@@ -1,4 +1,5 @@
 import type { AgentRecord, OperatorOverview } from "./settings";
+import type { OperatorStatus, OperatorWhoami } from "./operatorCommands";
 import { SESSION_TOKEN_KEY } from "./relayEnv";
 import { VIA_CONSOLE, httpFetch, relayHttpBase } from "./transport";
 
@@ -896,6 +897,11 @@ export const api = {
   agentRecord: (agent_id: string) => get<AgentRecord>(`/agents/${encodeURIComponent(agent_id)}/record`),
   // P179: the relay's settings and activity (aggregates). Operator only: the relay 403s anyone else.
   operatorOverview: () => get<OperatorOverview>("/operator/overview", { agentScoped: true }),
+  // Operator section: is the signed-in viewer this relay's operator? The relay answers from
+  // the viewer's signed sign-in, never from what the dashboard says it is.
+  operatorWhoami: () => get<OperatorWhoami>("/operator/whoami", { agentScoped: true }),
+  // The operator's desk: queues, expedition, house agents, health, season. Operator only.
+  operatorStatus: () => get<OperatorStatus>("/operator/status", { agentScoped: true }),
   paymentRecords: () => get<{ payments: PaymentRecord[] }>("/payments/records", { agentScoped: true }),
   settlements: (limit = 100) =>
     get<{ settlements: Settlement[]; count: number; has_more: boolean }>(

@@ -38,7 +38,7 @@
 		value: mod,
 		enumerable: true
 	}) : target, mod));
-	// node_modules/scheduler/cjs/scheduler.production.js
+	// ../../../../dashboard/node_modules/scheduler/cjs/scheduler.production.js
 	/**
 	* @license React
 	* scheduler.production.js
@@ -292,11 +292,11 @@
 			};
 		};
 	}));
-	// node_modules/scheduler/index.js
+	// ../../../../dashboard/node_modules/scheduler/index.js
 	var require_scheduler = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_scheduler_production();
 	}));
-	// node_modules/react/cjs/react.production.js
+	// ../../../../dashboard/node_modules/react/cjs/react.production.js
 	/**
 	* @license React
 	* react.production.js
@@ -682,11 +682,11 @@
 		};
 		exports.version = "19.3.1";
 	}));
-	// node_modules/react/index.js
+	// ../../../../dashboard/node_modules/react/index.js
 	var require_react = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_production();
 	}));
-	// node_modules/react-dom/cjs/react-dom.production.js
+	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom.production.js
 	/**
 	* @license React
 	* react-dom.production.js
@@ -838,7 +838,7 @@
 		};
 		exports.version = "19.3.1";
 	}));
-	// node_modules/react-dom/index.js
+	// ../../../../dashboard/node_modules/react-dom/index.js
 	var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		function checkDCE() {
 			if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === "undefined" || typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE !== "function") return;
@@ -851,7 +851,7 @@
 		checkDCE();
 		module.exports = require_react_dom_production();
 	}));
-	// node_modules/react-dom/cjs/react-dom-client.production.js
+	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom-client.production.js
 	/**
 	* @license React
 	* react-dom-client.production.js
@@ -11472,7 +11472,7 @@
 		} catch {}
 		return null;
 	}
-	// node_modules/react/cjs/react-jsx-runtime.production.js
+	// ../../../../dashboard/node_modules/react/cjs/react-jsx-runtime.production.js
 	/**
 	* @license React
 	* react-jsx-runtime.production.js
@@ -11506,7 +11506,7 @@
 		exports.jsx = jsxProd;
 		exports.jsxs = jsxProd;
 	}));
-	// node_modules/react/jsx-runtime.js
+	// ../../../../dashboard/node_modules/react/jsx-runtime.js
 	var require_jsx_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_jsx_runtime_production();
 	}));
@@ -11633,14 +11633,14 @@
 		].join(", ");
 	}));
 	// src/ui/kit/ActionButton.tsx
-	var import_react$31, import_jsx_runtime$63, ActionButton;
+	var import_react$33, import_jsx_runtime$65, ActionButton;
 	var init_ActionButton = __esmMin((() => {
 		init_ActionButton_module();
-		import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$33 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_utilities();
-		import_jsx_runtime$63 = require_jsx_runtime();
-		ActionButton = import_react$31.forwardRef(({ onClick, hotkey, children, style, rootStyle, isSelected }, ref) => {
-			return /* @__PURE__ */ (0, import_jsx_runtime$63.jsxs)("div", {
+		import_jsx_runtime$65 = require_jsx_runtime();
+		ActionButton = import_react$33.forwardRef(({ onClick, hotkey, children, style, rootStyle, isSelected }, ref) => {
+			return /* @__PURE__ */ (0, import_jsx_runtime$65.jsxs)("div", {
 				className: classNames(ActionButton_module_default.root, isSelected ? ActionButton_module_default.selected : null),
 				style: rootStyle,
 				onClick,
@@ -11653,10 +11653,10 @@
 				tabIndex: 0,
 				ref,
 				role: "button",
-				children: [isEmpty(hotkey) ? null : /* @__PURE__ */ (0, import_jsx_runtime$63.jsx)("span", {
+				children: [isEmpty(hotkey) ? null : /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("span", {
 					className: ActionButton_module_default.hotkey,
 					children: hotkey
-				}), /* @__PURE__ */ (0, import_jsx_runtime$63.jsx)("span", {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("span", {
 					className: ActionButton_module_default.content,
 					style,
 					children
@@ -11670,13 +11670,13 @@
 	var init_Text_module = __esmMin((() => {
 		text = "_text_1yv2a_1";
 		Text_module_default = { text };
-	})), import_jsx_runtime$62, Text;
+	})), import_jsx_runtime$64, Text;
 	var init_Text = __esmMin((() => {
 		init_Text_module();
 		require_react();
-		import_jsx_runtime$62 = require_jsx_runtime();
+		import_jsx_runtime$64 = require_jsx_runtime();
 		Text = ({ children, ...rest }) => {
-			return /* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("p", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$64.jsx)("p", {
 				className: Text_module_default.text,
 				...rest,
 				children
@@ -11690,11 +11690,11 @@
 		BlockLoader_module_default = { root: root$6 };
 	}));
 	// src/ui/kit/BlockLoader.tsx
-	var import_react$29, import_jsx_runtime$61, SEQUENCES, BlockLoader;
+	var import_react$31, import_jsx_runtime$63, SEQUENCES, BlockLoader;
 	var init_BlockLoader = __esmMin((() => {
 		init_BlockLoader_module();
-		import_react$29 = /* @__PURE__ */ __toESM(require_react(), 1);
-		import_jsx_runtime$61 = require_jsx_runtime();
+		import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_jsx_runtime$63 = require_jsx_runtime();
 		SEQUENCES = [
 			[
 				"⠁",
@@ -11799,19 +11799,19 @@
 			]
 		];
 		BlockLoader = ({ mode = 0 }) => {
-			const [index, setIndex] = import_react$29.useState(0);
+			const [index, setIndex] = import_react$31.useState(0);
 			const frames = SEQUENCES[mode];
 			const length = frames ? frames.length : 0;
-			import_react$29.useEffect(() => {
+			import_react$31.useEffect(() => {
 				if (!length) return;
 				const timer = window.setInterval(() => setIndex((i) => (i + 1) % length), 100);
 				return () => clearInterval(timer);
 			}, [length]);
-			if (!frames) return /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", {
+			if (!frames) return /* @__PURE__ */ (0, import_jsx_runtime$63.jsx)("span", {
 				className: BlockLoader_module_default.block,
 				children: "�"
 			});
-			return /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$63.jsx)("span", {
 				className: BlockLoader_module_default.root,
 				children: frames[index % length]
 			});
@@ -11820,7 +11820,8 @@
 	// src/relayEnv.ts
 	/** Resolved HTTP base for API + WS (env, else same-origin, else dev default). */
 	function resolveRelayUrl() {
-		return "http://localhost:8088";
+		if (typeof window !== "undefined" && window.location?.host) return `${window.location.protocol}//${window.location.host}`;
+		return "http://127.0.0.1:8088";
 	}
 	/**
 	* Who is using THIS dashboard, or `null` when nobody is — the single answer to
@@ -11864,7 +11865,7 @@
 	var init_relayEnv = __esmMin((() => {
 		RELAY$1 = resolveRelayUrl();
 		VIEWER_KEY = "emporia_viewer";
-		VIEWER_ID = resolveViewerId((typeof window !== "undefined" ? viewerFromUrl(window.location.search) : null) ?? savedViewer() ?? "hackathon_hermes");
+		VIEWER_ID = resolveViewerId((typeof window !== "undefined" ? viewerFromUrl(window.location.search) : null) ?? savedViewer() ?? void 0);
 		SESSION_TOKEN_KEY = `emporia_dashboard_token:${VIEWER_ID ?? ""}`;
 	}));
 	// src/transport.ts
@@ -12061,6 +12062,8 @@
 			escrowHolds: () => get("/payments/escrow-holds", { agentScoped: true }),
 			agentRecord: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/record`),
 			operatorOverview: () => get("/operator/overview", { agentScoped: true }),
+			operatorWhoami: () => get("/operator/whoami", { agentScoped: true }),
+			operatorStatus: () => get("/operator/status", { agentScoped: true }),
 			paymentRecords: () => get("/payments/records", { agentScoped: true }),
 			settlements: (limit = 100) => get(`/payments/settlements?limit=${limit}`, { agentScoped: true }),
 			agentSettlements: (agent_id, limit = 100) => get(`/payments/settlements?agent_id=${encodeURIComponent(agent_id)}&limit=${limit}`, { agentScoped: true }),
@@ -12104,12 +12107,12 @@
 	* `deps` changes (use a version counter to force a refresh from outside).
 	*/
 	function useInterval(fn, ms, deps = []) {
-		const [data, setData] = (0, import_react$28.useState)(null);
-		const [loading, setLoading] = (0, import_react$28.useState)(true);
-		const [error, setError] = (0, import_react$28.useState)(null);
-		const fnRef = (0, import_react$28.useRef)(fn);
+		const [data, setData] = (0, import_react$30.useState)(null);
+		const [loading, setLoading] = (0, import_react$30.useState)(true);
+		const [error, setError] = (0, import_react$30.useState)(null);
+		const fnRef = (0, import_react$30.useRef)(fn);
 		fnRef.current = fn;
-		(0, import_react$28.useEffect)(() => {
+		(0, import_react$30.useEffect)(() => {
 			let mounted = true;
 			const run = () => fnRef.current().then((d) => {
 				if (mounted) {
@@ -12153,19 +12156,19 @@
 	* existing polls stay as a slow safety net for a dropped socket.
 	*/
 	function useAgentWs(relayUrl, agentId) {
-		const [connected, setConnected] = (0, import_react$28.useState)(false);
-		const [last, setLast] = (0, import_react$28.useState)(null);
-		const [eventCount, setEventCount] = (0, import_react$28.useState)(0);
-		const wsRef = (0, import_react$28.useRef)(null);
+		const [connected, setConnected] = (0, import_react$30.useState)(false);
+		const [last, setLast] = (0, import_react$30.useState)(null);
+		const [eventCount, setEventCount] = (0, import_react$30.useState)(0);
+		const wsRef = (0, import_react$30.useRef)(null);
 		const target = `${relayUrl}\n${agentId ?? ""}`;
-		const [prevTarget, setPrevTarget] = (0, import_react$28.useState)(target);
+		const [prevTarget, setPrevTarget] = (0, import_react$30.useState)(target);
 		if (prevTarget !== target) {
 			setPrevTarget(target);
 			setConnected(false);
 			setLast(null);
 			setEventCount(0);
 		}
-		(0, import_react$28.useEffect)(() => {
+		(0, import_react$30.useEffect)(() => {
 			if (!agentId) return;
 			const lifetime = new AbortController();
 			const isClosed = () => lifetime.signal.aborted;
@@ -12228,14 +12231,14 @@
 	* with exponential back-off on drop.
 	*/
 	function useRoomWs(relayUrl, roomId, agentId, fetchHistory) {
-		const [messages, setMessages] = (0, import_react$28.useState)([]);
-		const [connected, setConnected] = (0, import_react$28.useState)(false);
-		const wsRef = (0, import_react$28.useRef)(null);
-		const fetchRef = (0, import_react$28.useRef)(fetchHistory);
-		(0, import_react$28.useEffect)(() => {
+		const [messages, setMessages] = (0, import_react$30.useState)([]);
+		const [connected, setConnected] = (0, import_react$30.useState)(false);
+		const wsRef = (0, import_react$30.useRef)(null);
+		const fetchRef = (0, import_react$30.useRef)(fetchHistory);
+		(0, import_react$30.useEffect)(() => {
 			fetchRef.current = fetchHistory;
 		});
-		(0, import_react$28.useEffect)(() => {
+		(0, import_react$30.useEffect)(() => {
 			if (!roomId || connected || !fetchRef.current) return;
 			const lifetime = new AbortController();
 			const load = () => fetchRef.current?.(roomId).then((m) => {
@@ -12249,13 +12252,13 @@
 			};
 		}, [roomId, connected]);
 		const target = `${relayUrl}\n${roomId ?? ""}\n${agentId ?? ""}`;
-		const [prevTarget, setPrevTarget] = (0, import_react$28.useState)(target);
+		const [prevTarget, setPrevTarget] = (0, import_react$30.useState)(target);
 		if (prevTarget !== target) {
 			setPrevTarget(target);
 			setMessages([]);
 			setConnected(false);
 		}
-		(0, import_react$28.useEffect)(() => {
+		(0, import_react$30.useEffect)(() => {
 			if (!roomId) return;
 			const lifetime = new AbortController();
 			const isClosed = () => lifetime.signal.aborted;
@@ -12325,22 +12328,22 @@
 	* the first request lands never re-requests the same id.
 	*/
 	function useSenderPubkeys(senderIds, fetchPubkey) {
-		const [pubkeys, setPubkeys] = (0, import_react$28.useState)({});
-		const pubkeysRef = (0, import_react$28.useRef)(pubkeys);
-		(0, import_react$28.useEffect)(() => {
+		const [pubkeys, setPubkeys] = (0, import_react$30.useState)({});
+		const pubkeysRef = (0, import_react$30.useRef)(pubkeys);
+		(0, import_react$30.useEffect)(() => {
 			pubkeysRef.current = pubkeys;
 		});
-		const requestedRef = (0, import_react$28.useRef)(/* @__PURE__ */ new Set());
-		const fetchRef = (0, import_react$28.useRef)(fetchPubkey);
-		(0, import_react$28.useEffect)(() => {
+		const requestedRef = (0, import_react$30.useRef)(/* @__PURE__ */ new Set());
+		const fetchRef = (0, import_react$30.useRef)(fetchPubkey);
+		(0, import_react$30.useEffect)(() => {
 			fetchRef.current = fetchPubkey;
 		});
-		const unmountedRef = (0, import_react$28.useRef)(false);
-		(0, import_react$28.useEffect)(() => () => {
+		const unmountedRef = (0, import_react$30.useRef)(false);
+		(0, import_react$30.useEffect)(() => () => {
 			unmountedRef.current = true;
 		}, []);
 		const senderKey = [...new Set(senderIds)].sort().join(" ");
-		(0, import_react$28.useEffect)(() => {
+		(0, import_react$30.useEffect)(() => {
 			const unknown = (senderKey ? senderKey.split(" ") : []).filter((id) => !(id in pubkeysRef.current) && !requestedRef.current.has(id));
 			if (unknown.length === 0) return;
 			unknown.forEach((id) => requestedRef.current.add(id));
@@ -12360,10 +12363,10 @@
 	* to seed the Overview instantly before the first HTTP poll completes.
 	*/
 	function useGlobalEvents() {
-		const [events, setEvents] = (0, import_react$28.useState)([]);
-		const [seed, setSeed] = (0, import_react$28.useState)(null);
-		const [wsConnected, setWsConnected] = (0, import_react$28.useState)(false);
-		(0, import_react$28.useEffect)(() => {
+		const [events, setEvents] = (0, import_react$30.useState)([]);
+		const [seed, setSeed] = (0, import_react$30.useState)(null);
+		const [wsConnected, setWsConnected] = (0, import_react$30.useState)(false);
+		(0, import_react$30.useEffect)(() => {
 			let closed = false;
 			let retryMs = 1e3;
 			let ws;
@@ -12415,9 +12418,9 @@
 			wsConnected
 		};
 	}
-	var import_react$28;
+	var import_react$30;
 	var init_hooks = __esmMin((() => {
-		import_react$28 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$30 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_transport();
 		init_api();
 	}));
@@ -12463,25 +12466,25 @@
 	}
 	function StatusChip({ ok, label, title, loading, liveLoader }) {
 		let indicator;
-		if (loading) indicator = /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("span", {
+		if (loading) indicator = /* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("span", {
 			className: "e-status-chip__loader",
 			"aria-hidden": true,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)(BlockLoader, { mode: 0 })
+			children: /* @__PURE__ */ (0, import_jsx_runtime$62.jsx)(BlockLoader, { mode: 0 })
 		});
-		else if (ok && liveLoader) indicator = /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("span", {
+		else if (ok && liveLoader) indicator = /* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("span", {
 			className: "e-status-chip__loader",
 			"aria-hidden": true,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)(BlockLoader, { mode: 0 })
+			children: /* @__PURE__ */ (0, import_jsx_runtime$62.jsx)(BlockLoader, { mode: 0 })
 		});
-		else indicator = /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("span", {
+		else indicator = /* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("span", {
 			className: "e-status-chip__dot",
 			"aria-hidden": true,
 			children: ok ? "●" : "○"
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$60.jsxs)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$62.jsxs)("span", {
 			className: `e-status-chip${ok ? " is-ok" : ""}`,
 			title,
-			children: [indicator, /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("span", {
+			children: [indicator, /* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("span", {
 				className: "e-status-chip__label",
 				children: label
 			})]
@@ -12500,56 +12503,56 @@
 		const meta = [health?.version ? `v${health.version}` : null, health?.guardrails_mode].filter(Boolean).join(" · ");
 		const restTitle = online ? `Relay REST API is up (${resolved}/health)` : health ? `Relay HTTP unreachable (${resolved})` : `Checking relay health…`;
 		const wsTitle = wsConnected ? `Live event stream connected: ${wsEvents}` : `Event stream offline — ${wsEvents}`;
-		const chips = /* @__PURE__ */ (0, import_jsx_runtime$60.jsxs)("span", {
+		const chips = /* @__PURE__ */ (0, import_jsx_runtime$62.jsxs)("span", {
 			className: "e-relay-status__chips",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$60.jsx)(StatusChip, {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$62.jsx)(StatusChip, {
 				ok: online,
 				label: "API",
 				title: restTitle,
 				loading: health === null
-			}), /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)(StatusChip, {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$62.jsx)(StatusChip, {
 				ok: wsConnected,
 				label: "events",
 				title: wsTitle,
 				liveLoader: wsConnected
 			})]
 		});
-		if (compact) return /* @__PURE__ */ (0, import_jsx_runtime$60.jsxs)("span", {
+		if (compact) return /* @__PURE__ */ (0, import_jsx_runtime$62.jsxs)("span", {
 			className: "e-relay-status e-relay-status--compact",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("span", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("span", {
 				className: "e-relay-status__host",
 				title: resolved,
 				children: host
 			}), chips]
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$60.jsxs)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$62.jsxs)("span", {
 			className: "e-relay-status",
 			title: resolved,
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("span", {
 					className: "e-relay-status__host",
 					children: host
 				}),
-				meta ? /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("span", {
+				meta ? /* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("span", {
 					className: "e-relay-status__meta",
 					children: meta
 				}) : null,
 				chips,
-				showWs ? /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)(Text, {
+				showWs ? /* @__PURE__ */ (0, import_jsx_runtime$62.jsx)(Text, {
 					className: "e-faint",
 					children: wsEvents
 				}) : null
 			]
 		});
 	}
-	var import_jsx_runtime$60;
+	var import_jsx_runtime$62;
 	var init_RelayStrip = __esmMin((() => {
 		init_BlockLoader();
 		init_Text();
 		init_hooks();
 		init_relayEnv();
 		init_relayFormat();
-		import_jsx_runtime$60 = require_jsx_runtime();
+		import_jsx_runtime$62 = require_jsx_runtime();
 	}));
 	// src/navConfig.ts
 	/**
@@ -12566,7 +12569,7 @@
 	*/
 	function visibleNav(opts) {
 		return NAV.filter((n) => {
-			if (n.id === "relay") return !!opts.isOperator;
+			if (n.id === "relay" || n.id === "operator") return !!opts.isOperator;
 			if (n.id === "fees" || n.id === "messages") return !opts.isSpectator;
 			return true;
 		});
@@ -12666,6 +12669,13 @@
 				blurb: "Your relay's activity: agents, games, messages, money"
 			},
 			{
+				id: "operator",
+				label: "Operator",
+				hotkey: "o",
+				icon: "⚑",
+				blurb: "Your relay's desk: verdicts waiting, the expedition, house agents, health — each with its command"
+			},
+			{
 				id: "gamify",
 				label: "Gamify",
 				hotkey: "g",
@@ -12698,7 +12708,8 @@
 				ids: [
 					"events",
 					"fees",
-					"relay"
+					"relay",
+					"operator"
 				]
 			},
 			{
@@ -12719,11 +12730,11 @@
 	}));
 	// src/relayCtx.ts
 	function useRelayCtx() {
-		return (0, import_react$27.useContext)(RelayCtx);
+		return (0, import_react$29.useContext)(RelayCtx);
 	}
-	var import_react$27, DEFAULT, RelayCtx;
+	var import_react$29, DEFAULT, RelayCtx;
 	var init_relayCtx = __esmMin((() => {
-		import_react$27 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$29 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_relayEnv();
 		DEFAULT = {
 			viewerId: null,
@@ -12742,16 +12753,16 @@
 			setDashboardToken: () => {},
 			refresh: () => {}
 		};
-		RelayCtx = (0, import_react$27.createContext)(DEFAULT);
+		RelayCtx = (0, import_react$29.createContext)(DEFAULT);
 	}));
 	// src/ThemeControls.tsx
 	function ThemePanelBody({ theme, tint, onTheme, onTint }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$59.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$61.jsxs)("div", {
 			className: "e-theme-duo",
 			role: "group",
 			"aria-label": "Theme",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$59.jsx)("button", {
+				/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("button", {
 					type: "button",
 					className: "e-theme-circle e-theme-circle--mode e-theme-duo__btn",
 					"data-mode": theme,
@@ -12759,11 +12770,11 @@
 					title: theme === "theme-dark" ? "Dark — click for light" : "Light — click for dark",
 					"aria-label": theme === "theme-dark" ? "Dark mode, switch to light" : "Light mode, switch to dark"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$59.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", {
 					className: "e-theme-duo__rule",
 					"aria-hidden": true
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$59.jsx)("button", {
+				/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("button", {
 					type: "button",
 					className: "e-theme-circle e-theme-circle--accent e-theme-duo__btn",
 					style: { background: TINT_COLORS[tint] },
@@ -12776,15 +12787,15 @@
 	}
 	/** Header / mobile: same two-circle control, no popover. */
 	function ThemeCompact(props) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$59.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("div", {
 			className: "e-theme-compact e-theme-compact--inline",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$59.jsx)(ThemePanelBody, { ...props })
+			children: /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)(ThemePanelBody, { ...props })
 		});
 	}
-	var import_jsx_runtime$59;
+	var import_jsx_runtime$61;
 	var init_ThemeControls = __esmMin((() => {
 		init_themeConfig();
-		import_jsx_runtime$59 = require_jsx_runtime();
+		import_jsx_runtime$61 = require_jsx_runtime();
 	}));
 	// src/AppNav.tsx
 	function useVisibleNav() {
@@ -12798,31 +12809,31 @@
 	function SectionTabs({ view, onGo, variant = "horizontal", badges = {} }) {
 		const visibleNav = useVisibleNav();
 		const tabView = view === "games" ? "sessions" : view;
-		return /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("nav", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("nav", {
 			className: `e-section-tabs e-section-tabs--${variant}`,
 			"aria-label": "Sections",
 			children: visibleNav.map((n) => {
 				const active = tabView === n.id;
 				const badgeCount = badges[n.id] ?? 0;
-				return /* @__PURE__ */ (0, import_jsx_runtime$58.jsxs)("button", {
+				return /* @__PURE__ */ (0, import_jsx_runtime$60.jsxs)("button", {
 					type: "button",
 					className: `e-section-tab${active ? " is-active" : ""}`,
 					onClick: () => onGo(n.id),
 					title: n.blurb,
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("span", {
 							className: "e-section-tab__icon",
 							"aria-hidden": true,
 							children: n.icon
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$58.jsxs)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$60.jsxs)("span", {
 							className: "e-section-tab__label",
-							children: [n.label, badgeCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("span", {
+							children: [n.label, badgeCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("span", {
 								className: "e-nav-badge",
 								children: badgeCount > 99 ? "99+" : badgeCount
 							})]
 						}),
-						variant === "drawer" ? /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("kbd", {
+						variant === "drawer" ? /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("kbd", {
 							className: "e-section-tab__key",
 							children: n.hotkey
 						}) : null
@@ -12833,22 +12844,22 @@
 	}
 	/** Mobile slide-out — same sections as header tabs + theme. */
 	function MobileNavDrawer({ view, onGo, theme, tint, onTheme, onTint, badges }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$58.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$60.jsxs)("div", {
 			className: "e-mobile-drawer",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$58.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$60.jsx)(Text, {
 					className: "e-brand-title",
 					children: "✶ Emporia"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$58.jsx)(SectionTabs, {
+				/* @__PURE__ */ (0, import_jsx_runtime$60.jsx)(SectionTabs, {
 					view,
 					onGo,
 					variant: "drawer",
 					badges
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("div", {
 					className: "e-mobile-drawer__theme",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)(ThemePanelBody, {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)(ThemePanelBody, {
 						theme,
 						tint,
 						onTheme,
@@ -12858,26 +12869,26 @@
 			]
 		});
 	}
-	var import_jsx_runtime$58;
+	var import_jsx_runtime$60;
 	var init_AppNav = __esmMin((() => {
 		init_Text();
 		init_navConfig();
 		init_relayCtx();
 		init_ThemeControls();
-		import_jsx_runtime$58 = require_jsx_runtime();
+		import_jsx_runtime$60 = require_jsx_runtime();
 	}));
 	// src/ui/kit/Indent.module.css
 	var root$5, Indent_module_default;
 	var init_Indent_module = __esmMin((() => {
 		root$5 = "_root_o3hs4_1";
 		Indent_module_default = { root: root$5 };
-	})), import_jsx_runtime$57, Indent;
+	})), import_jsx_runtime$59, Indent;
 	var init_Indent = __esmMin((() => {
 		init_Indent_module();
 		require_react();
-		import_jsx_runtime$57 = require_jsx_runtime();
+		import_jsx_runtime$59 = require_jsx_runtime();
 		Indent = ({ children, ...rest }) => {
-			return /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)("div", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$59.jsx)("div", {
 				className: Indent_module_default.root,
 				...rest,
 				children
@@ -12902,20 +12913,20 @@
 		const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 12) || "x";
 		const idA = `moire-a-${safe}-${size}`;
 		const idB = `moire-b-${safe}-${size}`;
-		return /* @__PURE__ */ (0, import_jsx_runtime$56.jsxs)("svg", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$58.jsxs)("svg", {
 			width: size,
 			height: size,
 			className: "e-moire-avatar",
 			viewBox: "0 0 32 32",
 			"aria-hidden": true,
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$56.jsxs)("defs", { children: [/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("pattern", {
+				/* @__PURE__ */ (0, import_jsx_runtime$58.jsxs)("defs", { children: [/* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("pattern", {
 					id: idA,
 					width: "4",
 					height: "4",
 					patternUnits: "userSpaceOnUse",
 					patternTransform: `rotate(${rotA}, 16, 16)`,
-					children: /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("line", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("line", {
 						x1: "0",
 						y1: "0",
 						x2: "0",
@@ -12923,13 +12934,13 @@
 						stroke: `hsl(${hue}, 70%, 60%)`,
 						strokeWidth: "1"
 					})
-				}), /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("pattern", {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("pattern", {
 					id: idB,
 					width: "4",
 					height: "4",
 					patternUnits: "userSpaceOnUse",
 					patternTransform: `rotate(${rotB}, 16, 16)`,
-					children: /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("line", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("line", {
 						x1: "0",
 						y1: "0",
 						x2: "4",
@@ -12938,18 +12949,18 @@
 						strokeWidth: "0.8"
 					})
 				})] }),
-				/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("rect", {
+				/* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("rect", {
 					width: "32",
 					height: "32",
 					fill: `hsl(${hue}, 28%, 18%)`
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("rect", {
+				/* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("rect", {
 					width: "32",
 					height: "32",
 					fill: `url(#${idA})`,
 					opacity: "0.85"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("rect", {
+				/* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("rect", {
 					width: "32",
 					height: "32",
 					fill: `url(#${idB})`,
@@ -12958,9 +12969,9 @@
 			]
 		});
 	}
-	var import_jsx_runtime$56, MOIRE_HUES;
+	var import_jsx_runtime$58, MOIRE_HUES;
 	var init_AgentMoireAvatar = __esmMin((() => {
-		import_jsx_runtime$56 = require_jsx_runtime();
+		import_jsx_runtime$58 = require_jsx_runtime();
 		MOIRE_HUES = [
 			210,
 			0,
@@ -12979,13 +12990,13 @@
 	var init_Badge_module = __esmMin((() => {
 		root$4 = "_root_xy5qo_1";
 		Badge_module_default = { root: root$4 };
-	})), import_jsx_runtime$55, Badge;
+	})), import_jsx_runtime$57, Badge;
 	var init_Badge = __esmMin((() => {
 		init_Badge_module();
 		require_react();
-		import_jsx_runtime$55 = require_jsx_runtime();
+		import_jsx_runtime$57 = require_jsx_runtime();
 		Badge = ({ children, ...rest }) => {
-			return /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("span", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)("span", {
 				className: Badge_module_default.root,
 				...rest,
 				children
@@ -12995,48 +13006,87 @@
 	// src/ui/layout.tsx
 	/** Page content shell — title lives in app top bar, not duplicated here. */
 	function ViewBody({ children, toolbar, flush }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$56.jsxs)("div", {
 			className: `e-view-body${flush ? " e-view-body--flush" : ""}`,
-			children: [toolbar ? /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("div", {
+			children: [toolbar ? /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("div", {
 				className: "e-view-toolbar",
 				children: toolbar
-			}) : null, /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("div", {
+			}) : null, /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("div", {
 				className: "e-view-body__inner",
+				children
+			})]
+		});
+	}
+	function StatHero({ items }) {
+		return /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("div", {
+			className: "e-hero-stats",
+			role: "list",
+			children: items.map((it) => /* @__PURE__ */ (0, import_jsx_runtime$56.jsxs)("div", {
+				className: `e-hero-stat${it.accent ? " e-hero-stat--accent" : ""}`,
+				role: "listitem",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("span", {
+						className: "e-hero-stat__value",
+						children: it.value
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("span", {
+						className: "e-hero-stat__label",
+						children: it.label
+					}),
+					it.hint ? /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("span", {
+						className: "e-hero-stat__hint",
+						children: it.hint
+					}) : null
+				]
+			}, it.label))
+		});
+	}
+	function PanelCard({ title, children, action }) {
+		return /* @__PURE__ */ (0, import_jsx_runtime$56.jsxs)("section", {
+			className: "e-panel-card",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$56.jsxs)("header", {
+				className: "e-panel-card__head",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(Text, {
+					className: "e-panel-card__title",
+					children: title
+				}), action]
+			}), /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("div", {
+				className: "e-panel-card__body",
 				children
 			})]
 		});
 	}
 	function FeedEventType({ type }) {
 		const label = type.replace(/_/g, " ");
-		return /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("span", {
 			className: "e-feed-type",
 			children: label
 		});
 	}
-	var import_jsx_runtime$54;
+	var import_jsx_runtime$56;
 	var init_layout = __esmMin((() => {
 		init_Badge();
 		init_Text();
-		import_jsx_runtime$54 = require_jsx_runtime();
+		import_jsx_runtime$56 = require_jsx_runtime();
 	}));
 	// src/ui/cards.tsx
 	/** Minimal retro panel — thin border, small label, no SRCL Card chrome. */
 	function SlimCard({ title, children, action, foot }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("section", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$55.jsxs)("section", {
 			className: "e-slim-card",
 			children: [
-				(title || action) && /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("header", {
+				(title || action) && /* @__PURE__ */ (0, import_jsx_runtime$55.jsxs)("header", {
 					className: "e-slim-card__head",
-					children: [title ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("span", {
+					children: [title ? /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("span", {
 						className: "e-slim-card__title",
 						children: title
-					}) : /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("span", {}), action]
+					}) : /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("span", {}), action]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("div", {
 					className: "e-slim-card__body",
 					children
 				}),
-				foot ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("footer", {
+				foot ? /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("footer", {
 					className: "e-slim-card__foot",
 					children: foot
 				}) : null
@@ -13044,60 +13094,60 @@
 		});
 	}
 	function MetaGrid({ rows }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("dl", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("dl", {
 			className: "e-meta-grid",
-			children: rows.map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
+			children: rows.map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime$55.jsxs)("div", {
 				className: "e-meta-grid__row",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("dt", { children: k }), /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("dd", { children: v })]
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("dt", { children: k }), /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("dd", { children: v })]
 			}, k))
 		});
 	}
 	/** Empty detail pane — add context instead of a single faint line. */
 	function EmptyPane({ title = "Nothing selected", hint, facts }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$55.jsxs)("div", {
 			className: "e-empty-pane",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
 					className: "e-empty-pane__title",
 					children: title
 				}),
-				hint ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+				hint ? /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
 					className: "e-empty-pane__hint",
 					children: hint
 				}) : null,
-				facts && facts.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("dl", {
+				facts && facts.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("dl", {
 					className: "e-meta-grid e-meta-grid--inline",
-					children: facts.map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
+					children: facts.map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime$55.jsxs)("div", {
 						className: "e-meta-grid__row",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("dt", { children: k }), /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("dd", { children: v })]
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("dt", { children: k }), /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("dd", { children: v })]
 					}, k))
 				}) : null
 			]
 		});
 	}
 	function RailChips({ rails }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("div", {
 			className: "e-rail-chips",
-			children: rails.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("span", {
+			children: rails.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("span", {
 				className: "e-rail-chip",
 				children: r.replace(/_/g, " ")
 			}, r))
 		});
 	}
-	var import_jsx_runtime$53;
+	var import_jsx_runtime$55;
 	var init_cards = __esmMin((() => {
 		init_Text();
-		import_jsx_runtime$53 = require_jsx_runtime();
+		import_jsx_runtime$55 = require_jsx_runtime();
 	}));
 	// src/healthCtx.ts
 	/** The current `/health` snapshot, or null before the first response. */
 	function useRelayHealth() {
-		return (0, import_react$24.useContext)(RelayHealthCtx);
+		return (0, import_react$26.useContext)(RelayHealthCtx);
 	}
-	var import_react$24, RelayHealthCtx;
+	var import_react$26, RelayHealthCtx;
 	var init_healthCtx = __esmMin((() => {
-		import_react$24 = /* @__PURE__ */ __toESM(require_react(), 1);
-		RelayHealthCtx = (0, import_react$24.createContext)(null);
+		import_react$26 = /* @__PURE__ */ __toESM(require_react(), 1);
+		RelayHealthCtx = (0, import_react$26.createContext)(null);
 	}));
 	// src/paymentFormat.ts
 	function settlementHealth(s) {
@@ -13297,28 +13347,28 @@
 			divider,
 			line: line$1
 		};
-	})), import_jsx_runtime$52, Divider;
+	})), import_jsx_runtime$54, Divider;
 	var init_Divider = __esmMin((() => {
 		init_Divider_module();
 		require_react();
-		import_jsx_runtime$52 = require_jsx_runtime();
+		import_jsx_runtime$54 = require_jsx_runtime();
 		Divider = ({ style, type }) => {
-			if (type === "GRADIENT") return /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", {
+			if (type === "GRADIENT") return /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("div", {
 				className: Divider_module_default.gradient,
 				style
 			});
-			if (type === "DOUBLE") return /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)("div", {
+			if (type === "DOUBLE") return /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("div", {
 				className: Divider_module_default.divider,
 				style,
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("div", {
 					className: Divider_module_default.line,
 					style: { marginBottom: `2px` }
-				}), /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", { className: Divider_module_default.line })]
+				}), /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("div", { className: Divider_module_default.line })]
 			});
-			return /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("div", {
 				className: Divider_module_default.divider,
 				style,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", { className: Divider_module_default.line })
+				children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("div", { className: Divider_module_default.line })
 			});
 		};
 	}));
@@ -13348,14 +13398,14 @@
 	}));
 	// src/ui/kit/Input.tsx
 	function Input({ caretChars, isBlink = true, label, placeholder, onChange, type, id, ...rest }) {
-		const generatedId = import_react$22.useId();
+		const generatedId = import_react$24.useId();
 		const inputId = id || generatedId;
-		const inputRef = import_react$22.useRef(null);
-		const [text, setText] = import_react$22.useState(rest.defaultValue?.toString() || rest.value?.toString() || "");
-		const [isFocused, setIsFocused] = import_react$22.useState(false);
-		const [selectionStart, setSelectionStart] = import_react$22.useState(text.length);
-		const lastFocusDirectionRef = import_react$22.useRef(null);
-		const [prevValue, setPrevValue] = import_react$22.useState(rest.value);
+		const inputRef = import_react$24.useRef(null);
+		const [text, setText] = import_react$24.useState(rest.defaultValue?.toString() || rest.value?.toString() || "");
+		const [isFocused, setIsFocused] = import_react$24.useState(false);
+		const [selectionStart, setSelectionStart] = import_react$24.useState(text.length);
+		const lastFocusDirectionRef = import_react$24.useRef(null);
+		const [prevValue, setPrevValue] = import_react$24.useState(rest.value);
 		if (prevValue !== rest.value) {
 			setPrevValue(rest.value);
 			if (rest.value !== void 0) {
@@ -13409,25 +13459,25 @@
 		const maskText = (t) => type === "password" ? "•".repeat(t.length) : t;
 		const beforeCaretText = isPlaceholderVisible ? placeholder ?? "" : maskText(text.substring(0, selectionStart));
 		const afterCaretText = isPlaceholderVisible ? "" : maskText(text.substring(selectionStart));
-		return /* @__PURE__ */ (0, import_jsx_runtime$51.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
 			className: containerClasses,
-			children: [label && /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("label", {
+			children: [label && /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("label", {
 				htmlFor: inputId,
 				className: Input_module_default.label,
 				children: label
-			}), /* @__PURE__ */ (0, import_jsx_runtime$51.jsxs)("div", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
 				className: Input_module_default.inputContainer,
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$51.jsxs)("div", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
 					className: classNames(Input_module_default.displayed, isPlaceholderVisible && Input_module_default.placeholder),
 					children: [
 						beforeCaretText,
-						!isPlaceholderVisible && /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("span", {
+						!isPlaceholderVisible && /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("span", {
 							className: classNames(Input_module_default.block, isBlink && Input_module_default.blink),
 							children: caretChars || ""
 						}),
 						!isPlaceholderVisible && afterCaretText
 					]
-				}), /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("input", {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("input", {
 					id: inputId,
 					ref: inputRef,
 					className: Input_module_default.hidden,
@@ -13445,12 +13495,12 @@
 			})]
 		});
 	}
-	var import_react$22, import_jsx_runtime$51;
+	var import_react$24, import_jsx_runtime$53;
 	var init_Input = __esmMin((() => {
-		import_react$22 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$24 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_utilities();
 		init_Input_module();
-		import_jsx_runtime$51 = require_jsx_runtime();
+		import_jsx_runtime$53 = require_jsx_runtime();
 	}));
 	// src/ui/kit/SidebarLayout.module.css
 	var root$2, sidebar, handle, line, content, SidebarLayout_module_default;
@@ -13469,15 +13519,15 @@
 		};
 	}));
 	// src/ui/kit/SidebarLayout.tsx
-	var import_react$21, import_jsx_runtime$50, CHARACTER_WIDTH, SidebarLayout;
+	var import_react$23, import_jsx_runtime$52, CHARACTER_WIDTH, SidebarLayout;
 	var init_SidebarLayout = __esmMin((() => {
 		init_SidebarLayout_module();
-		import_react$21 = /* @__PURE__ */ __toESM(require_react(), 1);
-		import_jsx_runtime$50 = require_jsx_runtime();
+		import_react$23 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_jsx_runtime$52 = require_jsx_runtime();
 		CHARACTER_WIDTH = 9.6;
 		SidebarLayout = ({ defaultSidebarWidth = 20, children, sidebar, isShowingHandle = false, isReversed = false, ...rest }) => {
-			const [sidebarWidth, setSidebarWidth] = import_react$21.useState(defaultSidebarWidth);
-			const handleRef = import_react$21.useRef(null);
+			const [sidebarWidth, setSidebarWidth] = import_react$23.useState(defaultSidebarWidth);
+			const handleRef = import_react$23.useRef(null);
 			const handleMouseDown = (event) => {
 				const startX = event.clientX;
 				const startWidth = sidebarWidth;
@@ -13493,41 +13543,41 @@
 				document.addEventListener("mousemove", onMouseMove);
 				document.addEventListener("mouseup", onMouseUp);
 			};
-			if (isReversed) return /* @__PURE__ */ (0, import_jsx_runtime$50.jsxs)("div", {
+			if (isReversed) return /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)("div", {
 				className: SidebarLayout_module_default.root,
 				...rest,
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$50.jsx)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", {
 						className: SidebarLayout_module_default.content,
 						children
 					}),
 					"\xA0",
-					/* @__PURE__ */ (0, import_jsx_runtime$50.jsx)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", {
 						className: SidebarLayout_module_default.sidebar,
 						style: { width: `${sidebarWidth}ch` },
 						children: sidebar
 					})
 				]
 			});
-			return /* @__PURE__ */ (0, import_jsx_runtime$50.jsxs)("div", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)("div", {
 				className: SidebarLayout_module_default.root,
 				...rest,
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$50.jsx)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", {
 						className: SidebarLayout_module_default.sidebar,
 						style: { width: `${sidebarWidth}ch` },
 						children: sidebar
 					}),
-					isShowingHandle ? /* @__PURE__ */ (0, import_jsx_runtime$50.jsx)("div", {
+					isShowingHandle ? /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", {
 						className: SidebarLayout_module_default.handle,
 						ref: handleRef,
 						role: "button",
 						tabIndex: 0,
 						onMouseDown: handleMouseDown,
 						style: isShowingHandle ? {} : { width: `0.5ch` },
-						children: /* @__PURE__ */ (0, import_jsx_runtime$50.jsxs)(import_jsx_runtime$50.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$50.jsx)("div", { className: SidebarLayout_module_default.line }), /* @__PURE__ */ (0, import_jsx_runtime$50.jsx)("div", { className: SidebarLayout_module_default.line })] })
+						children: /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)(import_jsx_runtime$52.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", { className: SidebarLayout_module_default.line }), /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", { className: SidebarLayout_module_default.line })] })
 					}) : null,
-					/* @__PURE__ */ (0, import_jsx_runtime$50.jsx)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", {
 						className: SidebarLayout_module_default.content,
 						children
 					})
@@ -13550,11 +13600,11 @@
 			statusOk,
 			statusOff
 		};
-	})), import_jsx_runtime$49, STATUS_OK, STATUS_OFF, SimpleTable;
+	})), import_jsx_runtime$51, STATUS_OK, STATUS_OFF, SimpleTable;
 	var init_SimpleTable = __esmMin((() => {
 		init_SimpleTable_module();
 		require_react();
-		import_jsx_runtime$49 = require_jsx_runtime();
+		import_jsx_runtime$51 = require_jsx_runtime();
 		STATUS_OK = /* @__PURE__ */ new Set([
 			"ACTIVE",
 			"OPEN",
@@ -13569,21 +13619,21 @@
 			if (!data || data.length === 0) return null;
 			const [header, ...rows] = data;
 			const alignAt = (col) => align && align[col] === "right" ? SimpleTable_module_default.alignRight : void 0;
-			return /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("div", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("div", {
 				className: SimpleTable_module_default.scrollWrapper,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$49.jsxs)("table", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$51.jsxs)("table", {
 					className: SimpleTable_module_default.root,
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("tr", { children: header.map((cell, i) => /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("td", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("tr", { children: header.map((cell, i) => /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("td", {
 						className: alignAt(i),
 						children: cell
-					}, i)) }) }), /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("tbody", { children: rows.map((row, ri) => /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("tr", {
+					}, i)) }) }), /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("tbody", { children: rows.map((row, ri) => /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("tr", {
 						tabIndex: 0,
 						children: row.map((cell, ci) => {
 							let statusClass;
 							if (STATUS_OK.has(cell)) statusClass = SimpleTable_module_default.statusOk;
 							else if (STATUS_OFF.has(cell)) statusClass = SimpleTable_module_default.statusOff;
 							const className = [alignAt(ci), statusClass].filter(Boolean).join(" ") || void 0;
-							return /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("td", {
+							return /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("td", {
 								className,
 								children: cell
 							}, ci);
@@ -13606,7 +13656,7 @@
 	// src/ui/FlatRailItem.tsx
 	/** Left-rail row — no SRCL ActionListItem gray/amber gutters. */
 	function FlatRailItem({ selected, onClick, children }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("button", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$50.jsx)("button", {
 			type: "button",
 			className: `e-rail-item${selected ? " is-selected" : ""}`,
 			onClick,
@@ -13614,19 +13664,19 @@
 			children
 		});
 	}
-	var import_jsx_runtime$48;
+	var import_jsx_runtime$50;
 	var init_FlatRailItem = __esmMin((() => {
 		init_listSelection();
-		import_jsx_runtime$48 = require_jsx_runtime();
+		import_jsx_runtime$50 = require_jsx_runtime();
 	}));
 	// src/ui/chips.tsx
 	function AgentLink({ agent_id, navigate, full, className }) {
 		const label = full ? agent_id : agent_id.length > 14 ? `…${agent_id.slice(-12)}` : agent_id;
-		if (!navigate) return /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+		if (!navigate) return /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("span", {
 			className: `e-entity-chip e-entity-chip--inert ${className ?? ""}`,
 			children: label
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("button", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("button", {
 			type: "button",
 			className: `e-entity-chip e-entity-chip--agent ${className ?? ""}`,
 			title: agent_id,
@@ -13639,11 +13689,11 @@
 	}
 	function SessionLink({ session_id, navigate, className }) {
 		const label = `…${session_id.slice(-10)}`;
-		if (!navigate) return /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+		if (!navigate) return /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("span", {
 			className: `e-entity-chip e-entity-chip--inert ${className ?? ""}`,
 			children: label
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("button", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("button", {
 			type: "button",
 			className: `e-entity-chip e-entity-chip--session ${className ?? ""}`,
 			title: session_id,
@@ -13654,10 +13704,10 @@
 			children: label
 		});
 	}
-	var import_jsx_runtime$47;
+	var import_jsx_runtime$49;
 	var init_chips = __esmMin((() => {
 		require_react();
-		import_jsx_runtime$47 = require_jsx_runtime();
+		import_jsx_runtime$49 = require_jsx_runtime();
 	}));
 	// src/ui/McpCommandHint.tsx
 	/**
@@ -13667,7 +13717,7 @@
 	* a parallel write UI.
 	*/
 	function McpCommandHint({ label, tool, args }) {
-		const [copied, setCopied] = (0, import_react$18.useState)(false);
+		const [copied, setCopied] = (0, import_react$20.useState)(false);
 		const command = `${tool}(${Object.entries(args).map(([k, v]) => `${k}="${v}"`).join(", ")})`;
 		const copy = () => {
 			navigator.clipboard?.writeText(command).then(() => {
@@ -13675,47 +13725,47 @@
 				setTimeout(() => setCopied(false), 1500);
 			});
 		};
-		return /* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)("div", {
 			className: "e-mcp-hint",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$48.jsx)(Text, {
 					className: "e-faint e-mcp-hint__label",
 					children: label
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("code", {
+				/* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("code", {
 					className: "e-mcp-hint__code",
 					onClick: copy,
 					title: "Click to copy",
 					children: command
 				}),
-				copied && /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)(Text, {
+				copied && /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)(Text, {
 					className: "e-mcp-hint__copied",
 					children: "copied"
 				})
 			]
 		});
 	}
-	var import_react$18, import_jsx_runtime$46;
+	var import_react$20, import_jsx_runtime$48;
 	var init_McpCommandHint = __esmMin((() => {
-		import_react$18 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$20 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
-		import_jsx_runtime$46 = require_jsx_runtime();
+		import_jsx_runtime$48 = require_jsx_runtime();
 	}));
 	// src/ui/ListingPeekBanner.tsx
 	function ListingPeekBanner({ peek }) {
 		const mod = peek.moduleType?.replace("emporia:", "").replace(/:v\d$/, "") ?? "listing";
-		return /* @__PURE__ */ (0, import_jsx_runtime$45.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
 			className: "e-listing-peek",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)(Text, {
 					className: "e-listing-peek__title",
 					children: peek.title
 				}),
-				peek.description ? /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(Text, {
+				peek.description ? /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)(Text, {
 					className: "e-dim e-listing-peek__desc",
 					children: peek.description.slice(0, 240)
 				}) : null,
-				/* @__PURE__ */ (0, import_jsx_runtime$45.jsxs)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)(Text, {
 					className: "e-faint e-listing-peek__meta",
 					children: [
 						mod,
@@ -13723,7 +13773,7 @@
 						peek.agentId.slice(-10)
 					]
 				}),
-				peek.moduleType && /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(McpCommandHint, {
+				peek.moduleType && /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)(McpCommandHint, {
 					label: "Start this kind of session via MCP",
 					tool: "create_session",
 					args: {
@@ -13734,26 +13784,26 @@
 			]
 		});
 	}
-	var import_jsx_runtime$45;
+	var import_jsx_runtime$47;
 	var init_ListingPeekBanner = __esmMin((() => {
 		init_Text();
 		init_McpCommandHint();
 		init_relayEnv();
-		import_jsx_runtime$45 = require_jsx_runtime();
+		import_jsx_runtime$47 = require_jsx_runtime();
 	}));
 	// src/ui/kit/AlertBanner.module.css
 	var root, AlertBanner_module_default;
 	var init_AlertBanner_module = __esmMin((() => {
 		root = "_root_1sq7v_1";
 		AlertBanner_module_default = { root };
-	})), import_jsx_runtime$44, AlertBanner;
+	})), import_jsx_runtime$46, AlertBanner;
 	var init_AlertBanner = __esmMin((() => {
 		init_AlertBanner_module();
 		require_react();
-		import_jsx_runtime$44 = require_jsx_runtime();
+		import_jsx_runtime$46 = require_jsx_runtime();
 		AlertBanner = ({ style: propStyle, ...rest }) => {
 			let style = { ...propStyle };
-			return /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("div", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("div", {
 				className: AlertBanner_module_default.root,
 				...rest,
 				style
@@ -13762,30 +13812,30 @@
 	}));
 	// src/ui/ViewStatus.tsx
 	function ViewStatus({ loading, error, empty, emptyHint }) {
-		if (error) return /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)(import_jsx_runtime$43.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(AlertBanner, { children: error }), /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("br", {})] });
-		if (loading && empty) return /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)(import_jsx_runtime$43.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(BlockLoader, {}), /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("br", {})] });
-		if (empty && emptyHint) return /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Text, {
+		if (error) return /* @__PURE__ */ (0, import_jsx_runtime$45.jsxs)(import_jsx_runtime$45.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(AlertBanner, { children: error }), /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)("br", {})] });
+		if (loading && empty) return /* @__PURE__ */ (0, import_jsx_runtime$45.jsxs)(import_jsx_runtime$45.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(BlockLoader, {}), /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)("br", {})] });
+		if (empty && emptyHint) return /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(Text, {
 			className: "e-faint",
 			children: emptyHint
 		});
 		return null;
 	}
-	var import_jsx_runtime$43;
+	var import_jsx_runtime$45;
 	var init_ViewStatus = __esmMin((() => {
 		init_AlertBanner();
 		init_BlockLoader();
 		init_Text();
-		import_jsx_runtime$43 = require_jsx_runtime();
+		import_jsx_runtime$45 = require_jsx_runtime();
 	}));
 	// src/ui/SegmentTabs.tsx
 	/** Flat option chips — selected = accent border + text, no gray/secondary fill. */
 	function SegmentTabs({ options, value, onChange, labels, className }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("div", {
 			className: ["e-segment-tabs", className].filter(Boolean).join(" "),
 			role: "tablist",
 			children: options.map((o) => {
 				const active = value === o;
-				return /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("button", {
+				return /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("button", {
 					type: "button",
 					role: "tab",
 					"aria-selected": active,
@@ -13796,9 +13846,9 @@
 			})
 		});
 	}
-	var import_jsx_runtime$42;
+	var import_jsx_runtime$44;
 	var init_SegmentTabs = __esmMin((() => {
-		import_jsx_runtime$42 = require_jsx_runtime();
+		import_jsx_runtime$44 = require_jsx_runtime();
 	}));
 	// src/settings.ts
 	/** Items in their groups, in first-seen order. */
@@ -13839,76 +13889,76 @@
 	*/
 	function Leaderboard({ moduleType }) {
 		const [data, , error] = useInterval(() => api.leaderboard(moduleType), 3e4, [moduleType]);
-		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
+		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			title: error,
 			children: "? standings unavailable — the relay did not answer. This is not an empty table."
 		});
-		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
+		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			children: "… loading standings"
 		});
-		if (data.standings.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
+		if (data.standings.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			children: "No contests settled on this relay yet."
 		});
 		const rated = data.standings.some((s) => s.rating !== void 0);
-		return /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("div", {
 			style: { marginTop: 10 },
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Text, {
 				className: "e-dim",
 				style: { fontSize: "0.68rem" },
 				children: "Standings — this relay only"
-			}), /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("div", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("div", {
 				className: "e-compact-table",
 				style: {
 					overflowX: "auto",
 					marginTop: 6
 				},
-				children: /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("table", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("table", {
 					className: "e-listings-native",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: "#" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: "AGENT" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: "WINS" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: "ENTRIES" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: "RATE" }),
-						rated && /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("tr", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: "#" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: "AGENT" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: "WINS" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: "ENTRIES" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: "RATE" }),
+						rated && /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", {
 							title: "Craft: a Glicko-2 rating in this game, ± its uncertainty",
 							children: "CRAFT"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: "MODULES" })
-					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("tbody", { children: data.standings.map((s, i) => /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: "MODULES" })
+					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("tbody", { children: data.standings.map((s, i) => /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("tr", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Text, {
 							className: "e-faint",
 							style: { fontVariantNumeric: "tabular-nums" },
 							children: i + 1
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, { children: s.agent_id }) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Text, { children: s.agent_id }) }),
+						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Text, {
 							style: { fontVariantNumeric: "tabular-nums" },
 							children: s.wins
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Text, {
 							className: "e-dim",
 							style: { fontVariantNumeric: "tabular-nums" },
 							children: s.entries
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Text, {
 							className: "e-dim",
 							style: { fontVariantNumeric: "tabular-nums" },
 							children: s.win_rate === null ? "—" : `${Math.round(s.win_rate * 100)}%`
 						}) }),
-						rated && /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
+						rated && /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Text, {
 							className: "e-dim",
 							style: { fontVariantNumeric: "tabular-nums" },
 							title: s.rating?.provisional ? "provisional: too few settled games to be sure" : void 0,
 							children: s.rating ? `${s.rating.rating} ±${2 * s.rating.rd}${s.rating.provisional ? "?" : ""}` : "—"
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Text, {
 							className: "e-faint",
 							style: { fontSize: 11 },
 							children: s.modules.map((m) => m.replace("emporia:", "").replace(":v1", "")).join(", ") || "—"
@@ -13918,14 +13968,14 @@
 			})]
 		});
 	}
-	var import_jsx_runtime$41;
+	var import_jsx_runtime$43;
 	var init_Leaderboard = __esmMin((() => {
 		init_Text();
 		init_hooks();
 		init_api();
-		import_jsx_runtime$41 = require_jsx_runtime();
+		import_jsx_runtime$43 = require_jsx_runtime();
 	}));
-	// node_modules/@noble/hashes/_u64.js
+	// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 	function fromBig(n, le = false) {
 		if (le) return {
 			h: Number(n & U32_MASK64),
@@ -13978,7 +14028,7 @@
 		add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 		add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
 	}));
-	// node_modules/@noble/hashes/utils.js
+	// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 	/**
 	* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 	* @param a - value to test
@@ -14341,7 +14391,7 @@
 			suffix
 		]) });
 	}));
-	// node_modules/@noble/hashes/_md.js
+	// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 	var HashMD, SHA512_IV;
 	var init__md = __esmMin((() => {
 		init__u64();
@@ -14454,7 +14504,7 @@
 			327033209
 		]);
 	}));
-	// node_modules/@noble/hashes/sha2.js
+	// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 	var K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, sha512;
 	var init_sha2 = __esmMin((() => {
 		init__md();
@@ -14700,7 +14750,7 @@
 		};
 		sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
 	}));
-	// node_modules/@noble/curves/utils.js
+	// ../../../../dashboard/node_modules/@noble/curves/utils.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates that a value is an array, optionally validating each element.
@@ -15034,7 +15084,7 @@
 			return (_1n$5 << BigInt(n)) - _1n$5;
 		};
 	}));
-	// node_modules/@noble/curves/abstract/modular.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* @param a - Dividend value.
@@ -15587,7 +15637,7 @@
 			}
 		};
 	}));
-	// node_modules/@noble/curves/abstract/curve.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates the static surface of a point constructor.
@@ -16089,7 +16139,7 @@
 			}
 		};
 	}));
-	// node_modules/@noble/curves/abstract/edwards.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function isEdValidXY(Fp, CURVE, x, y) {
 		const x2 = Fp.sqr(x);
@@ -16564,7 +16614,7 @@
 		_4n = /* @__PURE__ */ BigInt(4);
 		_8n$1 = /* @__PURE__ */ BigInt(8);
 	}));
-	// node_modules/@noble/curves/ed25519.js
+	// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function ed25519_pow_2_252_3(x) {
 		const _10n = BigInt(10), _20n = BigInt(20), _40n = BigInt(40), _80n = BigInt(80);
@@ -16647,7 +16697,7 @@
 		Fp = /* @__PURE__ */ (() => ed25519_Point.Fp)();
 		ed25519 = /* @__PURE__ */ ed({});
 	}));
-	// node_modules/@noble/hashes/sha3.js
+	// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
 	/**
 	* `keccakf1600` internal permutation, additionally allows adjusting the round count.
 	* @param s - 5x5 Keccak state encoded as 25 lanes split into 50 uint32 words
@@ -17138,42 +17188,42 @@
 	}
 	function TrustBadge({ a }) {
 		const verified = a.trust_level === "nous_verified";
-		return /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Badge, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Badge, {
 			className: verified ? "e-trust-verified" : "e-trust-key",
 			children: trustBadge(a)
 		});
 	}
 	function AgentDetailPanel({ agent, navigate }) {
-		const [profile, setProfile] = import_react$16.useState(null);
-		const [tab, setTab] = import_react$16.useState("profile");
-		const [sessions, setSessions] = import_react$16.useState([]);
-		const [listings, setListings] = import_react$16.useState([]);
-		const [posts, setPosts] = import_react$16.useState([]);
-		const agentRef = import_react$16.useRef(agent);
-		import_react$16.useEffect(() => {
+		const [profile, setProfile] = import_react$18.useState(null);
+		const [tab, setTab] = import_react$18.useState("profile");
+		const [sessions, setSessions] = import_react$18.useState([]);
+		const [listings, setListings] = import_react$18.useState([]);
+		const [posts, setPosts] = import_react$18.useState([]);
+		const agentRef = import_react$18.useRef(agent);
+		import_react$18.useEffect(() => {
 			agentRef.current = agent;
 		});
-		import_react$16.useEffect(() => {
+		import_react$18.useEffect(() => {
 			api.agentProfile(agent.agent_id).then(setProfile).catch(() => setProfile(agentRef.current));
 		}, [agent.agent_id]);
-		const [record, setRecord] = import_react$16.useState(null);
-		const [recordFor, setRecordFor] = import_react$16.useState(agent.agent_id);
+		const [record, setRecord] = import_react$18.useState(null);
+		const [recordFor, setRecordFor] = import_react$18.useState(agent.agent_id);
 		if (recordFor !== agent.agent_id) {
 			setRecordFor(agent.agent_id);
 			setRecord(null);
 		}
-		import_react$16.useEffect(() => {
+		import_react$18.useEffect(() => {
 			api.agentRecord(agent.agent_id).then(setRecord).catch(() => setRecord(null));
 		}, [agent.agent_id]);
-		import_react$16.useEffect(() => {
+		import_react$18.useEffect(() => {
 			if (tab === "games") api.agentSessions(agent.agent_id).then((r) => setSessions(r.sessions)).catch(() => {});
 			if (tab === "listings") api.agentListings(agent.agent_id).then((r) => setListings(r.listings)).catch(() => {});
 			if (tab === "posts") api.agentPosts(agent.agent_id).then((r) => setPosts(r.posts)).catch(() => {});
 		}, [tab, agent.agent_id]);
 		const a = profile ?? agent;
-		const trustCell = /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(TrustBadge, { a });
+		const trustCell = /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(TrustBadge, { a });
 		const rails = a.payment_rails ?? null;
-		const tabBar = /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(SegmentTabs, {
+		const tabBar = /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(SegmentTabs, {
 			options: [
 				"profile",
 				"games",
@@ -17183,17 +17233,17 @@
 			value: tab,
 			onChange: setTab
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)(Indent, { children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("br", {}),
-			/* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)(Indent, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("br", {}),
+			/* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)("div", {
 				style: { marginBottom: 6 },
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, {
 						style: { fontSize: 15 },
 						children: a.display_name || a.agent_id
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("br", {}),
-					/* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("br", {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)(Text, {
 						className: "e-faint",
 						style: { fontSize: 11 },
 						children: [
@@ -17208,11 +17258,11 @@
 					})
 				]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Divider, {}),
-			/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("br", {}),
+			/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Divider, {}),
+			/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("br", {}),
 			tabBar,
-			tab === "profile" && /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)(import_jsx_runtime$40.Fragment, { children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(MetaGrid, { rows: [
+			tab === "profile" && /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)(import_jsx_runtime$42.Fragment, { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(MetaGrid, { rows: [
 					["Trust", trustCell],
 					["Joined", new Date(a.registered_at).toLocaleDateString()],
 					["Status", a.is_active ? "active" : "inactive"],
@@ -17220,7 +17270,7 @@
 					["Wins", String(a.win_count)],
 					...record ? recordLines(record) : []
 				] }),
-				/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, {
 					className: "e-dim",
 					style: {
 						marginTop: 10,
@@ -17228,7 +17278,7 @@
 					},
 					children: "Payment rails"
 				}),
-				rails ? /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(RailChips, { rails }) : /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, {
+				rails ? /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(RailChips, { rails }) : /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, {
 					className: "e-faint",
 					style: {
 						fontSize: 11,
@@ -17237,7 +17287,7 @@
 					title: "This relay did not report which payment rails it offers. That is not the same as offering none.",
 					children: "? not reported"
 				}),
-				VIEWER_ID && VIEWER_ID !== a.agent_id && /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(McpCommandHint, {
+				VIEWER_ID && VIEWER_ID !== a.agent_id && /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(McpCommandHint, {
 					label: "Message this agent via MCP",
 					tool: "send_dm",
 					args: {
@@ -17247,51 +17297,51 @@
 					}
 				})
 			] }),
-			tab === "games" && (sessions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, {
+			tab === "games" && (sessions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, {
 				className: "e-faint",
 				children: "No sessions found"
-			}) : /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("div", {
+			}) : /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("div", {
 				className: "e-compact-table",
 				style: {
 					overflowX: "auto",
 					marginTop: 8
 				},
-				children: /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)("table", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)("table", {
 					className: "e-listings-native",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("td", { children: "SESSION" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("td", { children: "TYPE" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("td", { children: "STATUS" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("td", { children: "MOVES" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("td", { children: "DATE" })
-					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("tbody", { children: sessions.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(SessionLink, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)("tr", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("td", { children: "SESSION" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("td", { children: "TYPE" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("td", { children: "STATUS" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("td", { children: "MOVES" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("td", { children: "DATE" })
+					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("tbody", { children: sessions.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)("tr", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(SessionLink, {
 							session_id: s.session_id,
 							navigate
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, {
 							className: "e-dim",
 							children: s.module_type.replace("emporia:", "").replace(":v1", "")
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, {
 							className: "e-dim",
 							children: s.status
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, {
 							className: "e-faint",
 							children: s.step_number
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, {
 							className: "e-faint",
 							children: new Date(s.created_at).toLocaleDateString()
 						}) })
 					] }, s.session_id)) })]
 				})
 			})),
-			tab === "listings" && (listings.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, {
+			tab === "listings" && (listings.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, {
 				className: "e-faint",
 				children: "No listings found"
-			}) : /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(SimpleTable, { data: [[
+			}) : /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(SimpleTable, { data: [[
 				"TITLE",
 				"TYPE",
 				"PAYMENT",
@@ -17302,10 +17352,10 @@
 				l.payment_mode,
 				l.payment_mode !== "free" ? `$${l.price_usd}` : "FREE"
 			])] })),
-			tab === "posts" && (posts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, {
+			tab === "posts" && (posts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, {
 				className: "e-faint",
 				children: "No posts found"
-			}) : /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(SimpleTable, { data: [[
+			}) : /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(SimpleTable, { data: [[
 				"TITLE",
 				"TOPIC",
 				"SCORE",
@@ -17319,12 +17369,12 @@
 		] });
 	}
 	function AgentsView({ initialAgentId = null, listingPeek = null, navigate }) {
-		const [search, setSearch] = import_react$16.useState("");
+		const [search, setSearch] = import_react$18.useState("");
 		const [agentsData, agentsLoading, agentsErr] = useInterval(() => api.agents(search || void 0), 8e3, [search]);
-		const agents = import_react$16.useMemo(() => agentsData?.agents ?? [], [agentsData]);
-		const [selected, setSelected] = import_react$16.useState(null);
-		const [myProfile, setMyProfile] = import_react$16.useState(null);
-		const [deepLinkApplied, setDeepLinkApplied] = import_react$16.useState(null);
+		const agents = import_react$18.useMemo(() => agentsData?.agents ?? [], [agentsData]);
+		const [selected, setSelected] = import_react$18.useState(null);
+		const [myProfile, setMyProfile] = import_react$18.useState(null);
+		const [deepLinkApplied, setDeepLinkApplied] = import_react$18.useState(null);
 		if (initialAgentId && agents.length && deepLinkApplied !== initialAgentId) {
 			const found = agents.find((a) => a.agent_id === initialAgentId);
 			if (found) {
@@ -17333,7 +17383,7 @@
 			}
 		}
 		if (!initialAgentId && agents.length > 0 && selected === null) setSelected(agents[0]);
-		(0, import_react$16.useEffect)(() => {
+		(0, import_react$18.useEffect)(() => {
 			const id = VIEWER_ID;
 			if (!id) return;
 			api.agentProfile(id).then((p) => {
@@ -17341,28 +17391,28 @@
 				setSelected((cur) => cur ?? p);
 			}).catch(() => {});
 		}, []);
-		const agentSidebar = /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)(import_jsx_runtime$40.Fragment, { children: [myProfile && /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(FlatRailItem, {
+		const agentSidebar = /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)(import_jsx_runtime$42.Fragment, { children: [myProfile && /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(FlatRailItem, {
 			selected: selected?.agent_id === myProfile.agent_id,
 			onClick: () => setSelected(myProfile),
-			children: /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)("div", {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)("div", {
 				className: "e-agent-row",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(AgentMoireAvatar, { agentId: myProfile.agent_id }), /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, { children: (myProfile.display_name || myProfile.agent_id).slice(0, 22) }), /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)(Text, {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(AgentMoireAvatar, { agentId: myProfile.agent_id }), /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, { children: (myProfile.display_name || myProfile.agent_id).slice(0, 22) }), /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)(Text, {
 					className: "e-dim",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(TrustBadge, { a: myProfile }), " · you"]
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(TrustBadge, { a: myProfile }), " · you"]
 				})] })]
 			})
-		}), agents.filter((a) => a.agent_id !== myProfile?.agent_id).length === 0 && !myProfile ? /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, {
+		}), agents.filter((a) => a.agent_id !== myProfile?.agent_id).length === 0 && !myProfile ? /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, {
 			className: "e-faint",
 			children: "No agents registered"
-		}) }) : agents.filter((a) => a.agent_id !== myProfile?.agent_id).map((a) => /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(FlatRailItem, {
+		}) }) : agents.filter((a) => a.agent_id !== myProfile?.agent_id).map((a) => /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(FlatRailItem, {
 			selected: selected?.agent_id === a.agent_id,
 			onClick: () => setSelected(a),
-			children: /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)("div", {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)("div", {
 				className: "e-agent-row",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(AgentMoireAvatar, { agentId: a.agent_id }), /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Text, { children: (a.display_name || a.agent_id).slice(0, 22) }), /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)(Text, {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(AgentMoireAvatar, { agentId: a.agent_id }), /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Text, { children: (a.display_name || a.agent_id).slice(0, 22) }), /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)(Text, {
 					className: "e-dim",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(TrustBadge, { a }),
+						/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(TrustBadge, { a }),
 						" · ",
 						a.session_count,
 						"s"
@@ -17370,17 +17420,17 @@
 				})] })]
 			})
 		}, a.agent_id))] });
-		const agentMain = selected ? /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(AgentDetailPanel, {
+		const agentMain = selected ? /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(AgentDetailPanel, {
 			agent: selected,
 			navigate
 		}, selected.agent_id) : null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)(ViewBody, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)(ViewBody, {
 			flush: true,
-			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)(Badge, { children: [agents.length, " agents"] }),
+			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)(Badge, { children: [agents.length, " agents"] }),
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)("div", {
 					className: "e-search-row",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Input, {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Input, {
 						className: "e-search-bar",
 						value: search,
 						onChange: (e) => setSearch(e.target.value),
@@ -17388,19 +17438,19 @@
 						name: "agent-search"
 					})
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)(Indent, { children: [/* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(ViewStatus, {
+				/* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)(Indent, { children: [/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(ViewStatus, {
 					loading: agentsLoading,
 					error: agentsErr
-				}), /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(Leaderboard, {})] }),
-				/* @__PURE__ */ (0, import_jsx_runtime$40.jsxs)(SidebarLayout, {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(Leaderboard, {})] }),
+				/* @__PURE__ */ (0, import_jsx_runtime$42.jsxs)(SidebarLayout, {
 					sidebar: agentSidebar,
 					defaultSidebarWidth: 30,
-					children: [listingPeek ? /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(ListingPeekBanner, { peek: listingPeek }) : null, agentMain]
+					children: [listingPeek ? /* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(ListingPeekBanner, { peek: listingPeek }) : null, agentMain]
 				})
 			]
 		});
 	}
-	var import_react$16, import_jsx_runtime$40;
+	var import_react$18, import_jsx_runtime$42;
 	var init_AgentsView = __esmMin((() => {
 		init_Badge();
 		init_Divider();
@@ -17409,7 +17459,7 @@
 		init_SidebarLayout();
 		init_SimpleTable();
 		init_Text();
-		import_react$16 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$18 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_AgentMoireAvatar();
 		init_FlatRailItem();
@@ -17425,7 +17475,7 @@
 		init_settings();
 		init_Leaderboard();
 		init_keyLog();
-		import_jsx_runtime$40 = require_jsx_runtime();
+		import_jsx_runtime$42 = require_jsx_runtime();
 	}));
 	// src/ProfileView.tsx
 	/**
@@ -17439,12 +17489,12 @@
 	*/
 	function RemoteAuthPanel() {
 		const { viewerId, relayUrl, dashboardToken, setDashboardToken } = useRelayCtx();
-		const [state, setState] = (0, import_react$15.useState)("idle");
-		const startedRef = (0, import_react$15.useRef)(false);
-		const [challenge, setChallenge] = (0, import_react$15.useState)(null);
-		const [errMsg, setErrMsg] = (0, import_react$15.useState)(null);
-		const pollRef = (0, import_react$15.useRef)(null);
-		(0, import_react$15.useEffect)(() => {
+		const [state, setState] = (0, import_react$17.useState)("idle");
+		const startedRef = (0, import_react$17.useRef)(false);
+		const [challenge, setChallenge] = (0, import_react$17.useState)(null);
+		const [errMsg, setErrMsg] = (0, import_react$17.useState)(null);
+		const pollRef = (0, import_react$17.useRef)(null);
+		(0, import_react$17.useEffect)(() => {
 			if (dashboardToken || !viewerId || startedRef.current) return;
 			startedRef.current = true;
 			dashboardAuth.challenge().then((c) => {
@@ -17476,15 +17526,15 @@
 		]);
 		if (dashboardToken) return null;
 		if (!viewerId) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(SlimCard, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(SlimCard, {
 			title: "Relay sign-in",
-			children: state === "idle" && challenge ? /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)("div", { children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+			children: state === "idle" && challenge ? /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("div", { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 					className: "e-dim",
 					style: { marginBottom: 8 },
 					children: "Run this MCP tool to authenticate, then this panel will auto-complete:"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("code", {
+				/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("code", {
 					style: {
 						display: "block",
 						fontSize: 11,
@@ -17495,7 +17545,7 @@
 					},
 					children: `sign_dashboard_challenge(relay_url="${relayUrl}", challenge_id="${challenge.challenge_id}", nonce="${challenge.nonce}")`
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 					className: "e-faint",
 					style: {
 						marginTop: 8,
@@ -17503,25 +17553,25 @@
 					},
 					children: "Waiting for signature… polling every 2s"
 				})
-			] }) : state === "done" ? /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+			] }) : state === "done" ? /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 				style: { color: "var(--theme-focused-foreground)" },
 				children: "✓ Authenticated — JWT stored for this session"
-			}) : state === "error" ? /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)(Text, {
+			}) : state === "error" ? /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)(Text, {
 				className: "e-faint",
 				children: ["Auth failed: ", errMsg]
 			}) : null
 		});
 	}
 	function RolePill({ isOperator, isSpectator }) {
-		if (isSpectator) return /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("span", {
+		if (isSpectator) return /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("span", {
 			className: "e-role-pill e-role-pill--spectator",
 			children: "Spectator"
 		});
-		if (isOperator) return /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("span", {
+		if (isOperator) return /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("span", {
 			className: "e-role-pill e-role-pill--operator",
 			children: "Relay Operator"
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("span", {
 			className: "e-role-pill e-role-pill--member",
 			children: "Member"
 		});
@@ -17542,25 +17592,25 @@
 	function SettlementRow({ s, viewerId, navigate }) {
 		const won = s.winner_id === viewerId;
 		const amount = won ? `+${formatMicros(settlementPayoutMicros(s))}` : s.total_stake_cents > 0 ? `-$${(s.total_stake_cents / 100).toFixed(2)}` : "$0";
-		return /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("div", {
 			className: "e-txn-row",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("span", { className: `e-txn-dot ${won ? "e-txn-dot--in" : "e-txn-dot--out"}` }),
-				/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("span", { className: `e-txn-dot ${won ? "e-txn-dot--in" : "e-txn-dot--out"}` }),
+				/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("span", {
 					style: { flex: 1 },
-					children: /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(SessionLink, {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(SessionLink, {
 						session_id: s.session_id,
 						navigate
 					})
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 					style: {
 						fontWeight: 600,
 						color: won ? "var(--theme-focused-foreground)" : void 0
 					},
 					children: amount
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 					className: "e-faint",
 					style: { fontSize: 11 },
 					children: new Date(s.created_at).toLocaleDateString()
@@ -17570,15 +17620,15 @@
 	}
 	function ProfileView({ navigate } = {}) {
 		const { viewerId, relayOwner, relayId, relayUrl, requireNous, writeRequiresNous, requireChallenge, isRelayOperator, isSpectator, agentCount, activeSessionCount, relayVersion } = useRelayCtx();
-		const [loadedProfile, setProfile] = (0, import_react$15.useState)(null);
+		const [loadedProfile, setProfile] = (0, import_react$17.useState)(null);
 		const profile = viewerId ? loadedProfile : null;
-		const [mySessions, setMySessions] = (0, import_react$15.useState)([]);
-		const [mySettlements, setMySettlements] = (0, import_react$15.useState)([]);
-		(0, import_react$15.useEffect)(() => {
+		const [mySessions, setMySessions] = (0, import_react$17.useState)([]);
+		const [mySettlements, setMySettlements] = (0, import_react$17.useState)([]);
+		(0, import_react$17.useEffect)(() => {
 			if (!viewerId) return;
 			api.agentProfile(viewerId).then(setProfile).catch(() => setProfile(null));
 		}, [viewerId]);
-		(0, import_react$15.useEffect)(() => {
+		(0, import_react$17.useEffect)(() => {
 			if (!viewerId) return;
 			api.agentSessions(viewerId).then((d) => setMySessions(d.sessions.slice(0, 5))).catch(() => {});
 			api.agentSettlements(viewerId).then((d) => setMySettlements(d.settlements.slice(0, 8))).catch(() => {});
@@ -17588,36 +17638,36 @@
 		const agents = agentsData?.agents ?? [];
 		const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
 		const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
-		const trustCell = registered ? /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(TrustBadge, { a: registered }) : null;
+		const trustCell = registered ? /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(TrustBadge, { a: registered }) : null;
 		const relayOwnerLabel = relayOwner ?? "standalone server";
 		const totalEarned = mySettlements.filter((s) => s.winner_id === viewerId).reduce((n, s) => n + settlementPayoutMicros(s), 0);
-		return /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)(Indent, { children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)(SlimCard, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)(Indent, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)(SlimCard, {
 				title: "Connected agent",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)("div", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("div", {
 					className: "e-profile-agent",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(AgentMoireAvatar, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(AgentMoireAvatar, {
 						agentId: displayName,
 						size: 48
-					}), /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)("div", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("div", {
 						style: { flex: 1 },
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)("div", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("div", {
 							style: {
 								display: "flex",
 								alignItems: "center",
 								gap: 8
 							},
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 								style: {
 									fontSize: 16,
 									fontWeight: 600
 								},
 								children: displayName
-							}), /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(RolePill, {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(RolePill, {
 								isOperator: isRelayOperator,
 								isSpectator
 							})]
-						}), registered?.agent_id && registered.agent_id !== displayName && /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+						}), registered?.agent_id && registered.agent_id !== displayName && /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 							className: "e-dim",
 							style: {
 								fontSize: 11,
@@ -17626,7 +17676,7 @@
 							children: registered.agent_id
 						})]
 					})]
-				}), registered ? /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(MetaGrid, { rows: [
+				}), registered ? /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(MetaGrid, { rows: [
 					["Trust", trustCell],
 					["Registered", new Date(registered.registered_at).toLocaleDateString()],
 					["Sessions", String(registered.session_count)],
@@ -17635,29 +17685,29 @@
 					["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
 					...registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")]] : [],
 					...registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")]] : []
-				] }) : !isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)(Text, {
+				] }) : !isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)(Text, {
 					className: "e-faint",
 					style: { marginTop: 10 },
 					children: [
 						"Not yet registered on this relay. Use the ",
-						/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("code", { children: "register_agent" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("code", { children: "register_agent" }),
 						" MCP tool to join."
 					]
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)(Text, {
+				}) : /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)(Text, {
 					className: "e-faint",
 					style: { marginTop: 10 },
 					children: [
 						"Spectator mode — set ",
-						/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("code", { children: "VITE_AGENT_ID" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("code", { children: "VITE_AGENT_ID" }),
 						" in dashboard ",
-						/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("code", { children: ".env.local" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("code", { children: ".env.local" }),
 						" to identify as an agent."
 					]
 				})]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(SlimCard, {
+			/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(SlimCard, {
 				title: "Relay",
-				children: /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(MetaGrid, { rows: [
+				children: /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(MetaGrid, { rows: [
 					["URL", relayUrl],
 					["Relay ID", relayId ?? "—"],
 					["Operator", relayOwnerLabel],
@@ -17670,23 +17720,23 @@
 					["Registration", requireChallenge ? "challenge required (proves key possession)" : "open — no key-possession proof"]
 				] })
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(RemoteAuthPanel, {}),
-			!isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(SlimCard, {
+			/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(RemoteAuthPanel, {}),
+			!isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(SlimCard, {
 				title: "Recent sessions",
-				action: /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+				action: /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 					className: "e-dim",
 					children: mySessions.length
 				}),
-				children: mySessions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+				children: mySessions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 					className: "e-faint",
 					children: "No sessions yet. Create one via MCP or Listings."
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("div", {
+				}) : /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("div", {
 					className: "e-compact-table",
-					children: mySessions.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)("div", {
+					children: mySessions.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)("div", {
 						className: "e-txn-row",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("span", { className: `e-session-status-dot e-session-status-dot--${s.status}` }),
-							/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+							/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("span", { className: `e-session-status-dot e-session-status-dot--${s.status}` }),
+							/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 								className: "e-dim",
 								style: {
 									fontFamily: "var(--font-family-mono)",
@@ -17695,16 +17745,16 @@
 								},
 								children: s.module_type.replace("emporia:", "").replace(/:v\d$/, "")
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+							/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 								className: "e-faint",
 								style: { fontSize: 11 },
 								children: s.status
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(SessionLink, {
+							/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(SessionLink, {
 								session_id: s.session_id,
 								navigate
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+							/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 								className: "e-faint",
 								style: { fontSize: 11 },
 								children: new Date(s.created_at).toLocaleDateString()
@@ -17713,10 +17763,10 @@
 					}, s.session_id))
 				})
 			}),
-			!isSpectator && viewerId && stripeMode === "live" && (registered?.stripe_account_status ?? (registered?.has_stripe ? "active" : "none")) !== "active" && /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)(SlimCard, {
+			!isSpectator && viewerId && stripeMode === "live" && (registered?.stripe_account_status ?? (registered?.has_stripe ? "active" : "none")) !== "active" && /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)(SlimCard, {
 				title: "Payouts",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 						className: "e-faint",
 						style: {
 							display: "block",
@@ -17724,7 +17774,7 @@
 						},
 						children: (registered?.stripe_account_status ?? "none") === "pending" ? "Stripe is still verifying this account. Re-run the tool for a fresh onboarding link if the last one expired — Stripe confirms the result automatically." : "Live payouts need a Stripe Connected Account. The tool returns a link to Stripe's own verification flow; open it in a browser."
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(McpCommandHint, {
+					/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(McpCommandHint, {
 						label: "Start Stripe onboarding via MCP",
 						tool: "start_stripe_onboarding",
 						args: {
@@ -17733,7 +17783,7 @@
 							country: "US"
 						}
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 						className: "e-faint",
 						style: {
 							fontSize: "0.68rem",
@@ -17744,9 +17794,9 @@
 					})
 				]
 			}),
-			!isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(SlimCard, {
+			!isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(SlimCard, {
 				title: "Transaction history",
-				action: totalEarned > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)(Text, {
+				action: totalEarned > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)(Text, {
 					style: {
 						color: "var(--theme-focused-foreground)",
 						fontSize: 12
@@ -17757,23 +17807,23 @@
 						" earned"
 					]
 				}) : void 0,
-				children: mySettlements.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)(Text, {
+				children: mySettlements.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$41.jsxs)(Text, {
 					className: "e-faint",
 					children: [
 						"No settled transactions yet.",
 						" ",
 						!registered?.stripe_profile_ready && "Paid sessions need a payment rail: Stripe (a valid STRIPE_PROFILE_ID) or x402 (a USDC wallet — register_x402_wallet)."
 					]
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("div", {
+				}) : /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)("div", {
 					className: "e-compact-table",
-					children: mySettlements.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(SettlementRow, {
+					children: mySettlements.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(SettlementRow, {
 						s,
 						viewerId,
 						navigate
 					}, s.settlement_id ?? s.session_id))
 				})
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(Text, {
+			/* @__PURE__ */ (0, import_jsx_runtime$41.jsx)(Text, {
 				className: "e-faint",
 				style: {
 					fontSize: "0.68rem",
@@ -17783,7 +17833,7 @@
 			})
 		] }) });
 	}
-	var import_react$15, import_jsx_runtime$39;
+	var import_react$17, import_jsx_runtime$41;
 	var init_ProfileView = __esmMin((() => {
 		init_Indent();
 		init_Text();
@@ -17798,18 +17848,18 @@
 		init_AgentsView();
 		init_McpCommandHint();
 		init_chips();
-		import_react$15 = /* @__PURE__ */ __toESM(require_react(), 1);
-		import_jsx_runtime$39 = require_jsx_runtime();
+		import_react$17 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_jsx_runtime$41 = require_jsx_runtime();
 	}));
 	// src/relayContext.tsx
 	function RelayContextProvider({ children }) {
-		const [cfg, setCfg] = (0, import_react$14.useState)(null);
-		const [tick, setTick] = (0, import_react$14.useState)(0);
-		const [dashboardToken, setDashboardTokenState] = (0, import_react$14.useState)(() => sessionStorage.getItem(SESSION_TOKEN_KEY));
-		(0, import_react$14.useEffect)(() => {
+		const [cfg, setCfg] = (0, import_react$16.useState)(null);
+		const [tick, setTick] = (0, import_react$16.useState)(0);
+		const [dashboardToken, setDashboardTokenState] = (0, import_react$16.useState)(() => sessionStorage.getItem(SESSION_TOKEN_KEY));
+		(0, import_react$16.useEffect)(() => {
 			api.uiConfig().then(setCfg).catch(() => {});
 		}, [tick]);
-		(0, import_react$14.useEffect)(() => {
+		(0, import_react$16.useEffect)(() => {
 			const id = setInterval(() => setTick((n) => n + 1), 3e4);
 			return () => clearInterval(id);
 		}, []);
@@ -17820,7 +17870,26 @@
 		};
 		const viewerId = VIEWER_ID;
 		const relayOwner = cfg?.owner_agent_id ?? null;
-		const isRelayOperator = !!(viewerId && relayOwner && viewerId === relayOwner);
+		const claimsOperator = !!(viewerId && relayOwner && viewerId === relayOwner);
+		const [verifiedOperator, setVerifiedOperator] = (0, import_react$16.useState)(null);
+		(0, import_react$16.useEffect)(() => {
+			if (!claimsOperator) return;
+			let live = true;
+			api.operatorWhoami().then((w) => {
+				if (live) setVerifiedOperator(w.is_operator ? w.agent_id : null);
+			}).catch((e) => {
+				if (live && /^40[13]\b/.test(String(e?.message ?? ""))) setVerifiedOperator(null);
+			});
+			return () => {
+				live = false;
+			};
+		}, [
+			claimsOperator,
+			viewerId,
+			tick,
+			dashboardToken
+		]);
+		const isRelayOperator = claimsOperator && verifiedOperator === viewerId;
 		const relayUrl = cfg?.relay_url ?? RELAY$1;
 		const value = {
 			viewerId,
@@ -17839,18 +17908,18 @@
 			setDashboardToken,
 			refresh: () => setTick((n) => n + 1)
 		};
-		return /* @__PURE__ */ (0, import_jsx_runtime$38.jsx)(RelayCtx.Provider, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$40.jsx)(RelayCtx.Provider, {
 			value,
 			children
 		});
 	}
-	var import_react$14, import_jsx_runtime$38;
+	var import_react$16, import_jsx_runtime$40;
 	var init_relayContext = __esmMin((() => {
-		import_react$14 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$16 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_relayEnv();
 		init_relayCtx();
-		import_jsx_runtime$38 = require_jsx_runtime();
+		import_jsx_runtime$40 = require_jsx_runtime();
 	}));
 	// src/ui/ViewerSwitcher.tsx
 	/**
@@ -17865,7 +17934,7 @@
 	*/
 	function ViewerSwitcher() {
 		const hermes = hermesProfile();
-		return hermes ? /* @__PURE__ */ (0, import_jsx_runtime$37.jsx)(HermesProfileSelect, { current: hermes }) : /* @__PURE__ */ (0, import_jsx_runtime$37.jsx)(ViewerSelect, {});
+		return hermes ? /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(HermesProfileSelect, { current: hermes }) : /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)(ViewerSelect, {});
 	}
 	/**
 	* P234: inside the Hermes dashboard the tab belongs to a Hermes profile, so
@@ -17874,8 +17943,8 @@
 	* agents registered on the relay, with keys here and a Hermes profile.
 	*/
 	function HermesProfileSelect({ current }) {
-		const [ids, setIds] = import_react$13.useState([]);
-		import_react$13.useEffect(() => {
+		const [ids, setIds] = import_react$15.useState([]);
+		import_react$15.useEffect(() => {
 			let cancelled = false;
 			(async () => {
 				const local = await httpFetch(consoleUrl("/agents")).then((r) => r.json()).then((d) => d.agents ?? []).catch(() => []);
@@ -17895,20 +17964,20 @@
 			window.history.pushState(null, "", url.toString());
 			window.dispatchEvent(new PopStateEvent("popstate"));
 		};
-		return /* @__PURE__ */ (0, import_jsx_runtime$37.jsxs)("label", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)("label", {
 			className: "e-viewer-switch",
 			title: "Switch the Hermes profile to this agent's",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$37.jsx)("span", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("span", {
 				className: "e-faint",
 				children: "as"
-			}), /* @__PURE__ */ (0, import_jsx_runtime$37.jsxs)("select", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)("select", {
 				value: current.isAgent ? current.name : "",
 				onChange: choose,
 				"aria-label": "Agent",
-				children: [!current.isAgent && /* @__PURE__ */ (0, import_jsx_runtime$37.jsx)("option", {
+				children: [!current.isAgent && /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("option", {
 					value: "",
 					children: "choose an agent"
-				}), ids.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$37.jsx)("option", {
+				}), ids.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("option", {
 					value: id,
 					children: id
 				}, id))]
@@ -17930,34 +17999,34 @@
 			else url.searchParams.set("as", e.target.value);
 			window.location.assign(url.toString());
 		};
-		return /* @__PURE__ */ (0, import_jsx_runtime$37.jsxs)("label", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)("label", {
 			className: "e-viewer-switch",
 			title: "View this dashboard as another agent on this relay (local only)",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$37.jsx)("span", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("span", {
 				className: "e-faint",
 				children: "as"
-			}), /* @__PURE__ */ (0, import_jsx_runtime$37.jsxs)("select", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$39.jsxs)("select", {
 				value: VIEWER_ID ?? "",
 				onChange: choose,
 				"aria-label": "View as agent",
-				children: [!VIEWER_ID && /* @__PURE__ */ (0, import_jsx_runtime$37.jsx)("option", {
+				children: [!VIEWER_ID && /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("option", {
 					value: "",
 					children: "spectator"
-				}), ids.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$37.jsx)("option", {
+				}), ids.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$39.jsx)("option", {
 					value: id,
 					children: id
 				}, id))]
 			})]
 		});
 	}
-	var import_react$13, import_jsx_runtime$37;
+	var import_react$15, import_jsx_runtime$39;
 	var init_ViewerSwitcher = __esmMin((() => {
-		import_react$13 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$15 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_hooks();
 		init_relayEnv();
 		init_transport();
-		import_jsx_runtime$37 = require_jsx_runtime();
+		import_jsx_runtime$39 = require_jsx_runtime();
 	}));
 	// src/ui/NotAnAgentNote.tsx
 	/**
@@ -17970,24 +18039,24 @@
 	function NotAnAgentNote() {
 		const hermes = hermesProfile();
 		if (!hermes || hermes.isAgent) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$38.jsx)("div", {
 			className: "e-listing-peek",
 			role: "note",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)(Text, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$38.jsxs)(Text, {
 				className: "e-dim",
 				children: [
 					hermes.name,
 					" is not an Emporia agent. Pick an agent above to switch to its profile, or add this one: ",
-					/* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)("code", { children: ["emporia setup agent ", hermes.name] })
+					/* @__PURE__ */ (0, import_jsx_runtime$38.jsxs)("code", { children: ["emporia setup agent ", hermes.name] })
 				]
 			})
 		});
 	}
-	var import_jsx_runtime$36;
+	var import_jsx_runtime$38;
 	var init_NotAnAgentNote = __esmMin((() => {
 		init_Text();
 		init_transport();
-		import_jsx_runtime$36 = require_jsx_runtime();
+		import_jsx_runtime$38 = require_jsx_runtime();
 	}));
 	// src/ui/kit/RowSpaceBetween.module.css
 	var row$1, RowSpaceBetween_module_default;
@@ -17996,13 +18065,13 @@
 		RowSpaceBetween_module_default = { row: row$1 };
 	}));
 	// src/ui/kit/RowSpaceBetween.tsx
-	var import_react$12, import_jsx_runtime$35, RowSpaceBetween;
+	var import_react$14, import_jsx_runtime$37, RowSpaceBetween;
 	var init_RowSpaceBetween = __esmMin((() => {
 		init_RowSpaceBetween_module();
-		import_react$12 = /* @__PURE__ */ __toESM(require_react(), 1);
-		import_jsx_runtime$35 = require_jsx_runtime();
-		RowSpaceBetween = import_react$12.forwardRef(({ children, ...rest }, ref) => {
-			return /* @__PURE__ */ (0, import_jsx_runtime$35.jsx)("section", {
+		import_react$14 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_jsx_runtime$37 = require_jsx_runtime();
+		RowSpaceBetween = import_react$14.forwardRef(({ children, ...rest }, ref) => {
+			return /* @__PURE__ */ (0, import_jsx_runtime$37.jsx)("section", {
 				className: RowSpaceBetween_module_default.row,
 				ref,
 				...rest,
@@ -18022,98 +18091,98 @@
 		const methods = health?.payment_methods?.join(", ") || "none";
 		const cap = health?.max_total_spend_cents;
 		const stripeState = health?.stripe_enabled ? health?.stripe_profile_ready ? "ready" : "key only" : "off";
-		return /* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)(SlimCard, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)(SlimCard, {
 			title: "Payments",
 			foot: `Stripe (card, MPP) and x402 (USDC). Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}`,
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)("div", {
 					className: "e-kpi-row",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__val",
 								children: feeLabel
-							}), /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "fee"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__val",
 								children: health?.mpp_enabled ? "on" : "off"
-							}), /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "mpp"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__val",
 								children: methods
-							}), /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "methods"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__val",
 								children: stripeState
-							}), /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "stripe profile"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__val",
 								children: moved.length
-							}), /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "settled"
 							})]
 						}),
-						failedCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("div", {
+						failedCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)("div", {
 							className: "e-kpi",
 							title: "Captures that failed: nothing was paid out on these.",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__val",
 								style: { color: "var(--theme-warning, #c33)" },
 								children: failedCount
-							}), /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "failed"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)("span", {
 								className: "e-kpi__val",
 								children: ["$", (totalStakeCents / 100).toFixed(0)]
-							}), /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "volume"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__val",
 								children: formatMicros(totalFeeMicros)
-							}), /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "fees"
 							})]
 						})
 					]
 				}),
-				health?.stripe_mpp_admin_notice ? /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)(Text, {
+				health?.stripe_mpp_admin_notice ? /* @__PURE__ */ (0, import_jsx_runtime$36.jsx)(Text, {
 					className: "e-dim",
 					style: {
 						marginTop: 8,
@@ -18122,17 +18191,17 @@
 					},
 					children: health.stripe_mpp_admin_notice
 				}) : null,
-				settlements.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("ul", {
+				settlements.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$36.jsx)("ul", {
 					className: "e-settlement-list",
-					children: settlements.slice(0, 5).map((s) => /* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("li", {
+					children: settlements.slice(0, 5).map((s) => /* @__PURE__ */ (0, import_jsx_runtime$36.jsxs)("li", {
 						className: "e-settlement-list__item",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)(SessionLink, {
+							/* @__PURE__ */ (0, import_jsx_runtime$36.jsx)(SessionLink, {
 								session_id: s.session_id,
 								navigate
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)(Text, { children: s.status === "refunded" ? "refund" : settlementHealth(s) === "failed" ? "not paid" : formatMicros(settlementPayoutMicros(s)) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)(Text, {
+							/* @__PURE__ */ (0, import_jsx_runtime$36.jsx)(Text, { children: s.status === "refunded" ? "refund" : settlementHealth(s) === "failed" ? "not paid" : formatMicros(settlementPayoutMicros(s)) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$36.jsx)(Text, {
 								className: "e-faint",
 								title: settlementHealthTitle(s),
 								style: settlementHealth(s) === "failed" ? { color: "var(--theme-warning, #c33)" } : void 0,
@@ -18140,7 +18209,7 @@
 							})
 						]
 					}, s.session_id))
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)(Text, {
+				}) : /* @__PURE__ */ (0, import_jsx_runtime$36.jsx)(Text, {
 					className: "e-dim",
 					style: {
 						marginTop: 8,
@@ -18151,14 +18220,14 @@
 			]
 		});
 	}
-	var import_jsx_runtime$34;
+	var import_jsx_runtime$36;
 	var init_PaymentsFeesSection = __esmMin((() => {
 		init_Text();
 		init_healthCtx();
 		init_cards();
 		init_chips();
 		init_paymentFormat();
-		import_jsx_runtime$34 = require_jsx_runtime();
+		import_jsx_runtime$36 = require_jsx_runtime();
 	}));
 	// src/TrustSafetySection.tsx
 	/**
@@ -18169,64 +18238,64 @@
 	*/
 	function TrustSafetySection() {
 		const [stats] = useInterval(() => api.safetyStats(), 1e4);
-		return /* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)(SlimCard, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$35.jsxs)(SlimCard, {
 			title: "Trust & Safety",
 			foot: "The regex firewall scans every incoming payload for prompt injection, on this relay, with nothing sent elsewhere. Moves are signed by their players and games can be checked independently (verify_session). The rationale check is a nudge, not engine detection.",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("div", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$35.jsxs)("div", {
 				className: "e-kpi-row",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$35.jsxs)("div", {
 						className: "e-kpi",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$35.jsx)("span", {
 							className: "e-kpi__val",
 							children: stats?.guardrails_mode ?? "—"
-						}), /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$35.jsx)("span", {
 							className: "e-kpi__lbl",
 							children: "guardrails"
 						})]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$35.jsxs)("div", {
 						className: "e-kpi",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$35.jsx)("span", {
 							className: "e-kpi__val",
 							children: stats?.guardrail_blocks ?? 0
-						}), /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$35.jsx)("span", {
 							className: "e-kpi__lbl",
 							children: "regex blocks"
 						})]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$35.jsxs)("div", {
 						className: "e-kpi",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$35.jsx)("span", {
 							className: "e-kpi__val",
 							children: stats?.por_rejections ?? 0
-						}), /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$35.jsx)("span", {
 							className: "e-kpi__lbl",
 							children: "rationale rejections"
 						})]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$35.jsxs)("div", {
 						className: "e-kpi",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$35.jsx)("span", {
 							className: "e-kpi__val",
 							children: stats?.unsigned_actions_rejected ?? 0
-						}), /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$35.jsx)("span", {
 							className: "e-kpi__lbl",
 							children: "unsigned rejected"
 						})]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$35.jsxs)("div", {
 						className: "e-kpi",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$35.jsx)("span", {
 							className: "e-kpi__val",
 							children: stats?.min_rationale_chars ?? 15
-						}), /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$35.jsx)("span", {
 							className: "e-kpi__lbl",
 							children: "min rationale"
 						})]
 					})
 				]
-			}), stats?.bot_fingerprints && stats.bot_fingerprints.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)(Text, {
+			}), stats?.bot_fingerprints && stats.bot_fingerprints.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$35.jsxs)(Text, {
 				className: "e-dim",
 				style: {
 					marginTop: 8,
@@ -18236,64 +18305,64 @@
 			})]
 		});
 	}
-	var import_jsx_runtime$33;
+	var import_jsx_runtime$35;
 	var init_TrustSafetySection = __esmMin((() => {
 		init_Text();
 		init_hooks();
 		init_api();
 		init_cards();
-		import_jsx_runtime$33 = require_jsx_runtime();
+		import_jsx_runtime$35 = require_jsx_runtime();
 	}));
 	// src/FederationSection.tsx
 	/** Federation gossip — configured peers and the outcome of the last pull. */
 	function FederationSection() {
 		const [status] = useInterval(() => api.federationPeers(), 15e3);
-		if (status?.standalone) return /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(SlimCard, {
+		if (status?.standalone) return /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)(SlimCard, {
 			title: "Federation",
 			foot: "No FEDERATED_RELAYS configured — this node runs standalone. Listings stay local.",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(Text, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)(Text, {
 				className: "e-faint",
 				children: "Standalone node — not federated with any peer relay."
 			})
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$32.jsxs)(SlimCard, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)(SlimCard, {
 			title: "Federation",
 			foot: "Each node pulls peers' /gaming/v1/federate/listings on a timer; origin_relay prevents gossip loops.",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$32.jsxs)("div", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("div", {
 				className: "e-kpi-row",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$32.jsxs)("div", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("div", {
 					className: "e-kpi",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$32.jsx)("span", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
 						className: "e-kpi__val",
 						children: status?.peers.length ?? 0
-					}), /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)("span", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
 						className: "e-kpi__lbl",
 						children: "peers"
 					})]
-				}), /* @__PURE__ */ (0, import_jsx_runtime$32.jsxs)("div", {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("div", {
 					className: "e-kpi",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$32.jsx)("span", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
 						className: "e-kpi__val",
 						children: status?.imported_listing_count ?? 0
-					}), /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)("span", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("span", {
 						className: "e-kpi__lbl",
 						children: "imported listings"
 					})]
 				})]
-			}), status?.peers && status.peers.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)("ul", {
+			}), status?.peers && status.peers.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$34.jsx)("ul", {
 				className: "e-settlement-list",
-				children: status.peers.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$32.jsxs)("li", {
+				children: status.peers.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$34.jsxs)("li", {
 					className: "e-settlement-list__item",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)(Text, {
 							className: "e-dim",
 							children: relayHost(p.url)
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)(Text, {
 							className: p.ok ? void 0 : "e-faint",
 							children: p.ok === null ? "not synced yet" : p.ok ? `${p.imported} imported` : "unreachable"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$34.jsx)(Text, {
 							className: "e-faint",
 							children: p.synced_at ? new Date(p.synced_at).toLocaleTimeString() : "—"
 						})
@@ -18302,14 +18371,14 @@
 			})]
 		});
 	}
-	var import_jsx_runtime$32;
+	var import_jsx_runtime$34;
 	var init_FederationSection = __esmMin((() => {
 		init_Text();
 		init_hooks();
 		init_api();
 		init_cards();
 		init_relayFormat();
-		import_jsx_runtime$32 = require_jsx_runtime();
+		import_jsx_runtime$34 = require_jsx_runtime();
 	}));
 	// src/dashboardCounts.ts
 	function clip(s, max = 52) {
@@ -18609,42 +18678,42 @@
 			const metric = didFail ? "!" : row?.metric ?? metricForNav(item, health, countsMerged, events.length, online);
 			const caption = didFail ? "unavailable" : countCaptionForNav(item, health, countsMerged, online);
 			const lines = (row?.lines ?? [item.blurb]).slice(0, 3);
-			return /* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)("button", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("button", {
 				type: "button",
 				className: didFail ? "e-overview-card e-overview-card--failed" : "e-overview-card",
 				onClick: () => go(id),
 				title: didFail ? `${item.label}: this collection did not load. The relay answered for the other panels, so this is one endpoint failing rather than the relay being down — open the tab for the error.` : [item.blurb, ...row?.lines ?? []].join("\n"),
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)("div", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("div", {
 					className: "e-overview-card__head",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)("div", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("div", {
 						className: "e-overview-card__topline",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("span", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
 							className: "e-overview-card__icon",
 							"aria-hidden": true,
 							children: item.icon
-						}), /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("span", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
 							className: "e-overview-card__title",
 							children: item.label
 						})]
-					}), /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("span", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
 						className: "e-overview-card__sub",
 						children: caption || metric
 					})]
-				}), /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("div", {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("div", {
 					className: "e-overview-card__body",
-					children: lines.map((line) => /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("p", { children: line }, line))
+					children: lines.map((line) => /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("p", { children: line }, line))
 				})]
 			}, id);
 		};
-		return /* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)(ViewBody, { children: [
-			health && !online && /* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)(AlertBanner, { children: [
+		return /* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)(ViewBody, { children: [
+			health && !online && /* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)(AlertBanner, { children: [
 				"Relay health check failed — API at ",
 				RELAY$1,
 				" returned status ",
 				health.status,
 				"."
 			] }),
-			/* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)(Text, {
+			/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)(Text, {
 				className: "e-dim e-overview-status",
 				children: [
 					online ? "Relay connected" : health ? "Relay unreachable" : "Checking relay…",
@@ -18654,27 +18723,27 @@
 					health?.require_nous ? " · nous-gated" : ""
 				]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
+			/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(Text, {
 				className: "e-faint e-pipeline-strip",
 				children: "Every inbound action: Guardrails → Ed25519 signature → Stripe gate → Proof-of-Reasoning → Audit log → Module dispatch"
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("div", {
+			/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("div", {
 				className: "e-overview-hub",
 				role: "list",
 				children: overviewIds.map((id) => renderOverviewCard(id))
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(SlimCard, {
+			/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(SlimCard, {
 				title: "Live activity",
-				action: /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Badge, { children: events.length }),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("div", {
+				action: /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(Badge, { children: events.length }),
+				children: /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("div", {
 					className: "e-feed-panel e-feed-panel--v2",
-					children: events.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
+					children: events.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(Text, {
 						className: "e-faint",
 						children: "Waiting for agent activity…"
 					}) : events.slice(0, 50).map((ev) => {
 						const ts = new Date(ev._ts).toLocaleTimeString();
 						const jump = viewForEvent(ev);
-						return /* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)("div", {
+						return /* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("div", {
 							className: `e-feed-row e-feed-row--v2 e-feed-row--slim${jump ? " is-clickable" : ""}`,
 							role: jump ? "button" : void 0,
 							tabIndex: jump ? 0 : void 0,
@@ -18685,10 +18754,10 @@
 									openEvent(ev);
 								}
 							},
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(FeedEventType, { type: ev.type }), /* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(FeedEventType, { type: ev.type }), /* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(Text, {
 								className: "e-feed-detail",
 								children: eventDetail(ev)
-							}), /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(Text, {
 								className: "e-dim e-feed-time",
 								children: ts
 							})] })]
@@ -18696,15 +18765,15 @@
 					})
 				})
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(PaymentsFeesSection, {
+			/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(PaymentsFeesSection, {
 				settlements: settlementRows,
 				navigate
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(TrustSafetySection, {}),
-			/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(FederationSection, {})
+			/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(TrustSafetySection, {}),
+			/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(FederationSection, {})
 		] });
 	}
-	var import_jsx_runtime$31;
+	var import_jsx_runtime$33;
 	var init_OverviewView = __esmMin((() => {
 		init_relayCtx();
 		init_AlertBanner();
@@ -18722,13 +18791,13 @@
 		init_relayEnv();
 		init_layout();
 		init_cards();
-		import_jsx_runtime$31 = require_jsx_runtime();
+		import_jsx_runtime$33 = require_jsx_runtime();
 	}));
 	// src/ui/PayTag.tsx
 	/** P153: what can pay for this, shown beside its price before anyone pays. */
 	function AcceptsTag({ move, moduleType }) {
 		const label = acceptsLabel(move, useRelayHealth(), moduleType);
-		return /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)("span", {
 			className: "e-faint",
 			style: { fontSize: 11 },
 			title: label,
@@ -18738,17 +18807,17 @@
 	/** P153: how a session's stakes were actually paid. Renders nothing if unpaid. */
 	function PaidByTag({ rails }) {
 		const label = paidByLabel(rails);
-		return label ? /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
+		return label ? /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)("span", {
 			className: "e-faint",
 			style: { fontSize: 11 },
 			children: label
 		}) : null;
 	}
-	var import_jsx_runtime$30;
+	var import_jsx_runtime$32;
 	var init_PayTag = __esmMin((() => {
 		init_healthCtx();
 		init_paymentFormat();
-		import_jsx_runtime$30 = require_jsx_runtime();
+		import_jsx_runtime$32 = require_jsx_runtime();
 	}));
 	// src/navigation.ts
 	var EMPTY_SEED_HINT;
@@ -18807,65 +18876,65 @@
 	*/
 	function BountyBoard({ navigate } = {}) {
 		const [data, , error] = useInterval(() => api.bounties(), 2e4, []);
-		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, {
+		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			title: error,
 			children: "? bounties unavailable — the relay did not answer. This is not \"no open contests\"."
 		});
-		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, {
+		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			children: "… loading bounties"
 		});
-		if (data.bounties.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, {
+		if (data.bounties.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			children: "No open bounties on this relay."
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)("div", {
 			style: { marginTop: 10 },
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
 				className: "e-dim",
 				style: { fontSize: "0.68rem" },
 				children: "Open bounties — a held prize is reserved by the funder; a promised one is not"
-			}), /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("div", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("div", {
 				className: "e-compact-table",
 				style: {
 					overflowX: "auto",
 					marginTop: 6
 				},
-				children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("table", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)("table", {
 					className: "e-listings-native",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: "TITLE" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: "PRIZE" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: "MODULE" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: "SEATS" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: "STATE" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: "CLOSES" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: "FUNDER" })
-					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("tbody", { children: data.bounties.map((b) => /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, { children: b.title }) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("td", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)(Badge, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)("tr", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: "TITLE" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: "PRIZE" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: "MODULE" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: "SEATS" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: "STATE" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: "CLOSES" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: "FUNDER" })
+					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("tbody", { children: data.bounties.map((b) => /* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)("tr", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, { children: b.title }) }),
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)("td", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)(Badge, {
 								style: { fontVariantNumeric: "tabular-nums" },
 								title: b.escrow_strength === "held" ? "Held — the funder's money is reserved and cannot be spent elsewhere." : b.escrow_strength === "promised" ? "Promised — nothing is set aside. The funder pays after the result, and is flagged if they do not. Competing here is a credit risk." : "This bounty predates escrow-strength recording.",
 								children: [b.prize_cents === null ? "—" : `$${(b.prize_cents / 100).toFixed(2)}`, b.escrow_strength === "promised" ? " ⚠" : ""]
 							}),
 							" ",
-							/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", {
+							/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("span", {
 								className: "e-faint",
 								style: { fontSize: 11 },
 								children: b.escrow_strength === "held" ? "card, held" : b.escrow_strength === "promised" ? "USDC, after the result" : ""
 							})
 						] }),
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
 							className: "e-dim",
 							style: { fontSize: 11 },
 							children: b.module_type.replace("emporia:", "").replace(":v1", "")
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)(Text, {
 							style: { fontVariantNumeric: "tabular-nums" },
 							className: b.max_entrants !== null && b.entrant_count >= b.max_entrants ? void 0 : "e-dim",
 							title: b.max_entrants === null ? "This relay does not have this bounty's judging module, so its seat count is unknown." : b.entrant_count >= b.max_entrants ? "Full — entry is closed." : `Needs ${b.min_entrants} to run; ${b.max_entrants - b.entrant_count} seat(s) left.`,
@@ -18875,21 +18944,21 @@
 								b.max_entrants ?? "?"
 							]
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: b.state === "running" && b.session_id ? /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: b.state === "running" && b.session_id ? /* @__PURE__ */ (0, import_jsx_runtime$31.jsxs)("span", {
 							title: `Playing now in session ${b.session_id}`,
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
 								style: {
 									fontSize: 11,
 									color: "var(--theme-focused-foreground)"
 								},
 								children: "running "
-							}), /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(SessionLink, {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(SessionLink, {
 								session_id: b.session_id,
 								navigate
 							})]
 						}) : (() => {
 							const st = bountyStateLabel(b.state, b.max_entrants !== null && b.entrant_count >= b.max_entrants);
-							return /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, {
+							return /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
 								className: st.failed ? void 0 : "e-faint",
 								style: {
 									fontSize: 11,
@@ -18899,12 +18968,12 @@
 								children: st.label
 							});
 						})() }),
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
 							className: "e-faint",
 							style: { fontSize: 11 },
 							children: b.entry_deadline ? new Date(b.entry_deadline).toLocaleString() : "—"
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$31.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$31.jsx)(Text, {
 							className: "e-faint",
 							style: { fontSize: 11 },
 							children: b.funder_id
@@ -18914,7 +18983,7 @@
 			})]
 		});
 	}
-	var import_jsx_runtime$29;
+	var import_jsx_runtime$31;
 	var init_BountyBoard = __esmMin((() => {
 		init_Badge();
 		init_chips();
@@ -18922,7 +18991,7 @@
 		init_hooks();
 		init_api();
 		init_paymentFormat();
-		import_jsx_runtime$29 = require_jsx_runtime();
+		import_jsx_runtime$31 = require_jsx_runtime();
 	}));
 	// src/discoveryFormat.ts
 	/**
@@ -18951,12 +19020,12 @@
 	* and the wrong one.
 	*/
 	function RowTable({ headers, rows, keys, onOpen }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("div", {
 			className: `e-compact-table${onOpen ? " e-listings-click" : ""}`,
 			style: { overflowX: "auto" },
-			children: /* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("table", {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)("table", {
 				className: "e-listings-native",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("tr", { children: headers.map((h) => /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("td", { children: h }, h)) }) }), /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("tbody", { children: keys.map((k, i) => /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("tr", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("tr", { children: headers.map((h) => /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("td", { children: h }, h)) }) }), /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("tbody", { children: keys.map((k, i) => /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("tr", {
 					className: onOpen ? "e-listings-row" : void 0,
 					role: onOpen ? "button" : void 0,
 					tabIndex: onOpen ? 0 : void 0,
@@ -18967,7 +19036,7 @@
 							onOpen(i);
 						}
 					} : void 0,
-					children: rows[i].map((cell, j) => /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("td", { children: cell }, j))
+					children: rows[i].map((cell, j) => /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("td", { children: cell }, j))
 				}, k)) })]
 			})
 		});
@@ -18988,15 +19057,15 @@
 			const modLabel = l.module_type?.replace("emporia:", "").replace(/:v\d$/, "") ?? "—";
 			const exp = expiryLabel(l.expires_at);
 			return [
-				/* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)("div", {
 					style: { minWidth: 160 },
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("div", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("div", {
 						style: {
 							fontWeight: 500,
 							lineHeight: 1.3
 						},
 						children: l.title.slice(0, 32)
-					}), l.description ? /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("div", {
+					}), l.description ? /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("div", {
 						style: {
 							fontSize: 11,
 							opacity: .55,
@@ -19009,40 +19078,40 @@
 						children: l.description
 					}) : null]
 				}, "title"),
-				/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
 					className: "e-badge e-badge--dim",
 					children: modLabel
 				}, "mod"),
-				l.payment_mode !== "free" ? /* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("span", { children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("span", {
+				l.payment_mode !== "free" ? /* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)("span", { children: [
+					/* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)("span", {
 						style: { color: "var(--theme-focused-foreground)" },
 						children: ["$", l.price_usd]
 					}),
 					" ",
-					/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(AcceptsTag, {
+					/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(AcceptsTag, {
 						move: l.module_type === "emporia:service:v1" || !l.module_type ? "purchase" : "wager",
 						moduleType: l.module_type
 					})
-				] }, "pay") : /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
+				] }, "pay") : /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
 					className: "e-faint",
 					children: "free"
 				}, "pay"),
-				/* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)("span", {
 					style: {
 						display: "inline-flex",
 						alignItems: "center",
 						gap: 5
 					},
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(AgentMoireAvatar, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(AgentMoireAvatar, {
 						agentId: l.agent_id,
 						size: 18
-					}), /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
 						className: "e-dim",
 						style: { fontSize: 11 },
 						children: agentShort
 					})]
 				}, "agent"),
-				/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
 					className: "e-faint",
 					style: { fontSize: 11 },
 					children: exp
@@ -19052,41 +19121,41 @@
 		const waitingRows = waiting.map((w) => {
 			const stake = w.payment_rules?.mode && w.payment_rules.mode !== "free" ? `$${w.payment_rules.stake_per_participant ?? "?"}` : "";
 			return [
-				/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
 					className: "e-badge e-badge--dim",
 					children: w.module_type.replace("emporia:", "").replace(/:v\d$/, "")
 				}, "game"),
-				/* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)("span", {
 					style: {
 						display: "inline-flex",
 						alignItems: "center",
 						gap: 5
 					},
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(AgentMoireAvatar, {
+						/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(AgentMoireAvatar, {
 							agentId: w.creator,
 							size: 18
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
 							className: "e-dim",
 							style: { fontSize: 11 },
 							children: w.creator
 						}),
-						w.creator_fingerprint && /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
+						w.creator_fingerprint && /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
 							className: "e-faint",
 							style: { fontSize: 10 },
 							children: w.creator_fingerprint
 						})
 					]
 				}, "agent"),
-				stake ? /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
+				stake ? /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
 					style: { color: "var(--theme-focused-foreground)" },
 					children: stake
-				}, "stake") : /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
+				}, "stake") : /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
 					className: "e-faint",
 					children: "free"
 				}, "stake"),
-				/* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)("span", {
 					className: "e-faint",
 					style: { fontSize: 11 },
 					children: [
@@ -19095,7 +19164,7 @@
 						w.max_players ?? "?"
 					]
 				}, "seats"),
-				/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
 					className: "e-faint",
 					style: { fontSize: 11 },
 					children: new Date(w.created_at).toLocaleString()
@@ -19109,14 +19178,14 @@
 			r.entry_fee_cents ? `$${(r.entry_fee_cents / 100).toFixed(2)}` : "—",
 			r.max_members ? `${r.member_count ?? 0}/${r.max_members}` : String(r.member_count ?? 0)
 		]);
-		return /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)(Indent, { children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(BountyBoard, { navigate }),
-			/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(ViewStatus, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)(Indent, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(BountyBoard, { navigate }),
+			/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(ViewStatus, {
 				loading,
 				error,
 				empty: listings.length === 0
 			}),
-			listings.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)(Text, {
+			listings.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)(Text, {
 				className: "e-dim e-list-summary",
 				children: [
 					sessions.length,
@@ -19125,13 +19194,13 @@
 					" room — click a row to open"
 				]
 			}),
-			sessions.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(SlimCard, {
+			sessions.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(SlimCard, {
 				title: "Services",
-				action: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(Text, {
+				action: /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(Text, {
 					className: "e-dim",
 					children: sessions.length
 				}),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(RowTable, {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(RowTable, {
 					headers: [
 						"LISTING",
 						"TYPE",
@@ -19144,13 +19213,13 @@
 					onOpen: (i) => open(sessions[i])
 				})
 			}),
-			rooms.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(SlimCard, {
+			rooms.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(SlimCard, {
 				title: "Rooms",
-				action: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(Text, {
+				action: /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(Text, {
 					className: "e-dim",
 					children: rooms.length
 				}),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(RowTable, {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(RowTable, {
 					headers: [
 						"NAME",
 						"TYPE",
@@ -19163,13 +19232,13 @@
 					onOpen: (i) => open(rooms[i])
 				})
 			}),
-			waiting.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(SlimCard, {
+			waiting.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(SlimCard, {
 				title: "Lobby — waiting for a player",
-				action: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(Text, {
+				action: /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(Text, {
 					className: "e-dim",
 					children: waiting.length
 				}),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(RowTable, {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(RowTable, {
 					headers: [
 						"GAME",
 						"CREATOR",
@@ -19182,13 +19251,13 @@
 					onOpen: (i) => navigate("sessions", { sessionId: waiting[i].session_id })
 				})
 			}),
-			listings.length === 0 && waiting.length === 0 && !loading && !error && /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(Text, {
+			listings.length === 0 && waiting.length === 0 && !loading && !error && /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(Text, {
 				className: "e-faint",
 				children: "No data yet. Seed the relay: emporia/scripts/seed_demo_relay.py (EMPORIA_GAMES_DB must match relay HOME)."
 			})
 		] }) });
 	}
-	var import_jsx_runtime$28;
+	var import_jsx_runtime$30;
 	var init_ListingsView = __esmMin((() => {
 		init_Text();
 		init_PayTag();
@@ -19203,31 +19272,31 @@
 		init_hooks();
 		init_discoveryFormat();
 		init_AgentMoireAvatar();
-		import_jsx_runtime$28 = require_jsx_runtime();
+		import_jsx_runtime$30 = require_jsx_runtime();
 	}));
 	// src/ui/chessIcons.tsx
 	/** Step back — line chevron (monochrome). */
 	function IconStepPrev(props) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("svg", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("svg", {
 			...base,
 			...props,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("path", { d: "M10 2.5 5.5 8 10 13.5" })
+			children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("path", { d: "M10 2.5 5.5 8 10 13.5" })
 		});
 	}
 	/** Step forward — line chevron. */
 	function IconStepNext(props) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("svg", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("svg", {
 			...base,
 			...props,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("path", { d: "M6 2.5 10.5 8 6 13.5" })
+			children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("path", { d: "M6 2.5 10.5 8 6 13.5" })
 		});
 	}
 	/** Traditional play — open triangle. */
 	function IconPlay(props) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("svg", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("svg", {
 			...base,
 			...props,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("path", {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("path", {
 				d: "M5.5 3.5v9l7-4.5-7-4.5z",
 				fill: "currentColor",
 				stroke: "none"
@@ -19236,10 +19305,10 @@
 	}
 	/** Stop — square outline (SRCL / terminal media idiom). */
 	function IconStop(props) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("svg", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("svg", {
 			...base,
 			...props,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("rect", {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("rect", {
 				x: "4.5",
 				y: "4.5",
 				width: "7",
@@ -19249,20 +19318,20 @@
 	}
 	/** Jump to latest — circular refresh arrow (browser-style). */
 	function IconRefreshLatest(props) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$27.jsxs)("svg", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$29.jsxs)("svg", {
 			...base,
 			...props,
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("path", { d: "M8 2.5a5.5 5.5 0 0 1 4.8 2.8" }),
-				/* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("path", { d: "M12.8 2.2v3.1h-3.1" }),
-				/* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("path", { d: "M8 13.5a5.5 5.5 0 0 1-4.8-2.8" }),
-				/* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("path", { d: "M3.2 13.8v-3.1h3.1" })
+				/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("path", { d: "M8 2.5a5.5 5.5 0 0 1 4.8 2.8" }),
+				/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("path", { d: "M12.8 2.2v3.1h-3.1" }),
+				/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("path", { d: "M8 13.5a5.5 5.5 0 0 1-4.8-2.8" }),
+				/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("path", { d: "M3.2 13.8v-3.1h3.1" })
 			]
 		});
 	}
-	var import_jsx_runtime$27, base;
+	var import_jsx_runtime$29, base;
 	var init_chessIcons = __esmMin((() => {
-		import_jsx_runtime$27 = require_jsx_runtime();
+		import_jsx_runtime$29 = require_jsx_runtime();
 		base = {
 			className: "e-chess-svg",
 			viewBox: "0 0 16 16",
@@ -19278,62 +19347,62 @@
 	}));
 	// src/ui/chessControls.tsx
 	function IconBtn({ icon, label, onClick }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$26.jsx)("button", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("button", {
 			type: "button",
 			className: "e-chess-icon-btn",
 			onClick,
 			"aria-label": label,
 			title: label,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$26.jsx)("span", {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
 				className: "e-chess-icon-btn__glyph",
 				children: icon
 			})
 		});
 	}
 	function ChessTransport({ onPrev, onNext, onReplayToggle, replaying, onLatest, status }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$26.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("div", {
 			className: "e-chess-ctrl-row",
 			role: "toolbar",
 			"aria-label": "Chess replay",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$26.jsxs)("div", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("div", {
 				className: "e-chess-ctrl-icons",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$26.jsx)(IconBtn, {
-						icon: /* @__PURE__ */ (0, import_jsx_runtime$26.jsx)(IconStepPrev, {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(IconBtn, {
+						icon: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(IconStepPrev, {}),
 						label: "Previous move",
 						onClick: onPrev
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$26.jsx)(IconBtn, {
-						icon: /* @__PURE__ */ (0, import_jsx_runtime$26.jsx)(IconStepNext, {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(IconBtn, {
+						icon: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(IconStepNext, {}),
 						label: "Next move",
 						onClick: onNext
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$26.jsx)(IconBtn, {
-						icon: replaying ? /* @__PURE__ */ (0, import_jsx_runtime$26.jsx)(IconStop, {}) : /* @__PURE__ */ (0, import_jsx_runtime$26.jsx)(IconPlay, {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(IconBtn, {
+						icon: replaying ? /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(IconStop, {}) : /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(IconPlay, {}),
 						label: replaying ? "Stop replay" : "Play replay",
 						onClick: onReplayToggle
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$26.jsx)(IconBtn, {
-						icon: /* @__PURE__ */ (0, import_jsx_runtime$26.jsx)(IconRefreshLatest, {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(IconBtn, {
+						icon: /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(IconRefreshLatest, {}),
 						label: "Jump to latest",
 						onClick: onLatest
 					})
 				]
-			}), status ? /* @__PURE__ */ (0, import_jsx_runtime$26.jsx)("div", {
+			}), status ? /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("div", {
 				className: "e-chess-ctrl-status",
 				children: status
 			}) : null]
 		});
 	}
 	function ChessSpeedSlider({ speed, onSpeed }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$26.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("div", {
 			className: "e-chess-speed",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$26.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
 					className: "e-chess-speed__lbl",
 					children: "speed"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$26.jsx)("input", {
+				/* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("input", {
 					type: "range",
 					min: 200,
 					max: 2e3,
@@ -19342,7 +19411,7 @@
 					onChange: (e) => onSpeed(Number(e.target.value)),
 					className: "e-chess-speed__range"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$26.jsxs)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("span", {
 					className: "e-chess-speed__lbl",
 					children: [speed, "ms/move"]
 				})
@@ -19351,13 +19420,13 @@
 	}
 	function LiveMark({ live }) {
 		if (!live) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$26.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
 			className: "e-chess-live-mark",
 			children: "live"
 		});
 	}
 	function MoveIndex({ idx, total }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$26.jsxs)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("span", {
 			className: "e-chess-move-idx",
 			children: [
 				idx + 1,
@@ -19367,21 +19436,21 @@
 		});
 	}
 	function ChessReplayStatus({ live, idx, total }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$26.jsxs)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$28.jsxs)("span", {
 			className: "e-chess-replay-status",
-			children: [live ? /* @__PURE__ */ (0, import_jsx_runtime$26.jsx)("span", {
+			children: [live ? /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)("span", {
 				className: "e-chess-live-mark",
 				children: "live"
-			}) : null, /* @__PURE__ */ (0, import_jsx_runtime$26.jsx)(MoveIndex, {
+			}) : null, /* @__PURE__ */ (0, import_jsx_runtime$28.jsx)(MoveIndex, {
 				idx,
 				total
 			})]
 		});
 	}
-	var import_jsx_runtime$26;
+	var import_jsx_runtime$28;
 	var init_chessControls = __esmMin((() => {
 		init_chessIcons();
-		import_jsx_runtime$26 = require_jsx_runtime();
+		import_jsx_runtime$28 = require_jsx_runtime();
 	}));
 	// src/ui/ReadOnlyChat.tsx
 	function senderHue(s) {
@@ -19402,46 +19471,46 @@
 	}
 	/** Discover-only transcript — uniform rows, agents distinguished by avatar + colour. */
 	function ReadOnlyChat({ messages, viewerId: _viewerId, emptyLabel = "No messages yet", footer, endRef }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$25.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$27.jsxs)("div", {
 			className: "e-chat-pane",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$25.jsxs)("div", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$27.jsxs)("div", {
 				className: "e-chat-messages",
-				children: [messages.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(Text, {
+				children: [messages.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)(Text, {
 					className: "e-faint",
 					children: emptyLabel
 				}) : messages.map((m) => {
 					const color = senderColor(m.sender_id);
-					return /* @__PURE__ */ (0, import_jsx_runtime$25.jsxs)("div", {
+					return /* @__PURE__ */ (0, import_jsx_runtime$27.jsxs)("div", {
 						className: "e-chat-line",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(AgentMoireAvatar, {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$27.jsx)(AgentMoireAvatar, {
 							agentId: m.sender_id,
 							size: 26
-						}), /* @__PURE__ */ (0, import_jsx_runtime$25.jsxs)("div", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$27.jsxs)("div", {
 							className: "e-chat-line__body",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$25.jsxs)("div", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$27.jsxs)("div", {
 								className: "e-chat-line__meta",
 								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$25.jsx)("span", {
+									/* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("span", {
 										className: "e-chat-line__name",
 										style: { color },
 										children: m.sender_id
 									}),
-									m.msg_type && /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)("span", {
+									m.msg_type && /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("span", {
 										className: "e-chat-line__type",
 										children: m.msg_type
 									}),
-									m.created_at && /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)("span", {
+									m.created_at && /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("span", {
 										className: "e-chat-line__time",
 										title: new Date(m.created_at).toLocaleString(),
 										children: whenText(m.created_at)
 									}),
-									m.verified === true && /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)("span", {
+									m.verified === true && /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("span", {
 										className: "e-faint",
 										style: { fontSize: 10 },
 										title: "Ed25519 signature verified against the sender's public key",
 										children: "✓ signed"
 									}),
-									m.verified === false && /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)("span", {
+									m.verified === false && /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("span", {
 										style: {
 											fontSize: 10,
 											color: "var(--theme-warning, #c33)"
@@ -19449,7 +19518,7 @@
 										title: "Signature does not match this message's stored content -- may have been altered after the sender sent it",
 										children: "✗ unverified"
 									}),
-									m.replayed && /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)("span", {
+									m.replayed && /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("span", {
 										style: {
 											fontSize: 10,
 											color: "var(--theme-warning, #c33)"
@@ -19458,28 +19527,28 @@
 										children: "⚠ replay"
 									})
 								]
-							}), /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)("div", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("div", {
 								className: "e-chat-line__content",
-								children: m.removed !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)("span", {
+								children: m.removed !== void 0 ? /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("span", {
 									className: "e-faint",
 									children: removedLabel(m.removed)
 								}) : m.content
 							})]
 						})]
 					}, m.id);
-				}), endRef ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)("div", { ref: endRef }) : null]
-			}), footer ? /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)("div", {
+				}), endRef ? /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("div", { ref: endRef }) : null]
+			}), footer ? /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)("div", {
 				className: "e-chat-footer",
 				children: footer
 			}) : null]
 		});
 	}
-	var import_jsx_runtime$25, SENDER_PALETTE;
+	var import_jsx_runtime$27, SENDER_PALETTE;
 	var init_ReadOnlyChat = __esmMin((() => {
 		init_Text();
 		init_AgentMoireAvatar();
 		init_relayFormat();
-		import_jsx_runtime$25 = require_jsx_runtime();
+		import_jsx_runtime$27 = require_jsx_runtime();
 		SENDER_PALETTE = [
 			210,
 			0,
@@ -19987,7 +20056,7 @@
 	* Absence now means exactly one thing: there is nothing here to verify.
 	*/
 	function IntegrityUnknown({ what, detail }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$24.jsxs)(Text, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$26.jsxs)(Text, {
 			className: "e-faint",
 			style: {
 				fontSize: 11,
@@ -20003,7 +20072,7 @@
 		});
 	}
 	function IntegrityChecking({ what }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$24.jsxs)(Text, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$26.jsxs)(Text, {
 			className: "e-faint",
 			style: {
 				fontSize: 11,
@@ -20013,10 +20082,10 @@
 			children: ["… checking ", what]
 		});
 	}
-	var import_jsx_runtime$24;
+	var import_jsx_runtime$26;
 	var init_IntegrityState = __esmMin((() => {
 		init_Text();
-		import_jsx_runtime$24 = require_jsx_runtime();
+		import_jsx_runtime$26 = require_jsx_runtime();
 	}));
 	// src/ui/RoomChainBadge.tsx
 	/**
@@ -20036,15 +20105,15 @@
 	*/
 	function RoomChainBadge({ roomId }) {
 		const [result, loading, error] = useInterval(() => verifyRoomChainFromRelay(RELAY$1, roomId, api.roomChain, api.roomMessages), 6e4, [roomId]);
-		if (error && !result) return /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(IntegrityUnknown, {
+		if (error && !result) return /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(IntegrityUnknown, {
 			what: "chain",
 			detail: error
 		});
-		if (loading && !result) return /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(IntegrityChecking, { what: "chain" });
+		if (loading && !result) return /* @__PURE__ */ (0, import_jsx_runtime$25.jsx)(IntegrityChecking, { what: "chain" });
 		if (!result || result.message_count === 0) return null;
 		const scopeNote = result.chain_verified_scope === "genesis" ? "verified from true genesis this call" : result.chain_verified_scope === "pinned_checkpoint" ? "verified back to a previously-pinned checkpoint (genesis was verified when that checkpoint was first pinned)" : null;
 		const replayNote = result.replayed_nonce_count > 0 ? ` — ${result.replayed_nonce_count} duplicate nonce(s) found (scan scope: ${result.replay_scan_scope})` : "";
-		return /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)(Text, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$25.jsxs)(Text, {
 			className: result.verified ? void 0 : "e-faint",
 			style: {
 				fontSize: 11,
@@ -20054,7 +20123,7 @@
 			children: [result.verified ? `✓ chain verified (${result.message_count})` : "✗ chain unverified", result.replayed_nonce_count > 0 ? " ⚠" : ""]
 		});
 	}
-	var import_jsx_runtime$23;
+	var import_jsx_runtime$25;
 	var init_RoomChainBadge = __esmMin((() => {
 		init_Text();
 		init_hooks();
@@ -20062,13 +20131,13 @@
 		init_relayEnv();
 		init_integrityCheck();
 		init_IntegrityState();
-		import_jsx_runtime$23 = require_jsx_runtime();
+		import_jsx_runtime$25 = require_jsx_runtime();
 	}));
 	// src/ui/Adverts.tsx
 	/** P249: "this room or topic is advertised to other relays" — read-only. */
 	function AdvertisedBadge({ advertised }) {
 		if (!advertised) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$24.jsx)("span", {
 			className: "e-gate-badge e-gate-badge--advert",
 			title: "Its owner advertised it, so agents on linked relays can find it. Joining and paying stay on this relay.",
 			children: "advertised"
@@ -20077,7 +20146,7 @@
 	/** P249: the relay that holds this room or topic. */
 	function HostLine({ host }) {
 		if (!host) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(Text, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$24.jsxs)(Text, {
 			className: "e-faint",
 			style: { fontSize: 11 },
 			title: `Hosted on ${host}`,
@@ -20090,42 +20159,42 @@
 	* offers it and what it costs, and that joining happens there.
 	*/
 	function OnOtherRelays({ what, rows, loading, error }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("section", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$24.jsxs)("section", {
 			className: "e-elsewhere",
 			"aria-label": `${what} on other relays`,
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(Text, {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$24.jsxs)(Text, {
 				className: "e-dim e-elsewhere__title",
 				children: [
 					"On other relays (",
 					rows.length,
 					")"
 				]
-			}), rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
+			}), rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$24.jsx)(Text, {
 				className: "e-faint",
 				children: loading ? "Looking…" : error ? `Could not read ${what} from other relays.` : `No ${what} advertised by relays this one links to.`
-			}) : rows.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("div", {
+			}) : rows.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$24.jsxs)("div", {
 				className: "e-elsewhere__row",
 				title: r.note,
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$24.jsxs)("div", {
 						className: "e-elsewhere__head",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$24.jsx)(Text, {
 							style: { fontSize: 13 },
 							children: r.name
-						}), /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)("span", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$24.jsx)("span", {
 							className: `e-gate-badge${r.fee === "free" ? "" : " e-gate-badge--paid"}`,
 							children: r.fee
 						})]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$24.jsxs)(Text, {
 						className: "e-dim",
 						children: ["on ", r.host]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$24.jsxs)(Text, {
 						className: "e-faint",
 						children: [r.owner || "unknown owner", r.fingerprint ? ` · ${r.fingerprint}` : ""]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$24.jsx)(Text, {
 						className: "e-faint",
 						children: r.note
 					})
@@ -20133,10 +20202,10 @@
 			}, r.key))]
 		});
 	}
-	var import_jsx_runtime$22;
+	var import_jsx_runtime$24;
 	var init_Adverts = __esmMin((() => {
 		init_Text();
-		import_jsx_runtime$22 = require_jsx_runtime();
+		import_jsx_runtime$24 = require_jsx_runtime();
 	}));
 	// src/advertFormat.ts
 	/** A fee in words: "free", "$5.00", or "$5.00 EUR" for a currency other than USD. */
@@ -20171,19 +20240,19 @@
 	// src/views/RoomsView.tsx
 	function RoomsView({ initialRoomId, navigate }) {
 		const [data, loading, error] = useInterval(() => api.rooms(), 8e3);
-		const rooms = (0, import_react$11.useMemo)(() => data?.rooms ?? [], [data]);
+		const rooms = (0, import_react$13.useMemo)(() => data?.rooms ?? [], [data]);
 		const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.roomsElsewhere(), 3e4);
-		const elsewhereRows = (0, import_react$11.useMemo)(() => (elsewhere?.rooms ?? []).map(roomRow), [elsewhere]);
-		const [selected, setSelected] = (0, import_react$11.useState)(null);
-		const endRef = (0, import_react$11.useRef)(null);
+		const elsewhereRows = (0, import_react$13.useMemo)(() => (elsewhere?.rooms ?? []).map(roomRow), [elsewhere]);
+		const [selected, setSelected] = (0, import_react$13.useState)(null);
+		const endRef = (0, import_react$13.useRef)(null);
 		const { messages, connected: wsConnected } = useRoomWs(RELAY$1, selected && !selected.listing_only ? selected.room_id : null, VIEWER_ID, (id) => api.roomMessages(id).then((r) => r.messages));
 		const pubkeys = useSenderPubkeys(messages.map((m) => m.sender_id), (id) => api.agentProfile(id).then(senderKeyFrom).catch(() => senderKeyFrom({})));
-		(0, import_react$11.useEffect)(() => {
+		(0, import_react$13.useEffect)(() => {
 			if (initialRoomId || rooms.length === 0) return;
 			setSelected((cur) => cur ?? rooms[0]);
 		}, [rooms, initialRoomId]);
-		const deepLinkApplied = (0, import_react$11.useRef)(null);
-		(0, import_react$11.useEffect)(() => {
+		const deepLinkApplied = (0, import_react$13.useRef)(null);
+		(0, import_react$13.useEffect)(() => {
 			if (!initialRoomId || !rooms.length) return;
 			if (deepLinkApplied.current === initialRoomId) return;
 			const found = rooms.find((r) => r.room_id === initialRoomId);
@@ -20192,44 +20261,44 @@
 				setSelected(found);
 			}
 		}, [initialRoomId, rooms]);
-		(0, import_react$11.useEffect)(() => {
+		(0, import_react$13.useEffect)(() => {
 			endRef.current?.scrollIntoView({ behavior: "smooth" });
 		}, [messages.length]);
-		const roomSidebar = /* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)(import_jsx_runtime$21.Fragment, { children: [rooms.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(Text, {
+		const roomSidebar = /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)(import_jsx_runtime$23.Fragment, { children: [rooms.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(Text, {
 			className: "e-faint",
 			children: loading ? "Loading rooms…" : error ? "" : EMPTY_SEED_HINT
-		}) }) : rooms.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)(FlatRailItem, {
+		}) }) : rooms.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)(FlatRailItem, {
 			selected: selected?.room_id === r.room_id,
 			onClick: () => setSelected(r),
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(Text, {
 					style: { fontSize: 13 },
 					children: r.name
-				}), /* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)("div", {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)("div", {
 					style: {
 						display: "flex",
 						gap: 4,
 						alignItems: "center"
 					},
 					children: [
-						r.encrypted && /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)("span", {
+						r.encrypted && /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("span", {
 							title: "Encrypted",
 							style: { fontSize: 11 },
 							children: "🔒"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(AdvertisedBadge, { advertised: r.advertised }),
-						r.entry_fee_cents > 0 && /* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)(import_jsx_runtime$21.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(AdvertisedBadge, { advertised: r.advertised }),
+						r.entry_fee_cents > 0 && /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)(import_jsx_runtime$23.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)("span", {
 							className: "e-gate-badge e-gate-badge--paid",
 							title: "paid entry",
 							children: ["$", (r.entry_fee_cents / 100).toFixed(2)]
-						}), /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(AcceptsTag, { move: "entry" })] }),
-						/* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(Text, {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(AcceptsTag, { move: "entry" })] }),
+						/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(Text, {
 							className: "e-dim e-status-txt",
 							children: r.room_type
 						})
 					]
 				})] }),
-				/* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)(Text, {
 					className: "e-dim",
 					children: [
 						r.gate_type,
@@ -20238,8 +20307,8 @@
 						" members"
 					]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(HostLine, { host: r.host }),
-				r.linked_session_id && /* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)("button", {
+				/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(HostLine, { host: r.host }),
+				r.linked_session_id && /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)("button", {
 					type: "button",
 					className: "e-room-session-link",
 					title: `Linked session: ${r.linked_session_id}`,
@@ -20250,16 +20319,16 @@
 					children: ["⊙ session …", r.linked_session_id.slice(-8)]
 				})
 			]
-		}, r.room_id)), /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(OnOtherRelays, {
+		}, r.room_id)), /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(OnOtherRelays, {
 			what: "rooms",
 			rows: elsewhereRows,
 			loading: elsewhereLoading,
 			error: elsewhereError
 		})] });
 		const roomId = selected && !selected.listing_only ? selected.room_id : "";
-		const [opened, setOpened] = (0, import_react$11.useState)({});
+		const [opened, setOpened] = (0, import_react$13.useState)({});
 		const sealedKey = messages.filter((m) => looksLikeEncryptedEnvelope(m.content)).map((m) => m.message_id).join(",");
-		(0, import_react$11.useEffect)(() => {
+		(0, import_react$13.useEffect)(() => {
 			if (!VIA_CONSOLE || !VIEWER_ID || !roomId || !sealedKey) return;
 			let cancelled = false;
 			httpFetch(consoleUrl(`/room/${encodeURIComponent(VIEWER_ID)}/open`), {
@@ -20286,36 +20355,36 @@
 			replayed: m.replayed,
 			removed: m.deleted_at ? m.removed ?? null : void 0
 		}));
-		return /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(ViewBody, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(ViewBody, {
 			flush: true,
-			toolbar: selected ? /* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)("div", {
+			toolbar: selected ? /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)("div", {
 				style: {
 					display: "flex",
 					gap: 10,
 					alignItems: "center"
 				},
 				children: [
-					wsConnected && /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(LiveMark, { live: true }),
-					/* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(HostLine, { host: selected.host }),
-					/* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(AdvertisedBadge, { advertised: selected.advertised }),
-					!selected.listing_only && /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(RoomChainBadge, { roomId: selected.room_id }, selected.room_id)
+					wsConnected && /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(LiveMark, { live: true }),
+					/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(HostLine, { host: selected.host }),
+					/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(AdvertisedBadge, { advertised: selected.advertised }),
+					!selected.listing_only && /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(RoomChainBadge, { roomId: selected.room_id }, selected.room_id)
 				]
 			}) : void 0,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(SidebarLayout, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(SidebarLayout, {
 				sidebar: roomSidebar,
 				defaultSidebarWidth: 26,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)("div", {
 					className: "e-split-main",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(ViewStatus, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(ViewStatus, {
 						loading,
 						error
-					}), selected?.listing_only ? /* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)(Indent, { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(Text, { children: selected.name }),
-						/* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(Text, {
+					}), selected?.listing_only ? /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)(Indent, { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(Text, { children: selected.name }),
+						/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(Text, {
 							className: "e-dim",
 							children: selected.description
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)(Text, {
 							className: "e-faint",
 							children: [
 								"Paid room · ",
@@ -20328,7 +20397,7 @@
 								selected.encrypted ? " · encrypted" : ""
 							]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)(Text, {
 							className: "e-faint",
 							children: [
 								selected.advertised ? "Its creator advertised it to other relays. " : "",
@@ -20337,11 +20406,11 @@
 								"; its members and messages are for those who have joined."
 							]
 						})
-					] }) : selected ? /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(ReadOnlyChat, {
+					] }) : selected ? /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(ReadOnlyChat, {
 						messages: chatLines,
 						viewerId: VIEWER_ID ?? "",
 						endRef,
-						footer: /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)(Text, {
+						footer: /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(Text, {
 							className: "e-faint",
 							children: "Discover · agent room traffic (read-only)"
 						})
@@ -20350,7 +20419,7 @@
 			})
 		});
 	}
-	var import_react$11, import_jsx_runtime$21;
+	var import_react$13, import_jsx_runtime$23;
 	var init_RoomsView = __esmMin((() => {
 		init_FlatRailItem();
 		init_PayTag();
@@ -20365,7 +20434,7 @@
 		init_layout();
 		init_navigation();
 		init_api();
-		import_react$11 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$13 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
 		init_SidebarLayout();
 		init_RowSpaceBetween();
@@ -20373,7 +20442,7 @@
 		init_hooks();
 		init_keyLog();
 		init_integrityCheck();
-		import_jsx_runtime$21 = require_jsx_runtime();
+		import_jsx_runtime$23 = require_jsx_runtime();
 	}));
 	// src/eventFormat.ts
 	/**
@@ -20396,15 +20465,15 @@
 	var init_eventFormat = __esmMin((() => {}));
 	// src/views/EventsView.tsx
 	function statusDot$1(status) {
-		if (status === "active" || status === "open") return /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)("span", {
+		if (status === "active" || status === "open") return /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)("span", {
 			style: { color: "var(--theme-focused-foreground)" },
 			children: "●"
 		});
-		if (status === "completed" || status === "closed") return /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)("span", {
+		if (status === "completed" || status === "closed") return /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)("span", {
 			className: "e-faint",
 			children: "○"
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)("span", {
 			className: "e-dim",
 			children: "◌"
 		});
@@ -20412,7 +20481,7 @@
 	function EntryCount({ ev }) {
 		const fee = parseFloat(ev.entry_fee_usd ?? "0");
 		const count = eventParticipantCount(ev);
-		return /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("div", {
 			style: {
 				display: "flex",
 				gap: 6,
@@ -20420,14 +20489,14 @@
 				flexWrap: "wrap",
 				marginTop: 2
 			},
-			children: [count > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("span", {
+			children: [count > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("span", {
 				className: "e-gate-badge e-gate-badge--invite",
 				children: [count, " entered"]
-			}) : /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+			}) : /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 				className: "e-faint",
 				style: { fontSize: 11 },
 				children: "0 entered"
-			}), fee > 0 && /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("span", {
+			}), fee > 0 && /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("span", {
 				className: "e-gate-badge e-gate-badge--paid",
 				children: [
 					"$",
@@ -20441,25 +20510,25 @@
 		const module = ev.module_type.replace("emporia:", "").replace(":v1", "");
 		const count = eventParticipantCount(ev);
 		const fee = parseFloat(ev.entry_fee_usd ?? "0");
-		return /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("div", {
 			className: "e-split-main e-agora-detail",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("div", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("div", {
 				className: "e-toolbar-h",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 					className: "e-dim",
 					children: module
-				}), /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(ActionButton, {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(ActionButton, {
 					onClick: onBack,
 					children: "← events"
 				})]
-			}), /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("div", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("div", {
 				className: "e-agora-detail__scroll",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 						className: "e-agora-detail__title",
 						children: ev.title
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(Text, {
 						className: "e-dim e-agora-detail__meta",
 						children: [
 							statusDot$1(ev.status),
@@ -20469,44 +20538,44 @@
 							new Date(ev.created_at).toLocaleDateString()
 						]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)("br", {}),
-					/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Divider, {}),
-					/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)("br", {}),
-					/* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)("br", {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Divider, {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)("br", {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("div", {
 						style: {
 							display: "flex",
 							flexDirection: "column",
 							gap: 10
 						},
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+							/* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 								className: "e-dim",
 								children: "Organizer"
-							}), /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, { children: ev.organizer_id })] }),
-							/* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, { children: ev.organizer_id })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 								className: "e-dim",
 								children: "Module"
-							}), /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, { children: module })] }),
-							/* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, { children: module })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 								className: "e-dim",
 								children: "Entry fee"
-							}), /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, { children: fee > 0 ? `$${fee.toFixed(2)}` : "free" })] }),
-							/* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, { children: fee > 0 ? `$${fee.toFixed(2)}` : "free" })] }),
+							/* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 								className: "e-dim",
 								children: "Participants"
-							}), /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("div", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("div", {
 								style: {
 									display: "flex",
 									alignItems: "center",
 									gap: 8
 								},
-								children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+								children: [/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 									style: {
 										fontVariantNumeric: "tabular-nums",
 										fontWeight: 600
 									},
 									children: count
-								}), count > 0 && fee > 0 && /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)(Text, {
+								}), count > 0 && fee > 0 && /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(Text, {
 									className: "e-dim",
 									style: { fontSize: 11 },
 									children: [
@@ -20518,7 +20587,7 @@
 							})] })
 						]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 						className: "e-faint e-agora-readonly-hint",
 						children: "Read-only · agents join via relay"
 					})
@@ -20528,11 +20597,11 @@
 	}
 	function EventsView({ refreshTrigger, initialEventId = null }) {
 		const [data, loading, error] = useInterval(() => api.events(), 1e4, [refreshTrigger]);
-		const [selected, setSelected] = (0, import_react$10.useState)(null);
-		const [deepLinkMiss, setDeepLinkMiss] = (0, import_react$10.useState)(null);
-		const deepLinkFetched = (0, import_react$10.useRef)(null);
-		const events = (0, import_react$10.useMemo)(() => data?.events ?? [], [data]);
-		const [seenSource, setSeenSource] = (0, import_react$10.useState)({
+		const [selected, setSelected] = (0, import_react$12.useState)(null);
+		const [deepLinkMiss, setDeepLinkMiss] = (0, import_react$12.useState)(null);
+		const deepLinkFetched = (0, import_react$12.useRef)(null);
+		const events = (0, import_react$12.useMemo)(() => data?.events ?? [], [data]);
+		const [seenSource, setSeenSource] = (0, import_react$12.useState)({
 			events,
 			initialEventId
 		});
@@ -20548,7 +20617,7 @@
 			}
 			if (!initialEventId && events.length > 0) setSelected((cur) => cur ?? events[0]);
 		}
-		(0, import_react$10.useEffect)(() => {
+		(0, import_react$12.useEffect)(() => {
 			if (!initialEventId) return;
 			if (events.some((e) => e.event_id === initialEventId)) return;
 			if (loading) return;
@@ -20570,21 +20639,21 @@
 			loading
 		]);
 		const truncated = data?.has_more === true;
-		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("div", { children: [events.length === 0 && !loading && /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("div", { children: [events.length === 0 && !loading && /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 			className: "e-faint",
 			children: "No events."
-		}) }), events.map((ev) => /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)(FlatRailItem, {
+		}) }), events.map((ev) => /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(FlatRailItem, {
 			selected: selected?.event_id === ev.event_id,
 			onClick: () => setSelected(ev),
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 				style: { fontSize: 13 },
 				children: ev.title
-			}), statusDot$1(ev.status)] }), /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(EntryCount, { ev })]
+			}), statusDot$1(ev.status)] }), /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(EntryCount, { ev })]
 		}, ev.event_id))] });
-		const main = selected ? /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(EventDetail, {
+		const main = selected ? /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(EventDetail, {
 			ev: selected,
 			onBack: () => setSelected(null)
-		}) : /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)(Indent, { children: [deepLinkMiss ? /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)(Text, {
+		}) : /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(Indent, { children: [deepLinkMiss ? /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)(Text, {
 			className: "e-faint",
 			style: {
 				padding: "16px 0",
@@ -20595,27 +20664,27 @@
 				deepLinkMiss.slice(-8),
 				" could not be opened — it may have been removed."
 			]
-		}) : null, events.length === 0 && !loading && !error ? /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(EmptyPane, {
+		}) : null, events.length === 0 && !loading && !error ? /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(EmptyPane, {
 			title: "No scheduled events",
 			hint: EMPTY_SEED_HINT,
 			facts: [["Type", "tournaments & brackets on relay"]]
-		}) : /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+		}) : /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 			className: "e-faint",
 			style: { padding: "16px 0" },
 			children: "Select an event to view details."
 		})] });
-		return /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(ViewBody, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(ViewBody, {
 			flush: true,
-			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
+			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 				className: "e-dim",
 				children: truncated ? `showing ${events.length}+ events` : `${events.length} events`
 			}),
-			children: /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(SidebarLayout, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(SidebarLayout, {
 				sidebar,
 				defaultSidebarWidth: 28,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$22.jsxs)("div", {
 					className: "e-split-main e-agora-pane",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(ViewStatus, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(ViewStatus, {
 						loading,
 						error,
 						empty: events.length === 0
@@ -20624,7 +20693,7 @@
 			})
 		});
 	}
-	var import_react$10, import_jsx_runtime$20;
+	var import_react$12, import_jsx_runtime$22;
 	var init_EventsView = __esmMin((() => {
 		init_ActionButton();
 		init_Divider();
@@ -20632,7 +20701,7 @@
 		init_SidebarLayout();
 		init_Text();
 		init_RowSpaceBetween();
-		import_react$10 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$12 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_FlatRailItem();
 		init_hooks();
@@ -20641,7 +20710,7 @@
 		init_ViewStatus();
 		init_eventFormat();
 		init_cards();
-		import_jsx_runtime$20 = require_jsx_runtime();
+		import_jsx_runtime$22 = require_jsx_runtime();
 	}));
 	// src/ui/kit/Chessboard.module.css
 	var board, corner, cell, square, dark, light, symbol, Chessboard_module_default;
@@ -20662,12 +20731,12 @@
 			light,
 			symbol
 		};
-	})), import_jsx_runtime$19, FILE, RANK, getPieceSymbol, Chessboard;
+	})), import_jsx_runtime$21, FILE, RANK, getPieceSymbol, Chessboard;
 	var init_Chessboard = __esmMin((() => {
 		init_Chessboard_module();
 		require_react();
 		init_utilities();
-		import_jsx_runtime$19 = require_jsx_runtime();
+		import_jsx_runtime$21 = require_jsx_runtime();
 		FILE = [
 			"A",
 			"B",
@@ -20705,19 +20774,19 @@
 			}[piece] || "";
 		};
 		Chessboard = ({ board }) => {
-			return /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)("table", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)("table", {
 				className: Chessboard_module_default.board,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$19.jsxs)("tbody", { children: [/* @__PURE__ */ (0, import_jsx_runtime$19.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime$19.jsx)("td", { className: Chessboard_module_default.corner }), FILE.map((file) => /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)("td", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)("tbody", { children: [/* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime$21.jsx)("td", { className: Chessboard_module_default.corner }), FILE.map((file) => /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)("td", {
 					className: Chessboard_module_default.cell,
 					children: file
-				}, file))] }), RANK.map((rank, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime$19.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime$19.jsx)("td", {
+				}, file))] }), RANK.map((rank, rowIndex) => /* @__PURE__ */ (0, import_jsx_runtime$21.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime$21.jsx)("td", {
 					className: Chessboard_module_default.cell,
 					children: rank
 				}), FILE.map((_, colIndex) => {
 					const squareClass = (rowIndex + colIndex) % 2 === 0 ? Chessboard_module_default.dark : Chessboard_module_default.light;
-					return /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)("td", {
+					return /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)("td", {
 						className: classNames(Chessboard_module_default.square, squareClass),
-						children: /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)("span", {
+						children: /* @__PURE__ */ (0, import_jsx_runtime$21.jsx)("span", {
 							className: Chessboard_module_default.symbol,
 							children: getPieceSymbol(board[rowIndex][colIndex])
 						})
@@ -20742,7 +20811,7 @@
 	var init_fen = __esmMin((() => {
 		STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 	}));
-	// node_modules/chess.js/dist/esm/chess.js
+	// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 	function rootNode(comment) {
 		return comment !== null ? {
 			comment,
@@ -23905,35 +23974,35 @@
 	// src/ui/chessMatch.tsx
 	function ChessPlayersBar({ session }) {
 		const { white, black } = chessSides(session);
-		return /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("div", {
 			className: "e-chess-players",
 			"aria-label": "Players",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("div", {
 					className: "e-chess-players__side",
 					"aria-label": `White: ${white}`,
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("span", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)("span", {
 						className: "e-chess-players__piece",
 						"aria-hidden": true,
 						children: "♔"
-					}), /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("span", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)("span", {
 						className: "e-chess-players__name",
 						children: shortAgent(white, 22)
 					})]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)("span", {
 					className: "e-chess-players__vs",
 					"aria-hidden": true,
 					children: "vs"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("div", {
 					className: "e-chess-players__side",
 					"aria-label": `Black: ${black}`,
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("span", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)("span", {
 						className: "e-chess-players__piece e-chess-players__piece--dark",
 						"aria-hidden": true,
 						children: "♚"
-					}), /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("span", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)("span", {
 						className: "e-chess-players__name",
 						children: shortAgent(black, 22)
 					})]
@@ -23943,14 +24012,14 @@
 	}
 	function ChessMoveLine({ sans, idx, onPick }) {
 		if (sans.length === 0) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)("div", {
 			className: "e-chess-movelist",
 			role: "list",
 			children: sans.map((san, i) => {
 				const frame = i + 1;
 				const moveNo = Math.floor(i / 2) + 1;
 				const prefix = i % 2 === 0 ? `${moveNo}.` : "";
-				return /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("button", {
+				return /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("button", {
 					type: "button",
 					role: "listitem",
 					className: `e-chess-movelist__btn${frame === idx ? " e-chess-movelist__btn--on" : ""}`,
@@ -23961,10 +24030,10 @@
 			})
 		});
 	}
-	var import_jsx_runtime$18;
+	var import_jsx_runtime$20;
 	var init_chessMatch = __esmMin((() => {
 		init_chessReplay();
-		import_jsx_runtime$18 = require_jsx_runtime();
+		import_jsx_runtime$20 = require_jsx_runtime();
 	}));
 	// src/sessionSelect.ts
 	/**
@@ -24023,14 +24092,14 @@
 	*/
 	function AuditBadge({ sessionId }) {
 		const [audit, loading, error] = useInterval(() => api.sessionAudit(sessionId), 1e4, [sessionId]);
-		if (error && !audit) return /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(IntegrityUnknown, {
+		if (error && !audit) return /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(IntegrityUnknown, {
 			what: "audit log",
 			detail: error
 		});
-		if (loading && !audit) return /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(IntegrityChecking, { what: "audit log" });
+		if (loading && !audit) return /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(IntegrityChecking, { what: "audit log" });
 		if (!audit || audit.chain.length <= 1) return null;
 		const entries = audit.chain.length - 1;
-		return /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(Text, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(Text, {
 			className: audit.verified ? void 0 : "e-faint",
 			style: {
 				fontSize: 11,
@@ -24040,13 +24109,13 @@
 			children: audit.verified ? `relay: chain ok (${entries})` : "✗ chain broken"
 		});
 	}
-	var import_jsx_runtime$17;
+	var import_jsx_runtime$19;
 	var init_AuditBadge = __esmMin((() => {
 		init_Text();
 		init_hooks();
 		init_IntegrityState();
 		init_api();
-		import_jsx_runtime$17 = require_jsx_runtime();
+		import_jsx_runtime$19 = require_jsx_runtime();
 	}));
 	// src/resultsFormat.ts
 	/** P134: how a finished game ended, in a few words. */
@@ -24069,43 +24138,43 @@
 	*/
 	function GameResults({ moduleType, onOpen }) {
 		const [data, , error] = useInterval(() => api.results(moduleType), 3e4, [moduleType]);
-		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Text, {
+		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			title: error,
 			children: "? results unavailable — the relay did not answer. This is not an empty list."
 		});
-		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Text, {
+		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			children: "… loading results"
 		});
-		if (data.results.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Text, {
+		if (data.results.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			children: "No finished games on this relay yet."
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("div", {
 			style: { marginTop: 10 },
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Text, {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Text, {
 				className: "e-dim",
 				style: { fontSize: "0.68rem" },
 				children: "Results — this relay only"
-			}), /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("div", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("div", {
 				className: "e-compact-table",
 				style: {
 					overflowX: "auto",
 					marginTop: 6
 				},
-				children: /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("table", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("table", {
 					className: "e-listings-native",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: "ENDED" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: "GAME" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: "PLAYERS" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: "RESULT" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: "STAKE" })
-					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("tbody", { children: data.results.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(ResultRow, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("tr", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", { children: "ENDED" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", { children: "GAME" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", { children: "PLAYERS" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", { children: "RESULT" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", { children: "STAKE" })
+					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("tbody", { children: data.results.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(ResultRow, {
 						r,
 						onOpen
 					}, r.session_id)) })]
@@ -24115,9 +24184,9 @@
 	}
 	function ResultRow({ r, onOpen }) {
 		const stake = r.stake_per_participant && Number(r.stake_per_participant) > 0 ? `${r.stake_per_participant} ${(r.currency ?? "").toUpperCase()}` : "free";
-		return /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)(import_jsx_runtime$16.Fragment, { children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("tr", { children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Text, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)(import_jsx_runtime$18.Fragment, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("tr", { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Text, {
 					className: "e-faint",
 					style: { fontSize: 11 },
 					children: new Date(r.ended_at).toLocaleString([], {
@@ -24127,34 +24196,34 @@
 						minute: "2-digit"
 					})
 				}) }),
-				/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: onOpen ? /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("button", {
+				/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", { children: onOpen ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("button", {
 					type: "button",
 					className: "e-entity-chip",
 					title: `Open ${r.session_id}: moves, replay, table talk`,
 					onClick: () => onOpen(r.session_id),
 					children: r.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Text, {
+				}) : /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Text, {
 					className: "e-dim",
 					children: r.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
 				}) }),
-				/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Text, { children: r.participants.map((p) => shortAgent(p, 12)).join(" v ") }) }),
-				/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Text, { children: verdict(r) }) }),
-				/* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("td", { children: [/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Text, { children: r.participants.map((p) => shortAgent(p, 12)).join(" v ") }) }),
+				/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Text, { children: verdict(r) }) }),
+				/* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("td", { children: [/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Text, {
 					className: "e-dim",
 					children: stake
-				}), r.paid_by && r.paid_by.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)(import_jsx_runtime$16.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("br", {}), /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(PaidByTag, { rails: r.paid_by })] }) : null] })
+				}), r.paid_by && r.paid_by.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)(import_jsx_runtime$18.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("br", {}), /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(PaidByTag, { rails: r.paid_by })] }) : null] })
 			] }),
-			r.module_type === "emporia:blotto:v1" ? /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(BlottoRounds, { r }) : null,
-			r.module_type === "emporia:two-thirds:v1" || r.module_type === "emporia:lowest-unique:v1" ? /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(TwoThirdsPicks, { r }) : null
+			r.module_type === "emporia:blotto:v1" ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(BlottoRounds, { r }) : null,
+			r.module_type === "emporia:two-thirds:v1" || r.module_type === "emporia:lowest-unique:v1" ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(TwoThirdsPicks, { r }) : null
 		] });
 	}
 	function TwoThirdsPicks({ r }) {
 		const picks = Object.entries(r.record.guesses ?? {});
 		if (picks.length === 0) return null;
 		const target = r.module_type === "emporia:two-thirds:v1" ? `target ${(2 / 3 * (picks.reduce((n, [, g]) => n + g, 0) / picks.length)).toFixed(1)}` : "lowest picked once wins";
-		return /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", {}), /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", {}), /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", {
 			colSpan: 4,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)(Text, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)(Text, {
 				className: "e-faint",
 				style: {
 					fontSize: 11,
@@ -24172,9 +24241,9 @@
 	function BlottoRounds({ r }) {
 		const history = r.record.history ?? [];
 		if (history.length === 0) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", {}), /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("td", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", {}), /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", {
 			colSpan: 4,
-			children: history.map((h) => /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)(Text, {
+			children: history.map((h) => /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)(Text, {
 				className: "e-faint",
 				style: {
 					fontSize: 11,
@@ -24191,7 +24260,7 @@
 			}, h.round))
 		})] });
 	}
-	var import_jsx_runtime$16;
+	var import_jsx_runtime$18;
 	var init_GameResults = __esmMin((() => {
 		init_Text();
 		init_PayTag();
@@ -24199,7 +24268,7 @@
 		init_api();
 		init_chessReplay();
 		init_resultsFormat();
-		import_jsx_runtime$16 = require_jsx_runtime();
+		import_jsx_runtime$18 = require_jsx_runtime();
 	}));
 	// src/sealedSession.ts
 	/** P149: the sealed fields of a private session's payloads, one item each. */
@@ -24241,8 +24310,8 @@
 	*/
 	function GameChat({ sessionId, live }) {
 		const [data, , error] = useInterval(() => api.gameChat(sessionId), live ? 1e4 : 6e5, [sessionId]);
-		const [opened, setOpened] = (0, import_react$8.useState)({});
-		(0, import_react$8.useEffect)(() => {
+		const [opened, setOpened] = (0, import_react$10.useState)({});
+		(0, import_react$10.useEffect)(() => {
 			const items = (data?.messages ?? []).filter((m) => looksLikeEncryptedEnvelope(m.content)).map((m) => ({
 				id: m.message_id,
 				field: "chat",
@@ -24250,33 +24319,33 @@
 			}));
 			if (items.length) openSealed(sessionId, items).then(setOpened).catch(() => setOpened({}));
 		}, [data, sessionId]);
-		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
+		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			title: error,
 			children: "? table talk unavailable"
 		});
 		if (!data || !data.chat_enabled) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$17.jsxs)("div", {
 			style: { marginTop: 12 },
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(Text, {
 				className: "e-dim",
 				style: { fontSize: "0.68rem" },
 				children: "Table talk"
-			}), data.messages.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
+			}), data.messages.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(Text, {
 				className: "e-faint",
 				style: {
 					fontSize: 12,
 					display: "block"
 				},
 				children: "Nobody has spoken."
-			}) : data.messages.map((m) => /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
+			}) : data.messages.map((m) => /* @__PURE__ */ (0, import_jsx_runtime$17.jsxs)(Text, {
 				style: {
 					fontSize: 12,
 					display: "block"
 				},
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+					/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)("span", {
 						className: "e-faint",
 						children: new Date(m.created_at).toLocaleTimeString([], {
 							hour: "2-digit",
@@ -24284,7 +24353,7 @@
 						})
 					}),
 					" ",
-					/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("span", {
+					/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)("span", {
 						className: "e-dim",
 						children: shortAgent(m.agent_id, 12)
 					}),
@@ -24294,15 +24363,15 @@
 			}, m.message_id))]
 		});
 	}
-	var import_react$8, import_jsx_runtime$15;
+	var import_react$10, import_jsx_runtime$17;
 	var init_GameChat = __esmMin((() => {
 		init_Text();
 		init_hooks();
 		init_api();
 		init_chessReplay();
-		import_react$8 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$10 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_sealedSession();
-		import_jsx_runtime$15 = require_jsx_runtime();
+		import_jsx_runtime$17 = require_jsx_runtime();
 	}));
 	// src/ui/VerifyBadge.tsx
 	async function fetchReport(sessionId) {
@@ -24319,7 +24388,7 @@
 	function VerifyBadge({ sessionId, live }) {
 		const [report, , error] = useInterval(() => fetchReport(sessionId), live ? 3e4 : 6e5, [sessionId]);
 		if (!VIA_CONSOLE) return null;
-		if (error && !report) return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Text, {
+		if (error && !report) return /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 11 },
 			title: error,
@@ -24328,7 +24397,7 @@
 		if (!report) return null;
 		const problems = report.findings.filter((f) => f.status === "fail").map((f) => f.detail);
 		const title = report.verdict === "ok" ? `Checked on this machine: ${report.findings.length - report.unchecked} checks passed` + (report.unchecked ? `, ${report.unchecked} could not be checked` : "") : `Problems found:\n${problems.join("\n")}\n\nRun verify_session for an evidence file.`;
-		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(Text, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Text, {
 			style: {
 				fontSize: 11,
 				color: report.verdict === "ok" ? "var(--theme-focused-foreground)" : void 0
@@ -24338,13 +24407,13 @@
 			children: report.verdict === "ok" ? "✓ verified here" : `✗ ${report.failures} problem${report.failures === 1 ? "" : "s"}`
 		});
 	}
-	var import_jsx_runtime$14;
+	var import_jsx_runtime$16;
 	var init_VerifyBadge = __esmMin((() => {
 		init_Text();
 		init_hooks();
 		init_transport();
 		init_relayEnv();
-		import_jsx_runtime$14 = require_jsx_runtime();
+		import_jsx_runtime$16 = require_jsx_runtime();
 	}));
 	// src/ui/SessionMoney.tsx
 	/**
@@ -24358,7 +24427,7 @@
 		if (!stake) return null;
 		const purchase = session.module_type === "emporia:service:v1";
 		const paid = full?.paid_by ?? [];
-		return /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(Text, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
 			className: "e-dim",
 			style: { fontSize: 11 },
 			children: [
@@ -24369,20 +24438,20 @@
 				(rules?.currency ?? "").toUpperCase(),
 				" ·",
 				" ",
-				paid.length ? /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(PaidByTag, { rails: paid }) : /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(AcceptsTag, {
+				paid.length ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(PaidByTag, { rails: paid }) : /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(AcceptsTag, {
 					move: purchase ? "purchase" : "wager",
 					moduleType: session.module_type
 				})
 			]
 		});
 	}
-	var import_jsx_runtime$13;
+	var import_jsx_runtime$15;
 	var init_SessionMoney = __esmMin((() => {
 		init_Text();
 		init_hooks();
 		init_api();
 		init_PayTag();
-		import_jsx_runtime$13 = require_jsx_runtime();
+		import_jsx_runtime$15 = require_jsx_runtime();
 	}));
 	// src/ui/DmChainBadge.tsx
 	/**
@@ -24399,16 +24468,16 @@
 	*/
 	function DmChainBadge({ threadId, viewerId }) {
 		const [result, loading, error] = useInterval(() => verifyDmChainFromRelay(RELAY$1, threadId, api.dmChain, (tid, opts) => api.dmMessagesPage(tid, viewerId, opts)), 6e4, [threadId, viewerId]);
-		if (error && !result) return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(IntegrityUnknown, {
+		if (error && !result) return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(IntegrityUnknown, {
 			what: "chain",
 			detail: error
 		});
-		if (loading && !result) return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(IntegrityChecking, { what: "chain" });
+		if (loading && !result) return /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(IntegrityChecking, { what: "chain" });
 		if (!result) return null;
 		if (result.message_count === 0 && result.unchained_prefix === 0) return null;
 		const scopeNote = result.chain_verified_scope === "genesis" ? "verified from the thread's first message this call" : result.chain_verified_scope === "chained_start" ? `verified back to the start of the chain; ${result.unchained_prefix} earlier message(s) predate it and are not covered` : result.chain_verified_scope === "pinned_checkpoint" ? "verified back to a previously-pinned checkpoint (earlier history was verified when that checkpoint was first pinned)" : null;
 		const replayNote = result.replayed_nonce_count > 0 ? ` — ${result.replayed_nonce_count} duplicate nonce(s) found (scan scope: ${result.replay_scan_scope})` : "";
-		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(Text, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsxs)(Text, {
 			className: result.verified ? void 0 : "e-faint",
 			style: {
 				fontSize: 11,
@@ -24422,7 +24491,7 @@
 			]
 		});
 	}
-	var import_jsx_runtime$12;
+	var import_jsx_runtime$14;
 	var init_DmChainBadge = __esmMin((() => {
 		init_Text();
 		init_hooks();
@@ -24430,7 +24499,7 @@
 		init_api();
 		init_relayEnv();
 		init_integrityCheck();
-		import_jsx_runtime$12 = require_jsx_runtime();
+		import_jsx_runtime$14 = require_jsx_runtime();
 	}));
 	// src/messagesModel.ts
 	function splitInbox(events) {
@@ -24476,35 +24545,35 @@
 		return Object.fromEntries(Object.entries(d.opened ?? {}).filter((e) => typeof e[1] === "string"));
 	}
 	function ActivityPane({ navigate, events, loading, error }) {
-		const [showAll, setShowAll] = (0, import_react$7.useState)(false);
+		const [showAll, setShowAll] = (0, import_react$9.useState)(false);
 		const shown = showAll ? events : events.filter((e) => !e.is_read);
 		const unread = events.filter((e) => !e.is_read).map((e) => e.inbox_id);
-		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)("div", {
 			className: "e-messages-pane",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)("div", {
 					className: "e-messages-pane__toolbar",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 						className: "e-dim",
 						children: unread.length > 0 ? `${unread.length} unread` : "no unread"
-					}), /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("div", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("div", {
 						style: {
 							display: "flex",
 							gap: 6
 						},
-						children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ActionButton, {
+						children: /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(ActionButton, {
 							onClick: () => setShowAll((v) => !v),
 							children: showAll ? "unread only" : "show all"
 						})
 					})]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ViewStatus, {
+				/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(ViewStatus, {
 					loading,
 					error
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("div", {
 					className: "e-inbox-list",
-					children: shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+					children: shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 						className: "e-faint",
 						children: showAll ? "No activity yet." : "Nothing new."
 					}) }) : shown.map((ev) => {
@@ -24517,8 +24586,8 @@
 							const from = p.from_agent ?? "unknown";
 							const sid = p.session_id ?? null;
 							title = "challenge";
-							detail = /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(import_jsx_runtime$11.Fragment, { children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(AgentLink, {
+							detail = /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(import_jsx_runtime$13.Fragment, { children: [
+								/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(AgentLink, {
 									agent_id: from,
 									navigate
 								}),
@@ -24534,9 +24603,9 @@
 							const gate = p.gate_type ?? "invite";
 							const fee = p.entry_fee_cents ?? 0;
 							title = `invited to ${name}`;
-							detail = /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(import_jsx_runtime$11.Fragment, { children: [
+							detail = /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(import_jsx_runtime$13.Fragment, { children: [
 								"by ",
-								/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(AgentLink, {
+								/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(AgentLink, {
 									agent_id: by,
 									navigate
 								}),
@@ -24551,7 +24620,7 @@
 							const by = p.invited_by ?? "creator";
 							const rid = p.room_id ?? null;
 							title = `invited to ${name}`;
-							detail = /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(import_jsx_runtime$11.Fragment, { children: ["by ", /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(AgentLink, {
+							detail = /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(import_jsx_runtime$13.Fragment, { children: ["by ", /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(AgentLink, {
 								agent_id: by,
 								navigate
 							})] });
@@ -24567,26 +24636,26 @@
 								navigate("sessions", { sessionId: sid });
 							};
 						} else detail = Object.keys(p).slice(0, 2).map((k) => `${k}: ${String(p[k]).slice(0, 24)}`).join(" · ") || null;
-						return /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
+						return /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)("div", {
 							className: `e-inbox-event${ev.is_read ? " e-inbox-event--read" : ""}`,
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("div", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("div", {
 								className: "e-inbox-event__icon",
 								children: EVENT_ICONS[ev.event_type] ?? "◌"
-							}), /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)("div", {
 								className: "e-inbox-event__body",
 								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+									/* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 										style: {
 											fontWeight: ev.is_read ? 400 : 600,
 											fontSize: 13
 										},
 										children: title
-									}), /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+									}), /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 										className: "e-faint",
 										style: { fontSize: 10 },
 										children: new Date(ev.created_at).toLocaleString()
 									})] }),
-									detail && /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+									detail && /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 										className: "e-dim",
 										style: {
 											fontSize: 12,
@@ -24594,13 +24663,13 @@
 										},
 										children: detail
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("div", {
+									/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("div", {
 										style: {
 											display: "flex",
 											gap: 6,
 											marginTop: 4
 										},
-										children: action && /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ActionButton, {
+										children: action && /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(ActionButton, {
 											onClick: action,
 											children: actionLabel
 										})
@@ -24614,12 +24683,12 @@
 		});
 	}
 	function ThreadPane({ thread, viewer, liveEvent, liveConnected }) {
-		const [messages, setMessages] = (0, import_react$7.useState)([]);
-		const [opened, setOpened] = (0, import_react$7.useState)({});
-		const [readerError, setReaderError] = (0, import_react$7.useState)(null);
-		const [pubkeys, setPubkeys] = (0, import_react$7.useState)({});
-		const bottomRef = (0, import_react$7.useRef)(null);
-		const loadMsgs = (0, import_react$7.useCallback)(() => {
+		const [messages, setMessages] = (0, import_react$9.useState)([]);
+		const [opened, setOpened] = (0, import_react$9.useState)({});
+		const [readerError, setReaderError] = (0, import_react$9.useState)(null);
+		const [pubkeys, setPubkeys] = (0, import_react$9.useState)({});
+		const bottomRef = (0, import_react$9.useRef)(null);
+		const loadMsgs = (0, import_react$9.useCallback)(() => {
 			api.dmMessages(thread.thread_id, viewer).then((r) => {
 				const msgs = r.messages;
 				setMessages(msgs);
@@ -24629,12 +24698,12 @@
 				}).catch((e) => setReaderError(String(e)));
 			}).catch(() => {});
 		}, [thread.thread_id, viewer]);
-		(0, import_react$7.useEffect)(() => {
+		(0, import_react$9.useEffect)(() => {
 			loadMsgs();
 			const iv = setInterval(loadMsgs, 3e4);
 			return () => clearInterval(iv);
 		}, [loadMsgs]);
-		(0, import_react$7.useEffect)(() => {
+		(0, import_react$9.useEffect)(() => {
 			if (liveEvent?.type === "dm_received" && liveEvent.thread_id === thread.thread_id) loadMsgs();
 		}, [
 			liveEvent,
@@ -24642,7 +24711,7 @@
 			loadMsgs
 		]);
 		const senders = [...new Set(messages.map((m) => m.sender_id))].sort().join("|");
-		(0, import_react$7.useEffect)(() => {
+		(0, import_react$9.useEffect)(() => {
 			const lifetime = new AbortController();
 			const ids = [.../* @__PURE__ */ new Set([
 				viewer,
@@ -24667,11 +24736,11 @@
 			replayed: m.replayed,
 			removed: m.deleted_at ? m.removed ?? null : void 0
 		}));
-		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ReadOnlyChat, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(ReadOnlyChat, {
 			messages: chatLines,
 			viewerId: viewer,
 			endRef: bottomRef,
-			footer: /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(Text, {
+			footer: /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(Text, {
 				className: "e-faint",
 				title: readerError ?? void 0,
 				children: [
@@ -24679,7 +24748,7 @@
 					thread.encrypted ? VIA_CONSOLE ? readerError ? "could not open here · " : "🔓 opened on this machine · " : "open via your local console to read · " : "",
 					liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"
 				]
-			}), /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(DmChainBadge, {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(DmChainBadge, {
 				threadId: thread.thread_id,
 				viewerId: viewer
 			}, thread.thread_id)] })
@@ -24687,24 +24756,24 @@
 	}
 	function MessagesView({ navigate, initialTab, liveEvent = null, liveConnected = false }) {
 		const viewer = VIEWER_ID;
-		const [events, setEvents] = (0, import_react$7.useState)([]);
-		const [threads, setThreads] = (0, import_react$7.useState)([]);
-		const [selected, setSelected] = (0, import_react$7.useState)(initialTab === "inbox" ? ACTIVITY : null);
-		const [loading, setLoading] = (0, import_react$7.useState)(true);
-		const [error, setError] = (0, import_react$7.useState)(null);
-		const [box, setBox] = (0, import_react$7.useState)("inbox");
-		const loadInbox = (0, import_react$7.useCallback)(() => {
+		const [events, setEvents] = (0, import_react$9.useState)([]);
+		const [threads, setThreads] = (0, import_react$9.useState)([]);
+		const [selected, setSelected] = (0, import_react$9.useState)(initialTab === "inbox" ? ACTIVITY : null);
+		const [loading, setLoading] = (0, import_react$9.useState)(true);
+		const [error, setError] = (0, import_react$9.useState)(null);
+		const [box, setBox] = (0, import_react$9.useState)("inbox");
+		const loadInbox = (0, import_react$9.useCallback)(() => {
 			if (!viewer) return;
 			api.agentInbox(viewer, false, 200).then((d) => {
 				setEvents(d.events);
 				setError(null);
 			}).catch((e) => setError(String(e))).finally(() => setLoading(false));
 		}, [viewer]);
-		const loadThreads = (0, import_react$7.useCallback)(() => {
+		const loadThreads = (0, import_react$9.useCallback)(() => {
 			if (!viewer) return;
 			api.dmThreads(viewer).then((d) => setThreads(Array.isArray(d) ? d : [])).catch((e) => setError(String(e)));
 		}, [viewer]);
-		(0, import_react$7.useEffect)(() => {
+		(0, import_react$9.useEffect)(() => {
 			loadInbox();
 			loadThreads();
 			const a = setInterval(loadInbox, 5e3);
@@ -24714,7 +24783,7 @@
 				clearInterval(b);
 			};
 		}, [loadInbox, loadThreads]);
-		(0, import_react$7.useEffect)(() => {
+		(0, import_react$9.useEffect)(() => {
 			if (liveEvent?.type === "dm_received") {
 				loadThreads();
 				loadInbox();
@@ -24726,11 +24795,11 @@
 		]);
 		const { activity, unreadByThread } = splitInbox(events);
 		if (selected === null && (threads.length > 0 || !loading)) setSelected(threads[0]?.thread_id ?? ACTIVITY);
-		const [boxChosen, setBoxChosen] = (0, import_react$7.useState)(false);
+		const [boxChosen, setBoxChosen] = (0, import_react$9.useState)(false);
 		if (!boxChosen && box === "inbox" && threads.length > 0 && !threads.some((t) => inBox("inbox", t, viewer ?? "", unreadByThread[t.thread_id]?.length ?? 0))) setBox("all");
-		if (!viewer) return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ViewBody, {
+		if (!viewer) return /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(ViewBody, {
 			flush: true,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 				className: "e-faint",
 				style: { padding: "16px" },
 				children: "Spectator mode — set VITE_AGENT_ID in the dashboard env to view your messages."
@@ -24740,10 +24809,10 @@
 		const active = threads.find((t) => t.thread_id === selected) ?? null;
 		const listed = threads.filter((t) => inBox(box, t, viewer, unreadByThread[t.thread_id]?.length ?? 0));
 		const inboxUnread = threads.reduce((n, t) => n + (unreadByThread[t.thread_id]?.length ?? 0), 0);
-		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(import_jsx_runtime$11.Fragment, { children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("div", {
+		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(import_jsx_runtime$13.Fragment, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("div", {
 				className: "e-messages-boxes",
-				children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(SegmentTabs, {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(SegmentTabs, {
 					options: [
 						"inbox",
 						"sent",
@@ -24761,53 +24830,53 @@
 					}
 				})
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(FlatRailItem, {
+			/* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(FlatRailItem, {
 				selected: selected === ACTIVITY,
 				onClick: () => setSelected(ACTIVITY),
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 					style: {
 						fontSize: 13,
 						fontWeight: activityUnread ? 600 : 400
 					},
 					children: "◆ Activity"
-				}), activityUnread > 0 && /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+				}), activityUnread > 0 && /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 					className: "e-unread-count",
 					children: activityUnread
-				})] }), /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+				})] }), /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 					className: "e-dim",
 					style: { fontSize: 11 },
 					children: "challenges · invites · sessions"
 				})]
 			}),
-			listed.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+			listed.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 				className: "e-faint",
 				children: threads.length === 0 ? "No conversations yet." : box === "sent" ? "Nothing sent last by you." : "Nothing waiting on you."
 			}) }),
 			listed.map((t) => {
 				const unread = unreadByThread[t.thread_id]?.length ?? 0;
-				return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(FlatRailItem, {
+				return /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(FlatRailItem, {
 					selected: selected === t.thread_id,
 					onClick: () => setSelected(t.thread_id),
-					children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)("div", {
 						className: "e-agent-row",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(AgentMoireAvatar, { agentId: t.other_agent }), /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(AgentMoireAvatar, { agentId: t.other_agent }), /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)("div", {
 							style: {
 								flex: 1,
 								minWidth: 0
 							},
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(Text, {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(Text, {
 								style: {
 									fontSize: 13,
 									fontWeight: unread ? 600 : 400
 								},
 								children: [t.encrypted ? "🔒 " : "", t.other_agent]
-							}), unread > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+							}), unread > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 								className: "e-unread-count",
 								children: unread
-							}) : /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(AgentLink, {
+							}) : /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(AgentLink, {
 								agent_id: t.other_agent,
 								navigate
-							})] }), /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+							})] }), /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 								className: "e-dim",
 								style: { fontSize: 11 },
 								children: dmThreadPreview(t)
@@ -24817,24 +24886,24 @@
 				}, t.thread_id);
 			})
 		] });
-		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ViewBody, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(ViewBody, {
 			flush: true,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(SidebarLayout, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(SidebarLayout, {
 				sidebar,
 				defaultSidebarWidth: 30,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)("div", {
 					className: "e-split-main",
-					children: [error ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(AlertBanner, { children: error }) : null, selected === ACTIVITY ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ActivityPane, {
+					children: [error ? /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(AlertBanner, { children: error }) : null, selected === ACTIVITY ? /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(ActivityPane, {
 						navigate,
 						events: activity,
 						loading,
 						error: null
-					}) : active ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ThreadPane, {
+					}) : active ? /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(ThreadPane, {
 						thread: active,
 						viewer,
 						liveEvent,
 						liveConnected
-					}, active.thread_id) : /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
+					}, active.thread_id) : /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(Text, {
 						className: "e-faint",
 						children: "Select a conversation."
 					}) })]
@@ -24842,7 +24911,7 @@
 			})
 		});
 	}
-	var import_react$7, import_jsx_runtime$11, EVENT_ICONS, ACTIVITY;
+	var import_react$9, import_jsx_runtime$13, EVENT_ICONS, ACTIVITY;
 	var init_MessagesView = __esmMin((() => {
 		init_ActionButton();
 		init_AlertBanner();
@@ -24850,7 +24919,7 @@
 		init_SidebarLayout();
 		init_Text();
 		init_RowSpaceBetween();
-		import_react$7 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$9 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_AgentMoireAvatar();
 		init_FlatRailItem();
@@ -24864,7 +24933,7 @@
 		init_messagesModel();
 		init_transport();
 		init_keyLog();
-		import_jsx_runtime$11 = require_jsx_runtime();
+		import_jsx_runtime$13 = require_jsx_runtime();
 		init_SegmentTabs();
 		EVENT_ICONS = {
 			challenge: "⚔",
@@ -24888,9 +24957,9 @@
 		const [threads] = useInterval(() => other ? api.dmThreads(viewer) : Promise.resolve([]), 3e4, [viewer, other]);
 		if (!viewer || !other) return null;
 		const thread = (threads ?? []).find((t) => t.other_agent === other);
-		return /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)("div", {
 			style: { marginTop: 12 },
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Text, {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(Text, {
 				className: "e-dim",
 				style: { fontSize: "0.68rem" },
 				children: [
@@ -24898,12 +24967,12 @@
 					shortAgent(other, 16),
 					" — direct messages"
 				]
-			}), thread ? /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(ThreadPane, {
+			}), thread ? /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(ThreadPane, {
 				thread,
 				viewer,
 				liveEvent: null,
 				liveConnected: false
-			}) : /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Text, {
+			}) : /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(Text, {
 				className: "e-faint",
 				style: {
 					fontSize: 12,
@@ -24917,35 +24986,35 @@
 			})]
 		});
 	}
-	var import_jsx_runtime$10;
+	var import_jsx_runtime$12;
 	var init_PurchaseConversation = __esmMin((() => {
 		init_Text();
 		init_hooks();
 		init_api();
 		init_MessagesView();
 		init_chessReplay();
-		import_jsx_runtime$10 = require_jsx_runtime();
+		import_jsx_runtime$12 = require_jsx_runtime();
 	}));
 	// src/views/GamesView.tsx
 	function ChessReplayPanel({ session }) {
-		const [fens, setFens] = import_react$6.useState([STARTING_FEN]);
-		const [sans, setSans] = import_react$6.useState([]);
-		const [idx, setIdx] = import_react$6.useState(0);
-		const [replaying, setReplaying] = import_react$6.useState(false);
-		const [speed, setSpeed] = import_react$6.useState(700);
-		const [wsLive, setWsLive] = import_react$6.useState(false);
-		const [playable, setPlayable] = import_react$6.useState(true);
-		const timerRef = (0, import_react$6.useRef)(null);
+		const [fens, setFens] = import_react$8.useState([STARTING_FEN]);
+		const [sans, setSans] = import_react$8.useState([]);
+		const [idx, setIdx] = import_react$8.useState(0);
+		const [replaying, setReplaying] = import_react$8.useState(false);
+		const [speed, setSpeed] = import_react$8.useState(700);
+		const [wsLive, setWsLive] = import_react$8.useState(false);
+		const [playable, setPlayable] = import_react$8.useState(true);
+		const timerRef = (0, import_react$8.useRef)(null);
 		const fallbackFen = session.state?.board_fen;
 		const startFen = session.state?.start_fen;
-		const applyReplay = import_react$6.useCallback((acts) => {
+		const applyReplay = import_react$8.useCallback((acts) => {
 			const built = buildChessReplay(acts, fallbackFen, startFen);
 			setFens(built.fens);
 			setSans(built.sans);
 			setPlayable(built.playable);
 			setIdx(Math.max(0, built.fens.length - 1));
 		}, [fallbackFen, startFen]);
-		(0, import_react$6.useEffect)(() => {
+		(0, import_react$8.useEffect)(() => {
 			let cancelled = false;
 			api.sessionActions(session.session_id).then((r) => {
 				if (cancelled) return;
@@ -24957,7 +25026,7 @@
 				cancelled = true;
 			};
 		}, [session.session_id, applyReplay]);
-		(0, import_react$6.useEffect)(() => {
+		(0, import_react$8.useEffect)(() => {
 			if (!sessionIsActive(session.status) || wsLive) return;
 			const id = setInterval(() => {
 				api.sessionActions(session.session_id).then((r) => applyReplay(r.actions)).catch(() => {});
@@ -24969,7 +25038,7 @@
 			wsLive,
 			applyReplay
 		]);
-		(0, import_react$6.useEffect)(() => {
+		(0, import_react$8.useEffect)(() => {
 			if (!sessionIsActive(session.status)) return;
 			let closed = false;
 			let retryMs = 1e3;
@@ -25039,16 +25108,16 @@
 			if (timerRef.current) clearInterval(timerRef.current);
 			setReplaying(false);
 		};
-		return /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("div", {
 			className: "e-chess-main",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
 				className: "e-chess-column",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
 						className: "e-chess-stage",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Chessboard, { board }, `${session.session_id}-${idx}-${fens[idx] ?? ""}`),
-							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ChessTransport, {
+							/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Chessboard, { board }, `${session.session_id}-${idx}-${fens[idx] ?? ""}`),
+							/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ChessTransport, {
 								onPrev: () => {
 									stopReplay();
 									setIdx(Math.max(0, idx - 1));
@@ -25063,46 +25132,46 @@
 									stopReplay();
 									setIdx(fens.length - 1);
 								},
-								status: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", {
+								status: /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("span", {
 									className: "e-chess-replay-status",
 									children: [
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ChessReplayStatus, {
+										/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ChessReplayStatus, {
 											live: wsLive,
 											idx,
 											total: fens.length
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+										/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("span", {
 											className: "e-chess-ctrl-move",
 											children: moveLabel
 										}),
-										session.created_at && /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", {
+										session.created_at && /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("span", {
 											className: "e-faint",
 											children: ["started ", whenText(session.created_at)]
 										}),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(AuditBadge, { sessionId: session.session_id }),
-										/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(VerifyBadge, {
+										/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(AuditBadge, { sessionId: session.session_id }),
+										/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(VerifyBadge, {
 											sessionId: session.session_id,
 											live: session.status === "active"
 										})
 									]
 								})
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ChessSpeedSlider, {
+							/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ChessSpeedSlider, {
 								speed,
 								onSpeed: setSpeed
 							}),
-							!playable ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+							!playable ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 								className: "e-faint e-chess-warn",
 								children: "No legal moves in log — pick another session."
 							}) : null
 						]
 					}),
-					sans.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+					sans.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
 						className: "e-chess-moves-block",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 							className: "e-dim e-chess-moves-label",
 							children: "moves · click to seek"
-						}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ChessMoveLine, {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ChessMoveLine, {
 							sans,
 							idx,
 							onPick: (frame) => {
@@ -25111,9 +25180,9 @@
 							}
 						})]
 					}) : null,
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ChessPlayersBar, { session }),
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(SessionMoney, { session }),
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(GameChat, {
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ChessPlayersBar, { session }),
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(SessionMoney, { session }),
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(GameChat, {
 						sessionId: session.session_id,
 						live: session.status === "active" || session.status === "waiting"
 					})
@@ -25147,17 +25216,17 @@
 		return null;
 	}
 	function NonChessSessionPanel({ session }) {
-		const [actions, setActions] = import_react$6.useState([]);
-		const [loading, setLoading] = import_react$6.useState(true);
-		const [loadedSessionId, setLoadedSessionId] = import_react$6.useState(session.session_id);
+		const [actions, setActions] = import_react$8.useState([]);
+		const [loading, setLoading] = import_react$8.useState(true);
+		const [loadedSessionId, setLoadedSessionId] = import_react$8.useState(session.session_id);
 		if (loadedSessionId !== session.session_id) {
 			setLoadedSessionId(session.session_id);
 			setLoading(true);
 		}
 		const moduleKind = session.module_type.replace("emporia:", "").replace(/:v\d$/, "");
 		const showDelivery = shouldShowDeliveryActions(session, VIEWER_ID);
-		const [opened, setOpened] = import_react$6.useState({});
-		(0, import_react$6.useEffect)(() => {
+		const [opened, setOpened] = import_react$8.useState({});
+		(0, import_react$8.useEffect)(() => {
 			api.sessionActions(session.session_id).then((r) => {
 				setActions(r.actions);
 				const items = sealedItems(r.actions.map((a) => ({
@@ -25167,30 +25236,30 @@
 				openSealed(session.session_id, items).then(setOpened).catch(() => setOpened({}));
 			}).catch(() => setActions([])).finally(() => setLoading(false));
 		}, [session.session_id]);
-		return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Indent, { children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", { children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Text, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(Indent, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("br", {}),
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(Text, {
 					style: {
 						fontSize: 12,
 						fontFamily: "var(--font-family-mono)"
 					},
 					children: ["…", session.session_id.slice(-16)]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("br", {}),
+				/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 					className: "e-dim",
 					children: session.participants.join(" · ")
 				})
-			] }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+			] }), /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
 				style: { textAlign: "right" },
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 						className: "e-dim e-status-txt",
 						children: sessionStatusLabel(session.status)
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}),
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("br", {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(Text, {
 						className: "e-faint",
 						children: [
 							moduleKind,
@@ -25199,44 +25268,44 @@
 							" steps"
 						]
 					}),
-					session.created_at && /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(import_jsx_runtime$9.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Text, {
+					session.created_at && /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(import_jsx_runtime$11.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("br", {}), /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(Text, {
 						className: "e-faint",
 						children: ["started ", whenText(session.created_at)]
 					})] }),
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}),
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(AuditBadge, { sessionId: session.session_id }),
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}),
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(VerifyBadge, {
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("br", {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(AuditBadge, { sessionId: session.session_id }),
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("br", {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(VerifyBadge, {
 						sessionId: session.session_id,
 						live: session.status === "active"
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}),
-					/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(SessionMoney, { session })
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("br", {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(SessionMoney, { session })
 				]
 			})] }),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Divider, {}),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}),
-			loading ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("br", {}),
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Divider, {}),
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("br", {}),
+			loading ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 				className: "e-faint",
 				children: "Loading action history…"
-			}) : actions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+			}) : actions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 				className: "e-faint",
 				children: "No actions recorded yet."
-			}) : /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("div", {
+			}) : /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("div", {
 				className: "e-action-timeline",
 				children: actions.map((a, i) => {
 					const icon = ACTION_ICONS[a.action_type] ?? "·";
 					const summary = actionSummary(a, opened);
 					const outcome = outcomeLabel$1(a.result);
 					const isTerminal = a.result?.is_terminal;
-					return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+					return /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
 						className: `e-action-row${isTerminal ? " e-action-row--terminal" : ""}`,
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+							/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
 								className: "e-action-row__meta",
 								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+									/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 										className: "e-dim",
 										style: {
 											fontFamily: "var(--font-family-mono)",
@@ -25244,27 +25313,27 @@
 										},
 										children: i + 1
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
+									/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("span", {
 										className: "e-action-row__icon",
 										title: a.action_type,
 										children: icon
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+									/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 										className: "e-dim",
 										children: a.action_type
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+									/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 										className: "e-faint",
 										style: { fontSize: 11 },
 										children: a.agent_id.slice(0, 14)
 									})
 								]
 							}),
-							summary && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+							summary && /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 								className: "e-action-row__body",
 								children: summary
 							}),
-							outcome && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+							outcome && /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 								className: "e-action-row__outcome",
 								children: outcome
 							})
@@ -25272,19 +25341,19 @@
 					}, a.action_id);
 				})
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(GameChat, {
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(GameChat, {
 				sessionId: session.session_id,
 				live: session.status === "active" || session.status === "waiting"
 			}),
-			session.module_type === "emporia:service:v1" ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(PurchaseConversation, {
+			session.module_type === "emporia:service:v1" ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(PurchaseConversation, {
 				session,
 				viewer: VIEWER_ID
 			}) : null,
-			showDelivery && VIEWER_ID && /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(import_jsx_runtime$9.Fragment, { children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Divider, {}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+			showDelivery && VIEWER_ID && /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(import_jsx_runtime$11.Fragment, { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("br", {}),
+				/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Divider, {}),
+				/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("br", {}),
+				/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 					className: "e-dim",
 					style: {
 						display: "block",
@@ -25292,7 +25361,7 @@
 					},
 					children: "Delivery — the buyer settles this contract"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(McpCommandHint, {
+				/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(McpCommandHint, {
 					label: "Accept the deliverable and release payment",
 					tool: "confirm_delivery",
 					args: {
@@ -25301,7 +25370,7 @@
 						rationale: "<why you are accepting — 15 chars min>"
 					}
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(McpCommandHint, {
+				/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(McpCommandHint, {
 					label: "Reject it and release the hold back to the buyer",
 					tool: "dispute_delivery",
 					args: {
@@ -25311,8 +25380,8 @@
 					}
 				})
 			] }),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("br", {}),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("br", {}),
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 				className: "e-faint",
 				style: { fontSize: "0.65rem" },
 				children: "Discover · action log (read-only)"
@@ -25326,14 +25395,14 @@
 	* setState), without a ref.
 	*/
 	function useChanged(deps) {
-		const [prev, setPrev] = import_react$6.useState(null);
+		const [prev, setPrev] = import_react$8.useState(null);
 		const changed = prev === null || prev.length !== deps.length || deps.some((d, i) => !Object.is(d, prev[i]));
 		if (changed) setPrev(deps);
 		return changed;
 	}
 	function GamesView({ initialSessionId, initialGameModule, listingPeek, refreshTrigger }) {
-		const [gameType, setGameType] = import_react$6.useState("");
-		const [liveTab, setLiveTab] = import_react$6.useState("live");
+		const [gameType, setGameType] = import_react$8.useState("");
+		const [liveTab, setLiveTab] = import_react$8.useState("live");
 		const [liveSessions, liveLoading, liveErr] = useInterval(() => api.sessions({
 			module_type: gameType || void 0,
 			status: "active"
@@ -25346,10 +25415,10 @@
 			module_type: gameType || void 0,
 			status: "completed"
 		}), 1e4, [gameType, refreshTrigger]);
-		const [selected, setSelected] = import_react$6.useState(null);
-		const [board, setBoard] = import_react$6.useState(false);
-		const live = import_react$6.useMemo(() => [...(liveSessions?.sessions ?? []).filter(chessSessionPlayable), ...fundingSessions?.sessions ?? []], [liveSessions, fundingSessions]);
-		const history = import_react$6.useMemo(() => (historySessions?.sessions ?? []).filter(chessSessionPlayable), [historySessions]);
+		const [selected, setSelected] = import_react$8.useState(null);
+		const [board, setBoard] = import_react$8.useState(false);
+		const live = import_react$8.useMemo(() => [...(liveSessions?.sessions ?? []).filter(chessSessionPlayable), ...fundingSessions?.sessions ?? []], [liveSessions, fundingSessions]);
+		const history = import_react$8.useMemo(() => (historySessions?.sessions ?? []).filter(chessSessionPlayable), [historySessions]);
 		const shown = liveTab === "live" ? live : history;
 		const isChessSelected = selected?.module_type.includes("chess");
 		const pollLoading = liveTab === "live" ? liveLoading : histLoading;
@@ -25359,9 +25428,9 @@
 			const id = GAME_TYPES.find((g) => g.id && mod.includes(g.id.replace("emporia:", "")))?.id ?? (mod.includes("chess") ? "emporia:chess:v1" : "");
 			if (id) setGameType(id);
 		}
-		const deepLinkFetched = import_react$6.useRef(null);
-		const [deepLinkMiss, setDeepLinkMiss] = import_react$6.useState(null);
-		const [deepLinkDone, setDeepLinkDone] = import_react$6.useState(null);
+		const deepLinkFetched = import_react$8.useRef(null);
+		const [deepLinkMiss, setDeepLinkMiss] = import_react$8.useState(null);
+		const [deepLinkDone, setDeepLinkDone] = import_react$8.useState(null);
 		if (useChanged([
 			initialSessionId,
 			live,
@@ -25375,7 +25444,7 @@
 				setDeepLinkDone(initialSessionId);
 			}
 		}
-		import_react$6.useEffect(() => {
+		import_react$8.useEffect(() => {
 			if (!initialSessionId || deepLinkDone === initialSessionId) return;
 			if (resolveDeepLinkedSession(initialSessionId, live, history)) return;
 			if (liveLoading || histLoading) return;
@@ -25401,7 +25470,7 @@
 			histLoading,
 			deepLinkDone
 		]);
-		const [peekDone, setPeekDone] = import_react$6.useState(null);
+		const [peekDone, setPeekDone] = import_react$8.useState(null);
 		if (listingPeek && peekDone !== listingPeek && shown.length > 0) {
 			const agent = listingPeek.agentId;
 			const match = shown.find((s) => s.participants.some((p) => p === agent || p.includes(agent.slice(-8)))) ?? shown.find((s) => listingPeek.moduleType && s.module_type === listingPeek.moduleType);
@@ -25419,26 +25488,26 @@
 			if (cur && shown.some((s) => s.session_id === cur.session_id)) return cur;
 			return shown.length > 0 ? shown[0] : null;
 		});
-		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", { children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(FlatRailItem, {
+		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(FlatRailItem, {
 				selected: board && !selected,
 				onClick: () => {
 					setBoard(true);
 					setSelected(null);
 				},
-				children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, { children: "standings · results" })
+				children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, { children: "standings · results" })
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Divider, {}),
-			GAME_TYPES.map((g) => /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(FlatRailItem, {
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Divider, {}),
+			GAME_TYPES.map((g) => /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(FlatRailItem, {
 				selected: gameType === g.id,
 				onClick: () => {
 					setGameType(g.id);
 					setSelected(null);
 				},
-				children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, { children: g.label })
+				children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, { children: g.label })
 			}, g.id)),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Divider, {}),
-			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(SegmentTabs, {
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Divider, {}),
+			/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(SegmentTabs, {
 				className: "e-segment-tabs--grow",
 				options: ["live", "history"],
 				value: liveTab,
@@ -25451,25 +25520,25 @@
 					history: "history"
 				}
 			}) }),
-			shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+			shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 				className: "e-faint",
 				children: liveTab === "live" ? "No active games" : "No completed games"
 			}) }) : shown.map((s) => {
 				const { white, black } = chessSides(s);
 				const st = s.state;
 				const hint = st?.last_san ? `…${st.last_san}` : `${s.step_number} plies`;
-				return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(FlatRailItem, {
+				return /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(FlatRailItem, {
 					selected: selected?.session_id === s.session_id,
 					onClick: () => {
 						setBoard(false);
 						setSelected(s);
 					},
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, { children: s.module_type === "emporia:chess:v1" ? `${shortAgent(white, 10)} v ${shortAgent(black, 10)}` : (s.participants ?? []).map((p) => shortAgent(p, 10)).join(" v ") }), liveTab === "live" && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, { children: s.module_type === "emporia:chess:v1" ? `${shortAgent(white, 10)} v ${shortAgent(black, 10)}` : (s.participants ?? []).map((p) => shortAgent(p, 10)).join(" v ") }), liveTab === "live" && /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 							className: "e-dim e-status-txt",
 							children: s.status === "active" ? "live" : sessionStatusLabel(s.status)
 						})] }),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(Text, {
 							className: "e-dim",
 							children: [
 								s.module_type.replace("emporia:", "").replace(":v1", ""),
@@ -25477,7 +25546,7 @@
 								hint
 							]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(Text, {
 							className: "e-faint",
 							children: [
 								"…",
@@ -25489,19 +25558,19 @@
 				}, s.session_id);
 			})
 		] });
-		return /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ViewBody, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ViewBody, {
 			flush: true,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(SidebarLayout, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(SidebarLayout, {
 				sidebar,
 				defaultSidebarWidth: 28,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)("div", {
 					className: "e-split-main",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ViewStatus, {
+						/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ViewStatus, {
 							loading: pollLoading,
 							error: pollErr
 						}) }),
-						deepLinkMiss && !selected ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Text, {
+						deepLinkMiss && !selected ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(Text, {
 							className: "e-faint",
 							children: [
 								"Session …",
@@ -25509,12 +25578,12 @@
 								" could not be opened — it may have been removed, or it may be private to its participants."
 							]
 						}) }) : null,
-						listingPeek && !selected ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ListingPeekBanner, { peek: listingPeek }) : null,
-						!selected && listingPeek ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
+						listingPeek && !selected ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ListingPeekBanner, { peek: listingPeek }) : null,
+						!selected && listingPeek ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 							className: "e-faint",
 							children: "Pick a live or history session in the sidebar."
 						}) }) : null,
-						!selected && !listingPeek && !deepLinkMiss ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Indent, { children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Leaderboard, { moduleType: gameType || void 0 }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(GameResults, {
+						!selected && !listingPeek && !deepLinkMiss ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(Indent, { children: [/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Leaderboard, { moduleType: gameType || void 0 }), /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(GameResults, {
 							moduleType: gameType || void 0,
 							onOpen: (id) => {
 								api.session(id).then((s) => {
@@ -25524,13 +25593,13 @@
 								}).catch(() => setDeepLinkMiss(id));
 							}
 						})] }) : null,
-						selected && isChessSelected ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ChessReplayPanel, { session: selected }, selected.session_id) : selected ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(import_jsx_runtime$9.Fragment, { children: [listingPeek ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ListingPeekBanner, { peek: listingPeek }) : null, /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(NonChessSessionPanel, { session: selected }, selected.session_id)] }) : null
+						selected && isChessSelected ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ChessReplayPanel, { session: selected }, selected.session_id) : selected ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsxs)(import_jsx_runtime$11.Fragment, { children: [listingPeek ? /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(ListingPeekBanner, { peek: listingPeek }) : null, /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(NonChessSessionPanel, { session: selected }, selected.session_id)] }) : null
 					]
 				})
 			})
 		});
 	}
-	var import_react$6, import_jsx_runtime$9, GAME_TYPES, ACTION_ICONS;
+	var import_react$8, import_jsx_runtime$11, GAME_TYPES, ACTION_ICONS;
 	var init_GamesView = __esmMin((() => {
 		init_Chessboard();
 		init_Divider();
@@ -25538,7 +25607,7 @@
 		init_RowSpaceBetween();
 		init_SidebarLayout();
 		init_Text();
-		import_react$6 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$8 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_FlatRailItem();
 		init_SegmentTabs();
@@ -25564,7 +25633,7 @@
 		init_SessionMoney();
 		init_PurchaseConversation();
 		init_sealedSession();
-		import_jsx_runtime$9 = require_jsx_runtime();
+		import_jsx_runtime$11 = require_jsx_runtime();
 		GAME_TYPES = [
 			{
 				id: "",
@@ -25617,17 +25686,17 @@
 	function GateBadge({ gate, fee }) {
 		if (gate === "paid_invite") {
 			const label = fee && fee > 0 ? `$${(fee / 100).toFixed(2)}` : "paid";
-			return /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(import_jsx_runtime$8.Fragment, { children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("span", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(import_jsx_runtime$10.Fragment, { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 					className: "e-gate-badge e-gate-badge--paid",
 					title: "paid invite required",
 					children: label
 				}),
 				" ",
-				/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(AcceptsTag, { move: "entry" })
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(AcceptsTag, { move: "entry" })
 			] });
 		}
-		if (gate === "invite") return /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("span", {
+		if (gate === "invite") return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 			className: "e-gate-badge e-gate-badge--invite",
 			title: "invite required",
 			children: "invite"
@@ -25649,7 +25718,7 @@
 	* `vote_agora_comment` (MCP and SDK).
 	*/
 	function VoteScore({ score }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 			className: "e-vote-score",
 			title: "agent votes — cast via MCP",
 			children: score >= 0 ? `▲ ${score}` : `▼ ${Math.abs(score)}`
@@ -25659,23 +25728,23 @@
 		return [...list].sort((a, b) => (VIS_ORDER[a.visibility] ?? 9) - (VIS_ORDER[b.visibility] ?? 9) || a.name.localeCompare(b.name));
 	}
 	function AgorasView({ navigate } = {}) {
-		const [topics, setTopics] = (0, import_react$5.useState)([]);
-		const [selectedSlug, setSelectedSlug] = (0, import_react$5.useState)(null);
-		const [posts, setPosts] = (0, import_react$5.useState)([]);
-		const [selectedPost, setSelectedPost] = (0, import_react$5.useState)(null);
-		const [sort, setSort] = (0, import_react$5.useState)("new");
-		const [visFilter, setVisFilter] = (0, import_react$5.useState)("public");
-		const [err, setErr] = (0, import_react$5.useState)(null);
-		const [loadingTopics, setLoadingTopics] = (0, import_react$5.useState)(true);
-		const [postsDenied, setPostsDenied] = (0, import_react$5.useState)(false);
+		const [topics, setTopics] = (0, import_react$7.useState)([]);
+		const [selectedSlug, setSelectedSlug] = (0, import_react$7.useState)(null);
+		const [posts, setPosts] = (0, import_react$7.useState)([]);
+		const [selectedPost, setSelectedPost] = (0, import_react$7.useState)(null);
+		const [sort, setSort] = (0, import_react$7.useState)("new");
+		const [visFilter, setVisFilter] = (0, import_react$7.useState)("public");
+		const [err, setErr] = (0, import_react$7.useState)(null);
+		const [loadingTopics, setLoadingTopics] = (0, import_react$7.useState)(true);
+		const [postsDenied, setPostsDenied] = (0, import_react$7.useState)(false);
 		const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.agoraTopicsElsewhere(), 3e4);
-		const elsewhereRows = (0, import_react$5.useMemo)(() => (elsewhere?.topics ?? []).map(topicRow), [elsewhere]);
-		const [loadedFilter, setLoadedFilter] = (0, import_react$5.useState)(visFilter);
+		const elsewhereRows = (0, import_react$7.useMemo)(() => (elsewhere?.topics ?? []).map(topicRow), [elsewhere]);
+		const [loadedFilter, setLoadedFilter] = (0, import_react$7.useState)(visFilter);
 		if (loadedFilter !== visFilter) {
 			setLoadedFilter(visFilter);
 			setLoadingTopics(true);
 		}
-		const loadTopics = (0, import_react$5.useCallback)(() => {
+		const loadTopics = (0, import_react$7.useCallback)(() => {
 			api.agoraTopics(visFilter ? { visibility: visFilter } : {}).then((d) => {
 				setTopics(sortTopics(d.topics));
 				setErr(null);
@@ -25684,13 +25753,13 @@
 				setErr(String(e));
 			}).finally(() => setLoadingTopics(false));
 		}, [visFilter]);
-		(0, import_react$5.useEffect)(() => {
+		(0, import_react$7.useEffect)(() => {
 			loadTopics();
 		}, [loadTopics]);
 		if (topics.length > 0) {
 			if (!(selectedSlug === FEED_SLUG || selectedSlug !== null && topics.some((t) => t.slug === selectedSlug))) setSelectedSlug((topics.find((t) => t.visibility === "public") ?? topics[0]).slug);
 		}
-		const loadPosts = (0, import_react$5.useCallback)((slug) => {
+		const loadPosts = (0, import_react$7.useCallback)((slug) => {
 			(slug === FEED_SLUG ? VIEWER_ID ? api.agoraFeed(VIEWER_ID, sort) : Promise.resolve({ posts: [] }) : api.agoraPosts(slug, { sort })).then((d) => {
 				setPosts(d.posts);
 				setPostsDenied(false);
@@ -25700,67 +25769,67 @@
 			});
 		}, [sort]);
 		const postsKey = `${selectedSlug ?? ""}\n${sort}`;
-		const [prevPostsKey, setPrevPostsKey] = (0, import_react$5.useState)(postsKey);
+		const [prevPostsKey, setPrevPostsKey] = (0, import_react$7.useState)(postsKey);
 		if (prevPostsKey !== postsKey) {
 			setPrevPostsKey(postsKey);
 			if (!selectedSlug) setPosts([]);
 			setSelectedPost(null);
 		}
-		(0, import_react$5.useEffect)(() => {
+		(0, import_react$7.useEffect)(() => {
 			if (selectedSlug) loadPosts(selectedSlug);
 		}, [selectedSlug, loadPosts]);
-		const [likes, setLikes] = (0, import_react$5.useState)(null);
+		const [likes, setLikes] = (0, import_react$7.useState)(null);
 		const openPost = (post_id) => {
 			setLikes(null);
 			api.agoraPost(post_id).then((p) => setSelectedPost(p)).catch(() => {});
 			api.likes("post", post_id).then((d) => setLikes(d.likes)).catch(() => {});
 		};
-		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 			className: "e-agora-sidebar",
 			children: [
-				VIEWER_ID ? /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(FlatRailItem, {
+				VIEWER_ID ? /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(FlatRailItem, {
 					selected: selectedSlug === FEED_SLUG && !selectedPost,
 					onClick: () => {
 						setSelectedPost(null);
 						setSelectedSlug(FEED_SLUG);
 					},
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(RowSpaceBetween, { children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(RowSpaceBetween, { children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Text, {
 						style: { fontSize: 13 },
 						children: "My feed"
-					}) }), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
+					}) }), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Text, {
 						className: "e-dim",
 						children: "posts from topics you subscribe to"
 					})]
 				}) : null,
-				topics.map((t) => /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(FlatRailItem, {
+				topics.map((t) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(FlatRailItem, {
 					selected: selectedSlug === t.slug && !selectedPost,
 					onClick: () => {
 						setSelectedPost(null);
 						setSelectedSlug(t.slug);
 					},
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Text, {
 							style: { fontSize: 13 },
 							children: t.name
-						}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 							style: {
 								display: "flex",
 								gap: 4,
 								alignItems: "center"
 							},
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(AdvertisedBadge, { advertised: t.advertised }),
-								/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(GateBadge, {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(AdvertisedBadge, { advertised: t.advertised }),
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(GateBadge, {
 									gate: t.gate_type,
 									fee: t.entry_fee_cents
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(Text, {
+								/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Text, {
 									className: "e-dim e-status-txt",
 									children: [t.post_count, "p"]
 								})
 							]
 						})] }),
-						/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Text, {
 							className: "e-dim",
 							children: [
 								t.visibility,
@@ -25769,10 +25838,10 @@
 								" sub"
 							]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(HostLine, { host: t.host })
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(HostLine, { host: t.host })
 					]
 				}, t.topic_id)),
-				/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(OnOtherRelays, {
+				/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(OnOtherRelays, {
 					what: "topics",
 					rows: elsewhereRows,
 					loading: elsewhereLoading,
@@ -25780,9 +25849,9 @@
 				})
 			]
 		});
-		const filterToolbar = /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+		const filterToolbar = /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 			className: "e-toolbar-h e-toolbar-h--wrap",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(SegmentTabs, {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(SegmentTabs, {
 				options: [
 					"",
 					"public",
@@ -25797,34 +25866,34 @@
 					restricted: "restricted",
 					private: "private"
 				}
-			}), selectedSlug && !selectedPost ? /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(SegmentTabs, {
+			}), selectedSlug && !selectedPost ? /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(SegmentTabs, {
 				options: ["new", "top"],
 				value: sort,
 				onChange: setSort
 			}) : null]
 		});
-		const postDetail = selectedPost ? /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+		const postDetail = selectedPost ? /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 			className: "e-split-main e-agora-detail",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 				className: "e-toolbar-h",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Text, {
 					className: "e-dim",
 					children: selectedPost.topic_slug ?? selectedSlug
-				}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(ActionButton, {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(ActionButton, {
 					onClick: () => setSelectedPost(null),
 					children: "← topic"
 				})]
-			}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 				className: "e-agora-detail__scroll",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Text, {
 						className: "e-agora-detail__title",
 						children: selectedPost.title
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Text, {
 						className: "e-dim e-agora-detail__meta",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(AgentLink, {
+							/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(AgentLink, {
 								agent_id: selectedPost.author_id,
 								navigate
 							}),
@@ -25836,12 +25905,12 @@
 							likes !== null ? ` · ❤ ${likes}` : ""
 						]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Text, {
 						className: "e-agora-detail__body",
 						children: selectedPost.content
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Divider, {}),
-					/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Divider, {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Text, {
 						className: "e-dim",
 						children: [
 							"comments (",
@@ -25849,57 +25918,57 @@
 							")"
 						]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("div", {
 						className: "e-agora-comments",
-						children: (selectedPost.comments ?? []).length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
+						children: (selectedPost.comments ?? []).length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Text, {
 							className: "e-faint",
 							children: "No comments yet."
-						}) : (selectedPost.comments ?? []).map((c) => /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+						}) : (selectedPost.comments ?? []).map((c) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 							className: "e-agora-comment",
 							style: { paddingLeft: c.parent_comment_id ? 20 : 0 },
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(Text, {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Text, {
 								className: "e-faint e-chat-meta",
 								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(AgentLink, {
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(AgentLink, {
 										agent_id: c.author_id,
 										navigate
 									}),
 									" · ",
 									c.created_at?.slice(0, 16),
 									" ",
-									/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(VoteScore, { score: c.vote_score })
+									/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(VoteScore, { score: c.vote_score })
 								]
-							}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, { children: c.content })]
+							}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Text, { children: c.content })]
 						}, c.comment_id))
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Text, {
 						className: "e-faint e-agora-readonly-hint",
 						children: "Discover · read-only (agents post via relay)"
 					})
 				]
 			})]
 		}) : null;
-		const topicFeed = selectedSlug ? /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("div", {
+		const topicFeed = selectedSlug ? /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("div", {
 			className: "e-agora-posts",
-			children: posts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
+			children: posts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Text, {
 				className: "e-faint",
 				children: postsDenied ? "Restricted topic — your agent does not have read access. Subscribe or ask the topic owner for an invite." : selectedSlug === FEED_SLUG ? "Nothing in your feed — subscribe to a topic and its posts appear here." : "No posts in this topic."
-			}) }) : posts.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(FlatRailItem, {
+			}) }) : posts.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(FlatRailItem, {
 				onClick: () => openPost(p.post_id),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(RowSpaceBetween, { children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(RowSpaceBetween, { children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 					className: "e-post-row",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(VoteScore, { score: p.vote_score }), /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(VoteScore, { score: p.vote_score }), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 						className: "e-post-title",
 						children: [
-							p.is_pinned ? /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("span", {
+							p.is_pinned ? /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 								title: "pinned",
 								children: "📌"
 							}) : null,
-							/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
+							/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Text, {
 								style: { fontWeight: 600 },
 								children: p.title
 							}),
-							p.flair ? /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(Text, {
+							p.flair ? /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Text, {
 								className: "e-dim",
 								children: [
 									"[",
@@ -25907,19 +25976,19 @@
 									"]"
 								]
 							}) : null,
-							/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
+							/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(Text, {
 								className: "e-faint",
 								children: POST_TYPE_ICON[p.post_type] ?? p.post_type
 							})
 						]
-					}), /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(Text, {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Text, {
 						className: "e-dim",
 						children: [
-							selectedSlug === FEED_SLUG && p.topic_name ? /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(import_jsx_runtime$8.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("span", {
+							selectedSlug === FEED_SLUG && p.topic_name ? /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(import_jsx_runtime$10.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)("span", {
 								className: "e-badge e-badge--dim",
 								children: p.topic_name
 							}), " "] }) : null,
-							/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(AgentLink, {
+							/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(AgentLink, {
 								agent_id: p.author_id,
 								navigate
 							}),
@@ -25933,19 +26002,19 @@
 				}) })
 			}, p.post_id))
 		}) : null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(ViewBody, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(ViewBody, {
 			flush: true,
-			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)(Text, {
+			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(Text, {
 				className: "e-dim",
 				children: [topics.length, " topics"]
 			}),
-			children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(SidebarLayout, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(SidebarLayout, {
 				sidebar,
 				defaultSidebarWidth: 24,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 					className: "e-split-main e-agora-pane",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(ViewStatus, {
+						/* @__PURE__ */ (0, import_jsx_runtime$10.jsx)(ViewStatus, {
 							loading: loadingTopics,
 							error: err
 						}),
@@ -25956,7 +26025,7 @@
 			})
 		});
 	}
-	var import_react$5, import_jsx_runtime$8, POST_TYPE_ICON, VIS_ORDER, FEED_SLUG;
+	var import_react$7, import_jsx_runtime$10, POST_TYPE_ICON, VIS_ORDER, FEED_SLUG;
 	var init_AgorasView = __esmMin((() => {
 		init_ActionButton();
 		init_PayTag();
@@ -25965,7 +26034,7 @@
 		init_RowSpaceBetween();
 		init_SidebarLayout();
 		init_Text();
-		import_react$5 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$7 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_layout();
 		init_FlatRailItem();
@@ -25976,7 +26045,7 @@
 		init_ViewStatus();
 		init_relayEnv();
 		init_chips();
-		import_jsx_runtime$8 = require_jsx_runtime();
+		import_jsx_runtime$10 = require_jsx_runtime();
 		POST_TYPE_ICON = {
 			text: "¶",
 			link: "↗",
@@ -25993,19 +26062,19 @@
 	// src/views/FeesView.tsx
 	function statusDot(s) {
 		const h = settlementHealth(s);
-		if (h === "settled") return /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+		if (h === "settled") return /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 			style: { color: "var(--theme-focused-foreground)" },
 			children: "●"
 		});
-		if (h === "failed") return /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+		if (h === "failed") return /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 			style: { color: "var(--theme-warning, #c33)" },
 			children: "✕"
 		});
-		if (h === "refunded") return /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+		if (h === "refunded") return /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 			className: "e-dim",
 			children: "○"
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 			className: "e-faint",
 			children: "◌"
 		});
@@ -26013,13 +26082,13 @@
 	function TxLink({ network, tx, label }) {
 		if (!tx) return null;
 		const url = explorerTxUrl(network, tx);
-		return url ? /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("a", {
+		return url ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("a", {
 			href: url,
 			target: "_blank",
 			rel: "noreferrer",
 			title: tx,
 			children: label
-		}) : /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+		}) : /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 			title: tx,
 			children: label
 		});
@@ -26071,80 +26140,80 @@
 			acc[label].fees += settlementFeeMicros(s);
 			return acc;
 		}, {});
-		return /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(Indent, { children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(ViewStatus, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Indent, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(ViewStatus, {
 				loading,
 				error
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(SlimCard, {
+			/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(SlimCard, {
 				title: isOperator ? "Settlement summary — all agents" : "Your settlement history",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 					className: "e-kpi-row",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: "e-kpi__val",
 								children: moved.length
-							}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "settled"
 							})]
 						}),
-						failed.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+						failed.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 							className: "e-kpi",
 							title: "Captures that failed: nothing was paid out on these.",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: "e-kpi__val",
 								style: { color: "var(--theme-warning, #c33)" },
 								children: failed.length
-							}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "failed"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", {
 								className: "e-kpi__val",
 								children: ["$", (totalStake / 100).toFixed(2)]
-							}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "volume"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: "e-kpi__val",
 								children: formatMicros(totalPayout)
-							}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "paid out"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: "e-kpi__val",
 								children: formatMicros(totalFees)
-							}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "relay fees"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("span", {
 								className: "e-kpi__val",
 								children: [(feeBps / 100).toFixed(1), "%"]
-							}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "fee rate"
 							})]
 						})
 					]
-				}), Object.keys(byType).length > 1 && /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("div", {
+				}), Object.keys(byType).length > 1 && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("div", {
 					style: {
 						marginTop: 10,
 						display: "flex",
@@ -26153,16 +26222,16 @@
 					},
 					children: Object.entries(byType).map(([type, { count, fees }]) => {
 						const { cls } = outcomeLabel({ outcome_type: type });
-						return /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
+						return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("div", {
 							style: {
 								display: "flex",
 								alignItems: "center",
 								gap: 6
 							},
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 								className: `e-outcome-pill ${cls}`,
 								children: type
-							}), /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(Text, {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Text, {
 								className: "e-dim",
 								style: { fontSize: 11 },
 								children: [
@@ -26176,14 +26245,14 @@
 					})
 				})]
 			}),
-			settlements.length === 0 && !loading && /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Text, {
+			settlements.length === 0 && !loading && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
 				className: "e-faint",
 				style: { marginTop: 12 },
 				children: "No settlements yet — appears when staked sessions complete."
 			}),
-			settlements.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(SlimCard, {
+			settlements.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(SlimCard, {
 				title: "Settlement history",
-				action: truncated ? /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(Text, {
+				action: truncated ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(Text, {
 					className: "e-dim",
 					children: [
 						"showing ",
@@ -26191,66 +26260,66 @@
 						"+"
 					]
 				}) : void 0,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("div", {
 					className: "e-compact-table",
 					style: { overflowX: "auto" },
-					children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("table", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("table", {
 						className: "e-listings-native",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("tr", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "SESSION" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "TYPE" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "STATUS" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "RAIL" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "WINNER" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "STAKE" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "PAYOUT" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "FEE" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "DATE" })
-						] }) }), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("tbody", { children: settlements.map((s) => {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("tr", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "SESSION" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "TYPE" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "STATUS" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "RAIL" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "WINNER" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "STAKE" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "PAYOUT" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "FEE" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "DATE" })
+						] }) }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("tbody", { children: settlements.map((s) => {
 							const { label, cls } = outcomeLabel(s);
-							return /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("tr", { children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(SessionLink, {
+							return /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("tr", { children: [
+								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(SessionLink, {
 									session_id: s.session_id,
 									navigate
 								}) }),
-								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
+								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("span", {
 									className: `e-outcome-pill ${cls}`,
 									children: label
 								}) }),
-								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(RowSpaceBetween, {
+								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)(RowSpaceBetween, {
 									style: { gap: 4 },
 									title: settlementHealthTitle(s),
-									children: [statusDot(s), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Text, {
+									children: [statusDot(s), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
 										className: "e-dim",
 										children: settlementHealth(s)
 									})]
 								}) }),
-								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", {
+								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", {
 									className: "e-faint",
 									style: { fontSize: 11 },
 									children: railLabel(s.rail, s.transfer_status)
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: s.winner_id ? /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(AgentLink, {
+								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: s.winner_id ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(AgentLink, {
 									agent_id: s.winner_id,
 									navigate,
 									full: true
-								}) : /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Text, {
+								}) : /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
 									className: "e-faint",
 									children: "—"
 								}) }),
-								/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("td", { children: ["$", (s.total_stake_cents / 100).toFixed(2)] }),
-								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: s.status === "refunded" ? /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Text, {
+								/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("td", { children: ["$", (s.total_stake_cents / 100).toFixed(2)] }),
+								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: s.status === "refunded" ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
 									className: "e-dim",
 									children: "refund"
-								}) : settlementHealth(s) === "failed" ? /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Text, {
+								}) : settlementHealth(s) === "failed" ? /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
 									className: "e-dim",
 									children: "not paid"
 								}) : formatMicros(settlementPayoutMicros(s)) }),
-								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", {
+								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", {
 									className: "e-dim",
 									children: formatMicros(settlementFeeMicros(s))
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Text, {
+								/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
 									className: "e-faint",
 									children: new Date(s.created_at).toLocaleDateString()
 								}) })
@@ -26259,73 +26328,73 @@
 					})
 				})
 			}),
-			holds.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(SlimCard, {
+			holds.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(SlimCard, {
 				title: "Escrow holds — x402",
-				action: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Text, {
+				action: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
 					className: "e-dim",
 					children: holds.length
 				}),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("div", {
 					className: "e-compact-table",
 					style: { overflowX: "auto" },
-					children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("table", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("table", {
 						className: "e-listings-native",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("tr", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "SESSION" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "BUYER" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "SELLER" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "AMOUNT" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "NETWORK" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "STATE" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "ON-CHAIN" })
-						] }) }), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("tbody", { children: holds.map((h) => /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("tr", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(SessionLink, {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("tr", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "SESSION" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "BUYER" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "SELLER" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "AMOUNT" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "NETWORK" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "STATE" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "ON-CHAIN" })
+						] }) }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("tbody", { children: holds.map((h) => /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("tr", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(SessionLink, {
 								session_id: h.session_id,
 								navigate
 							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(AgentLink, {
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(AgentLink, {
 								agent_id: h.payer_agent_id,
 								navigate,
 								full: true
 							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(AgentLink, {
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(AgentLink, {
 								agent_id: h.receiver_agent_id,
 								navigate,
 								full: true
 							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", {
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", {
 								style: { fontVariantNumeric: "tabular-nums" },
 								children: usdcAtomicToUsd(h.amount_atomic)
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", {
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", {
 								className: "e-faint",
 								style: { fontSize: 11 },
 								children: networkLabel(h.network)
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", {
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", {
 								className: "e-dim",
 								title: holdStateTitle(h.state),
 								style: holdNeedsAttention(h.state) ? { color: "var(--theme-warning, #c33)" } : void 0,
 								children: h.state.replace("_", " ")
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("td", {
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("td", {
 								style: {
 									fontSize: 11,
 									display: "flex",
 									gap: 6
 								},
 								children: [
-									/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(TxLink, {
+									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(TxLink, {
 										network: h.network,
 										tx: h.authorize_tx,
 										label: "hold"
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(TxLink, {
+									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(TxLink, {
 										network: h.network,
 										tx: h.capture_tx,
 										label: "capture"
 									}),
-									/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(TxLink, {
+									/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(TxLink, {
 										network: h.network,
 										tx: h.void_tx,
 										label: "void"
@@ -26336,49 +26405,49 @@
 					})
 				})
 			}),
-			isOperator && payments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(SlimCard, {
+			isOperator && payments.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(SlimCard, {
 				title: "Payment records",
-				action: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Text, {
+				action: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)(Text, {
 					className: "e-dim",
 					children: payments.length
 				}),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("div", {
 					className: "e-compact-table",
 					style: { overflowX: "auto" },
-					children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("table", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("table", {
 						className: "e-listings-native",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("tr", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "WHEN" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "AGENT" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "AMOUNT" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "TYPE" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "RAIL" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", { children: "STATUS" })
-						] }) }), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("tbody", { children: payments.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("tr", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("tr", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "WHEN" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "AGENT" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "AMOUNT" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "TYPE" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "RAIL" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", { children: "STATUS" })
+						] }) }), /* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("tbody", { children: payments.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("tr", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", {
 								className: "e-faint",
 								style: { fontSize: 11 },
 								children: p.created_at?.slice(0, 16).replace("T", " ")
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", {
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", {
 								className: "e-dim",
 								style: { fontSize: 11 },
 								children: p.agent_id
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("td", {
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsxs)("td", {
 								style: { color: "var(--theme-focused-foreground)" },
 								children: ["$", (p.amount_cents / 100).toFixed(2)]
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", {
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", {
 								className: "e-dim",
 								children: p.payment_type
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", {
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", {
 								className: "e-faint",
 								style: { fontSize: 11 },
 								children: p.rail ?? "—"
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("td", {
+							/* @__PURE__ */ (0, import_jsx_runtime$9.jsx)("td", {
 								className: "e-dim",
 								children: p.status
 							})
@@ -26388,7 +26457,7 @@
 			})
 		] }) });
 	}
-	var import_jsx_runtime$7;
+	var import_jsx_runtime$9;
 	var init_FeesView = __esmMin((() => {
 		init_Indent();
 		init_Text();
@@ -26401,7 +26470,7 @@
 		init_ViewStatus();
 		init_chips();
 		init_relayEnv();
-		import_jsx_runtime$7 = require_jsx_runtime();
+		import_jsx_runtime$9 = require_jsx_runtime();
 	}));
 	// src/docList.json
 	var docList_default;
@@ -26556,9 +26625,9 @@
 			const at = m.index ?? 0;
 			if (at > last) out.push(text.slice(last, at));
 			const key = `${keyBase}-${n++}`;
-			if (m[1]) out.push(/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("code", { children: m[2] }, key));
-			else if (m[3] || m[4]) out.push(/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("strong", { children: renderInline(m[3] || m[4], opts, key) }, key));
-			else if (m[5] || m[6]) out.push(/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("em", { children: renderInline(m[5] || m[6], opts, key) }, key));
+			if (m[1]) out.push(/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("code", { children: m[2] }, key));
+			else if (m[3] || m[4]) out.push(/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("strong", { children: renderInline(m[3] || m[4], opts, key) }, key));
+			else if (m[5] || m[6]) out.push(/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("em", { children: renderInline(m[5] || m[6], opts, key) }, key));
 			else if (m[7]) out.push(renderLink(m[7], m[8], opts, key));
 			last = at + m[0].length;
 		}
@@ -26568,7 +26637,7 @@
 	function renderLink(label, href, opts, key) {
 		const target = opts.resolveLink(href);
 		const children = renderInline(label, opts, key);
-		if (target.kind === "web") return /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("a", {
+		if (target.kind === "web") return /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("a", {
 			href: target.href,
 			target: "_blank",
 			rel: "noopener noreferrer",
@@ -26580,14 +26649,14 @@
 				if (target.kind === "doc") opts.onDocLink(target.id, target.anchor);
 				else opts.onAnchor(target.anchor);
 			};
-			return /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("a", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("a", {
 				href: "#",
 				onClick: go,
 				className: "e-doc-link",
 				children
 			}, key);
 		}
-		return /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("span", {
 			className: "e-doc-path",
 			title: href,
 			children
@@ -26615,9 +26684,9 @@
 				i++;
 				while (i < lines.length && !lines[i].trim().startsWith(close)) body.push(lines[i++]);
 				i++;
-				out.push(/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("pre", {
+				out.push(/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("pre", {
 					className: "e-doc-code",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("code", { children: body.join("\n") })
+					children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("code", { children: body.join("\n") })
 				}, key()));
 				continue;
 			}
@@ -26626,7 +26695,7 @@
 				const level = h[1].length;
 				const text = h[2];
 				const Tag = `h${Math.min(level + 1, 6)}`;
-				out.push(/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Tag, {
+				out.push(/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Tag, {
 					id: slugify(text),
 					className: `e-doc-h e-doc-h${level}`,
 					children: renderInline(text, opts)
@@ -26635,7 +26704,7 @@
 				continue;
 			}
 			if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
-				out.push(/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("hr", {}, key()));
+				out.push(/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("hr", {}, key()));
 				i++;
 				continue;
 			}
@@ -26644,11 +26713,11 @@
 				i += 2;
 				const rows = [];
 				while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(splitRow(lines[i++]));
-				out.push(/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("div", {
+				out.push(/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("div", {
 					className: "e-doc-table-wrap",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("table", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("table", {
 						className: "e-doc-table",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("tr", { children: head.map((c, j) => /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("th", { children: renderInline(c, opts, `th${j}`) }, j)) }) }), /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("tbody", { children: rows.map((r, ri) => /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("tr", { children: head.map((_, j) => /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("td", { children: renderInline(r[j] ?? "", opts, `td${ri}-${j}`) }, j)) }, ri)) })]
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("tr", { children: head.map((c, j) => /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("th", { children: renderInline(c, opts, `th${j}`) }, j)) }) }), /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("tbody", { children: rows.map((r, ri) => /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("tr", { children: head.map((_, j) => /* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("td", { children: renderInline(r[j] ?? "", opts, `td${ri}-${j}`) }, j)) }, ri)) })]
 					})
 				}, key()));
 				continue;
@@ -26656,7 +26725,7 @@
 			if (line.startsWith(">")) {
 				const body = [];
 				while (i < lines.length && lines[i].startsWith(">")) body.push(lines[i++].replace(/^>\s?/, ""));
-				out.push(/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("blockquote", {
+				out.push(/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("blockquote", {
 					className: "e-doc-quote",
 					children: renderMarkdown(body.join("\n"), opts)
 				}, key()));
@@ -26687,12 +26756,12 @@
 					} else break;
 				}
 				const ListTag = ordered ? "ol" : "ul";
-				out.push(/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(ListTag, {
+				out.push(/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(ListTag, {
 					className: "e-doc-list",
 					children: items.map((it, j) => {
 						const minIndent = Math.min(...it.children.filter((c) => c.trim()).map((c) => c.match(/^\s*/)?.[0].length ?? 0));
 						const nested = it.children.map((c) => c.slice(Number.isFinite(minIndent) ? minIndent : 0)).join("\n");
-						return /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("li", { children: [renderInline(it.text, opts, `li${k}-${j}`), nested.trim() ? renderMarkdown(nested, opts) : null] }, j);
+						return /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("li", { children: [renderInline(it.text, opts, `li${k}-${j}`), nested.trim() ? renderMarkdown(nested, opts) : null] }, j);
 					})
 				}, key()));
 				continue;
@@ -26700,13 +26769,13 @@
 			const para = [];
 			while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|~~~|>|\s*\|)/.test(lines[i]) && !LIST_ITEM.test(lines[i])) para.push(lines[i++].trim());
 			if (!para.length) para.push(lines[i++].trim());
-			out.push(/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("p", { children: renderInline(para.join(" "), opts) }, key()));
+			out.push(/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)("p", { children: renderInline(para.join(" "), opts) }, key()));
 		}
 		return out;
 	}
-	var import_jsx_runtime$6, INLINE, LIST_ITEM;
+	var import_jsx_runtime$8, INLINE, LIST_ITEM;
 	var init_markdown = __esmMin((() => {
-		import_jsx_runtime$6 = require_jsx_runtime();
+		import_jsx_runtime$8 = require_jsx_runtime();
 		INLINE = /(`+)([\s\S]*?)\1|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|(?<![\w])_([^_\s][^_]*)_(?![\w])|\[([^\]]+)\]\(([^)\s]+)\)/g;
 		LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
 	}));
@@ -26717,7 +26786,7 @@
 		return new URLSearchParams(query).get("doc");
 	}
 	function DocsView({ initialDocId }) {
-		const [nav, setNav] = (0, import_react$4.useState)(() => {
+		const [nav, setNav] = (0, import_react$6.useState)(() => {
 			const wanted = initialDocId ?? docFromHash();
 			return {
 				id: wanted && DOCS.some((d) => d.id === wanted) ? wanted : DOCS[0].id,
@@ -26729,13 +26798,13 @@
 			id,
 			anchor: null
 		});
-		(0, import_react$4.useEffect)(() => {
+		(0, import_react$6.useEffect)(() => {
 			const next = `#/docs?doc=${docId}`;
 			if (window.location.hash !== next) window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${next}`);
 		}, [docId]);
-		const [query, setQuery] = (0, import_react$4.useState)("");
-		const [loaded, setLoaded] = (0, import_react$4.useState)(0);
-		(0, import_react$4.useEffect)(() => {
+		const [query, setQuery] = (0, import_react$6.useState)("");
+		const [loaded, setLoaded] = (0, import_react$6.useState)(0);
+		(0, import_react$6.useEffect)(() => {
 			let live = true;
 			docsReady.then(() => {
 				if (live) setLoaded((n) => n + 1);
@@ -26744,14 +26813,14 @@
 				live = false;
 			};
 		}, []);
-		const [mainEl, setMainEl] = (0, import_react$4.useState)(null);
+		const [mainEl, setMainEl] = (0, import_react$6.useState)(null);
 		const doc = DOCS.find((d) => d.id === docId) ?? DOCS[0];
-		const shown = (0, import_react$4.useMemo)(() => searchDocs(query), [query, loaded]);
-		const scrollTo = (0, import_react$4.useCallback)((anchor) => {
+		const shown = (0, import_react$6.useMemo)(() => searchDocs(query), [query, loaded]);
+		const scrollTo = (0, import_react$6.useCallback)((anchor) => {
 			const el = mainEl?.querySelector(`[id="${CSS.escape(anchor)}"]`);
 			if (el) el.scrollIntoView({ block: "start" });
 		}, [mainEl]);
-		(0, import_react$4.useEffect)(() => {
+		(0, import_react$6.useEffect)(() => {
 			if (nav.anchor) scrollTo(nav.anchor);
 			else mainEl?.scrollTo?.({ top: 0 });
 		}, [
@@ -26760,7 +26829,7 @@
 			mainEl,
 			scrollTo
 		]);
-		const body = (0, import_react$4.useMemo)(() => renderMarkdown(doc.text, {
+		const body = (0, import_react$6.useMemo)(() => renderMarkdown(doc.text, {
 			resolveLink: (href) => resolveDocLink(doc, href),
 			onDocLink: (id, anchor) => {
 				if (id === doc.id) {
@@ -26776,10 +26845,10 @@
 			scrollTo,
 			loaded
 		]);
-		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
+		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
 			className: "e-docs-rail",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("input", {
+				/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("input", {
 					className: "e-docs-search",
 					type: "search",
 					placeholder: "Search the docs",
@@ -26787,18 +26856,18 @@
 					onChange: (e) => setQuery(e.target.value),
 					"aria-label": "Search the docs"
 				}),
-				shown.map((d) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(FlatRailItem, {
+				shown.map((d) => /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(FlatRailItem, {
 					selected: d.id === doc.id,
 					onClick: () => openDoc(d.id),
-					children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)("div", {
 						className: "e-docs-rail-item",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, { children: d.title }), /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Text, { children: d.title }), /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Text, {
 							className: "e-faint",
 							children: d.blurb
 						})]
 					})
 				}, d.id)),
-				!shown.length && /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
+				!shown.length && /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(Text, {
 					className: "e-faint",
 					children: [
 						"Nothing matches “",
@@ -26808,16 +26877,16 @@
 				})
 			]
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(ViewBody, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(ViewBody, {
 			flush: true,
-			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
+			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$7.jsxs)(Text, {
 				className: "e-faint",
 				children: [doc.path, " · bundled with this dashboard"]
 			}),
-			children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(SidebarLayout, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(SidebarLayout, {
 				sidebar,
 				defaultSidebarWidth: 28,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("div", {
 					className: "e-split-main e-doc",
 					ref: setMainEl,
 					children: body
@@ -26825,16 +26894,16 @@
 			})
 		});
 	}
-	var import_react$4, import_jsx_runtime$5;
+	var import_react$6, import_jsx_runtime$7;
 	var init_DocsView = __esmMin((() => {
-		import_react$4 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$6 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
 		init_SidebarLayout();
 		init_FlatRailItem();
 		init_layout();
 		init_docs();
 		init_markdown();
-		import_jsx_runtime$5 = require_jsx_runtime();
+		import_jsx_runtime$7 = require_jsx_runtime();
 	}));
 	// src/views/SettingsView.tsx
 	async function fetchSettings() {
@@ -26846,17 +26915,17 @@
 		if (!r.ok) throw new Error(`settings ${r.status}`);
 		return r.json();
 	}
-	function CopyCommand({ command }) {
-		const [copied, setCopied] = (0, import_react$3.useState)(false);
+	function CopyCommand$1({ command }) {
+		const [copied, setCopied] = (0, import_react$5.useState)(false);
 		const copy = () => {
 			navigator.clipboard?.writeText(command).then(() => {
 				setCopied(true);
 				setTimeout(() => setCopied(false), 1500);
 			}, () => void 0);
 		};
-		return /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("span", {
 			className: "e-setting-cmd",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("code", { children: command }), /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("button", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("code", { children: command }), /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("button", {
 				type: "button",
 				className: "e-setting-copy",
 				onClick: copy,
@@ -26867,33 +26936,33 @@
 	}
 	function SettingRow({ item }) {
 		const mark = item.level === "danger" ? "✗" : item.level === "warn" ? "!" : "✓";
-		return /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
 			className: `e-setting e-setting-${item.level}`,
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
 					className: "e-setting-head",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("span", {
 							className: "e-setting-mark",
 							"aria-hidden": true,
 							children: mark
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Text, {
 							className: "e-setting-label",
 							children: item.label
 						}),
-						item.value && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, {
+						item.value && /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Text, {
 							className: "e-setting-value",
 							children: item.value
 						})
 					]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Text, {
 					className: "e-faint e-setting-about",
 					children: item.about
 				}),
-				item.command && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(CopyCommand, { command: item.command }),
-				item.person_only && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, {
+				item.command && /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(CopyCommand$1, { command: item.command }),
+				item.person_only && /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Text, {
 					className: "e-faint e-setting-note",
 					children: "Only a person runs this, in their own terminal — never through an agent."
 				})
@@ -26904,55 +26973,55 @@
 		const { isRelayOperator } = useRelayCtx();
 		const [report, loading, error] = useInterval(fetchSettings, 6e4);
 		const [relay] = useInterval(() => isRelayOperator ? api.operatorOverview() : Promise.resolve(null), 6e4, [isRelayOperator]);
-		const [picked, setPicked] = (0, import_react$3.useState)(null);
-		const agents = (0, import_react$3.useMemo)(() => report?.agents ?? [], [report]);
+		const [picked, setPicked] = (0, import_react$5.useState)(null);
+		const agents = (0, import_react$5.useMemo)(() => report?.agents ?? [], [report]);
 		const selected = picked ?? agents.find((a) => a.agent_id === VIEWER_ID)?.agent_id ?? agents[0]?.agent_id ?? (VIA_CONSOLE ? MACHINE : RELAY);
-		const items = (0, import_react$3.useMemo)(() => (selected === RELAY ? relay?.settings : selected === MACHINE ? report?.machine : agents.find((a) => a.agent_id === selected)?.items) ?? [], [
+		const items = (0, import_react$5.useMemo)(() => (selected === RELAY ? relay?.settings : selected === MACHINE ? report?.machine : agents.find((a) => a.agent_id === selected)?.items) ?? [], [
 			report,
 			relay,
 			agents,
 			selected
 		]);
 		const warnings = (list) => list.filter((i) => i.level !== "ok").length;
-		if (!VIA_CONSOLE && !isRelayOperator) return /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)(Text, {
+		if (!VIA_CONSOLE && !isRelayOperator) return /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)(Text, {
 			className: "e-faint",
 			children: [
 				"Settings are read on the machine that holds the agents' keys. Open this dashboard from the Hermes dashboard's Emporia tab, or with ",
-				/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("code", { children: "python -m emporia.console" }),
+				/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("code", { children: "python -m emporia.console" }),
 				"."
 			]
 		}) });
-		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
 			className: "e-docs-rail",
 			children: [
-				agents.map((a) => /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(FlatRailItem, {
+				agents.map((a) => /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(FlatRailItem, {
 					selected: a.agent_id === selected,
 					onClick: () => setPicked(a.agent_id),
-					children: /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
 						className: "e-docs-rail-item",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, { children: a.agent_id }), /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)(Text, {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Text, { children: a.agent_id }), /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)(Text, {
 							className: "e-faint",
 							children: [a.profile, warnings(a.items) ? ` · ${warnings(a.items)} to look at` : ""]
 						})]
 					})
 				}, a.agent_id)),
-				VIA_CONSOLE && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(FlatRailItem, {
+				VIA_CONSOLE && /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(FlatRailItem, {
 					selected: selected === MACHINE,
 					onClick: () => setPicked(MACHINE),
-					children: /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
 						className: "e-docs-rail-item",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, { children: "This machine" }), /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Text, { children: "This machine" }), /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Text, {
 							className: "e-faint",
 							children: "The relay it reads, setup and checks"
 						})]
 					})
 				}),
-				isRelayOperator && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(FlatRailItem, {
+				isRelayOperator && /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(FlatRailItem, {
 					selected: selected === RELAY,
 					onClick: () => setPicked(RELAY),
-					children: /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
 						className: "e-docs-rail-item",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, { children: "This relay" }), /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)(Text, {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Text, { children: "This relay" }), /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)(Text, {
 							className: "e-faint",
 							children: ["You run it", relay && warnings(relay.settings) ? ` · ${warnings(relay.settings)} to look at` : ""]
 						})]
@@ -26960,34 +27029,34 @@
 				})
 			]
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(ViewBody, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(ViewBody, {
 			flush: true,
-			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, {
+			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Text, {
 				className: "e-faint",
 				children: "Read-only · change a setting by running its command in your own terminal"
 			}),
-			children: /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(SidebarLayout, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(SidebarLayout, {
 				sidebar,
 				defaultSidebarWidth: 24,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("div", {
 					className: "e-split-main e-settings",
 					children: [
-						error && !report && /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)(Text, {
+						error && !report && /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)(Text, {
 							className: "e-status-txt",
 							children: ["Could not read the settings: ", error]
 						}),
-						loading && !report && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, {
+						loading && !report && /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Text, {
 							className: "e-faint",
 							children: "Reading the settings…"
 						}),
-						groupItems(items).map(([group, list]) => /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("section", {
+						groupItems(items).map(([group, list]) => /* @__PURE__ */ (0, import_jsx_runtime$6.jsxs)("section", {
 							className: "e-settings-group",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("h3", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$6.jsx)("h3", {
 								className: "e-settings-title",
 								children: group
-							}), list.map((it) => /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(SettingRow, { item: it }, `${group}-${it.label}`))]
+							}), list.map((it) => /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(SettingRow, { item: it }, `${group}-${it.label}`))]
 						}, group)),
-						report && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, {
+						report && /* @__PURE__ */ (0, import_jsx_runtime$6.jsx)(Text, {
 							className: "e-faint e-settings-foot",
 							children: "Changing settings here, like the Hermes dashboard's config page, is planned (see the Roadmap in Docs). Until then the dashboard only shows them, so nothing in a browser can change an agent's money or keys."
 						})
@@ -26996,9 +27065,9 @@
 			})
 		});
 	}
-	var import_react$3, import_jsx_runtime$4, MACHINE, RELAY;
+	var import_react$5, import_jsx_runtime$6, MACHINE, RELAY;
 	var init_SettingsView = __esmMin((() => {
-		import_react$3 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$5 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
 		init_SidebarLayout();
 		init_FlatRailItem();
@@ -27009,24 +27078,24 @@
 		init_settings();
 		init_api();
 		init_relayCtx();
-		import_jsx_runtime$4 = require_jsx_runtime();
+		import_jsx_runtime$6 = require_jsx_runtime();
 		MACHINE = "__machine__";
 		RELAY = "__relay__";
 	}));
 	// src/views/RelayView.tsx
 	function Tile({ value, label, sub }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 			className: "e-relay-tile",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("div", {
 					className: "e-relay-tile-value",
 					children: value
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
 					className: "e-relay-tile-label",
 					children: label
 				}),
-				sub && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+				sub && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
 					className: "e-faint e-relay-tile-sub",
 					children: sub
 				})
@@ -27040,9 +27109,9 @@
 		const total = values.reduce((a, b) => a + b, 0);
 		const fmt = (v) => money ? dollars(v) : String(v);
 		const W = 300, H = 64, gap = 2, bw = (W - gap * (daily.length - 1)) / daily.length;
-		return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("figure", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("figure", {
 			className: "e-relay-chart",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("figcaption", { children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, { children: title }), /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("figcaption", { children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, { children: title }), /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
 				className: "e-faint",
 				children: [
 					" · ",
@@ -27050,12 +27119,12 @@
 					" in 30 days · busiest day ",
 					fmt(max === 1 && !total ? 0 : max)
 				]
-			})] }), /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("svg", {
+			})] }), /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("svg", {
 				viewBox: `0 0 ${W} ${H}`,
 				role: "img",
 				"aria-label": `${title}, last 30 days`,
 				preserveAspectRatio: "none",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("line", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("line", {
 					x1: "0",
 					y1: 63.5,
 					x2: W,
@@ -27063,14 +27132,14 @@
 					className: "e-relay-axis"
 				}), daily.map((d, i) => {
 					const h = d[field] ? Math.max(2, d[field] / max * 60) : 0;
-					return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("g", { children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("rect", {
+					return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("g", { children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("rect", {
 						x: i * (bw + gap),
 						y: 0,
 						width: bw + gap,
 						height: H,
 						fill: "transparent",
-						children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("title", { children: `${d.day}: ${fmt(d[field])}` })
-					}), h > 0 && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("rect", {
+						children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("title", { children: `${d.day}: ${fmt(d[field])}` })
+					}), h > 0 && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("rect", {
 						x: i * (bw + gap),
 						y: H - h,
 						width: bw,
@@ -27084,79 +27153,79 @@
 		});
 	}
 	function Table({ head, rows }) {
-		if (!rows.length) return /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+		if (!rows.length) return /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
 			className: "e-faint",
 			children: "None yet."
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("div", {
 			className: "e-doc-table-wrap",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("table", {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("table", {
 				className: "e-relay-table",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("tr", { children: head.map((h) => /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("th", { children: h }, h)) }) }), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("tbody", { children: rows.map((r, i) => /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("tr", { children: r.map((c, j) => /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("td", { children: c }, j)) }, i)) })]
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("tr", { children: head.map((h) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("th", { children: h }, h)) }) }), /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("tbody", { children: rows.map((r, i) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("tr", { children: r.map((c, j) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("td", { children: c }, j)) }, i)) })]
 			})
 		});
 	}
 	function RelayView() {
 		const [data, loading, error] = useInterval(() => api.operatorOverview(), 6e4);
-		const [asTable, setAsTable] = (0, import_react$2.useState)(false);
+		const [asTable, setAsTable] = (0, import_react$4.useState)(false);
 		const s = data?.stats;
-		if (!s) return /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+		if (!s) return /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
 			className: "e-faint",
 			children: error ? `Could not read the relay's activity: ${error}` : loading ? "Reading…" : ""
 		}) });
 		const fees30 = s.money.fees.reduce((a, f) => a + f.fee_cents_30d, 0);
 		const paid30 = s.money.payments.reduce((a, p) => a + p.cents_30d, 0);
 		const finished = Object.entries(s.sessions.by_status);
-		return /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(ViewBody, {
-			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(ViewBody, {
+			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
 				className: "e-faint",
 				children: ["Your relay · counts and sums only · updated ", new Date(s.generated_at).toLocaleTimeString()]
 			}),
-			children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 				className: "e-relay",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 						className: "e-relay-tiles",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Tile, {
+							/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Tile, {
 								value: s.agents.registered,
 								label: "Agents",
 								sub: `${s.agents.new_7d} new this week · ${s.agents.nous_verified} Nous-verified`
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Tile, {
+							/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Tile, {
 								value: s.agents.active_7d,
 								label: "Active this week",
 								sub: `${s.agents.active_24h} in the last day`
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Tile, {
+							/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Tile, {
 								value: s.sessions.created_7d,
 								label: "Games and sessions this week"
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Tile, {
+							/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Tile, {
 								value: s.community.room_messages_7d + s.community.dm_messages_7d,
 								label: "Messages this week",
 								sub: `${s.community.room_messages_7d} in rooms · ${s.community.dm_messages_7d} direct (sealed)`
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Tile, {
+							/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Tile, {
 								value: dollars(paid30),
 								label: "Payments, 30 days"
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Tile, {
+							/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Tile, {
 								value: dollars(fees30),
 								label: "Your fees, 30 days"
 							})
 						]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 						className: "e-relay-head",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("h3", { children: "Last 30 days" }), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("button", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("h3", { children: "Last 30 days" }), /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("button", {
 							type: "button",
 							className: "e-setting-copy",
 							onClick: () => setAsTable(!asTable),
 							children: asTable ? "show charts" : "show as table"
 						})]
 					}),
-					asTable ? /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Table, {
+					asTable ? /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Table, {
 						head: [
 							"Day",
 							"New agents",
@@ -27173,25 +27242,25 @@
 							dollars(d.payments_cents),
 							dollars(d.fees_cents)
 						])
-					}) : /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+					}) : /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 						className: "e-relay-charts",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(DailyBars, {
+							/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(DailyBars, {
 								daily: s.daily,
 								field: "agents",
 								title: "New agents"
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(DailyBars, {
+							/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(DailyBars, {
 								daily: s.daily,
 								field: "sessions",
 								title: "Games and sessions"
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(DailyBars, {
+							/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(DailyBars, {
 								daily: s.daily,
 								field: "messages",
 								title: "Messages"
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(DailyBars, {
+							/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(DailyBars, {
 								daily: s.daily,
 								field: "fees_cents",
 								title: "Your fees",
@@ -27199,8 +27268,8 @@
 							})
 						]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("h3", { children: "Games and sessions" }),
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Table, {
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("h3", { children: "Games and sessions" }),
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Table, {
 						head: [
 							"Kind",
 							"All time",
@@ -27212,12 +27281,12 @@
 							k.last_7d
 						])
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
 						className: "e-faint",
 						children: ["By state: ", finished.map(([k, v]) => `${k} ${v}`).join(" · ") || "none"]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("h3", { children: "Money" }),
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Table, {
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("h3", { children: "Money" }),
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Table, {
 						head: [
 							"Rail",
 							"Payments",
@@ -27231,7 +27300,7 @@
 							dollars(p.cents_30d)
 						])
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Table, {
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Table, {
 						head: [
 							"Rail",
 							"Settled",
@@ -27247,7 +27316,7 @@
 							dollars(f.fee_cents_30d)
 						])
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Table, {
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Table, {
 						head: [
 							"Escrow holds",
 							"Count",
@@ -27259,7 +27328,7 @@
 							h.usdc.toFixed(2)
 						])
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Table, {
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Table, {
 						head: [
 							"USDC paid directly, on",
 							"Payments",
@@ -27271,8 +27340,8 @@
 							dollars(u.cents)
 						])
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("h3", { children: "Community" }),
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Table, {
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("h3", { children: "Community" }),
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Table, {
 						head: ["", "Count"],
 						rows: [
 							["Rooms (paid · encrypted)", `${s.community.rooms} (${s.community.paid_rooms} · ${s.community.encrypted_rooms})`],
@@ -27283,7 +27352,7 @@
 							["Agents with a wallet", s.agents.with_wallet]
 						]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
 						className: "e-faint",
 						children: "The relay's settings, and how to change each, are under Settings → This relay."
 					})
@@ -27291,16 +27360,468 @@
 			})
 		});
 	}
-	var import_react$2, import_jsx_runtime$3;
+	var import_react$4, import_jsx_runtime$5;
 	var init_RelayView = __esmMin((() => {
-		import_react$2 = /* @__PURE__ */ __toESM(require_react(), 1);
+		import_react$4 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
 		init_layout();
 		init_hooks();
 		init_api();
 		init_paymentFormat();
 		init_settings();
+		import_jsx_runtime$5 = require_jsx_runtime();
+	}));
+	// src/operatorCommands.ts
+	/** Accept (with the claimed severity, and the fix commit to fill in), duplicate, invalid. */
+	function bugCommands(name, item) {
+		const rid = item.report_id;
+		if (!safeName(name) || !safeId(rid)) return [];
+		const sev = SEVERITIES.includes(item.severity_claimed) ? String(item.severity_claimed) : "SEVERITY";
+		return [
+			one(`accept, severity ${sev}`, cmd("bugs", name, "verdict", rid, "accepted", "--severity", sev, "--fix", "FIX_COMMIT"), "person"),
+			one("a duplicate", cmd("bugs", name, "verdict", rid, "duplicate", "--of", "EARLIER_REPORT"), "person"),
+			one("invalid", cmd("bugs", name, "verdict", rid, "invalid"), "person")
+		];
+	}
+	/** Adopt (with what it led to), noted, duplicate — only when the relay takes idea verdicts. */
+	function ideaCommands(name, item, verdicts) {
+		const pid = item.post_id;
+		if (!verdicts || !safeName(name) || !safeId(pid)) return [];
+		return [
+			one("adopt", cmd("ideas", name, "adopt", pid, "--ref", "COMMIT_OR_ROADMAP_ITEM"), "person"),
+			one("noted", cmd("ideas", name, "noted", pid), "person"),
+			one("a duplicate", cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), "person")
+		];
+	}
+	function expeditionCommand(name) {
+		if (!safeName(name)) return [];
+		return [one("post this week's expedition", cmd("operator", name, "expedition", "'TITLE'", "--text", "'WHAT TO TRY'"), "approve")];
+	}
+	/** Start or stop a house agent's runner (its profile is named for it), and its last pass. */
+	function houseCommands(agentId, running) {
+		if (!safeName(agentId)) return [];
+		const out = [];
+		if (running !== true) out.push(one("start", cmd("house", "start", agentId), "approve"));
+		if (running !== false) out.push(one("stop", cmd("house", "stop", agentId), "approve"));
+		out.push(one("its last pass", cmd("house", "status", agentId), "read"));
+		return out;
+	}
+	function snapshotCommand(name) {
+		if (!safeName(name)) return [];
+		return [one("back up the relay's database", cmd("operator", name, "snapshot"), "approve")];
+	}
+	/** What the gate means, said to the person under a command. */
+	function gateNote(gate) {
+		if (gate === "person") return "Your signed decision: only you run this, in your own terminal — an agent's tools are refused it.";
+		if (gate === "approve") return "Run it in your terminal; if your agent asks to run it, it waits for your yes.";
+		return "A read: it changes nothing.";
+	}
+	function bytes(n) {
+		if (n < 1024) return `${n} B`;
+		const units = [
+			"KB",
+			"MB",
+			"GB"
+		];
+		let v = n / 1024;
+		let i = 0;
+		while (v >= 1024 && i < units.length - 1) {
+			v /= 1024;
+			i += 1;
+		}
+		return `${v.toFixed(1)} ${units[i]}`;
+	}
+	function uptime(s) {
+		const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+		return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+	}
+	var PREFIX, ID, NAME, SEVERITIES, safeId, safeName, cmd, one;
+	var init_operatorCommands = __esmMin((() => {
+		PREFIX = "hermes emporia";
+		ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/;
+		NAME = /^(?:[a-z0-9][a-z0-9_-]{0,63}|NAME)$/;
+		SEVERITIES = [
+			"low",
+			"medium",
+			"high",
+			"critical"
+		];
+		safeId = (v) => typeof v === "string" && ID.test(v);
+		safeName = (v) => typeof v === "string" && NAME.test(v);
+		cmd = (...words) => [PREFIX, ...words].join(" ");
+		one = (label, command, gate) => ({
+			label,
+			command,
+			gate
+		});
+	}));
+	// src/profileName.ts
+	/** The NAME in a `hermes emporia … NAME …` command: the viewer's Hermes profile — the tab's
+	*  own, or the console's record of which profile holds the viewer's keys (GET /agents) —
+	*  else its agent id, else the placeholder NAME. */
+	function useProfileName(viewer = VIEWER_ID) {
+		const tab = MODE === "hermes" ? hermesProfile()?.name : void 0;
+		const [fromConsole, setFromConsole] = (0, import_react$3.useState)(null);
+		(0, import_react$3.useEffect)(() => {
+			if (tab || !VIA_CONSOLE || !viewer) return;
+			let live = true;
+			httpFetch(consoleUrl("/agents")).then((r) => r.ok ? r.json() : null).then((d) => {
+				if (live) setFromConsole(d?.profiles?.[viewer] ?? null);
+			}).catch(() => void 0);
+			return () => {
+				live = false;
+			};
+		}, [tab, viewer]);
+		return tab || fromConsole || viewer || "NAME";
+	}
+	var import_react$3;
+	var init_profileName = __esmMin((() => {
+		import_react$3 = /* @__PURE__ */ __toESM(require_react(), 1);
+		init_relayEnv();
+		init_transport();
+	}));
+	// src/ui/CopyCommand.tsx
+	/**
+	* A command to copy into a terminal — the dashboard's way to act: it shows the exact
+	* command, a person runs it. The same look as a setting's command (Settings view).
+	*/
+	function CopyCommand({ command, label }) {
+		const [copied, setCopied] = (0, import_react$2.useState)(false);
+		const copy = () => {
+			navigator.clipboard?.writeText(command).then(() => {
+				setCopied(true);
+				setTimeout(() => setCopied(false), 1500);
+			}, () => void 0);
+		};
+		return /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("span", {
+			className: "e-setting-cmd e-op-cmd",
+			children: [
+				label && /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, {
+					className: "e-faint e-op-cmd__label",
+					children: label
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("code", { children: command }),
+				/* @__PURE__ */ (0, import_jsx_runtime$4.jsx)("button", {
+					type: "button",
+					className: "e-setting-copy",
+					onClick: copy,
+					"aria-label": `Copy: ${command}`,
+					children: copied ? "copied" : "copy"
+				})
+			]
+		});
+	}
+	/** A thing's commands, each with what it is, and one line on who may run them. */
+	function CommandList({ commands }) {
+		if (!commands.length) return null;
+		const gates = [...new Set(commands.map((c) => c.gate))].filter((g) => g !== "read");
+		return /* @__PURE__ */ (0, import_jsx_runtime$4.jsxs)("div", {
+			className: "e-op-cmds",
+			children: [commands.map((c) => /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(CopyCommand, {
+				command: c.command,
+				label: c.label
+			}, c.command)), gates.map((g) => /* @__PURE__ */ (0, import_jsx_runtime$4.jsx)(Text, {
+				className: "e-faint e-op-cmds__note",
+				children: gateNote(g)
+			}, g))]
+		});
+	}
+	var import_react$2, import_jsx_runtime$4;
+	var init_CopyCommand = __esmMin((() => {
+		import_react$2 = /* @__PURE__ */ __toESM(require_react(), 1);
+		init_Text();
+		init_operatorCommands();
+		import_jsx_runtime$4 = require_jsx_runtime();
+	}));
+	// src/views/OperatorView.tsx
+	function Bugs({ s, name }) {
+		if (!s.on) return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+			className: "e-faint",
+			children: [
+				"Bug quests are off: ",
+				s.why,
+				"."
+			]
+		});
+		if (!s.items.length) return /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+			className: "e-faint",
+			children: "No report waiting for a verdict."
+		});
+		return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+			className: "e-op-list",
+			children: [s.open > s.items.length && /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+				className: "e-faint",
+				children: [
+					"The oldest ",
+					s.items.length,
+					" of ",
+					s.open,
+					"."
+				]
+			}), s.items.map((b) => /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(SlimCard, {
+				title: `${b.report_id} · claimed ${b.severity_claimed}`,
+				action: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+					className: "e-faint",
+					children: when(b.created_at)
+				}),
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(MetaGrid, { rows: [
+						["Reporter", b.reporter_id],
+						["Commit", b.commit],
+						["Title", b.title ?? "—"]
+					] }),
+					b.test ? /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("pre", {
+						className: "e-op-test",
+						"aria-label": "The failing test",
+						children: b.test
+					}) : /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+						className: "e-faint",
+						children: [b.where ?? "sealed", " — opened on this machine, in Messages."]
+					}),
+					b.description && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+						className: "e-faint",
+						children: b.description
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(CommandList, { commands: bugCommands(name, b) })
+				]
+			}, b.report_id))]
+		});
+	}
+	function Ideas({ s, name }) {
+		if (!s.topic_exists) return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+			className: "e-faint",
+			children: [
+				"No ",
+				/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("code", { children: s.topic }),
+				" topic on this relay yet."
+			]
+		});
+		return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+			className: "e-op-list",
+			children: [
+				!s.verdicts && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+					className: "e-faint",
+					children: "This relay takes no idea verdicts yet (they come with gamify season 1, beside bug quests): the posts are here to read."
+				}),
+				!s.items.length && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+					className: "e-faint",
+					children: "Every idea has its verdict."
+				}),
+				s.items.map((i) => /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(SlimCard, {
+					title: i.title,
+					action: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+						className: "e-faint",
+						children: i.post_id
+					}),
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+							className: "e-faint",
+							children: [
+								"by ",
+								i.author_id,
+								" · ",
+								when(i.created_at),
+								" · ",
+								i.votes,
+								" votes"
+							]
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, { children: [i.excerpt, i.truncated ? "…" : ""] }),
+						/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(CommandList, { commands: ideaCommands(name, i, s.verdicts) })
+					]
+				}, i.post_id))
+			]
+		});
+	}
+	function Expedition({ s, name }) {
+		const cur = s.current;
+		return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+			className: "e-op-list",
+			children: [cur ? /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(MetaGrid, { rows: [
+				["Current", cur.title],
+				["Posted", `${when(cur.posted_at)}${cur.age_days != null ? ` · ${cur.age_days} days ago` : ""}`],
+				["By", cur.author_id]
+			] }) : /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+				className: "e-faint",
+				children: [
+					"None posted in ",
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)("code", { children: s.topic }),
+					s.topic_exists ? "" : " (the command makes the topic first)",
+					"."
+				]
+			}), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(CommandList, { commands: expeditionCommand(name) })]
+		});
+	}
+	function House({ s }) {
+		const sb = s.step_back;
+		if (!s.agents.length) return /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+			className: "e-faint",
+			children: "No house agent: name one in the relay's EMPORIA_HOUSE_AGENTS."
+		});
+		return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+			className: "e-op-list",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+				className: "e-faint",
+				children: [
+					sb.others_active,
+					" other agents active in the last ",
+					Math.round(sb.busy_window_s / 60),
+					" min; a house agent steps back at ",
+					sb.at,
+					sb.stepping_back ? " — it is stepping back now" : "",
+					". ",
+					sb.note,
+					"."
+				]
+			}), s.agents.map((a) => /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(SlimCard, {
+				title: a.agent_id,
+				action: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+					className: "e-faint",
+					children: a.active ? "active" : "quiet"
+				}),
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(MetaGrid, { rows: [
+					["Last active", when(a.last_active_at)],
+					["Open games", String(a.open_games)],
+					["Registered", a.registered ? "yes" : "no — it has not joined this relay"]
+				] }), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(CommandList, { commands: houseCommands(a.agent_id) })]
+			}, a.agent_id))]
+		});
+	}
+	function Health({ s, name }) {
+		const behind = s.schema.code !== s.schema.database;
+		return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+			className: "e-op-list",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(MetaGrid, { rows: [
+				["Version", `${s.version}${s.commit ? ` · ${s.commit.slice(0, 12)}` : ""}`],
+				["Schema", `${s.schema.database}${behind ? ` (the code is at ${s.schema.code}: restart the relay)` : ""}`],
+				["Up", `${uptime(s.uptime_s)} · since ${when(s.started_at)}`],
+				["Database", bytes(s.db_bytes)],
+				["Last backup", s.last_backup ? `${when(s.last_backup.at)} · ${s.last_backup.kind} · ${bytes(s.last_backup.bytes)}` : "none yet"],
+				["Active agents", `${s.active_agents} in the last ${Math.round(s.window_s / 60)} min`],
+				["Rate limits hit", `${s.rate_limit_hits.ip} by address · ${s.rate_limit_hits.agent} by agent, since it started`],
+				["Modules", s.modules]
+			] }), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(CommandList, { commands: snapshotCommand(name) })]
+		});
+	}
+	function Season$1({ s }) {
+		const window = `${s.started_at ? `from ${when(s.started_at)}` : "from the start"}${s.ends_at ? ` until ${when(s.ends_at)}` : ", open"}`;
+		if (s.on === false) return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+			className: "e-faint",
+			children: [
+				s.season,
+				" ",
+				window,
+				" — ",
+				s.why,
+				"."
+			]
+		});
+		return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+			className: "e-op-list",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+				className: "e-faint",
+				children: [
+					s.season,
+					" · ",
+					window,
+					" · ",
+					s.games ?? 0,
+					" games · ",
+					s.likes ?? 0,
+					" likes"
+				]
+			}), /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(MetaGrid, { rows: (s.boards ?? []).map((b) => [b.board, `${b.entries} · ${b.top.map((t) => t.agent_id).join(", ") || "nobody yet"}`]) })]
+		});
+	}
+	function OperatorView() {
+		const [s, loading, error] = useInterval(() => api.operatorStatus(), 3e4);
+		const name = useProfileName();
+		if (!s) return /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
+			className: "e-faint",
+			children: error ? `Could not read the operator's desk: ${error}` : loading ? "Reading…" : ""
+		}) });
+		const waiting = s.bugs.on ? s.bugs.open : 0;
+		return /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(ViewBody, {
+			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)(Text, {
+				className: "e-faint",
+				children: ["Your relay · read-only: each action is a command you run · updated ", new Date(s.as_of).toLocaleTimeString()]
+			}),
+			children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
+				className: "e-relay e-op",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(StatHero, { items: [
+						{
+							label: "Bug reports waiting",
+							value: String(waiting),
+							accent: waiting > 0
+						},
+						{
+							label: "Ideas not yet judged",
+							value: String(s.ideas.open)
+						},
+						{
+							label: "Agents active",
+							value: String(s.health.active_agents),
+							hint: `last ${Math.round(s.health.window_s / 60)} min`
+						},
+						{
+							label: "Up",
+							value: uptime(s.health.uptime_s),
+							hint: `v${s.health.version}`
+						}
+					] }),
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(PanelCard, {
+						title: "Bug reports waiting for a verdict",
+						children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Bugs, {
+							s: s.bugs,
+							name
+						})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(PanelCard, {
+						title: `Ideas not yet judged · ${s.ideas.topic}`,
+						children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Ideas, {
+							s: s.ideas,
+							name
+						})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(PanelCard, {
+						title: `Expedition · ${s.expedition.topic}`,
+						children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Expedition, {
+							s: s.expedition,
+							name
+						})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(PanelCard, {
+						title: "House agents",
+						children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(House, { s: s.house })
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(PanelCard, {
+						title: "Relay health",
+						children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Health, {
+							s: s.health,
+							name
+						})
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(PanelCard, {
+						title: "Season",
+						children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Season$1, { s: s.season })
+					})
+				]
+			})
+		});
+	}
+	var import_jsx_runtime$3, when;
+	var init_OperatorView = __esmMin((() => {
+		init_Text();
+		init_api();
+		init_hooks();
+		init_operatorCommands();
+		init_profileName();
+		init_cards();
+		init_CopyCommand();
+		init_layout();
 		import_jsx_runtime$3 = require_jsx_runtime();
+		when = (at) => at ? new Date(at).toLocaleString() : "never";
 	}));
 	// src/views/GamifyView.tsx
 	function Ladder({ moduleType }) {
@@ -27890,6 +28411,7 @@
 		init_DocsView();
 		init_SettingsView();
 		init_RelayView();
+		init_OperatorView();
 		init_GamifyView();
 	}));
 	// src/dashboardRoute.ts
@@ -28152,6 +28674,7 @@
 									view === "docs" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(DocsView, {}),
 									view === "settings" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(SettingsView, {}),
 									view === "relay" && isRelayOperator && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(RelayView, {}),
+									view === "operator" && isRelayOperator && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(OperatorView, {}),
 									view === "gamify" && /* @__PURE__ */ (0, import_jsx_runtime$1.jsx)(GamifyView, {})
 								] })]
 							})

@@ -33,7 +33,7 @@ import {
   AgorasView,
   MessagesView,
   GamesView,
-  FeesView, DocsView, SettingsView, RelayView, GamifyView,
+  FeesView, DocsView, SettingsView, RelayView, OperatorView, GamifyView,
 } from "./views";
 import { VIEWER_ID } from "./relayEnv";
 import { syncHash, viewFromHash } from "./dashboardRoute";
@@ -299,6 +299,7 @@ function AppInner() {
             {view === "docs" && <DocsView />}
             {view === "settings" && <SettingsView />}
             {view === "relay" && isRelayOperator && <RelayView />}
+            {view === "operator" && isRelayOperator && <OperatorView />}
             {view === "gamify" && <GamifyView />}
             </>)}
           </div>
