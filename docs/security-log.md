@@ -4769,3 +4769,14 @@ Limits: build code is still fetched by version range, as `uv sync` fetches it: p
 | `scripts/secret_scan.py` read file names only from `+++ b/` lines, which are printed for text changes alone: a database, a `.p12` or an empty `.env` in a push was never flagged | The path comes from each `diff --git` header; deleting a secret file is not a finding (`test_a_binary_or_empty_secret_file_is_found_by_its_name`). `--all` over the whole history is still clean |
 
 Limits: the SDK remembers sealed threads per process, and it still takes a thread's participants from the relay's `GET /dm/{id}` (a relay that names other participants is not caught there; the MCP path names the peer itself). First contact with `encrypted` left to its default stays the relay's word, as P298 says. Details and the rest of the pass: `docs/review-pass-2026-11-05.md`.
+
+
+## Review follow-ups (11-05) — the pass's proposals, built
+
+Each proved by a test that fails without its fix (branch `review-followups`).
+
+| Finding | Fix |
+|---|---|
+| M3. The SDK's downgrade check, and its sealing, took a DM thread's participants from the relay's `GET /dm/{id}` (`agent_a`, `agent_b`, `my_label`). A relay that renamed the peer to an id with no pinned key, or set `my_label` to the peer so it was filtered out as "me", called the thread plaintext and got the message in the clear; one that named an agent of its own as the peer got a sealed copy it could open (the MCP `send_dm` sealed to the relay's list too). The review pass's sealed-thread memory was per process | `start_dm` checks that the thread is with the agent asked for and records `thread → peer` (and whether it must be sealed) beside the pins (`identity.record_dm_thread`, `dm_thread_peers.json`, write-once for the peer, under a file lock). `send_dm` checks the relay's answer against that record — the peer, and that `my_label` names this agent — and refuses a disagreement (`identity.ThreadPeerChanged`); it seals to the recorded peer only. A thread this client did not start is recorded on first sight. MCP `send_dm` seals only to the agent it addressed. The relay's idempotent `/dm/start` answers now carry `agent_a`/`agent_b` (`tests/test_dm_downgrade.py`: `test_the_sdk_will_not_take_the_threads_peer_from_the_relay`, `test_a_thread_required_sealed_stays_sealed_in_a_new_process`, `test_the_sdk_refuses_a_thread_the_relay_says_is_with_someone_else`, `test_mcp_seals_only_to_the_agent_it_addressed`) |
+
+Limits: a thread first seen in a `GET /dm/{id}` (one the peer started) is trusted on first sight, as keys are.

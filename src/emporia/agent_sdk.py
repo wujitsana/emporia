@@ -123,6 +123,8 @@ class EmporiaAgent:
         self._timeout = timeout
         # Review pass (11-05): threads this agent required sealed (start_dm(encrypted=True),
         # or with another relay's agent): never sent to in plaintext, whatever the relay says.
+        # Review follow-up M3: also recorded on disk with the thread's peer
+        # (`identity.record_dm_thread`), so the rule outlives the process.
         self._sealed_threads: set[str] = set()
         # P45: the wallet this agent pays x402 from. Separate from
         # `public_key_hex` on purpose — that is an Ed25519 identity key the
@@ -830,16 +832,43 @@ class EmporiaAgent:
         from emporia.addresses import host_of, is_address, same_host, split_address
         required = encrypted is True or (is_address(to_agent)
                                          and not same_host(split_address(to_agent)[1], host_of(self.relay_url)))
+        from emporia import identity
+        if required and not thread.get("encrypted"):
+            raise identity.PlaintextRefused(
+                f"the relay answered with a plaintext DM thread with '{to_agent}', but "
+                + ("this agent asked for an encrypted one" if encrypted is True
+                   else "a DM to another relay's agent is always end-to-end encrypted")
+                + " — refusing it, since the relay could read what is sent there")
+        # Review follow-up M3: the thread must be with the agent asked for, and that is
+        # what is recorded — later sends check the relay's answer against it.
+        shown = thread if thread.get("agent_a") else {**await self.get_dm_thread(thread.get("thread_id", "")),
+                                                      "thread_id": thread.get("thread_id", "")}
+        named = identity.dm_thread_peer(self.relay_url, self.agent_id, shown)
+        if not identity.same_agent(named, to_agent, self.relay_url):
+            raise identity.ThreadPeerChanged(
+                f"asked for a DM thread with '{to_agent}', but the relay answered with one with "
+                f"'{named}' — refusing it")
+        identity.record_dm_thread(self.agent_id, self.relay_url, thread.get("thread_id", ""), to_agent,
+                                  sealed=required)
         if required:
-            if not thread.get("encrypted"):
-                from emporia.identity import PlaintextRefused
-                raise PlaintextRefused(
-                    f"the relay answered with a plaintext DM thread with '{to_agent}', but "
-                    + ("this agent asked for an encrypted one" if encrypted is True
-                       else "a DM to another relay's agent is always end-to-end encrypted")
-                    + " — refusing it, since the relay could read what is sent there")
             self._sealed_threads.add(thread.get("thread_id", ""))
         return thread
+
+    def _thread_peer(self, thread_id: str, thread: dict[str, Any]) -> tuple[str, bool]:
+        """(the peer, whether the thread must be sealed), from this client's own record.
+        Review follow-up M3: the relay's participants are checked against whom `start_dm`
+        asked for; a thread this client never started is recorded on first sight, so a
+        relay that renames its peer later is caught. Raises `identity.ThreadPeerChanged`."""
+        from emporia import identity
+        named = identity.dm_thread_peer(self.relay_url, self.agent_id, thread)
+        rec = identity.recorded_dm_thread(self.agent_id, self.relay_url, thread_id)
+        if rec is None:
+            rec = identity.record_dm_thread(self.agent_id, self.relay_url, thread_id, named, sealed=False)
+        elif not identity.same_agent(rec["peer"], named, self.relay_url):
+            raise identity.ThreadPeerChanged(
+                f"DM thread {thread_id} was started with '{rec['peer']}', but the relay now names "
+                f"'{named}' in it — refusing to send, which would reach whoever the relay chose")
+        return named, bool(rec.get("sealed")) or thread_id in self._sealed_threads
 
     async def get_dm_thread(self, thread_id: str) -> dict[str, Any]:
         """Thread metadata — participants and whether it is encrypted."""
@@ -903,18 +932,15 @@ class EmporiaAgent:
             at=body.get("at", ""),
         )
 
-    async def _thread_recipients(self, thread: dict[str, Any]) -> dict[str, str]:
-        """`{agent_id: encryption_public_key_hex}` for both participants — including
-        this agent, so it can read its own messages back."""
+    async def _thread_recipients(self, thread: dict[str, Any], peer: str) -> dict[str, str]:
+        """`{agent_id: encryption_public_key_hex}` for this agent (so it can read its own
+        messages back) and `peer`, the participant `_thread_peer` checked — never whoever
+        else the relay lists (review follow-up M3)."""
         from emporia.identity import get_encryption_public_key_hex
 
         # P185: in a thread with another relay's agent both are named by address.
         me = thread.get("my_label") or self.agent_id
-        recipients = {me: get_encryption_public_key_hex(self.profile_id)}
-        for participant in (thread["agent_a"], thread["agent_b"]):
-            if participant != me:
-                recipients[participant] = await self._peer_encryption_key(participant)
-        return recipients
+        return {me: get_encryption_public_key_hex(self.profile_id), peer: await self._peer_encryption_key(peer)}
 
     async def send_dm(self, thread_id: str, content: str, msg_type: str = DEFAULT_MSG_TYPE,
                       *, plaintext_ok: bool = False) -> dict[str, Any]:
@@ -962,18 +988,18 @@ class EmporiaAgent:
         nonce = new_message_nonce()
         from emporia import secret_guard
         secret_guard.check(self.agent_id, content)   # P172: before sealing
+        peer, sealed = self._thread_peer(thread_id, thread)
         if not thread["encrypted"] and not plaintext_ok:
             from emporia.identity import PlaintextRefused, refuse_plaintext_to
-            if thread_id in self._sealed_threads:
+            if sealed:
                 raise PlaintextRefused(
                     f"the relay now says DM thread {thread_id} is not encrypted, but this agent required it "
                     "sealed — refusing to send in plaintext, which the relay could read")
-            me = thread.get("my_label") or self.agent_id
-            refuse_plaintext_to(p for p in (thread.get("agent_a"), thread.get("agent_b")) if p != me)
+            refuse_plaintext_to([peer])
         if thread["encrypted"]:
             content = json.dumps(crypto_box.seal(
                 content,
-                await self._thread_recipients(thread),
+                await self._thread_recipients(thread, peer),
                 crypto_box.message_aad("dm", thread_id, thread.get("my_label") or self.agent_id, msg_type, nonce),
             ))
         signature = self._sign("dm", thread_id, content, msg_type, nonce)

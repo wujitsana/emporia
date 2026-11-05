@@ -3035,9 +3035,13 @@ def _flag_changed_keys(result: dict[str, Any], changed: list[str]) -> dict[str, 
     return result
 
 
-def _dm_recipients(sender: str, thread_id: str) -> dict[str, str]:
+def _dm_recipients(sender: str, thread_id: str, peer: str) -> dict[str, str]:
     """`{agent_id: encryption_public_key_hex}` for both participants of an encrypted
     thread — the sender included, so they can read their own messages back.
+
+    Review follow-up M3: `peer` is the agent this send was addressed to. A thread the
+    relay says is with anyone else (or that labels the sender as someone else) raises
+    `identity.ThreadPeerChanged`: sealing to the relay's list would reach whom it chose.
 
     Peer keys go through `identity.trust_peer_encryption_key()`, the same function
     agent_sdk.py calls, so the two clients cannot end up applying different trust
@@ -3045,7 +3049,13 @@ def _dm_recipients(sender: str, thread_id: str) -> dict[str, str]:
     returning a partial recipient set: encrypting to a key that failed its pin is
     the one outcome the pin exists to prevent.
     """
-    from emporia.identity import get_encryption_public_key_hex, trust_peer_encryption_key
+    from emporia.identity import (
+        ThreadPeerChanged,
+        dm_thread_peer,
+        get_encryption_public_key_hex,
+        same_agent,
+        trust_peer_encryption_key,
+    )
 
     thread_r = _bearer_request(
         "get", f"{_base()}/dm/{thread_id}", agent_id=sender, timeout=10,
@@ -3054,10 +3064,12 @@ def _dm_recipients(sender: str, thread_id: str) -> dict[str, str]:
     thread = thread_r.json()
     # P185: in a thread with another relay's agent both are named by address.
     me = thread.get("my_label") or sender
+    named = dm_thread_peer(_base(), sender, {"thread_id": thread_id, **thread})
+    if not same_agent(named, peer, _base()):
+        raise ThreadPeerChanged(f"not sent: the DM is to '{peer}', but the relay's thread {thread_id} is "
+                                f"with '{named}' — refusing to seal it to someone else")
     recipients = {me: get_encryption_public_key_hex(sender)}
-    for participant in (thread["agent_a"], thread["agent_b"]):
-        if participant == me:
-            continue
+    for participant in (named,):
         key_r = _bearer_request(
             "get", f"{_base()}/agents/{participant}/encryption-key",
             agent_id=sender, timeout=10,
@@ -3168,7 +3180,7 @@ def send_dm(
             secret_guard.check(sender, content)   # P163: before sealing
             me = start_r.json().get("my_label") or sender
             content = json.dumps(crypto_box.seal(
-                content, _dm_recipients(sender, thread_id),
+                content, _dm_recipients(sender, thread_id, to_agent_id),
                 crypto_box.message_aad("dm", thread_id, me, msg_type, nonce),
             ))
         # Send the message
