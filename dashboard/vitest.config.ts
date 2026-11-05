@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import path from "path";
+import { cssModuleName } from "./src/cssModuleName";
 
 const KIT = path.resolve("src/ui/kit");
 
@@ -16,6 +17,7 @@ export default defineConfig({
       "@kit": KIT,
     },
   },
+  css: { modules: { localsConvention: "camelCase", generateScopedName: cssModuleName } },
   // P171: the Docs view bundles ../README.md, ../SECURITY.md, ../docs/*.md.
   server: { fs: { allow: [path.resolve("..")] } },
   test: {

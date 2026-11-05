@@ -20,6 +20,7 @@ import fs from "fs";
 import crypto from "crypto";
 import { noRemoteFonts } from "./postcss.noRemoteFonts";
 import { scopeToShadowHost } from "./src/shadowScope";
+import { cssModuleName } from "./src/cssModuleName";
 
 const KIT = path.resolve("src/ui/kit");
 
@@ -71,7 +72,7 @@ export default defineConfig({
   },
   define: { "process.env.NODE_ENV": JSON.stringify("production") },
   css: {
-    modules: { localsConvention: "camelCase" },
+    modules: { localsConvention: "camelCase", generateScopedName: cssModuleName },
     postcss: { plugins: [noRemoteFonts, shadowScope] },
   },
   publicDir: false,
