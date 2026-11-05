@@ -146,7 +146,7 @@ function Quests({ agentId }: { agentId: string }) {
         <p className="e-note">Every welcome quest is done.</p>
       )}
       {q.quests.map((x) => (
-        <Text key={x.id} className={x.done ? "" : "e-faint"} style={{ fontSize: 13 }} title={x.how}>
+        <Text key={x.id} className={x.done ? "e-quest-row is-done" : "e-faint e-quest-row"} style={{ fontSize: 13 }} title={x.how}>
           {x.done ? "✓" : "·"} {x.title} <span className="e-faint">({x.xp} XP)</span>
         </Text>
       ))}

@@ -2,6 +2,7 @@ import Badge from "@kit/Badge";
 import Text from "@kit/Text";
 import { Component, type ReactNode } from "react";
 import type { NavItem } from "../navConfig";
+import { AnimaticHudTop, ScrambleText, TypedText } from "./AnimaticChrome";
 
 /**
  * The section's own heading: its name, and one line on what it shows. Every
@@ -12,11 +13,13 @@ export function PageHeading({ item }: { item: NavItem | undefined }) {
   if (!item) return null;
   return (
     <header className="e-page-head">
+      {/* The style modes' extras (styleMode.ts): nothing in the default style. */}
+      <AnimaticHudTop item={item} />
       <h1 className="e-page-head__title">
         <span className="e-page-head__icon" aria-hidden>{item.icon}</span>
-        {item.label}
+        <ScrambleText text={item.label} />
       </h1>
-      <p className="e-page-head__blurb">{item.blurb}</p>
+      <p className="e-page-head__blurb"><TypedText text={item.blurb} /></p>
     </header>
   );
 }

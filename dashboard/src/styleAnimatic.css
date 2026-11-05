@@ -1,0 +1,438 @@
+/* ═══════════════════════════════════════════════════════════════
+   STYLE MODE: ANIMATIC (experimental) — styleMode.ts
+   The demo animatic's information cards, as a dashboard look:
+   pixel headings (Silkscreen) that unscramble, mono lines typed with
+   a block cursor, corner brackets, status lines above and below,
+   and the tint as a FILL with dark ink on it — never as text on the
+   light canvas. docs/ui-style-experimental.md has the frames.
+
+   Rules:
+   - Every rule below is scoped under .style-animatic, the class
+     styleMode.applyStyle() puts on the app's root. With the default
+     style no rule here matches (styleAnimatic.test.ts checks it),
+     except § 0 (the font, which loads only when used) and § 9 (the
+     Settings switch itself, a new control in both styles).
+   - It follows light/dark and all eight tints: every colour comes
+     from the tint (--tint; amber when there is none), so the
+     kaleidoscope run still works.
+   - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with
+     prefers-reduced-motion or in capture mode (?capture=1).
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 0. THE PIXEL FACE ─────────────────────────────────────────────────────
+   Silkscreen (SIL OFL 1.1, assets/fonts/OFL-Silkscreen.txt), bundled: the
+   dashboard makes no third-party requests. Latin only; anything else falls
+   back to the mono stack. Not fetched until a pixel heading is on screen. */
+@font-face {
+  font-family: "EmporiaPixel";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/Silkscreen-Regular.woff2") format("woff2");
+}
+
+/* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */
+
+.style-animatic {
+  --anim-tint: var(--tint, #f0a832);                                   /* amber when no tint is set */
+  --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */
+  --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */
+  --anim-line: oklch(from var(--anim-tint) 0.62 c h);                  /* brackets, rules, ticks: graphics only */
+  --anim-pixel: "EmporiaPixel", var(--font-family-mono, monospace);
+  --anim-bracket: 12px;
+  --anim-bracket-w: 2px;
+  --anim-ease: cubic-bezier(0.33, 1, 0.68, 1);                          /* power2.out */
+}
+
+/* The light canvas for every tint, amber included (the default look keeps
+   amber on plain white): white with a breath of the tint, near-black ink.
+   The accent used AS TEXT is darker than the graphics accent so it reads
+   (≥ 4.5:1 on the canvas). */
+body.style-animatic.theme-light {
+  --theme-background: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
+  --theme-background-modal: oklch(from var(--anim-tint) 0.92 calc(c * 0.18) h);
+  --theme-background-input: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
+  --theme-border: oklch(from var(--anim-tint) 0.84 calc(c * 0.28) h);
+  --theme-border-subdued: oklch(from var(--anim-tint) 0.88 calc(c * 0.22) h);
+  --theme-text: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);
+  --theme-button: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);
+  --theme-button-text: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
+  --theme-focused-foreground: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h);
+  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);
+}
+
+/* The dark variant: the same cards on a near-black tinted canvas. */
+body.style-animatic.theme-dark {
+  --theme-background: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);
+  --theme-background-modal: oklch(from var(--anim-tint) 0.24 calc(c * 0.22) h);
+  --theme-background-input: oklch(from var(--anim-tint) 0.28 calc(c * 0.2) h);
+  --theme-border: oklch(from var(--anim-tint) 0.4 calc(c * 0.28) h);
+  --theme-border-subdued: oklch(from var(--anim-tint) 0.32 calc(c * 0.26) h);
+  --theme-text: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);
+  --theme-button: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);
+  --theme-button-text: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);
+  --theme-focused-foreground: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h);
+  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h / 0.5);
+  --anim-line: oklch(from var(--anim-tint) 0.72 c h);
+}
+
+.style-animatic .e-dashboard-shell {
+  --e-rule: var(--theme-border-subdued);
+  --anim-wash: color-mix(in srgb, var(--anim-fill) 45%, transparent);
+  --e-accent-wash: var(--anim-wash);
+}
+/* On the dark canvas a strong wash would sit under light text: keep it faint. */
+.style-animatic.theme-dark .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--anim-fill) 14%, transparent); }
+
+/* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────
+   Four L-shaped corners drawn as background images, so no element and no
+   ::before/::after is taken from the default rules. On panels only: the
+   frame around data, never over it. */
+.style-animatic .e-page-head,
+.style-animatic .e-now,
+.style-animatic .e-intro,
+.style-animatic .e-panel-card,
+.style-animatic .e-overview-card,
+.style-animatic .e-setplay,
+.style-animatic .e-empty-pane,
+.style-animatic .e-style-switch {
+  background-image:
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));
+  background-size:
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);
+  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  border-radius: 0;
+}
+.style-animatic .e-page-head { --anim-bracket: 18px; --anim-bracket-w: 3px; }
+
+/* ─── 3. THE SECTION HEADING: status line, pixel title, typed line ─────── */
+
+.style-animatic .e-page-head {
+  position: relative;
+  padding: 12px 24px 16px;
+  margin-top: 10px;
+  border-bottom: 0;
+  max-width: min(1440px, calc(100% - 32px));
+}
+.style-animatic .e-page-head__icon { display: none; }
+.style-animatic .e-page-head__title {
+  font-family: var(--anim-pixel);
+  font-weight: 400;
+  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);
+  line-height: 1.05;
+  letter-spacing: 0.04em;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.style-animatic .e-page-head__blurb {
+  margin-top: 10px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  opacity: 0.86;
+  max-width: 72ch;
+}
+
+/* The block cursor at the end of a typed line. */
+.style-animatic .e-anim-cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1em;
+  margin-left: 0.15em;
+  vertical-align: -0.14em;
+  background: currentColor;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .style-animatic .e-anim-cursor { animation: e-anim-blink 1.06s steps(1, end) infinite; }
+}
+@keyframes e-anim-blink { 50% { opacity: 0; } }
+
+/* Status lines: `emporia ~ hermes plugin · [1] · 01 / 14 · overview` above,
+   `T+00:28 · as alpha · watch only` below. Small, but ink at 80 %, not faint. */
+.style-animatic .e-anim-hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  letter-spacing: 0.05em;
+  color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background));
+  font-variant-numeric: tabular-nums;
+}
+.style-animatic .e-anim-hud__key {
+  padding: 1px 8px;
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  font-weight: 700;
+}
+.style-animatic .e-anim-hud--foot {
+  max-width: min(1440px, calc(100% - 32px));
+  margin: 8px auto 12px;
+  padding: 8px 24px 0;
+  border-top: 1px solid var(--theme-border-subdued);
+  box-sizing: border-box;
+}
+
+/* The beat flash: an ink bar along the heading's top edge, once per section. */
+.style-animatic .e-anim-flash {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  height: 4px;
+  background: var(--anim-ink);
+  opacity: 0;
+  pointer-events: none;
+}
+.style-animatic.theme-dark .e-anim-flash { background: var(--anim-fill); }
+@media (prefers-reduced-motion: no-preference) {
+  .style-animatic .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }
+}
+@keyframes e-anim-flash {
+  0% { opacity: 1; transform: scaleX(0.2); transform-origin: left; }
+  45% { opacity: 1; transform: scaleX(1); transform-origin: left; }
+  100% { opacity: 0; transform: scaleX(1); transform-origin: left; }
+}
+
+/* ─── 4. HEADER, NAV, MENU ──────────────────────────────────────────────── */
+
+.style-animatic .e-brand-title {
+  font-family: var(--anim-pixel);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.style-animatic .e-section-tab { opacity: 0.8; }
+.style-animatic .e-section-tab.is-active {
+  background: var(--anim-fill) !important;
+  color: var(--anim-ink);
+  border-color: var(--anim-fill);
+  font-weight: 700;
+}
+.style-animatic .e-section-tab.is-active .e-section-tab__icon { color: var(--anim-ink); }
+.style-animatic .e-section-group__rule { background: var(--anim-line); opacity: 0.5; }
+.style-animatic .e-mobile-top__section {
+  font-family: var(--anim-pixel);
+  color: var(--theme-text);
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+}
+.style-animatic .e-mobile-top__section::before { content: "> "; opacity: 0.8; }
+.style-animatic .e-section-group__title {
+  font-family: var(--anim-pixel);
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  opacity: 1;
+}
+.style-animatic .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background)); }
+.style-animatic .e-section-tab.is-active .e-section-tab__key { color: var(--anim-ink); }
+
+/* Relay / live: square chips, the live one filled. */
+.style-animatic .e-status-chip { border-color: var(--theme-border); background: transparent; }
+.style-animatic .e-status-chip.is-ok {
+  background: var(--anim-fill);
+  border-color: var(--anim-fill);
+  color: var(--anim-ink);
+  font-weight: 700;
+}
+.style-animatic .e-status-chip.is-ok .e-status-chip__loader,
+.style-animatic .e-status-chip.is-ok .e-status-chip__dot--pulse { color: var(--anim-ink); }
+
+/* ─── 5. CAPTION BARS AND CHIPS ─────────────────────────────────────────
+   The animatic's two text-on-fill shapes: a small bold chip (its
+   `CARD · build now` badge) for labels, and a bold band (its captions)
+   for the one line that says what happened. */
+.style-animatic .e-intro__title,
+.style-animatic .e-now__head > span:first-child,
+.style-animatic .e-now__label {
+  display: inline-block;
+  width: fit-content;
+  padding: 2px 8px;
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  font-weight: 700;
+  opacity: 1;
+}
+.style-animatic .e-now__label { padding: 1px 6px; font-size: 0.66rem; }
+.style-animatic .e-now__go,
+.style-animatic .e-now__live,
+.style-animatic .e-intro__link-label { color: var(--theme-focused-foreground); font-weight: 600; }
+.style-animatic .e-now__live { color: var(--anim-ink); }
+.style-animatic .e-now__head { align-items: center; }
+.style-animatic .e-now__head > span:last-child { font-family: var(--anim-pixel); font-size: 0.9rem; letter-spacing: 0.06em; }
+.style-animatic .e-intro { border-left-width: 1px; }
+.style-animatic .e-intro__text { font-size: 0.95rem; }
+
+/* Sub-headings inside a view, in the pixel face: the QUESTS card. */
+.style-animatic .e-subhead {
+  font-family: var(--anim-pixel);
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  opacity: 1;
+  margin-top: 22px;
+}
+.style-animatic .e-subhead::after { background: var(--anim-line); opacity: 0.6; }
+.style-animatic .e-panel-card__title { opacity: 0.85; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.style-animatic .e-overview-card__title { font-family: var(--anim-pixel); letter-spacing: 0.05em; text-transform: uppercase; }
+.style-animatic .e-rail-label { opacity: 0.8; font-weight: 700; }
+.style-animatic .e-rail-item.is-selected {
+  background: var(--e-accent-wash);
+  box-shadow: inset 3px 0 0 var(--anim-line);
+}
+
+/* Quests read like the animatic's QUESTS card: `>` lines, the done ones ticked. */
+.style-animatic .e-quest-row { font-size: 0.95rem !important; line-height: 1.7; opacity: 1; }
+.style-animatic .e-quest-row::before { content: "> "; color: var(--theme-focused-foreground); font-weight: 700; }
+.style-animatic .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) 74%, var(--theme-background)); }
+.style-animatic .e-quest-next .e-now__label { margin-right: 4px; }
+
+/* ─── 6. SET PLAYS ───────────────────────────────────────────────────── */
+
+.style-animatic .e-setplay { padding: 18px 20px 22px; }
+.style-animatic .e-setplay__game {
+  font-family: var(--anim-pixel);
+  font-size: clamp(1.4rem, 1rem + 1.4vw, 2rem);
+  line-height: 1.05;
+  letter-spacing: 0.05em;
+  color: var(--theme-text);
+}
+.style-animatic .e-setplay__players { font-size: 1.05rem; margin-top: 6px; }
+.style-animatic .e-setplay__status { opacity: 1; border-color: var(--theme-border); font-weight: 700; }
+.style-animatic .e-setplay__status.is-live {
+  background: var(--anim-fill);
+  border-color: var(--anim-fill);
+  color: var(--anim-ink);
+}
+/* The verdict is the caption band. */
+.style-animatic .e-setplay__verdict.is-win {
+  padding: 8px 12px;
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.style-animatic .e-setplay__verdict.is-win .e-setplay__why { color: var(--anim-ink); opacity: 0.85; }
+.style-animatic .e-setplay__wait { opacity: 0.86; font-size: 0.86rem; }
+
+/* commit → reveal → winner: square steps, the current one a filled pixel label. */
+.style-animatic .e-phase-strip__n { border-radius: 0; }
+.style-animatic .e-phase-strip__step.is-now {
+  opacity: 1;
+  color: var(--anim-ink);
+  background: var(--anim-fill);
+  padding: 3px 10px 3px 4px;
+  font-family: var(--anim-pixel);
+  letter-spacing: 0.05em;
+}
+.style-animatic .e-phase-strip__step.is-now .e-phase-strip__n {
+  background: var(--anim-ink);
+  border-color: var(--anim-ink);
+  color: var(--anim-fill);
+  font-family: var(--font-family-mono, monospace);
+}
+.style-animatic .e-phase-strip__step + .e-phase-strip__step::before { background: var(--anim-line); opacity: 0.8; }
+
+/* Won cells, winning seats and picks: the fill with ink on it. */
+.style-animatic .e-blotto__grid td.is-won,
+.style-animatic .e-lowest__cell.is-winner,
+.style-animatic .e-numline__pick.is-winner .e-numline__label {
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  border-color: var(--anim-line);
+}
+.style-animatic .e-blotto__grid tr.is-winner th,
+.style-animatic .e-seat.is-winner .e-seat__name,
+.style-animatic .e-seat.is-winner .e-seat__move { color: var(--theme-text); font-weight: 700; }
+.style-animatic .e-seat.is-winner {
+  background: var(--anim-wash);
+  box-shadow: inset 3px 0 0 var(--anim-line);
+}
+.style-animatic .e-numline__pick.is-winner .e-numline__pin { background: var(--anim-line); }
+.style-animatic .e-numline__mark--target { border-left-color: var(--anim-line); }
+.style-animatic .e-numline__mark--target > span { color: var(--theme-text); }
+.style-animatic .e-game-row__kind { color: var(--theme-text); font-weight: 700; }
+.style-animatic .e-blotto__grid thead th,
+.style-animatic .e-blotto__state,
+.style-animatic .e-seat__state { opacity: 0.8; }
+
+/* ─── 7. A CALMER FAINT ──────────────────────────────────────────────────
+   The default dims secondary text to 35–50 % opacity, which falls under
+   4.5:1 on a tinted canvas. Here faint is a colour at about 4.6:1 or more. */
+.style-animatic {
+  --anim-faint: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+}
+.style-animatic .e-faint,
+.style-animatic .e-dim,
+.style-animatic .e-rail-item .e-faint,
+.style-animatic .e-relay-status__host,
+.style-animatic .e-relay-status__meta,
+.style-animatic .e-game-row__phase,
+.style-animatic .e-chat-line__time,
+.style-animatic .e-chat-line__type,
+.style-animatic .e-badge--dim,
+.style-animatic .e-slim-card__title,
+.style-animatic .e-blotto__grid td.is-hidden,
+.style-animatic .e-phase-strip__step.is-next,
+.style-animatic [style*="opacity: 0.5"],
+.style-animatic [style*="opacity: 0.6"] {
+  opacity: 1 !important;
+  color: var(--anim-faint);
+}
+.style-animatic .e-phase-strip__step.is-done { opacity: 1; }
+/* Names in a chat are coloured per agent in the default; here they are ink, so they read on the tint. */
+.style-animatic .e-chat-line__name { color: var(--theme-text) !important; }
+.style-animatic .e-entity-chip--agent,
+.style-animatic .e-entity-chip--session { opacity: 1; color: var(--theme-focused-foreground); }
+
+/* ─── 8. MOTION ─────────────────────────────────────────────────────────
+   Panels arrive with a short rise when a section opens (they mount with it).
+   Off with reduced motion; capture mode turns every animation off anyway. */
+@media (prefers-reduced-motion: no-preference) {
+  .style-animatic .e-page-head,
+  .style-animatic .e-now,
+  .style-animatic .e-intro,
+  .style-animatic .e-setplay {
+    animation: e-anim-rise 0.38s var(--anim-ease) both;
+  }
+  .style-animatic .e-now { animation-delay: 0.05s; }
+  .style-animatic .e-setplay { animation-delay: 0.04s; }
+}
+@keyframes e-anim-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ─── 9. THE SWITCH IN SETTINGS (both styles) ─────────────────────────── */
+.e-style-switch { padding: 4px 0 6px; }
+.e-style-switch__option { display: block; cursor: pointer; }
+.e-style-switch__option input { margin: 0 4px 0 0; accent-color: var(--theme-text); }
+.e-style-switch .e-setting-note kbd,
+.e-style-switch .e-setting-note code { font-family: var(--font-family-mono, monospace); }
+.style-animatic .e-style-switch { padding: 6px 14px 10px; border: 1px solid var(--theme-border-subdued); }
+.style-animatic .e-style-switch__option.is-on .e-setting-label {
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  padding: 0 6px;
+  font-weight: 700;
+}
+
+/* ─── 10. PHONE ──────────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+  .style-animatic .e-page-head { padding: 10px 16px 14px; margin-top: 8px; max-width: calc(100% - 16px); }
+  .style-animatic .e-page-head__title { font-size: 1.55rem; }
+  .style-animatic .e-page-head__blurb { font-size: 0.84rem; }
+  .style-animatic .e-anim-hud { font-size: 0.7rem; }
+  .style-animatic .e-anim-hud--top .e-anim-hud__where { flex-basis: 100%; }
+  .style-animatic .e-anim-hud--foot { padding: 8px 16px 0; max-width: calc(100% - 16px); }
+  .style-animatic .e-setplay__game { font-size: 1.4rem; }
+}
