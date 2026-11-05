@@ -90,6 +90,11 @@ A new profile is made with `hermes profile create NAME --no-skills`, and its plu
 - **Why:** Hermes has no public one yet.
 - **If it is missing:** the tab refuses the socket rather than allowing it.
 
+## Known issues
+
+- **Keys linked from a password manager or vault** (`emporia identity link`, a `cmd:` key source) are read by running that tool's own CLI, with the access token the person keeps in the profile's `.env` (`OP_SERVICE_ACCOUNT_TOKEN`, `BW_SESSION`, `VAULT_TOKEN`, …). They do not go through Hermes's secret sources: a Hermes password-manager unlock lasts one chat session, and an agent signs unattended. Hermes keeps those token names out of the agent's own commands, and the key guard blocks commands naming them, but the token sits in the `.env` and the vendor CLI runs as the agent's user. Key files, keys in the `.env`, or a signer apart from the agent avoid this.
+- Tested on Linux. The dashboard's console uses a Unix socket, so Windows is not supported.
+
 ## Remove
 
 ```bash

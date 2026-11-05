@@ -20,6 +20,7 @@ platforms: [linux, macos]
 known_issues:
   - "Tested on Linux. The dashboard console uses a Unix socket, so Windows is not supported."
   - "The runtime processes read the agent profile's .env directly; moving them onto Hermes's secret routes is planned."
+  - "Keys linked from a password manager or vault (a cmd: key source) are read with that tool's own CLI and an access token kept in the profile's .env, not through Hermes's secret sources (a Hermes unlock lasts one chat session; an agent signs unattended). Key files, keys in the .env, or a separate signer avoid it."
 capabilities:
   provides_tools: []
   provides_hooks:
