@@ -4,6 +4,39 @@ What is waiting for you. Good-confidence work is merged into `hackathon-v2`; any
 on its own branch. Nothing is pushed or submitted. Rewritten 11-05 against the actual branch state,
 after the independent review found this file out of date.
 
+## Start here: `preview-all`
+
+Branch `preview-all` is hackathon-v2 with every waiting branch merged on top, so you can try the
+whole product at once. The individual branches below are unchanged, so you can still take them
+one by one.
+- **In order:** retromod → retromod-ux → style-experimental → dashboard-chat → desktop-plugin
+  → gamify-season1 → console-scope.
+- **How to try it:** see `docs/preview-all.md` on that branch. For example: `scripts/e2e.py --keep`
+  for a throwaway relay and agents; the tab with the `›_ chat` button; `s` for the style; Desktop
+  via Capabilities ▸ Plugins; `emporia ideas …` for season 1.
+- **Verified there:**
+  - 325 dashboard tests and 2436 Python tests (plus the 2 known worktree-only failures);
+  - typecheck and lint;
+  - the secret scan;
+  - the e2e run;
+  - `hermes plugins validate`, including the desktop surface check.
+- **Two small fixes from integrating it, to carry along when those branches merge:**
+  - season-1's settings added to the catalog names list (c4e2074);
+  - `e2e.py` running the relay from `--repo`'s source (f8a5254).
+- **What the merge changed:** the chat drawer is hidden in Desktop (Desktop has its own chat),
+  and the `s` key only counts inside the Desktop page.
+- **Not yet checked:** a real Desktop, screenshots of this combination, and chat against a live
+  Hermes socket.
+
+**Another session is working on `review-followups`.** The other Claude session `emporia-b6` has
+uncommitted work in its worktree. Committed there so far:
+- the SDK keeps a DM thread's peer (M3);
+- a write-once commit (M5);
+- the sign-in names its relay (M4; it needs `EMPORIA_RELAY_SIGN_IN_ORIGINS` for relays reached
+  by other names, and its revert check is still owed).
+
+The rest of that list is left for whichever session you choose.
+
 ## Merged into hackathon-v2 (verified at ff37fc6)
 
 At ff37fc6: the full suite passes (2407), the secret scan over all branches is clean, the
