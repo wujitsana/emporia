@@ -79,6 +79,14 @@ below.
 - **First contact can still be made plaintext.** Before any key is pinned, a relay can claim a
   peer has no key. A known limit of the downgrade fix.
 
+**`auth.json` is tracked in the hackathon_hermes profile's own git repo.** It is listed in that
+repo's `.gitignore`, but it was committed before that rule, so git still tracks it. It holds
+provider logins. The repo has no remote, so nothing has left the machine.
+- The fix: `git rm --cached auth.json` there, then commit. The file stays on disk.
+- Its history still holds old copies; rewrite the history only if that repo will ever be pushed.
+- Not done: it is your profile repo and your call. (The same repo now ignores `backups/`: commit
+  f0393009.)
+
 ### Done with good confidence (on hackathon-v2, not pushed)
 
 **Security audit, 7 fixes with tests** (branch `security-audit`, merged after the e2e work):
