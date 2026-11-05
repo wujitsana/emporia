@@ -85,7 +85,6 @@ from emporia.engine.guardrails import GuardrailBlocked, assert_payload_safe_asyn
 from emporia.identity import (
     relay_key_history,
     verify,
-    verify_raw,
     get_relay_public_key_hex,
     load_federation_peer_pubkeys,
     save_federation_peer_pubkeys,
@@ -6194,7 +6193,37 @@ async def ui_config(request: Request):
 class DashboardSessionRequest(BaseModel):
     agent_id: str
     challenge_id: str
-    signature_hex: str  # Ed25519 sig of the nonce, hex-encoded
+    # Review follow-up M4: v2 — `signature` (base64url) over
+    # wire.signed_dashboard_sign_in_payload(nonce, relay), `relay` this relay's origin.
+    relay: str = ""
+    signature: str = ""
+    signature_hex: str = ""     # v1 (the bare nonce): refused, by name
+
+
+def sign_in_origins() -> set[str]:
+    """M4: the origins a dashboard sign-in may name to be good here — this relay's own URL
+    (EMPORIA_RELAY_URL), plus any other name it is reached by (EMPORIA_RELAY_SIGN_IN_ORIGINS,
+    comma-separated). Never the request's Host header: whoever sends a signature chooses that."""
+    from emporia.addresses import canonical_host, host_of
+    from emporia.wire import relay_origin
+    out = set()
+    for url in (RELAY_BASE_URL, *os.getenv("EMPORIA_RELAY_SIGN_IN_ORIGINS", "").split(",")):
+        try:
+            origin = relay_origin(url)
+        except ValueError:
+            continue
+        out.add(f"{origin.split('://')[0]}://{canonical_host(host_of(origin))}")
+    return out
+
+
+def _names_this_relay(origin: str) -> bool:
+    from emporia.addresses import canonical_host, host_of
+    from emporia.wire import relay_origin
+    try:
+        o = relay_origin(origin)
+    except ValueError:
+        return False
+    return f"{o.split('://')[0]}://{canonical_host(host_of(o))}" in sign_in_origins()
 
 
 @app.post("/dashboard/challenge")
@@ -6219,10 +6248,12 @@ async def dashboard_challenge(request: Request):
         "expires_in": int(_CHALLENGE_TTL),
         "relay_id": relay_id(),
         "instructions": (
-            "Sign this nonce with your Ed25519 key via: "
-            "sign_dashboard_challenge(relay_url=..., challenge_id=..., nonce=...) "
-            "then POST /dashboard/session with the result."
+            "Ask the agent to sign in: sign_dashboard_challenge(relay_url=<this relay's URL>, "
+            "challenge_id=..., nonce=...). It signs the nonce with this relay's origin "
+            "(emporia:dashboard-sign-in:v2) and completes POST /dashboard/session itself; "
+            "poll GET /dashboard/poll for the token."
         ),
+        "sign_in": "emporia:dashboard-sign-in:v2",
     }
 
 
@@ -6232,7 +6263,19 @@ async def dashboard_session(req: DashboardSessionRequest):
 
     The JWT is scoped to this relay (relay_id in payload). It expires in 1 hour
     and is verified by _dashboard_agent_id() on subsequent requests.
+
+    Review follow-up M4: the signature covers the nonce and the relay it is for
+    (`emporia:dashboard-sign-in:v2`), and that relay must be this one
+    (`sign_in_origins`). The v1 form — a signature over the bare nonce, good
+    wherever the nonce was issued — is refused by name.
     """
+    if req.signature_hex or not req.signature or not req.relay:
+        raise HTTPException(400, "dashboard sign-in v1 (a signature over the bare nonce) is gone: sign "
+                                 "emporia:dashboard-sign-in:v2 {type, nonce, relay} and send {agent_id, "
+                                 "challenge_id, relay, signature} (docs/protocol.md §3.1)")
+    if not _names_this_relay(req.relay):
+        raise HTTPException(403, f"this sign-in is for {req.relay[:100]}, not this relay — a sign-in is "
+                                 "good only on the relay it names")
     entry = _CHALLENGE_STORE.pop(req.challenge_id, None)
     if not entry:
         raise HTTPException(400, "Unknown or expired challenge_id")
@@ -6249,12 +6292,10 @@ async def dashboard_session(req: DashboardSessionRequest):
     if not row:
         raise HTTPException(404, f"Agent {req.agent_id!r} not registered on this relay")
 
-    # Verify Ed25519 signature (raw bytes, hex sig — matches sign_dashboard_challenge's
-    # sign_raw() on the client side; identity.verify() is for dict-payload/base64 sigs)
-    from emporia.identity import challenge_bytes
-    sig_ok = verify_raw(challenge_bytes(nonce), req.signature_hex, row["public_key_hex"])  # P193
-    if not sig_ok:
-        raise HTTPException(403, "Invalid signature — ensure you signed the exact nonce bytes")
+    from emporia.wire import signed_dashboard_sign_in_payload
+    if not verify(signed_dashboard_sign_in_payload(nonce, req.relay), req.signature, row["public_key_hex"]):
+        raise HTTPException(403, "Invalid signature — sign {type: emporia:dashboard-sign-in:v2, nonce, "
+                                 "relay} with the agent's key")
 
     now = time.time()
     jwt = _jwt_encode({

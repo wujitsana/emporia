@@ -81,3 +81,65 @@ def test_a_binary_or_empty_secret_file_is_found_by_its_name(tmp_path, monkeypatc
     git("rm", "-q", "relay.db")
     git("commit", "-q", "-m", "remove it")
     assert secret_scan.scan([f"{first}..HEAD"]) == [], "removing a secret file is not a finding"
+
+
+# -- Review follow-up L8: the hook on a branch that has no scanner --------------------------
+
+def _push(tmp_path, ref: str, sha: str):
+    """Git's pre-push hook, run as git runs it: the push's lines on stdin."""
+    hook = tmp_path / ".git" / "hooks" / "pre-push"
+    return subprocess.run(["sh", str(hook)], input=f"refs/heads/{ref} {sha} refs/heads/{ref} {'0' * 40}\n",
+                          cwd=tmp_path, capture_output=True, text=True, timeout=60)
+
+
+def _scanner() -> str:
+    return (REPO / "scripts" / "secret_scan.py").read_text()
+
+
+def test_the_hook_takes_the_default_branchs_scanner_on_a_branch_without_it(tmp_path, monkeypatch):
+    """The hook ran `scripts/secret_scan.py` from the checkout: on a branch without it, every
+    push failed with python's "can't open file", which said nothing about the scan."""
+    git = _repo(tmp_path, monkeypatch)
+    _commit(git, tmp_path, "a.txt", "fine\n")
+    git("branch", "-M", "main")
+    _commit(git, tmp_path, "scripts/secret_scan.py", _scanner())        # the default branch has it
+    git("checkout", "-q", "-b", "old", "HEAD~1")                         # a branch from before it
+    bad = _commit(git, tmp_path, "profile/.env", "X=1\n")
+    assert secret_scan.install_hook() == 0
+    r = _push(tmp_path, "old", bad)
+    assert r.returncode == 1 and "profile/.env: secret-like file" in r.stdout, (r.stdout, r.stderr)
+    assert "using the one in main" in r.stderr
+
+
+def test_the_hook_scans_a_pushed_branch_that_has_the_scanner_from_a_checkout_without_it(tmp_path, monkeypatch):
+    """It must never let through, unscanned, a branch that has the script."""
+    git = _repo(tmp_path, monkeypatch)
+    _commit(git, tmp_path, "a.txt", "fine\n")
+    git("branch", "-M", "main")
+    git("checkout", "-q", "-b", "feature")
+    _commit(git, tmp_path, "scripts/secret_scan.py", _scanner())
+    bad = _commit(git, tmp_path, "keys/agent.priv", "not really a key\n")
+    git("checkout", "-q", "main")                                        # the checkout has no scanner
+    assert secret_scan.install_hook() == 0
+    r = _push(tmp_path, "feature", bad)
+    assert r.returncode == 1 and "keys/agent.priv: secret-like file" in r.stdout, (r.stdout, r.stderr)
+    assert f"the pushed commit {bad}" in r.stderr
+
+
+def test_with_no_scanner_anywhere_the_hook_says_the_scan_did_not_run(tmp_path, monkeypatch):
+    git = _repo(tmp_path, monkeypatch)
+    sha = _commit(git, tmp_path, "a.txt", "fine\n")
+    git("branch", "-M", "main")
+    assert secret_scan.install_hook() == 0
+    r = _push(tmp_path, "main", sha)
+    assert r.returncode == 0 and "NOT RUN" in r.stderr, (r.returncode, r.stderr)
+    assert "can't open file" not in r.stderr
+
+
+def test_the_hook_uses_the_checkouts_scanner_when_there_is_one(tmp_path, monkeypatch):
+    git = _repo(tmp_path, monkeypatch)
+    _commit(git, tmp_path, "scripts/secret_scan.py", _scanner())
+    bad = _commit(git, tmp_path, "relay.db", "x")
+    assert secret_scan.install_hook() == 0
+    r = _push(tmp_path, "main", bad)
+    assert r.returncode == 1 and "relay.db: secret-like file" in r.stdout and "using the one" not in r.stderr

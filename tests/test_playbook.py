@@ -88,6 +88,60 @@ def test_joining_checks_the_sessions_game_and_stake(monkeypatch):
     assert "does not sell" in m.join_session("s1")["error"], "providing someone's purchase is selling"
 
 
+@pytest.mark.parametrize("answer, said", [
+    (404, "no session s1 on this relay"),
+    (403, "cannot tell whether it is a game"),
+    (500, "the relay answered 500"),
+    (ConnectionError("down"), "could not load session s1"),
+])
+def test_a_session_that_cannot_be_read_is_not_joined_as_a_purchase(monkeypatch, answer, said):
+    """Review follow-up L9: a failed read of the session left no module, so the playbook took
+    the join for a sale: a `player` was told it "does not sell", about a game it could not see."""
+    monkeypatch.setenv("EMPORIA_PLAYBOOK", "player")
+    monkeypatch.setattr(m, "AGENT_ID", "pb_me")
+    sent = []
+
+    class R:
+        status_code = answer
+
+        def json(self):
+            return {"detail": "nope"}
+
+    def relay(method, url, **k):
+        sent.append((method, url))
+        if isinstance(answer, Exception):
+            raise answer
+        return R()
+    monkeypatch.setattr(m, "_bearer_request", relay)
+    out = m.join_session("s1")
+    assert out["success"] is False and said in out["error"] and "does not sell" not in out["error"], out
+    assert [s for s in sent if s[0] == "post"] == [], "no join was sent"
+
+
+def test_without_playbook_bounds_a_session_shown_to_its_players_only_can_still_be_joined(monkeypatch):
+    """A paid service shows itself to its participants only, so its provider-to-be reads 403;
+    with no bounds to apply (`custom`), the relay decides the join, as before."""
+    monkeypatch.delenv("EMPORIA_PLAYBOOK", raising=False)
+    monkeypatch.setattr(m, "AGENT_ID", "pb_me")
+    posted = []
+
+    class R:
+        def __init__(self, code, body):
+            self.status_code, self._b, self.text = code, body, ""
+
+        def json(self):
+            return self._b
+
+    def relay(method, url, **k):
+        if method == "post":
+            posted.append(url)
+            return R(200, {"session_id": "s1", "participants": ["buyer", "pb_me"]})
+        return R(403, {"detail": "Not a participant in this session"})
+    monkeypatch.setattr(m, "_bearer_request", relay)
+    m.join_session("s1")
+    assert any(u.endswith("/sessions/s1/join") for u in posted), posted
+
+
 def test_my_settings_shows_it(monkeypatch):
     monkeypatch.setenv("EMPORIA_PLAYBOOK", "merchant")
     monkeypatch.setattr(m, "_bearer_request", lambda *a, **k: (_ for _ in ()).throw(RuntimeError()))

@@ -628,6 +628,7 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_RELAY_PORT` | `8088` | Listen port |
 | `EMPORIA_RELAY_HOST` | `127.0.0.1` | Listen address. Any other is refused outside a container; the Docker image sets `0.0.0.0` inside it. A relay for other machines: `emporia relay host` |
 | `EMPORIA_RELAY_ACCESS` | `open` | Who may use the relay: `open`, `read-only` (anyone browses, members act) or `closed` (members only; no federation). An unknown value closes. `emporia relay access` |
+| `EMPORIA_RELAY_SIGN_IN_ORIGINS` | _(none)_ | Other origins (`scheme://host[:port]`, comma-separated) this relay is reached by. A dashboard sign-in names the relay it is for, and the relay accepts only the origin of `EMPORIA_RELAY_URL` and these — never the request's `Host` (docs/protocol.md §3.1) |
 | `EMPORIA_RELAY_MEMBERS` | _(none)_ | Members' public keys, comma-separated; the operator agent is always one. `emporia relay members add NAME\|KEY` |
 | `EMPORIA_RELAY_ENV_FILE` | _(the profile .env)_ | The file the relay re-reads access and members from when it changes (set in the Docker stack) |
 | `EMPORIA_SECRETS_DIR` | _(unset; `/run/secrets` in the image)_ | A folder of secret files, one per variable named for it (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `EMPORIA_OPERATOR_PRIVATE_KEY`). The Docker stacks mount `./secrets` there read-only, so secrets are never environment variables `docker inspect` shows. A variable set in the environment wins |

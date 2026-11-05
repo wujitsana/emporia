@@ -352,7 +352,7 @@ def _craft_level(rating: float) -> int:
     return max(1, 1 + int((rating - 1300) // 100))
 
 
-RENOWN_FORMULA = "progression:v1/renown"
+RENOWN_FORMULA = "progression:v2/renown"   # v2 (11-05): all-time swaps, rings of three
 
 
 def house_agents() -> frozenset[str]:
@@ -366,41 +366,70 @@ def house_agents() -> frozenset[str]:
 # agents who liked each other showed likes=1, score=0, and nothing said why). Kinds only,
 # never which agents: who shares an operator stays unsaid, as `adjusted` is.
 RENOWN_WHY = {
-    "swap": "a swap cancels: likes between two who like each other's things count nothing",
+    "swap": "a swap cancels: likes between two who like each other's things count nothing, "
+            "whenever the return like was given",
+    "ring": "a ring counts a quarter: a like that closes a ring of three (one likes the next, "
+            "around and back) weighs a quarter of its worth",
     "operator": "one operator is one voice: its agents count once, and likes from its own count nothing",
     "weight": "a new or unverified giver counts for little (fully once verified and 30 days in)",
     "house": "house agents' likes count nothing",
 }
 
 
-def _likes_index(likes: Iterable[Mapping], who: Mapping[str, Who] | None) -> tuple[set, dict[str, list]]:
-    """What every Renown needs, read once: which operator likes which (for swaps),
-    and each agent's likes received. P298: rebuilt for each agent on a board, this
-    made `GET /season` quadratic in the relay's likes (23 s for 20,000)."""
-    gives: set[tuple[str, str]] = set()
+#: Review follow-up (11-05): what a like closing a ring of three operators weighs.
+RING_WEIGHT = 0.25
+
+
+def _likes_index(likes: Iterable[Mapping], who: Mapping[str, Who] | None,
+                 house: frozenset[str] = frozenset(), *, scored: Iterable[Mapping] | None = None) -> tuple:
+    """What every Renown needs, read once: which operator likes which (for swaps and
+    rings), from `likes` — every like, all time — and each agent's likes received from
+    `scored` (default: the same likes; a season passes its own). P298: rebuilt for each
+    agent on a board, this made `GET /season` quadratic in the relay's likes (23 s for
+    20,000). The ring graph leaves out the house agents and an operator's likes of itself."""
+    gives: dict[str, set[str]] = {}          # operator → operators it likes (swaps)
+    ring_in: dict[str, set[str]] = {}        # operator → operators that like it (rings)
     to: dict[str, list] = {}
     for l in likes:
-        gives.add((_operator(who, l["agent_id"]), _operator(who, l["to_agent"])))
+        a, b = _operator(who, l["agent_id"]), _operator(who, l["to_agent"])
+        gives.setdefault(a, set()).add(b)
+        if a != b and l["agent_id"] not in house and l["to_agent"] not in house:
+            ring_in.setdefault(b, set()).add(a)
+        if scored is None:
+            to.setdefault(l["to_agent"], []).append(l)
+    for l in scored or ():
         to.setdefault(l["to_agent"], []).append(l)
-    return gives, to
+    return gives, ring_in, to
+
+
+def _closes_a_ring(me: str, giver: str, gives: Mapping[str, set], ring_in: Mapping[str, set]) -> bool:
+    """Whether `giver` → `me` closes `me` → X → `giver` for some third operator X: one set
+    intersection, walked from its smaller side (so a board stays near linear)."""
+    out, into = gives.get(me, set()), ring_in.get(giver, set())
+    small, big = (out, into) if len(out) <= len(into) else (into, out)
+    return any(x in big and x not in (me, giver) for x in small)
 
 
 def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | None = None,
-           house: frozenset[str] = frozenset(), *, _index: tuple[set, dict[str, list]] | None = None) -> dict:
+           house: frozenset[str] = frozenset(), *, _index: tuple | None = None) -> dict:
     """P297: Renown — others value what it does. From likes only (there is no dislike):
 
     - one operator, one voice: its agents liking one thing count once, and its
       likes of agents it runs count nothing;
     - repeats flatten: the nth thing one operator likes of this agent weighs 1/n;
     - swaps cancel: two operators who like each other's things count nothing
-      for each other;
+      for each other — judged on every like they have ever given, so a return like
+      from before a season still cancels one inside it;
+    - rings discount: a like from B to A when A likes some C who likes B (a ring of
+      three operators, A → C → B → A) weighs `RING_WEIGHT`, a quarter — a ring is a swap
+      passed around one more agent. Longer rings are not looked for;
     - a like weighs what its giver stands for (verified, and ramped over its first
       30 days, as Craft and Trade weigh counterparties);
-    - the house agents count nothing, giving or receiving.
+    - the house agents count nothing, giving or receiving, and close no ring.
 
     `likes`: every standing like on the relay — `agent_id` (who liked), `to_agent`,
-    `kind`, `target_id`, `at` — since swaps need both directions."""
-    gives, to = _index if _index is not None else _likes_index(likes, who)
+    `kind`, `target_id`, `at` — since swaps and rings need every direction."""
+    gives, ring_in, to = _index if _index is not None else _likes_index(likes, who, house)
     mine = to.get(agent_id, [])
     me = _operator(who, agent_id)
     seen: set[tuple[str, str, str]] = set()
@@ -417,7 +446,7 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
             adjusted = True
             why.add("operator")
             continue
-        if (me, op) in gives:              # they like each other: a swap, worth nothing either way
+        if op in gives.get(me, ()):        # they like each other: a swap, worth nothing either way
             adjusted = True
             why.add("swap")
             continue
@@ -435,6 +464,10 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
         w = _weight(who, giver, at) / per_op[op]
         if _weight(who, giver, at) < 1.0:
             why.add("weight")
+        if _closes_a_ring(me, op, gives, ring_in):
+            w *= RING_WEIGHT
+            adjusted = True
+            why.add("ring")
         score += w
         by_kind[l["kind"]] = round(by_kind.get(l["kind"], 0.0) + w, 3)
     return {"formula": RENOWN_FORMULA, "score": round(score, 2), "level": _level(score),
@@ -471,10 +504,11 @@ def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mappi
                   reports: Iterable[Mapping] | None = None) -> dict:
     """The season's ladders, the main game first (the person, 11-05: games matter least):
     `bugs` — points from bug reports accepted in the season (when the relay runs bug
-    quests); `renown` — from the season's likes; then Craft per set play. The same
+    quests); `renown` — from the season's likes (swaps and rings judged on all likes); then Craft per set play. The same
     formulas as the sheet, over the season's window only."""
     games = [g for g in games if in_season(g["ended_at"], s)]
-    likes = [l for l in likes if in_season(l["at"], s)]
+    every_like = list(likes)                 # swaps and rings are judged on all of them
+    likes = [l for l in every_like if in_season(l["at"], s)]
     boards: dict[str, list[dict]] = {}
     if reports is not None:
         pts: dict[str, dict] = {}
@@ -489,7 +523,7 @@ def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mappi
                                 key=lambda r: (-r["points"], r["agent_id"]))[:limit]
     table = craft_ratings(games, who)
     agents = {l["to_agent"] for l in likes} - set(house)
-    index = _likes_index(likes, who)
+    index = _likes_index(every_like, who, house, scored=likes)
     renown_rows = [{"agent_id": a, **{k: v for k, v in renown(a, likes, who, house, _index=index).items()
                                      if k in ("score", "level", "likes", "from_operators")}} for a in agents]
     renown_rows = [r for r in renown_rows if r["score"] > 0]

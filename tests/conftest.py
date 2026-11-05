@@ -124,6 +124,9 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "EMPORIA_GUARDRAILS_MODE": "enforce",
     "EMPORIA_AGENT_ID": "",
     "EMPORIA_RELAY_URL": "http://localhost:8088",
+    # Review follow-up M4: a dashboard sign-in names its relay. The suite's in-process
+    # clients reach the relay as `http://testserver` (TestClient) and `http://relay.test`.
+    "EMPORIA_RELAY_SIGN_IN_ORIGINS": "http://testserver,http://relay.test",
 
     # P99: the x402 escrow operator and its network. The profile .env may name
     # a real operator address and key; a test that inherited them would sign

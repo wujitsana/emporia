@@ -17,7 +17,7 @@ import os
 import re
 import secrets
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -444,6 +444,131 @@ def refuse_plaintext_to(peers: Iterable[str]) -> None:
                 f"messages to '{peer}' before (its encryption key is pinned) — refusing to send it in "
                 f"plaintext, which the relay could read. If plaintext is really wanted, ask for it "
                 f"explicitly (encrypted=False).")
+
+
+# ---------------------------------------------------------------------------
+# Review follow-up M3 (11-05): who a DM thread is with is this client's record
+# ---------------------------------------------------------------------------
+# The SDK's downgrade check and its sealing took a thread's participants from
+# `GET /dm/{id}`: a hostile relay renamed the peer to an id with no pin, or set
+# `my_label` to the peer so it was filtered out as "me", and the check found nobody.
+# `start_dm` now records whom the agent asked for (and whether it required a seal)
+# here, beside the pins, and every later send checks the relay's answer against it.
+
+_DM_THREAD_PEERS_FILE_NAME = "dm_thread_peers.json"
+
+
+class ThreadPeerChanged(PeerKeyMismatch):
+    """The relay names someone else in a DM thread than the agent this client started
+    it with (or names this agent wrongly). Refused: sealing or sending there would reach
+    whoever the relay chose."""
+
+
+def _canonical_agent(name: str, relay_url: str) -> str:
+    """One spelling for an agent as a client names it: NFKC and lowercase, as relays
+    keep ids; an address on the client's own relay is its bare id."""
+    import unicodedata
+
+    from emporia import addresses
+    n = unicodedata.normalize("NFKC", str(name or "")).strip().lower()
+    if addresses.is_address(n):
+        agent, host = addresses.split_address(n)
+        if addresses.same_host(host, addresses.host_of(relay_url)):
+            return agent
+        return addresses.address(agent, addresses.canonical_host(host))
+    return n
+
+
+def same_agent(a: str, b: str, relay_url: str) -> bool:
+    """Whether two names a client meets for agents are the same agent."""
+    return bool(a) and bool(b) and _canonical_agent(a, relay_url) == _canonical_agent(b, relay_url)
+
+
+def dm_thread_peer(relay_url: str, agent_id: str, thread: Mapping[str, Any]) -> str:
+    """The other participant of `thread` as the relay serves it, after checking that it
+    names this agent (`my_label`) as this agent and has exactly one other participant.
+    Raises `ThreadPeerChanged` otherwise."""
+    me = thread.get("my_label") or agent_id
+    if not same_agent(me, agent_id, relay_url):
+        raise ThreadPeerChanged(
+            f"the relay labels this agent '{me}' in DM thread {thread.get('thread_id')}, not "
+            f"'{agent_id}' — refusing it, since that is how a relay hides the real peer")
+    parts = [p for p in (thread.get("agent_a"), thread.get("agent_b")) if p]
+    others = [p for p in parts if p != me]
+    if me not in parts or len(others) != 1:
+        raise ThreadPeerChanged(
+            f"the relay's DM thread {thread.get('thread_id')} does not have this agent and one other "
+            f"in it (it names {', '.join(map(str, parts)) or 'nobody'}) — refusing it")
+    return others[0]
+
+
+def _dm_thread_key(agent_id: str, relay_url: str, thread_id: str) -> str:
+    return f"{signing_pin_id(agent_id, relay_url)}/{thread_id}"
+
+
+def load_dm_thread_peers() -> dict[str, dict[str, Any]]:
+    """{`agent@host/thread_id`: {"peer", "sealed"}}, or {}. A corrupt file is set aside
+    and logged, never silently reset (as the pin maps)."""
+    path = KEY_DIR / _DM_THREAD_PEERS_FILE_NAME
+    try:
+        data = json.loads(path.read_text())
+        return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except (json.JSONDecodeError, OSError) as e:
+        import logging
+        logging.getLogger("emporia.identity").warning(
+            "DM thread record at %s is corrupt/unreadable (%s) — preserving it for inspection", path, e)
+        try:
+            path.rename(path.with_name(f"{path.name}.corrupt-{int(time.time())}"))
+        except OSError:
+            pass
+        return {}
+
+
+def recorded_dm_thread(agent_id: str, relay_url: str, thread_id: str) -> dict[str, Any] | None:
+    """What this client recorded for a thread: whom it is with and whether it must be sealed."""
+    entry = load_dm_thread_peers().get(_dm_thread_key(agent_id, relay_url, thread_id))
+    return entry if isinstance(entry, dict) and isinstance(entry.get("peer"), str) else None
+
+
+def record_dm_thread(agent_id: str, relay_url: str, thread_id: str, peer: str, sealed: bool) -> dict[str, Any]:
+    """Record that `thread_id` is this agent's thread with `peer` (and, once `sealed`, that
+    it is never sent to in plaintext). Write-once for the peer: a different peer for a
+    recorded thread raises `ThreadPeerChanged`. A write failure raises, as for pins."""
+    key = _dm_thread_key(agent_id, relay_url, thread_id)
+    with _locked(KEY_DIR / f".{_DM_THREAD_PEERS_FILE_NAME}.lock"):
+        records = load_dm_thread_peers()
+        old = records.get(key) if isinstance(records.get(key), dict) else None
+        if old and not same_agent(old.get("peer", ""), peer, relay_url):
+            raise ThreadPeerChanged(
+                f"DM thread {thread_id} was started with '{old.get('peer')}', but the relay now says it "
+                f"is with '{peer}' — refusing it")
+        new = {"peer": old["peer"] if old else peer, "sealed": bool(sealed or (old or {}).get("sealed"))}
+        if new != old:
+            records[key] = new
+            KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+            _write_secret_atomically(KEY_DIR / _DM_THREAD_PEERS_FILE_NAME,
+                                     json.dumps(records, sort_keys=True, indent=2).encode())
+        return new
+
+
+class _locked:
+    """An exclusive lock on `path` (created 0600) for a read-modify-write of a file
+    beside it: MCP calls and SDK tasks can run at once."""
+
+    def __init__(self, path: Path):
+        self.path = path
+
+    def __enter__(self) -> "_locked":
+        import fcntl
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self.fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
+        fcntl.flock(self.fd, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        os.close(self.fd)          # closing releases the lock
 
 
 def _valid_x25519_pubkey_hex(value: str) -> bool:

@@ -123,6 +123,9 @@ def _k(name: str, builder: str, group: str, why: str, **kw: Any) -> Kind:
 
 KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("sign-in", "", "sign-in", "needed to act at all; a token is no more than the agent already has"),
+    _k("dashboard-sign-in", "signed_dashboard_sign_in_payload", "sign-in",
+       "a session token for the one relay it names; no more than the agent already has there",
+       check=lambda p, ctx: wire.dashboard_sign_in_problem(p.get("nonce"), p.get("relay"))),
     # playing
     _k("move", "signed_action_payload", "move", "routine; bound to a session and its step"),
     _k("session-create", "signed_session_create_payload", "join", "routine"),
@@ -267,8 +270,20 @@ def sign(agent_id: str, kind: str, *args: Any, **kwargs: Any) -> str:
     return signed(agent_id, kind, *args, **kwargs)[1]
 
 
+def dashboard_session_body(agent_id: str, challenge: dict[str, Any], relay_url: str,
+                           *, key: str = "") -> dict[str, Any]:
+    """Review follow-up M4: the `POST /dashboard/session` body for a challenge from
+    `relay_url` — signed over the nonce and that relay's origin (`dashboard-sign-in`),
+    so it is good on that relay alone. `relay_url` is the relay this client is talking
+    to, never one the challenge names. `key`: the profile whose key signs, when it is
+    not named `agent_id` (the SDK's `profile_id`)."""
+    sig = sign(key or agent_id, "dashboard-sign-in", challenge["nonce"], relay_url)
+    return wire.dashboard_session_body(agent_id, challenge["challenge_id"], relay_url, sig)
+
+
 def sign_in(agent_id: str, nonce: str) -> str:
-    """A relay's sign-in challenge (hex), the only raw signature an agent makes."""
+    """A relay's registration challenge (hex), the only raw signature an agent makes.
+    Dashboard sessions sign `dashboard-sign-in` instead (M4)."""
     check("sign-in", {"nonce": nonce}, Context(agent_id))
     if client := _signer_for(agent_id):
         return client.sign_in(nonce)

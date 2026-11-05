@@ -179,3 +179,128 @@ def test_mcp_will_not_send_in_the_clear_to_another_relays_agent(prod_client, mon
         out = mcp_server.send_dm("bob@relay-b.test", "the vault code is 8842", from_agent_id="rp_fed_a")
         assert not out.get("success") and "plaintext" in out["error"], out
         assert not sent, "nothing reached the relay"
+
+
+# -- Review follow-up M3 (11-05): who a thread is with is the client's record, not the relay's --
+
+def _relay_serving(agent, change):
+    """A hostile relay's `GET /dm/{id}`: the real answer, changed by `change(body)`."""
+    from types import SimpleNamespace
+    real = agent._bearer_request
+
+    async def hostile(method, url, **kw):
+        r = await real(method, url, **kw)
+        if method == "get" and "/dm/" in url and not url.endswith(("/messages", "/chain")):
+            body = change(dict(r.json()))
+            return SimpleNamespace(status_code=200, json=lambda: body, raise_for_status=lambda: None)
+        return r
+    agent._bearer_request = hostile
+
+
+@pytest.mark.parametrize("how", ["renamed", "my_label"])
+def test_the_sdk_will_not_take_the_threads_peer_from_the_relay(prod_client, how):
+    """M3: P298's check asked whether the thread's *other participant*, as `GET /dm/{id}`
+    named it, had a pinned key. A relay that renamed the peer to an id with no pin, or set
+    `my_label` to the peer so it was filtered out as "me", called the thread plaintext and
+    got the message in the clear. The peer is now the one `start_dm` asked for."""
+    a, b = f"m3_{how}_a", f"m3_{how}_b"
+
+    def change(t):
+        if how == "renamed":
+            return {**t, "encrypted": False, "agent_a": a, "agent_b": "m3_nobody_pinned"}
+        return {**t, "encrypted": False, "my_label": b}
+
+    async def scenario():
+        alice, bob = _sdk_wired(a), _sdk_wired(b)
+        try:
+            await alice.register()
+            await bob.register()
+            tid = (await alice.start_dm(b))["thread_id"]
+            await alice.send_dm(tid, "sealed, pins bob's key")
+            _relay_serving(alice, change)
+            with pytest.raises(identity.ThreadPeerChanged):
+                await alice.send_dm(tid, "the vault code is 5150")
+            return tid
+        finally:
+            await alice.__aexit__()
+            await bob.__aexit__()
+
+    tid = asyncio.run(scenario())
+    assert not any("5150" in c for c in _stored(tid))
+
+
+def test_a_thread_required_sealed_stays_sealed_in_a_new_process(prod_client):
+    """M3: the review pass remembered `start_dm(encrypted=True)` threads in memory only, so
+    a restarted agent (no key pinned yet) sent in plaintext when the relay said so."""
+    async def scenario():
+        alice, bob = _sdk_wired("m3_new_a"), _sdk_wired("m3_new_b")
+        try:
+            await alice.register()
+            await bob.register()
+            tid = (await alice.start_dm("m3_new_b", encrypted=True))["thread_id"]
+        finally:
+            await alice.__aexit__()
+            await bob.__aexit__()
+        again = _sdk_wired("m3_new_a")                     # the agent, restarted
+        try:
+            assert "m3_new_b" not in identity.load_peer_encryption_keys()
+            _relay_serving(again, lambda t: {**t, "encrypted": False})
+            with pytest.raises(identity.PlaintextRefused):
+                await again.send_dm(tid, "the vault code is 3141")
+        finally:
+            await again.__aexit__()
+        return tid
+
+    tid = asyncio.run(scenario())
+    assert not any("3141" in c for c in _stored(tid))
+
+
+def test_the_sdk_refuses_a_thread_the_relay_says_is_with_someone_else(prod_client):
+    from types import SimpleNamespace
+
+    async def scenario():
+        alice, bob = _sdk_wired("m3_ask_a"), _sdk_wired("m3_ask_b")
+        try:
+            await alice.register()
+            await bob.register()
+            real = alice._bearer_request
+
+            async def other(method, url, **kw):
+                r = await real(method, url, **kw)
+                if url.endswith("/dm/start"):
+                    body = {**r.json(), "agent_a": "m3_ask_a", "agent_b": "m3_ask_x"}
+                    return SimpleNamespace(status_code=200, json=lambda: body, raise_for_status=lambda: None)
+                return r
+            alice._bearer_request = other
+            with pytest.raises(identity.ThreadPeerChanged):
+                await alice.start_dm("m3_ask_b")
+        finally:
+            await alice.__aexit__()
+            await bob.__aexit__()
+    asyncio.run(scenario())
+
+
+def test_mcp_seals_only_to_the_agent_it_addressed(prod_client, monkeypatch):
+    """M3, MCP side: `_dm_recipients` sealed to both participants `GET /dm/{id}` listed, so
+    a relay naming an agent of its own as the peer got a copy it could open."""
+    from types import SimpleNamespace
+
+    from emporia import mcp_server
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        for x in ("m3_mcp_a", "m3_mcp_b", "m3_mcp_relays_own"):
+            mcp_server.register_agent(agent_id=x)
+        real, sent = mcp_server._bearer_request, []
+
+        def hostile(method, url, **kw):
+            r = real(method, url, **kw)
+            if method == "get" and "/dm/" in url and not url.endswith(("/messages", "/chain")):
+                body = {**r.json(), "agent_a": "m3_mcp_a", "agent_b": "m3_mcp_relays_own"}
+                return SimpleNamespace(status_code=200, json=lambda: body, text="", raise_for_status=lambda: None)
+            if url.endswith("/send"):
+                sent.append(kw.get("json"))
+            return r
+        monkeypatch.setattr(mcp_server, "_bearer_request", hostile)
+        out = mcp_server.send_dm("m3_mcp_b", "for bob only", from_agent_id="m3_mcp_a")
+        assert not out.get("success") and "m3_mcp_relays_own" in out["error"], out
+        assert not sent, "nothing was sealed to the relay's agent"

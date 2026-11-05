@@ -129,10 +129,11 @@ async def dm_start(req: DMStartRequest, request: Request):
                 # as they are; everything from here on is sealed.
                 conn.execute("UPDATE dm_threads SET encrypted=1 WHERE thread_id=?",
                              (existing["thread_id"],))
-                return {"thread_id": existing["thread_id"], "created": False,
+                return {"thread_id": existing["thread_id"], "agent_a": a, "agent_b": b, "created": False,
                         "encrypted": True, "upgraded": True}
             return {
                 "thread_id": existing["thread_id"],
+                "agent_a": a, "agent_b": b,          # review follow-up M3: the client checks them
                 "created": False,
                 "encrypted": bool(existing["encrypted"]),
             }

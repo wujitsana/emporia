@@ -140,7 +140,7 @@ def test_commit_move_keeps_the_nonce_local_and_reveal_move_uses_it(tmp_path, mon
     refused = m.commit_move("sess_x", [50, 50], "two fields only", agent_id="me")
     assert not refused["success"] and "5 whole numbers" in refused["error"] and "Nothing was committed" in refused["error"]
     assert not sent, "an illegal move is never committed: it could not be revealed, and loses on time"
-    assert m.commit_move("sess_x", [20] * 5, "spread evenly", agent_id="me")["success"]
+    assert m.commit_move("sess_x", [20] * 5, "spread evenly across fields", agent_id="me")["success"]
     [(action, payload)] = sent
     assert action == "commit" and set(payload) == {"commitment"}, "only the hash leaves"
     saved = tmp_path / "commitments" / "me.sess_x.json"
@@ -152,6 +152,83 @@ def test_commit_move_keeps_the_nonce_local_and_reveal_move_uses_it(tmp_path, mon
     action, reveal = sent[-1]
     assert action == "reveal" and reveal["move"] == [20] * 5
     assert commit_reveal.matches(payload["commitment"], reveal["move"], reveal["nonce"])
+
+
+def _m5_game(tmp_path, monkeypatch):
+    """A blotto round the MCP server sees through a stub relay that checks reveals."""
+    from emporia import identity
+    from emporia import mcp_server as m
+    monkeypatch.setattr(identity, "KEY_DIR", tmp_path)
+    state = {"round": 1, "commitments": {}, "revealed": {}, "battlefields": 5, "troops": 100}
+    monkeypatch.setattr(m, "_session_json", lambda sid, aid: {"module_type": BLOTTO, "state": {"data": state}})
+    monkeypatch.setattr(m, "_session_data", lambda sid, aid: state)
+    return m, state
+
+
+def _relay_reveal(state, payload):
+    if commit_reveal.matches(state["commitments"].get("me", ""), payload["move"], payload["nonce"]):
+        state["revealed"]["me"] = payload["move"]
+        return {"success": True}
+    return {"error": "Relay 400", "detail": "This reveal does not match your commitment", "success": False}
+
+
+def test_a_retry_with_another_move_while_the_first_is_in_flight_cannot_lose_the_game(tmp_path, monkeypatch):
+    """Review follow-up M5: commit_move saved {move, nonce} before sending, over the round's
+    entry. An agent that retried with move B while move A was still on its way (its answer
+    lost) found no commitment on the relay, so B's nonce replaced A's; the relay kept A, the
+    reveal sent B, matched nothing, and the game was lost on time."""
+    m, state = _m5_game(tmp_path, monkeypatch)
+    sent, retry = [], {}
+
+    def relay(sid, action, payload, rationale, aid, say=""):
+        sent.append((action, payload))
+        if action == "reveal":
+            return _relay_reveal(state, payload)
+        if not retry:
+            retry["started"] = True       # while A is on its way, the agent tries B
+            retry["out"] = m.commit_move("sess_m5", [100, 0, 0, 0, 0], "a different plan entirely", agent_id="me")
+            state["commitments"]["me"] = payload["commitment"]   # then A lands
+            return {"success": True}
+        return {"error": "Relay 400", "detail": "already committed", "success": False}
+    monkeypatch.setattr(m, "submit_action", relay)
+
+    assert m.commit_move("sess_m5", [20] * 5, "spread evenly across all fields", agent_id="me")["success"]
+    assert not retry["out"]["success"] and "still waiting" in retry["out"]["error"], retry["out"]
+    assert [a for a, _ in sent].count("commit") == 1, "the other move was never sent"
+    out = m.reveal_move("sess_m5", "revealing the even spread", agent_id="me")
+    assert out["success"], out
+    assert state["revealed"]["me"] == [20] * 5
+
+
+def test_reveal_says_so_when_the_saved_move_is_not_the_relays(tmp_path, monkeypatch):
+    """M5: reveal_move sent the saved move without comparing its commitment with the one the
+    relay holds, and the agent learnt only "does not match" from the relay."""
+    m, state = _m5_game(tmp_path, monkeypatch)
+    sent = []
+    monkeypatch.setattr(m, "submit_action", lambda sid, action, payload, rationale, aid, say="":
+                        sent.append(action) or {"success": True})
+    assert m.commit_move("sess_m5b", [20] * 5, "spread evenly across all fields", agent_id="me")["success"]
+    state["commitments"]["me"] = commit_reveal.commitment([100, 0, 0, 0, 0], commit_reveal.new_nonce())
+    out = m.reveal_move("sess_m5b", "revealing the even spread", agent_id="me")
+    assert not out["success"] and "not the one you committed" in out["error"], out
+    assert sent == ["commit"], "nothing was revealed"
+    state["commitments"] = {}
+    out = m.reveal_move("sess_m5b", "revealing the even spread", agent_id="me")
+    assert not out["success"] and "holds no commitment" in out["error"], out
+
+
+def test_a_commit_the_relay_refused_can_be_replaced(tmp_path, monkeypatch):
+    """M5: the entry is write-once only until the relay answers. A refusal (here: not this
+    agent's turn) with no commitment held frees the round for another move."""
+    m, state = _m5_game(tmp_path, monkeypatch)
+    answers = iter([{"error": "Relay 400", "detail": "Not your turn", "success": False}, {"success": True}])
+    sent = []
+    monkeypatch.setattr(m, "submit_action", lambda sid, action, payload, rationale, aid, say="":
+                        sent.append(payload) or next(answers))
+    first = m.commit_move("sess_m5c", [20] * 5, "spread evenly across all fields", agent_id="me")
+    assert not first["success"] and "Nothing is committed" in first["note"]
+    assert m.commit_move("sess_m5c", [100, 0, 0, 0, 0], "everything on the first field", agent_id="me")["success"]
+    assert sent[0] != sent[1]
 
 
 def test_the_default_game_is_one_round_four_moves(client):

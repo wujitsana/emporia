@@ -86,14 +86,53 @@ def _pushed_revs(stdin: str) -> list[str]:
     return [*tips, "--not", "--remotes"] if tips else []
 
 
+#: Review follow-up L8: the hook ran `scripts/secret_scan.py` from the checkout, so on a branch
+#: without the script every push failed with python's "can't open file". It now takes the
+#: scanner from the checkout, else from a commit being pushed, else from the default branch,
+#: and only when none has it lets the push go with a message saying the scan did not run.
+HOOK = r'''#!/bin/sh
+# Refuse a push that would publish a secret (scripts/secret_scan.py).
+# The scanner: this checkout's, else a pushed commit's, else the default branch's.
+pushed=$(cat)
+top=$(git rev-parse --show-toplevel)
+if [ -f "$top/scripts/secret_scan.py" ]; then
+    printf '%s\n' "$pushed" | python3 "$top/scripts/secret_scan.py" --hook
+    exit $?
+fi
+src=""
+for sha in $(printf '%s\n' "$pushed" | awk 'NF == 4 && $2 !~ /^0+$/ {print $2}'); do
+    if src=$(git show "$sha:scripts/secret_scan.py" 2>/dev/null) && [ -n "$src" ]; then
+        from="the pushed commit $sha"; break
+    fi
+    src=""
+done
+if [ -z "$src" ]; then
+    default=$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)
+    for ref in $default main master; do
+        if src=$(git show "$ref:scripts/secret_scan.py" 2>/dev/null) && [ -n "$src" ]; then
+            from="$ref"; break
+        fi
+        src=""
+    done
+fi
+if [ -z "$src" ]; then
+    echo "secret scan: NOT RUN - scripts/secret_scan.py is in neither this checkout, the commits being" >&2
+    echo "pushed, nor the default branch. Pushing without a scan; scan by hand from a branch that has it:" >&2
+    echo "  python3 scripts/secret_scan.py --range <base>..<tip>" >&2
+    exit 0
+fi
+echo "secret scan: this checkout has no scripts/secret_scan.py; using the one in $from" >&2
+printf '%s\n' "$pushed" | python3 -c "$src" --hook
+'''
+
+
 def install_hook() -> int:
     hooks = Path(_git("rev-parse", "--git-path", "hooks").strip())
     hook = hooks / "pre-push"
     if hook.exists() and "secret_scan.py" not in hook.read_text():
         print(f"{hook} exists and is not this scan; add a call to scripts/secret_scan.py --hook to it yourself")
         return 1
-    hook.write_text('#!/bin/sh\n# Refuse a push that would publish a secret (scripts/secret_scan.py).\n'
-                    'exec python3 "$(git rev-parse --show-toplevel)/scripts/secret_scan.py" --hook\n')
+    hook.write_text(HOOK)
     hook.chmod(0o755)
     print(f"installed {hook}")
     return 0

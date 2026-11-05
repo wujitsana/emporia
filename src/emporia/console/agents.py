@@ -58,10 +58,20 @@ class _SignsInThroughItsSigner:
         self.agent = agent
 
     def sign(self, data: bytes) -> bytes:
-        from emporia.identity import CHALLENGE_PREFIX
-        if not data.startswith(CHALLENGE_PREFIX):
-            raise RuntimeError("the console signs nothing but a sign-in through an agent's signer")
-        return bytes.fromhex(_signer_client(self.agent).sign_in(data[len(CHALLENGE_PREFIX):].decode()))
+        raise RuntimeError("the console signs nothing but a dashboard sign-in through an agent's signer")
+
+
+def dashboard_sign_in(agent: LocalAgent, nonce: str, relay_url: str) -> str:
+    """Review follow-up M4: the agent's signature (base64url) over a dashboard sign-in for
+    `relay_url` — its own key's, or its signer's (which applies its person's policy)."""
+    from emporia import identity, wire
+    payload = wire.signed_dashboard_sign_in_payload(nonce, relay_url)
+    if why := wire.dashboard_sign_in_problem(payload["nonce"], payload["relay"]):
+        raise ValueError(f"not signed: {why}")
+    key = load_identity_key(agent)
+    if isinstance(key, _SignsInThroughItsSigner):
+        return _signer_client(agent).sign("dashboard-sign-in", [nonce, relay_url], {})
+    return identity.sign_payload(key, payload)
 
 
 def _stem(agent_id: str) -> str:

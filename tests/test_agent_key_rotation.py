@@ -257,8 +257,10 @@ def test_a_step_must_be_later_than_the_one_before(client):
 
 def _session_token(client, agent_id: str, priv) -> int:
     ch = client.post("/dashboard/challenge").json()
-    sig = priv.sign(identity.challenge_bytes(ch["nonce"])).hex()
-    return client.post("/dashboard/session", json=wire.dashboard_session_body(agent_id, ch["challenge_id"], sig)).status_code
+    relay = "http://testserver"
+    sig = identity.sign_payload(priv, wire.signed_dashboard_sign_in_payload(ch["nonce"], relay))
+    return client.post("/dashboard/session",
+                       json=wire.dashboard_session_body(agent_id, ch["challenge_id"], relay, sig)).status_code
 
 
 def test_sign_in_uses_the_new_key_at_once_and_not_the_old(client):
@@ -688,6 +690,8 @@ def test_a_run_that_stopped_after_the_relay_took_the_key_finishes_with_the_key_o
 
     class DropsTheAnswer:
         """The relay gets the request; the answer never arrives."""
+        base_url = property(lambda self: self.inner.base_url)   # M4: the sign-in names it
+
         def __init__(self, inner):
             self.inner = inner
 
@@ -716,6 +720,8 @@ def test_a_refused_change_leaves_the_key_as_it_was(client, tmp_path):
     other = _agent_with_file(client, tmp_path, "kr_refused_other")
 
     class Refuses:
+        base_url = property(lambda self: self.inner.base_url)   # M4: the sign-in names it
+
         def __init__(self, inner):
             self.inner = inner
 

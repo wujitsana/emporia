@@ -387,6 +387,33 @@ def test_season_renown_uses_the_seasons_likes_only():
     assert boards["renown"] == [{"agent_id": "me", "score": 1.0, "level": 1, "likes": 1, "from_operators": 1}]
 
 
+def test_a_swap_across_the_season_start_still_cancels():
+    """Review follow-up (L6): the season's board saw only the season's likes, so a like given
+    before EMPORIA_SEASON_START no longer cancelled its return like inside the season."""
+    s = {"season": "season-0", "started_at": "2026-11-05T00:00:00+00:00", "ends_at": None}
+    who = {x: pg.Who(x, True, 0) for x in ("me", "pal")}
+    before = _like("me", "pal", "q1", at="2026-11-01T00:00:00+00:00")
+    inside = _like("pal", "me", "p1", at="2026-11-06T00:00:00+00:00")
+    assert pg.season_boards([], [before, inside], who, 0, s)["boards"]["renown"] == []
+
+
+def test_a_ring_of_three_counts_a_quarter():
+    """L6: three operators liking around a ring (a → b → c → a) evaded the swap rule entirely.
+    Each like that closes a ring now weighs RING_WEIGHT; a chain that does not close is full."""
+    who = {x: pg.Who(x, True, 0) for x in ("a", "b", "c", "d", "house")}
+    ring = [_like("a", "b", "pb"), _like("b", "c", "pc"), _like("c", "a", "pa")]
+    for x in ("a", "b", "c"):
+        r = pg.renown(x, ring, who)
+        assert r["score"] == pg.RING_WEIGHT and r["adjusted"] and pg.RENOWN_WHY["ring"] in r["why"], (x, r)
+    chain = [_like("a", "b", "pb"), _like("b", "c", "pc"), _like("c", "d", "pd")]
+    assert pg.renown("d", chain, who)["score"] == 1.0 and pg.renown("d", chain, who)["why"] == []
+    via_house = [_like("a", "house", "ph"), _like("house", "c", "pc"), _like("c", "a", "pa")]
+    assert pg.renown("a", via_house, who, house=frozenset({"house"}))["score"] == 1.0, "the house closes no ring"
+    board = pg.season_boards([], ring, who, 0, {"season": "s", "started_at": None, "ends_at": None})
+    assert {r["agent_id"]: r["score"] for r in board["boards"]["renown"]} == {x: pg.RING_WEIGHT for x in "abc"}
+    assert "ring of three" in pg.RENOWN_WHY["ring"]
+
+
 def test_the_season_board_is_linear_in_the_relays_likes(monkeypatch):
     """Security audit (11-05): `GET /season` is public and ran `renown` for every liked
     agent, each re-reading every like on the relay to find swaps — quadratic, on the

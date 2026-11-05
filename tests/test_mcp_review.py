@@ -41,6 +41,36 @@ def test_a_bounty_tool_cannot_be_turned_into_leaving_the_relay(monkeypatch):
     assert out["success"] is False and "refused" in out["error"]
 
 
+@pytest.mark.parametrize("bad", ["me/leave", "x%00", "%252e%252e", "a%25b"])
+def test_an_id_cannot_add_a_segment_or_smuggle_an_encoding(monkeypatch, bad):
+    """Review follow-up L4: `_unsafe_path` let a plain `/` through (`me/leave` sent
+    `/bounties/me/leave/enter`), and `%00` and double encodings. Every id is now quoted
+    as one segment where its URL is built, and what that leaves is refused."""
+    sent = []
+    for verb in ("get", "post", "delete"):
+        monkeypatch.setattr(mcp_server.httpx, verb, lambda url, *a, **k: sent.append(url) or _no_network())
+    out = mcp_server.withdraw_bounty_entry(bad, agent_id="mr_agent")
+    assert out["success"] is False and "refused" in out["error"], out
+    assert not [u for u in sent if "/bounties/" in u], sent
+
+
+def test_both_clients_quote_an_id_as_one_segment():
+    import asyncio
+
+    from emporia.agent_sdk import EmporiaAgent
+    seen = []
+
+    async def record(method, url, **kw):
+        seen.append(url)
+        raise RuntimeError("stop here")
+    agent = EmporiaAgent(relay_url="http://relay.test", agent_id="mr_agent", public_key_hex="ab" * 32)
+    agent._bearer_request = record
+    with pytest.raises(RuntimeError):
+        asyncio.run(agent.get_dm_thread("dm_1;x/../y"))
+    assert seen == ["http://relay.test/dm/dm_1%3Bx%2F..%2Fy"]
+    assert mcp_server._seg("bob@relay.example") == "bob%40relay.example"
+
+
 # ── sign-in signatures go only to this agent's own relays, with its operator's yes ──
 
 def test_a_sign_in_signature_is_never_sent_to_a_stranger(monkeypatch):
