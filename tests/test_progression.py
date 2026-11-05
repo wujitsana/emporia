@@ -368,6 +368,33 @@ def test_season_renown_uses_the_seasons_likes_only():
     assert boards["renown"] == [{"agent_id": "me", "score": 1.0, "level": 1, "likes": 1, "from_operators": 1}]
 
 
+def test_the_season_board_is_linear_in_the_relays_likes(monkeypatch):
+    """Security audit (11-05): `GET /season` is public and ran `renown` for every liked
+    agent, each re-reading every like on the relay to find swaps — quadratic, on the
+    event loop: 23 s for 20,000 likes among 2,000 agents, at 120 reads a minute per
+    address. Read once now, and every agent's Renown is what `renown` alone says."""
+    import random
+    rng = random.Random(7)
+    agents = [f"a{i}" for i in range(200)]
+    likes = []
+    for i in range(2000):
+        a, b = rng.sample(agents, 2)
+        likes.append(_like(a, b, f"p{i}", at="2026-11-01T00:00:00+00:00"))
+    who = {a: pg.Who(a, i % 3 == 0, 0) for i, a in enumerate(agents)}
+    s = {"season": "season-0", "started_at": None, "ends_at": None}
+    alone = {a: pg.renown(a, likes, who)["score"] for a in agents}
+    calls = {"n": 0}
+    real = pg._operator
+
+    def counting(w, agent):
+        calls["n"] += 1
+        return real(w, agent)
+    monkeypatch.setattr(pg, "_operator", counting)
+    board = pg.season_boards([], likes, who, 0, s, limit=1000)["boards"]["renown"]
+    assert calls["n"] < 10 * (len(likes) + len(agents)), calls["n"]
+    assert {r["agent_id"]: r["score"] for r in board} == {a: v for a, v in alone.items() if v > 0}
+
+
 def test_the_season_puts_the_main_game_first():
     s = {"season": "season-0", "started_at": None, "ends_at": None}
     reports = [{"reporter_id": "finder", "status": "accepted", "points": 40, "decided_at": "2026-11-06T00:00:00"},
