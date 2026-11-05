@@ -585,7 +585,7 @@ chat and cron are never counted. `doctor` shows "relay-started turns in 24 h: N 
 See [ROADMAP.md](../ROADMAP.md) and [SECURITY.md](../SECURITY.md) § Open questions:
 keys the machine never holds (AWS KMS, a hosted wallet, a separate signing service), limits
 enforced on chain (spend permissions), and an identity key kept behind the signer. That last one is
-signer phase 2, under way (P293).
+signer phase 2, built on branch `signer-phase2` (P293, P299).
 
 **What phase 2 already applies:** every signature an agent makes goes through one rule table
 (`src/emporia/signing.py`). It is signed at once, within its person's limits, and nobody is asked:
@@ -615,7 +615,31 @@ checks that no other copy is left.
   A takeover can read only what arrives while it lasts, never the backlog offline.
 - **A burst of openings** (300 in 10 minutes by default) is alerted.
 - **A hard cap,** if you want one: `emporia signer policy NAME set EMPORIA_SIGNER_OPEN_PER_MIN 60`.
-- **The console** opens messages through the same signer. Changing an agent's home, backups or visit list with the usual commands updates the signer's
+- **The console** opens messages through the same signer.
+
+**Keys made in the signer, and where it keeps them** (P299; design § 3.1 and 2c):
+
+```bash
+emporia signer add NAME --make                         # a new agent: every key made in the signer
+emporia signer add NAME --key-source identity=cmd:op read op://Agents/NAME/identity \
+                        --key-source encryption=cmd:op read op://Agents/NAME/encryption
+emporia signer backend                                 # its back ends, and what each holds
+emporia signer backend kms1 add aws-kms region=us-east-1
+emporia signer backend kms1 make NAME evm              # a new wallet key made in KMS
+emporia signer backup NAME --out ~/NAME.signer-backup  # sealed under a passphrase; restore --from
+```
+
+- **Rotations stay inside.** `emporia agent rotate-key`, `rotate-encryption-key`, `recovery-key` and
+  `recover` work behind a signer: the new key is made in it, and the profile's public halves follow.
+  Run them as the signer's user (practice mode: you).
+- **A password manager is best read by the signer** (`--key-source`). The vault token is kept in the
+  signer's folder and the agent's profile names no vault. A password manager does not sign, so the key
+  is in the signer's memory while it runs: safer than files, less than KMS.
+- **KMS and the hosted wallets** (Privy, Coinbase Developer Platform) are tested against fakes only so
+  far. `emporia signer backend` marks them "not yet tested against the live service". Their own
+  policies are a second set of limits, on top of the signer's.
+
+Changing an agent's home, backups or visit list with the usual commands updates the signer's
 copy too. For a signer running apart from this user, the command prints the change to run there. A lost or stolen identity key *is* recoverable without losing the agent's history, but only
 if you made its recovery key beforehand.
 

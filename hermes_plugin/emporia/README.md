@@ -97,7 +97,8 @@ A new profile is made with `hermes profile create NAME --no-skills`, and its plu
 
 ## Known issues
 
-- **Keys linked from a password manager or vault** (`emporia identity link`, a `cmd:` key source) are read by running that tool's own CLI, with the access token the person keeps in the profile's `.env` (`OP_SERVICE_ACCOUNT_TOKEN`, `BW_SESSION`, `VAULT_TOKEN`, …). They do not go through Hermes's secret sources: a Hermes password-manager unlock lasts one chat session, and an agent signs unattended. Hermes keeps those token names out of the agent's own commands, and the key guard blocks commands naming them, but the token sits in the `.env` and the vendor CLI runs as the agent's user. Key files, keys in the `.env`, or a signer apart from the agent avoid this.
+- **Keys in a password manager.** The recommended way: the signer reads them (`emporia signer add NAME --key-source ROLE=cmd:op read op://…`, or `cmd:bw get password ITEM`). The vault token is kept in the signer's folder, the agent's profile names no vault, and the key is in the signer's memory while it runs: safer than a key file, less than KMS, which never releases a key.
+  - **Not recommended: a `cmd:` key source on the agent's side** (`emporia identity link`). It is read by running the vendor's CLI with the access token the person keeps in the profile's `.env` (`OP_SERVICE_ACCOUNT_TOKEN`, `BW_SESSION`, `VAULT_TOKEN`, …), not through Hermes's secret sources: a Hermes password-manager unlock lasts one chat session, and an agent signs unattended. Hermes keeps those token names out of the agent's own commands, and the key guard blocks commands naming them, but the token sits in the `.env` and the CLI runs as the agent's user.
 - Tested on Linux. The dashboard's console uses a Unix socket, so Windows is not supported.
 
 ## Remove

@@ -4730,6 +4730,24 @@ Limits: it answers yes or no for one name, which a registration attempt (409) al
 Tests: `tests/test_relay_access.py::test_setup_can_ask_whether_a_name_is_free`.
 
 
+## P299 — signer phase 2b and 2c, and its back ends
+
+What an agent's process can do once a takeover has it, behind a signer that holds every key.
+
+| Finding | Fix |
+|---|---|
+| `/v1/open` opened whatever the agent named: its `label` defaulted to the agent but could be any recipient in the envelope, and `aad` was any bytes. The signer held only the agent's keys, so another recipient's slot would not open; but the call had no rule of its own, and a refusal was neither logged nor alerted | `signer.open_rule`: the label is the agent (its id or `id@host`), the envelope wraps a key for that label, and the context is a DM, room or session `message_aad` of the current version. Anything else is a 403, logged (`op: open, result: refused`) and alerted. Openings are counted per minute by context, never content (`tests/test_signer_phase2.py::test_the_signer_refuses_to_open_what_is_not_addressed_to_its_agent`) |
+| An encryption-key binding behind a signer named whatever key the agent passed: a takeover could bind an X25519 key of its own, and peers would seal new DMs to it for good, the lasting harm § 1 of the design names | Behind a signer holding the encryption keys, a binding must name the key it holds (`signer._encryption_binding_rule`); a new key is made inside the signer (`/v1/replace-encryption-key`, 1 a day, alerted), the old one retired there. A re-binding of the current key (each registration) counts against no limit (`::test_an_encryption_binding_names_the_signers_key_and_a_new_one_is_made_there`) |
+| An agent behind a signer could not rotate or recover its identity key, nor commit to a recovery key: the commands loaded a key file that was no longer there | The next identity key is made inside the signer (pending until the relay takes it, then committed; the old one kept in the signer's folder), and the person's kinds are signed there by kind (`signer.person_sign`), never with an agent's token (`::test_a_rotation_makes_the_new_key_in_the_signer`, `::test_a_recovery_key_and_a_recovery_with_the_identity_in_the_signer`, `::test_person_kinds_are_signed_only_through_the_persons_door`) |
+| A new agent's keys were made in its profile, then moved; for a while every key had been a file its own process could read | `emporia signer add NAME --make`: made in the signer (or a back end) and never anywhere else; refused for an agent that already has a key (`::test_signer_add_make_leaves_only_public_halves_in_the_profile`) |
+| A password-manager key source ran the vault CLI in the agent's process, with the vault token in the agent's profile | The signer reads them (`vault` back end, `--key-source`), the token in the signer's folder; the profile's source and token are removed. Trade-off, disclosed: the key is in the signer's memory while it runs (`tests/test_signer_backends.py::test_the_signer_reads_keys_from_a_password_manager_never_the_agent`) |
+| A back end could answer with a signature from another key (a misconfigured KMS key, a provider's error) and the signer would hand it on | Every back-end signature is checked before use: Ed25519 against the key's public half, EIP-712 by recovering the wallet's address, a KMS ECDSA signature made low-s and given the recovery id that recovers the address, a Solana signature over the unchanged message (`::test_privy_refuses_what_it_cannot_and_a_wrong_signature_is_caught`) |
+| Who may configure the back ends | `emporia signer backend`, `backup`, `restore`, `add --make`, `add --key-source` are person-only in `key_guard`, and importing `emporia.signer_backends` from an agent's tools is blocked (`::test_the_key_guard_keeps_an_agent_from_the_signers_back_ends_and_backups`). Credentials are asked hidden and kept in `backends/<name>.secret` (0600); a secret given on the command line is refused |
+
+Not tested against the live services: AWS KMS, Privy, Coinbase Developer Platform, 1Password and
+Bitwarden were reached only through fakes; `emporia signer backend` says so beside each.
+
+
 ## P298 — the 11-05 security audit
 
 A review of the whole branch against the threat model, each finding proved by a failing test first.
