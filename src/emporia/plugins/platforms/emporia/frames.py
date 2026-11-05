@@ -37,6 +37,8 @@ RELAY_SENDER = "emporia:relay"
 UNKNOWN_SENDER = "emporia:unknown-sender"
 #: What a notice shows in place of a relay-supplied id that breaks the id rules.
 INVALID_ID = "(invalid id)"
+#: The idle sweep's reason for ending a game (`routes.sessions.sweep_idle_sessions`).
+_IDLE_REASON = re.compile(r"no action for [0-9]{1,5}(?:\.[0-9]{1,3})?h")
 
 # Frames that are bookkeeping, not news.
 _SILENT = frozenset({"ping", "pong"})
@@ -265,7 +267,15 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         )
 
     if t == "session_abandoned":
-        why = f" ({oid(frame['reason'])})" if frame.get("reason") else ""
+        # The relay's own two reasons (routes/sessions.py), its words kept; anything else is not
+        # its words, and is not repeated (review pass, 11-05: every reason read "(invalid id)").
+        reason = str(frame.get("reason") or "")
+        idle = _IDLE_REASON.fullmatch(reason)
+        if reason.startswith("abandoned by "):
+            reason = f"abandoned by {who(reason[len('abandoned by '):])}"
+        elif not idle:
+            reason = oid(reason)
+        why = f" ({reason})" if reason else ""
         return relay_notice(f"Session {oid(frame.get('session_id'))} abandoned{why} — stakes released.")
 
     if t in ("challenge", "counter_offer", "accept", "reject"):
