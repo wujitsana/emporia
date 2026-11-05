@@ -24,7 +24,7 @@ def test_a_replaced_encryption_key_is_followed_across_relays(fleet):
     old, new, published = bob.call(
         "from emporia import identity\n"
         "old, new = identity.rotate_encryption_keypair(m.AGENT_ID)\n"
-        "r = [old, new, m.register_agent(m.AGENT_ID)['success']]")
+        "r = [old, new, m.register_agent(agent_id=m.AGENT_ID)['success']]")
     assert published and old != new
 
     # alpha replies in the thread bob began: its relay asks B again, and its client follows the newer binding

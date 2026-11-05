@@ -11319,7 +11319,7 @@ def test_mcp_register_agent_uses_shared_wire_contract(prod_client):
          patch.object(mcp_server, "NOUS_JWT", ""), \
          patch.dict(os.environ, {"EMPORIA_NOUS_JWT": ""}), \
          patch.object(wire, "registration_body", wraps=wire.registration_body) as spy:
-        result = mcp_server.register_agent("p6_3_mcp_register_agent", display_name="P6-3 MCP Agent")
+        result = mcp_server.register_agent(agent_id="p6_3_mcp_register_agent", display_name="P6-3 MCP Agent")
 
     assert result.get("success") is not False, result
     spy.assert_called_once()
@@ -16387,8 +16387,8 @@ def test_mcp_encrypted_dm_round_trip(prod_client):
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
     secret = "meet at the second gate, bring the manifest"
     with patch.object(mcp_server, "httpx", adapter):
-        mcp_server.register_agent("p16_mcp_a")
-        mcp_server.register_agent("p16_mcp_b")
+        mcp_server.register_agent(agent_id="p16_mcp_a")
+        mcp_server.register_agent(agent_id="p16_mcp_b")
         sent = mcp_server.send_dm("p16_mcp_b", secret, from_agent_id="p16_mcp_a", encrypted=True)
         assert "error" not in sent, sent
         tid = sent["thread_id"]
@@ -16415,8 +16415,8 @@ def test_both_clients_seal_through_crypto_box(prod_client):
     with patch.object(crypto_box, "seal", wraps=crypto_box.seal) as spy:
         adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
         with patch.object(mcp_server, "httpx", adapter):
-            mcp_server.register_agent("p16_drift_a")
-            mcp_server.register_agent("p16_drift_b")
+            mcp_server.register_agent(agent_id="p16_drift_a")
+            mcp_server.register_agent(agent_id="p16_drift_b")
             mcp_server.send_dm("p16_drift_b", "via mcp", from_agent_id="p16_drift_a",
                                encrypted=True)
 
@@ -18104,12 +18104,12 @@ def test_mcp_encrypted_room_round_trip(prod_client):
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
     secret = "the ledger key rotates on the 3rd"
     with patch.object(mcp_server, "httpx", adapter):
-        mcp_server.register_agent("p18_mr_a")
-        mcp_server.register_agent("p18_mr_b")
-        room = mcp_server.create_room("p18 mcp enc", "p18_mr_a", encrypted=True)
+        mcp_server.register_agent(agent_id="p18_mr_a")
+        mcp_server.register_agent(agent_id="p18_mr_b")
+        room = mcp_server.create_room("p18 mcp enc", creator_id="p18_mr_a", encrypted=True)
         rid = room["room"]["room_id"]
-        mcp_server.join_room(rid, "p18_mr_b")
-        sent = mcp_server.send_room_message(rid, "p18_mr_a", secret)
+        mcp_server.join_room(rid, agent_id="p18_mr_b")
+        sent = mcp_server.send_room_message(rid, sender_id="p18_mr_a", content=secret)
         assert "error" not in sent, sent
         read = mcp_server.get_room_messages(rid, agent_id="p18_mr_b")
 
@@ -18326,12 +18326,12 @@ def test_mcp_room_read_reports_a_stale_version_envelope_as_ciphertext_not_plaint
 
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
     with patch.object(mcp_server, "httpx", adapter):
-        mcp_server.register_agent("p20_stale_room_a")
-        mcp_server.register_agent("p20_stale_room_b")
-        room = mcp_server.create_room("p20 stale room", "p20_stale_room_a", encrypted=True)
+        mcp_server.register_agent(agent_id="p20_stale_room_a")
+        mcp_server.register_agent(agent_id="p20_stale_room_b")
+        room = mcp_server.create_room("p20 stale room", creator_id="p20_stale_room_a", encrypted=True)
         rid = room["room"]["room_id"]
-        mcp_server.join_room(rid, "p20_stale_room_b")
-        sent = mcp_server.send_room_message(rid, "p20_stale_room_a", "will be downgraded")
+        mcp_server.join_room(rid, agent_id="p20_stale_room_b")
+        sent = mcp_server.send_room_message(rid, sender_id="p20_stale_room_a", content="will be downgraded")
         assert "error" not in sent, sent
 
         with DB_LOCK, get_db() as conn:
@@ -18531,8 +18531,8 @@ def test_mcp_dm_tools_carry_success_key_like_their_room_siblings(prod_client):
 
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
     with patch.object(mcp_server, "httpx", adapter):
-        mcp_server.register_agent("p20_success_a")
-        mcp_server.register_agent("p20_success_b")
+        mcp_server.register_agent(agent_id="p20_success_a")
+        mcp_server.register_agent(agent_id="p20_success_b")
 
         sent = mcp_server.send_dm("p20_success_b", "hi", from_agent_id="p20_success_a")
         assert sent.get("success") is True, sent
@@ -18565,21 +18565,21 @@ def test_room_message_409_retry_skips_a_duplicate_nonce_conflict(prod_client):
 
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
     with patch.object(mcp_server, "httpx", adapter):
-        mcp_server.register_agent("p20_dupe_a")
-        room = mcp_server.create_room("p20 dupe room", "p20_dupe_a", encrypted=True)
+        mcp_server.register_agent(agent_id="p20_dupe_a")
+        room = mcp_server.create_room("p20 dupe room", creator_id="p20_dupe_a", encrypted=True)
         room_id = room["room"]["room_id"]
 
     fixed_nonce = "b" * 32
     with patch.object(mcp_server, "httpx", adapter), \
          patch("emporia.wire.new_message_nonce", return_value=fixed_nonce):
-        first = mcp_server.send_room_message(room_id, "p20_dupe_a", "first")
+        first = mcp_server.send_room_message(room_id, sender_id="p20_dupe_a", content="first")
         assert first.get("success") is True, first
 
         with patch(
             "emporia.mcp_server._room_recipients",
             wraps=mcp_server._room_recipients,
         ) as spy:
-            second = mcp_server.send_room_message(room_id, "p20_dupe_a", "second, same nonce")
+            second = mcp_server.send_room_message(room_id, sender_id="p20_dupe_a", content="second, same nonce")
 
     assert second.get("success") is not True, second
     assert "duplicate nonce" in str(second.get("detail", "")), second
@@ -19177,11 +19177,11 @@ def test_mcp_verify_room_chain_matches_sdk_behavior(prod_client):
 
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
     with patch.object(mcp_server, "httpx", adapter):
-        mcp_server.register_agent("p21_mcp_pin_a")
-        room = mcp_server.create_room("p21 mcp pin room", "p21_mcp_pin_a")
+        mcp_server.register_agent(agent_id="p21_mcp_pin_a")
+        room = mcp_server.create_room("p21 mcp pin room", creator_id="p21_mcp_pin_a")
         room_id = room["room"]["room_id"]
-        mcp_server.send_room_message(room_id, "p21_mcp_pin_a", "Move 1")
-        mcp_server.send_room_message(room_id, "p21_mcp_pin_a", "Move 2")
+        mcp_server.send_room_message(room_id, sender_id="p21_mcp_pin_a", content="Move 1")
+        mcp_server.send_room_message(room_id, sender_id="p21_mcp_pin_a", content="Move 2")
 
         first = mcp_server.verify_room_chain(room_id, agent_id="p21_mcp_pin_a")
         assert first["success"] is True, first
@@ -19221,12 +19221,12 @@ def test_mcp_verify_room_chain_fails_closed_when_history_exceeds_max_messages(pr
 
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
     with patch.object(mcp_server, "httpx", adapter):
-        mcp_server.register_agent("p23_mcp_cap_a")
-        room = mcp_server.create_room("p23 mcp cap room", "p23_mcp_cap_a")
+        mcp_server.register_agent(agent_id="p23_mcp_cap_a")
+        room = mcp_server.create_room("p23 mcp cap room", creator_id="p23_mcp_cap_a")
         room_id = room["room"]["room_id"]
-        mcp_server.send_room_message(room_id, "p23_mcp_cap_a", "Move 1")
-        mcp_server.send_room_message(room_id, "p23_mcp_cap_a", "Move 2")
-        mcp_server.send_room_message(room_id, "p23_mcp_cap_a", "Move 3")
+        mcp_server.send_room_message(room_id, sender_id="p23_mcp_cap_a", content="Move 1")
+        mcp_server.send_room_message(room_id, sender_id="p23_mcp_cap_a", content="Move 2")
+        mcp_server.send_room_message(room_id, sender_id="p23_mcp_cap_a", content="Move 3")
 
         capped = mcp_server.verify_room_chain(room_id, agent_id="p23_mcp_cap_a", max_messages=2)
         clean = mcp_server.verify_room_chain(room_id, agent_id="p23_mcp_cap_a")
@@ -19244,8 +19244,8 @@ def test_mcp_verify_room_chain_verifies_a_room_past_the_old_1000_message_cap(pro
 
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
     with patch.object(mcp_server, "httpx", adapter):
-        mcp_server.register_agent("p24_mcp_biground_a")
-        room = mcp_server.create_room("p24 mcp big room", "p24_mcp_biground_a")
+        mcp_server.register_agent(agent_id="p24_mcp_biground_a")
+        room = mcp_server.create_room("p24 mcp big room", creator_id="p24_mcp_biground_a")
         room_id = room["room"]["room_id"]
         for i in range(1200):
             rooms_db.post_message(room_id, "p24_mcp_biground_a", f"Move {i}", db_path=DATABASE_PATH)
@@ -19630,10 +19630,10 @@ def test_mcp_verify_room_chain_fails_closed_on_a_malformed_pin_entry(prod_client
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
     pin_key = None
     with patch.object(mcp_server, "httpx", adapter):
-        mcp_server.register_agent("p25_mcp_badpin_a")
-        room = mcp_server.create_room("p25 mcp bad pin room", "p25_mcp_badpin_a")
+        mcp_server.register_agent(agent_id="p25_mcp_badpin_a")
+        room = mcp_server.create_room("p25 mcp bad pin room", creator_id="p25_mcp_badpin_a")
         room_id = room["room"]["room_id"]
-        mcp_server.send_room_message(room_id, "p25_mcp_badpin_a", "Move 1")
+        mcp_server.send_room_message(room_id, sender_id="p25_mcp_badpin_a", content="Move 1")
 
         pin_key = f"{mcp_server.RELAY_URL}|{room_id}"
         try:
@@ -20289,7 +20289,7 @@ def test_mcp_start_stripe_onboarding_returns_onboarding_url(prod_client):
 
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
     with patch.object(mcp_server, "httpx", adapter):
-        mcp_server.register_agent("p25_mcp_onboard_a")
+        mcp_server.register_agent(agent_id="p25_mcp_onboard_a")
         with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
             with patch(
                 "emporia.payments.create_live_connected_account", new_callable=AsyncMock,
@@ -26915,7 +26915,7 @@ def test_the_display_name_the_installer_collected_reaches_registration(monkeypat
 
     monkeypatch.setenv("EMPORIA_DISPLAY_NAME", "Ada from the installer")
     with patch.object(mcp_server, "httpx", MagicMock(post=_fake_post)):
-        out = mcp_server.register_agent("p54_agent")
+        out = mcp_server.register_agent(agent_id="p54_agent")
     assert out.get("success"), out
     assert captured.get("display_name") == "Ada from the installer", (
         f"the name the installer collected must be the one registered; got {captured}"
@@ -26923,7 +26923,7 @@ def test_the_display_name_the_installer_collected_reaches_registration(monkeypat
 
     captured.clear()
     with patch.object(mcp_server, "httpx", MagicMock(post=_fake_post)):
-        mcp_server.register_agent("p54_agent", display_name="Explicit Override")
+        mcp_server.register_agent(agent_id="p54_agent", display_name="Explicit Override")
     assert captured.get("display_name") == "Explicit Override", (
         "an explicit argument still wins over the installer's answer"
     )
@@ -26931,7 +26931,7 @@ def test_the_display_name_the_installer_collected_reaches_registration(monkeypat
     captured.clear()
     monkeypatch.delenv("EMPORIA_DISPLAY_NAME", raising=False)
     with patch.object(mcp_server, "httpx", MagicMock(post=_fake_post)):
-        mcp_server.register_agent("p54_agent")
+        mcp_server.register_agent(agent_id="p54_agent")
     assert captured.get("display_name") == "p54_agent", (
         "and with neither, agent_id remains the last resort"
     )

@@ -387,9 +387,9 @@ def _audit_network_outcome(outcome: dict[str, Any]) -> None:
 
 @mcp.tool()
 def register_agent(
-    agent_id: str,
     display_name: str = "",
     nous_jwt: str = "",
+    agent_id: str = "",
 ) -> dict[str, Any]:
     """Register this agent on the relay.
 
@@ -398,6 +398,9 @@ def register_agent(
     Optionally attaches a Nous JWT for nous_verified trust level.
     Idempotent — safe to call on every start.
     """
+    agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
+    if not agent_id:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         from emporia.identity import get_public_key_hex
         pub_hex = get_public_key_hex(agent_id)
@@ -556,7 +559,7 @@ def move_home(old: str, agent_id: str = "") -> dict[str, Any]:
     aid = agent_id or AGENT_ID
     old = old.rstrip("/")
     out: dict[str, Any] = {"home": RELAY_URL, "from": old}
-    registered = register_agent(aid)
+    registered = register_agent(agent_id=aid)
     if not registered.get("success"):
         return {"success": False, "error": f"{RELAY_URL} did not register it: {registered.get('error')}"}
     record = None
@@ -867,7 +870,7 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
                 f"{aid} --allow {url}"), "success": False}
     token = _RELAY_CTX.set(url)
     try:
-        registered = register_agent(aid)
+        registered = register_agent(agent_id=aid)
     finally:
         _RELAY_CTX.reset(token)
     if not registered.get("success"):
@@ -1122,7 +1125,6 @@ def supported_games() -> dict[str, Any]:
 @mcp.tool()
 def create_room(
     name: str,
-    creator_id: str,
     room_type: str = "public",
     gate_type: str = "open",
     entry_fee_cents: int = 0,
@@ -1133,6 +1135,7 @@ def create_room(
     linked_session_id: str | None = None,
     access_duration_days: int | None = None,
     advertise: bool = False,
+    creator_id: str = "",
 ) -> dict[str, Any]:
     """Create a chat/collab room.
 
@@ -1162,6 +1165,9 @@ def create_room(
     selects which local agent's credential signs the request; the relay resolves
     the actual creator from that authenticated caller, not from a body field.
     """
+    creator_id = creator_id or AGENT_ID      # P297: yourself, unless named
+    if not creator_id:
+        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
     body = {
         "name": name, "description": description,
         "room_type": room_type, "gate_type": gate_type,
@@ -1520,12 +1526,12 @@ def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network
 @mcp.tool()
 def join_room(
     room_id: str,
-    agent_id: str,
     payment_intent_id: str | None = None,
     mpp_token: str = "",
     pay_with_x402: bool = False,
     pay_with_tempo: bool = False,
     pay_network: str = "",
+    agent_id: str = "",
 ) -> dict[str, Any]:
     """Join a room. Gate logic:
       open            — just join (public rooms only)
@@ -1556,6 +1562,9 @@ def join_room(
     payment_intent_id was *non-empty*, never that it was a real, paid
     PaymentIntent; that let any agent join a paid room for free.
     """
+    agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
+    if not agent_id:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     from datetime import UTC, datetime
 
     at = datetime.now(UTC).isoformat()   # P273: the join, signed by this agent
@@ -1593,10 +1602,10 @@ def join_room(
 @mcp.tool()
 def send_room_message(
     room_id: str,
-    sender_id: str,
     content: str,
     msg_type: str = DEFAULT_MSG_TYPE,
     parent_message_id: str | None = None,
+    sender_id: str = "",
 ) -> dict[str, Any]:
     """Send a message to a room. Sender must be a member.
 
@@ -1625,6 +1634,9 @@ def send_room_message(
     agent's credential signs and authenticates the request; the relay resolves the
     actual sender from that authenticated caller, not from a body field.
     """
+    sender_id = sender_id or AGENT_ID      # P297: yourself, unless named
+    if not sender_id:
+        return {"error": "sender_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         # N4-7: sign() (a local Ed25519 op that can raise if sender_id's key is
         # missing/unreadable) used to sit outside this try — a missing local key raised
@@ -2323,13 +2335,16 @@ def leave_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
 
 
 @mcp.tool()
-def revoke_room_invite(room_id: str, agent_id: str, creator_id: str) -> dict[str, Any]:
+def revoke_room_invite(room_id: str, agent_id: str, creator_id: str = "") -> dict[str, Any]:
     """Take back an invite to a room you created, before the invitee has joined.
     creator_id authenticates the call (the room's creator). Once they have
     joined, removing them is kick_from_room.
 
     Forwards to the relay's POST /rooms/{id}/invite/revoke.
     """
+    creator_id = creator_id or AGENT_ID      # P297: yourself, unless named
+    if not creator_id:
+        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         r = _bearer_request("post", f"{_base()}/rooms/{room_id}/invite/revoke", agent_id=creator_id,
                             json=_signed_room_act(creator_id, "uninvite", room_id, agent_id), timeout=10)
@@ -2343,9 +2358,9 @@ def revoke_room_invite(room_id: str, agent_id: str, creator_id: str) -> dict[str
 @mcp.tool()
 def kick_from_room(
     room_id: str,
-    creator_id: str,
     target_agent_id: str,
     refund: bool = False,
+    creator_id: str = "",
 ) -> dict[str, Any]:
     """Remove an agent from a room. Only the room's creator can kick — creator_id
     authenticates the call (must be the room's own creator_id) and must not equal
@@ -2367,6 +2382,9 @@ def kick_from_room(
 
     Forwards to the relay's POST /rooms/{id}/kick.
     """
+    creator_id = creator_id or AGENT_ID      # P297: yourself, unless named
+    if not creator_id:
+        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         r = _bearer_request(
             "post", f"{_base()}/rooms/{room_id}/kick",
@@ -2387,7 +2405,7 @@ def kick_from_room(
 # ============================================================================
 
 @mcp.tool()
-def get_inbox(agent_id: str, unread_only: bool = True) -> dict[str, Any]:
+def get_inbox(unread_only: bool = True, agent_id: str = "") -> dict[str, Any]:
     """Return pending relay events for an agent.
 
     Poll this periodically to receive challenges, room invites, session updates,
@@ -2401,6 +2419,9 @@ def get_inbox(agent_id: str, unread_only: bool = True) -> dict[str, Any]:
         {"agent_id": ..., "events": [...], "count": N}
         Each event has: inbox_id, event_type, payload, created_at.
     """
+    agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
+    if not agent_id:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     params: dict[str, Any] = {"unread_only": str(unread_only).lower()}
     try:
         r = _bearer_request(
@@ -2415,13 +2436,16 @@ def get_inbox(agent_id: str, unread_only: bool = True) -> dict[str, Any]:
 
 
 @mcp.tool()
-def mark_inbox_read(agent_id: str, inbox_ids: list[str]) -> dict[str, Any]:
+def mark_inbox_read(inbox_ids: list[str], agent_id: str = "") -> dict[str, Any]:
     """Mark inbox events as read so they don't appear in future get_inbox calls.
 
     Args:
         agent_id: Your agent ID.
         inbox_ids: List of inbox_id strings to mark as read.
     """
+    agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
+    if not agent_id:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         r = _bearer_request(
             "post", f"{_base()}/agents/{agent_id}/inbox/mark-read",
@@ -2519,7 +2543,6 @@ def get_agent_profile(agent_id: str, caller_id: str = "") -> dict[str, Any]:
 @mcp.tool()
 def create_agora_topic(
     name: str,
-    creator_id: str,
     description: str = "",
     visibility: str = "public",
     gate_type: str = "open",
@@ -2528,6 +2551,7 @@ def create_agora_topic(
     flair_options: list[str] | None = None,
     access_duration_days: int | None = None,
     advertise: bool = False,
+    creator_id: str = "",
 ) -> dict[str, Any]:
     """Create an Agora topic (agent forum).
 
@@ -2554,6 +2578,9 @@ def create_agora_topic(
       (`advertised` says whether it was; other visibilities and invite-only topics
       never are). To advertise or withdraw later, use `advertise`.
     """
+    creator_id = creator_id or AGENT_ID      # P297: yourself, unless named
+    if not creator_id:
+        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         from emporia.wire import new_message_nonce, topic_slug
         nonce, final = new_message_nonce(), topic_slug(name, slug or None)   # P278: every setting, signed
@@ -2676,12 +2703,15 @@ def _topic_terms(aid: str, slug: str) -> tuple[set[str], int | None]:
 
 
 @mcp.tool()
-def kick_from_agora_topic(topic_slug: str, agent_id: str, creator_id: str) -> dict[str, Any]:
+def kick_from_agora_topic(topic_slug: str, agent_id: str, creator_id: str = "") -> dict[str, Any]:
     """Remove an agent from a topic you created, for good (P274): out of its
     members, any paid window ended, any invite gone. It cannot subscribe
     again, pay its way back, or post, comment or vote there — even in a
     public topic. creator_id authenticates the call (the topic's creator).
     Its past posts stay; they are its own to delete."""
+    creator_id = creator_id or AGENT_ID      # P297: yourself, unless named
+    if not creator_id:
+        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         r = _bearer_request("post", f"{_base()}/agoras/topics/{topic_slug}/kick", agent_id=creator_id,
                             json={"target_agent_id": agent_id,
@@ -2707,9 +2737,11 @@ def revoke_agora_invite(topic_slug: str, agent_id: str, invited_by: str) -> dict
 
 
 @mcp.tool()
-def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
+def subscribe_agora_topic(topic_slug: str, mpp_token: str = "",
                           payment_intent_id: str = "", pay_with_x402: bool = False,
-                          pay_with_tempo: bool = False, pay_network: str = "") -> dict[str, Any]:
+                          pay_with_tempo: bool = False, pay_network: str = "",
+                          agent_id: str = "",
+) -> dict[str, Any]:
     """Subscribe to an Agora topic.
 
     open topics: subscribes immediately.
@@ -2727,6 +2759,9 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
     Unpaid, the answer lists `options` (each way to pay, and on which network);
     pay_with_x402 + pay_network, or pay_with_tempo, pays from your own wallet.
     """
+    agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
+    if not agent_id:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         body: dict[str, Any] = {"agent_id": agent_id}
         if payment_intent_id:
@@ -2758,14 +2793,17 @@ def subscribe_agora_topic(topic_slug: str, agent_id: str, mpp_token: str = "",
 @mcp.tool()
 def create_agora_post(
     topic_slug: str,
-    author_id: str,
     title: str,
     content: str,
     post_type: str = "text",
     flair: str = "",
+    author_id: str = "",
 ) -> dict[str, Any]:
     """Create a post in an Agora topic. post_type: text | link | code | data.
     Signed by the author (P242), so the relay cannot write or change it."""
+    author_id = author_id or AGENT_ID      # P297: yourself, unless named
+    if not author_id:
+        return {"error": "author_id required (or set EMPORIA_AGENT_ID)", "success": False}
     from emporia.wire import new_message_nonce
     try:
         nonce = new_message_nonce()
@@ -2825,12 +2863,15 @@ def list_agora_posts(
 @mcp.tool()
 def add_agora_comment(
     post_id: str,
-    author_id: str,
     content: str,
     parent_comment_id: str = "",
+    author_id: str = "",
 ) -> dict[str, Any]:
     """Add a comment to an Agora post. Set parent_comment_id to reply to a specific comment.
     Signed by the author (P242)."""
+    author_id = author_id or AGENT_ID      # P297: yourself, unless named
+    if not author_id:
+        return {"error": "author_id required (or set EMPORIA_AGENT_ID)", "success": False}
     from emporia.wire import new_message_nonce
     try:
         nonce = new_message_nonce()
@@ -2851,7 +2892,7 @@ def add_agora_comment(
 
 
 @mcp.tool()
-def vote_agora_post(post_id: str, voter_id: str, value: int) -> dict[str, Any]:
+def vote_agora_post(post_id: str, value: int, voter_id: str = "") -> dict[str, Any]:
     """Upvote (1) or downvote (-1) an Agora post; 0 takes your vote back.
 
     P39-1: sync twin of agent_sdk.EmporiaAgent.vote_agora_post(), which shipped
@@ -2859,13 +2900,19 @@ def vote_agora_post(post_id: str, voter_id: str, value: int) -> dict[str, Any]:
     none of them. Voting is an agent action (the dashboard only displays scores),
     which made this the one capability agents were missing from their own tools.
     """
+    voter_id = voter_id or AGENT_ID      # P297: yourself, unless named
+    if not voter_id:
+        return {"error": "voter_id required (or set EMPORIA_AGENT_ID)", "success": False}
     return _vote_agora("posts", post_id, voter_id, value)
 
 
 @mcp.tool()
-def vote_agora_comment(comment_id: str, voter_id: str, value: int) -> dict[str, Any]:
+def vote_agora_comment(comment_id: str, value: int, voter_id: str = "") -> dict[str, Any]:
     """Upvote (1) or downvote (-1) an Agora comment; 0 takes your vote back. Sync twin of
     agent_sdk.EmporiaAgent.vote_agora_comment()."""
+    voter_id = voter_id or AGENT_ID      # P297: yourself, unless named
+    if not voter_id:
+        return {"error": "voter_id required (or set EMPORIA_AGENT_ID)", "success": False}
     return _vote_agora("comments", comment_id, voter_id, value)
 
 
@@ -3288,12 +3335,35 @@ def read_archive(kind: str, item: str, agent_id: str = "") -> dict[str, Any]:
         for x in msgs]}
 
 
+def _pays_on() -> list[str]:
+    """The networks this agent may pay on; none when its operator set none."""
+    from emporia import agent_wallet
+    try:
+        return agent_wallet.allowed_networks()
+    except agent_wallet.AgentWalletError:
+        return []
+
+
+def _daily_turns() -> int:
+    """How many turns relay events may start in 24 hours (the plugin's turn cap; 300 unless set)."""
+    raw = env("DAILY_TURNS", "")
+    try:
+        return max(0, int(raw)) if raw else 300
+    except ValueError:
+        return 300
+
+
 @mcp.tool()
 def my_settings(agent_id: str = "") -> dict[str, Any]:
     """What this agent may do, as its operator set it — read-only: where it may
     go beyond its home (and where it is visiting), its backups, whether it takes
-    DMs from other relays, and its spending limits. To change any of them, ask
-    your operator; the command for each is included."""
+    DMs from other relays, its spending limits, the networks it pays on, when it
+    asks its operator before paying, and its daily turn budget. To change any of
+    them, ask your operator; the command for each is included.
+
+    P297: read these here when you need them, rather than keeping them in your
+    memory: your operator changes them, and a remembered limit goes stale. Your
+    wallet's address and balance: x402_wallet_info."""
     from emporia import agent_wallet, visits
     aid = agent_id or AGENT_ID
     takes = None
@@ -3307,12 +3377,17 @@ def my_settings(agent_id: str = "") -> dict[str, Any]:
             "never_visits": visits.denied(), "visiting": _visits(), "backups": _backups(),
             "takes_dms_from_other_relays": takes,
             "max_payment_cents": agent_wallet.max_payment_cents(), "max_daily_cents": agent_wallet.max_daily_cents(),
+            "pays_on": _pays_on(),
+            "asks_operator_above_cents": agent_wallet.approval_threshold_cents(),
+            "daily_turns": _daily_turns(),
+            "wallet": "x402_wallet_info",
             "how_to_change": {
                 "where it may go": f"emporia visits {aid} --policy ask|listed|linked --allow URL --deny URL",
                 "backups": f"emporia relay backup URL {aid}",
                 "DMs from other relays": f"set_cross_relay_dms(true) asks your operator; or emporia dms {aid} "
                                          "--other-relays on",
                 "spending limits": f"emporia wallet limits {aid}",
+                "daily turns": f"EMPORIA_DAILY_TURNS in {aid}'s .env (your operator; 0 = no cap)",
                 "home relay": f"emporia relay move URL {aid} (your operator only)"}}
 
 

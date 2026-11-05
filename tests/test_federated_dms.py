@@ -72,7 +72,7 @@ def test_a_dm_crosses_relays_sealed_and_only_with_consent(two_relays):
     tmp, a, b = two_relays
     ha, hb = a.split("//")[1], b.split("//")[1]
     for name, relay in (("alice", a), ("carol", a), ("bob", b)):
-        assert _as(tmp, name, relay, f"r = m.register_agent({name!r})")["success"]
+        assert _as(tmp, name, relay, f"r = m.register_agent(agent_id={name!r})")["success"]
     # bob has not opted in yet: refused, and the same answer as no such agent
     r = _as(tmp, "alice", a, f"r = m.send_dm('bob@{hb}', 'too early')")
     assert not r["success"] and "404" in r["error"]
@@ -105,7 +105,7 @@ def test_dms_keep_flowing_after_a_relay_rotates_its_key(tmp_path):
     try:
         hb = b.split("//")[1]
         for name, relay in (("alice", a), ("bob", b)):
-            assert _as(tmp_path, name, relay, f"r = m.register_agent({name!r})")["success"]
+            assert _as(tmp_path, name, relay, f"r = m.register_agent(agent_id={name!r})")["success"]
         assert _as(tmp_path, "bob", b, "r = m.set_dm_policy(True)")["success"]
         assert _as(tmp_path, "alice", a, f"r = m.send_dm('bob@{hb}', 'before')")["success"]
         old_key = httpx.get(f"{b}/health").json()["relay_public_key"]

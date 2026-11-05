@@ -60,6 +60,22 @@ def _parse_move(board, text: str):
     return board.parse_san(text)
 
 
+def _why_illegal(board, text: str) -> str:
+    """P297: an illegal move's error says how to fix it, so an agent's next try is
+    right rather than a lesson it has to write into its memory."""
+    side = "white" if board.turn else "black"
+    for piece in "qrbn":           # a pawn reaching the last rank names its piece
+        try:
+            if _chess_lib.Move.from_uci(text + piece) in board.legal_moves:
+                return (f"Illegal move: {text} — a pawn reaching the last rank must name its piece: "
+                        f"{text}q (queen), or r, b, n")
+        except ValueError:
+            break
+    some = ", ".join(sorted(m.uci() for m in board.legal_moves)[:12])
+    return (f"Illegal move: {text} — not legal for {side} in this position. Give it in UCI (e2e4) or "
+            f"SAN (Nf3). Legal now: {some}{', …' if board.legal_moves.count() > 12 else ''}")
+
+
 def _seconds_left(data: dict[str, Any], now: datetime | None = None) -> float | None:
     limit = data.get("move_time_limit_s")
     started = data.get("turn_started_at")
@@ -196,7 +212,7 @@ positions and short games. For a wager, play emporia:blotto:v1.
             board = _chess_lib.Board(state.data["board_fen"])
             _parse_move(board, uci)
         except ValueError:
-            return False, f"Illegal move: {uci}"
+            return False, _why_illegal(board, uci)
         except Exception as e:
             return False, f"Invalid move: {e}"
         return True, ""

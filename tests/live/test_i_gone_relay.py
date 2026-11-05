@@ -4,7 +4,7 @@ backup relay her own signed list named - and only a card that is hers, unchanged
 
 def _backup(agent, relay_url: str) -> None:
     """`emporia relay backup URL NAME`: she registers on that relay with the same key and republishes her list."""
-    done = agent.call(f"t = m._RELAY_CTX.set({relay_url!r})\nr1 = m.register_agent(m.AGENT_ID)\n"
+    done = agent.call(f"t = m._RELAY_CTX.set({relay_url!r})\nr1 = m.register_agent(agent_id=m.AGENT_ID)\n"
                       "m._RELAY_CTX.reset(t)\nr = [r1, m._publish_relay_list(m.AGENT_ID)]")
     assert done[0]["success"] and "ok" in done[1], done
 

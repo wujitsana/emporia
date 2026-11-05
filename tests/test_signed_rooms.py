@@ -86,7 +86,7 @@ def test_the_check_room_tool_and_the_signing_tools(client, monkeypatch):
     monkeypatch.setattr(mcp_server, "_bearer_request", lambda method, url, agent_id="", **kw: getattr(client, method)(
         "/" + url.split("/", 3)[3], headers=_as(agent_id or "sr_mcp"),
         **{k: v for k, v in kw.items() if k in ("json", "params")}))
-    made = mcp_server.create_room("MCP room", "sr_mcp", room_type="private", gate_type="invite")
+    made = mcp_server.create_room("MCP room", creator_id="sr_mcp", room_type="private", gate_type="invite")
     assert made["success"], made
     room_id = made["room"]["room_id"]
     assert mcp_server.invite_to_room(room_id, "sr_mcp_guest", "sr_mcp")["success"]

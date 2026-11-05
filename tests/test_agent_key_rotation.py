@@ -561,7 +561,7 @@ def test_a_rotated_agent_still_signs_listings_offers_and_adverts_with_the_mcp_to
     with patch("httpx.get", lambda url, **kw: client.get("/" + url.split("/", 3)[3])):
         listing = mcp_server.create_listing("After rotating", agent_id="kr_signs")
         game = mcp_server.create_session("emporia:chess:v1", agent_id="kr_signs")
-        room = mcp_server.create_room("after rotating", "kr_signs", advertise=True)
+        room = mcp_server.create_room("after rotating", creator_id="kr_signs", advertise=True)
     assert listing["success"], listing
     assert game["success"] and game["offered"], game
     assert room["success"] and room["advertised"], room

@@ -276,10 +276,10 @@ def test_the_mcp_tools_advertise_and_scan_relays_drops_forged_adverts(client, mo
         return client.get(url[len("http://relay-under-test"):])
 
     with patch("httpx.get", fake_get):
-        room = mcp_server.create_room("mcp room", "ra_mcp", advertise=True)
-        quiet_private = mcp_server.create_room("hidden", "ra_mcp", room_type="private", gate_type="invite",
+        room = mcp_server.create_room("mcp room", creator_id="ra_mcp", advertise=True)
+        quiet_private = mcp_server.create_room("hidden", creator_id="ra_mcp", room_type="private", gate_type="invite",
                                                advertise=True)
-        topic = mcp_server.create_agora_topic("MCP topic", "ra_mcp", slug="ra-mcp-topic", advertise=True)
+        topic = mcp_server.create_agora_topic("MCP topic", creator_id="ra_mcp", slug="ra-mcp-topic", advertise=True)
         assert room["advertised"] and topic["advertised"] and not quiet_private["advertised"]
         honest = mcp_server.scan_relays(kind="room")
         honest_topics = mcp_server.scan_relays(kind="topic")
@@ -432,9 +432,9 @@ def test_the_advertise_tool_and_the_elsewhere_lists(client, monkeypatch):
         return client.get(url[len("http://relay-under-test"):])
 
     with patch("httpx.get", fake_get):
-        paid = mcp_server.create_room("sell", "ra_tool", room_type="private", gate_type="paid", entry_fee_cents=300)
-        invite = mcp_server.create_room("closed", "ra_tool", room_type="private", gate_type="invite")
-        topic = mcp_server.create_agora_topic("Tool topic", "ra_tool", slug="ra-tool-topic")
+        paid = mcp_server.create_room("sell", creator_id="ra_tool", room_type="private", gate_type="paid", entry_fee_cents=300)
+        invite = mcp_server.create_room("closed", creator_id="ra_tool", room_type="private", gate_type="invite")
+        topic = mcp_server.create_agora_topic("Tool topic", creator_id="ra_tool", slug="ra-tool-topic")
         pid, iid = paid["room"]["room_id"], invite["room"]["room_id"]
         assert paid["advertised"] is False
         on = mcp_server.advertise("room", pid, agent_id="ra_tool")
@@ -446,7 +446,7 @@ def test_the_advertise_tool_and_the_elsewhere_lists(client, monkeypatch):
         assert {x["room_id"]: x["advertised"] for x in listed}[pid] is True
         assert [t["advertised"] for t in mcp_server.list_agora_topics()["topics"]
                 if t["slug"] == topic["slug"]] == [True]
-        hidden = mcp_server.create_agora_topic("Tool private", "ra_tool", slug="ra-tool-private",
+        hidden = mcp_server.create_agora_topic("Tool private", creator_id="ra_tool", slug="ra-tool-private",
                                                visibility="private")
         assert hidden["slug"] in {t["slug"] for t in mcp_server.list_agora_topics()["topics"]}
         assert hidden["slug"] not in {t["slug"] for t in client.get("/agoras/topics").json()["topics"]}

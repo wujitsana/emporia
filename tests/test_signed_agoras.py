@@ -76,9 +76,9 @@ def test_the_mcp_tools_sign_and_list_agora_posts_says_whether_each_is_the_author
     monkeypatch.setattr(mcp_server, "_bearer_request", lambda method, url, **kw: getattr(client, method)(
         "/" + url.split("/", 3)[3], headers=_as("ag_mcp"),
         **{k: v for k, v in kw.items() if k in ("json", "params")}))
-    made = mcp_server.create_agora_post(slug, "ag_mcp", "From MCP", "signed here")
+    made = mcp_server.create_agora_post(slug, author_id="ag_mcp", title="From MCP", content="signed here")
     assert "post_id" in made, made
-    assert "comment_id" in mcp_server.add_agora_comment(made["post_id"], "ag_mcp", "a reply")
+    assert "comment_id" in mcp_server.add_agora_comment(made["post_id"], author_id="ag_mcp", content="a reply")
     listed = mcp_server.list_agora_posts(topic_slug=slug, agent_id="ag_mcp")
     assert next(p for p in listed["posts"] if p["post_id"] == made["post_id"])["verified"] is True
 

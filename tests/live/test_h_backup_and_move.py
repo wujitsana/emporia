@@ -15,7 +15,7 @@ def test_an_agent_adds_a_backup_then_moves_home_and_its_record_travels_as_its_ol
     old_address = f"alpha@{a.host}"
 
     # `emporia relay backup B alpha`: she registers on B with the same key and her signed relay list names it
-    added = alpha.call("t = m._RELAY_CTX.set(m._backups()[0])\nr1 = m.register_agent(m.AGENT_ID)\n"
+    added = alpha.call("t = m._RELAY_CTX.set(m._backups()[0])\nr1 = m.register_agent(agent_id=m.AGENT_ID)\n"
                        "m._RELAY_CTX.reset(t)\nr = [r1, m._publish_relay_list(m.AGENT_ID)]")
     assert added[0]["success"] and "ok" in added[1], added
     assert httpx.get(f"{b.url}/agents/alpha/card").json()["card"]["public_key_hex"] == alpha.public_key

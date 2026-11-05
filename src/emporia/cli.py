@@ -2535,7 +2535,7 @@ def _after_key_change(profile: Path, agent_id: str, out: dict[str, Any], source:
         republish_env = {IDENTITY_KEY_SOURCE_VAR: f"cmd:cat {shlex.quote(str(out['new_key_file']))}"}
     # Registering again publishes its encryption key and relay list signed with the new key.
     r = _as_agent(profile, "from emporia import mcp_server as m\n"
-                  "r = m.register_agent(m.AGENT_ID)\nprint('ok' if r.get('success') else r.get('error'))",
+                  "r = m.register_agent(agent_id=m.AGENT_ID)\nprint('ok' if r.get('success') else r.get('error'))",
                   **republish_env)
     if r.returncode != 0 or r.stdout.strip().splitlines()[-1:] != ["ok"]:
         print(f"  It could not sign its encryption key and relay list with the new key yet "
@@ -2907,7 +2907,7 @@ def cmd_relay_backup(args: argparse.Namespace) -> int:
     merge_env_file(profile / ".env", {"EMPORIA_BACKUP_RELAYS": ",".join(backups)})
     code = ("import json\nfrom emporia import mcp_server as m\n"
             + ("" if args.remove else
-               f"t = m._RELAY_CTX.set({url!r})\nr = m.register_agent(m.AGENT_ID)\nm._RELAY_CTX.reset(t)\n"
+               f"t = m._RELAY_CTX.set({url!r})\nr = m.register_agent(agent_id=m.AGENT_ID)\nm._RELAY_CTX.reset(t)\n"
                "assert r.get('success'), r\n")
             + "print(json.dumps(m._publish_relay_list(m.AGENT_ID)))")
     r = _as_agent(profile, code, EMPORIA_BACKUP_RELAYS=",".join(backups))
@@ -3096,7 +3096,7 @@ def cmd_agent_rotate_encryption_key(name: str, yes: bool = False) -> int:
         return 1
     r = _as_agent(profile, "import json\nfrom emporia import identity, mcp_server as m\n"
                   "old, new = identity.rotate_encryption_keypair(m.AGENT_ID)\n"
-                  "reg = m.register_agent(m.AGENT_ID)\n"
+                  "reg = m.register_agent(agent_id=m.AGENT_ID)\n"
                   "print(json.dumps({'old': identity.encryption_key_fingerprint(old), "
                   "'new': identity.encryption_key_fingerprint(new), 'published': bool(reg.get('success')), "
                   "'error': reg.get('error', '')}))", EMPORIA_NO_ARCHIVE="1")
@@ -3353,7 +3353,7 @@ def cmd_relay_owner_key(args: argparse.Namespace) -> int:
     env = {"PATH": os.defpath, "HOME": str(Path.home()), "EMPORIA_NO_DOTENV": "1", "EMPORIA_NO_ARCHIVE": "1",
            "EMPORIA_KEYS_DIR": str(keys), "EMPORIA_RELAY_URL": url, "EMPORIA_AGENT_ID": name}
     r = subprocess.run([sys.executable, "-c", "import json\nfrom emporia import mcp_server as m\n"
-                        f"r = m.register_agent({name!r})\nprint(json.dumps(r))"],
+                        f"r = m.register_agent(agent_id={name!r})\nprint(json.dumps(r))"],
                        env=env, capture_output=True, text=True, timeout=60)
     try:
         out = _json.loads(r.stdout.strip().splitlines()[-1])

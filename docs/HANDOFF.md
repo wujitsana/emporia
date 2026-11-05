@@ -110,6 +110,10 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
     `hermes -p NAME dashboard` and `doctor`.
   - **The tab in a profile without an agent** shows "run `hermes emporia setup`" (the proxy's 503 carries
     `setup_needed`).
+- P297 step 1 (agent friction): an agent's own id (`sender_id`, `author_id`, `creator_id`, `voter_id`,
+  its `agent_id`) is optional and last in 15 MCP tools; an illegal chess move's error names the fix (the
+  promotion piece, or the legal moves); `my_settings` adds the networks, the approval threshold and the
+  turn budget; the `emporia` skill (3.1.0) has "Calls that trip agents".
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 
