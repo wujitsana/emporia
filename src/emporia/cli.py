@@ -2545,6 +2545,73 @@ def _after_key_change(profile: Path, agent_id: str, out: dict[str, Any], source:
     installer().print_restart_instructions([profile])
 
 
+def _show_playbook(name: str, pb) -> None:
+    from emporia import playbook as P
+    games = pb.games if isinstance(pb.games, str) else ", ".join(g.split(":")[1] for g in pb.games)
+    stake = "its spending limits" if pb.max_stake_cents is None else f"${pb.max_stake_cents / 100:.2f}"
+    print(f"  Playbook    {pb.preset} — {P.ABOUT.get(pb.preset, 'changed by hand')}")
+    print(f"  Games       {games}; stakes up to {stake}")
+    print(f"  Answers     {pb.answers}   Sells {'yes' if pb.sells else 'no'}   Buys {'yes' if pb.buys else 'no'}"
+          f"   Runs on {pb.runs}")
+
+
+def _setup_playbook(profile: Path, name: str, chosen: str, existing: bool) -> None:
+    """P297: setup's question. A new agent is asked (custom first: its own instructions
+    decide); an existing one keeps its playbook unless --playbook says otherwise."""
+    from emporia import playbook as P
+    current = installer().harvest_env(profile).get("EMPORIA_PLAYBOOK", "")
+    if not chosen and (existing and current or not _TTY):
+        return
+    if not chosen:
+        heading("Playbook", "What it may do on its own: games, stakes, selling, buying. Never its style.")
+        chosen = choose("What should it do?", [(k, P.ABOUT[k]) for k in P.PRESETS], 0)
+    merge_env_file(profile / ".env", {"EMPORIA_PLAYBOOK": chosen, **{var: "" for var in P.SETTINGS}})
+
+
+def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
+    """P297: what an agent may do on its own — which games and stakes, whether it
+    answers, sells or buys. Its person's setting, in its .env, outside the agent's
+    tools; the bridge and its MCP tools enforce it. Never its style (SOUL.md)."""
+    from emporia import playbook as P
+    name = name or (this_profile().name if this_profile() else "")
+    profile, _aid, env = _agent(name)
+    if not env:
+        print(f"agent playbook: {name or '(none)'} is not an Emporia agent profile")
+        return 1
+    dotenv = installer().harvest_env(profile)
+    updates: dict[str, str] = {}
+    preset = args.preset
+    if not preset and _TTY and not any(getattr(args, a) is not None for a in
+                                       ("games", "max_stake", "answers", "sells", "buys", "runs")):
+        heading(f"Playbook: {name}", "What it may do on its own. Its style stays its own (SOUL.md).")
+        _show_playbook(name, P.resolve(dotenv))
+        preset = choose("Start from", [(k, P.ABOUT[k]) for k in P.PRESETS],
+                        list(P.PRESETS).index(P.resolve(dotenv).preset)
+                        if P.resolve(dotenv).preset in P.PRESETS else 0)
+    if preset:
+        if preset not in P.PRESETS:
+            print(f"agent playbook: --preset is one of {', '.join(P.PRESETS)}")
+            return 1
+        updates["EMPORIA_PLAYBOOK"] = preset
+        updates.update({var: "" for var in P.SETTINGS})          # a preset starts clean
+    for attr, var in (("games", "EMPORIA_PLAYBOOK_GAMES"), ("max_stake", "EMPORIA_PLAYBOOK_MAX_STAKE_CENTS"),
+                      ("answers", "EMPORIA_PLAYBOOK_ANSWERS"), ("sells", "EMPORIA_PLAYBOOK_SELLS"),
+                      ("buys", "EMPORIA_PLAYBOOK_BUYS"), ("runs", "EMPORIA_PLAYBOOK_RUNS")):
+        if getattr(args, attr) is not None:
+            updates[var] = str(getattr(args, attr))
+    try:
+        pb = P.resolve({**dotenv, **updates})
+    except P.PlaybookError as e:
+        print(f"agent playbook: {e}")
+        return 1
+    if updates:
+        merge_env_file(profile / ".env", updates)
+        print(f"  Saved. {name}'s bridge and tools read it when they next start:")
+        print(f"      hermes -p {profile.name} gateway restart")
+    _show_playbook(name, pb)
+    return 0
+
+
 def _agent_to_change(command: str, name: str) -> tuple[Path, str, dict[str, str], dict[str, str], str, Path] | None:
     """The agent a key command is about, in a person's own terminal: its profile,
     id, env, .env, the linked key source (or "") and the folder its key lives in."""
@@ -4407,6 +4474,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         _agent_stripe(profile, name)
     # P168: the role decides its tools; then say plainly what was set up.
     apply_role(profile, role)
+    _setup_playbook(profile, name, args.playbook, existing)
     _setup_summary(profile, name, role)
     inst.print_restart_instructions(list(inst._TOUCHED_PROFILES))
     return 0
@@ -4425,6 +4493,11 @@ def _setup_summary(profile: Path, name: str, role: str) -> None:
     print(f"  Tools off   {', '.join(_disabled_toolsets(profile)) or 'none (full Hermes tools)'}")
     print(f"  Terminal    {backend}" + ("  (same disk as its keys)" if backend == "local" and role != "marketplace" else ""))
     print(f"  Keys        {'in its .env (hidden from its tools by Hermes)' if dotenv.get('EMPORIA_KEY_STORAGE') == 'env' else 'key files'}")
+    from emporia import playbook as _pb
+    try:
+        print(f"  Playbook    {_pb.resolve(dotenv).preset}  (emporia agent playbook {name} to change)")
+    except _pb.PlaybookError as e:
+        print(f"  Playbook    ! {e}")
     print(f"  Wallets     {', '.join(wallets) or 'none — it cannot pay or be paid (add one any time)'}")
     print(f"  Relay       {dotenv.get('EMPORIA_RELAY_URL') or relay_url()}")
     if wallets:
@@ -6382,7 +6455,7 @@ def build_parser() -> argparse.ArgumentParser:
                                        "or its identity key changed (rotate-key), given a recovery key "
                                        "(recovery-key) or replaced with it when lost (recover)")
     ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear", "rotate-key",
-                                        "rotate-encryption-key", "recovery-key", "recover"])
+                                        "rotate-encryption-key", "recovery-key", "recover", "playbook"])
     ag2.add_argument("url_or_name", nargs="?", default="",
                      help="leave: the relay's URL; delete, secure, refresh, inbox-clear, rotate-key: "
                           "the agent (secure, refresh, inbox-clear: or all)")
@@ -6395,6 +6468,14 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("--recovery-key-source", default="",
                      help="recover: where the recovery key is kept, e.g. cmd:op read op://Vault/Item/field "
                           "(without either, you are asked to type it)")
+    ag2.add_argument("--preset", default="", help="playbook: custom, player, merchant, scout or host")
+    ag2.add_argument("--games", default=None, help="playbook: all, none, set-plays, or games (blotto,chess,…)")
+    ag2.add_argument("--max-stake", default=None, help="playbook: largest stake it takes, in cents (none: its limits)")
+    ag2.add_argument("--answers", default=None, choices=["anyone", "nobody"],
+                     help="playbook: whom its DMs and invites wake it for")
+    ag2.add_argument("--sells", default=None, choices=["yes", "no"], help="playbook: may it sell")
+    ag2.add_argument("--buys", default=None, choices=["yes", "no"], help="playbook: may it buy")
+    ag2.add_argument("--runs", default=None, choices=["model", "rules"], help="playbook: model turns or rules")
     ag2.add_argument("--compromised-since", default="",
                      help="recover: when the old key stopped being only yours (ISO time; default now)")
     ag2.set_defaults(func=lambda a: cmd_agent_secure(a.url_or_name) if a.action == "secure" else
@@ -6404,7 +6485,8 @@ def build_parser() -> argparse.ArgumentParser:
                      cmd_agent_recovery_key(a.agent or a.url_or_name, a.out) if a.action == "recovery-key" else
                      cmd_agent_recover(a.agent or a.url_or_name, a.recovery_key_file, a.recovery_key_source,
                                        a.compromised_since, a.yes) if a.action == "recover" else
-                     cmd_agent_inbox_clear(a.url_or_name) if a.action == "inbox-clear" else cmd_agent(
+                     cmd_agent_inbox_clear(a.url_or_name) if a.action == "inbox-clear" else
+                     cmd_agent_playbook(a.url_or_name, a) if a.action == "playbook" else cmd_agent(
         argparse.Namespace(action=a.action, url=a.url_or_name if a.action == "leave" else "",
                            name=a.name if a.action == "leave" else a.url_or_name, home=a.home)))
 
@@ -6515,6 +6597,9 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("--role", choices=["marketplace", "developer", "both"], default="",
                     help="marketplace (wallet, no terminal/files — recommended for money), developer "
                          "(tools, no wallet) or both (not recommended on the local backend)")
+    ag.add_argument("--playbook", choices=["custom", "player", "merchant", "scout", "host"], default="",
+                    help="what it may do on its own (P297; default custom: no bounds beyond its limits). "
+                         "Change it later with `emporia agent playbook NAME`")
     ag.add_argument("--keys", choices=["env", "files"], default="",
                     help="where its keys are kept: its profile .env (recommended) or key files")
     ag.add_argument("--separate-keys", action="store_true",

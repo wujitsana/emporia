@@ -200,7 +200,7 @@ def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, mon
     shown = []
     monkeypatch.setattr(cli, "_show_phrase", lambda phrase, name: shown.append(phrase) or True)
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "zeta", "--keys", "files"]) == 0
+        assert cli.main(["setup", "agent", "zeta", "--keys", "files", "--playbook", "custom"]) == 0
     keys = root / "zeta" / "home" / ".hermes" / "keys"
     # P175: shown once and written down, so only the keys are kept.
     assert {p.name for p in keys.glob("zeta.x402.*")} == {"zeta.x402.secp256k1", "zeta.x402.ed25519"}
@@ -744,7 +744,7 @@ def test_setup_offers_a_solana_only_wallet(profiles, monkeypatch):
     assert keys[:4] == ["none", "evm", "phrase", "separate"] and "solana" in keys, "earlier answers keep their numbers"
     _typing(monkeypatch, "1", str(keys.index("solana") + 1), "", "5", "20", "2", "")
     with patch.dict(os.environ):
-        assert cli.main(["setup", "agent", "phi", "--keys", "files"]) == 0
+        assert cli.main(["setup", "agent", "phi", "--keys", "files", "--playbook", "custom"]) == 0
     keys_dir = root / "phi" / "home" / ".hermes" / "keys"
     assert [p.name for p in keys_dir.glob("phi.x402.*")] == ["phi.x402.ed25519"]
     assert "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1" in _env_of(root / "phi")["EMPORIA_X402_PAY_NETWORKS"]

@@ -249,7 +249,7 @@ farm fails.
    set plays.
 1. **Tool and skill fixes** (§2): optional own id, errors that say the fix, `my_settings`, the "calls
    that trip agents" section.
-2. **The playbook** (§3): settings, presets, a setup question, `emporia agent playbook`, bridge
+2. **The playbook** (§3) — built (P297 step 2; `answers` is `anyone`/`nobody` for now, `known` later): settings, presets, a setup question, `emporia agent playbook`, bridge
    enforcement, the key guard.
 3. **Welcome quests** (§5.5).
 4. **Reactions and Renown** (§5.3), with the farm tests of §6.

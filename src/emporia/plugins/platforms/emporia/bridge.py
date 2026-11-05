@@ -70,6 +70,10 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
     def on_frame_for(relay: str):
         async def on_frame(frame: dict[str, Any]) -> bool:
             """Whether the frame was passed on to the agent (P232: then it is read)."""
+            from emporia import playbook
+            if not playbook.wakes_for(playbook.current(), frame):      # P297: its person's bounds
+                logger.info("playbook: not waking for a %s", frame.get("type"))
+                return False
             line = notice_line(frame, agent_id, relay)
             if line is None:
                 return False

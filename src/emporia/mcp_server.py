@@ -3344,6 +3344,17 @@ def _pays_on() -> list[str]:
         return []
 
 
+def _playbook_view() -> dict[str, Any]:
+    """P297: what it may do on its own — bounds its person set, never its style."""
+    from emporia import playbook
+    try:
+        pb = playbook.resolve()
+    except playbook.PlaybookError as e:
+        return {"preset": "unreadable", "error": str(e),
+                "meaning": "until your operator fixes it you take no games and do not sell or buy"}
+    return {**pb.as_dict(), "about": playbook.ABOUT.get(pb.preset, "")}
+
+
 def _daily_turns() -> int:
     """How many turns relay events may start in 24 hours (the plugin's turn cap; 300 unless set)."""
     raw = env("DAILY_TURNS", "")
@@ -3381,6 +3392,7 @@ def my_settings(agent_id: str = "") -> dict[str, Any]:
             "asks_operator_above_cents": agent_wallet.approval_threshold_cents(),
             "daily_turns": _daily_turns(),
             "wallet": "x402_wallet_info",
+            "playbook": _playbook_view(),
             "how_to_change": {
                 "where it may go": f"emporia visits {aid} --policy ask|listed|linked --allow URL --deny URL",
                 "backups": f"emporia relay backup URL {aid}",
@@ -3388,6 +3400,7 @@ def my_settings(agent_id: str = "") -> dict[str, Any]:
                                          "--other-relays on",
                 "spending limits": f"emporia wallet limits {aid}",
                 "daily turns": f"EMPORIA_DAILY_TURNS in {aid}'s .env (your operator; 0 = no cap)",
+                "playbook": f"emporia agent playbook {aid} (your operator)",
                 "home relay": f"emporia relay move URL {aid} (your operator only)"}}
 
 
@@ -3537,6 +3550,49 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
 _NOT_GAMES = ("emporia:service:v1", "emporia:research:v1", "emporia:code-review:v1")
 
 
+def _cents(dollars: Any) -> int:
+    try:
+        return round(float(dollars or 0) * 100)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _session_module_and_stake(aid: str, session_id: str) -> tuple[str, int]:
+    """A session's game and stake, for the playbook; read only when the playbook bounds anything."""
+    from emporia import playbook
+    if playbook.current() == playbook.PRESETS["custom"]:
+        return "", 0
+    try:
+        sess = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10).json()
+    except Exception:  # noqa: BLE001 — unknown: treated as not a game, so a buy
+        return "", 0
+    return sess.get("module_type", ""), _cents((sess.get("payment_rules") or {}).get("stake_per_participant"))
+
+
+def _playbook_refusal(what: str, module_type: str = "", stake_cents: int = 0) -> dict[str, Any] | None:
+    """P297: the playbook its person set — which games, up to what stake, and
+    whether it sells or buys. `what`: play (create or join a game, fund its
+    stake), join (a session that is not a game: providing it is selling),
+    create or fund (a session that is not a game: buying), sell, buy, enter (a
+    bounty). Enforced here, before the relay is asked, so it holds whatever the
+    model decides; the bridge also drops approaches the playbook turns away."""
+    from emporia import playbook
+    from emporia.standing import game_module_types
+    pb = playbook.current()
+    game = bool(module_type) and module_type in game_module_types()
+    if game and what in ("play", "join", "create", "fund", "enter"):
+        why = playbook.may_play(pb, module_type, stake_cents)
+    elif what in ("join", "sell"):
+        why = playbook.may_sell(pb)
+    elif what in ("create", "fund", "buy"):
+        why = playbook.may_buy(pb)
+    elif what == "enter":
+        why = "" if pb.games != playbook.NONE else playbook.may_play(pb, module_type or "bounty")
+    else:
+        why = ""
+    return {"error": why, "playbook": pb.preset, "success": False} if why else None
+
+
 def _open_games_refusal(aid: str, module_type: str) -> dict[str, Any] | None:
     """P138: a cap on the games this agent has open (EMPORIA_MAX_OPEN_GAMES,
     default 3; 0 = no cap). Every move is a paid model turn, and an agent left
@@ -3630,7 +3686,8 @@ def create_session(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    if (refusal := _open_games_refusal(aid, module_type)):
+    if (refusal := _playbook_refusal("create", module_type, _cents(stake_per_participant))
+            or _open_games_refusal(aid, module_type)):
         return refusal
     body: dict[str, Any] = {
         "module_type": module_type,
@@ -3770,6 +3827,10 @@ def create_payment_intent(
     bid = buyer_id or AGENT_ID
     if not bid:
         return {"error": "buyer_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    # a game's stake by card is play; anything else is a buy
+    if (refusal := _playbook_refusal("fund", *(_session_module_and_stake(bid, session_id) if session_id
+                                              else ("", 0)))):
+        return refusal
     body: dict[str, Any] = {
         "amount_cents": amount_cents,
         "seller_id": seller_id,
@@ -3816,7 +3877,8 @@ def join_session(
         joining = session.get("module_type", "")
     except Exception:
         session, joining = {}, ""
-    if (refusal := _open_games_refusal(aid, joining)):
+    stake = _cents(((session or {}).get("payment_rules") or {}).get("stake_per_participant"))
+    if (refusal := _playbook_refusal("join", joining, stake) or _open_games_refusal(aid, joining)):
         return refusal
     from datetime import UTC, datetime
 
@@ -4107,6 +4169,8 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    if (refusal := _playbook_refusal("fund", *_session_module_and_stake(aid, session_id))):
+        return refusal
     try:
         url = f"{_base()}/sessions/{session_id}/fund"
         r = _bearer_request("post", url, agent_id=aid, payment_token=mpp_token, timeout=15,
@@ -4824,6 +4888,8 @@ def create_listing(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    if (refusal := _playbook_refusal("sell")):
+        return refusal
     try:
         # P240: signed by this agent, so relays that pull it can check it was.
         body = _signed_listing_body(aid, title, description, listing_type, payment_mode,
@@ -4958,6 +5024,8 @@ def enter_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    if (refusal := _playbook_refusal("enter")):
+        return refusal
     try:
         r = _bearer_request("post", f"{_base()}/bounties/{listing_id}/enter",
                             agent_id=aid, timeout=10)
@@ -5061,6 +5129,8 @@ def post_bounty(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    if (refusal := _playbook_refusal("buy")):
+        return refusal
     body = {
         "title": title, "description": description, "module_type": module_type,
         "prize_cents": prize_cents, "entry_deadline": entry_deadline, "rail": rail,

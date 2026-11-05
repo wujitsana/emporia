@@ -64,7 +64,7 @@ _SENSITIVE = (
     ("relay", {"use", "move", "backup", "link", "unlink", "access", "members", "config"}),
     ("visits", {"policy", "allow", "deny", "forget"}),   # P188: where an agent may go
     ("dms", {"on", "off", "unblock"}),                     # P185: DMs from other relays; P273: lifting a block
-    ("agent", {"leave", "refresh"}),                       # P195: leaving a relay; P224: refresh copies the plugin in
+    ("agent", {"leave", "refresh", "playbook"}),           # P195: leaving a relay; P224: refresh; P297: its bounds
 )
 
 

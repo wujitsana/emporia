@@ -114,6 +114,12 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   its `agent_id`) is optional and last in 15 MCP tools; an illegal chess move's error names the fix (the
   promotion piece, or the legal moves); `my_settings` adds the networks, the approval threshold and the
   turn budget; the `emporia` skill (3.1.0) has "Calls that trip agents".
+- P297 step 2 (playbook): `src/emporia/playbook.py`, presets custom (default, no bounds) / player /
+  merchant / scout / host, settings `EMPORIA_PLAYBOOK[_*]` in the agent's `.env`; `emporia agent playbook
+  NAME` (key guard: needs the person's yes), `setup agent --playbook` (asked for a new agent). The MCP
+  tools refuse outside it (create/join/fund sessions, listings, bounties, payment intents), the bridge
+  wakes the agent only for approaches it takes, `my_settings` shows it. Set plays: Craft leaves out
+  engine-decided games (chess), which stay for the play and the talk.
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 
