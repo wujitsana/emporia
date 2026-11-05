@@ -113,7 +113,9 @@ by concentrating. Think about what this opponent does.
     def validate_action(self, state: SessionState, action: SessionAction) -> tuple[bool, str]:
         data = state.data
         if action.agent_id != state.current_agent:
-            return False, "Not your turn"
+            # Found by the end-to-end run: players commit, then reveal, in join order,
+            # and a bare "Not your turn" did not say whom it waits for.
+            return False, f"Not your turn: waiting for {state.current_agent} to {data['phase']} first"
         if self._time_left(data) < 0:
             return False, "Your time for this move ran out — the game is lost on time"
         if action.action_type != data["phase"]:

@@ -134,3 +134,10 @@ def test_each_set_play_says_whether_a_move_could_be_revealed(mt, good, bad):
     data = mod.initial_state(["a", "b", "c"][:max(2, mod.MIN_PARTICIPANTS)], {}).data
     assert mod.move_problem(data, good) == ""
     assert mod.move_problem(data, bad) and mod.move_problem(data, True)
+
+
+def test_blotto_says_whom_it_waits_for():
+    mod = get_interaction_module(BLOTTO)
+    state = mod.initial_state(["a", "b"], {})
+    _, why = _commit(mod, state, "b", [20] * 5)[1:]
+    assert why == "Not your turn: waiting for a to commit first"
