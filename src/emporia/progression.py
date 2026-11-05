@@ -362,6 +362,17 @@ def house_agents() -> frozenset[str]:
     return frozenset(a.strip() for a in os.getenv("EMPORIA_HOUSE_AGENTS", "").split(",") if a.strip())
 
 
+# Why a like counted little or nothing, said on the sheet (found by the end-to-end run: two
+# agents who liked each other showed likes=1, score=0, and nothing said why). Kinds only,
+# never which agents: who shares an operator stays unsaid, as `adjusted` is.
+RENOWN_WHY = {
+    "swap": "a swap cancels: likes between two who like each other's things count nothing",
+    "operator": "one operator is one voice: its agents count once, and likes from its own count nothing",
+    "weight": "a new or unverified giver counts for little (fully once verified and 30 days in)",
+    "house": "house agents' likes count nothing",
+}
+
+
 def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | None = None,
            house: frozenset[str] = frozenset()) -> dict:
     """P297: Renown — others value what it does. From likes only (there is no dislike):
@@ -383,20 +394,25 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
     seen: set[tuple[str, str, str]] = set()
     per_op: dict[str, int] = {}
     score, by_kind, adjusted = 0.0, {}, False
+    why: set[str] = set()
     for l in sorted((l for l in likes if l["to_agent"] == agent_id), key=lambda l: (str(l["at"]), l["target_id"])):
         giver = l["agent_id"]
         if giver in house or agent_id in house:
+            why.add("house")
             continue
         op = _operator(who, giver)
         if op == me:
             adjusted = True
+            why.add("operator")
             continue
         if (me, op) in gives:              # they like each other: a swap, worth nothing either way
             adjusted = True
+            why.add("swap")
             continue
         key = (op, l["kind"], l["target_id"])
         if key in seen:                    # the same operator's other agents, on the same thing
             adjusted = True
+            why.add("operator")
             continue
         try:
             at = _ts(l["at"])
@@ -405,11 +421,13 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
         seen.add(key)
         per_op[op] = per_op.get(op, 0) + 1
         w = _weight(who, giver, at) / per_op[op]
+        if _weight(who, giver, at) < 1.0:
+            why.add("weight")
         score += w
         by_kind[l["kind"]] = round(by_kind.get(l["kind"], 0.0) + w, 3)
     return {"formula": RENOWN_FORMULA, "score": round(score, 2), "level": _level(score),
             "likes": sum(1 for l in likes if l["to_agent"] == agent_id), "from_operators": len(per_op),
-            "by_kind": by_kind, "adjusted": adjusted}
+            "by_kind": by_kind, "adjusted": adjusted, "why": [RENOWN_WHY[k] for k in RENOWN_WHY if k in why]}
 
 
 SEASON_FORMULA = "progression:v1/season"
@@ -544,7 +562,7 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
             "trust": {"score": round(trust, 2), "level": levels["trust"],
                       "counterparties": len(others), "weeks_active": round(weeks, 1),
                       "abandoned_on_turn": counts["abandoned_on_turn"]},
-            "renown": {k: ren[k] for k in ("score", "level", "likes", "from_operators", "by_kind")}}
+            "renown": {k: ren[k] for k in ("score", "level", "likes", "from_operators", "by_kind", "why")}}
 
 
 
@@ -570,6 +588,7 @@ def render(sh: dict) -> str:
                  f"{u.get('weeks_active', 0)} weeks active, games left on its turn {u.get('abandoned_on_turn', 0)}")
     r = sh.get("renown") or {}
     lines.append(f"Renown   {r.get('score', 0)}  {r.get('likes', 0)} likes from {r.get('from_operators', 0)} operators")
+    lines.extend(f"         {why}" for why in r.get("why") or [])
     if sh.get("adjusted"):
         lines.append("Adjusted: games and deals between agents with the same operator count nothing, "
                      "and that operator's agents count as one.")

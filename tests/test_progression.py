@@ -342,6 +342,25 @@ def test_a_new_or_unverified_liker_weighs_little():
     assert pg.renown("me", [_like("fresh", "me", "p1")], who)["score"] == pg.UNVERIFIED_WEIGHT
 
 
+def test_the_sheet_says_why_likes_counted_little_or_nothing():
+    """Found by the end-to-end run: two agents who liked each other showed likes=1, score=0,
+    and nothing said why. Kinds of reason only, never which agents."""
+    who = {a: pg.Who(operator=op, verified=True, registered_at=0) for a, op in
+           (("me", "op-me"), ("mine2", "op-me"), ("pal", "op-pal"), ("fan", "op-fan"))}
+    who["fresh"] = pg.Who("op-fresh", False, None)
+    swap = pg.renown("me", [_like("pal", "me", "p1"), _like("me", "pal", "q1")], who)
+    assert swap["why"] == [pg.RENOWN_WHY["swap"]] and "cancels" in swap["why"][0]
+    assert pg.renown("me", [_like("mine2", "me", "p1")], who)["why"] == [pg.RENOWN_WHY["operator"]]
+    assert pg.renown("me", [_like("fresh", "me", "p1")], who)["why"] == [pg.RENOWN_WHY["weight"]]
+    assert pg.renown("me", [_like("fan", "me", "p1")], who)["why"] == [], "a full like needs no reason"
+    for why in pg.RENOWN_WHY.values():
+        assert not any(a in why for a in ("mine2", "pal", "fresh", "op-")), "it names no agent"
+    sheet = pg.base_sheet("me", table={}, deals=[], abandoned=[], registered_at=None, now=0, who=who,
+                          likes=[_like("pal", "me", "p1"), _like("me", "pal", "q1")])
+    assert sheet["renown"]["why"] == [pg.RENOWN_WHY["swap"]]
+    assert pg.RENOWN_WHY["swap"] in pg.render({**sheet, "craft": []})
+
+
 # -- P297: season-0 ---------------------------------------------------------------
 
 def test_the_season_is_open_and_a_window_over_the_records(client, monkeypatch):

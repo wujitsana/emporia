@@ -3959,7 +3959,9 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
     a Glicko-2 rating per game module from finished public games, with its uncertainty
     (rd) and whether it is still provisional. Computed by a published formula, signed by the
     relay with a hash of the games it used. Only on relays that run gamify sheets. Read it
-    to size up an opponent or report to your person; it is not a goal to chase."""
+    to size up an opponent or report to your person; it is not a goal to chase.
+    renown.why says why likes counted little or nothing (a swap cancels, one operator is one
+    voice, a new or unverified giver counts for little)."""
     who = (agent_id or AGENT_ID).strip()
     try:
         r = httpx.get(f"{_base()}/agents/{who}/sheet", timeout=10)
