@@ -204,11 +204,11 @@ Run on `preview-all` in a git worktree, with no real model call, no live relay, 
 | dashboard `npx vitest run` | 47 files, 325 tests passed |
 | dashboard `npx tsc --noEmit -p .` | exit 0 |
 | dashboard `oxlint --max-warnings=0` | exit 0 |
-| Python, full suite (`pytest -q`) | 2436 passed, 3 skipped, 2 failed: the two known worktree-only failures (below) |
+| Python, full suite (`pytest -q`), at `9b809d3` | 2436 passed, 3 skipped, 2 failed: the two known worktree-only failures (below) |
 | ruff on every Python file the preview changes | clean (exit 0), except `tests/test_emporia.py`'s 25 F401, the same 25 as on hackathon-v2 |
 | ruff, repo-wide | exit 1, as on hackathon-v2: 80 F811 (the limit is 80) and 33 F401 (hackathon-v2: 34), all already there |
 | `scripts/secret_scan.py --range hackathon-v2..HEAD` | clean |
-| `scripts/e2e.py --repo <worktree>` | all steps passed (373 s): setup of player, merchant and house; doctor; refusals; a free blotto; likes; quests, sheet, season, activity; the house game; update as a verified no-op; tear down with no process or gateway service left |
+| `scripts/e2e.py --repo <worktree>` | all steps passed at `9b809d3` (598 s; 373 s at `f8a5254`): setup of player, merchant and house; doctor; refusals; a free blotto; likes; quests, sheet, season, activity; the house game; update as a verified no-op; tear down with no process or gateway service left |
 | `hermes plugins validate hermes_plugin/emporia`, throwaway home | passed: desktop surface ✓, security scan ✓; one warning, the known rule 9 private import (`hermes_cli.web_server_chat`, see `docs/catalog-compliance.md`) |
 | schema | `SCHEMA_VERSION = 32`; the fingerprint test and the copy-aside-before-upgrade test pass |
 
