@@ -3563,16 +3563,66 @@ def _cents(dollars: Any) -> int:
         return 0
 
 
-def _session_module_and_stake(aid: str, session_id: str) -> tuple[str, int]:
-    """A session's game and stake, for the playbook; read only when the playbook bounds anything."""
+class _StakeUnverified(Exception):
+    """The stake the relay shows for a game is not one its creator signed."""
+
+
+def _session_module_and_stake(aid: str, session_id: str,
+                              session: dict[str, Any] | None = None) -> tuple[str, int, dict[str, Any]]:
+    """A session's game, the stake the relay shows, and the relay's copy of it, for the
+    playbook; read only when the playbook bounds anything. `session`: the relay's copy,
+    when the caller already has it."""
     from emporia import playbook
-    if playbook.current() == playbook.PRESETS["custom"]:
-        return "", 0
+    if session is None:
+        if playbook.current() == playbook.PRESETS["custom"]:
+            return "", 0, {}
+        try:
+            session = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10).json()
+        except Exception:  # noqa: BLE001 — unknown: treated as not a game, so a buy
+            return "", 0, {}
+    session = session if isinstance(session, dict) else {}
+    return (session.get("module_type", ""),
+            _cents((session.get("payment_rules") or {}).get("stake_per_participant")), session)
+
+
+def _signed_stake_cents(aid: str, session_id: str, session: dict[str, Any], shown_cents: int) -> int:
+    """Security follow-up (11-05 audit): the stake a game's creator signed (P280) — the one
+    payment signs a hold for — checked against the relay's copy. Read from the creator's
+    signed creation served with the game (`creation`, `identity.game_terms`). Raises
+    `_StakeUnverified` when the two disagree, or when no signed creation verifies. A stake
+    the creator left to the module's default is not signed: the relay's word, as for payment."""
+    from emporia.identity import game_terms
+    from emporia.wire import stake_mismatch
+    rules = session.get("payment_rules") or {}
+    served = {**(session.get("creation") or {}), "module_type": session.get("module_type", ""),
+              "terms": rules.get("signed_terms"), "leaves": [],
+              "payment_rules": {k: rules.get(k) for k in ("mode", "stake_per_participant", "currency")}}
     try:
-        sess = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10).json()
-    except Exception:  # noqa: BLE001 — unknown: treated as not a game, so a buy
-        return "", 0
-    return sess.get("module_type", ""), _cents((sess.get("payment_rules") or {}).get("stake_per_participant"))
+        _, signed = game_terms(session_id, served, aid, aid, _base())
+    except ValueError as e:
+        raise _StakeUnverified(f"the stake shown for {session_id} is not one its creator signed ({e}); "
+                               "your playbook's stake limit holds to the signed stake") from None
+    if why := stake_mismatch(served["terms"], rules):
+        raise _StakeUnverified(f"the relay shows {session_id} on other terms than its creator signed: {why}")
+    return _cents(signed) if signed is not None else shown_cents
+
+
+def _playbook_session_refusal(what: str, aid: str, session_id: str,
+                              session: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """`_playbook_refusal` for an existing session — for a game, under a stake limit, with
+    the stake its creator signed, refused when the relay's copy disagrees."""
+    from emporia import playbook
+    from emporia.standing import game_module_types
+    module, shown, session = _session_module_and_stake(aid, session_id, session)
+    if refusal := _playbook_refusal(what, module, shown):
+        return refusal
+    pb = playbook.current()
+    if pb.max_stake_cents is None or not module or module not in game_module_types():
+        return None
+    try:
+        return _playbook_refusal(what, module, _signed_stake_cents(aid, session_id, session, shown))
+    except _StakeUnverified as e:
+        return {"error": str(e), "playbook": pb.preset, "success": False}
 
 
 def _playbook_refusal(what: str, module_type: str = "", stake_cents: int = 0) -> dict[str, Any] | None:
@@ -3839,8 +3889,8 @@ def create_payment_intent(
     if not bid:
         return {"error": "buyer_id required (or set EMPORIA_AGENT_ID)", "success": False}
     # a game's stake by card is play; anything else is a buy
-    if (refusal := _playbook_refusal("fund", *(_session_module_and_stake(bid, session_id) if session_id
-                                              else ("", 0)))):
+    if (refusal := (_playbook_session_refusal("fund", bid, session_id) if session_id
+                    else _playbook_refusal("fund", "", 0))):
         return refusal
     body: dict[str, Any] = {
         "amount_cents": amount_cents,
@@ -3888,8 +3938,9 @@ def join_session(
         joining = session.get("module_type", "")
     except Exception:
         session, joining = {}, ""
-    stake = _cents(((session or {}).get("payment_rules") or {}).get("stake_per_participant"))
-    if (refusal := _playbook_refusal("join", joining, stake) or _open_games_refusal(aid, joining)):
+    # The stake the playbook bounds is the one its creator signed (11-05 audit follow-up).
+    if (refusal := _playbook_session_refusal("join", aid, session_id, session or {})
+            or _open_games_refusal(aid, joining)):
         return refusal
     from datetime import UTC, datetime
 
@@ -4248,7 +4299,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    if (refusal := _playbook_refusal("fund", *_session_module_and_stake(aid, session_id))):
+    if (refusal := _playbook_session_refusal("fund", aid, session_id)):
         return refusal
     try:
         url = f"{_base()}/sessions/{session_id}/fund"

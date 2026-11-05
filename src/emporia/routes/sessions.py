@@ -283,7 +283,25 @@ async def get_session(session_id: str, request: Request):
     except ValueError:
         fields = []
     return {**s, "sealed": rs.session_sealed(s), "private_text_fields": fields,
-            "paid_by": rs.session_paid_by(session_id)}
+            "paid_by": rs.session_paid_by(session_id), "creation": _signed_creation(s)}
+
+
+def _signed_creation(s: dict[str, Any]) -> dict[str, Any]:
+    """The creator's signed creation (P279) and its key, served with the game to anyone
+    who may see it — so a joiner checks the signed terms before joining, as a payer
+    checks a room's card (P277). In the shape `identity.game_terms` reads (11-05 audit
+    follow-up: the playbook's stake limit holds to the signed stake)."""
+    from types import SimpleNamespace
+    creator = s["participants"][0] if s.get("participants") else ""
+    if not creator:
+        return {}
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT join_at, join_signature FROM participants WHERE session_id = ? AND agent_id = ?",
+                           (s["session_id"], creator)).fetchone()
+    if not row or not row["join_signature"]:
+        return {"creator": creator, "joins": {}, "keys": {}}
+    return {"creator": creator, "joins": {creator: {"at": row["join_at"], "signature": row["join_signature"]}},
+            "keys": rs._room_member_encryption_keys(SimpleNamespace(members=[creator]))}
 
 
 @router.get("/sessions/{session_id}/encryption-keys")

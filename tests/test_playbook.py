@@ -137,3 +137,51 @@ def test_a_fresh_mcp_process_knows_which_sessions_are_games():
     chess, blotto = r.stdout.strip().splitlines()[-2:] if r.stdout.strip() else ("", "")
     assert "does not take emporia:chess:v1" in chess, r.stderr[-800:]
     assert "up to $1.00" in blotto, r.stderr[-800:]
+
+
+def test_the_stake_limit_holds_to_the_stake_its_creator_signed(monkeypatch):
+    """Security follow-up (11-05 audit): the playbook's stake limit read the relay's unsigned
+    copy of a game's stake, while payment signs for the creator's signed one (P280). A relay
+    showing $0.50 for a game its creator signed at $3.00 got a $1.00-limit player past the
+    playbook, into a game whose hold is signed for $3.00. The limit now checks the signed
+    stake, and a game whose relay copy disagrees with it is refused."""
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from emporia import relay_server as rs
+    from emporia.relay_server import app
+    from tests.test_emporia import _publish_enc_key, _register_keyed
+    client = TestClient(app, client=("127.0.0.1", 51298))
+    for a in ("pbs_maker", "pbs_joiner"):
+        _register_keyed(client, a)
+        _publish_enc_key(client, a)
+
+    def game(stake: str) -> str:
+        r = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "payment_rules": {
+            "stake_per_participant": stake, "currency": "USD"}},
+            headers={"x-emporia-agent-id": "pbs_maker"})
+        assert r.status_code == 200, r.text
+        return r.json()["session_id"]
+
+    def keep_stake(sid: str, stake: str) -> None:   # the relay changes the stake it keeps
+        with rs.get_db() as conn:
+            row = conn.execute("SELECT payment_rules_json FROM sessions WHERE session_id = ?", (sid,)).fetchone()
+            conn.execute("UPDATE sessions SET payment_rules_json = ? WHERE session_id = ?",
+                         (json.dumps({**json.loads(row[0]), "stake_per_participant": stake}), sid))
+
+    monkeypatch.setenv("EMPORIA_PLAYBOOK", "player")       # stakes up to $1.00
+    monkeypatch.setattr(m, "AGENT_ID", "pbs_joiner")
+    monkeypatch.setattr(m, "_open_games_refusal", lambda aid, mt: None)
+    monkeypatch.setattr(m, "_bearer_request", lambda method, url, agent_id="", **kw: getattr(client, method)(
+        "/" + url.split("/", 3)[3], headers={"x-emporia-agent-id": agent_id or "pbs_joiner"},
+        **{k: v for k, v in kw.items() if k in ("json", "params")}))
+
+    lowered = game("3.00")
+    keep_stake(lowered, "0.50")
+    for out in (m.join_session(lowered), m.fund_session(lowered), m.create_payment_intent(50, session_id=lowered)):
+        assert not out["success"] and out.get("playbook") == "player", out
+        assert "signed" in out["error"], out["error"]
+    assert "up to $1.00" in m.join_session(game("3.00"))["error"], "the signed stake, as shown, is over the limit"
+    fine = m.join_session(game("0.50"))
+    assert "playbook" not in fine, fine
