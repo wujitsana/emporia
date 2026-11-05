@@ -41,6 +41,17 @@ grid, green on white, with the kaleidoscope run and the quests ending. To decide
 7. Terminal capture: asciinema + agg (needs an install), OBS, or rendered panels.
 8. Post the 30 s teaser too?
 
+**The video, later (user, 11-05):** include the person talking with their Hermes agent and the
+dashboard. If chat inside the dashboard lands (branch `dashboard-chat`), film that conversation in
+the tab itself, in our style, alongside the Hermes chat shots R1–R6. The shot list
+(`docs/demo/shots.json` on `demo-video-2`) gets updated and re-rendered when the UI work merges.
+
+**Chat with the agent inside the dashboard (branch `dashboard-chat`, in progress).** The
+dashboard would stay unable to sign or write to the relay itself. The person talks to their own
+agent, which acts under its own guards (playbook, approvals, key guard, signer limits). That
+reframes "visibility-only", so it is your decision. The proposal is in
+`docs/proposals/dashboard-chat.md` on that branch.
+
 **Hermes Desktop.** Build it after `retromod` lands, only if testing, the live relay and the video
 are on track (your call, 11-05). The design is in memory: a `desktop/plugin.js` half, without
 react-dom, about 3–5 days.
@@ -115,6 +126,10 @@ provider logins. The repo has no remote, so nothing has left the machine.
 - The old 0.3.0 Emporia tab is removed from the root home (your yes, 11-05).
 
 ### In progress
+
+- **The pre-push secret scan is installed:** `scripts/secret_scan.py` (commit 1c4413e), run by `.git/hooks/pre-push`.
+  - History is clean: all 615 pushed commits and the unpushed ones.
+  - The public GitHub repo was checked 11-05: no secret files or values were ever pushed.
 
 - **The scripted end-to-end check:** `scripts/e2e.py`, plus the smaller fixes the run found:
   - fix hints a plugin-only user can't run (they need `hermes emporia` pass-through);
