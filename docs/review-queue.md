@@ -1,0 +1,120 @@
+# For your review
+
+Decisions and finished work waiting for the person, newest first. Work that was done with good
+confidence is on hackathon-v2. Anything debatable sits on its own branch, or here as a question.
+Nothing is pushed.
+
+## 2026-11-05/06
+
+### Waiting on a decision
+
+**Permissions.** A safe allowlist, so agents stop waiting on prompts. The safety check (rightly)
+blocked me from editing my own permission settings, so it is yours to apply. To apply:
+`cp <scratchpad>/proposed-settings.local.json .claude/settings.local.json`. The path is in the
+conversation.
+- It allows: read-only inspection, tests and linters, local git (no push), the repo's Python,
+  ffmpeg.
+- It still asks before: kill, git reset or stash, rm -rf.
+- It blocks: git push, git clean, git reset --hard, pkill, `hermes gateway`, docker, and any
+  `.env`.
+
+**The redesigned UI (branch `retromod`).** Reviewed: 231 dashboard tests pass, the typecheck is
+clean, and the screenshots were checked. You chose to look at it yourself before it merges.
+- On top of it, branch `retromod-ux` (in progress) carries a structure proposal in
+  `docs/ui-ux-structure.md`:
+  - whether games get their own section, and whether the tabs are right;
+  - a live set-play view;
+  - testnet wording;
+  - the colour fade, and an instant tint change for capture;
+  - the Agents section on a phone.
+- To decide: merge `retromod`, then `retromod-ux`, or ask for changes.
+
+**The demo video (branch `demo-video-2`).** Reviewed: the animatic is 81 s, square, on the beat
+grid, green on white, with the kaleidoscope run and the quests ending. To decide:
+1. A first AI test: one keyframe plus one Kling clip, about $0.50 through the Nous gateway. After
+   that, the full generated set: about $3.6–4.3, or about $7 with one retake each.
+2. Music: "Voltaic" (CC BY, credit in the post), or a hand-downloaded no-credit track.
+3. The agents' names: ledger and magpie?
+4. The opening: the chat event (recommended), or a montage.
+5. The install shot: the catalog name after the PR merges, or the git-URL form now.
+6. Pin `emporia_source.json` and push, or use `--runtime-from` off camera.
+7. Terminal capture: asciinema + agg (needs an install), OBS, or rendered panels.
+8. Post the 30 s teaser too?
+
+**Hermes Desktop.** Build it after `retromod` lands, only if testing, the live relay and the video
+are on track (your call, 11-05). The design is in memory: a `desktop/plugin.js` half, without
+react-dom, about 3–5 days.
+
+**The gamify research (branch `gamify-research`, docs/proposals/gamify-rpg-and-interpretability.md).**
+Season-1 additions it proposes: debriefs, expeditions, "called it", and adopted ideas if time
+allows. Open questions:
+- Which season-1 set?
+- How many points for an adopted idea (it suggests 10)?
+- Topic names, and will you post expeditions weekly?
+- Moving set plays to `:v2` for calls (season 2)?
+
+**Explorer agents (layer 2).** Model-driven test agents on the Nous subscription:
+- the model is `deepseek/deepseek-v4-flash-0731`, using the Wudaosports login;
+- the profiles live in the real home and are removed after each run.
+
+They run after the scripted end-to-end check, layer 1, is in. I'll ask before each run.
+
+**Security proposals (from the 11-05 audit, not built).** The 7 fixes it made are merged; see
+below.
+- **Visited relays' notices.** They are trusted like the home relay's: the same allowlisted
+  `emporia:relay` sender, and ids go into the text unfiltered. Proposal: one sender per visited
+  relay, and an id filter. Medium.
+- **The local console serves every profile on the machine**, with no secret on its socket.
+  Proposal: serve only its own profile, plus a per-start socket secret. Medium.
+- **The playbook's stake limit trusts the relay's unsigned stake.** Wallet and signer caps still
+  hold. Proposal: check the creator's signed terms. Low/Medium.
+- **Key-only sybils.** They count as separate operators in Renown, at 0.25 weight after 30 days.
+  A design call for the season. Low.
+- **Smaller items:**
+  - the pip fallback isn't hash-locked;
+  - `/relay/activity` scans 30 days in Python;
+  - likes compare `at` as strings;
+  - no CSP on the standalone console;
+  - Sentry (when turned on) could capture request bodies.
+- **First contact can still be made plaintext.** Before any key is pinned, a relay can claim a
+  peer has no key. A known limit of the downgrade fix.
+
+### Done with good confidence (on hackathon-v2, not pushed)
+
+**Security audit, 7 fixes with tests** (branch `security-audit`, merged after the e2e work):
+- **High:** a hostile relay could turn a sealed DM conversation back into plaintext. Now refused
+  once the peer's key is pinned (breaking: an explicit `plaintext_ok` / `encrypted=False`).
+- **Medium:** an opponent's table talk and room names were pasted into trusted relay notices.
+- **Medium:** an agent's terminal could reach the local console's socket, and so other profiles'
+  DMs.
+- **Medium:** `--new-profile` could reset an existing agent.
+- **Medium:** `GET /season` took quadratic time in likes (23 s at 20k). Now 0.1 s.
+- **Low:** revealed bug reports skipped the size checks.
+- **Low:** runtime install passed Hermes's secrets to git, uv and pip.
+
+**From the end-to-end run, fixed with tests:**
+- Playbooks refused every game as a purchase.
+- An illegal blotto commit was accepted, which lost the game.
+- `validate_turn` crashed.
+- `doctor` said "not registered" for agents whose keys are in `.env`.
+- Contradictory playbook text.
+- The plugin's doctor scope.
+- My own regression from 470d039: new agents got the developer role with keys in files.
+- The restart block printed twice.
+
+**Other:**
+- Setup's order: profile, then plugin, then agent. Status says where the runtime came from.
+- The old 0.3.0 Emporia tab is removed from the root home (your yes, 11-05).
+
+### In progress
+
+- **The scripted end-to-end check:** `scripts/e2e.py`, plus the smaller fixes the run found:
+  - fix hints a plugin-only user can't run (they need `hermes emporia` pass-through);
+  - the message when no release is pinned;
+  - mislabels;
+  - doctor using each profile's own relay;
+  - explaining why Renown counts a like for little;
+  - house log noise.
+- **The security audit** (branch `security-audit`), including whether the hidden `--new-profile`
+  flag can be misused on a profile that already holds an agent.
+- **The UX structure** (`retromod-ux`).
