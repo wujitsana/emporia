@@ -17,7 +17,10 @@ import pytest
 
 from emporia import identity
 from emporia.relay_server import DB_LOCK, get_db
-from tests.test_emporia import _ASGIHttpxAdapter, _sdk_wired, prod_client  # noqa: F401 — the fixture
+from tests import test_emporia
+from tests.test_emporia import _ASGIHttpxAdapter, _sdk_wired
+
+prod_client = test_emporia.prod_client      # the fixture; bound, not imported, so no F811
 
 
 def _strip_encryption(thread_id: str, peer: str) -> None:
