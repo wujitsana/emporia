@@ -59,6 +59,33 @@ def test_a_good_profile_name_is_taken_as_hermes_spells_it():
     assert setup_cli.choose_profile(_args(profile="default"), "default", False) == ("default", False)
 
 
+def test_the_profile_name_rule_is_hermess_mirrored_not_imported():
+    """Catalog rule 9: the plugin imports no private Hermes module where it can do without, so
+    setup_cli mirrors hermes_cli.profiles' name rule. Here (a test, not the plugin) the mirror
+    is held to Hermes's own, asked through Hermes's interpreter."""
+    import inspect
+    import json
+    import subprocess
+    assert "hermes_cli" not in inspect.getsource(setup_cli._valid_profile_name)
+    hermes_py = Path("/opt/hermes/.venv/bin/python")
+    if not hermes_py.exists():
+        pytest.skip("no Hermes install here")
+    names = ["shop", "a", "a" * 64, "a" * 65, "x-y_z9", "-a", "_a", "A", "a b", "../x", "a/b", "é",
+             "root", "hermes", "tmp", "test", "sudo", "0day"]
+    probe = ("import json, sys\nfrom hermes_cli import profiles\nok = {}\n"
+             "for n in json.loads(sys.argv[1]):\n"
+             "    try:\n        profiles.validate_profile_name(n); ok[n] = True\n"
+             "    except ValueError:\n        ok[n] = False\n"
+             "print(json.dumps({'ok': ok, 'reserved': sorted(profiles._RESERVED_NAMES)}))")
+    out = subprocess.run([str(hermes_py), "-c", probe, json.dumps(names)], cwd="/opt/hermes",
+                         capture_output=True, text=True, timeout=60)
+    assert out.returncode == 0, out.stderr[-1000:]
+    hermes = json.loads(out.stdout.strip().splitlines()[-1])
+    assert sorted(setup_cli._RESERVED_NAMES) == hermes["reserved"]
+    for name in names:
+        assert setup_cli._valid_profile_name(name) == hermes["ok"][name], name
+
+
 def test_it_runs_setup_agent_for_the_chosen_profile_only(monkeypatch, capsys):
     ran = []
     monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "default")

@@ -342,8 +342,9 @@ def _emporia(rt: Path, *args: str) -> int:
 
 
 # Hermes's own rules for a profile name (hermes_cli.profiles.validate_profile_name), mirrored
-# for when that module cannot be imported: lowercase letters, digits, - and _, starting with
-# a letter or digit, at most 64 characters, and not one of its reserved names.
+# rather than imported: that module is no public plugin surface (catalog rule 9). Lowercase
+# letters, digits, - and _, starting with a letter or digit, at most 64 characters, and not one
+# of its reserved names. tests/test_plugin_setup.py keeps the mirror in step with Hermes.
 _PROFILE_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 _RESERVED_NAMES = frozenset({"hermes", "default", "test", "tmp", "root", "sudo"})
 PROFILE_NAME_RULE = ("lowercase letters, digits, - and _, starting with a letter or digit, at most 64 "
@@ -358,15 +359,7 @@ def _valid_profile_name(name: str) -> bool:
     """A name setup may make a profile under: Hermes's rules, and never `default` (the root)."""
     if not isinstance(name, str) or name == "default":
         return False
-    try:
-        from hermes_cli.profiles import validate_profile_name
-    except Exception:  # noqa: BLE001 — outside Hermes (tests, a bare checkout): the mirror
-        return bool(_PROFILE_ID.fullmatch(name)) and name not in _RESERVED_NAMES
-    try:
-        validate_profile_name(name)
-    except ValueError:
-        return False
-    return True
+    return bool(_PROFILE_ID.fullmatch(name)) and name not in _RESERVED_NAMES
 
 
 def choose_profile(args: argparse.Namespace, here: str, tty: bool, ask=input) -> tuple[str, bool] | None:
