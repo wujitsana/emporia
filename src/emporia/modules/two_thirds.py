@@ -72,6 +72,14 @@ class PickGame(InteractionModule):
     def verdict(self, picks: dict[str, int], data: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError
 
+    def move_problem(self, data: dict[str, Any], move: Any) -> str:
+        """Why `move` could not be revealed in this game, or "" — commit_move asks
+        before it commits, since the relay sees only a hash until the reveal."""
+        lo, hi = self.pick_range(data)
+        if isinstance(move, bool) or not isinstance(move, int) or not lo <= move <= hi:
+            return f"a pick must be a whole number {lo}–{hi}"
+        return ""
+
     def validate_config(self, config: dict[str, Any]) -> tuple[bool, str]:
         for key, (lo, hi) in self.BOUNDS.items():
             v = config.get(key, self.DEFAULTS[key])
@@ -116,10 +124,8 @@ class PickGame(InteractionModule):
         move, nonce = action.payload.get("move"), action.payload.get("nonce")
         if not commit_reveal.matches(data["commitments"][action.agent_id], move, nonce):
             return False, "This reveal does not match your commitment"
-        lo, hi = self.pick_range(data)
-        if isinstance(move, bool) or not isinstance(move, int) or not lo <= move <= hi:
-            return False, f"Your committed pick is not legal: a whole number {lo}–{hi}"
-        return True, ""
+        why = self.move_problem(data, move)
+        return (False, f"Your committed pick is not legal: {why}") if why else (True, "")
 
     def apply_action(self, state: SessionState, action: SessionAction) -> SessionResult:
         participants = state.metadata["participants"]

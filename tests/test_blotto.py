@@ -135,8 +135,11 @@ def test_commit_move_keeps_the_nonce_local_and_reveal_move_uses_it(tmp_path, mon
     monkeypatch.setattr(m, "submit_action",
                         lambda sid, action, payload, rationale, aid, say="": sent.append((action, payload))
                         or {"success": True})
-    state = {"round": 1, "commitments": {}}
-    monkeypatch.setattr(m, "_session_data", lambda sid, aid: state)
+    state = {"round": 1, "commitments": {}, "battlefields": 5, "troops": 100}
+    monkeypatch.setattr(m, "_session_json", lambda sid, aid: {"module_type": BLOTTO, "state": {"data": state}})
+    refused = m.commit_move("sess_x", [50, 50], "two fields only", agent_id="me")
+    assert not refused["success"] and "5 whole numbers" in refused["error"] and "Nothing was committed" in refused["error"]
+    assert not sent, "an illegal move is never committed: it could not be revealed, and loses on time"
     assert m.commit_move("sess_x", [20] * 5, "spread evenly", agent_id="me")["success"]
     [(action, payload)] = sent
     assert action == "commit" and set(payload) == {"commitment"}, "only the hash leaves"
@@ -226,3 +229,17 @@ def test_a_line_said_with_a_move_arrives_in_the_same_notice(client):
                                "x" * 20, say="hello")
     assert client.post(f"/sessions/{quiet}/action", json=body).status_code == 400, "no chat in this game"
     assert rs.load_session(quiet)["step_number"] == 0, "and the move did not happen"
+
+
+def test_validate_turn_checks_a_move_against_the_rules():
+    """Found by the end-to-end run: validate_turn called the module's methods on
+    its class, so every call raised TypeError."""
+    from emporia import mcp_server as m
+    from emporia.modules.blotto import BlottoModule
+    state = BlottoModule().initial_state(["a", "b"], {}).to_dict()
+    ok = m.validate_turn(BLOTTO, json.dumps(state), "a", "commit", {"commitment": "0" * 64},
+                         "committing a spread that beats their last")
+    assert ok["success"] and ok["new_state"]["current_agent"] == "b"
+    wrong = m.validate_turn(BLOTTO, json.dumps(state), "a", "reveal", {"move": [1], "nonce": "n"},
+                            "revealing before anyone has committed")
+    assert not wrong["success"] and "commit phase" in wrong["error"]

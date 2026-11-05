@@ -326,11 +326,12 @@ def _apply_game_turn(
         return {"error": f"Unknown module: {game_type}", "success": False}
     state = SessionState.from_dict(state_dict)
     action = SessionAction(agent_id=agent_id, action_type=action_type, payload=payload)
-    valid, err = cls.validate_action(state, action)
+    module = cls()   # found by the end-to-end run: called on the class, every module raised TypeError
+    valid, err = module.validate_action(state, action)
     if not valid:
         return {"error": err, "success": False}
-    result = cls.apply_action(state, action)
-    is_over, outcome = cls.is_terminal(result.new_state)
+    result = module.apply_action(state, action)
+    is_over, outcome = module.is_terminal(result.new_state)
     return {
         "success": result.success,
         "error": result.error,
@@ -4666,10 +4667,22 @@ def _write_commitments(path, saved: dict) -> None:
         json.dump(saved, f)
 
 
-def _session_data(session_id: str, aid: str) -> dict[str, Any]:
+def _session_json(session_id: str, aid: str) -> dict[str, Any]:
     r = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10)
     r.raise_for_status()
-    return (r.json().get("state") or {}).get("data") or {}
+    return r.json()
+
+
+def _session_data(session_id: str, aid: str) -> dict[str, Any]:
+    return (_session_json(session_id, aid).get("state") or {}).get("data") or {}
+
+
+def _move_problem(module_type: str, data: dict[str, Any], move: Any) -> str:
+    """Found by the end-to-end run: the relay sees only a hash at commit, so an
+    illegal move was taken, could not be revealed, and lost the game on time."""
+    cls = _load_game_module(module_type)
+    check = getattr(cls, "move_problem", None) if cls else None
+    return check(cls(), data, move) if check else ""
 
 
 def _submit_simultaneous(session_id: str, action: str, payload: dict, rationale: str,
@@ -4710,15 +4723,19 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
-        data = _session_data(session_id, aid)
+        sess = _session_json(session_id, aid)
     except Exception as e:
         return {"error": f"could not load session: {e}", "success": False}
+    data = (sess.get("state") or {}).get("data") or {}
     rnd = str(data.get("round", 1))
     path = _commitments_file(aid, session_id)
     saved = json.loads(path.read_text()) if path.exists() else {}
     if aid in (data.get("commitments") or {}):
         return {"error": f"you already committed in round {rnd}"
                 + (f": {saved[rnd]['move']}" if rnd in saved else ""), "success": False}
+    if why := _move_problem(sess.get("module_type", ""), data, move):
+        return {"error": f"not a legal move: {why}. Nothing was committed; commit a legal one",
+                "success": False}
     nonce = commit_reveal.new_nonce()
     digest = commit_reveal.commitment(move, nonce)
     # Saved before sending: a commit that lands but whose answer is lost can

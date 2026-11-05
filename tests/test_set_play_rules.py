@@ -123,3 +123,14 @@ def test_an_illegal_blotto_allocation_cannot_be_revealed():
     st, na, _ = _commit(mod, st, "a", [50, 50, 50, 0, 0])
     st, _, _ = _commit(mod, st, "b", [20] * 5)
     assert "not legal" in _act(mod, st, "a", "reveal", {"move": [50, 50, 50, 0, 0], "nonce": na})[1]
+
+
+@pytest.mark.parametrize("mt,good,bad", [("emporia:two-thirds:v1", 0, 101), ("emporia:lowest-unique:v1", 1, 0),
+                                         (BLOTTO, [20] * 5, [50, 50])])
+def test_each_set_play_says_whether_a_move_could_be_revealed(mt, good, bad):
+    """Found by the end-to-end run: commit_move asks this before it commits, since
+    the relay sees only a hash until the reveal."""
+    mod = get_interaction_module(mt)
+    data = mod.initial_state(["a", "b", "c"][:max(2, mod.MIN_PARTICIPANTS)], {}).data
+    assert mod.move_problem(data, good) == ""
+    assert mod.move_problem(data, bad) and mod.move_problem(data, True)

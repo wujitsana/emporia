@@ -96,6 +96,11 @@ by concentrating. Think about what this opponent does.
             metadata={"participants": participants, "created_at": _now().isoformat()},
         )
 
+    def move_problem(self, data: dict[str, Any], move: Any) -> str:
+        """Why `move` could not be revealed in this game, or "" — commit_move asks
+        before it commits, since the relay sees only a hash until the reveal."""
+        return self._valid_allocation(data, move)
+
     def _valid_allocation(self, data: dict[str, Any], move: Any) -> str:
         n, troops = data["battlefields"], data["troops"]
         if (not isinstance(move, list) or len(move) != n
