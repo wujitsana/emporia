@@ -170,6 +170,36 @@ class InteractionModule(ABC):
     #: the relay's deadline sweep has to ask it (not only submit_action).
     TIMED: bool = False
 
+    #: Bargain: True when the relay deals each player hidden information (its
+    #: own priorities) from a seed nobody can choose — the relay's secret,
+    #: committed to in the game's config before anyone joins, mixed with each
+    #: player's signature. `state.data["deal"]` then has the shape `new_deal()`
+    #: makes: the relay fills `contributions` at the start, and `relay_seed`,
+    #: `seed` and `hands` only for its own calls into the module during play —
+    #: they are stripped from everything stored or served (`conceal`) until the
+    #: game ends, when the whole deal is published for anyone to check. The
+    #: relay holds the hands while the game runs, so such a game takes no stake
+    #: and no bounty prize: whoever runs the relay could tip one side.
+    DEALS_HIDDEN: bool = False
+
+    #: True when table talk is part of the game: a session is created with
+    #: `chat` on unless its creator turned it off.
+    CHAT_BY_DEFAULT: bool = False
+
+    #: Action types whose payload is a move `move_problem(data, payload)` can
+    #: check before it is signed and sent (the MCP tools ask it first).
+    CHECKED_ACTIONS: tuple[str, ...] = ()
+
+    def deal(self, seed: str, participants: list[str], config: dict[str, Any]) -> dict[str, Any]:
+        """DEALS_HIDDEN: each player's hidden information from the game's seed and
+        settings — pure and deterministic, so anyone can redo it after the reveal."""
+        raise NotImplementedError
+
+    def private_view(self, data: dict[str, Any], agent_id: str) -> dict[str, Any] | None:
+        """DEALS_HIDDEN: what `agent_id` may read of its own hand (served to it alone)."""
+        hands = (data.get("deal") or {}).get("hands") or {}
+        return hands.get(agent_id)
+
     def validate_config(self, config: dict[str, Any]) -> tuple[bool, str]:
         """Check a session's settings at creation, before anyone stakes on them
         (P131). Return (valid, error_message); the default accepts anything."""
@@ -210,6 +240,71 @@ class InteractionModule(ABC):
 
     def deserialize_state(self, data: str) -> SessionState:
         return SessionState.from_dict(json.loads(data))
+
+
+# ============================================================================
+# Hidden deals (DEALS_HIDDEN modules)
+# ============================================================================
+#
+# The relay picks a secret `relay_seed` when the game is made and publishes only
+# `deal_commitment(relay_seed)` in its config. Each player contributes a
+# signature it cannot vary: the creator its signed creation (made before the
+# commitment existed), the joiner its signature over the commitment itself
+# (`wire.signed_deal_seed_payload`, deterministic Ed25519). The game's seed is
+# `deal_seed(relay_seed, [p0's, p1's])`. The relay cannot steer it (it fixed its
+# seed before the joiner's signature existed, and that signature binds the
+# commitment); a player cannot (it never sees the relay's seed until the end).
+
+DEAL_FIELDS_HIDDEN = ("relay_seed", "seed", "hands")
+
+
+def deal_commitment(relay_seed: str) -> str:
+    import hashlib
+    return hashlib.sha256(f"emporia:deal-commitment:v1:{relay_seed}".encode()).hexdigest()
+
+
+def deal_seed(relay_seed: str, contributions: list[str]) -> str:
+    """The game's seed: the relay's secret and every player's contribution, in seat order."""
+    import hashlib
+    return hashlib.sha256(":".join(["emporia:deal-seed:v1", relay_seed, *contributions]).encode()).hexdigest()
+
+
+def new_deal(commitment: str | None) -> dict[str, Any]:
+    return {"commitment": commitment, "contributions": {}, "relay_seed": None, "seed": None, "hands": None}
+
+
+def with_deal(state: SessionState, **fields: Any) -> SessionState:
+    """`state` with these fields of its deal replaced (a new state; the old is untouched)."""
+    deal = {**(state.data.get("deal") or new_deal(None)), **fields}
+    return SessionState(data={**state.data, "deal": deal}, current_agent=state.current_agent,
+                        step_number=state.step_number, metadata=state.metadata)
+
+
+def conceal(state: SessionState) -> SessionState:
+    """`state` as it may be stored and served while the game runs: no seed, no hands."""
+    if "deal" not in state.data:
+        return state
+    return with_deal(state, **{k: None for k in DEAL_FIELDS_HIDDEN})
+
+
+def check_deal(module: InteractionModule, participants: list[str], config: dict[str, Any],
+               deal: dict[str, Any]) -> str:
+    """"" when a published deal is what its commitment and contributions give, else why not.
+    The signatures themselves are checked by the caller against the players' keys."""
+    if not deal or not deal.get("relay_seed"):
+        return "the deal has not been revealed"
+    if deal_commitment(deal["relay_seed"]) != deal.get("commitment") or \
+            deal.get("commitment") != (config or {}).get("deal_commitment"):
+        return "the revealed relay seed does not match the commitment published before the game"
+    contrib = deal.get("contributions") or {}
+    if any(p not in contrib for p in participants):
+        return "a player's contribution to the seed is missing"
+    seed = deal_seed(deal["relay_seed"], [contrib[p]["signature"] for p in participants])
+    if seed != deal.get("seed"):
+        return "the game's seed is not the one its relay seed and contributions give"
+    if module.deal(seed, participants, config or {}) != deal.get("hands"):
+        return "the dealt hands are not the ones the seed gives"
+    return ""
 
 
 # ============================================================================

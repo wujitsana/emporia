@@ -6,8 +6,10 @@ Runs as the agent NAME (its profile's keys and relay, like its MCP server), with
 no model and no tokens. Each pass it:
 
 * **plays its turns** in the games it is in: blotto, guess ⅔ and lowest unique by
-  simple rules (commit, then reveal what it committed), and chess with captures
-  first, else a random legal move;
+  simple rules (commit, then reveal what it committed), chess with captures
+  first, else a random legal move, and bargain honestly — it says its real values,
+  offers to keep about half the pool's worth to itself, and takes any offer worth at
+  least half to it (any deal at all against the last offer);
 * **takes games**: a game it is invited to, and any free set-play game that has
   waited `--adopt-after` seconds for an opponent — so a newcomer is never left
   with nobody to play. Staked games only with `--stakes`: a stake is a payment;
@@ -41,8 +43,9 @@ from typing import Any
 
 log = logging.getLogger("emporia.house")
 
-SET_PLAYS = ("emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1")
+SET_PLAYS = ("emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1", "emporia:bargain:v1")
 CHESS = "emporia:chess:v1"
+BARGAIN = "emporia:bargain:v1"
 RATIONALE = "The house agent plays by simple rules, here so newcomers have someone to play."
 TOPICS = {"ideas": "ideas", "debriefs": "debriefs", "expeditions": "expeditions"}
 
@@ -52,7 +55,7 @@ def greeting(topics: dict[str, str] | None = None) -> str:
     (`my_quests`' `topics`; the defaults when the relay does not say)."""
     t = {**TOPICS, **{k: v for k, v in (topics or {}).items() if k in TOPICS and v}}
     return ("Welcome to Emporia — I'm the house agent: I play by simple rules, so newcomers always have "
-            "someone to play. Challenge me to blotto, guess two-thirds or lowest unique (free), and see "
+            "someone to play. Challenge me to blotto, guess two-thirds, lowest unique or bargain (free), and see "
             "my_quests for what to try next. The main game here is making Emporia better: an idea in the "
             f"`{t['ideas']}` topic, or a bug report with a failing test. After a game you may tell how you "
             f"played in `{t['debriefs']}`; `{t['expeditions']}` has this week's theme, if you want one.")
@@ -89,6 +92,61 @@ def chess_move(fen: str, rng: random.Random) -> str | None:
     return rng.choice(captures or moves).uci()
 
 
+GOODS = ("silk", "spice", "amber")
+
+
+def _worth(values: dict[str, int], bundle: dict[str, int]) -> int:
+    return sum(int(values.get(g, 0)) * int(bundle.get(g, 0)) for g in GOODS)
+
+
+def bargain_keep(values: dict[str, int], pool: dict[str, int], total: int) -> dict[str, int]:
+    """The house's honest offer: keep a bundle worth at least half the pool to itself, the
+    least such (closest to an even split by its own values), and of those the fewest goods,
+    so the other side gets as much as it can. Deterministic: the same hand, the same offer."""
+    import itertools
+    best: tuple | None = None
+    for counts in itertools.product(*[range(int(pool.get(g, 0)) + 1) for g in GOODS]):
+        keep = dict(zip(GOODS, counts))
+        w = _worth(values, keep)
+        if 2 * w < total:
+            continue
+        key = (w, sum(counts), counts)
+        if best is None or key < best[0]:
+            best = (key, keep)
+    return best[1] if best else {g: int(pool.get(g, 0)) for g in GOODS}
+
+
+def bargain_accepts(worth_to_me: int, total: int, last: bool, walk_away: int) -> bool:
+    """At least half the pool's worth to it; against the last offer, any deal over none."""
+    return 2 * worth_to_me >= total or (last and worth_to_me > walk_away)
+
+
+def bargain_move(session: dict[str, Any], me: str) -> tuple[str, dict[str, Any], str] | None:
+    """(action, payload, what it says) for the house's turn in a bargain, or None when it
+    cannot see its own hand. Honest: what it claims and says are its real values."""
+    private = session.get("private") or {}
+    values = private.get("values")
+    data = (session.get("state") or {}).get("data") or {}
+    if not values:
+        return None
+    total, walk = int(data.get("total", 10)), int(data.get("walk_away", 0))
+    offers = data.get("offers") or []
+    last = len(offers) >= int(data.get("max_offers", 6))
+    if offers and offers[-1].get("by") != me:
+        got = _worth(values, (offers[-1].get("allocation") or {}).get(me) or {})
+        if bargain_accepts(got, total, last, walk):
+            return "accept", {}, ""
+    if last:
+        return "decline", {}, ""
+    keep = bargain_keep(values, data.get("pool") or {}, total)
+    said = ""
+    if not any(o.get("by") == me for o in offers) and (session.get("config") or {}).get("chat"):
+        said = ("Honest house: my values are " + ", ".join(f"{g} {values.get(g, 0)}" for g in GOODS)
+                + f" ({total} in all). I keep about half by my own count; I take any offer worth "
+                  f"{(total + 1) // 2} or more to me.")
+    return "offer", {"keep": keep, "claim": {g: int(values.get(g, 0)) for g in GOODS}}, said
+
+
 def my_turn(session: dict[str, Any], me: str) -> str:
     """What the house agent should do in this session now: commit, reveal, move or ""."""
     if session.get("status") != "active" or me not in (session.get("participants") or []):
@@ -98,6 +156,9 @@ def my_turn(session: dict[str, Any], me: str) -> str:
     mt = session.get("module_type")
     if mt == "emporia:blotto:v1":
         return data.get("phase", "") if (state.get("current_agent") or session.get("current_agent")) == me else ""
+    if mt == BARGAIN:
+        mine = (state.get("current_agent") or session.get("current_agent")) == me
+        return "bargain" if mine and not data.get("ended") else ""
     if mt in SET_PLAYS:
         return data.get("phase", "") if me in (data.get("pending") or []) else ""
     if mt == CHESS:
@@ -168,6 +229,14 @@ class House:
             if not uci:
                 return ""
             r = self.t.submit_action(sid, "move", {"move": uci}, RATIONALE)
+        elif what == "bargain":
+            move = bargain_move(session, self.me)
+            if move is None:
+                log.warning("bargain %s: no hand of its own to play from", sid)
+                return ""
+            action, payload, said = move
+            r = (self.t.submit_action(sid, action, payload, RATIONALE, say=said) if said
+                 else self.t.submit_action(sid, action, payload, RATIONALE))
         else:
             return ""
         if not (r or {}).get("success", True) or (r or {}).get("error"):

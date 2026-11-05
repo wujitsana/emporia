@@ -380,6 +380,14 @@ def _signed_join(request):
     body["at"] = datetime.now(UTC).isoformat()
     make = wire.signed_session_join_payload if kind.group(1) == "sessions" else wire.signed_room_join_payload
     body["signature"] = identity.sign(make(sid, body["agent_id"], body["at"]), body["agent_id"])
+    if kind.group(1) == "sessions" and "deal_signature" not in body:
+        # Bargain: a dealt game's join carries the joiner's share of the seed, as the tools add it.
+        rs = sys.modules.get("emporia.relay_server")
+        s = rs.load_session(sid) if rs else None
+        commitment = ((s or {}).get("config") or {}).get("deal_commitment")
+        if commitment:
+            body["deal_signature"] = identity.sign(wire.signed_deal_seed_payload(sid, body["agent_id"], commitment),
+                                                   body["agent_id"])
     headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
     return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
                          extensions=request.extensions)

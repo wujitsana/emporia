@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass
 
 ALL = "all"
 NONE = "none"
-SET_PLAYS = ("emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1")
+SET_PLAYS = ("emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1", "emporia:bargain:v1")
 CHESS = "emporia:chess:v1"
 ANSWERS = ("anyone", "nobody")
 RUNS = ("model", "rules")

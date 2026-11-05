@@ -10,7 +10,8 @@ hand in a throwaway Hermes home:
   the marketplace role, its keys in its .env, the plugin enabled, registers, and passes doctor;
 * playbook refusals that name how to change them; a free blotto between A and B (an illegal commit
   refused, a like, quests, the character sheet, the season, the relay's activity count);
-* a house agent that adopts a waiting free blotto and plays it to the end;
+* a house agent that adopts a waiting free blotto and plays it to the end, then a bargain with it
+  (an illegal offer refused before it is sent, sealed values, its honest deal, the hands published);
 * `hermes emporia update --runtime-from`, twice: the second changes nothing.
 
 No model or LLM is called, no gateway is started. Each profile's name carries a tag of this run:
@@ -381,6 +382,38 @@ class Run:
             raise StepFailed("the house's game did not finish in 8 passes")
         check(self.house_agent in g["participants"], f"participants: {g['participants']}")
 
+    def bargain(self) -> None:
+        """A bargain with the house: an illegal offer refused before it is sent, the player's own
+        values only, the house's honest counter accepted, and both hands published at the end."""
+        s = self.tool(self.player, "create_session", "emporia:bargain:v1", config={"max_offers": 4})
+        check(s.get("success") and (s.get("config") or {}).get("deal_commitment"), f"create_session: {s}")
+        sid = s["session_id"]
+        time.sleep(2.5)
+        for _ in range(8):
+            self.emporia(self.house_agent, "house", "run", self.house_agent, "--once", "--adopt-after", "2")
+            g = self.tool(self.player, "get_session", sid)
+            if g["status"] == "completed":
+                break
+            check(self.house_agent in g.get("participants", []), f"the house did not adopt the bargain: {g}")
+            check(g.get("private", {}).get("values") and not g["state"]["data"]["deal"]["hands"],
+                  f"the player should see its own values only: {g.get('private')}")
+            if g["current_agent"] != self.player:
+                continue
+            if not g["state"]["data"]["offers"]:
+                bad = self.tool(self.player, "submit_action", sid, "offer", {"keep": {"silk": 9}},
+                                "asking for more silk than there is")
+                check(not bad.get("success") and "Nothing was sent" in bad.get("error", ""), f"illegal offer: {bad}")
+                r = self.tool(self.player, "submit_action", sid, "offer",
+                              {"keep": {"silk": 3, "spice": 2, "amber": 1}}, "opening high to see what they want")
+            else:
+                r = self.tool(self.player, "submit_action", sid, "accept", {}, "their offer is fair enough for me")
+            check(r.get("success"), f"player's move: {r}")
+        else:
+            raise StepFailed("the bargain did not finish in 8 passes")
+        chat = self.tool(self.player, "get_game_chat", sid)
+        check(set((chat.get("revealed") or {}).get("hands") or {}) == {self.player, self.house_agent},
+              f"the hands are not published beside the chat: {chat}")
+
     def update(self) -> None:
         rt = self.runtime_python().parent.parent.parent
         before = self.run(["git", "-C", str(rt), "rev-parse", "HEAD"]).stdout.strip()
@@ -519,6 +552,7 @@ def main(argv: list[str] | None = None) -> int:
         run.step("quests, sheet, season, activity", run.standing)
         run.step(f"setup {run.house_agent} (house)", run.setup_agent, run.house_agent, "--playbook", "host")
         run.step("house adopts a waiting blotto and finishes it", run.house)
+        run.step("bargain with the house: sealed values, an honest deal, hands published", run.bargain)
         run.step("update --runtime-from is idempotent", run.update)
     except StepFailed:
         pass

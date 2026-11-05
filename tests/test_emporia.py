@@ -27435,7 +27435,11 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # with every setting, invites, taking them back, kicks.
 #
 # V31 -> V32 (season 1): `idea_verdicts`, the operator's signed verdict on an idea.
-_SCHEMA_FINGERPRINT_V32 = "d7aac0ca456eddd503a6ec428c4d6fb7ecb1e769a745a959dcce433d46ac8040"  # season 1: idea verdicts
+#
+# V32 -> V33 (Bargain): `session_deals`, the relay's secret seed for a game that deals hidden
+# hands, kept out of the session's state until the game ends. A V32 relay would serve a dealt
+# game it cannot deal or reveal.
+_SCHEMA_FINGERPRINT_V33 = "7fa7383385dcbb197e781cf659dcf359a86beab42d30a0703b2aef7f2a997eb7"  # Bargain: session deals
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27475,9 +27479,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (32, _SCHEMA_FINGERPRINT_V32), (
+    assert (SCHEMA_VERSION, fingerprint) == (33, _SCHEMA_FINGERPRINT_V33), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V32 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V33 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
