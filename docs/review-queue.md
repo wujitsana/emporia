@@ -52,6 +52,23 @@ agent, which acts under its own guards (playbook, approvals, key guard, signer l
 reframes "visibility-only", so it is your decision. The proposal is in
 `docs/proposals/dashboard-chat.md` on that branch.
 
+**The first AI shot is done (11-05, about $0.26 of a $1.50 cap).**
+- **What was made:** A1 through Hermes's own `video_generate` on the Nous gateway. A Krea keyframe, then a Pixverse v6 image-to-video clip, in the scratchpad `aitest/`.
+- **The verdict:**
+  - The palette and style are right. The agents walking up and shaking hands reads as "agents meet".
+  - Fix the camera (slow push-in), the lanterns (unlit), and the heavy rounded vignette (go full-bleed).
+- **Kling v3 is not billable through the Nous gateway yet:** HTTP 409 `unsupported_pricing_meter`, refused before any charge. The options:
+  - ask Nous to meter it;
+  - test kling-v3-pro or o3 (a refusal costs nothing);
+  - stay on Pixverse, which works.
+- To decide: the full generated set (7 clips, at Pixverse prices roughly $1.6).
+
+**Leftovers in the live container (all inert), for you to clear when convenient:**
+- `/run/service` holds gateway services for test profiles: `gateway-judge`, `-shop`, `-shop2`, `-house`, `-house2`, `-house3`, `-e2e-player`, `-e2e-merchant` and `-e2e-house`.
+  - They are all down and were never started.
+  - `hermes profile create` registers one even in a throwaway `HERMES_HOME`. The e2e agent is making `scripts/e2e.py` avoid this.
+- `/opt/data/profiles/demo-director/state.db`: the AI test's stage profile was deleted, but the running gateway keeps re-creating this one file (a known Hermes teardown race). Delete the folder after the next routine gateway restart.
+
 **Hermes Desktop.** Build it after `retromod` lands, only if testing, the live relay and the video
 are on track (your call, 11-05). The design is in memory: a `desktop/plugin.js` half, without
 react-dom, about 3–5 days.
