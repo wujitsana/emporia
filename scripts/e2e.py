@@ -8,8 +8,9 @@ hand in a throwaway Hermes home:
   port, a minimal `judge` profile with the plugin installed from this repo;
 * `hermes -p judge emporia setup` for a player (A) and a merchant playing set plays (B): each has
   the marketplace role, its keys in its .env, the plugin enabled, registers, and passes doctor;
-* playbook refusals that name how to change them; a free blotto between A and B (an illegal commit
-  refused, a like, quests, the character sheet, the season, the relay's activity count);
+* playbook refusals that name how to change them; a free `emporia:blotto:v2` between A and B, A
+  sealing a call with its move (a retired `:v1` refused, an illegal commit refused, a like, quests,
+  the character sheet with its Insight, the season, the relay's activity count);
 * a house agent that adopts a waiting free blotto and plays it to the end;
 * `hermes emporia update`, twice: the runtime is already at the pinned commit, so each verifies it
   and changes nothing.
@@ -374,13 +375,15 @@ class Run:
         check("raised" not in res, f"{name} raised {res.get('raised')}")
         return res["ok"]
 
-    def act(self, agent: str, sid: str, moves: dict[str, list[int]]) -> dict:
-        """The next commit or reveal in a blotto session, by whoever is to move."""
+    def act(self, agent: str, sid: str, moves: dict[str, list[int]], calls: dict[str, float] | None = None) -> dict:
+        """The next commit or reveal in a blotto session, by whoever is to move (with its call, if any)."""
         s = self.tool(agent, "get_session", sid)
         phase = s["state"]["data"]["phase"]
         mover = s["current_agent"]
         if phase == "commit":
-            r = self.tool(mover, "commit_move", sid, moves[mover], "committing my planned spread")
+            call = (calls or {}).get(mover)
+            r = self.tool(mover, "commit_move", sid, moves[mover], "committing my planned spread",
+                          **({"call": call} if call is not None else {}))
         else:
             r = self.tool(mover, "reveal_move", sid, "revealing the move I committed")
         check(r.get("success"), f"{mover}'s {phase}: {r}")
@@ -397,20 +400,25 @@ class Run:
             check("agent playbook" in r["error"], f"the refusal names no way to change it: {r['error']}")
 
     def blotto(self) -> str:
-        s = self.tool(self.player, "create_session", "emporia:blotto:v1",
+        old = self.tool(self.player, "create_session", "emporia:blotto:v1", config={"opponent": self.merchant})
+        check(not old.get("success") and "retired" in json.dumps(old) and "emporia:blotto:v2" in json.dumps(old),
+              f"a retired :v1 set play was created, or its refusal names no successor: {old}")
+        s = self.tool(self.player, "create_session", "emporia:blotto:v2",
                       config={"rounds": 1, "battlefields": 3, "troops": 10, "opponent": self.merchant})
         check(s.get("success"), f"create_session: {s}")
         sid = s["session_id"]
         j = self.tool(self.merchant, "join_session", sid)
         check(j.get("success"), f"join_session: {j}")
         moves = {self.player: [6, 4, 0], self.merchant: [4, 3, 3]}
-        for _ in range(4):
-            r = self.act(self.player, sid, moves)
+        for _ in range(4):        # the player seals a call with its move; the merchant makes none
+            r = self.act(self.player, sid, moves, calls={self.player: 0.7})
         check(r.get("is_terminal") and (r.get("outcome") or {}).get("winner") == self.player, f"the end: {r}")
+        g = self.tool(self.player, "get_session", sid)
+        check(g["state"]["data"].get("calls") == {self.player: 70}, f"the call was not revealed with the move: {g['state']['data']}")
         return sid
 
     def illegal_commit(self) -> None:
-        s = self.tool(self.player, "create_session", "emporia:blotto:v1",
+        s = self.tool(self.player, "create_session", "emporia:blotto:v2",
                       config={"battlefields": 3, "troops": 10, "opponent": self.merchant})
         sid = s["session_id"]
         self.tool(self.merchant, "join_session", sid)
@@ -429,23 +437,27 @@ class Run:
     def standing(self) -> None:
         q = self.tool(self.player, "my_quests")
         done = {x["id"] for x in q.get("quests", []) if x.get("done")}
-        check("first-set-play" in done, f"quests done: {sorted(done)}")
+        check({"first-set-play", "call"} <= done, f"quests done: {sorted(done)}")
         sheet = self.tool(self.player, "character_sheet")
         craft = {c["module_type"]: c for c in sheet.get("craft", [])}
-        check("rating" in craft.get("emporia:blotto:v1", {}), f"no Craft blotto rating: {sheet.get('craft')}")
+        check("rating" in craft.get("emporia:blotto:v2", {}), f"no Craft blotto rating: {sheet.get('craft')}")
+        ins = sheet.get("insight") or {}
+        check(ins.get("games") == 1 and "per game over 1 game" in ins.get("why", ""),
+              f"the sheet does not score the call: {ins}")
         renown = sheet.get("renown") or {}
         check(renown.get("likes") == 1 and "swap cancels" in " ".join(renown.get("why") or []),
               f"Renown does not say why a swapped like counts nothing: {renown}")
         shown = self.emporia(self.player, "sheet", self.player)
         check("Renown" in shown and "swap cancels" in shown, f"emporia sheet: {shown.strip()[-300:]}")
         season = self.tool(self.player, "season")
-        check(season.get("boards", {}).get("emporia:blotto:v1"), f"no blotto ladder: {season.get('boards')}")
+        check(season.get("boards", {}).get("emporia:blotto:v2"), f"no blotto ladder: {season.get('boards')}")
+        check("insight" in season.get("boards", {}), f"no Insight board: {sorted(season.get('boards', {}))}")
         with urllib.request.urlopen(self.relay_url + "/relay/activity", timeout=5) as resp:
             act = json.loads(resp.read())
         check(act.get("active_agents") == 2, f"/relay/activity: {act}")
 
     def house(self) -> None:
-        s = self.tool(self.player, "create_session", "emporia:blotto:v1", config={"battlefields": 3, "troops": 10})
+        s = self.tool(self.player, "create_session", "emporia:blotto:v2", config={"battlefields": 3, "troops": 10})
         check(s.get("success"), f"create_session: {s}")
         sid = s["session_id"]
         time.sleep(2.5)                           # waiting longer than --adopt-after 2

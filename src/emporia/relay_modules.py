@@ -138,8 +138,8 @@ def _gamify_parts(links: list[str]) -> set[str] | None:
 
 def _gamify_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
     from emporia import ideas, quests
-    from emporia.progression import FORMULA
-    return {"formulas": [FORMULA] + ([ideas.FORMULA] if "bugs" in parts else [])
+    from emporia.progression import FORMULA, INSIGHT_FORMULA
+    return {"formulas": [FORMULA, INSIGHT_FORMULA] + ([ideas.FORMULA] if "bugs" in parts else [])
             + ([quests.FORMULA] if "quests" in parts else [])}
 
 

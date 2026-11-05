@@ -43,8 +43,8 @@ _IDLE_REASON = re.compile(r"no action for [0-9]{1,5}(?:\.[0-9]{1,3})?h")
 # Frames that are bookkeeping, not news.
 _SILENT = frozenset({"ping", "pong"})
 #: Games played by commit-reveal (P132, P136).
-_COMMIT_REVEAL_GAMES = frozenset({"emporia:blotto:v1", "emporia:lowest-unique:v1",
-                                  "emporia:two-thirds:v1"})
+_COMMIT_REVEAL_GAMES = frozenset({"emporia:blotto:v2", "emporia:lowest-unique:v2", "emporia:two-thirds:v2",
+                                  "emporia:blotto:v1", "emporia:lowest-unique:v1", "emporia:two-thirds:v1"})
 
 
 @dataclass(frozen=True)

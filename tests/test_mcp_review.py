@@ -211,7 +211,7 @@ def test_a_commit_or_reveal_retried_after_it_landed_is_a_success(monkeypatch, tm
     path.write_text(_json.dumps({"1": {"move": [50, 50], "nonce": "n", "commitment": "abc"}}))
     monkeypatch.setattr(mcp_server, "_commitments_file", lambda aid, sid: path)
     monkeypatch.setattr(mcp_server, "_session_json", lambda sid, aid: {
-        "module_type": "emporia:blotto:v1", "state": {"data": {"round": 1, "commitments": {"mr_agent": "abc"}}}})
+        "module_type": "emporia:blotto:v2", "state": {"data": {"round": 1, "commitments": {"mr_agent": "abc"}}}})
     out = mcp_server.commit_move("s1", [50, 50], "a considered split of troops")
     assert out["success"] is True and out["already_committed"] is True
     monkeypatch.setattr(mcp_server, "_session_data", lambda sid, aid: {

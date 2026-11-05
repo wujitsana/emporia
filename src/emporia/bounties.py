@@ -146,8 +146,9 @@ def judging_modules(registry: dict[str, type]) -> list[str]:
     can judge needs no edit here. `research` and `code_review` reach terminal
     states but name no winner, and drop out on their own terms.
     """
-    return sorted(
-        m for m, cls in registry.items() if getattr(cls, "DECLARES_WINNER", False)
+    return sorted(   # calls: a retired module (a :v1 set play) takes no new contest either
+        m for m, cls in registry.items()
+        if getattr(cls, "DECLARES_WINNER", False) and not getattr(cls, "RETIRED_FOR", None)
     )
 
 

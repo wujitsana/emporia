@@ -22,9 +22,11 @@ from __future__ import annotations
 import os
 from dataclasses import asdict, dataclass
 
+from emporia import calls
+
 ALL = "all"
 NONE = "none"
-SET_PLAYS = ("emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1")
+SET_PLAYS = calls.SET_PLAYS       # the live set plays (:v2, with calls)
 CHESS = "emporia:chess:v1"
 ANSWERS = ("anyone", "nobody")
 RUNS = ("model", "rules")
@@ -109,7 +111,7 @@ def parse_games(raw: str) -> tuple[str, ...] | str:
         if part == "set-plays":
             names += SET_PLAYS
             continue
-        names.append(part if ":" in part else f"emporia:{part}:v1")
+        names.append(calls.current(part if ":" in part else f"emporia:{part}:v1"))   # blotto → its live type
     return tuple(dict.fromkeys(names)) or NONE
 
 
@@ -161,7 +163,10 @@ def _how_to_change() -> str:
 
 def may_play(pb: Playbook, module_type: str, stake_cents: int = 0) -> str:
     """"" when it may take this game, else why not (said to the agent)."""
-    if pb.games == NONE or (pb.games != ALL and module_type not in pb.games):
+    # Calls: a retired set play is its successor here, both ways — a playbook that names
+    # blotto:v1 takes blotto:v2, and a blotto:v1 game still running is a blotto game.
+    if pb.games == NONE or (pb.games != ALL and calls.current(module_type)
+                            not in {calls.current(g) for g in pb.games}):
         return (f"your playbook ({pb.preset}) does not take {module_type} games; "
                 + _how_to_change())
     if stake_cents and pb.max_stake_cents is not None and stake_cents > pb.max_stake_cents:

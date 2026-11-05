@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from emporia.relay_server import app
 from tests.test_emporia import _register
 
-BLOTTO = "emporia:blotto:v1"
+BLOTTO = "emporia:blotto:v2"
 
 
 @pytest.fixture
@@ -44,6 +44,6 @@ def test_a_named_opponent_must_be_another_registered_agent(client, opponent, why
 def test_a_named_opponent_is_for_two_player_sessions(client):
     _register(client, "no_g1")
     _register(client, "no_g2")
-    r = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "creator_agent_id": "no_g1",
+    r = client.post("/sessions", json={"module_type": "emporia:two-thirds:v2", "creator_agent_id": "no_g1",
                                        "config": {"opponent": "no_g2"}}, headers={"x-emporia-agent-id": "no_g1"})
     assert r.status_code == 400 and "two-player" in r.text

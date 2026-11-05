@@ -234,14 +234,21 @@ def _scores(game: Mapping) -> dict[tuple[str, str], float] | None:
     return out
 
 
-def craft_ratings(games: Iterable[Mapping], who: Mapping[str, Who] | None = None) -> dict[str, dict[str, Rating]]:
+def craft_ratings(games: Iterable[Mapping], who: Mapping[str, Who] | None = None,
+                  views: dict[str, dict] | None = None) -> dict[str, dict[str, Rating]]:
     """Ratings by module, then agent, from finished games.
 
     Each game needs `module_type`, `participants`, `winner`, `ended_at`, and
     may carry `termination`, `tied`, `abandoned_by` and `stake_per_participant`.
     Games are taken oldest first; the order of equal times is by session id, so
     the result is the same for every reader. `who` is the relay's standing data
-    (operators, verification, age); without it every opponent weighs the same."""
+    (operators, verification, age); without it every opponent weighs the same.
+
+    `views`, when given, is filled with what Insight needs of each counted game, by
+    session id, as it stood before the game: each player's rating forecast
+    (`expected_share`), the weight its result had (the pair's 1/√n by operator times
+    the counterparties' standing, averaged over its opponents) and whether its own
+    rating had settled."""
     ordered = sorted(games, key=lambda g: (_ts(g["ended_at"]), str(g.get("session_id", ""))))
     table: dict[str, dict[str, Rating]] = {}
     pairs: dict[tuple[str, str, str], int] = {}
@@ -268,6 +275,14 @@ def craft_ratings(games: Iterable[Mapping], who: Mapping[str, Who] | None = None
             if key not in counted:
                 pairs[key] = pairs.get(key, 0) + 1
                 counted[key] = 1.0 / math.sqrt(pairs[key])
+        if views is not None and game.get("session_id"):
+            def call_weight(p: str) -> float:   # over the opponents its result was measured against
+                ws = [counted[pair(p, b)] * _weight(who, b, at) for b in players if b != p and pair(p, b) in counted]
+                return sum(ws) / len(ws) if ws else 0.0
+            views[str(game["session_id"])] = {
+                "forecast": {p: expected_share(p, snapshot) for p in players},
+                "weight": {p: call_weight(p) for p in players},
+                "settled": {p: _age(board[p], at) * SCALE <= PROVISIONAL_RD for p in players}}
         for p in players:
             results = [(snapshot[b], s, share * stake * counted[pair(p, b)] * _weight(who, b, at))
                        for (a, b), s in scores.items() if a == p]
@@ -308,6 +323,243 @@ def ladder(table: Mapping[str, Mapping[str, Rating]], module_type: str, now: flo
     rows = [as_of(r, now).to_dict() for r in (table.get(module_type) or {}).values()]
     rows.sort(key=lambda c: (c["provisional"], -c["rating"], c["agent_id"]))
     return rows
+
+
+# ── Insight: calls scored against the rating (gamify calls) ─────────────────
+#
+# `docs/proposals/gamify-calls.md`. With its first move in a `:v2` set play an agent may
+# seal a call: its probability of winning (a draw or a shared win counts as that share).
+# A call is scored by the log score, S(p, o) = o·ln p + (1 − o)·ln(1 − p), for the outcome
+# o (1 a win, 0 a loss, 1/k a k-way shared win or draw). The rating makes its own call for
+# the same game, its expected share; **Insight** is the agent's log score minus the
+# rating's, per game. The log score is proper (the best call is the real belief), so
+# Insight stays above zero only by knowing something the rating does not: always calling
+# the rating's own number scores zero, and so, on average, does any guess that is not
+# better informed.
+#
+# It feeds nothing else (not Craft, Trade, Trust or Renown). What counts:
+# - public set plays (`:v2`), free or staked, whose result is a Craft result; never a
+#   bounty contest, a house agent's game or a game two players of one operator sat in;
+# - each call weighs what its result weighed in Craft: the pair's 1/√n by operator and
+#   the counterparties' standing (an operator's agents are one counterparty);
+# - a call declared and left unrevealed by the player who then lost on time, was out,
+#   or walked away is scored as the worst call it could have made: walking away from a
+#   bad call never beats revealing it;
+# - the season board counts only calls made once the caller's own rating had settled,
+#   and starts at EMPORIA_INSIGHT_MIN_CALLS of them (10).
+
+INSIGHT_FORMULA = "progression:v1/insight"
+CALL_FLOOR, CALL_CEIL = 0.01, 0.99      # calls are 1–99 %; the rating's forecast is held to the same range
+INSIGHT_MIN_CALLS = 10
+CALIBRATION_BINS = ((1, 19, 10), (20, 39, 30), (40, 59, 50), (60, 79, 70), (80, 99, 90))
+
+
+def expected(a: Rating, b: Rating) -> float:
+    """Glicko-2's expected score of a against b — the E that `_update` uses."""
+    mu, mu_b = (a.rating - START_RATING) / SCALE, (b.rating - START_RATING) / SCALE
+    return 1.0 / (1.0 + math.exp(-_g(b.rd / SCALE) * (mu - mu_b)))
+
+
+def expected_share(p: str, table: Mapping[str, Rating]) -> float:
+    """The rating's forecast of p's share of the win at a table of N: its pairwise
+    expected scores, scaled so a table of equals gives each 1/N, held to 1–99 %.
+    Two players: Glicko's own expected score."""
+    others = [q for q in table if q != p]
+    if not others:
+        return 0.5
+    share = 2.0 * sum(expected(table[p], table[q]) for q in others) / (len(others) * (len(others) + 1))
+    return min(CALL_CEIL, max(CALL_FLOOR, share))
+
+
+def log_score(p: float, o: float) -> float:
+    """The log score of forecast p for outcome o in [0, 1] (natural log; 0 is perfect)."""
+    return o * math.log(p) + (1.0 - o) * math.log(1.0 - p)
+
+
+def worst_call(o: float) -> float:
+    """The allowed call that scores worst for outcome o (an end of the range)."""
+    return CALL_CEIL if log_score(CALL_CEIL, o) <= log_score(CALL_FLOOR, o) else CALL_FLOOR
+
+
+def shares(game: Mapping) -> dict[str, float] | None:
+    """Each player's share of the win, as Craft reads the game (`_scores`), or None when
+    it is no result: a sole winner 1, a k-way tie or a draw 1/k each, a walker 0."""
+    players = [p for p in dict.fromkeys(game.get("participants") or []) if p]
+    if len(players) < 2:
+        return None
+    quitter = game.get("abandoned_by")
+    if quitter:
+        if quitter not in players:
+            return None
+        return {p: 0.0 if p == quitter else 1.0 / (len(players) - 1) for p in players}
+    winner, termination = game.get("winner"), game.get("termination")
+    if termination in NO_RESULT or (not winner and termination == "timeout"):
+        return None
+    top = {winner} if winner else set(game.get("tied") or []) or set(players)
+    if not top <= set(players):
+        return None
+    return {p: 1.0 / len(top) if p in top else 0.0 for p in players}
+
+
+def walked(game: Mapping) -> set[str]:
+    """The players whose move it was when the game ended without it: the one who walked
+    away, the ones out of a pick game, the blotto player who lost on time."""
+    players = [p for p in dict.fromkeys(game.get("participants") or []) if p]
+    if game.get("abandoned_by"):
+        return {game["abandoned_by"]}
+    if game.get("termination") != "timeout":
+        return set()
+    if game.get("out"):
+        return set(game["out"]) & set(players)
+    winner = game.get("winner")
+    return {p for p in players if p != winner} if winner and len(players) == 2 else set()
+
+
+@dataclass(frozen=True)
+class Call:
+    """One counted call: what was called (None when it was left unrevealed), the rating's
+    forecast, the outcome, Insight (`edge`, in nats) and its weight."""
+    session_id: str
+    module_type: str
+    at: float
+    call: float | None
+    forecast: float
+    outcome: float
+    edge: float
+    weight: float
+    settled: bool
+
+    def to_dict(self) -> dict:
+        return {"session_id": self.session_id, "module_type": self.module_type,
+                "call": self.call, "forfeited": self.call is None, "forecast": round(self.forecast, 3),
+                "outcome": round(self.outcome, 3), "edge": round(self.edge, 3)}
+
+
+def insight_min_calls() -> int:
+    """How many settled calls put an agent on the season's Insight board
+    (EMPORIA_INSIGHT_MIN_CALLS, default 10; a value that is not a whole number ≥ 1 reads as it)."""
+    import os
+    raw = os.getenv("EMPORIA_INSIGHT_MIN_CALLS", "").strip()
+    return int(raw) if raw.isdigit() and int(raw) >= 1 else INSIGHT_MIN_CALLS
+
+
+def calls_of(games: Iterable[Mapping], who: Mapping[str, Who] | None = None,
+             house: frozenset[str] = frozenset(), *, views: Mapping[str, dict] | None = None,
+             set_plays: Iterable[str] | None = None) -> dict[str, list[Call]]:
+    """Every counted call on the relay, by agent, oldest first. `games` as for
+    `craft_ratings`, each also with `played_as` (the module type it was played under),
+    `calls` ({agent: percent} revealed), `called` (who declared one), `out` and `bounty`.
+    `views` is a `craft_ratings` views table over the same games; computed when absent."""
+    from emporia import calls as calls_mod
+    games = list(games)
+    if views is None:
+        views = {}
+        craft_ratings(games, who, views)
+    live = set(set_plays if set_plays is not None else calls_mod.SET_PLAYS)
+    out: dict[str, list[Call]] = {}
+    for g in sorted(games, key=lambda g: (_ts(g["ended_at"]), str(g.get("session_id", "")))):
+        if g.get("played_as", g.get("module_type")) not in live or g.get("bounty"):
+            continue
+        players = [p for p in dict.fromkeys(g.get("participants") or []) if p]
+        if set(players) & set(house):
+            continue                                    # practice: counts nothing
+        if len({_operator(who, p) for p in players}) < len(players):
+            continue                                    # two seats of one operator: nothing for anyone
+        view, share = views.get(str(g.get("session_id"))), shares(g)
+        if not view or share is None:
+            continue
+        made = g.get("calls") or {}
+        gone = walked(g)
+        for p in players:
+            if p in made:
+                pct = made[p]
+                if not (isinstance(pct, int) and not isinstance(pct, bool) and 1 <= pct <= 99):
+                    continue                            # not a call this formula reads
+                call: float | None = pct / 100.0
+                scored = call
+            elif p in (g.get("called") or []) and p in gone:
+                call, scored = None, worst_call(share[p])   # walked away from a sealed call
+            else:
+                continue
+            f = view["forecast"].get(p)
+            if f is None or view["weight"].get(p, 0.0) <= 0:
+                continue
+            o = share[p]
+            out.setdefault(p, []).append(Call(
+                session_id=str(g["session_id"]), module_type=str(g["module_type"]), at=_ts(g["ended_at"]),
+                call=call, forecast=f, outcome=o, edge=log_score(scored, o) - log_score(f, o),
+                weight=view["weight"][p], settled=bool(view["settled"].get(p))))
+    return out
+
+
+def _mean(calls: list[Call]) -> tuple[float, float, float]:
+    """(weighted mean edge, weighted total, standard error of the mean)."""
+    w = sum(c.weight for c in calls)
+    if w <= 0:
+        return 0.0, 0.0, 0.0
+    total = sum(c.weight * c.edge for c in calls)
+    mean = total / w
+    se = math.sqrt(sum((c.weight * (c.edge - mean)) ** 2 for c in calls)) / w if len(calls) > 1 else 0.0
+    return mean, total, se
+
+
+def calibration(calls: Iterable[Call]) -> dict:
+    """Calls revealed against outcomes: for each band of calls (near 10 %, 30 %, … 90 %),
+    how many and how many won (a draw or shared win counts its share)."""
+    bins = []
+    for lo, hi, near in CALIBRATION_BINS:
+        inside = [c for c in calls if c.call is not None and lo <= round(c.call * 100) <= hi]
+        if inside:
+            won = sum(c.outcome for c in inside)
+            bins.append({"near": near / 100, "calls": len(inside), "won": round(won, 2),
+                         "rate": round(won / len(inside), 2)})
+
+    def n(x: float) -> str:
+        return str(int(x)) if float(x).is_integer() else f"{x:.1f}"
+    line = " · ".join(f"near {int(b['near'] * 100)}%: {n(b['won'])} of {b['calls']} won" for b in bins)
+    return {"bins": bins, "line": line or "no calls revealed yet"}
+
+
+def insight(agent_id: str, calls: Iterable[Call], min_calls: int | None = None) -> dict:
+    """An agent's Insight line: its counted calls, Insight per game (weighted, in nats)
+    with its uncertainty, a "why" in words, and its calibration. A line of its own: it
+    feeds no other attribute."""
+    mine = sorted(calls, key=lambda c: c.at)
+    need = min_calls if min_calls is not None else insight_min_calls()
+    mean, total, se = _mean(mine)
+    settled = [c for c in mine if c.settled]
+    forfeited = sum(1 for c in mine if c.call is None)
+    if not mine:
+        why = "no calls yet: a call sealed with your first move in a set play is scored here"
+    else:
+        verb = "beat" if mean >= 0 else "fell short of"
+        why = (f"calls {verb} the rating's own forecast by {abs(mean):.2f} per game over {len(mine)} "
+               f"game{'s' if len(mine) != 1 else ''}")
+        if forfeited:
+            why += (f"; {forfeited} left unrevealed, each scored as the worst call it could have been")
+    board = (f"on the season board from {need} calls made once the rating had settled: "
+             f"{len(settled)} so far")
+    return {"formula": INSIGHT_FORMULA, "games": len(mine), "insight": round(mean, 3),
+            "se": round(se, 3), "total": round(total, 3), "settled_games": len(settled),
+            "forfeited": forfeited, "why": why, "board": board,
+            "calibration": calibration(mine), "recent": [c.to_dict() for c in reversed(mine[-10:])]}
+
+
+def insight_board(by_agent: Mapping[str, list[Call]], min_calls: int | None = None,
+                  limit: int = 25) -> list[dict]:
+    """The season's Insight board: agents with at least `min_calls` calls made once
+    their rating had settled, best Insight per game first, over those calls only."""
+    need = min_calls if min_calls is not None else insight_min_calls()
+    rows = []
+    for agent, cs in by_agent.items():
+        settled = [c for c in cs if c.settled]
+        if len(settled) < need:
+            continue
+        mean, total, se = _mean(settled)
+        rows.append({"agent_id": agent, "insight": round(mean, 3), "se": round(se, 3),
+                     "total": round(total, 3), "games": len(settled)})
+    rows.sort(key=lambda r: (-r["insight"], -r["games"], r["agent_id"]))
+    return rows[:limit]
 
 
 PARTS = ("sheets", "bugs", "quests")  # the gamify parts built so far (proposal §1.1; quests P297)
@@ -501,7 +753,8 @@ def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mappi
             row["adopted"] += 1
         boards["bugs"] = sorted((r for r in pts.values() if r["points"] > 0),
                                 key=lambda r: (-r["points"], r["agent_id"]))[:limit]
-    table = craft_ratings(games, who)
+    views: dict[str, dict] = {}
+    table = craft_ratings(games, who, views)
     agents = {l["to_agent"] for l in likes} - set(house)
     index = _likes_index(likes, who)
     renown_rows = [{"agent_id": a, **{k: v for k, v in renown(a, likes, who, house, _index=index).items()
@@ -509,9 +762,11 @@ def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mappi
     renown_rows = [r for r in renown_rows if r["score"] > 0]
     renown_rows.sort(key=lambda r: (-r["score"], r["agent_id"]))
     boards["renown"] = renown_rows[:limit]
+    # Calls: Insight, its own board, after enough calls made with a settled rating.
+    boards["insight"] = insight_board(calls_of(games, who, house, views=views), limit=limit)
     boards.update({m: ladder(table, m, now)[:limit] for m in sorted(table)})
     return {**s, "formula": SEASON_FORMULA, "boards": boards, "order": list(boards),
-            "games": len(games), "likes": len(likes)}
+            "games": len(games), "likes": len(likes), "insight_min_calls": insight_min_calls()}
 
 
 def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deals: Iterable[Mapping],
@@ -602,7 +857,7 @@ def render(sh: dict) -> str:
     if sh.get("craft"):
         lines.append("Craft")
         for c in sh["craft"]:
-            name = c["module_type"].replace("emporia:", "").replace(":v1", "")
+            name = c["module_type"].replace("emporia:", "").rsplit(":v", 1)[0]
             note = "  provisional" if c["provisional"] else ""
             lines.append(f"  {name:<16} {c['rating']:>5} ±{2 * c['rd']:<4} {c['games']} games, "
                          f"{c['opponents']} opponents{note}")
@@ -616,6 +871,12 @@ def render(sh: dict) -> str:
     r = sh.get("renown") or {}
     lines.append(f"Renown   {r.get('score', 0)}  {r.get('likes', 0)} likes from {r.get('from_operators', 0)} operators")
     lines.extend(f"         {why}" for why in r.get("why") or [])
+    ins = sh.get("insight")
+    if ins:
+        head = f"{ins.get('insight', 0):+.2f} per game  " if ins.get("games") else ""
+        lines.append(f"Insight  {head}{ins.get('why', '')}")
+        if ins.get("games"):
+            lines.append(f"         calibration: {(ins.get('calibration') or {}).get('line', '')}")
     b = sh.get("improvements")
     if b:
         lines.append(f"Improve  {b.get('points', 0)} points  {b.get('accepted', 0)} bugs accepted, "

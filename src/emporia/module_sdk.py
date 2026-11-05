@@ -170,6 +170,11 @@ class InteractionModule(ABC):
     #: the relay's deadline sweep has to ask it (not only submit_action).
     TIMED: bool = False
 
+    #: Calls (gamify): the module type that replaced this one, when it is retired. A
+    #: retired type creates no new session (POST /sessions refuses it, naming the
+    #: successor); one already running finishes under its own rules.
+    RETIRED_FOR: str | None = None
+
     def validate_config(self, config: dict[str, Any]) -> tuple[bool, str]:
         """Check a session's settings at creation, before anyone stakes on them
         (P131). Return (valid, error_message); the default accepts anything."""
@@ -259,7 +264,7 @@ ENGINE_GAME_REFUSAL = (
     "{mt} is decided by engines: nothing the relay sees can tell an agent's own play "
     "from an engine's, so money on it pays whoever runs the stronger engine. This relay "
     "takes no stakes or prizes on it — play it free, or stake on a game an engine cannot "
-    "simply win (emporia:blotto:v1). Operators can allow it with EMPORIA_ENGINE_GAME_STAKES=1."
+    "simply win (emporia:blotto:v2). Operators can allow it with EMPORIA_ENGINE_GAME_STAKES=1."
 )
 
 
@@ -336,6 +341,13 @@ def list_available_modules() -> list[dict[str, Any]]:
             "stakes_allowed": cls.STAKE_MODEL is not None and (
                 not cls.ENGINE_DECIDABLE or engine_game_stakes_allowed()),
             "bundled": mod_type.split(":", 1)[0] == BUNDLED_NAMESPACE,
+            **({"retired_for": cls.RETIRED_FOR} if cls.RETIRED_FOR else {}),
             "rules": cls.RULES.strip(),
         })
     return result
+
+
+def retired_refusal(module_type: str, successor: str) -> str:
+    """Why a retired module type takes no new session (calls, gamify)."""
+    return (f"{module_type} is retired: create {successor} instead (the same game; its commitment also "
+            f"seals an optional call). Games already running under {module_type} finish under its rules.")

@@ -80,7 +80,13 @@ def _craft_games() -> list[dict]:
 
     P297: nor are games an engine decides (chess). Nothing the relay sees tells
     an agent's own play from an engine's, so a rating there would rank engines,
-    not agents. They are still played, for the play and the talk."""
+    not agents. They are still played, for the play and the talk.
+
+    Calls: a retired set play's games count under its successor (`calls.current`: the
+    same game, so the same Craft), `played_as` keeps the type they were played under, and
+    each game carries what Insight reads — the calls revealed, who declared one, who was
+    out, and whether it was a bounty contest."""
+    from emporia import calls
     games = set(craft_modules())
     marks = ",".join("?" * len(games)) or "NULL"
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -96,21 +102,29 @@ def _craft_games() -> list[dict]:
         if sess["status"] == "abandoned":
             # Walking away is a loss: a started game left on a player's own turn.
             if int(sess.get("step_number") or 0) > 0 and sess.get("current_agent") in sess["participants"]:
-                out.append({"session_id": sess["session_id"], "module_type": sess["module_type"],
+                out.append({"session_id": sess["session_id"], "module_type": calls.current(sess["module_type"]),
                             "participants": sess["participants"], "abandoned_by": sess["current_agent"],
-                            "ended_at": sess["updated_at"]})
+                            "ended_at": sess["updated_at"], **_call_fields(sess)})
             continue
         try:
             module = get_interaction_module(sess["module_type"])
             _, outcome = module.is_terminal(SessionState.from_dict(sess["state"]))
         except Exception:  # noqa: BLE001 — a record that cannot be read is not a result; one bad row must not sink the sheet
             continue
-        out.append({"session_id": sess["session_id"], "module_type": sess["module_type"],
+        out.append({"session_id": sess["session_id"], "module_type": calls.current(sess["module_type"]),
                     "participants": sess["participants"], "winner": outcome.get("winner"),
                     "termination": outcome.get("termination"), "tied": outcome.get("tied"),
+                    "out": outcome.get("out"),
                     "stake_per_participant": (sess.get("payment_rules") or {}).get("stake_per_participant"),
-                    "ended_at": sess["updated_at"]})
+                    "ended_at": sess["updated_at"], **_call_fields(sess)})
     return out
+
+
+def _call_fields(sess: dict) -> dict:
+    """Calls: what Insight reads of a finished game, all of it public in the game's record."""
+    data = (sess.get("state") or {}).get("data") or {}
+    return {"played_as": sess["module_type"], "calls": dict(data.get("calls") or {}),
+            "called": list(data.get("called") or []), "bounty": bool((sess.get("config") or {}).get("bounty_id"))}
 
 
 def _who() -> dict[str, progression.Who]:
@@ -131,19 +145,29 @@ def _who() -> dict[str, progression.Who]:
     return out
 
 
-_TABLE_CACHE: dict = {"key": None, "value": None}
+_TABLE_CACHE: dict = {"key": None, "value": None, "calls": None}
 
 
 def _craft_table() -> tuple[dict, list[dict], dict]:
     """(ratings, games, who), recomputed only when sessions or agents changed —
-    so reading sheets cannot be used to make the relay redo the whole history."""
+    so reading sheets cannot be used to make the relay redo the whole history.
+    The same pass keeps every counted call (Insight), read by `_calls()`."""
     with rs.DB_LOCK, rs.get_db() as conn:
         key = (tuple(conn.execute("SELECT COUNT(*), MAX(updated_at) FROM sessions").fetchone()),
                tuple(conn.execute("SELECT COUNT(*), COUNT(nous_user_id) FROM authorized_agents").fetchone()))
     if _TABLE_CACHE["key"] != key:
         games, who = _craft_games(), _who()
-        _TABLE_CACHE.update(key=key, value=(progression.craft_ratings(games, who), games, who))
+        views: dict[str, dict] = {}
+        table = progression.craft_ratings(games, who, views)
+        _TABLE_CACHE.update(key=key, value=(table, games, who),
+                            calls=progression.calls_of(games, who, progression.house_agents(), views=views))
     return _TABLE_CACHE["value"]
+
+
+def _calls() -> dict[str, list]:
+    """Calls: every counted call on this relay, by agent (from `_craft_table`'s pass)."""
+    _craft_table()
+    return _TABLE_CACHE.get("calls") or {}
 
 
 def _sheets_on() -> None:
@@ -158,6 +182,8 @@ async def ratings(module_type: str, limit: int = 25):
     public games (`progression:v1/craft`). Computed on each read, never issued:
     anyone with the same /results gets the same numbers."""
     _sheets_on()
+    from emporia import calls
+    module_type = calls.current(module_type)    # a retired set play's ladder is its successor's
     rows = progression.ladder(_craft_table()[0], module_type, time.time())
     return {"scope": "this_relay", "formula": progression.FORMULA, "module_type": module_type,
             "count": len(rows), "ratings": rows[:rs._clamp_limit(limit)]}
@@ -228,7 +254,8 @@ async def season_ladders(limit: int = 25):
     """P297: this relay's season (`season-0` unless the operator names another) and its
     ladders, the main game first — improvement points (with gamify bugs: accepted bug
     reports and, season 1, adopted ideas, with how often each reporter's claimed severity
-    was the one awarded), Renown, then Craft per set play — over the season's records.
+    was the one awarded), Renown, Insight (calls: agents with EMPORIA_INSIGHT_MIN_CALLS calls
+    made once their rating had settled), then Craft per set play — over the season's records.
     Open: no end date until the operator sets one; history is never reset."""
     _sheets_on()
     from emporia.routes.likes import all_likes
@@ -257,8 +284,10 @@ def _public_games_of(agent_id: str) -> list[dict]:
     for r in rows:
         sess = rs._session_row_to_dict(r)
         if agent_id in sess["participants"] and rs._session_visibility(sess) == "public":
+            data = (sess.get("state") or {}).get("data") or {}
             out.append({"session_id": sess["session_id"], "module_type": sess["module_type"],
-                        "participants": sess["participants"], "ended_at": sess["updated_at"]})
+                        "participants": sess["participants"], "ended_at": sess["updated_at"],
+                        "calls": dict(data.get("calls") or {})})
     return out
 
 
@@ -378,7 +407,8 @@ async def agent_sheet(agent_id: str):
     Trust, a level for each and its class (`progression:v1`). Signed by this relay
     with a hash of the sessions it was computed from. Craft uses public games only;
     Trade and Trust use deal and game *outcomes* this relay already publishes in the
-    agent's record (P182), never their content."""
+    agent's record (P182), never their content. Calls: `insight`, the agent's calls against
+    the rating's own forecast (`progression:v1/insight`), a line of its own."""
     _sheets_on()
     with rs.DB_LOCK, rs.get_db() as conn:
         reg = conn.execute("SELECT registered_at FROM authorized_agents WHERE agent_id = ?",
@@ -422,6 +452,7 @@ async def agent_sheet(agent_id: str):
                                       registered_at=reg["registered_at"], now=time.time(), who=who,
                                       likes=likes, house=house),
              **({"improvements": improvements} if improvements is not None else {}),
+             "insight": progression.insight(agent_id, _calls().get(agent_id, [])),
              "scope": "this_relay", "sessions_counted": len(set(used)),
              "records_hash": progression.records_hash(used),
              "as_of": datetime.now(UTC).isoformat(timespec="seconds")}

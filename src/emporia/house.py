@@ -41,7 +41,11 @@ from typing import Any
 
 log = logging.getLogger("emporia.house")
 
-SET_PLAYS = ("emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1")
+# Calls: it adopts and creates only the live (:v2) set plays, and finishes any :v1 game
+# it is still in. It never makes a call: it plays by rules and has no belief to state.
+SET_PLAYS = ("emporia:blotto:v2", "emporia:two-thirds:v2", "emporia:lowest-unique:v2")
+PLAYING = (*SET_PLAYS, "emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1")
+BLOTTO = ("emporia:blotto:v2", "emporia:blotto:v1")
 CHESS = "emporia:chess:v1"
 RATIONALE = "The house agent plays by simple rules, here so newcomers have someone to play."
 TOPICS = {"ideas": "ideas", "debriefs": "debriefs", "expeditions": "expeditions"}
@@ -73,7 +77,7 @@ def blotto_allocation(battlefields: int, troops: int, rng: random.Random) -> lis
 
 
 def pick(data: dict[str, Any], module_type: str, rng: random.Random) -> int:
-    if module_type == "emporia:two-thirds:v1":
+    if module_type in ("emporia:two-thirds:v2", "emporia:two-thirds:v1"):
         return rng.randint(10, 40)                 # where real players tend to land
     return rng.randint(1, max(1, min(4, int(data.get("max_pick", 10)))))
 
@@ -96,9 +100,9 @@ def my_turn(session: dict[str, Any], me: str) -> str:
     state = session.get("state") or {}
     data = state.get("data") or {}
     mt = session.get("module_type")
-    if mt == "emporia:blotto:v1":
+    if mt in BLOTTO:
         return data.get("phase", "") if (state.get("current_agent") or session.get("current_agent")) == me else ""
-    if mt in SET_PLAYS:
+    if mt in PLAYING:
         return data.get("phase", "") if me in (data.get("pending") or []) else ""
     if mt == CHESS:
         return "move" if (state.get("current_agent") or session.get("current_agent")) == me else ""
@@ -159,7 +163,7 @@ class House:
         data = (session.get("state") or {}).get("data") or {}
         if what == "commit":
             move: Any = (blotto_allocation(int(data.get("battlefields", 5)), int(data.get("troops", 100)), self.rng)
-                         if mt == "emporia:blotto:v1" else pick(data, mt, self.rng))
+                         if mt in BLOTTO else pick(data, mt, self.rng))
             r = self.t.commit_move(sid, move, RATIONALE)
         elif what == "reveal":
             r = self.t.reveal_move(sid, RATIONALE)
@@ -235,7 +239,7 @@ class House:
         done = {"moves": 0, "joined": 0, "greeted": 0, "stepped_back": 0}
         for sid in self.challenges():
             s = self.t.get_session(sid)
-            if s and not s.get("error") and (s.get("module_type") in SET_PLAYS or s.get("module_type") == CHESS):
+            if s and not s.get("error") and (s.get("module_type") in PLAYING or s.get("module_type") == CHESS):
                 stake = str(((s.get("payment_rules") or {}).get("stake_per_participant")) or "0")
                 if self.stakes or stake in ("", "0", "0.0", "0.00"):
                     done["joined"] += self.take(sid)
@@ -245,7 +249,7 @@ class House:
             for s in (self.t.list_sessions(module_type=mt, status="waiting").get("sessions") or []):
                 if adoptable(s, self.me, now, self.adopt_after, self.stakes):
                     done["joined"] += self.take(s["session_id"])
-        for mt in (*SET_PLAYS, CHESS):
+        for mt in (*PLAYING, CHESS):
             for s in (self.t.list_sessions(module_type=mt, status="active").get("sessions") or []):
                 if self.me in (s.get("participants") or []):
                     full = self.t.get_session(s["session_id"])

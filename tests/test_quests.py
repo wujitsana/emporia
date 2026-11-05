@@ -12,7 +12,7 @@ def test_the_quests_come_from_the_records():
     me = "q_me"
     out = Q.progress(me, posts=[{"author_id": me, "topic_slug": "general", "visibility": "public",
                                  "created_at": "2026-11-05T01:00:00"}],
-                     games=[{"module_type": "emporia:blotto:v1", "participants": [me, "house"],
+                     games=[{"module_type": "emporia:blotto:v2", "participants": [me, "house"],
                              "ended_at": "2026-11-05T02:00:00"},
                             {"module_type": "emporia:chess:v1", "participants": [me, "x"], "ended_at": "2026-11-05"}],
                      deals=[], reports=[{"reporter_id": me, "status": "invalid", "created_at": "2026-11-05"}])
@@ -25,7 +25,7 @@ def test_the_quests_come_from_the_records():
 def test_all_four_welcome_quests_give_the_badge_and_reports_lead_on():
     me = "q_me"
     out = Q.progress(me, posts=[{"author_id": me, "topic_slug": "ideas", "visibility": "public", "created_at": "t1"}],
-                     games=[{"module_type": "emporia:two-thirds:v1", "participants": [me], "ended_at": "t2"}],
+                     games=[{"module_type": "emporia:two-thirds:v2", "participants": [me], "ended_at": "t2"}],
                      deals=[{"buyer": me, "seller": "house", "status": "confirmed", "ended_at": "t3"}],
                      reports=[{"reporter_id": me, "status": "accepted", "created_at": "t4", "decided_at": "t5"}])
     assert all(q["done"] for q in out["quests"] if not q.get("optional")) and "welcomed" in out["badges"]
@@ -51,7 +51,7 @@ def test_the_route_is_off_unless_the_operator_runs_quests(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
     assert client.get(f"/agents/{me}/quests").status_code == 404
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
-    _session("emporia:blotto:v1", [me, "q_house"], {"wins": {me: 2, "q_house": 0}, "history": [{}, {}], "rounds": 3})
+    _session("emporia:blotto:v2", [me, "q_house"], {"wins": {me: 2, "q_house": 0}, "history": [{}, {}], "rounds": 3})
     _session("emporia:service:v1", [me, "q_house"], {"buyer": me, "seller": "q_house", "status": "confirmed"})
     body = client.get(f"/agents/{me}/quests").json()
     done = {q["id"] for q in body["quests"] if q["done"]}
@@ -68,7 +68,7 @@ def _debrief(me, text, at="2026-11-05T03:00:00", topic="debriefs", **extra):
             "created_at": at, "title": "How I played", "content": text, **extra}
 
 
-GAME = {"session_id": "sess_abc123def456", "module_type": "emporia:blotto:v1", "participants": ["q_me", "q_op"],
+GAME = {"session_id": "sess_abc123def456", "module_type": "emporia:blotto:v2", "participants": ["q_me", "q_op"],
         "ended_at": "2026-11-05T02:00:00"}
 
 
@@ -183,7 +183,7 @@ def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypa
     monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", house)
     monkeypatch.setenv("EMPORIA_QUEST_DEBRIEFS_TOPIC", f"debriefs-{tag}")
     monkeypatch.setenv("EMPORIA_EXPEDITIONS_TOPIC", f"expeditions-{tag}")
-    sid = _session("emporia:blotto:v1", [me, house], {"wins": {me: 2, house: 0}, "history": [{}, {}], "rounds": 3})
+    sid = _session("emporia:blotto:v2", [me, house], {"wins": {me: 2, house: 0}, "history": [{}, {}], "rounds": 3})
     _agora_post(_topic(f"debriefs-{tag}"), me, "vs the house", f"In {sid} I spread thin, it concentrated; next "
                 "time I keep a reserve.", "2026-11-02T00:00:00+00:00")
     exp = _topic(f"expeditions-{tag}", creator=op)
@@ -193,7 +193,7 @@ def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypa
     body = client.get(f"/agents/{me}/quests").json()
     done = {q["id"] for q in body["quests"] if q["done"]}
     assert {"first-set-play", "debrief"} <= done, "a game against the house counts for quests: XP moves nothing"
-    assert body["formula"] == "quests:v2" and body["topics"]["debriefs"] == f"debriefs-{tag}"
+    assert body["formula"] == "quests:v3" and body["topics"]["debriefs"] == f"debriefs-{tag}"
     assert body["expedition"]["title"] == "Week 1: blotto with 7 fields" and body["expedition"]["author_id"] == op
     assert {f["id"] for f in body["feats"]} == set(Q.FEAT_IDS) and body["signature"]
     monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", "")

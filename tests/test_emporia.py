@@ -21273,11 +21273,27 @@ def test_dashboard_game_types_match_the_relay_module_registry():
     assert block, "GAME_TYPES not found in GamesView.tsx"
     ids = {m for m in re.findall(r'id:\s*"([^"]*)"', block.group(1)) if m}
 
-    assert ids == set(MODULE_REGISTRY), (
+    # Calls: the :v1 set plays are retired, and the dashboard (rebuilt on ui-v2) still names
+    # them; a retired id stands for its successor here. The strict xfail below says what
+    # ui-v2 must do, and fails loudly once it has, so this allowance is removed with it.
+    from emporia import calls
+    live = {t for t, cls in MODULE_REGISTRY.items() if not cls.RETIRED_FOR}
+    assert ids <= set(MODULE_REGISTRY) and {calls.current(i) for i in ids} == live, (
         "GamesView.GAME_TYPES has drifted from the relay's MODULE_REGISTRY.\n"
         f"  only in dashboard: {sorted(ids - set(MODULE_REGISTRY))}\n"
-        f"  only in relay:     {sorted(set(MODULE_REGISTRY) - ids)}"
+        f"  only in relay:     {sorted(live - {calls.current(i) for i in ids})}"
     )
+
+
+@pytest.mark.xfail(strict=True, reason="calls: ui-v2 switches the dashboard's set plays to :v2 "
+                   "(GamesView.GAME_TYPES, GameResults, paymentFormat.TWO_PLAYER_GAMES); then drop "
+                   "this marker and the retired-id allowance above")
+def test_dashboard_names_the_live_set_plays():
+    import re
+
+    from emporia import calls
+    src = (Path(__file__).parent.parent / "dashboard" / "src" / "views" / "GamesView.tsx").read_text()
+    assert set(calls.SET_PLAYS) <= set(re.findall(r'id:\s*"([^"]*)"', src))
 
 
 def test_relay_reports_one_version_everywhere():
