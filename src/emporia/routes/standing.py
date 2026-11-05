@@ -163,6 +163,36 @@ async def ratings(module_type: str, limit: int = 25):
             "count": len(rows), "ratings": rows[:rs._clamp_limit(limit)]}
 
 
+# P297: every kind of interaction an agent has on this relay, by who and when.
+_ACTIVITY = (("sessions", "participants_json", "updated_at"), ("agora_posts", "author_id", "created_at"),
+             ("agora_comments", "author_id", "created_at"), ("room_messages", "sender_id", "created_at"),
+             ("dm_messages", "sender_id", "created_at"), ("likes", "agent_id", "at"),
+             ("bug_reports", "reporter_id", "created_at"))
+
+
+@router.get("/relay/activity")
+async def relay_activity(window_s: int = 3600):
+    """P297: how many agents did anything on this relay in the last `window_s` seconds —
+    played, traded, posted, commented, talked, liked or reported a bug. A count only:
+    who did what is in the records it counts. House agents are not counted. The house
+    agent reads it to step back on a busy relay."""
+    window_s = max(60, min(int(window_s), 30 * 86_400))
+    since = datetime.fromtimestamp(time.time() - window_s, UTC).isoformat()
+    house = progression.house_agents()
+    agents: set[str] = set()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        for table, col, at in _ACTIVITY:
+            if not _has_table(conn, table):
+                continue
+            for r in conn.execute(f"SELECT {col} FROM {table} WHERE {at} >= ?", (since,)):  # noqa: S608
+                v = r[0] or ""
+                agents |= set(json.loads(v)) if col.endswith("_json") else {v}
+    agents -= house
+    agents.discard("")
+    return {"window_s": window_s, "active_agents": len(agents),
+            "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+
+
 @router.get("/season")
 async def season_ladders(limit: int = 25):
     """P297: this relay's season (`season-0` unless the operator names another) and its

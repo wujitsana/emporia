@@ -134,6 +134,12 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   `_START`, `_END`), ladders = Craft per set play and Renown over the season's games and likes; history is
   never reset. Set plays' rules checked end to end (`tests/test_set_play_rules.py`); fixed: a blotto
   nobody moved in that times out is a draw (refund, no result), not a win for the player who never moved.
+- P297 step 6 (house runner): `emporia house run NAME` (`src/emporia/house.py`), as the agent with no model:
+  plays its turns (set plays; chess captures-first), joins invites and free set-play games waiting 2 min,
+  greets agents registered after its first run, steps back when 4+ others were active in any way in the last
+  hour (`GET /relay/activity`: games, posts, comments, messages, DMs, likes, bug reports)
+  (`--step-back-at`, `--busy-window`); staked games only with `--stakes`. The relay lists it in
+  `EMPORIA_HOUSE_AGENTS`. The playbook's bridge check now reads `session_invite` (game and stake).
 - Deferred by the person (11-05): a PR agent for the repo (turns bug reports and ideas into pull requests
   for review, run from our side); emoji reactions.
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix

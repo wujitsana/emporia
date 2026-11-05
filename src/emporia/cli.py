@@ -4225,6 +4225,32 @@ def _as_agent(profile: Path, code: str, **env_over: str) -> subprocess.Completed
                           timeout=120)
 
 
+def cmd_house(args: argparse.Namespace) -> int:
+    """P297: `emporia house run NAME` — the house agent's rules runner, as NAME (its own
+    keys, relay and playbook, the env its MCP server runs with). No model, no tokens.
+    The relay should list NAME in EMPORIA_HOUSE_AGENTS so nothing done with it counts."""
+    if args.action != "run":
+        print("emporia house: run NAME")
+        return 2
+    profile, agent_id, env = _agent(args.name)
+    if not env:
+        print(f"house run: {args.name or '(none)'} is not an Emporia agent profile")
+        return 1
+    playbook = installer().harvest_env(profile).get("EMPORIA_PLAYBOOK", "")
+    if playbook != "host":
+        print(f"  ! {args.name}'s playbook is {playbook or 'custom'}; a house agent's is host: "
+              f"emporia agent playbook {args.name} --preset host")
+    print(f"  The house agent {agent_id}: plays, takes free set-play games left waiting "
+          f"{int(args.adopt_after)}s while the relay is quiet (it steps back once {args.step_back_at} others "
+          f"played in {int(args.busy_window)}s), greets newcomers. On the relay, list it in EMPORIA_HOUSE_AGENTS.")
+    argv = [sys.executable, "-m", "emporia.house", "--interval", str(args.interval),
+            "--adopt-after", str(args.adopt_after), "--step-back-at", str(args.step_back_at),
+            "--busy-window", str(args.busy_window)] + (["--once"] if args.once else []) + \
+        (["--stakes"] if args.stakes else [])
+    run_env = {"PATH": os.defpath, "HOME": str(Path.home()), "HERMES_HOME": str(profile), **_mcp_env(profile)}
+    return subprocess.call(argv, env=run_env)
+
+
 # The relay's own rule (relay_server._AGENT_ID_RE), checked here before anything is written.
 _AGENT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$")
 
@@ -6490,6 +6516,19 @@ def build_parser() -> argparse.ArgumentParser:
                      cmd_agent_playbook(a.url_or_name, a) if a.action == "playbook" else cmd_agent(
         argparse.Namespace(action=a.action, url=a.url_or_name if a.action == "leave" else "",
                            name=a.name if a.action == "leave" else a.url_or_name, home=a.home)))
+
+    hs = sub.add_parser("house", help="the house agent's rules runner: run NAME (P297)")
+    hs.add_argument("action", choices=["run"])
+    hs.add_argument("name", help="the house agent's profile")
+    hs.add_argument("--once", action="store_true", help="one pass, then stop")
+    hs.add_argument("--interval", type=float, default=20.0, help="seconds between passes")
+    hs.add_argument("--adopt-after", type=float, default=120.0,
+                    help="take a free set-play game nobody joined after this many seconds")
+    hs.add_argument("--stakes", action="store_true", help="also take staked games (each stake is a payment)")
+    hs.add_argument("--step-back-at", type=int, default=4,
+                    help="adopt no waiting game once this many other agents played within --busy-window")
+    hs.add_argument("--busy-window", type=float, default=3600.0, help="seconds counted as recent (default an hour)")
+    hs.set_defaults(func=cmd_house)
 
     sg = sub.add_parser("signer", help="agents' wallet keys in a process of their own — needed for real money, "
                                        "optional on testnet (start, add NAME; remove NAME undoes it)")

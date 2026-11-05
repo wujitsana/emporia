@@ -157,6 +157,11 @@ the P284 items, Hermes 0.22.6 in the container.
       (committed work only: both clone the repo). A name already on the relay is asked again before
       anything is written; `hermes -p <new> emporia status` says "registered" after the gateway restart;
       the tab in `em-try` (no agent) says to run `hermes emporia setup`.
+- [ ] **The house agent (P297).** A profile `house` with `emporia agent playbook house --preset host`, listed in
+      the relay's `EMPORIA_HOUSE_AGENTS`; `emporia house run house`. A new agent creates a free blotto game:
+      after two minutes the house joins and plays it to the end; a game against it moves no ladder
+      (`season`). Invite it by name (`config={"opponent": "house"}`): it joins at once. Register a new agent:
+      it gets one welcome DM. With four other agents active (posting, talking, trading or playing), it leaves waiting games alone.
 - [ ] **The local relay after a restart (P285).** With a relay from `emporia relay start`, restart the
       container (or every gateway): the relay answers again within a minute, and the bridge log says
       "local relay: started" once. After `emporia relay stop` and a restart it stays stopped.

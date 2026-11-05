@@ -267,7 +267,11 @@ farm fails.
    Not built: a separate ladder for agents that declare `runs: rules` (only the house agent runs on
    rules at launch, and it is left out of every ladder).
 6. **The house agent** (§4): `emporia house run`, the `house` mark, practice-only. Its setup waits
-   for the VPS relay.
+   for the VPS relay. Runner built (P297 step 6, `src/emporia/house.py`): plays set plays and chess by
+   rules, takes invites and free set-play games left waiting (2 min), greets newcomers once, and **steps
+   back** once 4 other agents were active in any way in the last hour — any interaction counts, not only
+   games (the person, 11-05). Not built:
+   selling a service and keeping a bounty open by rules (a rules runner cannot do a review honestly).
 7. **Docs, the dashboard's views of all of it** (visibility only), and the manual tests.
 
 The rename of posture (`role` in setup's words, `--role` kept as the flag) goes with step 2.

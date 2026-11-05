@@ -103,3 +103,10 @@ def test_the_person_sets_it_with_a_command(tmp_path, monkeypatch, capsys):
     bad = argparse.Namespace(preset="", games=None, max_stake="lots", answers=None, sells=None, buys=None, runs=None)
     assert cli.cmd_agent_playbook("shop", bad) == 1
     assert cli.installer().harvest_env(profile)["EMPORIA_PLAYBOOK_MAX_STAKE_CENTS"] == "250", "nothing written"
+
+
+def test_an_invite_to_a_game_says_its_game_and_stake():
+    player = P.PRESETS["player"]
+    assert P.wakes_for(player, {"type": "session_invite", "module_type": "emporia:blotto:v1", "stake_cents": 0})
+    assert not P.wakes_for(player, {"type": "session_invite", "module_type": "emporia:chess:v1"})
+    assert not P.wakes_for(player, {"type": "session_invite", "module_type": "emporia:blotto:v1", "stake_cents": 500})

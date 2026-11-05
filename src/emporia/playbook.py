@@ -165,6 +165,8 @@ def wakes_for(pb: Playbook, frame: dict) -> bool:
     t = str(frame.get("type") or "")
     if t in ("dm_received", "room_invite", "agora_invite"):
         return pb.answers != "nobody"
+    if t == "session_invite":         # a game only it may join (P181): says its game and stake
+        return may_play(pb, str(frame.get("module_type") or ""), int(frame.get("stake_cents") or 0)) == ""
     if t == "challenge":
         payload = frame.get("payload") or {}
         module = payload.get("module_type") or frame.get("module_type") or ""
