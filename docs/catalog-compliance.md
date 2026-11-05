@@ -162,7 +162,9 @@ The other Hermes imports are on the validator's public list:
   versions inside the ranges.
 - **Left for the owner:**
   - The floors were not re-tested at their oldest versions.
-  - `uv.lock` predates the `solana` extra; regenerate it with `uv lock`.
+  - `uv.lock` was regenerated with uv 0.13.5. It now includes the `solana` extra, and
+    `uv lock --check` passes. The installer's own `uv sync --frozen --no-dev --extra x402`
+    installs into a fresh copy of the tree.
   - A release quarantine (`uv lock --exclude-newer`) in CI is recommended by the rule.
 
 ### 11. Credentials come through Hermes — fail, proposal below
