@@ -1,7 +1,7 @@
 # MCP review — the tool surface Hermes agents act on the relay with
 
 Status: review done 2026-11-05 on branch `mcp-review` (from `hackathon-v2`). The clear,
-contained fixes are on the branch (three commits, listed at the end). Everything bigger is a
+contained fixes are on the branch (four commits, listed at the end). Everything bigger is a
 proposal below.
 
 Scope: `src/emporia/mcp_server.py` (91 tools), how Hermes loads and presents it
@@ -301,6 +301,7 @@ Correctness guard for all of these: the wake-up notices name the tool to call ne
 - `MCP review: ids cannot leave their route, sign-in signatures stay home, bounded walks`
 - `MCP review: agent-facing descriptions, one answer shape, retry-safe moves, paging`
 - `MCP review: docs match the tools agents call`
+- `MCP review: get_inbox keeps your own id last; a commit retried with another move is still refused`
 - this document.
 
 Tests: `tests/test_mcp_review.py` (30). No tool was added or removed, so the tool-count, unsurfaced-GET and
