@@ -30,7 +30,7 @@ A reviewer therefore reads two things at the pin: the plugin subdir, and the run
 | 8 | Desktop SDK surface | n/a | No `desktop/plugin.js`. The tab is a web-dashboard plugin. |
 | 9 | No core overrides | pass, 1 caution | No rebinds. One private import (`hermes_cli.web_server_chat._ws_auth_ok`), the same one the bundled kanban plugin uses. |
 | 10 | Dependency policy | pass (fixed) | The plugin declares no Python deps. The runtime's had bare floors; now each has an upper bound. |
-| 11 | Credentials through Hermes | **fail** | The plugin's own code is clean, but the runtime it starts reads profile `.env` files and gets the Nous token from Hermes's internals. A script in the tree reads and rewrites `auth.json`. Proposal below. |
+| 11 | Credentials through Hermes | **fail, narrowed** | The plugin's own code is clean. On `catalog-rule11`: `auth.json` is gone, the bridge gets its values through Hermes, Nous verification is opt-in, and env reads are blocked. The MCP server and the runtime CLI still read the `.env`. Status below. |
 | 12 | Approvals, unattended runs | pass (fixed) | Children no longer inherit YOLO or pre-accepted hooks. The runtime's CLI never waits on a dead stdin. |
 | 13 | Disclosure | pass (fixed), 1 decision | The README now covers the Nous token, cross-profile reads, the local relay restart and default hosts. One wording decision is for the owner. |
 | 14 | Compatibility metadata | pass | `requires_hermes: ">=0.22.6"` in plugin.yaml and the entry (= the current release); `version: "1.0.0"`. |
@@ -260,8 +260,59 @@ The other Hermes imports are on the validator's public list:
    why they were kept apart: a Hermes password-manager unlock is per chat session, and an agent
    signs unattended. That is a fair Hermes issue to open.
 
-None of these is implemented on this branch: each changes how keys reach a signing process, and
-2 and 3 change behaviour the owner chose. The fixes here keep every key where it was.
+**Status on branch `catalog-rule11`** (built on `catalog-compliance`; not merged):
+
+| Item | Status | Commit's test |
+|------|--------|---------------|
+| 1. The installer's `auth.json` path | **done.** `_find_auth_json` and `_try_refresh_nous` are gone; `resolve_nous_token` and the seed script ask Hermes (`nous_token.from_hermes`). | `test_installer.py::test_the_nous_token_comes_from_hermes_never_from_auth_json` |
+| The `key_guard` `/proc` rule | **done**, landed before any key moves. It blocks `/proc/<pid>/environ` (any pid, `self`, `*`, `$(…)`, `task/`) and `ps e` / `eww` / `auxe` / `['ps','eww']`. | `test_key_guard.py::test_reading_a_processs_environment_is_blocked` |
+| 2. The bridge | **done.** The adapter reads the profile's `EMPORIA_*` and vault values through `get_scoped_secret`, inside the profile's scope, and hands them over with `EMPORIA_NO_DOTENV=1`. | `test_platform_bridge.py::test_the_bridge_gets_this_profiles_env_not_the_gateways` |
+| 2. The MCP server | **not done.** See "Where it stopped". | — |
+| 2. The runtime CLI under `hermes emporia …` | **not done.** See "Where it stopped". | — |
+| 2. The console | **not touched.** Branch `console-scope` (another agent) scopes the console; it overlaps with this item. | — |
+| 3. Nous verification | **done: opt-in.** `EMPORIA_NOUS_VERIFY`, off by default; `emporia login` turns it on. | `test_nous_verify_opt_in.py` |
+| 4. Linked keys | **disclosed** as a known issue (README, entry). Not moved. | `test_catalog_entry.py` |
+| Rule 3, `--runtime-from` | **done:** local repos only. | `test_plugin_setup.py` |
+
+**Where it stopped, and why.**
+
+*The MCP server* still runs with `EMPORIA_DOTENV` and merges the profile's `.env`
+(`config.py:110-112`). The intended change: setup writes `${NAME}` for each setting into
+`mcp_servers.emporia.env` (`installer/install.py`, `_mcp_entry` and the update path beside it),
+plus `EMPORIA_NO_DOTENV=1`. It was not made, for three reasons:
+- Unlike the adapter, a `config.yaml` entry cannot enumerate the scope. Every name must be
+  written in advance, and Hermes silently drops a `${NAME}` that is unset.
+- The runtime reads about 137 distinct `EMPORIA_*` names. Some are built at runtime (per-network
+  settings, per-family key names), so a static list can miss one.
+- The process that pays reads its **spending limits and payment networks** from these settings.
+  A name missing from the list would silently drop a limit.
+
+A safe version needs:
+- a catalogue of every name the agent-side runtime reads, with a test that greps `src/emporia` and
+  fails on an unlisted literal;
+- the runtime-built names enumerated explicitly;
+- setup and `emporia agent refresh` writing the references;
+- `doctor` failing when a name in the profile's `.env` has no reference;
+- ideally, the MCP server failing closed when a limit setting is absent.
+
+That is a design review for the owner, not a mechanical change.
+
+*The runtime CLI* (`hermes emporia …` → `emporia.cli`) still reads profile `.env` files. Moving it
+means handing the CLI its values from `setup_cli`, which does run in Hermes's process and can call
+`get_scoped_secret`. But the CLI also *edits* the `.env` (setup, `wallet limits`, `login`,
+`signer add`), and acts on other profiles by name (`doctor --all`, `agent refresh NAME`). Neither
+has a Hermes route from outside Hermes (`save_env_values` is for code inside Hermes). It is the
+person's own command, but it is still in the pinned tree.
+
+**Direct `.env` reads that remain, each with no Hermes route today:**
+- **`key_source.set_env_lines` / `unset_env_lines`** (read-modify-write). They keep a brand-new key
+  or a changed setting in the profile's `.env`. Used by the bridge (a new key only), the MCP server
+  and the CLI.
+- **`config.load_profile_dotenv`**, in the MCP server and the CLI, until the `${NAME}` change above.
+- **`installer.harvest_env` and `collect_upstream_env`**, in the CLI's setup and doctor. The
+  latter also walks ancestor directories: remove that walk when the CLI moves.
+- **`relay_access._env_file`**, in relay processes only: a relay's own settings, not a plugin's.
+- **`console/agents.py:_profile_env`**: the console, being scoped on `console-scope`.
 
 ### 12. Approvals and unattended runs — pass (fixed)
 - **Fixed: no approval bypass reaches a child.** `setup_cli._clean_env` (`setup_cli.py:133-145`)
