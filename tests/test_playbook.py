@@ -19,6 +19,14 @@ def test_a_preset_with_the_persons_changes_on_top():
     assert P.resolve({"EMPORIA_PLAYBOOK": "player", "EMPORIA_PLAYBOOK_GAMES": "set-plays"}).games == P.SET_PLAYS
 
 
+def test_a_changed_preset_says_what_was_changed():
+    """Found by the end-to-end run: a merchant given set plays still read
+    "sells its listings; plays and buys nothing" beside the games it takes."""
+    assert P.about(P.PRESETS["merchant"]) == P.ABOUT["merchant"]
+    pb = P.resolve({"EMPORIA_PLAYBOOK": "merchant", "EMPORIA_PLAYBOOK_GAMES": "set-plays"})
+    assert "plays" not in P.about(pb) and "merchant" in P.about(pb) and "games" in P.about(pb)
+
+
 @pytest.mark.parametrize("env", [{"EMPORIA_PLAYBOOK": "wizard"}, {"EMPORIA_PLAYBOOK_SELLS": "maybe"},
                                  {"EMPORIA_PLAYBOOK_MAX_STAKE_CENTS": "lots"}, {"EMPORIA_PLAYBOOK_ANSWERS": "friends"}])
 def test_an_unreadable_setting_is_an_error_and_bounds_everything(env, monkeypatch):

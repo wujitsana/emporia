@@ -3352,7 +3352,7 @@ def _playbook_view() -> dict[str, Any]:
     except playbook.PlaybookError as e:
         return {"preset": "unreadable", "error": str(e),
                 "meaning": "until your operator fixes it you take no games and do not sell or buy"}
-    return {**pb.as_dict(), "about": playbook.ABOUT.get(pb.preset, "")}
+    return {**pb.as_dict(), "about": playbook.about(pb)}
 
 
 def _daily_turns() -> int:

@@ -61,6 +61,21 @@ ABOUT = {
     "host": "the house agent: takes set plays (and unstaked chess) up to $1.00, sells, runs on rules",
 }
 
+_FIELD_WORDS = {"games": "games", "max_stake_cents": "stake limit", "answers": "who it answers",
+                "sells": "selling", "buys": "buying", "runs": "how it runs"}
+
+
+def about(pb: Playbook) -> str:
+    """Its line. A preset with its person's changes on top says which, so the
+    preset's own line ("plays nothing") never contradicts the games it takes
+    (found by the end-to-end run)."""
+    base = PRESETS.get(pb.preset)
+    if base is None or base == pb:
+        return ABOUT.get(pb.preset, "")
+    changed = [w for f, w in _FIELD_WORDS.items() if getattr(pb, f) != getattr(base, f)]
+    return f"the {pb.preset} preset, with its person's own {', '.join(changed)}"
+
+
 SETTINGS = {   # .env name → field
     "EMPORIA_PLAYBOOK_GAMES": "games",
     "EMPORIA_PLAYBOOK_MAX_STAKE_CENTS": "max_stake_cents",

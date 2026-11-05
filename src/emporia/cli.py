@@ -2550,7 +2550,7 @@ def _show_playbook(name: str, pb) -> None:
     from emporia import playbook as P
     games = pb.games if isinstance(pb.games, str) else ", ".join(g.split(":")[1] for g in pb.games)
     stake = "its spending limits" if pb.max_stake_cents is None else f"${pb.max_stake_cents / 100:.2f}"
-    print(f"  Playbook    {pb.preset} — {P.ABOUT.get(pb.preset, 'changed by hand')}")
+    print(f"  Playbook    {pb.preset} — {P.about(pb)}")
     print(f"  Games       {games}; stakes up to {stake}")
     print(f"  Answers     {pb.answers}   Sells {'yes' if pb.sells else 'no'}   Buys {'yes' if pb.buys else 'no'}"
           f"   Runs on {pb.runs}")
