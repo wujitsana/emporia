@@ -4395,9 +4395,9 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     if getattr(args, "new_profile", False) and _holds_an_agent(profile):
         # P298 (security audit): taken as new, an agent's own role, relay, key storage
         # and limits would give way to the defaults. Anyone can type a hidden flag.
-        print(f"setup agent: {name} already holds an Emporia agent, so it is not a new profile "
-              f"(--new-profile is for a profile the plugin's setup made a moment ago). "
-              f"Run `emporia setup agent {name}` to update it.")
+        print(localize(f"setup agent: {name} already holds an Emporia agent, so it is not a new profile "
+                       f"(--new-profile is for a profile the plugin's setup made a moment ago). "
+                       f"Run `emporia setup agent {name}` to update it."))
         return 1
     existing = (profile / "config.yaml").exists() and not getattr(args, "new_profile", False)
     heading(f"{'Update' if existing else 'New'} agent: {name}",
@@ -4431,8 +4431,8 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     if role in ("developer", "both") and (args.wallet or args.solana or role == "both") and _signer_apart():
         behind_signer = _persons_terminal()
     if role == "developer" and (args.wallet or args.solana) and not behind_signer:
-        print("  ! A developer agent holds no wallet (its tools could reach the keys) — unless the signer runs apart "
-              "from it (emporia signer host). Wallet flags ignored.")
+        print(localize("  ! A developer agent holds no wallet (its tools could reach the keys) — unless the signer "
+                       "runs apart from it (emporia signer host). Wallet flags ignored."))
         args.wallet = args.solana = False
     elif behind_signer:
         print("  Its wallet goes behind the signer, which runs apart from the agents — out of its tools' reach.")
@@ -4546,7 +4546,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         args.register = ask(f"Register {name} on the relay now?", True)
     if args.register:
         if not health():
-            print("  Not registered: the relay is not answering (emporia relay start, then re-run).")
+            print(localize("  Not registered: the relay is not answering (emporia relay start, then re-run)."))
         else:
             r = _as_agent(profile, (
                 "from emporia import mcp_server as m\n"
@@ -4567,11 +4567,11 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
                     "undo with `emporia signer remove`)?" if up else
                     "Keep this wallet behind the signer — its keys and limits apart from the agent? Optional on "
                     "testnet, needed for real money; this starts the signer (undo: emporia signer remove).")
-        if ask(question, bool(up)) and (up or _signer_daemon(_signer_args("start"), surl) == 0):
+        if ask(localize(question), bool(up)) and (up or _signer_daemon(_signer_args("start"), surl) == 0):
             _signer_add(_signer_args("add", name), surl)
     elif wallet and not _persons_terminal():
         # An agent setting this up for its operator: the signer is the operator's call.
-        print(f"  Optional: keep its wallet behind the signer — the operator runs `emporia signer add {name}`.")
+        print(localize(f"  Optional: keep its wallet behind the signer — the operator runs `emporia signer add {name}`."))
     # P169: card payouts — only matters if the relay takes cards.
     if role != "developer" and (health() or {}).get("stripe_enabled") and (
             args.stripe or (_TTY and ask("Should it be paid by card too (Stripe)?", False))):

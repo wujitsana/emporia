@@ -35,6 +35,23 @@ def test_the_hints_know_every_command():
     assert set(cli_hints.COMMANDS) == set(commands)
 
 
+def test_the_operator_hints_in_tool_answers_name_the_command_this_install_has(monkeypatch):
+    """Review pass (11-05): two tool answers tell the agent what its operator can run when it
+    could not be asked; they said `emporia …` even where only `hermes emporia …` exists."""
+    from emporia import mcp_server
+    monkeypatch.setattr(cli_hints, "via_plugin", lambda runtime=None: True)
+    monkeypatch.setattr(mcp_server, "_ask_operator", lambda *a, **k: None)
+    dms = mcp_server.set_cross_relay_dms(True, agent_id="hint_me")
+    assert not dms["success"] and "they can run: hermes emporia dms hint_me" in dms["error"], dms
+    from types import SimpleNamespace
+
+    from emporia import visits
+    monkeypatch.setattr(visits, "visit_needs_yes", lambda url, linked: True)
+    monkeypatch.setattr(mcp_server, "fetch", SimpleNamespace(get=lambda *a, **k: SimpleNamespace(json=lambda: {})))
+    away = mcp_server.visit_relay("https://relay-b.test", agent_id="hint_me")
+    assert not away["success"] and "allow it: hermes emporia visits hint_me --allow" in away["error"], away
+
+
 def test_playbook_refusals_and_doctor_fixes_name_the_command_this_install_has(monkeypatch, capsys):
     monkeypatch.setattr(cli_hints, "via_plugin", lambda runtime=None: True)
     pb = playbook.Playbook("player", playbook.NONE, 100, "anyone", False, False, "model")

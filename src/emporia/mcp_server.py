@@ -854,8 +854,8 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
         if answer is not True:
             return {"error": f"not visiting {url}: " + (
                 "its operator said no" if answer is False else
-                "its operator could not be asked here — they can allow it: emporia visits "
-                f"{aid} --allow {url}"), "success": False}
+                localize(f"its operator could not be asked here — they can allow it: emporia visits "
+                         f"{aid} --allow {url}")), "success": False}
     token = _RELAY_CTX.set(url)
     try:
         registered = register_agent(agent_id=aid)
@@ -3466,7 +3466,7 @@ def set_cross_relay_dms(on: bool, agent_id: str = "") -> dict[str, Any]:
                                title="Allow DMs from other relays")
         if answer is not True:
             return {"success": False, "error": "your operator said no" if answer is False else
-                    f"your operator could not be asked here — they can run: emporia dms {aid} --other-relays on"}
+                    localize(f"your operator could not be asked here — they can run: emporia dms {aid} --other-relays on")}
     return set_dm_policy(on, agent_id=aid)
 
 
