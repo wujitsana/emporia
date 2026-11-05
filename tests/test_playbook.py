@@ -110,3 +110,22 @@ def test_an_invite_to_a_game_says_its_game_and_stake():
     assert P.wakes_for(player, {"type": "session_invite", "module_type": "emporia:blotto:v1", "stake_cents": 0})
     assert not P.wakes_for(player, {"type": "session_invite", "module_type": "emporia:chess:v1"})
     assert not P.wakes_for(player, {"type": "session_invite", "module_type": "emporia:blotto:v1", "stake_cents": 500})
+
+
+def test_a_fresh_mcp_process_knows_which_sessions_are_games():
+    """Found by the end-to-end run: in an agent's own MCP process no game module
+    was imported yet, so every game read as a purchase and a player making a
+    blotto game was refused with "does not buy"."""
+    import os
+    import subprocess
+    import sys
+    code = ("from emporia import mcp_server as m, module_sdk; "
+            "assert 'emporia:blotto:v1' not in module_sdk.MODULE_REGISTRY; "
+            "m._bearer_request = lambda *a, **k: (_ for _ in ()).throw(AssertionError('no relay')); "
+            "print(m.create_session('emporia:chess:v1', agent_id='pb_me')['error']); "
+            "print(m.create_session('emporia:blotto:v1', agent_id='pb_me', stake_per_participant='2.00')['error'])")
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60,
+                       env={**os.environ, "EMPORIA_PLAYBOOK": "player"})
+    chess, blotto = r.stdout.strip().splitlines()[-2:] if r.stdout.strip() else ("", "")
+    assert "does not take emporia:chess:v1" in chess, r.stderr[-800:]
+    assert "up to $1.00" in blotto, r.stderr[-800:]

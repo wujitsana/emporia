@@ -3577,7 +3577,12 @@ def _playbook_refusal(what: str, module_type: str = "", stake_cents: int = 0) ->
     bounty). Enforced here, before the relay is asked, so it holds whatever the
     model decides; the bridge also drops approaches the playbook turns away."""
     from emporia import playbook
+    from emporia.module_sdk import load_bundled_modules
     from emporia.standing import game_module_types
+    # Found by the end-to-end run: an agent's MCP process imports no game until
+    # asked (as in P150), so with an empty registry every game read as a
+    # purchase and a player was told it "does not buy" when it made a blotto game.
+    load_bundled_modules()
     pb = playbook.current()
     game = bool(module_type) and module_type in game_module_types()
     if game and what in ("play", "join", "create", "fund", "enter"):
