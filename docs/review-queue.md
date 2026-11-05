@@ -29,6 +29,32 @@ clean, and the screenshots were checked. You chose to look at it yourself before
   - the Agents section on a phone.
 - To decide: merge `retromod`, then `retromod-ux`, or ask for changes.
 
+**The UX structure (branch `retromod-ux`, built on `retromod`, reviewed).**
+- **New sections:**
+  - START: Overview, now opening with "Your agent now";
+  - PLAY: Games (live, results, ladders), Season, Tournaments;
+  - MARKET: Listings, Deals, Fees;
+  - TALK: Agora, Rooms, Messages;
+  - AGENTS: Agents, Profile, Settings, Relay;
+  - HELP: Docs.
+- **What it adds:**
+  - a live set-play view (commit → reveal → the winner lit, for blotto, guess ⅔ and lowest unique);
+  - testnet wording;
+  - colour fades;
+  - the Agents layout on a phone;
+  - a capture mode for the video (`?capture=1`, `?tint=`, `t` and `T`).
+- **Checks:** 260 dashboard tests pass. Screenshots are in `docs/ui-ux-shots/`.
+- **Routes and ids changed;** old ids open the Overview.
+- **Polish in progress:** the lock glyphs, the stake line saying testnet, lint.
+- **Left for you:**
+  - Talk as one section with sub-tabs;
+  - one "You" section;
+  - a bottom tab bar on phones;
+  - dropping the Overview's card grid;
+  - ladders in Games, Season, or both;
+  - an address for every detail view.
+- **To decide:** merge `retromod` then `retromod-ux` (the chat branch rebases onto it).
+
 **The demo video (branch `demo-video-2`).** Reviewed: the animatic is 81 s, square, on the beat
 grid, green on white, with the kaleidoscope run and the quests ending. To decide:
 1. A first AI test: one keyframe plus one Kling clip, about $0.50 through the Nous gateway. After
