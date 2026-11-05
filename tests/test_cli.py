@@ -464,3 +464,11 @@ def test_new_profile_is_refused_for_a_profile_that_holds_an_agent(profiles, caps
     assert (rc, after) == (1, before), after
     assert "already" in capsys.readouterr().out
     assert {f.name: f.read_bytes() for f in keydir.iterdir() if f.is_file()} == keys
+
+
+def test_setup_agent_is_the_wizard_not_the_check_before_it():
+    """Found merging the security audit: its `_holds_an_agent` landed between `@wizard`
+    and `cmd_setup_agent`, so setup agent lost going back a question, and the check was
+    wrapped in a wizard."""
+    assert hasattr(cli.cmd_setup_agent, "__wrapped__")
+    assert not hasattr(cli._holds_an_agent, "__wrapped__")

@@ -4365,7 +4365,6 @@ def _choose_agent_id(args: argparse.Namespace, name: str, profile: Path, existin
         explicit = True
 
 
-@wizard
 def _holds_an_agent(profile: Path) -> bool:
     """P298: an Emporia agent already lives in this profile — its MCP entry, its name
     in the .env, or a key of its own."""
@@ -4382,6 +4381,7 @@ def _holds_an_agent(profile: Path) -> bool:
     return keys.is_dir() and any(keys.glob("*.priv")) or keys.is_dir() and any(keys.glob("*.signer.pub"))
 
 
+@wizard
 def cmd_setup_agent(args: argparse.Namespace) -> int:
     inst = installer()
     me = this_profile()
