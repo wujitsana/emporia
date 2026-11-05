@@ -3734,7 +3734,9 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     has = wallet_presence(profile, agent_id)
     no_key = [n for n in pay_nets if not has.get(family(n) or "", False)]
     if not has["evm"] and not has["svm"]:
-        rep.warn("no wallet — can pay by card only", f"emporia wallet create {name}")
+        # Found by the end-to-end run: "by card only" on a relay that takes no cards.
+        rep.warn("no wallet — can pay by card only" if (health() or {}).get("stripe_enabled")
+                 else "no wallet — it cannot pay here (this relay takes no cards)", f"emporia wallet create {name}")
     elif not pay_nets:
         rep.fail("a wallet but no EMPORIA_X402_PAY_NETWORKS — it will pay on no network",
                  f"emporia wallet limits {name} --networks base-sepolia")
@@ -3785,7 +3787,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
                  "hermes plugins install emporia, then hermes emporia setup" if inst.from_catalog()
                  else f"emporia setup agent {name}")
     elif inst.from_catalog() or inst._tree_digest(plugin) == repo_digest:
-        rep.ok("Emporia plugin " + ("installed from the catalog" if inst.from_catalog() else "current"))
+        rep.ok("Emporia plugin " + (_plugin_origin(profile) if inst.from_catalog() else "current"))
     # else: P224, the secrets section names the files that differ and the fix, once
     if relay_up:
         status, profile_json = _signed_get(agent_id, key_dir, f"agents/{agent_id}")
@@ -3817,6 +3819,21 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
             rep.warn("not registered on this relay yet",
                      f"start its gateway or MCP (`hermes -p {name} gateway restart`)")
     doctor_a2a(rep, profile, has["evm"] or has["svm"])
+
+
+def _plugin_origin(profile: Path) -> str:
+    """Where Hermes installed this profile's plugin from, by its own install record (found by the
+    end-to-end run: a file:// install was said to be "installed from the catalog")."""
+    try:
+        record = json.loads((profile / "plugins" / ".install-metadata.json").read_text()).get("emporia") or {}
+    except (OSError, ValueError, AttributeError):
+        record = {}
+    if not isinstance(record, dict):
+        record = {}
+    if record.get("catalog"):
+        return "installed from the catalog"
+    source = str(record.get("source") or "")
+    return f"installed from {source}" if source else "installed (Hermes keeps no record of where from)"
 
 
 def doctor_skills(rep: Report, profile: Path) -> None:
@@ -4067,6 +4084,29 @@ def _prefetch_nous_tokens(profiles: list[Path]) -> None:
             _NOUS_TOKENS[profile] = token
 
 
+def _agent_relay(profile: Path, entry: dict) -> str:
+    """The relay an agent lives on: its MCP entry's, else its .env's, else this process's."""
+    return ((entry.get("env") or {}).get("EMPORIA_RELAY_URL")
+            or installer().harvest_env(profile).get("EMPORIA_RELAY_URL") or relay_url()).rstrip("/")
+
+
+class _RelayAs:
+    """Within it, relay_url() (and so health() and the signed reads) is `url`."""
+
+    def __init__(self, url: str) -> None:
+        self.url, self.before = url, None
+
+    def __enter__(self) -> None:
+        self.before = os.environ.get("EMPORIA_RELAY_URL")
+        os.environ["EMPORIA_RELAY_URL"] = self.url
+
+    def __exit__(self, *exc) -> None:
+        if self.before is None:
+            os.environ.pop("EMPORIA_RELAY_URL", None)
+        else:
+            os.environ["EMPORIA_RELAY_URL"] = self.before
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     rep = Report(compact=not getattr(args, "all", False))
     agents = [(p, e) for p, e in _agent_profiles(Path(args.profiles_root) if args.profiles_root
@@ -4074,9 +4114,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
               if not args.profile or p.name == args.profile]
     # Only agents doctor will get as far as checking (a broken MCP entry stops earlier).
     _prefetch_nous_tokens([p for p, e in agents if (e.get("env") or {}).get("EMPORIA_KEYS_DIR")])
-    h = doctor_relay(rep)
+    # Found by the end-to-end run: every agent was checked against this process's relay
+    # (EMPORIA_RELAY_URL, default localhost:8088), not its own. Each relay once, then its agents.
+    by_relay: dict[str, list[tuple[Path, dict]]] = {}
     for profile, entry in agents:
-        doctor_agent(rep, profile, entry, relay_up=h is not None)
+        by_relay.setdefault(_agent_relay(profile, entry), []).append((profile, entry))
+    for url, group in (by_relay or {relay_url(): []}).items():
+        with _RelayAs(url):
+            h = doctor_relay(rep)
+            for profile, entry in group:
+                doctor_agent(rep, profile, entry, relay_up=h is not None)
     doctor_dashboard(rep, [p for p, _ in agents])
     doctor_hermes_plugins(rep)
     doctor_machine_secrets(rep)

@@ -391,3 +391,50 @@ def test_a_profile_the_plugin_just_made_is_set_up_as_a_new_agent(profiles, capsy
     assert cli.profile_role(made, False) == "marketplace"
     assert "EMPORIA_KEY_STORAGE=env" in (made / ".env").read_text()
     assert not list(made.rglob("kappa.priv")), "its new identity key moved into its .env"
+
+
+def test_doctor_checks_each_agent_against_its_own_relay(profiles, capsys, monkeypatch):
+    """Found by the end-to-end run: every agent was checked against this process's
+    EMPORIA_RELAY_URL (default localhost:8088), not the relay its profile names."""
+    root, _ = profiles
+    for name, relay in (("ann", "http://127.0.0.1:7001"), ("bob", "http://127.0.0.1:7002"), ("cy", "")):
+        prof = _agent_profile(root, name)
+        cfg = yaml.safe_load((prof / "config.yaml").read_text())
+        if relay:
+            cfg["mcp_servers"]["emporia"]["env"]["EMPORIA_RELAY_URL"] = relay
+        (prof / "config.yaml").write_text(yaml.dump(cfg))
+    (root / "cy" / ".env").write_text("EMPORIA_RELAY_URL=http://127.0.0.1:7003\n")    # only in its .env
+    asked = []
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0: asked.append(cli.relay_url()) or None)
+    with patch.dict(os.environ, {"EMPORIA_RELAY_URL": "http://127.0.0.1:8088"}):
+        out = _doctor(root, capsys, monkeypatch)
+        assert os.environ["EMPORIA_RELAY_URL"] == "http://127.0.0.1:8088", "put back afterwards"
+    assert "8088" not in "".join(asked) and "8088" not in out
+    for name, port in (("ann", 7001), ("bob", 7002), ("cy", 7003)):
+        relay_at, agent_at = out.index(f"Relay  http://127.0.0.1:{port}"), out.index(f"Agent  {name}")
+        assert relay_at < agent_at, "each relay's section comes before its agents"
+
+
+@pytest.mark.parametrize("cards,says", [(True, "no wallet — can pay by card only"),
+                                        (False, "no wallet — it cannot pay here (this relay takes no cards)")])
+def test_doctor_says_card_only_only_where_the_relay_takes_cards(profiles, capsys, monkeypatch, cards, says):
+    root, _ = profiles
+    _agent_profile(root)
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0: {"stripe_enabled": cards, "version": "x"})
+    monkeypatch.setattr(cli, "_signed_get", lambda *a, **k: (404, None))
+    out = _doctor(root, capsys, monkeypatch)
+    assert says in out
+    assert ("by card only" in out) is cards
+
+
+def test_doctor_says_where_the_plugin_came_from(tmp_path):
+    """Found by the end-to-end run: a file:// install was said to be "installed from the catalog"."""
+    import json
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    meta = plugins / ".install-metadata.json"
+    assert cli._plugin_origin(tmp_path).startswith("installed (Hermes keeps no record")
+    meta.write_text(json.dumps({"emporia": {"source": "file:///src/emporia#hermes_plugin/emporia"}}))
+    assert cli._plugin_origin(tmp_path) == "installed from file:///src/emporia#hermes_plugin/emporia"
+    meta.write_text(json.dumps({"emporia": {"source": "https://x", "catalog": {"name": "emporia"}}}))
+    assert cli._plugin_origin(tmp_path) == "installed from the catalog"
