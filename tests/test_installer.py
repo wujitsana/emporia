@@ -365,8 +365,12 @@ def test_each_agent_profile_shares_the_relay_but_owns_its_identity(tmp_path, mon
         assert mcp_env["EMPORIA_AGENT_ID"] == name
         assert mcp_env["EMPORIA_KEYS_DIR"] == str(prof / "home" / ".hermes" / "keys")
         assert mcp_env["EMPORIA_DOTENV"] == str(prof / ".env")
-        if shutil.which("hermes"):
-            assert mcp_env["EMPORIA_HERMES_BIN"] == shutil.which("hermes")
+        # The Hermes this process was told to use (the suite's, a nonexistent one), else PATH's.
+        assert mcp_env["EMPORIA_HERMES_BIN"] == (os.environ.get("EMPORIA_HERMES_BIN") or shutil.which("hermes"))
+        # Catalog rule 11: the server reads no .env; Hermes hands it each setting by reference.
+        assert mcp_env["EMPORIA_NO_DOTENV"] == "1"
+        assert mcp_env["EMPORIA_X402_PAY_NETWORKS"] == "${EMPORIA_X402_PAY_NETWORKS}"
+        assert mcp_env["EMPORIA_IDENTITY_PRIVATE_KEY"] == "${EMPORIA_IDENTITY_PRIVATE_KEY}"
         assert f"EMPORIA_DOTENV={prof / '.env'}" in dotenv
         assert "EMPORIA_X402_PAY_NETWORKS=eip155:84532" in dotenv
         assert "EMPORIA_X402_MAX_PAYMENT_CENTS=500" in dotenv

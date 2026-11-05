@@ -122,32 +122,19 @@ def dotenv_path():
 
 def set_env_lines(path, updates: dict[str, str]) -> None:
     """Set `updates` in a .env, keeping every other line; 0600; no backup
-    beside it (a `.env.bak` is not a name Hermes protects)."""
-    lines = path.read_text().splitlines() if path.exists() else []
-    seen = set()
-    for i, line in enumerate(lines):
-        k = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else ""
-        if k in updates:
-            lines[i] = f"{k}={updates[k]}"
-            seen.add(k)
-    lines += [f"{k}={v}" for k, v in updates.items() if k not in seen]
-    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        f.write("\n".join(lines) + "\n")
-    os.chmod(path, 0o600)
+    beside it (a `.env.bak` is not a name Hermes protects). Catalog rule 11: a
+    Hermes profile's .env is written through Hermes (emporia.profile_env)."""
+    from emporia import profile_env
+    profile_env.update(path, updates)
 
 
 def unset_env_lines(path, names) -> None:
     """Remove `names` from a .env, keeping every other line; 0600; no backup
-    beside it (P175: removing a secret must not leave a copy)."""
+    beside it (P175: removing a secret must not leave a copy). Catalog rule 11:
+    a Hermes profile's .env is written through Hermes (emporia.profile_env)."""
+    from emporia import profile_env
     names = set(names)
-    lines = [ln for ln in (path.read_text().splitlines() if path.exists() else [])
-             if not ("=" in ln and not ln.lstrip().startswith("#")
-                     and ln.split("=", 1)[0].strip().removeprefix("export ").strip() in names)]
-    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        f.write("\n".join(lines) + "\n")
-    os.chmod(path, 0o600)
+    profile_env.update(path, unset=sorted(names))
     for name in names:
         os.environ.pop(name, None)
 

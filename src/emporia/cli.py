@@ -570,15 +570,9 @@ def _same_host(url: str) -> str:
 
 
 def _dotenv_names(path: str) -> set[str]:
-    names = set()
-    try:
-        for line in Path(path).expanduser().read_text().splitlines():
-            line = line.strip().removeprefix("export ").strip()
-            if line and not line.startswith("#") and "=" in line:
-                names.add(line.split("=", 1)[0].strip())
-    except OSError:
-        pass
-    return names
+    """The names a .env sets (a Hermes profile's read through Hermes, catalog rule 11)."""
+    from emporia import profile_env
+    return set(profile_env.read(Path(path))) if path else set()
 
 
 def ensure_local_relay(url: str) -> str:
@@ -2442,10 +2436,15 @@ def cmd_agent_refresh(name: str) -> int:
               else f"agent refresh: no profile under {root} has the Emporia plugin")
         return 1
     inst = installer()
+    # Catalog rule 11: each agent's MCP entry names every setting Hermes hands its server.
+    for profile in targets:
+        if added := inst.refresh_mcp_references(profile):
+            print(f"  {profile.name}: {len(added)} setting(s) now handed to its MCP server by Hermes "
+                  "(restart the gateway, or /reload-mcp)")
     if inst.from_catalog():
-        print("agent refresh: this Emporia came with the catalog plugin — update both with "
+        print("agent refresh: the plugin and its skills came with the catalog — update them with "
               "`hermes plugins update emporia`, then `hermes emporia update`")
-        return 1
+        return 0
     for profile in targets:
         print(f"  {profile.name}:")
         inst.install_platform_plugin(profile)
@@ -3712,6 +3711,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         rep.fail(f"holds the relay's settings: {', '.join(leaked)} (an agent never needs them)",
                  f"emporia setup agent {name}   (strips them)")
     doctor_profile_secrets(rep, profile, dotenv)
+    doctor_mcp_references(rep, profile, dotenv)
     doctor_signer(rep, profile, dotenv)
     doctor_delegation(rep, profile)
     model = inst.load_yaml(profile / "config.yaml").get("model") or {}
@@ -4243,9 +4243,45 @@ def cmd_login(args: argparse.Namespace) -> int:
 
 # ─── setup ───────────────────────────────────────────────────────────────────
 
-def _mcp_env(profile: Path) -> dict[str, str]:
+def doctor_mcp_references(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
+    """Catalog rule 11: the MCP server reads no .env; Hermes hands it each setting its entry
+    names as `${NAME}`. A setting the profile holds that the entry does not name would not
+    reach it — say which, and the fix."""
+    from emporia import agent_env
     entry = (installer().load_yaml(profile / "config.yaml").get("mcp_servers") or {}).get("emporia") or {}
-    return {k: str(v) for k, v in (entry.get("env") or {}).items() if k != "EMPORIA_NOUS_JWT"}
+    env = {k: str(v) for k, v in (entry.get("env") or {}).items()}
+    if not entry:
+        return
+    if env.get("EMPORIA_NO_DOTENV") != "1":
+        rep.fail("its MCP server still reads the profile's .env itself",
+                 f"emporia agent refresh {profile.name}   (Hermes hands it its settings instead)")
+        return
+    missing = agent_env.unreferenced(dotenv, env)
+    if missing:
+        rep.fail(f"settings its MCP server is not handed: {', '.join(missing)}",
+                 f"emporia agent refresh {profile.name}")
+    else:
+        rep.ok("its MCP server gets every setting through Hermes (no .env read)")
+
+
+_WHOLE_REF = re.compile(r"^\$\{([A-Z][A-Z0-9_]*)\}$")
+
+
+def _mcp_env(profile: Path) -> dict[str, str]:
+    """The environment the agent's MCP server runs with: its entry's `env`, each `${NAME}`
+    filled from the profile's settings as Hermes fills it (an unset one dropped), read
+    through Hermes (catalog rule 11)."""
+    entry = (installer().load_yaml(profile / "config.yaml").get("mcp_servers") or {}).get("emporia") or {}
+    raw = {k: str(v) for k, v in (entry.get("env") or {}).items() if k != "EMPORIA_NOUS_JWT"}
+    values = installer().harvest_env(profile) if any(_WHOLE_REF.match(v) for v in raw.values()) else {}
+    out = {}
+    for k, v in raw.items():
+        m = _WHOLE_REF.match(v)
+        if not m:
+            out[k] = v
+        elif values.get(m.group(1)) and m.group(1) != "EMPORIA_NOUS_JWT":
+            out[k] = values[m.group(1)]
+    return out
 
 
 def cmd_log_verify(args: argparse.Namespace) -> int:
@@ -4855,7 +4891,17 @@ def _extra_networks(names: list[str], facilitator: str) -> dict[str, str]:
 
 def merge_env_file(path: Path, updates: dict[str, str]) -> list[str]:
     """Set `updates` in a .env, keeping every other line as it was. Returns the
-    keys whose value changed. A dated 0600 backup is kept beside it first."""
+    keys whose value changed. A dated 0600 backup is kept beside it first.
+
+    Catalog rule 11: a Hermes profile's .env is Hermes's, and is changed through Hermes
+    (emporia.profile_env), under Hermes's own lock; no copy of it is made, since a
+    backup of a .env is one more file holding its keys."""
+    from emporia import profile_env
+    if profile_env.through_hermes(path):
+        changed = profile_env.update(path, updates)
+        if changed:
+            _signer_follows(path, {k: updates[k] for k in changed})
+        return changed
     lines = path.read_text().splitlines() if path.exists() else []
     changed, seen = [], set()
     for i, line in enumerate(lines):
@@ -4898,7 +4944,8 @@ def _signer_follows(path: Path, changed: dict[str, str]) -> None:
         held = (signer.agent_dir(agent) / "policy.json").exists()
     except OSError:
         held = False
-    behind = "EMPORIA_SIGNER_URL" in (path.read_text() if path.exists() else "")
+    from emporia import profile_env
+    behind = "EMPORIA_SIGNER_URL" in profile_env.read(path)
     if not behind:
         return
     if held:

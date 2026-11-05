@@ -333,8 +333,8 @@ def secure_profile(profile_dir: Path, dry_run: bool = False) -> list[str]:
     if dry_run:
         return sorted(set(moved))
     if to_env:
-        lines = env_path.read_text().splitlines() if env_path.exists() else []
-        _write_private(env_path, "\n".join(lines + [f"{k}={v}" for k, v in to_env.items()]) + "\n")
+        from emporia import profile_env      # catalog rule 11: through Hermes for a profile's .env
+        profile_env.update(env_path, to_env)
     if moved:
         save_yaml(config_path, config)
     for path in (config_path, env_path):
@@ -428,16 +428,10 @@ def _in_container() -> bool:
 
 
 def harvest_env(profile_dir: Path) -> dict[str, str]:
-    """Read .env from profile dir."""
-    env_file = profile_dir / ".env"
-    result: dict[str, str] = {}
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                result[k.strip()] = v.strip().strip('"').strip("'")
-    return result
+    """What the profile's .env holds. Catalog rule 11: a Hermes profile's .env is read
+    through Hermes (emporia.profile_env); a plain folder's (a relay's own) as a file."""
+    from emporia import profile_env
+    return profile_env.read(Path(profile_dir) / ".env")
 
 
 def _yaml_env_scalar(value: Any) -> str:
@@ -477,11 +471,17 @@ def collect_upstream_env(profile_dir: Path) -> dict[str, str]:
             break
         chain.append(current)
         current = current.parent
+    from emporia import hermes_settings, profile_env
+    # Catalog rule 11: where Hermes is installed, only Hermes homes (their .env, read through
+    # Hermes) — never the .env of some other folder above the profile.
+    homes_only = hermes_settings.available() or profile_env._from_catalog()
     for d in reversed(chain):
+        if homes_only and not (d / "config.yaml").exists():
+            continue
         merged.update({k: v for k, v in harvest_env(d).items() if v})
     merged.update(harvest_config_environment(profile_dir))
     emporia_root = profile_dir / "emporia"
-    if emporia_root.is_dir():
+    if emporia_root.is_dir() and not homes_only:              # a checkout's own .env: development only
         merged.update({k: v for k, v in harvest_env(emporia_root).items() if v})
     for k in _PROVIDER_ENV_KEYS:
         if os.environ.get(k) and k not in merged:
@@ -647,6 +647,34 @@ def _ensure_keys_dir(runtime_env: dict[str, str], dry_run: bool) -> None:
         Path(runtime_env["EMPORIA_KEYS_DIR"]).mkdir(mode=0o700, parents=True, exist_ok=True)
 
 
+def mcp_references(profile_dir: Path, entry_env: dict[str, str]) -> dict[str, str]:
+    """Catalog rule 11: a `${NAME}` for every setting and key the MCP server may read
+    (emporia.agent_env), which Hermes fills from this profile's scope, and
+    EMPORIA_NO_DOTENV=1, so the server reads no .env. A value the entry already holds
+    literally (its relay, its folders) stays literal."""
+    from emporia import agent_env
+    refs = agent_env.mcp_env(harvest_env(profile_dir))
+    return {k: v for k, v in refs.items() if k not in entry_env or k == "EMPORIA_NO_DOTENV"}
+
+
+def refresh_mcp_references(profile_dir: Path, dry_run: bool = False) -> list[str]:
+    """The profile's `emporia` MCP entry given every reference it lacks (mcp_references);
+    the names added. Nothing else in config.yaml changes."""
+    config_path = profile_dir / "config.yaml"
+    if not config_path.exists():
+        return []
+    config = load_yaml(config_path)
+    entry = (config.get("mcp_servers") or {}).get(MCP_TOOL_NAME)
+    if not isinstance(entry, dict):
+        return []
+    env = dict(entry.get("env") or {})
+    added = {k: v for k, v in mcp_references(profile_dir, env).items() if env.get(k) != v}
+    if added and not dry_run:
+        entry["env"] = {**env, **added}
+        save_yaml(config_path, config)
+    return sorted(added)
+
+
 def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profile_dir: Path | None = None) -> dict[str, Any]:
     env: dict[str, str] = {
         "EMPORIA_RELAY_URL": relay_url,
@@ -658,11 +686,13 @@ def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profi
         env["EMPORIA_DISPLAY_NAME"] = display_name
     if profile_dir:
         env.update(_profile_runtime_env(profile_dir))
-        # P109: this profile's own .env, not the one beside the code.
+        # P109: this profile's own .env, not the one beside the code — now only where a new
+        # setting or key is written (through Hermes); the server reads no .env at all.
         env["EMPORIA_DOTENV"] = str(profile_dir / ".env")
+        env.update(mcp_references(profile_dir, env))
     # P114: where Hermes is, so the MCP server can ask it for a current Nous
     # token whatever PATH Hermes gives it (it lives in ~/.local/bin here).
-    hermes_bin = shutil.which("hermes")
+    hermes_bin = os.getenv("EMPORIA_HERMES_BIN", "").strip() or shutil.which("hermes")
     if hermes_bin:
         env["EMPORIA_HERMES_BIN"] = hermes_bin
     return {
@@ -833,6 +863,12 @@ def install_into_profile(
                 existing_env[k] = v
                 changed = True
                 print(f"  ~ mcp_servers.{MCP_TOOL_NAME}.env.{k}")
+        # Catalog rule 11: an entry written before gets its references (and stops reading .env).
+        added = {k: v for k, v in mcp_references(profile_dir, existing_env).items() if existing_env.get(k) != v}
+        if added:
+            existing_env.update(added)
+            changed = True
+            print(f"  ~ mcp_servers.{MCP_TOOL_NAME}.env: {len(added)} setting(s) now handed over by Hermes")
         mcp_servers[MCP_TOOL_NAME]["env"] = existing_env
 
     # P63: no platform entry is written — see _platform_entry's removal note.
@@ -894,9 +930,8 @@ def install_into_profile(
 
     # .env file: ensure EMPORIA_AGENT_ID and optionally Nous JWT are present
     env_file = profile_dir / ".env"
-    env_lines: list[str] = []
-    if env_file.exists():
-        env_lines = env_file.read_text().splitlines()
+    from emporia import profile_env          # catalog rule 11: through Hermes for a profile's .env
+    env_lines: list[str] = profile_env.lines(env_file)
 
     def _set_env_line(lines: list[str], key: str, value: str) -> tuple[list[str], bool]:
         for i, ln in enumerate(lines):
@@ -961,7 +996,7 @@ def install_into_profile(
 
     if c1 or c2 or c3 or c4 or c5 or env_dirty:
         if not dry_run:
-            _write_private(env_file, "\n".join(env_lines) + "\n")
+            profile_env.replace(env_file, env_lines)
             print(f"  Updated: {env_file}")
         else:
             print(f"  [dry-run] Would update: {env_file}")
@@ -984,8 +1019,9 @@ def _merge_profile_env(env_path: Path, managed_lines: list[str], keep_relay: boo
     managed = {ln.split("=", 1)[0].strip() for ln in managed_lines if "=" in ln}
     kept: list[str] = []
     dropped: list[str] = []
+    from emporia import profile_env          # catalog rule 11: through Hermes for a profile's .env
     if env_path.exists():
-        for line in env_path.read_text().splitlines():
+        for line in profile_env.lines(env_path):
             key = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else ""
             if key and key in _RELAY_ONLY_ENV_KEYS and not keep_relay and key not in managed:
                 dropped.append(key)
@@ -1193,7 +1229,8 @@ def create_profile(
     if dry_run:
         print(f"  [dry-run] Would write {env_path}")
     else:
-        _write_private(env_path, "\n".join(_merge_profile_env(env_path, safe_env_lines, keep_relay=own_relay)) + "\n")
+        from emporia import profile_env      # catalog rule 11: through Hermes for a profile's .env
+        profile_env.replace(env_path, _merge_profile_env(env_path, safe_env_lines, keep_relay=own_relay))
         print(f"  Saved: {env_path}")
         if moved := secure_profile(profile_dir):
             print(f"  Moved from config.yaml to .env: {', '.join(moved)}")
@@ -1612,7 +1649,8 @@ def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
     _enable_plugin(profile_dir)
 
     env_file = profile_dir / ".env"
-    lines = env_file.read_text().splitlines() if env_file.exists() else []
+    from emporia import profile_env          # catalog rule 11: through Hermes for a profile's .env
+    lines = profile_env.lines(env_file)
     values = dict(ln.split("=", 1) for ln in lines if "=" in ln and not ln.startswith("#"))
     allowed = [a for a in (values.get("EMPORIA_ALLOWED_USERS") or "").split(",") if a.strip()]
     wanted = {
@@ -1631,7 +1669,7 @@ def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
             lines.append(f"{key}={value}")
             changed = True
     if changed:
-        env_file.write_text("\n".join(lines) + "\n")
+        profile_env.update(env_file, wanted)
         print(f"  + {env_file}: EMPORIA_PYTHON, EMPORIA_ALLOWED_USERS")
     # The tab, in this profile's own dashboard (P221: every agent on this machine, from any of them).
     write_tab_settings(profile_dir, profile_dir, values.get("EMPORIA_RELAY_URL", ""))
