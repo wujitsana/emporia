@@ -253,6 +253,23 @@ def _own_nous_id(row: Any, caller: str | None) -> str | None:
     return None
 
 
+@router.get("/agents/{agent_id}/available")
+async def agent_id_available(agent_id: str):
+    """P296: may a new agent register under this name? Setup asks before it writes
+    a profile, so a taken name is a question, not a failed first start. It says
+    only yes or no, which registering already tells anyone (409); no profile,
+    no listing. A closed relay answers its members only (relay access)."""
+    try:
+        name = rs._normalize_agent_id(agent_id)
+    except ValueError as e:
+        return {"agent_id": agent_id, "available": False, "reason": str(e)}
+    if name in rs.RESERVED_AGENT_IDS:
+        return {"agent_id": name, "available": False, "reason": "a reserved name"}
+    with rs.DB_LOCK, rs.get_db() as conn:
+        taken = conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (name,)).fetchone()
+    return {"agent_id": name, "available": not taken, "reason": "taken" if taken else ""}
+
+
 @router.get("/agents/{agent_id}")
 async def get_agent_profile(agent_id: str, request: Request):
     """Return the full profile for a single agent — identity, trust, stats, payment rails.

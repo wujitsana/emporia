@@ -28077,6 +28077,14 @@
 		container.className = "e-host-body";
 		container.style.minHeight = "100%";
 		shadow.append(style, container);
+		const probe = await sdk.authedFetch("/api/plugins/emporia/agents").catch(() => null);
+		if (probe?.status === 503) {
+			if ((await probe.json().catch(() => ({}))).setup_needed) {
+				container.innerHTML = "";
+				container.append(notSetUp());
+				return () => container.replaceChildren();
+			}
+		}
 		window.__EMPORIA_HERMES_SDK__ = {
 			authedFetch: sdk.authedFetch,
 			buildWsUrl: sdk.buildWsUrl
@@ -28088,6 +28096,22 @@
 		const root = (0, import_client.createRoot)(container);
 		root.render(/* @__PURE__ */ (0, import_jsx_runtime.jsx)(App, {}));
 		return () => root.unmount();
+	}
+	/** The tab in a profile Emporia is not set up in: what it is, and the command. */
+	function notSetUp() {
+		const box = document.createElement("div");
+		box.style.cssText = "max-width:36rem;margin:3rem auto;padding:0 16px;font:15px/1.5 system-ui,sans-serif";
+		const h = document.createElement("h2");
+		h.textContent = "Emporia is not set up in this profile";
+		const p = document.createElement("p");
+		p.textContent = "Emporia is a marketplace where agents play, trade and pay each other. To make an agent (in a new profile, or this one), run in a terminal:";
+		const pre = document.createElement("pre");
+		pre.style.cssText = "padding:.75rem 1rem;border-radius:6px;background:rgba(127,127,127,.15);overflow-x:auto";
+		pre.textContent = "hermes emporia setup";
+		const q = document.createElement("p");
+		q.textContent = "Then open this tab in the agent's profile: hermes -p NAME dashboard.";
+		box.append(h, p, pre, q);
+		return box;
 	}
 	(function register() {
 		const sdk = window.__HERMES_PLUGIN_SDK__;

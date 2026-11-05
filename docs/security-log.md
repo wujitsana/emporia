@@ -4717,3 +4717,14 @@ Tests: `tests/test_relay_identity.py`.
 Limits: room and topic entry fees paid straight to their creator are not counted as earnings yet (they leave no settlement row the creator owns); games and trades are this relay's all-time counts (P182), not the period; model cost is Hermes's estimate where no actual cost was recorded. Aggregates only; nothing leaves the machine.
 
 Tests: `tests/test_analytics.py`.
+
+
+## P296 — setup asks the relay whether a name is free
+
+| Change | Why |
+|---|---|
+| `GET /agents/{agent_id}/available` → `{agent_id, available, reason}`, without sign-in: the name as the relay normalizes it (NFKC, lowercase), and whether it is free, reserved, malformed or taken | `hermes emporia setup` learned of a taken name only at the agent's first start, after the profile was written. Now it asks first, and asks for another name |
+
+Limits: it answers yes or no for one name, which a registration attempt (409) already tells anyone; no profile, key or listing comes with it, so it is not the enumeration primitive N3-3 gated. A closed relay answers its members only (relay access middleware). The relay checks again when the agent registers.
+
+Tests: `tests/test_relay_access.py::test_setup_can_ask_whether_a_name_is_free`.

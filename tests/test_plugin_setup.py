@@ -13,7 +13,7 @@ spec.loader.exec_module(setup_cli)
 
 def _args(**kw):
     return argparse.Namespace(**{"profile": None, "here": False, "relay": None, "rest": [],
-                                 "plugin_source": "emporia", **kw})
+                                 "plugin_source": "emporia", "runtime_from": None, **kw})
 
 
 def test_it_asks_current_or_new_and_recommends_new():
@@ -39,13 +39,15 @@ def test_without_a_terminal_it_asks_nothing_and_needs_the_choice_as_a_flag(capsy
     assert "--profile" in capsys.readouterr().out
 
 
-def test_it_runs_setup_agent_for_the_chosen_profile_only(monkeypatch):
+def test_it_runs_setup_agent_for_the_chosen_profile_only(monkeypatch, capsys):
     ran = []
     monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "default")
     monkeypatch.setattr(setup_cli, "_emporia", lambda rt, *a: ran.append(a) or 0)
     assert setup_cli.checkout() == REPO                          # in this repo the checkout is the runtime
     assert setup_cli.cmd_setup(_args(profile="shop", relay="https://r.test", rest=["--", "--role", "marketplace"])) == 0
     assert ran == [("setup", "agent", "shop", "--relay-url", "https://r.test", "--role", "marketplace")]
+    out = capsys.readouterr().out
+    assert "hermes -p shop emporia status" in out and "hermes -p shop dashboard" in out   # P296: what next
 
 
 def test_a_catalog_runtime_is_pinned_to_a_full_commit(tmp_path, monkeypatch):
@@ -64,3 +66,46 @@ def test_the_pinned_runtime_is_unset_or_a_full_commit_of_this_repo():
     data = json.loads((REPO / "hermes_plugin" / "emporia" / "emporia_source.json").read_text())
     assert data["repo"] == "https://github.com/wujitsana/emporia"
     assert data["sha"] == "" or (len(data["sha"]) == 40 and set(data["sha"]) <= set("0123456789abcdef"))
+
+
+def test_a_release_can_be_tried_from_this_machine_before_it_is_pushed(tmp_path, monkeypatch):
+    """P296: `--runtime-from REPO[@SHA]` clones the runtime from a repo here (or a URL)
+    instead of the pinned GitHub commit; the pinned source itself stays https-only."""
+    import subprocess
+    head = subprocess.run(["git", "-C", str(REPO), "rev-parse", "HEAD"], capture_output=True,
+                          text=True).stdout.strip()
+    assert setup_cli.parse_runtime_from(str(REPO)) == (f"file://{REPO}", head)
+    assert setup_cli.parse_runtime_from(f"https://example.test/e@{head}") == ("https://example.test/e", head)
+    for bad in ("https://example.test/e", "ftp://x@" + head, "relative/path"):
+        try:
+            setup_cli.parse_runtime_from(bad)
+            raise AssertionError(bad)
+        except setup_cli.SetupFailed:
+            pass
+    ran = []
+    monkeypatch.setattr(setup_cli, "_run", lambda argv, cwd=None: ran.append(argv) or "")
+    monkeypatch.setattr(setup_cli, "runtime_dir", lambda: tmp_path / "plugin-data" / "emporia" / "runtime")
+    monkeypatch.setattr(setup_cli.shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+    setup_cli.install_runtime(say=lambda *a: None, pin=(f"file://{REPO}", head))
+    assert ran[0][:2] == ["git", "clone"] and f"file://{REPO}" in ran[0]
+    assert ["git", "-C", str(tmp_path / "plugin-data" / "emporia" / "runtime"), "checkout", "--quiet",
+            "--detach", head] in ran
+    monkeypatch.setattr(setup_cli, "SOURCE_FILE", tmp_path / "s.json")
+    (tmp_path / "s.json").write_text(f'{{"repo": "file://{REPO}", "sha": "{head}"}}')
+    try:
+        setup_cli.install_runtime(say=lambda *a: None)
+        raise AssertionError("the pinned source must be https")
+    except setup_cli.SetupFailed:
+        pass
+
+
+def test_status_says_whether_the_relay_has_the_agent(monkeypatch, capsys):
+    monkeypatch.setattr(setup_cli, "runtime", lambda: REPO)
+    settings = {"EMPORIA_AGENT_ID": "shop", "EMPORIA_RELAY_URL": "https://r.test"}
+    monkeypatch.setattr(setup_cli, "_setting", lambda n: settings.get(n, ""))
+    monkeypatch.setattr(setup_cli, "_registered", lambda relay, agent: False)
+    assert setup_cli.cmd_status(_args()) == 1
+    assert "not registered yet" in capsys.readouterr().out
+    monkeypatch.setattr(setup_cli, "_registered", lambda relay, agent: True)
+    assert setup_cli.cmd_status(_args()) == 0
+    assert "Relay   : registered" in capsys.readouterr().out

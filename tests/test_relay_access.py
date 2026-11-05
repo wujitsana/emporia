@@ -229,3 +229,17 @@ def test_the_cli_sets_the_mode_and_removes_a_member_in_the_relays_env_file(tmp_p
     assert cli.main(["relay", "access", "open", *dirs]) == 0
     os.utime(env, (time.time() + 30, time.time() + 30))
     assert relay_access.mode() == "open"
+
+
+def test_setup_can_ask_whether_a_name_is_free(client, monkeypatch):
+    """P296: before setup writes a profile, it asks the relay whether its name is
+    taken. The answer is yes or no only, and a closed relay gives it to members only."""
+    _register_keyed(client, "ra_taken")
+    assert client.get("/agents/ra_taken/available").json() == {
+        "agent_id": "ra_taken", "available": False, "reason": "taken"}
+    assert client.get("/agents/RA_Free/available").json() == {
+        "agent_id": "ra_free", "available": True, "reason": ""}
+    assert client.get("/agents/admin/available").json()["available"] is False
+    assert client.get("/agents/x!/available").json()["available"] is False
+    monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "closed")
+    assert client.get("/agents/ra_free/available").status_code == 403

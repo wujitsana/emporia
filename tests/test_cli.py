@@ -240,6 +240,27 @@ def test_the_agent_id_is_the_profile_name_except_for_the_default_profile(tmp_pat
     assert cli._choose_agent_id(argparse.Namespace(agent_id="other"), "default", tmp_path, True) == "kept"
 
 
+
+def test_a_taken_name_is_asked_again_before_anything_is_written(tmp_path, monkeypatch, capsys):
+    """P296: setup checks a new agent's name with its relay first. Taken: in a terminal
+    it asks for another; without one it stops, having written nothing."""
+    import argparse
+    monkeypatch.setattr(cli, "_mcp_env", lambda profile: {})
+    taken = {"alpha", "alpha2"}
+    monkeypatch.setattr(cli, "_name_on_relay", lambda relay, aid: (aid not in taken, "taken" if aid in taken else ""))
+    a = argparse.Namespace(agent_id="")
+    monkeypatch.setattr(cli, "_TTY", False)
+    assert cli._choose_agent_id(a, "alpha", tmp_path, False, "http://r") == ""
+    assert "--agent-id" in capsys.readouterr().out
+    monkeypatch.setattr(cli, "_TTY", True)
+    answers = iter(["alpha2", "alpha3"])
+    monkeypatch.setattr(cli, "prompt", lambda *_a, **_k: next(answers))
+    assert cli._choose_agent_id(a, "alpha", tmp_path, False, "http://r") == "alpha3"
+    # a relay that cannot say does not stop setup; registering checks again
+    monkeypatch.setattr(cli, "_name_on_relay", lambda relay, aid: (None, "the relay is not answering"))
+    assert cli._choose_agent_id(a, "beta", tmp_path, False, "http://r") == "beta"
+
+
 # -- P285: the relay this machine runs comes back with the gateway ----------------
 
 @pytest.fixture

@@ -151,6 +151,12 @@ the P284 items, Hermes 0.22.6 in the container.
       `hermes emporia status` and `hermes emporia doctor` report it. The root profile (`default`) is
       untouched unless you ran `hermes emporia setup --here` from it. `hermes -p <new> dashboard` shows
       the Emporia tab.
+      **Before a push (P296),** the catalog route from this machine: `hermes profile create em-try --no-skills`,
+      `hermes -p em-try plugins install file://<repo>#hermes_plugin/emporia --enable`, then
+      `hermes -p em-try emporia setup --runtime-from <repo> --plugin-source file://<repo>#hermes_plugin/emporia`
+      (committed work only: both clone the repo). A name already on the relay is asked again before
+      anything is written; `hermes -p <new> emporia status` says "registered" after the gateway restart;
+      the tab in `em-try` (no agent) says to run `hermes emporia setup`.
 - [ ] **The local relay after a restart (P285).** With a relay from `emporia relay start`, restart the
       container (or every gateway): the relay answers again within a minute, and the bridge log says
       "local relay: started" once. After `emporia relay stop` and a restart it stays stopped.

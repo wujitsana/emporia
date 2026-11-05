@@ -99,6 +99,17 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   - **Incident:** a test of `agent refresh all` once reached the live profiles (alpha, beta,
     hackathon_hermes, root) on 2026-11-04; they were restored to b38b793 and `tests/conftest.py` now
     fails any installer write into this machine's Hermes.
+- P296: before the fresh-start test.
+  - **Name check:** `emporia setup agent` asks the relay (`GET /agents/{id}/available`) right after the
+    relay is chosen; a taken name is asked again (without a terminal, setup stops before writing). It
+    registered under the profile's name instead of `--agent-id` before; fixed.
+  - **`--runtime-from REPO[@SHA]`** on `hermes emporia setup|update`: the runtime from a repo on this
+    machine (a path, so `file://`) or a URL, for trying a release before it is pushed. The pinned
+    `emporia_source.json` stays https-only.
+  - **After setup** it prints `hermes -p NAME emporia status` (now says whether the relay has the agent),
+    `hermes -p NAME dashboard` and `doctor`.
+  - **The tab in a profile without an agent** shows "run `hermes emporia setup`" (the proxy's 503 carries
+    `setup_needed`).
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 

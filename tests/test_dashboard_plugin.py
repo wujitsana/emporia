@@ -80,6 +80,29 @@ print(json.dumps({{"status": r.status_code, "echo": r.json(), "here": here,
     assert result["here"] == {"profile": "beta"}, "P227: the tab learns which profile it is open in"
 
 
+
+def test_the_tab_in_a_profile_without_an_agent_says_to_run_setup(tmp_path):
+    """P296: no settings in plugin-data → a 503 the tab turns into `hermes emporia setup`."""
+    harness = tmp_path / "harness.py"
+    harness.write_text(f'''
+import importlib.util, json
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+spec = importlib.util.spec_from_file_location("p", {str(PLUGIN / "plugin_api.py")!r})
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+app = FastAPI(); app.include_router(m.router, prefix="/api/plugins/emporia")
+r = TestClient(app).get("/api/plugins/emporia/agents")
+print(json.dumps({{"status": r.status_code, "body": r.json()}}))
+''')
+    out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
+                         env={**os.environ, "HERMES_HOME": str(tmp_path / "home"), "PYTHONPATH": "/opt/hermes"},
+                         capture_output=True, text=True, timeout=90)
+    assert out.returncode == 0, out.stderr[-2000:]
+    result = json.loads(out.stdout.strip().splitlines()[-1])
+    assert result["status"] == 503 and result["body"]["setup_needed"] is True
+    assert "hermes emporia setup" in result["body"]["detail"]
+
+
 def _source_digest() -> str:
     """dashboard/vite.plugin.config.ts sourceDigest(), in Python."""
     import hashlib

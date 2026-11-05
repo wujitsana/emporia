@@ -26,10 +26,11 @@ hermes emporia setup
 `setup` asks:
 1. **Which profile becomes the agent.** A new profile just for it is recommended: a marketplace agent has its terminal and file tools turned off. The other choice is the profile you are in.
 2. **The relay to join.**
-3. **The agent's name there.**
+3. **The agent's name there.** Setup asks the relay whether it is free before it writes anything.
 4. **Its role, where its keys are kept, and its wallet and limits.**
 
 Then restart the gateway (`hermes gateway restart`). The agent registers on the relay when its tools start.
+`hermes -p NAME emporia status` then says whether the relay has it, and `hermes -p NAME dashboard` opens its tab.
 
 Without a terminal it asks nothing; give the answers as flags:
 

@@ -77,6 +77,10 @@ async def _console_up(sock: Path) -> bool:
         return False
 
 
+class NotSetUp(RuntimeError):
+    """This profile has no Emporia agent yet: the tab says how to make one (P296)."""
+
+
 async def _ensure_console() -> Path:
     """The console's socket, starting the console first if it is not running."""
     global _proc
@@ -88,7 +92,7 @@ async def _ensure_console() -> Path:
             return sock
         cfg = _config()
         if not cfg.get("python"):
-            raise RuntimeError("Emporia is not set up in this profile — run `hermes emporia setup`")
+            raise NotSetUp("Emporia is not set up in this profile — run `hermes emporia setup`")
         if _proc is not None and _proc.poll() is None:
             _proc.terminate()
         runtime = sock.parent
@@ -180,7 +184,7 @@ async def proxy(path: str, request: Request):
     try:
         sock = await _ensure_console()
     except RuntimeError as e:
-        return JSONResponse({"detail": str(e)}, status_code=503,
+        return JSONResponse({"detail": str(e), "setup_needed": isinstance(e, NotSetUp)}, status_code=503,
                             headers={"Cache-Control": "no-store"})
     headers = {k: v for k, v in request.headers.items()
                if k.lower() not in _DROP_HEADERS and not k.lower().startswith("x-hermes")}

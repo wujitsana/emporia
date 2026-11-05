@@ -4161,10 +4161,29 @@ def _as_agent(profile: Path, code: str, **env_over: str) -> subprocess.Completed
 _AGENT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$")
 
 
-def _choose_agent_id(args: argparse.Namespace, name: str, profile: Path, existing: bool) -> str:
+def _name_on_relay(relay: str, agent_id: str) -> tuple[bool | None, str]:
+    """P296: may a new agent take this name on the relay? (True/False, why);
+    None when the relay cannot say (down, closed to us, or older than the check)."""
+    import httpx
+    try:
+        r = httpx.get(f"{relay.rstrip('/')}/agents/{agent_id}/available", timeout=5)
+    except Exception:  # noqa: BLE001
+        return None, "the relay is not answering"
+    if r.status_code == 403:
+        return None, "the relay is closed to non-members"
+    if r.status_code != 200:
+        return None, "the relay cannot check names"
+    d = r.json()
+    return bool(d.get("available")), d.get("reason") or ""
+
+
+def _choose_agent_id(args: argparse.Namespace, name: str, profile: Path, existing: bool,
+                     relay: str = "") -> str:
     """P295: its name on the relay. An existing agent keeps its own. A new one
     takes the profile's name — except the root profile, whose name `default`
-    every Hermes user shares, so the person picks one (suggested: their login)."""
+    every Hermes user shares, so the person picks one (suggested: their login).
+    P296: a new one's name is checked with the relay first; taken, the person
+    picks another (without a terminal, setup stops before writing anything)."""
     if existing and (current := _mcp_env(profile).get("EMPORIA_AGENT_ID")):
         if args.agent_id and args.agent_id != current:
             print(f"  It is {current!r} on its relay; a new name there would be a new agent. Kept {current!r}.")
@@ -4178,13 +4197,26 @@ def _choose_agent_id(args: argparse.Namespace, name: str, profile: Path, existin
                   "unique there)")
             return ""
         wanted = prompt("Its name on the relay (others see it; lowercase, digits, - or _)", suggestion).strip().lower()
-    if not wanted:
-        return name       # the profile's name, as before P295
-    if not _AGENT_ID_RE.match(wanted):
-        print(f"setup agent: {wanted!r} is not a name the relay takes (3-64 of a-z, 0-9, - and _, "
-              "starting and ending with a letter or digit)")
-        return ""
-    return wanted
+    explicit = bool(wanted)
+    wanted = wanted or name       # the profile's name, as before P295
+    while True:
+        if explicit and not _AGENT_ID_RE.match(wanted):
+            print(f"setup agent: {wanted!r} is not a name the relay takes (3-64 of a-z, 0-9, - and _, "
+                  "starting and ending with a letter or digit)")
+            return ""
+        free, why = _name_on_relay(relay, wanted) if relay else (None, "")
+        if free is not False:
+            if free is None and why:
+                print(f"  (Could not check {wanted!r} with the relay: {why}. It is checked again when it registers.)")
+            return wanted
+        print(f"  {wanted!r} is {why or 'taken'} on {relay}.")
+        if not _TTY:
+            print("setup agent: pick another with --agent-id NAME (nothing was written)")
+            return ""
+        wanted = prompt("Its name on the relay instead (lowercase, digits, - or _)", "").strip().lower()
+        if not wanted:
+            return ""
+        explicit = True
 
 
 @wizard
@@ -4209,6 +4241,9 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     chosen_relay = (args.relay_url or (_choose_relay(current_relay) if _TTY else "")
                     or current_relay or relay_url()).rstrip("/")
     os.environ["EMPORIA_RELAY_URL"] = chosen_relay
+    agent_id = _choose_agent_id(args, name, profile, existing, chosen_relay)
+    if not agent_id:
+        return 1
     heading("Role and keys", "Its role decides which of its own tools could ever reach its keys.")
     # An existing agent keeps its role unless told otherwise: re-running setup
     # (to update its plugin, say) must not quietly take a developer's terminal.
@@ -4291,9 +4326,6 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         args.max_daily_cents = prompt_cents("Most it may spend in 24 hours", args.max_daily_cents)
         args.approve_above_cents = prompt_cents(
             "Ask you before any single payment above (0 = always ask)", args.approve_above_cents)
-    agent_id = _choose_agent_id(args, name, profile, existing)
-    if not agent_id:
-        return 1
     wizard_commit()        # P213: from here it writes the profile
     heading("Saving")
     inst.create_profile(
@@ -4347,9 +4379,9 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         else:
             r = _as_agent(profile, (
                 "from emporia import mcp_server as m\n"
-                f"r = m.register_agent(agent_id={name!r})\n"
+                f"r = m.register_agent(agent_id={agent_id!r})\n"
                 "print('registered', r.get('trust_level') if r.get('success') else r.get('error'))\n"
-                + "".join(f"w = m.register_x402_wallet(agent_id={name!r}, network_family={f!r})\n"
+                + "".join(f"w = m.register_x402_wallet(agent_id={agent_id!r}, network_family={f!r})\n"
                           f"print({f!r} + ' wallet', 'registered' if w.get('success') else "
                           f"w.get('error') or w.get('detail'))\n" for f in families)))
             print("  " + (r.stdout.strip().replace("\n", "\n  ") or r.stderr.strip()[-300:]))

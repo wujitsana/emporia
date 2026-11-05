@@ -400,6 +400,7 @@ POST /payments/create-intent              create Stripe PaymentIntent (escrow)
 GET  /payments/settlements                list all settlements (operator auth); ?agent_id=X scopes to one agent (bearer JWT)
 GET  /payments/settlements/{session_id}   settlement for a session/room/topic (gated by that resource's own visibility rule, N4-2)
 GET  /payments/records                    all payment records
+GET  /agents/{id}/available               public: is this name free to register — yes/no (P296)
 GET  /agents/{id}/record                  public: an agent's record, counts only (P182)
 GET  /agents/{id}/card                    public once published: address, keys, signed relay list (P187)
 POST /agents/{id}/relay-list              the agent's signed relay list: home, visits, A2A URL (P187)

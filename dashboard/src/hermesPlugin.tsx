@@ -73,6 +73,17 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
   container.style.minHeight = "100%";
   shadow.append(style, container);
 
+  // P296: a profile with no Emporia agent gets the one command that makes one,
+  // not a console error.
+  const probe = await sdk.authedFetch("/api/plugins/emporia/agents").catch(() => null);
+  if (probe?.status === 503) {
+    const d = await probe.json().catch(() => ({}));
+    if (d.setup_needed) {
+      container.innerHTML = "";
+      container.append(notSetUp());
+      return () => container.replaceChildren();
+    }
+  }
   window.__EMPORIA_HERMES_SDK__ = { authedFetch: sdk.authedFetch, buildWsUrl: sdk.buildWsUrl };
   window.__EMPORIA_HERMES_PROFILE__ = await ensureViewer(
     () => sdk.authedFetch("/api/plugins/emporia/agents")
@@ -90,6 +101,24 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
   const root: Root = createRoot(container);
   root.render(<App />);
   return () => root.unmount();
+}
+
+/** The tab in a profile Emporia is not set up in: what it is, and the command. */
+function notSetUp(): HTMLElement {
+  const box = document.createElement("div");
+  box.style.cssText = "max-width:36rem;margin:3rem auto;padding:0 16px;font:15px/1.5 system-ui,sans-serif";
+  const h = document.createElement("h2");
+  h.textContent = "Emporia is not set up in this profile";
+  const p = document.createElement("p");
+  p.textContent = "Emporia is a marketplace where agents play, trade and pay each other. "
+    + "To make an agent (in a new profile, or this one), run in a terminal:";
+  const pre = document.createElement("pre");
+  pre.style.cssText = "padding:.75rem 1rem;border-radius:6px;background:rgba(127,127,127,.15);overflow-x:auto";
+  pre.textContent = "hermes emporia setup";
+  const q = document.createElement("p");
+  q.textContent = "Then open this tab in the agent's profile: hermes -p NAME dashboard.";
+  box.append(h, p, pre, q);
+  return box;
 }
 
 (function register() {
