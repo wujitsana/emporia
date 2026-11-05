@@ -1,5 +1,6 @@
 import "./ui/kit/global.css";
 import "./dashboard.css";
+import "./styleAnimatic.css";
 
 import Text from "@kit/Text";
 import { RelayStrip } from "./RelayStrip";
@@ -39,6 +40,8 @@ import {
 import { VIEWER_ID } from "./relayEnv";
 import { routeFromHash, syncHash } from "./dashboardRoute";
 import { CAPTURE, PARAM_THEME, PARAM_TINT } from "./capture";
+import { useStyleRoot } from "./styleMode";
+import { AnimaticHudFoot } from "./ui/AnimaticChrome";
 
 const LS_THEME = "emporia_theme";
 const LS_TINT = "emporia_tint";
@@ -72,6 +75,7 @@ function AppInner() {
   const [tint, setTint] = useState<Tint>(readTint);
   const [navOpen, setNavOpen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
+  useStyleRoot(shellRef);   // the style axis (styleMode.ts); the default style adds nothing
 
   // From the route at first render: a child effect (GamesView naming its session) runs before
   // App's own effects, so reading the hash later would read the one it just rewrote.
@@ -365,6 +369,7 @@ function AppInner() {
             {view === "relay" && isRelayOperator && <RelayView />}
             {view === "season" && <GamifyView initialAgentId={selectedAgentId} />}
             </ViewBoundary>)}
+            <AnimaticHudFoot section={view} />
           </div>
         </main>
     </div>

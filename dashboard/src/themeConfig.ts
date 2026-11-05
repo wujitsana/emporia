@@ -53,6 +53,11 @@ export function setThemeRoot(el: HTMLElement | null) {
   themeRoot = el;
 }
 
+/** The element the theme classes go on (the style mode's class goes there too). */
+export function themeRootEl(): HTMLElement {
+  return themeRoot ?? document.body;
+}
+
 /** How long the cross-fade class stays on after a change; a little over the CSS duration. */
 export const THEME_FADE_MS = 450;
 const fadeTimers = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
