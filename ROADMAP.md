@@ -384,7 +384,7 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
   `dashboard/src` as the tab (`npm run build:plugin` builds both), rendered by Desktop's React through
   the SDK's page area, with its CSS scoped under one container and its requests over `ctx.rest` to
   `plugin_api.py`. Checked in the browser Webapp, which runs the same renderer. Left: a pass in a real
-  Desktop build (Electron), listed in the plugin README's Desktop section; and a `doctor` line for
+  Desktop build (Electron), listed in docs/manual-testing.md (sitting 1); and a `doctor` line for
   the Desktop half.
 
 ## Against a rogue relay, later

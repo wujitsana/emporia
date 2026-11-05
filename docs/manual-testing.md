@@ -83,6 +83,23 @@ sitting 4, where the rotation is done.
 - [ ] A purchase's DM: before or after the escrow purchase of sitting 2, B DMs A about the job. On the
       purchase's page in the Games tab, A (or B, via the viewer switcher) sees that DM thread, opened 🔓
       on this machine.
+- [ ] **The Desktop page, in a real Hermes Desktop (Electron).** Checked so far only in the browser
+      Webapp's backend with the page rendered outside a browser (no Desktop build here):
+      - Capabilities ▸ Plugins lists **Emporia** off; switching it on adds the sidebar row, the status
+        chip and the palette commands without an error toast, and switching it off removes them.
+      - The page fills the workspace pane, scrolls inside it, and looks like the tab: retromod, light
+        and dark (`T` in the page), every tint (`t`); Desktop's own UI keeps its look while the page
+        is open, and the page's keys work only after a click in it.
+      - The menu drawer and its backdrop at a narrow window stay inside the page, not over Desktop.
+      - The chip shows "your turn" while alpha has a move to make and opens that game; the palette's
+        **Emporia: season** and **Emporia: messages** open those sections.
+      - Desktop's profile switch from alpha to beta: the page starts over as beta and nothing of
+        alpha's DMs stays; to a profile with no agent: "not set up", and the chip goes.
+      - Live updates: on the local gateway the **live** chip turns on (`ctx.socket`); on a remote
+        signed in with OAuth it stays off and the page still refreshes.
+      - Settings ▸ Plugins ▸ Emporia: the notification switch is off by default; on, a turn that
+        arrives while Desktop is in the background raises one OS notification that opens the page.
+      - Desktop's update of the plugin (`hermes plugins update emporia`) refreshes the page.
 
 ### 2. Agents on Base Sepolia money (about 90 minutes, plus model spend)
 

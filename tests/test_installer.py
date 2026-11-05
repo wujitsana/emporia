@@ -488,7 +488,7 @@ def test_the_dashboard_tab_installs_with_its_config_out_of_git_and_enabled(tmp_p
     bundle = installer._EMPORIA_DIR / "dashboard" / "dist-plugin"
     if not (bundle / "index.js").exists():
         import pytest
-        pytest.skip("dashboard bundle not built (npm run build:hermes-plugin)")
+        pytest.skip("dashboard bundle not built (npm run build:plugin)")
     monkeypatch.setattr(installer.shutil, "which", lambda name: None)     # no npm rebuild
     calls = []
     real_run = installer.subprocess.run

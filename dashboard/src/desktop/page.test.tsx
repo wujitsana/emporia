@@ -87,6 +87,10 @@ describe("the profile on the Desktop page", () => {
     expect(await screen.findByText("viewer=alpha dm=alpha's secret")).toBeTruthy();
     expect(hermesProfile()).toEqual({ name: "alpha", isAgent: true });
     expect(document.querySelector(".e-desktop-root > .e-host-body")).toBeTruthy();
+    // Desktop's base layer is taken back to browser defaults first; the app's own sheet comes after it.
+    const sheet = document.querySelector(".e-desktop-root > style")!.textContent!;
+    expect(sheet.indexOf("all: revert")).toBeGreaterThan(-1);
+    expect(sheet.indexOf("all: revert")).toBeLessThan(sheet.indexOf("__EMPORIA_DESKTOP_CSS__"));
     goToHash("#/messages");
 
     view.rerender(page("beta"));

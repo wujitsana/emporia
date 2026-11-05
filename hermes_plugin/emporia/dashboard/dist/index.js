@@ -18341,6 +18341,7 @@
 		init_transport();
 		init_bridge();
 	}));
+	var init_shadowScope = __esmMin((() => {}));
 	// src/keyTarget.ts
 	/** A key pressed on this element is text being typed, not a section shortcut. */
 	function isTypingTarget(t) {
@@ -29720,7 +29721,7 @@
 					return;
 				}
 				if (isTyping(e, shellRef.current) || e.metaKey || e.ctrlKey || e.altKey) return;
-				if (MODE === "desktop" && !(e.target instanceof Node && shellRef.current?.contains(e.target))) return;
+				if (MODE === "desktop" && !(e.target instanceof Element && e.target.closest(`.e-desktop-root`))) return;
 				if (e.key === "t" || e.key === "T") {
 					instantNext.current = true;
 					if (e.key === "t") setTint((cur) => {
@@ -29931,6 +29932,7 @@
 		init_NotAnAgentNote();
 		init_transport();
 		init_prefs();
+		init_shadowScope();
 		init_healthCtx();
 		init_themeConfig();
 		init_hooks();

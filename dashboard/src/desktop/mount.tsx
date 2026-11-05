@@ -16,7 +16,7 @@ import { setDesktopProfile } from "../transport";
 import { setThemeRoot } from "../themeConfig";
 import { resetRoute } from "../dashboardRoute";
 import { DESKTOP_BODY, DESKTOP_ROOT } from "../shadowScope";
-import { DESKTOP_CSS, DESKTOP_POLISH } from "./css";
+import { DESKTOP_CSS, DESKTOP_POLISH, DESKTOP_RESET } from "./css";
 import { isProfileSwitch, probeConsole } from "./probe";
 
 export function ScopedRoot({ children }: { children: ReactNode }) {
@@ -28,7 +28,7 @@ export function ScopedRoot({ children }: { children: ReactNode }) {
   return (
     // tabIndex: a click inside the page focuses it, so the page's own hotkeys apply there and only there.
     <div className={DESKTOP_ROOT} tabIndex={-1}>
-      <style>{DESKTOP_CSS + DESKTOP_POLISH}</style>
+      <style>{DESKTOP_RESET + DESKTOP_CSS + DESKTOP_POLISH}</style>
       <div ref={setBody} className={DESKTOP_BODY}>{body ? children : null}</div>
     </div>
   );

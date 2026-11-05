@@ -16,6 +16,7 @@ import { ViewerSwitcher } from "./ui/ViewerSwitcher";
 import { NotAnAgentNote } from "./ui/NotAnAgentNote";
 import { hermesProfile, MODE } from "./transport";
 import { readPref, writePref } from "./prefs";
+import { DESKTOP_ROOT } from "./shadowScope";
 import { RelayHealthCtx } from "./healthCtx";
 import { applyTheme, nextTint, toggleTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
@@ -216,7 +217,8 @@ function AppInner() {
       // In the Hermes tab (closed shadow root) e.target is the host; isTyping asks the app's own root.
       if (isTyping(e, shellRef.current) || e.metaKey || e.ctrlKey || e.altKey) return;
       // On the Desktop page the window is the whole app's: only keys pressed in this page count.
-      if (MODE === "desktop" && !(e.target instanceof Node && shellRef.current?.contains(e.target))) return;
+      // (A click on the page focuses its root, `.e-desktop-root`, so that is where its keys land.)
+      if (MODE === "desktop" && !(e.target instanceof Element && e.target.closest(`.${DESKTOP_ROOT}`))) return;
       // t: next tint, T: light ↔ dark — instant, for a capture script on the beat.
       // Saved like the picker's choice, except in capture mode.
       if (e.key === "t" || e.key === "T") {

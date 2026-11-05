@@ -3,6 +3,7 @@
  * (vitest.config.ts aliases the specifier here). The real SDK is the Desktop
  * app's own; the page never bundles it.
  */
+/* oxlint-disable react/only-export-components -- an SDK module: components and values, as the real one */
 import { useSyncExternalStore } from "react";
 
 type Listener<T> = (v: T) => void;
