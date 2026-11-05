@@ -299,6 +299,27 @@ def test_a_relay_started_here_comes_back_once_with_a_clean_environment(relay_her
     assert len(state["started"]) == 1
 
 
+def test_from_the_bridge_the_relay_gets_none_of_what_the_plugin_handed_it(relay_here, tmp_path, monkeypatch):
+    """Catalog rule 11: the bridge reads no .env (the plugin hands it the agent's values and
+    names them in EMPORIA_HANDED_NAMES), so the relay it restarts is kept clean by those names,
+    without the agent's .env being opened."""
+    pid_file, state = relay_here
+    monkeypatch.setenv("EMPORIA_DOTENV", str(tmp_path / "never-read.env"))     # does not exist
+    monkeypatch.setenv("EMPORIA_HANDED_NAMES", "EMPORIA_KEYS_DIR,VAULT_ADDR,BW_SESSION")
+    monkeypatch.setenv("EMPORIA_KEYS_DIR", "/agent/keys")
+    monkeypatch.setenv("VAULT_ADDR", "https://vault.alpha")
+    monkeypatch.setenv("BW_SESSION", "agent-session")
+    monkeypatch.setenv("PATH_FOR_TEST", "kept")
+    monkeypatch.setattr(cli, "_dotenv_names", lambda path: (_ for _ in ()).throw(AssertionError("read")))
+    pid_file.write_text("999999999")
+    pid_file.with_suffix(".url").write_text("http://127.0.0.1:8088")
+    assert cli.ensure_local_relay("http://localhost:8088") == "started"
+    env = state["started"][0]
+    assert env["PATH_FOR_TEST"] == "kept"
+    assert not [k for k in env if k.startswith("EMPORIA_")]
+    assert "VAULT_ADDR" not in env and "BW_SESSION" not in env
+
+
 def test_a_stopped_or_remote_relay_is_left_alone(relay_here):
     pid_file, state = relay_here
     assert "not started here" in cli.ensure_local_relay("http://localhost:8088")   # no pid file: stopped

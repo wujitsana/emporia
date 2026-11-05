@@ -621,7 +621,13 @@ def ensure_local_relay(url: str) -> str:
                     return "up"
                 time.sleep(0.25)
             return f"running (pid {pid}) but not answering — see `emporia relay logs`"
-        agent = _dotenv_names(os.environ.get("EMPORIA_DOTENV", ""))
+        handed = os.environ.get("EMPORIA_HANDED_NAMES")
+        if handed is not None:
+            # Catalog rule 11: the bridge reads no .env; what it holds of the agent's is what
+            # the plugin handed it (adapter._profile_values), and it names them.
+            agent = {n for n in handed.split(",") if n}
+        else:
+            agent = _dotenv_names(os.environ.get("EMPORIA_DOTENV", ""))
         env = {k: v for k, v in os.environ.items() if not k.startswith("EMPORIA_") and k not in agent}
         quiet = lambda *_: None   # noqa: E731 — the bridge's stdout is its event stream
         return "started" if _start_relay(env, url, say=quiet) == 0 else "did not start — see `emporia relay logs`"
