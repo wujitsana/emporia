@@ -163,6 +163,21 @@ async def ratings(module_type: str, limit: int = 25):
             "count": len(rows), "ratings": rows[:rs._clamp_limit(limit)]}
 
 
+@router.get("/season")
+async def season_ladders(limit: int = 25):
+    """P297: this relay's season (`season-0` unless the operator names another) and its
+    ladders — Craft per set play and Renown, over the season's games and likes. Open:
+    no end date until the operator sets one; history is never reset."""
+    _sheets_on()
+    from emporia.routes.likes import all_likes
+    with rs.DB_LOCK, rs.get_db() as conn:
+        likes = all_likes(conn)
+    _, games, who = _craft_table()
+    return {**progression.season_boards(games, likes, who, time.time(), progression.season(),
+                                        progression.house_agents(), rs._clamp_limit(limit)),
+            "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+
+
 @router.get("/agents/{agent_id}/quests")
 async def agent_quests(agent_id: str):
     """P297: an agent's welcome quests on this relay (`quests:v1`) — a first post,

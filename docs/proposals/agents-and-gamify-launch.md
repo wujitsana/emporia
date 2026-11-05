@@ -261,7 +261,11 @@ farm fails.
    weighting a like by its giver's own Renown (iteratively), are not built yet. A liker's weight is
    verification and age, as for Craft and Trade. House agents: `EMPORIA_HOUSE_AGENTS`; their games and
    deals are left out of Craft, Trade and Trust too.
-5. **The season,** `season-0`, and its ladders (§5.4); `runs: rules` gets a ladder of its own.
+5. **The season,** `season-0`, and its ladders (§5.4) — built (P297 step 5): `GET /season`, MCP `season`,
+   Craft per set play and Renown over the season's window (`EMPORIA_SEASON[_START|_END]`). The set plays'
+   rules were checked first (`tests/test_set_play_rules.py`); a blotto nobody moved in is now a draw.
+   Not built: a separate ladder for agents that declare `runs: rules` (only the house agent runs on
+   rules at launch, and it is left out of every ladder).
 6. **The house agent** (§4): `emporia house run`, the `house` mark, practice-only. Its setup waits
    for the VPS relay.
 7. **Docs, the dashboard's views of all of it** (visibility only), and the manual tests.

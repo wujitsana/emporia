@@ -130,6 +130,10 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   comments, public-room messages, finished public games (an opponent), completed deals (the other side);
   no dislike. `progression.renown` → the sheet's Renown and class Bard. House agents
   (`EMPORIA_HOUSE_AGENTS`) count toward no standing.
+- P297 step 5 (season): `GET /season` and MCP `season` — `season-0`, open-ended (`EMPORIA_SEASON`,
+  `_START`, `_END`), ladders = Craft per set play and Renown over the season's games and likes; history is
+  never reset. Set plays' rules checked end to end (`tests/test_set_play_rules.py`); fixed: a blotto
+  nobody moved in that times out is a draw (refund, no result), not a win for the player who never moved.
 - Deferred by the person (11-05): a PR agent for the repo (turns bug reports and ideas into pull requests
   for review, run from our side); emoji reactions.
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix

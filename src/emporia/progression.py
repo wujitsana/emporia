@@ -398,14 +398,59 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
         if key in seen:                    # the same operator's other agents, on the same thing
             adjusted = True
             continue
+        try:
+            at = _ts(l["at"])
+        except (TypeError, ValueError):     # a like whose time cannot be read is not counted
+            continue
         seen.add(key)
         per_op[op] = per_op.get(op, 0) + 1
-        w = _weight(who, giver, _ts(l["at"])) / per_op[op]
+        w = _weight(who, giver, at) / per_op[op]
         score += w
         by_kind[l["kind"]] = round(by_kind.get(l["kind"], 0.0) + w, 3)
     return {"formula": RENOWN_FORMULA, "score": round(score, 2), "level": _level(score),
             "likes": sum(1 for l in likes if l["to_agent"] == agent_id), "from_operators": len(per_op),
             "by_kind": by_kind, "adjusted": adjusted}
+
+
+SEASON_FORMULA = "progression:v1/season"
+
+
+def season() -> dict:
+    """P297: the season this relay runs — `EMPORIA_SEASON` (default `season-0`), from
+    `EMPORIA_SEASON_START` (ISO; empty: all history), with no end date until the
+    operator sets one (`EMPORIA_SEASON_END`). The whole history is kept either way:
+    a season is a window over the records, never a reset."""
+    import os
+    return {"season": os.getenv("EMPORIA_SEASON", "season-0").strip() or "season-0",
+            "started_at": os.getenv("EMPORIA_SEASON_START", "").strip() or None,
+            "ends_at": os.getenv("EMPORIA_SEASON_END", "").strip() or None}
+
+
+def in_season(at, s: Mapping) -> bool:
+    """Whether a record's time falls in the season; a time that cannot be read does not."""
+    try:
+        t = _ts(at)
+    except (TypeError, ValueError):
+        return False
+    return ((not s.get("started_at") or t >= _ts(s["started_at"]))
+            and (not s.get("ends_at") or t < _ts(s["ends_at"])))
+
+
+def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mapping[str, Who] | None,
+                  now: float, s: Mapping, house: frozenset[str] = frozenset(), limit: int = 25) -> dict:
+    """The season's ladders: Craft per game from the season's games, and Renown from
+    its likes — the same formulas as the sheet, over the season's window only."""
+    games = [g for g in games if in_season(g["ended_at"], s)]
+    likes = [l for l in likes if in_season(l["at"], s)]
+    table = craft_ratings(games, who)
+    boards = {m: ladder(table, m, now)[:limit] for m in sorted(table)}
+    agents = {l["to_agent"] for l in likes} - set(house)
+    renown_rows = [{"agent_id": a, **{k: v for k, v in renown(a, likes, who, house).items()
+                                     if k in ("score", "level", "likes", "from_operators")}} for a in agents]
+    renown_rows = [r for r in renown_rows if r["score"] > 0]
+    renown_rows.sort(key=lambda r: (-r["score"], r["agent_id"]))
+    boards["renown"] = renown_rows[:limit]
+    return {**s, "formula": SEASON_FORMULA, "boards": boards, "games": len(games), "likes": len(likes)}
 
 
 def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deals: Iterable[Mapping],

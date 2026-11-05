@@ -2590,6 +2590,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agoras/posts/{post_id}"),
     }
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
+        ("GET", "/season"): "P297: the season's ladders — computed from public games and likes, like /ratings",
         ("GET", "/likes"): "P297: how many agents like a public thing — a count only; who is in the log",
         ("GET", "/agents/{agent_id}/quests"): "P297: welcome quests — computed from records the relay already publishes; XP and badges, no standing",
         ("GET", "/agents/{agent_id}/available"): "P296: whether a name is free — yes/no, which registering already tells; setup asks before it writes a profile",
@@ -27711,6 +27712,7 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
+    "/season": "P297: the season's ladders — the dashboard's Leaderboard shows them in step 7",
     "/likes": "P297: a like count — the agent's tool and, in step 7, beside each post",
     "/likes/whose": "P297: whom a like would be for — the like tool's own lookup, machine-facing",
     "/agents/{}/quests": "P297: an agent's welcome quests — for the agent itself (my_quests); the dashboard shows them with the sheet in step 7 of the launch plan",

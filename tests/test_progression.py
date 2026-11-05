@@ -340,3 +340,29 @@ def test_renown_flattens_repeats_cancels_swaps_and_ignores_the_house():
 def test_a_new_or_unverified_liker_weighs_little():
     who = {"me": pg.Who("me", True, 0), "fresh": pg.Who("fresh", False, None)}
     assert pg.renown("me", [_like("fresh", "me", "p1")], who)["score"] == pg.UNVERIFIED_WEIGHT
+
+
+# -- P297: season-0 ---------------------------------------------------------------
+
+def test_the_season_is_open_and_a_window_over_the_records(client, monkeypatch):
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
+    monkeypatch.delenv("EMPORIA_SEASON", raising=False)
+    monkeypatch.setenv("EMPORIA_SEASON_START", "2026-10-01T00:00:00+00:00")
+    a, b = f"ss_a_{uuid.uuid4().hex[:6]}", f"ss_b_{uuid.uuid4().hex[:6]}"
+    for x in (a, b):
+        _register(x)
+    _session("emporia:blotto:v1", [a, b], {"wins": {a: 2, b: 0}, "history": [{}, {}], "rounds": 3})
+    body = client.get("/season").json()
+    assert body["season"] == "season-0" and body["ends_at"] is None and body["formula"] == pg.SEASON_FORMULA
+    assert a in [r["agent_id"] for r in body["boards"]["emporia:blotto:v1"]] and "renown" in body["boards"]
+    monkeypatch.setenv("EMPORIA_SEASON_START", "2026-12-01T00:00:00+00:00")       # after the game
+    assert a not in [r["agent_id"] for r in client.get("/season").json()["boards"].get("emporia:blotto:v1", [])]
+
+
+def test_season_renown_uses_the_seasons_likes_only():
+    s = {"season": "season-0", "started_at": "2026-11-05T00:00:00+00:00", "ends_at": None}
+    who = {x: pg.Who(x, True, 0) for x in ("me", "fan")}
+    old, new = _like("fan", "me", "p1", at="2026-11-01T00:00:00+00:00"), _like("fan", "me", "p2",
+                                                                              at="2026-11-06T00:00:00+00:00")
+    boards = pg.season_boards([], [old, new], who, 0, s)["boards"]
+    assert boards["renown"] == [{"agent_id": "me", "score": 1.0, "level": 1, "likes": 1, "from_operators": 1}]

@@ -68,7 +68,7 @@ once both have committed, reveal_move(session_id). Every earlier round of the
 game is public: read your opponent from it, and from their past games
 (game_results(agent_id=...)).
 Clock: `move_time_limit_s` (default 600) per move. Missing it — including not
-revealing — loses the game. No allocation always wins; an even split is beaten
+revealing — loses the game; if nobody has moved yet, it is a draw. No allocation always wins; an even split is beaten
 by concentrating. Think about what this opponent does.
 """
 
@@ -182,6 +182,9 @@ by concentrating. Think about what this opponent does.
         if over:
             return True, result
         if self._time_left(state.data) < 0:
+            if state.step_number == 0:     # P297: nobody moved — a draw (refunded), as in the pick games
+                return True, {"winner": None, "outcome_type": "draw", "termination": "timeout",
+                              "reason": f"{state.current_agent} did not commit in time; nobody had moved"}
             loser = state.current_agent
             winner = participants[1] if loser == participants[0] else participants[0]
             return True, {"winner": winner, "outcome_type": "won", "termination": "timeout",
