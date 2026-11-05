@@ -709,6 +709,22 @@
   }
 }
 
+/* A short screen (the 540 × 540 capture frame, a phone held sideways): the
+   "← back" row already says where you are, so the title row goes. */
+@media (max-width: 900px) and (max-height: 640px) {
+  .headRow {
+    display: none;
+  }
+
+  .head {
+    padding-top: 8px;
+  }
+
+  .sessionBar {
+    margin-top: 6px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .caret {
     animation: none;

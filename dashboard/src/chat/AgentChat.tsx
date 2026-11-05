@@ -30,6 +30,26 @@ export function ChatToggle({ compact = false }: { compact?: boolean }) {
   );
 }
 
+/** The first row of the ☰ menu: the chat is a companion, not a section, so it sits above the groups. */
+export function ChatMenuItem({ onOpen }: { onOpen: () => void }) {
+  if (!chatAvailable()) return null;
+  return (
+    <div className={styles.menuItem}>
+      <button
+        type="button"
+        className="e-section-tab"
+        onClick={() => {
+          onOpen();
+          setChatOpen(true);
+        }}
+      >
+        <span className={`e-section-tab__icon ${styles.glyph}`} aria-hidden>›_</span>
+        <span className="e-section-tab__label">Chat with your agent</span>
+      </button>
+    </div>
+  );
+}
+
 /** The drawer, mounted once at the shell level. */
 export function AgentChatDrawer() {
   if (!chatAvailable()) return null;

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AgentChatDrawer, ChatToggle } from "./AgentChat";
+import { AgentChatDrawer, ChatMenuItem, ChatToggle } from "./AgentChat";
 import { setChatOpen } from "./chatAccess";
 import { AskAgent } from "./AskAgent";
 
@@ -191,6 +191,19 @@ describe("agent chat drawer", () => {
     fireEvent.keyDown(box, { key: "Enter" });
     await waitFor(() => expect(screen.getByText("Current model: fake-model (custom)")).toBeTruthy());
     expect(hermes.sent.find((f) => f.method === "slash.exec")?.params).toMatchObject({ command: "/model", profile: "alpha" });
+  });
+
+  it("the menu's first row opens the chat and closes the menu", async () => {
+    let closed = false;
+    render(
+      <>
+        <ChatMenuItem onOpen={() => (closed = true)} />
+        <AgentChatDrawer />
+      </>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Chat with your agent/ }));
+    expect(closed).toBe(true);
+    await waitFor(() => expect(screen.getByText(/connected/)).toBeTruthy());
   });
 
   it("ask agent fills the composer and opens the chat, but sends nothing", async () => {

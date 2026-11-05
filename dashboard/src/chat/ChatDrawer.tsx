@@ -9,6 +9,7 @@
  */
 import Badge from "@kit/Badge";
 import BlockLoader from "@kit/BlockLoader";
+import { CAPTURE } from "../capture";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import styles from "./ChatDrawer.module.css";
 import type { ChatItem } from "./chatModel";
@@ -33,6 +34,11 @@ function when(ts: number | null): string {
     : d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+/** The kit's spinner; in capture mode (?capture=1) a still glyph, so nothing moves between frames. */
+function Spinner({ mode, still }: { mode: number; still: string }) {
+  return CAPTURE ? <span>{still}</span> : <BlockLoader mode={mode} />;
+}
+
 /* ── transcript items ────────────────────────────────────────────────────── */
 
 function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
@@ -42,7 +48,7 @@ function ToolCard({ item }: { item: Extract<ChatItem, { kind: "tool" }> }) {
     <div className={`${styles.tool} ${item.relay ? styles.untrusted : ""}`} data-status={item.status}>
       <button type="button" className={styles.toolHead} onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         <span className={styles.toolMark} aria-label={item.status}>
-          {item.status === "running" ? <BlockLoader mode={6} /> : mark}
+          {item.status === "running" ? <Spinner mode={6} still="┤" /> : mark}
         </span>
         <span className={styles.toolName}>{item.name}</span>
         {item.context && <span className={styles.toolContext}>{item.context}</span>}
@@ -170,7 +176,7 @@ function Item({ item, profile, api }: { item: ChatItem; profile: string; api: Ch
     case "relay":
       return (
         <div className={`${styles.line} ${styles.untrusted}`} data-who="relay">
-          <div className={styles.who}>relay</div>
+          <div className={styles.who}>to {profile}, from the relay</div>
           <UntrustedLabel />
           <div className={styles.text}>{item.text}</div>
         </div>
@@ -465,7 +471,7 @@ export function ChatDrawer({
         ))}
         {api.chat.busy && !api.chat.items.some((i) => i.kind === "agent" && i.streaming) && (
           <div className={styles.working}>
-            <BlockLoader mode={1} /> working
+            <Spinner mode={1} still="⣾" /> working
           </div>
         )}
         <div ref={endRef} />
