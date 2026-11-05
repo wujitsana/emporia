@@ -151,3 +151,25 @@ def test_house_run_does_not_log_every_http_request(monkeypatch):
     finally:
         for n, level in levels.items():
             logging.getLogger(n).setLevel(level)
+
+
+def test_the_greeting_names_ideas_debriefs_and_expeditions_as_the_relay_calls_them(tmp_path):
+    assert all(f"`{t}`" in H.GREETING for t in ("ideas", "debriefs", "expeditions"))
+    said = []
+
+    class Renamed(Tools):
+        def my_quests(self):
+            return {"success": True, "topics": {"ideas": "ideas", "debriefs": "war-stories", "expeditions": "quests"}}
+
+        def send_dm(self, to, content):
+            said.append(content)
+            return {"success": True}
+
+    t = Renamed(agents=["old"])
+    h = H.House("house", t, tmp_path / "state.json")
+    h.step()
+    t.agents.append("new")
+    h.step()
+    assert "`war-stories`" in said[0] and "`quests`" in said[0]
+    assert H.House("house", Tools(agents=[]), tmp_path / "s2.json").greeting() == H.GREETING, \
+        "a relay that does not say: the default names"
