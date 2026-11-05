@@ -41,6 +41,24 @@ def test_without_a_terminal_it_asks_nothing_and_needs_the_choice_as_a_flag(capsy
     assert "--profile" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("bad", ["../escape", "a/b", "-dash", "Bad Name", "x" * 65, "root", "default"])
+def test_a_profile_name_is_held_to_hermess_rules_before_anything_runs(monkeypatch, capsys, bad):
+    """Review follow-up L7: `--profile NAME` came back from `choose_profile` unchecked, and
+    `_profile_exists`, `_has_agent` and `_remove_profile` built `profiles/<NAME>` paths from it."""
+    ran = []
+    for f in ("_emporia", "runtime", "_profile_exists", "_has_agent", "_remove_profile", "_install_plugin_into"):
+        monkeypatch.setattr(setup_cli, f, lambda *a, f=f, **k: ran.append(f))
+    monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "alpha")
+    assert setup_cli.cmd_setup(_args(profile=bad)) == 2
+    assert ran == [], ran
+    assert "not a profile name Hermes accepts" in capsys.readouterr().out
+
+
+def test_a_good_profile_name_is_taken_as_hermes_spells_it():
+    assert setup_cli.choose_profile(_args(profile="Shop"), "alpha", False) == ("shop", True)
+    assert setup_cli.choose_profile(_args(profile="default"), "default", False) == ("default", False)
+
+
 def test_it_runs_setup_agent_for_the_chosen_profile_only(monkeypatch, capsys):
     ran = []
     monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "default")

@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -340,19 +341,47 @@ def _emporia(rt: Path, *args: str) -> int:
     return subprocess.call([str(python_of(rt)), "-m", "emporia.cli", *args], env=env, stdin=stdin)
 
 
-_NAME_OK = set("abcdefghijklmnopqrstuvwxyz0123456789-_")
+# Hermes's own rules for a profile name (hermes_cli.profiles.validate_profile_name), mirrored
+# for when that module cannot be imported: lowercase letters, digits, - and _, starting with
+# a letter or digit, at most 64 characters, and not one of its reserved names.
+_PROFILE_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+_RESERVED_NAMES = frozenset({"hermes", "default", "test", "tmp", "root", "sudo"})
+PROFILE_NAME_RULE = ("lowercase letters, digits, - and _, starting with a letter or digit, at most 64 "
+                     "characters, and not default, hermes, test, tmp, root or sudo")
+
+
+class ProfileNameRefused(ValueError):
+    """`--profile NAME` names no profile Hermes would accept."""
 
 
 def _valid_profile_name(name: str) -> bool:
-    return bool(name) and name != "default" and set(name) <= _NAME_OK and name[0].isalnum()
+    """A name setup may make a profile under: Hermes's rules, and never `default` (the root)."""
+    if not isinstance(name, str) or name == "default":
+        return False
+    try:
+        from hermes_cli.profiles import validate_profile_name
+    except Exception:  # noqa: BLE001 — outside Hermes (tests, a bare checkout): the mirror
+        return bool(_PROFILE_ID.fullmatch(name)) and name not in _RESERVED_NAMES
+    try:
+        validate_profile_name(name)
+    except ValueError:
+        return False
+    return True
 
 
 def choose_profile(args: argparse.Namespace, here: str, tty: bool, ask=input) -> tuple[str, bool] | None:
     """Which profile becomes the agent, and whether it is a new one. A
     marketplace agent has its terminal and file tools turned off, so a profile
-    of its own is the recommended answer; this one is offered too."""
+    of its own is the recommended answer; this one is offered too.
+
+    Review follow-up L7: `--profile NAME` is held to Hermes's name rules before
+    anything runs (`ProfileNameRefused`): it became `profiles/<NAME>` paths that
+    setup checks, writes and may remove, and only Hermes's own commands checked it."""
     if args.profile:
-        return args.profile, args.profile != here
+        name = str(args.profile).strip().lower()
+        if name != here and not _valid_profile_name(name):
+            raise ProfileNameRefused(f"{args.profile!r} is not a profile name Hermes accepts: {PROFILE_NAME_RULE}")
+        return name, name != here
     if args.here:
         return here, False
     if not tty:
@@ -370,7 +399,7 @@ def choose_profile(args: argparse.Namespace, here: str, tty: bool, ask=input) ->
         name = (ask("  Name for the new profile [emporia-agent]: ").strip().lower() or "emporia-agent")
         if _valid_profile_name(name):
             return name, True
-        print("  Lowercase letters, digits, - and _, starting with a letter or digit (not `default`).")
+        print(f"  A profile name is {PROFILE_NAME_RULE}.")
 
 
 def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
@@ -444,7 +473,11 @@ def cmd_setup(args: argparse.Namespace) -> int:
     print("Emporia setup")
     here = profile_name()
     tty = sys.stdin.isatty()
-    chosen = choose_profile(args, here, tty)
+    try:
+        chosen = choose_profile(args, here, tty)
+    except ProfileNameRefused as e:
+        print(f"  ✗ {e}. Nothing was set up.")
+        return 2
     if chosen is None:
         print("  No terminal to ask in. Say which profile, and the answers, for example:\n"
               "      hermes emporia setup --profile shop --relay https://relay.example -- --role marketplace "
