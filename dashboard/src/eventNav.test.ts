@@ -74,3 +74,35 @@ describe("routes", () => {
     expect(hashForView("season", "s-1")).toBe("#/season");
   });
 });
+
+describe("routes v2: #/<destination>/<section>[/<session>]", () => {
+  it("writes the destination first, and a lone section as the destination", () => {
+    expect(hashForView("games", "s-1")).toBe("#/play/games/s-1");
+    expect(hashForView("deals", "s-svc-1")).toBe("#/market/deals/s-svc-1");
+    expect(hashForView("rooms")).toBe("#/talk/rooms");
+    expect(hashForView("overview")).toBe("#/home");
+    expect(hashForView("docs")).toBe("#/more/docs");
+  });
+
+  it("parses them, and a bare destination opens its first section", () => {
+    expect(routeFromHash("#/play/games/s-1")).toEqual({ view: "games", sessionId: "s-1" });
+    expect(routeFromHash("#/play")).toEqual({ view: "games", sessionId: null });
+    expect(routeFromHash("#/market")).toEqual({ view: "listings", sessionId: null });
+    expect(routeFromHash("#/talk/messages")).toEqual({ view: "messages", sessionId: null });
+    expect(routeFromHash("#/more")).toEqual({ view: "agents", sessionId: null });
+    expect(routeFromHash("#/home")).toEqual({ view: "overview", sessionId: null });
+    expect(routeFromHash("#/more/docs?doc=payments")).toEqual({ view: "docs", sessionId: null });
+    expect(routeFromHash("#/play/nope")).toEqual({ view: "games", sessionId: null });
+  });
+
+  it("keeps every v1 route opening what it opened", () => {
+    const v1: [string, string, string | null][] = [
+      ["#/overview", "overview", null], ["#/games/s-9", "games", "s-9"], ["#/deals/s-8", "deals", "s-8"],
+      ["#/season", "season", null], ["#/tournaments", "tournaments", null], ["#/listings", "listings", null],
+      ["#/fees", "fees", null], ["#/agora", "agora", null], ["#/rooms", "rooms", null],
+      ["#/messages", "messages", null], ["#/agents", "agents", null], ["#/profile", "profile", null],
+      ["#/settings", "settings", null], ["#/relay", "relay", null], ["#/docs?doc=games", "docs", null],
+    ];
+    for (const [h, view, sessionId] of v1) expect(routeFromHash(h)).toEqual({ view, sessionId });
+  });
+});

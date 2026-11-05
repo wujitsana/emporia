@@ -1,17 +1,19 @@
 /**
- * The animatic style's moving parts (styleMode.ts, styleAnimatic.css). Each one
- * renders nothing extra in the default style: ScrambleText and TypedText give
- * back the plain text, and the status lines are not drawn at all.
+ * The look's moving parts (look.ts, dashboard.css § 30): the header's brand and
+ * the section heading decode from scrambled glyphs, the line under the heading
+ * types out with a block cursor, and two status lines frame the view.
  *
- * Motion is short and only on arrival (a section opening): the heading resolves
- * from scrambled glyphs in about 0.4 s, the line under it types in about 0.6 s.
- * With `prefers-reduced-motion`, or in capture mode, both are shown finished.
+ * Motion is short and only on arrival: the brand decodes from the demo's title
+ * card (`E#P0R!A` → `EMPORIA`) once when the dashboard opens and, more briefly,
+ * when a section opens; the heading resolves in about 0.4 s and its line types
+ * in about 0.6 s. With `prefers-reduced-motion`, or in capture mode, all of them
+ * are shown finished.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MODE } from "../transport";
 import { VIEWER_ID } from "../relayEnv";
-import { NAV, visibleNav, type NavItem } from "../navConfig";
-import { motionAllowed, scrambleFrame, useStyleMode } from "../styleMode";
+import { destinationOf, visibleDestinations, type NavItem } from "../navConfig";
+import { motionAllowed, scrambleFrame } from "../look";
 
 const SCRAMBLE_MS = 420;
 const TYPE_MS_PER_CHAR = 9;
@@ -19,11 +21,6 @@ const TYPE_MAX_MS = 650;
 
 /** power2.out: fast, then settling — the animatic's easing. */
 const ease = (t: number) => 1 - (1 - t) * (1 - t);
-
-function useAnimaticMotion(): boolean {
-  const [style] = useStyleMode();
-  return style === "animatic" && motionAllowed();
-}
 
 /**
  * Milliseconds since `key` arrived, counting up to `ms` and then holding there.
@@ -57,7 +54,7 @@ function useArrival(key: string, ms: number, moving: boolean, stepMs = 0): numbe
 
 /** A heading that decodes from scrambled glyphs into its word, once per text. */
 export function ScrambleText({ text }: { text: string }) {
-  const moving = useAnimaticMotion();
+  const moving = motionAllowed();
   // A new glyph every ~3 frames reads as decoding, not noise.
   const at = useArrival(text, SCRAMBLE_MS, moving, 45);
   if (!moving || at >= SCRAMBLE_MS) return <>{text}</>;
@@ -69,14 +66,54 @@ export function ScrambleText({ text }: { text: string }) {
   );
 }
 
+/** The brand as the demo's title card first shows it, before it resolves. */
+export const BRAND = "EMPORIA";
+export const BRAND_SCRAMBLED = "E#P0R!A";
+/** The first decode, when the dashboard opens; a section switch replays a shorter one. */
+export const BRAND_OPEN_MS = 900;
+export const BRAND_REPLAY_MS = 320;
+
+/**
+ * The header's EMPORIA, in the pixel face. It opens on `E#P0R!A` and decodes left
+ * to right (the video's title card), once on load; each `replay` change (a section
+ * opening) runs a short, gentler decode. Still, finished, under reduced motion and
+ * in capture mode. Screen readers read the word, never the glyphs.
+ */
+export function BrandTitle({ replay = "" }: { replay?: string }) {
+  const moving = motionAllowed();
+  const first = useRef(true);
+  const [run, setRun] = useState<{ key: string; ms: number }>({ key: `open:${replay}`, ms: BRAND_OPEN_MS });
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    setRun({ key: `replay:${replay}`, ms: BRAND_REPLAY_MS });
+  }, [replay]);
+  const at = useArrival(run.key, run.ms, moving, 55);
+  let shown = BRAND;
+  if (moving && at < run.ms) {
+    const opening = run.ms === BRAND_OPEN_MS;
+    // A replay is gentler: the first two letters stay, only the rest flickers back.
+    const from = opening ? 0 : 2;
+    const resolved = from + Math.floor(ease(at / run.ms) * (BRAND.length - from));
+    // The opening run starts on the title card's own frame.
+    shown = opening && at < 160 ? BRAND_SCRAMBLED : scrambleFrame(BRAND, resolved);
+  }
+  return (
+    <span className="e-brand" data-decoding={shown !== BRAND ? "true" : undefined}>
+      <span aria-hidden>{shown}</span>
+      <span className="e-sr">Emporia</span>
+    </span>
+  );
+}
+
 /** A line typed out with a block cursor after it; the cursor stays, blinking. */
 export function TypedText({ text }: { text: string }) {
-  const [style] = useStyleMode();
-  const moving = useAnimaticMotion();
+  const moving = motionAllowed();
   const per = Math.min(TYPE_MS_PER_CHAR, TYPE_MAX_MS / Math.max(1, text.length));
   const total = per * text.length;
   const at = useArrival(text, total, moving);
-  if (style !== "animatic") return <>{text}</>;
   const n = at >= total ? text.length : Math.floor(at / per);
   return (
     <>
@@ -93,22 +130,20 @@ export function TypedText({ text }: { text: string }) {
 
 const WHERE = MODE === "hermes" ? "emporia ~ hermes plugin" : MODE === "console" ? "emporia ~ local console" : "emporia ~ dashboard";
 
-/** The status line above a section: where this runs, the section's key, its place among the sections. */
+/** The status line above a section: where this runs, its destination's key and place, and the section. */
 export function AnimaticHudTop({ item }: { item: NavItem }) {
-  const [style] = useStyleMode();
-  if (style !== "animatic") return null;
   // Read from the viewer, not the relay context, so this module stays free of the relay's
-  // state (tests that mock relayEnv in part render PageHeading too). The operator's own
-  // section counts only on that section.
-  const shown = visibleNav({ isSpectator: VIEWER_ID === null, isOperator: item.id === "relay" });
-  const at = shown.findIndex((n) => n.id === item.id);
-  const n = (at < 0 ? NAV.findIndex((x) => x.id === item.id) : at) + 1;
+  // state (tests that mock relayEnv in part render PageHeading too).
+  const shown = visibleDestinations({ isSpectator: VIEWER_ID === null, isOperator: item.id === "relay" });
+  const dest = destinationOf(item.id);
+  const n = Math.max(0, shown.findIndex((d) => d.id === dest.id)) + 1;
   const pad = (x: number) => String(x).padStart(2, "0");
+  const where = dest.views.length > 1 ? `${dest.id} › ${item.id}` : dest.id;
   return (
     <div className="e-anim-hud e-anim-hud--top" aria-hidden>
       <span className="e-anim-hud__where">{WHERE}</span>
-      <span className="e-anim-hud__key">{item.hotkey}</span>
-      <span className="e-anim-hud__at">{pad(n)} / {pad(shown.length)} · {item.id}</span>
+      <span className="e-anim-hud__key">{item.hotkey ?? dest.hotkey}</span>
+      <span className="e-anim-hud__at">{pad(n)} / {pad(shown.length)} · {where}</span>
       {/* Keyed by section: it flashes once each time a section opens (the animatic's beat flash). */}
       <span key={item.id} className="e-anim-flash" />
     </div>
@@ -127,18 +162,15 @@ function clock(ms: number): string {
 
 /** The status line under the view: time since this dashboard opened, who it views as, and that it only watches. */
 export function AnimaticHudFoot({ section }: { section: string }) {
-  const [style] = useStyleMode();
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (style !== "animatic") return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, [style]);
-  if (style !== "animatic") return null;
+  }, []);
   return (
     <div className="e-anim-hud e-anim-hud--foot" aria-hidden>
       <span>{clock(now - OPENED)} · {VIEWER_ID ? `as ${VIEWER_ID}` : "spectator"}</span>
-      <span>{section} · watch only · s: style</span>
+      <span>{section} · watch only · 1–6 · [ ] · t T</span>
     </div>
   );
 }

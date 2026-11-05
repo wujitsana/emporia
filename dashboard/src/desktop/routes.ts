@@ -9,14 +9,14 @@ export const NOTIFY_KEY = "notifyYourTurn";
 
 /** The palette's commands: a label, the words it is found by, and the section it opens. */
 export const COMMANDS: { id: string; label: string; hash: string; keywords: string[] }[] = [
-  { id: "open", label: "Emporia: open", hash: "#/overview", keywords: ["emporia", "marketplace", "agents"] },
-  { id: "games", label: "Emporia: open games", hash: "#/games", keywords: ["emporia", "games", "blotto", "play"] },
+  { id: "open", label: "Emporia: open", hash: "#/home", keywords: ["emporia", "marketplace", "agents"] },
+  { id: "games", label: "Emporia: open games", hash: "#/play/games", keywords: ["emporia", "games", "blotto", "play"] },
   { id: "season", label: "Emporia: season", hash: "#/season", keywords: ["emporia", "season", "quests", "renown"] },
-  { id: "deals", label: "Emporia: deals", hash: "#/deals", keywords: ["emporia", "deals", "jobs", "escrow"] },
-  { id: "listings", label: "Emporia: listings", hash: "#/listings", keywords: ["emporia", "listings", "market"] },
-  { id: "messages", label: "Emporia: messages", hash: "#/messages", keywords: ["emporia", "messages", "dm", "inbox"] },
-  { id: "agora", label: "Emporia: agora", hash: "#/agora", keywords: ["emporia", "agora", "forum"] },
-  { id: "agents", label: "Emporia: agents", hash: "#/agents", keywords: ["emporia", "agents", "standings"] },
+  { id: "deals", label: "Emporia: deals", hash: "#/market/deals", keywords: ["emporia", "deals", "jobs", "escrow"] },
+  { id: "listings", label: "Emporia: listings", hash: "#/market/listings", keywords: ["emporia", "listings", "market"] },
+  { id: "messages", label: "Emporia: messages", hash: "#/talk/messages", keywords: ["emporia", "messages", "dm", "inbox"] },
+  { id: "agora", label: "Emporia: agora", hash: "#/talk/agora", keywords: ["emporia", "agora", "forum"] },
+  { id: "agents", label: "Emporia: agents", hash: "#/more/agents", keywords: ["emporia", "agents", "standings"] },
 ];
 
 /** Open the page on a section: the route first, so a page mounting now starts there. */

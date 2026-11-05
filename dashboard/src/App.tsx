@@ -1,13 +1,12 @@
 import "./ui/kit/global.css";
 import "./dashboard.css";
-import "./styleAnimatic.css";
 
 import Text from "@kit/Text";
 import { RelayStrip } from "./RelayStrip";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import { MobileNavDrawer, SectionTabs } from "./AppNav";
+import { MobileNavDrawer, SectionTabs, SubNav } from "./AppNav";
 import { ThemeCompact } from "./ThemeControls";
 import { ProfileView } from "./ProfileView";
 import { RELAY } from "./relayEnv";
@@ -21,7 +20,7 @@ import { DESKTOP_ROOT } from "./shadowScope";
 import { RelayHealthCtx } from "./healthCtx";
 import { applyTheme, nextTint, toggleTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
-import { navById, navForHotkey, type View } from "./navConfig";
+import { destById, destinationOf, navById, navForHotkey, siblingView, type Destination, type View } from "./navConfig";
 import { PageHeading, ViewBoundary } from "./ui/layout";
 import { isTyping } from "./keyTarget";
 import { sessionSection, type NavOpts } from "./eventNav";
@@ -40,9 +39,9 @@ import {
 import { VIEWER_ID } from "./relayEnv";
 import { currentHash, onRouteChange, routeFromHash, syncHash } from "./dashboardRoute";
 import { CAPTURE, PARAM_THEME, PARAM_TINT } from "./capture";
-import { useStyleRoot } from "./styleMode";
-import { AnimaticHudFoot } from "./ui/AnimaticChrome";
+import { AnimaticHudFoot, BrandTitle } from "./ui/LookChrome";
 import { AgentChatDrawer, ChatMenuItem, ChatToggle } from "./chat/AgentChat";
+import { setChatOpen } from "./chat/chatAccess";
 
 const LS_THEME = "emporia_theme";
 const LS_TINT = "emporia_tint";
@@ -78,7 +77,6 @@ function AppInner() {
   const [tint, setTint] = useState<Tint>(readTint);
   const [navOpen, setNavOpen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
-  useStyleRoot(shellRef);   // the style axis (styleMode.ts); the default style adds nothing
 
   // From the route at first render: a child effect (GamesView naming its session) runs before
   // App's own effects, so reading the hash later would read the one it just rewrote.
@@ -181,11 +179,25 @@ function AppInner() {
     (id: View) => {
       applyView(id);
       setNavOpen(false);
+      setChatOpen(false);       // a section picked from the menu, over full-page chat, is shown
       setListingPeek(null);
       setGameModuleType(null);
       setSelectedSessionId(null);
     },
     [applyView],
+  );
+
+  // Each destination reopens on the section last seen in it (Play → Tournaments, if that was last).
+  const lastInDest = useRef<Partial<Record<Destination, View>>>({});
+  useEffect(() => {
+    lastInDest.current[destinationOf(view).id] = view;
+  }, [view]);
+  const goToDest = useCallback(
+    (id: Destination) => {
+      const found = navForHotkey(destById(id)?.hotkey ?? "", { isSpectator, isOperator: isRelayOperator }, lastInDest.current);
+      if (found) goToView(found.id);
+    },
+    [goToView, isSpectator, isRelayOperator],
   );
 
   const navigate = useCallback<Navigate>(
@@ -240,10 +252,16 @@ function AppInner() {
         });
         return;
       }
+      // `[` / `]`: the previous / next section in this destination (Games ↔ Tournaments).
+      if (e.key === "[" || e.key === "]") {
+        const next = siblingView(view, e.key === "]" ? 1 : -1, { isSpectator, isOperator: isRelayOperator });
+        if (next !== view) goToView(next);
+        return;
+      }
       // P35-2: `navForHotkey` applies the same visibility rule the rendered
       // nav does. Searching the unfiltered NAV here is what let a spectator
       // reach the two sections the nav hides.
-      const found = navForHotkey(e.key, { isSpectator, isOperator: isRelayOperator });
+      const found = navForHotkey(e.key, { isSpectator, isOperator: isRelayOperator }, lastInDest.current);
       if (found) goToView(found.id);
     };
     window.addEventListener("keydown", handler);
@@ -251,7 +269,7 @@ function AppInner() {
     // `isSpectator` belongs here: the handler closes over it, and it stops being
     // constant the moment the dashboard/challenge login flow lands (the token
     // setter is already on the context).
-  }, [goToView, isSpectator, isRelayOperator]);
+  }, [goToView, isSpectator, isRelayOperator, view]);
 
   const currentNav = navById(view);
   // Picking a game or a deal names it in the route, so the address opens that session.
@@ -265,7 +283,7 @@ function AppInner() {
         <aside className="e-app-drawer" aria-label="Menu" inert={!navOpen}>
           <MobileNavDrawer
             view={view}
-            onGo={goToView}
+            onGoDest={goToDest}
             onClose={() => setNavOpen(false)}
             theme={theme}
             tint={tint}
@@ -284,7 +302,13 @@ function AppInner() {
         <main className="e-app-main">
           <header className="e-app-top">
             <div className="e-app-top__row">
-              <Text className="e-brand-title e-brand-title--header">✶ Emporia</Text>
+              <Text className="e-brand-title e-brand-title--header"><BrandTitle replay={view} /></Text>
+              <SectionTabs
+                view={view}
+                onGoDest={goToDest}
+                variant="horizontal"
+                badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined}
+              />
               <div className="e-app-top__actions">
                 <ThemeCompact
                   theme={theme}
@@ -301,12 +325,6 @@ function AppInner() {
                 />
               </div>
             </div>
-            <SectionTabs
-              view={view}
-              onGo={goToView}
-              variant="horizontal"
-              badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined}
-            />
           </header>
           {/* Phone: one row — the menu (sections, viewer, theme), where you are, and the relay's state. */}
           <div className="e-mobile-top">
@@ -321,7 +339,7 @@ function AppInner() {
               {inboxUnread > 0 && <span className="e-nav-badge">{inboxUnread > 99 ? "99+" : inboxUnread}</span>}
             </button>
             <span className="e-mobile-top__where">
-              <Text className="e-brand-title">✶ Emporia</Text>
+              <Text className="e-brand-title"><BrandTitle replay={view} /></Text>
               {currentNav && <span className="e-mobile-top__section">{currentNav.label}</span>}
             </span>
             <ChatToggle compact />
@@ -332,6 +350,8 @@ function AppInner() {
               compact
             />
           </div>
+          {/* The sections inside this destination (Games · Tournaments), on every width. */}
+          <SubNav view={view} onGo={goToView} badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined} />
           <div className="e-view">
             <NotAnAgentNote />
             {!hermesNonAgent && <PageHeading item={currentNav} />}
@@ -384,7 +404,8 @@ function AppInner() {
             <AnimaticHudFoot section={view} />
           </div>
         </main>
-        <AgentChatDrawer />
+        {/* Full-page chat (a phone, a narrow tab) keeps the menu: its ☰ opens the same drawer, above it. */}
+        <AgentChatDrawer onMenu={() => setNavOpen(true)} />
     </div>
     </RelayHealthCtx.Provider>
   );

@@ -34,6 +34,10 @@ The retromod tabs answer neither question directly. They are organised around th
 
 ### 2.1 The sections (built)
 
+> Superseded by navigation v2 (`docs/ui-nav-v2.md`): six destinations (Home, Play, Market, Talk,
+> Season, More) with these sections inside them, new routes (the v1 routes below still open what
+> they opened) and new keys. Kept as the v1 record.
+
 Six groups. The order runs from what is happening, to playing, to trading, to talking, to who:
 
 ```

@@ -9,10 +9,10 @@ import SidebarLayout from "@kit/SidebarLayout";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { ViewBody } from "../ui/layout";
 import { DOCS, docsReady, resolveDocLink, searchDocs } from "../docs";
-import { currentHash, replaceHash } from "../dashboardRoute";
+import { currentHash, hashForView, replaceHash } from "../dashboardRoute";
 import { renderMarkdown } from "../markdown";
 
-/** `#/docs?doc=payments` — so a document can be linked to and bookmarked. */
+/** `#/more/docs?doc=payments` (or v1's `#/docs?doc=…`) — so a document can be linked to and bookmarked. */
 function docFromHash(): string | null {
   const query = currentHash().split("?")[1] ?? "";
   return new URLSearchParams(query).get("doc");
@@ -29,7 +29,7 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
   });
   const docId = nav.id;
   const openDoc = (id: string) => setNav((cur) => (cur.id === id ? cur : { id, anchor: null }));
-  useEffect(() => { replaceHash(`#/docs?doc=${docId}`); }, [docId]);
+  useEffect(() => { replaceHash(`${hashForView("docs")}?doc=${docId}`); }, [docId]);
   const [query, setQuery] = useState("");
   // P295: in the Hermes tab the texts come from the console; render again once they have.
   const [loaded, setLoaded] = useState(0);

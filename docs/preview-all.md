@@ -1,5 +1,9 @@
 # preview-all: everything waiting for review, in one branch
 
+> `ui-v2`, on top of this branch, changes the tab after the first sandbox try: one style (no `s`
+> key, no Settings › Look), navigation v2 (six destinations, new keys and routes), chat and
+> overlays inside the tab, and the websocket fix. See `docs/ui-nav-v2.md`.
+
 Status: **a preview, not a release** (2026-11-05). `preview-all` is `hackathon-v2` (at `cc806c0`) with
 the seven branches that wait for review merged on top, so the whole product can be tried at once. It is
 not a merge into `hackathon-v2` and replaces none of the branches: each is still reviewed and merged on

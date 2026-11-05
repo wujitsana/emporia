@@ -51,8 +51,8 @@ export function AttentionChip({ profile, open, onNewTurn, pollMs = CHIP_POLL_MS 
 
   if (!state) return null;
   const { text, urgent } = attentionLabel(state.turns.length, state.unread);
-  const target = state.turns[0] ? `#/games/${encodeURIComponent(state.turns[0].session_id)}`
-    : state.unread > 0 ? "#/messages" : "#/overview";
+  const target = state.turns[0] ? `#/play/games/${encodeURIComponent(state.turns[0].session_id)}`
+    : state.unread > 0 ? "#/talk/messages" : "#/home";
   return (
     <button
       type="button"

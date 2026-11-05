@@ -281,6 +281,15 @@ function Composer({
   const busy = api.chat.busy;
   const disabled = api.conn !== "open";
   const query = draft.trimStart();
+
+  // One slim line by default; it grows with the text up to a few lines (the CSS max-height),
+  // then scrolls inside.
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    if (el.scrollHeight > el.clientHeight) el.style.height = `${el.scrollHeight + 2}px`;
+  }, [draft, inputRef]);
   const isCommandWord = query.startsWith("/") && !/\s/.test(query);
   // Rows show only for the text they were fetched for, until Escape dismisses them.
   const rows = isCommandWord && completion.for === query && dismissed !== query ? completion.rows : [];
@@ -378,7 +387,7 @@ function Composer({
         <textarea
           ref={inputRef}
           className={styles.input}
-          rows={2}
+          rows={1}
           value={draft}
           placeholder={disabled ? "connecting to Hermes…" : `message ${api.profile}'s agent — / for commands`}
           aria-label="Message to your agent"
@@ -413,6 +422,7 @@ export function ChatDrawer({
   panel,
   setPanel,
   focusTick,
+  onMenu,
 }: {
   api: ChatApi;
   open: boolean;
@@ -423,6 +433,8 @@ export function ChatDrawer({
   setPanel: (p: Panel | ((p: Panel) => Panel)) => void;
   /** Bumped when "ask about this" fills the composer, to focus it. */
   focusTick: number;
+  /** Opens the dashboard's menu over the full-page chat (phone, narrow tab). */
+  onMenu?: () => void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -493,9 +505,17 @@ export function ChatDrawer({
         }
       }}
     >
-      <button type="button" className={`${styles.back} ${styles.phoneOnly}`} onClick={onClose}>
-        <span aria-hidden>←</span> back
-      </button>
+      {/* Full-page chat (below the header-nav width): back to the dashboard, and the menu. */}
+      <div className={`${styles.backRow} ${styles.phoneOnly}`}>
+        <button type="button" className={styles.back} onClick={onClose}>
+          <span aria-hidden>←</span> back to the dashboard
+        </button>
+        {onMenu && (
+          <button type="button" className={`e-menu-button ${styles.menu}`} onClick={onMenu} aria-label="Open menu">
+            <span aria-hidden>☰</span>
+          </button>
+        )}
+      </div>
       <header className={styles.head}>
         <div className={styles.headRow}>
           <h2 className={styles.heading}>

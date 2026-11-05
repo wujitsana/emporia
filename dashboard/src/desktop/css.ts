@@ -30,14 +30,18 @@ export const DESKTOP_POLISH = `
 .e-desktop-root {
   height: 100%;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   position: relative;
   contain: layout paint;
   outline: none;
   text-align: left;
 }
+/* The app's frame is this pane (dashboard.css § 3): its view scrolls inside, and the
+   menu and popovers stay inside it. The notes before the app is up may scroll. */
 .e-desktop-root > .e-host-body {
-  min-height: 100%;
+  --e-frame-h: 100%;
+  height: 100%;
+  overflow-y: auto;
   box-sizing: border-box;
 }
 /* Before the app has a profile: the "opening", "not set up" and "did not answer" notes, in Desktop's own colours. */

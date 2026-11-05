@@ -75,13 +75,23 @@ body.theme-light {
 
 /* ─── 3. APP SHELL LAYOUT ────────────────────────────────────────────────── */
 
+/* The app is one frame: the header, the section strip, the view (which
+   scrolls) and the chat drawer all live inside it, and so does every overlay
+   (the phone menu and its backdrop, full-page chat, popovers). `contain:
+   layout paint` makes the frame the containing block of anything positioned
+   inside it, so nothing reaches past it into the page around it: inside the
+   Hermes tab the frame is the tab's own container (hermesPlugin.tsx sizes it to
+   what is visible, --e-frame-h: 100%), on the Desktop page the page's pane,
+   standalone the window. */
 .e-app-shell {
   display: flex;
-  min-height: 100vh;
+  height: var(--e-frame-h, 100dvh);
+  min-height: 0;
   width: 100%;
   max-width: 100%;
   position: relative;
-  overflow-x: clip;
+  overflow: hidden;
+  contain: layout paint;
 }
 
 /* Old left-sidebar layout — kept for non-header-nav mode */
@@ -90,8 +100,8 @@ body.theme-light {
   width: clamp(12rem, 22ch, 100%);
   max-width: 20rem;
   border-right: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-  height: 100vh;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
   position: sticky;
   top: 0;
   align-self: stretch;
@@ -216,6 +226,8 @@ body.theme-light {
 .e-app-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   max-width: 100%;
   display: flex;
   flex-direction: column;
@@ -274,17 +286,16 @@ body.theme-light {
 .e-topbar-icon { font-size: 1.485rem; line-height: 1; color: var(--theme-focused-foreground); margin-top: 2px; }
 .e-topbar-blurb { font-size: 0.748rem !important; max-width: 42ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Section tabs — desktop horizontal nav */
+/* Destinations (nav v2): six tabs in the header row, beside the brand. */
 .e-section-tabs {
   display: none;
   gap: 2px;
-  padding: 0 12px 8px;
   overflow-x: auto;
   max-width: 100%;
   box-sizing: border-box;
 }
 @media (min-width: 901px) {
-  .e-section-tabs { display: flex; flex-wrap: wrap; }
+  .e-section-tabs--horizontal { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; }
 }
 
 .e-section-tab {
@@ -1117,6 +1128,7 @@ body.theme-light {
 .e-theme-compact { position: relative; }
 .e-theme-compact--inline { display: flex; align-items: center; }
 .e-theme-compact__btn { padding: 4px; border: none; background: transparent; cursor: pointer; }
+/* Fixed, but inside the frame's `contain: layout paint`: it covers the frame, never the page around it. */
 .e-theme-compact__backdrop { position: fixed; inset: 0; z-index: 200; border: 0; background: transparent; }
 .e-theme-compact__pop {
   position: absolute;
@@ -1865,10 +1877,10 @@ body.theme-light {
   .e-view-body { padding: 14px 12px 24px; }
   .e-app-drawer {
     display: flex;
-    position: fixed;
+    position: absolute;
     left: 0; top: 0; bottom: 0;
-    z-index: 100;
-    width: min(85vw, 16rem);
+    z-index: 140;     /* above full-page chat (120): the chat's ☰ opens it */
+    width: min(85%, 16rem);
     transform: translateX(-105%);
     transition: transform 0.2s ease;
     background: var(--theme-background);
@@ -1880,9 +1892,9 @@ body.theme-light {
   }
   .e-app-shell.is-nav-open .e-app-backdrop {
     display: block;
-    position: fixed;
+    position: absolute;
     inset: 0;
-    z-index: 90;
+    z-index: 130;
     background: rgba(0,0,0,0.55);
     border: 0;
     padding: 0;
@@ -2056,27 +2068,84 @@ body.theme-light {
 .e-subhead:first-child { margin-top: 4px; }
 .e-note { font-size: 0.8rem; line-height: 1.5; opacity: 0.6; margin: 2px 0 0; }
 
-/* Grouped header tabs: a quiet rule between groups. */
-.e-section-group { display: contents; }
-.e-section-group__rule {
-  align-self: stretch;
-  width: 1px;
-  margin: 6px 6px;
-  background: var(--e-rule);
-}
 .e-section-tabs--horizontal { align-items: center; }
 .e-section-tab.is-active { background: var(--e-accent-wash) !important; }
 
-/* The menu: grouped list, a head with a close control, viewer + theme at the foot. */
-.e-section-tabs--drawer .e-section-group { display: flex; flex-direction: column; gap: 2px; }
-.e-section-tabs--drawer .e-section-group + .e-section-group { margin-top: 10px; }
-.e-section-group__title {
-  padding: 6px 14px 4px;
-  font-size: 0.66rem;
-  letter-spacing: 0.16em;
-  opacity: 0.5;
+/* The menu: the six destinations, each with its sections named under it. */
+.e-section-tabs--drawer .e-section-tab {
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "icon label key" "icon sub key";
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 0;
+  text-align: left;
 }
-.e-section-tabs--drawer .e-section-tab { min-height: 44px; }
+.e-section-tabs--drawer .e-section-tab__icon { grid-area: icon; }
+.e-section-tabs--drawer .e-section-tab__label { grid-area: label; font-size: 0.95rem; }
+.e-section-tabs--drawer .e-section-tab__key { grid-area: key; }
+.e-section-tab__sub {
+  grid-area: sub;
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  white-space: normal;
+}
+
+/* The sections inside the current destination: one strip under the header, every width. */
+.e-subnav {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 16px;
+  min-height: 40px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--e-rule);
+  background: var(--theme-background);
+}
+.e-subnav__dest {
+  display: inline-flex;
+  align-items: center;
+  padding-right: 10px;
+  margin-right: 4px;
+  border-right: 1px solid var(--e-rule);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  white-space: nowrap;
+}
+.e-subnav__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.e-subnav__tab:hover { border-bottom-color: var(--theme-border); }
+.e-subnav__tab.is-active { border-bottom-color: var(--theme-focused-foreground); font-weight: 700; }
+.e-subnav__keys {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+}
+@media (max-width: 900px) {
+  .e-subnav { padding: 0 8px; }
+  .e-subnav__dest, .e-subnav__keys { display: none; }
+  .e-subnav__tab { min-height: 44px; padding: 0 14px; }
+}
 /* The whole menu scrolls as one, so the foot never covers the last sections. */
 .e-section-tabs--drawer { flex: none; overflow: visible; }
 .e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }
@@ -2140,6 +2209,10 @@ body.theme-light {
   color: var(--theme-focused-foreground);
 }
 .e-mobile-top__section::before { content: "▸ "; opacity: 0.6; }
+
+/* The brand: the word, decoded (LookChrome.BrandTitle); a fixed width so the
+   header never shifts while glyphs change. */
+.e-brand { display: inline-block; min-width: 7.2ch; font-variant-numeric: tabular-nums; }
 .e-mobile-top .e-relay-status__host { display: none; }
 .e-mobile-top .e-relay-status__chips { gap: 6px; }
 .e-mobile-top .e-status-chip { padding: 4px 6px; }
@@ -2507,7 +2580,7 @@ body.theme-light {
 /* The capture frame (540 × 540 CSS px) is the phone layout; scale it so the
    smallest text on screen (0.65rem / 11px labels) is at least 13 CSS px. */
 @media (max-width: 700px) {
-  .e-capture .e-app-shell { zoom: 1.25; }
+  .e-capture .e-app-shell { zoom: 1.25; height: calc(var(--e-frame-h, 100dvh) / 1.25); }
 }
 
 .e-quest-next { margin: 4px 0 10px; font-size: 0.85rem; line-height: 1.5; }
@@ -2536,3 +2609,415 @@ body.theme-light {
 /* Season 1: the operator's current expedition, under an agent's quests — the theme's accent, a quiet rule. */
 .e-gamify-expedition { margin-top: 12px; padding: 6px 0 6px 10px;
   border-left: 2px solid var(--theme-focused-foreground); display: flex; flex-direction: column; gap: 2px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   30. THE LOOK — the one style (the demo animatic's information cards)
+   Pixel headings (Silkscreen) that unscramble, mono lines typed with
+   a block cursor, corner brackets, status lines above and below,
+   and the tint as a FILL with dark ink on it, never as text on the
+   light canvas. It was the "animatic" style beside "retromod"
+   (docs/ui-style-experimental.md, now history); since ui-v2 it is
+   the only one. `.e-look` is on the app's root with the theme and
+   tint classes (themeConfig.applyTheme), so these rules keep their
+   weight over the older ones above without a switch.
+   - It follows light/dark and all eight tints: every colour comes
+     from the tint (--tint; amber when there is none).
+   - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with
+     prefers-reduced-motion or in capture mode (?capture=1).
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 0. THE PIXEL FACE ─────────────────────────────────────────────────────
+   Silkscreen (SIL OFL 1.1, assets/fonts/OFL-Silkscreen.txt), bundled: the
+   dashboard makes no third-party requests. Latin only; anything else falls
+   back to the mono stack. Not fetched until a pixel heading is on screen. */
+@font-face {
+  font-family: "EmporiaPixel";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/Silkscreen-Regular.woff2") format("woff2");
+}
+
+/* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */
+
+.e-look {
+  --anim-tint: var(--tint, #f0a832);                                   /* amber when no tint is set */
+  --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */
+  --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */
+  --anim-line: oklch(from var(--anim-tint) 0.62 c h);                  /* brackets, rules, ticks: graphics only */
+  --anim-pixel: "EmporiaPixel", var(--font-family-mono, monospace);
+  --anim-bracket: 12px;
+  --anim-bracket-w: 2px;
+  --anim-ease: cubic-bezier(0.33, 1, 0.68, 1);                          /* power2.out */
+}
+
+/* The light canvas for every tint, amber included : white with a breath of the tint, near-black ink.
+   The accent used AS TEXT is darker than the graphics accent so it reads
+   (≥ 4.5:1 on the canvas). */
+body.e-look.theme-light {
+  --theme-background: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
+  --theme-background-modal: oklch(from var(--anim-tint) 0.92 calc(c * 0.18) h);
+  --theme-background-input: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
+  --theme-border: oklch(from var(--anim-tint) 0.84 calc(c * 0.28) h);
+  --theme-border-subdued: oklch(from var(--anim-tint) 0.88 calc(c * 0.22) h);
+  --theme-text: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);
+  --theme-button: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);
+  --theme-button-text: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
+  --theme-focused-foreground: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h);
+  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);
+}
+
+/* The dark variant: the same cards on a near-black tinted canvas. */
+body.e-look.theme-dark {
+  --theme-background: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);
+  --theme-background-modal: oklch(from var(--anim-tint) 0.24 calc(c * 0.22) h);
+  --theme-background-input: oklch(from var(--anim-tint) 0.28 calc(c * 0.2) h);
+  --theme-border: oklch(from var(--anim-tint) 0.4 calc(c * 0.28) h);
+  --theme-border-subdued: oklch(from var(--anim-tint) 0.32 calc(c * 0.26) h);
+  --theme-text: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);
+  --theme-button: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);
+  --theme-button-text: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);
+  --theme-focused-foreground: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h);
+  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h / 0.5);
+  --anim-line: oklch(from var(--anim-tint) 0.72 c h);
+}
+
+.e-look .e-dashboard-shell {
+  --e-rule: var(--theme-border-subdued);
+  --anim-wash: color-mix(in srgb, var(--anim-fill) 45%, transparent);
+  --e-accent-wash: var(--anim-wash);
+}
+/* On the dark canvas a strong wash would sit under light text: keep it faint. */
+.e-look.theme-dark .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--anim-fill) 14%, transparent); }
+
+/* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────
+   Four L-shaped corners drawn as background images, so no element and no
+   ::before/::after is taken from the other rules. On panels only: the
+   frame around data, never over it. */
+.e-look .e-page-head,
+.e-look .e-now,
+.e-look .e-intro,
+.e-look .e-panel-card,
+.e-look .e-overview-card,
+.e-look .e-setplay,
+.e-look .e-empty-pane {
+  background-image:
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));
+  background-size:
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);
+  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  border-radius: 0;
+}
+.e-look .e-page-head { --anim-bracket: 18px; --anim-bracket-w: 3px; }
+
+/* ─── 3. THE SECTION HEADING: status line, pixel title, typed line ─────── */
+
+.e-look .e-page-head {
+  position: relative;
+  padding: 12px 24px 16px;
+  margin-top: 10px;
+  border-bottom: 0;
+  max-width: min(1440px, calc(100% - 32px));
+}
+.e-look .e-page-head__title {
+  font-family: var(--anim-pixel);
+  font-weight: 400;
+  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);
+  line-height: 1.05;
+  letter-spacing: 0.04em;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.e-look .e-page-head__blurb {
+  margin-top: 10px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  opacity: 0.86;
+  max-width: 72ch;
+}
+
+/* The block cursor at the end of a typed line. */
+.e-look .e-anim-cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1em;
+  margin-left: 0.15em;
+  vertical-align: -0.14em;
+  background: currentColor;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .e-look .e-anim-cursor { animation: e-anim-blink 1.06s steps(1, end) infinite; }
+}
+@keyframes e-anim-blink { 50% { opacity: 0; } }
+
+/* Status lines: `emporia ~ hermes plugin · [1] · 01 / 14 · overview` above,
+   `T+00:28 · as alpha · watch only` below. Small, but ink at 80 %, not faint. */
+.e-look .e-anim-hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  letter-spacing: 0.05em;
+  color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background));
+  font-variant-numeric: tabular-nums;
+}
+.e-look .e-anim-hud__key {
+  padding: 1px 8px;
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  font-weight: 700;
+}
+.e-look .e-anim-hud--foot {
+  max-width: min(1440px, calc(100% - 32px));
+  margin: 8px auto 12px;
+  padding: 8px 24px 0;
+  border-top: 1px solid var(--theme-border-subdued);
+  box-sizing: border-box;
+}
+
+/* The beat flash: an ink bar along the heading's top edge, once per section. */
+.e-look .e-anim-flash {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  height: 4px;
+  background: var(--anim-ink);
+  opacity: 0;
+  pointer-events: none;
+}
+.e-look.theme-dark .e-anim-flash { background: var(--anim-fill); }
+@media (prefers-reduced-motion: no-preference) {
+  .e-look .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }
+}
+@keyframes e-anim-flash {
+  0% { opacity: 1; transform: scaleX(0.2); transform-origin: left; }
+  45% { opacity: 1; transform: scaleX(1); transform-origin: left; }
+  100% { opacity: 0; transform: scaleX(1); transform-origin: left; }
+}
+
+/* ─── 4. HEADER, NAV, MENU ──────────────────────────────────────────────── */
+
+.e-look .e-brand-title {
+  font-family: var(--anim-pixel);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.e-look .e-section-tab { opacity: 0.8; }
+.e-look .e-section-tab.is-active {
+  background: var(--anim-fill) !important;
+  color: var(--anim-ink);
+  border-color: var(--anim-fill);
+  font-weight: 700;
+}
+.e-look .e-section-tab.is-active .e-section-tab__icon { color: var(--anim-ink); }
+.e-look .e-section-tab.is-active .e-section-tab__sub { color: var(--anim-ink); }
+.e-look .e-subnav__tab.is-active { border-bottom-color: var(--anim-line); }
+.e-look .e-mobile-top__section {
+  font-family: var(--anim-pixel);
+  color: var(--theme-text);
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+}
+.e-look .e-mobile-top__section::before { content: "> "; opacity: 0.8; }
+.e-look .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background)); }
+.e-look .e-section-tab.is-active .e-section-tab__key { color: var(--anim-ink); }
+
+/* Relay / live: square chips, the live one filled. */
+.e-look .e-status-chip { border-color: var(--theme-border); background: transparent; }
+.e-look .e-status-chip.is-ok {
+  background: var(--anim-fill);
+  border-color: var(--anim-fill);
+  color: var(--anim-ink);
+  font-weight: 700;
+}
+.e-look .e-status-chip.is-ok .e-status-chip__loader,
+.e-look .e-status-chip.is-ok .e-status-chip__dot--pulse { color: var(--anim-ink); }
+
+/* ─── 5. CAPTION BARS AND CHIPS ─────────────────────────────────────────
+   The animatic's two text-on-fill shapes: a small bold chip (its
+   `CARD · build now` badge) for labels, and a bold band (its captions)
+   for the one line that says what happened. */
+.e-look .e-intro__title,
+.e-look .e-now__head > span:first-child,
+.e-look .e-now__label {
+  display: inline-block;
+  width: fit-content;
+  padding: 2px 8px;
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  font-weight: 700;
+  opacity: 1;
+}
+.e-look .e-now__label { padding: 1px 6px; font-size: 0.66rem; }
+.e-look .e-now__go,
+.e-look .e-now__live,
+.e-look .e-intro__link-label { color: var(--theme-focused-foreground); font-weight: 600; }
+.e-look .e-now__live { color: var(--anim-ink); }
+.e-look .e-now__head { align-items: center; }
+.e-look .e-now__head > span:last-child { font-family: var(--anim-pixel); font-size: 0.9rem; letter-spacing: 0.06em; }
+.e-look .e-intro { border-left-width: 1px; }
+.e-look .e-intro__text { font-size: 0.95rem; }
+
+/* Sub-headings inside a view, in the pixel face: the QUESTS card. */
+.e-look .e-subhead {
+  font-family: var(--anim-pixel);
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  opacity: 1;
+  margin-top: 22px;
+}
+.e-look .e-subhead::after { background: var(--anim-line); opacity: 0.6; }
+.e-look .e-panel-card__title { opacity: 0.85; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.e-look .e-overview-card__title { font-family: var(--anim-pixel); letter-spacing: 0.05em; text-transform: uppercase; }
+.e-look .e-rail-label { opacity: 0.8; font-weight: 700; }
+.e-look .e-rail-item.is-selected {
+  background: var(--e-accent-wash);
+  box-shadow: inset 3px 0 0 var(--anim-line);
+}
+
+/* Quests read like the animatic's QUESTS card: `>` lines, the done ones ticked. */
+.e-look .e-quest-row { font-size: 0.95rem !important; line-height: 1.7; opacity: 1; }
+.e-look .e-quest-row::before { content: "> "; color: var(--theme-focused-foreground); font-weight: 700; }
+.e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) 74%, var(--theme-background)); }
+.e-look .e-quest-next .e-now__label { margin-right: 4px; }
+
+/* ─── 6. SET PLAYS ───────────────────────────────────────────────────── */
+
+.e-look .e-setplay { padding: 18px 20px 22px; }
+.e-look .e-setplay__game {
+  font-family: var(--anim-pixel);
+  font-size: clamp(1.4rem, 1rem + 1.4vw, 2rem);
+  line-height: 1.05;
+  letter-spacing: 0.05em;
+  color: var(--theme-text);
+}
+.e-look .e-setplay__players { font-size: 1.05rem; margin-top: 6px; }
+.e-look .e-setplay__status { opacity: 1; border-color: var(--theme-border); font-weight: 700; }
+.e-look .e-setplay__status.is-live {
+  background: var(--anim-fill);
+  border-color: var(--anim-fill);
+  color: var(--anim-ink);
+}
+/* The verdict is the caption band. */
+.e-look .e-setplay__verdict.is-win {
+  padding: 8px 12px;
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.e-look .e-setplay__verdict.is-win .e-setplay__why { color: var(--anim-ink); opacity: 0.85; }
+.e-look .e-setplay__wait { opacity: 0.86; font-size: 0.86rem; }
+
+/* commit → reveal → winner: square steps, the current one a filled pixel label. */
+.e-look .e-phase-strip__n { border-radius: 0; }
+.e-look .e-phase-strip__step.is-now {
+  opacity: 1;
+  color: var(--anim-ink);
+  background: var(--anim-fill);
+  padding: 3px 10px 3px 4px;
+  font-family: var(--anim-pixel);
+  letter-spacing: 0.05em;
+}
+.e-look .e-phase-strip__step.is-now .e-phase-strip__n {
+  background: var(--anim-ink);
+  border-color: var(--anim-ink);
+  color: var(--anim-fill);
+  font-family: var(--font-family-mono, monospace);
+}
+.e-look .e-phase-strip__step + .e-phase-strip__step::before { background: var(--anim-line); opacity: 0.8; }
+
+/* Won cells, winning seats and picks: the fill with ink on it. */
+.e-look .e-blotto__grid td.is-won,
+.e-look .e-lowest__cell.is-winner,
+.e-look .e-numline__pick.is-winner .e-numline__label {
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  border-color: var(--anim-line);
+}
+.e-look .e-blotto__grid tr.is-winner th,
+.e-look .e-seat.is-winner .e-seat__name,
+.e-look .e-seat.is-winner .e-seat__move { color: var(--theme-text); font-weight: 700; }
+.e-look .e-seat.is-winner {
+  background: var(--anim-wash);
+  box-shadow: inset 3px 0 0 var(--anim-line);
+}
+.e-look .e-numline__pick.is-winner .e-numline__pin { background: var(--anim-line); }
+.e-look .e-numline__mark--target { border-left-color: var(--anim-line); }
+.e-look .e-numline__mark--target > span { color: var(--theme-text); }
+.e-look .e-game-row__kind { color: var(--theme-text); font-weight: 700; }
+.e-look .e-blotto__grid thead th,
+.e-look .e-blotto__state,
+.e-look .e-seat__state { opacity: 0.8; }
+
+/* ─── 7. A CALMER FAINT ──────────────────────────────────────────────────
+   Secondary text used to dim to 35–50 % opacity, which falls under
+   4.5:1 on a tinted canvas. Faint is a colour at about 4.6:1 or more. */
+.e-look {
+  --anim-faint: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+}
+.e-look .e-faint,
+.e-look .e-dim,
+.e-look .e-rail-item .e-faint,
+.e-look .e-relay-status__host,
+.e-look .e-relay-status__meta,
+.e-look .e-game-row__phase,
+.e-look .e-chat-line__time,
+.e-look .e-chat-line__type,
+.e-look .e-badge--dim,
+.e-look .e-slim-card__title,
+.e-look .e-blotto__grid td.is-hidden,
+.e-look .e-phase-strip__step.is-next,
+.e-look [style*="opacity: 0.5"],
+.e-look [style*="opacity: 0.6"] {
+  opacity: 1 !important;
+  color: var(--anim-faint);
+}
+.e-look .e-phase-strip__step.is-done { opacity: 1; }
+/* Names in a chat are ink, so they read on the tint. */
+.e-look .e-chat-line__name { color: var(--theme-text) !important; }
+.e-look .e-entity-chip--agent,
+.e-look .e-entity-chip--session { opacity: 1; color: var(--theme-focused-foreground); }
+
+/* ─── 8. MOTION ─────────────────────────────────────────────────────────
+   Panels arrive with a short rise when a section opens (they mount with it).
+   Off with reduced motion; capture mode turns every animation off anyway. */
+@media (prefers-reduced-motion: no-preference) {
+  .e-look .e-page-head,
+  .e-look .e-now,
+  .e-look .e-intro,
+  .e-look .e-setplay {
+    animation: e-anim-rise 0.38s var(--anim-ease) both;
+  }
+  .e-look .e-now { animation-delay: 0.05s; }
+  .e-look .e-setplay { animation-delay: 0.04s; }
+}
+@keyframes e-anim-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ─── 10. PHONE ──────────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+  .e-look .e-page-head { padding: 10px 16px 14px; margin-top: 8px; max-width: calc(100% - 16px); }
+  .e-look .e-page-head__title { font-size: 1.55rem; }
+  .e-look .e-page-head__blurb { font-size: 0.84rem; }
+  .e-look .e-anim-hud { font-size: 0.7rem; }
+  .e-look .e-anim-hud--top .e-anim-hud__where { flex-basis: 100%; }
+  .e-look .e-anim-hud--foot { padding: 8px 16px 0; max-width: calc(100% - 16px); }
+  .e-look .e-setplay__game { font-size: 1.4rem; }
+}

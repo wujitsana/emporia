@@ -1,89 +1,116 @@
-import Text from "@kit/Text";
 import type { ReactNode } from "react";
-import { groupedNav, visibleNav, type View } from "./navConfig";
+import { destinationOf, visibleDestinations, type Destination, type View } from "./navConfig";
 import { useRelayCtx } from "./relayCtx";
 import { ThemePanelBody } from "./ThemeControls";
 import { ViewerSwitcher } from "./ui/ViewerSwitcher";
+import { BrandTitle } from "./ui/LookChrome";
 import type { Theme, Tint } from "./themeConfig";
 import type { DashboardView } from "./eventNav";
 
-function useVisibleNav() {
-  // P34-2: `isRelayOperator` was destructured here and never used — the nav
-  // gates on `isSpectator` alone, and App.tsx passes operator-ness to FeesView
-  // itself. P35-2: the filter itself moved to navConfig.visibleNav(), so the
-  // keyboard handler in App.tsx can ask the same question and get the same
-  // answer instead of searching the unfiltered list.
+type Badges = Partial<Record<DashboardView, number>>;
+
+function useDestinations() {
+  // P35-2: one visibility rule (navConfig.visibleNav) for the nav and the keys.
   const { isSpectator, isRelayOperator } = useRelayCtx();
-  return visibleNav({ isSpectator, isOperator: isRelayOperator });
+  return visibleDestinations({ isSpectator, isOperator: isRelayOperator });
+}
+
+function Count({ n }: { n: number }) {
+  return n > 0 ? <span className="e-nav-badge">{n > 99 ? "99+" : n}</span> : null;
+}
+
+/** A destination's badge: the sum of its sections' (Talk carries Messages' unread). */
+function destBadge(views: DashboardView[], badges: Badges): number {
+  return views.reduce((sum, v) => sum + (badges[v] ?? 0), 0);
 }
 
 /**
- * Single nav source: horizontal tabs (desktop header) or the menu's list
- * (mobile). Both are drawn in NAV_GROUPS order — the tabs with a quiet rule
- * between groups, the menu with each group's name above it.
+ * The six destinations (navigation v2, docs/ui-nav-v2.md): a row of tabs in the
+ * desktop header, or the menu's list on a phone. A destination opens its last
+ * section, else its first.
  */
 export function SectionTabs({
   view,
-  onGo,
+  onGoDest,
   variant = "horizontal",
   badges = {},
 }: {
   view: View;
-  onGo: (id: View) => void;
+  onGoDest: (id: Destination) => void;
   variant?: "horizontal" | "drawer";
-  badges?: Partial<Record<DashboardView, number>>;
+  badges?: Badges;
 }) {
-  const groups = groupedNav(useVisibleNav());
-  const tabView = view;
+  const dests = useDestinations();
+  const here = destinationOf(view).id;
   return (
-    <nav
-      className={`e-section-tabs e-section-tabs--${variant}`}
-      aria-label="Sections"
-    >
-      {groups.map((g, gi) => (
-        <div key={g.title} className="e-section-group" role="group" aria-label={g.title}>
-          {variant === "drawer" ? (
-            <span className="e-section-group__title" aria-hidden>{g.title}</span>
-          ) : gi > 0 ? (
-            <span className="e-section-group__rule" aria-hidden />
-          ) : null}
-          {g.items.map((n) => {
-            const active = tabView === n.id;
-            const badgeCount = badges[n.id] ?? 0;
-            return (
-              <button
-                key={n.id}
-                type="button"
-                className={`e-section-tab${active ? " is-active" : ""}`}
-                onClick={() => onGo(n.id)}
-                title={n.blurb}
-                aria-current={active ? "page" : undefined}
-              >
-                <span className="e-section-tab__icon" aria-hidden>
-                  {n.icon}
-                </span>
-                <span className="e-section-tab__label">
-                  {n.label}
-                  {badgeCount > 0 && (
-                    <span className="e-nav-badge">{badgeCount > 99 ? "99+" : badgeCount}</span>
-                  )}
-                </span>
-                {variant === "drawer" ? (
-                  <kbd className="e-section-tab__key">{n.hotkey}</kbd>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      ))}
+    <nav className={`e-section-tabs e-section-tabs--${variant}`} aria-label="Sections">
+      {dests.map((d) => {
+        const active = d.id === here;
+        return (
+          <button
+            key={d.id}
+            type="button"
+            className={`e-section-tab${active ? " is-active" : ""}`}
+            onClick={() => onGoDest(d.id)}
+            title={d.blurb}
+            aria-current={active ? "page" : undefined}
+          >
+            <span className="e-section-tab__icon" aria-hidden>{d.icon}</span>
+            <span className="e-section-tab__label">
+              {d.label}
+              <Count n={destBadge(d.views, badges)} />
+            </span>
+            {variant === "drawer" ? (
+              <>
+                <span className="e-section-tab__sub">{d.items.map((n) => n.label).join(" · ")}</span>
+                <kbd className="e-section-tab__key">{d.hotkey}</kbd>
+              </>
+            ) : null}
+          </button>
+        );
+      })}
     </nav>
   );
 }
 
-/** Mobile slide-out menu — the same sections as the header tabs, then who you view as and the theme. */
+/**
+ * The sections inside the current destination — `Games · Tournaments`, `Agora ·
+ * Rooms · Messages` — one strip under the header, on every width. Not drawn for a
+ * destination with a single section (Home, Season).
+ */
+export function SubNav({ view, onGo, badges = {} }: { view: View; onGo: (id: View) => void; badges?: Badges }) {
+  const dests = useDestinations();
+  const here = destinationOf(view).id;
+  const dest = dests.find((d) => d.id === here);
+  if (!dest || dest.items.length < 2) return null;
+  return (
+    <nav className="e-subnav" aria-label={`${dest.label}: sections`}>
+      <span className="e-subnav__dest" aria-hidden>{dest.label}</span>
+      {dest.items.map((n) => {
+        const active = n.id === view;
+        return (
+          <button
+            key={n.id}
+            type="button"
+            className={`e-subnav__tab${active ? " is-active" : ""}`}
+            onClick={() => onGo(n.id)}
+            title={n.blurb}
+            aria-current={active ? "page" : undefined}
+          >
+            {n.label}
+            <Count n={badges[n.id] ?? 0} />
+          </button>
+        );
+      })}
+      <span className="e-subnav__keys" aria-hidden>[ ]</span>
+    </nav>
+  );
+}
+
+/** The phone's menu: the agent chat, the six destinations, then who you view as and the theme. */
 export function MobileNavDrawer({
   view,
-  onGo,
+  onGoDest,
   onClose,
   theme,
   tint,
@@ -93,20 +120,20 @@ export function MobileNavDrawer({
   lead,
 }: {
   view: View;
-  onGo: (id: View) => void;
+  onGoDest: (id: Destination) => void;
   onClose?: () => void;
-  /** Drawn above the section groups (the agent chat, in the Hermes tab). */
+  /** Drawn above the destinations (the agent chat, in the Hermes tab). */
   lead?: ReactNode;
   theme: Theme;
   tint: Tint;
   onTheme: (t: Theme) => void;
   onTint: (t: Tint) => void;
-  badges?: Partial<Record<DashboardView, number>>;
+  badges?: Badges;
 }) {
   return (
     <div className="e-mobile-drawer">
       <div className="e-mobile-drawer__head">
-        <Text className="e-brand-title">✶ Emporia</Text>
+        <span className="e-brand-title"><BrandTitle /></span>
         {onClose ? (
           <button type="button" className="e-icon-button" onClick={onClose} aria-label="Close menu">
             ✕
@@ -114,7 +141,7 @@ export function MobileNavDrawer({
         ) : null}
       </div>
       {lead}
-      <SectionTabs view={view} onGo={onGo} variant="drawer" badges={badges} />
+      <SectionTabs view={view} onGoDest={onGoDest} variant="drawer" badges={badges} />
       <div className="e-mobile-drawer__foot">
         <ViewerSwitcher />
         <ThemePanelBody theme={theme} tint={tint} onTheme={onTheme} onTint={onTint} />

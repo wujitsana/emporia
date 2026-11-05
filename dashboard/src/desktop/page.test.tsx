@@ -59,7 +59,7 @@ describe("routing on the Desktop page", () => {
     expect(route.currentHash()).toBe("#/season");
     expect(window.location.hash).toBe("");
     route.resetRoute();
-    expect(route.currentHash()).toBe("#/overview");
+    expect(route.currentHash()).toBe("#/home");
     off();
     route.goToHash("#/agora");
     expect(heard).toHaveBeenCalledTimes(1);
@@ -97,7 +97,7 @@ describe("the profile on the Desktop page", () => {
     // Between the switch and the console's answer, nobody: alpha's thread is gone at once.
     expect(screen.queryByText(/alpha's secret/)).toBeNull();
     expect(env.VIEWER_ID).toBeNull();
-    expect(currentHash()).toBe("#/overview");
+    expect(currentHash()).toBe("#/home");
     expect(await screen.findByText("viewer=beta dm=-")).toBeTruthy();
 
     view.rerender(page("gamma"));                 // a profile with no agent here
@@ -177,14 +177,14 @@ describe("the status chip", () => {
     render(<AttentionChip profile="alpha" open={(h) => opened.push(h)} onNewTurn={(s) => news.push(s.session_id)} pollMs={40} />);
     const chip = await screen.findByRole("button", { name: "Emporia: your turn" });
     chip.click();
-    expect(opened).toEqual(["#/games/g1"]);
+    expect(opened).toEqual(["#/play/games/g1"]);
     sessions = [game("g1"), game("g2")];
     await screen.findByRole("button", { name: "Emporia: your turn ×2" });
     expect(news).toEqual(["g2"]);
   });
 });
 
-describe("the tab's chat and style on the Desktop page", () => {
+describe("the tab's chat and look on the Desktop page", () => {
   it("has no chat drawer, even with a Hermes SDK on the window: Desktop's own chat is the agent's", async () => {
     const w = window as { __EMPORIA_HERMES_SDK__?: unknown; __EMPORIA_HERMES_PROFILE__?: unknown };
     w.__EMPORIA_HERMES_SDK__ = { buildWsUrl: async () => "ws://x", authedFetch: async () => new Response("{}") };
@@ -202,33 +202,14 @@ describe("the tab's chat and style on the Desktop page", () => {
     }
   });
 
-  it("switches the style with `s` only for a key pressed in the page, and keeps it in Desktop's storage", async () => {
+  it("puts the look on the page's own body, never on Desktop's (there is one style, no `s` key)", async () => {
     const { setDesktopBridge } = await import("./bridge");
     const { ScopedRoot } = await import("./mount");
-    const style = await import("../styleMode");
-    const b = fakeBridge(["alpha"]);
-    setDesktopBridge(b);
-    style._resetStyleForTests();
-    function Probe() {
-      const ref = { current: document.body as Node | null };
-      const s = style.useStyleRoot(ref);
-      return <div data-testid="style">{s}</div>;
-    }
-    render(<ScopedRoot><Probe /></ScopedRoot>);
-    expect(screen.getByTestId("style").textContent).toBe("retromod");
-    // Outside the page (Desktop's own UI): ignored.
-    const outside = document.createElement("div");
-    document.body.appendChild(outside);
-    act(() => { outside.dispatchEvent(new KeyboardEvent("keydown", { key: "s", bubbles: true })); });
-    expect(screen.getByTestId("style").textContent).toBe("retromod");
-    // In the page: switches, and the class goes on the page's own body, not Desktop's.
-    const page = document.querySelector(".e-desktop-root")!;
-    act(() => { page.dispatchEvent(new KeyboardEvent("keydown", { key: "s", bubbles: true })); });
-    expect(screen.getByTestId("style").textContent).toBe("animatic");
-    expect(document.querySelector(".e-host-body")!.classList.contains("style-animatic")).toBe(true);
-    expect(document.body.classList.contains("style-animatic")).toBe(false);
-    expect(b.storage!.get("emporia_style", null)).toBe("animatic");
-    outside.remove();
-    style._resetStyleForTests();
+    const { applyTheme } = await import("../themeConfig");
+    setDesktopBridge(fakeBridge(["alpha"]));
+    render(<ScopedRoot><div /></ScopedRoot>);
+    act(() => applyTheme("theme-light", "tint-green", { fade: false }));
+    expect(document.querySelector(".e-host-body")!.classList.contains("e-look")).toBe(true);
+    expect(document.body.classList.contains("e-look")).toBe(false);
   });
 });

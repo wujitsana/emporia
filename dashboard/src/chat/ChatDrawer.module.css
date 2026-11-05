@@ -1,18 +1,23 @@
-/* The agent chat drawer — the retromod look: monospace, hairline rules, the
-   theme's accent as the one highlight, 40–48px targets on a phone. Tokens only
-   (--theme-*, --e-rule, --e-accent-wash); no colours of its own. */
+/* The agent chat drawer: monospace, hairline rules, the theme's accent as the
+   one highlight, 40–48px targets on a phone. Tokens only (--theme-*, --e-rule,
+   --e-accent-wash); no colours of its own.
+
+   It is sized to the app's own frame, never to the browser window: inside the
+   Hermes tab the frame is the tab's container (hermesPlugin.tsx), so the
+   transcript scrolls and the composer stays pinned at the bottom of what you
+   see. Below the header-nav width it covers the frame (absolute, inside the
+   shell's `contain: layout paint`), never the Hermes app around it. */
 
 .root {
   display: none;
   flex: none;
   flex-direction: column;
   box-sizing: border-box;
-  width: min(27rem, 40vw);
-  height: 100vh;
-  height: 100dvh;
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
+  width: min(27rem, 40%);
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  align-self: stretch;
   border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
   background: var(--theme-background);
   color: var(--theme-text);
@@ -527,29 +532,34 @@
 .composer {
   position: relative;
   flex: none;
-  padding: 10px 16px 14px;
+  padding: 8px 12px 10px;
   border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
   background: var(--theme-background);
 }
 
 .inputRow {
   display: flex;
-  align-items: stretch;
+  align-items: flex-end;
   gap: 8px;
 }
 
+/* One slim line (42px) by default; it grows with the text (ChatDrawer's
+   layout effect) up to about four lines, then scrolls inside. */
 .input {
   flex: 1;
   min-width: 0;
   box-sizing: border-box;
-  min-height: 48px;
-  max-height: 10rem;
-  padding: 8px 10px;
+  height: 42px;
+  min-height: 42px;
+  max-height: calc(4 * 1.45em + 20px);
+  padding: 10px 10px;
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.35));
   background: var(--theme-background);
   color: inherit;
   font: inherit;
-  resize: vertical;
+  line-height: 1.45;
+  resize: none;
+  overflow-y: auto;
 }
 
 .input:focus {
@@ -558,8 +568,10 @@
 
 .send {
   flex: none;
+  box-sizing: border-box;
   min-width: 48px;
-  min-height: 48px;
+  height: 42px;
+  min-height: 42px;
   padding: 0 14px;
   border: 1px solid var(--theme-focused-foreground);
   background: var(--theme-focused-foreground);
@@ -669,6 +681,26 @@
   flex: none;
 }
 
+/* "← back to the dashboard", then the menu: the full-page chat's top row. */
+.backRow {
+  align-items: stretch;
+  flex: none;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+}
+
+.backRow .back {
+  flex: 1;
+  border-bottom: 0;
+}
+
+.menu {
+  flex: none;
+  min-width: 48px;
+  min-height: 44px;
+  border: 0;
+  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+}
+
 .phoneOnly {
   display: none;
 }
@@ -676,7 +708,7 @@
 /* Below the header-nav breakpoint: one full-screen panel, "← back" on top. */
 @media (max-width: 900px) {
   .root {
-    position: fixed;
+    position: absolute;
     inset: 0;
     z-index: 120;
     width: 100%;

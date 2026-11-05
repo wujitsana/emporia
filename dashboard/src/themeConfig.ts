@@ -54,7 +54,7 @@ export function setThemeRoot(el: HTMLElement | null) {
   themeRoot = el;
 }
 
-/** The element the theme classes go on (the style mode's class goes there too). */
+/** The element the theme classes (and the look's `e-look`) go on. */
 export function themeRootEl(): HTMLElement {
   return themeRoot ?? document.body;
 }
@@ -89,5 +89,6 @@ export function applyTheme(theme: Theme, tint: Tint, opts: { fade?: boolean; cap
   TINTS.forEach((t) => t && b.classList.remove(t));
   b.classList.add(theme);
   b.classList.add("font-use-CommitMono");
+  b.classList.add("e-look");   // the one look (dashboard.css § 30)
   if (tint) b.classList.add(tint);
 }

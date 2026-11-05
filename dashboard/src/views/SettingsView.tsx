@@ -16,7 +16,6 @@ import { EMPORIA_VERSION } from "../buildInfo";
 import { groupItems, type SettingItem, type SettingsReport } from "../settings";
 import { api } from "../api";
 import { useRelayCtx } from "../relayCtx";
-import { StyleSwitch } from "../ui/StyleSwitch";
 
 
 const MACHINE = "__machine__";
@@ -87,7 +86,6 @@ export function SettingsView() {
   if (!VIA_CONSOLE && !isRelayOperator) {
     return (
       <ViewBody>
-        <StyleSwitch />
         <Text className="e-faint">
           Settings are read on the machine that holds the agents' keys. Open this dashboard from the
           Hermes dashboard's Emporia tab, or with <code>python -m emporia.console</code>.
@@ -133,7 +131,6 @@ export function SettingsView() {
     <ViewBody flush toolbar={<Text className="e-faint">Read-only · change a setting by running its command in your own terminal · plugin {EMPORIA_VERSION}</Text>}>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={24}>
         <div className="e-split-main e-settings">
-          <StyleSwitch />
           {error && !report && <Text className="e-status-txt">Could not read the settings: {error}</Text>}
           {loading && !report && <Text className="e-faint">Reading the settings…</Text>}
           {groupItems(items).map(([group, list]) => (

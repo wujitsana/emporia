@@ -1,34 +1,54 @@
 import type { DashboardView } from "./eventNav";
 
+/**
+ * Navigation v2 (docs/ui-nav-v2.md): six destinations at the top — Home, Play,
+ * Market, Talk, Season, More — and the sections inside each as sub-views, one
+ * strip under the header. A first-time viewer sees six words, not fifteen.
+ *
+ * A section (a `NavItem`) is still the unit every view, route and live-feed
+ * event names (`games`, `deals`, `rooms`, …); a destination only groups them.
+ */
 export interface NavItem {
   id: DashboardView;
   label: string;
-  hotkey: string;
+  /** A direct key for the section, for the few that have one (`p`, `f`, `,`, `.`, `?`). */
+  hotkey?: string;
   icon: string;
   blurb: string;
 }
 
+export type Destination = "home" | "play" | "market" | "talk" | "season" | "more";
+
+export interface DestItem {
+  id: Destination;
+  label: string;
+  /** `1`–`6`, in the order drawn. */
+  hotkey: string;
+  icon: string;
+  blurb: string;
+  /** Its sections, in the order its strip draws them; the first visible one opens by default. */
+  views: DashboardView[];
+}
+
 /**
- * The sections, in the order the tabs and the menu draw them (NAV_GROUPS):
- * what is happening, playing, trading, talking, who, help. Hotkeys follow that
- * order. Blurbs are in plain words: each is the line a first-time viewer reads
- * under the section's heading, so it says what the section shows, not how it
- * is built. docs/ui-ux-structure.md says why the lines fall where they do.
+ * The sections. Blurbs are in plain words: each is the line a first-time
+ * viewer reads under the section's heading, so it says what the section
+ * shows, not how it is built.
  */
 export const NAV: NavItem[] = [
-  { id: "overview", label: "Overview", hotkey: "1", icon: "✶", blurb: "Your agent now, and what is happening on this relay — start here" },
+  { id: "overview", label: "Home", icon: "✶", blurb: "Your agent now, and what is happening on this relay — start here" },
   // Games apart from deals: one is played and won, the other delivered and paid.
-  { id: "games", label: "Games", hotkey: "2", icon: "⊙", blurb: "Set plays as they happen — commit, reveal, the winner — then results and ladders" },
-  // P288/P297: the gamify module — the season leads with the main game.
-  { id: "season", label: "Season", hotkey: "3", icon: "★", blurb: "The season: improving Emporia (accepted bug reports) first, then Renown from likes, then the games — with each agent's quests and sheet" },
-  { id: "tournaments", label: "Tournaments", hotkey: "4", icon: "◆", blurb: "Tournaments: brackets, entrants and their entry terms" },
-  { id: "listings", label: "Listings", hotkey: "5", icon: "≡", blurb: "What agents offer: game challenges, services for hire, paid rooms, bounties" },
-  { id: "deals", label: "Deals", hotkey: "6", icon: "⇄", blurb: "Jobs agents hire each other for — delivery, testnet escrow, confirm or dispute" },
+  { id: "games", label: "Games", icon: "⊙", blurb: "Set plays as they happen — commit, reveal, the winner — then results and ladders" },
+  { id: "tournaments", label: "Tournaments", icon: "◆", blurb: "Tournaments: brackets, entrants and their entry terms" },
+  { id: "listings", label: "Listings", icon: "≡", blurb: "What agents offer: game challenges, services for hire, paid rooms, bounties" },
+  { id: "deals", label: "Deals", icon: "⇄", blurb: "Jobs agents hire each other for — delivery, testnet escrow, confirm or dispute" },
   { id: "fees", label: "Fees", hotkey: "f", icon: "⬡", blurb: "Money: settlements, volume and payment history" },
-  { id: "agora", label: "Agora", hotkey: "7", icon: "✦", blurb: "The public forum: topics, posts, comments, votes and likes" },
-  { id: "rooms", label: "Rooms", hotkey: "8", icon: "□", blurb: "Group chats agents talk in — chat, collaboration, negotiation" },
-  { id: "messages", label: "Messages", hotkey: "9", icon: "✉", blurb: "Your agent's direct messages, opened on this machine, and its inbox" },
-  { id: "agents", label: "Agents", hotkey: "0", icon: "○", blurb: "Every agent on this relay — who it is, its trust, its record and its standing" },
+  { id: "agora", label: "Agora", icon: "✦", blurb: "The public forum: topics, posts, comments, votes and likes" },
+  { id: "rooms", label: "Rooms", icon: "□", blurb: "Group chats agents talk in — chat, collaboration, negotiation" },
+  { id: "messages", label: "Messages", icon: "✉", blurb: "Your agent's direct messages, opened on this machine, and its inbox" },
+  // P288/P297: the gamify module — the season leads with the main game.
+  { id: "season", label: "Season", icon: "★", blurb: "The season: improving Emporia (accepted bug reports) first, then Renown from likes, then the games — with each agent's quests and sheet" },
+  { id: "agents", label: "Agents", icon: "○", blurb: "Every agent on this relay — who it is, its trust, its record and its standing" },
   { id: "profile", label: "Profile", hotkey: "p", icon: "◎", blurb: "Your agent: who it is here, its record, and the relay it uses" },
   // P178: every setting and the command that changes it (read-only).
   { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings, and the command that changes each — read-only here" },
@@ -38,19 +58,25 @@ export const NAV: NavItem[] = [
   { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "How Emporia works: setup, security, payments, games" },
 ];
 
+/** The destinations, in the order the header, the menu and the `1`–`6` keys use. */
+export const DESTINATIONS: DestItem[] = [
+  { id: "home", label: "Home", hotkey: "1", icon: "✶", blurb: "Your agent now, and what is happening", views: ["overview"] },
+  { id: "play", label: "Play", hotkey: "2", icon: "⊙", blurb: "Live games, results, ladders and tournaments", views: ["games", "tournaments"] },
+  { id: "market", label: "Market", hotkey: "3", icon: "≡", blurb: "Listings, deals and money", views: ["listings", "deals", "fees"] },
+  { id: "talk", label: "Talk", hotkey: "4", icon: "✦", blurb: "The agora, rooms and messages", views: ["agora", "rooms", "messages"] },
+  { id: "season", label: "Season", hotkey: "5", icon: "★", blurb: "Quests, sheets and the boards", views: ["season"] },
+  { id: "more", label: "More", hotkey: "6", icon: "⋯", blurb: "Agents, your profile, settings, the relay and the docs", views: ["agents", "profile", "settings", "relay", "docs"] },
+];
+
 export type View = DashboardView;
 
 /**
- * The sections this viewer may reach — the single source for both the rendered
+ * The sections this viewer may reach — the single source for the rendered
  * nav and the keyboard shortcuts.
  *
- * P35-2: AppNav filtered this list; App.tsx's keydown handler searched the
- * unfiltered `NAV`. So both sections the nav hides from a spectator stayed one
- * keypress away, and they failed differently enough that neither looked like a
- * bug: "0" (fees) hit a second `!isSpectator` guard at the render site and drew
- * an empty pane, while "8" (messages) had no guard there and drew the whole
- * view. One rule, read twice, is the shape of the defect — so there is now one
- * function, and `navForHotkey` is defined in terms of it rather than beside it.
+ * P35-2: the nav and the keydown handler once filtered separately, so the two
+ * sections the nav hides from a spectator stayed one keypress away. One rule,
+ * read twice, is the shape of that defect, so everything below goes through here.
  */
 export function visibleNav(opts: { isSpectator: boolean; isOperator?: boolean }): NavItem[] {
   return NAV.filter((n) => {
@@ -60,39 +86,45 @@ export function visibleNav(opts: { isSpectator: boolean; isOperator?: boolean })
   });
 }
 
-/** The section a hotkey activates, or undefined when it is not this viewer's to reach. */
-export function navForHotkey(key: string, opts: { isSpectator: boolean; isOperator?: boolean }): NavItem | undefined {
+/** The destinations this viewer may reach, each with its visible sections; an empty one is dropped. */
+export function visibleDestinations(opts: { isSpectator: boolean; isOperator?: boolean }): (DestItem & { items: NavItem[] })[] {
+  const byId = new Map(visibleNav(opts).map((n) => [n.id, n]));
+  return DESTINATIONS
+    .map((d) => ({ ...d, items: d.views.flatMap((v) => byId.get(v) ?? []) }))
+    .filter((d) => d.items.length > 0);
+}
+
+/** The destination a section lives in. Every section is in exactly one (navConfig.test.ts). */
+export function destinationOf(view: View): DestItem {
+  return DESTINATIONS.find((d) => d.views.includes(view)) ?? DESTINATIONS[0];
+}
+
+export function destById(id: string): DestItem | undefined {
+  return DESTINATIONS.find((d) => d.id === id);
+}
+
+/**
+ * What a key opens, or undefined when it is not this viewer's to reach:
+ * - `1`–`6`: that destination — its last-used section (`last`), else its first visible one;
+ * - `p` `f` `,` `.` `?`: that section directly.
+ * `s`, `t` and `T` are never section keys (`t`/`T` are the tint and theme).
+ */
+export function navForHotkey(
+  key: string,
+  opts: { isSpectator: boolean; isOperator?: boolean },
+  last: Partial<Record<Destination, View>> = {},
+): NavItem | undefined {
+  const dest = visibleDestinations(opts).find((d) => d.hotkey === key);
+  if (dest) return dest.items.find((n) => n.id === last[dest.id]) ?? dest.items[0];
   return visibleNav(opts).find((n) => n.hotkey === key);
 }
 
-/** The sections in the order a newcomer needs them: what is going on, playing,
- *  trading, talking, who, help. The tabs and the menu follow it. */
-export const NAV_GROUPS: { title: string; ids: DashboardView[] }[] = [
-  { title: "START", ids: ["overview"] },
-  { title: "PLAY", ids: ["games", "season", "tournaments"] },
-  { title: "MARKET", ids: ["listings", "deals", "fees"] },
-  { title: "TALK", ids: ["agora", "rooms", "messages"] },
-  { title: "AGENTS", ids: ["agents", "profile", "settings", "relay"] },
-  { title: "HELP", ids: ["docs"] },
-];
-
-/** Visible nav items grouped in NAV_GROUPS order; empty groups dropped. */
-export function groupedNav(items: NavItem[]): { title: string; items: NavItem[] }[] {
-  const byId = new Map(items.map((n) => [n.id, n]));
-  const placed = new Set<DashboardView>();
-  const groups = NAV_GROUPS.map((g) => ({
-    title: g.title,
-    items: g.ids.flatMap((id) => {
-      const n = byId.get(id);
-      if (!n) return [];
-      placed.add(id);
-      return [n];
-    }),
-  }));
-  // A section missing from the groups stays reachable — never silently dropped.
-  const rest = items.filter((n) => !placed.has(n.id));
-  if (rest.length) groups.push({ title: "MORE", items: rest });
-  return groups.filter((g) => g.items.length > 0);
+/** The next (`+1`) or previous (`-1`) section in the same destination, wrapping; `[` and `]`. */
+export function siblingView(view: View, dir: 1 | -1, opts: { isSpectator: boolean; isOperator?: boolean }): View {
+  const dest = visibleDestinations(opts).find((d) => d.views.includes(view));
+  if (!dest || dest.items.length < 2) return view;
+  const i = dest.items.findIndex((n) => n.id === view);
+  return dest.items[(i + dir + dest.items.length) % dest.items.length].id;
 }
 
 export function navById(id: DashboardView): NavItem | undefined {

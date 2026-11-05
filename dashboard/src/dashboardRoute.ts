@@ -1,8 +1,8 @@
-import { NAV, type View } from "./navConfig";
+import { destById, destinationOf, NAV, type View } from "./navConfig";
 import { MODE } from "./transport";
 
 const VIEW_IDS = new Set<View>(NAV.map((n) => n.id));
-/** Sections whose route can name one session: `#/games/<session_id>`, `#/deals/<session_id>`. */
+/** Sections whose route can name one session: `#/play/games/<session_id>`, `#/market/deals/<session_id>`. */
 const SESSION_ROUTES = new Set<View>(["games", "deals"]);
 
 export interface Route {
@@ -19,7 +19,7 @@ export interface Route {
  * them, and a profile switch resets them.
  */
 const IN_MEMORY = MODE === "desktop";
-const DEFAULT_ROUTE = "#/overview";
+const DEFAULT_ROUTE = "#/home";
 let memoryHash = DEFAULT_ROUTE;
 const listeners = new Set<() => void>();
 
@@ -63,13 +63,44 @@ export function onRouteChange(fn: () => void): () => void {
   return () => window.removeEventListener("hashchange", fn);
 }
 
-/** Hash route: `#/games`, `#/games/<session_id>`, `#/season`, … Anything else opens the Overview. */
+/**
+ * Hash routes, v2 (docs/ui-nav-v2.md): `#/<destination>/<section>[/<session_id>]`, or
+ * `#/<destination>` alone for its first section — `#/home`, `#/play/games/<id>`,
+ * `#/market/deals/<id>`, `#/talk/rooms`, `#/season`, `#/more/docs`.
+ *
+ * The v1 routes still open what they opened (`#/overview`, `#/games/<id>`, `#/deals/<id>`,
+ * `#/rooms`, …): a bookmark or a link in a doc keeps working. Anything else opens Home.
+ */
 export function routeFromHash(hash: string = currentHash()): Route {
-  const [rawView, rawId] = hash.replace(/^#\/?/, "").split("?")[0].trim().split("/");
-  const view = (rawView ?? "").toLowerCase() as View;
-  if (!rawView || !VIEW_IDS.has(view)) return { view: "overview", sessionId: null };
-  const id = rawId ? decodeURIComponent(rawId) : "";
+  const parts = hash.replace(/^#\/?/, "").split("?")[0].trim().split("/");
+  const first = (parts[0] ?? "").toLowerCase();
+  let view: View | null = null;
+  let rawId: string | undefined;
+  const dest = destById(first);
+  if (dest) {
+    const second = (parts[1] ?? "").toLowerCase() as View;
+    if (dest.views.includes(second)) {
+      view = second;
+      rawId = parts[2];
+    } else {
+      view = dest.views[0];
+      rawId = undefined;
+    }
+  } else if (VIEW_IDS.has(first as View)) {
+    view = first as View;            // a v1 route
+    rawId = parts[1];
+  }
+  if (!view) return { view: "overview", sessionId: null };
+  const id = rawId ? safeDecode(rawId) : "";
   return { view, sessionId: SESSION_ROUTES.has(view) && /^[A-Za-z0-9_.:-]{1,128}$/.test(id) ? id : null };
+}
+
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return "";
+  }
 }
 
 export function viewFromHash(hash: string = currentHash()): View {
@@ -77,7 +108,9 @@ export function viewFromHash(hash: string = currentHash()): View {
 }
 
 export function hashForView(view: View, sessionId?: string | null): string {
-  return sessionId && SESSION_ROUTES.has(view) ? `#/${view}/${encodeURIComponent(sessionId)}` : `#/${view}`;
+  const dest = destinationOf(view);
+  const base = dest.views.length === 1 ? `#/${dest.id}` : `#/${dest.id}/${view}`;
+  return sessionId && SESSION_ROUTES.has(view) ? `${base}/${encodeURIComponent(sessionId)}` : base;
 }
 
 export function syncHash(view: View, sessionId?: string | null): void {

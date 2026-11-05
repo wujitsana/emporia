@@ -1,5 +1,10 @@
 # An experimental style: "animatic"
 
+> **History.** Since `ui-v2` the animatic look is the dashboard's only style: the switch (`s`,
+> Settings › Look, `?style=`) and the retromod look are gone, and these rules live in
+> `dashboard/src/dashboard.css` § 30. What stays below is how the look was chosen. See
+> `docs/ui-nav-v2.md` § 3.
+
 Branch `style-experimental`, on top of `retromod-ux`. It adds a **style mode**, a third look
 axis next to light/dark and the eight accent tints. The current look, `retromod`, stays the
 default and is unchanged. The new one, `animatic`, takes its ideas from the information cards of

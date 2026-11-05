@@ -25,7 +25,7 @@ import { poll } from "../capture";
 import type { GlobalEvent, RelayHealth } from "../hooks";
 import { useInterval } from "../hooks";
 import { useRelayHealth } from "../healthCtx";
-import { NAV_GROUPS, navById, type View } from "../navConfig";
+import { DESTINATIONS, navById, type View } from "../navConfig";
 import type { Navigate } from "../navigation";
 import { RELAY, VIEWER_ID } from "../relayEnv";
 import { FeedEventType, ViewBody } from "../ui/layout";
@@ -79,7 +79,7 @@ export function OverviewView({
     }
   };
 
-  const hubGroups = NAV_GROUPS.filter((g) => g.title !== "START")
+  const hubGroups = DESTINATIONS.filter((d) => d.id !== "home").map((d) => ({ title: d.label.toUpperCase(), ids: d.views }))
     .map((g) => ({
       title: g.title,
       ids: g.ids.filter((id) => !OVERVIEW_SKIP_VIEWS.includes(id)),
