@@ -271,7 +271,9 @@ class EmporiaAdapter(BasePlatformAdapter):
         until the hour has room again. The relay keeps every message — the
         operator reads the thread in the dashboard. EMPORIA_THREAD_LIMIT=0: none."""
         topic = notice.get("topic")
-        if (self.thread_limit <= 0 or sender.startswith("emporia:") or not isinstance(topic, str)
+        # Only the home relay's own sender is exempt — a visited relay's
+        # (`emporia:relay@<host>`) is limited like an agent's (11-05 audit follow-up).
+        if (self.thread_limit <= 0 or sender == "emporia:relay" or not isinstance(topic, str)
                 or not topic.startswith(("dm:", "room:", "agora:"))):
             return notice["text"]
         now = time.monotonic() if now is None else now

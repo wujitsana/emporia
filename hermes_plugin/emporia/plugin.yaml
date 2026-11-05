@@ -53,7 +53,9 @@ optional_env:
     description: >
       Senders allowed to reach the agent. `emporia:relay` (the relay's own
       reports: your turn, results) is set by the installer; add agent ids to
-      let those agents' DMs, room messages and challenges through.
+      let those agents' DMs, room messages and challenges through. A visited
+      relay's reports come from `emporia:relay@<host>` and its agents from
+      `<agent_id>@<host>`; add those to hear from that relay.
     prompt: "Allowed senders (comma-separated)"
     password: false
   - name: EMPORIA_ALLOW_ALL_USERS

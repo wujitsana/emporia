@@ -32,6 +32,11 @@ from typing import Any
 #: Sender id for frames the relay itself reports. Not a valid agent_id
 #: (contains ':'), so no agent can register as it.
 RELAY_SENDER = "emporia:relay"
+#: The sender of agent-attributed text whose author the relay named with no valid id
+#: (security follow-up to the 11-05 audit): never the relay, never on the allowlist.
+UNKNOWN_SENDER = "emporia:unknown-sender"
+#: What a notice shows in place of a relay-supplied id that breaks the id rules.
+INVALID_ID = "(invalid id)"
 
 # Frames that are bookkeeping, not news.
 _SILENT = frozenset({"ping", "pong"})
@@ -113,68 +118,96 @@ def _move_hint(module_type: str, sid: str) -> str:
             f"submit_action(session_id=\"{sid}\", ...)")
 
 
-def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
-    """The notice for one relay frame, or None when there is nothing to say."""
+def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notice | None:
+    """The notice for one relay frame, or None when there is nothing to say.
+
+    `relay`: the host of a visited relay, "" for home. A visited relay is not the home
+    relay (security follow-up to the 11-05 audit): its own reports come from
+    `emporia:relay@<host>` and its agents from `<agent_id>@<host>`, neither on the
+    operator's allowlist unless added. Every relay-supplied id put in the text meets
+    `wire.plain_id` / `wire.agent_ref`, or is shown as a placeholder."""
+    from emporia.wire import agent_ref, plain_host, plain_id
+
     t = str(frame.get("type") or "")
     if t in _SILENT:
         return None
+    host = (plain_host(relay) or "invalid-host") if relay else ""
+    relay_sender = f"{RELAY_SENDER}@{host}" if host else RELAY_SENDER
 
-    def relay(text: str) -> Notice:
-        return Notice(f"[Emporia] {text}", RELAY_SENDER, t)
+    def relay_notice(text: str) -> Notice:
+        return Notice(f"[Emporia] {text}", relay_sender, t)
 
-    def agent(sender: Any, text: str) -> Notice:
-        return Notice(f"[Emporia] {text}", str(sender or RELAY_SENDER), t)
+    def who(raw: Any) -> str:
+        """An agent named by the relay, as the notice names it — and attributes it."""
+        if not raw:
+            return "unknown"
+        ref = agent_ref(raw, bare_only=bool(host))
+        if not ref:
+            return INVALID_ID
+        return f"{ref}@{host}" if host else ref
+
+    def agent(raw: Any, text: str) -> Notice:
+        name = who(raw)
+        sender = name if name not in ("unknown", INVALID_ID) else (
+            f"{UNKNOWN_SENDER}@{host}" if host else UNKNOWN_SENDER)
+        return Notice(f"[Emporia] {text}", sender, t)
+
+    def oid(raw: Any) -> str:
+        return plain_id(raw) or (INVALID_ID if raw else "")
 
     if t == "room_invite":
-        room_id = frame.get("room_id", "")
+        room_id = oid(frame.get("room_id"))
         fee = frame.get("entry_fee_cents") or 0
         return agent(frame.get("invited_by"), (
-            f"Room invite from {frame.get('invited_by', 'unknown')}\n"
-            f"  Room: \"{frame.get('room_name', room_id)}\" (ID: {room_id})\n"
-            f"  Gate: {frame.get('gate_type', 'invite')} — "
+            f"Room invite from {who(frame.get('invited_by'))}\n"
+            f"  Room: \"{frame.get('room_name') or room_id}\" (ID: {room_id})\n"
+            f"  Gate: {oid(frame.get('gate_type')) or 'invite'} — "
             f"{_usd(fee) + ' entry' if fee else 'free entry'}\n"
             f"  → join_room(room_id=\"{room_id}\", agent_id=\"{agent_id}\")"
         ))
 
     if t == "agora_invite":
-        slug = frame.get("slug", "")
+        slug = oid(frame.get("slug"))
         fee = frame.get("entry_fee_cents") or 0
         return agent(frame.get("invited_by"), (
-            f"Agora invite from {frame.get('invited_by', 'unknown')}\n"
-            f"  Topic: \"{frame.get('name', slug)}\" ({slug})\n"
-            f"  Gate: {frame.get('gate_type', 'invite')} — "
+            f"Agora invite from {who(frame.get('invited_by'))}\n"
+            f"  Topic: \"{frame.get('name') or slug}\" ({slug})\n"
+            f"  Gate: {oid(frame.get('gate_type')) or 'invite'} — "
             f"{_usd(fee) + ' entry' if fee else 'free entry'}\n"
             f"  → subscribe_agora_topic(topic_slug=\"{slug}\", agent_id=\"{agent_id}\")"
         ))
 
     # A room's name is its creator's words: not in a notice from the relay (audit 11-05).
     if t == "room_join_unsigned":   # P275
-        room_id = frame.get("room_id", "")
-        return relay(
+        room_id = oid(frame.get("room_id"))
+        return relay_notice(
             f"Room {room_id} is encrypted, and you joined it before joins "
             f"were signed: the other members' clients will not seal messages to you until you sign yours.\n"
             f"  → join_room(room_id=\"{room_id}\", agent_id=\"{agent_id}\") — you stay a member, nothing is paid")
 
     if t == "kicked_from_room":
-        return relay(f"You were removed from room {frame.get('room_id', '')}.")
+        return relay_notice(f"You were removed from room {oid(frame.get('room_id'))}.")
 
     if t == "session_created":
-        sid = frame.get("session_id", "")
-        return relay(f"Session {sid} created — waiting for an opponent to join.")
+        sid = oid(frame.get("session_id"))
+        return relay_notice(f"Session {sid} created — waiting for an opponent to join.")
+
+    module = oid(frame.get("module_type"))
 
     if t == "session_started":
-        sid = frame.get("session_id", "")
+        sid = oid(frame.get("session_id"))
         kind = "Bounty contest" if frame.get("bounty_id") else "Session"
+        players = frame.get("participants") if isinstance(frame.get("participants"), list) else []
         text = (f"{kind} {sid} started — participants: "
-                f"{', '.join(frame.get('participants') or [])}")
+                f"{', '.join(who(p) for p in players[:16])}")
         if frame.get("current_agent") == agent_id:
-            text += "\n  You move first.\n" + _move_hint(frame.get("module_type", ""), sid)
-        return relay(text)
+            text += "\n  You move first.\n" + _move_hint(module, sid)
+        return relay_notice(text)
 
     if t == "your_turn":
-        sid = frame.get("session_id", "")
-        last = frame.get("last_action") or {}
-        by = f" {_one_line(last.get('agent_id'), 64)} played {_one_line(last.get('action_type'), 32)}" if last else ""
+        sid = oid(frame.get("session_id"))
+        last = frame.get("last_action") if isinstance(frame.get("last_action"), dict) else {}
+        by = f" {who(last.get('agent_id'))} played {oid(last.get('action_type')) or 'a move'}" if last else ""
         # P148: table talk sent with the move arrives in the same notice — as a
         # pointer, never the words (security audit 11-05): this notice is the
         # relay's, allowlisted, and the words are another agent's.
@@ -183,32 +216,34 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
                    f"get_game_chat(session_id=\"{sid}\")")
         else:
             by += "." if last else ""
-        return relay(
-            f"Your turn in {_module_label(frame.get('module_type', ''))} session {sid}.{by}\n"
-            + _move_hint(frame.get("module_type", ""), sid)
+        return relay_notice(
+            f"Your turn in {_module_label(module)} session {sid}.{by}\n"
+            + _move_hint(module, sid)
         )
 
     if t == "session_completed":
-        sid = frame.get("session_id", "")
-        outcome = frame.get("outcome") or {}
-        settlement = frame.get("settlement") or {}
+        sid = oid(frame.get("session_id"))
+        outcome = frame.get("outcome") if isinstance(frame.get("outcome"), dict) else {}
+        settlement = frame.get("settlement") if isinstance(frame.get("settlement"), dict) else {}
         winner = outcome.get("winner")
         if winner:
-            result = "you won" if winner == agent_id else f"winner: {winner}"
+            result = "you won" if winner == agent_id else f"winner: {who(winner)}"
         else:
-            result = f"no winner ({outcome.get('outcome_type') or outcome.get('status') or 'ended'})"
+            ended = oid(outcome.get("outcome_type")) or oid(outcome.get("status")) or "ended"
+            result = f"no winner ({ended})"
         payout = settlement.get("winner_payout_cents") or 0
         paid = f" — payout {_usd(payout)}" if payout and winner == agent_id else ""
-        return relay(f"Session {sid} complete — {result}{paid}\n"
-                     f"  → get_settlements(session_id=\"{sid}\")")
+        return relay_notice(f"Session {sid} complete — {result}{paid}\n"
+                            f"  → get_settlements(session_id=\"{sid}\")")
 
     if t == "funding_required" and frame.get("kind") == "wager":
         # P154/P157: both players stake a wager once both have joined — in USDC
         # escrow, or on a card held as a payment to the opponent.
-        sid = frame.get("session_id", "")
+        sid = oid(frame.get("session_id"))
         card = frame.get("rail") == "card"
-        return relay(
-            f"{frame.get('opponent', 'Your opponent')} joined your {_module_label(frame.get('module_type', ''))} "
+        opponent = who(frame.get("opponent")) if frame.get("opponent") else "Your opponent"
+        return relay_notice(
+            f"{opponent} joined your {_module_label(module)} "
             f"wager {sid}. Stake {_usd(frame.get('amount_cents'))} to start: "
             + ("a card hold paid to them if you lose, cancelled if you win or draw.\n"
                f"  → fund_session(session_id=\"{sid}\", mpp_token=...)  or payment_intent_id from "
@@ -219,9 +254,10 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         )
 
     if t == "funding_required":
-        sid = frame.get("session_id", "")
-        return relay(
-            f"{frame.get('seller_id', 'A seller')} took your service session {sid}. "
+        sid = oid(frame.get("session_id"))
+        seller = who(frame.get("seller_id")) if frame.get("seller_id") else "A seller"
+        return relay_notice(
+            f"{seller} took your service session {sid}. "
             f"Fund it ({_usd(frame.get('amount_cents'))}, paid to them when you confirm "
             f"delivery) to let them start.\n"
             f"  → fund_session(session_id=\"{sid}\", mpp_token=...)  (Stripe)\n"
@@ -229,21 +265,21 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
         )
 
     if t == "session_abandoned":
-        why = f" ({frame['reason']})" if frame.get("reason") else ""
-        return relay(f"Session {frame.get('session_id')} abandoned{why} — stakes released.")
+        why = f" ({oid(frame['reason'])})" if frame.get("reason") else ""
+        return relay_notice(f"Session {oid(frame.get('session_id'))} abandoned{why} — stakes released.")
 
     if t in ("challenge", "counter_offer", "accept", "reject"):
-        from_agent = frame.get("from_agent", "unknown")
-        payload = frame.get("payload") or {}
+        from_agent = who(frame.get("from_agent"))
+        payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
         price = payload.get("price_usd") or payload.get("stake_per_participant") or ""
         price_str = f" — ${price}" if price else ""
-        sid = payload.get("session_id") or frame.get("session_id") or ""
+        sid = oid(payload.get("session_id") or frame.get("session_id"))
         if t == "challenge":
             hint = (f"\n  → join_session(session_id=\"{sid}\", agent_id=\"{agent_id}\")"
                     if sid else "")
-            return agent(from_agent, f"Challenge from {from_agent}{price_str}{hint}")
+            return agent(frame.get("from_agent"), f"Challenge from {from_agent}{price_str}{hint}")
         if t == "counter_offer":
-            room_id = frame.get("room_id") or payload.get("room_id")
+            room_id = oid(frame.get("room_id") or payload.get("room_id"))
             reply = (
                 f"send_room_message(room_id=\"{room_id}\", sender_id=\"{agent_id}\", "
                 f"content=..., msg_type=\"accept\" | \"counter_offer\" | \"reject\")"
@@ -251,60 +287,60 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
                 f"send_dm(to_agent_id=\"{from_agent}\", content=..., "
                 f"msg_type=\"accept\" | \"counter_offer\" | \"reject\")"
             )
-            return agent(from_agent, f"Counter-offer from {from_agent}{price_str}\n  → {reply}")
+            return agent(frame.get("from_agent"), f"Counter-offer from {from_agent}{price_str}\n  → {reply}")
         verb = "accepted" if t == "accept" else "rejected"
-        return agent(from_agent, f"{from_agent} {verb} your offer{price_str}")
+        return agent(frame.get("from_agent"), f"{from_agent} {verb} your offer{price_str}")
 
     if t == "dm_received":
-        sender = frame.get("sender_id", "unknown")
-        thread_id = frame.get("thread_id", "")
+        sender = who(frame.get("sender_id"))
+        thread_id = oid(frame.get("thread_id"))
         content = str(frame.get("content") or "")
         # A small limit: the whole thread brought days-old exchanges back into
         # the turn, and the agent picked up where an old conversation left off.
         body = ("(end-to-end encrypted — read it with "
                 f"get_dm_messages(thread_id=\"{thread_id}\", limit=5); the newest is last)"
                 if _looks_encrypted(frame, content) else content)
-        return agent(sender, (
+        return agent(frame.get("sender_id"), (
             f"DM from {sender}: {body}\n"
             f"  → send_dm(to_agent_id=\"{sender}\", content=...)"
         ))
 
     if t == "room_message":
-        sender = frame.get("sender_id", "unknown")
-        if sender == "emporia:broker":
+        if frame.get("sender_id") == "emporia:broker":
             return None  # the negotiation broker's own bookkeeping
-        room_id = frame.get("room_id", "")
+        sender = who(frame.get("sender_id"))
+        room_id = oid(frame.get("room_id"))
         content = str(frame.get("content") or "")
         if _looks_encrypted(frame, content):
-            return agent(sender, (
+            return agent(frame.get("sender_id"), (
                 f"{sender} posted an end-to-end encrypted message in room {room_id}.\n"
                 f"  → get_room_messages(room_id=\"{room_id}\", agent_id=\"{agent_id}\")"
             ))
         mentioned = agent_id.lower() in content.lower()
         hint = (f"\n  → You were mentioned. send_room_message(room_id=\"{room_id}\", "
                 f"sender_id=\"{agent_id}\", content=...)" if mentioned else "")
-        return agent(sender, f"[{room_id}] {sender}: {content}{hint}")
+        return agent(frame.get("sender_id"), f"[{room_id}] {sender}: {content}{hint}")
 
     if t == "game_chat":
         # P143: table talk — same topic as the game, so it lands in the game's
         # own conversation beside the moves.
-        sender = frame.get("agent_id", "unknown")
-        sid = frame.get("session_id", "")
+        sender = who(frame.get("agent_id"))
+        sid = oid(frame.get("session_id"))
         content = str(frame.get("content") or "")
         if _looks_encrypted({}, content):  # P149: a private game's talk, sealed
             content = f"(sealed — read it with get_game_chat(session_id=\"{sid}\"))"
-        return agent(sender, (
+        return agent(frame.get("agent_id"), (
             f"[{sid}] {sender} at the table: {content}\n"
             f"  → reply with send_game_chat(session_id=\"{sid}\", content=...) if worth a turn"
         ))
 
     if t == "agora_post_created":
-        slug = frame.get("topic_slug", "")
-        post_id = frame.get("post_id", "")
-        preview = frame.get("preview") or ""
+        slug = oid(frame.get("topic_slug"))
+        post_id = oid(frame.get("post_id"))
+        preview = str(frame.get("preview") or "")
         return agent(frame.get("author_id"), (
-            f"New post in '{frame.get('topic_name', slug)}' ({slug}) by "
-            f"{frame.get('author_id', 'unknown')}\n"
+            f"New post in '{frame.get('topic_name') or slug}' ({slug}) by "
+            f"{who(frame.get('author_id'))}\n"
             f"  Title: {frame.get('title', '')}"
             + (f"\n  Preview: {preview[:120]}" if preview else "")
             + f"\n  → add_agora_comment(post_id=\"{post_id}\", author_id=\"{agent_id}\", "
@@ -314,8 +350,7 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
     # Unknown frame: say that something arrived without dumping a raw dict —
     # and in one short line, since it goes out as the relay (audit 11-05).
     detail = _one_line(frame.get("message"), 200)
-    return relay(f"{_one_line(t, 48) or 'event'}" + (f": {detail}" if detail else ""))
-
+    return relay_notice(f"{_one_line(t, 48) or 'event'}" + (f": {detail}" if detail else ""))
 
 def _one_line(value: Any, limit: int) -> str:
     """A relay-supplied value inside a relay notice: one line, at most `limit` characters."""
