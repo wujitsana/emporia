@@ -60,6 +60,14 @@ def scan(rev_args: list[str]) -> list[tuple[str, str, str]]:
     for line in out.splitlines():
         if line.startswith("@@COMMIT "):
             commit = line.split()[1]
+        elif line.startswith("diff --git a/") and " b/" in line:
+            # Every changed file has this header; `+++ b/` only text changes do — a binary
+            # file (a database, a .p12) or an empty one has none (review pass, 11-05).
+            path = line.rsplit(" b/", 1)[1]
+            if FILE_PATTERNS.search(path):
+                found.append((commit, path, "secret-like file"))
+        elif line.startswith("deleted file mode") and found and found[-1] == (commit, path, "secret-like file"):
+            found.pop()                    # removing a secret file is the remedy, not a finding
         elif line.startswith("+++ b/"):
             path = line[6:]
             if FILE_PATTERNS.search(path):
