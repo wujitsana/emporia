@@ -374,3 +374,20 @@ def test_doctor_finds_two_identity_keys_and_names_the_one_the_relay_knows(tmp_pa
     lines.clear()                                                                    # a command source is not run
     cli.doctor_identity_key(Rep(), "ag", "ag", tmp_path, "cmd:op read x", {}, "http://r", True)
     assert lines[0][0] == "ok" and "does not open" in lines[0][1]
+
+
+def test_a_profile_the_plugin_just_made_is_set_up_as_a_new_agent(profiles, capsys):
+    """Found by the end-to-end run: since P296 the plugin makes the profile (and its
+    config.yaml) before setup agent runs, which then took it for an existing one —
+    role read from its full tools (developer), keys left in files."""
+    root, _ = profiles
+    made = root / "kappa"
+    made.mkdir()
+    (made / "config.yaml").write_text(yaml.dump({"plugins": {"enabled": ["emporia"]}}))
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "kappa", "--new-profile"]) == 0
+    out = capsys.readouterr().out
+    assert "New agent: kappa" in out and "existing keys are still files" not in out
+    assert cli.profile_role(made, False) == "marketplace"
+    assert "EMPORIA_KEY_STORAGE=env" in (made / ".env").read_text()
+    assert not list(made.rglob("kappa.priv")), "its new identity key moved into its .env"

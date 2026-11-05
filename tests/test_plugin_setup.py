@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("emporia_setup_cli", REPO / "hermes_plugin" / "emporia" / "setup_cli.py")
 setup_cli = importlib.util.module_from_spec(spec)
@@ -168,3 +170,22 @@ def test_status_says_where_a_runtime_came_from(monkeypatch, tmp_path):
     state["origin"] = src["repo"]
     assert "not the pinned" in setup_cli.runtime_note(tmp_path, src)
     assert "pins no release" in setup_cli.runtime_note(tmp_path, {**src, "sha": ""})
+
+
+@pytest.mark.parametrize("made,flag", [("made", True), ("there", False)])
+def test_setup_agent_hears_that_the_profile_was_made_just_now(monkeypatch, tmp_path, made, flag):
+    """Found by the end-to-end run: a profile the plugin had just made was set up as an
+    existing one (developer role, keys in files). Only a profile it made is new."""
+    ran = []
+    rt = tmp_path / "plugin-data" / "emporia" / "runtime"
+    monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "judge")
+    monkeypatch.setattr(setup_cli, "runtime", lambda: rt)
+    monkeypatch.setattr(setup_cli, "from_catalog", lambda r: True)
+    monkeypatch.setattr(setup_cli, "_git_head", lambda r: "a" * 40)
+    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://x.test/e", "sha": "a" * 40})
+    monkeypatch.setattr(setup_cli, "python_of", lambda r: Path(sys.executable))
+    monkeypatch.setattr(setup_cli, "_create_profile", lambda n: made)
+    monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n, s: True)
+    monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: ran.append(a) or 0)
+    assert setup_cli.cmd_setup(_args(profile="shop")) == 0
+    assert ("--new-profile" in ran[0]) is flag

@@ -4325,7 +4325,9 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         print("setup agent: a name is required")
         return 1
     profile = profile_dir(name)
-    existing = (profile / "config.yaml").exists()
+    # --new-profile: the plugin's setup made this profile a moment ago (P296), so its
+    # config.yaml is Hermes's bare one, not an agent's to keep.
+    existing = (profile / "config.yaml").exists() and not getattr(args, "new_profile", False)
     heading(f"{'Update' if existing else 'New'} agent: {name}",
             "Its model and API key, and Emporia: its tools, skill, platform plugin and its own keys.")
     sync_model = args.sync_model or (existing and me is not None and me != profile and ask(
@@ -6670,6 +6672,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="also copy this profile's other settings (default: bare)")
     ag.add_argument("--register", action="store_true",
                     help="register it (and its wallet) on the relay now")
+    ag.add_argument("--new-profile", action="store_true", help=argparse.SUPPRESS)  # the plugin made it just now
     ag.set_defaults(func=cmd_setup_agent)
     rl = ss.add_parser("relay", help="x402 + escrow preset and the operator key")
     rl.add_argument("--preset", default="base-sepolia")

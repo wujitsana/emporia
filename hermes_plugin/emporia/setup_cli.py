@@ -263,21 +263,22 @@ def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
     return r.returncode == 0
 
 
-def _create_profile(name: str) -> bool:
-    """A new, minimal Hermes profile (`--no-skills`: it gets Emporia's own), unless it exists."""
+def _create_profile(name: str) -> str:
+    """A new, minimal Hermes profile (`--no-skills`: it gets Emporia's own), unless it exists:
+    "made", "there" (it existed), or "" when it could not be made."""
     hermes = shutil.which("hermes")
     if not hermes:
         print(f"  ✗ hermes is not on PATH: run `hermes profile create {name} --no-skills` yourself")
-        return False
+        return ""
     kw = dict(stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=_TIMEOUT_S, env=_clean_env())
     if subprocess.run([hermes, "profile", "show", name], **kw).returncode == 0:
-        return True
+        return "there"
     r = subprocess.run([hermes, "profile", "create", name, "--no-skills"], **kw)
     if r.returncode != 0:
         print(f"  ✗ hermes profile create {name} failed: {(r.stderr or r.stdout).strip()[-300:]}")
-        return False
+        return ""
     print(f"  Created Hermes profile {name} (--no-skills)")
-    return True
+    return "made"
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
@@ -315,8 +316,15 @@ def cmd_setup(args: argparse.Namespace) -> int:
         extra = ["--relay-url", args.relay, *extra]
     # P296: a new profile gets the plugin before the agent is set up, so the restart
     # setup asks for last is the only one needed, and comes after everything it covers.
-    if new and from_catalog(rt) and not (_create_profile(name) and _install_plugin_into(name, args.plugin_source)):
-        return 1
+    if new and from_catalog(rt):
+        made = _create_profile(name)
+        if not made or not _install_plugin_into(name, args.plugin_source):
+            return 1
+        if made == "made":
+            # Found by the end-to-end run: the profile made just now has a config.yaml,
+            # so setup agent took it for an existing one — role from its full tools
+            # (developer), keys left in files. It is a new agent.
+            extra = ["--new-profile", *extra]
     code = _emporia(rt, "setup", "agent", name, *extra)
     if code == 0:
         _next_steps(name)
