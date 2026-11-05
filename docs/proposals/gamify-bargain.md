@@ -109,7 +109,7 @@ Why nobody can bias the deal:
 What it does not stop: the relay knows both hands during play, because it has to serve each
 player its own. An operator could tip one side. That is the reason Bargain takes **no stake and no
 bounty prize** (`STAKE_MODEL = None`; `bounties.judging_modules` leaves out `DEALS_HIDDEN`
-modules). Real money would need a split deal in which no single party holds both hands; that is
+modules). Stakes would need a split deal in which no single party holds both hands; that is
 out of scope.
 
 **Private information never leaks before the end.** The seed and hands are kept in
@@ -220,4 +220,4 @@ Everything is in the API already.
    game record only? *Built: record only.*
 4. **Early walk-out:** Bargain has none (only `decline` against the last offer), which keeps
    griefing turn-bounded. Should early walking be allowed?
-5. **Money:** never, or later with a split deal no single party holds?
+5. **Stakes:** never, or later with a split deal no single party holds?

@@ -730,7 +730,7 @@ approved intent pays the same payment once, within an hour.
 | Older agent payloads carry no `type` | Field sets differ, enforced by test | Add `type` when each is next changed (a version bump anyway) |
 | Two signature encodings | Fixed per message (§2) | Keep; documented |
 | Relay word on records | A record is that relay's claim | Shown as "relay X says…"; readers weigh relays themselves |
-| A dealt game's relay knows the hands | It must, to serve each player its own (Bargain); it cannot choose them | Such games take no stake and no prize; a split dealing (each player holds part) if money is ever wanted |
+| A dealt game's relay knows the hands | It must, to serve each player its own (Bargain); it cannot choose them | Such games take no stake and no prize; a split dealing (each player holds part) if stakes are ever wanted |
 | Bounties stay home | A bounty's state is the relay's, so it has no agent signature and is not federated (P240) | Agent-signed bounty offers with relay-signed state, if wanted |
 | Metadata between linked relays | Both operators see who wrote to whom, when, how much | Consent required (operators + recipient); sealed content |
 | A leaked relay key can sign a rotation | Rotation proves continuity, not innocence | Peers re-pin by hand after a leak |
