@@ -1,4 +1,5 @@
 import Text from "@kit/Text";
+import type { ReactNode } from "react";
 import { groupedNav, visibleNav, type View } from "./navConfig";
 import { useRelayCtx } from "./relayCtx";
 import { ThemePanelBody } from "./ThemeControls";
@@ -89,10 +90,13 @@ export function MobileNavDrawer({
   onTheme,
   onTint,
   badges,
+  lead,
 }: {
   view: View;
   onGo: (id: View) => void;
   onClose?: () => void;
+  /** Drawn above the section groups (the agent chat, in the Hermes tab). */
+  lead?: ReactNode;
   theme: Theme;
   tint: Tint;
   onTheme: (t: Theme) => void;
@@ -109,6 +113,7 @@ export function MobileNavDrawer({
           </button>
         ) : null}
       </div>
+      {lead}
       <SectionTabs view={view} onGo={onGo} variant="drawer" badges={badges} />
       <div className="e-mobile-drawer__foot">
         <ViewerSwitcher />

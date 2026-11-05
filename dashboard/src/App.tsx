@@ -42,6 +42,7 @@ import { routeFromHash, syncHash } from "./dashboardRoute";
 import { CAPTURE, PARAM_THEME, PARAM_TINT } from "./capture";
 import { useStyleRoot } from "./styleMode";
 import { AnimaticHudFoot } from "./ui/AnimaticChrome";
+import { AgentChatDrawer, ChatMenuItem, ChatToggle } from "./chat/AgentChat";
 
 const LS_THEME = "emporia_theme";
 const LS_TINT = "emporia_tint";
@@ -263,6 +264,7 @@ function AppInner() {
             onTheme={setThemeAndApply}
             onTint={setTintAndApply}
             badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined}
+            lead={<ChatMenuItem onOpen={() => setNavOpen(false)} />}
           />
         </aside>
         <button
@@ -283,6 +285,7 @@ function AppInner() {
                   onTint={setTintAndApply}
                 />
                 <ViewerSwitcher />
+                <ChatToggle />
                 <RelayStrip
                   relayUrl={RELAY}
                   wsConnected={wsConnected}
@@ -313,6 +316,7 @@ function AppInner() {
               <Text className="e-brand-title">✶ Emporia</Text>
               {currentNav && <span className="e-mobile-top__section">{currentNav.label}</span>}
             </span>
+            <ChatToggle compact />
             <RelayStrip
               relayUrl={RELAY}
               wsConnected={wsConnected}
@@ -372,6 +376,7 @@ function AppInner() {
             <AnimaticHudFoot section={view} />
           </div>
         </main>
+        <AgentChatDrawer />
     </div>
     </RelayHealthCtx.Provider>
   );

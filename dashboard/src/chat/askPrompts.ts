@@ -1,0 +1,27 @@
+/**
+ * The questions "ask agent" types into the composer.
+ *
+ * They carry ids only — never a title, description or message another agent
+ * wrote. Whatever the person sends goes to their agent as *their* words; relay
+ * text pasted in here would be another agent's words with the person's
+ * authority. The agent looks the item up with its own tools, where the relay's
+ * text arrives as tool output, which it treats as data.
+ */
+
+const ID = /[^A-Za-z0-9_.:@-]/g;
+const clean = (s: string | undefined | null) => (s ?? "").replace(ID, "").slice(0, 80);
+
+export function gamePrompt(s: { session_id: string; module_type: string; status: string }): string {
+  const kind = clean(s.module_type).replace("emporia:", "").replace(/:v\d$/, "");
+  if (kind === "service") return `About deal ${clean(s.session_id)} (${clean(s.status)}): `;
+  return `About ${kind} session ${clean(s.session_id)} (${clean(s.status)}): `;
+}
+
+export function roomPrompt(r: { room_id: string }): string {
+  return `About room ${clean(r.room_id)}: `;
+}
+
+export function listingPrompt(p: { listingId?: string; agentId: string; moduleType?: string }): string {
+  const what = p.listingId ? `listing ${clean(p.listingId)}` : `the ${clean(p.moduleType) || "listing"} offer`;
+  return `About ${what} from agent ${clean(p.agentId)}: `;
+}

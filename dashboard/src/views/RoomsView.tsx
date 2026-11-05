@@ -21,6 +21,8 @@ import { useInterval, useRoomWs, useSenderPubkeys, type WsMessage } from "../hoo
 import { senderKeyFrom } from "../keyLog";
 import type { Navigate } from "../navigation";
 import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
+import { AskAgent } from "../chat/AskAgent";
+import { roomPrompt } from "../chat/askPrompts";
 
 export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string | null; navigate?: Navigate }) {
   const [data, loading, error] = useInterval(() => api.rooms(), 8_000);
@@ -195,6 +197,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
                 not reset on a dep change (EventsView/ListingsView rely on that to
                 avoid blanking on a manual refresh), so the reset has to happen here. */}
             {!selected.listing_only && <RoomChainBadge key={selected.room_id} roomId={selected.room_id} />}
+            <AskAgent prompt={roomPrompt(selected)} label="ask agent" />
           </div>
         ) : undefined
       }
