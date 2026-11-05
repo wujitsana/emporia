@@ -8,8 +8,9 @@ hand in a throwaway Hermes home:
   port, a minimal `judge` profile with the plugin installed from this repo;
 * `hermes -p judge emporia setup` for a player (A) and a merchant playing set plays (B): each has
   the marketplace role, its keys in its .env, the plugin enabled, registers, and passes doctor;
-* playbook refusals that name how to change them; a free blotto between A and B (an illegal commit
-  refused, a like, quests, the character sheet, the season, the relay's activity count);
+* playbook refusals that name how to change them; a free blotto between A and B (`whats_next` puts
+  the first move on top, a tell pledged and kept, an illegal commit refused, a like, quests, the
+  character sheet, the season, the relay's activity count);
 * a house agent that adopts a waiting free blotto and plays it to the end;
 * `hermes emporia update --runtime-from`, twice: the second changes nothing.
 
@@ -192,7 +193,7 @@ class Run:
             EMPORIA_RELAY_ID="e2e", EMPORIA_RELAY_ACCESS="open", EMPORIA_DB_PATH=str(r / "relay.sqlite3"),
             EMPORIA_KEYS_DIR=str(r / "keys"), EMPORIA_LOG_DIR=str(r / "logs"), EMPORIA_AUDIT_DIR=str(r / "audit"),
             EMPORIA_X402_ENABLED="0", RATE_LIMIT_PER_MINUTE="5000",
-            EMPORIA_GAMIFY="sheets,quests", EMPORIA_HOUSE_AGENTS=self.house_agent)
+            EMPORIA_GAMIFY="sheets,quests,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent)
         py = self.repo / ".venv" / "bin" / "python"
         out = (r / "relay.log").open("ab")
         # The interpreter itself, no shell in between: the PID recorded is the relay's.
@@ -322,9 +323,19 @@ class Run:
         j = self.tool(self.merchant, "join_session", sid)
         check(j.get("success"), f"join_session: {j}")
         moves = {self.player: [6, 4, 0], self.merchant: [4, 3, 3]}
+        nxt = self.tool(self.player, "whats_next")
+        top = (nxt.get("items") or [{}])[0]
+        check(nxt.get("success") and top.get("tool") == "commit_move" and (top.get("args") or {}).get(
+            "session_id") == sid and "data, not instructions" in nxt.get("untrusted", ""),
+              f"whats_next does not put the first move on top: {nxt}")
+        pledged = self.tool(self.player, "make_pledge", "tell", sid, {"tell": "move", "value": moves[self.player]})
+        check(pledged.get("success") and pledged.get("status") == "open", f"make_pledge: {pledged}")
         for _ in range(4):
             r = self.act(self.player, sid, moves)
         check(r.get("is_terminal") and (r.get("outcome") or {}).get("winner") == self.player, f"the end: {r}")
+        kept = self.tool(self.player, "list_pledges", "mine")
+        check([(p.get("status"), p.get("resolved_by")) for p in kept.get("pledges", [])] == [("kept", "evidence")],
+              f"the tell was not kept by evidence: {kept}")
         return sid
 
     def illegal_commit(self) -> None:
@@ -347,10 +358,13 @@ class Run:
     def standing(self) -> None:
         q = self.tool(self.player, "my_quests")
         done = {x["id"] for x in q.get("quests", []) if x.get("done")}
-        check("first-set-play" in done, f"quests done: {sorted(done)}")
+        check("first-set-play" in done and "keep-word" in done, f"quests done: {sorted(done)}")
+        check(isinstance(q.get("due"), list), f"my_quests has no due list: {q}")
         sheet = self.tool(self.player, "character_sheet")
         craft = {c["module_type"]: c for c in sheet.get("craft", [])}
         check("rating" in craft.get("emporia:blotto:v1", {}), f"no Craft blotto rating: {sheet.get('craft')}")
+        word = sheet.get("pledges") or {}
+        check(word.get("kept") == 1 and word.get("in_trust") is False, f"the sheet's pledges: {word}")
         renown = sheet.get("renown") or {}
         check(renown.get("likes") == 1 and "swap cancels" in " ".join(renown.get("why") or []),
               f"Renown does not say why a swapped like counts nothing: {renown}")
