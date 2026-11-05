@@ -375,7 +375,13 @@ folder; `hermes dashboard --isolated` on its own port; profiles `default`, `alph
   in a closed shadow root. Its chat socket went to the throwaway dashboard's real `/api/ws`.
   Headless Chromium drove it.
 - Screenshots: `docs/dashboard-chat-shots/` at 1280 and 390, light with tint-green, dark,
-  and the 540 × 540 @2x capture frame. No page scrolls sideways.
+  and the 540 × 540 @2x capture frame (`?capture=1`). No page scrolls sideways. The relay
+  views behind the drawer use a small read-only fixture (not committed), so some sections
+  are empty. Each shot shows what the real chat socket returned.
+- **Not verified:** in the 540 capture frame, a headless screenshot taken with the slash
+  typeahead open closed Chromium's debugging connection. That happened twice; every other
+  frame worked. The same view at 390 and 1280 was fine. Check it once in a normal browser
+  before filming that beat.
 
 ## 8. Effort, risks, and what fits before Nov 11
 
@@ -409,5 +415,7 @@ folder; `hermes dashboard --isolated` on its own port; profiles `default`, `alph
   The client sends only parameters present in the generated contract.
 - **Approval semantics** are the real product question (§ top), not a technical risk.
 - **Busy-input interrupts** can surprise (§ 6).
+- **The sign-in gate is unverified.** The ticket path was read in code, not exercised: the
+  prototype ran on loopback with the session token.
 - **Bundle conflicts.** The tab bundle is a committed build output, so every branch that
   touches `dashboard/` conflicts on `dist/`. Rebuild after each rebase, as was done here.
