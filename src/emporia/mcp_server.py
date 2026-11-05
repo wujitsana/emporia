@@ -4579,12 +4579,8 @@ def submit_action(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    stripped = rationale.replace(" ", "").replace("\n", "").replace("\t", "")
-    if len(stripped) < MIN_RATIONALE_CHARS:
-        return {"error": f"rationale too short — {len(stripped)} non-whitespace chars, need {MIN_RATIONALE_CHARS}", "success": False}
-    for fp in BOT_FINGERPRINTS:
-        if fp.lower() in rationale.lower():
-            return {"error": f"rationale contains forbidden fingerprint '{fp}'", "success": False}
+    if why := _rationale_problem(rationale):
+        return {"error": why, "success": False}
     # Signature is mandatory — bound to session_id + current step_number so it
     # can't be replayed against a different session or turn.
     from emporia.wire import action_envelope
@@ -4790,9 +4786,46 @@ def _commitments_file(aid: str, session_id: str):
 
 
 def _write_commitments(path, saved: dict) -> None:
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(saved, f)
+    from emporia.identity import _write_secret_atomically
+    _write_secret_atomically(path, json.dumps(saved).encode())
+
+
+class _commitments:
+    """Review follow-up M5: the round entries of `path`, read and written under an
+    exclusive lock (MCP calls can run at once). Yields the dict; writes it back on
+    leaving, if it changed."""
+
+    def __init__(self, path):
+        from emporia.identity import _locked
+        self.path, self.lock = path, _locked(path.with_name(f".{path.name}.lock"))
+
+    def __enter__(self) -> dict:
+        self.lock.__enter__()
+        try:
+            self.saved = json.loads(self.path.read_text()) if self.path.exists() else {}
+        except BaseException:
+            self.lock.__exit__(None, None, None)
+            raise
+        self.before = json.dumps(self.saved, sort_keys=True)
+        return self.saved
+
+    def __exit__(self, *exc: Any) -> None:
+        try:
+            if exc[0] is None and json.dumps(self.saved, sort_keys=True) != self.before:
+                _write_commitments(self.path, self.saved)
+        finally:
+            self.lock.__exit__(*exc)
+
+
+def _rationale_problem(rationale: str) -> str:
+    """Why the relay would refuse `rationale`, or "" (MIN_RATIONALE_CHARS, fingerprints)."""
+    stripped = rationale.replace(" ", "").replace("\n", "").replace("\t", "")
+    if len(stripped) < MIN_RATIONALE_CHARS:
+        return f"rationale too short — {len(stripped)} non-whitespace chars, need {MIN_RATIONALE_CHARS}"
+    for fp in BOT_FINGERPRINTS:
+        if fp.lower() in rationale.lower():
+            return f"rationale contains forbidden fingerprint '{fp}'"
+    return ""
 
 
 def _session_load_error(session_id: str, e: Exception) -> str:
@@ -4877,29 +4910,61 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
     data = (sess.get("state") or {}).get("data") or {}
     rnd = str(data.get("round", 1))
     path = _commitments_file(aid, session_id)
-    saved = json.loads(path.read_text()) if path.exists() else {}
-    if aid in (data.get("commitments") or {}):
-        if (rnd in saved and saved[rnd].get("commitment") == data["commitments"][aid]
-                and saved[rnd].get("move") == move):
-            # MCP review: a retry after a lost answer — the commit landed; say so, as a success.
-            return {"success": True, "already_committed": True, "round": rnd, "move": saved[rnd]["move"],
-                    "next": "reveal_move once the other player has committed"}
-        return {"error": f"you already committed in round {rnd}"
-                + (f": {saved[rnd]['move']}" if rnd in saved else ""), "success": False}
-    if why := _move_problem(sess.get("module_type", ""), data, move):
-        return {"error": f"not a legal move: {why}. Nothing was committed; commit a legal one",
-                "success": False}
-    nonce = commit_reveal.new_nonce()
-    digest = commit_reveal.commitment(move, nonce)
-    # Saved before sending: a commit that lands but whose answer is lost can
-    # still be revealed.
-    saved[rnd] = {"move": move, "nonce": nonce, "commitment": digest}
-    _write_commitments(path, saved)
+    held = (data.get("commitments") or {}).get(aid)
+    # Review follow-up M5: the round's entry is write-once until the relay takes or refuses
+    # it. Before, a retry with another move while the first commit was in flight replaced
+    # its nonce; the relay kept the first, the reveal matched nothing, and the game was lost
+    # on time. The lock covers concurrent MCP calls.
+    with _commitments(path) as saved:
+        entry = saved.get(rnd)
+        if held:
+            if entry and entry.get("commitment") == held:
+                entry["state"] = "confirmed"
+                if entry.get("move") == move:
+                    # MCP review: a retry after a lost answer — the commit landed; say so, as a success.
+                    return {"success": True, "already_committed": True, "round": rnd, "move": entry["move"],
+                            "next": "reveal_move once the other player has committed"}
+            if entry and entry.get("commitment") == held:
+                return {"error": f"you already committed in round {rnd}: {entry['move']}", "success": False}
+            return {"error": f"you already committed in round {rnd}, with a commitment no move saved here "
+                             "matches", "success": False}
+        if entry and entry.get("move") != move:
+            return {"error": f"a commit of {entry['move']} for round {rnd} is still waiting for the relay's "
+                             "answer. Nothing else is committed until the relay takes or refuses it, or its "
+                             "reveal would fail and the game be lost on time: call commit_move again with "
+                             "that same move to send it again", "round": rnd, "success": False}
+        if not entry:
+            if why := _move_problem(sess.get("module_type", ""), data, move):
+                return {"error": f"not a legal move: {why}. Nothing was committed; commit a legal one",
+                        "success": False}
+            if why := _rationale_problem(rationale):
+                return {"error": f"{why}. Nothing was committed", "success": False}
+            nonce = commit_reveal.new_nonce()
+            # Saved before sending: a commit that lands but whose answer is lost can
+            # still be revealed.
+            entry = saved[rnd] = {"move": move, "nonce": nonce, "commitment": commit_reveal.commitment(move, nonce),
+                                  "state": "pending"}
+        digest = entry["commitment"]                 # a retry of the same move sends the same commitment
     result = _submit_simultaneous(session_id, "commit", {"commitment": digest}, rationale, aid, say=say)
-    if result.get("receipt"):
-        # P140: the relay's signed word it accepted this commit, and when.
-        saved[rnd]["commit_receipt"] = result["receipt"]
-        _write_commitments(path, saved)
+    now_held: Any = None
+    if not result.get("success") and "detail" in result:
+        try:                                         # the relay answered no: does it hold ours anyway?
+            now_held = (_session_data(session_id, aid).get("commitments") or {}).get(aid)
+        except Exception:  # noqa: BLE001 — unknown: the entry stays pending
+            now_held = digest
+    with _commitments(path) as saved:
+        entry = saved.get(rnd)
+        if not entry or entry.get("commitment") != digest:
+            return result
+        if result.get("success") or now_held == digest:
+            entry["state"] = "confirmed"
+            if result.get("receipt"):
+                # P140: the relay's signed word it accepted this commit, and when.
+                entry["commit_receipt"] = result["receipt"]
+        elif "detail" in result:                     # refused, and the relay holds none of ours
+            del saved[rnd]
+            result = {**result, "note": f"Nothing is committed for round {rnd}; commit_move again"}
+        # no answer at all: it may have landed, so the entry stays pending
     return result
 
 
@@ -4924,21 +4989,34 @@ def reveal_move(session_id: str, rationale: str, agent_id: str = "", say: str = 
         return {"error": _session_load_error(session_id, e), "success": False}
     rnd = str(data.get("round", 1))
     path = _commitments_file(aid, session_id)
-    saved = json.loads(path.read_text()) if path.exists() else {}
-    if rnd not in saved:
+    with _commitments(path) as saved:
+        entry = dict(saved.get(rnd) or {})
         landed = rnd.isdigit() and str(int(rnd) - 1) in saved
+    if not entry:
         return {"error": f"no committed move saved here for round {rnd}"
                 + (f" — your round {int(rnd) - 1} reveal landed and the game moved on: commit_move for "
                    f"round {rnd}" if landed else ""), "success": False}
-    entry = saved[rnd]
     if aid in (data.get("revealed") or {}):
         # MCP review: a retry after a lost answer — the reveal landed.
         return {"success": True, "already_revealed": True, "round": rnd, "move": entry["move"]}
+    # Review follow-up M5: the saved move is revealed only when it is the one the relay holds.
+    held = (data.get("commitments") or {}).get(aid)
+    if not held:
+        return {"error": f"the relay holds no commitment from you for round {rnd}, so there is nothing to "
+                         f"reveal: the commit of {entry['move']} saved here has not landed (commit_move again "
+                         "with that move to send it)", "round": rnd, "success": False}
+    if held != entry.get("commitment"):
+        return {"error": f"the move saved here for round {rnd} ({entry['move']}) is not the one you committed: "
+                         f"the relay holds commitment {held[:12]}…, the saved move's is "
+                         f"{str(entry.get('commitment'))[:12]}…. Revealing it would be refused, and no move "
+                         "saved here matches the relay's, so this round cannot be revealed from here",
+                "round": rnd, "success": False}
     result = _submit_simultaneous(session_id, "reveal", {"move": entry["move"], "nonce": entry["nonce"]},
                                   rationale, aid, say=say)
     if result.get("receipt"):
-        entry["reveal_receipt"] = result["receipt"]
-        _write_commitments(path, saved)
+        with _commitments(path) as saved:
+            if (saved.get(rnd) or {}).get("commitment") == held:
+                saved[rnd]["reveal_receipt"] = result["receipt"]
     return result
 
 
