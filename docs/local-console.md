@@ -70,6 +70,7 @@ SameSite=Strict session cookie, so another local user or a web page cannot use i
   Hermes v0.22.3; the plugins now require Hermes 0.22.6 or later, P284).
 - **Logs**: the console and `plugin_api.py` never log bodies; paths carry no content.
 - **Caching**: every console response is `Cache-Control: no-store`; nothing is written to disk.
+- **Content-Security-Policy**: every response allows this origin only (`default-src 'none'`, scripts, styles, images, fonts and connections from `'self'`, no frames or plugins); an inline script or style in the served `index.html` only by its hash, never `'unsafe-inline'`. Also `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`.
 - **Shared page**: other dashboard plugins run in the same page; the closed shadow root limits
   casual DOM reads but cannot stop a deliberately hostile plugin — install only plugins you trust.
 - **Not in scope**: an LLM agent with terminal access can read its own profile's key files; that
