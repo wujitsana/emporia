@@ -121,7 +121,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
                 title={`Linked session: ${r.linked_session_id}`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigate?.("sessions", { sessionId: r.linked_session_id! });
+                  navigate?.("session", { sessionId: r.linked_session_id! });
                 }}
               >
                 ⊙ session …{r.linked_session_id.slice(-8)}

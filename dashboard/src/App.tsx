@@ -18,12 +18,12 @@ import { hermesProfile } from "./transport";
 
 const hermesNonAgent = hermesProfile()?.isAgent === false;
 import { RelayHealthCtx } from "./healthCtx";
-import { applyTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
+import { applyTheme, nextTint, toggleTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
 import { navById, navForHotkey, type View } from "./navConfig";
 import { PageHeading, ViewBoundary } from "./ui/layout";
 import { isTyping } from "./keyTarget";
-import type { NavOpts } from "./eventNav";
+import { sessionSection, type NavOpts } from "./eventNav";
 import type { Navigate } from "./navigation";
 import {
   OverviewView,
@@ -37,16 +37,22 @@ import {
   FeesView, DocsView, SettingsView, RelayView, GamifyView,
 } from "./views";
 import { VIEWER_ID } from "./relayEnv";
-import { syncHash, viewFromHash } from "./dashboardRoute";
+import { routeFromHash, syncHash } from "./dashboardRoute";
+import { CAPTURE, PARAM_THEME, PARAM_TINT } from "./capture";
 
 const LS_THEME = "emporia_theme";
 const LS_TINT = "emporia_tint";
 
+// `?theme=` / `?tint=` win for this load (not saved); capture mode starts light, tint-green.
 function readTheme(): Theme {
+  if (PARAM_THEME) return PARAM_THEME;
+  if (CAPTURE) return "theme-light";
   const v = localStorage.getItem(LS_THEME);
   return (THEMES as readonly string[]).includes(v ?? "") ? (v as Theme) : "theme-light";
 }
 function readTint(): Tint {
+  if (PARAM_TINT !== null) return PARAM_TINT;
+  if (CAPTURE) return "tint-green";
   const v = localStorage.getItem(LS_TINT);
   return (TINTS as readonly string[]).includes(v ?? "") ? (v as Tint) : "";
 }
@@ -61,13 +67,15 @@ export default function App() {
 
 function AppInner() {
   const { isRelayOperator, isSpectator } = useRelayCtx();
-  const [view, setView] = useState<View>(() => viewFromHash());
+  const [view, setView] = useState<View>(() => routeFromHash().view);
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [tint, setTint] = useState<Tint>(readTint);
   const [navOpen, setNavOpen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
 
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  // From the route at first render: a child effect (GamesView naming its session) runs before
+  // App's own effects, so reading the hash later would read the one it just rewrote.
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(() => routeFromHash().sessionId);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -116,45 +124,48 @@ function AppInner() {
   if (seenEvent !== latestEvent) {
     setSeenEvent(latestEvent);
     if (latestEvent) {
-      if (latestEvent.type === "session_created" || latestEvent.type === "session_completed")
+      if (latestEvent.type === "session_created" || latestEvent.type === "session_completed"
+        || latestEvent.type === "action_result")
         setSessionsRefresh((n) => n + 1);
       if (latestEvent.type === "listing_created") setListingsRefresh((n) => n + 1);
       if (latestEvent.type === "event_created") setEventsRefresh((n) => n + 1);
     }
   }
 
+  // A change from the theme picker fades; one from the t/T hotkeys (or any in capture mode) is instant.
+  const instantNext = useRef(false);
   useEffect(() => {
-    applyTheme(theme, tint);
+    applyTheme(theme, tint, { fade: !CAPTURE && !instantNext.current, capture: CAPTURE });
+    instantNext.current = false;
   }, [theme, tint]);
 
   const setThemeAndApply = (t: Theme) => {
     setTheme(t);
-    localStorage.setItem(LS_THEME, t);
+    if (!CAPTURE) localStorage.setItem(LS_THEME, t);
   };
   const setTintAndApply = (t: Tint) => {
     setTint(t);
-    localStorage.setItem(LS_TINT, t);
+    if (!CAPTURE) localStorage.setItem(LS_TINT, t);
   };
 
-  const applyView = useCallback((id: View) => {
-    if (id === "games") {
-      setView("sessions");
-      syncHash("sessions");
-      return;
-    }
+  const applyView = useCallback((id: View, sessionId?: string | null) => {
     setView(id);
-    syncHash(id);
+    syncHash(id, sessionId);
   }, []);
 
+  // A route that names a session (`#/games/<id>`) opens it — on load and on a hash change.
   useEffect(() => {
     const onHash = () => {
-      applyView(viewFromHash());
+      const r = routeFromHash();
+      setView(r.view);
+      if (r.sessionId) setSelectedSessionId(r.sessionId);
       setNavOpen(false);
     };
+    onHash();
     window.addEventListener("hashchange", onHash);
-    if (!window.location.hash) syncHash(viewFromHash());
+    if (!window.location.hash) syncHash(routeFromHash().view);
     return () => window.removeEventListener("hashchange", onHash);
-  }, [applyView]);
+  }, []);
 
   const goToView = useCallback(
     (id: View) => {
@@ -162,13 +173,26 @@ function AppInner() {
       setNavOpen(false);
       setListingPeek(null);
       setGameModuleType(null);
+      setSelectedSessionId(null);
     },
     [applyView],
   );
 
   const navigate = useCallback<Navigate>(
     (toView, opts) => {
-      applyView(toView);
+      if (toView === "session") {
+        // A session lives in Games or Deals by its module; ask the relay once if the caller did not say.
+        const id = opts?.sessionId;
+        if (!id) return;
+        setSelectedSessionId(id);
+        setListingPeek(null);
+        if (opts?.gameModuleType) applyView(sessionSection(opts.gameModuleType), id);
+        else api.session(id)
+          .then((s) => applyView(sessionSection(s.module_type), id))
+          .catch(() => applyView("games", id));   // Games says it could not be opened
+        return;
+      }
+      applyView(toView, opts?.sessionId);
       if (opts?.sessionId !== undefined) setSelectedSessionId(opts.sessionId);
       if (opts?.roomId !== undefined) setSelectedRoomId(opts.roomId);
       if (opts?.agentId !== undefined) setSelectedAgentId(opts.agentId);
@@ -187,6 +211,22 @@ function AppInner() {
       }
       // In the Hermes tab (closed shadow root) e.target is the host; isTyping asks the app's own root.
       if (isTyping(e, shellRef.current) || e.metaKey || e.ctrlKey || e.altKey) return;
+      // t: next tint, T: light ↔ dark — instant, for a capture script on the beat.
+      // Saved like the picker's choice, except in capture mode.
+      if (e.key === "t" || e.key === "T") {
+        instantNext.current = true;
+        if (e.key === "t") setTint((cur) => {
+          const next = nextTint(cur);
+          if (!CAPTURE) localStorage.setItem(LS_TINT, next);
+          return next;
+        });
+        else setTheme((cur) => {
+          const next = toggleTheme(cur);
+          if (!CAPTURE) localStorage.setItem(LS_THEME, next);
+          return next;
+        });
+        return;
+      }
       // P35-2: `navForHotkey` applies the same visibility rule the rendered
       // nav does. Searching the unfiltered NAV here is what let a spectator
       // reach the two sections the nav hides.
@@ -200,7 +240,11 @@ function AppInner() {
     // setter is already on the context).
   }, [goToView, isSpectator, isRelayOperator]);
 
-  const currentNav = navById(view === "games" ? "sessions" : view);
+  const currentNav = navById(view);
+  // Picking a game or a deal names it in the route, so the address opens that session.
+  const onSessionShown = useCallback((id: string | null) => {
+    if (view === "games" || view === "deals") syncHash(view, id);
+  }, [view]);
 
   return (
     <RelayHealthCtx.Provider value={relayHealth}>
@@ -289,22 +333,24 @@ function AppInner() {
             {view === "listings" && (
               <ListingsView refreshTrigger={listingsRefresh} navigate={navigate} />
             )}
-            {view === "sessions" && (
+            {(view === "games" || view === "deals") && (
               <GamesView
+                section={view}
                 initialSessionId={selectedSessionId}
                 initialGameModule={gameModuleType}
                 listingPeek={listingPeek}
                 refreshTrigger={sessionsRefresh}
+                onSessionShown={onSessionShown}
               />
             )}
             {view === "rooms" && <RoomsView initialRoomId={selectedRoomId} navigate={navigate} />}
-            {view === "events" && (
+            {view === "tournaments" && (
               <EventsView refreshTrigger={eventsRefresh} initialEventId={selectedEventId} />
             )}
             {view === "agents" && (
               <AgentsView initialAgentId={selectedAgentId} listingPeek={listingPeek} navigate={navigate} />
             )}
-            {view === "agoras" && <AgorasView navigate={navigate} />}
+            {view === "agora" && <AgorasView navigate={navigate} />}
             {view === "messages" && (
               <MessagesView
                 navigate={navigate}
@@ -317,7 +363,7 @@ function AppInner() {
             {view === "docs" && <DocsView />}
             {view === "settings" && <SettingsView />}
             {view === "relay" && isRelayOperator && <RelayView />}
-            {view === "gamify" && <GamifyView />}
+            {view === "season" && <GamifyView initialAgentId={selectedAgentId} />}
             </ViewBoundary>)}
           </div>
         </main>

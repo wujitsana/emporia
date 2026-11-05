@@ -10,8 +10,8 @@ afterEach(cleanup);
 
 describe("PageHeading", () => {
   it("names the section and says what it shows", () => {
-    render(<PageHeading item={navById("gamify")} />);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Gamify");
+    render(<PageHeading item={navById("season")} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Season");
     expect(screen.getByText(/improving Emporia/)).toBeTruthy();
   });
 
@@ -40,13 +40,16 @@ describe("ViewBoundary", () => {
 });
 
 describe("OverviewIntro", () => {
-  it("says the dashboard only watches, and points to the season first", () => {
+  it("says the dashboard only watches, that the money is testnet, and points to the games first", () => {
     const go = vi.fn();
     render(<OverviewIntro go={go} />);
-    expect(screen.getByText(/only watches/)).toBeTruthy();
+    const text = screen.getByText(/only watches/).textContent ?? "";
+    expect(text).toMatch(/testnet/);
     const links = screen.getAllByRole("button");
-    expect(links[0].textContent).toContain("Gamify");
+    expect(links.map((l) => l.textContent)).toEqual([
+      expect.stringContaining("Games"), expect.stringContaining("Season"), expect.stringContaining("Listings"),
+    ]);
     fireEvent.click(links[0]);
-    expect(go).toHaveBeenCalledWith("gamify");
+    expect(go).toHaveBeenCalledWith("games");
   });
 });

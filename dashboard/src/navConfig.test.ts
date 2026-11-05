@@ -18,16 +18,18 @@ describe("groupedNav", () => {
     }
   });
 
-  it("starts with the overview and the season, and drops empty groups", () => {
+  it("starts with the overview, then the games and the season, and drops empty groups", () => {
     const groups = groupedNav(visibleNav({ isSpectator: true }));
-    expect(groups[0].items.map((n) => n.id)).toEqual(["overview", "gamify"]);
+    expect(groups[0].items.map((n) => n.id)).toEqual(["overview"]);
+    expect(groups[1]).toMatchObject({ title: "PLAY" });
+    expect(groups[1].items.map((n) => n.id)).toEqual(["games", "season", "tournaments"]);
     expect(groups.every((g) => g.items.length > 0)).toBe(true);
   });
 
   it("keeps a section missing from the groups reachable", () => {
-    const extra = { id: "games" as const, label: "Games", hotkey: "x", icon: "x", blurb: "x" };
+    const extra = { id: "nowhere" as unknown as "games", label: "Games", hotkey: "x", icon: "x", blurb: "x" };
     const groups = groupedNav([...visibleNav({ isSpectator: false }), extra]);
-    expect(groups.at(-1)?.items.map((n) => n.id)).toEqual(["games"]);
+    expect(groups.at(-1)?.items.map((n) => n.id)).toEqual(["nowhere"]);
   });
 
   it("gives every section a plain-words blurb for its heading", () => {
@@ -58,19 +60,19 @@ describe("visibleNav", () => {
 
 describe("navForHotkey", () => {
   it("refuses a spectator the hotkeys for sections the nav hides", () => {
-    expect(navForHotkey("0", { isSpectator: true })).toBeUndefined();
-    expect(navForHotkey("8", { isSpectator: true })).toBeUndefined();
+    expect(navForHotkey("f", { isSpectator: true })).toBeUndefined();
+    expect(navForHotkey("9", { isSpectator: true })).toBeUndefined();
   });
 
   it("still resolves those hotkeys for an identified viewer", () => {
-    expect(navForHotkey("0", { isSpectator: false })?.id).toBe("fees");
-    expect(navForHotkey("8", { isSpectator: false })?.id).toBe("messages");
+    expect(navForHotkey("f", { isSpectator: false })?.id).toBe("fees");
+    expect(navForHotkey("9", { isSpectator: false })?.id).toBe("messages");
   });
 
   it("resolves shared hotkeys the same for both", () => {
     for (const spec of [true, false]) {
       expect(navForHotkey("1", { isSpectator: spec })?.id).toBe("overview");
-      expect(navForHotkey("3", { isSpectator: spec })?.id).toBe("sessions");
+      expect(navForHotkey("2", { isSpectator: spec })?.id).toBe("games");
     }
   });
 

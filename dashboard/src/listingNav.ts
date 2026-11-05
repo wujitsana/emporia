@@ -1,6 +1,5 @@
 import type { Listing } from "./api";
-import type { View } from "./navConfig";
-import type { NavOpts } from "./eventNav";
+import { sessionSection, type NavOpts, type NavTarget } from "./eventNav";
 
 function listingPeek(l: Listing): NavOpts["listingPeek"] {
   return {
@@ -12,16 +11,16 @@ function listingPeek(l: Listing): NavOpts["listingPeek"] {
 }
 
 /** Where a listing row should open in the dashboard. */
-export function viewForListing(l: Listing): { view: View; opts?: NavOpts } {
+export function viewForListing(l: Listing): { view: NavTarget; opts?: NavOpts } {
   if (l.listing_type === "room") {
     return { view: "rooms", opts: { roomId: l.listing_id, listingPeek: listingPeek(l) } };
   }
   if (l.listing_type === "event") {
-    return { view: "events", opts: { listingPeek: listingPeek(l) } };
+    return { view: "tournaments", opts: { listingPeek: listingPeek(l) } };
   }
-  // All session-type listings (chess, service, research, code-review) → Sessions view
+  // A game challenge opens Games; a service, code review or research offer opens Deals.
   return {
-    view: "sessions",
+    view: sessionSection(l.module_type),
     opts: {
       gameModuleType: l.module_type ?? "",
       listingPeek: listingPeek(l),

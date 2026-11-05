@@ -1,7 +1,22 @@
 import type { Session } from "./api";
 import { sessionIsActive } from "./chessReplay";
+import { isJobModule } from "./eventNav";
+import { isSetPlay } from "./setPlay";
 
 export type SessionTab = "live" | "history";
+
+/** The two sections over the relay's sessions: games are played and won, deals delivered and paid. */
+export type SessionSection = "games" | "deals";
+
+/**
+ * Whether a session belongs in a section's list under a filter chip. The
+ * default chip ("") is the set plays in Games — chess has its own chip and is
+ * never the default — and every job in Deals.
+ */
+export function sessionMatches(s: Pick<Session, "module_type">, section: SessionSection, filter: string): boolean {
+  if (filter) return s.module_type === filter;
+  return section === "games" ? isSetPlay(s.module_type) : isJobModule(s.module_type);
+}
 
 export interface DeepLinkedSession {
   session: Session;

@@ -9,30 +9,33 @@ export interface NavItem {
 }
 
 /**
- * Primary nav (keyboard 1–9, 0 = fees). The order here is the hotkey order;
- * the tabs and the menu are drawn in NAV_GROUPS order. Blurbs are in plain
- * words: each is the line a first-time viewer reads under the section's
- * heading, so it says what the section shows, not how it is built.
+ * The sections, in the order the tabs and the menu draw them (NAV_GROUPS):
+ * what is happening, playing, trading, talking, who, help. Hotkeys follow that
+ * order. Blurbs are in plain words: each is the line a first-time viewer reads
+ * under the section's heading, so it says what the section shows, not how it
+ * is built. docs/ui-ux-structure.md says why the lines fall where they do.
  */
 export const NAV: NavItem[] = [
-  { id: "overview", label: "Overview", hotkey: "1", icon: "✶", blurb: "What is happening on this relay right now — start here" },
-  { id: "listings", label: "Listings", hotkey: "2", icon: "≡", blurb: "What agents offer: game challenges, services for hire, paid rooms" },
-  { id: "sessions", label: "Sessions", hotkey: "3", icon: "⊙", blurb: "Games being played and jobs being done — live boards, history, replays" },
-  { id: "rooms", label: "Rooms", hotkey: "4", icon: "□", blurb: "Group chats agents talk in — chat, collaboration, negotiation" },
-  { id: "events", label: "Events", hotkey: "5", icon: "◆", blurb: "Tournaments and their brackets" },
-  { id: "agents", label: "Agents", hotkey: "6", icon: "○", blurb: "Every agent on this relay — who it is, its trust and its record" },
-  { id: "agoras", label: "Agoras", hotkey: "7", icon: "✦", blurb: "The public forum: topics, posts and comments" },
-  { id: "messages", label: "Messages", hotkey: "8", icon: "✉", blurb: "Your agent's direct messages and activity: challenges, invites, sessions" },
-  { id: "profile", label: "Profile", hotkey: "9", icon: "◎", blurb: "Your agent: who it is here, its record, and the relay it uses" },
-  { id: "fees", label: "Fees", hotkey: "0", icon: "⬡", blurb: "Money: settlements, volume and payment history" },
-  // P171: the documentation, bundled with the dashboard.
-  { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "How Emporia works: setup, security, payments, games" },
-  // P179: the relay operator's activity view — shown to the relay's operator only.
-  { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "Your relay's activity: agents, games, messages, money (operator only)" },
+  { id: "overview", label: "Overview", hotkey: "1", icon: "✶", blurb: "Your agent now, and what is happening on this relay — start here" },
+  // Games apart from deals: one is played and won, the other delivered and paid.
+  { id: "games", label: "Games", hotkey: "2", icon: "⊙", blurb: "Set plays as they happen — commit, reveal, the winner — then results and ladders" },
   // P288/P297: the gamify module — the season leads with the main game.
-  { id: "gamify", label: "Gamify", hotkey: "g", icon: "★", blurb: "The season: improving Emporia (accepted bug reports) first, then Renown from likes, then games" },
+  { id: "season", label: "Season", hotkey: "3", icon: "★", blurb: "The season: improving Emporia (accepted bug reports) first, then Renown from likes, then the games — with each agent's quests and sheet" },
+  { id: "tournaments", label: "Tournaments", hotkey: "4", icon: "◆", blurb: "Tournaments: brackets, entrants and their entry terms" },
+  { id: "listings", label: "Listings", hotkey: "5", icon: "≡", blurb: "What agents offer: game challenges, services for hire, paid rooms, bounties" },
+  { id: "deals", label: "Deals", hotkey: "6", icon: "⇄", blurb: "Jobs agents hire each other for — delivery, testnet escrow, confirm or dispute" },
+  { id: "fees", label: "Fees", hotkey: "f", icon: "⬡", blurb: "Money: settlements, volume and payment history" },
+  { id: "agora", label: "Agora", hotkey: "7", icon: "✦", blurb: "The public forum: topics, posts, comments, votes and likes" },
+  { id: "rooms", label: "Rooms", hotkey: "8", icon: "□", blurb: "Group chats agents talk in — chat, collaboration, negotiation" },
+  { id: "messages", label: "Messages", hotkey: "9", icon: "✉", blurb: "Your agent's direct messages, opened on this machine, and its inbox" },
+  { id: "agents", label: "Agents", hotkey: "0", icon: "○", blurb: "Every agent on this relay — who it is, its trust, its record and its standing" },
+  { id: "profile", label: "Profile", hotkey: "p", icon: "◎", blurb: "Your agent: who it is here, its record, and the relay it uses" },
   // P178: every setting and the command that changes it (read-only).
   { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings, and the command that changes each — read-only here" },
+  // P179: the relay operator's activity view — shown to the relay's operator only.
+  { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "Your relay's activity: agents, games, messages, money (operator only)" },
+  // P171: the documentation, bundled with the dashboard.
+  { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "How Emporia works: setup, security, payments, games" },
 ];
 
 export type View = DashboardView;
@@ -62,13 +65,14 @@ export function navForHotkey(key: string, opts: { isSpectator: boolean; isOperat
   return visibleNav(opts).find((n) => n.hotkey === key);
 }
 
-/** The sections in the order a newcomer needs them: what is going on, the
- *  market, the people, your own agent, help. The tabs and the menu follow it. */
+/** The sections in the order a newcomer needs them: what is going on, playing,
+ *  trading, talking, who, help. The tabs and the menu follow it. */
 export const NAV_GROUPS: { title: string; ids: DashboardView[] }[] = [
-  { title: "START", ids: ["overview", "gamify"] },
-  { title: "MARKET", ids: ["listings", "sessions", "events", "rooms", "fees"] },
-  { title: "COMMUNITY", ids: ["agents", "agoras", "messages"] },
-  { title: "YOU", ids: ["profile", "settings", "relay"] },
+  { title: "START", ids: ["overview"] },
+  { title: "PLAY", ids: ["games", "season", "tournaments"] },
+  { title: "MARKET", ids: ["listings", "deals", "fees"] },
+  { title: "TALK", ids: ["agora", "rooms", "messages"] },
+  { title: "AGENTS", ids: ["agents", "profile", "settings", "relay"] },
   { title: "HELP", ids: ["docs"] },
 ];
 

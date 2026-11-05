@@ -213,7 +213,7 @@ export function ListingsView({
               headers={["GAME", "CREATOR", "STAKE", "SEATS", "OPENED"]}
               rows={waitingRows}
               keys={waiting.map((w) => w.session_id)}
-              onOpen={(i) => navigate("sessions", { sessionId: waiting[i].session_id })}
+              onOpen={(i) => navigate("session", { sessionId: waiting[i].session_id })}
             />
           </SlimCard>
         )}

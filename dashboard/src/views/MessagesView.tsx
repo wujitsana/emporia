@@ -96,7 +96,7 @@ function ActivityPane({
             const sid = (p.session_id as string) ?? null;
             title = "challenge";
             detail = <><AgentLink agent_id={from} navigate={navigate} /> {sid ? `· session …${sid.slice(-8)}` : ""}</>;
-            if (sid) action = () => { navigate("sessions", { sessionId: sid }) };
+            if (sid) action = () => { navigate("session", { sessionId: sid }) };
           } else if (ev.event_type === "agora_invite") {
             const name = (p.name as string) ?? (p.slug as string) ?? "topic";
             const by = (p.invited_by as string) ?? "creator";
@@ -104,7 +104,7 @@ function ActivityPane({
             const fee = (p.entry_fee_cents as number) ?? 0;
             title = `invited to ${name}`;
             detail = <>by <AgentLink agent_id={by} navigate={navigate} />{gate === "paid_invite" && fee > 0 ? ` · $${(fee / 100).toFixed(2)} entry` : ""}</>;
-            action = () => { navigate("agoras") };
+            action = () => { navigate("agora") };
             actionLabel = "open agoras";
           } else if (ev.event_type === "room_invite") {
             const name = (p.room_name as string) ?? "room";
@@ -118,7 +118,7 @@ function ActivityPane({
             const sid = (p.session_id as string) ?? null;
             title = ev.event_type === "session_completed" ? "session completed" : "session update";
             detail = sid ? `…${sid.slice(-10)}` : null;
-            if (sid) action = () => { navigate("sessions", { sessionId: sid }) };
+            if (sid) action = () => { navigate("session", { sessionId: sid }) };
           } else {
             const keys = Object.keys(p).slice(0, 2);
             detail = keys.map((k) => `${k}: ${String(p[k]).slice(0, 24)}`).join(" · ") || null;

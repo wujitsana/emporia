@@ -149,6 +149,12 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
               ...(record ? recordLines(record) : []),
             ]}
           />
+          {navigate && (
+            <button type="button" className="e-entity-chip" style={{ marginTop: 10 }}
+              onClick={() => navigate("season", { agentId: a.agent_id })}>
+              ★ its character sheet and quests, in Season →
+            </button>
+          )}
           <Text className="e-dim" style={{ marginTop: 10, fontSize: "0.68rem" }}>
             Payment rails
           </Text>
@@ -283,12 +289,25 @@ export function AgentsView({
       .catch(() => {});
   }, []);
 
+  // P72-3 put the standings above the list; on a phone that pushed the list a
+  // screen down and sat above every agent's detail. They are the list's first
+  // row now, and open in the detail pane like an agent does.
+  const [standings, setStandings] = React.useState(false);
+  const pick = (a: AgentProfile) => { setStandings(false); setSelected(a); };
+
   const agentSidebar = (
     <>
+      <FlatRailItem selected={standings} onClick={() => setStandings(true)}>
+        <div className="e-docs-rail-item">
+          <Text>Standings</Text>
+          <Text className="e-faint">who wins most — this relay</Text>
+        </div>
+      </FlatRailItem>
+      <div className="e-rail-label">Agents</div>
       {myProfile && (
         <FlatRailItem
-          selected={selected?.agent_id === myProfile.agent_id}
-          onClick={() => setSelected(myProfile)}
+          selected={!standings && selected?.agent_id === myProfile.agent_id}
+          onClick={() => pick(myProfile)}
         >
           <div className="e-agent-row">
             <AgentMoireAvatar agentId={myProfile.agent_id} />
@@ -305,8 +324,8 @@ export function AgentsView({
         agents.filter((a) => a.agent_id !== myProfile?.agent_id).map((a) => (
           <FlatRailItem
             key={a.agent_id}
-            selected={selected?.agent_id === a.agent_id}
-            onClick={() => setSelected(a)}
+            selected={!standings && selected?.agent_id === a.agent_id}
+            onClick={() => pick(a)}
           >
             <div className="e-agent-row">
               <AgentMoireAvatar agentId={a.agent_id} />
@@ -323,7 +342,13 @@ export function AgentsView({
     </>
   );
 
-  const agentMain = selected ? (
+  const agentMain = standings ? (
+    <div className="e-split-main">
+      <Text className="e-subhead">Standings — wins across every game, this relay</Text>
+      <Leaderboard />
+      <Text className="e-note">Each game's own ladder is under Games › ladders; the season's boards are under Season.</Text>
+    </div>
+  ) : selected ? (
     <AgentDetailPanel key={selected.agent_id} agent={selected} navigate={navigate} />
   ) : null;
 
@@ -340,11 +365,6 @@ export function AgentsView({
       </div>
       <Indent>
         <ViewStatus loading={agentsLoading} error={agentsErr} />
-        {/* P72-3: standing lives with the agents it ranks. The primary nav's
-            hotkeys 1-9 and 0 are all taken, and a leaderboard is a view *of*
-            agents rather than a peer of Listings or Rooms — so it sits here
-            instead of becoming an eleventh top-level section. */}
-        <Leaderboard />
       </Indent>
       <SidebarLayout sidebar={agentSidebar} defaultSidebarWidth={30} initialPane={initialAgentId ? "detail" : "list"}>
         {listingPeek ? <ListingPeekBanner peek={listingPeek} /> : null}

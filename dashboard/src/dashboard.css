@@ -895,7 +895,8 @@ body.theme-light {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 2px 6px;
   margin-bottom: 6px;
   min-width: 0;
 }
@@ -2261,6 +2262,270 @@ body.theme-light {
   .e-section-tab { min-height: 44px; }
   .e-rail-item { min-height: 48px; }
   .e-segment-tab { min-height: 40px; }
+}
+
+/* ─── 26. SET PLAYS (blotto, ⅔, lowest unique) ─────────────────────────── */
+
+.e-setplay { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.e-setplay__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.e-setplay__game {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--theme-focused-foreground);
+}
+.e-setplay__players { margin: 2px 0 0; font-size: 1.05rem; }
+.e-setplay__status {
+  flex: none;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border: 1px solid var(--e-rule);
+  opacity: 0.75;
+}
+.e-setplay__status.is-live {
+  opacity: 1;
+  border-color: var(--theme-focused-foreground);
+  color: var(--theme-focused-foreground);
+}
+.e-setplay__status.is-live::before { content: "● "; }
+.e-setplay__verdict { margin: 0; font-size: 0.95rem; }
+.e-setplay__verdict.is-win { color: var(--theme-focused-foreground); font-weight: 600; }
+.e-setplay__why { color: var(--theme-text); opacity: 0.6; font-size: 0.82rem; font-weight: 400; }
+.e-setplay__wait { margin: 0; font-size: 0.82rem; line-height: 1.5; opacity: 0.7; max-width: 72ch; }
+.e-setplay__meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; border-top: 1px solid var(--e-rule); }
+.e-setplay__badges { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }
+.e-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* commit → reveal → winner */
+.e-phase-strip { list-style: none; display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; font-size: 0.78rem; }
+.e-phase-strip__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 0;
+  opacity: 0.4;
+  white-space: nowrap;
+}
+.e-phase-strip__step + .e-phase-strip__step::before {
+  content: "";
+  width: clamp(12px, 4vw, 56px);
+  height: 1px;
+  margin-right: 10px;
+  background: currentColor;
+  opacity: 0.6;
+}
+.e-phase-strip__step.is-done { opacity: 0.75; }
+.e-phase-strip__step.is-now { opacity: 1; color: var(--theme-focused-foreground); }
+.e-phase-strip__n {
+  display: inline-grid;
+  place-items: center;
+  width: 1.7em;
+  height: 1.7em;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.72rem;
+}
+.e-phase-strip__step.is-now .e-phase-strip__n {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  border-color: var(--theme-focused-foreground);
+}
+.e-phase-strip__who { font-weight: 600; }
+
+/* Seats (pick games) */
+.e-seats { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--e-rule); }
+.e-seat {
+  display: grid;
+  grid-template-columns: minmax(8ch, 1fr) minmax(12ch, 1.4fr) 5ch;
+  gap: 8px;
+  align-items: baseline;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--e-rule);
+  font-size: 0.85rem;
+}
+.e-seat__state { opacity: 0.65; font-size: 0.78rem; }
+.e-seat__move { text-align: right; font-size: 1rem; }
+.e-seat.is-to_commit { opacity: 0.55; }
+.e-seat.is-out { opacity: 0.45; text-decoration: line-through; }
+.e-seat.is-winner {
+  background: color-mix(in srgb, var(--theme-focused-foreground) 16%, transparent);
+  box-shadow: inset 3px 0 0 var(--theme-focused-foreground);
+}
+.e-seat.is-winner .e-seat__name,
+.e-seat.is-winner .e-seat__move { color: var(--theme-focused-foreground); font-weight: 600; }
+
+/* Blotto: a row per player, a column per field */
+.e-blotto__rules, .e-lowest__rules, .e-twothirds__rules { margin: 0 0 8px; font-size: 0.75rem; line-height: 1.5; }
+.e-blotto__scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.e-blotto__grid { border-collapse: collapse; font-size: 0.95rem; }
+.e-blotto__grid th, .e-blotto__grid td { padding: 8px 10px; border: 1px solid var(--e-rule); text-align: center; }
+.e-blotto__grid thead th { font-size: 0.68rem; letter-spacing: 0.1em; font-weight: 400; opacity: 0.6; border-top: 0; }
+.e-blotto__grid thead th:first-child { border-left: 0; }
+.e-blotto__grid tbody th { text-align: left; font-weight: 400; min-width: 12ch; border-left: 0; }
+.e-blotto__name { display: block; }
+.e-blotto__state { display: block; font-size: 0.68rem; opacity: 0.6; white-space: nowrap; }
+.e-blotto__grid td { min-width: 3.2ch; }
+.e-blotto__grid td.is-hidden { opacity: 0.4; }
+.e-blotto__grid td.is-won {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  font-weight: 700;
+}
+.e-blotto__grid tr.is-winner th { color: var(--theme-focused-foreground); font-weight: 600; }
+.e-blotto__took { font-weight: 600; }
+.e-blotto__history { margin-top: 8px; font-size: 0.78rem; }
+.e-blotto__history summary { cursor: pointer; opacity: 0.7; }
+
+/* Guess ⅔: one number line */
+.e-numline {
+  --rows: 1;
+  position: relative;
+  margin: 28px 12px 4px;
+  height: calc(40px + var(--rows) * 30px);
+}
+.e-numline__axis { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }
+.e-numline__tick { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }
+.e-numline__tick > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }
+.e-numline__mark { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }
+.e-numline__mark > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }
+/* The target (⅔ of the average) is always left of the average: label it on its left. */
+.e-numline__mark--target > span { left: auto; right: 5px; }
+.e-numline__mark--target.is-low > span { left: 5px; right: auto; bottom: 16px; }
+.e-numline__mark--target { border-left-color: var(--theme-focused-foreground); opacity: 1; }
+.e-numline__mark--target > span { color: var(--theme-focused-foreground); font-weight: 600; }
+.e-numline__pick { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }
+.e-numline__pin { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }
+.e-numline__label { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--e-rule); background: var(--theme-background); }
+.e-numline__pick.is-winner .e-numline__pin { background: var(--theme-focused-foreground); opacity: 1; width: 3px; }
+.e-numline__pick.is-winner .e-numline__label {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  border-color: var(--theme-focused-foreground);
+  font-weight: 700;
+}
+
+/* Lowest unique: a box per number */
+.e-lowest__row { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; margin: 0; padding: 0; }
+.e-lowest__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 4.6rem;
+  padding: 6px 8px;
+  border: 1px solid var(--e-rule);
+  font-size: 0.78rem;
+}
+.e-lowest__n { font-size: 1.05rem; }
+.e-lowest__cell.is-empty { opacity: 0.4; }
+.e-lowest__cell.is-taken .e-lowest__who { text-decoration: line-through; opacity: 0.6; }
+.e-lowest__cell.is-unique { border-color: var(--theme-text); }
+.e-lowest__tag { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.55; }
+.e-lowest__cell.is-winner {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  border-color: var(--theme-focused-foreground);
+  font-weight: 700;
+}
+.e-lowest__cell.is-winner .e-lowest__tag { opacity: 0.85; }
+
+/* Game rows in the Games rail */
+.e-game-row { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }
+.e-game-row__top { display: flex; justify-content: space-between; gap: 8px; }
+.e-game-row__kind { font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--theme-focused-foreground); }
+.e-game-row__phase { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; white-space: nowrap; }
+
+/* ─── 27. OVERVIEW: YOUR AGENT NOW ─────────────────────────────────────── */
+
+.e-now { border: 1px solid var(--e-rule); margin-bottom: 16px; }
+.e-now__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--e-rule);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.e-now__head > span:first-child { opacity: 0.6; }
+.e-now__row {
+  display: grid;
+  grid-template-columns: 7ch minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  align-items: baseline;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.e-now__row:last-child { border-bottom: 0; }
+.e-now__row:hover { background: color-mix(in srgb, var(--theme-focused-foreground) 8%, transparent); }
+.e-now__row--static { cursor: default; }
+.e-now__row--static:hover { background: transparent; }
+.e-now__label { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }
+.e-now__go { color: var(--theme-focused-foreground); }
+.e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }
+.e-now__live { color: var(--theme-focused-foreground); }
+
+/* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */
+/* On only for the length of a theme or tint change (themeConfig.applyTheme),
+   so hovers and other transitions are untouched the rest of the time. A run
+   through the tints reads as one surface changing colour, not a flash. */
+@media (prefers-reduced-motion: no-preference) {
+  .e-theme-anim,
+  .e-theme-anim *,
+  .e-theme-anim *::before,
+  .e-theme-anim *::after {
+    transition-property: color, background-color, border-color, outline-color, fill, stroke, box-shadow, text-decoration-color !important;
+    transition-duration: 0.35s !important;
+    transition-timing-function: ease-out !important;
+    transition-delay: 0s !important;
+  }
+}
+
+/* ─── 29. CAPTURE MODE (?capture=1, src/capture.ts) ────────────────────── */
+/* For filming: nothing moves between frames, so a tint switched on the beat
+   lands in one frame; the relay's host:port is not on screen. */
+.e-capture,
+.e-capture *,
+.e-capture *::before,
+.e-capture *::after {
+  transition: none !important;
+  animation: none !important;
+}
+.e-capture .e-capture-hide { display: none !important; }
+/* The capture frame (540 × 540 CSS px) is the phone layout; scale it so the
+   smallest text on screen (0.65rem / 11px labels) is at least 13 CSS px. */
+@media (max-width: 700px) {
+  .e-capture .e-app-shell { zoom: 1.25; }
+}
+
+.e-quest-next { margin: 4px 0 10px; font-size: 0.85rem; line-height: 1.5; }
+.e-quest-next code { font-size: 0.78rem; overflow-wrap: anywhere; opacity: 0.8; }
+
+@media (max-width: 700px) {
+  /* On a detail screen, the list's own controls (search, counts, the toolbar
+     line) belong to the list: hide them so the detail starts at the top. */
+  .e-view-body:has([data-pane-shown="detail"]) .e-view-toolbar,
+  .e-view-body__inner:has(> [data-pane-shown="detail"]) > .e-search-row { display: none; }
+  /* Keep commit → reveal → winner on one line; the verdict line names the winner. */
+  .e-phase-strip { flex-wrap: nowrap; }
+  .e-phase-strip__step { padding-right: 6px; gap: 5px; }
+  .e-phase-strip__step + .e-phase-strip__step::before { width: 14px; margin-right: 6px; }
+  .e-phase-strip__who { display: none; }
+  .e-setplay { padding: 12px 16px 24px; }
+  .e-blotto__grid th, .e-blotto__grid td { padding: 8px 6px; }
+  .e-blotto__grid tbody th { min-width: 9ch; }
 }
 
 @media (prefers-reduced-motion: reduce) {
