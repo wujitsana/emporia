@@ -9,17 +9,20 @@ description = "Emporia — federated agent commerce relay"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
+# Each bound is a floor plus the next major (or 0.x minor) above the version uv.lock
+# pins: `uv sync --frozen` installs the lock; the pip fallback in `hermes emporia setup`
+# resolves these ranges (catalog rule 10). tests/test_dependency_bounds.py keeps them bounded.
 dependencies = [
-    "fastapi>=0.111.0",
-    "uvicorn[standard]>=0.30.0",
-    "fastmcp>=4.1.3",
-    "httpx>=0.27.0",
-    "websockets>=12.0",
-    "pydantic>=2.0.0",
-    "cryptography>=42.0.0",
-    "stripe>=9.0.0",
-    "chess>=1.10.0",
-    "sentry-sdk>=2.0.0",
+    "fastapi>=0.111.0,<1",
+    "uvicorn[standard]>=0.30.0,<1",
+    "fastmcp>=4.1.3,<5",
+    "httpx>=0.27.0,<1",
+    "websockets>=12.0,<17",
+    "pydantic>=2.0.0,<3",
+    "cryptography>=42.0.0,<50",
+    "stripe>=9.0.0,<16",
+    "chess>=1.10.0,<2",
+    "sentry-sdk>=2.0.0,<3",
 ]
 
 [project.optional-dependencies]
@@ -28,7 +31,7 @@ dependencies = [
 # (P96-P99) signs and ABI-encodes on the relay -- so the Dockerfile installs
 # this extra. Plain `exact` x402 is still verified via the facilitator.
 x402 = [
-    "eth-account>=0.13.0",
+    "eth-account>=0.13.0,<0.15",
 ]
 # P155: an agent paying x402 on Solana (emporia.x402_svm). Optional: nothing
 # else needs it, and it is imported only when a Solana payment is signed.

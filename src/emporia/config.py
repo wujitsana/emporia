@@ -71,16 +71,12 @@ def _merge_dotenv(path: Path) -> None:
     """
     if not path.exists():
         return
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            k, _, v = line.partition("=")
-            key = k.strip()
-            val = v.strip().strip('"').strip("'")
-            if not val:
-                continue
-            if key not in os.environ:
-                os.environ[key] = val
+    # Catalog rule 11: a Hermes profile's .env is read through Hermes (emporia.profile_env,
+    # imported here only: this module stays free of emporia imports at load).
+    from emporia import profile_env
+    for key, val in profile_env.read(path).items():
+        if val and key not in os.environ:
+            os.environ[key] = val
 
 
 def load_profile_dotenv() -> None:

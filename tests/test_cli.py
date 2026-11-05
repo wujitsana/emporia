@@ -65,7 +65,8 @@ def test_doctor_names_each_problem_with_its_fix(profiles, capsys, monkeypatch):
     bad.mkdir()
     (bad / "config.yaml").write_text(yaml.dump(
         {"mcp_servers": {"emporia": {"env": {"EMPORIA_AGENT_ID": "legacy"}}}}))
-    (bad / ".env").write_text("STRIPE_SECRET_KEY=sk_live_relays\n")
+    # EMPORIA_NOUS_VERIFY=1: a missing Nous login is a problem only for an agent that verifies.
+    (bad / ".env").write_text("STRIPE_SECRET_KEY=sk_live_relays\nEMPORIA_NOUS_VERIFY=1\n")
     keys = bad / "home" / ".hermes" / "keys"
     keys.mkdir(parents=True)
     (keys / "legacy.priv").write_bytes(b"x" * 32)
@@ -298,6 +299,27 @@ def test_a_relay_started_here_comes_back_once_with_a_clean_environment(relay_her
     assert len(state["started"]) == 1
 
 
+def test_from_the_bridge_the_relay_gets_none_of_what_the_plugin_handed_it(relay_here, tmp_path, monkeypatch):
+    """Catalog rule 11: the bridge reads no .env (the plugin hands it the agent's values and
+    names them in EMPORIA_HANDED_NAMES), so the relay it restarts is kept clean by those names,
+    without the agent's .env being opened."""
+    pid_file, state = relay_here
+    monkeypatch.setenv("EMPORIA_DOTENV", str(tmp_path / "never-read.env"))     # does not exist
+    monkeypatch.setenv("EMPORIA_HANDED_NAMES", "EMPORIA_KEYS_DIR,VAULT_ADDR,BW_SESSION")
+    monkeypatch.setenv("EMPORIA_KEYS_DIR", "/agent/keys")
+    monkeypatch.setenv("VAULT_ADDR", "https://vault.alpha")
+    monkeypatch.setenv("BW_SESSION", "agent-session")
+    monkeypatch.setenv("PATH_FOR_TEST", "kept")
+    monkeypatch.setattr(cli, "_dotenv_names", lambda path: (_ for _ in ()).throw(AssertionError("read")))
+    pid_file.write_text("999999999")
+    pid_file.with_suffix(".url").write_text("http://127.0.0.1:8088")
+    assert cli.ensure_local_relay("http://localhost:8088") == "started"
+    env = state["started"][0]
+    assert env["PATH_FOR_TEST"] == "kept"
+    assert not [k for k in env if k.startswith("EMPORIA_")]
+    assert "VAULT_ADDR" not in env and "BW_SESSION" not in env
+
+
 def test_a_stopped_or_remote_relay_is_left_alone(relay_here):
     pid_file, state = relay_here
     assert "not started here" in cli.ensure_local_relay("http://localhost:8088")   # no pid file: stopped
@@ -464,6 +486,13 @@ def test_new_profile_is_refused_for_a_profile_that_holds_an_agent(profiles, caps
     assert (rc, after) == (1, before), after
     assert "already" in capsys.readouterr().out
     assert {f.name: f.read_bytes() for f in keydir.iterdir() if f.is_file()} == keys
+    # Review pass (11-05): the plugin passes --new-profile, so its refusal is read by a
+    # plugin-only user — who has `hermes emporia setup`, not `emporia setup agent`.
+    from emporia import cli_hints
+    with patch.object(cli_hints, "via_plugin", lambda runtime=None: True), patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "lambda", "--new-profile"]) == 1
+    out = capsys.readouterr().out
+    assert "hermes emporia setup --profile lambda" in out and "`emporia setup agent" not in out, out
 
 
 def test_setup_agent_is_the_wizard_not_the_check_before_it():
@@ -472,3 +501,17 @@ def test_setup_agent_is_the_wizard_not_the_check_before_it():
     wrapped in a wizard."""
     assert hasattr(cli.cmd_setup_agent, "__wrapped__")
     assert not hasattr(cli._holds_an_agent, "__wrapped__")
+
+
+def test_a_catalog_runtime_is_never_pulled_or_synced_by_emporia_update(monkeypatch, capsys):
+    """Catalog rule 3: the runtime the catalog plugin installed moves only with the plugin's pin.
+    `emporia update` (git pull, uv/pip sync, plugin refresh) refuses it before doing anything."""
+    import argparse
+    ran = []
+    monkeypatch.setattr(cli.installer(), "from_catalog", lambda: True)
+    monkeypatch.setattr(cli, "_run", lambda argv, cwd=None, timeout=None: ran.append(argv) or True)
+    monkeypatch.setattr(cli.subprocess, "run", lambda *a, **k: ran.append(a) or None)
+    assert cli.cmd_update(argparse.Namespace(no_pull=False)) == 1
+    assert cli.cmd_update(argparse.Namespace(no_pull=True)) == 1
+    assert ran == []
+    assert "moves only with it" in capsys.readouterr().out

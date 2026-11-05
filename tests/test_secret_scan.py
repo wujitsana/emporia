@@ -60,3 +60,24 @@ def test_the_hook_scans_only_what_the_push_adds(tmp_path, monkeypatch):
     sha = _commit(git, tmp_path, "a.txt", "fine\n")
     assert secret_scan._pushed_revs(f"refs/heads/x {sha} refs/heads/x {'0' * 40}\n") == [sha, "--not", "--remotes"]
     assert secret_scan._pushed_revs(f"(delete) {'0' * 40} refs/heads/x abc\n") == []
+
+
+def test_a_binary_or_empty_secret_file_is_found_by_its_name(tmp_path, monkeypatch):
+    """Review pass (11-05): file names were read only from `+++ b/` lines, which git prints
+    for text changes alone. A database, a .p12 or an empty .env shows no such line ("Binary
+    files ... differ", or nothing), so the file patterns' own examples were never matched."""
+    git = _repo(tmp_path, monkeypatch)
+    (tmp_path / "relay.db").write_bytes(b"SQLite format 3\x00" + bytes(range(256)))
+    (tmp_path / "keys").mkdir()
+    (tmp_path / "keys" / "agent.p12").write_bytes(b"\x30\x82\x00\x00" + bytes(range(256)))
+    (tmp_path / "profile").mkdir()
+    (tmp_path / "profile" / ".env").write_text("")
+    git("add", "-A")
+    git("commit", "-q", "-m", "binary and empty")
+    kinds = {(path, kind) for _, path, kind in secret_scan.scan(["--all"])}
+    assert {("relay.db", "secret-like file"), ("keys/agent.p12", "secret-like file"),
+            ("profile/.env", "secret-like file")} <= kinds, kinds
+    first = git("rev-parse", "HEAD").strip()
+    git("rm", "-q", "relay.db")
+    git("commit", "-q", "-m", "remove it")
+    assert secret_scan.scan([f"{first}..HEAD"]) == [], "removing a secret file is not a finding"

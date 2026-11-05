@@ -36,6 +36,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SOURCE_FILE = HERE / "emporia_source.json"
+#: The runtime's dependencies exported from uv.lock with every file's hash, in the runtime's
+#: own checkout: what pip installs when there is no uv (scripts/pin_plugin_runtime.py --export).
+LOCKED_REQUIREMENTS = Path("installer") / "runtime-requirements.txt"
 _TIMEOUT_S = 900
 
 
@@ -130,13 +133,22 @@ class NoRelease(SetupFailed):
     """This plugin build pins no commit of the runtime (a build before its first release)."""
 
 
+# Hermes's switches that skip or pre-answer approvals. A child of `hermes emporia` (git, pip,
+# `hermes -p NAME plugins install`, `hermes profile create`, the runtime's CLI and the
+# `hermes` commands it runs) never inherits them: what it does is approved, or asked, on
+# its own (catalog rule 12).
+APPROVAL_BYPASS_VARS = frozenset({"HERMES_YOLO_MODE", "HERMES_YOLO", "HERMES_ACCEPT_HOOKS",
+                                  "HERMES_ACP_AUTO_APPROVE"})
+
+
 def _clean_env() -> dict[str, str]:
     """This process's environment without what the `hermes` launcher sets for Hermes's own
     interpreter (P296, found by the end-to-end run: with Hermes's PYTHONPATH, pip took
     Hermes's packages as Emporia's dependencies and skipped them, and Emporia's Python
-    imported Hermes's copies)."""
+    imported Hermes's copies), and without Hermes's approval bypasses."""
     return {k: v for k, v in os.environ.items()
             if k not in ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PYTHONSTARTUP")
+            and k not in APPROVAL_BYPASS_VARS
             and not k.startswith(("PIP_", "UV_PROJECT", "UV_PYTHON"))}
 
 
@@ -178,54 +190,116 @@ def _is_sha(sha: str) -> bool:
     return len(sha) == 40 and all(c in "0123456789abcdef" for c in sha)
 
 
-def parse_runtime_from(spec: str) -> tuple[str, str]:
-    """`--runtime-from REPO[@SHA]`, for trying a release before it is pushed: an
-    Emporia repo on this machine (a path or file:// URL) or an https one, at a
-    commit (default: that local repo's HEAD). Never used unless asked for."""
-    repo, _, sha = spec.partition("@")
-    if repo.startswith("/"):
-        repo = "file://" + repo
-    if not repo.startswith(("https://", "file://")):
-        raise SetupFailed(f"--runtime-from: {repo!r} is neither an https URL nor a path on this machine")
-    if not sha and repo.startswith("file://"):
-        sha = _run(["git", "-C", repo[len("file://"):], "rev-parse", "HEAD"]).strip()
-    if not _is_sha(sha):
-        raise SetupFailed(f"--runtime-from: give the full commit (REPO@SHA), not {sha!r}")
-    return repo, sha
+def _git(rt: Path, *args: str) -> str:
+    try:
+        return _run(["git", "-C", str(rt), *args]).strip()
+    except SetupFailed:
+        return ""
 
 
-def install_runtime(say=print, target: Path | None = None, pin: tuple[str, str] | None = None) -> Path:
-    """Clone (or move) the runtime to the pinned commit — or `pin`, from
-    `--runtime-from` — and sync its venv: the one this profile already runs
-    (`target`), else this profile's plugin-data."""
+# Where the runtime's Python is imported from: its package folder is on sys.path (an
+# editable install puts `src` there), and the CLI loads installer/install.py by path.
+_IMPORT_ROOTS = ("src", "installer")
+
+
+def _not_as_pinned(rt: Path, sha: str) -> list[str]:
+    """The pinned commit's files whose bytes here are not that commit's, read from the files
+    themselves: the index can be told to look away (`update-index --assume-unchanged` or
+    `--skip-worktree`), and then `git status` and `checkout --force` both pass a changed file by."""
+    wanted: dict[str, str] = {}
+    out: list[str] = []
+    for entry in filter(None, _run(["git", "-C", str(rt), "ls-tree", "-r", "-z", sha]).split("\0")):
+        meta, _, path = entry.partition("\t")
+        mode, kind, obj = meta.split()
+        if kind != "blob":
+            continue
+        here = rt / path
+        if mode == "120000":                     # a symlink: its target is its content
+            if not here.is_symlink() or os.readlink(here) != _run(["git", "-C", str(rt), "cat-file", "blob", obj]):
+                out.append(path)
+        elif here.is_symlink() or not here.is_file():
+            out.append(path)
+        else:
+            wanted[path] = obj
+    paths = list(wanted)
+    for i in range(0, len(paths), 200):
+        chunk = paths[i:i + 200]
+        got = _run(["git", "-C", str(rt), "hash-object", "--", *chunk]).split()
+        out += [p for p, h in zip(chunk, got, strict=True) if h != wanted[p]]
+    return out
+
+
+def _unpinned_code(rt: Path) -> list[str]:
+    """Files no commit holds (untracked or ignored) that Python would import from the runtime:
+    a module beside the pinned ones (emporia.modules imports every one it finds), a
+    sitecustomize, a .pth, a compiled extension, a sourceless .pyc. Caches in __pycache__ are not
+    code Python runs without its source."""
+    listed = _run(["git", "-C", str(rt), "ls-files", "--others", "-z", "--", *_IMPORT_ROOTS])
+    return [p for p in filter(None, listed.split("\0"))
+            if p.endswith((".py", ".pth", ".so", ".pyd")) or (p.endswith(".pyc") and "__pycache__/" not in p)]
+
+
+def verify_runtime(rt: Path, sha: str, tree: str = "") -> None:
+    """Catalog rule 3: the runtime is exactly the reviewed code. Its HEAD is the pinned
+    commit (a full sha names one commit; no branch, tag or ref is followed), that commit's
+    tree is the tree emporia_source.json records (so no other object can stand in for it),
+    no tracked file differs from it — by the files' own bytes, not only what the index says —
+    and no code beside it would be imported. Raises SetupFailed otherwise; nothing then runs."""
+    head = _git(rt, "rev-parse", "HEAD")
+    if head != sha:
+        raise SetupFailed(f"the runtime at {rt} is at {head[:12] or '?'}, not the pinned {sha[:12]}")
+    if _git(rt, "cat-file", "-t", sha) != "commit":
+        raise SetupFailed(f"the pinned {sha[:12]} is not a commit in {rt}")
+    if tree and _git(rt, "rev-parse", f"{sha}^{{tree}}") != tree:
+        raise SetupFailed(f"the runtime's tree at {sha[:12]} is not the one {SOURCE_FILE.name} records "
+                          f"({tree[:12]}): refusing to run it")
+    changed = _run(["git", "-C", str(rt), "status", "--porcelain", "--untracked-files=no"]).strip()
+    if changed:
+        raise SetupFailed(f"the runtime at {rt} has files that differ from the pinned commit:\n{changed[:500]}")
+    changed = "\n".join(_not_as_pinned(rt, sha))
+    if changed:
+        raise SetupFailed(f"the runtime at {rt} has files that differ from the pinned commit:\n{changed[:500]}")
+    extra = "\n".join(_unpinned_code(rt))
+    if extra:
+        raise SetupFailed(f"the runtime at {rt} has code the pinned commit does not hold:\n{extra[:500]}")
+
+
+def install_runtime(say=print, target: Path | None = None) -> Path:
+    """Clone (or move) the runtime to the commit emporia_source.json pins, verify it is
+    exactly that code, and sync its venv: the one this profile already runs (`target`),
+    else this profile's plugin-data. Only `hermes emporia setup` and `hermes emporia update`
+    call it, when a person runs them; nothing installs or updates the runtime on its own."""
     src = source()
-    repo, sha = pin or (src.get("repo", ""), src.get("sha", ""))
-    if not pin and not sha:
+    repo, sha, tree = src.get("repo", ""), src.get("sha", ""), src.get("tree", "")
+    if not sha:
         # Found by the end-to-end run: this said "Needs git, and uv or python3", which
         # sent people after tools they had.
-        raise NoRelease("this plugin build pins no release yet; use --runtime-from REPO@SHA "
-                        "(an Emporia repo on this machine, or its https URL, at a full commit)")
-    if not (repo.startswith(("https://", "file://") if pin else "https://") and _is_sha(sha)):
+        raise NoRelease(f"this plugin build pins no release of the runtime yet ({SOURCE_FILE.name} "
+                        "names no commit); install a released build of the plugin")
+    if not (repo.startswith("https://") and _is_sha(sha) and (not tree or _is_sha(tree))):
         raise SetupFailed(f"{SOURCE_FILE.name} names no pinned commit (repo {repo!r}, sha {sha!r})")
-    return _sync_runtime(say, target if target is not None and from_catalog(target) else runtime_dir(), repo, sha)
+    return _sync_runtime(say, target if target is not None and from_catalog(target) else runtime_dir(),
+                         repo, sha, tree)
 
 
 _INSTALLED = "emporia-installed"      # in the runtime's .venv: the commit its packages were installed for
 
 
-def _sync_runtime(say, rt: Path, repo: str, sha: str) -> Path:
+def _sync_runtime(say, rt: Path, repo: str, sha: str, tree: str = "") -> Path:
     if not (rt / ".git").is_dir():
         if rt.exists():
             shutil.rmtree(rt)
         say(f"  Fetching Emporia {sha[:12]} from {repo}")
         _run(["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout", repo, str(rt)])
+    _run(["git", "-C", str(rt), "remote", "set-url", "origin", repo])   # the pinned source, nothing else
     if _git_head(rt) != sha:
         _run(["git", "-C", str(rt), "fetch", "--quiet", repo, sha])
-    if _git_head(rt) != sha or not _is_emporia(rt):
-        # P296: always after a --no-checkout clone, whose files are not there yet even when
-        # its HEAD is already the pinned commit (a release's commit is its branch's tip).
-        _run(["git", "-C", str(rt), "checkout", "--quiet", "--detach", sha])
-    _run(["git", "-C", str(rt), "remote", "set-url", "origin", repo])   # where it came from, for status
+    # Always: after a --no-checkout clone the files are not there yet even when HEAD is the
+    # pinned commit (P296), and --force puts back any tracked file that was changed here. The
+    # index is rebuilt from the pinned tree first, so no file it was told to ignore is skipped.
+    _run(["git", "-C", str(rt), "read-tree", sha])
+    _run(["git", "-C", str(rt), "checkout", "--quiet", "--force", "--detach", sha])
+    verify_runtime(rt, sha, tree)
     marker = rt / ".venv" / _INSTALLED
     first = not python_of(rt).exists()
     if not first and marker.is_file() and marker.read_text().strip() == sha:
@@ -235,10 +309,21 @@ def _sync_runtime(say, rt: Path, repo: str, sha: str) -> Path:
     if uv:
         _run([uv, "sync", "--quiet", "--frozen", "--no-dev", "--extra", "x402"], cwd=rt)
     else:
+        # Security follow-up (11-05 audit): pip resolved every dependency afresh from PyPI.
+        # Now it installs uv.lock's export, each file by its hash, and Emporia itself
+        # with no dependency resolved. A runtime without the export is refused.
+        locked = rt / LOCKED_REQUIREMENTS
+        if not locked.is_file():
+            raise SetupFailed(f"this Emporia ({sha[:12]}) has no hash-locked requirements "
+                              f"({LOCKED_REQUIREMENTS}), so pip cannot install it pinned — install uv "
+                              "(https://docs.astral.sh/uv/) and run setup again")
         py = shutil.which("python3") or sys.executable
         if first:
             _run([py, "-m", "venv", str(rt / ".venv")])
-        _run([str(python_of(rt)), "-m", "pip", "install", "--quiet", "-e", f"{rt}[x402]"])
+        pip = [str(python_of(rt)), "-m", "pip", "install", "--quiet"]
+        _run([*pip, "--require-hashes", "--no-deps", "-r", str(locked)])
+        _run([*pip, "--no-deps", "-e", str(rt)])
+    verify_runtime(rt, sha, tree)      # installing changed no tracked file
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(sha + "\n")
     return rt
@@ -247,9 +332,12 @@ def _sync_runtime(say, rt: Path, repo: str, sha: str) -> Path:
 # ── The commands ─────────────────────────────────────────────────────────────
 
 def _emporia(rt: Path, *args: str) -> int:
-    """Run the runtime's `emporia` CLI for this profile, attached to this terminal."""
+    """Run the runtime's `emporia` CLI for this profile, attached to this terminal. Without
+    one (cron, the gateway, a pipe) its stdin is /dev/null: a question it asks ends at once
+    instead of waiting on a stdin nobody writes to (catalog rule 12)."""
     env = {**_clean_env(), "HERMES_HOME": str(hermes_home())}
-    return subprocess.call([str(python_of(rt)), "-m", "emporia.cli", *args], env=env)
+    stdin = None if sys.stdin is not None and sys.stdin.isatty() else subprocess.DEVNULL
+    return subprocess.call([str(python_of(rt)), "-m", "emporia.cli", *args], env=env, stdin=stdin)
 
 
 _NAME_OK = set("abcdefghijklmnopqrstuvwxyz0123456789-_")
@@ -364,14 +452,14 @@ def cmd_setup(args: argparse.Namespace) -> int:
         return 2
     name, new = chosen
     try:
-        pin = parse_runtime_from(args.runtime_from) if args.runtime_from else None
         rt = runtime()
-        if pin and rt is not None and not from_catalog(rt):
-            raise SetupFailed(f"this profile runs the checkout at {rt}; --runtime-from is for a plugin "
-                              "installed from the catalog (or a git URL)")
-        want = pin[1] if pin else source().get("sha")
-        if rt is None or (from_catalog(rt) and _git_head(rt) != want):
-            rt = install_runtime(target=rt, pin=pin)
+        src = source()
+        if rt is None or (from_catalog(rt) and (_git_head(rt) != src.get("sha") or not python_of(rt).exists())):
+            # moves it to the pin (or, a runtime folder already at the pin with no packages yet,
+            # just checks it out), verifies it (rule 3) and installs its packages
+            rt = install_runtime(target=rt)
+        elif from_catalog(rt):
+            verify_runtime(rt, src.get("sha", ""), src.get("tree", ""))      # rule 3: what runs is pinned
         if not python_of(rt).exists():
             raise SetupFailed(f"{rt} has no virtualenv: run `uv sync` there")
     except NoRelease as exc:
@@ -435,19 +523,20 @@ def _origin(rt: Path) -> str:
 
 
 def runtime_note(rt: Path, src: dict) -> str:
-    """What `status` says of the runtime: a checkout, the pinned release, a
-    `--runtime-from` one (and how to go back), or behind the pinned one."""
+    """What `status` says of the runtime: a checkout, the pinned release (verified), or
+    not the pinned one — another source, another commit, or changed files — and the fix."""
     if not from_catalog(rt):
         return "a checkout"
-    head, pinned, origin = _git_head(rt), src.get("sha", ""), _origin(rt)
-    if pinned and head == pinned:
-        return "pinned"
-    if origin and origin != src.get("repo", ""):
-        back = "; `hermes emporia update` goes back to the pinned one" if pinned else ""
-        return f"from --runtime-from {origin}{back}"
+    pinned, origin = src.get("sha", ""), _origin(rt)
     if not pinned:
-        return "this plugin pins no release: `hermes emporia update --runtime-from REPO@SHA`"
-    return f"not the pinned {pinned[:12]}: run `hermes emporia update`"
+        return f"this plugin release pins no runtime ({SOURCE_FILE.name}): update the plugin"
+    if origin and origin != src.get("repo", ""):
+        return f"from {origin}, not the pinned source: run `hermes emporia update`"
+    try:
+        verify_runtime(rt, pinned, src.get("tree", ""))
+    except SetupFailed as exc:
+        return f"not the pinned {pinned[:12]} ({exc}): run `hermes emporia update`"
+    return "pinned, verified"
 
 
 def cmd_status(_args: argparse.Namespace) -> int:
@@ -501,18 +590,17 @@ def cmd_update(args: argparse.Namespace) -> int:
         print(f"This profile runs the Emporia checkout at {rt}: update it with `emporia update` there.")
         return 0
     try:
-        pin = parse_runtime_from(args.runtime_from) if getattr(args, "runtime_from", None) else None
         before = _state(rt)
-        rt = install_runtime(target=rt, pin=pin)
+        rt = install_runtime(target=rt)          # verifies the commit and tree (rule 3)
     except SetupFailed as exc:
         print(f"  ✗ {exc}")
         return 1
-    sha = pin[1] if pin else source().get("sha", "")
+    sha = source().get("sha", "")
     if _state(rt) == before:
         # Found by the end-to-end run: it said "restart the gateway" when nothing had changed.
-        print(f"Runtime already at {sha[:12]}: nothing to do.")
+        print(f"Runtime already at {sha[:12]} (verified): nothing to do.")
         return 0
-    print(f"Runtime at {sha[:12]}. Restart each profile that runs it to use it:")
+    print(f"Runtime at {sha[:12]} (verified). Restart each profile that runs it to use it:")
     for name in _profiles_running(rt) or [profile_name()]:
         print(f"    hermes {'' if name == 'default' else f'-p {name} '}gateway restart")
     return 0
@@ -575,16 +663,12 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     p.add_argument("--plugin-source", default="emporia",
                    help="Where a new profile's plugin comes from (default: the catalog entry; before it is "
                         "listed: https://github.com/wujitsana/emporia#hermes_plugin/emporia)")
-    _runtime_from = dict(metavar="REPO[@SHA]", help="Testing a release before it is pushed: take the runtime "
-                         "from this Emporia repo (a path here, or a URL) at this commit, not the pinned one")
-    p.add_argument("--runtime-from", **_runtime_from)
     p.add_argument("rest", nargs=argparse.REMAINDER,
                    help="After --: options for `emporia setup agent` (--role, --keys, --wallet, …)")
     sub.add_parser("status", help="Where the runtime is, and this agent on its relay")
     d = sub.add_parser("doctor", help="Check everything Emporia needs in this profile")
     d.add_argument("--all", action="store_true", help="every check, not just a count of those that pass")
-    u = sub.add_parser("update", help="Move the runtime to the commit this plugin release pins")
-    u.add_argument("--runtime-from", **_runtime_from)
+    sub.add_parser("update", help="Move the runtime to the commit this plugin release pins, and verify it")
     for name in PASSTHROUGH:
         # No option of its own (prefix_chars nobody types): every word after the command,
         # --help included, goes to the runtime's `emporia NAME`.

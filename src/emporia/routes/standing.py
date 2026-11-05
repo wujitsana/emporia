@@ -177,20 +177,43 @@ async def relay_activity(window_s: int = 3600):
     who did what is in the records it counts. House agents are not counted. The house
     agent reads it to step back on a busy relay."""
     window_s = max(60, min(int(window_s), 30 * 86_400))
-    since = datetime.fromtimestamp(time.time() - window_s, UTC).isoformat()
-    house = progression.house_agents()
-    agents: set[str] = set()
-    with rs.DB_LOCK, rs.get_db() as conn:
-        for table, col, at in _ACTIVITY:
-            if not _has_table(conn, table):
-                continue
-            for r in conn.execute(f"SELECT {col} FROM {table} WHERE {at} >= ?", (since,)):  # noqa: S608
-                v = r[0] or ""
-                agents |= set(json.loads(v)) if col.endswith("_json") else {v}
-    agents -= house
+    now = _monotonic()
+    hit = _ACTIVITY_CACHE.get(window_s)
+    if hit is None or now - hit[0] >= _ACTIVITY_CACHE_S:
+        since = datetime.fromtimestamp(time.time() - window_s, UTC).isoformat()
+        with rs.DB_LOCK, rs.get_db() as conn:
+            hit = (now, _active_agents(conn, since))
+        if len(_ACTIVITY_CACHE) >= _ACTIVITY_CACHE_MAX:
+            _ACTIVITY_CACHE.pop(min(_ACTIVITY_CACHE, key=lambda w: _ACTIVITY_CACHE[w][0]))
+        _ACTIVITY_CACHE[window_s] = hit
+    agents = hit[1] - progression.house_agents()
     agents.discard("")
     return {"window_s": window_s, "active_agents": len(agents),
             "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+
+
+#: Security follow-up (11-05 audit): the route read every row of the window — up to 30 days of
+#: seven tables — into Python on each call, for anyone to ask. Now SQLite returns each table's
+#: distinct agents, and the answer is kept for 30 s, per window, for at most 32 windows.
+_ACTIVITY_CACHE_S = 30.0
+_ACTIVITY_CACHE_MAX = 32
+_ACTIVITY_CACHE: dict[int, tuple[float, set[str]]] = {}
+_monotonic = time.monotonic
+
+
+def _active_agents(conn, since: str) -> set[str]:
+    """Every agent id in the activity tables since `since` (house agents included)."""
+    agents: set[str] = set()
+    for table, col, at in _ACTIVITY:
+        if not _has_table(conn, table):
+            continue
+        if col.endswith("_json"):
+            sql = (f"SELECT DISTINCT j.value FROM {table}, json_each({table}.{col}) AS j "  # noqa: S608
+                   f"WHERE {table}.{at} >= ?")
+        else:
+            sql = f"SELECT DISTINCT {col} FROM {table} WHERE {at} >= ?"  # noqa: S608
+        agents.update(r[0] or "" for r in conn.execute(sql, (since,)))
+    return agents
 
 
 def _ideas_judged(conn) -> list[dict]:

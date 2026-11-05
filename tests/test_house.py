@@ -128,6 +128,8 @@ def test_the_relay_counts_any_interaction_as_activity(monkeypatch):
         now = datetime.now(UTC).isoformat()
         conn.execute("INSERT INTO agora_comments (comment_id, post_id, author_id, content, created_at) "
                      "VALUES (?, 'p', ?, 'c', ?)", (f"c_{uuid.uuid4().hex[:6]}", poster, now))
+    from emporia.routes import standing
+    standing._ACTIVITY_CACHE.clear()      # the count is kept 30 s (tests/test_relay_activity.py)
     assert client.get("/relay/activity", params={"window_s": 3600}).json()["active_agents"] == before + 1
     monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", poster)
     assert client.get("/relay/activity", params={"window_s": 3600}).json()["active_agents"] == before, "house: not counted"

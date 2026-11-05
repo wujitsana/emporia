@@ -37,6 +37,37 @@ def test_ordinary_work_passes(tool, args):
     assert guard.pre_tool_call(tool_name=tool, args=args) is None
 
 
+@pytest.mark.parametrize("tool,args", [
+    ("terminal", {"command": "cat /proc/4242/environ"}),
+    ("terminal", {"command": "tr '\\0' '\\n' < /proc/self/environ"}),
+    ("terminal", {"command": "for p in /proc/*/environ; do strings $p; done"}),
+    ("terminal", {"command": "xargs -0 -n1 < /proc/$(pgrep -f emporia.mcp_server)/environ"}),
+    ("terminal", {"command": "cat /proc/4242/task/4243/environ"}),
+    ("terminal", {"command": "ps e"}),
+    ("terminal", {"command": "ps eww -p 4242"}),
+    ("terminal", {"command": "ps auxe | grep emporia"}),
+    ("terminal", {"command": "ps axeww"}),
+    ("terminal", {"command": "ps -p 4242 e"}),
+    ("execute_code", {"code": "open('/proc/self/environ','rb').read()"}),
+    ("execute_code", {"code": "import subprocess; subprocess.run(['ps', 'eww'])"}),
+    ("read_file", {"path": "/proc/1/environ"}),
+])
+def test_reading_a_processs_environment_is_blocked(tool, args):
+    """Catalog rule 11, before any key moves into a child's environment: the MCP server and
+    the bridge are handed their keys in it, and their own user can read it."""
+    out = guard.pre_tool_call(tool_name=tool, args=args)
+    assert out and out["action"] == "block" and "never read" in out["message"]
+
+
+@pytest.mark.parametrize("command", [
+    "ps aux | grep emporia", "ps -ef", "ps -e -o pid,comm", "ps -p 4242 -o user,etime",
+    "ps -eo pid,args --sort=start_time", "cat /proc/4242/status", "ls /proc/self/fd",
+    "echo $PATH", "pgrep -af emporia",
+])
+def test_listing_processes_without_their_environment_passes(command):
+    assert guard.pre_tool_call(tool_name="terminal", args={"command": command}) is None
+
+
 def test_a_key_value_that_reaches_a_result_is_hidden():
     out = guard.transform_tool_result(result="ok\nEMPORIA_X402_EVM_PRIVATE_KEY=" + "ab" * 32 + "\nMORE=1\n")
     assert "ab" * 32 not in out and "EMPORIA_X402_EVM_PRIVATE_KEY=[hidden by Emporia]" in out and "MORE=1" in out

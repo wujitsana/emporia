@@ -225,3 +225,42 @@ def test_the_console_serves_the_listed_docs_and_nothing_else():
     assert c.get("/docs/README.md").status_code == 200
     for path in ("docs/security-log.md", "pyproject.toml", "../README.md", ".env"):
         assert c.get(f"/docs/{path}").status_code == 404, path
+
+
+def test_the_standalone_console_sends_a_strict_content_security_policy(tmp_path):
+    """Security follow-up (11-05 audit): the standalone console serves the dashboard next to
+    the agents' keys and sent no Content-Security-Policy: a script injected into the page
+    (a relay-supplied string rendered unsafely, a compromised dependency) could load code
+    from anywhere and send what the page reads anywhere. Every response now carries a CSP
+    allowing this origin only — no inline script or style except by hash of what the
+    served index.html holds — plus nosniff and no referrer."""
+    import base64
+    import hashlib
+    ui = tmp_path / "ui"
+    (ui / "assets").mkdir(parents=True)
+    inline = "window.__boot = 1;"
+    (ui / "index.html").write_text(
+        '<!doctype html><html><head><script type="module" src="/assets/a.js"></script>'
+        f"<script>{inline}</script><style>body{{margin:0}}</style></head><body></body></html>")
+    (ui / "assets" / "a.js").write_text("console.log(1)")
+    c = TestClient(build_app(_console(session_token="s" * 32), ui_dir=ui), base_url="http://127.0.0.1:8089")
+    refused = c.get("/agents")
+    c.get("/session?key=" + "s" * 32, follow_redirects=False)
+    for r in (refused, c.get("/"), c.get("/assets/a.js"), c.get("/agents")):
+        csp = r.headers.get("content-security-policy", "")
+        rules = dict((part.split(" ", 1) + [""])[:2] for part in (p.strip() for p in csp.split(";")) if part)
+        assert rules.get("default-src") == "'none'", (r.url, csp)
+        assert rules.get("frame-ancestors") == "'none'" and rules.get("object-src") == "'none'"
+        assert rules.get("base-uri") == "'none'"
+        assert "'unsafe-inline'" not in csp and "'unsafe-eval'" not in csp and "*" not in csp
+        assert rules["connect-src"] == "'self'"
+        script_hash = "'sha256-" + base64.b64encode(hashlib.sha256(inline.encode()).digest()).decode() + "'"
+        style_hash = "'sha256-" + base64.b64encode(hashlib.sha256(b"body{margin:0}").digest()).decode() + "'"
+        assert rules["script-src"] == f"'self' {script_hash}", csp
+        assert rules["style-src"] == f"'self' {style_hash}", csp
+        assert r.headers.get("x-content-type-options") == "nosniff"
+        assert r.headers.get("referrer-policy") == "no-referrer"
+    # With no inline code in the page (the built bundle has none), only this origin.
+    (ui / "index.html").write_text('<!doctype html><script type="module" src="/assets/a.js"></script>')
+    plain = TestClient(build_app(_console(), ui_dir=ui)).get("/").headers["content-security-policy"]
+    assert "script-src 'self';" in plain and "style-src 'self';" in plain

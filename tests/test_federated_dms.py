@@ -65,7 +65,7 @@ def _as(tmp: Path, name: str, relay: str, code: str):
 
 
 def _read(tmp, name, relay):
-    return _as(tmp, name, relay, "t = m.list_dm_threads()[0]['thread_id']\nr = m.get_dm_messages(t)['messages']")
+    return _as(tmp, name, relay, "t = m.list_dm_threads()['threads'][0]['thread_id']\nr = m.get_dm_messages(t)['messages']")
 
 
 def test_a_dm_crosses_relays_sealed_and_only_with_consent(two_relays):

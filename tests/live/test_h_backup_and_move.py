@@ -48,7 +48,7 @@ def test_an_agent_adds_a_backup_then_moves_home_and_its_record_travels_as_its_ol
     assert not old_way["success"] and f"alpha@{b.host}" in str(old_way), old_way
     assert alpha.tool("set_dm_policy", other_relays=True)["success"]
     assert bob.tool("send_dm", to_agent_id="alpha", content="found you on B")["success"]
-    got = alpha.tool("get_dm_messages", thread_id=next(t["thread_id"] for t in alpha.tool("list_dm_threads")))
+    got = alpha.tool("get_dm_messages", thread_id=next(t["thread_id"] for t in alpha.tool("list_dm_threads")["threads"]))
     assert [(m["sender_id"], m["content"], m["verified"]) for m in got["messages"]] == [("bob", "found you on B", True)]
 
     # her record on B: B's own count is separate; A's is shown as A's signed word, and it checks against A's key

@@ -570,15 +570,9 @@ def _same_host(url: str) -> str:
 
 
 def _dotenv_names(path: str) -> set[str]:
-    names = set()
-    try:
-        for line in Path(path).expanduser().read_text().splitlines():
-            line = line.strip().removeprefix("export ").strip()
-            if line and not line.startswith("#") and "=" in line:
-                names.add(line.split("=", 1)[0].strip())
-    except OSError:
-        pass
-    return names
+    """The names a .env sets (a Hermes profile's read through Hermes, catalog rule 11)."""
+    from emporia import profile_env
+    return set(profile_env.read(Path(path))) if path else set()
 
 
 def ensure_local_relay(url: str) -> str:
@@ -621,7 +615,13 @@ def ensure_local_relay(url: str) -> str:
                     return "up"
                 time.sleep(0.25)
             return f"running (pid {pid}) but not answering — see `emporia relay logs`"
-        agent = _dotenv_names(os.environ.get("EMPORIA_DOTENV", ""))
+        handed = os.environ.get("EMPORIA_HANDED_NAMES")
+        if handed is not None:
+            # Catalog rule 11: the bridge reads no .env; what it holds of the agent's is what
+            # the plugin handed it (adapter._profile_values), and it names them.
+            agent = {n for n in handed.split(",") if n}
+        else:
+            agent = _dotenv_names(os.environ.get("EMPORIA_DOTENV", ""))
         env = {k: v for k, v in os.environ.items() if not k.startswith("EMPORIA_") and k not in agent}
         quiet = lambda *_: None   # noqa: E731 — the bridge's stdout is its event stream
         return "started" if _start_relay(env, url, say=quiet) == 0 else "did not start — see `emporia relay logs`"
@@ -2485,10 +2485,15 @@ def cmd_agent_refresh(name: str) -> int:
               else f"agent refresh: no profile under {root} has the Emporia plugin")
         return 1
     inst = installer()
+    # Catalog rule 11: each agent's MCP entry names every setting Hermes hands its server.
+    for profile in targets:
+        if added := inst.refresh_mcp_references(profile):
+            print(f"  {profile.name}: {len(added)} setting(s) now handed to its MCP server by Hermes "
+                  "(restart the gateway, or /reload-mcp)")
     if inst.from_catalog():
-        print("agent refresh: this Emporia came with the catalog plugin — update both with "
+        print("agent refresh: the plugin and its skills came with the catalog — update them with "
               "`hermes plugins update emporia`, then `hermes emporia update`")
-        return 1
+        return 0
     for profile in targets:
         print(f"  {profile.name}:")
         inst.install_platform_plugin(profile)
@@ -3755,6 +3760,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         rep.fail(f"holds the relay's settings: {', '.join(leaked)} (an agent never needs them)",
                  f"emporia setup agent {name}   (strips them)")
     doctor_profile_secrets(rep, profile, dotenv)
+    doctor_mcp_references(rep, profile, dotenv)
     doctor_signer(rep, profile, dotenv)
     doctor_delegation(rep, profile)
     model = inst.load_yaml(profile / "config.yaml").get("model") or {}
@@ -3771,9 +3777,12 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     elif model:
         rep.ok(f"model {model.get('default') or model.get('provider')}")
     from emporia import nous_token
-    if nous_token.is_current(_NOUS_TOKENS.get(profile) if profile in _NOUS_TOKENS
-                             else nous_token.from_hermes(profile) or ""):
-        rep.ok("Nous login current (via Hermes)")
+    if not nous_token.verify_enabled(dotenv):
+        rep.ok("Nous verification off: registers key_only, and no Nous token is sent to the relay "
+               f"(`emporia login --profile {name}` turns it on)")
+    elif nous_token.is_current(_NOUS_TOKENS.get(profile) if profile in _NOUS_TOKENS
+                               else nous_token.from_hermes(profile) or ""):
+        rep.ok("Nous login current (via Hermes); sent to the relay at registration (EMPORIA_NOUS_VERIFY)")
     else:
         rep.warn("no current Nous login for this profile — registers key_only, can't enter bounties",
                  f"emporia login --profile {name}")
@@ -3919,14 +3928,9 @@ def api_server_host(profile: Path, dotenv: dict[str, str]) -> str | None:
 
 
 def turns_in_24h(profile: Path) -> int:
-    """Relay-started agent turns in the last 24 h, from the plugin's emporia_turns.json."""
-    import time
-    try:
-        raw = (json.loads((profile / "emporia_turns.json").read_text()) or {}).get("turns") or []
-        cutoff = time.time() - 86400
-        return sum(1 for t in raw if isinstance(t, (int, float)) and t > cutoff)
-    except (OSError, ValueError, AttributeError):
-        return 0
+    """Relay-started agent turns in the last 24 h, from the plugin's turn counter."""
+    from emporia import analytics
+    return analytics.turns_used(profile)
 
 
 def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
@@ -4206,6 +4210,12 @@ def cmd_update(args: argparse.Namespace) -> int:
     when that is a fast-forward with no local changes. Hermes's gateway and
     dashboard are restarted by the person, as the last lines say."""
     import shutil
+    # Catalog rule 3: a runtime the catalog plugin installed follows that plugin's pinned
+    # commit only. It is never pulled, synced or refreshed here — before anything is done.
+    if installer().from_catalog():
+        print("update: this Emporia came with the catalog plugin, and moves only with it: "
+              "`hermes plugins update emporia`, then `hermes emporia update`. Nothing was changed.")
+        return 1
     if not args.no_pull:
         git = shutil.which("git")
         if not git or not (REPO / ".git").exists():
@@ -4235,11 +4245,6 @@ def cmd_update(args: argparse.Namespace) -> int:
         print("update: the Python packages did not install (see above); stopping here")
         return 1
 
-    inst = installer()
-    if inst.from_catalog():
-        print("update: this Emporia came with the catalog plugin — `hermes plugins update emporia`, "
-              "then `hermes emporia update`")
-        return 1
     # P295: each agent profile's plugin carries the dashboard tab (its bundle
     # committed), so refreshing the agents' plugins updates the tab too. Nothing
     # else is touched: a profile that is not an Emporia agent is left alone.
@@ -4252,7 +4257,7 @@ def cmd_update(args: argparse.Namespace) -> int:
     elif health():
         print(f"  relay: one is answering at {relay_url()}, not started by `emporia relay start`; "
               f"restart it where it was started so it runs the new code")
-    inst.print_restart_instructions([])
+    installer().print_restart_instructions([])
     print("Then: hermes gateway restart (or `hermes -p NAME gateway restart` and /reload-mcp in each), "
           "and `emporia doctor`.")
     return 0
@@ -4272,7 +4277,13 @@ def cmd_login(args: argparse.Namespace) -> int:
           f"credentials, answer Y.")
     subprocess.run(["hermes", "-p", name, "auth", "add", "nous", "--type", "oauth"], check=False)
     if nous_token.is_current(nous_token.from_hermes(profile) or ""):
-        print(f"login: {name} has a current Nous login — it registers as nous_verified.")
+        # Signing in here is asking for verification: from now on its registrations carry
+        # the token, so the relay's operator sees it (catalog rule 13).
+        from emporia.key_source import set_env_lines
+        set_env_lines(profile / ".env", {nous_token.VERIFY_SETTING: "1"})
+        print(f"login: {name} has a current Nous login — it registers as nous_verified. Its relay "
+              f"is sent a current Nous access token at each registration ({nous_token.VERIFY_SETTING}=1 "
+              f"in its .env; set it to 0 to stop).")
         return 0
     print(f"login: Hermes still has no current Nous login for {name}. Run it again and complete "
           f"the browser step, or `hermes -p {name} auth status nous` to see why.")
@@ -4281,9 +4292,45 @@ def cmd_login(args: argparse.Namespace) -> int:
 
 # ─── setup ───────────────────────────────────────────────────────────────────
 
-def _mcp_env(profile: Path) -> dict[str, str]:
+def doctor_mcp_references(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
+    """Catalog rule 11: the MCP server reads no .env; Hermes hands it each setting its entry
+    names as `${NAME}`. A setting the profile holds that the entry does not name would not
+    reach it — say which, and the fix."""
+    from emporia import agent_env
     entry = (installer().load_yaml(profile / "config.yaml").get("mcp_servers") or {}).get("emporia") or {}
-    return {k: str(v) for k, v in (entry.get("env") or {}).items() if k != "EMPORIA_NOUS_JWT"}
+    env = {k: str(v) for k, v in (entry.get("env") or {}).items()}
+    if not entry:
+        return
+    if env.get("EMPORIA_NO_DOTENV") != "1":
+        rep.fail("its MCP server still reads the profile's .env itself",
+                 f"emporia agent refresh {profile.name}   (Hermes hands it its settings instead)")
+        return
+    missing = agent_env.unreferenced(dotenv, env)
+    if missing:
+        rep.fail(f"settings its MCP server is not handed: {', '.join(missing)}",
+                 f"emporia agent refresh {profile.name}")
+    else:
+        rep.ok("its MCP server gets every setting through Hermes (no .env read)")
+
+
+_WHOLE_REF = re.compile(r"^\$\{([A-Z][A-Z0-9_]*)\}$")
+
+
+def _mcp_env(profile: Path) -> dict[str, str]:
+    """The environment the agent's MCP server runs with: its entry's `env`, each `${NAME}`
+    filled from the profile's settings as Hermes fills it (an unset one dropped), read
+    through Hermes (catalog rule 11)."""
+    entry = (installer().load_yaml(profile / "config.yaml").get("mcp_servers") or {}).get("emporia") or {}
+    raw = {k: str(v) for k, v in (entry.get("env") or {}).items() if k != "EMPORIA_NOUS_JWT"}
+    values = installer().harvest_env(profile) if any(_WHOLE_REF.match(v) for v in raw.values()) else {}
+    out = {}
+    for k, v in raw.items():
+        m = _WHOLE_REF.match(v)
+        if not m:
+            out[k] = v
+        elif values.get(m.group(1)) and m.group(1) != "EMPORIA_NOUS_JWT":
+            out[k] = values[m.group(1)]
+    return out
 
 
 def cmd_log_verify(args: argparse.Namespace) -> int:
@@ -4444,9 +4491,9 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     if getattr(args, "new_profile", False) and _holds_an_agent(profile):
         # P298 (security audit): taken as new, an agent's own role, relay, key storage
         # and limits would give way to the defaults. Anyone can type a hidden flag.
-        print(f"setup agent: {name} already holds an Emporia agent, so it is not a new profile "
-              f"(--new-profile is for a profile the plugin's setup made a moment ago). "
-              f"Run `emporia setup agent {name}` to update it.")
+        print(localize(f"setup agent: {name} already holds an Emporia agent, so it is not a new profile "
+                       f"(--new-profile is for a profile the plugin's setup made a moment ago). "
+                       f"Run `emporia setup agent {name}` to update it."))
         return 1
     existing = (profile / "config.yaml").exists() and not getattr(args, "new_profile", False)
     heading(f"{'Update' if existing else 'New'} agent: {name}",
@@ -4480,8 +4527,8 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     if role in ("developer", "both") and (args.wallet or args.solana or role == "both") and _signer_apart():
         behind_signer = _persons_terminal()
     if role == "developer" and (args.wallet or args.solana) and not behind_signer:
-        print("  ! A developer agent holds no wallet (its tools could reach the keys) — unless the signer runs apart "
-              "from it (emporia signer host). Wallet flags ignored.")
+        print(localize("  ! A developer agent holds no wallet (its tools could reach the keys) — unless the signer "
+                       "runs apart from it (emporia signer host). Wallet flags ignored."))
         args.wallet = args.solana = False
     elif behind_signer:
         print("  Its wallet goes behind the signer, which runs apart from the agents — out of its tools' reach.")
@@ -4595,7 +4642,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         args.register = ask(f"Register {name} on the relay now?", True)
     if args.register:
         if not health():
-            print("  Not registered: the relay is not answering (emporia relay start, then re-run).")
+            print(localize("  Not registered: the relay is not answering (emporia relay start, then re-run)."))
         else:
             r = _as_agent(profile, (
                 "from emporia import mcp_server as m\n"
@@ -4616,11 +4663,11 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
                     "undo with `emporia signer remove`)?" if up else
                     "Keep this wallet behind the signer — its keys and limits apart from the agent? Optional on "
                     "testnet, needed for real money; this starts the signer (undo: emporia signer remove).")
-        if ask(question, bool(up)) and (up or _signer_daemon(_signer_args("start"), surl) == 0):
+        if ask(localize(question), bool(up)) and (up or _signer_daemon(_signer_args("start"), surl) == 0):
             _signer_add(_signer_args("add", name), surl)
     elif wallet and not _persons_terminal():
         # An agent setting this up for its operator: the signer is the operator's call.
-        print(f"  Optional: keep its wallet behind the signer — the operator runs `emporia signer add {name}`.")
+        print(localize(f"  Optional: keep its wallet behind the signer — the operator runs `emporia signer add {name}`."))
     # P169: card payouts — only matters if the relay takes cards.
     if role != "developer" and (health() or {}).get("stripe_enabled") and (
             args.stripe or (_TTY and ask("Should it be paid by card too (Stripe)?", False))):
@@ -4916,7 +4963,17 @@ def _extra_networks(names: list[str], facilitator: str) -> dict[str, str]:
 
 def merge_env_file(path: Path, updates: dict[str, str]) -> list[str]:
     """Set `updates` in a .env, keeping every other line as it was. Returns the
-    keys whose value changed. A dated 0600 backup is kept beside it first."""
+    keys whose value changed. A dated 0600 backup is kept beside it first.
+
+    Catalog rule 11: a Hermes profile's .env is Hermes's, and is changed through Hermes
+    (emporia.profile_env), under Hermes's own lock; no copy of it is made, since a
+    backup of a .env is one more file holding its keys."""
+    from emporia import profile_env
+    if profile_env.through_hermes(path):
+        changed = profile_env.update(path, updates)
+        if changed:
+            _signer_follows(path, {k: updates[k] for k in changed})
+        return changed
     lines = path.read_text().splitlines() if path.exists() else []
     changed, seen = [], set()
     for i, line in enumerate(lines):
@@ -4959,7 +5016,8 @@ def _signer_follows(path: Path, changed: dict[str, str]) -> None:
         held = (signer.agent_dir(agent) / "policy.json").exists()
     except OSError:
         held = False
-    behind = "EMPORIA_SIGNER_URL" in (path.read_text() if path.exists() else "")
+    from emporia import profile_env
+    behind = "EMPORIA_SIGNER_URL" in profile_env.read(path)
     if not behind:
         return
     if held:

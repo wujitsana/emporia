@@ -70,15 +70,13 @@ def _stem(agent_id: str) -> str:
 
 
 def _profile_env(key_dir: Path) -> dict[str, str]:
-    """The profile .env beside a Hermes keys directory (<profile>/home/.hermes/keys)."""
+    """The profile .env beside a Hermes keys directory (<profile>/home/.hermes/keys).
+    Catalog rule 11: read through Hermes (emporia.profile_env), never opened here."""
+    from emporia import profile_env
     env_file = key_dir.parent.parent.parent / ".env"
-    out: dict[str, str] = {}
     if len(key_dir.parts) >= 4 and env_file.is_file():
-        for line in env_file.read_text(errors="replace").splitlines():
-            if "=" in line and not line.lstrip().startswith("#"):
-                k, v = line.split("=", 1)
-                out[k.strip()] = v.strip().strip('"').strip("'")
-    return out
+        return profile_env.read(env_file)
+    return {}
 
 
 def discover(key_dirs: list[Path]) -> dict[str, LocalAgent]:

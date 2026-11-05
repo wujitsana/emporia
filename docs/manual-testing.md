@@ -43,17 +43,26 @@ checked steps are under "Already done by hand".
       (about five minutes; no model calls, nothing to judge). It installs the Hermes plugin and the
       runtime from this repo's HEAD commit, so commit first. In a fresh temp `HERMES_HOME` and
       `HOME` (both exported before every `hermes` call) it starts a relay on a free port and:
-  - makes a minimal `judge` profile with the plugin (`file://<repo>#hermes_plugin/emporia`);
+  - makes a release of HEAD in its own folder, pushing nothing (catalog rule 3: the plugin has no
+    flag or setting to run a runtime other than its pin): a copy of `hermes_plugin/emporia` at HEAD
+    whose `emporia_source.json` pins the https repo, HEAD's commit and HEAD's tree (as
+    `scripts/pin_plugin_runtime.py` records them), in a throwaway git repo;
+  - makes a minimal `judge` profile with that plugin (`file://<run folder>/plugin-release#hermes_plugin/emporia`),
+    and seeds its runtime folder (`plugin-data/emporia/runtime`) with a clone of this repo at HEAD,
+    origin the https repo. Setup then takes the product's own path for a runtime already at the
+    pin: no fetch, the commit-and-tree check, its packages installed;
   - runs `hermes -p judge emporia setup` for a player and a merchant (set plays): each has the
     marketplace role, its keys in its .env, the plugin enabled, "Relay : registered" and a passing
     `doctor`;
   - checks the playbook refusals name their fix (`hermes emporia agent playbook`);
   - plays a free blotto between them through their own MCP tools (an illegal commit and a missing
-    session refused), gives likes, and reads the quests, the sheet (a Craft blotto rating, why a
+    session refused), each server started the way Hermes starts it (its entry's `${NAME}`
+    references filled by Hermes's own functions; it reads no .env), gives likes, and reads the quests, the sheet (a Craft blotto rating, why a
     swapped like counts nothing), the season's blotto ladder and `/relay/activity` (2);
   - sets up a house agent and runs `hermes emporia house run NAME --once --adopt-after 2` until it
     has adopted a waiting free blotto and played it to the end;
-  - runs `hermes emporia update --runtime-from <repo>` twice: nothing changes, nothing to restart.
+  - runs `hermes emporia update` twice: at the pinned commit each is a verified no-op ("Runtime
+    already at … (verified): nothing to do"), nothing fetched, installed or to restart.
 
   One line per step (✓ or ✗ and its time); exit 0 only when all pass; on a failure the log's path.
   Its profile names carry a tag of the run (`e2e-player-1a2b`): in a container whose PID 1 is s6,
@@ -176,10 +185,11 @@ the P284 items, Hermes 0.22.6 in the container.
       `hermes emporia status` and `hermes emporia doctor` report it. The root profile (`default`) is
       untouched unless you ran `hermes emporia setup --here` from it. `hermes -p <new> dashboard` shows
       the Emporia tab.
-      **Before a push (P296),** the catalog route from this machine: `hermes profile create em-try --no-skills`,
-      `hermes -p em-try plugins install file://<repo>#hermes_plugin/emporia --enable`, then
-      `hermes -p em-try emporia setup --runtime-from <repo> --plugin-source file://<repo>#hermes_plugin/emporia`
-      (committed work only: both clone the repo). A name already on the relay is asked again before
+      **Before a release (P296),** the catalog route: push the code to a branch, pin it
+      (`scripts/pin_plugin_runtime.py`, a second commit), push that, then `hermes profile create em-try
+      --no-skills`, `hermes -p em-try plugins install https://github.com/wujitsana/emporia#hermes_plugin/emporia --ref <pin commit> --enable`,
+      and `hermes -p em-try emporia setup`. (Catalog rule 3: the plugin has no flag to take its runtime from
+      anywhere but its pin; unpushed work is tried from a checkout, whose plugin runs that checkout.) A name already on the relay is asked again before
       anything is written; `hermes -p <new> emporia status` says "registered" after the gateway restart;
       the tab in `em-try` (no agent) says to run `hermes emporia setup`.
 - [ ] **The house agent (P297).** A profile `house` with `emporia agent playbook house --preset host`, listed in

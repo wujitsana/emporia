@@ -18,7 +18,42 @@ here is pure: no I/O, no `httpx`, no `identity` import.
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+# Ids a relay supplies, as they may appear in text put in front of an agent's model
+# (security follow-up to the 11-05 audit). An agent id: identity's key-file characters
+# (lowercase letters, digits, `_`, `-`), at most 64 — the relay's registration rule is
+# stricter, so every real id passes. An object id (session, room, thread, post, a slug,
+# a module type): letters, digits, `_`, `-`, `.`, `:`, at most 64. A host: a DNS name or
+# bracketed IPv6 address with an optional port.
+_AGENT_ID = re.compile(r"[a-z0-9_-]{1,64}")
+_OBJECT_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}")
+_HOST = re.compile(r"(?:[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?|\[[0-9a-f:.]{2,45}\])(?::[0-9]{1,5})?")
+
+
+def plain_id(value: Any) -> str:
+    """`value` when it is an object id by the rules above, else ""."""
+    return value if isinstance(value, str) and _OBJECT_ID.fullmatch(value) else ""
+
+
+def plain_host(value: Any) -> str:
+    """`value`, lowercased, when it is a relay host (`name[:port]`), else ""."""
+    value = value.lower() if isinstance(value, str) else ""
+    return value if _HOST.fullmatch(value) else ""
+
+
+def agent_ref(value: Any, *, bare_only: bool = False) -> str:
+    """`value` when it names an agent — an agent id, or an address `agent_id@host`
+    (`addresses.address`) unless `bare_only` — else ""."""
+    if not isinstance(value, str):
+        return ""
+    agent_id, at, host = value.rpartition("@")
+    if not at:
+        return value if _AGENT_ID.fullmatch(value) else ""
+    if bare_only or not _AGENT_ID.fullmatch(agent_id) or not plain_host(host) or host != host.lower():
+        return ""
+    return value
 
 
 def dashboard_session_body(agent_id: str, challenge_id: str, signature_hex: str) -> dict[str, Any]:

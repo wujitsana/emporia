@@ -11,7 +11,8 @@ hand in a throwaway Hermes home:
 * playbook refusals that name how to change them; a free blotto between A and B (an illegal commit
   refused, a like, quests, the character sheet, the season, the relay's activity count);
 * a house agent that adopts a waiting free blotto and plays it to the end;
-* `hermes emporia update --runtime-from`, twice: the second changes nothing.
+* `hermes emporia update`, twice: the runtime is already at the pinned commit, so each verifies it
+  and changes nothing.
 
 No model or LLM is called, no gateway is started. Each profile's name carries a tag of this run:
 inside a container whose PID 1 is s6, `hermes profile create` registers a (stopped) gateway service
@@ -21,7 +22,15 @@ folder this script makes (base: --workdir, default the system temp), and torn do
 on an error and on Ctrl-C: only the processes it started (their recorded PIDs) are stopped.
 
 The plugin and the runtime are installed from the repo's HEAD commit, as a user would get them:
-commit first, or the run tests the last commit, not your working tree.
+commit first, or the run tests the last commit, not your working tree. The plugin has no way to
+take its runtime from anywhere but its pin (catalog rule 3), so the run makes a release of HEAD
+in its own folder, the way `scripts/pin_plugin_runtime.py` makes one, without pushing anything:
+
+* a copy of `hermes_plugin/emporia` at HEAD whose `emporia_source.json` pins the https repo, HEAD's
+  commit and HEAD's tree, in a throwaway git repo the plugin is installed from (`file://`);
+* the judge's runtime folder (`plugin-data/emporia/runtime`) seeded with a clone of this repo at
+  that commit, its origin the https repo. Setup then takes the product's own path for a runtime
+  already at the pinned commit: no fetch, a checkout, the commit-and-tree check, its packages.
 
 Usage:
     .venv/bin/python scripts/e2e.py [--keep] [--repo PATH] [--workdir DIR]
@@ -55,9 +64,25 @@ SETUP_TIMEOUT = 900
 # teardown removes, through `hermes profile delete`, the services of the profiles this run made.
 S6_SCANDIR = Path("/run/service")
 
+# Runs with Hermes's interpreter, HERMES_HOME the agent's profile: builds the agent's MCP server
+# environment with Hermes's own functions (its `${NAME}` references filled from the profile's
+# secret scope, an unset one dropped, on Hermes's filtered baseline, as the MCP client spawns it)
+# and replaces itself with the runtime's python running WORKER. The values go from Hermes straight
+# into the worker's environment: this script never holds or prints one.
+LAUNCH = r'''
+import os, sys
+from mcp.client.stdio import get_default_environment
+from tools.mcp_tool_config import _build_safe_env, _load_mcp_config
+server = _load_mcp_config().get("emporia") or {}
+if not server.get("command"):
+    sys.exit("no emporia MCP server in this profile")
+env = {**get_default_environment(), **{str(k): str(v) for k, v in _build_safe_env(server.get("env")).items()}}
+os.execve(server["command"], [server["command"], "-c", sys.argv[1]], env)
+'''
+
 # Runs inside an agent's own runtime (its python, its MCP server's env, as Hermes starts it) and
 # answers tool calls: one JSON line in ({"tool", "args", "kwargs"}), one JSON line out. Nothing
-# here reads or prints a key: the MCP module loads the profile's .env itself (EMPORIA_DOTENV).
+# here reads or prints a key: the server's settings and keys are what Hermes handed it.
 WORKER = r'''
 import json, os, sys
 out = os.fdopen(os.dup(1), "w", buffering=1)
@@ -116,6 +141,9 @@ class Run:
         self.relay_url = ""
         self.hermes = shutil.which("hermes") or ""
         self.sha = ""
+        self.tree = ""
+        self.https_repo = ""
+        self.plugin_repo = self.root / "plugin-release"   # the pinned plugin, installed from file://
         self._torn_down = False
 
     # ── output ──────────────────────────────────────────────────────────────
@@ -219,24 +247,67 @@ class Run:
         self.note(f"relay {self.relay_url} pid {proc.pid}")
         return f"pid {proc.pid}"
 
+    def release(self) -> str:
+        """A release of the commit this run started at, made here and pushed nowhere: the plugin at
+        that commit, its emporia_source.json pinning the https repo, the commit and its tree (what
+        scripts/pin_plugin_runtime.py records), in a throwaway git repo to install it from."""
+        git = lambda *a, cwd=self.repo: self.run(["git", "-C", str(cwd), *a]).stdout.strip()  # noqa: E731
+        self.tree = git("rev-parse", f"{self.sha}^{{tree}}")
+        pinned = json.loads(git("show", f"{self.sha}:hermes_plugin/emporia/emporia_source.json"))
+        self.https_repo = str(pinned.get("repo") or "")
+        check(self.https_repo.startswith("https://"), f"emporia_source.json names no https repo: {self.https_repo!r}")
+        src = self.plugin_repo
+        src.mkdir()
+        archive = self.root / "plugin.tar"
+        git("archive", "--format=tar", "-o", str(archive), self.sha, "hermes_plugin/emporia")
+        self.run(["tar", "-xf", str(archive), "-C", str(src)])
+        archive.unlink()
+        pinned.update(sha=self.sha, tree=self.tree)
+        (src / "hermes_plugin" / "emporia" / "emporia_source.json").write_text(json.dumps(pinned, indent=2) + "\n")
+        git("init", "--quiet", cwd=src)
+        git("add", "-A", cwd=src)
+        git("-c", "user.name=e2e", "-c", "user.email=e2e@localhost", "-c", "commit.gpgsign=false",
+            "commit", "--quiet", "-m", f"the plugin pinned to {self.sha[:12]}", cwd=src)
+        return f"pinned {self.sha[:12]} (tree {self.tree[:12]})"
+
+    def seed_runtime(self) -> str:
+        """The judge's runtime folder holds this repo at the pinned commit, its origin the https
+        repo, as a person's would after a clone from it: setup finds it at the pin, fetches
+        nothing, and checks it is exactly the pinned commit and tree before installing it."""
+        rt = self.profile(self.judge) / "plugin-data" / "emporia" / "runtime"
+        check(not rt.exists(), f"{rt} is there already")
+        rt.parent.mkdir(parents=True, exist_ok=True)
+        self.run(["git", "clone", "--quiet", "--no-hardlinks", "--no-checkout", str(self.repo), str(rt)], timeout=600)
+        self.run(["git", "-C", str(rt), "checkout", "--quiet", "--detach", self.sha])
+        self.run(["git", "-C", str(rt), "remote", "set-url", "origin", self.https_repo])
+        head = self.run(["git", "-C", str(rt), "rev-parse", "HEAD"]).stdout.strip()
+        check(head == self.sha, f"the seeded runtime is at {head[:12]}, not {self.sha[:12]}")
+        return str(rt)
+
     def make_judge(self) -> None:
         self.hermes_cmd("profile", "create", self.judge, "--no-skills")
         self.hermes_cmd("-p", self.judge, "plugins", "install", self.plugin_source(), "--enable", timeout=600)
-        check((self.profile(self.judge) / "plugins" / "emporia" / "plugin.yaml").is_file(),
-              f"the plugin is not in {self.judge}'s plugins/")
-
-    def runtime_from(self) -> str:
-        """The repo at the commit this run started at: another commit landing mid-run moves nothing."""
-        return f"{self.repo}@{self.sha}"
+        installed = self.profile(self.judge) / "plugins" / "emporia"
+        check((installed / "plugin.yaml").is_file(), f"the plugin is not in {self.judge}'s plugins/")
+        pin = json.loads((installed / "emporia_source.json").read_text())
+        check((pin.get("sha"), pin.get("tree")) == (self.sha, self.tree),
+              f"the installed plugin pins {str(pin.get('sha'))[:12]}, not {self.sha[:12]}")
 
     def plugin_source(self) -> str:
-        return f"file://{self.repo}#hermes_plugin/emporia"
+        return f"file://{self.plugin_repo}#hermes_plugin/emporia"
 
     def setup_agent(self, name: str, *extra: str) -> None:
         self.hermes_cmd("-p", self.judge, "emporia", "setup", "--profile", name, "--relay", self.relay_url,
-                        "--runtime-from", self.runtime_from(), "--plugin-source", self.plugin_source(),
+                        "--plugin-source", self.plugin_source(),
                         "--", "--role", "marketplace", "--keys", "env", *extra, "--register",
                         timeout=SETUP_TIMEOUT)
+        if name == self.player:
+            # The seeded runtime was used as it was: still the pinned commit, nothing fetched.
+            rt = self.runtime_python().parent.parent.parent
+            head = self.run(["git", "-C", str(rt), "rev-parse", "HEAD"]).stdout.strip()
+            origin = self.run(["git", "-C", str(rt), "remote", "get-url", "origin"]).stdout.strip()
+            check((head, origin) == (self.sha, self.https_repo), f"the runtime is {head[:12]} from {origin}")
+            check(self.runtime_python().is_file(), "setup installed no packages into the runtime")
 
     def emporia(self, profile: str, *args: str, ok_codes=(0,), timeout: float = 120) -> str:
         """`hermes -p PROFILE emporia …`: the plugin's own commands, and the runtime's CLI
@@ -261,6 +332,14 @@ class Run:
         self.emporia(name, "doctor")
 
     # ── tools, as the agent ─────────────────────────────────────────────────
+    def hermes_python(self) -> tuple[str, str]:
+        """Hermes's own interpreter and import path, as its `hermes` launcher sets them."""
+        check(self.hermes, "hermes is not on PATH")
+        root = Path(os.path.realpath(self.hermes)).parent.parent
+        python, sites = root / ".venv" / "bin" / "python", sorted(root.glob(".venv/lib/python3*/site-packages"))
+        check(python.is_file() and sites, f"no Hermes interpreter under {root}")
+        return str(python), os.pathsep.join([str(root), str(sites[-1])])
+
     def worker(self, name: str) -> subprocess.Popen:
         if name in self.workers and self.workers[name].poll() is None:
             return self.workers[name]
@@ -268,11 +347,14 @@ class Run:
         cfg = yaml.safe_load((self.profile(name) / "config.yaml").read_text()) or {}
         server = (cfg.get("mcp_servers") or {}).get("emporia") or {}
         check(server.get("command"), f"{name} has no emporia MCP server")
+        check((server.get("env") or {}).get("EMPORIA_NO_DOTENV") == "1",
+              f"{name}'s MCP server would read the .env itself (no EMPORIA_NO_DOTENV=1)")
+        # Started the way Hermes starts it (LAUNCH): the entry's env rendered by Hermes, not here.
+        python, path = self.hermes_python()
         env = {k: v for k, v in self.env().items() if k != "EMPORIA_RELAY_URL"}
-        env.update({k: str(v) for k, v in (server.get("env") or {}).items()})
-        env["HERMES_HOME"] = str(self.profile(name))
+        env.update(HERMES_HOME=str(self.profile(name)), PYTHONPATH=path)
         err = (self.root / f"worker-{name}.log").open("ab")
-        proc = subprocess.Popen([server["command"], "-c", WORKER], cwd=self.root, env=env, text=True,
+        proc = subprocess.Popen([python, "-c", LAUNCH, WORKER], cwd=self.root, env=env, text=True,
                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, bufsize=1)
         self.pids.append(proc.pid)
         self.procs[proc.pid] = proc
@@ -382,16 +464,19 @@ class Run:
         check(self.house_agent in g["participants"], f"participants: {g['participants']}")
 
     def update(self) -> None:
+        """At the pinned commit, update is a verified no-op: twice, nothing moves or installs."""
         rt = self.runtime_python().parent.parent.parent
         before = self.run(["git", "-C", str(rt), "rev-parse", "HEAD"]).stdout.strip()
-        first = self.emporia(self.player, "update", "--runtime-from", self.runtime_from(), timeout=600)
-        second = self.emporia(self.player, "update", "--runtime-from", self.runtime_from(), timeout=600)
+        first = self.emporia(self.player, "update", timeout=600)
+        second = self.emporia(self.player, "update", timeout=600)
         after = self.run(["git", "-C", str(rt), "rev-parse", "HEAD"]).stdout.strip()
         check(before == after == self.sha, f"runtime moved: {before[:12]} -> {after[:12]} (HEAD {self.sha[:12]})")
         dirty = self.run(["git", "-C", str(rt), "status", "--porcelain", "--untracked-files=no"]).stdout.strip()
         check(not dirty, f"the runtime's files changed: {dirty[:200]}")
         for out in (first, second):
-            check("first time" not in out and "gateway restart" not in out,
+            check(f"Runtime already at {self.sha[:12]} (verified): nothing to do." in out,
+                  f"update at the pin did not verify and stop: {out.strip()[-200:]}")
+            check("Installing" not in out and "Fetching" not in out and "gateway restart" not in out,
                   f"update with nothing to do still says: {out.strip()[-200:]}")
         check("Relay   : registered" in self.emporia(self.player, "status"), "status after update")
 
@@ -505,7 +590,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         run.step("temp HERMES_HOME and HOME", lambda: None)
         run.step("throwaway relay", run.start_relay)
-        run.step("judge profile with the plugin", run.make_judge)
+        run.step("a release of HEAD, made here", run.release)
+        run.step("judge profile with the pinned plugin", run.make_judge)
+        run.step("runtime folder seeded at the pinned commit", run.seed_runtime)
         run.step(f"setup {run.player} (player)", run.setup_agent, run.player, "--playbook", "player")
         run.step(f"setup {run.merchant} (merchant)", run.setup_agent, run.merchant, "--playbook", "merchant")
         run.step(f"{run.merchant} plays set plays", run.emporia, run.merchant, "agent", "playbook", run.merchant,
@@ -519,7 +606,7 @@ def main(argv: list[str] | None = None) -> int:
         run.step("quests, sheet, season, activity", run.standing)
         run.step(f"setup {run.house_agent} (house)", run.setup_agent, run.house_agent, "--playbook", "host")
         run.step("house adopts a waiting blotto and finishes it", run.house)
-        run.step("update --runtime-from is idempotent", run.update)
+        run.step("update at the pinned commit is a verified no-op", run.update)
     except StepFailed:
         pass
     except KeyboardInterrupt:

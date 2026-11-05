@@ -56,14 +56,14 @@ def _value(name: str, started_with: str) -> str:
     if mtime is None:
         return started_with
     if (_live["path"], _live["mtime"]) != (path, mtime):
-        values = {}
+        # Catalog rule 11: a Hermes profile's .env is read through Hermes (emporia.profile_env);
+        # a relay's own folder's, as a file. Read again only when the file changed.
+        from emporia import profile_env
         try:
-            for line in path.read_text().splitlines():
-                key, sep, val = line.strip().partition("=")
-                if sep and key.strip() in (SETTING, MEMBERS):
-                    values[key.strip()] = val.strip().strip('"').strip("'")
-        except OSError:
+            read = profile_env.read(path, fresh=True)
+        except Exception:  # noqa: BLE001 — no answer: keep what the process started with
             return started_with
+        values = {k: v for k, v in read.items() if k in (SETTING, MEMBERS)}
         _live.update(path=path, mtime=mtime, values=values)
     values = _live["values"]
     return values[name] if name in values else started_with   # type: ignore[index]

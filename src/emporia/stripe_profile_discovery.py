@@ -129,19 +129,16 @@ def scan_stripe_profile_id_in_tree(
     for root in extra_roots:
         paths.append(root / ".env")
 
+    # Catalog rule 11: a Hermes profile's .env is read through Hermes (emporia.profile_env);
+    # where Hermes is installed, no other folder's .env is read at all.
+    from emporia import hermes_settings, profile_env
+    homes_only = hermes_settings.available() or profile_env._from_catalog()
     for path in paths:
-        if not path.is_file():
+        if not path.is_file() or (homes_only and not profile_env.is_profile_env(path)):
             continue
-        for line in path.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, _, v = line.partition("=")
-            if k.strip() != "STRIPE_PROFILE_ID":
-                continue
-            val = v.strip().strip('"').strip("'")
-            if _valid_profile_id(val):
-                return val
+        val = profile_env.read(path).get("STRIPE_PROFILE_ID", "")
+        if _valid_profile_id(val):
+            return val
     return None
 
 

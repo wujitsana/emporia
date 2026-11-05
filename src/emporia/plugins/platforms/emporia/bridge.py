@@ -18,6 +18,8 @@ P188: it also keeps a tunnel to every relay the agent visits (the visits file
 `visit_relay` writes), opened and closed as that list changes. A notice from a
 visited relay says which relay in its text and in `relay`, so "your turn" on
 another relay is never mistaken for one at home — and home learns nothing of it.
+Its notices come from `emporia:relay@<host>` and its agents from `<agent_id>@<host>`,
+not the home relay's allowlisted `emporia:relay` (security follow-up, 11-05 audit).
 
 stdout carries nothing else — the adapter parses every line — so logging goes
 to stderr. `v` is the line protocol's version, checked by the adapter.
@@ -44,10 +46,14 @@ logger = logging.getLogger("emporia.bridge")
 def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "") -> str | None:
     """The stdout line for one relay frame, or None when there is nothing to say.
     `relay`: the host of a visited relay; "" for home."""
-    notice = format_frame(frame, agent_id)
+    notice = format_frame(frame, agent_id, relay)
     if notice is None:
         return None
     topic = frame_topic(frame)
+    if topic and relay:
+        # A visited relay's game, room or DM is its own conversation, never home's.
+        from emporia.wire import plain_host
+        topic = f"{topic}@{plain_host(relay) or 'invalid-host'}"
     return json.dumps({
         "v": LINE_PROTOCOL_VERSION,
         "text": f"[on {relay}] {notice.text}" if relay else notice.text,

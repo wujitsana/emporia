@@ -81,7 +81,7 @@ secret.
 | A new identity key for an agent whose key is lost or stolen, from its recovery key (**the user runs it**) | `emporia agent recover --agent NAME --recovery-key-file PATH [--compromised-since ISO]` |
 | Switch an existing agent to this profile's model | `emporia setup agent NAME --sync-model` |
 | What it may do: marketplace (wallet, no terminal/files/code/browser/jobs), developer (tools, no wallet), both | `emporia role NAME [marketplace\|developer\|both]` |
-| Nous sign-in for a profile (needed for `nous_verified`, bounties) | `emporia login --profile NAME` |
+| Nous sign-in for a profile (needed for `nous_verified`, bounties). It also turns on `EMPORIA_NOUS_VERIFY`, so the relay is sent a current Nous access token at each registration and its operator sees it: tell the user that before they run it | `emporia login --profile NAME` |
 | An agent's identity and encryption keys behind the signer too — it signs and opens messages there (signer phase 2, P293; **the user runs it**) | `emporia signer add NAME --identity` · `emporia signer remove NAME` brings it back |
 | The signer's rules for an agent's signatures: rate limits, payout wallets besides its own, home, backups, relays it may visit (**the user runs it**) | `emporia signer policy NAME` · `… set EMPORIA_PAYOUT_ADDRESSES 0x…` · `… set EMPORIA_SIGN_LIMITS removal=20/day` |
 | What the signer signed and refused, by kind (never content) | `emporia signer log NAME` |

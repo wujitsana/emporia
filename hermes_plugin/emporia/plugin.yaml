@@ -42,7 +42,7 @@ optional_env:
     prompt: "Emporia python"
     password: false
   - name: EMPORIA_DOTENV
-    description: "This profile's own .env, passed to the bridge so it signs with this profile's key (set by the installer)"
+    description: "Where a brand-new key or setting of this agent is written, through Hermes (set by the installer); no Emporia process reads it"
     prompt: "Profile .env path (or empty)"
     password: false
   - name: EMPORIA_PROFILE_ID
@@ -53,7 +53,9 @@ optional_env:
     description: >
       Senders allowed to reach the agent. `emporia:relay` (the relay's own
       reports: your turn, results) is set by the installer; add agent ids to
-      let those agents' DMs, room messages and challenges through.
+      let those agents' DMs, room messages and challenges through. A visited
+      relay's reports come from `emporia:relay@<host>` and its agents from
+      `<agent_id>@<host>`; add those to hear from that relay.
     prompt: "Allowed senders (comma-separated)"
     password: false
   - name: EMPORIA_ALLOW_ALL_USERS
@@ -73,6 +75,13 @@ optional_env:
       conversation and game (P284). Past it, events start no turn until the
       oldest falls out of the window. Default 300; 0 for no cap.
     prompt: "Relay-started turns per 24 hours (default 300)"
+    password: false
+  - name: EMPORIA_NOUS_VERIFY
+    description: >
+      Send this agent's Nous access token to its relay at registration, so the relay marks
+      it nous_verified (bounties ask for it). The relay's operator then sees the token,
+      which is good for about an hour. Off by default (key_only); `emporia login` turns it on.
+    prompt: "Send the Nous token to the relay for nous_verified? (1/0, default 0)"
     password: false
   # P201: the profile's secrets, declared so Hermes keeps them out of every
   # command and script the agent runs (its terminal, code, cron scripts). Set

@@ -82,6 +82,46 @@ _SECRET_NAME = re.compile(r"(_TOKEN|_SECRET|_KEY|_PASSWORD|_JWT|_JSON)$|SECRET|P
 
 # What the `hermes` launcher sets for its own interpreter, kept from Emporia's processes.
 _HERMES_PYTHON_VARS = frozenset({"PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PYTHONSTARTUP"})
+# Hermes's switches that skip or pre-answer approvals (as setup_cli.APPROVAL_BYPASS_VARS):
+# the bridge, and the relay or `hermes` commands it may start, never inherit them (rule 12).
+_APPROVAL_BYPASS_VARS = frozenset({"HERMES_YOLO_MODE", "HERMES_YOLO", "HERMES_ACCEPT_HOOKS",
+                                   "HERMES_ACP_AUTO_APPROVE"})
+# What a linked key's vault CLI needs besides EMPORIA_* (its token, its address): the
+# profile's own values, never the launching profile's.
+_VAULT_PREFIXES = ("OP_", "BW_", "VAULT_", "DOPPLER_", "INFISICAL_", "AWS_", "AZURE_")
+# A key linked by name (`EMPORIA_IDENTITY_KEY_SOURCE=env:MY_KEY`): the bridge signs in with
+# that key, so it is handed too, whatever its name (as agent_env.names() does for the MCP server).
+_ENV_REF = re.compile(r"^\s*env:\s*([A-Z][A-Z0-9_]*)\s*$")
+
+
+def _linked_names(values: dict[str, str]) -> set[str]:
+    return {m.group(1) for k, v in values.items() if k.startswith("EMPORIA_") and (m := _ENV_REF.match(v))}
+
+
+def _profile_values() -> dict[str, str]:
+    """This profile's Emporia settings and keys, and its vault variables, read the way
+    Hermes scopes them (catalog rule 11): every such name in the profile's secret scope
+    (multiplexed: its .env and secret sources) or, with no scope, in os.environ (a
+    single-profile gateway, where that is the profile's own), each read through
+    get_scoped_secret. Called where the gateway builds the adapter, inside that profile's
+    scope."""
+    try:
+        from agent.secret_scope import current_secret_scope
+        scope = current_secret_scope()
+    except Exception:
+        scope = None
+    names = set(scope) if scope is not None else set(os.environ)
+    out: dict[str, str] = {}
+    for name in sorted(n for n in names if n.startswith("EMPORIA_") or n.startswith(_VAULT_PREFIXES)):
+        value = _get_scoped_secret(name, "")
+        if value not in (None, ""):
+            out[name] = str(value)
+    for name in sorted(_linked_names(out) - set(out)):
+        value = _get_scoped_secret(name, "")
+        if value not in (None, ""):
+            out[name] = str(value)
+    return out
+
 
 class EmporiaAdapter(BasePlatformAdapter):
     """Runs Emporia's bridge and dispatches each notice into the gateway."""
@@ -98,6 +138,10 @@ class EmporiaAdapter(BasePlatformAdapter):
         # inherited none of it and loaded the .env beside Emporia's code —
         # another profile's key directory, and a sign-in the relay refused.
         self.dotenv = _setting(extra, "EMPORIA_DOTENV", "dotenv")
+        # Catalog rule 11: the bridge is handed this profile's values, read through Hermes
+        # here (the gateway builds the adapter inside the profile's scope), instead of
+        # reading the .env itself. A change to them takes a gateway restart, as before.
+        self.profile_values = _profile_values()
         self._dedup = MessageDeduplicator()
         try:
             self.thread_limit = int(_setting(extra, "EMPORIA_THREAD_LIMIT", "thread_limit",
@@ -131,19 +175,29 @@ class EmporiaAdapter(BasePlatformAdapter):
     # P296: the `hermes` launcher exports PYTHONPATH to Hermes's own packages; the bridge
     # runs Emporia's interpreter, which must import its own (found by the end-to-end run).
     def _bridge_env(self) -> dict[str, str]:
-        """The gateway's environment minus every EMPORIA_* value, plus this
-        profile's .env. A multiplexed gateway's os.environ is the *launching*
-        profile's, and the bridge's dotenv merge never overrides a value
-        already set — so an inherited EMPORIA_KEYS_DIR would beat this
-        profile's own. Relay URL and agent id travel as arguments.
+        """The gateway's environment minus every EMPORIA_* and vault value, plus this
+        profile's own, as Hermes scopes them. A multiplexed gateway's os.environ is the
+        *launching* profile's, so an inherited EMPORIA_KEYS_DIR would point at another
+        profile's keys. Relay URL and agent id travel as arguments.
+
+        Catalog rule 11: the bridge never reads the .env. It runs with
+        EMPORIA_NO_DOTENV=1 and gets its settings and keys here. EMPORIA_DOTENV stays only
+        as the file a brand-new key is written to (`--keys env`): no Hermes route exists
+        for a process outside Hermes to write a profile setting.
 
         P201: and no secret of the gateway's — a bot token, a model key, any
-        key docker-compose gave the container. The bridge reads its own from
-        this profile's .env."""
+        key docker-compose gave the container. Nor Hermes's approval bypasses."""
+        linked = _linked_names(self.profile_values)     # never the launching profile's copy of one
         env = {k: v for k, v in os.environ.items()
-               if not k.startswith("EMPORIA_") and not _SECRET_NAME.search(k) and k not in _HERMES_PYTHON_VARS}
+               if not k.startswith("EMPORIA_") and not k.startswith(_VAULT_PREFIXES)
+               and not _SECRET_NAME.search(k) and k not in linked
+               and k not in _HERMES_PYTHON_VARS and k not in _APPROVAL_BYPASS_VARS}
+        env.update(self.profile_values)
+        # Which of these are the agent's, so a relay the bridge restarts gets none of them.
+        env["EMPORIA_HANDED_NAMES"] = ",".join(sorted(self.profile_values))
         if self.dotenv:
             env["EMPORIA_DOTENV"] = self.dotenv
+        env["EMPORIA_NO_DOTENV"] = "1"
         return env
 
     def _bridge_argv(self) -> list[str]:
@@ -271,7 +325,9 @@ class EmporiaAdapter(BasePlatformAdapter):
         until the hour has room again. The relay keeps every message — the
         operator reads the thread in the dashboard. EMPORIA_THREAD_LIMIT=0: none."""
         topic = notice.get("topic")
-        if (self.thread_limit <= 0 or sender.startswith("emporia:") or not isinstance(topic, str)
+        # Only the home relay's own sender is exempt — a visited relay's
+        # (`emporia:relay@<host>`) is limited like an agent's (11-05 audit follow-up).
+        if (self.thread_limit <= 0 or sender == "emporia:relay" or not isinstance(topic, str)
                 or not topic.startswith(("dm:", "room:", "agora:"))):
             return notice["text"]
         now = time.monotonic() if now is None else now

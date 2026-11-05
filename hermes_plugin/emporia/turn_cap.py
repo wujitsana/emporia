@@ -7,7 +7,9 @@ agents writing at once — could run a profile's model bill up overnight.
 
 ``pre_llm_call`` runs before each turn's first inference request. For turns
 started on the Emporia platform it counts them in a rolling 24 hours, kept in
-``<HERMES_HOME>/emporia_turns.json``; past ``EMPORIA_DAILY_TURNS`` (default
+the plugin's own data, ``<HERMES_HOME>/plugin-data/emporia/turns.json`` (before
+it, ``<HERMES_HOME>/emporia_turns.json``: read once and moved, so the profile
+holds nothing of the plugin's outside plugin-data); past ``EMPORIA_DAILY_TURNS`` (default
 300, 0 = no cap) it ends the turn before inference. A reply on this platform
 reaches no one (see plugin.yaml), so the block message lands in the session
 and the gateway log, not with the agent that wrote. Game turns count too:
@@ -33,7 +35,8 @@ except ImportError:  # pragma: no cover - not on the platforms Hermes runs on
 PLATFORM = "emporia"
 DEFAULT_CAP = 300
 WINDOW = 24 * 3600
-FILE = "emporia_turns.json"
+FILE = "turns.json"
+OLD_FILE = "emporia_turns.json"     # at the profile's root, before the counter moved to plugin-data
 _lock = threading.Lock()
 
 
@@ -62,12 +65,24 @@ def _home() -> Path:
         return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
 
 
+def data_dir(home: Path | None = None) -> Path:
+    """The plugin's own data in this profile (what ``plugins.plugin_storage.plugin_data_dir``
+    returns, worked out from the home so the hook needs no Hermes import)."""
+    return (home or _home()) / "plugin-data" / PLATFORM
+
+
 def _read(path: Path) -> dict:
     try:
         data = json.loads(path.read_text())
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+def _counted(home: Path) -> dict:
+    """The counter, from plugin-data, else from where it was kept before."""
+    path = data_dir(home) / FILE
+    return _read(path) if path.exists() else _read(home / OLD_FILE)
 
 
 def _write(path: Path, data: dict) -> None:
@@ -84,18 +99,20 @@ def pre_llm_call(platform: str = "", is_first_turn: bool = False, **_ignored):
     if limit == 0:
         return None
     home = _home()
-    path = home / FILE
+    folder = data_dir(home)
+    path = folder / FILE
     now = time.time()
     with _lock:
-        home.mkdir(parents=True, exist_ok=True)
-        with open(home / f".{FILE}.lock", "a") as held:
+        folder.mkdir(parents=True, exist_ok=True)
+        with open(folder / f".{FILE}.lock", "a") as held:
             if fcntl:
                 fcntl.flock(held, fcntl.LOCK_EX)
-            data = _read(path)
+            data = _counted(home)
             turns = [t for t in data.get("turns", []) if isinstance(t, (int, float)) and now - t < WINDOW]
             if len(turns) < limit:
                 turns.append(now)
                 _write(path, {"turns": turns})
+                _forget_old(home)
                 return None
     resume = time.strftime("%H:%M UTC", time.gmtime(min(turns) + WINDOW))
     return {"action": "block", "message": (
@@ -104,8 +121,17 @@ def pre_llm_call(platform: str = "", is_first_turn: bool = False, **_ignored):
         "raise EMPORIA_DAILY_TURNS in this profile's .env (0 = no cap) to resume sooner.")}
 
 
+def _forget_old(home: Path) -> None:
+    """Once its turns are in plugin-data, the old counter (and its lock) go."""
+    for name in (OLD_FILE, f".{OLD_FILE}.lock"):
+        try:
+            (home / name).unlink()
+        except OSError:
+            pass
+
+
 def used(home: Path | None = None, now: float | None = None) -> int:
     """Relay-started turns in the last 24 hours (what `emporia doctor` shows)."""
     now = time.time() if now is None else now
-    data = _read((home or _home()) / FILE)
+    data = _counted(home or _home())
     return sum(1 for t in data.get("turns", []) if isinstance(t, (int, float)) and now - t < WINDOW)
