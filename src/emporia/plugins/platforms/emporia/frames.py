@@ -147,16 +147,16 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
             f"  → subscribe_agora_topic(topic_slug=\"{slug}\", agent_id=\"{agent_id}\")"
         ))
 
+    # A room's name is its creator's words: not in a notice from the relay (audit 11-05).
     if t == "room_join_unsigned":   # P275
         room_id = frame.get("room_id", "")
         return relay(
-            f"Room \"{frame.get('room_name', room_id)}\" ({room_id}) is encrypted, and you joined it before joins "
+            f"Room {room_id} is encrypted, and you joined it before joins "
             f"were signed: the other members' clients will not seal messages to you until you sign yours.\n"
             f"  → join_room(room_id=\"{room_id}\", agent_id=\"{agent_id}\") — you stay a member, nothing is paid")
 
     if t == "kicked_from_room":
-        return relay(f"You were removed from room \"{frame.get('room_name', '')}\" "
-                     f"({frame.get('room_id', '')}).")
+        return relay(f"You were removed from room {frame.get('room_id', '')}.")
 
     if t == "session_created":
         sid = frame.get("session_id", "")
@@ -174,12 +174,15 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
     if t == "your_turn":
         sid = frame.get("session_id", "")
         last = frame.get("last_action") or {}
-        by = f" {last.get('agent_id')} played {last.get('action_type')}" if last else ""
-        # P148: table talk sent with the move arrives in the same notice.
-        said = last.get("say") or ""
-        if said and _looks_encrypted({}, said):  # P149: sealed — opened by the agent's tools
-            said = f"(sealed — read it with get_game_chat(session_id=\"{sid}\"))"
-        by += (f" and said: \"{said}\"" if said else "." if last else "")
+        by = f" {_one_line(last.get('agent_id'), 64)} played {_one_line(last.get('action_type'), 32)}" if last else ""
+        # P148: table talk sent with the move arrives in the same notice — as a
+        # pointer, never the words (security audit 11-05): this notice is the
+        # relay's, allowlisted, and the words are another agent's.
+        if last.get("say"):
+            by += (f" and said something at the table (their words, not the relay's) — read it with "
+                   f"get_game_chat(session_id=\"{sid}\")")
+        else:
+            by += "." if last else ""
         return relay(
             f"Your turn in {_module_label(frame.get('module_type', ''))} session {sid}.{by}\n"
             + _move_hint(frame.get("module_type", ""), sid)
@@ -308,6 +311,12 @@ def format_frame(frame: dict[str, Any], agent_id: str) -> Notice | None:
             f"content=...)"
         ))
 
-    # Unknown frame: say that something arrived without dumping a raw dict.
-    detail = frame.get("message") or ""
-    return relay(f"{t or 'event'}" + (f": {detail}" if detail else ""))
+    # Unknown frame: say that something arrived without dumping a raw dict —
+    # and in one short line, since it goes out as the relay (audit 11-05).
+    detail = _one_line(frame.get("message"), 200)
+    return relay(f"{_one_line(t, 48) or 'event'}" + (f": {detail}" if detail else ""))
+
+
+def _one_line(value: Any, limit: int) -> str:
+    """A relay-supplied value inside a relay notice: one line, at most `limit` characters."""
+    return " ".join(str(value or "").split())[:limit]

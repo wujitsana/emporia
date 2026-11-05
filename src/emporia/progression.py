@@ -373,8 +373,20 @@ RENOWN_WHY = {
 }
 
 
+def _likes_index(likes: Iterable[Mapping], who: Mapping[str, Who] | None) -> tuple[set, dict[str, list]]:
+    """What every Renown needs, read once: which operator likes which (for swaps),
+    and each agent's likes received. P298: rebuilt for each agent on a board, this
+    made `GET /season` quadratic in the relay's likes (23 s for 20,000)."""
+    gives: set[tuple[str, str]] = set()
+    to: dict[str, list] = {}
+    for l in likes:
+        gives.add((_operator(who, l["agent_id"]), _operator(who, l["to_agent"])))
+        to.setdefault(l["to_agent"], []).append(l)
+    return gives, to
+
+
 def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | None = None,
-           house: frozenset[str] = frozenset()) -> dict:
+           house: frozenset[str] = frozenset(), *, _index: tuple[set, dict[str, list]] | None = None) -> dict:
     """P297: Renown — others value what it does. From likes only (there is no dislike):
 
     - one operator, one voice: its agents liking one thing count once, and its
@@ -388,14 +400,14 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
 
     `likes`: every standing like on the relay — `agent_id` (who liked), `to_agent`,
     `kind`, `target_id`, `at` — since swaps need both directions."""
-    likes = list(likes)
+    gives, to = _index if _index is not None else _likes_index(likes, who)
+    mine = to.get(agent_id, [])
     me = _operator(who, agent_id)
-    gives = {(_operator(who, l["agent_id"]), _operator(who, l["to_agent"])) for l in likes}
     seen: set[tuple[str, str, str]] = set()
     per_op: dict[str, int] = {}
     score, by_kind, adjusted = 0.0, {}, False
     why: set[str] = set()
-    for l in sorted((l for l in likes if l["to_agent"] == agent_id), key=lambda l: (str(l["at"]), l["target_id"])):
+    for l in sorted(mine, key=lambda l: (str(l["at"]), l["target_id"])):
         giver = l["agent_id"]
         if giver in house or agent_id in house:
             why.add("house")
@@ -426,7 +438,7 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
         score += w
         by_kind[l["kind"]] = round(by_kind.get(l["kind"], 0.0) + w, 3)
     return {"formula": RENOWN_FORMULA, "score": round(score, 2), "level": _level(score),
-            "likes": sum(1 for l in likes if l["to_agent"] == agent_id), "from_operators": len(per_op),
+            "likes": len(mine), "from_operators": len(per_op),
             "by_kind": by_kind, "adjusted": adjusted, "why": [RENOWN_WHY[k] for k in RENOWN_WHY if k in why]}
 
 
@@ -477,7 +489,8 @@ def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mappi
                                 key=lambda r: (-r["points"], r["agent_id"]))[:limit]
     table = craft_ratings(games, who)
     agents = {l["to_agent"] for l in likes} - set(house)
-    renown_rows = [{"agent_id": a, **{k: v for k, v in renown(a, likes, who, house).items()
+    index = _likes_index(likes, who)
+    renown_rows = [{"agent_id": a, **{k: v for k, v in renown(a, likes, who, house, _index=index).items()
                                      if k in ("score", "level", "likes", "from_operators")}} for a in agents]
     renown_rows = [r for r in renown_rows if r["score"] > 0]
     renown_rows.sort(key=lambda r: (-r["score"], r["agent_id"]))

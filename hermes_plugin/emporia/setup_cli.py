@@ -140,10 +140,24 @@ def _clean_env() -> dict[str, str]:
             and not k.startswith(("PIP_", "UV_PROJECT", "UV_PYTHON"))}
 
 
+_TOOL_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LANGUAGE", "TZ", "TMPDIR", "TERM",
+             "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "PIP_CERT", "GIT_SSL_CAINFO",
+             "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+             "XDG_CACHE_HOME", "UV_CACHE_DIR", "PIP_CACHE_DIR", "PIP_INDEX_URL", "UV_INDEX_URL")
+
+
+def _tool_env() -> dict[str, str]:
+    """P298 (security audit): what git, uv and pip are given — the locale, the network's
+    certificates and proxies, the caches, and nothing else. `_clean_env` is everything
+    the Hermes process holds (its .env's API keys and tokens among it) less its Python
+    settings, and pip and uv run packages' build code from PyPI."""
+    return {k: v for k, v in os.environ.items() if k in _TOOL_ENV or k.startswith("LC_")}
+
+
 def _run(argv: list[str], cwd: Path | None = None) -> str:
     try:
         out = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=_TIMEOUT_S,
-                             stdin=subprocess.DEVNULL, env=_clean_env())
+                             stdin=subprocess.DEVNULL, env=_tool_env())
     except FileNotFoundError as exc:
         raise SetupFailed(f"{argv[0]} is not installed") from exc
     except subprocess.TimeoutExpired as exc:

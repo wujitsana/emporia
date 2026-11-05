@@ -40,7 +40,13 @@ _KEY_PATHS = re.compile(
     # approve, change limits or mint tokens without an `emporia signer` command.
     # Its source is no secret: reading or linting signer.py is fine; running it is not.
     r"|\bimport\s+emporia\.signer\b|\bfrom\s+emporia(?:\.signer)?\s+import\s+[\w\s,]*\b(?:signer|decide|save_policy"
-    r"|new_agent_token|admin_token)\b|-m\s+emporia\.signer\b")
+    r"|new_agent_token|admin_token)\b|-m\s+emporia\.signer\b"
+    # P298: the dashboard's console holds every local profile's keys behind a Unix
+    # socket the folder alone guards; through it one agent reads another's inbox and
+    # has its DMs opened. Its socket and folder, and starting one or loading its key
+    # discovery directly, are the keys by another name.
+    r"|\bconsole\.sock\b|\bemporia-console\b|\bplugin-data/emporia/console\b"
+    r"|-m\s+emporia\.console\b|\bfrom\s+emporia\.console\b|\bimport\s+emporia\.console\b")
 _KEY_NAMES = re.compile(
     r"\bEMPORIA_(?:IDENTITY|ENCRYPTION|X402_EVM|X402_SOLANA|OPERATOR)_PRIVATE_KEY\b"
     r"|\bEMPORIA_X402_PHRASE_SECRET\b|\bEMPORIA_ENCRYPTION_RETIRED_KEYS\b"

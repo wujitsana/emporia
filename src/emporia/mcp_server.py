@@ -3105,6 +3105,11 @@ def send_dm(
         # P18-2: one nonce, bound into both the ciphertext's AAD and the signature,
         # so a stored row cannot be replayed as a different message.
         nonce = new_message_nonce()
+        if not start_r.json().get("encrypted") and encrypted is not False:
+            # P298: the relay's word that this thread is plaintext is not enough
+            # once this agent has sealed to the peer.
+            from emporia.identity import refuse_plaintext_to
+            refuse_plaintext_to([to_agent_id])
         if start_r.json().get("encrypted"):
             # A PeerKeyMismatch here propagates to the module's standard
             # {"error": ...} return via the outer handler, carrying its own message

@@ -4366,6 +4366,22 @@ def _choose_agent_id(args: argparse.Namespace, name: str, profile: Path, existin
 
 
 @wizard
+def _holds_an_agent(profile: Path) -> bool:
+    """P298: an Emporia agent already lives in this profile — its MCP entry, its name
+    in the .env, or a key of its own."""
+    inst = installer()
+    if (profile / "config.yaml").exists() and ((inst.load_yaml(profile / "config.yaml").get("mcp_servers") or {})
+                                               .get("emporia")):
+        return True
+    env = inst.harvest_env(profile) if (profile / ".env").exists() else {}
+    from emporia import key_source
+    if env.get("EMPORIA_AGENT_ID") or env.get(key_source.SOURCE_VARS["identity"]) \
+            or env.get(key_source.ENV_KEY_NAMES["identity"]):
+        return True
+    keys = profile / "home" / ".hermes" / "keys"
+    return keys.is_dir() and any(keys.glob("*.priv")) or keys.is_dir() and any(keys.glob("*.signer.pub"))
+
+
 def cmd_setup_agent(args: argparse.Namespace) -> int:
     inst = installer()
     me = this_profile()
@@ -4376,6 +4392,13 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     profile = profile_dir(name)
     # --new-profile: the plugin's setup made this profile a moment ago (P296), so its
     # config.yaml is Hermes's bare one, not an agent's to keep.
+    if getattr(args, "new_profile", False) and _holds_an_agent(profile):
+        # P298 (security audit): taken as new, an agent's own role, relay, key storage
+        # and limits would give way to the defaults. Anyone can type a hidden flag.
+        print(f"setup agent: {name} already holds an Emporia agent, so it is not a new profile "
+              f"(--new-profile is for a profile the plugin's setup made a moment ago). "
+              f"Run `emporia setup agent {name}` to update it.")
+        return 1
     existing = (profile / "config.yaml").exists() and not getattr(args, "new_profile", False)
     heading(f"{'Update' if existing else 'New'} agent: {name}",
             "Its model and API key, and Emporia: its tools, skill, platform plugin and its own keys.")
