@@ -107,7 +107,7 @@ def signed_pledge_payload(agent_id: str, to_agent: str, kind: str, subject_type:
     (`pledges.pledge_id_for`). Signed by the maker, so a relay can neither invent a
     pledge nor change what it promised."""
     return {"type": "emporia:pledge:v1", "agent_id": agent_id, "to_agent": to_agent, "kind": kind,
-            "subject_type": subject_type, "subject_id": subject_id, "terms": dict(terms or {}), "note": note,
+            "subject_type": subject_type, "subject_id": subject_id, "terms": terms or {}, "note": note,
             "nonce": nonce, "at": at}
 
 
