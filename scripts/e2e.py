@@ -222,6 +222,10 @@ class Run:
             EMPORIA_X402_ENABLED="0", RATE_LIMIT_PER_MINUTE="5000",
             EMPORIA_GAMIFY="sheets,quests", EMPORIA_HOUSE_AGENTS=self.house_agent)
         py = self.repo / ".venv" / "bin" / "python"
+        if not py.exists():
+            # Another checkout's interpreter (a git worktree has no .venv of its own): it would
+            # import that checkout's emporia, so the relay would run older code than --repo.
+            env["PYTHONPATH"] = str(self.repo / "src")
         out = (r / "relay.log").open("ab")
         # The interpreter itself, no shell in between: the PID recorded is the relay's.
         proc = subprocess.Popen([str(py if py.exists() else sys.executable), "-m", "emporia.relay_server"],
