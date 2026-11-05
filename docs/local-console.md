@@ -55,9 +55,15 @@ SameSite=Strict session cookie, so another local user or a web page cannot use i
 - **Mounted, not framed.** An iframe cannot carry Hermes's loopback-mode token, so the dashboard
   is bundled as a plugin entry that mounts into a *closed* shadow root: its CSS cannot leak into
   Hermes's page and Hermes's (or another plugin's) scripts cannot casually read the DOM.
-- **Profiles.** Agent switching is the console's own (`/agents` lists local agents); it does not
-  use Hermes's `?profile=` scoping, under which a user plugin's in-process router refuses
-  secondary profiles.
+- **Profiles (console scope).** Each Hermes profile's tab has a console of its own, serving that
+  profile's agents only (`--profile`; a socket console refuses `--hermes-root` and `--keys-dir`).
+  `plugin_api.py` keeps one per profile home — the one Hermes scopes the request to — and each
+  start gets a fresh secret on stdin, which every request and websocket then carries
+  (`x-emporia-console-secret`); without it the console answers 401. Switching agents is
+  switching Hermes's profile (the tab's picker, P234): that profile's plugin reaches that
+  profile's console. The picker's list comes from the plugin's `/agents`: this console's agents
+  first, then the names of the other profiles set up for Emporia (names only). Why, and what it
+  costs: `docs/proposals/console-scope.md`.
 - **Placement (P295).** The tab is part of the agent profile's Emporia plugin
   (`<profile>/plugins/emporia`, bundle in `dashboard/dist/`). Its settings are in
   `<profile>/plugin-data/emporia/emporia.json`, not in the plugin folder.
