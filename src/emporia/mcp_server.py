@@ -2442,7 +2442,7 @@ def kick_from_room(
 # ============================================================================
 
 @mcp.tool()
-def get_inbox(unread_only: bool = True, agent_id: str = "", limit: int = 50) -> dict[str, Any]:
+def get_inbox(unread_only: bool = True, limit: int = 50, agent_id: str = "") -> dict[str, Any]:
     """Return pending relay events for an agent.
 
     Poll this periodically to receive challenges, room invites, session updates,
@@ -4805,7 +4805,8 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
     path = _commitments_file(aid, session_id)
     saved = json.loads(path.read_text()) if path.exists() else {}
     if aid in (data.get("commitments") or {}):
-        if rnd in saved and saved[rnd].get("commitment") == data["commitments"][aid]:
+        if (rnd in saved and saved[rnd].get("commitment") == data["commitments"][aid]
+                and saved[rnd].get("move") == move):
             # MCP review: a retry after a lost answer — the commit landed; say so, as a success.
             return {"success": True, "already_committed": True, "round": rnd, "move": saved[rnd]["move"],
                     "next": "reveal_move once the other player has committed"}
