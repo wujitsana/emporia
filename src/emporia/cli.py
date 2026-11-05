@@ -3870,14 +3870,9 @@ def api_server_host(profile: Path, dotenv: dict[str, str]) -> str | None:
 
 
 def turns_in_24h(profile: Path) -> int:
-    """Relay-started agent turns in the last 24 h, from the plugin's emporia_turns.json."""
-    import time
-    try:
-        raw = (json.loads((profile / "emporia_turns.json").read_text()) or {}).get("turns") or []
-        cutoff = time.time() - 86400
-        return sum(1 for t in raw if isinstance(t, (int, float)) and t > cutoff)
-    except (OSError, ValueError, AttributeError):
-        return 0
+    """Relay-started agent turns in the last 24 h, from the plugin's turn counter."""
+    from emporia import analytics
+    return analytics.turns_used(profile)
 
 
 def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
