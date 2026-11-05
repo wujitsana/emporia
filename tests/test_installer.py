@@ -295,26 +295,41 @@ def test_an_agent_profile_never_gets_the_relays_stripe_settings(tmp_path, monkey
     assert oct((agent / ".env").stat().st_mode)[-3:] == "600" == oct((agent / "config.yaml").stat().st_mode)[-3:]
 
 
-def test_the_freshest_nous_login_wins(tmp_path, monkeypatch):
-    """P108: a fresh login at the data root lost to an expired profile file
-    because the profile file was checked first."""
-    import os
+def _jwt(exp: float) -> str:
+    import base64
+    import json as _json
+    body = base64.urlsafe_b64encode(_json.dumps({"exp": int(exp)}).encode()).decode().rstrip("=")
+    return f"h.{body}.s"
 
+
+def test_the_nous_token_comes_from_hermes_never_from_auth_json(tmp_path, monkeypatch):
+    """Catalog rule 11: the installer used to read auth.json itself, refresh the token as
+    Hermes's client and write it back. Now: the flag, a current EMPORIA_NOUS_JWT, else Hermes
+    for this profile; auth.json is never opened, so it is never changed."""
+    import time
+
+    from emporia import nous_token
     profile = tmp_path / "profile"
     profile.mkdir()
-    stale, fresh = profile / "auth.json", tmp_path / "data" / "auth.json"
-    fresh.parent.mkdir()
-    stale.write_text('{"providers": {"nous": {"access_token": "old"}}}')
-    fresh.write_text('{"providers": {"nous": {"access_token": "new"}}}')
-    # Far-future times: /opt/data/auth.json and ~/auth.json are fixed
-    # candidates too, and a real one on this machine must never win here.
-    future = 4_000_000_000
-    os.utime(stale, (future, future))
-    os.utime(fresh, (future + 100, future + 100))
-    monkeypatch.setenv("HERMES_DATA_DIR", str(fresh.parent))
-    assert installer._find_auth_json(profile) == fresh
-    os.utime(fresh, (future - 100, future - 100))
-    assert installer._find_auth_json(profile) == stale
+    auth = profile / "auth.json"
+    auth.write_text('{"providers": {"nous": {"access_token": "from-the-file", "refresh_token": "r"}}}')
+    before = auth.read_bytes()
+    asked = []
+    current = _jwt(time.time() + 3600)
+    monkeypatch.setattr(nous_token, "from_hermes", lambda p=None: asked.append(p) or current)
+
+    assert installer.resolve_nous_token("explicit", profile_dir=profile) == "explicit"
+    monkeypatch.setenv("EMPORIA_NOUS_JWT", current)
+    assert installer.resolve_nous_token(None, profile_dir=profile) == current and asked == []
+    monkeypatch.setenv("EMPORIA_NOUS_JWT", _jwt(time.time() - 60))          # expired: ask Hermes
+    assert installer.resolve_nous_token(None, profile_dir=profile) == current and asked == [profile]
+    monkeypatch.setattr(nous_token, "from_hermes", lambda p=None: None)        # no login: key_only
+    assert installer.resolve_nous_token(None, profile_dir=profile) is None
+    assert auth.read_bytes() == before
+    assert not hasattr(installer, "_find_auth_json") and not hasattr(installer, "_try_refresh_nous")
+    repo = _INSTALLER_PATH.parent.parent
+    src = (repo / "installer" / "install.py").read_text() + (repo / "scripts" / "seed_demo_relay.py").read_text()
+    assert '"auth.json"' not in src and "refresh_token" not in src
 
 
 def test_each_agent_profile_shares_the_relay_but_owns_its_identity(tmp_path, monkeypatch):

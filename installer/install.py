@@ -119,182 +119,46 @@ def _guardrails_env_lines(*, disabled: bool = False) -> list[str]:
     return ["EMPORIA_GUARDRAILS_MODE=off" if disabled else "EMPORIA_GUARDRAILS_MODE=enforce"]
 
 
-def _find_auth_json(profile_dir: Path | None = None) -> Path | None:
-    """Walk common locations to find auth.json.
-
-    `hermes auth add nous` writes the live credential into the *active Hermes
-    profile's own* auth.json (`<profile_dir>/auth.json`) — not a data-root or
-    home-root file. That profile dir varies with `home_mode`: it can be
-    `/opt/data/profiles/<name>`, `~/profiles/<name>`, or `~/.hermes/profiles/<name>`.
-    Check the profile-scoped file first (most specific, most likely to be fresh),
-    then fall back to the legacy data-root/home-root locations.
-    """
-    if profile_dir is None:
-        profile_dir = find_profile_dir_from_cwd()
-        if profile_dir is None:
-            env_name = os.getenv("HERMES_PROFILE") or os.getenv("HERMES_AGENT_ID")
-            if env_name:
-                profile_dir = find_profile_dir_by_name(env_name)
-
-    candidates = []
-    if profile_dir:
-        candidates.append(profile_dir / "auth.json")
-    candidates += [
-        Path(os.getenv("HERMES_DATA_DIR", "")) / "auth.json",
-        Path("/opt/data/auth.json"),
-        Path.home() / "auth.json",
-    ]
-    # P108: the newest file, not the first that exists. `hermes auth add nous`
-    # run without `-p` writes the fresh login to the data root, leaving an
-    # expired profile file first in line — and an expired token stopped the
-    # search, so agents registered key_only despite a valid login on disk.
-    found = [p for p in dict.fromkeys(candidates) if p.is_file() and p.stat().st_size > 10]
-    return max(found, key=lambda p: p.stat().st_mtime) if found else None
-
-
-def _try_refresh_nous(nous: dict, auth_path: Path) -> str | None:
-    """Attempt silent OAuth2 refresh-token grant. Returns new access_token or None."""
-    refresh_token = nous.get("refresh_token", "")
-    client_id = nous.get("client_id", "hermes-cli")
-    portal_base = nous.get("portal_base_url", "https://portal.nousresearch.com").rstrip("/")
-    if not refresh_token:
-        return None
-    try:
-        # OIDC discovery → token_endpoint
-        try:
-            with urllib.request.urlopen(
-                f"{portal_base}/.well-known/openid-configuration", timeout=5
-            ) as r:
-                token_url = json.loads(r.read()).get("token_endpoint", "")
-        except Exception:
-            token_url = ""
-        if not token_url:
-            token_url = f"{portal_base}/api/oauth/token"
-
-        payload = urllib.parse.urlencode({
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token,
-            "client_id": client_id,
-        }).encode()
-        req = urllib.request.Request(
-            token_url, data=payload,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        with urllib.request.urlopen(req, timeout=10) as r:
-            resp = json.loads(r.read())
-
-        new_access = resp.get("access_token", "")
-        if not new_access:
-            return None
-
-        # Write new tokens back to auth.json so Hermes stays in sync
-        try:
-            auth_data = json.loads(auth_path.read_text())
-            n = auth_data.setdefault("providers", {}).setdefault("nous", {})
-            n["access_token"] = new_access
-            if "refresh_token" in resp:
-                n["refresh_token"] = resp["refresh_token"]
-            if "expires_in" in resp:
-                exp = (datetime.datetime.now(datetime.timezone.utc)
-                       + datetime.timedelta(seconds=int(resp["expires_in"])))
-                n["expires_at"] = exp.isoformat()
-            auth_path.write_text(json.dumps(auth_data, indent=2))
-        except Exception:
-            pass  # auth.json update is best-effort
-        return new_access
-    except urllib.error.HTTPError as e:
-        try:
-            detail = json.loads(e.read()).get("error_description", e.reason)
-        except Exception:
-            detail = e.reason
-        print(f"  Refresh failed: {e.code} {detail}")
-        return None
-    except Exception as e:
-        print(f"  Refresh failed: {type(e).__name__}: {e}")
-        return None
-
-
 def _nous_access_token_expired(token: str, leeway_sec: int = 30) -> bool:
-    """True if JWT exp is in the past (signature not verified — expiry check only)."""
-    try:
-        import jwt
-
-        payload = jwt.decode(
-            token,
-            options={
-                "verify_signature": False,
-                "verify_aud": False,
-                "verify_iss": False,
-            },
-        )
-        exp = payload.get("exp")
-        if exp is None:
-            return False
-        return datetime.datetime.now(datetime.timezone.utc).timestamp() >= float(exp) - leeway_sec
-    except Exception:
-        return True
+    """True if the JWT's exp is in the past, or it has none we can read (not verified — the
+    relay verifies the token; this only decides whether to ask Hermes for a current one)."""
+    from emporia import nous_token
+    exp = nous_token.expires_at(token)
+    return exp is None or datetime.datetime.now(datetime.timezone.utc).timestamp() >= exp - leeway_sec
 
 
 def resolve_nous_token(
     explicit: str | None = None, profile_dir: Path | None = None
 ) -> str | None:
-    """
-    Return a valid Nous JWT.
+    """A current Nous access token, or None (the agent then registers key_only).
 
-    Priority: --nous-token arg → non-expired EMPORIA_NOUS_JWT env → auth.json (with
-    silent refresh if expired). Returns None if no token is available and
-    prints a clear message so the caller can warn about key_only mode.
+    Priority: --nous-token arg → a non-expired EMPORIA_NOUS_JWT → Hermes, asked for this
+    profile's own login (`nous_token.from_hermes`).
 
-    `profile_dir`: the active Hermes profile dir, if already known by the
-    caller (checked first by `_find_auth_json` — see its docstring for why).
+    Catalog rule 11: this used to read Hermes's auth.json itself, refresh an expired token
+    against the Nous portal as Hermes's own client, and write the new tokens back. Hermes
+    owns that login: its refresh token rotates under Hermes's lock, and a second refresher
+    races it (a reused refresh token revokes the whole session). Hermes is asked instead,
+    and does its own refresh.
     """
     # 1. Explicit CLI arg
     if explicit:
         return explicit
 
-    # 2. Env var only if not expired (stale profile .env must not block refresh)
+    # 2. Env var only if not expired (stale profile .env must not block a current login)
     env_tok = os.getenv("EMPORIA_NOUS_JWT", "").strip()
     if env_tok and not _nous_access_token_expired(env_tok):
         return env_tok
 
-    # 3. auth.json
-    auth_path = _find_auth_json(profile_dir)
-    if not auth_path:
-        return None
-    try:
-        auth_data = json.loads(auth_path.read_text())
-        nous = auth_data.get("providers", {}).get("nous", {})
-        access = nous.get("access_token", "")
-        if not access:
-            return None
-
-        expires_at = nous.get("expires_at", "")
-        now = datetime.datetime.now(datetime.timezone.utc)
-        if expires_at:
-            try:
-                exp = datetime.datetime.fromisoformat(expires_at)
-                if now < exp - datetime.timedelta(seconds=30):
-                    return access  # still valid
-            except Exception:
-                pass
-
-        # Expired — try silent refresh
-        print("  Nous token expired — attempting silent refresh…")
-        refreshed = _try_refresh_nous(nous, auth_path)
-        if refreshed:
-            print("  Nous token refreshed.")
-            return refreshed
-
-        print("  Nous token expired and silent refresh failed (refresh_token itself may")
-        print("  be expired/revoked — this requires a human to re-approve, not something")
-        print("  this installer can do unattended). To restore nous_verified trust:")
-        print("    hermes auth add nous --type oauth --no-browser --manual-paste")
-        print("  This prints a URL + device code; open it, approve, then re-run the")
-        print("  installer (or `scripts/seed_demo_relay.py`) — no extra flags needed,")
-        print("  the fresh token will be picked up automatically.")
-        return None
-    except Exception:
-        return None
+    # 3. Hermes, for this profile
+    from emporia import nous_token
+    token = nous_token.from_hermes(profile_dir)
+    if token:
+        return token
+    print("  No current Nous login from Hermes for this profile. To restore nous_verified trust:")
+    print("    hermes auth add nous --type oauth --no-browser --manual-paste")
+    print("  then run this again; the fresh login is picked up automatically.")
+    return None
 
 
 def _hermes_profile_exists(name: str) -> bool:
@@ -1961,8 +1825,8 @@ def main() -> None:
     if not args.dry_run:
         _ensure_project_dependencies(dry_run=False)
 
-    # Detect current profile first — Nous auth.json lives inside it (see
-    # _find_auth_json), so token resolution needs this to check the right file.
+    # Detect current profile first — Hermes is asked for *this* profile's Nous
+    # login (resolve_nous_token), so token resolution needs to know which it is.
     # 1. Walk up from CWD
     current_profile_dir = find_profile_dir_from_cwd()
     # 2. Fall back to HERMES_PROFILE env var
@@ -1976,7 +1840,7 @@ def main() -> None:
         print("No profile detected from CWD — using relay URL defaults")
 
     # Resolve Nous JWT once up front — all operations share the same token.
-    # Falls back to auth.json with silent refresh; warns if unavailable.
+    # Falls back to asking Hermes for this profile's login; warns if unavailable.
     nous_token = resolve_nous_token(args.nous_token, profile_dir=current_profile_dir)
     if nous_token:
         print("  Nous token: ready (agents will register as nous_verified)")

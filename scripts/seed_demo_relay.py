@@ -72,68 +72,19 @@ RELAY = os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088").rstrip("/")
 GATEWAY = os.getenv("HERMES_DEMO_GATEWAY_URL", "https://hermes-agent.nousresearch.com")
 DB_PATH = os.getenv("EMPORIA_DB_PATH", os.path.expanduser("~/.hermes/emporia.sqlite3"))
 
-# Pick up Nous JWT from env (written by installer) or auth.json fallback.
-# `hermes auth add nous` writes the live credential into the *active Hermes
-# profile's own* auth.json — not a data-root file — and that profile dir
-# varies with home_mode (/opt/data/profiles/<name>, ~/profiles/<name>,
-# ~/.hermes/profiles/<name>). Check profile-scoped candidates first, same
-# walk-up-from-script-location approach as _load_dotenv() above, then fall
-# back to the legacy data-root location for compatibility.
-def _auth_json_candidates() -> list[Path]:
-    candidates = []
-    for parent in Path(__file__).resolve().parents:
-        f = parent / "auth.json"
-        if (parent / "config.yaml").exists():
-            candidates.append(f)
-    candidates.append(Path("/opt/data/auth.json"))
-    return candidates
-
+# The Nous JWT: EMPORIA_NOUS_JWT while it is current, else asked of Hermes for the
+# profile this script runs in (catalog rule 11: Hermes's auth.json is Hermes's to read
+# and refresh, never this script's).
 def _nous_jwt() -> str | None:
+    from emporia import nous_token
     token = os.getenv("EMPORIA_NOUS_JWT", "")
-    if token:
-        # Stale profile .env tokens must not win over auth.json refresh
-        try:
-            import importlib.util
-
-            install_py = Path(__file__).resolve().parents[1] / "installer" / "install.py"
-            if install_py.exists():
-                spec = importlib.util.spec_from_file_location("emporia_installer", install_py)
-                if spec and spec.loader:
-                    mod = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(mod)
-                    if getattr(mod, "_nous_access_token_expired", None) and mod._nous_access_token_expired(token):
-                        token = ""
-        except Exception:
-            pass
-    if token:
+    if nous_token.is_current(token):
         return token
-    for auth_file in _auth_json_candidates():
-        if auth_file.exists():
-            try:
-                d = json.loads(auth_file.read_text())
-                tok = d.get("providers", {}).get("nous", {}).get("access_token")
-                if tok:
-                    return tok
-            except Exception:
-                pass
-    try:
-        import importlib.util
-
-        install_py = Path(__file__).resolve().parents[1] / "installer" / "install.py"
-        if install_py.exists():
-            spec = importlib.util.spec_from_file_location("emporia_installer", install_py)
-            if spec and spec.loader:
-                mod = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(mod)
-                for parent in Path(__file__).resolve().parents:
-                    if (parent / "config.yaml").exists():
-                        refreshed = mod.resolve_nous_token(None, profile_dir=parent)
-                        if refreshed:
-                            os.environ["EMPORIA_NOUS_JWT"] = refreshed
-                            return refreshed
-    except Exception:
-        pass
-    return None
+    profile = next((p for p in Path(__file__).resolve().parents if (p / "config.yaml").exists()), None)
+    fresh = nous_token.from_hermes(profile)
+    if fresh:
+        os.environ["EMPORIA_NOUS_JWT"] = fresh
+    return fresh
 
 
 # Resolved at seed() time after dotenv (module-level snapshot can miss profile .env ordering).
