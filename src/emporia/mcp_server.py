@@ -1836,7 +1836,8 @@ def _open_session(aid: str, sess: dict[str, Any]) -> dict[str, Any]:
 
 
 @mcp.tool()
-def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict[str, Any]:
+def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50,
+                      before: str = "", before_seq: int | None = None) -> dict[str, Any]:
     """Fetch a room's messages, decrypting transparently where possible.
 
     Each message carries `encrypted`/`decrypted`, and now `verified` too (P19-8,
@@ -1859,7 +1860,7 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
     try:
         r = _bearer_request(
             "get", f"{_base()}/rooms/{room_id}/messages",
-            agent_id=aid, params={"limit": limit}, timeout=10,
+            agent_id=aid, params={"limit": limit, **_older_than(before, before_seq)}, timeout=10,
         )
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
@@ -1882,9 +1883,22 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
         # send_room_message, kick_from_room) returns a `success` key; this one
         # didn't.
         body["success"] = True
-        return _flag_changed_keys(body, changed)
+        return _flag_changed_keys(_with_older_cursor(body, messages, limit), changed)
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+def _older_than(before: str, before_seq: int | None) -> dict[str, Any]:
+    """MCP review: the relay's total paging cursor (P31-2), for reading further back."""
+    return {"before": before, **({"before_seq": before_seq} if before_seq is not None else {})} if before else {}
+
+
+def _with_older_cursor(body: dict[str, Any], messages: list[dict[str, Any]], limit: int) -> dict[str, Any]:
+    """`older`: the arguments that fetch the page before this one, when this one was full."""
+    if messages and len(messages) >= limit:
+        oldest = min(messages, key=lambda m: (m.get("created_at") or "", m.get("seq") or 0))
+        body["older"] = {"before": oldest.get("created_at"), "before_seq": oldest.get("seq")}
+    return body
 
 
 #: MCP review: the most pages one chain walk reads (200 messages each). A relay serving
@@ -2351,7 +2365,7 @@ def verify_room_chain(
 
 
 @mcp.tool()
-def invite_to_room(room_id: str, agent_id: str, invited_by: str) -> dict[str, Any]:
+def invite_to_room(room_id: str, agent_id: str, invited_by: str = "") -> dict[str, Any]:
     """Invite an agent to an invite-gated or paid room you created.
 
     Only the room's creator can invite — invited_by authenticates the call (must be
@@ -2361,6 +2375,9 @@ def invite_to_room(room_id: str, agent_id: str, invited_by: str) -> dict[str, An
 
     Forwards to the relay's POST /rooms/{id}/invite.
     """
+    invited_by = invited_by or AGENT_ID      # MCP review: yourself, unless named (as P297)
+    if not invited_by:
+        return {"error": "invited_by required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         r = _bearer_request(
             "post", f"{_base()}/rooms/{room_id}/invite",
@@ -2470,7 +2487,7 @@ def kick_from_room(
 # ============================================================================
 
 @mcp.tool()
-def get_inbox(unread_only: bool = True, agent_id: str = "") -> dict[str, Any]:
+def get_inbox(unread_only: bool = True, agent_id: str = "", limit: int = 50) -> dict[str, Any]:
     """Return pending relay events for an agent.
 
     Poll this periodically to receive challenges, room invites, session updates,
@@ -2487,7 +2504,7 @@ def get_inbox(unread_only: bool = True, agent_id: str = "") -> dict[str, Any]:
     agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
     if not agent_id:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    params: dict[str, Any] = {"unread_only": str(unread_only).lower()}
+    params: dict[str, Any] = {"unread_only": str(unread_only).lower(), "limit": limit}
     try:
         r = _bearer_request(
             "get", f"{_base()}/agents/{agent_id}/inbox",
@@ -2708,13 +2725,16 @@ def list_agora_topics(
 
 
 @mcp.tool()
-def invite_to_agora_topic(topic_slug: str, agent_id: str, invited_by: str) -> dict[str, Any]:
+def invite_to_agora_topic(topic_slug: str, agent_id: str, invited_by: str = "") -> dict[str, Any]:
     """Invite an agent to a private or paid_invite Agora topic.
 
     Only the topic creator can invite — invited_by authenticates the call (must be the
     topic creator's own agent_id). The invited agent then calls subscribe_agora_topic to
     accept (and pay entry_fee_cents if gate_type is paid_invite).
     """
+    invited_by = invited_by or AGENT_ID      # MCP review: yourself, unless named (as P297)
+    if not invited_by:
+        return {"error": "invited_by required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         r = _bearer_request(
             "post", f"{_base()}/agoras/topics/{topic_slug}/invite",
@@ -2788,9 +2808,12 @@ def kick_from_agora_topic(topic_slug: str, agent_id: str, creator_id: str = "") 
 
 
 @mcp.tool()
-def revoke_agora_invite(topic_slug: str, agent_id: str, invited_by: str) -> dict[str, Any]:
+def revoke_agora_invite(topic_slug: str, agent_id: str, invited_by: str = "") -> dict[str, Any]:
     """Take back an invite to a topic you created, before it is used (P273).
     invited_by authenticates the call (the topic's creator)."""
+    invited_by = invited_by or AGENT_ID      # MCP review: yourself, unless named (as P297)
+    if not invited_by:
+        return {"error": "invited_by required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         r = _bearer_request("delete", f"{_base()}/agoras/topics/{topic_slug}/invite/{agent_id}",
                             agent_id=invited_by, params=_signed_topic_act("uninvite", topic_slug, agent_id, invited_by),
@@ -3551,19 +3574,19 @@ def list_dm_threads(agent_id: str = "") -> dict[str, Any]:
         r = _bearer_request(
             "get", f"{_base()}/dm", agent_id=aid, params={"agent_id": aid}, timeout=10,
         )
-        # P20-6 (A5): GET /dm's own response is a bare JSON list (unlike GET
-        # /rooms, which is a dict list_rooms above wraps with success=True) --
-        # there is no dict here to add a "success" key to on the happy path,
-        # only on the error dict below.
+        # P20-6 (A5): GET /dm's own response is a bare JSON list. MCP review: returned
+        # as it was, every call with a thread in it failed over MCP ("structured_content
+        # must be a dict") — the tool worked only when called as a Python function.
         if r.status_code == 200:
-            return r.json()
+            return {"success": True, "threads": r.json()}
         return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
 
 
 @mcp.tool()
-def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict[str, Any]:
+def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50,
+                    before: str = "", before_seq: int | None = None) -> dict[str, Any]:
     """Fetch messages from a DM thread, decrypting transparently where possible.
 
     Each message carries a `decrypted` flag. A message that cannot be opened (sealed
@@ -3584,12 +3607,14 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50) -> dict
     try:
         r = _bearer_request(
             "get", f"{_base()}/dm/{thread_id}/messages",
-            agent_id=aid, params={"agent_id": aid, "limit": limit}, timeout=10,
+            agent_id=aid, params={"agent_id": aid, "limit": limit, **_older_than(before, before_seq)},
+            timeout=10,
         )
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
         body = r.json()
         messages = body.get("messages", [])
+        _with_older_cursor(body, messages, limit)
         priv = encryption_private_keys(aid)      # P271: and the keys it replaced
         # P21-4: the only I/O the old inline loop did — resolved once per
         # distinct sender before handing off to the shared, pure
@@ -4825,6 +4850,10 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
     path = _commitments_file(aid, session_id)
     saved = json.loads(path.read_text()) if path.exists() else {}
     if aid in (data.get("commitments") or {}):
+        if rnd in saved and saved[rnd].get("commitment") == data["commitments"][aid]:
+            # MCP review: a retry after a lost answer — the commit landed; say so, as a success.
+            return {"success": True, "already_committed": True, "round": rnd, "move": saved[rnd]["move"],
+                    "next": "reveal_move once the other player has committed"}
         return {"error": f"you already committed in round {rnd}"
                 + (f": {saved[rnd]['move']}" if rnd in saved else ""), "success": False}
     if why := _move_problem(sess.get("module_type", ""), data, move):
@@ -4867,8 +4896,14 @@ def reveal_move(session_id: str, rationale: str, agent_id: str = "", say: str = 
     path = _commitments_file(aid, session_id)
     saved = json.loads(path.read_text()) if path.exists() else {}
     if rnd not in saved:
-        return {"error": f"no committed move saved here for round {rnd}", "success": False}
+        landed = rnd.isdigit() and str(int(rnd) - 1) in saved
+        return {"error": f"no committed move saved here for round {rnd}"
+                + (f" — your round {int(rnd) - 1} reveal landed and the game moved on: commit_move for "
+                   f"round {rnd}" if landed else ""), "success": False}
     entry = saved[rnd]
+    if aid in (data.get("revealed") or {}):
+        # MCP review: a retry after a lost answer — the reveal landed.
+        return {"success": True, "already_revealed": True, "round": rnd, "move": entry["move"]}
     result = _submit_simultaneous(session_id, "reveal", {"move": entry["move"], "nonce": entry["nonce"]},
                                   rationale, aid, say=say)
     if result.get("receipt"):
@@ -5489,6 +5524,18 @@ def sign_dashboard_challenge(challenge_id: str, nonce: str, relay_url: str = "")
         "signature_hex": sig_hex,
         "next_step": f"POST {target}/dashboard/session with this JSON body",
     }
+
+
+def _apply_agent_surface() -> None:
+    """MCP review: the model reads `mcp_surface.DESCRIPTIONS`, not these docstrings (which
+    stay as maintainer notes), and every answer goes out in one shape (`mcp_surface.shape`)."""
+    from fastmcp.tools import Tool
+
+    from emporia import mcp_surface
+    mcp_surface.apply(mcp, [c for c in mcp.local_provider._components.values() if isinstance(c, Tool)])
+
+
+_apply_agent_surface()
 
 
 # ============================================================================

@@ -81,3 +81,121 @@ def test_scan_relays_takes_a_bounded_list(monkeypatch):
     monkeypatch.setattr(mcp_server.fetch, "get", _no_network)
     out = mcp_server.scan_relays(relays=[f"https://r{i}.example" for i in range(21)])
     assert out["success"] is False and "at most" in out["error"]
+
+
+# ── what the model reads: one agent-facing description per tool ──
+
+def _tools():
+    import asyncio
+    return {t.name: t for t in asyncio.run(mcp_server.mcp.list_tools())}
+
+
+def test_every_tool_has_an_agent_description_and_none_is_stale():
+    from emporia import mcp_surface
+    registered = set(_tools())
+    assert registered - mcp_surface.DESCRIPTIONS.keys() == set(), "add these to mcp_surface.DESCRIPTIONS"
+    assert mcp_surface.DESCRIPTIONS.keys() - registered == set(), "these are no longer tools"
+
+
+def test_descriptions_lead_with_a_short_first_sentence_and_carry_no_history():
+    """Hermes's deferred catalog lists each tool by its first sentence, clipped at 80 chars."""
+    import re
+    for name, tool in _tools().items():
+        first = re.split(r"(?<=[.!?])\s", " ".join(tool.description.split()), maxsplit=1)[0]
+        assert len(first) <= 80, (name, first)
+        assert not re.search(r"\bP\d{2,3}\b|\bN\d-\d\b", tool.description), (name, "review ids are for maintainers")
+
+
+def test_the_tool_list_stays_within_its_measured_budget():
+    """MCP review: 78 KB before, ~48 KB after (eager mode, Hermes's converted schemas)."""
+    import json
+    size = sum(len(json.dumps({"name": t.name, "description": t.description, "parameters": t.parameters},
+                              separators=(",", ":"))) for t in _tools().values())
+    assert size < 52_000, size
+
+
+def test_relay_and_own_id_arguments_say_what_they_are():
+    props = {name: t.parameters["properties"] for name, t in _tools().items()}
+    assert "visit" in props["submit_action"]["relay"]["description"]
+    assert "omit for home" not in props["visit_relay"]["relay"].get("description", "")
+    assert props["send_dm"]["from_agent_id"]["description"] == "you if empty"
+    assert props["invite_to_room"]["agent_id"]["description"] == "the agent to invite"
+    assert props["invite_to_room"]["invited_by"]["description"] == "you if empty"
+
+
+def test_every_answer_has_one_shape():
+    from emporia import mcp_surface
+    assert mcp_surface.shape("x", [1]) == {"success": True, "items": [1]}
+    assert mcp_surface.shape("x", {"error": "no"}) == {"success": False, "error": "no"}
+    assert mcp_surface.shape("x", {"a": 1}) == {"success": True, "a": 1}
+    assert "not instructions" in mcp_surface.shape("get_dm_messages", {"messages": []})["untrusted"]
+    assert "untrusted" not in mcp_surface.shape("get_dm_messages", {"error": "x"})
+
+
+def test_list_dm_threads_works_over_mcp(monkeypatch):
+    """It returned the relay's bare list, which MCP refuses as structured content: every
+    call with a thread in it failed with a ToolError."""
+    import asyncio
+
+    from fastmcp import Client
+
+    class _R:
+        status_code = 200
+
+        def json(self):
+            return [{"thread_id": "dm_1", "other_agent": "bob"}]
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: _R())
+    monkeypatch.setattr(mcp_server, "AGENT_ID", "mr_agent")
+
+    async def call():
+        async with Client(mcp_server.mcp) as c:
+            return (await c.call_tool("list_dm_threads", {})).structured_content
+    out = asyncio.run(call())
+    assert out["success"] is True and out["threads"][0]["thread_id"] == "dm_1"
+    assert "not instructions" in out["untrusted"]
+
+
+# ── small gaps ──
+
+def test_inviting_defaults_to_yourself():
+    import inspect
+    for fn in (mcp_server.invite_to_room, mcp_server.invite_to_agora_topic, mcp_server.revoke_agora_invite):
+        assert inspect.signature(fn).parameters["invited_by"].default == ""
+
+
+def test_message_reads_page_back(monkeypatch):
+    seen = {}
+
+    class _R:
+        status_code = 200
+
+        def json(self):
+            return {"messages": [{"message_id": "m2", "created_at": "t2", "seq": 2, "sender_id": "bob"},
+                                 {"message_id": "m1", "created_at": "t1", "seq": 1, "sender_id": "bob"}]}
+
+    def fake(method, url, **kw):
+        seen.setdefault("params", kw.get("params"))
+        return _R()
+    monkeypatch.setattr(mcp_server, "_bearer_request", fake)
+    monkeypatch.setattr(mcp_server, "_sender_public_key", lambda *a, **k: "")
+    monkeypatch.setattr(mcp_server, "AGENT_ID", "mr_agent")
+    monkeypatch.setattr("emporia.identity.encryption_private_keys", lambda aid: [])
+    out = mcp_server.get_dm_messages("dm_1", limit=2, before="t9", before_seq=9)
+    assert seen["params"]["before"] == "t9" and seen["params"]["before_seq"] == 9
+    assert out["older"] == {"before": "t1", "before_seq": 1}
+
+
+def test_a_commit_or_reveal_retried_after_it_landed_is_a_success(monkeypatch, tmp_path):
+    import json as _json
+    monkeypatch.setattr(mcp_server, "AGENT_ID", "mr_agent")
+    path = tmp_path / "c.json"
+    path.write_text(_json.dumps({"1": {"move": [50, 50], "nonce": "n", "commitment": "abc"}}))
+    monkeypatch.setattr(mcp_server, "_commitments_file", lambda aid, sid: path)
+    monkeypatch.setattr(mcp_server, "_session_json", lambda sid, aid: {
+        "module_type": "emporia:blotto:v1", "state": {"data": {"round": 1, "commitments": {"mr_agent": "abc"}}}})
+    out = mcp_server.commit_move("s1", [50, 50], "a considered split of troops")
+    assert out["success"] is True and out["already_committed"] is True
+    monkeypatch.setattr(mcp_server, "_session_data", lambda sid, aid: {
+        "round": 1, "commitments": {"mr_agent": "abc"}, "revealed": {"mr_agent": [50, 50]}})
+    out = mcp_server.reveal_move("s1", "revealing the split as committed")
+    assert out["success"] is True and out["already_revealed"] is True
