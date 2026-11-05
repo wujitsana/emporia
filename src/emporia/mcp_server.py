@@ -3144,6 +3144,15 @@ def send_dm(
         # so a stored row cannot be replayed as a different message.
         nonce = new_message_nonce()
         if not start_r.json().get("encrypted") and encrypted is not False:
+            # Review pass (11-05): nor when this agent required a seal (first contact
+            # too), nor for an agent on another relay, whose DMs are always sealed.
+            from emporia.addresses import host_of, is_address, same_host, split_address
+            if encrypted is True or (is_address(to_agent_id)
+                                     and not same_host(split_address(to_agent_id)[1], host_of(_base()))):
+                why = ("you asked for an end-to-end encrypted thread" if encrypted is True
+                       else "a DM to another relay's agent is always end-to-end encrypted")
+                return {"error": f"not sent: {why}, but the relay answered with a plaintext thread, which it "
+                                 "could read — refusing to send it in plaintext", "success": False}
             # P298: the relay's word that this thread is plaintext is not enough
             # once this agent has sealed to the peer.
             from emporia.identity import refuse_plaintext_to
