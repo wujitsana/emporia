@@ -252,7 +252,7 @@
 
 .toolHead {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 1ch;
   width: 100%;
   min-height: 36px;
@@ -707,6 +707,20 @@
   .input {
     font-size: 16px; /* no zoom-on-focus on a phone */
   }
+}
+
+/* The kit gives every `ul li` an inline :before spacer (global.css), which
+   opens an empty line above a block button. Lists here are rows, not prose. */
+.typeahead > li::before,
+.sessionList > li::before {
+  content: none;
+  display: none;
+}
+
+/* A flex column shrinks its scrollable children to nothing when it overflows;
+   transcript items keep their height and the transcript scrolls instead. */
+.transcript > * {
+  flex-shrink: 0;
 }
 
 /* A short screen (the 540 × 540 capture frame, a phone held sideways): the
