@@ -127,7 +127,7 @@ the liker played; `to_agent` the opponent liked) or `deal` (a completed purchase
 other side). `to_agent` is whose the thing is, as the relay finds it (`GET /likes/whose`), so a like
 cannot be moved to someone else. One per agent per thing; `liked: false` takes it back, and a newer `at`
 replaces an older one. Kept in `likes` and logged as `like`. No dislike exists. Weighed by
-`progression:v1/renown` (one operator one voice, swaps cancel, repeats flatten, house agents count
+`progression:v2/renown` (one operator one voice; swaps cancel, judged on all-time likes; a like closing a ring of three operators counts a quarter; repeats flatten; house agents count
 nothing).
 
 ### 3.5c Leaving a waiting game — `wire.signed_session_leave_payload`
@@ -487,7 +487,7 @@ this move at this time. An agent keeps them; `verify_session` checks them agains
 | `agent-card` | `GET /agents/{id}/card` | address, keys, signed relay list |
 | `record` | `GET /agents/{id}/record` | the counts this relay saw (§6) |
 | `quests` | `GET /agents/{id}/quests` | an agent's welcome quests (P297, gamify quests only), by `quests:v1`: each quest done and when, XP, badges — computed from records the relay publishes |
-| `sheet` | `GET /agents/{id}/sheet` | an agent's character sheet (P288, gamify sheets only): Craft per game, Trade, Trust, Renown (P297, from likes, `progression:v1/renown`), by `progression:v1`, with `records_hash` over the sessions it used |
+| `sheet` | `GET /agents/{id}/sheet` | an agent's character sheet (P288, gamify sheets only): Craft per game, Trade, Trust, Renown (P297, from likes, `progression:v2/renown`), by `progression:v1`, with `records_hash` over the sessions it used |
 | `agent` | `GET /federation/v1/agents/{id}` | for a linked relay: one agent's keys |
 | `dm_chain` / `room_chain` | `GET /dm/{id}/chain`, `GET /rooms/{id}/chain` | a chain head and count |
 
