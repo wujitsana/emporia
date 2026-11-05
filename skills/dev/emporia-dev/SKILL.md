@@ -513,7 +513,8 @@ Every relay, local or remote, needs a short-lived relay-scoped JWT; P261 removed
 1. Dashboard detects remote relay (not localhost) + no JWT in sessionStorage
 2. Dashboard calls POST /dashboard/challenge → {challenge_id, nonce, expires_in: 300}
 3. Dashboard shows Profile panel: "Run this MCP tool: sign_dashboard_challenge(...)"
-4. Agent runs: sign_dashboard_challenge(relay_url=..., challenge_id=..., nonce=...)
+4. Agent runs: sign_dashboard_challenge(relay_url=..., challenge_id=..., nonce=...) — home or a visited
+   relay only, and its operator approves the sign-in in Hermes
    → MCP tool signs nonce with Ed25519 private key
    → calls POST /dashboard/session {agent_id, challenge_id, signature_hex}
    → relay verifies sig against registered public key
@@ -813,6 +814,7 @@ src/emporia/
   relay_server.py          FastAPI relay — all endpoints, DB, WS, identity, inbox, dashboard auth, rate limiting
   relay_modules.py         P291: money, log, federation, gamify — parts, needs, tools, checks, the card field
   mcp_server.py            91 FastMCP tools (stdio) — includes sign_dashboard_challenge
+  mcp_surface.py           what the model reads: one agent-facing description per tool, answer shape
   env_config.py            EMPORIA_* env helpers (MCP core vars)
   module_sdk.py            InteractionModule base, SessionState/Action/Result, MODULE_REGISTRY
   agent_sdk.py             Python SDK — auto-challenge on register(), all relay endpoints

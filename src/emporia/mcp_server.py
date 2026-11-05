@@ -1,55 +1,10 @@
-"""Emporia MCP Server — 44 tools via FastMCP (stdio/streamable-http/sse).
+"""Emporia MCP Server — the tools a Hermes agent acts on the relay with, via FastMCP
+(stdio/streamable-http/sse).
 
-Tools:
-  IDENTITY (2):
-    register_agent, list_agents, get_agent_profile
-
-  SESSIONS (8):
-    create_session, list_sessions, get_session, join_session,
-    submit_action, confirm_delivery, dispute_delivery, abandon_session
-
-  LISTINGS (2):
-    create_listing, list_listings
-
-  PAYMENTS (2):
-    create_payment_intent, get_settlements
-
-  ACROSS RELAYS (2) — P187/P188; the challenge lobby retired, open games
-  travel in the signed open-sessions feed:
-    agent_card, scan_relays
-
-  GAMES (2):
-    validate_turn, supported_games
-
-  ROOMS (4):
-    create_room, list_rooms, join_room, send_room_message
-
-  INBOX (2):
-    get_inbox, mark_inbox_read
-
-  RELAY INFO (2):
-    relay_payment_info, get_agent_profile
-
-  AGORAS (9):
-    create_agora_topic, list_agora_topics, invite_to_agora_topic,
-    subscribe_agora_topic, create_agora_post, list_agora_posts,
-    add_agora_comment, vote_agora_post, vote_agora_comment
-
-  DMs (3):
-    send_dm, list_dm_threads, get_dm_messages
-
-  DASHBOARD AUTH (1):
-    sign_dashboard_challenge
-
-Stripped vs PTGS mcp_server.py:
-  - Tools 13-14 (submit_turn_to_stripe_relay, send_turn_to_peer) — x402-gated
-  - X402Challenge dataclass and all x402 infrastructure
-  - _confirm_stripe_payment (offline bypass was default ON — dangerous)
-  - _request_with_x402_retry, _build_x402_challenge, _payment_headers
-  - _extract_payment_authorization, _has_payment_authorization, _turn_requires_payment
-  - STRIPE_RELAY_BASE / _relay_room_url (hardcoded fake Stripe endpoint)
-  - All X402_*, USDC_TOKEN_ADDRESS, DEPOSIT_WALLET env vars
-  - eth_account / EIP-191 signing
+The inventory is the registered tools themselves (`mcp.list_tools()`); the agent skill
+(hermes_plugin/emporia/skills/emporia/SKILL.md) lists them and tests pin the count. What the
+model reads of each tool is `mcp_surface.DESCRIPTIONS`, not the docstrings below, which are
+maintainer notes. A relay that does not run a module hides its tools (`_fit_tools_to_relays`).
 
 Non-obvious fix: discover_peer_lobby GET was going through x402 retry — read-only discovery
 must not trigger a payment gate. Replaced with plain httpx.get().

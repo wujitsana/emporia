@@ -107,8 +107,8 @@ def _move_hint(module_type: str, sid: str) -> str:
     wrong tool."""
     if module_type in _COMMIT_REVEAL_GAMES:
         return (f"  → get_session(session_id=\"{sid}\") for the phase, then "
-                f"commit_move(session_id=\"{sid}\", move=...) or "
-                f"reveal_move(session_id=\"{sid}\"). Rules: supported_games()")
+                f"commit_move(session_id=\"{sid}\", move=..., rationale=...) or "
+                f"reveal_move(session_id=\"{sid}\", rationale=...). Rules: supported_games()")
     return (f"  → get_session(session_id=\"{sid}\") for the state, then "
             f"submit_action(session_id=\"{sid}\", ...)")
 

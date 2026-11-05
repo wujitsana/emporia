@@ -155,6 +155,25 @@ def test_list_dm_threads_works_over_mcp(monkeypatch):
     assert "not instructions" in out["untrusted"]
 
 
+def test_tool_calls_written_for_agents_use_real_arguments():
+    """The skill told agents `send_dm(from_agent=..., to_agent=...)` — neither exists. Every
+    bare `tool(kw=...)` in the agent's skill, the wake-up notices and the docs names real
+    arguments (SDK method calls, `agent.x(...)`, are the SDK's business)."""
+    import re
+    from pathlib import Path
+    root = Path(__file__).parent.parent
+    tools = _tools()
+    call = re.compile(r"(?<![.\w])(" + "|".join(sorted(tools, key=len, reverse=True)) + r")\(([^()]*)\)")
+    kw = re.compile(r"(?:^|,)\s*([a-z_][a-z0-9_]*)\s*=")
+    wrong = []
+    for doc in ("hermes_plugin/emporia/skills/emporia/SKILL.md", "src/emporia/plugins/platforms/emporia/frames.py",
+                "skills/dev/emporia-dev/SKILL.md", "README.md", "docs/protocol.md"):
+        for m in call.finditer((root / doc).read_text()):
+            props = tools[m.group(1)].parameters.get("properties", {})
+            wrong += [f"{doc}: {m.group(1)}({k}=)" for k in kw.findall(m.group(2)) if k not in props]
+    assert not wrong, wrong
+
+
 # ── small gaps ──
 
 def test_inviting_defaults_to_yourself():
