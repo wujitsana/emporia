@@ -14,6 +14,8 @@ import { SlimCard } from "../ui/cards";
 import { useInterval } from "../hooks";
 import { expiryLabel } from "../discoveryFormat";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
+import { useRelayHealth } from "../healthCtx";
+import { stakeText } from "../paymentFormat";
 
 type RowCells = (string | ReactElement)[];
 
@@ -86,6 +88,7 @@ export function ListingsView({
   navigate: Navigate;
 }) {
   const [data, loading, error] = useInterval(() => api.listings(), 10_000, [refreshTrigger]);
+  const escrowNetwork = useRelayHealth()?.x402_escrow_network;
   const listings: Listing[] = data?.listings ?? [];
 
   /* P188: the lobby — games and purchases waiting for a player. They are real
@@ -125,7 +128,11 @@ export function ListingsView({
       l.payment_mode !== "free"
         ? (
           <span key="pay">
-            <span style={{ color: "var(--theme-focused-foreground)" }}>${l.price_usd}</span>{" "}
+            <span style={{ color: "var(--theme-focused-foreground)" }}>
+              {l.payment_mode === "x402"
+                ? stakeText(Number(l.price_usd), "usd", { mode: "x402", escrowNetwork }).amount
+                : `$${l.price_usd}`}
+            </span>{" "}
             <AcceptsTag move={l.module_type === "emporia:service:v1" || !l.module_type ? "purchase" : "wager"} moduleType={l.module_type} />
           </span>
         )
@@ -213,7 +220,7 @@ export function ListingsView({
               headers={["GAME", "CREATOR", "STAKE", "SEATS", "OPENED"]}
               rows={waitingRows}
               keys={waiting.map((w) => w.session_id)}
-              onOpen={(i) => navigate("sessions", { sessionId: waiting[i].session_id })}
+              onOpen={(i) => navigate("session", { sessionId: waiting[i].session_id })}
             />
           </SlimCard>
         )}

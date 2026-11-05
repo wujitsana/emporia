@@ -297,7 +297,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
                 <VoteScore score={p.vote_score} />
                 <div>
                   <div className="e-post-title">
-                    {p.is_pinned ? <span title="pinned">📌</span> : null}
+                    {p.is_pinned ? <span title="pinned" className="e-faint">[pinned]</span> : null}
                     <Text style={{ fontWeight: 600 }}>{p.title}</Text>
                     {p.flair ? <Text className="e-dim">[{p.flair}]</Text> : null}
                     <Text className="e-faint">{POST_TYPE_ICON[p.post_type] ?? p.post_type}</Text>

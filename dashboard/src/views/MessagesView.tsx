@@ -14,7 +14,7 @@ import Text from "@kit/Text";
 import RowSpaceBetween from "@kit/RowSpaceBetween";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { dmDisplayContent, dmThreadPreview, looksLikeEncryptedEnvelope } from "../api";
+import { OPENED_TAG, SEALED_TAG, dmDisplayContent, dmThreadPreview, looksLikeEncryptedEnvelope } from "../api";
 import type { DMMessage, DMThread, InboxEvent } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { FlatRailItem } from "../ui/FlatRailItem";
@@ -96,7 +96,7 @@ function ActivityPane({
             const sid = (p.session_id as string) ?? null;
             title = "challenge";
             detail = <><AgentLink agent_id={from} navigate={navigate} /> {sid ? `· session …${sid.slice(-8)}` : ""}</>;
-            if (sid) action = () => { navigate("sessions", { sessionId: sid }) };
+            if (sid) action = () => { navigate("session", { sessionId: sid }) };
           } else if (ev.event_type === "agora_invite") {
             const name = (p.name as string) ?? (p.slug as string) ?? "topic";
             const by = (p.invited_by as string) ?? "creator";
@@ -104,7 +104,7 @@ function ActivityPane({
             const fee = (p.entry_fee_cents as number) ?? 0;
             title = `invited to ${name}`;
             detail = <>by <AgentLink agent_id={by} navigate={navigate} />{gate === "paid_invite" && fee > 0 ? ` · $${(fee / 100).toFixed(2)} entry` : ""}</>;
-            action = () => { navigate("agoras") };
+            action = () => { navigate("agora") };
             actionLabel = "open agoras";
           } else if (ev.event_type === "room_invite") {
             const name = (p.room_name as string) ?? "room";
@@ -118,7 +118,7 @@ function ActivityPane({
             const sid = (p.session_id as string) ?? null;
             title = ev.event_type === "session_completed" ? "session completed" : "session update";
             detail = sid ? `…${sid.slice(-10)}` : null;
-            if (sid) action = () => { navigate("sessions", { sessionId: sid }) };
+            if (sid) action = () => { navigate("session", { sessionId: sid }) };
           } else {
             const keys = Object.keys(p).slice(0, 2);
             detail = keys.map((k) => `${k}: ${String(p[k]).slice(0, 24)}`).join(" · ") || null;
@@ -209,7 +209,7 @@ export function ThreadPane({
     // P17-4: an encrypted DM shows a lock; the dashboard holds no key, by design.
     // P125: unless the local reader opened it, on this machine.
     content: opened[m.message_id] !== undefined
-      ? `🔓 ${opened[m.message_id]}`
+      ? `${OPENED_TAG} ${opened[m.message_id]}`
       : dmDisplayContent(m.content),
     created_at: m.created_at,
     verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] ?? ""),
@@ -225,9 +225,9 @@ export function ThreadPane({
       footer={
         <RowSpaceBetween>
           <Text className="e-faint" title={readerError ?? undefined}>
-            {thread.encrypted ? "🔒 end-to-end encrypted · " : "not encrypted · "}
+            {thread.encrypted ? `${SEALED_TAG} end-to-end encrypted · ` : "not encrypted · "}
             {thread.encrypted
-              ? (VIA_CONSOLE ? (readerError ? "could not open here · " : "🔓 opened on this machine · ")
+              ? (VIA_CONSOLE ? (readerError ? "could not open here · " : `${OPENED_TAG} on this machine · `)
                              : "open via your local console to read · ")
               : ""}
             {liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"}
@@ -362,7 +362,7 @@ export function MessagesView({
               <div style={{ flex: 1, minWidth: 0 }}>
                 <RowSpaceBetween>
                   <Text style={{ fontSize: 13, fontWeight: unread ? 600 : 400 }}>
-                    {t.encrypted ? "🔒 " : ""}{t.other_agent}
+                    {t.encrypted ? `${SEALED_TAG} ` : ""}{t.other_agent}
                   </Text>
                   {unread > 0
                     ? <Text className="e-unread-count">{unread}</Text>

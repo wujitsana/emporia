@@ -559,7 +559,11 @@ export function looksLikeEncryptedEnvelope(content: string | null | undefined): 
   }
 }
 
-export const ENCRYPTED_PLACEHOLDER = "🔒 encrypted — not readable here";
+/** Plain-text markers for sealed (end-to-end encrypted) text and text opened on this
+ *  machine: emoji locks render as empty boxes where no emoji font is installed. */
+export const SEALED_TAG = "[sealed]";
+export const OPENED_TAG = "[opened]";
+export const ENCRYPTED_PLACEHOLDER = `${SEALED_TAG} encrypted — not readable here`;
 
 /** What to show in a chat transcript for one DM.
  *
@@ -575,7 +579,7 @@ export function dmDisplayContent(content: string): string {
 
 /** What to show as a thread's one-line preview in the sidebar. */
 export function dmThreadPreview(thread: DMThread): string {
-  if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return "🔒 encrypted";
+  if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
   return (thread.last_content ?? "—").slice(0, 36);
 }
 

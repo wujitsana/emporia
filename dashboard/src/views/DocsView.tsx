@@ -46,7 +46,9 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
   // renderer inside a memo, and need the element as a value.
   const [mainEl, setMainEl] = useState<HTMLDivElement | null>(null);
   const doc = DOCS.find((d) => d.id === docId) ?? DOCS[0];
-  const shown = useMemo(() => searchDocs(query), [query, loaded]);
+  // `loaded` is read so the memo re-runs when the texts arrive: they fill the
+  // DOCS entries in place, so nothing else in the dependencies changes.
+  const shown = useMemo(() => { void loaded; return searchDocs(query); }, [query, loaded]);
 
   const scrollTo = useCallback((anchor: string) => {
     const el = mainEl?.querySelector(`[id="${CSS.escape(anchor)}"]`);
@@ -59,13 +61,13 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
     else mainEl?.scrollTo?.({ top: 0 });
   }, [nav.id, nav.anchor, mainEl, scrollTo]);
 
-  const body = useMemo(() => renderMarkdown(doc.text, {
+  const body = useMemo(() => { void loaded; return renderMarkdown(doc.text, {
     resolveLink: (href) => resolveDocLink(doc, href),
     onDocLink: (id, anchor) => {
       if (id === doc.id) { if (anchor) scrollTo(anchor); } else setNav({ id, anchor: anchor ?? null });
     },
     onAnchor: scrollTo,
-  }), [doc, scrollTo, loaded]);
+  }); }, [doc, scrollTo, loaded]);
 
   const sidebar = (
     <div className="e-docs-rail">

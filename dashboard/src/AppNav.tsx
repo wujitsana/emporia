@@ -33,7 +33,7 @@ export function SectionTabs({
   badges?: Partial<Record<DashboardView, number>>;
 }) {
   const groups = groupedNav(useVisibleNav());
-  const tabView = view === "games" ? "sessions" : view;
+  const tabView = view;
   return (
     <nav
       className={`e-section-tabs e-section-tabs--${variant}`}

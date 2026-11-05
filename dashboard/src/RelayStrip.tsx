@@ -111,7 +111,7 @@ export function RelayStrip({
   if (compact) {
     return (
       <span className="e-relay-status e-relay-status--compact">
-        <span className="e-relay-status__host" title={resolved}>
+        <span className="e-relay-status__host e-capture-hide" title={resolved}>
           {host}
         </span>
         {chips}
@@ -121,7 +121,7 @@ export function RelayStrip({
 
   return (
     <span className="e-relay-status" title={resolved}>
-      <span className="e-relay-status__host">{host}</span>
+      <span className="e-relay-status__host e-capture-hide">{host}</span>
       {meta ? <span className="e-relay-status__meta">{meta}</span> : null}
       {chips}
       {showWs ? <Text className="e-faint">{wsEvents}</Text> : null}

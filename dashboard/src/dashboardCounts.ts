@@ -1,6 +1,6 @@
 import { api, dmThreadPreview } from "./api";
 import type { RelayHealth } from "./hooks";
-import type { DashboardView } from "./eventNav";
+import { isJobModule, type DashboardView } from "./eventNav";
 import type { NavItem } from "./navConfig";
 
 export type OverviewTabId = Exclude<DashboardView, "overview">;
@@ -13,7 +13,7 @@ export interface OverviewSectionRow {
 }
 
 /** Tabs omitted from Overview hub. */
-export const OVERVIEW_SKIP_VIEWS: DashboardView[] = ["overview", "games", "fees", "profile", "docs", "settings", "relay", "gamify"];
+export const OVERVIEW_SKIP_VIEWS: DashboardView[] = ["overview", "season", "fees", "profile", "docs", "settings", "relay"];
 
 /** Grid slots per row (≥ card count) so few cards don't stretch to half-screen squares. */
 export function overviewGridCols(cardCount: number): number {
@@ -88,9 +88,12 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
   const topics = val(snapshot.agoraTopics);
   const dms = val(snapshot.dmThreads);
 
-  const gameSessions = [...(sessions?.sessions ?? [])]
+  const allSessions = [...(sessions?.sessions ?? [])]
     .filter((s) => s.module_type.startsWith("emporia:"))
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const gameSessions = allSessions.filter((s) => !isJobModule(s.module_type));
+  const dealSessions = allSessions.filter((s) => isJobModule(s.module_type));
+  const kindOf = (m: string) => m.split(":")[1] ?? "game";
 
   const rows: OverviewSectionRow[] = [
     {
@@ -112,11 +115,11 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
           : ["No rooms visible to viewer"],
     },
     {
-      view: "events",
+      view: "tournaments",
       lines:
         events?.events?.length
           ? events.events.slice(0, MAX_LINES).map((e) => clip(`${e.title} · ${e.status} · $${e.entry_fee_usd}`))
-          : ["No scheduled events"],
+          : ["No tournaments scheduled"],
     },
     {
       view: "games",
@@ -124,23 +127,21 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
       lines:
         gameSessions.length
           ? gameSessions.slice(0, MAX_LINES).map((s) => {
-              const kind = s.module_type.split(":").pop() ?? "game";
-              const vs = s.participants?.length ? s.participants.join(" vs ") : s.current_agent;
-              return clip(`${kind} · ${s.status} · ${vs}`);
+              const vs = s.participants?.length ? s.participants.join(" v ") : s.current_agent;
+              return clip(`${kindOf(s.module_type)} · ${s.status} · ${vs}`);
             })
-          : ["No recent games"],
+          : ["No games yet"],
     },
     {
-      view: "sessions",
-      metric: String(gameSessions.length),
+      view: "deals",
+      metric: String(dealSessions.length),
       lines:
-        gameSessions.length
-          ? gameSessions.slice(0, MAX_LINES).map((s) => {
-              const kind = s.module_type.split(":")[1] ?? "game";
-              const vs = s.participants?.length ? s.participants.join(" vs ") : s.current_agent;
-              return clip(`${kind} · ${s.status} · ${vs}`);
+        dealSessions.length
+          ? dealSessions.slice(0, MAX_LINES).map((s) => {
+              const vs = s.participants?.length ? s.participants.join(" & ") : s.current_agent;
+              return clip(`${kindOf(s.module_type)} · ${s.status} · ${vs}`);
             })
-          : ["No recent sessions"],
+          : ["No deals yet"],
     },
     {
       view: "agents",
@@ -152,7 +153,7 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
           : ["No registered agents"],
     },
     {
-      view: "agoras",
+      view: "agora",
       lines:
         topics?.topics?.length
           ? topics.topics.slice(0, MAX_LINES).map((t) =>
@@ -197,8 +198,10 @@ export interface DashboardCounts {
   agoraTopics: number | string | null;
   dmThreads: number | string | null;
   modules: number | null;
-  /** Emporia module sessions (chess, etc.) — used for Games, not raw /health modules. */
+  /** Games (set plays, chess) — used for Games, not raw /health modules. */
   gameSessions: number | null;
+  /** Jobs (service, code review, research) — used for Deals. */
+  dealSessions: number | null;
 }
 
 /** Per-tab counts for the nav metrics. Pure. */
@@ -222,11 +225,12 @@ export interface DashboardCounts {
 export function failedFromSnapshot(snapshot: OverviewSnapshot): Set<OverviewTabId> {
   const pairs: [OverviewTabId, PromiseSettledResult<unknown>][] = [
     ["listings", snapshot.listings],
-    ["sessions", snapshot.sessions],
+    ["games", snapshot.sessions],
+    ["deals", snapshot.sessions],
     ["rooms", snapshot.rooms],
-    ["events", snapshot.events],
+    ["tournaments", snapshot.events],
     ["agents", snapshot.agents],
-    ["agoras", snapshot.agoraTopics],
+    ["agora", snapshot.agoraTopics],
     ["messages", snapshot.dmThreads],
     ["fees", snapshot.settlements],
   ];
@@ -268,9 +272,9 @@ export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts 
 
   const sessionsList =
     sessionsR.status === "fulfilled" ? sessionsR.value.sessions : null;
-  const gameSessions = sessionsList
-    ? sessionsList.filter((s) => s.module_type.startsWith("emporia:")).length
-    : null;
+  const emporia = sessionsList?.filter((s) => s.module_type.startsWith("emporia:")) ?? null;
+  const gameSessions = emporia ? emporia.filter((s) => !isJobModule(s.module_type)).length : null;
+  const dealSessions = emporia ? emporia.filter((s) => isJobModule(s.module_type)).length : null;
 
   return {
     listings: len(listingsR),
@@ -283,6 +287,7 @@ export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts 
     dmThreads: len(dmsR),
     modules: null,
     gameSessions,
+    dealSessions,
   };
 }
 
@@ -298,15 +303,15 @@ export function metricForNav(
       return online ? "● LIVE" : health ? "OFFLINE" : "…";
     case "listings":
       return String(counts?.listings ?? health?.listing_count ?? "—");
-    case "sessions":
-      return String(counts?.sessions ?? health?.session_count ?? "—");
+    case "deals":
+      return String(counts?.dealSessions ?? "—");
     case "rooms":
       return String(counts?.rooms ?? "—");
-    case "events":
+    case "tournaments":
       return String(counts?.events ?? "—");
     case "agents":
       return String(counts?.agents ?? "—");
-    case "agoras":
+    case "agora":
       return String(counts?.agoraTopics ?? "—");
     case "messages":
       return String(counts?.dmThreads ?? "—");
@@ -344,23 +349,23 @@ export function countCaptionForNav(
       const c = n(counts?.listings) ?? n(health?.listing_count as number | undefined);
       return c != null ? `${c} listing${c === 1 ? "" : "s"}` : null;
     }
-    case "sessions": {
-      const c = n(counts?.sessions) ?? n(health?.session_count as number | undefined);
-      return c != null ? `${c} session${c === 1 ? "" : "s"}` : null;
+    case "deals": {
+      const c = n(counts?.dealSessions);
+      return c != null ? `${c} deal${c === 1 ? "" : "s"}` : null;
     }
     case "rooms": {
       const c = n(counts?.rooms);
       return c != null ? `${c} room${c === 1 ? "" : "s"}` : null;
     }
-    case "events": {
+    case "tournaments": {
       const c = n(counts?.events);
-      return c != null ? `${c} event${c === 1 ? "" : "s"}` : null;
+      return c != null ? `${c} tournament${c === 1 ? "" : "s"}` : null;
     }
     case "agents": {
       const c = n(counts?.agents);
       return c != null ? `${c} agent${c === 1 ? "" : "s"}` : null;
     }
-    case "agoras": {
+    case "agora": {
       const c = n(counts?.agoraTopics);
       return c != null ? `${c} topic${c === 1 ? "" : "s"}` : null;
     }
@@ -372,7 +377,7 @@ export function countCaptionForNav(
       return "Settings & relay";
     case "games": {
       const c = n(counts?.gameSessions);
-      return c != null ? `${c} recent game${c === 1 ? "" : "s"}` : null;
+      return c != null ? `${c} game${c === 1 ? "" : "s"}` : null;
     }
     case "fees": {
       const c = n(counts?.settlements);

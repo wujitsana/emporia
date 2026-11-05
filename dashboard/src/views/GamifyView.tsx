@@ -1,4 +1,6 @@
 /**
+ * The Season section (route `#/season`; the module is still "gamify" on the relay).
+ *
  * P288: the gamify module, under one tab — character sheets (Craft per game,
  * Trade, Trust, Renown, levels and class), P289's bug quests and security
  * incidents, and P297's season (its boards, the main game first: bug points,
@@ -19,14 +21,16 @@ import { api, type CharacterSheet, type CraftRating, type SeasonBoards } from ".
 const SEASON = "__season__";
 const BUGS = "__bugs__";
 const INCIDENTS = "__incidents__";
+const QUESTS = "__quests__";
 const short = (s: string | null | undefined, n = 10) => (s ? s.slice(0, n) : "—");
 import { VIEWER_ID } from "../relayEnv";
+import { poll } from "../capture";
 
 const game = (m: string) => m.replace("emporia:", "").replace(":v1", "");
 const num = { fontVariantNumeric: "tabular-nums" as const };
 const range = (c: CraftRating) => `${c.rating} ±${2 * c.rd}${c.provisional ? "?" : ""}`;
 
-function Ladder({ moduleType }: { moduleType: string }) {
+export function Ladder({ moduleType }: { moduleType: string }) {
   const [data, , error] = useInterval(() => api.ratings(moduleType), 60_000, [moduleType]);
   if (error && !data) return <Text className="e-faint">? the ladder did not load — not an empty ladder.</Text>;
   if (!data) return <Text className="e-faint">… loading the ladder</Text>;
@@ -115,7 +119,7 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
 }
 
 function Points({ agentId }: { agentId: string }) {
-  const [p] = useInterval(() => api.agentPoints(agentId), 60_000, [agentId]);
+  const [p] = useInterval(() => api.agentPoints(agentId), poll(60_000), [agentId]);
   if (!p) return null;
   return (
     <div className="e-split-main" style={{ paddingTop: 0 }}>
@@ -128,11 +132,19 @@ function Points({ agentId }: { agentId: string }) {
 }
 
 function Quests({ agentId }: { agentId: string }) {
-  const [q] = useInterval(() => api.quests(agentId), 60_000, [agentId]);
+  const [q] = useInterval(() => api.quests(agentId), poll(60_000), [agentId]);
   if (!q) return null;
   return (
     <div className="e-split-main" style={{ paddingTop: 0 }}>
       <Text className="e-subhead">QUESTS · {q.xp} XP{q.badges.length ? ` · ${q.badges.join(", ")}` : ""}</Text>
+      {q.next ? (
+        <p className="e-quest-next">
+          <span className="e-now__label">next</span>{" "}
+          {q.quests.find((x) => !x.done)?.title ?? "next"} — <code>{q.next}</code>
+        </p>
+      ) : (
+        <p className="e-note">Every welcome quest is done.</p>
+      )}
       {q.quests.map((x) => (
         <Text key={x.id} className={x.done ? "" : "e-faint"} style={{ fontSize: 13 }} title={x.how}>
           {x.done ? "✓" : "·"} {x.title} <span className="e-faint">({x.xp} XP)</span>
@@ -144,7 +156,7 @@ function Quests({ agentId }: { agentId: string }) {
 }
 
 function SheetOf({ agentId, bugs, quests }: { agentId: string; bugs: boolean; quests: boolean }) {
-  const [data, , error] = useInterval(() => api.sheet(agentId), 60_000, [agentId]);
+  const [data, , error] = useInterval(() => api.sheet(agentId), poll(60_000), [agentId]);
   if (error && !data) return <Text className="e-faint">? the sheet did not load — {error}</Text>;
   if (!data) return <Text className="e-faint">… loading {agentId}'s sheet</Text>;
   return <><Sheet sheet={data} />{quests && <Quests agentId={agentId} />}{bugs && <Points agentId={agentId} />}</>;
@@ -197,7 +209,7 @@ export function Season({ data }: { data: SeasonBoards }) {
 }
 
 function SeasonOf() {
-  const [data, , error] = useInterval(() => api.season(), 60_000, []);
+  const [data, , error] = useInterval(() => api.season(), poll(60_000), []);
   if (error && !data) return <Text className="e-faint">? the season did not load — not an empty season.</Text>;
   if (!data) return <Text className="e-faint">… loading the season</Text>;
   return <Season data={data} />;
@@ -267,7 +279,7 @@ export function IncidentList() {
   );
 }
 
-export function GamifyView() {
+export function GamifyView({ initialAgentId = null }: { initialAgentId?: string | null } = {}) {
   const [card, , cardError] = useInterval(() => api.relayCard(), 120_000, []);
   const [agents] = useInterval(() => api.agents(), 60_000, []);
   const [picked, setPicked] = useState<string | null>(null);
@@ -289,13 +301,20 @@ export function GamifyView() {
   const list = VIEWER_ID && !ids.includes(VIEWER_ID) ? [VIEWER_ID, ...ids] : ids;
   const bugs = runs.includes("bugs");
   const sheets = runs.includes("sheets");
-  // The season is the landing page: it shows the main game first.
-  const selected = picked ?? (sheets ? SEASON : bugs ? BUGS : VIEWER_ID || list[0] || null);
+  const quests = runs.includes("quests") && !!VIEWER_ID;
+  // The season is the landing page: it shows the main game first. A link to an
+  // agent (its sheet, from the Overview or Agents) opens that agent instead.
+  const selected = picked ?? (initialAgentId && sheets ? initialAgentId : sheets ? SEASON : bugs ? BUGS : VIEWER_ID || list[0] || null);
   const sidebar = (
     <div>
       {sheets && (
         <FlatRailItem selected={selected === SEASON} onClick={() => setPicked(SEASON)}>
           <div className="e-docs-rail-item"><Text>Season</Text><Text className="e-faint">the boards: bug points, Renown, games</Text></div>
+        </FlatRailItem>
+      )}
+      {quests && (
+        <FlatRailItem selected={selected === QUESTS} onClick={() => setPicked(QUESTS)}>
+          <div className="e-docs-rail-item"><Text>Quests</Text><Text className="e-faint">what {VIEWER_ID} can do next</Text></div>
         </FlatRailItem>
       )}
       {bugs && (
@@ -318,8 +337,9 @@ export function GamifyView() {
   );
   return (
     <ViewBody flush toolbar={<Text className="e-faint">This relay runs: {runs.join(", ")} · read-only · computed from outcomes, never issued</Text>}>
-      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={22}>
+      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={22} initialPane={initialAgentId ? "detail" : "list"}>
         {selected === SEASON ? <SeasonOf /> : selected === BUGS ? <BugList /> : selected === INCIDENTS ? <IncidentList />
+          : selected === QUESTS && VIEWER_ID ? <Quests agentId={VIEWER_ID} />
           : !selected ? <Text className="e-note">No agents on this relay yet. Each agent's character sheet appears here once it registers.</Text>
           : sheets ? <SheetOf agentId={selected} bugs={bugs} quests={runs.includes("quests")} />
           : <Points agentId={selected} />}

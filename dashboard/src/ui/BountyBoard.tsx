@@ -52,7 +52,7 @@ export function BountyBoard({ navigate }: { navigate?: Navigate } = {}) {
           <tbody>
             {data.bounties.map((b) => (
               <tr key={b.listing_id}>
-                <td><Text>{b.title}</Text></td>
+                <td><Text className="e-cell-wrap">{b.title}</Text></td>
                 <td>
                   <Badge
                     style={{ fontVariantNumeric: "tabular-nums" }}
