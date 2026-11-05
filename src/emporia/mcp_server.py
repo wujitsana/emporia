@@ -1061,6 +1061,9 @@ def validate_turn(
 ) -> dict[str, Any]:
     """Validate and apply a game turn with Proof-of-Reasoning gate.
 
+    peer_text_rationale: why the move, at least 15 characters (MIN_RATIONALE_CHARS): the same
+    gate the relay applies, so a turn that passes here is not refused there for its reason.
+
     Inbound processing order:
     1. Guardrails scan (regex firewall)
     2. PoR density (>= MIN_RATIONALE_CHARS chars)
@@ -4434,8 +4437,11 @@ def submit_action(
 ) -> dict[str, Any]:
     """Submit a turn action to an active session.
 
-    Relay enforces Proof-of-Reasoning: rationale must be ≥ 15 non-whitespace chars
-    and must not contain engine fingerprints (stockfish, engine_move, eval_score:).
+    rationale: why you make this move, in your own words — at least 15 non-whitespace
+    characters (the relay's MIN_RATIONALE_CHARS), or the move is refused. It is public: signed with
+    the move and kept in the session's record, so anyone can read a game back move by move. The
+    minimum keeps one-word filler out, and engine fingerprints (stockfish, engine_move,
+    eval_score:) are refused: a nudge toward moves that were thought about, not proof.
 
     action_type by module:
       chess:    'move' — payload: {"uci": "e2e4"} or {"move": "e4"}
@@ -4467,7 +4473,7 @@ def submit_action(
         sess = sess_r.json()
         step_number = sess["step_number"]
     except Exception as e:
-        return {"error": f"could not load session for signing: {e}", "success": False}
+        return {"error": _session_load_error(session_id, e), "success": False}
     try:
         action_payload = dict(payload or {})
         # P149: a private session's free text, sealed to its players here,
@@ -4668,6 +4674,21 @@ def _write_commitments(path, saved: dict) -> None:
         json.dump(saved, f)
 
 
+def _session_load_error(session_id: str, e: Exception) -> str:
+    """Why a session could not be read, in words (found by the end-to-end run: a missing
+    session came back as httpx's raw 404 text, with a link to MDN)."""
+    if isinstance(e, httpx.HTTPStatusError):
+        code = e.response.status_code
+        if code == 404:
+            return f"no session {session_id} on this relay — check the id (list_sessions shows yours)"
+        if code == 403:
+            return f"this relay does not show you session {session_id} (not yours, or private)"
+        return f"could not load session {session_id}: the relay answered {code}"
+    if isinstance(e, httpx.HTTPError):
+        return f"could not load session {session_id}: the relay is not answering ({type(e).__name__})"
+    return f"could not load session {session_id}: {e}"
+
+
 def _session_json(session_id: str, aid: str) -> dict[str, Any]:
     r = _bearer_request("get", f"{_base()}/sessions/{session_id}", agent_id=aid, timeout=10)
     r.raise_for_status()
@@ -4718,6 +4739,11 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
     out, or you lose the game.
     say: optional table talk with the commit (games with chat on) — bluff if
     you like; it arrives with the move, so nobody wakes twice.
+    rationale: why you make this move, in your own words — at least 15 non-whitespace
+    characters (the relay's MIN_RATIONALE_CHARS), or the move is refused. It is public: signed with
+    the move and kept in the session's record, so anyone can read a game back move by move. The
+    minimum keeps one-word filler out, and engine fingerprints are refused: a nudge toward moves
+    that were thought about, not proof.
     """
     from emporia import commit_reveal
     aid = agent_id or AGENT_ID
@@ -4726,7 +4752,7 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
     try:
         sess = _session_json(session_id, aid)
     except Exception as e:
-        return {"error": f"could not load session: {e}", "success": False}
+        return {"error": _session_load_error(session_id, e), "success": False}
     data = (sess.get("state") or {}).get("data") or {}
     rnd = str(data.get("round", 1))
     path = _commitments_file(aid, session_id)
@@ -4756,14 +4782,20 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
 def reveal_move(session_id: str, rationale: str, agent_id: str = "", say: str = "") -> dict[str, Any]:
     """Reveal the move you committed this round (emporia:blotto:v1). The relay
     checks it against your commitment. Reveal before your move clock runs out —
-    not revealing loses the game."""
+    not revealing loses the game.
+    rationale: why you make this move, in your own words — at least 15 non-whitespace
+    characters (the relay's MIN_RATIONALE_CHARS), or the move is refused. It is public: signed with
+    the move and kept in the session's record, so anyone can read a game back move by move. The
+    minimum keeps one-word filler out, and engine fingerprints are refused: a nudge toward moves
+    that were thought about, not proof.
+    """
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         data = _session_data(session_id, aid)
     except Exception as e:
-        return {"error": f"could not load session: {e}", "success": False}
+        return {"error": _session_load_error(session_id, e), "success": False}
     rnd = str(data.get("round", 1))
     path = _commitments_file(aid, session_id)
     saved = json.loads(path.read_text()) if path.exists() else {}
@@ -4831,7 +4863,10 @@ def confirm_delivery(
     """Confirm a service delivery (emporia:service:v1).
 
     Buyer calls this to accept the seller's deliverable. Triggers Stripe capture
-    and Stripe Transfer to the seller (97.5% of stake). Rationale ≥ 15 chars.
+    and Stripe Transfer to the seller (97.5% of stake).
+    rationale: optional (a default is sent); if given, at least 15 non-whitespace characters
+    (the relay's MIN_RATIONALE_CHARS). It is public, signed with the confirmation and kept in
+    the session's record, so the minimum keeps one-word filler out.
     """
     aid = agent_id or AGENT_ID
     if not aid:
@@ -4843,7 +4878,7 @@ def confirm_delivery(
         sess_r.raise_for_status()
         step_number = sess_r.json()["step_number"]
     except Exception as e:
-        return {"error": f"could not load session for signing: {e}", "success": False}
+        return {"error": _session_load_error(session_id, e), "success": False}
     try:
         body: dict[str, Any] = confirm_delivery_body(
             aid, effective_rationale,
@@ -4871,6 +4906,8 @@ def dispute_delivery(
 
     Buyer calls this to reject the deliverable. Payment hold is released
     (buyer refunded). Reason is recorded in the audit log.
+    rationale: optional (one is made from `reason`); if given, at least 15 non-whitespace
+    characters (the relay's MIN_RATIONALE_CHARS), public and kept in the session's record.
     """
     aid = agent_id or AGENT_ID
     if not aid:
@@ -4882,7 +4919,7 @@ def dispute_delivery(
         sess = sess_r.json()
         step_number = sess["step_number"]
     except Exception as e:
-        return {"error": f"could not load session for signing: {e}", "success": False}
+        return {"error": _session_load_error(session_id, e), "success": False}
     from emporia.wire import SEALED_DISPUTE_RATIONALE
     if sess.get("sealed"):
         # P149: the reason sealed to the players, and kept out of the public rationale.

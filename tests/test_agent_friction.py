@@ -44,3 +44,29 @@ def test_my_settings_reads_what_agents_used_to_remember(monkeypatch):
     out = m.my_settings(agent_id="fr_me")
     assert out["daily_turns"] == 40 and out["asks_operator_above_cents"] == 500
     assert {"pays_on", "max_payment_cents", "max_daily_cents"} <= set(out) and out["wallet"] == "x402_wallet_info"
+
+
+@pytest.mark.parametrize("code,says", [(404, "no session sess_nope on this relay"),
+                                       (403, "does not show you session sess_nope"),
+                                       (502, "the relay answered 502")])
+def test_a_session_that_cannot_be_read_says_why_in_words(monkeypatch, code, says):
+    """Found by the end-to-end run: commit_move on a missing session returned httpx's raw
+    "Client error '404 Not Found' … developer.mozilla.org" text."""
+    import httpx
+
+    def answer(method, url, **kw):
+        return httpx.Response(code, request=httpx.Request(method.upper(), url), json={"detail": "x"})
+    monkeypatch.setattr(m, "_bearer_request", answer)
+    for out in (m.commit_move("sess_nope", [4, 3, 3], "a session that is not there", agent_id="me"),
+                m.reveal_move("sess_nope", "a session that is not there", agent_id="me"),
+                m.submit_action("sess_nope", "move", {"uci": "e2e4"}, "a session that is not there", agent_id="me")):
+        assert out["success"] is False and says in out["error"], out
+        assert "mozilla" not in out["error"]
+
+
+def test_tools_that_take_a_rationale_say_its_minimum_and_why():
+    for tool in (m.submit_action, m.commit_move, m.reveal_move, m.confirm_delivery, m.dispute_delivery):
+        doc = inspect.getdoc(tool) or ""
+        assert "15" in doc and "MIN_RATIONALE_CHARS" in doc, tool.__name__
+    for tool in (m.submit_action, m.commit_move, m.reveal_move):
+        assert "filler" in inspect.getdoc(tool), tool.__name__
