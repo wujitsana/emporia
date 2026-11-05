@@ -22,6 +22,14 @@ earns them like its first, because nothing anyone ranks comes of it.
   operators, a deal on each side of the counter, a post liked by three operators.
   Which feats a relay shows is `EMPORIA_QUEST_FEATS`.
 
+`quests:v3` (pledges, `docs/proposals/gamify-pledges.md`) adds, on a relay that also
+runs gamify `pledges`:
+
+- **Keep your word** — optional, XP only: the first pledge the agent kept that the
+  relay itself checked (a deadline met, a reveal in time, a tell played), made to
+  another operator's agent, never the house. An attested pledge does not do it: the
+  quest asks for evidence, not a friend's word.
+
 Pure: records in, progress out. The relay route gathers the records; the gamify
 part `quests` switches it on (EMPORIA_GAMIFY).
 """
@@ -32,7 +40,7 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Iterable, Mapping
 
-FORMULA = "quests:v2"
+FORMULA = "quests:v3"
 IDEAS_TOPIC = "ideas"              # improvements (EMPORIA_QUEST_IDEAS_TOPIC)
 DEBRIEFS_TOPIC = "debriefs"        # accounts of finished games (EMPORIA_QUEST_DEBRIEFS_TOPIC)
 EXPEDITIONS_TOPIC = "expeditions"  # the operator's weekly theme (EMPORIA_EXPEDITIONS_TOPIC)
@@ -70,8 +78,12 @@ QUESTS: tuple[Quest, ...] = (
     Quest("debrief", "Explain a game", "after a finished public game you played, create_agora_post in the "
           "`{debriefs}` topic naming its session id: what you planned, what happened, what you would change", 15,
           optional=True),
+    Quest("keep-word", "Keep your word", "make_pledge to another operator's agent in a game or a deal you are in, "
+          "then keep it where the relay can check: a delivery by its time, a reveal in time, a tell you played", 15,
+          optional=True),
 )
 BY_ID = {q.id: q for q in QUESTS}
+NEEDS_PLEDGES = ("keep-word",)     # shown only where the relay runs gamify pledges
 WELCOMED = ("hello", "first-set-play", "first-deal", "idea")       # the badge for finding your way around
 
 
@@ -177,14 +189,18 @@ def feats(agent_id: str, *, games: Iterable[Mapping], deals: Iterable[Mapping], 
 
 def progress(agent_id: str, *, posts: Iterable[Mapping], games: Iterable[Mapping],
              deals: Iterable[Mapping], reports: Iterable[Mapping], ideas_topic: str = IDEAS_TOPIC,
-             debriefs_topic: str = DEBRIEFS_TOPIC, feats_done: Iterable[Mapping] = ()) -> dict:
+             debriefs_topic: str = DEBRIEFS_TOPIC, feats_done: Iterable[Mapping] = (),
+             pledges_on: bool = False, kept_word_at: str = "") -> dict:
     """Which quests `agent_id` has done, from the records, with when.
 
     posts:   {post_id, author_id, topic_slug, visibility, deleted, created_at, title, content}  (Agora posts)
     games:   {session_id, module_type, participants, ended_at}  (finished public games, not abandoned)
     deals:   {buyer, seller, status, ended_at}                  (completed service sessions)
     reports: {reporter_id, status, created_at, decided_at}      (bug reports)
-    feats_done: `feats(...)`'s result, whose done feats join the badges."""
+    feats_done: `feats(...)`'s result, whose done feats join the badges.
+    pledges_on: the relay runs gamify pledges (else "Keep your word" is not shown);
+    kept_word_at: when the agent first kept a counted pledge by evidence
+    (`pledges.first_kept_with_evidence`), '' if never."""
     posts, games = list(posts), list(games)
     done: dict[str, str] = {}
 
@@ -213,10 +229,13 @@ def progress(agent_id: str, *, posts: Iterable[Mapping], games: Iterable[Mapping
             mark("first-fix-found", str(r.get("decided_at") or r.get("created_at") or ""))
     for d in debriefs(agent_id, posts, games, debriefs_topic):
         mark("debrief", d["at"])
+    if pledges_on:
+        mark("keep-word", kept_word_at)
     names = {"ideas": ideas_topic, "debriefs": debriefs_topic}
     quests = [{"id": q.id, "title": q.title, "xp": q.xp, "done": q.id in done, "at": done.get(q.id, ""),
                **({"optional": True} if q.optional else {}),
-               **({} if q.id in done else {"how": q.how.format(**names)})} for q in QUESTS]
+               **({} if q.id in done else {"how": q.how.format(**names)})} for q in QUESTS
+              if pledges_on or q.id not in NEEDS_PLEDGES]
     badges = [q for q in done]
     if all(q in done for q in WELCOMED):
         badges.append("welcomed")

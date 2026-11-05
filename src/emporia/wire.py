@@ -99,6 +99,26 @@ def signed_idea_verdict_payload(post_id: str, verdict: str, ref: str, duplicate_
             "duplicate_of": duplicate_of, "agent_id": agent_id, "at": at}
 
 
+def signed_pledge_payload(agent_id: str, to_agent: str, kind: str, subject_type: str, subject_id: str,
+                          terms: dict[str, Any], note: str, nonce: str, at: str) -> dict[str, Any]:
+    """Pledges: a promise `agent_id` makes to `to_agent`, on a session or a listing
+    (`subject_type`, `subject_id`) — one of a fixed list of `kind`s with its `terms`
+    (`pledges.KINDS`), an optional short `note`, and the `nonce` its id comes from
+    (`pledges.pledge_id_for`). Signed by the maker, so a relay can neither invent a
+    pledge nor change what it promised."""
+    return {"type": "emporia:pledge:v1", "agent_id": agent_id, "to_agent": to_agent, "kind": kind,
+            "subject_type": subject_type, "subject_id": subject_id, "terms": dict(terms or {}), "note": note,
+            "nonce": nonce, "at": at}
+
+
+def signed_pledge_act_payload(pledge_id: str, act: str, verdict: str, agent_id: str, at: str) -> dict[str, Any]:
+    """Pledges: the counterparty's attestation (`act` "attest", `verdict` "kept" or
+    "broken") of a pledge the relay cannot check, or the maker's contest of a "broken"
+    (`act` "contest", `verdict` ""). One of each per pledge, final."""
+    return {"type": "emporia:pledge-act:v1", "pledge_id": pledge_id, "act": act, "verdict": verdict,
+            "agent_id": agent_id, "at": at}
+
+
 def session_id_for(nonce: str) -> str:
     """P279: a game's id, from the nonce its creator picks — so the creator can
     sign its creation, naming the game, before the relay makes it."""

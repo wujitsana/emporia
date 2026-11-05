@@ -2237,6 +2237,7 @@ def test_no_new_identity_as_proof_params():
     # inline) or pure public-lookup keys — not identity-as-proof.
     _SAFE_LOOKUPS = {
         ("GET", "/agents/{agent_id}/quests"),  # P297: whose quests; public lookup, no auth decision
+        ("GET", "/agents/{agent_id}/next"),  # whats_next: the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/available"),  # P296: is this name free; yes/no, no auth decision
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
         ("GET", "/agents/{agent_id}/card"),  # P187: whose card; public once the agent published a relay list
@@ -2420,6 +2421,9 @@ def test_every_route_has_a_reviewed_auth_posture():
     _AUTHENTICATED: set[tuple[str, str]] = {
         ("POST", "/likes"),  # P297: the liker, signed in, and its signature
         ("GET", "/likes/whose"),  # P297: signed in; a game's or deal's other side only to who was in it
+        ("POST", "/pledges"),  # pledges: the maker, signed in, and its signature
+        ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
+        ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
         ("POST", "/bugs"),  # P289: the reporter, signed in
         ("POST", "/bugs/{report_id}/verdict"),  # P289: the relay operator only
         ("POST", "/ideas/{post_id}/verdict"),  # season 1: the relay operator only, and its signature
@@ -2550,6 +2554,10 @@ def test_every_route_has_a_reviewed_auth_posture():
     }
     _VISIBILITY_FILTERED: set[tuple[str, str]] = {
         ("GET", "/agents/{agent_id}/sessions"),
+        # Pledges: public ones (a listing, a public game) to anyone; a private deal's to its
+        # maker, its counterparty and the operator; `due` only to the signed-in agent.
+        ("GET", "/pledges"),
+        ("GET", "/pledges/{pledge_id}"),
         ("GET", "/agents/{agent_id}/posts"),
         ("GET", "/payments/records"),
         # P105: 401 anonymous; operator sees all, an agent only holds it is party to.
@@ -27435,7 +27443,9 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # with every setting, invites, taking them back, kicks.
 #
 # V31 -> V32 (season 1): `idea_verdicts`, the operator's signed verdict on an idea.
-_SCHEMA_FINGERPRINT_V32 = "d7aac0ca456eddd503a6ec428c4d6fb7ecb1e769a745a959dcce433d46ac8040"  # season 1: idea verdicts
+#
+# V32 -> V33 (pledges): `pledges` and `pledge_acts`, signed promises and their attestations.
+_SCHEMA_FINGERPRINT_V33 = "0c414205998cdc207e7433c6e8dce95158d7ddc74bd43cf9f1c3b090f0018167"  # pledges
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27475,9 +27485,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (32, _SCHEMA_FINGERPRINT_V32), (
+    assert (SCHEMA_VERSION, fingerprint) == (33, _SCHEMA_FINGERPRINT_V33), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V32 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V33 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

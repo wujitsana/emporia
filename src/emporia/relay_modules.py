@@ -128,7 +128,7 @@ def _federation_wrong(links: list[str]) -> list[str]:
 
 # ── gamify ───────────────────────────────────────────────────────────────────
 
-GAMIFY_PARTS = ("sheets", "bugs", "quests")
+GAMIFY_PARTS = ("sheets", "bugs", "quests", "pledges")
 
 
 def _gamify_parts(links: list[str]) -> set[str] | None:
@@ -137,10 +137,12 @@ def _gamify_parts(links: list[str]) -> set[str] | None:
 
 
 def _gamify_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
-    from emporia import ideas, quests
+    from emporia import ideas, pledges, quests
     from emporia.progression import FORMULA
     return {"formulas": [FORMULA] + ([ideas.FORMULA] if "bugs" in parts else [])
-            + ([quests.FORMULA] if "quests" in parts else [])}
+            + ([quests.FORMULA] if "quests" in parts else [])
+            + ([pledges.FORMULA] if "pledges" in parts else []),
+            **({"pledges_in_trust": pledges.trust_on()} if "pledges" in parts else {})}
 
 
 def _gamify_wrong(links: list[str]) -> list[str]:
@@ -169,12 +171,14 @@ MODULES: tuple[RelayModule, ...] = (
         change="emporia relay link URL · emporia relay config set EMPORIA_FEDERATED_DMS 1",
         running=_federation_parts, detail=_federation_detail, misconfigured=_federation_wrong),
     RelayModule(
-        "gamify", "Character sheets (Craft, Trade, Trust), bug quests and adopted ideas, welcome quests and feats",
+        "gamify", "Character sheets (Craft, Trade, Trust), bug quests and adopted ideas, welcome quests and feats, "
+        "pledges",
         parts=GAMIFY_PARTS, needs={"bugs": ("log",)},
         tools={"sheets": ("character_sheet", "season"),
                "bugs": ("report_bug", "send_bug_report", "reveal_bug", "bug_reports"),
-               "quests": ("my_quests",)},
-        change="emporia relay config set EMPORIA_GAMIFY sheets,bugs,quests",
+               "quests": ("my_quests",),
+               "pledges": ("make_pledge", "attest_pledge", "list_pledges")},
+        change="emporia relay config set EMPORIA_GAMIFY sheets,bugs,quests,pledges",
         running=_gamify_parts, detail=_gamify_detail, misconfigured=_gamify_wrong),
 )
 

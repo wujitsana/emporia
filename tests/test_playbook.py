@@ -108,6 +108,13 @@ def test_the_person_sets_it_with_a_command(tmp_path, monkeypatch, capsys):
     env = cli.installer().harvest_env(profile)
     assert env["EMPORIA_PLAYBOOK"] == "player" and env["EMPORIA_PLAYBOOK_MAX_STAKE_CENTS"] == "250"
     assert "stakes up to $2.50" in capsys.readouterr().out
+    no_pledges = argparse.Namespace(preset="", games=None, max_stake=None, answers=None, sells=None, buys=None,
+                                    runs=None, pledges="no")
+    assert cli.cmd_agent_playbook("shop", no_pledges) == 0
+    assert cli.installer().harvest_env(profile)["EMPORIA_PLAYBOOK_PLEDGES"] == "no"
+    assert "Pledges no" in capsys.readouterr().out
+    args = cli.build_parser().parse_args(["agent", "playbook", "shop", "--pledges", "yes"])
+    assert args.pledges == "yes"
     bad = argparse.Namespace(preset="", games=None, max_stake="lots", answers=None, sells=None, buys=None, runs=None)
     assert cli.cmd_agent_playbook("shop", bad) == 1
     assert cli.installer().harvest_env(profile)["EMPORIA_PLAYBOOK_MAX_STAKE_CENTS"] == "250", "nothing written"

@@ -1440,6 +1440,34 @@ def init_db() -> None:
                 signature TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_idea_verdicts_ref ON idea_verdicts(ref);
+            CREATE TABLE IF NOT EXISTS pledges (
+                pledge_id TEXT PRIMARY KEY,
+                maker_id TEXT NOT NULL,
+                to_agent TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                subject_type TEXT NOT NULL,
+                subject_id TEXT NOT NULL,
+                terms_json TEXT NOT NULL DEFAULT '{}',
+                note TEXT NOT NULL DEFAULT '',
+                nonce TEXT NOT NULL,
+                made_at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                public INTEGER NOT NULL DEFAULT 0,
+                recorded_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_pledges_maker ON pledges(maker_id, made_at);
+            CREATE INDEX IF NOT EXISTS idx_pledges_to ON pledges(to_agent, made_at);
+            CREATE INDEX IF NOT EXISTS idx_pledges_subject ON pledges(subject_type, subject_id);
+            CREATE TABLE IF NOT EXISTS pledge_acts (
+                pledge_id TEXT NOT NULL,
+                act TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                verdict TEXT NOT NULL DEFAULT '',
+                at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                recorded_at TEXT NOT NULL,
+                PRIMARY KEY (pledge_id, act)
+            );
             CREATE TABLE IF NOT EXISTS security_incidents (
                 incident_id TEXT PRIMARY KEY,
                 summary TEXT NOT NULL,
@@ -3470,6 +3498,8 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("likes", "agent_id"), ("likes", "to_agent"),
     # Season 1: whose idea was judged, and by whom. The signature keeps the handle it was signed with.
     ("idea_verdicts", "author_id"), ("idea_verdicts", "decided_by"),
+    # Pledges: who promised, to whom, and who attested or contested. The signatures keep the handles signed with.
+    ("pledges", "maker_id"), ("pledges", "to_agent"), ("pledge_acts", "agent_id"),
 )
 
 # Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
@@ -3491,6 +3521,10 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # Season 1: an idea's verdict — the post, the author's operator key (as bug_reports'), what it led to.
     *(("idea_verdicts", c) for c in ("post_id", "operator_key", "verdict", "ref", "duplicate_of", "points",
                                      "decided_at", "signature")),
+    # Pledges: what was promised on which session or listing, its terms and note, and the signed acts on it.
+    *(("pledges", c) for c in ("pledge_id", "kind", "subject_type", "subject_id", "terms_json", "note", "nonce",
+                               "made_at", "signature", "public", "recorded_at")),
+    *(("pledge_acts", c) for c in ("pledge_id", "act", "verdict", "at", "signature", "recorded_at")),
     # P289: bug reports and incidents. `operator_key` is a Nous account or a stable id
     # (the cap's key), never a handle — so a rename does not reset an operator's cap.
     *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",
@@ -8994,6 +9028,8 @@ from emporia.routes import bounties as _bounty_routes
 from emporia.routes import standing as _standing_routes  # noqa: E402
 from emporia.routes import bugs as _bug_routes  # noqa: E402
 from emporia.routes import ideas as _idea_routes  # noqa: E402
+from emporia.routes import pledges as _pledge_routes  # noqa: E402
+from emporia.routes import whats_next as _next_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
@@ -9017,6 +9053,8 @@ app.include_router(_bounty_routes.router)
 app.include_router(_standing_routes.router)
 app.include_router(_bug_routes.router)
 app.include_router(_idea_routes.router)
+app.include_router(_pledge_routes.router)
+app.include_router(_next_routes.router)
 app.include_router(_like_routes.router)
 app.include_router(_deletion_routes.router)
 app.include_router(_translog_routes.router)
