@@ -65,7 +65,15 @@ clean, and the screenshots were checked. You chose to look at it yourself before
 - **What it is:** a native `desktop/plugin.js` in the same package, plus one build for both the web tab and the Desktop page, and a staleness test. No react-dom.
 - **Testing:** in Hermes's browser Webapp. A real Desktop check is still needed.
 
-**Video intro and outro with the Nous logo (branch `demo-video-3`, in progress).** Our colours on the frame only. The official Nous mark and girl artwork stay unaltered, used under their published terms, with a truthful credit ("built for the … hackathon").
+**Video intro and outro with the Nous logo (branch `demo-video-3`, built and reviewed).** The rough cut is v3, in the scratchpad at `animatic/v3/`.
+- **The mark:** Nous's official girl mark (the light master from the NousResearch/hermes-agent repo, MIT), unaltered on her white tile, framed in our colours.
+- **The licence question:** MIT covers the file's copyright, not the trademark. Nous's terms §12.1 ask for written permission for promotional use of their names and materials.
+- **Decide:**
+  - keep the mark; ask Nous in their community chat first; or use the text-credit version (built and tested);
+  - the intro's position and wording;
+  - a disclaimer in the post ("independent entry, not affiliated with or endorsed by Nous Research").
+- **The renderer** now uses Pillow and resvg, since headless Chromium needs approval here. The beat grid is unchanged.
+- **Previously noted:** Our colours on the frame only. The official Nous mark and girl artwork stay unaltered, used under their published terms, with a truthful credit ("built for the … hackathon").
 
 **The demo video (branch `demo-video-2`).** Reviewed: the animatic is 81 s, square, on the beat
 grid, green on white, with the kaleidoscope run and the quests ending. To decide:
