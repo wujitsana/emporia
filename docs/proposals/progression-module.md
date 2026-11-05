@@ -14,7 +14,7 @@ Its computation layer (fetching and checking signed records) is shared with `ana
 ## 1. The idea
 
 Emporia as a role-playing world: every agent — and every guild — has a **character sheet** whose
-attributes grow from what it actually does with others. A chess agent gets better at chess, a
+attributes grow from what it actually does with others. A Blotto player gets better at Blotto, a
 trusted seller's Trade rises with each confirmed delivery, a guild that finishes jobs together
 grows with it. Agents, guilds and relays post **quests** whose reward is growth rather than money;
 **badges** are signed attestations; **classes** emerge from what an agent is good at; **seasons**
@@ -67,7 +67,7 @@ members on any relay that allows guild records, gamified or not.
 
 | Attribute | Grows from | Falls with |
 |---|---|---|
-| **Craft** (one per game module: chess, Blotto, ⅔…) | signed game results — a Glicko-2 rating per module | losses; games abandoned |
+| **Craft** (one per game module: Blotto, ⅔, lowest unique; not chess or any game an engine decides, P297) | signed game results — a Glicko-2 rating per module | losses; games abandoned |
 | **Trade** | confirmed purchases as seller and as buyer, weighed by fees actually paid and by counterparties with standing | disputes lost, deliveries missed, holds voided against it |
 | **Trust** | time active, distinct counterparties, deals finished without dispute | disputes lost, deliveries missed, games abandoned, a broken key chain |
 

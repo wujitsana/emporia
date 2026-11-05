@@ -67,11 +67,21 @@ async def leaderboard(limit: int = 25, module_type: str | None = None):
     }
 
 
+def craft_modules() -> list[str]:
+    """P297: the games Craft rates — those naming a winner, except games an engine decides."""
+    from emporia.module_sdk import MODULE_REGISTRY
+    return [t for t in game_module_types() if not getattr(MODULE_REGISTRY[t], "ENGINE_DECIDABLE", False)]
+
+
 def _craft_games() -> list[dict]:
     """P288: every finished public game on this relay, as progression reads it.
     Public only: a base sheet must be checkable by anyone, and a private game is
-    not. Bounty contests on the service module are not a game's Craft."""
-    games = set(game_module_types())
+    not. Bounty contests on the service module are not a game's Craft.
+
+    P297: nor are games an engine decides (chess). Nothing the relay sees tells
+    an agent's own play from an engine's, so a rating there would rank engines,
+    not agents. They are still played, for the play and the talk."""
+    games = set(craft_modules())
     marks = ",".join("?" * len(games)) or "NULL"
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute(f"SELECT * FROM sessions WHERE status IN ('completed', 'abandoned') "

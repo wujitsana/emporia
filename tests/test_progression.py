@@ -301,3 +301,12 @@ def test_leaving_a_game_against_your_own_agent_counts_nothing_either_way():
     sh = pg.base_sheet("a", table={}, deals=[], registered_at=None, now=0, who=w,
                        abandoned=[{"participants": ["a", "sock"], "current_agent": "a", "step_number": 9}])
     assert sh["trust"]["abandoned_on_turn"] == 0 and sh["trust"]["score"] == 0 and sh["adjusted"] is True
+
+
+def test_craft_rates_set_plays_not_games_an_engine_decides():
+    """P297: chess is played for the play and the talk; nothing tells an agent's own
+    moves from an engine's, so Craft rates the set plays only."""
+    from emporia.routes.standing import craft_modules
+    rated = craft_modules()
+    assert "emporia:chess:v1" not in rated
+    assert {"emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1"} <= set(rated)
