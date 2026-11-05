@@ -36,6 +36,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 SOURCE_FILE = HERE / "emporia_source.json"
+#: The runtime's dependencies exported from uv.lock with every file's hash, in the runtime's
+#: own checkout: what pip installs when there is no uv (scripts/pin_plugin_runtime.py --export).
+LOCKED_REQUIREMENTS = Path("installer") / "runtime-requirements.txt"
 _TIMEOUT_S = 900
 
 
@@ -216,10 +219,20 @@ def install_runtime(say=print, target: Path | None = None, pin: tuple[str, str] 
     if uv:
         _run([uv, "sync", "--quiet", "--frozen", "--no-dev", "--extra", "x402"], cwd=rt)
     else:
+        # Security follow-up (11-05 audit): pip resolved every dependency afresh from PyPI.
+        # Now it installs uv.lock's export, each file by its hash, and Emporia itself
+        # with no dependency resolved. A runtime without the export is refused.
+        locked = rt / LOCKED_REQUIREMENTS
+        if not locked.is_file():
+            raise SetupFailed(f"this Emporia ({sha[:12]}) has no hash-locked requirements "
+                              f"({LOCKED_REQUIREMENTS}), so pip cannot install it pinned — install uv "
+                              "(https://docs.astral.sh/uv/) and run setup again")
         py = shutil.which("python3") or sys.executable
         if not python_of(rt).exists():
             _run([py, "-m", "venv", str(rt / ".venv")])
-        _run([str(python_of(rt)), "-m", "pip", "install", "--quiet", "-e", f"{rt}[x402]"])
+        pip = [str(python_of(rt)), "-m", "pip", "install", "--quiet"]
+        _run([*pip, "--require-hashes", "--no-deps", "-r", str(locked)])
+        _run([*pip, "--no-deps", "-e", str(rt)])
     return rt
 
 
