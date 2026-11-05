@@ -4,10 +4,10 @@ What is waiting for you. Good-confidence work is merged into `hackathon-v2`; any
 on its own branch. Nothing is pushed or submitted. Rewritten 11-05 against the actual branch state,
 after the independent review found this file out of date.
 
-## Merged into hackathon-v2 (verified at 9df9bbd)
+## Merged into hackathon-v2 (verified at ff37fc6)
 
-At 9df9bbd: the full suite passes (2338), the secret scan over all branches is clean, and the
-end-to-end run passes (`scripts/e2e.py`).
+At ff37fc6: the full suite passes (2407), the secret scan over all branches is clean, the
+end-to-end run passes (twice), and `hermes plugins validate` passes with one documented warning.
 
 | Merge | What it brought |
 |---|---|
@@ -16,6 +16,7 @@ end-to-end run passes (`scripts/e2e.py`).
 | `security-followups` (7e08ccb) | Visited relays get their own sender id and filtered ids. The playbook's stake limit is checked against the creator's signed stake. `/relay/activity` runs in SQL. Like times are compared as times. The console has a CSP. The pip fallback is hash-locked. |
 | `mcp-review` (d8253d5) | A path-traversal guard on tool ids. Sign-in signing is limited to home and visited relays. Bounded chain walks. `list_dm_threads` works again. Agent-facing tool descriptions. Every answer has `success`. Commit and reveal are retry-safe. DMs, rooms and the inbox page. Twelve larger proposals are in `docs/proposals/mcp-review.md`. |
 | `review-pass` (9df9bbd) | A DM the agent required sealed could still go out in plaintext on first contact or cross-relay (high). Subprocess tests in worktrees tested the main checkout's code. The secret scan missed binary and empty secret files. The abandoned-game notice. Hint wording. Five medium proposals are in `docs/review-pass-2026-11-05.md`. |
+| Catalog compliance (`catalog-compliance` and `catalog-rule11`, merged at 574832a, plus 99b967a, 60f077b, ff37fc6) | Every one of the 18 catalog rules passes. Profile `.env` access goes only through Hermes; the MCP server gets its settings through `${NAME}`; no `auth.json` handling; the key guard blocks reads of process environments; `--runtime-from` is removed; the runtime is verified file by file against the pinned tree; Nous verification is opt-in; dependencies are bounded. The integration review fixed four more problems: tampered or untracked runtime files passing verification; a refused setting write counting as success; a stale cache; a key linked by name not reaching the bridge. `scripts/e2e.py` now installs a release of HEAD made in its own folder, with no product flag. |
 | `scripts/secret_scan.py` (3e74a92) | Installed as the `pre-push` hook. Pushed history was checked 11-05 (615 commits on the public repo): no secret files or values ever pushed. |
 
 Also done on 11-05: the old 0.3.0 tab was removed from the root home; the profile repo ignores
@@ -27,26 +28,14 @@ main checkout's code. Each branch reruns its tests when it is merged.
 
 ## Built on branches, waiting for you
 
-**1. Catalog compliance (`catalog-compliance`, then `catalog-rule11`). You required this
-("plug-in must follow those guidelines").**
-- **Status:** every one of the 18 rules passes, and `hermes plugins validate` reports no failures.
-- **Rule 11:** profile `.env` access goes only through Hermes's public functions; the MCP server
-  gets its settings through `${NAME}` scope; there is no `auth.json` handling; the key guard
-  blocks reads of process environments.
-- **Rule 3:** `--runtime-from` is removed; the runtime is verified against the pinned commit and
-  tree; nothing fetches code automatically.
-- **Other changes:** Nous verification is opt-in; dependencies are bounded and `uv.lock` was
-  regenerated.
-- **What remains:** one warning, the private `_ws_auth_ok` import. There is no public route and
-  the kanban plugin sets the precedent; an issue is drafted.
-- **Next (I start this):** integrate onto hackathon-v2. `scripts/e2e.py` used `--runtime-from`,
-  so it needs a test-only pre-seeded runtime. Merge if everything is green.
-- **Yours:**
-  - the plugin README's "Testnet first" paragraph mentions the person-only unlock for real-money
-    networks: keep or cut?
-  - the release steps: pin (`scripts/pin_plugin_runtime.py`), put the sha in
-    `docs/catalog/emporia.yaml`, add the screenshots, re-validate;
-  - version labels (pyproject 0.2.0, dashboard 0.3.0, plugin 1.0.0): align them?
+**1. Catalog compliance is merged (see above). For the release, yours:**
+- **README wording:** the plugin README's "Testnet first" paragraph mentions the person-only
+  unlock for real-money networks. Keep or cut?
+- **Release steps:** run `scripts/pin_plugin_runtime.py` and commit (it records sha and tree);
+  put the sha in `docs/catalog/emporia.yaml` and the screenshot URLs; add the screenshots;
+  re-validate at that commit. The PR text is `docs/catalog/PR.md`.
+- **Version labels:** `desktop-plugin` sets the dashboard manifest to 1.0.0, matching
+  plugin.yaml; pyproject is still 0.2.0. Align it?
 
 **2. Dashboard UI: `retromod`, then `retromod-ux`.**
 - **`retromod`:** the redesign. Phone list/detail views, grouped navigation, section headings,
@@ -101,10 +90,19 @@ main checkout's code. Each branch reruns its tests when it is merged.
   - should key-only agents count as operators for feats?
   - should ideas get their own gamify part?
 
-**7. Hermes Desktop half (`desktop-plugin`, in progress).**
-- **What it is:** a native `desktop/plugin.js` in the same package, with one build for web and
-  Desktop and a staleness test. Tested in Hermes's browser Webapp.
-- **Yours:** the real Desktop check, on your machine.
+**7. Hermes Desktop half (`desktop-plugin`, on `retromod-ux`, built).**
+- **What it is:** the whole dashboard as a native Desktop page, built from the same source as the
+  tab with one `npm run build:plugin`. It adds a sidebar row, 8 palette commands, a "your turn" or
+  unread status chip, and an opt-in notification. It is off until enabled in
+  Capabilities ▸ Plugins.
+- **Shared with the tab:** a test fails if either bundle is stale; the version (1.0.0) comes from
+  one source.
+- **Checks:** Hermes's desktop-surface lint passes with 0 hits, and validate passes. 17 checks
+  pass against a real throwaway Webapp backend; 279 tests pass.
+- **Not seen yet:** the sandbox's browser won't start, so there are no screenshots. A real
+  Desktop session is needed (checklist in `docs/manual-testing.md`, about half a day,
+  likely some CSS tuning).
+- **Order:** it merges after the UI branches.
 
 ## The demo video
 
