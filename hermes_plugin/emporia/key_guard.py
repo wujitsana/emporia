@@ -8,8 +8,9 @@ which on Hermes's `local` terminal backend run on the same disk as the keys.
 Two Hermes hooks narrow that:
 
 * ``pre_tool_call`` vetoes a call whose command, path or code names the keys
-  folder, a key file, a key variable, or a password-manager session token.
-  Only what a tool *reads or runs* is inspected (command, path, code), never
+  folder, a key file, a key variable, or a password-manager session token,
+  or reads another process's environment (``/proc/<pid>/environ``, ``ps e``),
+  where Emporia's processes are handed their keys. Only what a tool *reads or runs* is inspected (command, path, code), never
   what it writes, so editing Emporia's own source stays possible.
 * ``transform_tool_result`` hides the value of a key assignment that reaches a
   tool result anyway.
@@ -41,6 +42,16 @@ _KEY_PATHS = re.compile(
     # Its source is no secret: reading or linting signer.py is fine; running it is not.
     r"|\bimport\s+emporia\.signer\b|\bfrom\s+emporia(?:\.signer)?\s+import\s+[\w\s,]*\b(?:signer|decide|save_policy"
     r"|new_agent_token|admin_token)\b|-m\s+emporia\.signer\b")
+# Catalog rule 11: Emporia's processes get their settings and keys in their environment,
+# through Hermes (an MCP server's `${NAME}` env, the bridge's from the gateway's scope). A
+# process's environment is readable by its own user: /proc/<pid>/environ (Hermes's file tool
+# refuses it; the agent's terminal and code would not) and `ps e` / `ps eww` / `ps auxe`
+# (BSD-style options with `e`, as the first word or alone; `ps -e` lists processes, no env).
+_ENV_READS = re.compile(
+    r"/proc/[^\n]*?/environ\b"                                   # any pid: 123, self, *, $(pgrep …)
+    r"|\bps\s+[A-Za-z]*e[A-Za-z]*(?=$|[\s|;&)])"
+    r"|\bps\b[^|;&\n]*\se(?=$|[\s|;&)])"
+    r"|['\"]ps['\"]\s*,\s*['\"][A-Za-z]*e[A-Za-z]*['\"]")         # ['ps', 'eww'] from code
 _KEY_NAMES = re.compile(
     r"\bEMPORIA_(?:IDENTITY|ENCRYPTION|X402_EVM|X402_SOLANA|OPERATOR)_PRIVATE_KEY\b"
     r"|\bEMPORIA_X402_PHRASE_SECRET\b|\bEMPORIA_ENCRYPTION_RETIRED_KEYS\b"
@@ -171,7 +182,7 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
         return None
     for key in _READ_ARGS:
         for text in _strings(args.get(key)):
-            if _KEY_PATHS.search(text) or _KEY_NAMES.search(text):
+            if _KEY_PATHS.search(text) or _KEY_NAMES.search(text) or _ENV_READS.search(text):
                 return {"action": "block", "message": BLOCKED}
     if any(_RELAY_SETTING.search(text) for text in _strings(args)) or any(
             _RELAY_FOLDER.search(text) for key in _READ_ARGS for text in _strings(args.get(key))):
