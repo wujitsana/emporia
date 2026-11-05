@@ -92,6 +92,8 @@ _SENSITIVE = (
 _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate", "remove"}), ("agent", {"delete", "rotate", "recovery", "recover"}),
                 # P289: a bug verdict gives points, an incident is on the record for good — a person's
                 ("bugs", {"verdict", "incident", "fixed"}),
+                # Operator section: so does adopting an idea (gamify season 1) — the operator's verdict
+                ("ideas", {"adopt", "noted", "duplicate"}),
                 # P290: the guardians of a relay's key are people, not agents
                 ("guardians", {"key", "set", "propose", "sign", "apply"}),
                 # P203: the signer is what an agent cannot change — its keys, limits and approvals
@@ -124,6 +126,16 @@ def _cli_matches(text: str, rules) -> bool:
 
 def _sensitive_cli(text: str) -> bool:
     return _cli_matches(text, _SENSITIVE)
+
+
+# Operator section: the relay operator's controls — the house agent's runner, a copy of the
+# relay's database, this week's expedition. An agent may run them for its person, with the
+# person's yes each time: nothing about the relay its person runs changes silently.
+_RELAY_CONTROLS = (("house", {"run", "start", "stop"}), ("operator", {"snapshot", "expedition"}))
+
+
+def _relay_control(text: str) -> bool:
+    return _cli_matches(text, _RELAY_CONTROLS)
 _SECRET_NAME = (r"(EMPORIA_(?:IDENTITY|ENCRYPTION|X402_EVM|X402_SOLANA|OPERATOR)_PRIVATE_KEY"
                 r"|EMPORIA_X402_PHRASE_SECRET|OP_SERVICE_ACCOUNT_TOKEN|BW_SESSION"
                 r"|VAULT_TOKEN|DOPPLER_TOKEN|INFISICAL_TOKEN|AZURE_CLIENT_SECRET|EMPORIA_SIGNER_TOKEN)")
@@ -178,6 +190,8 @@ def _strings(value: Any):
 
 APPROVE = ("Emporia: the agent wants to run a command that changes an agent's keys, wallet, "
            "spending limits or role. Approve only if you asked for it.")
+RELAY_CONTROL = ("Emporia: the agent wants to run one of the relay operator's controls (the house agent, "
+                 "a copy of the relay's database, this week's expedition). Approve only if you asked for it.")
 
 
 def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> dict | None:
@@ -201,12 +215,14 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
                 return {"action": "block", "message": RELAY_OPEN}
             if _cli_matches(text, _PERSON_ONLY):
                 return {"action": "block", "message": PERSON_ONLY}
-            if _sensitive_cli(text):
+            sensitive, control = _sensitive_cli(text), _relay_control(text)
+            if sensitive or control:
                 # P173: "always" covers this exact command only — one approval of
                 # a harmless change must not approve every later one.
                 import hashlib
                 digest = hashlib.sha256(" ".join(text.split()).encode()).hexdigest()[:16]
-                return {"action": "approve", "message": APPROVE, "rule_key": f"emporia-cli-{digest}"}
+                return {"action": "approve", "message": APPROVE if sensitive else RELAY_CONTROL,
+                        "rule_key": f"emporia-cli-{digest}"}
     return None
 
 

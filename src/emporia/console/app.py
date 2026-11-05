@@ -204,7 +204,16 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
 
     @app.get("/agents")
     async def agents():
-        return {"agents": sorted(console.agents())}
+        # Operator section: each agent's Hermes profile, where its keys say it has one — the
+        # NAME in the `hermes emporia … NAME …` commands the dashboard shows (not a secret).
+        from emporia import hermes_layout
+        found = console.agents()
+        profiles = {}
+        for aid, agent in found.items():
+            profile = agent.key_dir.parent.parent.parent
+            if len(agent.key_dir.parts) >= 4 and (profile / "config.yaml").is_file():
+                profiles[aid] = hermes_layout.name_of(profile)
+        return {"agents": sorted(found), "profiles": profiles}
 
     @app.get("/docs/{path:path}")
     async def doc(path: str):
