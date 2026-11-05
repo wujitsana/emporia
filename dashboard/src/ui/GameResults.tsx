@@ -1,5 +1,6 @@
 import Text from "@kit/Text";
-import { PaidByTag } from "./PayTag";
+import { useRelayHealth } from "../healthCtx";
+import { stakeText } from "../paymentFormat";
 import { useInterval } from "../hooks";
 import { api } from "../api";
 import type { GameResult } from "../api";
@@ -44,8 +45,12 @@ export function GameResults({ moduleType, onOpen }: { moduleType?: string; onOpe
 }
 
 function ResultRow({ r, onOpen }: { r: GameResult; onOpen?: (sessionId: string) => void }) {
-  const stake = r.stake_per_participant && Number(r.stake_per_participant) > 0
-    ? `${r.stake_per_participant} ${(r.currency ?? "").toUpperCase()}` : "free";
+  const health = useRelayHealth();
+  const money = r.stake_per_participant && Number(r.stake_per_participant) > 0
+    ? stakeText(Number(r.stake_per_participant), r.currency ?? undefined,
+      { rails: r.paid_by, escrowNetwork: health?.x402_escrow_network })
+    : null;
+  const stake = money ? money.amount : "free";
   return (
     <>
       <tr>
@@ -64,7 +69,7 @@ function ResultRow({ r, onOpen }: { r: GameResult; onOpen?: (sessionId: string) 
         <td><Text>{verdict(r)}</Text></td>
         <td>
           <Text className="e-dim">{stake}</Text>
-          {r.paid_by && r.paid_by.length > 0 ? <><br /><PaidByTag rails={r.paid_by} /></> : null}
+          {money?.via ? <><br /><span className="e-faint" style={{ fontSize: 11 }}>{money.via}</span></> : null}
         </td>
       </tr>
       {r.module_type === "emporia:blotto:v1" ? <BlottoRounds r={r} /> : null}

@@ -5,7 +5,7 @@ import RowSpaceBetween from "@kit/RowSpaceBetween";
 import SidebarLayout from "@kit/SidebarLayout";
 import Text from "@kit/Text";
 import React, { useEffect, useRef } from "react";
-import { api, dashboardToken, looksLikeEncryptedEnvelope } from "../api";
+import { OPENED_TAG, SEALED_TAG, api, dashboardToken, looksLikeEncryptedEnvelope } from "../api";
 import type { Session, SessionAction } from "../api";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { SegmentTabs } from "../ui/SegmentTabs";
@@ -256,8 +256,8 @@ const ACTION_ICONS: Record<string, string> = {
   confirm: "✔",
   dispute: "✗",
   submit: "⬆",
-  commit: "🔒",
-  reveal: "🔓",
+  commit: "■",
+  reveal: "◆",
   review: "✎",
   reject: "✗",
   complete: "★",
@@ -268,7 +268,7 @@ function actionSummary(a: SessionAction, opened: Record<string, string> = {}): s
   const p: Record<string, unknown> = { ...(a.payload ?? {}) };
   for (const [k, v] of Object.entries(p)) {
     if (typeof v === "string" && looksLikeEncryptedEnvelope(v)) {
-      p[k] = opened[`${a.action_id}:${k}`] !== undefined ? `🔓 ${opened[`${a.action_id}:${k}`]}` : "🔒 sealed to the players";
+      p[k] = opened[`${a.action_id}:${k}`] !== undefined ? `${OPENED_TAG} ${opened[`${a.action_id}:${k}`]}` : `${SEALED_TAG} sealed to the players`;
     }
   }
   if (p.deliverable) return String(p.deliverable).slice(0, 120);

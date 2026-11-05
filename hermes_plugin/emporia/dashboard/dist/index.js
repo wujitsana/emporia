@@ -11931,10 +11931,10 @@
 	}
 	/** What to show as a thread's one-line preview in the sidebar. */
 	function dmThreadPreview(thread) {
-		if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return "🔒 encrypted";
+		if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
 		return (thread.last_content ?? "—").slice(0, 36);
 	}
-	var BASE$1, dashboardAuth, ENCRYPTED_PLACEHOLDER, api;
+	var BASE$1, dashboardAuth, SEALED_TAG, OPENED_TAG, ENCRYPTED_PLACEHOLDER, api;
 	var init_api = __esmMin((() => {
 		init_relayEnv();
 		init_transport();
@@ -11949,7 +11949,9 @@
 			/** Poll after agent signs — resolves once relay has the token */
 			poll: (challenge_id) => get(`/dashboard/poll?challenge_id=${encodeURIComponent(challenge_id)}`)
 		};
-		ENCRYPTED_PLACEHOLDER = "🔒 encrypted — not readable here";
+		SEALED_TAG = "[sealed]";
+		OPENED_TAG = "[opened]";
+		ENCRYPTED_PLACEHOLDER = `${SEALED_TAG} encrypted — not readable here`;
 		api = {
 			relayCard: () => get("/relay/card"),
 			sheet: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/sheet`),
@@ -13383,7 +13385,7 @@
 		const card = !!h?.stripe_enabled;
 		const usdc = !!h?.x402_enabled;
 		const on = (nets) => {
-			const names = nets.filter((n) => !!n).map(networkLabel);
+			const names = nets.filter((n) => !!n).map(networkWithKind);
 			return names.length ? ` (${names.join(", ")})` : "";
 		};
 		const ways = [];
@@ -13408,14 +13410,34 @@
 		}
 		return ways.length ? `accepts ${ways.join(" · ")}` : "no payment rail on this relay";
 	}
-	/** P153: how a session's stakes were actually paid. USDC on a session is
-	*  always held in escrow (a direct x402 payment is for entries, which are not
-	*  sessions). */
-	function paidByLabel(rails) {
-		if (!rails || rails.length === 0) return null;
-		return "paid by " + rails.map((r) => r === "stripe" ? "card" : r === "x402" ? "USDC escrow" : r === "tempo" ? "Tempo" : r).join(" + ");
+	/**
+	* Whether stakes on this escrow network are test money. A relay that does not
+	* name its escrow network is holding test funds: agents pay on testnets unless
+	* a person unlocks a real-money network for that agent in their own terminal.
+	*/
+	function isTestnet(network) {
+		return !network || TESTNETS.has(network);
 	}
-	var FAILED_TRANSFERS, DIRECT_TRANSFERS, EXPLORERS, NETWORK_NAMES, TWO_PLAYER_GAMES;
+	/** "Base Sepolia testnet", "Solana devnet": a network's name that says when it is a test one. */
+	function networkWithKind(network) {
+		const name = networkLabel(network);
+		return TESTNETS.has(network) && !/devnet|testnet/i.test(name) ? `${name} testnet` : name;
+	}
+	/**
+	* The money line under a game or a deal, in two parts: what is staked or paid
+	* ("1.00 USDC (testnet)") and how it is held ("escrow", "card"), or null when
+	* nobody has paid yet. USDC on a session is always held in escrow.
+	*/
+	function stakeText(amount, currency, opts) {
+		const rails = opts.rails ?? [];
+		const unit = rails.includes("x402") || opts.mode === "x402" ? `USDC${isTestnet(opts.escrowNetwork) ? " (testnet)" : ""}` : (currency ?? "").toUpperCase();
+		const via = rails.length ? rails.map((r) => r === "x402" ? "escrow" : r === "stripe" ? "card" : r === "tempo" ? "Tempo" : r).join(" + ") : null;
+		return {
+			amount: `${amount.toFixed(2)} ${unit}`.trim(),
+			via
+		};
+	}
+	var FAILED_TRANSFERS, DIRECT_TRANSFERS, EXPLORERS, NETWORK_NAMES, TWO_PLAYER_GAMES, TESTNETS;
 	var init_paymentFormat = __esmMin((() => {
 		FAILED_TRANSFERS = /* @__PURE__ */ new Set(["capture_failed", "transfer_failed"]);
 		DIRECT_TRANSFERS = /* @__PURE__ */ new Set([
@@ -13437,6 +13459,11 @@
 			"eip155:42431": "Tempo Moderato"
 		};
 		TWO_PLAYER_GAMES = /* @__PURE__ */ new Set(["emporia:blotto:v1", "emporia:chess:v1"]);
+		TESTNETS = /* @__PURE__ */ new Set([
+			"eip155:84532",
+			"solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+			"eip155:42431"
+		]);
 	}));
 	// src/ui/kit/Divider.module.css
 	var gradient, divider, line$1, Divider_module_default;
@@ -19506,15 +19533,6 @@
 			children: label.replace(/^accepts /, "")
 		});
 	}
-	/** P153: how a session's stakes were actually paid. Renders nothing if unpaid. */
-	function PaidByTag({ rails }) {
-		const label = paidByLabel(rails);
-		return label ? /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)("span", {
-			className: "e-faint",
-			style: { fontSize: 11 },
-			children: label
-		}) : null;
-	}
 	var import_jsx_runtime$32;
 	var init_PayTag = __esmMin((() => {
 		init_healthCtx();
@@ -19750,6 +19768,7 @@
 	}
 	function ListingsView({ refreshTrigger, navigate }) {
 		const [data, loading, error] = useInterval(() => api.listings(), 1e4, [refreshTrigger]);
+		const escrowNetwork = useRelayHealth()?.x402_escrow_network;
 		const listings = data?.listings ?? [];
 		const [lobby] = useInterval(() => api.openSessions(), 15e3, [refreshTrigger]);
 		const waiting = lobby?.open_sessions ?? [];
@@ -19790,9 +19809,12 @@
 					children: modLabel
 				}, "mod"),
 				l.payment_mode !== "free" ? /* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)("span", { children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)("span", {
+					/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
 						style: { color: "var(--theme-focused-foreground)" },
-						children: ["$", l.price_usd]
+						children: l.payment_mode === "x402" ? stakeText(Number(l.price_usd), "usd", {
+							mode: "x402",
+							escrowNetwork
+						}).amount : `$${l.price_usd}`
 					}),
 					" ",
 					/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(AcceptsTag, {
@@ -19979,6 +20001,8 @@
 		init_hooks();
 		init_discoveryFormat();
 		init_AgentMoireAvatar();
+		init_healthCtx();
+		init_paymentFormat();
 		import_jsx_runtime$30 = require_jsx_runtime();
 	}));
 	// src/ui/chessIcons.tsx
@@ -20991,7 +21015,7 @@
 						r.encrypted && /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)("span", {
 							title: "Encrypted",
 							style: { fontSize: 11 },
-							children: "🔒"
+							children: "[sealed]"
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(AdvertisedBadge, { advertised: r.advertised }),
 						r.entry_fee_cents > 0 && /* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)(import_jsx_runtime$23.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$23.jsxs)("span", {
@@ -21055,7 +21079,7 @@
 		const chatLines = markReplayedNonces(messages).map((m) => ({
 			id: m.message_id,
 			sender_id: m.sender_id,
-			content: opened[m.message_id] !== void 0 ? `🔓 ${opened[m.message_id]}` : dmDisplayContent(m.content),
+			content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : dmDisplayContent(m.content),
 			msg_type: m.msg_type,
 			created_at: m.created_at,
 			verified: m.deleted_at ? null : verifyMessageSignature("room", roomId, m, pubkeys[m.sender_id] ?? ""),
@@ -24950,7 +24974,12 @@
 		});
 	}
 	function ResultRow({ r, onOpen }) {
-		const stake = r.stake_per_participant && Number(r.stake_per_participant) > 0 ? `${r.stake_per_participant} ${(r.currency ?? "").toUpperCase()}` : "free";
+		const health = useRelayHealth();
+		const money = r.stake_per_participant && Number(r.stake_per_participant) > 0 ? stakeText(Number(r.stake_per_participant), r.currency ?? void 0, {
+			rails: r.paid_by,
+			escrowNetwork: health?.x402_escrow_network
+		}) : null;
+		const stake = money ? money.amount : "free";
 		return /* @__PURE__ */ (0, import_jsx_runtime$17.jsxs)(import_jsx_runtime$17.Fragment, { children: [
 			/* @__PURE__ */ (0, import_jsx_runtime$17.jsxs)("tr", { children: [
 				/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(Text, {
@@ -24978,7 +25007,11 @@
 				/* @__PURE__ */ (0, import_jsx_runtime$17.jsxs)("td", { children: [/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(Text, {
 					className: "e-dim",
 					children: stake
-				}), r.paid_by && r.paid_by.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$17.jsxs)(import_jsx_runtime$17.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)("br", {}), /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(PaidByTag, { rails: r.paid_by })] }) : null] })
+				}), money?.via ? /* @__PURE__ */ (0, import_jsx_runtime$17.jsxs)(import_jsx_runtime$17.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)("br", {}), /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)("span", {
+					className: "e-faint",
+					style: { fontSize: 11 },
+					children: money.via
+				})] }) : null] })
 			] }),
 			r.module_type === "emporia:blotto:v1" ? /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(BlottoRounds, { r }) : null,
 			r.module_type === "emporia:two-thirds:v1" || r.module_type === "emporia:lowest-unique:v1" ? /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(TwoThirdsPicks, { r }) : null
@@ -25030,7 +25063,8 @@
 	var import_jsx_runtime$17;
 	var init_GameResults = __esmMin((() => {
 		init_Text();
-		init_PayTag();
+		init_healthCtx();
+		init_paymentFormat();
 		init_hooks();
 		init_api();
 		init_chessReplay();
@@ -25125,7 +25159,7 @@
 						children: shortAgent(m.agent_id, 12)
 					}),
 					" ",
-					looksLikeEncryptedEnvelope(m.content) ? opened[m.message_id] !== void 0 ? `🔓 ${opened[m.message_id]}` : "🔒 sealed to the players" : m.content
+					looksLikeEncryptedEnvelope(m.content) ? opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : `${SEALED_TAG} sealed to the players` : m.content
 				]
 			}, m.message_id))]
 		});
@@ -25185,27 +25219,31 @@
 	// src/ui/SessionMoney.tsx
 	/**
 	* P153: a session's money in one line — its stake, then what can pay it
-	* (before anyone has) or how it was paid (after). Nothing for a free session.
+	* (before anyone has) or how it is held (after): "stake 1.00 USDC (testnet) ·
+	* escrow". Nothing for a free session.
 	*/
 	function SessionMoney({ session }) {
 		const [full] = useInterval(() => api.session(session.session_id), 3e4, [session.session_id]);
+		const health = useRelayHealth();
 		const rules = full?.payment_rules ?? session.payment_rules;
 		const stake = Number(rules?.stake_per_participant ?? 0);
 		if (!stake) return null;
 		const purchase = session.module_type === "emporia:service:v1";
-		const paid = full?.paid_by ?? [];
+		const money = stakeText(stake, rules?.currency, {
+			rails: full?.paid_by ?? [],
+			mode: rules?.mode,
+			escrowNetwork: health?.x402_escrow_network
+		});
 		return /* @__PURE__ */ (0, import_jsx_runtime$14.jsxs)(Text, {
 			className: "e-dim",
 			style: { fontSize: 11 },
 			children: [
 				purchase ? "price" : "stake",
 				" ",
-				stake.toFixed(2),
-				" ",
-				(rules?.currency ?? "").toUpperCase(),
+				money.amount,
 				" ·",
 				" ",
-				paid.length ? /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(PaidByTag, { rails: paid }) : /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(AcceptsTag, {
+				money.via ?? /* @__PURE__ */ (0, import_jsx_runtime$14.jsx)(AcceptsTag, {
 					move: purchase ? "purchase" : "wager",
 					moduleType: session.module_type
 				})
@@ -25217,6 +25255,8 @@
 		init_Text();
 		init_hooks();
 		init_api();
+		init_healthCtx();
+		init_paymentFormat();
 		init_PayTag();
 		import_jsx_runtime$14 = require_jsx_runtime();
 	}));
@@ -25497,7 +25537,7 @@
 		const chatLines = markReplayedNonces(messages).map((m) => ({
 			id: m.message_id,
 			sender_id: m.sender_id,
-			content: opened[m.message_id] !== void 0 ? `🔓 ${opened[m.message_id]}` : dmDisplayContent(m.content),
+			content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : dmDisplayContent(m.content),
 			created_at: m.created_at,
 			verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] ?? ""),
 			replayed: m.replayed,
@@ -25511,8 +25551,8 @@
 				className: "e-faint",
 				title: readerError ?? void 0,
 				children: [
-					thread.encrypted ? "🔒 end-to-end encrypted · " : "not encrypted · ",
-					thread.encrypted ? VIA_CONSOLE ? readerError ? "could not open here · " : "🔓 opened on this machine · " : "open via your local console to read · " : "",
+					thread.encrypted ? `${SEALED_TAG} end-to-end encrypted · ` : "not encrypted · ",
+					thread.encrypted ? VIA_CONSOLE ? readerError ? "could not open here · " : `${OPENED_TAG} on this machine · ` : "open via your local console to read · " : "",
 					liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"
 				]
 			}), /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(DmChainBadge, {
@@ -25636,7 +25676,7 @@
 									fontSize: 13,
 									fontWeight: unread ? 600 : 400
 								},
-								children: [t.encrypted ? "🔒 " : "", t.other_agent]
+								children: [t.encrypted ? `${SEALED_TAG} ` : "", t.other_agent]
 							}), unread > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Text, {
 								className: "e-unread-count",
 								children: unread
@@ -27030,7 +27070,7 @@
 	}
 	function actionSummary(a, opened = {}) {
 		const p = { ...a.payload ?? {} };
-		for (const [k, v] of Object.entries(p)) if (typeof v === "string" && looksLikeEncryptedEnvelope(v)) p[k] = opened[`${a.action_id}:${k}`] !== void 0 ? `🔓 ${opened[`${a.action_id}:${k}`]}` : "🔒 sealed to the players";
+		for (const [k, v] of Object.entries(p)) if (typeof v === "string" && looksLikeEncryptedEnvelope(v)) p[k] = opened[`${a.action_id}:${k}`] !== void 0 ? `${OPENED_TAG} ${opened[`${a.action_id}:${k}`]}` : `${SEALED_TAG} sealed to the players`;
 		if (p.deliverable) return String(p.deliverable).slice(0, 120);
 		if (p.finding) return String(p.finding).slice(0, 120);
 		if (p.comment) return String(p.comment).slice(0, 120);
@@ -27617,8 +27657,8 @@
 			confirm: "✔",
 			dispute: "✗",
 			submit: "⬆",
-			commit: "🔒",
-			reveal: "🔓",
+			commit: "■",
+			reveal: "◆",
 			review: "✎",
 			reject: "✗",
 			complete: "★"
@@ -27905,7 +27945,8 @@
 						children: [
 							p.is_pinned ? /* @__PURE__ */ (0, import_jsx_runtime$7.jsx)("span", {
 								title: "pinned",
-								children: "📌"
+								className: "e-faint",
+								children: "[pinned]"
 							}) : null,
 							/* @__PURE__ */ (0, import_jsx_runtime$7.jsx)(Text, {
 								style: { fontWeight: 600 },
@@ -28758,7 +28799,9 @@
 		}, []);
 		const [mainEl, setMainEl] = (0, import_react$3.useState)(null);
 		const doc = DOCS.find((d) => d.id === docId) ?? DOCS[0];
-		const shown = (0, import_react$3.useMemo)(() => searchDocs(query), [query, loaded]);
+		const shown = (0, import_react$3.useMemo)(() => {
+			return searchDocs(query);
+		}, [query, loaded]);
 		const scrollTo = (0, import_react$3.useCallback)((anchor) => {
 			const el = mainEl?.querySelector(`[id="${CSS.escape(anchor)}"]`);
 			if (el) el.scrollIntoView({ block: "start" });
@@ -28772,18 +28815,20 @@
 			mainEl,
 			scrollTo
 		]);
-		const body = (0, import_react$3.useMemo)(() => renderMarkdown(doc.text, {
-			resolveLink: (href) => resolveDocLink(doc, href),
-			onDocLink: (id, anchor) => {
-				if (id === doc.id) {
-					if (anchor) scrollTo(anchor);
-				} else setNav({
-					id,
-					anchor: anchor ?? null
-				});
-			},
-			onAnchor: scrollTo
-		}), [
+		const body = (0, import_react$3.useMemo)(() => {
+			return renderMarkdown(doc.text, {
+				resolveLink: (href) => resolveDocLink(doc, href),
+				onDocLink: (id, anchor) => {
+					if (id === doc.id) {
+						if (anchor) scrollTo(anchor);
+					} else setNav({
+						id,
+						anchor: anchor ?? null
+					});
+				},
+				onAnchor: scrollTo
+			});
+		}, [
 			doc,
 			scrollTo,
 			loaded

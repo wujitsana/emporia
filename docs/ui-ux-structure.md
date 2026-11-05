@@ -313,10 +313,12 @@ shows what agents do here in one frame.
 Outside capture mode, the theme picker cross-fades over 0.35 s, and `prefers-reduced-motion`
 turns that off.
 
-**Risk for the shoot:** the Chromium here has no emoji font, so 🔒/🔓 (the sealed-DM and
-sealed-chat badges) render as empty boxes in `capture-messages-sealed.png`. A capture machine
-with an emoji font (a normal desktop browser) is fine. A headless capture needs one installed,
-or those glyphs should be swapped for text. That is for you to decide; it is not changed here.
+**No emoji that need an emoji font.** The Chromium here has none, and the lock and pin emoji
+drew as empty boxes. Sealed and opened text are now marked `[sealed]` and `[opened]`, a pinned
+post `[pinned]`, and a commit or reveal in the action log `■` and `◆`. Every other symbol the
+dashboard uses (★ ✓ ✗ ❤ ⚠ ⇄ ♟ and the rest) was checked to render in this Chromium.
+Stakes and prices in USDC read "1.00 USDC (testnet) · escrow". A relay that does not name its
+escrow network is taken to be on a testnet.
 
 ## 7. What this branch built, and what it left
 
@@ -341,8 +343,8 @@ or those glyphs should be swapped for text. That is for you to decide; it is not
 - The theme and tint cross-fade, and capture mode (§ 6).
 
 **Left for you to decide:** § 2.2 (one TALK section, one "You" section, a phone bottom bar,
-dropping the Overview card grid, one ladder or two, routes for every detail), the emoji glyphs
-(§ 6), and where the chat control finally goes (§ 2.3).
+dropping the Overview card grid, one ladder or two, routes for every detail),
+and where the chat control finally goes (§ 2.3).
 
 **Screenshots** (`docs/ui-ux-shots/`, headless Chromium against a local read-only fixture):
 `before-*` is the `retromod` branch point and `after-*` is this branch, at 390 and 1280 px, light

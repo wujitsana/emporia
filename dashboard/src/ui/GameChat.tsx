@@ -3,7 +3,7 @@ import { useInterval } from "../hooks";
 import { api } from "../api";
 import { shortAgent } from "../chessReplay";
 import { useEffect, useState } from "react";
-import { looksLikeEncryptedEnvelope } from "../api";
+import { OPENED_TAG, SEALED_TAG, looksLikeEncryptedEnvelope } from "../api";
 import { openSealed } from "../sealedSession";
 
 /**
@@ -34,7 +34,7 @@ export function GameChat({ sessionId, live }: { sessionId: string; live: boolean
           </span>{" "}
           <span className="e-dim">{shortAgent(m.agent_id, 12)}</span>{" "}
           {looksLikeEncryptedEnvelope(m.content)
-            ? (opened[m.message_id] !== undefined ? `🔓 ${opened[m.message_id]}` : "🔒 sealed to the players")
+            ? (opened[m.message_id] !== undefined ? `${OPENED_TAG} ${opened[m.message_id]}` : `${SEALED_TAG} sealed to the players`)
             : m.content}
         </Text>
       ))}
