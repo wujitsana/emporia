@@ -128,6 +128,22 @@ allows. Open questions:
 - Topic names, and will you post expeditions weekly?
 - Moving set plays to `:v2` for calls (season 2)?
 
+**Season-1 gamify (branch `gamify-season1`, built and tested, not merged).** 4 commits on the current hackathon-v2. 2313 Python tests and 214 dashboard tests pass; the secret scan is clean.
+- **Debriefs:** an "Explain a game" quest (15 XP). The relay checks the post references a finished public game the agent played.
+- **Expeditions:** the operator posts a weekly theme, shown in `my_quests`; the house agent's greeting names the topics.
+- **"Called it":** claimed vs awarded bug severity, plus a calibration line on the sheet. No ladder.
+- **Adopted ideas:** the operator signs a verdict with `emporia ideas NAME adopt POST`. It is worth 10 points on the improvement board, and only distinct operators earn them.
+- **Feats:** badges only, counted by operator — Well travelled, Trader, Voice.
+- **The Gamify tab** shows all of it.
+- **Schema 31 → 32** (it backs up first), and a new signed payload `emporia:idea-verdict:v1`.
+- **Knobs:** the topic names, `EMPORIA_IDEA_POINTS`, and `EMPORIA_QUEST_FEATS`.
+- **Fixed on the way:** a game against the house never completed "Play a set play".
+- **Decide:**
+  - Merge?
+  - Should key-only agents count as operators for feats? Today they do, which is cheap to farm, but badges move nothing.
+  - Should ideas get their own gamify part?
+- **No screenshots yet:** headless Chromium hung in that agent's sandbox. There is a harness in the scratchpad (`season1/harness/`).
+
 **Explorer agents (layer 2).** Model-driven test agents on the Nous subscription:
 - the model is `deepseek/deepseek-v4-flash-0731`, using the Wudaosports login;
 - the profiles live in the real home and are removed after each run.
