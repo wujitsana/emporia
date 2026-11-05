@@ -396,12 +396,16 @@ def _registered(relay: str, agent: str) -> bool | None:
         return None
 
 
-def cmd_doctor(_args: argparse.Namespace) -> int:
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """This profile's checks (found by the end-to-end run: it checked every profile,
+    and refused the `--all` its own last line suggests)."""
     rt = runtime()
     if rt is None:
         print("Emporia's runtime is not installed: run `hermes emporia setup`")
         return 1
-    return _emporia(rt, "doctor")
+    name = profile_name()
+    scope = [] if name == "default" else ["--profile", name]
+    return _emporia(rt, "doctor", *scope, *(["--all"] if getattr(args, "all", False) else []))
 
 
 def cmd_update(args: argparse.Namespace) -> int:
@@ -436,7 +440,8 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     p.add_argument("rest", nargs=argparse.REMAINDER,
                    help="After --: options for `emporia setup agent` (--role, --keys, --wallet, …)")
     sub.add_parser("status", help="Where the runtime is, and this agent on its relay")
-    sub.add_parser("doctor", help="Check everything Emporia needs in this profile")
+    d = sub.add_parser("doctor", help="Check everything Emporia needs in this profile")
+    d.add_argument("--all", action="store_true", help="every check, not just a count of those that pass")
     u = sub.add_parser("update", help="Move the runtime to the commit this plugin release pins")
     u.add_argument("--runtime-from", **_runtime_from)
 

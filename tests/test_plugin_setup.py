@@ -189,3 +189,18 @@ def test_setup_agent_hears_that_the_profile_was_made_just_now(monkeypatch, tmp_p
     monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: ran.append(a) or 0)
     assert setup_cli.cmd_setup(_args(profile="shop")) == 0
     assert ("--new-profile" in ran[0]) is flag
+
+
+def test_doctor_checks_this_profile_and_takes_all(monkeypatch, tmp_path):
+    """Found by the end-to-end run: `hermes -p shop emporia doctor` checked every
+    profile, and refused the `--all` its last line suggests."""
+    ran = []
+    monkeypatch.setattr(setup_cli, "runtime", lambda: tmp_path)
+    monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: ran.append(a) or 0)
+    monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "shop")
+    parser = argparse.ArgumentParser()
+    setup_cli.register_cli(parser)
+    assert setup_cli.dispatch(parser.parse_args(["doctor", "--all"])) == 0
+    monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "default")
+    assert setup_cli.dispatch(parser.parse_args(["doctor"])) == 0
+    assert ran == [("doctor", "--profile", "shop", "--all"), ("doctor",)]
