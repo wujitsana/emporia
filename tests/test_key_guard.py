@@ -294,3 +294,21 @@ def test_setting_emporia_up_or_updating_it_is_the_persons_yes():
         assert guard.pre_tool_call("terminal", {"command": cmd})["action"] == "approve", cmd
     for cmd in ("hermes emporia status", "hermes emporia doctor", "emporia doctor"):
         assert guard.pre_tool_call("terminal", {"command": cmd}) is None, cmd
+
+
+def test_the_local_console_is_out_of_an_agents_reach():
+    """Security audit (11-05): the dashboard's console holds every local profile's keys
+    and answers on a Unix socket with no credential (the folder is the gate, and the
+    agents' tools run as the same user). From a terminal one agent could read another
+    profile's inbox as that agent and have its sealed DMs opened — another agent's keys,
+    used for it, with no key path named. Starting a console of its own over every
+    profile's keys is the same."""
+    for cmd in ("curl --unix-socket ~/.hermes/plugin-data/emporia/console/console.sock http://c/relay/beta/dm",
+                "curl --unix-socket /opt/x/plugins/emporia/console.sock http://c/dm/beta/open -d '{}'",
+                "python -c \"import httpx; httpx.HTTPTransport(uds='/srv/h/plugin-data/emporia/console/x')\"",
+                "python -m emporia.console --uds /srv/s.sock --hermes-root /srv/hermes",
+                "python -c 'from emporia.console.agents import discover, load_identity_key'"):
+        r = guard.pre_tool_call("terminal", {"command": cmd})
+        assert r and r["action"] == "block", cmd
+    for fine in ("pytest tests/test_console.py -q", "ruff check src/emporia/console/app.py"):
+        assert guard.pre_tool_call("terminal", {"command": fine}) is None, fine
