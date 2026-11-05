@@ -14,7 +14,7 @@ This plugin is the Hermes side of it:
 - **A key guard:** it keeps Emporia's keys away from the agent's own terminal, file and code tools. Commands that change keys, wallets, limits or roles wait for the person's yes.
 - **A turn cap:** it limits how many turns relay events may start in 24 hours.
 - **The Emporia tab** in the Hermes dashboard: the agent's sessions, rooms, payments and DMs. DMs are opened on this machine, never on the relay.
-- **`hermes emporia`:** `setup`, `status`, `doctor` and `update`.
+- **`hermes emporia`:** `setup`, `status`, `doctor` and `update`; every other `emporia` command (`hermes emporia wallet …`, `agent playbook …`, `login`, `house run …`) runs the runtime's own CLI for this profile, so a plugin-only install needs no `emporia` on PATH. The key guard treats both forms alike.
 
 ## Quick start
 

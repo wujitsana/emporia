@@ -294,3 +294,18 @@ def test_setting_emporia_up_or_updating_it_is_the_persons_yes():
         assert guard.pre_tool_call("terminal", {"command": cmd})["action"] == "approve", cmd
     for cmd in ("hermes emporia status", "hermes emporia doctor", "emporia doctor"):
         assert guard.pre_tool_call("terminal", {"command": cmd}) is None, cmd
+
+
+def test_hermes_emporia_passes_through_with_the_same_guard():
+    """`hermes emporia NAME …` runs the runtime's CLI: what an agent may not run as
+    `emporia …` it may not run this way either."""
+    for cmd in ("hermes emporia wallet backup shop", "hermes -p shop emporia wallet mainnet shop",
+                "hermes emporia signer approve shop 3", "hermes emporia agent recovery-key --agent shop",
+                "hermes emporia relay host", "hermes emporia bugs relay verdict 1 accepted"):
+        assert guard.pre_tool_call("terminal", {"command": cmd})["action"] == "block", cmd
+    for cmd in ("hermes emporia agent playbook shop --games set-plays", "hermes -p shop emporia wallet create shop",
+                "hermes emporia role shop both", "hermes emporia identity store shop --to env",
+                "hermes emporia setup dashboard shop", "hermes emporia visits shop --policy linked"):
+        assert guard.pre_tool_call("terminal", {"command": cmd})["action"] == "approve", cmd
+    for cmd in ("hermes emporia sheet shop", "hermes emporia stats shop", "hermes emporia identity show shop"):
+        assert guard.pre_tool_call("terminal", {"command": cmd}) is None, cmd

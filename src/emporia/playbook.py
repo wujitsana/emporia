@@ -153,25 +153,31 @@ def current() -> Playbook:
         return Playbook("unreadable", NONE, 0, "nobody", False, False, "model")
 
 
+def _how_to_change() -> str:
+    """How the agent's operator changes it, as this install runs the command."""
+    from emporia.cli_hints import localize
+    return localize("your operator sets it: emporia agent playbook")
+
+
 def may_play(pb: Playbook, module_type: str, stake_cents: int = 0) -> str:
     """"" when it may take this game, else why not (said to the agent)."""
     if pb.games == NONE or (pb.games != ALL and module_type not in pb.games):
         return (f"your playbook ({pb.preset}) does not take {module_type} games; "
-                "your operator sets it: emporia agent playbook")
+                + _how_to_change())
     if stake_cents and pb.max_stake_cents is not None and stake_cents > pb.max_stake_cents:
         return (f"your playbook ({pb.preset}) takes stakes up to ${pb.max_stake_cents / 100:.2f}, "
-                f"not ${stake_cents / 100:.2f}; your operator sets it: emporia agent playbook")
+                f"not ${stake_cents / 100:.2f}; {_how_to_change()}")
     return ""
 
 
 def may_sell(pb: Playbook) -> str:
     return "" if pb.sells else (f"your playbook ({pb.preset}) does not sell; "
-                                "your operator sets it: emporia agent playbook")
+                                + _how_to_change())
 
 
 def may_buy(pb: Playbook) -> str:
     return "" if pb.buys else (f"your playbook ({pb.preset}) does not buy; "
-                               "your operator sets it: emporia agent playbook")
+                               + _how_to_change())
 
 
 def wakes_for(pb: Playbook, frame: dict) -> bool:

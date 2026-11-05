@@ -204,3 +204,33 @@ def test_doctor_checks_this_profile_and_takes_all(monkeypatch, tmp_path):
     monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "default")
     assert setup_cli.dispatch(parser.parse_args(["doctor"])) == 0
     assert ran == [("doctor", "--profile", "shop", "--all"), ("doctor",)]
+
+
+def test_every_emporia_command_passes_through_hermes_emporia():
+    """Found by the end-to-end run: a plugin-only install puts no `emporia` on PATH, yet
+    doctor and the tools' refusals name its commands. `hermes emporia NAME …` runs them;
+    setup, status, doctor and update stay the plugin's own."""
+    import argparse as ap
+
+    from emporia import cli
+    commands = next(a for a in cli.build_parser()._actions if isinstance(a, ap._SubParsersAction)).choices
+    assert set(setup_cli.PASSTHROUGH) == set(commands) - {"setup", "doctor", "update"}
+    setup = next(a for a in commands["setup"]._actions if isinstance(a, ap._SubParsersAction)).choices
+    assert set(setup_cli.SETUP_PASSTHROUGH) == set(setup) - {"agent"}
+
+
+def test_hermes_emporia_runs_the_runtimes_command_with_every_word(monkeypatch, tmp_path):
+    ran = []
+    monkeypatch.setattr(setup_cli, "runtime", lambda: tmp_path)
+    monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: ran.append(a) or 0)
+    parser = argparse.ArgumentParser()
+    setup_cli.register_cli(parser)
+    for argv in (["agent", "playbook", "shop", "--games", "set-plays"], ["wallet", "--help"], ["login"],
+                 ["house", "run", "h", "--once", "-h"], ["setup", "dashboard", "shop"],
+                 ["setup", "relay", "--preset", "base-sepolia"]):
+        assert setup_cli.dispatch(parser.parse_args(argv)) == 0
+    assert ran == [("agent", "playbook", "shop", "--games", "set-plays"), ("wallet", "--help"), ("login",),
+                   ("house", "run", "h", "--once", "-h"), ("setup", "dashboard", "shop"),
+                   ("setup", "relay", "--preset", "base-sepolia")]
+    monkeypatch.setattr(setup_cli, "runtime", lambda: None)
+    assert setup_cli.dispatch(parser.parse_args(["wallet", "create", "shop"])) == 1

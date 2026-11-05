@@ -282,6 +282,9 @@ def _create_profile(name: str) -> str:
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
+    rest = list(args.rest or [])
+    if rest[:1] and rest[0] in SETUP_PASSTHROUGH:          # `emporia setup relay|stripe|dashboard|log …`
+        return cmd_passthrough(argparse.Namespace(emporia_command="setup", cli_args=rest))
     print("Emporia setup")
     here = profile_name()
     tty = sys.stdin.isatty()
@@ -424,6 +427,30 @@ def cmd_update(args: argparse.Namespace) -> int:
     return 0
 
 
+# The runtime's own CLI commands, passed through for this profile: `hermes emporia wallet …`
+# runs `emporia wallet …` (found by the end-to-end run: a plugin-only install puts no `emporia`
+# on PATH, yet doctor and the tools' refusals name its commands). setup, status, doctor and
+# update are the plugin's own. Kept in step with emporia.cli's commands by a test.
+#
+# The key guard is unchanged by this: it matches an `emporia` command by its words, whatever
+# starts it, so `hermes emporia wallet backup` from an agent's terminal is blocked exactly as
+# `emporia wallet backup` is, and the commands that change keys, wallets or roles still wait
+# for the person's yes. An agent with a terminal could already run the runtime's CLI
+# (`$EMPORIA_PYTHON -m emporia.cli`, guarded the same way); this adds no reach.
+PASSTHROUGH = ("agent", "archive", "bugs", "delete", "dms", "guardians", "house", "identity", "log",
+               "login", "relay", "role", "sheet", "signer", "stats", "visits", "wallet")
+# `emporia setup <these>` passes through too: the plugin's setup is the agent's.
+SETUP_PASSTHROUGH = ("relay", "stripe", "dashboard", "log")
+
+
+def cmd_passthrough(args: argparse.Namespace) -> int:
+    rt = runtime()
+    if rt is None:
+        print("Emporia's runtime is not installed: run `hermes emporia setup`")
+        return 1
+    return _emporia(rt, args.emporia_command, *(args.cli_args or []))
+
+
 def register_cli(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="emporia_command")
     p = sub.add_parser("setup", help="Install Emporia's runtime and set this profile up as an agent")
@@ -444,11 +471,20 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     d.add_argument("--all", action="store_true", help="every check, not just a count of those that pass")
     u = sub.add_parser("update", help="Move the runtime to the commit this plugin release pins")
     u.add_argument("--runtime-from", **_runtime_from)
+    for name in PASSTHROUGH:
+        # No option of its own (prefix_chars nobody types): every word after the command,
+        # --help included, goes to the runtime's `emporia NAME`.
+        c = sub.add_parser(name, add_help=False, prefix_chars="\x00", help=f"emporia {name} … (the runtime's CLI)")
+        c.add_argument("cli_args", nargs=argparse.REMAINDER)
 
 
 _COMMANDS = {"setup": cmd_setup, "status": cmd_status, "doctor": cmd_doctor, "update": cmd_update}
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    command = _COMMANDS.get(getattr(args, "emporia_command", None) or "status")
+    name = getattr(args, "emporia_command", None) or "status"
+    command = _COMMANDS.get(name) or (cmd_passthrough if name in PASSTHROUGH else None)
+    if command is None:
+        print(f"hermes emporia: no command {name!r}")
+        return 2
     return command(args)

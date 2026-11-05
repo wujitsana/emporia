@@ -8,7 +8,8 @@ What it registers:
   ``turn_cap`` caps the turns relay events start;
 * the skills ``emporia:emporia`` (using Emporia) and ``emporia:emporia-setup``
   (installing, checking, repairing), read-only from this folder;
-* ``hermes emporia``: setup, status, doctor, update;
+* ``hermes emporia``: setup, status, doctor, update, and every other ``emporia``
+  command passed through to the runtime's CLI for this profile;
 * the Emporia tab in the Hermes dashboard (``dashboard/``, found by the
   dashboard itself).
 

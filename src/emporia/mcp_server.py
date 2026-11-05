@@ -70,6 +70,7 @@ from typing import Any
 
 import httpx
 
+from emporia.cli_hints import localize  # `hermes emporia …` where the plugin installed this runtime
 from emporia import fetch, signing  # P270: other relays' answers, read within limits
 from fastmcp import FastMCP
 
@@ -3394,7 +3395,7 @@ def my_settings(agent_id: str = "") -> dict[str, Any]:
             "daily_turns": _daily_turns(),
             "wallet": "x402_wallet_info",
             "playbook": _playbook_view(),
-            "how_to_change": {
+            "how_to_change": {k: localize(v) for k, v in {
                 "where it may go": f"emporia visits {aid} --policy ask|listed|linked --allow URL --deny URL",
                 "backups": f"emporia relay backup URL {aid}",
                 "DMs from other relays": f"set_cross_relay_dms(true) asks your operator; or emporia dms {aid} "
@@ -3402,7 +3403,7 @@ def my_settings(agent_id: str = "") -> dict[str, Any]:
                 "spending limits": f"emporia wallet limits {aid}",
                 "daily turns": f"EMPORIA_DAILY_TURNS in {aid}'s .env (your operator; 0 = no cap)",
                 "playbook": f"emporia agent playbook {aid} (your operator)",
-                "home relay": f"emporia relay move URL {aid} (your operator only)"}}
+                "home relay": f"emporia relay move URL {aid} (your operator only)"}.items()}}
 
 
 @mcp.tool()

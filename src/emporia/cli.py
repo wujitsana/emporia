@@ -34,6 +34,7 @@ import time
 from pathlib import Path
 
 from emporia import hermes_layout
+from emporia.cli_hints import localize, via_plugin
 from typing import Any
 
 from emporia import __version__
@@ -400,6 +401,7 @@ class Report:
         self._add("✗", msg, fix)
 
     def _add(self, mark: str, msg: str, fix: str) -> None:
+        fix = localize(fix)        # `hermes emporia …` where the plugin installed this runtime
         if not self.compact:
             print(f"  {mark} {msg}" + (f"\n      fix: {fix}" if fix else ""))
             return
@@ -4079,13 +4081,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     doctor_hermes_plugins(rep)
     doctor_machine_secrets(rep)
     import shutil
-    if not shutil.which("emporia"):          # P210: every doc says `emporia …`
+    if not shutil.which("emporia") and not via_plugin():   # P210: every doc says `emporia …`
         rep.warn("`emporia` is not on PATH (it is in this checkout's .venv)",
                  f"ln -s {Path(sys.executable).with_name('emporia')} ~/.local/bin/emporia")
     rep.flush()
     print("\n" + ("Problems found (✗) — fix them in order." if rep.failed
                   else "No problems found. Warnings (!) are optional.")
-          + ("" if getattr(args, "all", False) else "  Every check: emporia doctor --all"))
+          + ("" if getattr(args, "all", False) else localize("  Every check: emporia doctor --all")))
     return 1 if rep.failed else 0
 
 
@@ -4447,8 +4449,8 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         if fresh and not existing and not inst.harvest_env(profile).get("EMPORIA_IDENTITY_KEY_SOURCE"):
             _move_to_env(profile, fresh, True, restart_hint=False)   # setup says restart at its end
         elif fresh and existing:
-            print(f"  Its existing keys are still files; move them with `emporia identity store {name} "
-                  f"--to env` and `emporia wallet store {name}`.")
+            print(localize(f"  Its existing keys are still files; move them with `emporia identity store {name} "
+                           f"--to env` and `emporia wallet store {name}`."))
     if wallet:
         from emporia.networks import NETWORKS, label
         _, agent_id, _ = _agent(name)
@@ -4527,7 +4529,7 @@ def _setup_summary(profile: Path, name: str, role: str) -> None:
     print(f"  Keys        {'in its .env (hidden from its tools by Hermes)' if dotenv.get('EMPORIA_KEY_STORAGE') == 'env' else 'key files'}")
     from emporia import playbook as _pb
     try:
-        print(f"  Playbook    {_pb.resolve(dotenv).preset}  (emporia agent playbook {name} to change)")
+        print(f"  Playbook    {_pb.resolve(dotenv).preset}  ({localize(f'emporia agent playbook {name}')} to change)")
     except _pb.PlaybookError as e:
         print(f"  Playbook    ! {e}")
     print(f"  Wallets     {', '.join(wallets) or 'none — it cannot pay or be paid (add one any time)'}")
@@ -4541,9 +4543,10 @@ def _setup_summary(profile: Path, name: str, role: str) -> None:
               + (f"asks you above ${int(approve) / 100:.2f}" if approve else "never asks you"))
     for w in _role_warnings(role, bool(wallets), backend):
         print(f"  ! {w}")
-    print(f"  Recovery    make a recovery key now, in your own terminal, so a lost or stolen identity key is not the end of "
-          f"{name}: emporia agent recovery-key --agent {name} --out PATH (print it, or keep it in a password manager)")
-    print(f"  Check it any time: emporia doctor --profile {name}")
+    print(localize(f"  Recovery    make a recovery key now, in your own terminal, so a lost or stolen identity key is "
+                   f"not the end of {name}: emporia agent recovery-key --agent {name} --out PATH (print it, or "
+                   "keep it in a password manager)"))
+    print(localize(f"  Check it any time: emporia doctor --profile {name}"))
 
 
 def _where_kept(ref: str, has_file: bool) -> str:
