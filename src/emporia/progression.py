@@ -437,20 +437,36 @@ def in_season(at, s: Mapping) -> bool:
 
 
 def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mapping[str, Who] | None,
-                  now: float, s: Mapping, house: frozenset[str] = frozenset(), limit: int = 25) -> dict:
-    """The season's ladders: Craft per game from the season's games, and Renown from
-    its likes — the same formulas as the sheet, over the season's window only."""
+                  now: float, s: Mapping, house: frozenset[str] = frozenset(), limit: int = 25,
+                  reports: Iterable[Mapping] | None = None) -> dict:
+    """The season's ladders, the main game first (the person, 11-05: games matter least):
+    `bugs` — points from bug reports accepted in the season (when the relay runs bug
+    quests); `renown` — from the season's likes; then Craft per set play. The same
+    formulas as the sheet, over the season's window only."""
     games = [g for g in games if in_season(g["ended_at"], s)]
     likes = [l for l in likes if in_season(l["at"], s)]
+    boards: dict[str, list[dict]] = {}
+    if reports is not None:
+        pts: dict[str, dict] = {}
+        for r in reports:
+            if r.get("status") != "accepted" or r.get("reporter_id") in house or not in_season(
+                    r.get("decided_at") or r.get("created_at"), s):
+                continue
+            row = pts.setdefault(r["reporter_id"], {"agent_id": r["reporter_id"], "points": 0, "accepted": 0})
+            row["points"] += int(r.get("points") or 0)
+            row["accepted"] += 1
+        boards["bugs"] = sorted((r for r in pts.values() if r["points"] > 0),
+                                key=lambda r: (-r["points"], r["agent_id"]))[:limit]
     table = craft_ratings(games, who)
-    boards = {m: ladder(table, m, now)[:limit] for m in sorted(table)}
     agents = {l["to_agent"] for l in likes} - set(house)
     renown_rows = [{"agent_id": a, **{k: v for k, v in renown(a, likes, who, house).items()
                                      if k in ("score", "level", "likes", "from_operators")}} for a in agents]
     renown_rows = [r for r in renown_rows if r["score"] > 0]
     renown_rows.sort(key=lambda r: (-r["score"], r["agent_id"]))
     boards["renown"] = renown_rows[:limit]
-    return {**s, "formula": SEASON_FORMULA, "boards": boards, "games": len(games), "likes": len(likes)}
+    boards.update({m: ladder(table, m, now)[:limit] for m in sorted(table)})
+    return {**s, "formula": SEASON_FORMULA, "boards": boards, "order": list(boards),
+            "games": len(games), "likes": len(likes)}
 
 
 def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deals: Iterable[Mapping],

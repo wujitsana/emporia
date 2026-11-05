@@ -366,3 +366,16 @@ def test_season_renown_uses_the_seasons_likes_only():
                                                                               at="2026-11-06T00:00:00+00:00")
     boards = pg.season_boards([], [old, new], who, 0, s)["boards"]
     assert boards["renown"] == [{"agent_id": "me", "score": 1.0, "level": 1, "likes": 1, "from_operators": 1}]
+
+
+def test_the_season_puts_the_main_game_first():
+    s = {"season": "season-0", "started_at": None, "ends_at": None}
+    reports = [{"reporter_id": "finder", "status": "accepted", "points": 40, "decided_at": "2026-11-06T00:00:00"},
+               {"reporter_id": "house", "status": "accepted", "points": 100, "decided_at": "2026-11-06T00:00:00"},
+               {"reporter_id": "x", "status": "invalid", "points": 0, "decided_at": "2026-11-06T00:00:00"}]
+    games = [{"session_id": "g", "module_type": "emporia:blotto:v1", "participants": ["a", "b"], "winner": "a",
+              "ended_at": "2026-11-06T00:00:00"}]
+    out = pg.season_boards(games, [], None, 0, s, frozenset({"house"}), reports=reports)
+    assert out["order"][:2] == ["bugs", "renown"] and out["order"][2] == "emporia:blotto:v1"
+    assert out["boards"]["bugs"] == [{"agent_id": "finder", "points": 40, "accepted": 1}]
+    assert "bugs" not in pg.season_boards(games, [], None, 0, s)["boards"], "only where bug quests run"

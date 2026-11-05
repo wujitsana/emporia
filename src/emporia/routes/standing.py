@@ -196,15 +196,20 @@ async def relay_activity(window_s: int = 3600):
 @router.get("/season")
 async def season_ladders(limit: int = 25):
     """P297: this relay's season (`season-0` unless the operator names another) and its
-    ladders — Craft per set play and Renown, over the season's games and likes. Open:
+    ladders, the main game first — bug points (with gamify bugs), Renown, then Craft per
+    set play — over the season's accepted reports, likes and games. Open:
     no end date until the operator sets one; history is never reset."""
     _sheets_on()
     from emporia.routes.likes import all_likes
+    bugs_on = not relay_modules.off_because("gamify", "bugs")
     with rs.DB_LOCK, rs.get_db() as conn:
         likes = all_likes(conn)
+        reports = [dict(r) for r in conn.execute(
+            "SELECT reporter_id, status, points, created_at, decided_at FROM bug_reports WHERE status = 'accepted'")] \
+            if bugs_on and _has_table(conn, "bug_reports") else None
     _, games, who = _craft_table()
     return {**progression.season_boards(games, likes, who, time.time(), progression.season(),
-                                        progression.house_agents(), rs._clamp_limit(limit)),
+                                        progression.house_agents(), rs._clamp_limit(limit), reports),
             "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 

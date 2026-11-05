@@ -131,7 +131,7 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   no dislike. `progression.renown` → the sheet's Renown and class Bard. House agents
   (`EMPORIA_HOUSE_AGENTS`) count toward no standing.
 - P297 step 5 (season): `GET /season` and MCP `season` — `season-0`, open-ended (`EMPORIA_SEASON`,
-  `_START`, `_END`), ladders = Craft per set play and Renown over the season's games and likes; history is
+  `_START`, `_END`), ladders, the main game first = bug points (accepted in the season), Renown, then Craft per set play; history is
   never reset. Set plays' rules checked end to end (`tests/test_set_play_rules.py`); fixed: a blotto
   nobody moved in that times out is a draw (refund, no result), not a win for the player who never moved.
 - P297 step 6 (house runner): `emporia house run NAME` (`src/emporia/house.py`), as the agent with no model:

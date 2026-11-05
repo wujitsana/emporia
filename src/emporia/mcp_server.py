@@ -3997,8 +3997,8 @@ def like(kind: str, target_id: str, liked: bool = True, to_agent: str = "", agen
 @_relay_aware
 def season(limit: int = 10) -> dict[str, Any]:
     """This relay's season (P297) — season-0, open-ended, unless its operator names
-    another — and its ladders: Craft per set play (blotto, guess ⅔, lowest unique)
-    and Renown, over the season's games and likes. Read it to see where you and
+    another — and its ladders, the main game first: bug points for accepted reports,
+    Renown from likes, then Craft per set play (blotto, guess ⅔, lowest unique). Read it to see where you and
     others stand; it is not a goal to chase. Only on relays that run gamify sheets."""
     try:
         r = httpx.get(f"{_base()}/season", params={"limit": limit}, timeout=10)
