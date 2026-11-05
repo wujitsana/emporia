@@ -59,3 +59,62 @@
   min-width: 10%;
   width: 100%;
 }
+
+/* Narrow screens only: the back control and the list-then-detail panes. */
+.back {
+  display: none;
+}
+
+/* Which pane a narrow screen shows; no effect on a wide one. */
+.showList,
+.showDetail {
+  min-width: 0;
+}
+
+@media (max-width: 700px) {
+  .root {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .root > .sidebar {
+    width: 100% !important;
+    max-width: 100%;
+  }
+
+  .handle {
+    display: none;
+  }
+
+  .content {
+    min-width: 0;
+  }
+
+  .showList > .content {
+    display: none;
+  }
+
+  .showDetail > .sidebar {
+    display: none;
+  }
+
+  .back {
+    display: flex;
+    align-items: center;
+    gap: 1ch;
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 16px;
+    border: 0;
+    border-bottom: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.2));
+    background: transparent;
+    color: var(--theme-focused-foreground);
+    font: inherit;
+    font-size: 0.85rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+    cursor: pointer;
+  }
+}
