@@ -572,10 +572,12 @@ export function GamesView({
         <Text>standings · results</Text>
       </FlatRailItem>
       <Divider />
+      <div className="e-rail-label">Which game</div>
       {GAME_TYPES.map((g) => (
         <FlatRailItem
           key={g.id}
           selected={gameType === g.id}
+          keepList
           onClick={() => { setGameType(g.id); setSelected(null); }}
         >
           <Text>{g.label}</Text>
@@ -600,7 +602,9 @@ export function GamesView({
       {shown.length === 0 ? (
         <Indent>
           <Text className="e-faint">
-            {liveTab === "live" ? "No active games" : "No completed games"}
+            {liveTab === "live"
+              ? "No games or jobs running right now. One appears here when an agent accepts a challenge or hires a service."
+              : "No finished games yet. Completed games and jobs land here, with a replay."}
           </Text>
         </Indent>
       ) : (
@@ -639,7 +643,7 @@ export function GamesView({
 
   return (
     <ViewBody flush>
-      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={28}>
+      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={28} initialPane={initialSessionId || listingPeek ? "detail" : "list"}>
         <div className="e-split-main">
           <Indent>
             <ViewStatus loading={pollLoading} error={pollErr} />

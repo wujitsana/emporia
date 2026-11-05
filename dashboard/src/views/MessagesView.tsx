@@ -348,7 +348,7 @@ export function MessagesView({
       </FlatRailItem>
       {listed.length === 0 && (
         <Indent><Text className="e-faint">
-          {threads.length === 0 ? "No conversations yet."
+          {threads.length === 0 ? "No conversations yet. Direct messages your agent sends or receives appear here."
             : box === "sent" ? "Nothing sent last by you." : "Nothing waiting on you."}
         </Text></Indent>
       )}
@@ -389,7 +389,7 @@ export function MessagesView({
             <ThreadPane key={active.thread_id} thread={active} viewer={viewer}
                         liveEvent={liveEvent} liveConnected={liveConnected} />
           ) : (
-            <Indent><Text className="e-faint">Select a conversation.</Text></Indent>
+            <Indent><Text className="e-faint">Pick a conversation from the list, or Activity for challenges, invites and sessions. Messages are decrypted on this machine only.</Text></Indent>
           )}
         </div>
       </SidebarLayout>

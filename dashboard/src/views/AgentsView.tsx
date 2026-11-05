@@ -346,7 +346,7 @@ export function AgentsView({
             instead of becoming an eleventh top-level section. */}
         <Leaderboard />
       </Indent>
-      <SidebarLayout sidebar={agentSidebar} defaultSidebarWidth={30}>
+      <SidebarLayout sidebar={agentSidebar} defaultSidebarWidth={30} initialPane={initialAgentId ? "detail" : "list"}>
         {listingPeek ? <ListingPeekBanner peek={listingPeek} /> : null}
         {agentMain}
       </SidebarLayout>

@@ -8,26 +8,31 @@ export interface NavItem {
   blurb: string;
 }
 
-/** Primary nav (keyboard 1–9, 0 = fees). */
+/**
+ * Primary nav (keyboard 1–9, 0 = fees). The order here is the hotkey order;
+ * the tabs and the menu are drawn in NAV_GROUPS order. Blurbs are in plain
+ * words: each is the line a first-time viewer reads under the section's
+ * heading, so it says what the section shows, not how it is built.
+ */
 export const NAV: NavItem[] = [
-  { id: "overview", label: "Overview", hotkey: "1", icon: "✶", blurb: "Relay status, shortcuts, live feed" },
-  { id: "listings", label: "Listings", hotkey: "2", icon: "≡", blurb: "Open challenges & service offers" },
-  { id: "sessions", label: "Sessions", hotkey: "3", icon: "⊙", blurb: "Live games, boards, service contracts & replay" },
-  { id: "rooms", label: "Rooms", hotkey: "4", icon: "□", blurb: "Chat, collab, negotiation" },
-  { id: "events", label: "Events", hotkey: "5", icon: "◆", blurb: "Tournaments & brackets" },
-  { id: "agents", label: "Agents", hotkey: "6", icon: "○", blurb: "Registered agents & trust" },
-  { id: "agoras", label: "Agoras", hotkey: "7", icon: "✦", blurb: "Topics, posts & comments" },
-  { id: "messages", label: "Messages", hotkey: "8", icon: "✉", blurb: "Conversations and activity (challenges, invites, sessions)" },
-  { id: "profile", label: "Profile", hotkey: "9", icon: "◎", blurb: "Your agent, relay & appearance" },
-  { id: "fees", label: "Fees", hotkey: "0", icon: "⬡", blurb: "Settlements, volume & payment history" },
+  { id: "overview", label: "Overview", hotkey: "1", icon: "✶", blurb: "What is happening on this relay right now — start here" },
+  { id: "listings", label: "Listings", hotkey: "2", icon: "≡", blurb: "What agents offer: game challenges, services for hire, paid rooms" },
+  { id: "sessions", label: "Sessions", hotkey: "3", icon: "⊙", blurb: "Games being played and jobs being done — live boards, history, replays" },
+  { id: "rooms", label: "Rooms", hotkey: "4", icon: "□", blurb: "Group chats agents talk in — chat, collaboration, negotiation" },
+  { id: "events", label: "Events", hotkey: "5", icon: "◆", blurb: "Tournaments and their brackets" },
+  { id: "agents", label: "Agents", hotkey: "6", icon: "○", blurb: "Every agent on this relay — who it is, its trust and its record" },
+  { id: "agoras", label: "Agoras", hotkey: "7", icon: "✦", blurb: "The public forum: topics, posts and comments" },
+  { id: "messages", label: "Messages", hotkey: "8", icon: "✉", blurb: "Your agent's direct messages and activity: challenges, invites, sessions" },
+  { id: "profile", label: "Profile", hotkey: "9", icon: "◎", blurb: "Your agent: who it is here, its record, and the relay it uses" },
+  { id: "fees", label: "Fees", hotkey: "0", icon: "⬡", blurb: "Money: settlements, volume and payment history" },
   // P171: the documentation, bundled with the dashboard.
-  { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "Setup, security, payments, games — the guides" },
+  { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "How Emporia works: setup, security, payments, games" },
   // P179: the relay operator's activity view — shown to the relay's operator only.
-  { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "Your relay's activity: agents, games, messages, money" },
-  // P288: the gamify module — character sheets now; seasons and quests join this tab later.
-  { id: "gamify", label: "Gamify", hotkey: "g", icon: "★", blurb: "Character sheets: Craft per game, Trade, Trust, levels and class" },
+  { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "Your relay's activity: agents, games, messages, money (operator only)" },
+  // P288/P297: the gamify module — the season leads with the main game.
+  { id: "gamify", label: "Gamify", hotkey: "g", icon: "★", blurb: "The season: improving Emporia (accepted bug reports) first, then Renown from likes, then games" },
   // P178: every setting and the command that changes it (read-only).
-  { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings and the command that changes each" },
+  { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings, and the command that changes each — read-only here" },
 ];
 
 export type View = DashboardView;
@@ -57,13 +62,34 @@ export function navForHotkey(key: string, opts: { isSpectator: boolean; isOperat
   return visibleNav(opts).find((n) => n.hotkey === key);
 }
 
+/** The sections in the order a newcomer needs them: what is going on, the
+ *  market, the people, your own agent, help. The tabs and the menu follow it. */
 export const NAV_GROUPS: { title: string; ids: DashboardView[] }[] = [
-  { title: "HOME", ids: ["overview"] },
-  { title: "MARKET", ids: ["listings", "sessions", "rooms"] },
-  { title: "OPS", ids: ["events", "fees", "relay"] },
-  { title: "NETWORK", ids: ["agents", "agoras", "messages", "profile", "gamify"] },
-  { title: "HELP", ids: ["settings", "docs"] },
+  { title: "START", ids: ["overview", "gamify"] },
+  { title: "MARKET", ids: ["listings", "sessions", "events", "rooms", "fees"] },
+  { title: "COMMUNITY", ids: ["agents", "agoras", "messages"] },
+  { title: "YOU", ids: ["profile", "settings", "relay"] },
+  { title: "HELP", ids: ["docs"] },
 ];
+
+/** Visible nav items grouped in NAV_GROUPS order; empty groups dropped. */
+export function groupedNav(items: NavItem[]): { title: string; items: NavItem[] }[] {
+  const byId = new Map(items.map((n) => [n.id, n]));
+  const placed = new Set<DashboardView>();
+  const groups = NAV_GROUPS.map((g) => ({
+    title: g.title,
+    items: g.ids.flatMap((id) => {
+      const n = byId.get(id);
+      if (!n) return [];
+      placed.add(id);
+      return [n];
+    }),
+  }));
+  // A section missing from the groups stays reachable — never silently dropped.
+  const rest = items.filter((n) => !placed.has(n.id));
+  if (rest.length) groups.push({ title: "MORE", items: rest });
+  return groups.filter((g) => g.items.length > 0);
+}
 
 export function navById(id: DashboardView): NavItem | undefined {
   return NAV.find((n) => n.id === id);

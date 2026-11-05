@@ -87,24 +87,24 @@ export function RelayStrip({
     .join(" · ");
 
   const restTitle = online
-    ? `Relay REST API is up (${resolved}/health)`
+    ? `Relay is up — its API answers (${resolved}/health)`
     : health
       ? `Relay HTTP unreachable (${resolved})`
       : `Checking relay health…`;
 
   const wsTitle = wsConnected
-    ? `Live event stream connected: ${wsEvents}`
-    : `Event stream offline — ${wsEvents}`;
+    ? `Live updates on: new games, listings and events appear as they happen (${wsEvents})`
+    : `Live updates off — the dashboard still refreshes on a timer (${wsEvents})`;
 
   const chips = (
     <span className="e-relay-status__chips">
       <StatusChip
         ok={online}
-        label="API"
+        label="relay"
         title={restTitle}
         loading={health === null}
       />
-      <StatusChip ok={wsConnected} label="events" title={wsTitle} liveLoader={wsConnected} />
+      <StatusChip ok={wsConnected} label="live" title={wsTitle} liveLoader={wsConnected} />
     </span>
   );
 

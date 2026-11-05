@@ -199,7 +199,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
         ) : undefined
       }
     >
-      <SidebarLayout sidebar={roomSidebar} defaultSidebarWidth={26}>
+      <SidebarLayout sidebar={roomSidebar} defaultSidebarWidth={26} initialPane={initialRoomId ? "detail" : "list"}>
         <div className="e-split-main">
           <ViewStatus loading={loading} error={error} />
           {selected?.listing_only ? (

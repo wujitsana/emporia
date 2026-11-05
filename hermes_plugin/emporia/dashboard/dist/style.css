@@ -915,19 +915,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-rail-item:focus-visible { outline: none; }
 .e-rail-item:focus-visible { color: var(--theme-focused-foreground); }
 
-/* Legacy ActionListItem in sidebar — flatten it */
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_icon"] { display: none !important; }
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_text"] {
-  background: transparent !important;
-  padding: 6px 8px 6px 10px !important;
-}
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_item"] {
-  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05));
-}
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_item"]:hover [class*="ActionListItem_icon"],
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_item"]:focus [class*="ActionListItem_icon"] {
-  background: transparent !important;
-}
 .e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="Badge_root"] {
   background: transparent !important;
   padding: 0 !important;
@@ -2211,13 +2198,24 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   padding: 8px 12px;
   border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
 }
+/* The kit Input draws its text in a display layer and puts the real <input>
+   (which gets this class) transparent on top. So the box lives on the display
+   layer, and the input just covers it exactly — styling the input itself drew
+   a second, empty box under the placeholder. */
+.e-search-row > [class*="Input_root"] { flex: 1; min-width: 0; }
+.e-search-row [class*="Input_displayed"] {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  box-sizing: border-box;
+}
 .e-search-bar {
-  flex: 1;
-  min-width: 0;
-  font-size: 1.045rem !important;
-  padding: 8px 10px !important;
-  border: 1px solid var(--theme-border, rgba(255,255,255,0.2)) !important;
-  background: var(--theme-background) !important;
+  height: 100%;
+  padding: 0 12px !important;
+  box-sizing: border-box;
+  border: 0 !important;
+  background: transparent !important;
 }
 
 /* ─── 19. ACTION TIMELINE ────────────────────────────────────────────────── */
@@ -2287,18 +2285,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 
 /* ─── 22. SRCL COMPONENT OVERRIDES ──────────────────────────────────────── */
 
-/* Window panels — flat */
-.e-dashboard-shell [class*="Window_window"] {
-  background: var(--theme-background) !important;
-  box-shadow: none !important;
-}
-
-/* Navigation component */
-.e-dashboard-shell [class*="Navigation_root"] {
-  background: transparent !important;
-  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
-}
-
 /* ActionButton — outline style, no fills */
 .e-dashboard-shell [class*="ActionButton_content"] {
   background: transparent !important;
@@ -2320,33 +2306,11 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-dashboard-shell [class*="ActionButton_root"]:focus,
 .e-dashboard-shell [class*="ActionButton_root"]:active { background: transparent !important; }
 
-/* ActionListItem rows */
-.e-dashboard-shell [class*="ActionListItem_text"] { background: transparent !important; }
-.e-dashboard-shell [class*="ActionListItem_icon"] { background: transparent !important; }
-
 /* Badges — square */
 .e-dashboard-shell [class*="Badge_root"] { border-radius: 0 !important; }
 
-/* Select / Input */
-.e-dashboard-shell [class*="Select_root"],
+/* Input */
 .e-dashboard-shell [class*="Input_root"] input { background: transparent !important; }
-.e-dashboard-shell [class*="Select_display"] {
-  background: transparent !important;
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12)) !important;
-  padding-left: 8px !important;
-  border-radius: 2px;
-}
-.e-dashboard-shell [class*="Select_display"]:hover,
-.e-dashboard-shell [class*="Select_display"]:focus {
-  background: transparent !important;
-  color: var(--theme-focused-foreground) !important;
-  border-color: var(--theme-focused-foreground) !important;
-}
-.e-dashboard-shell [class*="Select_control"]         { background: transparent !important; }
-.e-dashboard-shell [class*="Select_control"].focused {
-  background: transparent !important;
-  color: var(--theme-focused-foreground) !important;
-}
 
 /* Kill all surfaces from panels and stat blocks */
 .e-dashboard-shell .e-app-top,
@@ -2400,17 +2364,8 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   }
 }
 
-/* Stack SidebarLayout vertically on narrow screens */
-@media (max-width: 700px) {
-  .e-view [class*="SidebarLayout_root"] { flex-direction: column !important; align-items: stretch !important; }
-  .e-view [class*="SidebarLayout_sidebar"] {
-    width: 100% !important;
-    max-width: 100% !important;
-    border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-    max-height: 38vh;
-    overflow-y: auto;
-  }
-}
+/* Narrow screens: SidebarLayout itself (kit module CSS) turns rail-beside-detail
+   into list-then-detail with a back control — see ui/kit/SidebarLayout.tsx. */
 
 @media (min-width: 901px) {
   .e-hero-stats { grid-template-columns: repeat(4, 1fr); }
@@ -2501,97 +2456,308 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-relay-table { border-collapse: collapse; font-size: 0.94em; margin: 4px 0 10px 0; font-variant-numeric: tabular-nums; }
 .e-relay-table th, .e-relay-table td { text-align: left; padding: 4px 10px;
   border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
-._hotkey_1ab7a_1 {
-  background: var(--theme-button-foreground);
-  color: var(--theme-text);
-  cursor: pointer;
-  flex-shrink: 0;
-  font-weight: 400;
-  padding: 0 1ch 0 1ch;
-  text-indent: 0ch;
-  user-select: none;
+
+/* ─── 24. RETROMOD ───────────────────────────────────────────────────────────
+   The terminal look, kept and made consistent: monospace, hairline boxes, the
+   theme's accent as the one highlight. Modern where it helps reading and
+   touching: smooth type, clear focus, one heading per section, 44px targets on
+   a phone, list-then-detail split views, tables that scroll in their own box.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.e-dashboard-shell {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  --e-rule: var(--theme-border-subdued, rgba(128, 128, 128, 0.22));
+  --e-accent-wash: color-mix(in srgb, var(--theme-focused-foreground) 9%, transparent);
 }
 
-._content_1ab7a_12 {
-  background: var(--theme-button-background);
-  box-shadow: inset 0 0 0 2px var(--theme-button-foreground);
-  cursor: pointer;
-  flex-shrink: 0;
-  font-weight: 400;
-  padding: 0 1ch 0 1ch;
-  text-indent: 0ch;
+/* One focus ring, everywhere — keyboard users always see where they are. */
+.e-dashboard-shell :focus-visible,
+.e-dashboard-shell .e-rail-item:focus-visible,
+.e-dashboard-shell .e-theme-circle:focus-visible {
+  outline: 2px solid var(--theme-focused-foreground);
+  outline-offset: 2px;
+}
+.e-dashboard-shell .e-rail-item:focus-visible { outline-offset: -2px; }
+
+/* Section heading: ▍Name, then the plain-words line on what it shows. */
+.e-page-head {
+  padding: 14px 24px 12px;
+  border-bottom: 1px solid var(--e-rule);
+  max-width: min(1440px, 100%);
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.e-page-head__title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 1ch;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  user-select: none;
+  line-height: 1.3;
+}
+.e-page-head__icon { color: var(--theme-focused-foreground); }
+.e-page-head__blurb {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  opacity: 0.62;
+  max-width: 80ch;
 }
 
-._root_1ab7a_24 {
-  display: inline-flex;
+/* Sub-heading inside a view: CAPS label with a box-drawing rule after it. */
+.e-subhead {
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+  margin: 18px 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.e-subhead::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--e-rule);
+}
+.e-subhead:first-child { margin-top: 4px; }
+.e-note { font-size: 0.8rem; line-height: 1.5; opacity: 0.6; margin: 2px 0 0; }
+
+/* Grouped header tabs: a quiet rule between groups. */
+.e-section-group { display: contents; }
+.e-section-group__rule {
+  align-self: stretch;
+  width: 1px;
+  margin: 6px 6px;
+  background: var(--e-rule);
+}
+.e-section-tabs--horizontal { align-items: center; }
+.e-section-tab.is-active { background: var(--e-accent-wash) !important; }
+
+/* The menu: grouped list, a head with a close control, viewer + theme at the foot. */
+.e-section-tabs--drawer .e-section-group { display: flex; flex-direction: column; gap: 2px; }
+.e-section-tabs--drawer .e-section-group + .e-section-group { margin-top: 10px; }
+.e-section-group__title {
+  padding: 6px 14px 4px;
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  opacity: 0.5;
+}
+.e-section-tabs--drawer .e-section-tab { min-height: 44px; }
+/* The whole menu scrolls as one, so the foot never covers the last sections. */
+.e-section-tabs--drawer { flex: none; overflow: visible; }
+.e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }
+.e-mobile-drawer__head {
+  display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--e-rule);
+}
+.e-mobile-drawer__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--e-rule);
+}
+.e-icon-button,
+.e-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.1rem;
   cursor: pointer;
-  outline: 0;
-  border: 0;
-  margin: 0;
-  padding: 0;
+}
+.e-icon-button:hover,
+.e-menu-button:hover { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-menu-button .e-nav-badge { margin-left: 0; }
+
+/* Phone top bar: one row — menu, where you are, relay state. */
+.e-mobile-top { flex-wrap: nowrap !important; gap: 10px; padding: 6px 12px; }
+/* Brand above, the section you are in below it — both always fit. */
+.e-mobile-top__where {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.e-mobile-top__where .e-brand-title { font-size: 0.8rem !important; line-height: 1.2; opacity: 0.75; }
+.e-mobile-top__section {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.85rem;
+  line-height: 1.25;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--theme-focused-foreground);
+}
+.e-mobile-top__section::before { content: "▸ "; opacity: 0.6; }
+.e-mobile-top .e-relay-status__host { display: none; }
+.e-mobile-top .e-relay-status__chips { gap: 6px; }
+.e-mobile-top .e-status-chip { padding: 4px 6px; }
+
+/* A label above a run of rail rows ("Which game", "Character sheets"). */
+.e-rail-label {
+  padding: 12px 12px 4px;
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+
+/* Rail rows: room to breathe, the selected one washed in the accent. */
+.e-rail-item { padding: 8px 10px 8px 12px; min-height: 40px; }
+.e-rail-item.is-selected { background: var(--e-accent-wash); }
+.e-dashboard-shell [class*="SidebarLayout_sidebar"] {
+  border-right: 1px solid var(--e-rule);
   box-sizing: border-box;
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size);
-  flex-shrink: 0;
+}
+.e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main { padding: 12px 16px 24px 20px; }
+.e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main:has(.e-chess-main) { padding-left: 8px; }
 
-  &:hover ._hotkey_1ab7a_1 {
-    background: var(--theme-focused-foreground);
-  }
+/* What-you-are-looking-at box on the Overview. */
+.e-intro {
+  border: 1px solid var(--e-rule);
+  border-left: 3px solid var(--theme-focused-foreground);
+  padding: 12px 16px 14px;
+  margin-bottom: 16px;
+  line-height: 1.55;
+}
+.e-intro__title {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin: 0 0 6px;
+}
+.e-intro__text { margin: 0; font-size: 0.9rem; max-width: 78ch; }
+.e-intro__go { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.e-intro__link {
+  flex: 1 1 13rem;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.e-intro__link:hover { border-color: var(--theme-focused-foreground); }
+.e-intro__link-label { color: var(--theme-focused-foreground); font-size: 0.85rem; }
+.e-intro__link-hint { font-size: 0.72rem; opacity: 0.6; }
 
-  &:hover ._content_1ab7a_12 {
-    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);
-  }
+/* The toolbar line above a split view is context, not content — keep it small. */
+.e-view-body--flush .e-view-toolbar,
+.e-view-body--flush .e-view-toolbar p { font-size: 0.78rem; line-height: 1.45; }
 
-  &:focus {
-    background: var(--theme-focused-foreground);
-  }
+/* Leaderboard-style tables size to their content instead of spreading three
+   short columns across a wide screen. */
+.e-listings-native.e-board { width: auto; min-width: min(100%, 34rem); }
 
-  &:focus ._hotkey_1ab7a_1 {
-    background: var(--theme-focused-foreground);
-  }
+/* Replay status line (ply, started, audit, verify) wraps instead of running off the edge. */
+.e-chess-replay-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
 
-  &:focus ._content_1ab7a_12 {
-    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);
-  }
+/* ─── 25. PHONE (≤ 700px) ───────────────────────────────────────────────── */
 
-  &:active {
-    background: var(--theme-focused-foreground);
-  }
+@media (max-width: 700px) {
+  .e-page-head { padding: 12px 16px 10px; }
+  .e-page-head__blurb { font-size: 0.78rem; }
+  .e-view-toolbar { justify-content: flex-start; }
+  .e-view-body { padding: 12px 16px 24px; }
+  .e-dashboard-shell [class*="SidebarLayout_sidebar"] { border-right: 0; }
+  .e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main { padding: 12px 16px 24px; }
 
-  &:active ._hotkey_1ab7a_1 {
-    background: var(--theme-focused-foreground);
+  /* Tables scroll inside their own box; short cells stay on one line. */
+  .e-listings-native,
+  .e-relay-table,
+  .e-compact-table table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
+  .e-listings-native td,
+  .e-relay-table td,
+  .e-relay-table th { white-space: nowrap; }
+  .e-listings-native td.e-cell-wrap,
+  .e-listings-native td:has(> .e-cell-wrap) { white-space: normal; min-width: 18ch; }
 
-  &:active ._content_1ab7a_12 {
-    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);
+  /* Comfortable targets. */
+  .e-rail-item { min-height: 48px; padding: 10px 16px; }
+  /* Filters (data-keep-list) become a row of chips, so the list itself is near the top. */
+  .e-rail-item[data-keep-list] {
+    display: inline-flex;
+    align-items: center;
+    width: auto;
+    min-height: 40px;
+    margin: 4px 0 4px 8px;
+    padding: 6px 12px !important;
+    border: 1px solid var(--e-rule) !important;
   }
+  .e-rail-item[data-keep-list].is-selected { border-color: var(--theme-focused-foreground) !important; }
+  .e-segment-tab { min-height: 40px; padding: 6px 12px; }
+  .e-dashboard-shell [class*="ActionButton_root"] { min-height: 40px; }
+  .e-search-row [class*="Input_displayed"] { min-height: 44px; }
+  .e-theme-duo { padding: 12px 14px; }
+  .e-theme-circle { width: 20px; height: 20px; }
+  .e-theme-duo__rule { margin: 0 12px; }
+  .e-viewer-switch select { min-height: 40px; font-size: 14px; }
+  .e-meta-grid__row { grid-template-columns: 6rem 1fr; }
 }
 
-._selected_1ab7a_71 {
-  ._content_1ab7a_12 {
-    background: var(--theme-focused-foreground);
-  }
+@media (pointer: coarse) {
+  .e-section-tab { min-height: 44px; }
+  .e-rail-item { min-height: 48px; }
+  .e-segment-tab { min-height: 40px; }
 }
-._text_1yv2a_1 {
+
+@media (prefers-reduced-motion: reduce) {
+  .e-dashboard-shell *,
+  .e-app-drawer { transition: none !important; animation: none !important; }
+}
+.Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
-._root_1kxgp_1 {
+.BlockLoader_root_1fkyl {
   display: inline-block;
   width: 1ch;
   color: inherit;
   height: calc(var(--font-size) * var(--theme-line-height-base));
   vertical-align: bottom;
 }
-._root_o3hs4_1 {
+.Indent_root_9k7l5 {
   display: block;
   padding: 0 0 0 1ch;
 }
-._root_xy5qo_1 {
+.Badge_root_1obhs {
   display: inline-block;
   vertical-align: top;
   text-align: center;
@@ -2606,13 +2772,13 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   background: var(--theme-border);
   padding: 0 1ch 0 1ch;
 }
-._gradient_1qzeu_1 {
+.Divider_gradient_hx4se {
   background: linear-gradient(to right, transparent, var(--theme-border), transparent);
   height: calc(var(--font-size) * var(--theme-line-height-base));
   width: 100%;
 }
 
-._divider_1qzeu_7 {
+.Divider_divider_hx4se {
   align-items: center;
   border: 0;
   display: flex;
@@ -2624,29 +2790,29 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   width: 100%;
 }
 
-._line_1qzeu_19 {
+.Divider_line_hx4se {
   background: var(--theme-text);
   display: block;
   flex-shrink: 0;
   height: 2px;
   width: 100%;
 }
-._root_ug52k_1 {
+.Input_root_zrgvd {
   position: relative;
   display: block;
 }
 
-._label_ug52k_6 {
+.Input_label_zrgvd {
   background: var(--theme-border);
   display: block;
 }
 
-._placeholder_ug52k_11 {
+.Input_placeholder_zrgvd {
   font-style: italic;
   color: var(--theme-overlay);
 }
 
-._displayed_ug52k_16 {
+.Input_displayed_zrgvd {
   overflow: hidden;
   white-space: nowrap;
   pointer-events: none;
@@ -2655,27 +2821,27 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   box-shadow: inset 0 0 0 2px var(--theme-border);
 }
 
-._focused_ug52k_25 {
-  ._block_ug52k_26 {
+.Input_focused_zrgvd {
+  .Input_block_zrgvd {
     background: var(--theme-focused-foreground);
   }
 
-  ._placeholder_ug52k_11 {
+  .Input_placeholder_zrgvd {
     background: var(--theme-focused-foreground);
   }
 }
 
-@keyframes _blink_ug52k_41 {
+@keyframes Input_blink_zrgvd {
   50% {
     opacity: 0;
   }
 }
 
-._blink_ug52k_41 {
-  animation: _blink_ug52k_41 1s step-start 0s infinite;
+.Input_blink_zrgvd {
+  animation: Input_blink_zrgvd 1s step-start 0s infinite;
 }
 
-._block_ug52k_26 {
+.Input_block_zrgvd {
   display: inline-block;
   min-width: 1ch;
   background: var(--theme-text);
@@ -2684,12 +2850,12 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   vertical-align: bottom;
 }
 
-._inputContainer_ug52k_54 {
+.Input_inputContainer_zrgvd {
   position: relative;
   display: block;
 }
 
-._hidden_ug52k_59 {
+.Input_hidden_zrgvd {
   position: absolute;
   top: 0;
   left: 0;
@@ -2710,20 +2876,20 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
     -webkit-box-shadow: 0 0 0px 1000px var(--theme-focused-foreground) inset;
   }
 }
-._root_1gl67_1 {
+.SidebarLayout_root_1g3qb {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   white-space: pre-wrap;
 }
 
-._sidebar_1gl67_8 {
+.SidebarLayout_sidebar_1g3qb {
   align-self: stretch;
   flex-shrink: 0;
   width: 20ch;
 }
 
-._handle_1gl67_14 {
+.SidebarLayout_handle_1g3qb {
   align-self: stretch;
   flex-shrink: 0;
   display: flex;
@@ -2735,7 +2901,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   cursor: col-resize;
 
   &:hover {
-    ._line_1gl67_26 {
+    .SidebarLayout_line_1g3qb {
       background: var(--theme-focused-foreground);
     }
   }
@@ -2744,19 +2910,19 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
     outline: 0;
     border: 0;
 
-    ._line_1gl67_26 {
+    .SidebarLayout_line_1g3qb {
       background: var(--theme-focused-foreground);
     }
   }
 
   &:active {
-    ._line_1gl67_26 {
+    .SidebarLayout_line_1g3qb {
       background: var(--theme-focused-foreground);
     }
   }
 }
 
-._line_1gl67_26 {
+.SidebarLayout_line_1g3qb {
   align-self: stretch;
   width: 2px;
   background: var(--theme-text);
@@ -2767,9 +2933,68 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   }
 }
 
-._content_1gl67_58 {
+.SidebarLayout_content_1g3qb {
   min-width: 10%;
   width: 100%;
+}
+
+/* Narrow screens only: the back control and the list-then-detail panes. */
+.SidebarLayout_back_1g3qb {
+  display: none;
+}
+
+/* Which pane a narrow screen shows; no effect on a wide one. */
+.SidebarLayout_showList_1g3qb,
+.SidebarLayout_showDetail_1g3qb {
+  min-width: 0;
+}
+
+@media (max-width: 700px) {
+  .SidebarLayout_root_1g3qb {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .SidebarLayout_root_1g3qb > .SidebarLayout_sidebar_1g3qb {
+    width: 100% !important;
+    max-width: 100%;
+  }
+
+  .SidebarLayout_handle_1g3qb {
+    display: none;
+  }
+
+  .SidebarLayout_content_1g3qb {
+    min-width: 0;
+  }
+
+  .SidebarLayout_showList_1g3qb > .SidebarLayout_content_1g3qb {
+    display: none;
+  }
+
+  .SidebarLayout_showDetail_1g3qb > .SidebarLayout_sidebar_1g3qb {
+    display: none;
+  }
+
+  .SidebarLayout_back_1g3qb {
+    display: flex;
+    align-items: center;
+    gap: 1ch;
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 16px;
+    border: 0;
+    border-bottom: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.2));
+    background: transparent;
+    color: var(--theme-focused-foreground);
+    font: inherit;
+    font-size: 0.85rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+    cursor: pointer;
+  }
 }
 /*
 NOTE(jimmylee):
@@ -2780,12 +3005,12 @@ reference the ANSI palette in global.css so the colors are byte-equal to
 scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 */
 
-._scrollWrapper_14i6v_10 {
+.SimpleTable_scrollWrapper_x98rn {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-._root_14i6v_15 {
+.SimpleTable_root_x98rn {
   padding: 0;
   border-collapse: collapse;
   border: 0;
@@ -2794,63 +3019,138 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   width: 100%;
 }
 
-._root_14i6v_15 td {
+.SimpleTable_root_x98rn td {
   padding: 0 2ch 0 0;
   vertical-align: top;
 }
 
-._root_14i6v_15 td:last-child {
+.SimpleTable_root_x98rn td:last-child {
   padding-right: 0;
 }
 
-._root_14i6v_15 thead td {
+.SimpleTable_root_x98rn thead td {
   background: var(--ansi-240-gray-35);
   color: var(--color-white);
   font-weight: 400;
 }
 
-._root_14i6v_15 tbody tr:focus {
+.SimpleTable_root_x98rn tbody tr:focus {
   background: var(--theme-focused-foreground);
   outline: 0;
 }
 
-._alignRight_14i6v_44 {
+.SimpleTable_alignRight_x98rn {
   text-align: right;
 }
 
-._statusOk_14i6v_48 {
+.SimpleTable_statusOk_x98rn {
   color: var(--ansi-10-lime);
   font-weight: 700;
 }
 
-._statusOff_14i6v_53 {
+.SimpleTable_statusOff_x98rn {
   color: var(--ansi-248-gray-66);
 }
-._root_1sq7v_1 {
+.AlertBanner_root_l7zgu {
   display: block;
   background: var(--theme-border);
   box-shadow: 1ch 1ch 0 0 var(--theme-border-subdued);
   padding: calc(var(--font-size) * var(--theme-line-height-base)) 2ch calc(var(--font-size) * var(--theme-line-height-base)) 2ch;
   font-weight: 400;
 }
-._row_dduqy_1 {
+.RowSpaceBetween_row_1rf1p {
   display: flex;
   justify-content: space-between;
   outline: 0;
   border: 0;
 }
-._board_1cp8w_1 {
+.ActionButton_hotkey_fa94z {
+  background: var(--theme-button-foreground);
+  color: var(--theme-text);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-weight: 400;
+  padding: 0 1ch 0 1ch;
+  text-indent: 0ch;
+  user-select: none;
+}
+
+.ActionButton_content_fa94z {
+  background: var(--theme-button-background);
+  box-shadow: inset 0 0 0 2px var(--theme-button-foreground);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-weight: 400;
+  padding: 0 1ch 0 1ch;
+  text-indent: 0ch;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.ActionButton_root_fa94z {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  outline: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size);
+  flex-shrink: 0;
+
+  &:hover .ActionButton_hotkey_fa94z {
+    background: var(--theme-focused-foreground);
+  }
+
+  &:hover .ActionButton_content_fa94z {
+    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);
+  }
+
+  &:focus {
+    background: var(--theme-focused-foreground);
+  }
+
+  &:focus .ActionButton_hotkey_fa94z {
+    background: var(--theme-focused-foreground);
+  }
+
+  &:focus .ActionButton_content_fa94z {
+    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);
+  }
+
+  &:active {
+    background: var(--theme-focused-foreground);
+  }
+
+  &:active .ActionButton_hotkey_fa94z {
+    background: var(--theme-focused-foreground);
+  }
+
+  &:active .ActionButton_content_fa94z {
+    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);
+  }
+}
+
+.ActionButton_selected_fa94z {
+  .ActionButton_content_fa94z {
+    background: var(--theme-focused-foreground);
+  }
+}
+.Chessboard_board_cycky {
   display: inline-table;
   border-collapse: collapse;
   touch-action: none;
 }
 
-._corner_1cp8w_7 {
+.Chessboard_corner_cycky {
   width: 1ch;
   height: calc(var(--theme-line-height-base) * 1rem);
 }
 
-._cell_1cp8w_12 {
+.Chessboard_cell_cycky {
   width: 1ch;
   height: calc(var(--theme-line-height-base) * 1rem);
   background-color: var(--theme-border-subdued);
@@ -2858,22 +3158,22 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   vertical-align: middle;
 }
 
-._square_1cp8w_20 {
+.Chessboard_square_cycky {
   height: calc(var(--theme-line-height-base) * 2rem);
   text-align: center;
   vertical-align: middle;
   width: 3ch;
 }
 
-._dark_1cp8w_27 {
+.Chessboard_dark_cycky {
   background-color: var(--theme-focused-foreground);
 }
 
-._light_1cp8w_31 {
+.Chessboard_light_cycky {
   background-color: var(--theme-focused-foreground-subdued);
 }
 
-._symbol_1cp8w_35 {
+.Chessboard_symbol_cycky {
   font-size: 40px;
   line-height: calc(var(--theme-line-height-base) * 2rem);
 }

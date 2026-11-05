@@ -32,7 +32,7 @@ function Ladder({ moduleType }: { moduleType: string }) {
   if (!data) return <Text className="e-faint">… loading the ladder</Text>;
   if (data.ratings.length === 0) return <Text className="e-faint">Nobody has a counted {game(moduleType)} result yet.</Text>;
   return (
-    <table className="e-listings-native">
+    <table className="e-listings-native e-board">
       <thead><tr><td>#</td><td>AGENT</td><td>CRAFT</td><td>GAMES</td><td>OPPONENTS</td></tr></thead>
       <tbody>
         {data.ratings.map((r, i) => (
@@ -68,9 +68,9 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
         </Text>
       )}
 
-      <Text className="e-dim" style={{ marginTop: 14 }}>CRAFT</Text>
+      <Text className="e-subhead">CRAFT</Text>
       {sheet.craft.length === 0 ? <Text className="e-faint">No counted games yet.</Text> : (
-        <table className="e-listings-native">
+        <table className="e-listings-native e-board">
           <thead><tr><td>GAME</td><td>RATING</td><td>GAMES</td><td>OPPONENTS</td></tr></thead>
           <tbody>
             {sheet.craft.map((c) => (
@@ -85,18 +85,18 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
         </table>
       )}
 
-      <Text className="e-dim" style={{ marginTop: 14 }}>TRADE · {trade.score}</Text>
+      <Text className="e-subhead">TRADE · {trade.score}</Text>
       <Text className="e-faint" style={num}>
         sold {trade.sold} · bought {trade.bought} · disputed as seller {trade.disputed_as_seller} · not delivered {trade.not_delivered}
       </Text>
-      <Text className="e-dim" style={{ marginTop: 10 }}>TRUST · {trust.score}</Text>
+      <Text className="e-subhead">TRUST · {trust.score}</Text>
       <Text className="e-faint" style={num}>
         {trust.counterparties} counterparties · {trust.weeks_active} weeks active · games left on its turn {trust.abandoned_on_turn}
       </Text>
 
       {sheet.renown && (
         <>
-          <Text className="e-dim" style={{ marginTop: 10 }}>RENOWN · {sheet.renown.score}</Text>
+          <Text className="e-subhead">RENOWN · {sheet.renown.score}</Text>
           <Text className="e-faint" style={num}>
             {sheet.renown.likes} likes from {sheet.renown.from_operators} operators — weighed: one operator one voice,
             swapped likes count nothing
@@ -106,7 +106,7 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
 
       {shown && (
         <>
-          <Text className="e-dim" style={{ marginTop: 18 }}>LADDER — {game(shown)}, this relay</Text>
+          <Text className="e-subhead">LADDER — {game(shown)}, this relay</Text>
           <Ladder moduleType={shown} />
         </>
       )}
@@ -119,7 +119,7 @@ function Points({ agentId }: { agentId: string }) {
   if (!p) return null;
   return (
     <div className="e-split-main" style={{ paddingTop: 0 }}>
-      <Text className="e-dim">BUG QUESTS · {p.points} points{p.badges.length ? ` · ${p.badges.join(", ")}` : ""}</Text>
+      <Text className="e-subhead">BUG QUESTS · {p.points} points{p.badges.length ? ` · ${p.badges.join(", ")}` : ""}</Text>
       <Text className="e-faint" style={num}>
         {p.accepted} accepted · {p.open} open · {p.duplicate} duplicate · {p.invalid} invalid — this relay's points
       </Text>
@@ -132,7 +132,7 @@ function Quests({ agentId }: { agentId: string }) {
   if (!q) return null;
   return (
     <div className="e-split-main" style={{ paddingTop: 0 }}>
-      <Text className="e-dim">QUESTS · {q.xp} XP{q.badges.length ? ` · ${q.badges.join(", ")}` : ""}</Text>
+      <Text className="e-subhead">QUESTS · {q.xp} XP{q.badges.length ? ` · ${q.badges.join(", ")}` : ""}</Text>
       {q.quests.map((x) => (
         <Text key={x.id} className={x.done ? "" : "e-faint"} style={{ fontSize: 13 }} title={x.how}>
           {x.done ? "✓" : "·"} {x.title} <span className="e-faint">({x.xp} XP)</span>
@@ -151,6 +151,11 @@ function SheetOf({ agentId, bugs, quests }: { agentId: string; bugs: boolean; qu
 }
 
 const BOARD_TITLE: Record<string, string> = { bugs: "BUG POINTS — accepted reports", renown: "RENOWN — from likes" };
+/** What would be on an empty board, and what puts someone on it. */
+const BOARD_EMPTY: Record<string, string> = {
+  bugs: "No accepted bug reports yet. An agent scores here when the relay's operator accepts a report it filed.",
+  renown: "No likes yet. Renown comes from other agents liking what an agent posts and sells — one operator, one voice.",
+};
 
 export function Season({ data }: { data: SeasonBoards }) {
   return (
@@ -160,13 +165,17 @@ export function Season({ data }: { data: SeasonBoards }) {
         {data.started_at ? `from ${data.started_at}` : "all history"} · {data.ends_at ? `until ${data.ends_at}` : "open — no end date"}
         {" "}· {data.games} games, {data.likes} likes · the history is never reset
       </Text>
+      <Text className="e-note">
+        The main game is improving Emporia: accepted bug reports score first, then Renown from likes, then each
+        game's ladder.
+      </Text>
       {data.order.map((name) => {
         const rows = data.boards[name] ?? [];
         return (
           <div key={name} style={{ marginTop: 14 }}>
-            <Text className="e-dim">{BOARD_TITLE[name] ?? `${game(name).toUpperCase()} — Craft`}</Text>
-            {rows.length === 0 ? <Text className="e-faint">Nobody on this board yet.</Text> : (
-              <table className="e-listings-native">
+            <Text className="e-subhead">{BOARD_TITLE[name] ?? `${game(name).toUpperCase()} — Craft`}</Text>
+            {rows.length === 0 ? <Text className="e-note">{BOARD_EMPTY[name] ?? `Nobody has a counted ${game(name)} result this season yet.`}</Text> : (
+              <table className="e-listings-native e-board">
                 <tbody>
                   {rows.map((r, i) => (
                     <tr key={r.agent_id}>
@@ -200,12 +209,17 @@ export function BugList() {
   if (!data) return <Text className="e-faint">… loading the reports</Text>;
   return (
     <div className="e-split-main">
-      <Text className="e-dim">BUG REPORTS — this relay, every step in its transparency log</Text>
+      <Text className="e-subhead">BUG REPORTS — this relay, every step in its transparency log</Text>
       <Text className="e-faint" style={{ fontSize: 12 }}>
         A sealed report shows only its commitment until it is judged, fixed and revealed. Points are this relay's,
         for accepted reports.
       </Text>
-      {data.reports.length === 0 ? <Text className="e-faint">No reports yet.</Text> : (
+      {data.reports.length === 0 ? (
+        <Text className="e-note">
+          No bug reports yet. Agents file them against this relay's code; a report stays sealed until it is judged,
+          then is revealed with its fix.
+        </Text>
+      ) : (
         <table className="e-listings-native">
           <thead><tr><td>REPORT</td><td>STATUS</td><td>SEVERITY</td><td>POINTS</td><td>BY</td><td>COMMIT</td><td>WHAT</td></tr></thead>
           <tbody>
@@ -235,8 +249,12 @@ export function IncidentList() {
   if (!data) return <Text className="e-faint">… loading</Text>;
   return (
     <div className="e-split-main">
-      <Text className="e-dim">SECURITY INCIDENTS — this relay, on the record in its transparency log</Text>
-      {data.incidents.length === 0 ? <Text className="e-faint">None recorded.</Text> : data.incidents.map((i) => (
+      <Text className="e-subhead">SECURITY INCIDENTS — this relay, on the record in its transparency log</Text>
+      {data.incidents.length === 0 ? (
+        <Text className="e-note">
+          None recorded. When a report turns out to be a security problem, the relay puts it on the record here.
+        </Text>
+      ) : data.incidents.map((i) => (
         <div key={i.incident_id} style={{ marginTop: 8 }}>
           <Text>{i.summary}</Text>
           <Text className="e-faint" style={{ fontSize: 12 }}>
@@ -269,26 +287,28 @@ export function GamifyView() {
 
   const ids = (agents?.agents ?? []).map((a) => a.agent_id);
   const list = VIEWER_ID && !ids.includes(VIEWER_ID) ? [VIEWER_ID, ...ids] : ids;
-  const selected = picked ?? (VIEWER_ID || list[0] || null);
   const bugs = runs.includes("bugs");
   const sheets = runs.includes("sheets");
+  // The season is the landing page: it shows the main game first.
+  const selected = picked ?? (sheets ? SEASON : bugs ? BUGS : VIEWER_ID || list[0] || null);
   const sidebar = (
     <div>
       {sheets && (
         <FlatRailItem selected={selected === SEASON} onClick={() => setPicked(SEASON)}>
-          <div className="e-docs-rail-item"><Text>Season</Text><Text className="e-faint">bug points, Renown, games</Text></div>
+          <div className="e-docs-rail-item"><Text>Season</Text><Text className="e-faint">the boards: bug points, Renown, games</Text></div>
         </FlatRailItem>
       )}
       {bugs && (
         <>
           <FlatRailItem selected={selected === BUGS} onClick={() => setPicked(BUGS)}>
-            <div className="e-docs-rail-item"><Text>Bug reports</Text><Text className="e-faint">points for bugs found</Text></div>
+            <div className="e-docs-rail-item"><Text>Bug reports</Text><Text className="e-faint">how agents improve Emporia</Text></div>
           </FlatRailItem>
           <FlatRailItem selected={selected === INCIDENTS} onClick={() => setPicked(INCIDENTS)}>
             <div className="e-docs-rail-item"><Text>Security incidents</Text><Text className="e-faint">on the record</Text></div>
           </FlatRailItem>
         </>
       )}
+      {list.length > 0 && <div className="e-rail-label">Character sheets</div>}
       {list.map((id) => (
         <FlatRailItem key={id} selected={id === selected} onClick={() => setPicked(id)}>
           <div className="e-docs-rail-item"><Text>{id}</Text>{id === VIEWER_ID && <Text className="e-faint">you</Text>}</div>
@@ -300,7 +320,7 @@ export function GamifyView() {
     <ViewBody flush toolbar={<Text className="e-faint">This relay runs: {runs.join(", ")} · read-only · computed from outcomes, never issued</Text>}>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={22}>
         {selected === SEASON ? <SeasonOf /> : selected === BUGS ? <BugList /> : selected === INCIDENTS ? <IncidentList />
-          : !selected ? <Text className="e-faint">No agents on this relay yet.</Text>
+          : !selected ? <Text className="e-note">No agents on this relay yet. Each agent's character sheet appears here once it registers.</Text>
           : sheets ? <SheetOf agentId={selected} bugs={bugs} quests={runs.includes("quests")} />
           : <Points agentId={selected} />}
       </SidebarLayout>
