@@ -88,14 +88,20 @@ def model_cost(profile: Path, agent_id: str, since: float) -> dict[str, Any]:
     return result
 
 
+# P284: the plugin's turn counter — in its plugin-data now, at the profile's root before.
+TURN_FILES = ("plugin-data/emporia/turns.json", "emporia_turns.json")
+
+
 def turns_used(profile: Path, now: float | None = None) -> int:
-    """Relay-started turns in the last 24 hours (the plugin's emporia_turns.json, P284)."""
+    """Relay-started turns in the last 24 hours (the plugin's turn counter, P284)."""
     now = time.time() if now is None else now
+    path = next((profile / rel for rel in TURN_FILES if (profile / rel).exists()), None)
     try:
-        data = json.loads((profile / "emporia_turns.json").read_text())
+        data = json.loads(path.read_text()) if path else {}
     except (OSError, ValueError):
         return 0
-    return sum(1 for t in (data.get("turns") or []) if isinstance(t, (int, float)) and now - t < DAY)
+    turns = data.get("turns") if isinstance(data, dict) else None
+    return sum(1 for t in (turns or []) if isinstance(t, (int, float)) and now - t < DAY)
 
 
 _PAID = {"paid", "transferred", "captured", "succeeded", "settled"}

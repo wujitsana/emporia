@@ -176,10 +176,11 @@ the P284 items, Hermes 0.22.6 in the container.
       `hermes emporia status` and `hermes emporia doctor` report it. The root profile (`default`) is
       untouched unless you ran `hermes emporia setup --here` from it. `hermes -p <new> dashboard` shows
       the Emporia tab.
-      **Before a push (P296),** the catalog route from this machine: `hermes profile create em-try --no-skills`,
-      `hermes -p em-try plugins install file://<repo>#hermes_plugin/emporia --enable`, then
-      `hermes -p em-try emporia setup --runtime-from <repo> --plugin-source file://<repo>#hermes_plugin/emporia`
-      (committed work only: both clone the repo). A name already on the relay is asked again before
+      **Before a release (P296),** the catalog route: push the code to a branch, pin it
+      (`scripts/pin_plugin_runtime.py`, a second commit), push that, then `hermes profile create em-try
+      --no-skills`, `hermes -p em-try plugins install https://github.com/wujitsana/emporia#hermes_plugin/emporia --ref <pin commit> --enable`,
+      and `hermes -p em-try emporia setup`. (Catalog rule 3: the plugin has no flag to take its runtime from
+      anywhere but its pin; unpushed work is tried from a checkout, whose plugin runs that checkout.) A name already on the relay is asked again before
       anything is written; `hermes -p <new> emporia status` says "registered" after the gateway restart;
       the tab in `em-try` (no agent) says to run `hermes emporia setup`.
 - [ ] **The house agent (P297).** A profile `house` with `emporia agent playbook house --preset host`, listed in

@@ -101,8 +101,12 @@ def main(argv: list[str]) -> int:
         return 1
     data = json.loads(SOURCE.read_text())
     data["sha"] = sha
+    # Catalog rule 3: the tree that commit holds, which `hermes emporia setup|update` checks
+    # after checkout, so nothing but the reviewed code can be installed as this runtime.
+    data["tree"] = git("rev-parse", f"{sha}^{{tree}}")
     SOURCE.write_text(json.dumps(data, indent=2) + "\n")
-    print(f"pinned the plugin's runtime to {sha}. Commit this file; the catalog entry pins that commit.")
+    print(f"pinned the plugin's runtime to {sha} (tree {data['tree'][:12]}). Commit this file; the "
+          "catalog entry pins that commit.")
     return 0
 
 

@@ -378,7 +378,8 @@ def register_agent(
 
     Automatically proves Ed25519 private-key possession via a challenge/response
     round-trip (POST /agents/challenge → sign nonce → POST /agents/register).
-    Optionally attaches a Nous JWT for nous_verified trust level.
+    Attaches a Nous JWT for the nous_verified trust level only when the person turned
+    Nous verification on (EMPORIA_NOUS_VERIFY); otherwise it registers key_only.
     Idempotent — safe to call on every start.
     """
     agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
@@ -413,7 +414,8 @@ def register_agent(
     # P114: an explicit token is the caller's choice; otherwise a current one —
     # the configured token if it has not expired, else a fresh one from Hermes.
     from emporia import nous_token
-    jwt = nous_jwt or nous_token.current(os.getenv("EMPORIA_NOUS_JWT", "") or NOUS_JWT)
+    # Catalog rule 11: only when the person turned verification on (EMPORIA_NOUS_VERIFY).
+    jwt = nous_token.for_registration(nous_jwt, os.getenv("EMPORIA_NOUS_JWT", "") or NOUS_JWT)
     # P54: the installer collects a display name from the user and writes it
     # into this process's own environment as EMPORIA_DISPLAY_NAME — and nothing
     # ever read it, so an agent registered through this tool without an explicit

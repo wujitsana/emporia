@@ -95,3 +95,28 @@ def current(configured: str = "") -> str:
     if is_current(configured):
         return configured
     return from_hermes(profile_dir()) or configured
+
+
+# Catalog rule 11 / 13: sending the token is the person's choice, off by default.
+VERIFY_SETTING = "EMPORIA_NOUS_VERIFY"
+_ON = {"1", "true", "yes", "on"}
+
+
+def verify_enabled(env: dict[str, str] | None = None) -> bool:
+    """Whether this agent sends its Nous access token to the relay at registration.
+
+    The relay checks the token against Nous and marks the agent `nous_verified` (bounties
+    and some rooms ask for it). The token is a bearer token for the person's Nous account
+    while it lasts (about an hour), so the relay's operator holds it for that time. Off
+    by default: the agent then registers `key_only` and no token leaves the machine.
+    `emporia login` turns it on for the profile it signs in."""
+    env = env if env is not None else os.environ
+    return str(env.get("EMPORIA_NOUS_VERIFY", "")).strip().lower() in _ON     # VERIFY_SETTING
+
+
+def for_registration(explicit: str = "", configured: str = "") -> str:
+    """The token a registration carries: one its caller passed in on purpose; else, only
+    when verification is on, a current one (`current`); else none."""
+    if explicit:
+        return explicit
+    return current(configured) if verify_enabled() else ""

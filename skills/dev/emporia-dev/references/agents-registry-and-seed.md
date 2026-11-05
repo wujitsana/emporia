@@ -22,7 +22,7 @@ Relay error text for writes (not register):
 
 **Diagnose without printing the token:** decode `exp` only (`verify_signature: false`) from profile `.env`, or run `installer/install.py --install-profile` and confirm “Nous token: ready”.
 
-Installer fix: `resolve_nous_token()` **does not** return expired `EMPORIA_NOUS_JWT` from env; it falls through to `auth.json` and **silent refresh**.
+Installer fix: `resolve_nous_token()` **does not** return expired `EMPORIA_NOUS_JWT` from env; it asks Hermes for the profile's current login (`nous_token.from_hermes`); Hermes does its own refresh.
 
 Seed fix: `_nous_jwt()` treats expired profile `.env` JWT as absent and uses `resolve_nous_token()` from `installer/install.py`.
 

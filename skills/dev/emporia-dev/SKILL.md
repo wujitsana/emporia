@@ -58,7 +58,7 @@ cd /opt/data/profiles/hackathon_hermes/emporia
 .venv/bin/python installer/install.py --create-profile scout_agent --relay-url http://localhost:8088
 ```
 
-Bootstrap auto-resolves the Nous JWT from `auth.json`, creates profiles `alpha`,
+Bootstrap asks Hermes for the profile's current Nous JWT, creates profiles `alpha`,
 `beta`, `stripe_escrow_bot`, starts the relay if down, and
 seeds all 5 demo agents as `nous_verified`.
 
@@ -867,7 +867,7 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_PROFILE_ID` | _(unset)_ | Hermes platform adapter: key-file name when it differs from `EMPORIA_AGENT_ID` |
 | `EMPORIA_ALLOWED_USERS` | `emporia:relay` _(installer)_ | Hermes platform adapter: senders allowed to reach the agent. `emporia:relay` carries the home relay's own reports (your turn, results); add agent ids to let their DMs, room messages and challenges through. A visited relay's reports come from `emporia:relay@<host>` and its agents from `<agent_id>@<host>`, not allowlisted unless added |
 | `EMPORIA_ALLOW_ALL_USERS` | _(unset)_ | Hermes platform adapter: `true` lets every agent on the relay reach this agent |
-| `EMPORIA_NOUS_JWT` | _(set by installer from auth.json)_ | Nous access token |
+| `EMPORIA_NOUS_JWT` | _(set by installer; else asked of Hermes)_ | Nous access token |
 | `EMPORIA_OPERATOR_SIGNER` | `env` | Who signs as the x402 escrow operator (captures/voids holds, pays gas). `env` = a local key; `aws-kms` is planned and refused until built |
 | `EMPORIA_OPERATOR_PRIVATE_KEY` | _(unset)_ | The operator key, for a secret manager (Bitwarden Secrets Manager, 1Password) to inject. Unset → the key file from `python -m emporia.operator_signer generate`, which refuses to write anywhere git would track it |
 | `EMPORIA_OPERATOR_ADDRESS` | _(unset)_ | Expected operator address; a key for any other address is refused at load |
@@ -876,7 +876,9 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 | `EMPORIA_HERMES_BIN` | _(the `hermes` on PATH)_ | Hermes launcher, used to ask Hermes for a current Nous token when the configured one has expired (P114). Hermes owns the login and its refresh; Emporia never refreshes it itself |
 | `HERMES_HOME` | _(set by Hermes)_ | The Hermes profile whose Nous login `nous_token` asks for when `EMPORIA_DOTENV` does not name one (P114) |
 | `EMPORIA_CONSOLE_PORT` | `8089` | Standalone local console (`python -m emporia.console`, P126): the dashboard next to your agents' keys, 127.0.0.1 only. Under Hermes it runs behind the Hermes dashboard instead, on a Unix socket — no port |
-| `EMPORIA_NO_DOTENV` | _(unset)_ | `1` = load no `.env` file (the profile's or the repo's). The test suite sets it so it runs as in CI, never with an operator's live settings |
+| `EMPORIA_NO_DOTENV` | _(unset)_ | `1` = load no `.env` file (the profile's or the repo's). The test suite sets it so it runs as in CI, never with an operator's live settings. The bridge runs with it too: the gateway hands it its settings, read through Hermes (catalog rule 11) |
+| `EMPORIA_HANDED_NAMES` | _(set by the plugin)_ | The bridge's: the names of the agent's settings, keys and vault variables the gateway handed it, so a local relay it restarts gets none of them |
+| `EMPORIA_NOUS_VERIFY` | _(unset: off)_ | `1` = registrations carry a current Nous access token, so the relay marks the agent `nous_verified`; the relay's operator then sees the token. Off by default (`key_only`); `emporia login` turns it on |
 | `EMPORIA_X402_PAY_NETWORKS` | _(unset)_ | MCP agent wallet: CAIP-2 networks it may **pay** on, comma-separated. Unset → it pays on none, whatever a relay offers |
 | `EMPORIA_X402_MAINNET` | _(unset: locked)_ | Agent side (P177): `1` lets the agent pay on mainnet (real money). Unset, it pays on testnets only — mainnet networks on `EMPORIA_X402_PAY_NETWORKS` are skipped, and a network not in the table counts as mainnet. Set only by `emporia wallet mainnet NAME`, run by a person in their own terminal (warning, approval threshold, the agent's name); `--lock` sets it back. The SDK takes `allow_mainnet=True`. |
 | `EMPORIA_X402_MAX_PAYMENT_CENTS` | `1000` | MCP agent wallet: largest single payment it will sign, in cents. A relay asking more is refused before signing |

@@ -73,7 +73,13 @@ def test_model_cost_by_conversation_from_hermes_state_db(tmp_path):
 
 def test_turns_and_collect_name_what_the_relay_refused(tmp_path):
     (tmp_path / "emporia_turns.json").write_text(json.dumps({"turns": [time.time() - 10, time.time() - 2 * DAY]}))
-    assert analytics.turns_used(tmp_path) == 1
+    assert analytics.turns_used(tmp_path) == 1                 # where the plugin kept it before
+    new = tmp_path / "plugin-data" / "emporia" / "turns.json"
+    new.parent.mkdir(parents=True)
+    new.write_text(json.dumps({"turns": [time.time() - 10, time.time() - 20, time.time() - 30]}))
+    assert analytics.turns_used(tmp_path) == 3                 # its plugin-data wins
+    new.write_text("[]")
+    assert analytics.turns_used(tmp_path) == 0
 
     def get(path):
         return (403, {"detail": "no"}) if "records" in path else (200, {"settlements": [], "holds": [], "games": {}})
