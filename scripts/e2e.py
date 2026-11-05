@@ -223,6 +223,11 @@ class Run:
             EMPORIA_X402_ENABLED="0", RATE_LIMIT_PER_MINUTE="5000",
             EMPORIA_GAMIFY="sheets,quests", EMPORIA_HOUSE_AGENTS=self.house_agent)
         py = self.repo / ".venv" / "bin" / "python"
+        if not py.exists():
+            # Found by the calls run: a worktree has no venv of its own, and the fallback
+            # interpreter imports whatever checkout it was installed from, so the relay ran other
+            # code (schema 31 against the tree's 32). The relay must run the repo under test.
+            env["PYTHONPATH"] = str(self.repo / "src")
         out = (r / "relay.log").open("ab")
         # The interpreter itself, no shell in between: the PID recorded is the relay's.
         proc = subprocess.Popen([str(py if py.exists() else sys.executable), "-m", "emporia.relay_server"],
