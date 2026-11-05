@@ -28,16 +28,7 @@ one by one.
 - **Not yet checked:** a real Desktop, screenshots of this combination, and chat against a live
   Hermes socket.
 
-**Another session is working on `review-followups`.** The other Claude session `emporia-b6` has
-uncommitted work in its worktree. Committed there so far:
-- the SDK keeps a DM thread's peer (M3);
-- a write-once commit (M5);
-- the sign-in names its relay (M4; it needs `EMPORIA_RELAY_SIGN_IN_ORIGINS` for relays reached
-  by other names, and its revert check is still owed).
-
-The rest of that list is left for whichever session you choose.
-
-## Merged into hackathon-v2 (verified at ff37fc6)
+## Merged into hackathon-v2 (latest verified at 8329310)
 
 At ff37fc6: the full suite passes (2407), the secret scan over all branches is clean, the
 end-to-end run passes (twice), and `hermes plugins validate` passes with one documented warning.
@@ -50,6 +41,7 @@ end-to-end run passes (twice), and `hermes plugins validate` passes with one doc
 | `mcp-review` (d8253d5) | A path-traversal guard on tool ids. Sign-in signing is limited to home and visited relays. Bounded chain walks. `list_dm_threads` works again. Agent-facing tool descriptions. Every answer has `success`. Commit and reveal are retry-safe. DMs, rooms and the inbox page. Twelve larger proposals are in `docs/proposals/mcp-review.md`. |
 | `review-pass` (9df9bbd) | A DM the agent required sealed could still go out in plaintext on first contact or cross-relay (high). Subprocess tests in worktrees tested the main checkout's code. The secret scan missed binary and empty secret files. The abandoned-game notice. Hint wording. Five medium proposals are in `docs/review-pass-2026-11-05.md`. |
 | Catalog compliance (`catalog-compliance` and `catalog-rule11`, merged at 574832a, plus 99b967a, 60f077b, ff37fc6) | Every one of the 18 catalog rules passes. Profile `.env` access goes only through Hermes; the MCP server gets its settings through `${NAME}`; no `auth.json` handling; the key guard blocks reads of process environments; `--runtime-from` is removed; the runtime is verified file by file against the pinned tree; Nous verification is opt-in; dependencies are bounded. The integration review fixed four more problems: tampered or untracked runtime files passing verification; a refused setting write counting as success; a stale cache; a key linked by name not reaching the bridge. `scripts/e2e.py` now installs a release of HEAD made in its own folder, with no product flag. |
+| `review-followups` (f2a4063, plus 8329310) | The SDK keeps a DM thread's peer (M3); write-once commits (M5); the sign-in names its relay (M4; relays reached by another name need `EMPORIA_RELAY_SIGN_IN_ORIGINS`); Renown v2 (swaps judged on all-time likes, rings of three count a quarter); `join_session` says a session cannot be read (L9); the pre-push hook works on branches without the scanner (L8); setup checks profile names (L7) with a mirrored copy of Hermes's rule, tested against Hermes, so no core import (catalog rule 9). Verified at 8329310: 2450 tests, the secret scan, e2e twice (19/19), `hermes plugins validate`. |
 | `scripts/secret_scan.py` (3e74a92) | Installed as the `pre-push` hook. Pushed history was checked 11-05 (615 commits on the public repo): no secret files or values ever pushed. |
 
 Also done on 11-05: the old 0.3.0 tab was removed from the root home; the profile repo ignores
