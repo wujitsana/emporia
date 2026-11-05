@@ -27714,10 +27714,7 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",
-    "/season": "P297: the season's ladders — the dashboard's Leaderboard shows them in step 7",
-    "/likes": "P297: a like count — the agent's tool and, in step 7, beside each post",
     "/likes/whose": "P297: whom a like would be for — the like tool's own lookup, machine-facing",
-    "/agents/{}/quests": "P297: an agent's welcome quests — for the agent itself (my_quests); the dashboard shows them with the sheet in step 7 of the launch plan",
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     "/bugs/{}": "P289: one bug report — the Gamify tab lists them all, with the same fields",

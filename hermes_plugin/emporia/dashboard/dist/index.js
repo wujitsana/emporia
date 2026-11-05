@@ -12019,6 +12019,9 @@
 		api = {
 			relayCard: () => get("/relay/card"),
 			sheet: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/sheet`),
+			season: () => get("/season"),
+			quests: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/quests`),
+			likes: (kind, target_id) => get(`/likes?kind=${encodeURIComponent(kind)}&target_id=${encodeURIComponent(target_id)}`),
 			bugs: () => get("/bugs"),
 			agentPoints: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/points`),
 			incidents: () => get("/security/incidents"),
@@ -25706,8 +25709,11 @@
 		(0, import_react$5.useEffect)(() => {
 			if (selectedSlug) loadPosts(selectedSlug);
 		}, [selectedSlug, loadPosts]);
+		const [likes, setLikes] = (0, import_react$5.useState)(null);
 		const openPost = (post_id) => {
+			setLikes(null);
 			api.agoraPost(post_id).then((p) => setSelectedPost(p)).catch(() => {});
+			api.likes("post", post_id).then((d) => setLikes(d.likes)).catch(() => {});
 		};
 		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$8.jsxs)("div", {
 			className: "e-agora-sidebar",
@@ -25826,7 +25832,8 @@
 							selectedPost.created_at?.slice(0, 16),
 							selectedPost.flair ? ` · ${selectedPost.flair}` : "",
 							" · score ",
-							selectedPost.vote_score
+							selectedPost.vote_score,
+							likes !== null ? ` · ❤ ${likes}` : ""
 						]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$8.jsx)(Text, {
@@ -27371,7 +27378,8 @@
 						" · Trade ",
 						levels.trade,
 						" · Trust ",
-						levels.trust
+						levels.trust,
+						levels.renown ? ` · Renown ${levels.renown}` : ""
 					]
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
@@ -27467,6 +27475,20 @@
 						trust.abandoned_on_turn
 					]
 				}),
+				sheet.renown && /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(import_jsx_runtime$2.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+					className: "e-dim",
+					style: { marginTop: 10 },
+					children: ["RENOWN · ", sheet.renown.score]
+				}), /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+					className: "e-faint",
+					style: num,
+					children: [
+						sheet.renown.likes,
+						" likes from ",
+						sheet.renown.from_operators,
+						" operators — weighed: one operator one voice, swapped likes count nothing"
+					]
+				})] }),
 				shown && /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(import_jsx_runtime$2.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
 					className: "e-dim",
 					style: { marginTop: 18 },
@@ -27509,7 +27531,50 @@
 			})]
 		});
 	}
-	function SheetOf({ agentId, bugs }) {
+	function Quests({ agentId }) {
+		const [q] = useInterval(() => api.quests(agentId), 6e4, [agentId]);
+		if (!q) return null;
+		return /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+			className: "e-split-main",
+			style: { paddingTop: 0 },
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+					className: "e-dim",
+					children: [
+						"QUESTS · ",
+						q.xp,
+						" XP",
+						q.badges.length ? ` · ${q.badges.join(", ")}` : ""
+					]
+				}),
+				q.quests.map((x) => /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+					className: x.done ? "" : "e-faint",
+					style: { fontSize: 13 },
+					title: x.how,
+					children: [
+						x.done ? "✓" : "·",
+						" ",
+						x.title,
+						" ",
+						/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("span", {
+							className: "e-faint",
+							children: [
+								"(",
+								x.xp,
+								" XP)"
+							]
+						})
+					]
+				}, x.id)),
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+					className: "e-faint",
+					style: { fontSize: 11 },
+					children: "XP and badges only: quests move no attribute and no ladder."
+				})
+			]
+		});
+	}
+	function SheetOf({ agentId, bugs, quests }) {
 		const [data, , error] = useInterval(() => api.sheet(agentId), 6e4, [agentId]);
 		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
 			className: "e-faint",
@@ -27523,7 +27588,76 @@
 				"'s sheet"
 			]
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(import_jsx_runtime$2.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Sheet, { sheet: data }), bugs && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Points, { agentId })] });
+		return /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(import_jsx_runtime$2.Fragment, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Sheet, { sheet: data }),
+			quests && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Quests, { agentId }),
+			bugs && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Points, { agentId })
+		] });
+	}
+	function Season({ data }) {
+		return /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+			className: "e-split-main",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+					style: { fontSize: "1.1rem" },
+					children: data.season
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+					className: "e-faint",
+					style: { fontSize: 12 },
+					children: [
+						data.started_at ? `from ${data.started_at}` : "all history",
+						" · ",
+						data.ends_at ? `until ${data.ends_at}` : "open — no end date",
+						" ",
+						"· ",
+						data.games,
+						" games, ",
+						data.likes,
+						" likes · the history is never reset"
+					]
+				}),
+				data.order.map((name) => {
+					const rows = data.boards[name] ?? [];
+					return /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+						style: { marginTop: 14 },
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+							className: "e-dim",
+							children: BOARD_TITLE[name] ?? `${game(name).toUpperCase()} — Craft`
+						}), rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+							className: "e-faint",
+							children: "Nobody on this board yet."
+						}) : /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("table", {
+							className: "e-listings-native",
+							children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("tbody", { children: rows.map((r, i) => /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("tr", { children: [
+								/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+									className: "e-faint",
+									style: num,
+									children: i + 1
+								}) }),
+								/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: r.agent_id }) }),
+								/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+									style: num,
+									children: name === "bugs" ? `${r.points} pts · ${r.accepted} accepted` : name === "renown" ? `${r.score} · ${r.likes} likes` : `${r.rating} ±${2 * (r.rd ?? 0)}${r.provisional ? "?" : ""} · ${r.games} games`
+								}) })
+							] }, r.agent_id)) })
+						})]
+					}, name);
+				})
+			]
+		});
+	}
+	function SeasonOf() {
+		const [data, , error] = useInterval(() => api.season(), 6e4, []);
+		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+			className: "e-faint",
+			children: "? the season did not load — not an empty season."
+		});
+		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+			className: "e-faint",
+			children: "… loading the season"
+		});
+		return /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Season, { data });
 	}
 	function BugList() {
 		const [data, , error] = useInterval(() => api.bugs(), 6e4, []);
@@ -27649,37 +27783,52 @@
 		const list = VIEWER_ID && !ids.includes(VIEWER_ID) ? [VIEWER_ID, ...ids] : ids;
 		const selected = picked ?? (VIEWER_ID || list[0] || null);
 		const bugs = runs.includes("bugs");
-		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", { children: [bugs && /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(import_jsx_runtime$2.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
-			selected: selected === BUGS,
-			onClick: () => setPicked(BUGS),
-			children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
-				className: "e-docs-rail-item",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: "Bug reports" }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
-					className: "e-faint",
-					children: "points for bugs found"
-				})]
-			})
-		}), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
-			selected: selected === INCIDENTS,
-			onClick: () => setPicked(INCIDENTS),
-			children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
-				className: "e-docs-rail-item",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: "Security incidents" }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
-					className: "e-faint",
-					children: "on the record"
-				})]
-			})
-		})] }), list.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
-			selected: id === selected,
-			onClick: () => setPicked(id),
-			children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
-				className: "e-docs-rail-item",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: id }), id === VIEWER_ID && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
-					className: "e-faint",
-					children: "you"
-				})]
-			})
-		}, id))] });
+		const sheets = runs.includes("sheets");
+		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", { children: [
+			sheets && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
+				selected: selected === SEASON,
+				onClick: () => setPicked(SEASON),
+				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+					className: "e-docs-rail-item",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: "Season" }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+						className: "e-faint",
+						children: "bug points, Renown, games"
+					})]
+				})
+			}),
+			bugs && /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(import_jsx_runtime$2.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
+				selected: selected === BUGS,
+				onClick: () => setPicked(BUGS),
+				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+					className: "e-docs-rail-item",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: "Bug reports" }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+						className: "e-faint",
+						children: "points for bugs found"
+					})]
+				})
+			}), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
+				selected: selected === INCIDENTS,
+				onClick: () => setPicked(INCIDENTS),
+				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+					className: "e-docs-rail-item",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: "Security incidents" }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+						className: "e-faint",
+						children: "on the record"
+					})]
+				})
+			})] }),
+			list.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
+				selected: id === selected,
+				onClick: () => setPicked(id),
+				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+					className: "e-docs-rail-item",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: id }), id === VIEWER_ID && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+						className: "e-faint",
+						children: "you"
+					})]
+				})
+			}, id))
+		] });
 		return /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(ViewBody, {
 			flush: true,
 			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
@@ -27693,17 +27842,18 @@
 			children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(SidebarLayout, {
 				sidebar,
 				defaultSidebarWidth: 22,
-				children: selected === BUGS ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(BugList, {}) : selected === INCIDENTS ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(IncidentList, {}) : !selected ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+				children: selected === SEASON ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(SeasonOf, {}) : selected === BUGS ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(BugList, {}) : selected === INCIDENTS ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(IncidentList, {}) : !selected ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
 					className: "e-faint",
 					children: "No agents on this relay yet."
-				}) : runs.includes("sheets") ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(SheetOf, {
+				}) : sheets ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(SheetOf, {
 					agentId: selected,
-					bugs
+					bugs,
+					quests: runs.includes("quests")
 				}) : /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Points, { agentId: selected })
 			})
 		});
 	}
-	var import_react$1, import_jsx_runtime$2, BUGS, INCIDENTS, short, game, num, range;
+	var import_react$1, import_jsx_runtime$2, SEASON, BUGS, INCIDENTS, short, game, num, range, BOARD_TITLE;
 	var init_GamifyView = __esmMin((() => {
 		import_react$1 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
@@ -27714,12 +27864,17 @@
 		init_api();
 		import_jsx_runtime$2 = require_jsx_runtime();
 		init_relayEnv();
+		SEASON = "__season__";
 		BUGS = "__bugs__";
 		INCIDENTS = "__incidents__";
 		short = (s, n = 10) => s ? s.slice(0, n) : "—";
 		game = (m) => m.replace("emporia:", "").replace(":v1", "");
 		num = { fontVariantNumeric: "tabular-nums" };
 		range = (c) => `${c.rating} ±${2 * c.rd}${c.provisional ? "?" : ""}`;
+		BOARD_TITLE = {
+			bugs: "BUG POINTS — accepted reports",
+			renown: "RENOWN — from likes"
+		};
 	}));
 	// src/views/index.ts
 	var init_views = __esmMin((() => {

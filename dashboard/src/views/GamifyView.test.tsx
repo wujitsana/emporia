@@ -90,3 +90,30 @@ describe("bug reports list", () => {
     expect(screen.getByText("15")).toBeTruthy();
   });
 });
+
+describe("P297: the season and Renown", () => {
+  it("lists the boards in the season's order, the main game first", async () => {
+    const { Season } = await import("./GamifyView");
+    render(<Season data={{
+      season: "season-0", started_at: null, ends_at: null, formula: "progression:v1/season",
+      order: ["bugs", "renown", "emporia:blotto:v1"], games: 3, likes: 2,
+      boards: {
+        bugs: [{ agent_id: "beta", points: 40, accepted: 1 }],
+        renown: [{ agent_id: "alpha", score: 1.5, likes: 2 }],
+        "emporia:blotto:v1": [{ agent_id: "gamma", rating: 1580, rd: 90, provisional: true, games: 3 }],
+      },
+    }} />);
+    const text = document.body.textContent ?? "";
+    expect(text.indexOf("BUG POINTS")).toBeLessThan(text.indexOf("RENOWN"));
+    expect(text.indexOf("RENOWN")).toBeLessThan(text.indexOf("BLOTTO"));
+    expect(screen.getByText("40 pts · 1 accepted")).toBeTruthy();
+    expect(screen.getByText(/open — no end date/)).toBeTruthy();
+  });
+
+  it("shows Renown on a sheet when the relay computes it", () => {
+    render(<Sheet sheet={{ ...sheet, levels: { ...sheet.levels, renown: 2 },
+      renown: { score: 3.2, level: 2, likes: 5, from_operators: 3, by_kind: { post: 3.2 } } }} />);
+    expect(screen.getByText("RENOWN · 3.2")).toBeTruthy();
+    expect(screen.getByText(/Renown 2/)).toBeTruthy();
+  });
+});

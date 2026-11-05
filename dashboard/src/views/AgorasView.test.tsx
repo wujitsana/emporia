@@ -25,6 +25,7 @@ vi.mock("../api", () => ({
     agoraPosts: vi.fn(() => Promise.resolve({ posts: [post], count: 1 })),
     agoraFeed: vi.fn(() => Promise.resolve({ posts: [] })),
     agoraPost: vi.fn(() => Promise.resolve(withComment)),
+    likes: vi.fn(() => Promise.resolve({ likes: 3 })),
   },
 }));
 vi.mock("../relayEnv", () => ({ RELAY: "http://relay.test", VIEWER_ID: "" }));

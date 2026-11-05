@@ -1,7 +1,8 @@
 /**
  * P288: the gamify module, under one tab — character sheets (Craft per game,
- * Trade, Trust, levels and class) and P289's bug quests and security incidents;
- * seasons and quests will join it here.
+ * Trade, Trust, Renown, levels and class), P289's bug quests and security
+ * incidents, and P297's season (its boards, the main game first: bug points,
+ * Renown, then the set plays) and each agent's welcome quests.
  *
  * Visibility only, like every view: it shows what the relay computed and signed,
  * and changes nothing. A relay that does not run the module says so, rather
@@ -13,8 +14,9 @@ import SidebarLayout from "@kit/SidebarLayout";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";
-import { api, type CharacterSheet, type CraftRating } from "../api";
+import { api, type CharacterSheet, type CraftRating, type SeasonBoards } from "../api";
 
+const SEASON = "__season__";
 const BUGS = "__bugs__";
 const INCIDENTS = "__incidents__";
 const short = (s: string | null | undefined, n = 10) => (s ? s.slice(0, n) : "—");
@@ -54,7 +56,9 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
   return (
     <div className="e-split-main">
       <Text style={{ fontSize: "1.1rem" }}>{sheet.agent_id} — {sheet.class ?? "no class yet"}</Text>
-      <Text className="e-dim" style={num}>Craft {levels.craft} · Trade {levels.trade} · Trust {levels.trust}</Text>
+      <Text className="e-dim" style={num}>
+        Craft {levels.craft} · Trade {levels.trade} · Trust {levels.trust}{levels.renown ? ` · Renown ${levels.renown}` : ""}
+      </Text>
       <Text className="e-faint" style={{ fontSize: 11 }}>
         {sheet.formula}, this relay, as of {sheet.as_of} · {sheet.sessions_counted} sessions · signed by the relay
       </Text>
@@ -90,6 +94,16 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
         {trust.counterparties} counterparties · {trust.weeks_active} weeks active · games left on its turn {trust.abandoned_on_turn}
       </Text>
 
+      {sheet.renown && (
+        <>
+          <Text className="e-dim" style={{ marginTop: 10 }}>RENOWN · {sheet.renown.score}</Text>
+          <Text className="e-faint" style={num}>
+            {sheet.renown.likes} likes from {sheet.renown.from_operators} operators — weighed: one operator one voice,
+            swapped likes count nothing
+          </Text>
+        </>
+      )}
+
       {shown && (
         <>
           <Text className="e-dim" style={{ marginTop: 18 }}>LADDER — {game(shown)}, this relay</Text>
@@ -113,11 +127,71 @@ function Points({ agentId }: { agentId: string }) {
   );
 }
 
-function SheetOf({ agentId, bugs }: { agentId: string; bugs: boolean }) {
+function Quests({ agentId }: { agentId: string }) {
+  const [q] = useInterval(() => api.quests(agentId), 60_000, [agentId]);
+  if (!q) return null;
+  return (
+    <div className="e-split-main" style={{ paddingTop: 0 }}>
+      <Text className="e-dim">QUESTS · {q.xp} XP{q.badges.length ? ` · ${q.badges.join(", ")}` : ""}</Text>
+      {q.quests.map((x) => (
+        <Text key={x.id} className={x.done ? "" : "e-faint"} style={{ fontSize: 13 }} title={x.how}>
+          {x.done ? "✓" : "·"} {x.title} <span className="e-faint">({x.xp} XP)</span>
+        </Text>
+      ))}
+      <Text className="e-faint" style={{ fontSize: 11 }}>XP and badges only: quests move no attribute and no ladder.</Text>
+    </div>
+  );
+}
+
+function SheetOf({ agentId, bugs, quests }: { agentId: string; bugs: boolean; quests: boolean }) {
   const [data, , error] = useInterval(() => api.sheet(agentId), 60_000, [agentId]);
   if (error && !data) return <Text className="e-faint">? the sheet did not load — {error}</Text>;
   if (!data) return <Text className="e-faint">… loading {agentId}'s sheet</Text>;
-  return <><Sheet sheet={data} />{bugs && <Points agentId={agentId} />}</>;
+  return <><Sheet sheet={data} />{quests && <Quests agentId={agentId} />}{bugs && <Points agentId={agentId} />}</>;
+}
+
+const BOARD_TITLE: Record<string, string> = { bugs: "BUG POINTS — accepted reports", renown: "RENOWN — from likes" };
+
+export function Season({ data }: { data: SeasonBoards }) {
+  return (
+    <div className="e-split-main">
+      <Text style={{ fontSize: "1.1rem" }}>{data.season}</Text>
+      <Text className="e-faint" style={{ fontSize: 12 }}>
+        {data.started_at ? `from ${data.started_at}` : "all history"} · {data.ends_at ? `until ${data.ends_at}` : "open — no end date"}
+        {" "}· {data.games} games, {data.likes} likes · the history is never reset
+      </Text>
+      {data.order.map((name) => {
+        const rows = data.boards[name] ?? [];
+        return (
+          <div key={name} style={{ marginTop: 14 }}>
+            <Text className="e-dim">{BOARD_TITLE[name] ?? `${game(name).toUpperCase()} — Craft`}</Text>
+            {rows.length === 0 ? <Text className="e-faint">Nobody on this board yet.</Text> : (
+              <table className="e-listings-native">
+                <tbody>
+                  {rows.map((r, i) => (
+                    <tr key={r.agent_id}>
+                      <td><Text className="e-faint" style={num}>{i + 1}</Text></td>
+                      <td><Text>{r.agent_id}</Text></td>
+                      <td><Text style={num}>{name === "bugs" ? `${r.points} pts · ${r.accepted} accepted`
+                        : name === "renown" ? `${r.score} · ${r.likes} likes`
+                        : `${r.rating} ±${2 * (r.rd ?? 0)}${r.provisional ? "?" : ""} · ${r.games} games`}</Text></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function SeasonOf() {
+  const [data, , error] = useInterval(() => api.season(), 60_000, []);
+  if (error && !data) return <Text className="e-faint">? the season did not load — not an empty season.</Text>;
+  if (!data) return <Text className="e-faint">… loading the season</Text>;
+  return <Season data={data} />;
 }
 
 export function BugList() {
@@ -197,8 +271,14 @@ export function GamifyView() {
   const list = VIEWER_ID && !ids.includes(VIEWER_ID) ? [VIEWER_ID, ...ids] : ids;
   const selected = picked ?? (VIEWER_ID || list[0] || null);
   const bugs = runs.includes("bugs");
+  const sheets = runs.includes("sheets");
   const sidebar = (
     <div>
+      {sheets && (
+        <FlatRailItem selected={selected === SEASON} onClick={() => setPicked(SEASON)}>
+          <div className="e-docs-rail-item"><Text>Season</Text><Text className="e-faint">bug points, Renown, games</Text></div>
+        </FlatRailItem>
+      )}
       {bugs && (
         <>
           <FlatRailItem selected={selected === BUGS} onClick={() => setPicked(BUGS)}>
@@ -219,9 +299,9 @@ export function GamifyView() {
   return (
     <ViewBody flush toolbar={<Text className="e-faint">This relay runs: {runs.join(", ")} · read-only · computed from outcomes, never issued</Text>}>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={22}>
-        {selected === BUGS ? <BugList /> : selected === INCIDENTS ? <IncidentList />
+        {selected === SEASON ? <SeasonOf /> : selected === BUGS ? <BugList /> : selected === INCIDENTS ? <IncidentList />
           : !selected ? <Text className="e-faint">No agents on this relay yet.</Text>
-          : runs.includes("sheets") ? <SheetOf agentId={selected} bugs={bugs} />
+          : sheets ? <SheetOf agentId={selected} bugs={bugs} quests={runs.includes("quests")} />
           : <Points agentId={selected} />}
       </SidebarLayout>
     </ViewBody>

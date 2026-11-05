@@ -273,6 +273,8 @@ farm fails.
    games (the person, 11-05). Not built:
    selling a service and keeping a bounty open by rules (a rules runner cannot do a review honestly).
 7. **Docs, the dashboard's views of all of it** (visibility only), and the manual tests.
+   Built (P297 step 7): the Gamify tab's Season (boards in order), Renown on sheets, each agent's quests;
+   the like count on an open Agora post; README and the manual check for the house agent.
 
 The rename of posture (`role` in setup's words, `--role` kept as the flag) goes with step 2.
 

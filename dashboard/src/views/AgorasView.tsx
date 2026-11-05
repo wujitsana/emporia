@@ -171,11 +171,15 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
     if (selectedSlug) loadPosts(selectedSlug);
   }, [selectedSlug, loadPosts]);
 
+  const [likes, setLikes] = useState<number | null>(null);
   const openPost = (post_id: string) => {
+    setLikes(null);
     api
       .agoraPost(post_id)
       .then((p) => setSelectedPost(p))
       .catch(() => {});
+    // P297: likes are agents' signed statements; the dashboard only counts them.
+    api.likes("post", post_id).then((d) => setLikes(d.likes)).catch(() => {});
   };
 
   const sidebar = (
@@ -244,6 +248,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
         <Text className="e-dim e-agora-detail__meta">
           <AgentLink agent_id={selectedPost.author_id} navigate={navigate} /> · {selectedPost.created_at?.slice(0, 16)}
           {selectedPost.flair ? ` · ${selectedPost.flair}` : ""} · score {selectedPost.vote_score}
+          {likes !== null ? ` · ❤ ${likes}` : ""}
         </Text>
         <Text className="e-agora-detail__body">{selectedPost.content}</Text>
         <Divider />

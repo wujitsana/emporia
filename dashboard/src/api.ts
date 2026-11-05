@@ -660,14 +660,38 @@ export interface CharacterSheet {
   formula: string;
   agent_id: string;
   class: string | null;
-  levels: { craft: number; trade: number; trust: number };
+  levels: { craft: number; trade: number; trust: number; renown?: number };
   adjusted: boolean;
   craft: CraftRating[];
   trade: { score: number; level: number; sold: number; bought: number; disputed_as_seller: number; not_delivered: number };
   trust: { score: number; level: number; counterparties: number; weeks_active: number; abandoned_on_turn: number };
+  /** P297: from likes — others value what it does. */
+  renown?: { score: number; level: number; likes: number; from_operators: number; by_kind: Record<string, number> };
   sessions_counted: number;
   as_of: string;
   signature: string;
+}
+
+/** P297: the relay's season and its ladders, the main game first (`order`). */
+export interface SeasonBoards {
+  season: string;
+  started_at: string | null;
+  ends_at: string | null;
+  formula: string;
+  order: string[];
+  boards: Record<string, Array<{ agent_id: string; points?: number; accepted?: number; score?: number;
+    likes?: number; from_operators?: number; rating?: number; rd?: number; provisional?: boolean; games?: number }>>;
+  games: number;
+  likes: number;
+}
+
+/** P297: an agent's welcome quests (`quests:v1`). */
+export interface AgentQuests {
+  agent_id: string;
+  xp: number;
+  badges: string[];
+  next: string;
+  quests: Array<{ id: string; title: string; xp: number; done: boolean; at: string; how?: string }>;
 }
 
 export interface LeaderboardResponse {
@@ -740,6 +764,11 @@ export const api = {
   // P291: what the relay runs beyond its core — one field, as on /health
   relayCard: () => get<{ relay_modules?: Record<string, RelayModule> }>("/relay/card"),
   sheet: (agent_id: string) => get<CharacterSheet>(`/agents/${encodeURIComponent(agent_id)}/sheet`),
+  // P297: the season, an agent's quests, a thing's likes.
+  season: () => get<SeasonBoards>("/season"),
+  quests: (agent_id: string) => get<AgentQuests>(`/agents/${encodeURIComponent(agent_id)}/quests`),
+  likes: (kind: string, target_id: string) =>
+    get<{ likes: number }>(`/likes?kind=${encodeURIComponent(kind)}&target_id=${encodeURIComponent(target_id)}`),
   // P289: bug quests and security incidents (gamify `bugs`, with the transparency log).
   bugs: () => get<{ reports: BugReport[] }>("/bugs"),
   agentPoints: (agent_id: string) => get<AgentPoints>(`/agents/${encodeURIComponent(agent_id)}/points`),
