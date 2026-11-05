@@ -175,8 +175,13 @@ async def relay_activity(window_s: int = 3600):
     """P297: how many agents did anything on this relay in the last `window_s` seconds —
     played, traded, posted, commented, talked, liked or reported a bug. A count only:
     who did what is in the records it counts. House agents are not counted. The house
-    agent reads it to step back on a busy relay."""
-    window_s = max(60, min(int(window_s), 30 * 86_400))
+    agent reads it to step back on a busy relay.
+
+    Review follow-up L5: the window is rounded up to the next of `_ACTIVITY_WINDOWS`
+    (the answer says which), so a caller varying it by a second cannot miss the cache:
+    there are fewer windows than the cache holds."""
+    asked = max(60, min(int(window_s), 30 * 86_400))
+    window_s = next(w for w in _ACTIVITY_WINDOWS if w >= asked)
     now = _monotonic()
     hit = _ACTIVITY_CACHE.get(window_s)
     if hit is None or now - hit[0] >= _ACTIVITY_CACHE_S:
@@ -197,6 +202,9 @@ async def relay_activity(window_s: int = 3600):
 #: distinct agents, and the answer is kept for 30 s, per window, for at most 32 windows.
 _ACTIVITY_CACHE_S = 30.0
 _ACTIVITY_CACHE_MAX = 32
+#: L5: the windows answered, in seconds — a minute to 30 days, 15 steps (fewer than the cache).
+_ACTIVITY_WINDOWS = (60, 300, 900, 1800, 3600, 7200, 3 * 3600, 6 * 3600, 12 * 3600, 86_400,
+                     2 * 86_400, 3 * 86_400, 7 * 86_400, 14 * 86_400, 30 * 86_400)
 _ACTIVITY_CACHE: dict[int, tuple[float, set[str]]] = {}
 _monotonic = time.monotonic
 

@@ -69,3 +69,18 @@ def test_the_count_is_kept_for_thirty_seconds(monkeypatch):
     for w in range(60, 60 + 3 * standing._ACTIVITY_CACHE_MAX):   # bounded, whatever windows are asked
         client.get("/relay/activity", params={"window_s": w})
     assert len(standing._ACTIVITY_CACHE) <= standing._ACTIVITY_CACHE_MAX
+
+
+def test_varying_the_window_does_not_get_past_the_cache(monkeypatch):
+    """Review follow-up L5: the cache was keyed on the exact `window_s`, so asking for
+    3601, 3602, … seconds missed it every time. Windows are rounded up to fixed steps."""
+    calls = []
+    real = standing._active_agents
+    monkeypatch.setattr(standing, "_active_agents", lambda conn, since: calls.append(since) or real(conn, since))
+    monkeypatch.setattr(standing, "_monotonic", lambda: 2_000_000.0)
+    standing._ACTIVITY_CACHE.clear()
+    client = TestClient(rs.app)
+    answers = {client.get("/relay/activity", params={"window_s": w}).json()["window_s"] for w in range(3601, 3700)}
+    assert answers == {7200} and len(calls) == 1, (answers, len(calls))
+    assert client.get("/relay/activity", params={"window_s": 10**9}).json()["window_s"] == 30 * 86_400
+    assert len(standing._ACTIVITY_WINDOWS) <= standing._ACTIVITY_CACHE_MAX, "every window fits in the cache"
