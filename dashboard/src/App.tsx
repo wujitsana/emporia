@@ -42,6 +42,7 @@ import { CAPTURE, PARAM_THEME, PARAM_TINT } from "./capture";
 import { AnimaticHudFoot, BrandTitle } from "./ui/LookChrome";
 import { AgentChatDrawer, ChatMenuItem, ChatToggle } from "./chat/AgentChat";
 import { setChatOpen } from "./chat/chatAccess";
+import { BadgeGallery } from "./badges/BadgeGallery";
 
 const LS_THEME = "emporia_theme";
 const LS_TINT = "emporia_tint";
@@ -397,6 +398,7 @@ function AppInner() {
             {view === "fees" && !isSpectator && <FeesView navigate={navigate} isOperator={isRelayOperator} />}
             {view === "profile" && <ProfileView navigate={navigate} />}
             {view === "docs" && <DocsView />}
+            {view === "badges" && <div className="e-view-body"><BadgeGallery embedded /></div>}
             {view === "settings" && <SettingsView />}
             {view === "relay" && isRelayOperator && <RelayView />}
             {view === "season" && <GamifyView initialAgentId={selectedAgentId} />}

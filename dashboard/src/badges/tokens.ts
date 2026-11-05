@@ -3,10 +3,10 @@
  *
  * - Ink is `currentColor`: the theme's text colour where the badge sits (`--theme-text`).
  * - The accent is `--e-badge-accent` (badges.css), derived from `--tint` like the
- *   animatic style's accent-as-text (`--theme-focused-foreground` in styleAnimatic.css):
- *   dark enough on the light canvas, light enough on the dark one, for every tint.
- *   It is set on the element that carries the theme class, so it also holds in the
- *   retromod style (and once ui-v2 makes animatic the only style).
+ *   look's accent-as-text (`--theme-focused-foreground`, dashboard.css § 30): dark
+ *   enough on the light canvas, light enough on the dark one, for every tint. Since
+ *   ui-v2 the look is the only style and badges.css points the accent at that token;
+ *   the retromod ramps stay here as history, and are no longer checked.
  * - The surfaces are what a badge can sit on: the canvas, a panel (`--theme-background-modal`)
  *   and, in the animatic style, the selected-row wash.
  *
@@ -82,10 +82,10 @@ export function themeColors(style: StyleName, theme: ThemeName, tint: Tint, gamu
     { name: "canvas", rgb: rel(0.14, (c) => c * 0.18) }, { name: "panel", rgb: rel(0.24, (c) => c * 0.22) }] };
 }
 
-/** Every combination the dashboard can show: 2 styles × 2 themes × 8 tints. */
+/** Every combination the dashboard can show: its one style × 2 themes × 8 tints. */
 export function allThemes(gamut: Gamut = "css"): ThemeColors[] {
   const out: ThemeColors[] = [];
-  for (const style of ["animatic", "retromod"] as const) {
+  for (const style of ["animatic"] as const) {
     for (const theme of ["light", "dark"] as const) {
       for (const tint of TINTS) out.push(themeColors(style, theme, tint, gamut));
     }

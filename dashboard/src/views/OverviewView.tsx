@@ -30,6 +30,7 @@ import type { Navigate } from "../navigation";
 import { RELAY, VIEWER_ID } from "../relayEnv";
 import { FeedEventType, ViewBody } from "../ui/layout";
 import { SlimCard } from "../ui/cards";
+import { PixelBadge } from "../badges";
 
 export function OverviewView({
   events,
@@ -218,6 +219,14 @@ function seasonRanks(season: SeasonBoards | null, agent: string): string[] {
   });
 }
 
+/** The agent's best place on any season board (1 is first), or null when it is on none. */
+function bestRank(season: SeasonBoards | null, agent: string): number | null {
+  if (!season) return null;
+  const places = season.order.map((name) => (season.boards[name] ?? []).findIndex((r) => r.agent_id === agent))
+    .filter((i) => i >= 0);
+  return places.length ? Math.min(...places) + 1 : null;
+}
+
 /**
  * "Your agent now": what the viewed agent is doing — its live game, its latest
  * deal, where it stands this season, and its next quest — each one tap from
@@ -258,7 +267,7 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
           const g = gameLine(s);
           return (
             <button key={s.session_id} type="button" className="e-now__row" onClick={() => open(s)}>
-              <span className="e-now__label e-now__live">▶ live</span>
+              <span className="e-now__label e-now__live"><PixelBadge id="live" size={1} mono /> live</span>
               <span>{kindLabel(s.module_type)} · {s.participants.join(" v ")}</span>
               <span className="e-now__go">{g.where} →</span>
             </button>
@@ -269,6 +278,7 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
   }
 
   const ranks = seasonRanks(season, viewer);
+  const best = bestRank(season, viewer);
   const renown = season?.boards.renown?.find((r) => r.agent_id === viewer);
   const next = quests?.quests.find((q) => !q.done);
   const latestDeal = deals[0];
@@ -283,7 +293,7 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
         const g = gameLine(s);
         return (
           <button key={s.session_id} type="button" className="e-now__row" onClick={() => open(s)}>
-            <span className="e-now__label e-now__live">▶ live</span><span>{g.what}</span><span className="e-now__go">{g.where} →</span>
+            <span className="e-now__label e-now__live"><PixelBadge id="live" size={1} mono /> live</span><span>{g.what}</span><span className="e-now__go">{g.where} →</span>
           </button>
         );
       })}
@@ -297,7 +307,7 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
       {season ? (
         <button type="button" className="e-now__row" onClick={() => navigate("season", { agentId: viewer })}>
           <span className="e-now__label">season</span>
-          <span>{ranks.length ? ranks.slice(0, 3).join(" · ") : "Not on a board yet"}
+          <span>{best ? <><PixelBadge id={`rank-${best}`} size={1} />{" "}</> : null}{ranks.length ? ranks.slice(0, 3).join(" · ") : "Not on a board yet"}
             {renown?.score !== undefined ? ` · Renown ${renown.score}` : ""}{quests ? ` · ${quests.xp} XP` : ""}</span>
           <span className="e-now__go">sheet →</span>
         </button>
@@ -305,7 +315,7 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
       {quests ? (
         <button type="button" className="e-now__row" onClick={() => navigate("season")}>
           <span className="e-now__label">next</span>
-          <span>{next ? next.title : "Every welcome quest is done"}</span>
+          <span>{next ? <><PixelBadge id={next.id} size={1} /> {next.title}</> : "Every welcome quest is done"}</span>
           <span className="e-now__go">quests →</span>
           {next && quests.next ? <span className="e-now__sub">{quests.next}</span> : null}
         </button>

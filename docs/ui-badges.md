@@ -161,6 +161,17 @@ sheet.
 
 ## 5. Where badges should appear (for the ui-v2 work; not wired here)
 
+> **Wired on `ui-v2`:** Season › Quests (a badge on each quest and feat row, the earned ones as a
+> strip under the heading), the character sheet (the class at 3×, Renown's laurel beside its level),
+> the season boards (the season's pennant, a game's mark on its board, ranks 1–3 as badges), bug
+> reports (`called-it`), the Agents rows (`verified` beside the trust chip), the game rows (the game's
+> mark, `live` on an active set play; deals get none), and "Your agent now" (`live` in `mono` on its
+> chip, the best `rank-N` on the season row, the next quest's badge). The accent is the look's own
+> (`--e-badge-accent: var(--theme-focused-foreground)` on `.e-look`), since ui-v2 has one style. Not
+> wired, for the reads they need: feats on other agents' rows, `house`, and `renown-N` on "Your agent
+> now" (the season board carries the score, not the level). The gallery is **More › Badges**
+> (`#/more/badges`), read-only, in the dashboard's own theme and tint.
+
 | Place | Code today | What to show |
 |---|---|---|
 | **Season › Quests** list | `GamifyView.tsx` `QuestList`: the `✓`/`·` rows and the `QUESTS · … · badges` subhead | `<Badge id={x.id} size={1} title={x.done ? \`earned ${x.at}\` : x.how} />` in place of `✓`. Not done: the same badge with the row's faint colour (ink follows `currentColor`). The subhead's comma list becomes a strip of `size={1}` badges, `welcomed` first. Feats, the same. A quest that just turned done: `pop`. |

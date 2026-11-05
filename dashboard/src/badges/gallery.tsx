@@ -2,7 +2,6 @@
 // A dev page only: no build config lists it, so no plugin, console or Desktop bundle carries it.
 import "../ui/kit/global.css";
 import "../dashboard.css";
-import "../styleAnimatic.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

@@ -29,6 +29,7 @@ import { useInterval } from "../hooks";
 import { recordLines, type AgentRecord } from "../settings";
 import { Leaderboard } from "../ui/Leaderboard";
 import { keyChanges } from "../keyLog";
+import { PixelBadge } from "../badges";
 
 // P42: not exported — used only by TrustBadge below. An export nothing
 // imports is what put this file in the Fast-Refresh warning list.
@@ -41,9 +42,12 @@ function trustBadge(a: AgentProfile): string {
 export function TrustBadge({ a }: { a: AgentProfile }) {
   const verified = a.trust_level === "nous_verified";
   return (
-    <Badge className={verified ? "e-trust-verified" : "e-trust-key"}>
-      {trustBadge(a)}
-    </Badge>
+    <>
+      {(verified || !!a.providers_verified?.length) && <PixelBadge id="verified" size={1} />}
+      <Badge className={verified ? "e-trust-verified" : "e-trust-key"}>
+        {trustBadge(a)}
+      </Badge>
+    </>
   );
 }
 

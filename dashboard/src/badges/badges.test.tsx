@@ -194,15 +194,21 @@ describe("<Badge>", () => {
 });
 
 describe("contrast: legible on every canvas", () => {
-  it("badges.css derives the accent exactly as tokens.ts computes it", () => {
-    expect(css).toContain(`.theme-light {\n  --e-badge-accent: ${ACCENT_CSS.light};`);
-    expect(css).toContain(`.theme-dark {\n  --e-badge-accent: ${ACCENT_CSS.dark};`);
+  it("badges.css derives the accent exactly as tokens.ts computes it, from the look's own accent", () => {
+    expect(css).toContain(`.e-look {\n  --e-badge-accent: var(--theme-focused-foreground);`);
+    expect(css).toContain(`.e-badge-panel.theme-light {\n  --e-badge-accent: ${ACCENT_CSS.light};`);
+    expect(css).toContain(`.e-badge-panel.theme-dark {\n  --e-badge-accent: ${ACCENT_CSS.dark};`);
+    // The look sets that token to the same formula (with --anim-tint, which is --tint or amber).
+    const look = readFileSync(`${cwd}/src/dashboard.css`, "utf8");
+    const viaLook = (f: string) => f.replace("var(--tint, #f0a832)", "var(--anim-tint)");
+    expect(look).toContain(`--theme-focused-foreground: ${viaLook(ACCENT_CSS.light)};`);
+    expect(look).toContain(`--theme-focused-foreground: ${viaLook(ACCENT_CSS.dark)};`);
   });
 
   for (const gamut of ["css", "clip"] as Gamut[]) {
-    it(`ink and accent meet ${NON_TEXT_MIN}:1 in both styles, both themes and all 8 tints (${gamut} gamut)`, () => {
+    it(`ink and accent meet ${NON_TEXT_MIN}:1 in the one style, both themes and all 8 tints (${gamut} gamut)`, () => {
       const themes = allThemes(gamut);
-      expect(themes.length).toBe(32);
+      expect(themes.length).toBe(16);
       const fails: string[] = [];
       for (const t of themes) {
         for (const s of t.surfaces) {

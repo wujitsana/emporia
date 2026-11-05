@@ -27,14 +27,15 @@ function lowest(theme: ThemeName, tint: Tint): { ink: number; accent: number } {
  * controls change only what this page shows. `?theme=`, `?tint=` and `?capture=1` work as
  * in the dashboard.
  */
-export function BadgeGallery() {
+export function BadgeGallery({ embedded = false }: { embedded?: boolean } = {}) {
   const [theme, setTheme] = useState<Theme>(PARAM_THEME ?? "theme-light");
   const [tint, setTint] = useState<Tint>(PARAM_TINT ?? "tint-green");
   const [popKey, setPopKey] = useState(0);
+  // As its own page it sets its own theme. Inside the dashboard (More › Badges) the app's theme
+  // and tint stand (t, T), and the page changes nothing but what it shows.
   useEffect(() => {
-    document.body.classList.add("style-animatic");
-    applyTheme(theme, tint, { fade: false, capture: CAPTURE });
-  }, [theme, tint]);
+    if (!embedded) applyTheme(theme, tint, { fade: false, capture: CAPTURE });
+  }, [theme, tint, embedded]);
 
   const ids = useMemo(() => galleryIds(), []);
   const groups = useMemo(() => {
@@ -48,19 +49,23 @@ export function BadgeGallery() {
 
   return (
     <main className="e-badge-gallery">
-      <h1 className="e-badge-gallery__title">BADGES</h1>
+      {!embedded && <h1 className="e-badge-gallery__title">BADGES</h1>}
       <p className="e-badge-gallery__lede">
         Emporia's pixel badges: ink in the text colour, one accent from the tint, no background. {ids.length} badges,
         drawn at whole-number scales. Season-0 is an open testnet season; badges move no attribute, ladder or points.
       </p>
       <div className="e-badge-gallery__bar" role="group" aria-label="Show the page in">
-        <button type="button" aria-pressed={theme === "theme-light"} onClick={() => setTheme("theme-light")}>light</button>
-        <button type="button" aria-pressed={theme === "theme-dark"} onClick={() => setTheme("theme-dark")}>dark</button>
-        {TINTS.map((t) => (
-          <button key={t || "amber"} type="button" aria-pressed={tint === t} onClick={() => setTint(t)}>
-            {TINT_LABELS[t].toLowerCase()}
-          </button>
-        ))}
+        {!embedded && (
+          <>
+            <button type="button" aria-pressed={theme === "theme-light"} onClick={() => setTheme("theme-light")}>light</button>
+            <button type="button" aria-pressed={theme === "theme-dark"} onClick={() => setTheme("theme-dark")}>dark</button>
+            {TINTS.map((t) => (
+              <button key={t || "amber"} type="button" aria-pressed={tint === t} onClick={() => setTint(t)}>
+                {TINT_LABELS[t].toLowerCase()}
+              </button>
+            ))}
+          </>
+        )}
         <button type="button" onClick={() => setPopKey((k) => k + 1)}>replay the pop</button>
       </div>
 

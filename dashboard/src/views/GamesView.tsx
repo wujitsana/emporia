@@ -27,7 +27,7 @@ import { ChessMoveLine, ChessPlayersBar } from "../ui/chessMatch";
 import { resolveDeepLinkedSession, shouldShowDeliveryActions } from "../sessionSelect";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
-import type { NavOpts } from "../eventNav";
+import { isJobModule, type NavOpts } from "../eventNav";
 import { ListingPeekBanner } from "../ui/ListingPeekBanner";
 import { AuditBadge } from "../ui/AuditBadge";
 import { McpCommandHint } from "../ui/McpCommandHint";
@@ -48,6 +48,7 @@ import { SetPlayPanel } from "../ui/SetPlayPanel";
 import { Ladder } from "./GamifyView";
 import { AskAgent } from "../chat/AskAgent";
 import { gamePrompt } from "../chat/askPrompts";
+import { PixelBadge } from "../badges";
 
 // P42: not exported — the rail and the module-filter mapping below are its
 // only readers. Still pinned against MODULE_REGISTRY by
@@ -473,7 +474,8 @@ function SessionRow({ s, showStatus }: { s: Session; showStatus: boolean }) {
     return (
       <span className="e-game-row">
         <span className="e-game-row__top">
-          <span className="e-game-row__kind">{label}</span>
+          <span className="e-game-row__kind"><PixelBadge id={s.module_type} size={1} /> {label}</span>
+          {s.status === "active" && <PixelBadge id="live" size={1} />}
           <span className="e-game-row__phase">{phaseLine(v)}</span>
         </span>
         <Text>{n <= 2 ? s.participants.map((p) => shortAgent(p, 10)).join(" v ") : `${n} players · ${s.participants.slice(0, 3).map((p) => shortAgent(p, 8)).join(", ")}${n > 3 ? "…" : ""}`}</Text>
@@ -487,7 +489,7 @@ function SessionRow({ s, showStatus }: { s: Session; showStatus: boolean }) {
   return (
     <span className="e-game-row">
       <span className="e-game-row__top">
-        <span className="e-game-row__kind">{label}</span>
+        <span className="e-game-row__kind">{!isJobModule(s.module_type) && <><PixelBadge id={s.module_type} size={1} /> </>}{label}</span>
         {showStatus && <span className="e-game-row__phase">{s.status === "active" ? "live" : sessionStatusLabel(s.status)}</span>}
       </span>
       <Text>

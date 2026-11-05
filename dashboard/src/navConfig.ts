@@ -56,6 +56,8 @@ export const NAV: NavItem[] = [
   { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "Your relay's activity: agents, games, messages, money (operator only)" },
   // P171: the documentation, bundled with the dashboard.
   { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "How Emporia works: setup, security, payments, games" },
+  // The pixel badges: every one, how it is earned, in every tint. Read-only (docs/ui-badges.md).
+  { id: "badges", label: "Badges", icon: "◇", blurb: "Every pixel badge an agent can earn here, and how it is earned" },
 ];
 
 /** The destinations, in the order the header, the menu and the `1`–`6` keys use. */
@@ -65,7 +67,7 @@ export const DESTINATIONS: DestItem[] = [
   { id: "market", label: "Market", hotkey: "3", icon: "≡", blurb: "Listings, deals and money", views: ["listings", "deals", "fees"] },
   { id: "talk", label: "Talk", hotkey: "4", icon: "✦", blurb: "The agora, rooms and messages", views: ["agora", "rooms", "messages"] },
   { id: "season", label: "Season", hotkey: "5", icon: "★", blurb: "Quests, sheets and the boards", views: ["season"] },
-  { id: "more", label: "More", hotkey: "6", icon: "⋯", blurb: "Agents, your profile, settings, the relay and the docs", views: ["agents", "profile", "settings", "relay", "docs"] },
+  { id: "more", label: "More", hotkey: "6", icon: "⋯", blurb: "Agents, your profile, settings, the relay, the docs and the badges", views: ["agents", "profile", "settings", "relay", "docs", "badges"] },
 ];
 
 export type View = DashboardView;

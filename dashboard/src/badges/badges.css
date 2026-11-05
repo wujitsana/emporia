@@ -11,12 +11,23 @@
    are mirrored in tokens.ts (ACCENT_CSS); keep the two the same.
    ═══════════════════════════════════════════════════════════════ */
 
-.theme-light {
+/* The dashboard has one style (ui-v2): the badge accent is the look's own accent-as-text. */
+.e-look {
+  --e-badge-accent: var(--theme-focused-foreground);
+}
+/* The gallery's panels each carry their own theme and tint: the same formula, worked out there.
+   (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */
+.e-badge-panel.theme-light {
   --e-badge-accent: oklch(from var(--tint, #f0a832) 0.45 min(c, 0.2) h);
 }
-.theme-dark {
+.e-badge-panel.theme-dark {
   --e-badge-accent: oklch(from var(--tint, #f0a832) max(l, 0.78) min(c, 0.22) h);
 }
+
+/* A row of small badges (Season › Quests: the ones earned). */
+.e-badge-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+/* The sheet's head: the class badge beside the name and levels. */
+.e-sheet-head { display: flex; align-items: center; gap: 12px; }
 
 .e-badge {
   display: inline-block;

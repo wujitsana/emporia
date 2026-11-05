@@ -31,6 +31,7 @@ const QUESTS = "__quests__";
 const short = (s: string | null | undefined, n = 10) => (s ? s.slice(0, n) : "—");
 import { VIEWER_ID } from "../relayEnv";
 import { poll } from "../capture";
+import { PixelBadge } from "../badges";
 
 const game = (m: string) => m.replace("emporia:", "").replace(":v1", "");
 const num = { fontVariantNumeric: "tabular-nums" as const };
@@ -65,10 +66,16 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
   const { levels, trade, trust } = sheet;
   return (
     <div className="e-split-main">
-      <Text style={{ fontSize: "1.1rem" }}>{sheet.agent_id} — {sheet.class ?? "no class yet"}</Text>
-      <Text className="e-dim" style={num}>
-        Craft {levels.craft} · Trade {levels.trade} · Trust {levels.trust}{levels.renown ? ` · Renown ${levels.renown}` : ""}
-      </Text>
+      <div className="e-sheet-head">
+        <PixelBadge id={sheet.class ?? "class-none"} size={3} />
+        <div>
+          <Text style={{ fontSize: "1.1rem" }}>{sheet.agent_id} — {sheet.class ?? "no class yet"}</Text>
+          <Text className="e-dim" style={num}>
+            Craft {levels.craft} · Trade {levels.trade} · Trust {levels.trust}
+            {levels.renown ? <> · <PixelBadge id={`renown-${levels.renown}`} size={1} /> Renown {levels.renown}</> : null}
+          </Text>
+        </div>
+      </div>
       <Text className="e-faint" style={{ fontSize: 11 }}>
         {sheet.formula}, this relay, as of {sheet.as_of} · {sheet.sessions_counted} sessions · signed by the relay
       </Text>
@@ -171,7 +178,14 @@ export function QuestList({ q }: { q: AgentQuests }) {
   const feats = q.feats ?? [];
   return (
     <div className="e-split-main" style={{ paddingTop: 0 }}>
-      <Text className="e-subhead">QUESTS · {q.xp} XP{q.badges.length ? ` · ${q.badges.join(", ")}` : ""}</Text>
+      <Text className="e-subhead">QUESTS · {q.xp} XP</Text>
+      {q.badges.length > 0 && (
+        <p className="e-badge-strip" aria-label={`Badges: ${q.badges.join(", ")}`}>
+          {[...q.badges].sort((a, b) => (a === "welcomed" ? -1 : b === "welcomed" ? 1 : 0)).map((b) => (
+            <PixelBadge key={b} id={b} size={1} />
+          ))}
+        </p>
+      )}
       {q.next ? (
         <p className="e-quest-next">
           <span className="e-now__label">next</span>{" "}
@@ -182,15 +196,19 @@ export function QuestList({ q }: { q: AgentQuests }) {
       )}
       {q.quests.map((x) => (
         <Text key={x.id} className={x.done ? "e-quest-row is-done" : "e-faint e-quest-row"} style={{ fontSize: 13 }} title={x.how}>
-          {x.done ? "✓" : "·"} {x.title} <span className="e-faint">({x.xp} XP{x.optional ? ", optional" : ""})</span>
+          <PixelBadge id={x.id} size={1} title={x.done ? `earned ${x.at}` : x.how} />{" "}
+          <span className="e-sr">{x.done ? "done: " : "to do: "}</span>
+          {x.title} <span className="e-faint">({x.xp} XP{x.optional ? ", optional" : ""})</span>
         </Text>
       ))}
       {feats.length > 0 && (
         <>
           <Text className="e-subhead">FEATS · badges for breadth</Text>
           {feats.map((f) => (
-            <Text key={f.id} className={f.done ? "" : "e-faint"} style={{ fontSize: 13 }} title={f.how}>
-              {f.done ? "✓" : "·"} {f.title}{f.done ? "" : <span className="e-faint"> — {f.how}</span>}
+            <Text key={f.id} className={f.done ? "e-quest-row is-done" : "e-faint e-quest-row"} style={{ fontSize: 13 }} title={f.how}>
+              <PixelBadge id={f.id} size={1} title={f.done ? `earned ${f.at}` : f.how} />{" "}
+              <span className="e-sr">{f.done ? "done: " : "to do: "}</span>
+              {f.title}{f.done ? "" : <span className="e-faint"> — {f.how}</span>}
             </Text>
           ))}
         </>
@@ -227,7 +245,7 @@ const BOARD_EMPTY: Record<string, string> = {
 export function Season({ data }: { data: SeasonBoards }) {
   return (
     <div className="e-split-main">
-      <Text style={{ fontSize: "1.1rem" }}>{data.season}</Text>
+      <Text style={{ fontSize: "1.1rem" }}><PixelBadge id={data.season} size={2} /> {data.season}</Text>
       <Text className="e-faint" style={{ fontSize: 12 }}>
         {data.started_at ? `from ${data.started_at}` : "all history"} · {data.ends_at ? `until ${data.ends_at}` : "open — no end date"}
         {" "}· {data.games} games, {data.likes} likes · the history is never reset
@@ -240,13 +258,18 @@ export function Season({ data }: { data: SeasonBoards }) {
         const rows = data.boards[name] ?? [];
         return (
           <div key={name} style={{ marginTop: 14 }}>
-            <Text className="e-subhead">{BOARD_TITLE[name] ?? `${game(name).toUpperCase()} — Craft`}</Text>
+            <Text className="e-subhead">
+              {BOARD_TITLE[name] ? null : <><PixelBadge id={name} size={1} />{" "}</>}
+              {BOARD_TITLE[name] ?? `${game(name).toUpperCase()} — Craft`}
+            </Text>
             {rows.length === 0 ? <Text className="e-note">{BOARD_EMPTY[name] ?? `Nobody has a counted ${game(name)} result this season yet.`}</Text> : (
               <table className="e-listings-native e-board">
                 <tbody>
                   {rows.map((r, i) => (
                     <tr key={r.agent_id}>
-                      <td><Text className="e-faint" style={num}>{i + 1}</Text></td>
+                      <td><Text className="e-faint" style={num}>
+                        {i < 3 ? <PixelBadge id={`rank-${i + 1}`} size={1} /> : i + 1}
+                      </Text></td>
                       <td><Text>{r.agent_id}</Text></td>
                       <td><Text style={num}>{name === "bugs" ? improvementRow(r)
                         : name === "renown" ? `${r.score} · ${r.likes} likes`
@@ -295,7 +318,7 @@ export function BugList() {
                 <td><Text className="e-faint">{b.report_id}</Text></td>
                 <td><Text>{b.status}</Text></td>
                 <td><Text className="e-dim" title={b.called_it ? "called it: the claimed severity was the one awarded" : undefined}>
-                  {claimedAwarded(b.severity_claimed, b.severity)}{b.called_it ? " ✓" : ""}
+                  {claimedAwarded(b.severity_claimed, b.severity)}{b.called_it ? <> <PixelBadge id="called-it" size={1} /></> : ""}
                 </Text></td>
                 <td><Text style={num}>{b.points}</Text></td>
                 <td><Text className="e-dim">{b.reporter_id}</Text></td>

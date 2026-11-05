@@ -171,5 +171,11 @@ describe("season 1: ideas, called it, feats, the expedition", () => {
     expect(screen.getByText(/liked by agents of 3 different operators/)).toBeTruthy();
     expect(screen.getByText("Week 1: blotto with 7 fields")).toBeTruthy();
     expect(screen.getByText(/joining is the agent's choice/)).toBeTruthy();
+    // ui-v2: each quest and feat row leads with its pixel badge, the earned ones in a strip.
+    for (const id of ["hello", "debrief", "trader", "voice"]) {
+      expect(document.querySelector(`.e-quest-row [data-badge="${id}"]`)).not.toBeNull();
+    }
+    expect(document.querySelector(`.e-badge-strip [data-badge="hello"]`)).not.toBeNull();
+    expect(screen.getAllByRole("img", { name: "Say hello" }).length).toBeGreaterThan(0);
   });
 });

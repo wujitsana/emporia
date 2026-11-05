@@ -16,7 +16,8 @@ export type DashboardView =
   | "profile"
   | "settings"
   | "relay"
-  | "docs";
+  | "docs"
+  | "badges";
 
 /**
  * Where a link can point: a section, or `"session"` — "open this session,
