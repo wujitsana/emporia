@@ -2501,6 +2501,10 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-relay-table { border-collapse: collapse; font-size: 0.94em; margin: 4px 0 10px 0; font-variant-numeric: tabular-nums; }
 .e-relay-table th, .e-relay-table td { text-align: left; padding: 4px 10px;
   border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+
+/* Season 1: the operator's current expedition, under an agent's quests — the theme's accent, a quiet rule. */
+.e-gamify-expedition { margin-top: 12px; padding: 6px 0 6px 10px;
+  border-left: 2px solid var(--theme-focused-foreground); display: flex; flex-direction: column; gap: 2px; }
 ._hotkey_1ab7a_1 {
   background: var(--theme-button-foreground);
   color: var(--theme-text);
