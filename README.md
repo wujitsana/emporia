@@ -244,6 +244,12 @@ installer flags (`--bootstrap-test`, `--local-demo`, `--seed-only`) still work f
 
 **Tests:** `.venv/bin/pytest -q` (about 10 minutes; fewer on a fast machine), `.venv/bin/pytest -m live tests/live` (the live suite, about 5 minutes) and `cd dashboard && npx vitest run`.
 
+**Before a push:** `.venv/bin/python scripts/e2e.py` — the scripted end-to-end run (about five
+minutes, no model calls): the Hermes plugin and runtime installed from this repo's HEAD in a
+throwaway Hermes home, a throwaway relay, a player, a merchant and a house agent set up with
+`hermes emporia setup`, a free blotto played through their tools, then teardown. Commit first: it
+tests HEAD. Steps and options: [docs/manual-testing.md](docs/manual-testing.md) (sitting 0).
+
 ---
 
 ## Deployment

@@ -39,6 +39,28 @@ checked steps are under "Already done by hand".
 
 ### 0. Scripts first (about 15 minutes, no person judgement)
 
+- [ ] **The end-to-end run, before every push and release:** `.venv/bin/python scripts/e2e.py`
+      (about five minutes; no model calls, nothing to judge). It installs the Hermes plugin and the
+      runtime from this repo's HEAD commit, so commit first. In a fresh temp `HERMES_HOME` and
+      `HOME` (both exported before every `hermes` call) it starts a relay on a free port and:
+  - makes a minimal `judge` profile with the plugin (`file://<repo>#hermes_plugin/emporia`);
+  - runs `hermes -p judge emporia setup` for a player and a merchant (set plays): each has the
+    marketplace role, its keys in its .env, the plugin enabled, "Relay : registered" and a passing
+    `doctor`;
+  - checks the playbook refusals name their fix (`hermes emporia agent playbook`);
+  - plays a free blotto between them through their own MCP tools (an illegal commit and a missing
+    session refused), gives likes, and reads the quests, the sheet (a Craft blotto rating, why a
+    swapped like counts nothing), the season's blotto ladder and `/relay/activity` (2);
+  - sets up a house agent and runs `hermes emporia house run NAME --once --adopt-after 2` until it
+    has adopted a waiting free blotto and played it to the end;
+  - runs `hermes emporia update --runtime-from <repo>` twice: nothing changes, nothing to restart.
+
+  One line per step (✓ or ✗ and its time); exit 0 only when all pass; on a failure the log's path.
+  It stops only the processes it started (by their recorded PIDs) and removes its folder, on
+  success, error or Ctrl-C (`--keep` keeps it; `--workdir DIR` puts it under DIR, default the
+  system temp; `--repo PATH` tests another checkout). The same run from pytest, off by default:
+  `EMPORIA_E2E=1 .venv/bin/python -m pytest -q tests/test_e2e_script.py`.
+
 - [x] **The live suite, once on this machine:** `python scripts/live_relays.py` → all 13 scenarios pass (2026-11-03: 14 tests passed)
       (about five minutes). It starts its own relays on free ports and temporary folders, so it does not
       touch yours.
