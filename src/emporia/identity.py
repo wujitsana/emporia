@@ -17,6 +17,7 @@ import os
 import re
 import secrets
 import time
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -421,6 +422,28 @@ class PeerKeyMismatch(Exception):
     """A peer's encryption key changed after it was pinned. Raised rather than
     warned: continuing would seal the message to whatever key was just served,
     which is precisely the attack pinning exists to stop."""
+
+
+class PlaintextRefused(PeerKeyMismatch):
+    """P298: the relay says a DM thread is plaintext, with a peer this client has
+    already sealed to. Whether a thread is sealed is otherwise the relay's word, so a
+    relay (or anyone with its database) could answer `encrypted: false` and read
+    everything sent after."""
+
+
+def refuse_plaintext_to(peers: Iterable[str]) -> None:
+    """Raise `PlaintextRefused` when any of `peers` has an encryption key pinned here:
+    it has received sealed messages from this agent, so a plaintext thread with it
+    is a downgrade, not its choice. The agent's own explicit request for plaintext
+    skips this call."""
+    pinned = load_peer_encryption_keys()
+    for peer in peers:
+        if peer and peer in pinned:
+            raise PlaintextRefused(
+                f"the relay says the DM thread with '{peer}' is not encrypted, but this agent has sealed "
+                f"messages to '{peer}' before (its encryption key is pinned) — refusing to send it in "
+                f"plaintext, which the relay could read. If plaintext is really wanted, ask for it "
+                f"explicitly (encrypted=False).")
 
 
 def _valid_x25519_pubkey_hex(value: str) -> bool:

@@ -900,7 +900,8 @@ class EmporiaAgent:
                 recipients[participant] = await self._peer_encryption_key(participant)
         return recipients
 
-    async def send_dm(self, thread_id: str, content: str, msg_type: str = DEFAULT_MSG_TYPE) -> dict[str, Any]:
+    async def send_dm(self, thread_id: str, content: str, msg_type: str = DEFAULT_MSG_TYPE,
+                      *, plaintext_ok: bool = False) -> dict[str, Any]:
         """Send a message in a DM thread previously created by start_dm(). Signature
         is mandatory — bound to thread_id + msg_type, not just content (same N3-8/R7
         shape as send_room_message()'s room_id + msg_type binding), so it can't be
@@ -910,6 +911,11 @@ class EmporiaAgent:
         signed and sent; the relay never sees the plaintext. That is transparent to
         the caller by design — an API where you can forget to encrypt is one where
         someone will.
+
+        P298: a thread the relay calls plaintext, with a peer this agent has sealed
+        to before, raises `identity.PlaintextRefused` — the relay's flag is not
+        enough. `plaintext_ok=True` when plaintext is this agent's own choice
+        (a thread it started with `encrypted=False`).
         """
         from emporia import crypto_box
         from emporia.wire import (
@@ -940,6 +946,10 @@ class EmporiaAgent:
         nonce = new_message_nonce()
         from emporia import secret_guard
         secret_guard.check(self.agent_id, content)   # P172: before sealing
+        if not thread["encrypted"] and not plaintext_ok:
+            from emporia.identity import refuse_plaintext_to
+            me = thread.get("my_label") or self.agent_id
+            refuse_plaintext_to(p for p in (thread.get("agent_a"), thread.get("agent_b")) if p != me)
         if thread["encrypted"]:
             content = json.dumps(crypto_box.seal(
                 content,
