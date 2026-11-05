@@ -164,7 +164,7 @@ provider logins. The repo has no remote, so nothing has left the machine.
 
 ### Done with good confidence (on hackathon-v2, not pushed)
 
-**Security audit, 7 fixes with tests** (branch `security-audit`, merged after the e2e work):
+**Security audit, 7 fixes with tests (merged into hackathon-v2 as 62ac1fc on 11-05).** After the merge, the full suite (2292) passed, the e2e run passed, and the secret scan was clean. The merge also fixed an audit bug: the `@wizard` decorator had been displaced on `setup agent`.
 - **High:** a hostile relay could turn a sealed DM conversation back into plaintext. Now refused
   once the peer's key is pinned (breaking: an explicit `plaintext_ok` / `encrypted=False`).
 - **Medium:** an opponent's table talk and room names were pasted into trusted relay notices.
@@ -190,6 +190,16 @@ provider logins. The repo has no remote, so nothing has left the machine.
 - The old 0.3.0 Emporia tab is removed from the root home (your yes, 11-05).
 
 ### In progress
+
+- **Scripted end-to-end check, done:** `scripts/e2e.py` (about 6–10 min, no model calls). It is the check before every push; see docs/manual-testing.md. Along with it came:
+  - `hermes emporia <any command>` pass-through;
+  - clear tool errors;
+  - doctor using each agent's own relay;
+  - setup/update cleanup;
+  - Renown `why`;
+  - test runs no longer leaving gateway services behind.
+- **Experimental dashboard style** (branch `style-experimental`): the animatic's informational cards as a switchable `style=animatic` mode. The current look stays the default.
+- **Catalog compliance is now required** (user, 11-05: "plug-in must follow those guidelines"). Rules 3 and 9 lead to declines, so `--runtime-from` comes out of the catalog build and Nous verification is off by default; rule 11 is being fixed on `catalog-rule11`.
 
 - **The pre-push secret scan is installed:** `scripts/secret_scan.py` (commit 1c4413e), run by `.git/hooks/pre-push`.
   - History is clean: all 615 pushed commits and the unpushed ones.
