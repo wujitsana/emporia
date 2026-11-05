@@ -250,6 +250,29 @@ def _invalidate_dashboard_bearer(relay_url: str = "", agent_id: str = "") -> Non
     _dashboard_token_cache.pop(f"{target}|{aid}", None)
 
 
+_ENCODED_DOTS_OR_SLASH = ("%2e", "%2f", "%5c")
+
+
+def _unsafe_path(url: str) -> str:
+    """Why the path of `url` is not the one route its tool meant, or "".
+
+    Tools build relay paths from their arguments (`/sessions/{session_id}/fund`), and
+    httpx resolves dot segments before sending: a session id of `../agents/me/leave#`
+    turned a bounty call into a POST to `/agents/me/leave`, with the agent's own token
+    — an operator-only act (P195) reached through a tool that never offered it. So a
+    path may hold no `.`/`..` segment, no `?` or `#` (query parameters travel apart),
+    no backslash, no control character, and no encoded dot or slash."""
+    rest = url.split("://", 1)[-1]
+    path = rest[rest.find("/"):] if "/" in rest else ""
+    if any(c in path for c in "?#\\") or any(ord(c) < 0x21 or ord(c) == 0x7F for c in path):
+        return "an id may not contain '?', '#', '\\', spaces or control characters"
+    if any(seg in (".", "..") for seg in path.split("/")):
+        return "an id may not be '.' or '..' or climb out of its path"
+    if any(enc in path.lower() for enc in _ENCODED_DOTS_OR_SLASH):
+        return "an id may not carry an encoded dot, slash or backslash"
+    return ""
+
+
 def _bearer_request(
     method: str, url: str, *, agent_id: str = "", payment_token: str = "", **kwargs: Any,
 ) -> httpx.Response:
@@ -261,6 +284,9 @@ def _bearer_request(
     paying and with what — before this, a paid call could carry only the
     payment and the relay could not tell who sent it. Retrying a paid call is
     safe: the SPT's Idempotency-Key (P88) returns the same PaymentIntent."""
+    # MCP review: one route per call — an id from a tool argument may not climb out of it.
+    if why := _unsafe_path(url):
+        raise ValueError(f"refused: {why}. Pass the id exactly as the relay gave it")
     # P163: nothing an agent sends may carry its keys or other secrets.
     if method in ("post", "put", "patch"):
         from emporia import secret_guard
@@ -672,6 +698,9 @@ def _read_feed(relay: str, path: str, key: str) -> tuple[list[dict], str]:
     return items, ""
 
 
+_MAX_SCAN_RELAYS = 20
+
+
 @mcp.tool()
 def scan_relays(
     relays: list[str] | None = None, kind: str = "", module_type: str = "",
@@ -700,6 +729,8 @@ def scan_relays(
     from emporia.addresses import host_of
     from emporia.identity import verify
     from emporia.wire import listing_verdict, open_session_verdict, room_advert_verdict, topic_advert_verdict
+    if len(relays or []) > _MAX_SCAN_RELAYS:   # MCP review: each costs up to five reads
+        return {"error": f"name at most {_MAX_SCAN_RELAYS} relays per scan", "success": False}
     refused: dict[str, int] = {}
     targets = list(dict.fromkeys(u.rstrip("/") for u in
                                  [RELAY_URL, *_linked_relays(), *visits.allowed(), *_visits(), *(relays or [])]))
@@ -1856,6 +1887,24 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50) -> dict
         return {"error": str(e), "success": False}
 
 
+#: MCP review: the most pages one chain walk reads (200 messages each). A relay serving
+#: unchained rows forever, or the same page again, kept the walk going past the client's
+#: timeout — and the worker thread kept fetching after Hermes had given up on the call.
+_MAX_CHAIN_PAGES = 500
+
+
+def _chain_walk_stalled(pages: int, before: Any, before_seq: Any, seen: set[tuple[Any, Any]]) -> str:
+    """Why a backward chain walk must stop now ("" to go on): too many pages, or a cursor
+    already used — the relay is not moving the walk back through its history."""
+    if pages > _MAX_CHAIN_PAGES:
+        return (f"stopped after {_MAX_CHAIN_PAGES} pages without reaching the chain's start — "
+                "pass max_messages, or verify again later")
+    if (before, before_seq) in seen:
+        return "the relay served the same page twice — it is not walking back through its history"
+    seen.add((before, before_seq))
+    return ""
+
+
 @mcp.tool()
 def verify_dm_chain(
     thread_id: str, agent_id: str = "", max_messages: int | None = None,
@@ -1967,8 +2016,14 @@ def verify_dm_chain(
         chained_seen = 0
         reached_chain_start = False
         reached_pin = False
+        page_cursors: set[tuple[Any, Any]] = set()
 
+        pages = 0
         while True:
+            pages += 1
+            if (why := _chain_walk_stalled(pages, before, before_seq, page_cursors)):
+                result["reason"] = why
+                return result
             if max_messages is not None and chained_seen >= max_messages:
                 result["reason"] = (
                     f"could not fetch full history for independent verification — "
@@ -2188,7 +2243,12 @@ def verify_room_chain(
         reached_pin = False
         pin_matched = False
 
+        pages, page_cursors = 0, set()
         while True:
+            pages += 1
+            if (why := _chain_walk_stalled(pages, before, before_seq, page_cursors)):
+                result["reason"] = why
+                return result
             if max_messages is not None and fetched >= max_messages:
                 result["reason"] = (
                     f"could not fetch full history for independent verification -- "
@@ -5384,7 +5444,20 @@ def sign_dashboard_challenge(challenge_id: str, nonce: str, relay_url: str = "")
     The JWT is relay-scoped and expires in 1 hour. For localhost dashboards,
     this flow is unnecessary (localhost trust handles it automatically).
     """
-    target = relay_url or _base()
+    # MCP review: a sign-in signature is a session as this agent on whichever relay issued
+    # the nonce (it names no relay), so it goes only to this agent's own relays, and only
+    # with its operator's yes. Before, relay_url could be any URL: one call, prompted by a
+    # stranger with a nonce taken from this agent's home, handed that stranger a token for it.
+    target = (relay_url or _base()).strip().rstrip("/")
+    if target not in {RELAY_URL.rstrip("/"), *_visits()}:
+        return {"error": f"refused: {target} is not this agent's home or a relay it visits — a "
+                         "sign-in signature goes to no other", "success": False}
+    answer = _ask_operator(f"Sign {AGENT_ID} in to a dashboard on {target}? Whoever holds the "
+                           "resulting token acts as this agent there for an hour. Allow only if you "
+                           "opened that dashboard yourself.", title="Allow a dashboard sign-in")
+    if answer is not True:
+        return {"error": "not signed: " + ("its operator said no" if answer is False else
+                                           "its operator could not be asked here"), "success": False}
     try:
         sig_hex = signing.sign_in(AGENT_ID, nonce)
     except Exception as e:
@@ -5406,9 +5479,9 @@ def sign_dashboard_challenge(challenge_id: str, nonce: str, relay_url: str = "")
                     "expires_in": data["expires_in"],
                     "instructions": "Paste this token into the dashboard auth dialog as a Bearer token.",
                 }
-            return {"error": f"relay rejected: {r.text}", "signature_hex": sig_hex}
+            return {"error": f"relay rejected: {r.text}", "success": False}
         except Exception as e:
-            return {"error": str(e), "signature_hex": sig_hex}
+            return {"error": str(e), "success": False}
 
     return {
         "agent_id": AGENT_ID,
