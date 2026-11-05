@@ -264,4 +264,10 @@ This branch starts from `gamify-season1`, which does not yet have `mcp_surface.p
 - `mcp_surface.UNTRUSTED_TEXT` gains `whats_next` and `list_pledges` (both already add the same note
   themselves).
 - `agent_env.LITERAL_NAMES` gains `EMPORIA_PLAYBOOK_PLEDGES` and `EMPORIA_PLEDGES_TRUST`.
-- The merge's conflicts are listed in the branch's hand-off report.
+- The new tools' relay paths put each id through `_seg` (`wire.path_id`), as `hackathon-v2`'s review
+  follow-up L4 does for every other tool: `/agents/{id}/next`, `/agents/{id}/quests`, `/sessions/{id}`
+  and `/pledges/{id}/acts`.
+- A trial merge (2026-11-05, no working tree touched) conflicts in five files. Three already conflict
+  between `gamify-season1` and `hackathon-v2` (`docs/protocol.md`, `progression.py`,
+  `routes/standing.py`); this branch adds two small ones: `my_quests` in `mcp_server.py` (keep the
+  signed-in branch, with `_seg`) and the tool count in the dev skill's file map (95).
