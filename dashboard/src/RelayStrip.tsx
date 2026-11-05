@@ -5,7 +5,7 @@ import type { RelayHealth } from "./hooks";
 import { toWsUrl } from "./hooks";
 import { resolveRelayUrl } from "./relayEnv";
 import { relayHost } from "./relayFormat";
-import { MODE } from "./transport";
+import { MODE, socketsCarried } from "./transport";
 
 // P42: internal to this file — see the note on trustBadge in AgentsView.
 function relayWsOrigin(httpRelay?: string): string {
@@ -96,7 +96,9 @@ export function RelayStrip({
 
   const wsTitle = wsConnected
     ? `Live updates on: new games, listings and events appear as they happen (${wsEvents})`
-    : `Live updates off — the dashboard still refreshes on a timer (${wsEvents})`;
+    : !socketsCarried()
+      ? "Live updates off: this Hermes profile runs the plugin in its plugin host, which carries no websockets yet. The dashboard refreshes on a timer."
+      : `Live updates off — the dashboard still refreshes on a timer (${wsEvents})`;
 
   const chips = (
     <span className="e-relay-status__chips">

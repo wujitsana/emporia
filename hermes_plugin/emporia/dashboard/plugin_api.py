@@ -12,7 +12,16 @@ only, and each start gets a secret on stdin that every request here presents.
 
 Hermes authenticates every HTTP request here (its /api/ gate). WebSocket
 upgrades it leaves to the route, so ``ws`` below checks the credential with
-Hermes's own ``_ws_auth_ok`` and refuses when it cannot (fail closed).
+Hermes's own ``_ws_auth_ok`` and refuses when it cannot (fail closed): before the
+handshake (a 403, the same for every refusal) when the credential fails, and with a
+close code and a reason once it passed. It never returns without one or the other.
+
+Websockets reach this router only when it runs in the dashboard's own process. A
+profile's plugin host (``plugins.isolation: host``, and every profile but the one the
+dashboard was launched as) forwards plain requests only and refuses a socket itself,
+with an HTTP 501 that uvicorn logs as "ASGI callable returned without completing
+handshake". So ``/agents`` and ``/_hermes_profile`` say whether sockets are carried
+(``sockets``), and the tab does not dial one where they are not: it polls.
 
 Nothing is logged except the console's start; request and response bodies —
 which include decrypted DMs — never are. Hermes's own credentials (cookie,
@@ -23,12 +32,15 @@ from __future__ import annotations
 
 import asyncio
 import atexit
+import hashlib
 import json
 import logging
 import os
 import re
 import secrets
+import stat
 import subprocess
+import tempfile
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -89,12 +101,61 @@ def _config() -> dict:
         return {}
 
 
+#: A Unix socket's path must fit `sun_path`: 108 bytes with its NUL on Linux, 104 on macOS.
+#: Stay under both, so a deep HERMES_HOME never starts a console that dies at once.
+SUN_PATH_MAX = 100
+
+
+def _sockets_carried() -> bool:
+    """Whether Hermes carries a websocket to this router: only in the dashboard's own process.
+    In a profile's plugin host (Hermes sets HERMES_PLUGIN_HOST_PROCESS there) it forwards plain
+    requests only, and answers every socket with a 501 before it reaches this router."""
+    return os.environ.get("HERMES_PLUGIN_HOST_PROCESS") != "1"
+
+
+def _private_dir(path: Path) -> bool:
+    """Make `path` a 0700 folder of this user, or say it cannot be one (someone else's, a link)."""
+    try:
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        st = path.lstat()
+        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
+            return False
+        if stat.S_IMODE(st.st_mode) != 0o700:
+            os.chmod(path, 0o700)
+        return True
+    except OSError:
+        return False
+
+
+def _short_socket(home: Path) -> Path:
+    """A short socket path for this profile's console, for when the configured one is too long:
+    `$XDG_RUNTIME_DIR/emporia-console/<hash>/console.sock`, else
+    `<tmp>/emporia-console-<uid>/<hash>/console.sock`, each folder 0700 and this user's own.
+    The hash names the profile home, so each profile keeps a console of its own."""
+    tag = hashlib.sha256(os.fsencode(str(home))).hexdigest()[:16]
+    roots = []
+    xdg = os.environ.get("XDG_RUNTIME_DIR", "")
+    if xdg and os.path.isabs(xdg):
+        roots.append(Path(xdg) / "emporia-console")
+    roots.append(Path(tempfile.gettempdir()) / f"emporia-console-{os.getuid()}")
+    for root in roots:
+        sock = root / tag / "console.sock"
+        if len(os.fsencode(str(sock))) <= SUN_PATH_MAX and _private_dir(root):
+            return sock
+    raise RuntimeError("no private folder with a short enough path for the Emporia console's socket")
+
+
 def _socket() -> Path:
+    """This profile's console socket: the configured folder (`runtime_dir`, else plugin-data),
+    or, when that path is past the AF_UNIX limit, a short private one (`_short_socket`)."""
     runtime = _config().get("runtime_dir")
     if not runtime:
         from plugins.plugin_storage import plugin_data_dir
         runtime = plugin_data_dir("emporia") / "console"
-    return Path(runtime) / "console.sock"
+    sock = Path(runtime) / "console.sock"
+    if len(os.fsencode(str(sock))) <= SUN_PATH_MAX:      # the path as bound and dialled
+        return sock
+    return _short_socket(_home())
 
 
 def _transport(sock: Path) -> httpx.AsyncBaseTransport:
@@ -132,8 +193,8 @@ async def _ensure_console() -> tuple[Path, str]:
         if console.proc is not None and console.proc.poll() is None:
             console.proc.terminate()
         runtime = sock.parent
-        runtime.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chmod(runtime, 0o700)
+        if not _private_dir(runtime):
+            raise RuntimeError(f"the console's folder {runtime} is not this user's own 0700 folder")
         # Console scope: this profile only (never --hermes-root), and a fresh secret, given on
         # stdin — not in its arguments (anyone on the machine reads those) or environment.
         argv = [cfg["python"], "-m", "emporia.console", "--uds", str(sock),
@@ -165,28 +226,44 @@ async def _ensure_console() -> tuple[Path, str]:
         raise RuntimeError(f"the Emporia console did not start; see {runtime / 'console.log'}")
 
 
+async def _close(socket: WebSocket, code: int, reason: str = "") -> None:
+    """End a socket with a close code, before or after the handshake. Never leave it untouched:
+    uvicorn logs a socket the route returns from without either as an incomplete handshake."""
+    from starlette.websockets import WebSocketState
+    try:
+        if socket.application_state == WebSocketState.CONNECTED:
+            await socket.close(code=code, reason=reason[:120])
+        elif socket.application_state == WebSocketState.CONNECTING:
+            await socket.close(code=code)            # before accept: a 403 handshake answer
+    except RuntimeError:
+        pass                                         # the client went first
+
+
 @router.websocket("/ws/{path:path}")
 async def ws(socket: WebSocket, path: str):
-    import websockets
-
     try:
         from hermes_cli import web_server_chat
         authorized = bool(web_server_chat._ws_auth_ok(socket))
     except Exception:
         authorized = False                                    # fail closed
     if not authorized:
-        await socket.close(code=1008)
+        # Before accept: the same 403 for every refusal, so it says nothing about the plugin.
+        await _close(socket, 1008)
         return
     try:
         sock, secret = await _ensure_console()
-    except RuntimeError:
-        await socket.close(code=1011)
+    except Exception as e:                                    # not set up, no console, no folder
+        # The credential passed: accept, then say why, with a close code the tab can read.
+        await socket.accept()
+        await _close(socket, 1011, f"the Emporia console is not running: {e}")
         return
     query = urlencode([(k, v) for k, v in socket.query_params.multi_items()
                        if k not in _WS_AUTH_PARAMS])
     uri = f"ws://console/ws/{path}" + (f"?{query}" if query else "")
     await socket.accept()
+    code, reason = 1000, ""
     try:
+        import websockets
         async with websockets.unix_connect(str(sock), uri=uri,
                                            additional_headers={SECRET_HEADER: secret}) as upstream:
             async def down():
@@ -201,13 +278,15 @@ async def ws(socket: WebSocket, path: str):
             _, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             for t in pending:
                 t.cancel()
+            # The console's own close code and reason, passed on (a refused room, a finished game).
+            if upstream.close_code is not None:
+                code, reason = upstream.close_code, upstream.close_reason or ""
     except Exception:
-        pass
+        code, reason = 1011, "the console's socket failed"
     finally:
-        try:
-            await socket.close()
-        except RuntimeError:
-            pass
+        if code in (1005, 1006, 1015):                        # codes no endpoint may send
+            code = 1000
+        await _close(socket, code, reason)
 
 
 @router.get("/_hermes_profile")
@@ -219,7 +298,7 @@ async def hermes_profile(request: Request):
     if not name:
         home = Path(os.getenv("HERMES_HOME", "")).expanduser()
         name = home.name if home.parent.name == "profiles" else ""
-    return JSONResponse({"profile": name}, headers={"Cache-Control": "no-store"})
+    return JSONResponse({"profile": name, "sockets": _sockets_carried()}, headers={"Cache-Control": "no-store"})
 
 
 _PROFILE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
@@ -249,7 +328,8 @@ async def agents():
         return Response(r.content, status_code=r.status_code, headers={"Cache-Control": "no-store"})
     own = [str(a) for a in (r.json().get("agents") or [])]
     others = [n for n in _other_agent_profiles(_home()) if n not in own]
-    return JSONResponse({"agents": own + others}, headers={"Cache-Control": "no-store"})
+    return JSONResponse({"agents": own + others, "sockets": _sockets_carried()},
+                        headers={"Cache-Control": "no-store"})
 
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])

@@ -84,7 +84,12 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
       return () => container.replaceChildren();
     }
   }
-  window.__EMPORIA_HERMES_SDK__ = { authedFetch: sdk.authedFetch, buildWsUrl: sdk.buildWsUrl };
+  // Whether Hermes carries this plugin's websockets here: not when the profile's plugin runs in
+  // its plugin host (plugin_api.py `sockets`). Then the tab dials none and polls (transport.ts).
+  const sockets = probe?.ok
+    ? await probe.clone().json().then((d) => d?.sockets !== false).catch(() => true)
+    : true;
+  window.__EMPORIA_HERMES_SDK__ = { authedFetch: sdk.authedFetch, buildWsUrl: sdk.buildWsUrl, sockets };
   window.__EMPORIA_HERMES_PROFILE__ = await ensureViewer(
     () => sdk.authedFetch("/api/plugins/emporia/agents")
       .then((r) => r.json()).then((d) => d.agents as string[]),

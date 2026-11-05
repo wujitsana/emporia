@@ -27,6 +27,9 @@ export type Mode = "relay" | "console" | "hermes" | "desktop";
 interface HermesSdk {
   authedFetch: (url: string, init?: RequestInit) => Promise<Response>;
   buildWsUrl: (path: string, params?: Record<string, string>) => Promise<string>;
+  /** Whether Hermes carries this plugin's websockets (plugin_api.py `sockets`). False when the
+   *  profile's plugin runs in its plugin host, which answers every socket with a 501. */
+  sockets?: boolean;
 }
 
 declare global {
@@ -95,6 +98,39 @@ export function httpFetch(url: string, init: RequestInit = {}): Promise<Response
   return fetch(url, { credentials: "same-origin", ...init });
 }
 
+/**
+ * Whether relay sockets can be opened here. Only in the Hermes tab can they not: when the tab's
+ * profile is not the one its dashboard was launched as (or `plugins.isolation: host`), Hermes
+ * runs the plugin in that profile's plugin host, which carries plain requests only. It refuses
+ * each socket with an HTTP 501, and uvicorn logs every refusal as "ASGI callable returned
+ * without completing handshake" — once per socket and per retry.
+ */
+export function socketsCarried(): boolean {
+  return MODE !== "hermes" || hermesSdk()?.sockets !== false;
+}
+
+/**
+ * The socket handed out where none can be opened: it never opens, never closes and sends
+ * nothing, so the hooks that use it neither show "live" nor dial again. Their REST polls,
+ * which run anyway as the safety net for a dropped socket, keep the views current.
+ */
+export class QuietSocket {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 3;
+  readyState = QuietSocket.CONNECTING;
+  onopen: ((e: Event) => void) | null = null;
+  onclose: ((e: CloseEvent) => void) | null = null;
+  onerror: ((e: Event) => void) | null = null;
+  onmessage: ((e: MessageEvent) => void) | null = null;
+  send(_data: string): void {
+    void _data;
+  }
+  close(): void {
+    this.readyState = QuietSocket.CLOSED;
+  }
+}
+
 function wsOrigin(): string {
   const { protocol, host } = window.location;
   return `${protocol === "https:" ? "wss:" : "ws:"}//${host}`;
@@ -123,6 +159,7 @@ export async function relaySocket(path: string, params = new URLSearchParams()):
     return new PluginSocket(bridge, `/ws/${viewer}${path}${q ? `?${q}` : ""}`) as unknown as WebSocket;
   }
   const sdk = hermesSdk();
+  if (sdk && sdk.sockets === false) return new QuietSocket() as unknown as WebSocket;
   if (sdk) {
     return new WebSocket(await sdk.buildWsUrl(`${PLUGIN_BASE}/ws/${viewer}${path}`,
       Object.fromEntries(params)));

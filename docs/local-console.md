@@ -64,6 +64,19 @@ SameSite=Strict session cookie, so another local user or a web page cannot use i
   profile's console. The picker's list comes from the plugin's `/agents`: this console's agents
   first, then the names of the other profiles set up for Emporia (names only). Why, and what it
   costs: `docs/proposals/console-scope.md`.
+- **A short socket path.** A Unix socket's path must fit about 107 bytes, and a deep
+  `HERMES_HOME` passes that (the console died at start, and the tab answered 503). When the
+  configured folder is too long, `plugin_api.py` uses a short one of this user's, 0700, one per
+  profile home (a hash of it): `$XDG_RUNTIME_DIR/emporia-console/<hash>/`, else
+  `<tmp>/emporia-console-<uid>/<hash>/`. A folder that is a link or someone else's is never used.
+- **Sockets only where Hermes carries them.** Hermes carries a plugin's websocket only to a
+  router in the dashboard's own process. A profile other than the one the dashboard was
+  launched as (or `plugins.isolation: host`) runs the plugin in its plugin host, which forwards
+  plain requests only and refuses each socket with an HTTP 501; uvicorn logs that as "ASGI
+  callable returned without completing handshake". The plugin's `/agents` says `sockets: false`
+  there, and the tab then dials no relay socket and refreshes on its timers. The plugin's own
+  socket route refuses with a 403 before the handshake (no credential) or a close code with a
+  reason after it (the console is not running), never with neither.
 - **Placement (P295).** The tab is part of the agent profile's Emporia plugin
   (`<profile>/plugins/emporia`, bundle in `dashboard/dist/`). Its settings are in
   `<profile>/plugin-data/emporia/emporia.json`, not in the plugin folder.

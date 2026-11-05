@@ -107,7 +107,7 @@ m._stop_console()
     assert result["ws_refused"], "a websocket without Hermes's credential is refused"
     assert result["relayed"] == "as the console: alpha/ws/agent/alpha", "the websocket carries the secret"
     assert oct(runtime.stat().st_mode)[-3:] == "700"
-    assert result["here"] == {"profile": "beta"}, "P227: the tab learns which profile it is open in"
+    assert result["here"] == {"profile": "beta", "sockets": True}, "P227: the tab learns which profile it is open in"
 
 
 
@@ -220,7 +220,8 @@ print(json.dumps({{"seen": seen, "started": started, "picker": picker}}))
     assert len(r["started"]) == 2, "one console per profile, reused when switching back"
     # The tab's profile picker (P234) still offers every agent profile, this one first: names
     # only, from the profiles set up for Emporia (gamma is not) — no other console is asked.
-    assert r["picker"] == [{"agents": ["alpha", "beta"]}, {"agents": ["beta", "alpha"]}], r["picker"]
+    assert r["picker"] == [{"agents": ["alpha", "beta"], "sockets": True},
+                           {"agents": ["beta", "alpha"], "sockets": True}], r["picker"]
     secrets = []
     for name, started in zip(("alpha", "beta"), r["started"]):
         argv, secret = started["argv"], started["secret"].strip()
@@ -324,3 +325,151 @@ def test_hermes_own_desktop_surface_lint_finds_nothing_in_the_page():
     assert out.returncode == 0, out.stderr[-2000:]
     result = json.loads(out.stdout.strip().splitlines()[-1])
     assert result == {"hits": [], "cues": []}, result
+
+
+def _plugin_module():
+    """plugin_api.py imported as Hermes imports it (it imports nothing from Emporia)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("emporia_plugin_api_under_test", PLUGIN / "plugin_api.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_a_deep_hermes_home_gets_a_short_private_console_socket(tmp_path, monkeypatch):
+    """A socket path past AF_UNIX's limit (about 107 bytes) killed the console at start and the
+    tab answered 503; a deep HERMES_HOME reached it. Past the limit, the socket moves to a short
+    0700 folder of this user's, one per profile home; a short configured path is kept."""
+    import shutil
+    import stat as st
+    import tempfile
+    m = _plugin_module()
+    deep = tmp_path / ("d" * 60) / "profiles" / "player"
+    monkeypatch.setattr(m, "_home", lambda: deep)
+    monkeypatch.setattr(m, "_config", lambda: {"runtime_dir": str(deep / "plugin-data" / "emporia" / "console")})
+    short_root = Path(tempfile.mkdtemp(prefix="x"))          # the XDG runtime folder stand-in
+    try:
+        monkeypatch.setenv("XDG_RUNTIME_DIR", str(short_root))
+        sock = m._socket()
+        assert len(os.fsencode(str(sock))) <= m.SUN_PATH_MAX
+        assert sock.name == "console.sock" and sock.parent.parent == short_root / "emporia-console"
+        root = sock.parent.parent
+        assert st.S_IMODE(root.stat().st_mode) == 0o700 and root.stat().st_uid == os.getuid()
+        # Another profile: another folder. The same profile: the same one.
+        monkeypatch.setattr(m, "_home", lambda: deep.parent / "merchant")
+        assert m._socket().parent != sock.parent
+        monkeypatch.setattr(m, "_home", lambda: deep)
+        assert m._socket() == sock
+        # A folder that is a link (or someone else's) is never used.
+        root.rmdir()
+        root.symlink_to(tmp_path)
+        monkeypatch.setattr(m.tempfile, "gettempdir", lambda: str(short_root / ("t" * 90)))
+        with pytest.raises(RuntimeError, match="short enough"):
+            m._socket()
+        root.unlink()
+        # A configured path that fits is kept as it is.
+        monkeypatch.setattr(m, "_config", lambda: {"runtime_dir": "rt"})
+        assert m._socket() == Path("rt") / "console.sock"
+    finally:
+        shutil.rmtree(short_root, ignore_errors=True)
+
+
+def test_the_tab_learns_whether_hermes_carries_its_sockets(monkeypatch):
+    """Hermes runs a profile's plugin in that profile's plugin host when it is not the profile the
+    dashboard was launched as; the host carries no websockets and Hermes answers each with a 501,
+    which uvicorn logs as an incomplete handshake. The tab is told, and does not dial."""
+    m = _plugin_module()
+    monkeypatch.delenv("HERMES_PLUGIN_HOST_PROCESS", raising=False)
+    assert m._sockets_carried() is True
+    monkeypatch.setenv("HERMES_PLUGIN_HOST_PROCESS", "1")
+    assert m._sockets_carried() is False
+
+
+def test_a_refused_socket_closes_cleanly_never_with_an_incomplete_handshake(monkeypatch):
+    """The user's terminal showed `ASGI callable returned without completing handshake`. Run the
+    plugin's socket route in uvicorn with the protocol Hermes's uvicorn picks (websockets-sansio):
+    a socket without Hermes's credential gets a 403 before accept; one with it, whose console
+    cannot start, is accepted and closed with 1011 and a reason. Neither logs that error, while
+    an HTTP denial answer (what Hermes sends for a plugin host's socket) does, so the check bites."""
+    import asyncio
+    import logging
+    import sys
+    import types
+
+    import uvicorn
+    import websockets
+    from fastapi import FastAPI, WebSocket
+    from fastapi.responses import JSONResponse
+
+    m = _plugin_module()
+    monkeypatch.setattr(m, "_config", lambda: {})                 # no settings: not set up here
+    allow = {"ok": False}
+    pkg = types.ModuleType("hermes_cli")
+    fake = types.ModuleType("hermes_cli.web_server_chat")
+    fake._ws_auth_ok = lambda socket: allow["ok"]
+    pkg.web_server_chat = fake
+    monkeypatch.setitem(sys.modules, "hermes_cli", pkg)
+    monkeypatch.setitem(sys.modules, "hermes_cli.web_server_chat", fake)
+
+    app = FastAPI()
+    app.include_router(m.router, prefix="/api/plugins/emporia")
+
+    @app.websocket("/denied")
+    async def denied(socket: WebSocket):
+        await socket.send_denial_response(JSONResponse({"detail": "no"}, status_code=501))
+
+    records: list[str] = []
+
+    class Grab(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    grab = Grab()
+
+    async def run():
+        srv = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, ws="websockets-sansio",
+                                            log_level="info", lifespan="off"))
+        logging.getLogger("uvicorn.error").addHandler(grab)     # after Config: it resets logging
+        task = asyncio.create_task(srv.serve())
+        while not srv.started:
+            await asyncio.sleep(0.02)
+        port = srv.servers[0].sockets[0].getsockname()[1]
+        base = f"ws://127.0.0.1:{port}"
+        out = {}
+        try:
+            async with websockets.connect(f"{base}/api/plugins/emporia/ws/alpha/ws/events"):
+                out["unauth"] = "accepted"
+        except websockets.InvalidStatus as e:
+            out["unauth"] = e.response.status_code
+        await asyncio.sleep(0.1)
+        out["unauth_logs"] = list(records)
+        allow["ok"] = True
+        async with websockets.connect(f"{base}/api/plugins/emporia/ws/alpha/ws/events") as s:
+            try:
+                await s.recv()
+            except websockets.ConnectionClosed as e:
+                out["auth"] = (e.rcvd.code, e.rcvd.reason)
+        await asyncio.sleep(0.1)
+        out["auth_logs"] = list(records)
+        try:
+            async with websockets.connect(f"{base}/denied"):
+                pass
+        except websockets.InvalidStatus as e:
+            out["denied"] = e.response.status_code
+        except websockets.InvalidMessage:       # some uvicorn versions garble the denial answer
+            out["denied"] = "refused"
+        await asyncio.sleep(0.1)
+        out["denied_logs"] = list(records)
+        srv.should_exit = True
+        await task
+        return out
+
+    try:
+        out = asyncio.run(run())
+    finally:
+        logging.getLogger("uvicorn.error").removeHandler(grab)
+    bad = "ASGI callable returned without completing handshake."
+    assert out["unauth"] == 403
+    assert out["auth"][0] == 1011 and "not running" in out["auth"][1], out["auth"]
+    assert bad not in out["unauth_logs"] and bad not in out["auth_logs"], out["auth_logs"]
+    assert out["denied"] in (501, "refused") and bad in out["denied_logs"], "the check sees the error when it happens"
