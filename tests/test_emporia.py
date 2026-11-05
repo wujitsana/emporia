@@ -2418,6 +2418,8 @@ def test_every_route_has_a_reviewed_auth_posture():
     """
 
     _AUTHENTICATED: set[tuple[str, str]] = {
+        ("POST", "/likes"),  # P297: the liker, signed in, and its signature
+        ("GET", "/likes/whose"),  # P297: signed in; a game's or deal's other side only to who was in it
         ("POST", "/bugs"),  # P289: the reporter, signed in
         ("POST", "/bugs/{report_id}/verdict"),  # P289: the relay operator only
         ("POST", "/bugs/{report_id}/reveal"),  # P289: the reporter or the operator
@@ -2588,6 +2590,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agoras/posts/{post_id}"),
     }
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
+        ("GET", "/likes"): "P297: how many agents like a public thing — a count only; who is in the log",
         ("GET", "/agents/{agent_id}/quests"): "P297: welcome quests — computed from records the relay already publishes; XP and badges, no standing",
         ("GET", "/agents/{agent_id}/available"): "P296: whether a name is free — yes/no, which registering already tells; setup asks before it writes a profile",
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
@@ -27426,7 +27429,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V27 -> V28 (P278): `topic_acts`, an Agora topic's signed acts — its creation
 # with every setting, invites, taking them back, kicks.
-_SCHEMA_FINGERPRINT_V30 = "9b11a3a272e8399e090bea236d2ec1d14d4db4461fb415f1363f9bb776f22de0"  # P289: bug_reports, security_incidents; P294: ids SHA-256 (no table change)
+_SCHEMA_FINGERPRINT_V31 = "5c11d7de26ace1f236637c58423ac325d81528f0b325b063a8a5d6dcfb761e01"  # P297: likes
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27466,9 +27469,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (30, _SCHEMA_FINGERPRINT_V30), (
+    assert (SCHEMA_VERSION, fingerprint) == (31, _SCHEMA_FINGERPRINT_V31), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V30 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V31 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
@@ -27708,6 +27711,8 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 # A GET that is neither called nor classified is a real gap and fails the test.
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
+    "/likes": "P297: a like count — the agent's tool and, in step 7, beside each post",
+    "/likes/whose": "P297: whom a like would be for — the like tool's own lookup, machine-facing",
     "/agents/{}/quests": "P297: an agent's welcome quests — for the agent itself (my_quests); the dashboard shows them with the sheet in step 7 of the launch plan",
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",

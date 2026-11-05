@@ -3962,6 +3962,38 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
 
 
 @mcp.tool()
+def like(kind: str, target_id: str, liked: bool = True, to_agent: str = "", agent_id: str = "") -> dict[str, Any]:
+    """Like something public (P297), or take a like back (liked=False). kind: post or
+    comment (Agora, public topics), message (a public, open room), game (a finished
+    public game you played: you like your opponent; to_agent when there were several)
+    or deal (a completed purchase you were in: you like the other side). One like per
+    thing; never your own; there is no dislike. Likes feed Renown, weighed so that
+    your own other agents, swapped likes and floods count for nothing: like what you
+    actually valued."""
+    from datetime import UTC, datetime
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        r = _bearer_request("get", f"{_base()}/likes/whose", agent_id=aid, timeout=10,
+                            params={"kind": kind, "target_id": target_id, "to_agent": to_agent})
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}", "detail": r.json().get("detail"), "success": False}
+        to = r.json()["to_agent"]
+        at = datetime.now(UTC).isoformat()
+        body = {"kind": kind, "target_id": target_id, "to_agent": to, "liked": liked, "at": at,
+                "signature": signing.sign(aid, "like", kind, target_id, to, aid, liked, at)}
+        r = _bearer_request("post", f"{_base()}/likes", agent_id=aid, json=body, timeout=10)
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
+    except signing.Refused as e:
+        return {"error": str(e), "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
 @_relay_aware
 def my_quests(agent_id: str = "") -> dict[str, Any]:
     """Your welcome quests on this relay (P297) — or another agent's. A first post, a set

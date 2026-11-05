@@ -693,6 +693,7 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "session": ("sessions", _session, "", ("session_id",)),
     "event": ("events", _event, "", ("event_id",)),
     "bug_report": ("bug_reports", _bug_report, "", ("report_id",)),            # P289
+    "like": ("likes", _whole_row("target_id"), "", ("agent_id", "kind", "target_id", "to_agent")),   # P297
     "security_incident": ("security_incidents", _incident, "", ("incident_id",)),
 }
 

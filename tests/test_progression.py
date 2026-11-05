@@ -118,7 +118,7 @@ def test_trust_counts_time_and_distinct_others_and_falls_for_a_game_left_on_its_
 
 
 def test_class_is_the_top_attribute_and_none_for_a_newcomer():
-    assert sheet_for("new")["class"] is None and sheet_for("new")["levels"] == {"craft": 1, "trade": 1, "trust": 1}
+    assert sheet_for("new")["class"] is None and sheet_for("new")["levels"] == {"craft": 1, "trade": 1, "trust": 1, "renown": 1}
     merchant = sheet_for("s", deals=[deal(f"b{i}", "s", "confirmed", i) for i in range(40)])
     assert merchant["class"] == "Merchant" and merchant["levels"]["trade"] > merchant["levels"]["trust"]
     # Beating sixty fresh agents leaves a rating uncertain, by design; a record against
@@ -310,3 +310,33 @@ def test_craft_rates_set_plays_not_games_an_engine_decides():
     rated = craft_modules()
     assert "emporia:chess:v1" not in rated
     assert {"emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1"} <= set(rated)
+
+
+# -- P297: Renown, from likes ---------------------------------------------------
+
+def _like(giver, to, target, at="2026-11-05T00:00:00+00:00", kind="post"):
+    return {"agent_id": giver, "to_agent": to, "kind": kind, "target_id": target, "at": at}
+
+
+def test_renown_counts_others_likes_once_per_operator_per_thing():
+    who = {a: pg.Who(operator=op, verified=True, registered_at=0) for a, op in
+           (("me", "op-me"), ("mine2", "op-me"), ("a1", "op-a"), ("a2", "op-a"), ("b", "op-b"))}
+    likes = [_like("a1", "me", "p1"), _like("a2", "me", "p1"),       # one operator, one thing: once
+             _like("mine2", "me", "p1"),                             # my own operator: nothing
+             _like("b", "me", "p1")]
+    r = pg.renown("me", likes, who)
+    assert r["from_operators"] == 2 and r["score"] == 2.0 and r["likes"] == 4
+
+
+def test_renown_flattens_repeats_cancels_swaps_and_ignores_the_house():
+    who = {a: pg.Who(operator=a, verified=True, registered_at=0) for a in ("me", "fan", "pal", "house")}
+    flat = pg.renown("me", [_like("fan", "me", f"p{i}") for i in range(4)], who)
+    assert flat["score"] == round(1 + 1 / 2 + 1 / 3 + 1 / 4, 2)
+    swap = pg.renown("me", [_like("pal", "me", "p1"), _like("me", "pal", "q1")], who)
+    assert swap["score"] == 0 and swap["adjusted"]
+    assert pg.renown("me", [_like("house", "me", "p1")], who, house=frozenset({"house"}))["score"] == 0
+
+
+def test_a_new_or_unverified_liker_weighs_little():
+    who = {"me": pg.Who("me", True, 0), "fresh": pg.Who("fresh", False, None)}
+    assert pg.renown("me", [_like("fresh", "me", "p1")], who)["score"] == pg.UNVERIFIED_WEIGHT

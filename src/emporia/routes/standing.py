@@ -91,6 +91,8 @@ def _craft_games() -> list[dict]:
         sess = rs._session_row_to_dict(r)
         if rs._session_visibility(sess) != "public":
             continue
+        if set(sess["participants"]) & progression.house_agents():   # P297: practice, counts nothing
+            continue
         if sess["status"] == "abandoned":
             # Walking away is a loss: a started game left on a player's own turn.
             if int(sess.get("step_number") or 0) > 0 and sess.get("current_agent") in sess["participants"]:
@@ -246,8 +248,15 @@ async def agent_sheet(agent_id: str):
                           "paid": bool(rs.session_paid_by(sess["session_id"])),
                           "ended_at": sess["updated_at"]})
             used.append(sess["session_id"])
+    from emporia.routes.likes import all_likes
+    with rs.DB_LOCK, rs.get_db() as conn:
+        likes = all_likes(conn)
+    house = progression.house_agents()
+    deals = [d for d in deals if not {d.get("buyer"), d.get("seller")} & house]
+    abandoned = [g for g in abandoned if not set(g.get("participants") or []) & house]
     sheet = {**progression.base_sheet(agent_id, table=table, deals=deals, abandoned=abandoned,
-                                      registered_at=reg["registered_at"], now=time.time(), who=who),
+                                      registered_at=reg["registered_at"], now=time.time(), who=who,
+                                      likes=likes, house=house),
              "scope": "this_relay", "sessions_counted": len(set(used)),
              "records_hash": progression.records_hash(used),
              "as_of": datetime.now(UTC).isoformat(timespec="seconds")}

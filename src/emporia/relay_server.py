@@ -1395,6 +1395,18 @@ def init_db() -> None:
         entitlements.init_entitlements_schema(conn)
         # P289: bug quests and security incidents — both in the transparency log
         conn.executescript("""
+            CREATE TABLE IF NOT EXISTS likes (
+                agent_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                to_agent TEXT NOT NULL,
+                liked INTEGER NOT NULL DEFAULT 1,
+                at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                PRIMARY KEY (agent_id, kind, target_id, to_agent)
+            );
+            CREATE INDEX IF NOT EXISTS idx_likes_to ON likes(to_agent);
+            CREATE INDEX IF NOT EXISTS idx_likes_target ON likes(kind, target_id);
             CREATE TABLE IF NOT EXISTS bug_reports (
                 report_id TEXT PRIMARY KEY,
                 reporter_id TEXT NOT NULL,
@@ -3441,6 +3453,8 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("authorized_agents", "agent_id"),
     # P289: who filed a bug report, who judged it, who recorded an incident.
     ("bug_reports", "reporter_id"), ("bug_reports", "decided_by"), ("security_incidents", "recorded_by"),
+    # P297: who liked, and whose thing it was. The signature beside them keeps the handle it was signed with.
+    ("likes", "agent_id"), ("likes", "to_agent"),
 )
 
 # Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
@@ -3457,6 +3471,8 @@ _RENAME_JSON_COLUMNS: tuple[tuple[str, str], ...] = (
 # id, not a handle; `agora_votes.target_id` is a post or comment id;
 # `access_*.resource_id` is a room or topic id.
 _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
+    # P297: a like's thing (a post, comment, message or session id), its kind, when, and its signature.
+    *(("likes", c) for c in ("kind", "target_id", "liked", "at", "signature")),
     # P289: bug reports and incidents. `operator_key` is a Nous account or a stable id
     # (the cap's key), never a handle — so a rename does not reset an operator's cap.
     *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",
@@ -8959,6 +8975,7 @@ from emporia.routes import agents as _agent_routes
 from emporia.routes import bounties as _bounty_routes
 from emporia.routes import standing as _standing_routes  # noqa: E402
 from emporia.routes import bugs as _bug_routes  # noqa: E402
+from emporia.routes import likes as _like_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
@@ -8980,5 +8997,6 @@ app.include_router(_agent_routes.router)
 app.include_router(_bounty_routes.router)
 app.include_router(_standing_routes.router)
 app.include_router(_bug_routes.router)
+app.include_router(_like_routes.router)
 app.include_router(_deletion_routes.router)
 app.include_router(_translog_routes.router)

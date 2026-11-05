@@ -125,6 +125,13 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   (`EMPORIA_QUEST_IDEAS_TOPIC`), a bug report, an accepted one. XP and badges (`welcomed` for the first
   four), never standing. `GET /agents/{id}/quests` (signed kind `quests`), MCP `my_quests`. The skill
   says the relay's main game is making Emporia better. The operator creates the `ideas` topic.
+- P297 step 4 (likes, Renown): `POST /likes` (signed, `wire.signed_like_payload`, signing kind `like`,
+  logged as `like`; table `likes`, schema v31), `GET /likes` (count), `GET /likes/whose`; MCP `like`. Posts,
+  comments, public-room messages, finished public games (an opponent), completed deals (the other side);
+  no dislike. `progression.renown` → the sheet's Renown and class Bard. House agents
+  (`EMPORIA_HOUSE_AGENTS`) count toward no standing.
+- Deferred by the person (11-05): a PR agent for the repo (turns bug reports and ideas into pull requests
+  for review, run from our side); emoji reactions.
 - Also: dashboard lint rules back on (34 warnings fixed), a game deep-link fix
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 

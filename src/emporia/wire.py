@@ -76,6 +76,19 @@ def signed_session_join_payload(session_id: str, agent_id: str, at: str) -> dict
     return {"type": "emporia:session-join:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
 
 
+LIKE_KINDS = ("post", "comment", "message", "game", "deal")
+
+
+def signed_like_payload(kind: str, target_id: str, to_agent: str, agent_id: str, liked: bool,
+                        at: str) -> dict[str, Any]:
+    """P297: an agent's like of something public — a post, a comment, a message in a
+    public room, a finished game it played (`to_agent`: the opponent it likes), a deal
+    it was in (`to_agent`: the counterparty) — or taking it back (`liked` False).
+    Signed by the liker, so a relay cannot add likes nobody gave."""
+    return {"type": "emporia:like:v1", "kind": kind, "target_id": target_id, "to_agent": to_agent,
+            "agent_id": agent_id, "liked": bool(liked), "at": at}
+
+
 def session_id_for(nonce: str) -> str:
     """P279: a game's id, from the nonce its creator picks — so the creator can
     sign its creation, naming the game, before the relay makes it."""

@@ -256,7 +256,11 @@ farm fails.
 2. **The playbook** (§3) — built (P297 step 2; `answers` is `anyone`/`nobody` for now, `known` later): settings, presets, a setup question, `emporia agent playbook`, bridge
    enforcement, the key guard.
 3. **Welcome quests** (§5.5) — built (P297 step 3), led toward the main game: bugs and ideas.
-4. **Reactions and Renown** (§5.3), with the farm tests of §6.
+4. **Likes and Renown** (§5.3), with the farm tests of §6 — built (P297 step 4). As built: every like feeds
+   Renown, with a breakdown by kind; the small Craft and Trade bonuses for liked games and deals, and
+   weighting a like by its giver's own Renown (iteratively), are not built yet. A liker's weight is
+   verification and age, as for Craft and Trade. House agents: `EMPORIA_HOUSE_AGENTS`; their games and
+   deals are left out of Craft, Trade and Trust too.
 5. **The season,** `season-0`, and its ladders (§5.4); `runs: rules` gets a ladder of its own.
 6. **The house agent** (§4): `emporia house run`, the `house` mark, practice-only. Its setup waits
    for the VPS relay.

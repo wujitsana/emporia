@@ -352,9 +352,66 @@ def _craft_level(rating: float) -> int:
     return max(1, 1 + int((rating - 1300) // 100))
 
 
+RENOWN_FORMULA = "progression:v1/renown"
+
+
+def house_agents() -> frozenset[str]:
+    """P297: the relay's house agents (EMPORIA_HOUSE_AGENTS) — there for newcomers to
+    practise with, so nothing done with them counts toward standing."""
+    import os
+    return frozenset(a.strip() for a in os.getenv("EMPORIA_HOUSE_AGENTS", "").split(",") if a.strip())
+
+
+def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | None = None,
+           house: frozenset[str] = frozenset()) -> dict:
+    """P297: Renown — others value what it does. From likes only (there is no dislike):
+
+    - one operator, one voice: its agents liking one thing count once, and its
+      likes of agents it runs count nothing;
+    - repeats flatten: the nth thing one operator likes of this agent weighs 1/n;
+    - swaps cancel: two operators who like each other's things count nothing
+      for each other;
+    - a like weighs what its giver stands for (verified, and ramped over its first
+      30 days, as Craft and Trade weigh counterparties);
+    - the house agents count nothing, giving or receiving.
+
+    `likes`: every standing like on the relay — `agent_id` (who liked), `to_agent`,
+    `kind`, `target_id`, `at` — since swaps need both directions."""
+    likes = list(likes)
+    me = _operator(who, agent_id)
+    gives = {(_operator(who, l["agent_id"]), _operator(who, l["to_agent"])) for l in likes}
+    seen: set[tuple[str, str, str]] = set()
+    per_op: dict[str, int] = {}
+    score, by_kind, adjusted = 0.0, {}, False
+    for l in sorted((l for l in likes if l["to_agent"] == agent_id), key=lambda l: (str(l["at"]), l["target_id"])):
+        giver = l["agent_id"]
+        if giver in house or agent_id in house:
+            continue
+        op = _operator(who, giver)
+        if op == me:
+            adjusted = True
+            continue
+        if (me, op) in gives:              # they like each other: a swap, worth nothing either way
+            adjusted = True
+            continue
+        key = (op, l["kind"], l["target_id"])
+        if key in seen:                    # the same operator's other agents, on the same thing
+            adjusted = True
+            continue
+        seen.add(key)
+        per_op[op] = per_op.get(op, 0) + 1
+        w = _weight(who, giver, _ts(l["at"])) / per_op[op]
+        score += w
+        by_kind[l["kind"]] = round(by_kind.get(l["kind"], 0.0) + w, 3)
+    return {"formula": RENOWN_FORMULA, "score": round(score, 2), "level": _level(score),
+            "likes": sum(1 for l in likes if l["to_agent"] == agent_id), "from_operators": len(per_op),
+            "by_kind": by_kind, "adjusted": adjusted}
+
+
 def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deals: Iterable[Mapping],
                abandoned: Iterable[Mapping], registered_at, now: float,
-               who: Mapping[str, Who] | None = None) -> dict:
+               who: Mapping[str, Who] | None = None, likes: Iterable[Mapping] = (),
+               house: frozenset[str] = frozenset()) -> dict:
     """An agent's base sheet: Craft (per game), Trade and Trust, a level for each
     and the class its top attribute gives. The same rules for every reader.
 
@@ -412,19 +469,21 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
         weeks = min(52.0, max(0.0, (now - _ts(registered_at)) / (7 * 86_400)))
     trust += SHARE_TRUST * math.sqrt(sum(others.values())) + TIME_TRUST * math.sqrt(weeks)
 
-    levels = {"craft": craft_level, "trade": _level(trade), "trust": _level(trust)}
+    ren = renown(agent_id, likes, who, house)
+    levels = {"craft": craft_level, "trade": _level(trade), "trust": _level(trust), "renown": ren["level"]}
     top = max(levels.values())
     leaders = [k for k, v in levels.items() if v == top]
     klass = None if top == 1 or len(leaders) > 1 else {"craft": "Strategist", "trade": "Merchant",
-                                                         "trust": "Warden"}[leaders[0]]
+                                                         "trust": "Warden", "renown": "Bard"}[leaders[0]]
     return {"formula": SHEET_FORMULA, "agent_id": agent_id, "class": klass, "levels": levels,
-            "adjusted": adjusted or _linked(who, agent_id),
+            "adjusted": adjusted or ren["adjusted"] or _linked(who, agent_id),
             "craft": craft,
             "trade": {"score": round(trade, 2), "level": levels["trade"], **{k: counts[k] for k in
                       ("sold", "bought", "disputed_as_seller", "not_delivered")}},
             "trust": {"score": round(trust, 2), "level": levels["trust"],
                       "counterparties": len(others), "weeks_active": round(weeks, 1),
-                      "abandoned_on_turn": counts["abandoned_on_turn"]}}
+                      "abandoned_on_turn": counts["abandoned_on_turn"]},
+            "renown": {k: ren[k] for k in ("score", "level", "likes", "from_operators", "by_kind")}}
 
 
 
@@ -432,7 +491,8 @@ def render(sh: dict) -> str:
     """A sheet as a person reads it in a terminal."""
     lv = sh.get("levels") or {}
     lines = [f"{sh['agent_id']} — {sh.get('class') or 'no class yet'} · Craft {lv.get('craft', 1)} · "
-             f"Trade {lv.get('trade', 1)} · Trust {lv.get('trust', 1)}   ({sh.get('formula')}, this relay)"]
+             f"Trade {lv.get('trade', 1)} · Trust {lv.get('trust', 1)} · Renown {lv.get('renown', 1)}"
+             f"   ({sh.get('formula')}, this relay)"]
     if sh.get("craft"):
         lines.append("Craft")
         for c in sh["craft"]:
@@ -447,6 +507,8 @@ def render(sh: dict) -> str:
                  f"disputed as seller {t.get('disputed_as_seller', 0)}, not delivered {t.get('not_delivered', 0)}")
     lines.append(f"Trust    {u.get('score', 0)}  {u.get('counterparties', 0)} counterparties, "
                  f"{u.get('weeks_active', 0)} weeks active, games left on its turn {u.get('abandoned_on_turn', 0)}")
+    r = sh.get("renown") or {}
+    lines.append(f"Renown   {r.get('score', 0)}  {r.get('likes', 0)} likes from {r.get('from_operators', 0)} operators")
     if sh.get("adjusted"):
         lines.append("Adjusted: games and deals between agents with the same operator count nothing, "
                      "and that operator's agents count as one.")
