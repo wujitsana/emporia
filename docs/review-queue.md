@@ -55,6 +55,18 @@ clean, and the screenshots were checked. You chose to look at it yourself before
   - an address for every detail view.
 - **To decide:** merge `retromod` then `retromod-ux` (the chat branch rebases onto it).
 
+**Experimental "animatic" style (branch `style-experimental`, on `retromod-ux`, reviewed).** The animatic's informational cards as a switchable style: pixel headings that unscramble, a typed line with a cursor, corner brackets, status lines, and filled label chips. Every text passes WCAG AA.
+- **How to switch:** the `s` key, Settings › Look, or `?style=animatic`. The current look stays the default.
+- **To pick:** the "promote to default?" list (15 items, §6 of `docs/ui-style-experimental.md`). Several items are readability fixes the default needs anyway:
+  - secondary text at 1.3–2.4:1 contrast;
+  - accent colour used as text on white.
+
+**Hermes Desktop half (branch `desktop-plugin`, in progress).** Started 11-05: the Hermes Marketplace lives in Desktop, and judges may install there.
+- **What it is:** a native `desktop/plugin.js` in the same package, plus one build for both the web tab and the Desktop page, and a staleness test. No react-dom.
+- **Testing:** in Hermes's browser Webapp. A real Desktop check is still needed.
+
+**Video intro and outro with the Nous logo (branch `demo-video-3`, in progress).** Our colours on the frame only. The official Nous mark and girl artwork stay unaltered, used under their published terms, with a truthful credit ("built for the … hackathon").
+
 **The demo video (branch `demo-video-2`).** Reviewed: the animatic is 81 s, square, on the beat
 grid, green on white, with the kaleidoscope run and the quests ending. To decide:
 1. A first AI test: one keyframe plus one Kling clip, about $0.50 through the Nous gateway. After
@@ -93,7 +105,18 @@ dashboard. If chat inside the dashboard lands (branch `dashboard-chat`), film th
 the tab itself, in our style, alongside the Hermes chat shots R1–R6. The shot list
 (`docs/demo/shots.json` on `demo-video-2`) gets updated and re-rendered when the UI work merges.
 
-**Chat with the agent inside the dashboard (branch `dashboard-chat`, in progress).** The
+**Chat with the agent inside the dashboard (branch `dashboard-chat`, built and reviewed).** It works through Hermes's own chat API, with no second agent loop, in our style. Tested end to end against a throwaway Hermes with a fake model; 288 dashboard tests pass.
+- **Built:**
+  - streaming replies, tool cards, approval and clarify cards;
+  - 130 slash commands with typeahead, terminal-only ones labelled;
+  - a session switcher (this profile only);
+  - "ask agent" prefill on games, deals and rooms;
+  - capture mode.
+- **Tab-only:** the standalone console has no safe route to Hermes chat.
+- **To decide:** approvals from the tab: (a) as built, allow once or deny for Emporia key, wallet, limit and role changes, never "always"; (b) chat without approvals; (c) no chat.
+- **Also yours:** a real-model test on a test profile (Nous subscription).
+- **Remaining:** about 1.5–2 days, including reconnect replay.
+- **Previously noted:** The
 dashboard would stay unable to sign or write to the relay itself. The person talks to their own
 agent, which acts under its own guards (playbook, approvals, key guard, signer limits). That
 reframes "visibility-only", so it is your decision. The proposal is in
@@ -206,6 +229,24 @@ provider logins. The repo has no remote, so nothing has left the machine.
 - The old 0.3.0 Emporia tab is removed from the root home (your yes, 11-05).
 
 ### In progress
+
+- **Merged on 11-05 (the merge agent's verification report is pending):**
+  - `security-followups` (7e08ccb):
+    - visited-relay sender identity;
+    - the signed-stake playbook check;
+    - SQL `/relay/activity`;
+    - like times;
+    - console CSP;
+    - the hash-locked pip fallback.
+  - `mcp-review` (d8253d5):
+    - a path-traversal guard on tool ids;
+    - sign-in signing limited to home and visited relays;
+    - bounded chain walks;
+    - the `list_dm_threads` fix;
+    - agent-facing descriptions;
+    - retry-safe commit/reveal;
+    - paging.
+  - Twelve MCP proposals are in `docs/proposals/mcp-review.md`, among them role-scoped tool lists, tool merges and a `whats_next` tool.
 
 - **Scripted end-to-end check, done:** `scripts/e2e.py` (about 6–10 min, no model calls). It is the check before every push; see docs/manual-testing.md. Along with it came:
   - `hermes emporia <any command>` pass-through;
