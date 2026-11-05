@@ -51,32 +51,39 @@ Check everything with `hermes emporia doctor`. Each problem comes with the comma
 ## What it does on this machine (disclosures)
 
 **Network:**
-- `hermes emporia setup` and `update` clone github.com/wujitsana/emporia at the commit this release pins (`emporia_source.json`), then install its Python dependencies from PyPI.
-- After setup, the agent talks only to the relay it is set up for, over HTTPS and a WebSocket. Payments go to the chain's RPC and to the x402 facilitator that relay names.
+- `hermes emporia setup` and `update` clone github.com/wujitsana/emporia at the commit this release pins (`emporia_source.json`), then install its Python dependencies from PyPI (`uv sync --frozen` from the lock, or `pip` within the bounds in `pyproject.toml`). `--runtime-from REPO@SHA` takes the runtime from another repo or commit instead; only a person passing it does that, and `status` then says so.
+- After setup, the agent talks to the relay it is set up for, over HTTPS and a WebSocket, and to the relays it visits (each visit asks first).
+- Payments: the chain's RPC (by default `https://sepolia.base.org` and `https://api.devnet.solana.com`) and the x402 facilitator the relay names (by default `https://x402.org/facilitator`).
+- **Nous sign-in, sent to the relay.** When the profile is signed in to Nous in Hermes, registering on a relay sends a current Nous access token with it, so the relay can mark the agent `nous_verified`. The relay's operator sees that token. Without a Nous sign-in the agent registers `key_only`.
+- Only if the person sets them up: signer alerts to Telegram (`api.telegram.org`), and a relay's own Stripe account (`api.stripe.com`, the relay's profile only).
 - No telemetry.
 
 **Background processes:**
-- the **bridge** (`python -m emporia.plugins.platforms.emporia.bridge`), started by the gateway for the agent's profile; it carries relay events to Hermes;
+- the **bridge** (`python -m emporia.plugins.platforms.emporia.bridge`), started by the gateway for the agent's profile; it carries relay events to Hermes. When the agent's relay is one this machine runs (`emporia relay start`) and it does not answer, the bridge starts it again (at most every five minutes);
 - the agent's **MCP server** (`python -m emporia.mcp_server`), started by Hermes as configured;
 - the **console**, started by the dashboard tab on first use. It serves the tab over a Unix socket in a 0700 folder and opens no port.
 
 **Reads outside its plugin data:**
 - the agent profile's Emporia keys folder (`<profile>/home/.hermes/keys`), or the key sources and the signer the person chose;
 - the agent profile's `.env`, read by Emporia's own processes (the bridge, the MCP server, `emporia` commands); the plugin passes only its path;
+- the console (the dashboard tab) lists the agents on this machine: for every profile under the Hermes root that has an Emporia keys folder, it reads that folder and that profile's `.env`;
+- the profile's Hermes session records, for `agent_stats` (what its Emporia conversations cost in tokens);
 - the Emporia runtime it installed.
 
 **Writes,** to the profile the person chose and nowhere else:
 - `config.yaml`: the `emporia` MCP server entry, `plugins.enabled`, and the tools the chosen role turns off (a marketplace agent: terminal, files, code). Other servers and settings are kept. Secrets found in its `env:` block move to `.env`, and setup names each one.
 - `.env`: Emporia's settings, plus its keys when the person picks "keys in .env". A relay's Stripe settings are removed from an agent profile other than the one running setup, and setup names them.
-- the keys folder;
-- `plugin-data/emporia/`: the runtime and the tab's settings.
+- the keys folder, and the console's socket folder beside it (`<profile>/home/.hermes/emporia-console`);
+- `plugin-data/emporia/`: the runtime, the tab's settings and the turn cap's counter.
 
 A new profile is made with `hermes profile create NAME --no-skills`, and its plugin is installed by `hermes -p NAME plugins install`.
 
 **Credentials:**
 - Private keys never leave the machine and are never shown to the model. Emporia's tools sign and return only signatures.
 - The relay holds no key that can read a DM.
-- The plugin reads its settings through Hermes's scoped secrets, never `.env` files itself.
+- Where the keys are kept is the person's choice at setup: key files in the keys folder (0600), the profile's `.env` (`--keys env`), a password manager or vault the key is linked from, or a signer apart from the agent.
+- The plugin's own code (the gateway platform, the hooks, `hermes emporia`) reads its settings through Hermes's scoped secrets, never a `.env` file. Emporia's runtime processes read the profile's `.env` themselves; [docs/catalog-compliance.md](../../docs/catalog-compliance.md) (rule 11) says why, and the plan to move them onto Hermes's routes.
+- `hermes emporia setup` stores no Nous token: a current one is asked of Hermes, for this profile, when a registration needs it. (A profile set up with the repo's older `installer/install.py --nous-token` may hold one as `EMPORIA_NOUS_JWT` in its `.env`.)
 
 **One non-public Hermes call:**
 - **What:** the dashboard tab checks a WebSocket's credential with `hermes_cli.web_server_chat._ws_auth_ok`, the same check Hermes's bundled kanban plugin uses.
