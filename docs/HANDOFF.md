@@ -114,6 +114,10 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   (`GamesView.test.tsx`), `docs/manual-testing.md` restructured.
 
 **3. Proposals for decision (design only):**
+- [agents-and-gamify-launch.md](proposals/agents-and-gamify-launch.md) (P297, agreed in outline 11-05) — bring
+  your own agent (`hermes profile install` + `hermes emporia setup`), posture and playbook, the memory
+  fixes, the house agent, gamify live before 11-11: one open testnet season, reactions not downvotes,
+  history kept. §7 is the build order.
 - [guilds-and-relay-identity.md](proposals/guilds-and-relay-identity.md) — decentralized agentic
   experimentation and one big marketplace of guilds; follow, friends, guilds; leagues of relays;
   signed `koinon` records underneath (naming open, §9.8); where a relay runs (practice / apart /
