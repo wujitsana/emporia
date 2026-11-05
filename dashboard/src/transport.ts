@@ -161,8 +161,41 @@ export async function relaySocket(path: string, params = new URLSearchParams()):
   const sdk = hermesSdk();
   if (sdk && sdk.sockets === false) return new QuietSocket() as unknown as WebSocket;
   if (sdk) {
-    return new WebSocket(await sdk.buildWsUrl(`${PLUGIN_BASE}/ws/${viewer}${path}`,
+    const ws = new WebSocket(await sdk.buildWsUrl(`${PLUGIN_BASE}/ws/${viewer}${path}`,
       Object.fromEntries(params)));
+    watchRefusals(ws, sdk);
+    return ws;
   }
   return new WebSocket(`${wsOrigin()}/ws/${viewer}${path}${q ? `?${q}` : ""}`);
+}
+
+/** Refused before opening this many times in a row, with none ever open: stop dialling. */
+export const REFUSALS_BEFORE_QUIET = 3;
+let refusals = 0;
+let everOpen = false;
+
+/**
+ * A safety net for a plugin that does not say whether its sockets are carried (one from before
+ * `sockets`, or a Hermes that refuses them for another reason): every refused dial is a line in
+ * the person's terminal, so after a few refusals and no socket ever open, the tab stops dialling
+ * and polls, as it does when told.
+ */
+function watchRefusals(ws: WebSocket, sdk: HermesSdk): void {
+  let opened = false;
+  ws.addEventListener?.("open", () => {
+    opened = true;
+    everOpen = true;
+    refusals = 0;
+  });
+  ws.addEventListener?.("close", () => {
+    if (opened || everOpen) return;
+    refusals += 1;
+    if (refusals >= REFUSALS_BEFORE_QUIET) sdk.sockets = false;
+  });
+}
+
+/** Tests only. */
+export function _resetSocketRefusals(): void {
+  refusals = 0;
+  everOpen = false;
 }

@@ -26,6 +26,50 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** A WebSocket stand-in whose open and close the test fires. */
+class FakeWs {
+  static made: FakeWs[] = [];
+  listeners: Record<string, (() => void)[]> = {};
+  url: string;
+  constructor(url: string) {
+    this.url = url;
+    FakeWs.made.push(this);
+  }
+  addEventListener(type: string, fn: () => void) {
+    (this.listeners[type] ??= []).push(fn);
+  }
+  fire(type: string) {
+    (this.listeners[type] ?? []).forEach((fn) => fn());
+  }
+}
+
+describe("a plugin that does not say (older, or refusing for another reason)", () => {
+  it("stops dialling after a few refusals with none ever open", async () => {
+    FakeWs.made = [];
+    vi.stubGlobal("WebSocket", FakeWs);
+    const t = await loadWith({ authedFetch: vi.fn(), buildWsUrl: async () => "ws://x/" });
+    t._resetSocketRefusals();
+    for (let i = 0; i < t.REFUSALS_BEFORE_QUIET; i++) {
+      const s = (await t.relaySocket("/ws/events")) as unknown as FakeWs;
+      s.fire("close");
+    }
+    expect(await t.relaySocket("/ws/events")).toBeInstanceOf(t.QuietSocket);
+    expect(FakeWs.made).toHaveLength(t.REFUSALS_BEFORE_QUIET);
+  });
+
+  it("keeps dialling once a socket has opened (a dropped one is not a refusal)", async () => {
+    FakeWs.made = [];
+    vi.stubGlobal("WebSocket", FakeWs);
+    const t = await loadWith({ authedFetch: vi.fn(), buildWsUrl: async () => "ws://x/" });
+    t._resetSocketRefusals();
+    const first = (await t.relaySocket("/ws/events")) as unknown as FakeWs;
+    first.fire("open");
+    first.fire("close");
+    for (let i = 0; i < t.REFUSALS_BEFORE_QUIET + 1; i++) ((await t.relaySocket("/ws/events")) as unknown as FakeWs).fire("close");
+    expect(await t.relaySocket("/ws/events")).toBeInstanceOf(FakeWs);
+  });
+});
+
 describe("relay sockets in the Hermes tab", () => {
   it("dials none when the plugin host carries no sockets, and the quiet socket never retries", async () => {
     const buildWsUrl = vi.fn(async () => "ws://x/");

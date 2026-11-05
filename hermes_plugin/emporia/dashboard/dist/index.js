@@ -11980,10 +11980,33 @@ var EmporiaHermesPlugin = (function(exports) {
 		}
 		const sdk = hermesSdk();
 		if (sdk && sdk.sockets === false) return new QuietSocket();
-		if (sdk) return new WebSocket(await sdk.buildWsUrl(`${PLUGIN_BASE}/ws/${viewer}${path}`, Object.fromEntries(params)));
+		if (sdk) {
+			const ws = new WebSocket(await sdk.buildWsUrl(`${PLUGIN_BASE}/ws/${viewer}${path}`, Object.fromEntries(params)));
+			watchRefusals(ws, sdk);
+			return ws;
+		}
 		return new WebSocket(`${wsOrigin()}/ws/${viewer}${path}${q ? `?${q}` : ""}`);
 	}
-	var MODE, IN_HERMES, desktopProfile, VIA_CONSOLE, QuietSocket;
+	/**
+	* A safety net for a plugin that does not say whether its sockets are carried (one from before
+	* `sockets`, or a Hermes that refuses them for another reason): every refused dial is a line in
+	* the person's terminal, so after a few refusals and no socket ever open, the tab stops dialling
+	* and polls, as it does when told.
+	*/
+	function watchRefusals(ws, sdk) {
+		let opened = false;
+		ws.addEventListener?.("open", () => {
+			opened = true;
+			everOpen = true;
+			refusals = 0;
+		});
+		ws.addEventListener?.("close", () => {
+			if (opened || everOpen) return;
+			refusals += 1;
+			if (refusals >= 3) sdk.sockets = false;
+		});
+	}
+	var MODE, IN_HERMES, desktopProfile, VIA_CONSOLE, QuietSocket, refusals, everOpen;
 	var init_transport = __esmMin((() => {
 		init_relayEnv();
 		init_bridge();
@@ -12006,6 +12029,8 @@ var EmporiaHermesPlugin = (function(exports) {
 				this.readyState = QuietSocket.CLOSED;
 			}
 		};
+		refusals = 0;
+		everOpen = false;
 	}));
 	// src/api.ts
 	/** The dashboard's JWT, if any — for callers that need it outside a fetch() header
