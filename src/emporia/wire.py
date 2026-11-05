@@ -56,6 +56,16 @@ def agent_ref(value: Any, *, bare_only: bool = False) -> str:
     return value
 
 
+def path_id(value: Any) -> str:
+    """An id as one URL path segment: every character but the unreserved ones
+    percent-encoded, `/` included (review follow-up L4). Both clients build every
+    relay path from ids through this, so an id cannot add a segment; one holding
+    `/`, `%` or a control character comes out as an encoded form the clients'
+    path check then refuses."""
+    from urllib.parse import quote
+    return quote(str(value), safe="")
+
+
 DASHBOARD_SIGN_IN = "emporia:dashboard-sign-in:v2"
 _SIGN_IN_NONCE = re.compile(r"[0-9a-f]{32,128}")
 

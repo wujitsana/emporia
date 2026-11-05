@@ -24,6 +24,7 @@ from websockets.exceptions import ConnectionClosedError, InvalidHandshake
 
 from emporia import signing
 from emporia.wire import DEFAULT_MSG_TYPE, ERR_DUPLICATE_NONCE, error_code
+from emporia.wire import path_id as _seg  # L4: every id in a relay path is one segment
 
 
 def _ws_url(http_url: str, path: str) -> str:
@@ -334,7 +335,7 @@ class EmporiaAgent:
         re-linked.
         """
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/agents/{self.agent_id}/stripe-onboarding",
+            "post", f"{self.relay_url}/agents/{_seg(self.agent_id)}/stripe-onboarding",
             json={"email": email, "country": country},
         )
         resp.raise_for_status()
@@ -455,7 +456,7 @@ class EmporiaAgent:
         from emporia.identity import get_public_key_hex
         from emporia.wire import stable_id_for
         try:
-            r = await self._bearer_request("get", f"{self.relay_url}/agents/{self.agent_id}")
+            r = await self._bearer_request("get", f"{self.relay_url}/agents/{_seg(self.agent_id)}")
             if r.status_code == 200 and r.json().get("stable_id"):
                 return r.json()["stable_id"]
         except Exception:  # noqa: BLE001 - no answer: sign as the key it holds
@@ -467,13 +468,13 @@ class EmporiaAgent:
         in the lobby. False when not offered (private, or refused)."""
         try:
             origin = (await self._client().get(f"{self.relay_url}/health")).json().get("relay_url")
-            s = (await self._bearer_request("get", f"{self.relay_url}/sessions/{session_id}")).json()
+            s = (await self._bearer_request("get", f"{self.relay_url}/sessions/{_seg(session_id)}")).json()
             if not origin or s.get("status") != "waiting":
                 return False
             signature = self._sign(
                 "open-session", await self._signing_identity(), origin, session_id, s["module_type"],
                 s.get("config") or {}, s.get("payment_rules") or {})
-            r = await self._bearer_request("post", f"{self.relay_url}/sessions/{session_id}/offer",
+            r = await self._bearer_request("post", f"{self.relay_url}/sessions/{_seg(session_id)}/offer",
                                            json={"signature": signature})
             return r.status_code == 200
         except Exception:  # noqa: BLE001
@@ -494,7 +495,7 @@ class EmporiaAgent:
 
         Without either, raises PaymentRequiredError carrying the offer(s).
         """
-        url = f"{self.relay_url}/sessions/{session_id}/fund"
+        url = f"{self.relay_url}/sessions/{_seg(session_id)}/fund"
         resp = await self._bearer_request("post", url, payment_token=mpp_spt)
         if pay_with_x402 and resp.status_code == 402:
             offer = (_payment_detail(resp) or {}).get("escrow")
@@ -508,7 +509,7 @@ class EmporiaAgent:
             from emporia.payments import _x402_amount_atomic
 
             session = (await self._bearer_request(
-                "get", f"{self.relay_url}/sessions/{session_id}")).json()
+                "get", f"{self.relay_url}/sessions/{_seg(session_id)}")).json()
             payees, signed_stake = await self._game_payees(session_id)   # P275
             # P280: the stake its creator signed, where it set one — not the relay's word for it.
             stake = signed_stake or (session.get("payment_rules") or {}).get("stake_per_participant", "0")
@@ -627,7 +628,7 @@ class EmporiaAgent:
 
         at = datetime.now(UTC).isoformat()
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/sessions/{session_id}/leave",
+            "post", f"{self.relay_url}/sessions/{_seg(session_id)}/leave",
             json={"at": at, "signature": self._sign("session-leave", session_id, self.agent_id, at)},
         )
         resp.raise_for_status()
@@ -666,11 +667,11 @@ class EmporiaAgent:
         }
         # P95: the payment and the payer's identity travel together.
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/sessions/{session_id}/join", json=body, payment_token=mpp_spt,
+            "post", f"{self.relay_url}/sessions/{_seg(session_id)}/join", json=body, payment_token=mpp_spt,
         )
         if pay_with_x402:
             resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
-                "post", f"{self.relay_url}/sessions/{session_id}/join", json=body,
+                "post", f"{self.relay_url}/sessions/{_seg(session_id)}/join", json=body,
                 headers={"PAYMENT-SIGNATURE": header},
             ))
         _raise_for_status_or_payment(resp)
@@ -698,14 +699,14 @@ class EmporiaAgent:
             self.agent_id, action_type, payload, rationale, signature,
         )
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/sessions/{session_id}/action",
+            "post", f"{self.relay_url}/sessions/{_seg(session_id)}/action",
             json=envelope,
         )
         resp.raise_for_status()
         return resp.json()
 
     async def get_session(self, session_id: str) -> dict[str, Any]:
-        resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{session_id}")
+        resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{_seg(session_id)}")
         resp.raise_for_status()
         return resp.json()
 
@@ -727,7 +728,7 @@ class EmporiaAgent:
             self.agent_id, effective_rationale, signature,
         )
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/sessions/{session_id}/confirm-delivery", json=body,
+            "post", f"{self.relay_url}/sessions/{_seg(session_id)}/confirm-delivery", json=body,
         )
         resp.raise_for_status()
         return resp.json()
@@ -754,7 +755,7 @@ class EmporiaAgent:
             self.agent_id, reason, effective_rationale, signature,
         )
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/sessions/{session_id}/dispute-delivery", json=body,
+            "post", f"{self.relay_url}/sessions/{_seg(session_id)}/dispute-delivery", json=body,
         )
         resp.raise_for_status()
         return resp.json()
@@ -870,14 +871,14 @@ class EmporiaAgent:
 
     async def get_dm_thread(self, thread_id: str) -> dict[str, Any]:
         """Thread metadata — participants and whether it is encrypted."""
-        resp = await self._bearer_request("get", f"{self.relay_url}/dm/{thread_id}")
+        resp = await self._bearer_request("get", f"{self.relay_url}/dm/{_seg(thread_id)}")
         resp.raise_for_status()
         return resp.json()
 
     async def enable_dm_encryption(self, thread_id: str) -> dict[str, Any]:
         """Turn on end-to-end encryption for an existing thread. One-way: either
         participant may enable it, nothing can turn it back off."""
-        resp = await self._bearer_request("post", f"{self.relay_url}/dm/{thread_id}/encrypt")
+        resp = await self._bearer_request("post", f"{self.relay_url}/dm/{_seg(thread_id)}/encrypt")
         resp.raise_for_status()
         return resp.json()
 
@@ -920,7 +921,7 @@ class EmporiaAgent:
         from emporia.identity import trust_peer_encryption_key
 
         resp = await self._bearer_request(
-            "get", f"{self.relay_url}/agents/{agent_id}/encryption-key",
+            "get", f"{self.relay_url}/agents/{_seg(agent_id)}/encryption-key",
         )
         resp.raise_for_status()
         body = resp.json()
@@ -1002,7 +1003,7 @@ class EmporiaAgent:
             ))
         signature = self._sign("dm", thread_id, content, msg_type, nonce)
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/dm/{thread_id}/send",
+            "post", f"{self.relay_url}/dm/{_seg(thread_id)}/send",
             json=dm_thread_message_envelope(
                 content, msg_type, signature, nonce=nonce,
             ),
@@ -1022,7 +1023,7 @@ class EmporiaAgent:
         from emporia.identity import encryption_private_keys, verify_dm_message
 
         resp = await self._bearer_request(
-            "get", f"{self.relay_url}/dm/{thread_id}/messages",
+            "get", f"{self.relay_url}/dm/{_seg(thread_id)}/messages",
             params={"agent_id": self.agent_id, "limit": limit},
         )
         resp.raise_for_status()
@@ -1146,7 +1147,7 @@ class EmporiaAgent:
         unconditionally, since an anonymous read of this endpoint was one half of a
         working payment bypass for paid Agora topics."""
         resp = await self._bearer_request(
-            "get", f"{self.relay_url}/payments/settlements/{session_id}"
+            "get", f"{self.relay_url}/payments/settlements/{_seg(session_id)}"
         )
         if resp.status_code in (403, 404):
             return None
@@ -1189,12 +1190,12 @@ class EmporiaAgent:
                 "signature": self._sign("room-join", room_id, agent_id, at)}
         # P95: the payment and the payer's identity travel together.
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/rooms/{room_id}/join", json=body, payment_token=mpp_spt,
+            "post", f"{self.relay_url}/rooms/{_seg(room_id)}/join", json=body, payment_token=mpp_spt,
         )
         if pay_with_x402 and resp.status_code == 402:
             payees, fee = await self._room_terms(room_id)   # P275: only its creator, at most its signed fee
             resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
-                "post", f"{self.relay_url}/rooms/{room_id}/join", json=body,
+                "post", f"{self.relay_url}/rooms/{_seg(room_id)}/join", json=body,
                 headers={"PAYMENT-SIGNATURE": header},
             ), payees=payees, max_cents=fee)
         _raise_for_status_or_payment(resp)
@@ -1209,7 +1210,7 @@ class EmporiaAgent:
         at = datetime.now(UTC).isoformat()   # P262: signed, so payers can check it is this agent's
         signature = self._sign("payout-wallet", await self._signing_identity(), network_family, address, at)
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/agents/{self.agent_id}/x402-wallet",
+            "post", f"{self.relay_url}/agents/{_seg(self.agent_id)}/x402-wallet",
             json={"network_family": network_family, "address": address, "at": at, "signature": signature},
         )
         resp.raise_for_status()
@@ -1221,7 +1222,7 @@ class EmporiaAgent:
         wallet; this signs it with `x402_private_key` and retries once. Paying
         late still clears a default. Pass pay_with_x402=False to get the
         PaymentRequiredError (and its challenge) without paying."""
-        url = f"{self.relay_url}/bounties/{listing_id}/settle-promise"
+        url = f"{self.relay_url}/bounties/{_seg(listing_id)}/settle-promise"
         resp = await self._bearer_request("post", url)
         if pay_with_x402:
             resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
@@ -1244,7 +1245,7 @@ class EmporiaAgent:
     async def get_room(self, room_id: str) -> dict[str, Any]:
         """One room's metadata — including `encrypted`, which `send_room_message()`
         reads before deciding whether to seal."""
-        resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{room_id}")
+        resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{_seg(room_id)}")
         resp.raise_for_status()
         return resp.json()
 
@@ -1252,7 +1253,7 @@ class EmporiaAgent:
         """P275: who a room's fee may pay and the fee its creator signed
         (`payee.room_terms`, which the MCP tools call too)."""
         from emporia import payee
-        resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{room_id}")
+        resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{_seg(room_id)}")
         room = resp.json() if resp.status_code == 200 else None
         changed: list[str] = []
         key = await self._sender_public_key(str((room or {}).get("creator_id") or ""), changed) if room else ""
@@ -1263,7 +1264,7 @@ class EmporiaAgent:
         P280: and the stake its creator signed, if it set one (`identity.game_terms`)."""
         from emporia import payee
         from emporia.identity import game_terms
-        resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{session_id}/encryption-keys")
+        resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{_seg(session_id)}/encryption-keys")
         try:
             others, stake = game_terms(session_id, resp.json(), self.agent_id, self.profile_id,
                                        self.relay_url) if resp.status_code == 200 else (set(), None)
@@ -1282,7 +1283,7 @@ class EmporiaAgent:
         from emporia.identity import room_recipients
 
         resp = await self._bearer_request(
-            "get", f"{self.relay_url}/rooms/{room_id}/encryption-keys",
+            "get", f"{self.relay_url}/rooms/{_seg(room_id)}/encryption-keys",
         )
         resp.raise_for_status()
         room = await self.get_room(room_id)
@@ -1297,7 +1298,7 @@ class EmporiaAgent:
         from emporia import crypto_box
         from emporia.identity import session_recipients
         sid = session["session_id"]
-        resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{sid}/encryption-keys")
+        resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{_seg(sid)}/encryption-keys")
         resp.raise_for_status()
         # P274: each player checked against its own signed join, as the MCP tools do
         recipients = session_recipients(sid, resp.json(), self.agent_id, self.profile_id, self.relay_url)
@@ -1328,7 +1329,7 @@ class EmporiaAgent:
         from emporia.identity import encryption_private_keys, verify_room_message
 
         resp = await self._bearer_request(
-            "get", f"{self.relay_url}/rooms/{room_id}/messages", params={"limit": limit},
+            "get", f"{self.relay_url}/rooms/{_seg(room_id)}/messages", params={"limit": limit},
         )
         resp.raise_for_status()
         messages = resp.json().get("messages", [])
@@ -1385,7 +1386,7 @@ class EmporiaAgent:
         """
         from emporia import identity, rooms
 
-        resp = await self._bearer_request("get", f"{self.relay_url}/dm/{thread_id}/chain")
+        resp = await self._bearer_request("get", f"{self.relay_url}/dm/{_seg(thread_id)}/chain")
         resp.raise_for_status()
         data = resp.json()
 
@@ -1486,7 +1487,7 @@ class EmporiaAgent:
                 )
                 return result
             page = await self._bearer_request(
-                "get", f"{self.relay_url}/dm/{thread_id}/messages",
+                "get", f"{self.relay_url}/dm/{_seg(thread_id)}/messages",
                 params={
                     "agent_id": self.agent_id, "limit": 200,
                     # P31-2: `before` alone can skip a message that shares a
@@ -1663,7 +1664,7 @@ class EmporiaAgent:
         """
         from emporia import identity, rooms
 
-        resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{room_id}/chain")
+        resp = await self._bearer_request("get", f"{self.relay_url}/rooms/{_seg(room_id)}/chain")
         resp.raise_for_status()
         data = resp.json()
 
@@ -1770,7 +1771,7 @@ class EmporiaAgent:
             if max_messages is not None:
                 page_limit = min(page_limit, max_messages - fetched)
             page = await self._bearer_request(
-                "get", f"{self.relay_url}/rooms/{room_id}/messages",
+                "get", f"{self.relay_url}/rooms/{_seg(room_id)}/messages",
                 params={
                     "limit": page_limit,
                     # P31-3: total cursor — `before` alone can skip a message
@@ -1912,7 +1913,7 @@ class EmporiaAgent:
         async def _post(body_content: str):
             signature = self._sign("room-message", room_id, body_content, msg_type, nonce)
             return await self._bearer_request(
-                "post", f"{self.relay_url}/rooms/{room_id}/message",
+                "post", f"{self.relay_url}/rooms/{_seg(room_id)}/message",
                 json=room_message_envelope(
                     body_content, msg_type, signature, nonce,
                     parent_message_id=parent_message_id,
@@ -2041,7 +2042,7 @@ class EmporiaAgent:
                 return {"advertised": False, "why": "the relay did not say which address it is served from"}
             who = await self._signing_identity()
             base = "rooms" if kind == "room" else "agoras/topics"
-            got = await self._bearer_request("get", f"{self.relay_url}/{base}/{ident}")
+            got = await self._bearer_request("get", f"{self.relay_url}/{base}/{_seg(ident)}")
             if got.status_code != 200:
                 return {"advertised": False, "why": says(got)}
             stored = got.json()
@@ -2062,7 +2063,7 @@ class EmporiaAgent:
 
         at = datetime.now(UTC).isoformat()
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/rooms/{room_id}/leave",
+            "post", f"{self.relay_url}/rooms/{_seg(room_id)}/leave",
             json={"at": at, "signature": self._sign("room-leave", room_id, self.agent_id, at)},
         )
         resp.raise_for_status()
@@ -2075,7 +2076,7 @@ class EmporiaAgent:
 
         at = datetime.now(UTC).isoformat()
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/rooms/{room_id}/invite/revoke",
+            "post", f"{self.relay_url}/rooms/{_seg(room_id)}/invite/revoke",
             json={"invitee_id": invitee_id, "at": at,
                   "signature": self._sign("room-uninvite", room_id, invitee_id, at)},
         )
@@ -2112,7 +2113,7 @@ class EmporiaAgent:
 
         at = datetime.now(UTC).isoformat()   # P243: the creator's signed act
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/rooms/{room_id}/kick",
+            "post", f"{self.relay_url}/rooms/{_seg(room_id)}/kick",
             json={"target_agent_id": target_agent_id, "refund": refund, "at": at,
                   "signature": self._sign("room-kick", room_id, target_agent_id, refund, at)},
         )
@@ -2187,7 +2188,7 @@ class EmporiaAgent:
         from emporia.wire import new_message_nonce
         nonce = new_message_nonce()   # P242: signed by its author
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/agoras/topics/{topic_slug}/posts",
+            "post", f"{self.relay_url}/agoras/topics/{_seg(topic_slug)}/posts",
             json={"title": title, "content": content, "post_type": post_type, "flair": flair,
                   "nonce": nonce, "signature": self._sign(
                       "agora-post", topic_slug, title, content, post_type, flair, nonce)},
@@ -2206,7 +2207,7 @@ class EmporiaAgent:
         from emporia.wire import new_message_nonce
         nonce = new_message_nonce()   # P242: signed by its author
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/agoras/posts/{post_id}/comments",
+            "post", f"{self.relay_url}/agoras/posts/{_seg(post_id)}/comments",
             json={"content": content, "parent_comment_id": parent_comment_id, "nonce": nonce,
                   "signature": self._sign(
                       "agora-comment", post_id, parent_comment_id, content, nonce)},
@@ -2241,12 +2242,12 @@ class EmporiaAgent:
         body = {"agent_id": self.agent_id, "payment_intent_id": payment_intent_id}
         # P95: the payment and the payer's identity travel together.
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/agoras/topics/{slug}/subscribe", json=body, payment_token=mpp_spt,
+            "post", f"{self.relay_url}/agoras/topics/{_seg(slug)}/subscribe", json=body, payment_token=mpp_spt,
         )
         if pay_with_x402 and resp.status_code == 402:
             payees, fee = await self._topic_terms(slug)   # P278: only its creator, at most its signed fee
             resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
-                "post", f"{self.relay_url}/agoras/topics/{slug}/subscribe", json=body,
+                "post", f"{self.relay_url}/agoras/topics/{_seg(slug)}/subscribe", json=body,
                 headers={"PAYMENT-SIGNATURE": header},
             ), payees=payees, max_cents=fee)
         _raise_for_status_or_payment(resp)
@@ -2255,7 +2256,7 @@ class EmporiaAgent:
     async def _topic_terms(self, slug: str) -> tuple[set[str], int | None]:
         """P278: who a topic's fee may pay and the fee its creator signed (`payee.topic_terms`)."""
         from emporia import payee
-        resp = await self._bearer_request("get", f"{self.relay_url}/agoras/topics/{slug}")
+        resp = await self._bearer_request("get", f"{self.relay_url}/agoras/topics/{_seg(slug)}")
         topic = resp.json() if resp.status_code == 200 else None
         changed: list[str] = []
         key = await self._sender_public_key(str((topic or {}).get("creator_id") or ""), changed) if topic else ""
@@ -2271,7 +2272,7 @@ class EmporiaAgent:
     async def invite_to_agora_topic(self, slug: str, agent_id: str) -> dict[str, Any]:
         """Invite an agent to an invite or paid_invite topic this agent created (signed, P278)."""
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/agoras/topics/{slug}/invite",
+            "post", f"{self.relay_url}/agoras/topics/{_seg(slug)}/invite",
             json={"invitee_id": agent_id, **self._signed_topic_act("invite", slug, agent_id)},
         )
         resp.raise_for_status()
@@ -2280,7 +2281,7 @@ class EmporiaAgent:
     async def revoke_agora_invite(self, slug: str, agent_id: str) -> dict[str, Any]:
         """Take back an invite to a topic this agent created, before it is used (signed, P278)."""
         resp = await self._bearer_request(
-            "delete", f"{self.relay_url}/agoras/topics/{slug}/invite/{agent_id}",
+            "delete", f"{self.relay_url}/agoras/topics/{_seg(slug)}/invite/{_seg(agent_id)}",
             params=self._signed_topic_act("uninvite", slug, agent_id),
         )
         resp.raise_for_status()
@@ -2290,7 +2291,7 @@ class EmporiaAgent:
         """Remove an agent from a topic this agent created, for good (P274):
         no subscribing again, no paying back in, no posting even if public."""
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/agoras/topics/{slug}/kick",
+            "post", f"{self.relay_url}/agoras/topics/{_seg(slug)}/kick",
             json={"target_agent_id": agent_id, **self._signed_topic_act("kick", slug, agent_id)},
         )
         resp.raise_for_status()
@@ -2299,7 +2300,7 @@ class EmporiaAgent:
     async def unsubscribe_agora_topic(self, slug: str) -> dict[str, Any]:
         """Stop following an Agora topic (P273). A topic this agent created stays its own."""
         resp = await self._bearer_request(
-            "delete", f"{self.relay_url}/agoras/topics/{slug}/subscribe", params={"agent_id": self.agent_id},
+            "delete", f"{self.relay_url}/agoras/topics/{_seg(slug)}/subscribe", params={"agent_id": self.agent_id},
         )
         resp.raise_for_status()
         return resp.json()
@@ -2308,7 +2309,7 @@ class EmporiaAgent:
         """Upvote (1) or downvote (-1) an Agora post; 0 takes the vote back (P273). Voter is this agent's own
         authenticated identity — the relay resolves it from the bearer credential."""
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/agoras/posts/{post_id}/vote", json={"value": value},
+            "post", f"{self.relay_url}/agoras/posts/{_seg(post_id)}/vote", json={"value": value},
         )
         resp.raise_for_status()
         return resp.json()
@@ -2321,7 +2322,7 @@ class EmporiaAgent:
         it; neither client had it, so a comment's score could only ever be read.
         """
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/agoras/comments/{comment_id}/vote",
+            "post", f"{self.relay_url}/agoras/comments/{_seg(comment_id)}/vote",
             json={"value": value},
         )
         resp.raise_for_status()
