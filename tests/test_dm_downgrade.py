@@ -95,3 +95,87 @@ def test_a_first_plaintext_thread_with_a_peer_never_sealed_to_still_works(prod_c
             await alice.__aexit__()
             await bob.__aexit__()
     asyncio.run(scenario())
+
+
+def test_the_sdk_will_not_send_in_the_clear_when_it_asked_for_a_seal(prod_client):
+    """Review pass (11-05): the SDK's counterpart. `start_dm(encrypted=True)` answered with a
+    plaintext thread is refused, and that thread stays one this agent requires sealed, so a
+    relay that calls it plaintext later — before any key is pinned — gets nothing."""
+    async def scenario():
+        alice, bob = _sdk_wired("rp_sdk_a"), _sdk_wired("rp_sdk_b")
+        try:
+            await alice.register()
+            await bob.register()
+            real = alice._bearer_request
+
+            async def lying(method, url, **kw):
+                r = await real(method, url, **kw)
+                if url.endswith("/dm/start") or (method == "get" and "/dm/" in url and "/messages" not in url):
+                    body = {**r.json(), "encrypted": False}
+                    from types import SimpleNamespace
+                    return SimpleNamespace(status_code=200, json=lambda: body, raise_for_status=lambda: None)
+                return r
+            alice._bearer_request = lying
+            with pytest.raises(identity.PlaintextRefused):
+                await alice.start_dm("rp_sdk_b", encrypted=True)
+            alice._bearer_request = real
+            tid = (await alice.start_dm("rp_sdk_b", encrypted=True))["thread_id"]
+            alice._bearer_request = lying
+            assert "rp_sdk_b" not in identity.load_peer_encryption_keys()
+            with pytest.raises(identity.PlaintextRefused):
+                await alice.send_dm(tid, "the vault code is 6620")
+            return tid
+        finally:
+            await alice.__aexit__()
+            await bob.__aexit__()
+
+    tid = asyncio.run(scenario())
+    assert not any("6620" in c for c in _stored(tid))
+
+
+def _lying_about_dm_start(mcp_server, monkeypatch, fake: dict | None = None) -> list:
+    """A hostile relay's `/dm/start`: whatever was asked, the thread is "not encrypted"
+    (`fake`: the whole answer, for a thread it never made). Returns the bodies it was sent."""
+    from types import SimpleNamespace
+    real, sent = mcp_server._bearer_request, []
+
+    def hostile(method, url, **kw):
+        if url.endswith("/dm/start"):
+            body = fake if fake is not None else {**real(method, url, **kw).json(), "encrypted": False}
+            return SimpleNamespace(status_code=200, json=lambda: body, text="")
+        if url.endswith("/send"):
+            sent.append(kw.get("json"))
+        return real(method, url, **kw)
+    monkeypatch.setattr(mcp_server, "_bearer_request", hostile)
+    return sent
+
+
+def test_mcp_will_not_send_in_the_clear_when_it_asked_for_a_seal(prod_client, monkeypatch):
+    """Review pass (11-05): `encrypted=True` is the agent requiring a seal. With a peer not
+    yet pinned (first contact), a relay answering `encrypted: false` got the message in
+    plaintext — the downgrade check covered only peers sealed to before."""
+    from emporia import mcp_server
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.register_agent(agent_id="rp_seal_a")
+        mcp_server.register_agent(agent_id="rp_seal_b")
+        assert "rp_seal_b" not in identity.load_peer_encryption_keys()
+        sent = _lying_about_dm_start(mcp_server, monkeypatch)
+        out = mcp_server.send_dm("rp_seal_b", "the vault code is 7731", from_agent_id="rp_seal_a",
+                                 encrypted=True)
+        assert not out.get("success") and "plaintext" in out["error"], out
+        assert not sent, "nothing reached the relay"
+
+
+def test_mcp_will_not_send_in_the_clear_to_another_relays_agent(prod_client, monkeypatch):
+    """Review pass (11-05): a DM between relays is always sealed (the relay itself refuses a
+    plaintext one), so a home relay calling such a thread plaintext is lying."""
+    from emporia import mcp_server
+    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
+    with patch.object(mcp_server, "httpx", adapter):
+        mcp_server.register_agent(agent_id="rp_fed_a")
+        sent = _lying_about_dm_start(mcp_server, monkeypatch,
+                                     fake={"thread_id": "dm_fake", "encrypted": False})
+        out = mcp_server.send_dm("bob@relay-b.test", "the vault code is 8842", from_agent_id="rp_fed_a")
+        assert not out.get("success") and "plaintext" in out["error"], out
+        assert not sent, "nothing reached the relay"

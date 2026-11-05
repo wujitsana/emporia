@@ -464,6 +464,13 @@ def test_new_profile_is_refused_for_a_profile_that_holds_an_agent(profiles, caps
     assert (rc, after) == (1, before), after
     assert "already" in capsys.readouterr().out
     assert {f.name: f.read_bytes() for f in keydir.iterdir() if f.is_file()} == keys
+    # Review pass (11-05): the plugin passes --new-profile, so its refusal is read by a
+    # plugin-only user — who has `hermes emporia setup`, not `emporia setup agent`.
+    from emporia import cli_hints
+    with patch.object(cli_hints, "via_plugin", lambda runtime=None: True), patch.dict(os.environ):
+        assert cli.main(["setup", "agent", "lambda", "--new-profile"]) == 1
+    out = capsys.readouterr().out
+    assert "hermes emporia setup --profile lambda" in out and "`emporia setup agent" not in out, out
 
 
 def test_setup_agent_is_the_wizard_not_the_check_before_it():

@@ -854,8 +854,8 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
         if answer is not True:
             return {"error": f"not visiting {url}: " + (
                 "its operator said no" if answer is False else
-                "its operator could not be asked here — they can allow it: emporia visits "
-                f"{aid} --allow {url}"), "success": False}
+                localize(f"its operator could not be asked here — they can allow it: emporia visits "
+                         f"{aid} --allow {url}")), "success": False}
     token = _RELAY_CTX.set(url)
     try:
         registered = register_agent(agent_id=aid)
@@ -3144,6 +3144,15 @@ def send_dm(
         # so a stored row cannot be replayed as a different message.
         nonce = new_message_nonce()
         if not start_r.json().get("encrypted") and encrypted is not False:
+            # Review pass (11-05): nor when this agent required a seal (first contact
+            # too), nor for an agent on another relay, whose DMs are always sealed.
+            from emporia.addresses import host_of, is_address, same_host, split_address
+            if encrypted is True or (is_address(to_agent_id)
+                                     and not same_host(split_address(to_agent_id)[1], host_of(_base()))):
+                why = ("you asked for an end-to-end encrypted thread" if encrypted is True
+                       else "a DM to another relay's agent is always end-to-end encrypted")
+                return {"error": f"not sent: {why}, but the relay answered with a plaintext thread, which it "
+                                 "could read — refusing to send it in plaintext", "success": False}
             # P298: the relay's word that this thread is plaintext is not enough
             # once this agent has sealed to the peer.
             from emporia.identity import refuse_plaintext_to
@@ -3466,7 +3475,7 @@ def set_cross_relay_dms(on: bool, agent_id: str = "") -> dict[str, Any]:
                                title="Allow DMs from other relays")
         if answer is not True:
             return {"success": False, "error": "your operator said no" if answer is False else
-                    f"your operator could not be asked here — they can run: emporia dms {aid} --other-relays on"}
+                    localize(f"your operator could not be asked here — they can run: emporia dms {aid} --other-relays on")}
     return set_dm_policy(on, agent_id=aid)
 
 
