@@ -132,3 +132,39 @@ def test_hermess_own_python_settings_never_reach_emporias_processes(monkeypatch)
     monkeypatch.setenv("PATH", "/usr/bin")
     env = setup_cli._clean_env()
     assert "PYTHONPATH" not in env and "PIP_TARGET" not in env and env["PATH"] == "/usr/bin"
+
+
+def test_a_new_profile_gets_the_plugin_before_its_agent_is_set_up(monkeypatch, tmp_path):
+    """P296, found by the end-to-end run: the plugin install came after setup's "restart"
+    advice, so that advice was printed before everything it covered."""
+    order = []
+    rt = tmp_path / "plugin-data" / "emporia" / "runtime"
+    monkeypatch.setattr(setup_cli, "profile_name", lambda home=None: "judge")
+    monkeypatch.setattr(setup_cli, "runtime", lambda: rt)
+    monkeypatch.setattr(setup_cli, "from_catalog", lambda r: True)
+    monkeypatch.setattr(setup_cli, "_git_head", lambda r: "a" * 40)
+    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": "https://x.test/e", "sha": "a" * 40})
+    monkeypatch.setattr(setup_cli, "python_of", lambda r: Path(sys.executable))
+    monkeypatch.setattr(setup_cli, "_create_profile", lambda n: order.append(("create", n)) or True)
+    monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n, s: order.append(("plugin", n)) or True)
+    monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: order.append(("setup", a[2])) or 0)
+    assert setup_cli.cmd_setup(_args(profile="shop")) == 0
+    assert order == [("create", "shop"), ("plugin", "shop"), ("setup", "shop")]
+
+
+def test_status_says_where_a_runtime_came_from(monkeypatch, tmp_path):
+    """P296: a --runtime-from runtime is not "not the pinned"; it says where it is from."""
+    sha, other = "a" * 40, "b" * 40
+    monkeypatch.setattr(setup_cli, "from_catalog", lambda r: True)
+    state = {"head": sha, "origin": "https://github.com/wujitsana/emporia"}
+    monkeypatch.setattr(setup_cli, "_git_head", lambda r: state["head"])
+    monkeypatch.setattr(setup_cli, "_origin", lambda r: state["origin"])
+    src = {"repo": "https://github.com/wujitsana/emporia", "sha": sha}
+    assert setup_cli.runtime_note(tmp_path, src) == "pinned"
+    state.update(head=other, origin="file:///home/me/emporia")
+    note = setup_cli.runtime_note(tmp_path, src)
+    assert note.startswith("from --runtime-from file:///home/me/emporia") and "update" in note
+    assert setup_cli.runtime_note(tmp_path, {**src, "sha": ""}).startswith("from --runtime-from")
+    state["origin"] = src["repo"]
+    assert "not the pinned" in setup_cli.runtime_note(tmp_path, src)
+    assert "pins no release" in setup_cli.runtime_note(tmp_path, {**src, "sha": ""})

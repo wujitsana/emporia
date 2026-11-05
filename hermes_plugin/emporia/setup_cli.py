@@ -196,6 +196,7 @@ def install_runtime(say=print, target: Path | None = None, pin: tuple[str, str] 
         # P296: always after a --no-checkout clone, whose files are not there yet even when
         # its HEAD is already the pinned commit (a release's commit is its branch's tip).
         _run(["git", "-C", str(rt), "checkout", "--quiet", "--detach", sha])
+    _run(["git", "-C", str(rt), "remote", "set-url", "origin", repo])   # where it came from, for status
     say("  Installing its Python packages (first time: a minute or two)")
     uv = shutil.which("uv")
     if uv:
@@ -262,6 +263,23 @@ def _install_plugin_into(name: str, plugin_source: str = "emporia") -> bool:
     return r.returncode == 0
 
 
+def _create_profile(name: str) -> bool:
+    """A new, minimal Hermes profile (`--no-skills`: it gets Emporia's own), unless it exists."""
+    hermes = shutil.which("hermes")
+    if not hermes:
+        print(f"  ✗ hermes is not on PATH: run `hermes profile create {name} --no-skills` yourself")
+        return False
+    kw = dict(stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=_TIMEOUT_S, env=_clean_env())
+    if subprocess.run([hermes, "profile", "show", name], **kw).returncode == 0:
+        return True
+    r = subprocess.run([hermes, "profile", "create", name, "--no-skills"], **kw)
+    if r.returncode != 0:
+        print(f"  ✗ hermes profile create {name} failed: {(r.stderr or r.stdout).strip()[-300:]}")
+        return False
+    print(f"  Created Hermes profile {name} (--no-skills)")
+    return True
+
+
 def cmd_setup(args: argparse.Namespace) -> int:
     print("Emporia setup")
     here = profile_name()
@@ -295,9 +313,11 @@ def cmd_setup(args: argparse.Namespace) -> int:
         extra = extra[1:]
     if args.relay:
         extra = ["--relay-url", args.relay, *extra]
-    code = _emporia(rt, "setup", "agent", name, *extra)
-    if code == 0 and new and from_catalog(rt) and not _install_plugin_into(name, args.plugin_source):
+    # P296: a new profile gets the plugin before the agent is set up, so the restart
+    # setup asks for last is the only one needed, and comes after everything it covers.
+    if new and from_catalog(rt) and not (_create_profile(name) and _install_plugin_into(name, args.plugin_source)):
         return 1
+    code = _emporia(rt, "setup", "agent", name, *extra)
     if code == 0:
         _next_steps(name)
     return code
@@ -312,16 +332,37 @@ def _next_steps(name: str) -> None:
     print(f"      hermes {p}emporia doctor     # if anything looks wrong; each problem names its fix")
 
 
+def _origin(rt: Path) -> str:
+    try:
+        return _run(["git", "-C", str(rt), "remote", "get-url", "origin"]).strip()
+    except SetupFailed:
+        return ""
+
+
+def runtime_note(rt: Path, src: dict) -> str:
+    """What `status` says of the runtime: a checkout, the pinned release, a
+    `--runtime-from` one (and how to go back), or behind the pinned one."""
+    if not from_catalog(rt):
+        return "a checkout"
+    head, pinned, origin = _git_head(rt), src.get("sha", ""), _origin(rt)
+    if pinned and head == pinned:
+        return "pinned"
+    if origin and origin != src.get("repo", ""):
+        back = "; `hermes emporia update` goes back to the pinned one" if pinned else ""
+        return f"from --runtime-from {origin}{back}"
+    if not pinned:
+        return "this plugin pins no release: `hermes emporia update --runtime-from REPO@SHA`"
+    return f"not the pinned {pinned[:12]}: run `hermes emporia update`"
+
+
 def cmd_status(_args: argparse.Namespace) -> int:
     src, rt = source(), runtime()
     print(f"Profile : {profile_name()} ({hermes_home()})")
     if rt is None:
         print("Runtime : not installed — run `hermes emporia setup`")
         return 1
+    note = runtime_note(rt, src)
     head = _git_head(rt)
-    pinned = src.get("sha", "")
-    note = ("a checkout" if not from_catalog(rt)
-            else "pinned" if head == pinned else f"not the pinned {pinned[:12]}: run `hermes emporia update`")
     print(f"Runtime : {rt} @ {head[:12] or '?'} ({note})")
     agent, relay = _setting("EMPORIA_AGENT_ID"), _setting("EMPORIA_RELAY_URL")
     if not agent:
