@@ -29,11 +29,48 @@ class RotationError(Exception):
     """Said to the person as it is; nothing is half-done unless the message says so."""
 
 
-def _public_hex(priv: ed25519.Ed25519PrivateKey) -> str:
+class SignerIdentity:
+    """P293 (2c): the agent's identity key as its signer holds it. Its person's
+    commands sign through it by kind (`signer.person_sign`) and never see the key.
+    Run as the signer's user, who can read its folder (practice mode: the same user)."""
+
+    def __init__(self, agent_id: str):
+        from emporia import signer
+        self.agent_id = agent_id
+        pub = signer.identity_public(agent_id)
+        if not pub:
+            raise RotationError(f"the signer here does not hold {agent_id}'s identity key — run this as the "
+                                "signer's user, where its folder is (emporia signer status)")
+        self.public_hex = pub
+
+    def sign(self, kind: str, *args: Any) -> str:
+        from emporia import signer, signing
+        try:
+            return signer.person_sign(self.agent_id, kind, *args)
+        except signing.Refused as e:
+            raise RotationError(f"the signer did not sign it: {e}") from None
+
+
+def in_signer(agent_id: str, key_dir: Path) -> bool:
+    """The agent's identity key is held by its signer (its profile has only the `.signer.pub` marker)."""
+    return (key_dir / f"{identity._keyfile_stem(agent_id)}.signer.pub").is_file()
+
+
+def _public_hex(priv: Any) -> str:
+    if isinstance(priv, SignerIdentity):
+        return priv.public_hex
     return priv.public_key().public_bytes_raw().hex()
 
 
-def _session(http: Any, agent_id: str, priv: ed25519.Ed25519PrivateKey) -> dict[str, str]:
+def _sign(key: Any, kind: str, *args: Any) -> str:
+    """A signature by kind, with a key here or the one the signer holds."""
+    if isinstance(key, SignerIdentity):
+        return key.sign(kind, *args)
+    from emporia import signing
+    return identity.sign_payload(key, signing.payload(kind, *args))
+
+
+def _session(http: Any, agent_id: str, priv: Any) -> dict[str, str]:
     """Sign in to the relay as the agent with `priv` — the same challenge the
     agent's own tools answer — and return the header that carries the token."""
     ch = http.post("/dashboard/challenge").json()
@@ -41,7 +78,7 @@ def _session(http: Any, agent_id: str, priv: ed25519.Ed25519PrivateKey) -> dict[
     payload = wire.signed_dashboard_sign_in_payload(ch.get("nonce"), relay)
     if why := wire.dashboard_sign_in_problem(payload["nonce"], payload["relay"]):
         raise RotationError(f"not signed in to the relay: {why}")
-    signature = identity.sign_payload(priv, payload)
+    signature = _sign(priv, "dashboard-sign-in", ch.get("nonce"), relay)
     r = http.post("/dashboard/session", json=wire.dashboard_session_body(agent_id, ch["challenge_id"], relay,
                                                                           signature))
     if r.status_code != 200:
@@ -50,9 +87,12 @@ def _session(http: Any, agent_id: str, priv: ed25519.Ed25519PrivateKey) -> dict[
 
 
 def load_agent_key(agent_id: str, key_dir: Path, source: str = "",
-                   source_env: dict[str, str] | None = None) -> ed25519.Ed25519PrivateKey:
+                   source_env: dict[str, str] | None = None) -> Any:
     """The agent's identity key as it is kept now: in `source` (a password
-    manager, an environment variable) or in its key file in `key_dir`."""
+    manager, an environment variable), in its key file in `key_dir`, or — P293
+    (2c) — in its signer, which signs for its person by kind."""
+    if in_signer(agent_id, key_dir):
+        return SignerIdentity(agent_id)
     try:
         if source:
             from emporia.key_source import key32
@@ -94,6 +134,8 @@ def rotate_identity_key(
     not a file here) and `key_log` as the relay now holds it."""
     stem = identity._keyfile_stem(agent_id)
     old_priv = load_agent_key(agent_id, key_dir, source, source_env)
+    if isinstance(old_priv, SignerIdentity):
+        return rotate_identity_key_in_signer(agent_id, key_dir, http, old_priv)
     old_pub = _public_hex(old_priv)
     new_file = key_dir / f"{stem}.priv.new"
 
@@ -154,3 +196,48 @@ def rotate_identity_key(
         return out
     out.update(install_identity_key(agent_id, key_dir, new_file))
     return out
+
+
+def rotate_identity_key_in_signer(agent_id: str, key_dir: Path, http: Any,
+                                  held: SignerIdentity | None = None) -> dict[str, Any]:
+    """P293 (2c): `rotate_identity_key` for an agent whose identity key its signer
+    holds. The new key is made inside the signer and stays there; the old key
+    (still in the signer) signs the step; the profile's marker follows. A run that
+    stopped after the relay took the new key is finished, not repeated."""
+    from emporia import signer
+    held = held or SignerIdentity(agent_id)
+    old_pub = held.public_hex
+    pending = signer.identity_pending(agent_id)
+    headers, first_error = None, None
+    try:
+        headers = _session(http, agent_id, held)
+    except RotationError as e:
+        first_error = e
+    if headers is None:
+        raise first_error  # type: ignore[misc]
+    me = http.get(f"/agents/{agent_id}", headers=headers)
+    if me.status_code != 200:
+        raise RotationError(f"the relay would not show {agent_id} ({me.status_code}) — is it registered there?")
+    profile = me.json()
+    on_relay = profile["public_key_hex"]
+    if on_relay == pending:                     # an earlier run got this far
+        key_log = profile.get("key_log") or []
+    elif on_relay != old_pub:
+        raise RotationError(f"the relay has a different key for {agent_id} ({on_relay[:12]}…) than the signer "
+                            f"holds ({old_pub[:12]}…); nothing was changed")
+    else:
+        at = datetime.now(UTC).isoformat()
+        body = {"new_public_key_hex": pending, "at": at,
+                "signature": held.sign("key-rotation", profile["stable_id"], old_pub, pending, at)}
+        r = http.post(f"/agents/{agent_id}/key-rotations", json=body, headers=headers)
+        if r.status_code != 200:
+            if 400 <= r.status_code < 500:      # refused: the new key was never taken
+                signer.identity_abort(agent_id)
+            detail = r.json().get("detail") if "json" in r.headers.get("content-type", "") else r.text
+            raise RotationError(f"the relay refused the key change ({r.status_code}): {detail}")
+        key_log = r.json()["key_log"]
+    new_pub = signer.identity_commit(agent_id)
+    marker = key_dir / f"{identity._keyfile_stem(agent_id)}.signer.pub"
+    marker.write_text(new_pub + "\n")
+    return {"old_public_key": old_pub, "new_public_key": new_pub, "new_key_file": None, "installed": True,
+            "kept_old_key_file": None, "key_log": key_log, "in_signer": True}

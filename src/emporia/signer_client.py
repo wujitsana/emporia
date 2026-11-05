@@ -99,6 +99,10 @@ class Client:
         return r.json()
 
 
+    def replace_encryption_key(self) -> dict:
+        """P293 (2c): a new encryption key made in the signer; its public half and signed binding."""
+        return self._signing("/v1/replace-encryption-key", {})
+
     def open(self, envelope: dict, label: str, aad: bytes) -> str:
         """P293 (2b): the plaintext of one sealed message, opened by the signer."""
         import base64

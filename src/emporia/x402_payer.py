@@ -62,6 +62,12 @@ class X402PayerError(Exception):
 # order is part of the EIP-712 type hash — reordering these silently produces a
 # signature the token contract will not honour, so this is written once and
 # never rebuilt per call.
+_EIP712_DOMAIN_TYPES = [
+    {"name": "name", "type": "string"},
+    {"name": "version", "type": "string"},
+    {"name": "chainId", "type": "uint256"},
+    {"name": "verifyingContract", "type": "address"},
+]
 _TRANSFER_WITH_AUTHORIZATION_TYPES = {
     "TransferWithAuthorization": [
         {"name": "from", "type": "address"},
@@ -199,7 +205,8 @@ def build_payment_payload(
             "requirement is missing asset/payTo/amount — nothing to authorize"
         )
 
-    account = Account.from_key(private_key)
+    from emporia.operator_signer import as_evm_signer
+    signer = as_evm_signer(private_key)      # P293: a key here, or the signer's back end
     issued = int(time.time()) if now is None else int(now)
     valid_after = issued - _VALID_AFTER_SKEW_SECONDS
     valid_before = issued + int(requirement.get("maxTimeoutSeconds") or 0)
@@ -210,39 +217,30 @@ def build_payment_payload(
         )
     nonce = secrets.token_bytes(32)
 
-    signed = Account.sign_typed_data(
-        private_key,
-        domain_data={
-            # The domain is what binds this signature to one token contract on
-            # one chain. `name`/`version` are the contract's own EIP-712 domain
-            # values and are readable only from the chain — which is why they
-            # have to arrive in the challenge.
-            "name": extra["name"],
-            "version": extra["version"],
-            "chainId": chain_id,
-            "verifyingContract": asset,
-        },
-        message_types=_TRANSFER_WITH_AUTHORIZATION_TYPES,
-        message_data={
-            "from": account.address,
-            "to": pay_to,
-            "value": int(amount),
-            "validAfter": valid_after,
-            "validBefore": valid_before,
-            "nonce": nonce,
-        },
-    )
+    full_message = {
+        "types": {"EIP712Domain": _EIP712_DOMAIN_TYPES, **_TRANSFER_WITH_AUTHORIZATION_TYPES},
+        "primaryType": "TransferWithAuthorization",
+        # The domain is what binds this signature to one token contract on
+        # one chain. `name`/`version` are the contract's own EIP-712 domain
+        # values and are readable only from the chain — which is why they
+        # have to arrive in the challenge.
+        "domain": {"name": extra["name"], "version": extra["version"], "chainId": chain_id,
+                   "verifyingContract": asset},
+        "message": {"from": signer.address, "to": pay_to, "value": int(amount), "validAfter": valid_after,
+                    "validBefore": valid_before, "nonce": nonce},
+    }
+    signature = signer.sign_typed_data(full_message)
 
     payload: dict[str, Any] = {
         "x402Version": 2,
         "accepted": requirement,
         "payload": {
-            "signature": signed.signature.to_0x_hex(),
+            "signature": signature,
             # Strings, not ints: the spec types every Authorization field as a
             # string, and a facilitator that parses strictly will reject an
             # int-typed `value` even though the signature over it is correct.
             "authorization": {
-                "from": account.address,
+                "from": signer.address,
                 "to": pay_to,
                 "value": str(amount),
                 "validAfter": str(valid_after),

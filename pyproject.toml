@@ -38,6 +38,11 @@ x402 = [
 solana = [
     "solders>=0.21,<0.28",
 ]
+# P293 (signer phase 2): the signer's AWS KMS back end (emporia.signer_backends). Only
+# the signer installs it; nothing an agent runs imports it.
+kms = [
+    "boto3>=1.43,<2",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",

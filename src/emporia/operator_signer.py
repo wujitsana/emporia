@@ -77,10 +77,19 @@ class LocalKeySigner:
         return "env"
 
     def sign_typed_data(self, full_message: dict) -> str:
-        return "0x" + self._account.sign_typed_data(full_message=full_message).signature.hex()
+        return "0x" + bytes(self._account.sign_typed_data(full_message=full_message).signature).hex()
 
     def sign_transaction(self, tx: dict) -> bytes:
         return bytes(self._account.sign_transaction(tx).raw_transaction)
+
+
+def as_evm_signer(key):
+    """P293: a private key (hex) as a signer; a signer as itself. What the payment
+    modules take, so a key held by a back end signs the same way as one here."""
+    if isinstance(key, (str, bytes)):
+        from eth_account import Account
+        return LocalKeySigner(Account.from_key(key))
+    return key
 
 
 def _git_work_tree(path: Path) -> Path | None:

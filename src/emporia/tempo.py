@@ -147,7 +147,6 @@ def pay(offer: dict[str, Any], private_key: str, *, rpc_url: str | None = None,
     it, and return the credential for the retry. The agent wallet applies its
     caps before calling this."""
     from eth_abi import encode
-    from eth_account import Account
     from eth_utils import keccak, to_checksum_address
 
     req = offer["request"]
@@ -155,7 +154,8 @@ def pay(offer: dict[str, Any], private_key: str, *, rpc_url: str | None = None,
     url = rpc_url or os.getenv("EMPORIA_TEMPO_RPC_URL", "") or PUBLIC_RPC.get(chain_id, "")
     if not url:
         raise TempoError(f"no RPC for Tempo chain {chain_id}: set EMPORIA_TEMPO_RPC_URL")
-    acct = Account.from_key(private_key)
+    from emporia.operator_signer import as_evm_signer
+    acct = as_evm_signer(private_key)      # P293: a key here, or the signer's back end
     token = to_checksum_address(req["currency"])
     data = keccak(text="transferWithMemo(address,uint256,bytes32)")[:4] + encode(
         ["address", "uint256", "bytes32"],
@@ -168,7 +168,7 @@ def pay(offer: dict[str, Any], private_key: str, *, rpc_url: str | None = None,
     tx = {"type": 2, "chainId": chain_id, "to": token, "value": 0, "data": "0x" + data.hex(),
           "gas": int(gas * 1.3), "maxFeePerGas": base * 2 + tip, "maxPriorityFeePerGas": tip,
           "nonce": int(_rpc(url, "eth_getTransactionCount", [acct.address, "pending"]), 16)}
-    tx_hash = _rpc(url, "eth_sendRawTransaction", ["0x" + acct.sign_transaction(tx).raw_transaction.hex()])
+    tx_hash = _rpc(url, "eth_sendRawTransaction", ["0x" + bytes(acct.sign_transaction(tx)).hex()])
     deadline = time.time() + wait_s
     while time.time() < deadline:
         receipt = _rpc(url, "eth_getTransactionReceipt", [tx_hash])

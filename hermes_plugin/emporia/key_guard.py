@@ -42,6 +42,8 @@ _KEY_PATHS = re.compile(
     # Its source is no secret: reading or linting signer.py is fine; running it is not.
     r"|\bimport\s+emporia\.signer\b|\bfrom\s+emporia(?:\.signer)?\s+import\s+[\w\s,]*\b(?:signer|decide|save_policy"
     r"|new_agent_token|admin_token)\b|-m\s+emporia\.signer\b"
+    # P293: its back ends' code (credentials, keys in KMS or a provider) is the signer's too
+    r"|\bemporia\.signer_backends\b|\bfrom\s+emporia\s+import\s+[\w\s,]*\bsigner_backends\b"
     # P298: the dashboard's console holds every local profile's keys behind a Unix
     # socket the folder alone guards; through it one agent reads another's inbox and
     # has its DMs opened. Its socket and folder, and starting one or loading its key
@@ -96,7 +98,9 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate", 
                 ("guardians", {"key", "set", "propose", "sign", "apply"}),
                 # P203: the signer is what an agent cannot change — its keys, limits and approvals
                 ("signer", {"serve", "start", "stop", "host", "add", "remove", "policy", "pending", "approve", "deny",
-                            "alerts"}))   # P293: where its alerts go is its person's too
+                            "alerts",   # P293: where its alerts go is its person's too
+                            # P293 (phase 2): where its keys are kept, and their backup
+                            "backend", "backup", "restore"}))
 # P183: other ways to open a relay to other machines — telling it to listen on
 # another address (in a command or a file the agent writes), or starting the
 # Docker relay or its system service. The relay itself refuses another address

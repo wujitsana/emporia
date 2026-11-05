@@ -26,7 +26,8 @@ import httpx
 
 from emporia import identity, signer
 
-EVENTS = ("refused", "payout-wallet", "home-or-backups", "encryption-key", "open-burst", "test")
+EVENTS = ("refused", "payout-wallet", "home-or-backups", "encryption-key", "open-burst", "test",
+          "identity-change", "recovery-key")     # P299: its person rotated its key, made a recovery key
 MAX_PER_HOUR = 20
 DETAIL_MAX = 300
 _TOKEN_RE = re.compile(r"^\d+:[A-Za-z0-9_-]{35,}$")

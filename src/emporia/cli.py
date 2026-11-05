@@ -1632,6 +1632,12 @@ def cmd_signer(args: argparse.Namespace) -> int:
         return _signer_alerts(args)
     if args.action == "remove":
         return _signer_remove(args)
+    if args.action == "backend":
+        return _signer_backend(args)
+    if args.action == "backup":
+        return _signer_backup(args)
+    if args.action == "restore":
+        return _signer_restore(args)
     if args.action == "status":
         try:
             h = signer_client.Client(url, "", "").health()
@@ -1645,6 +1651,14 @@ def cmd_signer(args: argparse.Namespace) -> int:
             if ways_round else " — apart from this user" if apart else
             " — PRACTICE MODE: the same user as the agents, so it adds no protection against a rogue agent "
             "(it can read the signer's folder). Testnet only; apart from them: emporia signer host"))
+        try:
+            lines = _backends_lines()
+        except OSError:
+            lines = []
+        if len(lines) > 1:
+            print("Back ends (emporia signer backend):")
+            for line in lines:
+                print(line)
         return 0
     if args.action in ("pending", "approve", "deny"):
         admin = signer_client.Admin(url, signer.admin_token())
@@ -1680,7 +1694,7 @@ def cmd_signer(args: argparse.Namespace) -> int:
 
 def _signer_args(action: str, name: str = "", rest: list | None = None, lock: bool = False) -> argparse.Namespace:
     return argparse.Namespace(action=action, name=name, rest=rest or [], dir="", port=0, url="", socket="", lock=lock,
-                              run="")
+                              run="", make=False, backend=[], out="", from_="", identity=False, key_source=[])
 
 
 _ESCALATIONS: list[str] | None = None
@@ -1746,7 +1760,8 @@ def _signer_menu(args: argparse.Namespace, url: str) -> int:
     """`emporia signer` in a terminal: the signer's state, then what to do."""
     from emporia import signer
     if not _TTY:
-        print("signer: start|stop|logs|status|add NAME|remove NAME|policy NAME|pending|approve ID|deny ID|serve "
+        print("signer: start|stop|logs|status|add NAME [--make]|remove NAME|policy NAME|backend|backup NAME|"
+              "restore NAME|pending|approve ID|deny ID|serve "
               "— or run `emporia signer` in a terminal to choose")
         return cmd_signer(_signer_args("status"))
     while True:
@@ -2045,6 +2060,10 @@ def _signer_remove(args: argparse.Namespace) -> int:
     if not _persons_terminal():
         print("signer remove: only a person moves an agent's keys, in their own terminal.")
         return 1
+    if elsewhere := sorted(r for r in signer.routes(name) if r in ("identity", "encryption", "evm", "svm")):
+        print(f"signer remove: {name}'s {', '.join(elsewhere)} key(s) are held by a back end (emporia signer backend) "
+              "and cannot come out of it; it stays behind the signer.")
+        return 1
     env = signer.policy(name).get("env", {})
     from emporia.networks import mainnet_unlocked
     if mainnet_unlocked(env):
@@ -2117,6 +2136,374 @@ def _signer_remove(args: argparse.Namespace) -> int:
     print(f"{name}: its wallet ({', '.join(moved)}) is back in {where}, its limits in its .env. The signer's copy "
           f"is in {trash} until you remove it.")
     installer().print_restart_instructions([profile])
+    return 0
+
+
+# ─── P293 (signer phase 2): back ends, keys made inside, a backup ────────────
+
+def _backends_lines() -> list[str]:
+    """One line per back end: its type, what it does, whether it was ever tried live."""
+    from emporia import signer, signer_backends as sb
+    out, used = [], {}
+    for agent, rs in signer.all_routes().items():
+        for role, r in rs.items():
+            if role in sb.ROLES:
+                used.setdefault(r.get("backend"), []).append(f"{agent} {role}")
+    for name, item in signer.backends().items():
+        try:
+            caps = ", ".join(sorted(signer.get_backend(name).capabilities))
+        except sb.BackendError as e:
+            caps = f"(not loaded: {e})"
+        note = "" if sb.LIVE_TESTED.get(item["type"]) else f"  [{sb.NOT_LIVE_NOTE}]"
+        holds = ", ".join(used.get(name, [])) or ("every role not routed elsewhere" if name == "local" else "nothing yet")
+        out.append(f"  {name:12} {item['type']:8} {caps}{note}\n  {'':12} holds: {holds}")
+    return out
+
+
+def _signer_backend(args: argparse.Namespace) -> int:
+    """P293: `emporia signer backend` — where the signer keeps each agent's keys
+    (signer-phase-2.md § 3.1). Its person's, in their own terminal, as the
+    signer's user; credentials go to the signer's folder only, asked hidden.
+
+      emporia signer backend                              the back ends, and what each holds
+      emporia signer backend NAME add aws-kms region=R [profile=P]
+      emporia signer backend NAME add privy app_id=ID [policy_id=P] [owner_id=O]
+      emporia signer backend NAME add cdp api_key_id=ID [policy_id=P]
+      emporia signer backend NAME add vault           a password manager (its token asked, hidden)
+      emporia signer backend NAME use AGENT ROLE REF      a key already there (a KMS key id, a wallet id)
+      emporia signer backend NAME make AGENT ROLE         a new key made there
+      emporia signer backend NAME check                   ask it for each key's public half
+      emporia signer backend NAME remove
+    ROLE: identity, encryption, evm or svm. The signer's rules and limits apply
+    whichever back end signs; a provider's own policy is a second layer."""
+    import getpass
+
+    from emporia import signer, signer_backends as sb
+    name, rest = args.name, list(args.rest or [])
+    if not name:
+        print("The signer's back ends (signer-phase-2.md § 3.1):")
+        for line in _backends_lines():
+            print(line)
+        print("Add: emporia signer backend NAME add vault|aws-kms|privy|cdp … · route a key: emporia signer backend NAME "
+              "use|make AGENT ROLE")
+        return 0
+    if not _persons_terminal():
+        print("signer backend: only a person sets where an agent's keys are kept, in their own terminal.")
+        return 1
+    verb = rest[0] if rest else "show"
+    try:
+        if verb == "show":
+            item = signer.backends().get(name)
+            if item is None:
+                print(f"signer backend: no back end {name!r}")
+                return 1
+            d = signer.get_backend(name).describe()
+            print(f"  {name}: {d['type']} — {', '.join(d['capabilities'])}" +
+                  ("" if d["live_tested"] else f" [{sb.NOT_LIVE_NOTE}]"))
+            for k, v in d["settings"].items():
+                print(f"    {k} = {v}")
+            if d["secrets"]:
+                print(f"    secrets kept in the signer's folder: {', '.join(d['secrets'])}")
+            return 0
+        if verb == "add":
+            if len(rest) < 2:
+                print("signer backend: NAME add vault|aws-kms|privy|cdp key=value …")
+                return 1
+            type_ = rest[1]
+            pairs = dict(p.split("=", 1) for p in rest[2:] if "=" in p)
+            if bad := [p for p in rest[2:] if "=" not in p]:
+                print(f"signer backend add: settings are key=value, not {' '.join(bad)}")
+                return 1
+            if type_ in sb.SECRETS and (named := set(pairs) & set(sb.SECRETS[type_])):
+                print(f"signer backend add: {', '.join(sorted(named))} is a secret, never a value on the command "
+                      "line — it is asked for, hidden")
+                return 1
+            secrets_ = {}
+            for key in sb.SECRETS.get(type_, ()):
+                value = getpass.getpass(f"  {key} (kept in the signer's folder only; Enter to skip): ").strip()
+                if value:
+                    secrets_[key] = value
+            if type_ == "privy" and not secrets_.get("app_secret"):
+                print("signer backend add: privy needs its app secret")
+                return 1
+            if type_ == "cdp" and not (secrets_.get("api_key_secret") and secrets_.get("wallet_secret")):
+                print("signer backend add: cdp needs its API key secret and wallet secret")
+                return 1
+            signer.save_backend(name, type_, pairs, secrets_)
+            print(f"  {name}: a {type_} back end, settings {', '.join(pairs) or 'none'}"
+                  + (f", secrets {', '.join(secrets_)} in {signer.signer_dir() / 'backends'}" if secrets_ else "")
+                  + ("" if sb.LIVE_TESTED.get(type_) else f".\n  Note: the {type_} adapter is {sb.NOT_LIVE_NOTE} "
+                     "— try it on testnet first (docs/manual-testing.md, \"Signer back ends\")."))
+            return 0
+        if verb == "remove":
+            signer.remove_backend(name)
+            print(f"  {name}: removed")
+            return 0
+        if verb == "check":
+            found = [(a, r, v) for a, rs in signer.all_routes().items() for r, v in rs.items()
+                     if r in sb.ROLES and v.get("backend") == name]
+            b = signer.get_backend(name)
+            for agent, role, v in found:
+                print(f"  {agent} {role}: {b.public(agent, role, v.get('ref', ''))}")
+            print(f"  {len(found)} key(s) answered" + ("" if b.live_tested else f" [{sb.NOT_LIVE_NOTE}]"))
+            return 0
+        if verb in ("use", "make"):
+            if len(rest) < 3 or (verb == "use" and len(rest) < 4 and name != "local"):
+                print(f"signer backend: NAME {verb} AGENT ROLE" + (" REF" if verb == "use" else ""))
+                return 1
+            agent, role = rest[1], rest[2]
+            if not (signer.agent_dir(agent) / "policy.json").exists():
+                print(f"signer backend: the signer holds no agent {agent!r} (emporia signer add {agent} first)")
+                return 1
+            if role not in sb.ROLES:
+                print(f"signer backend: ROLE is one of {', '.join(sb.ROLES)}")
+                return 1
+            if role in ("identity", "encryption") and signer.holds(agent, role):
+                print(f"signer backend: {agent} already has its {role} key; another key there would be another "
+                      f"identity — " + ("emporia agent rotate-key makes the next one" if role == "identity"
+                                        else "emporia agent rotate-encryption-key replaces it"))
+                return 1
+            before = signer.public(agent, role) if signer.holds(agent, role) else None
+            b = signer.get_backend(name)
+            ref = b.make(agent, role) if verb == "make" else (rest[3] if len(rest) > 3 else "")
+            signer.set_route(agent, role, name, ref)
+            now = signer.public(agent, role)
+            print(f"  {agent} {role}: held by {name} ({b.type}) — {now}"
+                  + ("" if b.live_tested else f"  [{sb.NOT_LIVE_NOTE}]"))
+            if before and before != now:
+                print(f"  Its {role} wallet was {before}: money there stays there, and the old key stays in the "
+                      f"signer's folder. Register the new address for payouts (its agent's register_x402_wallet).")
+            return 0
+    except (ValueError, sb.BackendError) as e:
+        print(f"signer backend: {e}")
+        return 1
+    print("signer backend: NAME add|use|make|check|show|remove")
+    return 1
+
+
+def _signer_add_make(args: argparse.Namespace, url: str) -> int:
+    """P293 (2c): `emporia signer add NAME --make` — a new agent's identity,
+    encryption and wallet keys made inside the signer (or the back ends named
+    with --backend ROLE=NAME), so they never exist in its profile. The profile
+    gets only their public halves (the `.signer.pub` markers) and the signer's
+    address; the agent then registers, signing through the signer."""
+    from emporia import signer, signer_backends as sb
+    from emporia.identity import _keyfile_stem
+    name = args.name
+    profile = profile_dir(name)
+    env = {**installer().harvest_env(profile), **_mcp_env(profile)}
+    if env.get("EMPORIA_SIGNER_URL"):
+        print(f"signer add --make: {name} is already behind the signer at {env['EMPORIA_SIGNER_URL']}")
+        return 1
+    for var in ("EMPORIA_IDENTITY_KEY_SOURCE", "EMPORIA_ENCRYPTION_KEY_SOURCE", "EMPORIA_X402_EVM_KEY_SOURCE",
+                "EMPORIA_X402_SOLANA_KEY_SOURCE", "EMPORIA_IDENTITY_PRIVATE_KEY", "EMPORIA_ENCRYPTION_PRIVATE_KEY",
+                "EMPORIA_X402_EVM_PRIVATE_KEY", "EMPORIA_X402_SOLANA_PRIVATE_KEY"):
+        if env.get(var, "").strip():
+            print(f"signer add --make: {name} already has a key ({var} is set) — keys made in the signer are for an "
+                  f"agent that has none yet. To move the keys it has: emporia signer add {name} --identity")
+            return 1
+    key_dir = Path(env.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    stem = _keyfile_stem(name)
+    have = [f.name for f in (key_dir.glob(f"{stem}.*") if key_dir.is_dir() else [])
+            if f.is_file() and not f.name.endswith(".signer.pub")
+            and any(f.name.endswith(s) for s in (".priv", ".x25519.priv", ".x25519.retired", ".x402.secp256k1",
+                                                  ".x402.ed25519", ".x402.phrase"))]
+    if have:
+        print(f"signer add --make: {name} already has key files ({', '.join(sorted(have))}) — keys made in the "
+              f"signer are for an agent that has none yet. To move them: emporia signer add {name} --identity")
+        return 1
+    if (signer.agent_dir(name) / "policy.json").exists():
+        print(f"signer add --make: the signer already holds an agent {name!r}")
+        return 1
+    where = {}
+    for item in getattr(args, "backend", None) or []:
+        role, _, backend = item.partition("=")
+        if role not in sb.ROLES or not backend:
+            print(f"signer add --make: --backend ROLE=NAME, ROLE one of {', '.join(sb.ROLES)}")
+            return 1
+        where[role] = backend
+    try:
+        made = signer.make_agent_keys(name, where)
+    except (ValueError, sb.BackendError) as e:
+        print(f"signer add --make: {e}")
+        return 1
+    rules = {**env, **{k: v for k, v in _mcp_env(profile).items() if k in signer.SIGNING_POLICY}}
+    signer.save_policy(name, {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"})
+    token = signer.new_agent_token(name)
+    if added := signer.add_settings(env):
+        print(f"  The signer takes {name}'s network settings: {', '.join(added)} (in {signer.settings_path()})")
+    signer.own(signer.agent_dir(name))
+    key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    for marker, value in ((key_dir / f"{stem}.signer.pub", made["identity"]),
+                          (key_dir / f"{stem}.x25519.signer.pub", made["encryption"])):
+        marker.write_text(value + "\n")
+        if os.getuid() == 0:
+            owner = profile.stat()
+            os.chown(marker, owner.st_uid, owner.st_gid)
+    merge_env_file(profile / ".env", {"EMPORIA_SIGNER_URL": url, "EMPORIA_SIGNER_TOKEN": token})
+    where_said = {r: where.get(r, "local") for r in made}
+    print(f"{name}: its keys were made in the signer and never existed in its profile:")
+    for role, pub in made.items():
+        b = signer.get_backend(where_said[role])
+        print(f"    {role:10} {pub}   ({where_said[role]}"
+              + ("" if b.live_tested else f"; {sb.NOT_LIVE_NOTE}") + ")")
+    print(f"  The profile has only the public halves ({stem}.signer.pub, {stem}.x25519.signer.pub) and asks {url}.\n"
+          f"  Back them up from the signer's side: emporia signer backup {name} --out PATH")
+    r = _as_agent(profile, "from emporia import mcp_server as m\n"
+                  "r = m.register_agent(agent_id=m.AGENT_ID)\nprint('ok' if r.get('success') else r.get('error'))")
+    last = (r.stdout or "").strip().splitlines()[-1:] if r.returncode == 0 else []
+    if last == ["ok"]:
+        print("  Published: it registered on its relay, signed by the signer (its identity and encryption keys).")
+    else:
+        print(f"  Not published yet ({((r.stdout or r.stderr) or '').strip()[-160:]}); it registers when it next "
+              "starts, with the signer running.")
+    installer().print_restart_instructions([profile])
+    return 0
+
+
+def _signer_add_sources(args: argparse.Namespace, url: str) -> int:
+    """P293: `emporia signer add NAME --key-source ROLE=cmd:…` — an agent whose
+    keys are kept in a password manager goes behind the signer, which reads them
+    itself (`cmd:op read op://…`, `cmd:bw get password ITEM`) at its start. The
+    vault token becomes the signer's; the agent's profile keeps no reference to
+    the vault, only the public halves. Each key read must be the one the agent
+    has now, or nothing changes. Its person's, in their own terminal."""
+    import getpass
+
+    from emporia import signer, signer_backends as sb
+    from emporia.identity import _keyfile_stem
+    from emporia.key_source import SOURCE_VARS, unset_env_lines
+    name = args.name
+    profile = profile_dir(name)
+    env = {**installer().harvest_env(profile), **_mcp_env(profile)}
+    if env.get("EMPORIA_SIGNER_URL"):
+        print(f"signer add --key-source: {name} is already behind the signer at {env['EMPORIA_SIGNER_URL']}")
+        return 1
+    if (signer.agent_dir(name) / "policy.json").exists():
+        print(f"signer add --key-source: the signer already holds an agent {name!r}")
+        return 1
+    refs: dict[str, str] = {}
+    for item in args.key_source:
+        role, _, ref = item.partition("=")
+        if role not in sb.ROLES or not ref.strip().startswith("cmd:"):
+            print(f"signer add --key-source: ROLE=cmd:… (ROLE one of {', '.join(sb.ROLES)}), e.g. "
+                  "identity=cmd:op read op://Agents/alpha/identity")
+            return 1
+        refs[role] = ref.strip()
+    key_dir = Path(env.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+    stem = _keyfile_stem(name)
+    files = {"identity": f"{stem}.priv", "encryption": f"{stem}.x25519.priv", "evm": f"{stem}.x402.secp256k1",
+             "svm": f"{stem}.x402.ed25519"}
+    has = {r for r in sb.ROLES if env.get(SOURCE_VARS[r], "").strip() or (key_dir / files[r]).is_file()}
+    if missing := sorted(has - set(refs)):
+        print(f"signer add --key-source: {name} also has {', '.join(missing)} keys; name a source for each "
+              "(every key moves together), or move key files with: emporia signer add NAME --identity")
+        return 1
+    if ("identity" in refs) != ("encryption" in refs):
+        print("signer add --key-source: the identity and encryption keys move together")
+        return 1
+    if "vault" not in signer.backends():
+        print("  The signer reads them with the vault's own command-line tool. Its token is kept in the signer's "
+              "folder\n  (Enter to skip one: the signer's own environment then has to provide it).")
+        tokens = {k: getpass.getpass(f"  {k} (hidden; Enter to skip): ").strip()
+                  for k in sb.SECRETS["vault"]}
+        signer.save_backend("vault", "vault", {}, {k: v for k, v in tokens.items() if v})
+    b = signer.get_backend("vault")
+    publics = {}
+    try:
+        for role, ref in refs.items():
+            publics[role] = b.public(name, role, ref)
+    except sb.BackendError as e:
+        print(f"signer add --key-source: {e}")
+        return 1
+    for role in ("identity", "encryption"):
+        if role in publics and (want := _expected_public(profile, name, role)) and want != publics[role]:
+            print(f"signer add --key-source: the {role} key in {refs[role]} is not {name}'s ({want[:12]}…); "
+                  "it would be another agent. Nothing changed.")
+            return 1
+    for role, ref in refs.items():
+        signer.set_route(name, role, "vault", ref)
+    rules = {**env, **{k: v for k, v in _mcp_env(profile).items() if k in signer.SIGNING_POLICY}}
+    signer.save_policy(name, {k: rules.get(k, "") for k in signer.POLICY_NAMES if k != "EMPORIA_X402_MAINNET"})
+    token = signer.new_agent_token(name)
+    signer.add_settings(env)
+    signer.own(signer.agent_dir(name))
+    if "identity" in publics:
+        key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        for marker, value in ((key_dir / f"{stem}.signer.pub", publics["identity"]),
+                              (key_dir / f"{stem}.x25519.signer.pub", publics["encryption"])):
+            marker.write_text(value + "\n")
+    unset_env_lines(profile / ".env", [SOURCE_VARS[r] for r in refs] + ["EMPORIA_X402_MAINNET"])
+    left = [v for v in SOURCE_VARS.values() if installer().harvest_env(profile).get(v, "").startswith("cmd:")]
+    vault_vars = [v for v in ("OP_SERVICE_ACCOUNT_TOKEN", "BW_SESSION", "BW_CLIENTID", "BW_CLIENTSECRET")
+                  if installer().harvest_env(profile).get(v)]
+    if vault_vars and not left:
+        unset_env_lines(profile / ".env", vault_vars)
+    merge_env_file(profile / ".env", {"EMPORIA_SIGNER_URL": url, "EMPORIA_SIGNER_TOKEN": token})
+    print(f"{name}: its keys ({', '.join(refs)}) are read by the signer from the password manager; its profile "
+          "names no vault any more.")
+    if vault_vars and not left:
+        print(f"  The vault's token is the signer's now: removed from {name}'s profile ({', '.join(vault_vars)}).")
+    print("  The signer reads them when it starts and holds them in memory while it runs: safer than files, "
+          "less than KMS.\n  Restart the signer (emporia signer stop; emporia signer start) to read them now.")
+    installer().print_restart_instructions([profile])
+    return 0
+
+
+def _signer_backup(args: argparse.Namespace) -> int:
+    """P293 (2c): `emporia signer backup NAME --out PATH` — the agent's keys the
+    signer holds, sealed under a passphrase, for its person to keep off this
+    machine. Run from the signer's side, in the person's own terminal."""
+    import getpass
+
+    from emporia import signer
+    from emporia.identity import _write_secret_atomically
+    if not _persons_terminal():
+        print("signer backup: only a person backs up an agent's keys, in their own terminal.")
+        return 1
+    if not args.name or not (signer.agent_dir(args.name) / "policy.json").exists():
+        print(f"signer backup: the signer holds no agent {args.name!r}")
+        return 1
+    out = Path(args.out).expanduser() if args.out else None
+    if out is None or out.exists() or not out.parent.is_dir():
+        print("signer backup: --out PATH, a file that does not exist yet in a folder that does")
+        return 1
+    phrase = getpass.getpass("  A passphrase for the backup (12 characters or more; nothing is shown): ")
+    if getpass.getpass("  Again: ") != phrase:
+        print("signer backup: the two did not match; nothing written")
+        return 1
+    try:
+        data, notes = signer.backup(args.name, phrase)
+    except ValueError as e:
+        print(f"signer backup: {e}")
+        return 1
+    _write_secret_atomically(out, data)
+    print(f"  {args.name}: its keys in the signer, sealed under your passphrase, in {out} (owner-only).\n"
+          "  Keep it off this machine (and the passphrase apart from it); restore with "
+          f"emporia signer restore {args.name} --from PATH.")
+    for note in notes:
+        print(f"  {note}")
+    return 0
+
+
+def _signer_restore(args: argparse.Namespace) -> int:
+    import getpass
+
+    from emporia import signer
+    if not _persons_terminal():
+        print("signer restore: only a person restores an agent's keys, in their own terminal.")
+        return 1
+    src = Path(getattr(args, "from_", "") or "").expanduser()
+    if not args.name or not src.is_file():
+        print("signer restore: NAME --from PATH (a backup from emporia signer backup)")
+        return 1
+    try:
+        roles = signer.restore(args.name, src.read_bytes(), getpass.getpass("  The backup's passphrase: "))
+    except ValueError as e:
+        print(f"signer restore: {e}")
+        return 1
+    print(f"  {args.name}: {', '.join(roles)} back in the signer. If the agent is new to this signer, its policy "
+          f"and token follow with: emporia signer add {args.name} (it is already behind a signer: rerun is refused)")
     return 0
 
 
@@ -2250,6 +2637,10 @@ def _signer_add(args: argparse.Namespace, url: str) -> int:
     if not _persons_terminal():
         print("signer add: only a person moves an agent's keys, in their own terminal.")
         return 1
+    if getattr(args, "make", False):
+        return _signer_add_make(args, url)
+    if getattr(args, "key_source", None):
+        return _signer_add_sources(args, url)
     dotenv = installer().harvest_env(profile)
     if dotenv.get("EMPORIA_SIGNER_URL"):
         if getattr(args, "identity", False):
@@ -2526,7 +2917,9 @@ def _after_key_change(profile: Path, agent_id: str, out: dict[str, Any], source:
     print(f"  {agent_id}: new key {fingerprint(out['new_public_key'])} (was {fingerprint(out['old_public_key'])}), "
           "on the relay.")
     republish_env: dict[str, str] = {}
-    if out["installed"]:
+    if out.get("in_signer"):
+        print("  The new key was made in its signer and stays there; the profile has only its public half.")
+    elif out["installed"]:
         print(f"  The new key is {out['new_key_file']}.")
         if out["kept_old_key_file"] and recovered:
             print(f"  The old key is kept as {out['kept_old_key_file']}. That key is compromised: it is kept only "
@@ -6673,7 +7066,8 @@ def build_parser() -> argparse.ArgumentParser:
                                        "optional on testnet (start, add NAME; remove NAME undoes it)")
     sg.add_argument("action", nargs="?", default="",
                     choices=["", "start", "stop", "logs", "serve", "host", "status", "add", "remove", "policy",
-                             "pending", "approve", "deny", "audit", "log", "alerts"])
+                             "pending", "approve", "deny", "audit", "log", "alerts", "backend", "backup",
+                             "restore"])
     sg.add_argument("--run", choices=["docker", "service"], default="",
                     help="host: its own container beside Hermes's, or a system service under its own user")
     sg.add_argument("name", nargs="?", default="", help="add, remove, policy: the agent; approve, deny: the intent")
@@ -6686,6 +7080,15 @@ def build_parser() -> argparse.ArgumentParser:
     sg.add_argument("--lock", action="store_true", help="policy mainnet: lock it again")
     sg.add_argument("--identity", action="store_true",
                     help="add: move its identity key into the signer too (signer phase 2)")
+    sg.add_argument("--make", action="store_true",
+                    help="add: make a new agent's identity, encryption and wallet keys inside the signer (2c)")
+    sg.add_argument("--backend", action="append", default=[], metavar="ROLE=NAME",
+                    help="add --make: make ROLE's key in the back end NAME (emporia signer backend)")
+    sg.add_argument("--key-source", action="append", default=[], metavar="ROLE=cmd:…",
+                    help="add: the signer reads ROLE's key from a password manager (cmd:op read op://…, "
+                         "cmd:bw get password ITEM); the vault token becomes the signer's")
+    sg.add_argument("--out", default="", help="backup: the file to write (it must not exist yet)")
+    sg.add_argument("--from", dest="from_", default="", help="restore: a backup from emporia signer backup")
     sg.set_defaults(func=cmd_signer)
 
     ar = sub.add_parser("archive", help="an agent's own copy of everything it is part of on its relay")
