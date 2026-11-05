@@ -35,7 +35,7 @@ import os
 import random
 import sys
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -246,6 +246,10 @@ def main(argv: list[str] | None = None) -> int:
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s house %(message)s")
     from emporia import mcp_server as tools
+    # Found by the end-to-end run: httpx logged an "HTTP Request" line for every call, a
+    # screenful a pass; its warnings and the house's own lines are what a person reads.
+    for chatty in ("httpx", "httpcore"):
+        logging.getLogger(chatty).setLevel(logging.WARNING)
     me = tools.AGENT_ID
 
     def relay_activity(window_s: int) -> dict:

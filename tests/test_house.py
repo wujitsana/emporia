@@ -131,3 +131,21 @@ def test_the_relay_counts_any_interaction_as_activity(monkeypatch):
     assert client.get("/relay/activity", params={"window_s": 3600}).json()["active_agents"] == before + 1
     monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", poster)
     assert client.get("/relay/activity", params={"window_s": 3600}).json()["active_agents"] == before, "house: not counted"
+
+
+def test_house_run_does_not_log_every_http_request(monkeypatch):
+    """Found by the end-to-end run: `emporia house run` printed an httpx "HTTP Request"
+    line for every call it made."""
+    import logging
+
+    from emporia import house
+    from emporia import mcp_server as tools
+    monkeypatch.setattr(tools, "AGENT_ID", "")
+    levels = {n: logging.getLogger(n).level for n in ("httpx", "httpcore")}
+    try:
+        assert house.main(["--once"]) == 1                     # no agent: it stops, loggers already set
+        assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING
+        assert logging.getLogger("httpcore").getEffectiveLevel() == logging.WARNING
+    finally:
+        for n, level in levels.items():
+            logging.getLogger(n).setLevel(level)
