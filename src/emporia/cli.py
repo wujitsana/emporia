@@ -3488,15 +3488,18 @@ def _signed_get(agent_id: str, key_dir: Path, path: str, method: str = "GET",
                 body: dict | None = None) -> tuple[int, Any]:
     """GET (or `method`) `path` on the relay as `agent_id`, signed with its own key;
     `body` is sent as JSON."""
-    from emporia.console.agents import LocalAgent
+    from emporia.console.agents import LocalAgent, discover
     from emporia.console.relay import RelayClient
+    # Found by the end-to-end run: an identity key kept in its .env (not a file)
+    # was never read, so doctor said "not registered" of an agent that was.
+    agent = discover([key_dir]).get(agent_id) or LocalAgent(agent_id, key_dir)
 
     async def go():
         client = RelayClient(relay_url(), timeout=10)
         try:
             data = json.dumps(body).encode() if body is not None else b""
             headers = {"Content-Type": "application/json"} if body is not None else {}
-            r = await client.forward(LocalAgent(agent_id, key_dir), method, path, "", headers, data)
+            r = await client.forward(agent, method, path, "", headers, data)
             return r.status_code, (r.json() if r.content else None)
         finally:
             await client.close()

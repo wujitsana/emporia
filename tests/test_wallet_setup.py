@@ -369,6 +369,32 @@ def test_the_dashboard_finds_an_agent_whose_key_is_linked(tmp_path, monkeypatch)
     assert key.private_bytes_raw() == raw
 
 
+def test_the_cli_signs_as_an_agent_whose_key_is_in_its_env(tmp_path, monkeypatch):
+    """Found by the end-to-end run: `_signed_get` read only a key file, so doctor
+    said an agent with its identity key in its .env was "not registered"."""
+    from emporia import cli
+    from emporia.console import agents as console_agents
+    from emporia.console.relay import RelayClient
+    keys = tmp_path / "profiles" / "nu" / "home" / ".hermes" / "keys"
+    keys.mkdir(parents=True)
+    raw = os.urandom(32)
+    (tmp_path / "profiles" / "nu" / ".env").write_text(f"EMPORIA_IDENTITY_KEY_SOURCE=env:NU_KEY\nNU_KEY={raw.hex()}\n")
+    signed = []
+
+    class Reply:
+        status_code, content = 200, b"{}"
+
+        def json(self):
+            return {}
+
+    async def forward(self, agent, *a):
+        signed.append(console_agents.load_identity_key(agent).private_bytes_raw())
+        return Reply()
+    monkeypatch.setattr(RelayClient, "forward", forward)
+    assert cli._signed_get("nu", keys, "agents/nu")[0] == 200
+    assert signed == [raw]
+
+
 # -- P165: keys in the profile .env -------------------------------------------
 
 def _env_of(profile):
