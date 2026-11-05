@@ -4325,7 +4325,9 @@ def _holds_an_agent(profile: Path) -> bool:
                                                .get("emporia")):
         return True
     env = inst.harvest_env(profile) if (profile / ".env").exists() else {}
-    if env.get("EMPORIA_AGENT_ID") or env.get("EMPORIA_IDENTITY_KEY_SOURCE") or env.get("EMPORIA_IDENTITY_PRIVATE_KEY"):
+    from emporia import key_source
+    if env.get("EMPORIA_AGENT_ID") or env.get(key_source.SOURCE_VARS["identity"]) \
+            or env.get(key_source.ENV_KEY_NAMES["identity"]):
         return True
     keys = profile / "home" / ".hermes" / "keys"
     return keys.is_dir() and any(keys.glob("*.priv")) or keys.is_dir() and any(keys.glob("*.signer.pub"))
