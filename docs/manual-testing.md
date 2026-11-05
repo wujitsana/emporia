@@ -56,6 +56,9 @@ checked steps are under "Already done by hand".
   - runs `hermes emporia update --runtime-from <repo>` twice: nothing changes, nothing to restart.
 
   One line per step (✓ or ✗ and its time); exit 0 only when all pass; on a failure the log's path.
+  Its profile names carry a tag of the run (`e2e-player-1a2b`): in a container whose PID 1 is s6,
+  `hermes profile create` registers a stopped gateway service per profile in `/run/service`, with no
+  opt-out, so the teardown removes this run's own through `hermes profile delete`.
   It stops only the processes it started (by their recorded PIDs) and removes its folder, on
   success, error or Ctrl-C (`--keep` keeps it; `--workdir DIR` puts it under DIR, default the
   system temp; `--repo PATH` tests another checkout). The same run from pytest, off by default:

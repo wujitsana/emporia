@@ -13,7 +13,10 @@ hand in a throwaway Hermes home:
 * a house agent that adopts a waiting free blotto and plays it to the end;
 * `hermes emporia update --runtime-from`, twice: the second changes nothing.
 
-No model or LLM is called, no gateway is started. Everything is written under one temporary
+No model or LLM is called, no gateway is started. Each profile's name carries a tag of this run:
+inside a container whose PID 1 is s6, `hermes profile create` registers a (stopped) gateway service
+for it in the container's supervision tree, and Hermes has no opt-out; the teardown removes those
+services through `hermes profile delete`, for this run's profiles only. Everything is written under one temporary
 folder this script makes (base: --workdir, default the system temp), and torn down at the end,
 on an error and on Ctrl-C: only the processes it started (their recorded PIDs) are stopped.
 
@@ -32,6 +35,7 @@ import argparse
 import atexit
 import json
 import os
+import secrets
 import shutil
 import signal
 import socket
@@ -44,8 +48,12 @@ from pathlib import Path
 from typing import Any
 
 REPO_DEFAULT = Path(__file__).resolve().parent.parent
-PLAYER, MERCHANT, HOUSE = "e2e-player", "e2e-merchant", "e2e-house"
 SETUP_TIMEOUT = 900
+# Inside a container whose PID 1 is s6-svscan, `hermes profile create` registers a gateway service
+# for the profile in the container-wide supervision tree, whatever HERMES_HOME says; Hermes has no
+# opt-out. So every profile name carries this run's tag (never a name someone else has), and the
+# teardown removes, through `hermes profile delete`, the services of the profiles this run made.
+S6_SCANDIR = Path("/run/service")
 
 # Runs inside an agent's own runtime (its python, its MCP server's env, as Hermes starts it) and
 # answers tool calls: one JSON line in ({"tool", "args", "kwargs"}), one JSON line out. Nothing
@@ -95,6 +103,11 @@ class Run:
         for d in (self.hh, self.home, self.relay_dir):
             d.mkdir()
         self.log = self.log_path.open("a", encoding="utf-8")
+        tag = secrets.token_hex(2)
+        self.judge = f"e2e-judge-{tag}"
+        self.player, self.merchant, self.house_agent = (f"e2e-player-{tag}", f"e2e-merchant-{tag}",
+                                                        f"e2e-house-{tag}")
+        self.services_before = self._services()
         self.pids: list[int] = []                # every process this run started and still owns
         self.procs: dict[int, subprocess.Popen] = {}
         self.workers: dict[str, subprocess.Popen] = {}
@@ -164,7 +177,7 @@ class Run:
         return self.hh / "profiles" / name
 
     def runtime_python(self) -> Path:
-        return self.profile("judge") / "plugin-data" / "emporia" / "runtime" / ".venv" / "bin" / "python"
+        return self.profile(self.judge) / "plugin-data" / "emporia" / "runtime" / ".venv" / "bin" / "python"
 
     # ── steps ───────────────────────────────────────────────────────────────
     def start_relay(self) -> str:
@@ -179,7 +192,7 @@ class Run:
             EMPORIA_RELAY_ID="e2e", EMPORIA_RELAY_ACCESS="open", EMPORIA_DB_PATH=str(r / "relay.sqlite3"),
             EMPORIA_KEYS_DIR=str(r / "keys"), EMPORIA_LOG_DIR=str(r / "logs"), EMPORIA_AUDIT_DIR=str(r / "audit"),
             EMPORIA_X402_ENABLED="0", RATE_LIMIT_PER_MINUTE="5000",
-            EMPORIA_GAMIFY="sheets,quests", EMPORIA_HOUSE_AGENTS=HOUSE)
+            EMPORIA_GAMIFY="sheets,quests", EMPORIA_HOUSE_AGENTS=self.house_agent)
         py = self.repo / ".venv" / "bin" / "python"
         out = (r / "relay.log").open("ab")
         # The interpreter itself, no shell in between: the PID recorded is the relay's.
@@ -207,10 +220,10 @@ class Run:
         return f"pid {proc.pid}"
 
     def make_judge(self) -> None:
-        self.hermes_cmd("profile", "create", "judge", "--no-skills")
-        self.hermes_cmd("-p", "judge", "plugins", "install", self.plugin_source(), "--enable", timeout=600)
-        check((self.profile("judge") / "plugins" / "emporia" / "plugin.yaml").is_file(),
-              "the plugin is not in judge's plugins/")
+        self.hermes_cmd("profile", "create", self.judge, "--no-skills")
+        self.hermes_cmd("-p", self.judge, "plugins", "install", self.plugin_source(), "--enable", timeout=600)
+        check((self.profile(self.judge) / "plugins" / "emporia" / "plugin.yaml").is_file(),
+              f"the plugin is not in {self.judge}'s plugins/")
 
     def runtime_from(self) -> str:
         """The repo at the commit this run started at: another commit landing mid-run moves nothing."""
@@ -220,7 +233,7 @@ class Run:
         return f"file://{self.repo}#hermes_plugin/emporia"
 
     def setup_agent(self, name: str, *extra: str) -> None:
-        self.hermes_cmd("-p", "judge", "emporia", "setup", "--profile", name, "--relay", self.relay_url,
+        self.hermes_cmd("-p", self.judge, "emporia", "setup", "--profile", name, "--relay", self.relay_url,
                         "--runtime-from", self.runtime_from(), "--plugin-source", self.plugin_source(),
                         "--", "--role", "marketplace", "--keys", "env", *extra, "--register",
                         timeout=SETUP_TIMEOUT)
@@ -293,86 +306,86 @@ class Run:
 
     # ── the flow ────────────────────────────────────────────────────────────
     def refusals(self) -> None:
-        sell = self.tool(PLAYER, "create_listing", "E2E service", description="a test listing")
+        sell = self.tool(self.player, "create_listing", "E2E service", description="a test listing")
         check(not sell.get("success") and "does not sell" in sell.get("error", ""), f"player sold: {sell}")
-        chess = self.tool(MERCHANT, "create_session", "emporia:chess:v1")
+        chess = self.tool(self.merchant, "create_session", "emporia:chess:v1")
         check(not chess.get("success") and "does not take emporia:chess:v1" in chess.get("error", ""),
               f"merchant made a chess game: {chess}")
         for r in (sell, chess):
             check("agent playbook" in r["error"], f"the refusal names no way to change it: {r['error']}")
 
     def blotto(self) -> str:
-        s = self.tool(PLAYER, "create_session", "emporia:blotto:v1",
-                      config={"rounds": 1, "battlefields": 3, "troops": 10, "opponent": MERCHANT})
+        s = self.tool(self.player, "create_session", "emporia:blotto:v1",
+                      config={"rounds": 1, "battlefields": 3, "troops": 10, "opponent": self.merchant})
         check(s.get("success"), f"create_session: {s}")
         sid = s["session_id"]
-        j = self.tool(MERCHANT, "join_session", sid)
+        j = self.tool(self.merchant, "join_session", sid)
         check(j.get("success"), f"join_session: {j}")
-        moves = {PLAYER: [6, 4, 0], MERCHANT: [4, 3, 3]}
+        moves = {self.player: [6, 4, 0], self.merchant: [4, 3, 3]}
         for _ in range(4):
-            r = self.act(PLAYER, sid, moves)
-        check(r.get("is_terminal") and (r.get("outcome") or {}).get("winner") == PLAYER, f"the end: {r}")
+            r = self.act(self.player, sid, moves)
+        check(r.get("is_terminal") and (r.get("outcome") or {}).get("winner") == self.player, f"the end: {r}")
         return sid
 
     def illegal_commit(self) -> None:
-        s = self.tool(PLAYER, "create_session", "emporia:blotto:v1",
-                      config={"battlefields": 3, "troops": 10, "opponent": MERCHANT})
+        s = self.tool(self.player, "create_session", "emporia:blotto:v1",
+                      config={"battlefields": 3, "troops": 10, "opponent": self.merchant})
         sid = s["session_id"]
-        self.tool(MERCHANT, "join_session", sid)
-        bad = self.tool(PLAYER, "commit_move", sid, [50, 50], "everything on two of the fields")
+        self.tool(self.merchant, "join_session", sid)
+        bad = self.tool(self.player, "commit_move", sid, [50, 50], "everything on two of the fields")
         check(not bad.get("success") and "not a legal move" in bad.get("error", ""), f"illegal commit: {bad}")
-        missing = self.tool(PLAYER, "commit_move", "sess_nope", [4, 3, 3], "a session that is not there")
+        missing = self.tool(self.player, "commit_move", "sess_nope", [4, 3, 3], "a session that is not there")
         check(not missing.get("success") and "no session sess_nope" in missing.get("error", ""),
               f"commit to a missing session: {missing}")
 
     def like(self, sid: str) -> None:
-        r = self.tool(PLAYER, "like", "game", sid)
-        check(r.get("success") and r.get("to_agent") == MERCHANT, f"like: {r}")
-        back = self.tool(MERCHANT, "like", "game", sid)
-        check(back.get("success") and back.get("to_agent") == PLAYER, f"like back: {back}")
+        r = self.tool(self.player, "like", "game", sid)
+        check(r.get("success") and r.get("to_agent") == self.merchant, f"like: {r}")
+        back = self.tool(self.merchant, "like", "game", sid)
+        check(back.get("success") and back.get("to_agent") == self.player, f"like back: {back}")
 
     def standing(self) -> None:
-        q = self.tool(PLAYER, "my_quests")
+        q = self.tool(self.player, "my_quests")
         done = {x["id"] for x in q.get("quests", []) if x.get("done")}
         check("first-set-play" in done, f"quests done: {sorted(done)}")
-        sheet = self.tool(PLAYER, "character_sheet")
+        sheet = self.tool(self.player, "character_sheet")
         craft = {c["module_type"]: c for c in sheet.get("craft", [])}
         check("rating" in craft.get("emporia:blotto:v1", {}), f"no Craft blotto rating: {sheet.get('craft')}")
         renown = sheet.get("renown") or {}
         check(renown.get("likes") == 1 and "swap cancels" in " ".join(renown.get("why") or []),
               f"Renown does not say why a swapped like counts nothing: {renown}")
-        shown = self.emporia(PLAYER, "sheet", PLAYER)
+        shown = self.emporia(self.player, "sheet", self.player)
         check("Renown" in shown and "swap cancels" in shown, f"emporia sheet: {shown.strip()[-300:]}")
-        season = self.tool(PLAYER, "season")
+        season = self.tool(self.player, "season")
         check(season.get("boards", {}).get("emporia:blotto:v1"), f"no blotto ladder: {season.get('boards')}")
         with urllib.request.urlopen(self.relay_url + "/relay/activity", timeout=5) as resp:
             act = json.loads(resp.read())
         check(act.get("active_agents") == 2, f"/relay/activity: {act}")
 
     def house(self) -> None:
-        s = self.tool(PLAYER, "create_session", "emporia:blotto:v1", config={"battlefields": 3, "troops": 10})
+        s = self.tool(self.player, "create_session", "emporia:blotto:v1", config={"battlefields": 3, "troops": 10})
         check(s.get("success"), f"create_session: {s}")
         sid = s["session_id"]
         time.sleep(2.5)                           # waiting longer than --adopt-after 2
-        moves = {PLAYER: [5, 5, 0]}
+        moves = {self.player: [5, 5, 0]}
         for _ in range(8):
-            out = self.emporia(HOUSE, "house", "run", HOUSE, "--once", "--adopt-after", "2")
+            out = self.emporia(self.house_agent, "house", "run", self.house_agent, "--once", "--adopt-after", "2")
             check("HTTP Request" not in out, "house run logs every HTTP request")
-            g = self.tool(PLAYER, "get_session", sid)
+            g = self.tool(self.player, "get_session", sid)
             if g["status"] == "completed":
                 break
-            check(HOUSE in g.get("participants", []), f"the house did not adopt the game: {g.get('participants')}")
-            if g["current_agent"] == PLAYER:
-                self.act(PLAYER, sid, moves)
+            check(self.house_agent in g.get("participants", []), f"the house did not adopt the game: {g.get('participants')}")
+            if g["current_agent"] == self.player:
+                self.act(self.player, sid, moves)
         else:
             raise StepFailed("the house's game did not finish in 8 passes")
-        check(HOUSE in g["participants"], f"participants: {g['participants']}")
+        check(self.house_agent in g["participants"], f"participants: {g['participants']}")
 
     def update(self) -> None:
         rt = self.runtime_python().parent.parent.parent
         before = self.run(["git", "-C", str(rt), "rev-parse", "HEAD"]).stdout.strip()
-        first = self.emporia(PLAYER, "update", "--runtime-from", self.runtime_from(), timeout=600)
-        second = self.emporia(PLAYER, "update", "--runtime-from", self.runtime_from(), timeout=600)
+        first = self.emporia(self.player, "update", "--runtime-from", self.runtime_from(), timeout=600)
+        second = self.emporia(self.player, "update", "--runtime-from", self.runtime_from(), timeout=600)
         after = self.run(["git", "-C", str(rt), "rev-parse", "HEAD"]).stdout.strip()
         check(before == after == self.sha, f"runtime moved: {before[:12]} -> {after[:12]} (HEAD {self.sha[:12]})")
         dirty = self.run(["git", "-C", str(rt), "status", "--porcelain", "--untracked-files=no"]).stdout.strip()
@@ -380,7 +393,7 @@ class Run:
         for out in (first, second):
             check("first time" not in out and "gateway restart" not in out,
                   f"update with nothing to do still says: {out.strip()[-200:]}")
-        check("Relay   : registered" in self.emporia(PLAYER, "status"), "status after update")
+        check("Relay   : registered" in self.emporia(self.player, "status"), "status after update")
 
     # ── teardown ────────────────────────────────────────────────────────────
     def teardown(self) -> None:
@@ -403,9 +416,11 @@ class Run:
                     proc.kill()
                     proc.wait(timeout=5)
         alive = [pid for pid in self.pids if self.procs[pid].poll() is None]
+        services = self._remove_own_services()
         left = self._left_running()
-        self.note(f"\nstopped: {self.pids}; still alive: {alive}; others naming the run's folder: {left}")
-        ok = not alive and not left
+        self.note(f"\nstopped: {self.pids}; still alive: {alive}; others naming the run's folder: {left}; "
+                  f"gateway services left: {services}")
+        ok = not alive and not left and not services
         try:
             self.log.close()
         except OSError:
@@ -419,10 +434,33 @@ class Run:
         else:
             shutil.rmtree(self.root, ignore_errors=True)
         took = time.monotonic() - t0
-        what = f"stopped {len(self.pids)} processes" + (f"; still running: {alive + left}" if not ok else "")
+        what = (f"stopped {len(self.pids)} processes" + (f"; still running: {alive + left}" if alive or left else "")
+                + (f"; gateway services not removed: {', '.join(services)}" if services else ""))
         print(f"{'✓' if ok else '✗'} tear down: {what}  ({took:.1f}s)", flush=True)
         if not ok:
             self.failed += 1
+
+    @staticmethod
+    def _services() -> set[str]:
+        try:
+            return {p.name for p in S6_SCANDIR.iterdir() if p.name.startswith("gateway-")}
+        except OSError:
+            return set()
+
+    def _remove_own_services(self) -> list[str]:
+        """The s6 gateway services `hermes profile create` registered for this run's profiles, removed
+        the way Hermes removes them: `hermes profile delete NAME --yes`, here, with the temp homes.
+        Only names this run made, and only services that were not there when it started."""
+        mine = [n for n in (self.judge, self.player, self.merchant, self.house_agent)
+                if f"gateway-{n}" not in self.services_before]
+        for name in mine:
+            if f"gateway-{name}" in self._services() and self.hermes:
+                try:
+                    self.run([self.hermes, "profile", "delete", name, "--yes"], timeout=120, ok_codes=None)
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    self.note(f"profile delete {name}: {exc}")
+        now = self._services()
+        return [f"gateway-{n}" for n in mine if f"gateway-{n}" in now]
 
     def _left_running(self) -> list[int]:
         """Processes not started here that name this run's folder: reported, never killed."""
@@ -468,18 +506,18 @@ def main(argv: list[str] | None = None) -> int:
         run.step("temp HERMES_HOME and HOME", lambda: None)
         run.step("throwaway relay", run.start_relay)
         run.step("judge profile with the plugin", run.make_judge)
-        run.step(f"setup {PLAYER} (player)", run.setup_agent, PLAYER, "--playbook", "player")
-        run.step(f"setup {MERCHANT} (merchant)", run.setup_agent, MERCHANT, "--playbook", "merchant")
-        run.step(f"{MERCHANT} plays set plays", run.emporia, MERCHANT, "agent", "playbook", MERCHANT,
+        run.step(f"setup {run.player} (player)", run.setup_agent, run.player, "--playbook", "player")
+        run.step(f"setup {run.merchant} (merchant)", run.setup_agent, run.merchant, "--playbook", "merchant")
+        run.step(f"{run.merchant} plays set plays", run.emporia, run.merchant, "agent", "playbook", run.merchant,
                  "--games", "set-plays")
-        for name in (PLAYER, MERCHANT):
+        for name in (run.player, run.merchant):
             run.step(f"{name}: role, keys, plugin, registered, doctor", run.check_agent, name)
         run.step("playbook refusals name their fix", run.refusals)
         sid = run.step("free blotto, end to end", run.blotto)
         run.step("illegal commit and missing session refused", run.illegal_commit)
         run.step("likes", run.like, sid)
         run.step("quests, sheet, season, activity", run.standing)
-        run.step(f"setup {HOUSE} (house)", run.setup_agent, HOUSE, "--playbook", "host")
+        run.step(f"setup {run.house_agent} (house)", run.setup_agent, run.house_agent, "--playbook", "host")
         run.step("house adopts a waiting blotto and finishes it", run.house)
         run.step("update --runtime-from is idempotent", run.update)
     except StepFailed:
