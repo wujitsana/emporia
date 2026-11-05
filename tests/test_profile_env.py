@@ -1,7 +1,9 @@
 """Catalog rule 11: a Hermes profile's .env is read and written through Hermes, never opened
 by Emporia, whenever Hermes is installed; a catalog runtime with no Hermes fails closed."""
+import json
 import re
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -133,4 +135,78 @@ def test_through_the_installed_hermes_for_real(profile, monkeypatch):
     hermes_settings.write(profile, unset=["EMPORIA_T_SECRET"])
     assert hermes_settings.read(profile, fresh=True) == {"EMPORIA_AGENT_ID": "zed"}
     assert oct((profile / ".env").stat().st_mode)[-3:] == "600"
+    hermes_settings.forget()
+
+
+def _stub_hermes(tmp_path, monkeypatch, *, blocked=()):
+    """A Hermes whose env writer refuses the names in `blocked` as Hermes's does: it says why
+    on stderr and returns, the call itself succeeding."""
+    root = tmp_path / "stub-hermes"
+    (root / "agent").mkdir(parents=True)
+    (root / "hermes_cli").mkdir()
+    (root / "agent" / "__init__.py").write_text("")
+    (root / "hermes_cli" / "__init__.py").write_text("")
+    (root / "agent" / "secret_scope.py").write_text(
+        "import json\n"
+        "def load_env_file(p):\n"
+        "    try:\n"
+        "        return json.loads(p.read_text())\n"
+        "    except OSError:\n"
+        "        return {}\n")
+    (root / "hermes_cli" / "config.py").write_text(
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        f"BLOCKED = {sorted(blocked)!r}\n"
+        "def get_env_path():\n"
+        "    return Path(os.environ['HERMES_HOME']) / '.env'\n"
+        "def _load():\n"
+        "    p = get_env_path()\n"
+        "    return json.loads(p.read_text()) if p.exists() else {}\n"
+        "def save_env_value(k, v):\n"
+        "    if k in BLOCKED:\n"
+        "        print(f'{k}: this .env is locked', file=sys.stderr)\n"
+        "        return\n"
+        "    d = _load(); d[k] = v; get_env_path().write_text(json.dumps(d))\n"
+        "def remove_env_value(k):\n"
+        "    if k in BLOCKED:\n"
+        "        return False\n"
+        "    d = _load(); d.pop(k, None); get_env_path().write_text(json.dumps(d))\n"
+        "    return True\n")
+    monkeypatch.setattr(hermes_settings, "_hermes", lambda: (Path(sys.executable), str(root)))
+    hermes_settings.forget()
+
+
+def test_a_write_hermes_refused_is_a_failure_that_names_the_setting_not_its_value(profile, tmp_path,
+                                                                                  monkeypatch):
+    """Found integrating the catalog work: Hermes's save_env_value skips a write its .env lock
+    refuses (it prints why and returns), so a spending limit or a key that never landed was
+    reported as written. Each write is read back; one that did not land fails, by name."""
+    _stub_hermes(tmp_path, monkeypatch, blocked={"EMPORIA_X402_MAX_DAILY_CENTS", "EMPORIA_SIGNER_TOKEN"})
+    hermes_settings.write(profile, {"EMPORIA_AGENT_ID": "zed"})
+    assert hermes_settings.read(profile, fresh=True) == {"EMPORIA_AGENT_ID": "zed"}
+    with pytest.raises(hermes_settings.SettingsUnavailable) as caught:
+        hermes_settings.write(profile, {"EMPORIA_X402_MAX_DAILY_CENTS": "300",
+                                        "EMPORIA_SIGNER_TOKEN": "tok-sentinel-not-shown"})
+    msg = str(caught.value)
+    assert "EMPORIA_SIGNER_TOKEN" in msg and "EMPORIA_X402_MAX_DAILY_CENTS" in msg
+    assert "tok-sentinel-not-shown" not in msg and "300" not in msg
+    (profile / ".env").write_text('{"EMPORIA_SIGNER_TOKEN": "x"}')     # (the stub's .env is JSON)
+    with pytest.raises(hermes_settings.SettingsUnavailable, match="did not take EMPORIA_SIGNER_TOKEN"):
+        hermes_settings.write(profile, unset=["EMPORIA_SIGNER_TOKEN"])     # a removal refused, too
+    hermes_settings.forget()
+
+
+def test_a_write_is_judged_against_what_the_profile_holds_now(profile, monkeypatch):
+    """A value read earlier in the process (cached) may have changed since: a set judged
+    "already so" from the cache was skipped, and the profile kept the other value."""
+    held = {"EMPORIA_PLAYBOOK": "host"}
+    writes = []
+    monkeypatch.setattr(hermes_settings, "available", lambda: True)
+    monkeypatch.setattr(hermes_settings, "_run", lambda code, home, *a, stdin="": (
+        json.dumps(held) if not stdin else writes.append(json.loads(stdin)) or ""))
+    hermes_settings.forget()
+    assert profile_env.read(profile / ".env") == {"EMPORIA_PLAYBOOK": "host"}     # now cached
+    held["EMPORIA_PLAYBOOK"] = "player"                                           # changed elsewhere
+    assert profile_env.update(profile / ".env", {"EMPORIA_PLAYBOOK": "host"}) == ["EMPORIA_PLAYBOOK"]
+    assert writes == [{"set": {"EMPORIA_PLAYBOOK": "host"}, "unset": []}]
     hermes_settings.forget()

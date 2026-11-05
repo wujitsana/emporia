@@ -317,13 +317,15 @@ from agent.secret_scope import reset_secret_scope, set_secret_scope
 os.environ["EMPORIA_KEYS_DIR"] = "/launching/profile/keys"
 os.environ.update(TELEGRAM_BOT_TOKEN="t", OPENROUTER_API_KEY="k", GROKBOT_FEEDBACK_HEADER_SECRET="s",
                   SOME_PRIVATE_THING="p", LANG_PLAIN="ok", HERMES_YOLO_MODE="1", HERMES_ACCEPT_HOOKS="1",
-                  VAULT_ADDR="https://vault.launching")
+                  VAULT_ADDR="https://vault.launching", ALPHA_ENC="launching-copy", BETA_WALLET="launching-wallet")
 extra = {{"relay_url": "http://relay.test", "agent_id": "alpha", "python": "/x/python",
           "dotenv": "/profiles/alpha/.env"}}
 # A multiplexed gateway builds the adapter inside alpha's secret scope (its .env, as Hermes reads it).
 token = set_secret_scope({{"EMPORIA_KEYS_DIR": "/profiles/alpha/home/.hermes/keys",
                           "EMPORIA_IDENTITY_KEY_SOURCE": "env:EMPORIA_IDENTITY_PRIVATE_KEY",
                           "EMPORIA_IDENTITY_PRIVATE_KEY": "alpha-key", "VAULT_ADDR": "https://vault.alpha",
+                          "EMPORIA_ENCRYPTION_KEY_SOURCE": "env:ALPHA_ENC", "ALPHA_ENC": "alpha-enc",
+                          "EMPORIA_X402_EVM_KEY_SOURCE": "env:BETA_WALLET",
                           "OPENROUTER_API_KEY": "alphas-model-key"}}, profile_home="/profiles/alpha")
 try:
     scoped = EmporiaAdapter(PlatformConfig(enabled=True, extra=extra))
@@ -337,6 +339,7 @@ def show(env):
             "emporia": {{k: v for k, v in env.items() if k.startswith("EMPORIA_")
                          and k not in ("EMPORIA_DOTENV", "EMPORIA_NO_DOTENV", "EMPORIA_HANDED_NAMES")}},
             "vault": env.get("VAULT_ADDR"),
+            "linked": {{k: env.get(k) for k in ("ALPHA_ENC", "BETA_WALLET")}},
             "secrets": sorted(k for k in ("TELEGRAM_BOT_TOKEN", "OPENROUTER_API_KEY",
                                           "GROKBOT_FEEDBACK_HEADER_SECRET", "SOME_PRIVATE_THING") if k in env),
             "plain": "LANG_PLAIN" in env and "PATH" in env,
@@ -359,11 +362,16 @@ print(json.dumps({{"scoped": show(scoped._bridge_env()), "single": show(single._
     # brand-new key is written.
     scoped, single = result["scoped"], result["single"]
     assert scoped == {"dotenv": "/profiles/alpha/.env", "no_dotenv": "1",
-                      "handed": "EMPORIA_IDENTITY_KEY_SOURCE,EMPORIA_IDENTITY_PRIVATE_KEY,EMPORIA_KEYS_DIR,VAULT_ADDR",
+                      "handed": "ALPHA_ENC,EMPORIA_ENCRYPTION_KEY_SOURCE,EMPORIA_IDENTITY_KEY_SOURCE,"
+                                "EMPORIA_IDENTITY_PRIVATE_KEY,EMPORIA_KEYS_DIR,EMPORIA_X402_EVM_KEY_SOURCE,VAULT_ADDR",
                       "emporia": {"EMPORIA_KEYS_DIR": "/profiles/alpha/home/.hermes/keys",
                                   "EMPORIA_IDENTITY_KEY_SOURCE": "env:EMPORIA_IDENTITY_PRIVATE_KEY",
-                                  "EMPORIA_IDENTITY_PRIVATE_KEY": "alpha-key"},
+                                  "EMPORIA_IDENTITY_PRIVATE_KEY": "alpha-key",
+                                  "EMPORIA_ENCRYPTION_KEY_SOURCE": "env:ALPHA_ENC",
+                                  "EMPORIA_X402_EVM_KEY_SOURCE": "env:BETA_WALLET"},
                       "vault": "https://vault.alpha", "secrets": [], "plain": True,
+                      # A key linked by any name is alpha's own; one alpha lacks is never the launcher's.
+                      "linked": {"ALPHA_ENC": "alpha-enc", "BETA_WALLET": None},
                       "hermes_python": False, "bypass": []}
     # One profile, no scope: its os.environ is its own (Hermes loaded its .env there).
     assert single["emporia"]["EMPORIA_KEYS_DIR"] == "/launching/profile/keys"

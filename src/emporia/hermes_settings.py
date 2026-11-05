@@ -33,13 +33,24 @@ _READ = ("import json, sys\n"
          "from pathlib import Path\n"
          "from agent.secret_scope import load_env_file\n"
          "sys.stdout.write(json.dumps(load_env_file(Path(sys.argv[1]) / '.env')))\n")
+# Then read back: Hermes skips a write its .env lock refuses (it prints why and returns), so
+# what was asked is checked against what the file now holds, and a setting that did not land
+# (a spending limit, a key) fails the write — by name only, never its value. Hermes keeps a
+# value without line breaks and without non-ASCII characters, so that is what is compared.
 _WRITE = ("import json, sys\n"
-          "from hermes_cli.config import remove_env_value, save_env_value\n"
+          "from agent.secret_scope import load_env_file\n"
+          "from hermes_cli.config import get_env_path, remove_env_value, save_env_value\n"
           "d = json.load(sys.stdin)\n"
           "for k, v in d.get('set', {}).items():\n"
           "    save_env_value(k, v)\n"
           "for k in d.get('unset', []):\n"
-          "    remove_env_value(k)\n")
+          "    remove_env_value(k)\n"
+          "have = load_env_file(get_env_path())\n"
+          "kept = lambda v: v.replace('\\n', '').replace('\\r', '').encode('ascii', 'ignore').decode('ascii')\n"
+          "bad = sorted([k for k, v in d.get('set', {}).items() if have.get(k) != kept(v)]\n"
+          "             + [k for k in d.get('unset', []) if k in have])\n"
+          "if bad:\n"
+          "    sys.exit('the profile did not take ' + ', '.join(bad))\n")
 
 
 class SettingsUnavailable(RuntimeError):

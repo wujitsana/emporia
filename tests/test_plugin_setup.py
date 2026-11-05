@@ -142,6 +142,60 @@ def test_the_runtime_is_verified_against_the_pinned_commit_and_tree(tmp_path):
         setup_cli.verify_runtime(repo, sha, tree)
 
 
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+def test_a_changed_file_the_index_was_told_to_ignore_is_still_refused(tmp_path, flag):
+    """Found integrating the catalog work: `git status` reads the index, and an index told to
+    look away from a file (assume-unchanged, skip-worktree) passes it changed. The files'
+    own bytes are compared with the pinned tree."""
+    import subprocess
+    repo, sha, tree = _repo(tmp_path)
+    subprocess.run(["git", "-C", str(repo), "update-index", flag, "code.py"], check=True)
+    (repo / "code.py").write_text("print('changed, and the index looks away')\n")
+    assert not subprocess.run(["git", "-C", str(repo), "status", "--porcelain"], capture_output=True,
+                              text=True).stdout.strip(), "git status alone sees nothing"
+    with pytest.raises(setup_cli.SetupFailed, match="differ from the pinned commit:\ncode.py"):
+        setup_cli.verify_runtime(repo, sha, tree)
+    (repo / "code.py").unlink()
+    with pytest.raises(setup_cli.SetupFailed, match="differ from the pinned commit"):
+        setup_cli.verify_runtime(repo, sha, tree)
+
+
+@pytest.mark.parametrize("extra", ["src/emporia/modules/extra.py", "src/sitecustomize.py", "src/x.pth",
+                                   "src/emporia/stale.pyc", "installer/helper.py"])
+def test_code_no_commit_holds_is_refused_beside_the_runtime(tmp_path, extra):
+    """emporia.modules imports every module in its folder, and an editable install puts `src`
+    on sys.path (a sitecustomize there runs at every start): code beside the pinned files would
+    run as the reviewed runtime. A cache in __pycache__, or another untracked file, is fine."""
+    repo, sha, tree = _repo(tmp_path)
+    cache = repo / "src" / "emporia" / "__pycache__" / "cli.cpython-313.pyc"
+    cache.parent.mkdir(parents=True)
+    cache.write_bytes(b"cache")
+    (repo / "src" / "emporia.egg-info").mkdir()
+    (repo / "src" / "emporia.egg-info" / "PKG-INFO").write_text("Name: emporia\n")
+    setup_cli.verify_runtime(repo, sha, tree)
+    (repo / extra).parent.mkdir(parents=True, exist_ok=True)
+    (repo / extra).write_text("print('not reviewed')\n")
+    with pytest.raises(setup_cli.SetupFailed, match="code the pinned commit does not hold"):
+        setup_cli.verify_runtime(repo, sha, tree)
+
+
+@pytest.mark.parametrize("flag", ["--assume-unchanged", "--skip-worktree"])
+def test_installing_puts_back_a_file_the_index_was_told_to_ignore(tmp_path, monkeypatch, flag):
+    """The index is rebuilt from the pinned tree before the forced checkout, so a file hidden
+    from it is restored rather than kept (and then refused) — update repairs the runtime.
+    (`checkout --force` alone keeps a skip-worktree file as it is.)"""
+    import subprocess
+    repo, sha, tree = _repo(tmp_path)
+    subprocess.run(["git", "-C", str(repo), "update-index", flag, "code.py"], check=True)
+    (repo / "code.py").write_text("print('changed')\n")
+    (repo / ".venv").mkdir()
+    (repo / ".venv" / setup_cli._INSTALLED).write_text(sha + "\n")     # its packages: this commit's
+    monkeypatch.setattr(setup_cli, "python_of", lambda r: Path(sys.executable))
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", "https://example.test/e"], check=True)
+    assert setup_cli._sync_runtime(lambda *a: None, repo, "https://example.test/e", sha, tree) == repo
+    assert (repo / "code.py").read_text() == "print('reviewed')\n"
+
+
 def test_status_says_when_the_runtime_is_not_the_verified_pin(tmp_path, monkeypatch):
     repo, sha, tree = _repo(tmp_path)
     rt = tmp_path / "home" / "plugin-data" / "emporia" / "runtime"

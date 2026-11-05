@@ -197,11 +197,54 @@ def _git(rt: Path, *args: str) -> str:
         return ""
 
 
+# Where the runtime's Python is imported from: its package folder is on sys.path (an
+# editable install puts `src` there), and the CLI loads installer/install.py by path.
+_IMPORT_ROOTS = ("src", "installer")
+
+
+def _not_as_pinned(rt: Path, sha: str) -> list[str]:
+    """The pinned commit's files whose bytes here are not that commit's, read from the files
+    themselves: the index can be told to look away (`update-index --assume-unchanged` or
+    `--skip-worktree`), and then `git status` and `checkout --force` both pass a changed file by."""
+    wanted: dict[str, str] = {}
+    out: list[str] = []
+    for entry in filter(None, _run(["git", "-C", str(rt), "ls-tree", "-r", "-z", sha]).split("\0")):
+        meta, _, path = entry.partition("\t")
+        mode, kind, obj = meta.split()
+        if kind != "blob":
+            continue
+        here = rt / path
+        if mode == "120000":                     # a symlink: its target is its content
+            if not here.is_symlink() or os.readlink(here) != _run(["git", "-C", str(rt), "cat-file", "blob", obj]):
+                out.append(path)
+        elif here.is_symlink() or not here.is_file():
+            out.append(path)
+        else:
+            wanted[path] = obj
+    paths = list(wanted)
+    for i in range(0, len(paths), 200):
+        chunk = paths[i:i + 200]
+        got = _run(["git", "-C", str(rt), "hash-object", "--", *chunk]).split()
+        out += [p for p, h in zip(chunk, got, strict=True) if h != wanted[p]]
+    return out
+
+
+def _unpinned_code(rt: Path) -> list[str]:
+    """Files no commit holds (untracked or ignored) that Python would import from the runtime:
+    a module beside the pinned ones (emporia.modules imports every one it finds), a
+    sitecustomize, a .pth, a compiled extension, a sourceless .pyc. Caches in __pycache__ are not
+    code Python runs without its source."""
+    listed = _run(["git", "-C", str(rt), "ls-files", "--others", "-z", "--", *_IMPORT_ROOTS])
+    return [p for p in filter(None, listed.split("\0"))
+            if p.endswith((".py", ".pth", ".so", ".pyd")) or (p.endswith(".pyc") and "__pycache__/" not in p)]
+
+
 def verify_runtime(rt: Path, sha: str, tree: str = "") -> None:
     """Catalog rule 3: the runtime is exactly the reviewed code. Its HEAD is the pinned
     commit (a full sha names one commit; no branch, tag or ref is followed), that commit's
     tree is the tree emporia_source.json records (so no other object can stand in for it),
-    and no tracked file differs from it. Raises SetupFailed otherwise; nothing then runs."""
+    no tracked file differs from it — by the files' own bytes, not only what the index says —
+    and no code beside it would be imported. Raises SetupFailed otherwise; nothing then runs."""
     head = _git(rt, "rev-parse", "HEAD")
     if head != sha:
         raise SetupFailed(f"the runtime at {rt} is at {head[:12] or '?'}, not the pinned {sha[:12]}")
@@ -213,6 +256,12 @@ def verify_runtime(rt: Path, sha: str, tree: str = "") -> None:
     changed = _run(["git", "-C", str(rt), "status", "--porcelain", "--untracked-files=no"]).strip()
     if changed:
         raise SetupFailed(f"the runtime at {rt} has files that differ from the pinned commit:\n{changed[:500]}")
+    changed = "\n".join(_not_as_pinned(rt, sha))
+    if changed:
+        raise SetupFailed(f"the runtime at {rt} has files that differ from the pinned commit:\n{changed[:500]}")
+    extra = "\n".join(_unpinned_code(rt))
+    if extra:
+        raise SetupFailed(f"the runtime at {rt} has code the pinned commit does not hold:\n{extra[:500]}")
 
 
 def install_runtime(say=print, target: Path | None = None) -> Path:
@@ -246,7 +295,9 @@ def _sync_runtime(say, rt: Path, repo: str, sha: str, tree: str = "") -> Path:
     if _git_head(rt) != sha:
         _run(["git", "-C", str(rt), "fetch", "--quiet", repo, sha])
     # Always: after a --no-checkout clone the files are not there yet even when HEAD is the
-    # pinned commit (P296), and --force puts back any tracked file that was changed here.
+    # pinned commit (P296), and --force puts back any tracked file that was changed here. The
+    # index is rebuilt from the pinned tree first, so no file it was told to ignore is skipped.
+    _run(["git", "-C", str(rt), "read-tree", sha])
     _run(["git", "-C", str(rt), "checkout", "--quiet", "--force", "--detach", sha])
     verify_runtime(rt, sha, tree)
     marker = rt / ".venv" / _INSTALLED

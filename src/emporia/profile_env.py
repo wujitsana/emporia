@@ -93,7 +93,9 @@ def update(path: Path, updates: dict[str, str] | None = None, unset=()) -> list[
     updates = {str(k): str(v) for k, v in (updates or {}).items()}
     unset = [str(n) for n in unset if str(n) not in updates]
     if through_hermes(path):
-        have = hermes_settings.read(path.parent)
+        # Fresh: a value read earlier in this process may have changed since, and a set judged
+        # "already so" from it would be skipped.
+        have = hermes_settings.read(path.parent, fresh=True)
         changed = [k for k, v in updates.items() if have.get(k) != v] + [n for n in unset if n in have]
         if changed:
             hermes_settings.write(path.parent, {k: updates[k] for k in changed if k in updates},
@@ -129,7 +131,7 @@ def replace(path: Path, lines: list[str]) -> list[str]:
     path = Path(path).expanduser()
     want = _parse("\n".join(lines))
     if through_hermes(path):
-        have = hermes_settings.read(path.parent)
+        have = hermes_settings.read(path.parent, fresh=True)
         return update(path, {k: v for k, v in want.items() if have.get(k) != v},
                       [n for n in have if n not in want])
     before = read(path)

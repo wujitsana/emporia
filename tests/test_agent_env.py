@@ -12,7 +12,9 @@ _READ = re.compile(
     r'''|environ\[\s*["']([A-Z][A-Z0-9_]*)["']'''
     r'''|environ\.get\(\s*["']([A-Z][A-Z0-9_]*)["']'''
     r'''|\benv\.get\(\s*["']([A-Z][A-Z0-9_]*)["']'''
-    r'''|\b_getenv\(\s*["']([A-Z][A-Z0-9_]*)["']''')
+    r'''|\b_getenv\(\s*["']([A-Z][A-Z0-9_]*)["']'''
+    r'''|environ\.(?:setdefault|pop)\(\s*["']([A-Z][A-Z0-9_]*)["']'''
+    r'''|["']([A-Z][A-Z0-9_]*)["']\s+(?:not\s+)?in\s+os\.environ\b''')
 _ENVF = re.compile(r'''\benv(?:_int|_float)?\(\s*["']([A-Z][A-Z0-9_]*)["']''')
 # Process-wide, set by the OS, the terminal or Hermes itself; never a profile setting.
 _GLOBAL = {"HERMES_HOME", "TERM", "NO_COLOR", "PATH", "HOME", "USER", "LANG", "TZ"}

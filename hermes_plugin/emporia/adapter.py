@@ -89,6 +89,13 @@ _APPROVAL_BYPASS_VARS = frozenset({"HERMES_YOLO_MODE", "HERMES_YOLO", "HERMES_AC
 # What a linked key's vault CLI needs besides EMPORIA_* (its token, its address): the
 # profile's own values, never the launching profile's.
 _VAULT_PREFIXES = ("OP_", "BW_", "VAULT_", "DOPPLER_", "INFISICAL_", "AWS_", "AZURE_")
+# A key linked by name (`EMPORIA_IDENTITY_KEY_SOURCE=env:MY_KEY`): the bridge signs in with
+# that key, so it is handed too, whatever its name (as agent_env.names() does for the MCP server).
+_ENV_REF = re.compile(r"^\s*env:\s*([A-Z][A-Z0-9_]*)\s*$")
+
+
+def _linked_names(values: dict[str, str]) -> set[str]:
+    return {m.group(1) for k, v in values.items() if k.startswith("EMPORIA_") and (m := _ENV_REF.match(v))}
 
 
 def _profile_values() -> dict[str, str]:
@@ -106,6 +113,10 @@ def _profile_values() -> dict[str, str]:
     names = set(scope) if scope is not None else set(os.environ)
     out: dict[str, str] = {}
     for name in sorted(n for n in names if n.startswith("EMPORIA_") or n.startswith(_VAULT_PREFIXES)):
+        value = _get_scoped_secret(name, "")
+        if value not in (None, ""):
+            out[name] = str(value)
+    for name in sorted(_linked_names(out) - set(out)):
         value = _get_scoped_secret(name, "")
         if value not in (None, ""):
             out[name] = str(value)
@@ -176,9 +187,10 @@ class EmporiaAdapter(BasePlatformAdapter):
 
         P201: and no secret of the gateway's — a bot token, a model key, any
         key docker-compose gave the container. Nor Hermes's approval bypasses."""
+        linked = _linked_names(self.profile_values)     # never the launching profile's copy of one
         env = {k: v for k, v in os.environ.items()
                if not k.startswith("EMPORIA_") and not k.startswith(_VAULT_PREFIXES)
-               and not _SECRET_NAME.search(k)
+               and not _SECRET_NAME.search(k) and k not in linked
                and k not in _HERMES_PYTHON_VARS and k not in _APPROVAL_BYPASS_VARS}
         env.update(self.profile_values)
         # Which of these are the agent's, so a relay the bridge restarts gets none of them.
