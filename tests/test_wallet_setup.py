@@ -1132,3 +1132,19 @@ def test_an_answer_is_echoed_short_and_followed_by_a_blank_line(monkeypatch, cap
     monkeypatch.setattr(menus, "select", lambda *a, **k: 0)
     cli.choose("Role?", [("m", "Marketplace agent — plays, trades, chats"), ("d", "Developer")])
     assert capsys.readouterr().out == "Role? → Marketplace agent\n\n"
+
+
+def test_setup_agent_says_restart_once_after_moving_a_new_agents_keys(tmp_path, monkeypatch):
+    """Found by the end-to-end run: a new agent's key move printed the "Next: restart"
+    block, then setup printed it again at its end."""
+    profile = tmp_path / "nu"
+    profile.mkdir()
+    key = profile / "nu.priv"
+    key.write_bytes(b"\x01" * 32)
+    calls = []
+    monkeypatch.setattr(cli.installer(), "print_restart_instructions", lambda ps: calls.append(ps))
+    assert cli._move_to_env(profile, [("identity", key, key.read_bytes().hex())], True, restart_hint=False) == 0
+    assert calls == [] and not key.exists()
+    key.write_bytes(b"\x02" * 32)
+    assert cli._move_to_env(profile, [("identity", key, key.read_bytes().hex())], True) == 0
+    assert calls == [[profile]], "on its own (`emporia identity store`) it still says restart"

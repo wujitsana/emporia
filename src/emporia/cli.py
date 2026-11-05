@@ -4445,7 +4445,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         fresh = [(w, f, f.read_bytes().hex()) for w in ("identity", "encryption")
                  if (f := _key_file(profile, aid, w)).exists()]
         if fresh and not existing and not inst.harvest_env(profile).get("EMPORIA_IDENTITY_KEY_SOURCE"):
-            _move_to_env(profile, fresh, True)
+            _move_to_env(profile, fresh, True, restart_hint=False)   # setup says restart at its end
         elif fresh and existing:
             print(f"  Its existing keys are still files; move them with `emporia identity store {name} "
                   f"--to env` and `emporia wallet store {name}`.")
@@ -6178,9 +6178,11 @@ def _link_key(profile: Path, agent_id: str, which: str, ref: str) -> int:
     return 0
 
 
-def _move_to_env(profile: Path, items: list[tuple[str, Path, str]], remove: bool | None) -> int:
+def _move_to_env(profile: Path, items: list[tuple[str, Path, str]], remove: bool | None,
+                 restart_hint: bool = True) -> int:
     """Move key files into the profile .env: (what, file, value) each. The file
-    is removed only after the .env is checked to hold the same value."""
+    is removed only after the .env is checked to hold the same value. `setup agent`
+    says restart once, at its end (restart_hint=False)."""
     from emporia import key_source
     moved = []
     for what, f, value in items:
@@ -6201,7 +6203,8 @@ def _move_to_env(profile: Path, items: list[tuple[str, Path, str]], remove: bool
             print(f"  removed {f.name}")
     if not remove:
         print("  The key files are still there; remove them once the agent has restarted fine.")
-    installer().print_restart_instructions([profile])
+    if restart_hint:
+        installer().print_restart_instructions([profile])
     return 0
 
 
