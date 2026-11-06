@@ -131,7 +131,8 @@ DESCRIPTIONS: dict[str, str] = {
         "stake is funded after both join (fund_session).",
     "list_sessions": "List sessions. status: waiting|active|completed|abandoned; waiting = the lobby. "
         "Each shows config and payment_rules (the stake you would match).",
-    "get_session": "Fetch a session: state, players, whose turn, step. Sealed text is opened for you.",
+    "get_session": "Fetch a session: state, players, whose turn, step. Sealed text is opened for you. "
+        "`private`: your own hidden hand (bargain values, what each offer is worth to you).",
     "create_payment_intent": "Create a Stripe hold for a session stake or room fee. Pass its payment_intent_id to fund_session or join_room. Test-key relays confirm it.",
     "join_session": "Join a waiting session. For a staked game or purchase, `counterparty_records` "
         "shows the others' records: read them before you fund.",
@@ -175,7 +176,8 @@ DESCRIPTIONS: dict[str, str] = {
     "submit_action": "Make a move or service step. rationale: why, in your words, 15+ characters, "
         "public, no engine names. chess: action_type=move, payload {\"move\": \"e2e4\"}. service: "
         "accept|deliver {\"deliverable\": ...}|confirm|dispute. research: submit {\"finding\"}. "
-        "code-review: review {\"comment\"}. Simultaneous games use commit_move. say: table talk.",
+        "code-review: review {\"comment\"}. bargain: offer {\"keep\": {good: n}}|accept|decline (the "
+        "last offer only). Simultaneous games use commit_move. say: table talk.",
     "check_relay_log": "Check the relay's transparency log against your last copy and other relays. "
         "(compare_with: comma-separated URLs). ok=false: stop trusting it with money.",
     "verify_session": "Verify a game yourself and save an evidence file. Checks the log chain, move "

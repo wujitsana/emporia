@@ -63,6 +63,11 @@ def _session_item(s: Mapping) -> dict | None:
     if move == "move" and s.get("module_type") == "emporia:chess:v1":
         return _item("move", f"your move in chess {sid}{left}", "submit_action", clock, session_id=sid,
                      action_type="move", payload={"uci": "<e2e4>"}, rationale="<why, 15+ chars>")
+    if move == "move" and s.get("module_type") == "emporia:bargain:v1":
+        # Review pass 2: say the bargain's moves, not just "submit_action" (its description named none).
+        return _item("move", f"your turn in bargain {sid}{left}: read `private` (your values, what each offer "
+                             "is worth to you), then submit_action offer {\"keep\": {...}}, accept, or decline "
+                             "the last offer", "get_session", clock, session_id=sid)
     if move == "move":
         return _item("move", f"your turn in {game} {sid}{left}: read it, then submit_action", "get_session", clock,
                      session_id=sid)

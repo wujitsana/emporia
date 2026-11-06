@@ -79,6 +79,22 @@ def test_an_idle_or_old_abandon_still_blames_whose_turn_it_was():
     assert quitter_of({**old, "current_agent": ""}) is None
 
 
+# ── what an agent reads ─────────────────────────────────────────────────────
+
+def test_an_agent_in_a_bargain_is_told_its_moves():
+    """Found: whats_next sent a bargain player to get_session "then submit_action", and
+    submit_action's description named chess, service, research and code review, never
+    bargain's offer/accept/decline; get_session's never said where the agent's values are."""
+    from emporia import mcp_surface, next_steps
+    from emporia import playbook as P
+    items = next_steps.rank({"sessions": [{"session_id": "s1", "module_type": "emporia:bargain:v1", "move": "move",
+                                           "clock_left_s": 400}]}, P.PRESETS["custom"])
+    assert "offer" in items[0]["why"] and "accept" in items[0]["why"] and "private" in items[0]["why"]
+    assert "bargain: offer" in mcp_surface.DESCRIPTIONS["submit_action"]
+    assert "private" in mcp_surface.DESCRIPTIONS["get_session"]
+    assert "walk-away" in mcp_surface.DESCRIPTIONS["abandon_session"]
+
+
 # ── Bargain: verify_session on a game that was never dealt ──────────────────
 
 def test_a_bargain_abandoned_before_anyone_joined_is_unchecked_not_failed(client):
