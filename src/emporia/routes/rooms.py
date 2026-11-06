@@ -781,37 +781,6 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
         except PermissionError as e:
             raise HTTPException(403, str(e))
 
-    # Negotiation broker: route counter_offer/accept/reject in 2-member private rooms
-    broker_response: dict[str, Any] | None = None
-    if effective_msg_type in ("counter_offer", "accept", "reject") and room.is_negotiation_room():
-        # P19-6 (M8): the broker used to run unconditionally here — on an
-        # encrypted room, req.content is the *envelope*, not the offer: it's a
-        # JSON dict (crypto_box.seal()'s output serialized), so
-        # `req.content.strip().startswith("{")` is true and json.loads()
-        # parses it cleanly, handing process_offer() the envelope's structural
-        # fields (v, alg, epk, ct, ...) as if they were an offer. Worse than a
-        # no-op: on ACCEPT/COUNTER it posted `broker_response` as a *plaintext*
-        # system row via rooms_db.post_message() below, bypassing
-        # validate_envelope_for() entirely — a guaranteed plaintext write into
-        # a room whose entire point is that the relay never holds plaintext.
-        # The relay cannot decrypt, so it cannot broker; refuse cleanly instead.
-        if room.encrypted:
-            raise HTTPException(
-                400,
-                "the negotiation broker is unavailable in an end-to-end encrypted "
-                "room — it would need to read the offer's plaintext to apply the "
-                "midpoint algorithm, which is exactly what this room's encryption "
-                "denies the relay. Negotiate out of band, or use an unencrypted room.",
-            )
-        from emporia.negotiation import process_offer
-        try:
-            offer_payload = json.loads(req.content) if req.content.strip().startswith("{") else {"text": req.content}
-            constraints = req.negotiation_constraints or {}
-            decision, response = process_offer(caller, offer_payload, constraints)
-            broker_response = {"decision": decision, "response": response}
-        except Exception:
-            pass  # non-JSON content — treat as plain chat
-
     try:
         msg = rooms_db.post_message(
             room_id=room_id,
@@ -821,7 +790,6 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
             parent_message_id=req.parent_message_id,
             signature=req.signature,
             nonce=req.nonce,
-            metadata={"broker": broker_response} if broker_response else {},
             db_path=rs.DATABASE_PATH,
         )
     except sqlite3.IntegrityError as e:
@@ -834,8 +802,6 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
         }) from e
 
     event: dict[str, Any] = {"type": "room_message", "room_id": room_id, **msg.to_dict()}
-    if broker_response:
-        event["broker"] = broker_response
     await rs.broadcast_to_session(f"room:{room_id}", event)
     # Push to member inboxes so offline agents don't miss messages
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -845,29 +811,7 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
     for member in members:
         await rs.broadcast_to_agent(member, event)
 
-    # If broker decided, post a system follow-up
-    if broker_response and broker_response["decision"] in ("ACCEPT", "COUNTER"):
-        sys_content = (
-            f"[Emporia broker] {broker_response['decision']}: "
-            f"{json.dumps(broker_response['response'])}"
-        )
-        sys_msg = rooms_db.post_message(
-            room_id=room_id,
-            sender_id="emporia:broker",
-            content=sys_content,
-            msg_type="system",
-            parent_message_id=msg.message_id,
-            db_path=rs.DATABASE_PATH,
-        )
-        await rs.broadcast_to_session(f"room:{room_id}", {
-            "type": "room_message",
-            "room_id": room_id,
-            **sys_msg.to_dict(),
-        })
-
     result = msg.to_dict()
-    if broker_response:
-        result["broker"] = broker_response
     return result
 @router.get("/rooms/{room_id}/encryption-keys")
 async def get_room_encryption_keys(room_id: str, request: Request):

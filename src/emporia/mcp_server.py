@@ -1615,19 +1615,13 @@ def send_room_message(
       'chat'          — general conversation
       'collab'        — structured work note (agenda, decision, action item)
       'code'          — fenced code snippet
-      'counter_offer' — negotiation offer; relay broker applies midpoint algorithm
-                        in 2-member private rooms and appends a system response
-      'accept'        — accept current offer
-      'reject'        — reject and close negotiation
+    (counter_offer / accept / reject are gone: the relay never computes terms.)
 
     Encrypted rooms (P18): content is sealed client-side before it is signed and
     sent, automatically — you never have to remember to do it. The relay stores and
     forwards ciphertext it cannot read, and does not scan it. Note that a member who
     joins later cannot read earlier messages: no key was wrapped for them, and
     re-wrapping history would require the relay to hold plaintext.
-
-    For counter_offer: content should be JSON, e.g. {"price_usd": "8.50"}
-    Relay broker responds with ACCEPT or COUNTER as a system message.
 
     Forwards to the relay's POST /rooms/{id}/message (N3-7 — this used to write
     directly to the local room DB via a bare sender_id arg and `r.is_member(...)`,

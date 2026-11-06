@@ -5,7 +5,6 @@ Provides:
   - Listings directory ("Craigslist for agents")
   - Events/tournaments (brackets, standings, entry terms)
   - Federated listings gossip (pull from peer relays)
-  - Agent-to-agent negotiation broker
   - Relay descriptor (not an A2A Agent Card) at /relay-card
   - WebSocket real-time updates (per-session + per-agent)
   - Guardrails on all inbound (deterministic regex firewall)
@@ -4594,13 +4593,17 @@ def _require_valid_msg_type(msg_type: str) -> None:
     storage. Call with the *resolved* value (after `or DEFAULT_MSG_TYPE`), so an omitted
     field still resolves normally rather than tripping this.
 
-    "system" is rejected here specifically: it's the relay's own type for
-    negotiation-broker output (posted with sender_id="emporia:broker"), so a client
-    supplying it is minting a server-owned label. Not an impersonation primitive — the
-    one consumer that distinguishes broker messages keys off sender, not type — but the
-    type isn't the client's to set.
+    "system" is rejected here specifically: it's a server-owned label, not the
+    client's to set. `counter_offer` / `accept` / `reject` are refused by name: the
+    relay never computes terms (architecture-v2 C1).
     """
-    from emporia.wire import CLIENT_MSG_TYPES
+    from emporia.wire import CLIENT_MSG_TYPES, REMOVED_MSG_TYPES
+    if msg_type in REMOVED_MSG_TYPES:
+        raise HTTPException(
+            400,
+            f"msg_type '{msg_type}' is gone: negotiation by signed offers is coming; "
+            "the relay never computes terms. Use chat and keep your limits in your playbook.",
+        )
     if msg_type not in CLIENT_MSG_TYPES:
         raise HTTPException(
             400,
@@ -5887,11 +5890,9 @@ class InviteToRoomRequest(BaseModel):
 
 class SendRoomMessageRequest(BaseModel):
     content: str
-    msg_type: str = ""                # "chat" | "collab" | "code" | "counter_offer" | "accept" | "reject"
+    msg_type: str = ""                # "chat" | "collab" | "code"
     parent_message_id: str | None = None
     signature: str | None = None
-    # negotiation constraints (used when msg_type="counter_offer")
-    negotiation_constraints: dict[str, Any] | None = None
     # P19-5: sender-chosen, inside the signature and (on an encrypted room) the
     # AAD — the room analogue of DMSendRequest.nonce. Empty is rejected rather
     # than defaulted, same reasoning as the DM field: a silent fallback would
@@ -8150,8 +8151,6 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
 # Messaging / Negotiation
 # ============================================================================
 
-VALID_MSG_TYPES = {"challenge", "counter_offer", "accept", "reject", "chat", "rpc", "notification"}
-
 
 @app.post("/messages")
 async def send_message(req: SendMessageRequest, request: Request):
@@ -8369,7 +8368,6 @@ async def ws_agent(ws: WebSocket, agent_id: str):
 # Public: open to all registered agents.
 # Private: hidden from listing; gated by invite OR Stripe payment.
 # Encryption flag: relay stores opaque ciphertext, skips guardrails scan.
-# Negotiation routing: counter_offer in a 2-member private room is brokered.
 # Session link: a game session can have an associated room for in-session chat.
 # ============================================================================
 

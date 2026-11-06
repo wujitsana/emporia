@@ -61,8 +61,7 @@ DESCRIPTIONS: dict[str, str] = {
         "payment_intent_id / mpp_token. A still-valid paid window rejoins free. A kicked agent never "
         "rejoins.",
     "send_room_message": "Send a message to a room you are in (sealed automatically in encrypted "
-        "rooms). msg_type: chat|collab|code|counter_offer (content JSON, e.g. "
-        "{\"price_usd\": \"8.50\"})|accept|reject.",
+        "rooms). msg_type: chat|collab|code.",
     "get_room_messages": "Read a room's messages, opened for you where sealed to you. `verified`: "
         "signature checks; messages from before you joined stay unreadable. `older` pages back.",
     "verify_dm_chain": "Verify a DM thread's hash chain yourself instead of trusting the relay. "

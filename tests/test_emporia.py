@@ -3629,53 +3629,6 @@ def test_audit_chain_detects_tampering():
 
 
 # ============================================================================
-# Negotiation
-# ============================================================================
-
-def test_negotiation_buyer_accept():
-    from emporia.negotiation import process_offer
-    decision, resp = process_offer(
-        "vendor_a",
-        {"price_usd": "8.00"},
-        {"role": "buyer", "max_budget_usd": "10"},
-    )
-    assert decision == "ACCEPT"
-    assert float(resp["price_usd"]) == 8.0
-
-
-def test_negotiation_buyer_counter():
-    from emporia.negotiation import process_offer
-    decision, resp = process_offer(
-        "vendor_a",
-        {"price_usd": "20.00"},
-        {"role": "buyer", "max_budget_usd": "10"},
-    )
-    assert decision == "COUNTER"
-    assert float(resp["price_usd"]) <= 10.0
-
-
-def test_negotiation_vendor_accept():
-    from emporia.negotiation import process_offer
-    decision, resp = process_offer(
-        "buyer_b",
-        {"price_usd": "6.00"},
-        {"role": "vendor", "min_acceptable_usd": "5"},
-    )
-    assert decision == "ACCEPT"
-
-
-def test_negotiation_vendor_counter():
-    from emporia.negotiation import process_offer
-    decision, resp = process_offer(
-        "buyer_b",
-        {"price_usd": "2.00"},
-        {"role": "vendor", "min_acceptable_usd": "5"},
-    )
-    assert decision == "COUNTER"
-    assert float(resp["price_usd"]) >= 5.0
-
-
-# ============================================================================
 # Stripe (mocked)
 # ============================================================================
 
@@ -8845,16 +8798,6 @@ def test_verify_chain_page_empty_page_fails_closed(rooms_db_path):
     ok, new_expected, reason = verify_chain_page([], "anything", at_genesis=True)
     assert ok is False
     assert new_expected is None
-
-
-def test_is_negotiation_room(rooms_db_path):
-    from emporia.rooms import create_room, add_member, get_room
-    room = create_room("Negotiation", "agent_alice", room_type="private",
-                       gate_type="invite", db_path=rooms_db_path)
-    assert not room.is_negotiation_room()  # 1 member
-    add_member(room.room_id, "agent_bob", db_path=rooms_db_path)
-    room2 = get_room(room.room_id, db_path=rooms_db_path)
-    assert room2.is_negotiation_room()  # 2 members, private → negotiation room
 
 
 def test_list_rooms_visibility(rooms_db_path):
@@ -17810,14 +17753,9 @@ def test_room_encryption_keys_is_one_query_not_two_per_member(client):
     assert spy.call_count == 1, spy.call_args_list
 
 
-def test_encrypted_negotiation_room_refuses_the_broker(client):
-    """P19-6 (M8): the broker used to run unconditionally — on an encrypted
-    room, req.content is the envelope (a JSON dict), so the "looks like JSON"
-    check passed and process_offer() got handed the envelope's structural
-    fields as if they were an offer. Worse: on ACCEPT/COUNTER it then wrote a
-    *plaintext* system message into the encrypted room via rooms_db.post_message(),
-    bypassing validate_envelope_for() entirely. Now it refuses cleanly, and
-    nothing — encrypted or not — gets written."""
+def test_negotiation_msg_types_are_refused_by_name(client):
+    """C1: the relay never computes terms. counter_offer / accept / reject are
+    refused with a clear error in rooms and DMs, encrypted or not; nothing is stored."""
     _enc_agents(client, "p19_neg_a", "p19_neg_b")
     room = client.post("/rooms", json=_signed_room("p19_neg_a", {
         "name": "p19 neg room", "description": "", "room_type": "private",
@@ -17827,16 +17765,17 @@ def test_encrypted_negotiation_room_refuses_the_broker(client):
                headers={"X-Emporia-Agent-Id": "p19_neg_a"})
     assert client.post(f"/rooms/{room}/join", json={"agent_id": "p19_neg_b"},
                        headers={"X-Emporia-Agent-Id": "p19_neg_b"}).status_code == 200
-
-    sealed = _seal_room(room, "p19_neg_a", ["p19_neg_a", "p19_neg_b"],
-                        json.dumps({"price_usd": "8.50"}), msg_type="counter_offer")
-    r = _send_room_raw(client, room, "p19_neg_a", sealed, msg_type="counter_offer")
-    assert r.status_code == 400, r.text
-    assert "encrypted" in r.text.lower()
-
+    for mt in ("counter_offer", "accept", "reject"):
+        sealed = _seal_room(room, "p19_neg_a", ["p19_neg_a", "p19_neg_b"],
+                            json.dumps({"price_usd": "8.50"}), msg_type=mt)
+        r = _send_room_raw(client, room, "p19_neg_a", sealed, msg_type=mt)
+        assert r.status_code == 400, r.text
+        assert "never computes terms" in r.text
     msgs = client.get(f"/rooms/{room}/messages",
                       headers={"X-Emporia-Agent-Id": "p19_neg_b"}).json()["messages"]
-    assert msgs == [], "a refused broker call must not reach storage, plaintext or not"
+    assert msgs == []
+    with pytest.raises(ImportError):
+        __import__("emporia.negotiation")
 
 
 def test_room_encryption_keys_is_members_only(client):

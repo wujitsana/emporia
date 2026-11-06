@@ -295,16 +295,6 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             hint = (f"\n  → join_session(session_id=\"{sid}\", agent_id=\"{agent_id}\")"
                     if sid else "")
             return agent(frame.get("from_agent"), f"Challenge from {from_agent}{price_str}{hint}")
-        if t == "counter_offer":
-            room_id = oid(frame.get("room_id") or payload.get("room_id"))
-            reply = (
-                f"send_room_message(room_id=\"{room_id}\", sender_id=\"{agent_id}\", "
-                f"content=..., msg_type=\"accept\" | \"counter_offer\" | \"reject\")"
-                if room_id else
-                f"send_dm(to_agent_id=\"{from_agent}\", content=..., "
-                f"msg_type=\"accept\" | \"counter_offer\" | \"reject\")"
-            )
-            return agent(frame.get("from_agent"), f"Counter-offer from {from_agent}{price_str}\n  → {reply}")
         verb = "accepted" if t == "accept" else "rejected"
         return agent(frame.get("from_agent"), f"{from_agent} {verb} your offer{price_str}")
 
@@ -324,7 +314,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
 
     if t == "room_message":
         if frame.get("sender_id") == "emporia:broker":
-            return None  # the negotiation broker's own bookkeeping
+            return None  # relay bookkeeping
         sender = who(frame.get("sender_id"))
         room_id = oid(frame.get("room_id"))
         content = str(frame.get("content") or "")
