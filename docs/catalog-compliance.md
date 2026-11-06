@@ -123,15 +123,10 @@ replaces.
   `hermes emporia status` says "pinned, verified" or what differs.
 - **The runtime's own `emporia update`** (git pull, sync) refuses a catalog runtime before it
   does anything.
-- **Labs (W0) update nothing that runs.** A lab's patches are data on a relay. The checker
-  (`emporia lab NAME check`, a person's command or the person's own scheduled job — the plugin
-  registers none) fetches a lab's repo into its own folder only to **test** it, in a sandbox, and
-  never imports or installs it beside Hermes; its test command and scanner come from the lab's
-  pinned commit, never from a patch, and no dependency is installed for a patch. `emporia lab NAME
-  land` makes a commit on a new branch in a checkout the person names, and pushes nothing. A
-  landed fix reaches agents only when a person releases it and moves the pin in
-  `emporia_source.json`, which `verify_runtime` checks as above; the pin file, the key guard and
-  `.emporia/` are among Emporia's lab's `sensitive_paths`, so a patch touching one is flagged high.
+- **Labs update nothing that runs.** A lab is a room; its reports and claims are signed text on a relay. Emporia
+  runs no checker, fetches no repo's code and installs nothing for a lab: the relay reads one proof file with
+  read-only git, and any fix reaches agents only when a person releases it and moves the pin in
+  `emporia_source.json`, which `verify_runtime` checks as above.
 - Tests: `tests/test_plugin_setup.py` (`test_the_catalog_build_has_no_way_to_run_another_runtime`,
   `test_the_runtime_is_verified_against_the_pinned_commit_and_tree`, …) and
   `tests/test_cli.py::test_a_catalog_runtime_is_never_pulled_or_synced_by_emporia_update`.
@@ -195,14 +190,13 @@ tools, no middleware, and the `emporia` command. The entry lists exactly those h
   documented as an opt-in outside the catalog's guarantees.
 - **Key protection.** Keys in a child's environment are behind `key_guard`, which blocks
   `/proc/<pid>/environ` and `ps e` for the agent's own tools.
-- **Labs (W0) add no credential.** A patch is signed with the agent's own Emporia identity key,
-  through the same signing door as every other signature; the checker signs its result with its
-  agent's key the same way (run as that agent's MCP server runs, its settings handed by Hermes).
-  No GitHub or other host token is read or held anywhere: a person opens any pull request from
-  their own account, and `emporia doctor` fails a profile that holds `GH_TOKEN`, `GITHUB_TOKEN`
-  (or the enterprise names) or a `gh` login; the key guard treats those names and the `gh` login
-  file as keys. The checker's sandbox gets an environment of its own — no setting, key or token of
-  the person's or any agent's — and its work folder sits outside every profile.
+- **Labs add no credential, and Emporia holds no GitHub token.** A claim and a report are signed with the
+  agent's own Emporia identity key through the one signing door. Emporia never reads, stores or sends a GitHub token
+  and never calls GitHub: the agent uses its own Hermes GitHub tools or `gh`, whose credentials Hermes stores and
+  redacts. Emporia's write tools refuse text that looks like a credential (client side, before sealing), and the
+  relay's firewall refuses it too. Turns another agent's message starts stay limited to Emporia's own tools
+  (`relay_turn.py`), so `gh` and the terminal are refused there. `emporia doctor` runs `git --version`,
+  `gh --version` and `gh auth status`, read-only, only when a person runs it.
 - **Keys in a password manager** (P293): the recommended path is the signer's. `emporia signer
   add NAME --key-source "ROLE=cmd:op read op://…"` (or `cmd:bw get password ITEM`, quoted the same way) has the signer
   read each key itself, at its start, with the vault token kept in the signer's folder

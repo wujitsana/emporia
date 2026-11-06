@@ -3584,7 +3584,7 @@ function Leaderboard({ moduleType }) {
 		})]
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_u64.js
+// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
 var _32n = /* @__PURE__ */ BigInt(32);
 function fromBig(n, le = false) {
@@ -3634,7 +3634,7 @@ var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0
 var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
 var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/utils.js
+// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 /**
 * Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 * @param a - value to test
@@ -4018,7 +4018,7 @@ var oidNist = (suffix) => ({ oid: Uint8Array.from([
 	2,
 	suffix
 ]) });
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_md.js
+// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 /**
 * Internal Merkle-Damgard hash utils.
 * @module
@@ -4152,7 +4152,7 @@ var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
 	1541459225,
 	327033209
 ]);
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha2.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 /**
 * SHA2 hash function. A.k.a. sha256, sha384, sha512, sha512_224, sha512_256.
 * SHA256 is the fastest hash implementable in JS, even faster than Blake3.
@@ -4411,7 +4411,7 @@ var _SHA512 = class extends SHA2_64B {
 * ```
 */
 var sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/utils.js
+// ../../../../dashboard/node_modules/@noble/curves/utils.js
 /**
 * Hex, bytes and number utilities.
 * @module
@@ -4838,7 +4838,7 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
 	iter(fields, false);
 	iter(optFields, true);
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/modular.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 /**
 * Utils for modular division and fields.
 * Field over 11 is a finite (Galois) field is integer number operations `mod 11`.
@@ -5405,7 +5405,7 @@ function Field(ORDER, opts = {}) {
 	Object.freeze(_Field.prototype);
 	return new _Field(ORDER, opts);
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/curve.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 /**
 * Methods for elliptic curve multiplication by scalars.
 * Contains wNAF-based ScalarMultiplier, pippenger.
@@ -5934,7 +5934,7 @@ function createKeygen(randomSecretKey, getPublicKey) {
 		};
 	};
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/edwards.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 /**
 * Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
 * For design rationale of types / exports, see weierstrass module documentation.
@@ -6407,7 +6407,7 @@ function eddsa(Point, cHash, eddsaOpts = {}) {
 		lengths
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/ed25519.js
+// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 /**
 * ed25519 Twisted Edwards curve with following addons:
 * - X25519 ECDH
@@ -6508,7 +6508,7 @@ function ed(opts) {
 * ```
 */
 var ed25519 = /* @__PURE__ */ ed({});
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha3.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
 /**
 * SHA3 (keccak) hash function, based on a new "Sponge function" design.
 * Different from older hashes, the internal state is bigger than output size.
@@ -10616,16 +10616,10 @@ function ideaCommands(name, item, verdicts) {
 		one("a duplicate", cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), "person")
 	];
 }
-/** Labs (W0): check it in the sandbox (or again), land a passed one in your checkout, read it. */
-function patchCommands(name, item) {
-	const pid = item.patch_id, lab = item.lab;
-	if (!safeName(name) || !safeId(pid) || !safeId(lab)) return [];
-	const check = item.check && typeof item.check === "object" ? item.check : null;
-	const out = [];
-	if (check && check.verdict === "pass") out.push(one("land it in your checkout (a new branch; nothing is pushed)", cmd("lab", name, "land", pid, "--into", "CHECKOUT"), "person"));
-	out.push(one(check ? "check it again" : "check it in the sandbox", cmd("lab", name, "check", lab, "--patch", pid), "person"));
-	out.push(one("read the lab's patches", cmd("lab", name, "show", lab), "read"));
-	return out;
+/** Labs v2: read a lab's threads and board. */
+function labCommands(name, lab) {
+	if (!safeName(name) || !safeId(lab)) return [];
+	return [one("read the lab's threads", cmd("lab", name, "show", lab), "read")];
 }
 function expeditionCommand(name) {
 	if (!safeName(name)) return [];
@@ -13153,7 +13147,7 @@ function fenToBoard(fen) {
 		return row;
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/chess.js/dist/esm/chess.js
+// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 function rootNode(comment) {
 	return comment !== null ? {
 		comment,
@@ -22923,7 +22917,7 @@ function RelayView() {
 // src/views/OperatorView.tsx
 /**
 * Operator section: the desk of whoever runs this relay — the bug reports and ideas waiting
-* for a verdict, the patches waiting in its labs, this week's expedition, the house agents,
+* for a verdict, the activity in its labs, this week's expedition, the house agents,
 * the relay's health and its season — read from GET /operator/status, which the relay
 * answers for its operator alone.
 *
@@ -23032,12 +23026,7 @@ function Ideas({ s, name }) {
 		]
 	});
 }
-function checkLine(c) {
-	if (!c) return "not yet checked";
-	const tests = c.tests_exit === null ? "no tests run" : `tests exit ${c.tests_exit}${c.passed !== null ? ` (${c.passed} passed, ${c.failed ?? 0} failed)` : ""}`;
-	return `${c.verdict} · ${tests} · secret scan ${c.secret_scan ?? "—"} · risk ${c.risk_floor ?? "—"}`;
-}
-function Patches({ s, name }) {
+function LabActivityPanel({ s, name }) {
 	if (!s.on) return /* @__PURE__ */ jsxs(Text, {
 		className: "e-faint",
 		children: [
@@ -23049,65 +23038,49 @@ function Patches({ s, name }) {
 	return /* @__PURE__ */ jsxs("div", {
 		className: "e-op-list",
 		children: [
-			s.labs.map((l) => /* @__PURE__ */ jsxs(Text, {
+			s.labs.map((l) => /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsxs(Text, {
 				className: "e-faint",
 				children: [
 					"Lab ",
 					/* @__PURE__ */ jsx("code", { children: l.slug }),
 					": ",
-					l.repo_url,
+					l.subject,
+					l.verified ? "" : " · unverified",
 					" · ",
-					l.branch,
-					" @ ",
-					l.commit.slice(0, 12)
+					l.maintainers,
+					" maintainer(s)"
 				]
-			}, l.slug)),
-			!s.items.length && /* @__PURE__ */ jsx(Text, {
+			}), /* @__PURE__ */ jsx(CommandList, { commands: labCommands(name, l.slug) })] }, l.slug)),
+			!s.recent.length && /* @__PURE__ */ jsx(Text, {
 				className: "e-faint",
-				children: "No patch waiting."
+				children: "No report yet."
 			}),
-			s.waiting > s.items.length && /* @__PURE__ */ jsxs(Text, {
+			s.recent.map((r) => /* @__PURE__ */ jsxs(Text, {
 				className: "e-faint",
 				children: [
-					"The oldest ",
-					s.items.length,
-					" of ",
-					s.waiting,
-					"."
+					when$1(r.at),
+					" · ",
+					r.lab,
+					" · ",
+					/* @__PURE__ */ jsx("code", { children: r.ref }),
+					" ",
+					r.event,
+					" · by ",
+					r.maintainer_id
 				]
-			}),
-			s.items.map((p) => /* @__PURE__ */ jsxs(SlimCard, {
-				title: `${p.patch_id} · ${p.lab}`,
-				action: /* @__PURE__ */ jsx(Text, {
-					className: "e-faint",
-					children: when$1(p.created_at)
-				}),
+			}, `${r.lab}${r.ref}${r.event}`)),
+			s.open_threads.map((t) => /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
 				children: [
-					/* @__PURE__ */ jsx(MetaGrid, { rows: [
-						["Author", p.author_id],
-						["Answers", p.thread],
-						["Base", p.base_commit.slice(0, 12)],
-						["Files", `${p.files.length} · +${p.added} −${p.removed}`],
-						["Check", checkLine(p.check)],
-						...p.check ? [["Sandbox", `${p.check.isolation ?? "—"} · ${p.check.sandbox ?? ""}`]] : [],
-						...p.check?.flags.length ? [["Flags", p.check.flags.join(", ")]] : []
-					] }),
-					p.check?.problem && /* @__PURE__ */ jsx(Text, {
-						className: "e-faint",
-						children: p.check.problem
-					}),
-					p.check?.isolation === "none" && /* @__PURE__ */ jsx(Text, {
-						className: "e-faint",
-						children: "Checked without a sandbox: read the diff before you trust its result."
-					}),
-					p.summary && /* @__PURE__ */ jsxs(Text, {
-						className: "e-faint",
-						"aria-label": "The agent's summary",
-						children: ["The agent's words: ", p.summary]
-					}),
-					/* @__PURE__ */ jsx(CommandList, { commands: patchCommands(name, p) })
+					"Open · ",
+					t.lab,
+					" · ",
+					/* @__PURE__ */ jsx("code", { children: t.ref }),
+					" · ",
+					t.messages,
+					" message(s)"
 				]
-			}, p.patch_id))
+			}, `${t.lab}${t.ref}`))
 		]
 	});
 }
@@ -23219,7 +23192,7 @@ function OperatorView() {
 		children: error ? `Could not read the operator's desk: ${error}` : loading ? "Reading…" : ""
 	}) });
 	const waiting = s.bugs.on ? s.bugs.open : 0;
-	const patches = s.patches?.on ? s.patches.waiting : 0;
+	const openThreads = s.labs?.on ? s.labs.open_threads.length : 0;
 	return /* @__PURE__ */ jsx(ViewBody, {
 		toolbar: /* @__PURE__ */ jsxs(Text, {
 			className: "e-faint",
@@ -23238,10 +23211,10 @@ function OperatorView() {
 						label: "Ideas not yet judged",
 						value: String(s.ideas.open)
 					},
-					...s.patches?.on ? [{
-						label: "Patches waiting",
-						value: String(patches),
-						accent: patches > 0
+					...s.labs?.on ? [{
+						label: "Lab threads open",
+						value: String(openThreads),
+						accent: openThreads > 0
 					}] : [],
 					{
 						label: "Agents active",
@@ -23268,10 +23241,10 @@ function OperatorView() {
 						name
 					})
 				}),
-				s.patches && /* @__PURE__ */ jsx(PanelCard, {
-					title: "Patches waiting",
-					children: /* @__PURE__ */ jsx(Patches, {
-						s: s.patches,
+				s.labs && /* @__PURE__ */ jsx(PanelCard, {
+					title: "Lab activity",
+					children: /* @__PURE__ */ jsx(LabActivityPanel, {
+						s: s.labs,
 						name
 					})
 				}),

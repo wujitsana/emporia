@@ -39,7 +39,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		value: mod,
 		enumerable: true
 	}) : target, mod));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/scheduler/cjs/scheduler.production.js
+	// ../../../../dashboard/node_modules/scheduler/cjs/scheduler.production.js
 	/**
 	* @license React
 	* scheduler.production.js
@@ -293,11 +293,11 @@ var EmporiaHermesPlugin = (function(exports) {
 			};
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/scheduler/index.js
+	// ../../../../dashboard/node_modules/scheduler/index.js
 	var require_scheduler = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_scheduler_production();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/cjs/react.production.js
+	// ../../../../dashboard/node_modules/react/cjs/react.production.js
 	/**
 	* @license React
 	* react.production.js
@@ -683,11 +683,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		exports.version = "19.3.1";
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/index.js
+	// ../../../../dashboard/node_modules/react/index.js
 	var require_react = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_production();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react-dom/cjs/react-dom.production.js
+	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom.production.js
 	/**
 	* @license React
 	* react-dom.production.js
@@ -839,7 +839,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		exports.version = "19.3.1";
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react-dom/index.js
+	// ../../../../dashboard/node_modules/react-dom/index.js
 	var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		function checkDCE() {
 			if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === "undefined" || typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE !== "function") return;
@@ -852,7 +852,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		checkDCE();
 		module.exports = require_react_dom_production();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react-dom/cjs/react-dom-client.production.js
+	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom-client.production.js
 	/**
 	* @license React
 	* react-dom-client.production.js
@@ -11473,7 +11473,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		} catch {}
 		return null;
 	}
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/cjs/react-jsx-runtime.production.js
+	// ../../../../dashboard/node_modules/react/cjs/react-jsx-runtime.production.js
 	/**
 	* @license React
 	* react-jsx-runtime.production.js
@@ -11507,7 +11507,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		exports.jsx = jsxProd;
 		exports.jsxs = jsxProd;
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/jsx-runtime.js
+	// ../../../../dashboard/node_modules/react/jsx-runtime.js
 	var require_jsx_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_jsx_runtime_production();
 	}));
@@ -15124,7 +15124,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_api();
 		import_jsx_runtime$55 = require_jsx_runtime();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_u64.js
+	// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 	function fromBig(n, le = false) {
 		if (le) return {
 			h: Number(n & U32_MASK64),
@@ -15177,7 +15177,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 		add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/utils.js
+	// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 	/**
 	* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 	* @param a - value to test
@@ -15540,7 +15540,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			suffix
 		]) });
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_md.js
+	// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 	var HashMD, SHA512_IV;
 	var init__md = __esmMin((() => {
 		init__u64();
@@ -15653,7 +15653,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			327033209
 		]);
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha2.js
+	// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 	var K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, sha512;
 	var init_sha2 = __esmMin((() => {
 		init__md();
@@ -15899,7 +15899,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/utils.js
+	// ../../../../dashboard/node_modules/@noble/curves/utils.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates that a value is an array, optionally validating each element.
@@ -16233,7 +16233,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			return (_1n$5 << BigInt(n)) - _1n$5;
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/modular.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* @param a - Dividend value.
@@ -16786,7 +16786,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/curve.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates the static surface of a point constructor.
@@ -17288,7 +17288,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/edwards.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function isEdValidXY(Fp, CURVE, x, y) {
 		const x2 = Fp.sqr(x);
@@ -17763,7 +17763,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		_4n = /* @__PURE__ */ BigInt(4);
 		_8n$1 = /* @__PURE__ */ BigInt(8);
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/ed25519.js
+	// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function ed25519_pow_2_252_3(x) {
 		const _10n = BigInt(10), _20n = BigInt(20), _40n = BigInt(40), _80n = BigInt(80);
@@ -17846,7 +17846,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		Fp = /* @__PURE__ */ (() => ed25519_Point.Fp)();
 		ed25519 = /* @__PURE__ */ ed({});
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha3.js
+	// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
 	/**
 	* `keccakf1600` internal permutation, additionally allows adjusting the round count.
 	* @param s - 5x5 Keccak state encoded as 25 lanes split into 50 uint32 words
@@ -21917,16 +21917,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			one("a duplicate", cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), "person")
 		];
 	}
-	/** Labs (W0): check it in the sandbox (or again), land a passed one in your checkout, read it. */
-	function patchCommands(name, item) {
-		const pid = item.patch_id, lab = item.lab;
-		if (!safeName(name) || !safeId(pid) || !safeId(lab)) return [];
-		const check = item.check && typeof item.check === "object" ? item.check : null;
-		const out = [];
-		if (check && check.verdict === "pass") out.push(one("land it in your checkout (a new branch; nothing is pushed)", cmd("lab", name, "land", pid, "--into", "CHECKOUT"), "person"));
-		out.push(one(check ? "check it again" : "check it in the sandbox", cmd("lab", name, "check", lab, "--patch", pid), "person"));
-		out.push(one("read the lab's patches", cmd("lab", name, "show", lab), "read"));
-		return out;
+	/** Labs v2: read a lab's threads and board. */
+	function labCommands(name, lab) {
+		if (!safeName(name) || !safeId(lab)) return [];
+		return [one("read the lab's threads", cmd("lab", name, "show", lab), "read")];
 	}
 	function expeditionCommand(name) {
 		if (!safeName(name)) return [];
@@ -24672,7 +24666,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	var init_fen = __esmMin((() => {
 		STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/chess.js/dist/esm/chess.js
+	// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 	function rootNode(comment) {
 		return comment !== null ? {
 			comment,
@@ -34903,12 +34897,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	function checkLine(c) {
-		if (!c) return "not yet checked";
-		const tests = c.tests_exit === null ? "no tests run" : `tests exit ${c.tests_exit}${c.passed !== null ? ` (${c.passed} passed, ${c.failed ?? 0} failed)` : ""}`;
-		return `${c.verdict} · ${tests} · secret scan ${c.secret_scan ?? "—"} · risk ${c.risk_floor ?? "—"}`;
-	}
-	function Patches({ s, name }) {
+	function LabActivityPanel({ s, name }) {
 		if (!s.on) return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
 			className: "e-faint",
 			children: [
@@ -34920,65 +34909,49 @@ var EmporiaHermesPlugin = (function(exports) {
 		return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 			className: "e-op-list",
 			children: [
-				s.labs.map((l) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
+				s.labs.map((l) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
 					className: "e-faint",
 					children: [
 						"Lab ",
 						/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("code", { children: l.slug }),
 						": ",
-						l.repo_url,
+						l.subject,
+						l.verified ? "" : " · unverified",
 						" · ",
-						l.branch,
-						" @ ",
-						l.commit.slice(0, 12)
+						l.maintainers,
+						" maintainer(s)"
 					]
-				}, l.slug)),
-				!s.items.length && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(CommandList, { commands: labCommands(name, l.slug) })] }, l.slug)),
+				!s.recent.length && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
 					className: "e-faint",
-					children: "No patch waiting."
+					children: "No report yet."
 				}),
-				s.waiting > s.items.length && /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
+				s.recent.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
 					className: "e-faint",
 					children: [
-						"The oldest ",
-						s.items.length,
-						" of ",
-						s.waiting,
-						"."
+						when$1(r.at),
+						" · ",
+						r.lab,
+						" · ",
+						/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("code", { children: r.ref }),
+						" ",
+						r.event,
+						" · by ",
+						r.maintainer_id
 					]
-				}),
-				s.items.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(SlimCard, {
-					title: `${p.patch_id} · ${p.lab}`,
-					action: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
-						className: "e-faint",
-						children: when$1(p.created_at)
-					}),
+				}, `${r.lab}${r.ref}${r.event}`)),
+				s.open_threads.map((t) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
+					className: "e-faint",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(MetaGrid, { rows: [
-							["Author", p.author_id],
-							["Answers", p.thread],
-							["Base", p.base_commit.slice(0, 12)],
-							["Files", `${p.files.length} · +${p.added} −${p.removed}`],
-							["Check", checkLine(p.check)],
-							...p.check ? [["Sandbox", `${p.check.isolation ?? "—"} · ${p.check.sandbox ?? ""}`]] : [],
-							...p.check?.flags.length ? [["Flags", p.check.flags.join(", ")]] : []
-						] }),
-						p.check?.problem && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
-							className: "e-faint",
-							children: p.check.problem
-						}),
-						p.check?.isolation === "none" && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
-							className: "e-faint",
-							children: "Checked without a sandbox: read the diff before you trust its result."
-						}),
-						p.summary && /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
-							className: "e-faint",
-							"aria-label": "The agent's summary",
-							children: ["The agent's words: ", p.summary]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(CommandList, { commands: patchCommands(name, p) })
+						"Open · ",
+						t.lab,
+						" · ",
+						/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("code", { children: t.ref }),
+						" · ",
+						t.messages,
+						" message(s)"
 					]
-				}, p.patch_id))
+				}, `${t.lab}${t.ref}`))
 			]
 		});
 	}
@@ -35090,7 +35063,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: error ? `Could not read the operator's desk: ${error}` : loading ? "Reading…" : ""
 		}) });
 		const waiting = s.bugs.on ? s.bugs.open : 0;
-		const patches = s.patches?.on ? s.patches.waiting : 0;
+		const openThreads = s.labs?.on ? s.labs.open_threads.length : 0;
 		return /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(ViewBody, {
 			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
 				className: "e-faint",
@@ -35109,10 +35082,10 @@ var EmporiaHermesPlugin = (function(exports) {
 							label: "Ideas not yet judged",
 							value: String(s.ideas.open)
 						},
-						...s.patches?.on ? [{
-							label: "Patches waiting",
-							value: String(patches),
-							accent: patches > 0
+						...s.labs?.on ? [{
+							label: "Lab threads open",
+							value: String(openThreads),
+							accent: openThreads > 0
 						}] : [],
 						{
 							label: "Agents active",
@@ -35139,10 +35112,10 @@ var EmporiaHermesPlugin = (function(exports) {
 							name
 						})
 					}),
-					s.patches && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(PanelCard, {
-						title: "Patches waiting",
-						children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Patches, {
-							s: s.patches,
+					s.labs && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(PanelCard, {
+						title: "Lab activity",
+						children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(LabActivityPanel, {
+							s: s.labs,
 							name
 						})
 					}),

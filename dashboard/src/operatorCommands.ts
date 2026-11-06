@@ -59,37 +59,12 @@ export interface IdeaItem {
   created_at: string;
 }
 
-/** Labs (W0): a checker's latest result for a patch, as the desk carries it — counts and codes. */
-export interface PatchCheck {
-  check_id: string;
-  checker_id: string;
-  at: string;
-  verdict: "pass" | "fail";
-  risk_floor: string | null;
-  flags: string[];
-  secret_scan: string | null;
-  tests_exit: number | null;
-  passed: number | null;
-  failed: number | null;
-  isolation: "isolated" | "partial" | "none" | null;
-  sandbox: string | null;
-  problem: string;
-}
-
-/** Labs (W0): a patch waiting. `summary` is the agent's own words: shown beside a command, never in one. */
-export interface PatchItem {
-  patch_id: string;
-  lab: string;
-  author_id: string;
-  thread: string;
-  base_commit: string;
-  files: string[];
-  added: number;
-  removed: number;
-  summary: string;
-  status: string;
-  created_at: string;
-  check: PatchCheck | null;
+/** Labs v2: a lab's activity: recent maintainer reports (public records: refs and agents) and open threads. */
+export interface LabActivity {
+  labs: { slug: string; subject: string; verified: boolean; maintainers: number }[];
+  reports: number;
+  recent: { lab: string; ref: string; event: string; maintainer_id: string; at: string }[];
+  open_threads: { lab: string; ref: string; messages: number; last_at: string | null }[];
 }
 
 export interface HouseAgent {
@@ -115,11 +90,8 @@ export interface OperatorStatus {
     on: true; open: number; items: BugItem[]; severities: string[]; verdicts: string[];
   };
   ideas: { topic: string; topic_exists: boolean; verdicts: boolean; open: number; items: IdeaItem[] };
-  /** Labs (W0); absent from a relay older than labs. */
-  patches?: { on: false; why: string } | {
-    on: true; waiting: number; unchecked: number; items: PatchItem[];
-    labs: { slug: string; repo_url: string; branch: string; commit: string }[];
-  };
+  /** Labs v2; absent when the relay has no labs. */
+  labs?: { on: false; why: string } | ({ on: true } & LabActivity);
   expedition: {
     topic: string; topic_exists: boolean;
     current: { post_id: string; author_id: string; title: string; excerpt: string; posted_at: string; age_days: number | null } | null;
@@ -171,20 +143,10 @@ export function ideaCommands(name: string, item: { post_id?: unknown }, verdicts
   ];
 }
 
-/** Labs (W0): check it in the sandbox (or again), land a passed one in your checkout, read it. */
-export function patchCommands(
-  name: string, item: { patch_id?: unknown; lab?: unknown; check?: { verdict?: unknown } | null },
-): OperatorCommand[] {
-  const pid = item.patch_id, lab = item.lab;
-  if (!safeName(name) || !safeId(pid) || !safeId(lab)) return [];
-  const check = item.check && typeof item.check === "object" ? item.check : null;
-  const out: OperatorCommand[] = [];
-  if (check && check.verdict === "pass") {
-    out.push(one("land it in your checkout (a new branch; nothing is pushed)", cmd("lab", name, "land", pid, "--into", "CHECKOUT"), "person"));
-  }
-  out.push(one(check ? "check it again" : "check it in the sandbox", cmd("lab", name, "check", lab, "--patch", pid), "person"));
-  out.push(one("read the lab's patches", cmd("lab", name, "show", lab), "read"));
-  return out;
+/** Labs v2: read a lab's threads and board. */
+export function labCommands(name: string, lab: unknown): OperatorCommand[] {
+  if (!safeName(name) || !safeId(lab)) return [];
+  return [one("read the lab's threads", cmd("lab", name, "show", lab), "read")];
 }
 
 export function expeditionCommand(name: string): OperatorCommand[] {
