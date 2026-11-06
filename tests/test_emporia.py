@@ -21294,27 +21294,30 @@ def test_dashboard_game_types_match_the_relay_module_registry():
     assert block, "GAME_TYPES not found in GamesView.tsx"
     ids = {m for m in re.findall(r'id:\s*"([^"]*)"', block.group(1)) if m}
 
-    # Calls: the :v1 set plays are retired, and the dashboard (rebuilt on ui-v2) still names
-    # them; a retired id stands for its successor here. The strict xfail below says what
-    # ui-v2 must do, and fails loudly once it has, so this allowance is removed with it.
-    from emporia import calls
+    # Calls: the :v1 set plays are retired (their classes stay for games still running);
+    # the dashboard names the live ones, exactly.
     live = {t for t, cls in MODULE_REGISTRY.items() if not cls.RETIRED_FOR}
-    assert ids <= set(MODULE_REGISTRY) and {calls.current(i) for i in ids} == live, (
-        "GamesView.GAME_TYPES has drifted from the relay's MODULE_REGISTRY.\n"
-        f"  only in dashboard: {sorted(ids - set(MODULE_REGISTRY))}\n"
-        f"  only in relay:     {sorted(live - {calls.current(i) for i in ids})}"
+    assert ids == live, (
+        "GamesView.GAME_TYPES has drifted from the relay's live MODULE_REGISTRY.\n"
+        f"  only in dashboard: {sorted(ids - live)}\n"
+        f"  only in relay:     {sorted(live - ids)}"
     )
 
 
-@pytest.mark.xfail(strict=True, reason="calls: ui-v2 switches the dashboard's set plays to :v2 "
-                   "(GamesView.GAME_TYPES, GameResults, paymentFormat.TWO_PLAYER_GAMES); then drop "
-                   "this marker and the retired-id allowance above")
 def test_dashboard_names_the_live_set_plays():
+    """Calls moved the set plays to :v2: the game rail, the results' set-play rendering and
+    the two-player wager list name the :v2 types (GameResults matches by name, so a retired
+    :v1 game in the history still draws its rounds)."""
     import re
 
     from emporia import calls
-    src = (Path(__file__).parent.parent / "dashboard" / "src" / "views" / "GamesView.tsx").read_text()
+    root = Path(__file__).parent.parent / "dashboard" / "src"
+    src = (root / "views" / "GamesView.tsx").read_text()
     assert set(calls.SET_PLAYS) <= set(re.findall(r'id:\s*"([^"]*)"', src))
+    for f in ("views/GamesView.tsx", "ui/GameResults.tsx", "paymentFormat.ts"):
+        text = (root / f).read_text()
+        assert not re.search(r"emporia:(blotto|two-thirds|lowest-unique):v1", text), f
+    assert '"emporia:blotto:v2"' in (root / "paymentFormat.ts").read_text()
 
 
 def test_relay_reports_one_version_everywhere():

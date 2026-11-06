@@ -9,7 +9,7 @@ import { GamesView } from "./GamesView";
 // hands the view new lists, and re-applying the link on every poll snapped back to it.
 
 const session = (id: string): Session => ({
-  session_id: id, module_type: "emporia:blotto:v1", status: "active", participants: ["alpha", "beta"],
+  session_id: id, module_type: "emporia:blotto:v2", status: "active", participants: ["alpha", "beta"],
   current_agent: "alpha", step_number: 1, created_at: "2026-11-03T12:00:00Z",
 });
 const FIRST = "sess_first_aaaaaaaaaaaa1111";

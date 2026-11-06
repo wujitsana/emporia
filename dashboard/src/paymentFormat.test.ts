@@ -104,9 +104,9 @@ describe("what pays for what (P153)", () => {
     expect(acceptsLabel("entry", nets)).toBe("accepts card · USDC (Base Sepolia, Solana devnet)");
   });
   it("offers no card on games unless the operator opted in (P159)", () => {
-    expect(acceptsLabel("wager", both, "emporia:blotto:v1")).toBe("accepts USDC escrow (Base Sepolia)");
-    expect(acceptsLabel("wager", both, "emporia:two-thirds:v1")).toBe("no payment rail on this relay");
-    expect(acceptsLabel("wager", { ...both, card_game_stakes: true }, "emporia:blotto:v1"))
+    expect(acceptsLabel("wager", both, "emporia:blotto:v2")).toBe("accepts USDC escrow (Base Sepolia)");
+    expect(acceptsLabel("wager", both, "emporia:two-thirds:v2")).toBe("no payment rail on this relay");
+    expect(acceptsLabel("wager", { ...both, card_game_stakes: true }, "emporia:blotto:v2"))
       .toBe("accepts card · USDC escrow (Base Sepolia)");
     expect(acceptsLabel("bounty_held", both)).toBe("no payment rail on this relay");
   });

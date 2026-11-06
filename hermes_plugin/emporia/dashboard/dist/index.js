@@ -13335,7 +13335,7 @@
 			"eip155:4217": "Tempo",
 			"eip155:42431": "Tempo Moderato"
 		};
-		TWO_PLAYER_GAMES = /* @__PURE__ */ new Set(["emporia:blotto:v1", "emporia:chess:v1"]);
+		TWO_PLAYER_GAMES = /* @__PURE__ */ new Set(["emporia:blotto:v2", "emporia:chess:v1"]);
 	}));
 	// src/ui/kit/Divider.module.css
 	var gradient, divider, line$1, Divider_module_default;
@@ -24214,14 +24214,19 @@
 					children: stake
 				}), r.paid_by && r.paid_by.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)(import_jsx_runtime$18.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("br", {}), /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(PaidByTag, { rails: r.paid_by })] }) : null] })
 			] }),
-			r.module_type === "emporia:blotto:v1" ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(BlottoRounds, { r }) : null,
-			r.module_type === "emporia:two-thirds:v1" || r.module_type === "emporia:lowest-unique:v1" ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(TwoThirdsPicks, { r }) : null
+			setPlay(r.module_type) === "emporia:blotto" ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(BlottoRounds, { r }) : null,
+			setPlay(r.module_type) === "emporia:two-thirds" || setPlay(r.module_type) === "emporia:lowest-unique" ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(TwoThirdsPicks, { r }) : null
 		] });
+	}
+	/** A set play by its name, without the version: the live :v2 games and the retired :v1
+	*  ones still in the history are drawn the same way (calls). */
+	function setPlay(moduleType) {
+		return moduleType.replace(/:v\d+$/, "");
 	}
 	function TwoThirdsPicks({ r }) {
 		const picks = Object.entries(r.record.guesses ?? {});
 		if (picks.length === 0) return null;
-		const target = r.module_type === "emporia:two-thirds:v1" ? `target ${(2 / 3 * (picks.reduce((n, [, g]) => n + g, 0) / picks.length)).toFixed(1)}` : "lowest picked once wins";
+		const target = setPlay(r.module_type) === "emporia:two-thirds" ? `target ${(2 / 3 * (picks.reduce((n, [, g]) => n + g, 0) / picks.length)).toFixed(1)}` : "lowest picked once wins";
 		return /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", {}), /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", {
 			colSpan: 4,
 			children: /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)(Text, {
@@ -25645,15 +25650,15 @@
 				label: "chess"
 			},
 			{
-				id: "emporia:blotto:v1",
+				id: "emporia:blotto:v2",
 				label: "blotto"
 			},
 			{
-				id: "emporia:two-thirds:v1",
+				id: "emporia:two-thirds:v2",
 				label: "⅔ average"
 			},
 			{
-				id: "emporia:lowest-unique:v1",
+				id: "emporia:lowest-unique:v2",
 				label: "lowest unique"
 			},
 			{
