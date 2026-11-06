@@ -67,20 +67,11 @@ def idea_commands(name: str, item: dict[str, Any], verdicts: bool) -> list[dict[
             _one("a duplicate", _cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), PERSON)]
 
 
-def patch_commands(name: str, item: dict[str, Any]) -> list[dict[str, str]]:
-    """Labs (W0): check it in the sandbox (or again), land a passed one in your checkout, read it."""
-    pid, lab = item.get("patch_id"), item.get("lab")
-    if not safe_name(name) or not safe_id(pid) or not safe_id(lab):
+def lab_commands(name: str, lab: str) -> list[dict[str, str]]:
+    """Labs v2: read a lab's threads and board."""
+    if not safe_name(name) or not safe_id(lab):
         return []
-    check = item.get("check") if isinstance(item.get("check"), dict) else None
-    out = []
-    if check and check.get("verdict") == "pass":
-        out.append(_one("land it in your checkout (a new branch; nothing is pushed)",
-                        _cmd("lab", name, "land", pid, "--into", "CHECKOUT"), PERSON))
-    out.append(_one("check it in the sandbox" if not check else "check it again",
-                    _cmd("lab", name, "check", lab, "--patch", pid), PERSON))
-    out.append(_one("read the lab's patches", _cmd("lab", name, "show", lab), READ))
-    return out
+    return [_one("read the lab's threads", _cmd("lab", name, "show", lab), READ)]
 
 
 def expedition_command(name: str) -> list[dict[str, str]]:
@@ -170,21 +161,19 @@ def render(status: dict[str, Any], name: str) -> list[str]:
             out.append(f"  {it['post_id']}  by {it['author_id']:<14} {it.get('title') or ''}")
             cmds(idea_commands(name, it, bool(i.get("verdicts"))))
 
-    p = status.get("patches") or {}
+    p = status.get("labs") or {}
     out.append("")
     if not p.get("on"):
-        out.append(f"Patches: off — {p.get('why')}")
+        out.append(f"Lab activity: off — {p.get('why')}")
     else:
-        out.append(f"Patches waiting: {p.get('waiting', 0)} ({p.get('unchecked', 0)} not yet checked)")
-        for it in p.get("items") or []:
-            c = it.get("check") or {}
-            state = (f"checked {c.get('verdict')}: tests exit {c.get('tests_exit')}, scan {c.get('secret_scan')}, "
-                     f"risk {c.get('risk_floor')}, {c.get('isolation')} sandbox" if c else "not yet checked")
-            out.append(f"  {it['patch_id']}  {it['lab']:<10} by {it['author_id']:<14} on {it['thread']:<22} "
-                       f"{len(it.get('files') or [])} files +{it.get('added', 0)} -{it.get('removed', 0)} · {state}")
-            if it.get("summary"):
-                out.append(f"      | {str(it['summary']).splitlines()[0][:100]}  (the agent's words)")
-            cmds(patch_commands(name, it))
+        out.append(f"Lab activity: {len(p.get('labs') or [])} lab(s), {p.get('reports', 0)} report(s), "
+                   f"{len(p.get('open_threads') or [])} open thread(s)")
+        for r in p.get("recent") or []:
+            out.append(f"  {r['at'][:16]}  {r['lab']:<10} {r['ref']:<32} {r['event']:<9} by {r['maintainer_id']}")
+        for t in p.get("open_threads") or []:
+            out.append(f"  open  {t['lab']:<10} {t['ref']:<32} {t['messages']} message(s)")
+        for lb in p.get("labs") or []:
+            cmds(lab_commands(name, lb["slug"]))
 
     e = status.get("expedition") or {}
     out.append("")

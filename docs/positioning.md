@@ -944,7 +944,7 @@ they don't run (P291). This rework folds in what `docs/proposals/mcp-review.md` 
 | Module: gamify bugs | `report_bug(resend=)`, `reveal_bug`, `bug_reports` | +3 |
 | Module: prizes | `start_challenge`, `settle_promise` | +2 |
 | Module: cards | `create_payment_intent`, `start_stripe_onboarding` | +2 |
-| Module: labs | `submit_patch`, `review_patch` | +2 |
+| Module: labs | `lab_threads`, `lab_report` (and `github_claim_line`) | +2 (+1) |
 
 Everything on gives 71. A typical testnet relay (x402, gamify) shows 65.
 

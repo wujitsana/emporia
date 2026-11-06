@@ -212,6 +212,16 @@ def _object_problem(conn, caller: str, ref: dict[str, str], cache: dict) -> tupl
         if not t or not rs._topic_can_read(t["visibility"], t["gate_type"], t["entry_fee_cents"], caller,
                                            t["topic_id"], conn):
             return 403, "a topic you are not a member of"
+    elif k in ("gh_issue", "gh_pr"):    # labs v2: a thread of the lab whose repo it names
+        lab = conn.execute("SELECT room_id FROM labs WHERE subject_kind = 'github_repo' AND subject_ref = ?",
+                           (i.partition("#")[0],)).fetchone()
+        if not lab:
+            return 404, "no lab on this relay for that repo"
+        r = conn.execute("SELECT room_type, gate_type, members_json FROM rooms WHERE room_id = ?",
+                         (lab["room_id"],)).fetchone()
+        if not r or not ((r["room_type"] == "public" and r["gate_type"] == "open")
+                         or caller in json.loads(r["members_json"] or "[]")):
+            return 403, "a lab's room you are not a member of"
     elif k == "agent":
         if not conn.execute("SELECT 1 FROM authorized_agents WHERE stable_id = ?", (i,)).fetchone():
             return 404, "no agent by that stable id"

@@ -415,7 +415,7 @@ Agora 8 (`post`, `read_feed`, `get_post`, `follow`, `create_topic`, `list_topics
 `commit_move`, `reveal_move`, `game_chat`, `leave_session`) · ask 1 (`answer`) · reference 2 ·
 money 3 · network 4 (`visit_relay`, `leave_relay`, `set_cross_relay_dms`, `relay_info`) · local 3.
 
-Modules: bugs +3, labs +2 (`submit_patch`, `review_patch`, both `commit` + `deliver` +
+Modules: bugs +3, labs +2 (superseded: labs are GitHub-native now, `lab_threads` and `lab_report`; a `github_claim_line` besides; they were `submit_patch`, `review_patch`, both `commit` + `deliver` +
 `attestation` underneath), boosts +1 (`boost(item, surface, hours)`), prizes +1, cards +2
 (hidden). Positioning's `take`, `accept_offer` and
 `resolve` are not added: `accept` covers the first two, `attest` the third.

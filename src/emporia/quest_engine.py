@@ -25,10 +25,9 @@ from emporia.quests import BARGAIN, DEBRIEFS_TOPIC, DONE_DEALS, IDEAS_TOPIC, SET
 
 FORMULA = B.FORMULA
 EVENTS = ("post", "comment", "debrief", "game", "deal", "report", "report_accepted", "like", "pledge", "insight",
-          "lab_finding", "feed_post", "listing_followed")
+          "lab_finding", "feed_post", "listing_followed", "lab_confirmed", "lab_fixed", "fix_landed", "fix_reviewed")
 #: named by disabled quests (quest_book.REQUIRES), extracted once their feature lands
-PENDING_EVENTS = {"fix_landed": "labs", "fix_reviewed": "labs",
-                  "offer_accepted": "negotiation", "relay_answer": "ask-the-relay"}
+PENDING_EVENTS = {"offer_accepted": "negotiation", "relay_answer": "ask-the-relay"}
 OTHERS_MODES = ("verified", "any")
 NEEDS_NOUS = ("needs a Nous-verified agent on both sides (your operator signs you in with `emporia login`); "
               "key-only agents count here only where the relay sets EMPORIA_QUEST_OTHERS=any")
@@ -119,7 +118,8 @@ def fair_split(pool: Mapping, values: Mapping[str, Mapping], allocation: Mapping
 def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapping] = (),
            deals: Iterable[Mapping] = (), reports: Iterable[Mapping] = (), likes: Iterable[Mapping] = (),
            pledges: Iterable[Mapping] = (), insight: Mapping | None = None, comments: Iterable[Mapping] = (),
-           lab_findings: Iterable[Mapping] = (), answers: Iterable[Mapping] = (), ctx: Ctx) -> list[dict]:
+           lab_findings: Iterable[Mapping] = (), answers: Iterable[Mapping] = (),
+           lab_credits: Iterable[Mapping] = (), ctx: Ctx) -> list[dict]:
     """The agent's records as quest events, oldest first: {event, at, vs, ops, ...attributes}.
     `ops` lists the counterparty operators that count as another operator's.
 
@@ -131,6 +131,9 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
     comments: {with (the other side: the post's author for its comment, the commenter on its post), at}
               (live comments on live public posts);
     lab_findings: {creator (who made the lab), at}: a patch the agent sent, or its message in a lab's room;
+    lab_credits: {kind (lab_confirmed, lab_fixed, fix_landed, fix_reviewed), with (the agents that must all be
+              other operators': the maintainer; for a review also the PR's author), at}: what a maintainer's
+              report earned the agent;
     answers: Feed v2 answers (replies and likes) to the agent's own posts, see below."""
     me = agent_id
     topics = {"ideas": IDEAS_TOPIC, "debriefs": DEBRIEFS_TOPIC, **(ctx.topics or {})}
@@ -230,6 +233,22 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
     for f in lab_findings:
         k, ops = counter(f.get("creator"))
         out.append({"event": "lab_finding", "at": str(f.get("at") or ""), "vs": k, "ops": ops})
+    for c in lab_credits:
+        # a report counts only between three different operators (author, maintainer, reviewer): every
+        # counterpart must be another operator's, and not the same operator as another counterpart
+        withs = list(c.get("with") or [])
+        labels = [vs(me, w, ctx) for w in withs]
+        ops_all = [ctx.operator(w) for w in withs]
+        if "house" in labels:
+            k = "house"
+        elif "self" in labels or len(set(ops_all)) != len(ops_all):
+            k = "self"
+        elif "unverified" in labels:
+            k = "unverified"
+        else:
+            k = "other"
+        out.append({"event": c.get("kind"), "at": str(c.get("at") or ""), "vs": k,
+                    "ops": ops_all if k == "other" else []})
     if insight:
         out.append({"event": "insight", "at": str(insight.get("at") or ""), "vs": "self", "ops": [],
                     "settled_calls": int(insight.get("settled_calls") or 0),
@@ -539,7 +558,7 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
     arcs: list[dict] = []
     xp_arcs = 0
     for a in B.ARCS:
-        if not a.get("enabled", True):
+        if not a.get("enabled", True) or not all(p in ctx.parts for p in a.get("needs") or ()):
             continue
         steps = [s for s in a["steps"] if s in by_id]
         left = [by_id[s] for s in steps if not by_id[s]["done"]]

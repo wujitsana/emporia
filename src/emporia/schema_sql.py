@@ -665,13 +665,16 @@ CREATE TABLE IF NOT EXISTS labs (
                 slug TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 room_id TEXT NOT NULL UNIQUE,
-                repo_url TEXT NOT NULL,
+                subject_kind TEXT NOT NULL,
+                subject_ref TEXT NOT NULL,
+                repo_url TEXT NOT NULL DEFAULT '',
                 branch TEXT NOT NULL,
-                pinned_commit TEXT NOT NULL,
+                proof_commit TEXT NOT NULL,
                 creator_id TEXT NOT NULL,
-                checkers_json TEXT NOT NULL DEFAULT '[]',
+                creator_stable TEXT NOT NULL,
+                maintainers_json TEXT NOT NULL DEFAULT '[]',
                 licence TEXT NOT NULL DEFAULT '',
-                represents INTEGER NOT NULL DEFAULT 0,
+                verified INTEGER NOT NULL DEFAULT 0,
                 proof_json TEXT NOT NULL DEFAULT '',
                 checked_at TEXT NOT NULL DEFAULT '',
                 signed_at TEXT NOT NULL,
@@ -679,43 +682,30 @@ CREATE TABLE IF NOT EXISTS labs (
                 created_at TEXT NOT NULL
             );
 
-CREATE TABLE IF NOT EXISTS lab_patches (
-                patch_id TEXT PRIMARY KEY,
+CREATE INDEX IF NOT EXISTS idx_labs_subject ON labs(subject_kind, subject_ref);
+
+CREATE TABLE IF NOT EXISTS lab_reports (
+                report_id TEXT PRIMARY KEY,
                 lab_slug TEXT NOT NULL,
-                author_id TEXT NOT NULL,
-                operator_key TEXT NOT NULL,
-                thread TEXT NOT NULL,
-                base_commit TEXT NOT NULL,
-                diff TEXT NOT NULL,
-                diff_sha256 TEXT NOT NULL,
-                files_json TEXT NOT NULL,
-                summary TEXT NOT NULL,
-                nonce TEXT NOT NULL,
+                ref_kind TEXT NOT NULL,
+                ref_id TEXT NOT NULL,
+                event TEXT NOT NULL,
+                commit_sha TEXT NOT NULL DEFAULT '',
+                maintainer_id TEXT NOT NULL,
+                author_claim TEXT NOT NULL,
+                author_stable TEXT NOT NULL,
+                credited_json TEXT NOT NULL DEFAULT '[]',
+                reviewers_json TEXT NOT NULL DEFAULT '[]',
+                note TEXT NOT NULL DEFAULT '',
                 signed_at TEXT NOT NULL,
                 signature TEXT NOT NULL,
-                lines_added INTEGER NOT NULL DEFAULT 0,
-                lines_removed INTEGER NOT NULL DEFAULT 0,
-                thread_message_id TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'open',
                 created_at TEXT NOT NULL,
-                UNIQUE (author_id, nonce)
+                UNIQUE (lab_slug, signature)
             );
 
-CREATE INDEX IF NOT EXISTS idx_lab_patches_lab ON lab_patches(lab_slug, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_lab_reports_lab ON lab_reports(lab_slug, created_at);
 
-CREATE INDEX IF NOT EXISTS idx_lab_patches_operator ON lab_patches(operator_key, lab_slug, status);
-
-CREATE TABLE IF NOT EXISTS lab_checks (
-                check_id TEXT PRIMARY KEY,
-                patch_id TEXT NOT NULL,
-                checker_id TEXT NOT NULL,
-                result_json TEXT NOT NULL,
-                signed_at TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-CREATE INDEX IF NOT EXISTS idx_lab_checks_patch ON lab_checks(patch_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_lab_reports_ref ON lab_reports(lab_slug, ref_id, created_at);
 
 CREATE TABLE IF NOT EXISTS beacon_rounds (
                 round INTEGER PRIMARY KEY,

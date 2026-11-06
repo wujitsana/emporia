@@ -178,40 +178,30 @@ def _loads(raw: Any, default: Any) -> Any:
     return value if isinstance(value, type(default)) else default
 
 
-def patch_queue(conn) -> dict[str, Any]:
-    """Labs (W0): patches waiting — not yet checked, or checked and not yet landed — oldest first,
-    each with its latest check. A summary is the agent's own words: shown beside the commands,
-    never inside one."""
-    if why := relay_modules.off_because("labs", "patches"):
+def lab_activity(conn) -> dict[str, Any]:
+    """Labs v2: recent maintainer reports and the open threads of each lab. Reports are public records
+    (refs and agents); thread counts are messages' numbers, never their text."""
+    if why := relay_modules.off_because("labs", "reports"):
         return {"on": False, "why": why}
     if not _has_table(conn, "labs"):
         return {"on": False, "why": "this relay's database has no labs yet"}
-    total = conn.execute("SELECT COUNT(*) FROM lab_patches WHERE status IN ('open', 'passed', 'failed')").fetchone()[0]
-    rows = conn.execute("SELECT * FROM lab_patches WHERE status IN ('open', 'passed', 'failed') "
-                        "ORDER BY created_at, patch_id LIMIT ?", (QUEUE_LIMIT,)).fetchall()
-    items = []
-    for r in rows:
-        c = conn.execute("SELECT check_id, checker_id, result_json, created_at FROM lab_checks WHERE patch_id = ? "
-                         "ORDER BY created_at DESC LIMIT 1", (r["patch_id"],)).fetchone()
-        res = _loads(c["result_json"], {}) if c else None
-        tests = (res or {}).get("tests") or {}
-        items.append({
-            "patch_id": r["patch_id"], "lab": r["lab_slug"], "author_id": r["author_id"], "thread": r["thread"],
-            "base_commit": r["base_commit"], "files": _loads(r["files_json"], []), "added": r["lines_added"],
-            "removed": r["lines_removed"], "summary": (r["summary"] or "")[:_TEXT_CHARS], "status": r["status"],
-            "created_at": r["created_at"],
-            "check": None if not c else {
-                "check_id": c["check_id"], "checker_id": c["checker_id"], "at": c["created_at"],
-                "verdict": res.get("verdict"), "risk_floor": res.get("risk_floor"), "flags": res.get("flags") or [],
-                "secret_scan": res.get("secret_scan"), "tests_exit": tests.get("exit_code"),
-                "passed": tests.get("passed"), "failed": tests.get("failed"),
-                "isolation": (res.get("sandbox") or {}).get("isolation"),
-                "sandbox": (res.get("sandbox") or {}).get("kind"), "problem": res.get("problem") or ""},
-        })
-    labs_here = [dict(slug=r["slug"], repo_url=r["repo_url"], branch=r["branch"], commit=r["pinned_commit"])
-                 for r in conn.execute("SELECT slug, repo_url, branch, pinned_commit FROM labs ORDER BY created_at")]
-    return {"on": True, "waiting": total, "unchecked": sum(1 for i in items if i["check"] is None),
-            "items": items, "labs": labs_here}
+    from emporia.routes import labs as lab_routes
+    labs_here, recent, open_threads = [], [], []
+    for lab in conn.execute("SELECT * FROM labs ORDER BY created_at").fetchall():
+        labs_here.append({"slug": lab["slug"], "subject": f"{lab['subject_kind']}:{lab['subject_ref']}",
+                          "verified": bool(lab["verified"]), "maintainers": len(_loads(lab["maintainers_json"], []))})
+        for t in lab_routes.thread_list(conn, lab):
+            if t["state"] == "open":
+                open_threads.append({"lab": lab["slug"], "ref": t["ref"], "messages": t["messages"],
+                                     "last_at": t["last_at"]})
+    for r in conn.execute("SELECT lab_slug, ref_kind, ref_id, event, maintainer_id, signed_at FROM lab_reports "
+                          "ORDER BY created_at DESC, report_id LIMIT ?", (QUEUE_LIMIT,)):
+        recent.append({"lab": r["lab_slug"], "ref": f"{r['ref_kind']}:{r['ref_id']}", "event": r["event"],
+                       "maintainer_id": r["maintainer_id"], "at": r["signed_at"]})
+    total = conn.execute("SELECT COUNT(*) FROM lab_reports").fetchone()[0]
+    return {"on": True, "labs": labs_here, "reports": total, "recent": recent,
+            "open_threads": sorted(open_threads, key=lambda t: t["last_at"] or "", reverse=True)[:QUEUE_LIMIT]}
+
 
 
 def expedition(conn) -> dict[str, Any]:
@@ -379,7 +369,7 @@ async def operator_status(request: Request, window_s: int = 3600):
     asked = max(60, min(int(window_s), 30 * 86_400))
     window = next(w for w in _ACTIVITY_WINDOWS if w >= asked)
     with rs.DB_LOCK, rs.get_db() as conn:
-        parts = {"bugs": bug_queue(conn), "ideas": idea_queue(conn), "patches": patch_queue(conn),
+        parts = {"bugs": bug_queue(conn), "ideas": idea_queue(conn), "labs": lab_activity(conn),
                  "expedition": expedition(conn),
                  "house": house(conn, window), "health": health(conn, window)}
     return {"agent_id": caller, "relay_id": rs.relay_id(), "relay_url": rs.RELAY_BASE_URL, **parts,

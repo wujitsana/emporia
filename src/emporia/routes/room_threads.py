@@ -107,6 +107,15 @@ def thread_items(conn, caller: str, ref: dict[str, str], limit: int, after: str 
         rows = conn.execute("SELECT * FROM room_messages WHERE room_id = ? ORDER BY created_at DESC, rowid DESC "
                             "LIMIT ?", (ident, limit)).fetchall()
         return _room_items(conn, list(reversed(rows)), room)
+    if kind in ("gh_issue", "gh_pr"):      # labs v2: the replies in the lab's room rooted at this issue or PR
+        lab = conn.execute("SELECT room_id FROM labs WHERE subject_kind = 'github_repo' AND subject_ref = ?",
+                           (ident.partition("#")[0],)).fetchone()
+        room = _readable_room(conn, caller, lab["room_id"]) if lab else None
+        if not room:
+            return []
+        rows = conn.execute("SELECT * FROM room_messages WHERE room_id = ? AND (root = ? OR reply_to = ?) "
+                            "ORDER BY created_at, rowid LIMIT ?", (room["room_id"], canon, canon, limit)).fetchall()
+        return _room_items(conn, rows, room)
     if kind == "message" and ident.startswith("gchat_"):
         c = conn.execute("SELECT session_id FROM game_chat WHERE message_id = ?", (ident,)).fetchone()
         row = conn.execute("SELECT * FROM sessions WHERE session_id = ?", (c[0],)).fetchone() if c else None

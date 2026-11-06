@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  bugCommands, bytes, expeditionCommand, houseCommands, ideaCommands, patchCommands, snapshotCommand, uptime,
+  bugCommands, bytes, expeditionCommand, houseCommands, ideaCommands, labCommands, snapshotCommand, uptime,
   type OperatorCommand,
 } from "./operatorCommands";
 // The table emporia/operator_desk.py reproduces too (tests/test_operator.py): one set of strings.
@@ -9,8 +9,7 @@ import vectors from "./operatorCommands.vectors.json";
 interface Case {
   kind: string;
   name: string;
-  item?: { report_id?: string; severity_claimed?: string; post_id?: string; patch_id?: string; lab?: string;
-    check?: { verdict?: string } | null };
+  item?: { report_id?: string; severity_claimed?: string; post_id?: string; lab?: string };
   verdicts?: boolean;
   running?: boolean;
   expect: OperatorCommand[];
@@ -21,7 +20,7 @@ function built(c: Case): OperatorCommand[] {
   if (c.kind === "idea") return ideaCommands(c.name, c.item ?? {}, !!c.verdicts);
   if (c.kind === "expedition") return expeditionCommand(c.name);
   if (c.kind === "house") return houseCommands(c.name, c.running);
-  if (c.kind === "patch") return patchCommands(c.name, c.item ?? {});
+  if (c.kind === "lab") return labCommands(c.name, c.item?.lab);
   return snapshotCommand(c.name);
 }
 
@@ -41,12 +40,9 @@ describe("the operator's commands, as the Python side builds them", () => {
     expect(accept.gate).toBe("person");
   });
 
-  it("lands only a patch that passed its check, and never puts a summary in a command", () => {
-    expect(patchCommands("op", { patch_id: "lpt_1", lab: "emporia", check: null })[0].command)
-      .toBe("hermes emporia lab op check emporia --patch lpt_1");
-    expect(patchCommands("op", { patch_id: "lpt_1", lab: "emporia", check: { verdict: "fail" } })
-      .some((c) => c.command.includes(" land "))).toBe(false);
-    expect(patchCommands("op", { patch_id: "lpt_1", lab: "emporia; rm -rf ~", check: null })).toEqual([]);
+  it("reads a lab with a plain command and refuses an unsafe name", () => {
+    expect(labCommands("op", "emporia")[0].command).toBe("hermes emporia lab op show emporia");
+    expect(labCommands("op", "emporia; rm -rf ~")).toEqual([]);
   });
 
   it("offers no idea verdict on a relay that takes none", () => {

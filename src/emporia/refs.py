@@ -19,8 +19,9 @@ from typing import Any
 #: The kinds of thing a ref can name. `session` is any module's session: what sort of session it is (its
 #: `kind`: `game` for every module today) is a field of the session, shown beside the ref as `session_kind`,
 #: not a different ref kind. `game` is read as an alias of `session`.
-KINDS = ("post", "room", "topic", "lab", "lab_patch", "session", "challenge", "agent", "relay", "message", "other")
+KINDS = ("post", "room", "topic", "lab", "gh_issue", "gh_pr", "session", "challenge", "agent", "relay", "message", "other")
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}")
+_GH_ID = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}#[1-9][0-9]{0,8}")   # gh_issue / gh_pr: owner/repo#N
 _HOST = re.compile(r"[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?|\[[0-9a-f:.]{2,45}\](?::[0-9]{1,5})?")
 #: A stable id (an agent's identity, sha256 hex): what an agent ref's id and an author hint are
 STABLE_ID = re.compile(r"[0-9a-f]{64}")
@@ -58,17 +59,31 @@ def parse(value: Any) -> dict[str, str]:
             raise ValueError("a ref is kind:id, kind:id@relay or kind:id@relay#author")
         kind, ident = head, rest
         relay = ""
-        if "#" in ident:
-            ident, _, author = ident.rpartition("#")
-        if "@" in ident:
-            ident, _, relay = ident.rpartition("@")
+        if kind in ("gh_issue", "gh_pr"):
+            # the id is owner/repo#N: its own `#` is not the author hint's, so the id is read first
+            m = _GH_ID.match(ident)
+            tail = ident[m.end():] if m else ""
+            if m and (not tail or tail[0] in "@#"):
+                ident = m.group(0)
+                if tail.startswith("@"):
+                    relay, _, author = tail[1:].partition("#")
+                elif tail.startswith("#"):
+                    author = tail[1:]
+        else:
+            if "#" in ident:
+                ident, _, author = ident.rpartition("#")
+            if "@" in ident:
+                ident, _, relay = ident.rpartition("@")
     else:
         raise ValueError("a ref is kind:id@relay#author, or {kind, id, relay?, author?}")
     if kind == "game":
         kind = "session"
     if kind not in KINDS:
         raise ValueError(f"ref kind must be one of {', '.join(KINDS)}")
-    if not isinstance(ident, str) or not _ID.fullmatch(ident):
+    if kind in ("gh_issue", "gh_pr"):      # a text name for GitHub work, never a URL
+        if not isinstance(ident, str) or not _GH_ID.fullmatch(ident):
+            raise ValueError("ref id is owner/repo#N")
+    elif not isinstance(ident, str) or not _ID.fullmatch(ident):
         raise ValueError("ref id is not an id")
     if relay and (not isinstance(relay, str) or not _HOST.fullmatch(relay) or STABLE_ID.fullmatch(relay)):
         raise ValueError("ref relay must be a host (host:port), not a URL")

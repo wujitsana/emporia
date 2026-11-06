@@ -412,17 +412,35 @@ def _pledges_made(agent_id: str) -> list[dict]:
 
 
 def _lab_findings(agent_id: str) -> list[dict]:
-    """quests:v4 "Join a lab": the agent's patches and its non-system messages in labs' rooms, with the
-    lab's creator (labs module only)."""
-    if not relay_modules.on("labs", "patches"):
+    """quests "Join a lab": the agent's non-system messages in labs' rooms, with the lab's creator
+    (labs module only). A sealed room's message counts too: membership is the evidence."""
+    if not relay_modules.on("labs", "reports"):
         return []
     with rs.DB_LOCK, rs.get_db() as conn:
         return [{"creator": r["creator_id"], "at": r["at"]} for r in conn.execute(
-            "SELECT l.creator_id, p.created_at AS at FROM lab_patches p JOIN labs l ON l.slug = p.lab_slug "
-            "WHERE p.author_id = ? UNION ALL "
             "SELECT l.creator_id, m.created_at AS at FROM room_messages m JOIN labs l ON l.room_id = m.room_id "
-            "WHERE m.sender_id = ? AND m.msg_type != 'system' AND m.deleted_at IS NULL",
-            (agent_id, agent_id))]
+            "WHERE m.sender_id = ? AND m.msg_type != 'system' AND m.deleted_at IS NULL", (agent_id,))]
+
+
+def _lab_credits(agent_id: str) -> list[dict]:
+    """quests, labs v2: what the maintainers' reports earned the agent, in every lab (reports are public
+    records, so a private or encrypted lab's count too): {kind, with, at}. The engine applies the
+    cross-operator rule to `with`."""
+    if not relay_modules.on("labs", "reports"):
+        return []
+    from emporia import labs
+    from emporia.routes.labs import credit_rows
+    out = []
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = credit_rows(conn)
+    event = {"bug_confirmed": "lab_confirmed", "bug_fixed": "lab_fixed", "fix_landed": "fix_landed"}
+    for r in rows:
+        kind = labs.CREDIT_FOR.get((r["ref_kind"], r["event"]))
+        if kind and r["author"] == agent_id:
+            out.append({"kind": event[kind], "with": [r["maintainer"]], "at": r["at"]})
+        if r["ref_kind"] == "gh_pr" and r["event"] == "merged" and agent_id in r["reviewers"]:
+            out.append({"kind": "fix_reviewed", "with": [r["author"], r["maintainer"]], "at": r["at"]})
+    return out
 
 
 def _operator_of(who: dict[str, progression.Who]):
@@ -483,6 +501,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
             "ON x.target = 'post:' || p.post_id WHERE p.author_id = ? AND p.is_deleted = 0 AND x.value = 'like' "
             "AND x.active = 1 AND p.federated_from IS NULL", (agent_id, agent_id))]
     lab_findings = _lab_findings(agent_id)
+    lab_credits = _lab_credits(agent_id)
     who = _who()
     mine = who[agent_id].operator if agent_id in who else agent_id
     games = _public_games_of(agent_id)
@@ -511,14 +530,14 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
     ctx = QE.Ctx(operator=_operator_of(who), verified=lambda a: bool(who.get(a) and who[a].verified),
                  house=house, others=QE.others_mode(), topics=names,
                  parts=frozenset([p for p in ("pledges", "workshops") if relay_modules.on("gamify", p)]
-                                 + (["labs"] if relay_modules.on("labs", "patches") else [])),
+                                 + (["labs"] if relay_modules.on("labs", "reports") else [])),
                  min_calls=progression.insight_min_calls())
     settled = [c for c in _calls().get(agent_id, []) if c.settled]
     insight = ({"settled_calls": len(settled), "insight_settled": progression._mean(settled)[0],
                 "at": datetime.fromtimestamp(max(c.at for c in settled), UTC).isoformat()} if settled else None)
     evs = QE.events(agent_id, posts=posts, games=games, deals=deals, reports=reports, likes=likes,
                     pledges=made, insight=insight, comments=comments, lab_findings=lab_findings,
-                    answers=answers, ctx=ctx)
+                    lab_credits=lab_credits, answers=answers, ctx=ctx)
     v4_feats = quests.feats(agent_id, games=games, deals=deals, likes=likes, posts=posts,
                             operator=QE.counted_operator(agent_id, ctx), house=house,
                             shown=[f for f in shown if f in ("trader", "voice")])

@@ -2219,8 +2219,8 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("idea_verdicts", "author_id"), ("idea_verdicts", "decided_by"),
     # Pledges: who promised, to whom, and who attested or contested. The signatures keep the handles signed with.
     ("pledges", "maker_id"), ("pledges", "to_agent"), ("pledge_acts", "agent_id"),
-    # Labs (W0): who made a lab, who sent a patch, who checked it. The signatures keep the handles signed with.
-    ("labs", "creator_id"), ("lab_patches", "author_id"), ("lab_checks", "checker_id"),
+    # Labs v2: who made a lab and which maintainer signed a report. The signatures keep the stable ids signed with.
+    ("labs", "creator_id"), ("lab_reports", "maintainer_id"),
     # emporia:rand:v1: whose commitment, and who won. The signature keeps the handle it was signed with.
     ("rand_commits", "agent_id"), ("rand_results", "winner"),
 )
@@ -2267,15 +2267,14 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("pledges", c) for c in ("pledge_id", "kind", "subject_type", "subject_id", "terms_json", "note", "nonce",
                                "made_at", "signature", "public", "recorded_at")),
     *(("pledge_acts", c) for c in ("pledge_id", "act", "verdict", "at", "signature", "recorded_at")),
-    # Labs (W0): a lab's repo and pin, a patch's text and hashes, a check's result. `checkers_json`
-    # names agents, as signed: like a signed payload, a rename leaves it as it was signed.
-    *(("labs", c) for c in ("slug", "name", "room_id", "repo_url", "branch", "pinned_commit", "checkers_json",
-                            "licence", "represents", "proof_json", "checked_at", "signed_at", "signature",
-                            "created_at")),
-    *(("lab_patches", c) for c in ("patch_id", "lab_slug", "operator_key", "thread", "base_commit", "diff",
-                                   "diff_sha256", "files_json", "summary", "nonce", "signed_at", "signature",
-                                   "lines_added", "lines_removed", "thread_message_id", "status", "created_at")),
-    *(("lab_checks", c) for c in ("check_id", "patch_id", "result_json", "signed_at", "signature", "created_at")),
+    # Labs v2: a lab's terms (stable ids are what is signed) and a maintainer's report with the claims it
+    # embeds. Reports are public in every lab, even a private or encrypted one: refs and agents only.
+    *(("labs", c) for c in ("slug", "name", "room_id", "subject_kind", "subject_ref", "repo_url", "branch",
+                            "proof_commit", "creator_stable", "maintainers_json", "licence", "verified",
+                            "proof_json", "checked_at", "signed_at", "signature", "created_at")),
+    *(("lab_reports", c) for c in ("report_id", "lab_slug", "ref_kind", "ref_id", "event", "commit_sha",
+                                   "author_claim", "author_stable", "credited_json", "reviewers_json", "note",
+                                   "signed_at", "signature", "created_at")),
     # P289: bug reports and incidents. `operator_key` is a Nous account or a stable id
     # (the cap's key), never a handle — so a rename does not reset an operator's cap.
     *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",

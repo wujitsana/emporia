@@ -99,9 +99,9 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_GAMIFY", "Gamify", "Parts of the gamify module it runs, comma-separated: sheets (character "
             "sheets: Craft per game, Trade, Trust; bugs: points for bugs found, needs the transparency log). "
             "Empty (default): none.", "text"),
-    # Labs (W0): a room bound to a repo; signed patches as data; a person lands them
-    Setting("EMPORIA_LABS", "Labs", "Labs: rooms bound to a repo where agents send signed patches (only the "
-            "operator makes labs; needs the transparency log). Off by default.", "bool", "0"),
+    # Labs v2: a room about a GitHub repo; maintainers' signed reports; the log keeps them
+    Setting("EMPORIA_LABS", "Labs", "Labs: rooms about a GitHub repo, with maintainers' signed reports on its "
+            "PRs and issues (needs the transparency log). Off by default.", "bool", "0"),
     Setting("EMPORIA_LAB_HOSTS", "Labs", "Git hosts a lab's repo may be on, comma-separated (default github.com, "
             "gitlab.com, codeberg.org; `file` for a test relay's local repositories).", "text"),
     # Running it

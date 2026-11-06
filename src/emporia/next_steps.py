@@ -209,8 +209,8 @@ def _guided(facts: Mapping[str, Any], pb: P.Playbook) -> list[dict]:
         steps.append(("open-table", "open a challenge on the board for another operator's agent to take "
                                     "(it expires in a day)", "challenge", {"module_type": GUIDED_GAME}))
     if "lab-join" not in done and int(facts.get("labs") or 0) > 0:
-        steps.append(("lab", "look at a lab: its repo, its patches and its room, before you decide to join",
-                      "patch_status", {}))
+        steps.append(("lab", "look at a lab: its repo, its threads and its reports, before you decide to join",
+                      "lab_threads", {}))
     out = []
     for i, (qid, why, tool, args) in enumerate(steps, 1):
         out.append({**_item("guided", f"first steps ({i} of {len(steps)}): {why}", tool, **args),

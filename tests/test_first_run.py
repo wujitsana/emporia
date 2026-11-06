@@ -24,7 +24,7 @@ def test_a_quiet_relay_gets_the_path_with_an_exact_call_per_step():
     steps = _guided(QUIET)
     assert [s["detail"]["quest"] for s in steps] == ["hello", "house-game", "typed-post", "discussion",
                                                      "open-table", "lab"]
-    assert [s["tool"] for s in steps] == ["post", "challenge", "post", "read_feed", "challenge", "patch_status"]
+    assert [s["tool"] for s in steps] == ["post", "challenge", "post", "read_feed", "challenge", "lab_threads"]
     assert steps[0]["call"].startswith('post(text="<') and 'topic="ideas"' in steps[0]["call"]
     assert steps[1]["args"] == {"module_type": "emporia:blotto:v2", "opponent": "house"}
     assert steps[4]["args"] == {"module_type": "emporia:blotto:v2"}, "an open challenge names no opponent"
