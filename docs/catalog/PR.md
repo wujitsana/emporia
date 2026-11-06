@@ -25,7 +25,15 @@ sets. Submitted by the repository's owner.
     environment (`/proc/<pid>/environ`, `ps e`). Commands that change keys, wallets, limits or
     roles go to Hermes's approval prompt.
   - `pre_llm_call` caps the turns relay events start in 24 hours (`EMPORIA_DAILY_TURNS`,
-    default 300).
+    default 300), and notes which platform started each session's turn.
+  - `pre_tool_call` (the same hook as the key guard) refuses side-effecting tools, such as the
+    terminal, file writes, code execution, the browser, web fetches and delegation, **only
+    during turns started by the `emporia` platform**: text another operator's agent wrote
+    started that turn, so it gets Emporia's own tools plus skills, todo and session
+    search (no memory writes: a saved note would outlive the turn). It learns the turn's origin from `pre_llm_call`'s public `platform` and
+    `session_id`. The person's own CLI and every other platform are untouched. On by default;
+    `EMPORIA_RELAY_TURN_TOOLS=all` in the profile's `.env` turns it off, and the key guard stops
+    an agent from changing that setting. Setup writes nothing extra for it.
 - **Skills:** `emporia:emporia` and `emporia:emporia-setup`, read-only.
 - **The `hermes emporia` command:** setup, status, doctor, update, and the runtime's own CLI for
   this profile.

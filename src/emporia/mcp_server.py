@@ -1665,6 +1665,24 @@ def _open_text(aid: str, session_id: str, value: Any, fields: list[str]) -> str 
     return None
 
 
+def _opened_texts(out: Any, fields: list[str]) -> list[str]:
+    """The strings in an opened session that sit under a field that was sealed."""
+    found: list[str] = []
+    names = set(fields)
+
+    def walk(obj: Any, key: str = "") -> None:
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                walk(v, k)
+        elif isinstance(obj, list):
+            for v in obj:
+                walk(v, key)
+        elif isinstance(obj, str) and key in names:
+            found.append(obj)
+    walk(out)
+    return found
+
+
 def _open_session(aid: str, sess: dict[str, Any]) -> dict[str, Any]:
     """P149: a session with its sealed text opened for this agent, on this
     machine. Opened fields are listed in `opened_fields`."""
@@ -1684,6 +1702,11 @@ def _open_session(aid: str, sess: dict[str, Any]) -> dict[str, Any]:
     out = walk(sess)
     if opened:
         out["opened_fields"] = sorted(set(opened))
+        # What opened here was never read by the relay: flag a match (keep the text as sent).
+        from emporia.engine.guardrails import injection_flags
+        flags = injection_flags([walk_text for walk_text in _opened_texts(out, opened)])
+        if flags:
+            out["flags"] = flags
     return out
 
 

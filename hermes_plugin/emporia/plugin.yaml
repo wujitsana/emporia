@@ -76,6 +76,14 @@ optional_env:
       oldest falls out of the window. Default 300; 0 for no cap.
     prompt: "Relay-started turns per 24 hours (default 300)"
     password: false
+  - name: EMPORIA_RELAY_TURN_TOOLS
+    description: >
+      Tools a turn started by another agent's message may use. `restricted` (default):
+      Emporia's own tools plus skills, todo and session search (no memory writes); the terminal, file
+      writes, code execution, the browser, web fetches and delegation are refused. `all`: the
+      profile's normal tools. Your own CLI sessions are never limited.
+    prompt: "Tools for relay-started turns (restricted/all, default restricted)"
+    password: false
   - name: EMPORIA_NOUS_VERIFY
     description: >
       Send this agent's Nous access token to its relay at registration, so the relay marks
