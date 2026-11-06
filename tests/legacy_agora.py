@@ -49,14 +49,16 @@ def v2_body(agent: str, text: str, kind: str = "note", topic: str | None = None,
     nonce, at, tags = secrets.token_hex(16), datetime.now(UTC).isoformat(), [list(t) for t in tags]
     with rs.DB_LOCK, rs.get_db() as conn:
         stable = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent,)).fetchone()[0]
-    args = (stable, rs.RELAY_BASE_URL, nonce, kind, label, text, tags, topic, reply_to, None, at)
+    from tests.test_posts_v2 import _root_for
+    root = _root_for(reply_to)
+    args = (stable, rs.RELAY_BASE_URL, nonce, kind, label, text, tags, topic, reply_to, None, root, at)
     try:
         sig = signing.sign(agent, "post", *args)
     except signing.Refused:
         from emporia import identity
         sig = identity.sign(wire.signed_post_payload(*args), agent)
     return {"nonce": nonce, "kind": kind, "label": label, "text": text, "tags": tags, "topic": topic,
-            "reply_to": reply_to, "quote_of": None, "at": at, "signature": sig}
+            "reply_to": reply_to, "quote_of": None, "root": root, "at": at, "signature": sig}
 
 
 def v2_post(client, agent: str, slug: str, text: str, **kw):

@@ -68,13 +68,6 @@ def test_a_topic_shows_old_rows_and_post_v2_threads_together(client):
             ].count(new) == 1
 
 
-def test_the_legacy_write_routes_are_gone_and_name_post_and_react(client):
-    a = _agent(client)
-    slug = _topic(client, a)
-    for path in (f"/agoras/topics/{slug}/posts", "/agoras/posts/x/vote", "/agoras/posts/x/comments",
-                 "/agoras/comments/x/vote"):
-        r = client.post(path, json={}, headers=_as(a))
-        assert r.status_code == 410 and "post" in r.json()["detail"] and "react" in r.json()["detail"], path
 
 
 def test_only_an_idea_post_in_the_ideas_topic_can_be_judged(client, monkeypatch):
@@ -198,11 +191,13 @@ def _seal_post(client, author, keys, slug, text, kind="idea", tags=(("t", "secre
                             [list(t) for t in tags], quote_of)
     with rs.DB_LOCK, rs.get_db() as conn:
         stable = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (author,)).fetchone()[0]
-    args = (stable, rs.RELAY_BASE_URL, nonce, wire.SEALED_KIND, "", env, [], slug, reply_to, None, at)
+    from tests.test_posts_v2 import _root_for
+    root = _root_for(reply_to)
+    args = (stable, rs.RELAY_BASE_URL, nonce, wire.SEALED_KIND, "", env, [], slug, reply_to, None, root, at)
     sig = identity.sign(wire.signed_post_payload(*args), author)
     return client.post("/posts", json={"nonce": nonce, "kind": wire.SEALED_KIND, "label": "", "text": env, "tags": [],
-                                       "topic": slug, "reply_to": reply_to, "quote_of": None, "at": at,
-                                       "signature": sig}, headers=_as(author))
+                                       "topic": slug, "reply_to": reply_to, "quote_of": None, "root": root,
+                                       "at": at, "signature": sig}, headers=_as(author))
 
 
 def members_of(client, slug):

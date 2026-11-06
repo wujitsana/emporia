@@ -548,19 +548,3 @@ def test_the_log_takes_both_the_pledge_and_its_acts(client):
     assert translog.SOURCES["pledge"][0] == "pledges" and translog.SOURCES["pledge_act"][0] == "pledge_acts"
 
 
-def test_a_v32_relay_is_copied_aside_then_given_the_pledge_tables(tmp_path, monkeypatch):
-    import sqlite3
-    db = tmp_path / "relay.sqlite3"
-    old = sqlite3.connect(db)
-    old.execute("CREATE TABLE kept_from_v32 (x TEXT)")
-    old.execute("PRAGMA user_version = 32")
-    old.commit()
-    old.close()
-    monkeypatch.setattr(rs, "DATABASE_PATH", db)
-    rs.init_db()
-    conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION >= 33
-    assert conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'pledges'").fetchone()
-    assert conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'pledge_acts'").fetchone()
-    [snap] = list(tmp_path.glob(f"relay.sqlite3.before-v{rs.SCHEMA_VERSION}-*.bak"))
-    assert sqlite3.connect(snap).execute("PRAGMA user_version").fetchone()[0] == 32

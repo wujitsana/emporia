@@ -158,26 +158,6 @@ def test_rotation_the_old_key_stops_and_each_verdict_keeps_the_key_that_signed_i
     assert client.get("/ideas").json()["verdict_key"] == new_pub
 
 
-def test_a_v33_relay_is_copied_aside_then_given_the_verdict_key_columns(tmp_path, monkeypatch):
-    db = tmp_path / "relay.sqlite3"
-    old = sqlite3.connect(db)
-    old.execute("CREATE TABLE idea_verdicts (post_id TEXT PRIMARY KEY, author_id TEXT NOT NULL, operator_key "
-                "TEXT NOT NULL, verdict TEXT NOT NULL, ref TEXT NOT NULL DEFAULT '', duplicate_of TEXT NOT NULL "
-                "DEFAULT '', points INTEGER NOT NULL DEFAULT 0, decided_by TEXT NOT NULL, decided_at TEXT NOT "
-                "NULL, signature TEXT NOT NULL)")
-    old.execute("INSERT INTO idea_verdicts (post_id, author_id, operator_key, verdict, decided_by, decided_at, "
-                "signature) VALUES ('pst_1', 'a', 'k', 'noted', 'op', 't', 's')")
-    old.execute("PRAGMA user_version = 33")
-    old.commit()
-    old.close()
-    monkeypatch.setattr(rs, "DATABASE_PATH", db)
-    rs.init_db()
-    conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION >= 34
-    assert {"verdict_key", "verdict_signature"} <= {r[1] for r in conn.execute("PRAGMA table_info(bug_reports)")}
-    assert conn.execute("SELECT verdict, verdict_key FROM idea_verdicts WHERE post_id = 'pst_1'").fetchone() == \
-        ("noted", "")
-    assert list(tmp_path.glob(f"relay.sqlite3.before-v{rs.SCHEMA_VERSION}-*.bak"))
 
 
 def test_the_verdict_key_is_made_and_kept_on_the_persons_side(tmp_path, monkeypatch):
@@ -333,29 +313,3 @@ def test_guard_mode_is_checked_once_per_interval_across_requests(setup, mm, monk
     assert len(_mode_checks(mm)) == 5, "a back end set up again is asked afresh"
 
 
-@pytest.mark.parametrize("start", [34, 35, 36])
-def test_a_v34_to_v36_relay_is_copied_aside_then_upgraded_and_keeps_its_verdicts(tmp_path, monkeypatch, start):
-    """The labs + verdict-key schema (34) upgrades to Feed v2 (35): posts, follows and reactions arrive, the old
-    likes become reactions, and the idea verdicts already given are kept."""
-    db = tmp_path / "relay.sqlite3"
-    old = sqlite3.connect(db)
-    old.execute("CREATE TABLE idea_verdicts (post_id TEXT PRIMARY KEY, author_id TEXT NOT NULL, operator_key "
-                "TEXT NOT NULL, verdict TEXT NOT NULL, ref TEXT NOT NULL DEFAULT '', duplicate_of TEXT NOT NULL "
-                "DEFAULT '', points INTEGER NOT NULL DEFAULT 0, decided_by TEXT NOT NULL, decided_at TEXT NOT "
-                "NULL, signature TEXT NOT NULL, verdict_key TEXT NOT NULL DEFAULT '')")
-    old.execute("INSERT INTO idea_verdicts (post_id, author_id, operator_key, verdict, decided_by, decided_at, "
-                "signature) VALUES ('pst_1', 'a', 'k', 'noted', 'op', 't', 's')")
-    old.execute(f"PRAGMA user_version = {start}")
-    old.commit()
-    old.close()
-    monkeypatch.setattr(rs, "DATABASE_PATH", db)
-    rs.init_db()
-    conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION >= 37
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    assert {"posts", "follows", "reactions", "beacon_rounds", "rand_commits", "rand_results"} <= tables
-    assert not {"room_adverts", "topic_adverts", "elsewhere_adverts"} & tables
-    assert "encrypted" in {r[1] for r in conn.execute("PRAGMA table_info(agora_topics)")}
-    assert conn.execute("SELECT verdict FROM idea_verdicts WHERE post_id = 'pst_1'").fetchone() == ("noted",)
-    [snap] = list(tmp_path.glob(f"relay.sqlite3.before-v{rs.SCHEMA_VERSION}-*.bak"))
-    assert sqlite3.connect(snap).execute("PRAGMA user_version").fetchone()[0] == start

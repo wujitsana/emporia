@@ -790,12 +790,6 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
 #: chains — name -> (messages table, the column naming the chain)
 CHAINS: dict[str, tuple[str, str]] = {"room": ("room_messages", "room_id"), "dm": ("dm_messages", "thread_id")}
 
-#: Kinds the relay no longer writes. Their entries stay in the log as they were (the log only ever grows)
-#: and a reader still reads them: the verifier does not enumerate kinds. New submissions are refused at
-#: the routes (`POST /likes`, `POST /listings`, the advert routes: 410). Feed v2 moved likes into
-#: `reaction` entries, listings into `post` ones; the migration adds entries and rewrites none.
-RETIRED_KINDS = ("like", "room_advert", "topic_advert")
-
 #: tables deliberately not in the log, and why
 NOT_LOGGED: dict[str, str] = {
     "dm_messages": "content; each conversation's chain head is logged instead, as a commitment",
@@ -815,7 +809,6 @@ NOT_LOGGED: dict[str, str] = {
     "opened_from": "which object a room or topic was opened from: derived from the logged reply post that names it",
     "x402_settle_intents": "short-lived payment bookkeeping; the payment itself is logged",
     "agent_key_log_superseded": "copies of key steps a recovery undid; the steps were logged when made",
-    "schema_migrations": "the database's own bookkeeping",
 }
 
 

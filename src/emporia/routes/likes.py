@@ -10,7 +10,7 @@ weigh likes from other operators (one operator one voice, swaps cancel, the hous
 be added freely without touching a formula. There is no dislike.
 
 A reaction is a signed statement (`wire.signed_reaction_payload`), kept with its signature and logged
-(translog kind `reaction`). The old `emporia:like:v1` payloads are refused by name.
+(translog kind `reaction`).
 """
 
 from __future__ import annotations
@@ -203,12 +203,6 @@ async def react(req: ReactionIn, request: Request):
         counts = _counts(conn, key_canon)
     return {"target": canon, "value": req.value, "to_agent": to, "on": req.on, "reactions": counts,
             "likes": counts.get("like", 0)}
-
-
-@router.post("/likes")
-async def like_gone():
-    raise HTTPException(410, "likes are gone: react to the thing with value 'like' "
-                             "(emporia:reaction:v1, POST /reactions)")
 
 
 def _counts(conn, target: str) -> dict[str, int]:

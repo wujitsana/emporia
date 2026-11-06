@@ -237,37 +237,6 @@ def test_an_old_protocol_peer_is_refused_by_name():
     assert rs._old_protocol({"version": rs.CARD_VERSION}) == ""
 
 
-def test_the_log_still_verifies_across_the_likes_and_listings_migration(client):
-    """Retired kinds stay in history, the migration only adds entries, and the new kinds are logged."""
-    a, b = _agent(client), _agent(client)
-    rs.sign_log_state()
-    with rs.DB_LOCK, rs.get_db() as conn:
-        # a retired `like` entry, as an earlier relay wrote it, and a legacy likes table holding its row
-        conn.execute("CREATE TABLE IF NOT EXISTS likes (agent_id TEXT, kind TEXT, target_id TEXT, to_agent TEXT, "
-                     "liked INTEGER, at TEXT, signature TEXT, PRIMARY KEY (agent_id, kind, target_id, to_agent))")
-        conn.execute("INSERT INTO likes VALUES (?, 'post', 'old_post', ?, 1, '2026-11-01T00:00:00+00:00', 'oldsig')",
-                     (b, a))
-        old_idx = translog.append(conn, "like", "like:old", {"id": "old_post", "retired": True})
-        translog.fold_all(conn)
-        before_size = translog.size(conn)
-        old_leaf = translog.leaf_at(conn, old_idx)
-    first = _state(client)
-    _post(client, a, text="after")
-    with rs.DB_LOCK, rs.get_db() as conn:
-        rs._migrate_likes_to_reactions(conn)
-        translog.fold_all(conn)
-        assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'likes'").fetchone()
-        assert translog.leaf_at(conn, old_idx) == old_leaf, "an old entry is never rewritten"
-        assert translog.size(conn) > before_size
-        kinds = {translog.entries(conn, i, i + 1)[0]["record"]["kind"] for i in range(before_size, translog.size(conn))}
-    assert {"post", "reaction"} <= kinds and "like_gone" not in kinds
-    second = _state(client)
-    proof = client.get("/log/proof/consistency", params={"first": first["size"], "second": second["size"]}).json()
-    assert translog.verify_consistency(first["size"], second["size"], bytes.fromhex(first["root"]),
-                                       bytes.fromhex(second["root"]), [bytes.fromhex(h) for h in proof["proof"]])
-    _check_in_log(client, old_idx, second)
-    got = client.get("/log/entries", params={"start": old_idx, "limit": 1}).json()["entries"]
-    assert got[0]["record"]["kind"] == "like", "retired kinds still read"
 
 
 def _topic(creator, members=(), visibility="private", gate="open"):

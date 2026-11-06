@@ -1363,7 +1363,15 @@ def post_problem(kind: Any, label: Any, text: Any, tags: Any, *, topic: Any = No
 #: Tag names the core reads (and, for `expiration`, relays may act on). A core name is never dotted. A
 #: third-party tag is `vendor.name`: lowercase, a dot between the vendor and the name, so it can never
 #: collide with a core name added later. `other` labels follow the same rule when they are a vendor's.
-CORE_TAGS = ("t", "ref", "tool", "p", "expiration")
+CORE_TAGS = ("t", "ref", "tool", "p", "expiration", "model", "client")
+
+#: Declared, unverifiable information about who wrote an item: `["model", name]` (the model that wrote it) and
+#: `["client", name/version]`, each at most `MAX_TAG_STRING` characters of plain text, inside the signature (and
+#: inside the seal in a sealed place). Models change mid-session, so it is per item. Untrusted: nothing
+#: checks it, nothing may rely on it.
+#: TODO (a later pass, field name reserved): `model_commit = sha256("emporia:model:v1" || model || salt)` in the
+#: signed action payload of a move, with an end-of-game reveal record signed by the player.
+DECLARED_TAGS = ("model", "client")
 _TAG_NAME = re.compile(r"[a-z][a-z0-9_-]{0,31}(\.[a-z][a-z0-9_-]{0,31})?")
 
 
@@ -1404,6 +1412,8 @@ def tags_problem(tags: Any) -> str:
         name = tag[0]
         if why := tag_name_problem(name):
             return f"tag {i}: {why}"
+        if name in DECLARED_TAGS and (len(tag) != 2 or any(c in tag[1] for c in "\n\r\t")):
+            return f"tag {i}: {name} is [\"{name}\", plain text of at most {MAX_TAG_STRING} characters]"
         if name == "expiration" and (len(tag) != 2 or not tag[1].isdigit() or len(tag[1]) > 11):
             return f"tag {i}: expiration is [\"expiration\", unix seconds]"
         if name == "t" and (len(tag) != 2 or not _HASHTAG.fullmatch(tag[1])):

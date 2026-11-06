@@ -18,14 +18,6 @@ from emporia import rooms as rooms_db
 router = APIRouter()
 
 
-@router.post("/listings")
-async def create_listing(request: Request):
-    """Gone: `emporia:listing:v1` is replaced by `emporia:post:v2`. What a listing did is a post of
-    kind offer, challenge or pointer, with `ref` or `tool` tags saying what it is about."""
-    raise HTTPException(410, "listings v1 are gone: post kind='offer' | 'challenge' | 'pointer' "
-                             "(emporia:post:v2, POST /posts) instead")
-
-
 @router.get("/listings")
 async def get_listings(
     listing_type: str | None = None,

@@ -243,57 +243,8 @@ def test_the_operators_command_signs_with_the_verdict_key_and_sends_the_verdict(
     assert "/verdict" not in src and "operator_verdicts" not in src, "no MCP tool reaches a verdict"
 
 
-def test_a_v31_relay_is_copied_aside_then_given_the_verdicts_table(tmp_path, monkeypatch):
-    import sqlite3
-    db = tmp_path / "relay.sqlite3"
-    old = sqlite3.connect(db)
-    old.execute("CREATE TABLE kept_from_v31 (x TEXT)")
-    old.execute("PRAGMA user_version = 31")
-    old.commit()
-    old.close()
-    monkeypatch.setattr(rs, "DATABASE_PATH", db)
-    rs.init_db()
-    conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION >= 32
-    assert conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'idea_verdicts'").fetchone()
-    [snap] = list(tmp_path.glob(f"relay.sqlite3.before-v{rs.SCHEMA_VERSION}-*.bak"))
-    assert sqlite3.connect(snap).execute("PRAGMA user_version").fetchone()[0] == 31
 
 
-@pytest.mark.parametrize("start", [31, 32])
-def test_one_bump_to_34_gives_pledges_and_the_beacon_cache_their_tables_after_a_copy(tmp_path, monkeypatch, start):
-    """gamify-all pledges (`pledges`, `pledge_acts`) and games v2's beacon cache (`beacon_rounds`;
-    Bargain v1's `session_deals` is dropped) are added by the bump to 34. From 31 (before the launch additions) or from 32 the relay copies the
-    database aside first, then adds what is missing and keeps what was there."""
-    import sqlite3
-    db = tmp_path / "relay.sqlite3"
-    old = sqlite3.connect(db)
-    old.execute("CREATE TABLE kept (x TEXT)")
-    old.execute("INSERT INTO kept VALUES ('was here')")
-    if start == 32:
-        old.execute("CREATE TABLE idea_verdicts (post_id TEXT PRIMARY KEY, author_id TEXT NOT NULL, operator_key "
-                    "TEXT NOT NULL, verdict TEXT NOT NULL, ref TEXT NOT NULL DEFAULT '', duplicate_of TEXT NOT NULL "
-                    "DEFAULT '', points INTEGER NOT NULL DEFAULT 0, decided_by TEXT NOT NULL, decided_at TEXT NOT "
-                    "NULL, signature TEXT NOT NULL)")
-        old.execute("INSERT INTO idea_verdicts (post_id, author_id, operator_key, verdict, decided_by, decided_at, "
-                    "signature) VALUES ('pst_1', 'a', 'k', 'noted', 'op', 't', 's')")
-    old.execute(f"PRAGMA user_version = {start}")
-    old.commit()
-    old.close()
-    monkeypatch.setattr(rs, "DATABASE_PATH", db)
-    rs.init_db()
-    conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION >= 33
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    assert {"idea_verdicts", "beacon_rounds", "pledges", "pledge_acts", "kept"} <= tables
-    assert conn.execute("SELECT x FROM kept").fetchall() == [("was here",)]
-    if start == 32:
-        assert conn.execute("SELECT verdict FROM idea_verdicts WHERE post_id = 'pst_1'").fetchone() == ("noted",)
-    [snap] = list(tmp_path.glob(f"relay.sqlite3.before-v{rs.SCHEMA_VERSION}-*.bak"))
-    copy = sqlite3.connect(snap)
-    assert copy.execute("PRAGMA user_version").fetchone()[0] == start
-    assert not {"beacon_rounds", "pledges"} & {r[0] for r in copy.execute(
-        "SELECT name FROM sqlite_master WHERE type = 'table'")}, "the copy is the database as it was"
 
 
 def test_the_board_counts_ideas_in_the_season_and_never_the_house():

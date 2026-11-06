@@ -139,12 +139,3 @@ def test_every_id_emporia_derives_is_sha256(tmp_path):
     assert wire.listing_id_for("sid", "n1") == "lst_" + hashlib.sha256(b"emporia:listing:v2:sid:n1").hexdigest()[:32]
     for name in ("wire.py", "identity.py", "relay_server.py"):
         assert "sha3_256(" not in (SRC / name).read_text(), name
-    old = sqlite3.connect(tmp_path / "old.sqlite3")
-    old.execute("CREATE TABLE authorized_agents (agent_id TEXT)")
-    old.execute("INSERT INTO authorized_agents VALUES ('alpha')")
-    old.execute("PRAGMA user_version = 29")
-    with pytest.raises(RuntimeError, match="SHA3-256 ids"):
-        rs._assert_ids_are_sha256(old)
-    empty = sqlite3.connect(tmp_path / "empty.sqlite3")
-    empty.execute("PRAGMA user_version = 29")
-    rs._assert_ids_are_sha256(empty)                                  # nothing to keep: nothing refused

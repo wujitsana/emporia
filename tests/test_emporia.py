@@ -2260,7 +2260,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/reactions/whose"),  # signed in; a game's or deal's other side only to who was in it
         ("POST", "/posts"),  # the author, signed in, and its signature
         ("POST", "/follows"),  # the follower, signed in, and its signature
-        ("POST", "/likes"),  # refused by name (410) after the caller is known
         ("POST", "/pledges"),  # pledges: the maker, signed in, and its signature
         ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
         ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
@@ -2337,7 +2336,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         # authenticated caller.
         ("POST", "/gaming/v1/federate/sync"),
         ("GET", "/payments/settlements"),
-        ("POST", "/listings"),
         ("POST", "/events"),
         ("POST", "/sessions"),
         ("POST", "/sessions/{session_id}/join"),
@@ -2445,10 +2443,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/reactions"): "how many agents gave each value to a public thing — counts only; a post in a closed topic answers its members only",
         ("GET", "/feed"): "posts newest first or like-ranked: those in a topic the caller cannot read are left out",
         ("GET", "/happening"): "Agora v2: counts and first lines of public places only (no private, paid or encrypted one)",
-        ("POST", "/agoras/topics/{slug}/posts"): "Agora v2: gone (410), names `post`",
-        ("POST", "/agoras/posts/{post_id}/vote"): "Agora v2: gone (410), names `react`",
-        ("POST", "/agoras/posts/{post_id}/comments"): "Agora v2: gone (410), names `post` with reply_to",
-        ("POST", "/agoras/comments/{comment_id}/vote"): "Agora v2: gone (410), names `react`",
         ("GET", "/posts/{post_id}"): "one post: 404 for one in a topic the caller cannot read",
         ("GET", "/thread"): "the replies to any object: a private room or topic needs membership (403)",
         ("GET", "/follows"): "whom an agent follows, and a count: signed, public acts",
@@ -7058,616 +7052,28 @@ def test_settlement_agent_id_query_does_not_drop_owned_rows_past_candidate_limit
         f"got {len(seen_pis)} settlements back, own PaymentIntent id missing"
 
 
-def test_migrate_settlements_adds_and_backfills_payer_id():
-    """N7 review R1/R2/R6: payer_id is not blocked on a migration runner — this
-    codebase already has an additive-column migration pattern (gate_type/
-    entry_fee_cents on agora_topics, three columns on authorized_agents), and
-    _migrate_settlements follows it exactly. Exercises the migration itself
-    against a DB that predates the payer_id column, not just a fresh schema — a
-    migration that adds the column but leaves pre-existing rows NULL would
-    silently make every historical receipt unreachable via ?agent_id=, which is
-    R1 again by another route."""
-    import sqlite3
-    import tempfile
-    from emporia.relay_server import _migrate_settlements
 
-    with tempfile.NamedTemporaryFile(suffix=".sqlite3") as f:
-        conn = sqlite3.connect(f.name)
-        conn.row_factory = sqlite3.Row
-        conn.executescript("""
-            CREATE TABLE sessions (session_id TEXT PRIMARY KEY);
-            CREATE TABLE payments (
-                payment_id TEXT PRIMARY KEY, session_id TEXT, room_id TEXT,
-                agent_id TEXT NOT NULL, amount_cents INTEGER, currency TEXT,
-                payment_intent_id TEXT NOT NULL, payment_type TEXT, status TEXT,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE settlements (
-                settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
-                winner_id TEXT, total_stake_cents INTEGER, platform_fee_cents INTEGER,
-                winner_payout_cents INTEGER, platform_fee_bps INTEGER,
-                payment_intent_ids TEXT NOT NULL DEFAULT '[]',
-                transfer_id TEXT, transfer_status TEXT, status TEXT,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE schema_migrations (
-                key TEXT PRIMARY KEY, applied_at TEXT NOT NULL
-            );
-        """)
-        # A real session's aggregate settlement (two participants' PIs) — must
-        # stay payer_id NULL, not get misattributed to whichever PI matches first.
-        conn.execute("INSERT INTO sessions (session_id) VALUES ('sess_legacy')")
-        conn.execute(
-            "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, created_at) "
-            "VALUES ('stl_sess', 'sess_legacy', ?, '2020-01-01')",
-            (json.dumps(["pi_sess_a", "pi_sess_b"]),),
-        )
-        # A pre-existing room settlement (predates payer_id) from a real payment —
-        # must be backfilled.
-        conn.execute(
-            "INSERT INTO payments (payment_id, session_id, room_id, agent_id, amount_cents, "
-            "currency, payment_intent_id, payment_type, status, created_at) "
-            "VALUES ('pay_1', NULL, 'room_legacy', 'legacy_payer', 100, 'usd', "
-            "'pi_room_legacy', 'room_entry', 'confirmed', '2020-01-01')"
-        )
-        conn.execute(
-            "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, created_at) "
-            "VALUES ('stl_room', 'room_legacy', ?, '2020-01-01')",
-            (json.dumps(["pi_room_legacy"]),),
-        )
-        conn.commit()
 
-        cols_before = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-        assert "payer_id" not in cols_before, "test setup must predate the payer_id column"
 
-        _migrate_settlements(conn)
-        conn.commit()
 
-        cols_after = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-        assert "payer_id" in cols_after
 
-        session_row = conn.execute(
-            "SELECT payer_id FROM settlements WHERE settlement_id = 'stl_sess'"
-        ).fetchone()
-        assert session_row["payer_id"] is None, \
-            "a session's aggregate settlement must stay payer_id NULL, not be misattributed"
 
-        room_row = conn.execute(
-            "SELECT payer_id FROM settlements WHERE settlement_id = 'stl_room'"
-        ).fetchone()
-        assert room_row["payer_id"] == "legacy_payer", \
-            "a pre-existing room settlement must be backfilled from its payments row"
 
-        # N8 review R3 (then N9 review R2, which changed *how* this is enforced —
-        # see _migrate_settlements' docstring): a second call on an already-
-        # migrated DB must do no per-row work at all, not run unconditionally on
-        # every relay startup forever (session settlements keep payer_id NULL by
-        # design, so an unconditional `WHERE payer_id IS NULL` scan never empties
-        # out). Driven off the `schema_migrations` completion marker rather than
-        # the column's mere presence, so this assertion still holds after the
-        # marker is set. set_trace_callback observes every SQL statement sqlite3
-        # actually runs — a more direct assertion than re-checking the (unchanged)
-        # end state.
-        executed_sql: list[str] = []
-        conn.set_trace_callback(lambda sql: executed_sql.append(sql))
-        _migrate_settlements(conn)
-        conn.set_trace_callback(None)
-        assert not any("payer_id IS NULL" in s for s in executed_sql), \
-            f"a second _migrate_settlements() call on an already-migrated DB re-ran " \
-            f"the backfill scan — it must only run once (N8 review R3). " \
-            f"Statements run: {executed_sql}"
 
-        conn.close()
 
 
-def test_migrate_settlements_retries_backfill_after_crash_before_marker():
-    """N9 review R2: N8-4 conflated "the payer_id column exists" with "the
-    backfill finished," and removed the migration's only retry. Verified
-    empirically that these two facts can actually come apart: Python's sqlite3
-    module commits `ALTER TABLE ADD COLUMN` immediately, independent of the
-    surrounding `with conn:` block, while the backfill's UPDATEs share one
-    implicit transaction with whatever runs after them — so a process killed
-    between the ALTER and the loop's completion leaves the column present with
-    every legacy room/Agora row still `payer_id IS NULL`, and N8-4's guard
-    (`if "payer_id" not in settlement_cols`) never re-enters on the next startup.
 
-    N8-4's docstring called this a safe degradation ("falls back to the
-    participants-set fallback"). It isn't: add_participant() is only ever called
-    from session joins, so a room/Agora settlement's session_id never appears in
-    `participants` — such a row satisfies neither arm of
-    _caller_owns_settlement_row and becomes visible only to the relay operator,
-    permanently unreachable by the agent who actually paid.
 
-    Simulates exactly that crash window directly (column present, no
-    `schema_migrations` row, one unbackfilled legacy row) rather than a real
-    process kill, then asserts a call in that state still performs the backfill.
-    Must fail against N8-4's HEAD: the old column-presence guard skips the loop
-    entirely here, leaving payer_id NULL."""
-    import sqlite3
-    import tempfile
-    from emporia.relay_server import _migrate_settlements
 
-    with tempfile.NamedTemporaryFile(suffix=".sqlite3") as f:
-        conn = sqlite3.connect(f.name)
-        conn.row_factory = sqlite3.Row
-        conn.executescript("""
-            CREATE TABLE sessions (session_id TEXT PRIMARY KEY);
-            CREATE TABLE payments (
-                payment_id TEXT PRIMARY KEY, session_id TEXT, room_id TEXT,
-                agent_id TEXT NOT NULL, amount_cents INTEGER, currency TEXT,
-                payment_intent_id TEXT NOT NULL, payment_type TEXT, status TEXT,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE settlements (
-                settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
-                winner_id TEXT, total_stake_cents INTEGER, platform_fee_cents INTEGER,
-                winner_payout_cents INTEGER, platform_fee_bps INTEGER,
-                payment_intent_ids TEXT NOT NULL DEFAULT '[]',
-                transfer_id TEXT, transfer_status TEXT, status TEXT,
-                created_at TEXT NOT NULL, payer_id TEXT
-            );
-            CREATE TABLE schema_migrations (
-                key TEXT PRIMARY KEY, applied_at TEXT NOT NULL
-            );
-        """)
-        # payer_id already exists (as if ALTER TABLE already committed) and
-        # schema_migrations is empty (as if the process died before the backfill
-        # loop's completion marker committed) — the crash window itself.
-        conn.execute(
-            "INSERT INTO payments (payment_id, session_id, room_id, agent_id, amount_cents, "
-            "currency, payment_intent_id, payment_type, status, created_at) "
-            "VALUES ('pay_1', NULL, 'room_crash', 'crash_payer', 100, 'usd', "
-            "'pi_room_crash', 'room_entry', 'confirmed', '2020-01-01')"
-        )
-        conn.execute(
-            "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, created_at) "
-            "VALUES ('stl_crash', 'room_crash', ?, '2020-01-01')",
-            (json.dumps(["pi_room_crash"]),),
-        )
-        conn.commit()
 
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-        assert "payer_id" in cols, \
-            "test setup must simulate the post-ALTER, pre-backfill crash window"
-        marker = conn.execute(
-            "SELECT 1 FROM schema_migrations WHERE key = 'settlements_payer_id_backfill'"
-        ).fetchone()
-        assert marker is None, "test setup must simulate an unfinished backfill"
 
-        _migrate_settlements(conn)
-        conn.commit()
 
-        row = conn.execute(
-            "SELECT payer_id FROM settlements WHERE settlement_id = 'stl_crash'"
-        ).fetchone()
-        assert row["payer_id"] == "crash_payer", \
-            f"a call after the column exists but before the backfill marker is " \
-            f"set must still perform the backfill — got payer_id={row['payer_id']!r} " \
-            f"(N9 review R2: N8-4 removed this retry)"
 
-        conn.close()
 
 
-def _dedupe_key_test_conn():
-    """Shared fixture setup for the _migrate_settlement_dedupe_key() tests below —
-    a DB that predates the dedupe_key column, with a schema_migrations table
-    (P1r-1 made this migration marker-gated, so it now needs one)."""
-    import sqlite3
 
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript("""
-        CREATE TABLE settlements (
-            settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
-            winner_id TEXT, total_stake_cents INTEGER, platform_fee_cents INTEGER,
-            winner_payout_cents INTEGER, platform_fee_bps INTEGER,
-            payment_intent_ids TEXT NOT NULL DEFAULT '[]',
-            transfer_id TEXT, transfer_status TEXT, status TEXT,
-            created_at TEXT NOT NULL, payer_id TEXT
-        );
-        CREATE TABLE schema_migrations (
-            key TEXT PRIMARY KEY, applied_at TEXT NOT NULL
-        );
-    """)
-    return conn
 
 
-def test_migrate_settlement_dedupe_key_backfills_dedupes_and_indexes():
-    """P1r-1 (R1): _migrate_settlement_dedupe_key() must (a) compute a dedupe_key
-    for every existing row — session-escrow rows (payer_id NULL) included, using
-    the COALESCE(payer_id, '') shape, not left NULL — (b) collapse a pre-existing
-    *genuine* duplicate pair (same session/payer/payment_intent_ids, as pre-fix
-    record_settlement()'s old INSERT OR IGNORE could produce) down to one row,
-    keeping the earliest, and (c) leave a real UNIQUE index behind so a later
-    INSERT ... ON CONFLICT(dedupe_key) can actually collide. Exercises the
-    migration against a DB that predates the column, not just a fresh schema —
-    same discipline as test_migrate_settlements_adds_and_backfills_payer_id."""
-    import sqlite3
-    from emporia.relay_server import _migrate_settlement_dedupe_key
-
-    conn = _dedupe_key_test_conn()
-    # A session-escrow row (payer_id NULL) — must get a non-NULL dedupe_key.
-    conn.execute(
-        "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, created_at) "
-        "VALUES ('stl_dk_sess', 'sess_dk_legacy', '[]', '2020-01-01')"
-    )
-    # A genuine pre-existing duplicate: the same session/payer/PI recorded twice,
-    # as pre-fix record_settlement() could produce on a replay. 'stl_dk_a' must
-    # survive (earlier rowid); 'stl_dk_b' must be removed.
-    conn.execute(
-        "INSERT INTO settlements (settlement_id, session_id, payer_id, payment_intent_ids, "
-        "created_at) VALUES ('stl_dk_a', 'room_dk_dup', 'dk_payer', '[\"pi_dk\"]', '2020-01-01')"
-    )
-    conn.execute(
-        "INSERT INTO settlements (settlement_id, session_id, payer_id, payment_intent_ids, "
-        "created_at) VALUES ('stl_dk_b', 'room_dk_dup', 'dk_payer', '[\"pi_dk\"]', '2020-01-02')"
-    )
-    conn.commit()
-
-    cols_before = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-    assert "dedupe_key" not in cols_before, "test setup must predate the dedupe_key column"
-
-    _migrate_settlement_dedupe_key(conn)
-    conn.commit()
-
-    cols_after = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-    assert "dedupe_key" in cols_after
-
-    sess_row = conn.execute(
-        "SELECT dedupe_key FROM settlements WHERE settlement_id = 'stl_dk_sess'"
-    ).fetchone()
-    assert sess_row["dedupe_key"] is not None and sess_row["dedupe_key"].startswith("sess_dk_legacy::"), \
-        f"a session-escrow row's dedupe_key must fold payer_id IS NULL into '', not stay NULL " \
-        f"— got {sess_row['dedupe_key']!r}"
-
-    dup_rows = conn.execute(
-        "SELECT settlement_id FROM settlements WHERE session_id = 'room_dk_dup'"
-    ).fetchall()
-    assert [r["settlement_id"] for r in dup_rows] == ["stl_dk_a"], \
-        f"duplicate rows must collapse to the earliest, got {[r['settlement_id'] for r in dup_rows]}"
-
-    index_exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_settlements_dedupe_key'"
-    ).fetchone()
-    assert index_exists, "a UNIQUE index on dedupe_key must exist after migration"
-
-    a_key = conn.execute(
-        "SELECT dedupe_key FROM settlements WHERE settlement_id = 'stl_dk_a'"
-    ).fetchone()["dedupe_key"]
-    with pytest.raises(sqlite3.IntegrityError):
-        conn.execute(
-            "INSERT INTO settlements (settlement_id, session_id, payer_id, dedupe_key, "
-            "payment_intent_ids, created_at) "
-            "VALUES ('stl_dk_c', 'room_dk_dup', 'dk_payer', ?, '[\"pi_dk\"]', '2020-01-03')",
-            (a_key,),
-        )
-
-    conn.close()
-
-
-def test_migrate_settlement_dedupe_key_distinguishes_second_payment_from_same_payer():
-    """P1r-1 (R1): the bug this pass fixes. P1a-2's dedupe_key
-    (session_id||':'||COALESCE(payer_id,'')) is keyed on (resource, payer) only,
-    so a payer's second *genuine* payment for the same resource — rejoin after a
-    kick, resubscribe after an unsubscribe, both supported flows — collided with
-    their first and was silently dropped. Two settlement rows for the same
-    session/payer but *different* payment_intent_ids must produce two distinct
-    dedupe_keys, and both rows must survive the migration. Must fail pre-fix (the
-    old 2-part key made both rows collide, dropping one at migration time — and
-    dropping the second one's INSERT even earlier, at record_settlement())."""
-    from emporia.relay_server import _migrate_settlement_dedupe_key
-
-    conn = _dedupe_key_test_conn()
-    conn.execute(
-        "INSERT INTO settlements (settlement_id, session_id, payer_id, payment_intent_ids, "
-        "created_at) VALUES ('stl_rejoin_1', 'room_rejoin', 'rejoin_payer', '[\"pi_JOIN_ONE\"]', "
-        "'2020-01-01')"
-    )
-    conn.execute(
-        "INSERT INTO settlements (settlement_id, session_id, payer_id, payment_intent_ids, "
-        "created_at) VALUES ('stl_rejoin_2', 'room_rejoin', 'rejoin_payer', '[\"pi_JOIN_TWO\"]', "
-        "'2020-01-02')"
-    )
-    conn.commit()
-
-    _migrate_settlement_dedupe_key(conn)
-    conn.commit()
-
-    rows = conn.execute(
-        "SELECT settlement_id, dedupe_key FROM settlements WHERE session_id = 'room_rejoin' "
-        "ORDER BY settlement_id"
-    ).fetchall()
-    assert [r["settlement_id"] for r in rows] == ["stl_rejoin_1", "stl_rejoin_2"], \
-        f"a payer's second genuine payment must not be dropped as a duplicate of the first, " \
-        f"got surviving rows {[r['settlement_id'] for r in rows]}"
-    assert rows[0]["dedupe_key"] != rows[1]["dedupe_key"], \
-        f"different payment_intent_ids for the same (session, payer) must produce different " \
-        f"dedupe_keys, got the same key {rows[0]['dedupe_key']!r} for both"
-
-    conn.close()
-
-
-def test_collapse_duplicate_settlements_treats_null_dedupe_keys_as_distinct():
-    """P1r-4 (R4): `GROUP BY dedupe_key` folds every NULL into a single group,
-    unlike `UNIQUE`, which treats each NULL as distinct from every other NULL.
-    An ungated `GROUP BY dedupe_key HAVING c > 1` would see three NULL-key rows
-    as one duplicate group of three and delete all but one of them — even though
-    none of them are actually duplicates of each other. Calls
-    _collapse_duplicate_settlements_by_dedupe_key() directly (bypassing
-    _migrate_settlement_dedupe_key()'s recompute loop, which today always gives
-    every row a non-NULL key before this runs) so the guard itself is exercised
-    rather than asserting on a path that can't reach it. Must fail pre-fix: all
-    but one of the three NULL-key rows would be deleted."""
-    from emporia.relay_server import _collapse_duplicate_settlements_by_dedupe_key
-
-    conn = _dedupe_key_test_conn()
-    conn.execute("ALTER TABLE settlements ADD COLUMN dedupe_key TEXT")
-    for i in range(3):
-        conn.execute(
-            "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, "
-            "created_at, dedupe_key) VALUES (?, ?, '[]', ?, NULL)",
-            (f"stl_null_{i}", f"sess_null_{i}", f"2020-01-0{i + 1}"),
-        )
-    # A genuine duplicate pair with a real (non-NULL) dedupe_key, to confirm the
-    # guard doesn't also suppress the collapse this function exists to do.
-    conn.execute(
-        "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, "
-        "created_at, dedupe_key) VALUES ('stl_dup_a', 'room_dup', '[]', '2020-01-01', "
-        "'room_dup::samekey')"
-    )
-    conn.execute(
-        "INSERT INTO settlements (settlement_id, session_id, payment_intent_ids, "
-        "created_at, dedupe_key) VALUES ('stl_dup_b', 'room_dup', '[]', '2020-01-02', "
-        "'room_dup::samekey')"
-    )
-    conn.commit()
-
-    _collapse_duplicate_settlements_by_dedupe_key(conn)
-    conn.commit()
-
-    null_rows = conn.execute(
-        "SELECT settlement_id FROM settlements WHERE dedupe_key IS NULL"
-    ).fetchall()
-    assert {r["settlement_id"] for r in null_rows} == {"stl_null_0", "stl_null_1", "stl_null_2"}, \
-        f"NULL-dedupe_key rows are not duplicates of each other and must all survive, " \
-        f"got {[r['settlement_id'] for r in null_rows]}"
-
-    dup_rows = conn.execute(
-        "SELECT settlement_id FROM settlements WHERE session_id = 'room_dup'"
-    ).fetchall()
-    assert [r["settlement_id"] for r in dup_rows] == ["stl_dup_a"], \
-        f"a genuine (non-NULL-key) duplicate pair must still collapse to the earliest, " \
-        f"got {[r['settlement_id'] for r in dup_rows]}"
-
-    conn.close()
-
-
-def test_migrate_settlement_dedupe_key_rewrites_stale_two_part_keys_once():
-    """P1r-1 (R1): pre-existing rows carry the *old* 2-part dedupe_key shape
-    (session_id||':'||COALESCE(payer_id,'')), written either by hand here to
-    simulate a DB that already ran the P1a-2 migration, or genuinely by that
-    migration before this pass shipped. The rewrite must replace every row's key
-    with the new 3-part shape derived from its own payment_intent_ids — and, like
-    _migrate_settlements' payer_id backfill, do this exactly once: a second call
-    must not re-scan or rewrite anything already migrated (checked via
-    set_trace_callback, mirroring test_migrate_settlements_adds_and_backfills_payer_id)."""
-    from emporia.relay_server import _migrate_settlement_dedupe_key
-
-    conn = _dedupe_key_test_conn()
-    conn.execute("ALTER TABLE settlements ADD COLUMN dedupe_key TEXT")
-    conn.execute(
-        "INSERT INTO settlements (settlement_id, session_id, payer_id, payment_intent_ids, "
-        "created_at, dedupe_key) VALUES ('stl_stale', 'room_stale', 'stale_payer', "
-        "'[\"pi_stale\"]', '2020-01-01', 'room_stale:stale_payer')"
-    )
-    conn.execute(
-        "CREATE UNIQUE INDEX idx_settlements_dedupe_key ON settlements(dedupe_key)"
-    )
-    conn.commit()
-
-    _migrate_settlement_dedupe_key(conn)
-    conn.commit()
-
-    row = conn.execute(
-        "SELECT dedupe_key FROM settlements WHERE settlement_id = 'stl_stale'"
-    ).fetchone()
-    assert row["dedupe_key"] != "room_stale:stale_payer", \
-        "a stale 2-part key must be rewritten to the new 3-part (payment-scoped) shape"
-    assert row["dedupe_key"].startswith("room_stale:stale_payer:"), \
-        f"the rewritten key must keep the session/payer prefix, got {row['dedupe_key']!r}"
-
-    executed_sql: list[str] = []
-    conn.set_trace_callback(lambda sql: executed_sql.append(sql))
-    _migrate_settlement_dedupe_key(conn)
-    conn.set_trace_callback(None)
-    assert not any("UPDATE settlements SET dedupe_key" in s for s in executed_sql), \
-        f"a second call on an already-migrated DB must not rewrite anything again. " \
-        f"Statements run: {executed_sql}"
-
-    conn.close()
-
-
-def test_migrate_rooms_adds_access_duration_days_column():
-    """P2-3: _migrate_rooms() must add access_duration_days to a rooms table
-    that predates it (a DB created before this pass), without touching
-    existing rows' other columns. NULL is the correct backfilled value — every
-    pre-existing room had no concept of an access window."""
-    import sqlite3
-    from emporia.relay_server import _migrate_rooms
-
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript("""
-        CREATE TABLE rooms (
-            room_id TEXT PRIMARY KEY, name TEXT NOT NULL,
-            description TEXT NOT NULL DEFAULT '', room_type TEXT NOT NULL DEFAULT 'public',
-            gate_type TEXT NOT NULL DEFAULT 'open', entry_fee_cents INTEGER NOT NULL DEFAULT 0,
-            currency TEXT NOT NULL DEFAULT 'USD', creator_id TEXT NOT NULL,
-            members_json TEXT NOT NULL DEFAULT '[]', max_members INTEGER,
-            encrypted INTEGER NOT NULL DEFAULT 0, linked_session_id TEXT,
-            created_at TEXT NOT NULL, updated_at TEXT NOT NULL
-        );
-        CREATE TABLE room_messages (
-            message_id TEXT PRIMARY KEY, room_id TEXT NOT NULL, sender_id TEXT NOT NULL,
-            msg_type TEXT NOT NULL, content TEXT NOT NULL, parent_message_id TEXT,
-            chain_hash TEXT, signature TEXT, metadata_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL
-        );
-    """)
-    conn.execute(
-        "INSERT INTO rooms (room_id, name, creator_id, created_at, updated_at) "
-        "VALUES ('room_legacy', 'Legacy Room', 'legacy_owner', '2020-01-01', '2020-01-01')"
-    )
-    conn.commit()
-
-    cols_before = {r[1] for r in conn.execute("PRAGMA table_info(rooms)").fetchall()}
-    assert "access_duration_days" not in cols_before
-
-    _migrate_rooms(conn)
-    conn.commit()
-
-    cols_after = {r[1] for r in conn.execute("PRAGMA table_info(rooms)").fetchall()}
-    assert "access_duration_days" in cols_after
-    row = conn.execute(
-        "SELECT access_duration_days, name FROM rooms WHERE room_id = 'room_legacy'"
-    ).fetchone()
-    assert row["access_duration_days"] is None
-    assert row["name"] == "Legacy Room"
-    conn.close()
-
-
-def test_migrate_agora_tables_adds_access_duration_days_column():
-    """P2-3: sibling of test_migrate_rooms_adds_access_duration_days_column for
-    agora_topics — _migrate_agora_tables() already extends this same idempotent
-    ADD COLUMN block for gate_type/entry_fee_cents; access_duration_days follows
-    the identical pattern."""
-    import sqlite3
-    from emporia.relay_server import _migrate_agora_tables
-
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript("""
-        CREATE TABLE agora_topics (
-            topic_id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
-            description TEXT NOT NULL DEFAULT '', visibility TEXT NOT NULL DEFAULT 'public',
-            gate_type TEXT NOT NULL DEFAULT 'open', entry_fee_cents INTEGER NOT NULL DEFAULT 0,
-            creator_id TEXT NOT NULL, created_at TEXT NOT NULL,
-            post_count INTEGER NOT NULL DEFAULT 0, subscriber_count INTEGER NOT NULL DEFAULT 0,
-            flair_options TEXT NOT NULL DEFAULT '[]'
-        );
-    """)
-    conn.execute(
-        "INSERT INTO agora_topics (topic_id, slug, name, creator_id, created_at) "
-        "VALUES ('tpc_legacy', 'legacy-slug', 'Legacy Topic', 'legacy_owner', '2020-01-01')"
-    )
-    conn.commit()
-
-    cols_before = {r[1] for r in conn.execute("PRAGMA table_info(agora_topics)").fetchall()}
-    assert "access_duration_days" not in cols_before
-
-    _migrate_agora_tables(conn)
-    conn.commit()
-
-    cols_after = {r[1] for r in conn.execute("PRAGMA table_info(agora_topics)").fetchall()}
-    assert "access_duration_days" in cols_after
-    row = conn.execute(
-        "SELECT access_duration_days FROM agora_topics WHERE topic_id = 'tpc_legacy'"
-    ).fetchone()
-    assert row["access_duration_days"] is None
-    conn.close()
-
-
-def test_assert_not_pre_p3_schema_rejects_db_missing_rail_column():
-    """P3: no ALTER/migration exists for `rail` — the operator is starting from
-    a fresh DB for this pass, by decision (see the P3 plan's "Migrations"
-    section), so `CREATE TABLE IF NOT EXISTS` silently does nothing against a
-    pre-P3 `settlements` table missing the column. Startup must fail loudly
-    on an old-schema DB rather than serve it. Must fail pre-fix:
-    _assert_not_pre_p3_schema doesn't exist."""
-    import sqlite3
-
-    from emporia.relay_server import _assert_not_pre_p3_schema
-
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript("""
-        CREATE TABLE settlements (
-            settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, winner_id TEXT,
-            total_stake_cents INTEGER NOT NULL DEFAULT 0, platform_fee_cents INTEGER NOT NULL DEFAULT 0,
-            winner_payout_cents INTEGER NOT NULL DEFAULT 0, platform_fee_bps INTEGER NOT NULL DEFAULT 250,
-            payment_intent_ids TEXT NOT NULL DEFAULT '[]', transfer_id TEXT,
-            transfer_status TEXT NOT NULL DEFAULT 'pending_connect', status TEXT NOT NULL DEFAULT 'settled',
-            created_at TEXT NOT NULL, payer_id TEXT
-        );
-        CREATE TABLE rooms (room_id TEXT PRIMARY KEY, gate_type TEXT NOT NULL DEFAULT 'open');
-    """)
-    conn.commit()
-
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-    assert "rail" not in cols, "test setup must predate the rail column"
-
-    with pytest.raises(RuntimeError, match="predates the P3"):
-        _assert_not_pre_p3_schema(conn)
-    conn.close()
-
-
-def test_assert_not_pre_p3_schema_rejects_legacy_stripe_payment_room():
-    """P3: sibling of the missing-column check — a DB whose `settlements`
-    table already has `rail` (e.g. it was reseeded after P3 landed, then a
-    legacy room row survived some other way) but still carries a room with
-    the pre-rename `gate_type='stripe_payment'` value must also be rejected.
-    Without this, that room would silently fall through every
-    `gate_type == "paid"` check P3-1 introduced and become a free room. Must
-    fail pre-fix: _assert_not_pre_p3_schema doesn't exist."""
-    import sqlite3
-
-    from emporia.relay_server import _assert_not_pre_p3_schema
-
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript("""
-        CREATE TABLE settlements (
-            settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
-            rail TEXT NOT NULL DEFAULT 'stripe'
-        );
-        CREATE TABLE rooms (room_id TEXT PRIMARY KEY, gate_type TEXT NOT NULL DEFAULT 'open');
-    """)
-    conn.execute(
-        "INSERT INTO rooms (room_id, gate_type) VALUES ('room_legacy', 'stripe_payment')"
-    )
-    conn.commit()
-
-    with pytest.raises(RuntimeError, match="legacy gate_type='stripe_payment'"):
-        _assert_not_pre_p3_schema(conn)
-    conn.close()
-
-
-def test_assert_not_pre_p3_schema_rejects_db_missing_x402_pay_to_column():
-    """P1b-2: sibling of the two P3 checks above — authorized_agents.x402_pay_to_json
-    landed with no ALTER TABLE either, same fresh-DB posture. Must fail pre-fix:
-    _assert_not_pre_p3_schema doesn't check for this column yet."""
-    import sqlite3
-
-    from emporia.relay_server import _assert_not_pre_p3_schema
-
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript("""
-        CREATE TABLE settlements (
-            settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
-            rail TEXT NOT NULL DEFAULT 'stripe'
-        );
-        CREATE TABLE rooms (room_id TEXT PRIMARY KEY, gate_type TEXT NOT NULL DEFAULT 'open');
-        CREATE TABLE authorized_agents (agent_id TEXT PRIMARY KEY);
-    """)
-    conn.commit()
-
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()}
-    assert "x402_pay_to_json" not in cols, "test setup must predate the x402_pay_to_json column"
-
-    with pytest.raises(RuntimeError, match="x402_pay_to_json"):
-        _assert_not_pre_p3_schema(conn)
-    conn.close()
 
 
 def test_set_x402_wallet_validates_format_and_requires_caller_match(client):
@@ -7719,44 +7125,6 @@ def test_set_x402_wallet_validates_format_and_requires_caller_match(client):
     assert AGENT_REGISTRY.get_x402_pay_to("p1b2_owner", "svm") == svm_addr
 
 
-def test_migrate_settlement_dedupe_key_restores_index_on_every_startup():
-    """P2-1 (R3): P1r-1 restructured this migration into a marker-gated one-shot
-    but left `CREATE UNIQUE INDEX` *inside* the gated block, so it only ever runs
-    once — same regression class as N8-R3 (an unconditional-per-startup fix
-    turned into a marker-gated one that then only did part of its job once).
-    Proved live: drop the index after the marker is already set (schema rebuild,
-    manual intervention, a future migration that rebuilds the table — SQLite's
-    standard ALTER-by-rebuild recipe drops every index), call
-    _migrate_settlement_dedupe_key() again — pre-fix it returns immediately at
-    the marker check and the index stays gone, so a subsequent record_settlement()
-    dies with 'ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE
-    constraint' — money already moved, no settlement row, a 500. Must fail
-    pre-fix: the index is still absent after the second call."""
-    from emporia.relay_server import _migrate_settlement_dedupe_key
-
-    conn = _dedupe_key_test_conn()
-    _migrate_settlement_dedupe_key(conn)
-    conn.commit()
-    index_exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_settlements_dedupe_key'"
-    ).fetchone()
-    assert index_exists, "test setup: first call must create the index"
-
-    conn.execute("DROP INDEX idx_settlements_dedupe_key")
-    conn.commit()
-
-    _migrate_settlement_dedupe_key(conn)
-    conn.commit()
-
-    index_exists = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_settlements_dedupe_key'"
-    ).fetchone()
-    assert index_exists, (
-        "the unique index must be restored on every startup, not just the first — "
-        "a marker-gated migration that skips re-asserting its own index leaves "
-        "record_settlement()'s ON CONFLICT(dedupe_key) with nothing to conflict on"
-    )
-    conn.close()
 
 
 def test_record_settlement_is_idempotent():
@@ -10007,8 +9375,6 @@ def test_agora_writes_gated_by_topic_visibility(client):
     assert r.status_code == 403, r.text
     r = v2_post(client, "agw_member", slug, "legit reply", reply_to=f"post:{post_id}")
     assert r.status_code == 200, r.text
-    # and the old routes are gone for everyone
-    assert client.post(f"/agoras/topics/{slug}/posts", json={}, headers={"x-emporia-agent-id": "agw_owner"}).status_code == 410
 
 
 def test_agora_feed_requires_own_identity(client):
@@ -14462,9 +13828,6 @@ def test_all_limit_params_are_clamped(client):
         headers={"x-emporia-agent-id": "climit_owner"})
     assert r.status_code == 200
 
-    client.post("/listings", json=_signed_listing(
-        client, "climit_owner", "t", hours=24, description="d", module_type="emporia:chess:v1"),
-        headers={"x-emporia-agent-id": "climit_owner"})
 
     r = client.post("/rooms", json=_signed_room("climit_owner", {"name": "Clamp Room", "creator_id": "climit_owner"}),
                      headers={"x-emporia-agent-id": "climit_owner"})
@@ -18964,90 +18327,8 @@ def test_register_agent_test_mode_marks_stripe_account_active_immediately(client
 # several live-mode correctness gaps in the code it had just introduced.
 # ============================================================================
 
-def test_p26_migration_backfills_status_for_preexisting_stripe_accounts():
-    """P26-H1: THE bug P25 shipped. P25's migration comment claimed 'none' was
-    "already correct for every pre-existing row" -- it is not. register_agent()
-    only sets 'active' at *registration* time, so every agent that registered
-    BEFORE P25 has a working test-mode Connected Account but reads 'none'
-    after the migration. Both new pre-checks then skip that agent's payout:
-    the charge is still captured into the platform balance, the creator's
-    97.5% is never transferred, and nothing retries it (nothing in the
-    codebase reads 'pending_connect_not_active'). Money captured and stranded,
-    silently, on every existing deployment.
-
-    The backfill can also soundly infer *mode*: pre-P25 auto-provisioning was
-    gated on `sk_test_`, so any pre-existing account is necessarily test-mode.
-    """
-    import sqlite3
-    import tempfile as _tempfile
-
-    from emporia.relay_server import _migrate_authorized_agents
-
-    db = os.path.join(_tempfile.mkdtemp(), "pre_p25.sqlite3")
-    conn = sqlite3.connect(db)
-    conn.row_factory = sqlite3.Row
-    # A pre-P25 schema: no stripe_account_status/-_mode columns at all.
-    conn.execute(
-        "CREATE TABLE authorized_agents ("
-        "agent_id TEXT PRIMARY KEY, public_key_hex TEXT, display_name TEXT, "
-        "registered_at TEXT, is_active INTEGER DEFAULT 1, stripe_account_id TEXT)"
-    )
-    conn.executemany(
-        "INSERT INTO authorized_agents (agent_id, stripe_account_id) VALUES (?, ?)",
-        [("paid_before", "acct_preexisting"), ("never_had_one", None), ("empty_string", "")],
-    )
-    conn.commit()
-
-    _migrate_authorized_agents(conn)
-    conn.commit()
-    rows = {
-        r["agent_id"]: (r["stripe_account_status"], r["stripe_account_mode"])
-        for r in conn.execute(
-            "SELECT agent_id, stripe_account_status, stripe_account_mode FROM authorized_agents"
-        )
-    }
-    conn.close()
-
-    # The whole point: an agent who could be paid before the upgrade can still be paid after.
-    assert rows["paid_before"] == ("active", "test"), rows
-    # An agent with no account is genuinely 'none' -- the default really is right for these.
-    assert rows["never_had_one"] == ("none", ""), rows
-    assert rows["empty_string"] == ("none", ""), rows
 
 
-def test_p26_migration_backfill_does_not_clobber_an_existing_pending_account():
-    """The backfill must run only when the column is newly added. A relay
-    already on P25 can legitimately hold a live account at 'pending' (created,
-    KYC unfinished); re-running the migration must not promote it to 'active'
-    and make the relay attempt a real transfer Stripe would reject."""
-    import sqlite3
-    import tempfile as _tempfile
-
-    from emporia.relay_server import _migrate_authorized_agents
-
-    db = os.path.join(_tempfile.mkdtemp(), "already_p25.sqlite3")
-    conn = sqlite3.connect(db)
-    conn.row_factory = sqlite3.Row
-    conn.execute(
-        "CREATE TABLE authorized_agents ("
-        "agent_id TEXT PRIMARY KEY, public_key_hex TEXT, display_name TEXT, "
-        "registered_at TEXT, is_active INTEGER DEFAULT 1, stripe_account_id TEXT, "
-        "stripe_account_status TEXT NOT NULL DEFAULT 'none', "
-        "stripe_account_mode TEXT NOT NULL DEFAULT '')"
-    )
-    conn.execute(
-        "INSERT INTO authorized_agents (agent_id, stripe_account_id, stripe_account_status, "
-        "stripe_account_mode) VALUES ('mid_onboarding', 'acct_live_pending', 'pending', 'live')"
-    )
-    conn.commit()
-
-    _migrate_authorized_agents(conn)
-    conn.commit()
-    row = conn.execute(
-        "SELECT stripe_account_status, stripe_account_mode FROM authorized_agents"
-    ).fetchone()
-    conn.close()
-    assert (row["stripe_account_status"], row["stripe_account_mode"]) == ("pending", "live"), dict(row)
 
 
 @pytest.mark.parametrize("bad_header,label", [
@@ -20577,203 +19858,16 @@ def test_relay_server_hardcodes_no_version_literal():
     )
 
 
-def _legacy_settlements_db() -> str:
-    """A settlements table as it existed before `payer_id` and `rail` — i.e. the
-    schema every relay deployed before N7 is still carrying on disk."""
-    import sqlite3
-    import tempfile as _tempfile
-
-    db = os.path.join(_tempfile.mkdtemp(), "legacy.sqlite3")
-    conn = sqlite3.connect(db)
-    conn.execute(
-        "CREATE TABLE settlements ("
-        "settlement_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, winner_id TEXT, "
-        "total_stake_cents INTEGER NOT NULL DEFAULT 0, "
-        "platform_fee_cents INTEGER NOT NULL DEFAULT 0, "
-        "winner_payout_cents INTEGER NOT NULL DEFAULT 0, "
-        "platform_fee_bps INTEGER NOT NULL DEFAULT 250, "
-        "payment_intent_ids TEXT NOT NULL DEFAULT '[]', transfer_id TEXT, "
-        "transfer_status TEXT NOT NULL DEFAULT 'pending_connect', "
-        "status TEXT NOT NULL DEFAULT 'settled', created_at TEXT NOT NULL, "
-        # `rail` is present: it predates payer_id, and a DB without it is
-        # refused deliberately by _assert_not_pre_p3_schema with an actionable
-        # "delete and reseed" message. This fixture models the generation that
-        # the index crash actually broke, which is the one in between.
-        "rail TEXT NOT NULL DEFAULT 'stripe')"
-    )
-    conn.commit()
-    conn.close()
-    return db
 
 
-def test_init_db_starts_against_a_pre_payer_id_database(monkeypatch):
-    """P36-1: the relay could not start against its own existing database.
-
-    `init_db()` ran every `CREATE INDEX` inside the same script as the
-    `CREATE TABLE IF NOT EXISTS` statements, and only *then* called the
-    `_migrate_*` functions that add columns via ALTER. On a fresh DB that order
-    is invisible: the CREATE TABLE includes `payer_id`, so the index over it
-    succeeds. On a DB created before `payer_id` existed the CREATE TABLE is a
-    no-op, the column is still missing, and
-
-        CREATE INDEX IF NOT EXISTS idx_settlements_payer ON settlements(payer_id)
-
-    raises `sqlite3.OperationalError: no such column: payer_id` during lifespan
-    startup — the process exits. Every test passed throughout, because tests
-    always build a fresh database.
-
-    Reproduced against the real deployed DB before the fix.
-    """
-    import sqlite3
-    from pathlib import Path as _Path
-
-    import emporia.relay_server as rs
-
-    db = _legacy_settlements_db()
-    monkeypatch.setattr(rs, "DATABASE_PATH", _Path(db))
-
-    rs.init_db()  # this raised OperationalError before the fix
-
-    conn = sqlite3.connect(db)
-    cols = [r[1] for r in conn.execute("PRAGMA table_info(settlements)")]
-    assert "payer_id" in cols, "the migration that adds payer_id did not run"
-    idx = {r[0] for r in conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='settlements'"
-    )}
-    assert "idx_settlements_payer" in idx, (
-        "the index over the migrated column was never created -- reordering must "
-        "move it after the migrations, not drop it"
-    )
-    conn.close()
 
 
-def test_init_db_creates_no_index_before_running_migrations():
-    """P36-1, the class rather than the instance. An index over a column that a
-    migration adds can only work if indexes come after migrations. Today exactly
-    one index is in that position; the ordering is what stops the next one being
-    a startup crash discovered in production."""
-    import inspect
 
 
-    body = inspect.getsource(init_db).splitlines()
-    first_migration = next(
-        (i for i, ln in enumerate(body) if "_migrate_" in ln and "(conn)" in ln), None
-    )
-    assert first_migration is not None, "init_db no longer calls the _migrate_* functions"
-
-    early = [
-        (i, ln.strip()) for i, ln in enumerate(body)
-        if "CREATE INDEX" in ln and i < first_migration
-    ]
-    assert not early, (
-        "init_db creates indexes before running column migrations; an index over "
-        "a migration-added column crashes startup on any pre-existing database:\n"
-        + "\n".join(f"  line {i}: {ln}" for i, ln in early)
-    )
 
 
-def _p27_migrate(schema_cols, rows):
-    """Run `_migrate_authorized_agents` against a hand-built historical schema.
-
-    `schema_cols` is the set of stripe columns the table starts with, which is
-    what distinguishes one deployed generation from another: P24 has neither,
-    P25 has `stripe_account_status` only, P26 has both. Returns
-    `{agent_id: (status, mode)}` after the migration.
-    """
-    import sqlite3
-    import tempfile as _tempfile
-
-    from emporia.relay_server import _migrate_authorized_agents
-
-    db = os.path.join(_tempfile.mkdtemp(), "generation.sqlite3")
-    conn = sqlite3.connect(db)
-    conn.row_factory = sqlite3.Row
-    cols = [
-        "agent_id TEXT PRIMARY KEY", "public_key_hex TEXT", "display_name TEXT",
-        "registered_at TEXT", "is_active INTEGER DEFAULT 1", "stripe_account_id TEXT",
-    ]
-    if "stripe_account_status" in schema_cols:
-        cols.append("stripe_account_status TEXT NOT NULL DEFAULT 'none'")
-    if "stripe_account_mode" in schema_cols:
-        cols.append("stripe_account_mode TEXT NOT NULL DEFAULT ''")
-    conn.execute(f"CREATE TABLE authorized_agents ({', '.join(cols)})")
-    for agent_id, account_id, status in rows:
-        names = ["agent_id", "stripe_account_id"]
-        values = [agent_id, account_id]
-        if "stripe_account_status" in schema_cols:
-            names.append("stripe_account_status")
-            values.append(status)
-        conn.execute(
-            f"INSERT INTO authorized_agents ({', '.join(names)}) "
-            f"VALUES ({', '.join('?' * len(names))})",
-            values,
-        )
-    conn.commit()
-    _migrate_authorized_agents(conn)
-    conn.commit()
-    out = {
-        r["agent_id"]: (r["stripe_account_status"], r["stripe_account_mode"])
-        for r in conn.execute(
-            "SELECT agent_id, stripe_account_status, stripe_account_mode FROM authorized_agents"
-        )
-    }
-    conn.close()
-    return out
 
 
-def test_p27_backfill_reaches_a_relay_that_actually_ran_p25():
-    """P27-1: P26's H1 fix did not reach the deployments H1 was about.
-
-    The backfill was gated on `stripe_account_status` being *newly added*, so
-    it only fires on a P24 -> P26 jump. But P25 shipped, and a relay that ran
-    it already HAS that column -- populated with exactly the wrong value,
-    since that mis-defaulting was H1. Upgrading P25 -> P26 therefore skipped
-    the repair and left the money stranded, which is the whole failure P26
-    reported fixing.
-
-    P26's own "already on P25" test missed this because its fixture includes
-    `stripe_account_mode` -- a column P25 never had (`git show a321d70` adds
-    no such column). It builds a P26 schema and asserts a re-run is inert,
-    which is true and worth keeping, but is not the upgrade path it names.
-    """
-    # The real P25 schema: status column present, mode column not yet.
-    rows = _p27_migrate(
-        {"stripe_account_status"},
-        [
-            # A working test-mode Connected Account that P25's migration
-            # mis-defaulted to 'none'. This agent could be paid before P25 and
-            # must be payable again after the upgrade.
-            ("stranded", "acct_preexisting", "none"),
-            # Created under P25's live onboarding, KYC genuinely unfinished --
-            # promoting this would make the relay attempt a doomed transfer.
-            ("kyc_in_flight", "acct_live_new", "pending"),
-            # Registered after P25, already correct.
-            ("registered_post_p25", "acct_new", "active"),
-            # No account at all: 'none' really is right for these.
-            ("never_had_one", None, "none"),
-        ],
-    )
-    assert rows["stranded"] == ("active", "test"), rows
-    assert rows["kyc_in_flight"] == ("pending", ""), rows
-    assert rows["registered_post_p25"] == ("active", ""), rows
-    assert rows["never_had_one"] == ("none", ""), rows
-
-
-def test_p27_backfill_never_resurrects_a_deauthorized_account():
-    """P27-1: the backfill is now reachable on more than one upgrade path, so
-    its SQL -- not just its gate -- has to be safe.
-
-    P26 added a deauthorization handler that sets status 'none' while leaving
-    `stripe_account_id` in place. That is the same (id present, status 'none')
-    shape the backfill repairs, so a backfill that ran on a P26-era schema
-    would mark a disconnected account payable again and send a transfer
-    Stripe will reject. A fully-migrated table must be inert.
-    """
-    rows = _p27_migrate(
-        {"stripe_account_status", "stripe_account_mode"},
-        [("deauthorized", "acct_disconnected", "none")],
-    )
-    assert rows["deauthorized"] == ("none", ""), rows
 
 
 def test_p27_stripe_rejecting_account_creation_is_a_502_not_a_500(client):
@@ -23773,28 +22867,6 @@ def test_one_nous_user_still_maps_to_many_agents_each_with_its_own_identity(clie
         "two personas of one operator must not share an identity"
 
 
-def test_legacy_rows_are_backfilled_from_their_current_key(client):
-    """A relay upgraded in place has rows that predate `stable_id`, and their
-    genesis key is not recoverable — nothing ever recorded it. The honest
-    choice is to treat the key on file as genesis and say so, rather than leave
-    a NULL that every reader has to branch on forever. Reproduced by clearing
-    the column on a real row, exactly as the migration finds it."""
-    from emporia.relay_server import AGENT_REGISTRY, get_db, stable_id_for
-
-    key = _p47_pubkey("p47_legacy")
-    client.post("/agents/register", json={"agent_id": "p47_legacy", "public_key_hex": key})
-
-    with get_db() as conn:
-        conn.execute("UPDATE authorized_agents SET stable_id = NULL WHERE agent_id = 'p47_legacy'")
-        conn.commit()
-
-    AGENT_REGISTRY.backfill_stable_ids()
-
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT stable_id FROM authorized_agents WHERE agent_id = 'p47_legacy'"
-        ).fetchone()
-    assert row["stable_id"] == stable_id_for(key)
 
 
 def test_stable_id_is_unique_across_agents(client):
@@ -26585,116 +25657,9 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # P61 — the schema has a version, and the version has to stay honest
 # ---------------------------------------------------------------------------
 
-# 42 tables, 352 columns, at SCHEMA_VERSION 18. Recomputed by the test below;
-# when it fails, read *why* before touching this string.
-#
-# V1 -> V2 (P72-4): `bounty_entries` and its UNIQUE (listing_id, nous_user_id)
-# index. The version bump is the loud break this repo prefers to a compatibility
-# shim: a relay still on V1 code refuses to open a V2 database rather than
-# silently ignoring a table it does not know about — and the table it would be
-# ignoring is the one enforcing one entry per Nous account.
-#
-# V2 -> V3 (P87): `listings.federated_from`, the peer a federated row was pulled
-# from. Federation ownership is checked against it, so a V2 relay that ignored
-# it would let a peer overwrite rows it does not own.
-#
-# V3 -> V4 (P99): `escrow_holds`, the on-chain holds of x402 purchases. A V3
-# relay would serve a V4 database blind to holds it is operator for -- unable to
-# capture or void them -- so it refuses instead.
-#
-# V4 -> V5 (P129): `settlements.platform_fee_atomic`/`winner_payout_atomic`, an
-# escrow capture's split to the atomic unit. A V4 relay would keep writing
-# settlements without them, so the ledger would disagree with the chain again.
-#
-# V5 -> V6 (P143): `game_chat`, table talk stored inside its game. A V5 relay
-# would serve a V6 database without the chat its games' records include.
-#
-# V7 -> V8 (P240): `listings.agent_stable_id`, `listing_nonce`, `signature` —
-# the agent's own signature over a listing. A V7 relay would serve V8 rows to
-# its peers without them, and they would refuse every one.
-#
-# V8 -> V9 (P241): `session_offers`, a creator's signed offer of an open game.
-# A V8 relay would serve an empty lobby from a V9 database.
-#
-# V9 -> V10 (P242): `agora_posts`/`agora_comments` `nonce` and `signature` —
-# each post and comment its author's signed word.
-#
-# V10 -> V11 (P243): `room_acts`, a room's creation, invites and kicks, each as
-# its creator signed it.
-#
-# V11 -> V12 (P247): `room_adverts` and `topic_adverts`, an owner's signed advert
-# of a room or public topic. A V11 relay would serve empty room and topic feeds
-# from a V12 database.
-#
-# V12 -> V13 (P245): `agent_key_log`, an agent's signed key changes, and the key
-# log kept with a pulled listing (`listings.agent_key_log_json`) and a pinned
-# remote agent (`remote_agents.stable_id`, `key_log_json`). A V12 relay would
-# serve no key log, so other relays would drop a rotated agent's listings.
-#
-# V13 -> V14 (P246): a key log step may be a commitment to a recovery key or a
-# recovery (`agent_key_log.commitment`, `recovery_public_key`, `compromised_since`,
-# `recorded_at`), and the steps a recovery undid are kept in
-# `agent_key_log_superseded`. A V13 relay would drop the new fields from the log it
-# serves, so no reader could check a recovery.
-#
-# V14 -> V15 (P249): `elsewhere_adverts`, the rooms and topics advertised on linked
-# relays, each pulled and checked against its owner's signature. A V14 relay would
-# not keep or serve them, so a finder here would see nothing from linked relays.
-#
-# V15 -> V16 (P256): the transparency log -- `translog_leaves`, `translog_states`
-# and `translog_chain_heads`. A V15 relay would write key changes and payments
-# without their leaves, so the log would stop covering them unnoticed.
-#
-# V16 -> V17 (P257): `translog_nodes`, the log's complete subtrees stored so proofs
-# read O(log^2 n) hashes, and `translog_sources`, how far each table has been
-# folded into the log. A V16 relay would not keep either.
-#
-# V17 -> V18 (P258): the log kept small -- a leaf is its index, an 8-byte ref key
-# and its record (`translog_leaves.ref_key`, `record`); subtree hashes as raw
-# bytes; `translog_seen` replaces `translog_chain_heads` and `translog_sources`.
-# A V17 log is dropped and folded in again from every table.
-#
-# V21 -> V22 (P269): `translog_epochs`, one row per log the relay has kept (a
-# rebuild starts a new one, with the old log's last state and a signed hand-over),
-# and `translog_states.epoch`.
-#
-# V22 -> V23 (P271): `authorized_agents.encryption_key_at` and
-# `remote_agents.encryption_key_at`, when the agent signed its encryption key's
-# (v2) binding, so a replaced key is followed forward only.
-#
-# V23 -> V24 (P272): `participants.join_at` and `join_signature`, the join the
-# agent signed.
-#
-# V24 -> V25 (P273): `session_leaves`, a player's signed leave of a game not
-# yet started; `dm_blocks`, the senders an agent takes no DMs from.
-#
-# V25 -> V26 (P274): `dm_blocks.blocked_stable_id`, so a block follows the
-# blocked agent's identity across a move or a rename.
-#
-# V26 -> V27 (P277): `rooms.linked_session_salt`, the salt of a room's signed
-# commitment to its game, so its card can carry the signed settings unlinked.
-#
-# V27 -> V28 (P278): `topic_acts`, an Agora topic's signed acts — its creation
-# with every setting, invites, taking them back, kicks.
-#
-# V31 -> V32 (launch additions): `idea_verdicts`, the operator's signed verdict on an idea.
-#
-# V33 -> V34 (games v2): `session_deals` is dropped, `beacon_rounds` (a cache of drand rounds), `rand_commits` and `rand_results` added.
-#
-# V32 -> V33 (gamify-all: Bargain and pledges in one bump): `session_deals`, the relay's secret
-# seed for a game that deals hidden hands, kept out of the session's state until the game ends
-# (a V32 relay would serve a dealt game it cannot deal or reveal); `pledges` and `pledge_acts`,
-# signed promises and their attestations.
-#
-# V33 -> V34 (labs W0 and security review pass 2, one bump): `labs`, `lab_patches` and `lab_checks` — a
-# room bound to a repo, an agent's signed patch kept as data, a checker's signed result — and
-# `bug_reports.verdict_key` / `verdict_signature`, `idea_verdicts.verdict_key` (the operator's verdict key).
-#
-# V34 -> V35 (Feed v2): `posts`, `follows`, `opened_from`, `reactions` (replacing `likes`).
-#
-# V35 -> V36 (games v2): `session_deals` dropped (Bargain v1); `beacon_rounds`, `rand_commits`, `rand_results` added.
-# Fresh v2 schema (39): Agora v2 + rooms v2 + the season board as plain CREATE statements.
-_SCHEMA_FINGERPRINT = "a961e31ef9387614742de080564da7624c697e2991faba19ac4d8af8601e6fd0"
+# One schema (`emporia.schema_sql`), one version. The relay starts fresh, so there is no upgrade history to
+# record: change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
+_SCHEMA_FINGERPRINT = "14afd4e3f3a6e55df5a11b7ea5e3bcc9690c1fb0dee6cf5d7b8e2e99fb561c37"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -26724,8 +25689,8 @@ def test_a_schema_change_requires_a_version_bump():
     Nothing makes that automatic, so this does: a fingerprint over every table
     and column. Change the schema and this fails, which is the reminder to bump
     `SCHEMA_VERSION` — without which an operator rolling a binary back onto a
-    migrated database gets undefined behaviour instead of the refusal
-    `_assert_schema_not_from_the_future()` exists to give them.
+    database from another version gets undefined behaviour instead of the refusal
+    `_assert_schema_version()` exists to give them.
 
     **When this fails, that is the whole message.** Bump `SCHEMA_VERSION`, then
     update the fingerprint here. Updating the fingerprint alone silences the
@@ -26734,7 +25699,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (39, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (40, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"
@@ -26756,6 +25721,29 @@ def test_a_fresh_database_is_stamped_with_the_current_version():
     assert stamped == SCHEMA_VERSION, (
         f"the suite's own database is stamped {stamped}, code says {SCHEMA_VERSION}"
     )
+
+
+def test_a_database_from_an_older_schema_is_refused_by_name():
+    """The relay starts fresh: an older database is never upgraded, it is refused with what to do."""
+    import sqlite3 as _sqlite3
+    import tempfile
+    from pathlib import Path as _Path
+
+    from emporia import relay_server as rs
+
+    db = _Path(tempfile.mkdtemp()) / "old.sqlite3"
+    conn = _sqlite3.connect(db)
+    conn.execute("CREATE TABLE authorized_agents (agent_id TEXT)")
+    conn.execute(f"PRAGMA user_version = {rs.SCHEMA_VERSION - 1}")
+    conn.commit()
+    conn.close()
+    with patch.object(rs, "DATABASE_PATH", db):
+        with pytest.raises(RuntimeError, match="(?i)starts fresh.*move the old database aside"):
+            rs.init_db()
+    conn = _sqlite3.connect(db)
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    conn.close()
+    assert tables == {"authorized_agents"}, "a refused database is not touched"
 
 
 def test_a_database_from_a_newer_relay_is_refused_rather_than_migrated():

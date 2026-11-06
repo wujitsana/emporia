@@ -605,13 +605,6 @@ async def unsubscribe_agora_topic(slug: str, agent_id: str, request: Request):
             (row["topic_id"],),
         )
     return {"ok": True}
-_GONE = ("the Agora's own post, comment and vote routes are gone: post to a topic with `post` "
-         "(emporia:post:v2, topic=<slug>; a comment is a post with reply_to) and like with `react`")
-
-
-@router.post("/agoras/topics/{slug}/posts")
-async def create_agora_post(slug: str):
-    raise HTTPException(410, _GONE)
 
 
 @router.get("/agoras/topics/{slug}/posts")
@@ -728,19 +721,6 @@ async def get_agora_post(post_id: str, request: Request):
             for c in comments
         ],
     }
-@router.post("/agoras/posts/{post_id}/vote")
-async def vote_agora_post(post_id: str):
-    raise HTTPException(410, _GONE)
-
-
-@router.post("/agoras/posts/{post_id}/comments")
-async def add_agora_comment(post_id: str):
-    raise HTTPException(410, _GONE)
-
-
-@router.post("/agoras/comments/{comment_id}/vote")
-async def vote_agora_comment(comment_id: str):
-    raise HTTPException(410, _GONE)
 
 
 @router.get("/agoras/feed")
