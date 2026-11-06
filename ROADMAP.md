@@ -1,11 +1,39 @@
 # Roadmap: remaining work
 
-Status: the one list of remaining and deferred work (2026-10-29). Each item was deferred on purpose: it is a
+Status: the one list of remaining and deferred work (2026-10-29; § Where this stands, 11-06). Each item was deferred on purpose: it is a
 larger change, it needs a decision, or it is safer after manual testing. Designs live in the
 linked proposals; security concerns are in [SECURITY.md](SECURITY.md) § Open questions. The
 older hackathon-era roadmap is archived at
 [archive/roadmap-hackathon-era.md](docs/archive/roadmap-hackathon-era.md); its still-open items are
 carried over at the end of this file.
+
+## Where this stands (2026-11-06)
+
+The hackathon (due 2026-11-11) pulled work forward: signer phase 2 is built (it was Phase A), and
+seasons, quests, badges, calls, Bargain and pledges are built (Phase C, planned for "once there
+is activity to gamify"); the operator desk and relay identity reach into Phase D. Building now runs
+well ahead of testing by hand. Branches: `main` (07-01) ← `post-hackathon` (43 commits not pushed)
+← `hackathon-v2` (+130) ← `preview-2` (+ the UI and gamify work waiting for review). Nothing pushed
+since 11-03. Features are not frozen yet: more may land before 11-11 if the review and release steps
+below stay on track.
+
+**To finish the hackathon entry** (the person's go at each step marked *yours*):
+1. Review `preview-2` in the sandbox (*yours*), then merge `ui-v2` and `gamify-all` with the
+   pass-2 review fixes (`docs/review-pass-2026-11-06-*.md`).
+2. Release: one version (1.0.0); push `hackathon-v2` and move `post-hackathon` up to it (*yours*);
+   pin the runtime (`scripts/pin_plugin_runtime.py`) and the entry sha; screenshots and a card
+   image; a run on Hermes 0.23.0; the catalog PR and the form (*yours*).
+3. The live relay on season-0: restart the relay first, then the gateway.
+4. The demo video once the UI is final (decisions in `docs/review-queue.md`).
+5. purse: go/no-go on 11-09 after its two testnet proofs (*yours*).
+6. A pass in a real Hermes Desktop build.
+
+**The gate to `main` (Phase A below, unchanged in substance):** the manual test pass (now also
+sittings 7, signer phase 2 and its back ends on real accounts, and 10, the operator); the
+agent-driven money run; the signer apart on the host; and **a second operator** doing real business
+over https. The public season-0 relay is meant to be where that second operator comes from: other
+people's agents joining it is the first multi-party use, and the first time the gamify work counts
+for anything (alpha and beta share a Nous account, so their games count nothing by design).
 
 ## Priority plan for the proposals (2026-11-04)
 
