@@ -99,7 +99,7 @@ async def dm_start(req: DMStartRequest, request: Request):
     # published a key; `encrypted: false` still asks for plaintext explicitly.
     both_keys = all(rs.AGENT_REGISTRY.get_encryption_key(x)[0] for x in (a, b))
     want = req.encrypted if req.encrypted is not None else both_keys
-    now = datetime.now(UTC).isoformat()
+    now = rooms_db.coarse_minute() if want else datetime.now(UTC).isoformat()
     thread_id = f"dm_{uuid.uuid4().hex[:12]}"
     with rs.DB_LOCK, rs.get_db() as conn:
         existing = conn.execute(
@@ -158,10 +158,14 @@ async def _dm_start_remote(caller: str, agent_id: str, peer: str, encrypted: boo
     rs._require_encryption_keys_published([caller])
     me = fd.address(caller, fd.own_host())
     them = fd.address(agent_id, fd.host_of(peer))
-    thread_id = fd.thread_id_for(me, them)
-    with rs.DB_LOCK, rs.get_db() as conn:
-        replying = conn.execute("SELECT 1 FROM dm_threads WHERE thread_id = ?", (thread_id,)).fetchone()
-    if replying and fd.remote(them):
+
+    def held(addr: str):
+        a, b = sorted((me, addr))
+        with rs.DB_LOCK, rs.get_db() as conn:
+            return conn.execute("SELECT * FROM dm_threads WHERE agent_a = ? AND agent_b = ?", (a, b)).fetchone()
+
+    existing = held(them)
+    if existing and fd.remote(them):
         # A thread the other agent began: it chose to write here, and its keys
         # were pinned when its first message arrived. Its opt-in is not needed.
         # P271: its record is asked for again, so a key it replaced since is
@@ -170,15 +174,16 @@ async def _dm_start_remote(caller: str, agent_id: str, peer: str, encrypted: boo
             await fd.look_up(peer, agent_id)
         except Exception:  # noqa: BLE001 - the pinned keys stand
             pass
-        return {"thread_id": thread_id, "agent_a": min(me, them), "agent_b": max(me, them), "created": False,
-                "encrypted": True, "federated": True, "my_label": me, "peer_label": them, "peer_relay": peer}
+        return {"thread_id": existing["thread_id"], "agent_a": min(me, them), "agent_b": max(me, them),
+                "created": False, "encrypted": True, "federated": True, "my_label": me, "peer_label": them,
+                "peer_relay": peer}
     record = await fd.look_up(peer, agent_id)
     them = record["address"]
-    thread_id = fd.thread_id_for(me, them)
+    existing = held(them)
     a, b = sorted((me, them))
-    now = datetime.now(UTC).isoformat()
+    now = rooms_db.coarse_minute()
+    thread_id = existing["thread_id"] if existing else fd.new_thread_id()    # opaque, chosen here
     with rs.DB_LOCK, rs.get_db() as conn:
-        existing = conn.execute("SELECT thread_id FROM dm_threads WHERE thread_id = ?", (thread_id,)).fetchone()
         if existing:
             conn.execute("UPDATE dm_threads SET started_by_local = 1 WHERE thread_id = ?", (thread_id,))
         else:
@@ -608,7 +613,8 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     sender_label = _my_label(thread, caller)
     if thread["remote_address"]:
         await _deliver_remote(thread, caller, sender_label, req, effective_msg_type)
-    now = datetime.now(UTC).isoformat()
+    # a sealed thread keeps the minute and no finer (ordering is the table's sequence, not the clock)
+    now = rooms_db.coarse_minute() if thread["encrypted"] else datetime.now(UTC).isoformat()
     message_id = f"dmm_{uuid.uuid4().hex[:12]}"
     with rs.DB_LOCK, rs.get_db() as conn:
         try:

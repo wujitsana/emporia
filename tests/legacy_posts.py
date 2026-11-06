@@ -35,12 +35,13 @@ def _rewrite(url: str, body: dict, headers: dict) -> dict:
     scope, build = (("room_id", wire.signed_room_message_payload), m["room"]) if m["room"] else (
         ("thread_id", wire.signed_dm_thread_payload), m["dm"])
     nonce = body.get("nonce") or ""
-    good = any(rs.AGENT_REGISTRY.verify_signature(agent, scope[1](build, content, t, nonce), body["signature"])
+    extra = (rs.AGENT_REGISTRY.get_stable_id(agent) or "",) if m["room"] else ()
+    good = any(rs.AGENT_REGISTRY.verify_signature(agent, scope[1](build, content, t, nonce, *extra), body["signature"])
                for t in {msg_type, "chat", "note"} if t)
     new = room_post.canonical(room_post.body("note", content))
     out = {**body, "content": new, "msg_type": "note"}
     if good:
-        out["signature"] = identity.sign(scope[1](build, new, "note", nonce), agent)
+        out["signature"] = identity.sign(scope[1](build, new, "note", nonce, *extra), agent)
     return out
 
 

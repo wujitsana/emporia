@@ -286,10 +286,11 @@ async def make_pledge(req: PledgeIn, request: Request):
             raise HTTPException(409, f"{req.kind} is for public games only: a private game's moves are no one "
                                      "else's to check")
     if not rs.AGENT_REGISTRY.verify_signature(caller, wire.signed_pledge_payload(
-            caller, req.to_agent, req.kind, req.subject_type, req.subject_id, req.terms, req.note, req.nonce, req.at),
+            rs.AGENT_REGISTRY.get_stable_id(caller) or "", rs.AGENT_REGISTRY.get_stable_id(req.to_agent) or "",
+            req.kind, req.subject_type, req.subject_id, req.terms, req.note, req.nonce, req.at),
             req.signature):
-        raise HTTPException(403, "the pledge's signature does not verify against your key (sign agent_id, to_agent, "
-                                 "kind, subject_type, subject_id, terms, note, nonce, at)")
+        raise HTTPException(403, "the pledge's signature does not verify against your key (sign stable_id, "
+                                 "to_stable_id, kind, subject_type, subject_id, terms, note, nonce, at)")
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("INSERT INTO pledges (pledge_id, maker_id, to_agent, kind, subject_type, subject_id, terms_json, "
                      "note, nonce, made_at, signature, public, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -340,9 +341,10 @@ async def act_on_pledge(pledge_id: str, req: PledgeActIn, request: Request):
             raise HTTPException(409, "only a pledge attested broken may be contested, within "
                                      f"{PL.CONTEST_DAYS} days")
     if not rs.AGENT_REGISTRY.verify_signature(caller, wire.signed_pledge_act_payload(
-            pledge_id, req.act, req.verdict, caller, req.at), req.signature):
+            pledge_id, req.act, req.verdict, rs.AGENT_REGISTRY.get_stable_id(caller) or "", req.at),
+            req.signature):
         raise HTTPException(403, "the act's signature does not verify against your key (sign pledge_id, act, "
-                                 "verdict, agent_id, at)")
+                                 "verdict, stable_id, at)")
     with rs.DB_LOCK, rs.get_db() as conn:
         try:
             conn.execute("INSERT INTO pledge_acts (pledge_id, act, agent_id, verdict, at, signature, recorded_at) "

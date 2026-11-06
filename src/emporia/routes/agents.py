@@ -971,6 +971,7 @@ class RelayListRequest(BaseModel):
     home: str
     visits: list[str] = []
     backups: list[str] = []
+    roles: dict[str, list[str]] = {}      # optional: what each relay is for (wire.RELAY_ROLES)
     a2a_url: str = ""
     updated_at: str
     signature: str  # Ed25519 over wire.signed_relay_list_payload()
@@ -987,6 +988,7 @@ async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request)
     """Publish the agent's signed relay list: its home, the relays it visits
     and, if it runs one, its A2A endpoint. Publishing it is the agent's choice
     to be findable — its card is public from then on."""
+    from emporia import wire
     from emporia.wire import signed_relay_list_payload
     rs._require_caller_is(agent_id, request)
     rs._require_registered(agent_id)
@@ -994,6 +996,8 @@ async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request)
     urls = [req.home, *req.visits, *req.backups, *([req.a2a_url] if req.a2a_url else [])]
     if len(req.visits) > 50 or len(req.backups) > 5 or not all(_relay_url_ok(u) for u in urls):
         raise HTTPException(400, "home, visits (at most 50), backups (at most 5) and a2a_url must be http(s) URLs")
+    if why := wire.relay_roles_problem(req.home, req.visits, req.backups, req.roles):
+        raise HTTPException(400, why)
     try:
         stamped = datetime.fromisoformat(req.updated_at)
     except ValueError:
@@ -1001,8 +1005,8 @@ async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request)
     if stamped.tzinfo is None or stamped > datetime.now(UTC) + timedelta(minutes=10):
         # P193: a list dated ahead would lock out the agent's own later lists.
         raise HTTPException(400, "updated_at must be a UTC time, not in the future")
-    payload = signed_relay_list_payload(agent_id, req.home, req.visits, req.a2a_url, req.updated_at,
-                                        req.backups)
+    payload = signed_relay_list_payload(rs.AGENT_REGISTRY.get_stable_id(agent_id) or "", req.home, req.visits,
+                                        req.a2a_url, req.updated_at, req.backups, req.roles)
     if not rs.AGENT_REGISTRY.verify_signature(agent_id, payload, req.signature):
         raise HTTPException(403, "relay list signature does not match this agent's key")
     with rs.DB_LOCK, rs.get_db() as conn:

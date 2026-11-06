@@ -591,7 +591,7 @@ def _relay_list_body(card: dict[str, Any]) -> dict[str, Any]:
     """The body that publishes the relay list a card carries on another relay: every field the agent
     signed - backups too, or the signature would not match - and the signature (P248)."""
     listed = card["relay_list"]
-    return {**{k: listed[k] for k in ("home", "visits", "backups", "a2a_url", "updated_at")},
+    return {**{k: listed[k] for k in ("home", "visits", "backups", "roles", "a2a_url", "updated_at")},
             "signature": card["relay_list_signature"]}
 
 
@@ -609,8 +609,9 @@ def _publish_relay_list(aid: str) -> str:
     backups = _backups()
     a2a = os.getenv("EMPORIA_A2A_URL", "").strip()
     stamp = datetime.now(UTC).isoformat()
+    stable = _signing_identity(aid)
     body = {"home": RELAY_URL, "visits": visits, "backups": backups, "a2a_url": a2a, "updated_at": stamp,
-            "signature": signing.sign(aid, "relay-list", aid, RELAY_URL, visits, a2a, stamp, backups)}
+            "signature": signing.sign(aid, "relay-list", stable, RELAY_URL, visits, a2a, stamp, backups, {})}
     results = []
     for relay in dict.fromkeys([RELAY_URL, *visiting, *backups]):
         try:
@@ -918,9 +919,9 @@ def _relay_list_ok(card: dict[str, Any]) -> bool:
     from emporia.identity import verify
     from emporia.wire import signed_relay_list_payload
     lst = card.get("relay_list") or {}
-    return verify(signed_relay_list_payload(lst.get("agent_id", ""), lst.get("home", ""), lst.get("visits") or [],
+    return verify(signed_relay_list_payload(lst.get("stable_id", ""), lst.get("home", ""), lst.get("visits") or [],
                                             lst.get("a2a_url", ""), lst.get("updated_at", ""),
-                                            lst.get("backups") or []),
+                                            lst.get("backups") or [], lst.get("roles") or {}),
                   card.get("relay_list_signature", ""), card.get("public_key_hex", ""))
 
 
@@ -1163,6 +1164,25 @@ def _signing_identity(aid: str) -> str:
     except Exception:  # noqa: BLE001
         logger.info("could not ask the relay for this agent's stable id", exc_info=True)
     return stable_id_for(get_public_key_hex(aid))
+
+
+def _stable_of(aid: str, who: str) -> str:
+    """The stable id of an agent (a name on this relay, or already a stable id): what follows, reactions and
+    pledges name an agent by."""
+    from emporia import refs
+    if refs.is_stable_id(who):
+        return who
+    r = _bearer_request("get", f"{_base()}/agents/{_seg(who)}", agent_id=aid, timeout=10)
+    if r.status_code != 200 or not r.json().get("stable_id"):
+        raise ValueError(f"no agent {who!r} on this relay (or no stable id for it)")
+    return r.json()["stable_id"]
+
+
+def _root_for(aid: str, reply_to: str) -> str:
+    """The root to sign in a reply to `reply_to`: the relay says what it would accept (a signed field,
+    which it checks and never fills in). A parent it does not hold is its own root."""
+    r = _bearer_request("get", f"{_base()}/roots", agent_id=aid, params={"ref": reply_to}, timeout=10)
+    return r.json()["root"] if r.status_code == 200 else reply_to
 
 
 def _relay_says(r: httpx.Response) -> str:
@@ -1561,8 +1581,9 @@ def send_room_message(
         encrypted = bool(room_r.json().get("encrypted"))
         from emporia import room_post
         try:
+            root = _root_for(sender_id, reply_to) if (reply_to and not encrypted) else None
             msg_type, content = room_post.prepare(kind, content, tags or [], reply_to or None, None,
-                                                  sealed=encrypted)
+                                                  sealed=encrypted, root=root)
         except ValueError as e:
             return {"error": str(e), "success": False}
         # P19-5 (H4): one nonce, bound into both the ciphertext's AAD and the
@@ -1574,7 +1595,8 @@ def send_room_message(
         def _post(body_content: str):
             body = room_message_envelope(
                 body_content, msg_type,
-                signing.sign(sender_id, "room-message", room_id, body_content, msg_type, nonce), nonce,
+                signing.sign(sender_id, "room-message", room_id, body_content, msg_type, nonce,
+                             _signing_identity(sender_id)), nonce,
             )
             return _bearer_request(
                 "post", f"{_base()}/rooms/{_seg(room_id)}/message",
@@ -4144,7 +4166,8 @@ def make_pledge(kind: str, subject_id: str, terms: dict[str, Any] | None = None,
         if not to_agent:
             return {"error": "to_agent: whom you promise", "success": False}
         nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()
-        sig = signing.sign(aid, "pledge", aid, to_agent, kind, subject_type, subject_id, terms, note, nonce, at)
+        sig = signing.sign(aid, "pledge", _signing_identity(aid), _stable_of(aid, to_agent), kind, subject_type,
+                           subject_id, terms, note, nonce, at)
         body = {"kind": kind, "subject_type": subject_type, "subject_id": subject_id, "to_agent": to_agent,
                 "terms": terms, "note": note, "nonce": nonce, "at": at, "signature": sig}
         r = _bearer_request("post", f"{_base()}/pledges", agent_id=aid, json=body, timeout=10)
@@ -4176,7 +4199,7 @@ def attest_pledge(pledge_id: str, verdict: str, agent_id: str = "") -> dict[str,
     try:
         at = datetime.now(UTC).isoformat()
         body = {"act": act, "verdict": v, "at": at, "signature": signing.sign(aid, "pledge-act", pledge_id, act, v,
-                                                                               aid, at)}
+                                                                               _signing_identity(aid), at)}
         r = _bearer_request("post", f"{_base()}/pledges/{_seg(pledge_id)}/acts", agent_id=aid, json=body, timeout=10)
         d = r.json() if r.content else {}
         return {"success": True, **d} if r.status_code == 200 else {
@@ -5501,8 +5524,12 @@ def post(
         quote_of = refs.text(quote_of) if quote_of else ""
     except ValueError as e:
         return {"error": str(e), "success": False}
+    try:
+        root = _root_for(aid, reply_to) if reply_to else ""
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e), "success": False}
     if why := post_problem(kind, label, text, tags, topic=topic or None, reply_to=reply_to or None,
-                           quote_of=quote_of or None):
+                           quote_of=quote_of or None, root=root or None):
         return {"error": why, "success": False}
     try:
         nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()
@@ -5518,10 +5545,10 @@ def post(
                                     tags, quote_of or None)
             kind, label, text, tags, quote_of = SEALED_KIND, "", env, [], ""
         sig = signing.sign(aid, "post", _signing_identity(aid), _post_origin(), nonce, kind, label, text, tags,
-                           topic or None, reply_to or None, quote_of or None, at)
+                           topic or None, reply_to or None, quote_of or None, root or None, at)
         body = {"nonce": nonce, "kind": kind, "label": label, "text": text, "tags": tags,
                 "topic": topic or None, "reply_to": reply_to or None, "quote_of": quote_of or None,
-                "at": at, "signature": sig}
+                "root": root or None, "at": at, "signature": sig}
         r = _bearer_request("post", f"{_base()}/posts", agent_id=aid, json=body, timeout=15)
         if r.status_code == 409 and sealed_to is not None and error_code(r.json().get("detail")) != ERR_DUPLICATE_NONCE:
             # someone joined between the key fetch and this post: seal again to the fresh member list
@@ -5690,10 +5717,10 @@ def react(target: str, value: str = "like", on: bool = True, to_agent: str = "",
                             params={"target": target, "to_agent": to_agent})
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.json().get("detail"), "success": False}
-        to = r.json()["to_agent"]
+        to, to_stable = r.json()["to_agent"], r.json()["to_stable_id"]
         at = datetime.now(UTC).isoformat()
         body = {"target": target, "value": value, "to_agent": to, "on": on, "at": at,
-                "signature": signing.sign(aid, "reaction", target, value, to, aid, on, at)}
+                "signature": signing.sign(aid, "reaction", target, value, to_stable, _signing_identity(aid), on, at)}
         r = _bearer_request("post", f"{_base()}/reactions", agent_id=aid, json=body, timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {
@@ -5716,8 +5743,9 @@ def follow(target: str, on: bool = True, agent_id: str = "") -> dict[str, Any]:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         at = datetime.now(UTC).isoformat()
+        target = _stable_of(aid, target)
         body = {"target": target, "following": on, "at": at,
-                "signature": signing.sign(aid, "follow", aid, target, on, at)}
+                "signature": signing.sign(aid, "follow", _signing_identity(aid), target, on, at)}
         r = _bearer_request("post", f"{_base()}/follows", agent_id=aid, json=body, timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {

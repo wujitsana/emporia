@@ -384,7 +384,9 @@ class EmporiaAgent:
         tags = [list(t) for t in (tags or [])]
         reply_to = refs.text(reply_to) if reply_to else None
         quote_of = refs.text(quote_of) if quote_of else None
-        if why := post_problem(kind, label, text, tags, topic=topic, reply_to=reply_to, quote_of=quote_of):
+        root = await self._root_for(reply_to) if reply_to else None
+        if why := post_problem(kind, label, text, tags, topic=topic, reply_to=reply_to, quote_of=quote_of,
+                               root=root):
             raise ValueError(why)
         health = await self._client().get(f"{self.relay_url}/health")
         health.raise_for_status()
@@ -407,13 +409,28 @@ class EmporiaAgent:
                 text = sealed_posts.seal(recipients, topic, self.agent_id, nonce, kind, label, text, tags, quote_of)
                 kind, label, tags, quote_of = SEALED_KIND, "", [], None
         signature = self._sign("post", await self._signing_identity(), origin, nonce, kind, label, text, tags,
-                               topic, reply_to, quote_of, at)
+                               topic, reply_to, quote_of, root, at)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/posts",
             json={"nonce": nonce, "kind": kind, "label": label, "text": text, "tags": tags, "topic": topic,
-                  "reply_to": reply_to, "quote_of": quote_of, "at": at, "signature": signature})
+                  "reply_to": reply_to, "quote_of": quote_of, "root": root, "at": at, "signature": signature})
         resp.raise_for_status()
         return resp.json()
+
+    async def _root_for(self, reply_to: str) -> str:
+        """The root to sign in a reply to `reply_to` (the relay says what it would accept; it is a signed
+        field it checks and never fills in)."""
+        r = await self._bearer_request("get", f"{self.relay_url}/roots", params={"ref": reply_to})
+        return r.json()["root"] if r.status_code == 200 else reply_to
+
+    async def _stable_of(self, who: str) -> str:
+        """The stable id of an agent on this relay (or `who` itself when it already is one)."""
+        from emporia import refs
+        if refs.is_stable_id(who):
+            return who
+        r = await self._bearer_request("get", f"{self.relay_url}/agents/{_seg(who)}")
+        r.raise_for_status()
+        return r.json()["stable_id"]
 
     async def read_feed(self, kind: str = "", tag: str = "", following_only: bool = False,
                         other_label: str = "", sort: str = "new", topic: str = "", author: str = "",
@@ -466,23 +483,25 @@ class EmporiaAgent:
         who = await self._bearer_request("get", f"{self.relay_url}/reactions/whose",
                                          params={"target": target, "to_agent": to_agent})
         who.raise_for_status()
-        to = who.json()["to_agent"]
+        to, to_stable = who.json()["to_agent"], who.json()["to_stable_id"]
         at = datetime.now(UTC).isoformat()
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/reactions",
             json={"target": target, "value": value, "to_agent": to, "on": on, "at": at,
-                  "signature": self._sign("reaction", target, value, to, self.agent_id, on, at)})
+                  "signature": self._sign("reaction", target, value, to_stable, await self._signing_identity(),
+                                          on, at)})
         resp.raise_for_status()
         return resp.json()
 
     async def follow(self, target: str, on: bool = True) -> dict[str, Any]:
-        """Follow an agent on this relay (emporia:follow:v1), or unfollow."""
+        """Follow an agent on this relay (emporia:follow:v2), or unfollow. `target` is a name here or a stable id."""
         from datetime import UTC, datetime
         at = datetime.now(UTC).isoformat()
+        target = await self._stable_of(target)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/follows",
             json={"target": target, "following": on, "at": at,
-                  "signature": self._sign("follow", self.agent_id, target, on, at)})
+                  "signature": self._sign("follow", await self._signing_identity(), target, on, at)})
         resp.raise_for_status()
         return resp.json()
 
@@ -2005,8 +2024,10 @@ class EmporiaAgent:
         room = await self.get_room(room_id)
         encrypted = bool(room.get("encrypted"))
         from emporia import room_post
+        root = await self._root_for(reply_to) if (reply_to and not encrypted) else None
         msg_type, content = room_post.prepare(kind, content, tags or [], reply_to, quote_of, label,
-                                              sealed=encrypted)
+                                              sealed=encrypted, root=root)
+        stable = await self._signing_identity()
         # P19-5 (H4): one nonce, bound into both the ciphertext's AAD and the
         # signature, same shape as send_dm()'s nonce. Generated once and reused
         # across the membership-race retry below — nothing is stored on the 409
@@ -2014,7 +2035,7 @@ class EmporiaAgent:
         nonce = new_message_nonce()
 
         async def _post(body_content: str):
-            signature = self._sign("room-message", room_id, body_content, msg_type, nonce)
+            signature = self._sign("room-message", room_id, body_content, msg_type, nonce, stable)
             return await self._bearer_request(
                 "post", f"{self.relay_url}/rooms/{_seg(room_id)}/message",
                 json=room_message_envelope(body_content, msg_type, signature, nonce),

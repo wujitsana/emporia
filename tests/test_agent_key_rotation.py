@@ -41,6 +41,12 @@ from tests.test_emporia import (
 ORIGIN = "https://kr-relay.example"
 
 
+def _stable_of(agent: str) -> str:
+    """The stable id of a test agent that never rotated: the hash of its key."""
+    from emporia import identity, wire
+    return wire.stable_id_for(identity.get_public_key_hex(agent))
+
+
 @pytest.fixture
 def client():
     return TestClient(app, client=("127.0.0.1", 51450))
@@ -285,7 +291,7 @@ def test_posts_comments_messages_and_acts_check_against_the_key_of_their_time(cl
     def say_room(text):
         nonce = wire.new_message_nonce()
         r = client.post(f"/rooms/{room_id}/message", headers=_as(hand), json={
-            "content": text, "nonce": nonce, "signature": sign(wire.signed_room_message_payload(room_id, text, "chat", nonce), hand)})
+            "content": text, "nonce": nonce, "signature": sign(wire.signed_room_message_payload(room_id, text, "chat", nonce, _stable_of(hand)), hand)})
         assert r.status_code == 200, r.text
 
     def write_everything(tag):

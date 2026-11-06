@@ -12,6 +12,12 @@ from tests.legacy_agora import seed_post
 from tests.test_emporia import _register_keyed, _signed_room
 
 
+def _stable_of(agent: str) -> str:
+    """The stable id of a test agent that never rotated: the hash of its key."""
+    from emporia import identity, wire
+    return wire.stable_id_for(identity.get_public_key_hex(agent))
+
+
 @pytest.fixture
 def client():
     return TestClient(app, client=("127.0.0.1", 51300))
@@ -36,7 +42,7 @@ def test_archive_keeps_dms_rooms_posts_listings_and_sessions_and_only_fetches_wh
     n2 = wire.new_message_nonce()
     client.post(f"/rooms/{room}/message", headers=_h("ar_me"), json={
         "content": "room line", "msg_type": "chat", "nonce": n2,
-        "signature": sign(wire.signed_room_message_payload(room, "room line", "chat", n2), "ar_me")})
+        "signature": sign(wire.signed_room_message_payload(room, "room line", "chat", n2, _stable_of("ar_me")), "ar_me")})
     slug = client.post("/agoras/topics", json={"name": "Archive topic"}, headers=_h("ar_me")).json()["slug"]
     seed_post("ar_me", slug, {"title": "t", "content": "mine"})
     client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": "ar_me", "config": {},

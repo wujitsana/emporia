@@ -34,17 +34,35 @@ def _stable(agent):
         return conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent,)).fetchone()[0]
 
 
-def _body(agent, kind="note", text="hello", tags=(), label="", topic=None, reply_to=None, quote_of=None):
+def _root_for(reply_to):
+    """What a reply to `reply_to` signs as its root: the parent's own root, or the parent."""
+    if not reply_to:
+        return None
+    try:
+        parsed = refs.parse(reply_to)
+    except ValueError:
+        return reply_to
+    if parsed["kind"] == "post" and not parsed.get("relay"):
+        with rs.DB_LOCK, rs.get_db() as conn:
+            row = conn.execute("SELECT root FROM posts WHERE post_id = ?", (parsed["id"],)).fetchone()
+        if row and row["root"]:
+            return row["root"]
+    return reply_to
+
+
+def _body(agent, kind="note", text="hello", tags=(), label="", topic=None, reply_to=None, quote_of=None,
+          root=None):
     nonce, at = secrets.token_hex(16), datetime.now(UTC).isoformat()
     tags = [list(t) for t in tags]
-    args = (_stable(agent), rs.RELAY_BASE_URL, nonce, kind, label, text, tags, topic, reply_to, quote_of, at)
+    root = root or _root_for(reply_to)
+    args = (_stable(agent), rs.RELAY_BASE_URL, nonce, kind, label, text, tags, topic, reply_to, quote_of, root, at)
     try:
         sig = signing.sign(agent, "post", *args)
     except signing.Refused:     # the signer's own check; the relay must refuse it too
         from emporia import identity
         sig = identity.sign(wire.signed_post_payload(*args), agent)
     return {"nonce": nonce, "kind": kind, "label": label, "text": text, "tags": tags, "topic": topic,
-            "reply_to": reply_to, "quote_of": quote_of, "at": at, "signature": sig}
+            "reply_to": reply_to, "quote_of": quote_of, "root": root, "at": at, "signature": sig}
 
 
 def _post(client, agent, **kw):
@@ -52,7 +70,7 @@ def _post(client, agent, **kw):
 
 
 def test_refs_parse_validate_and_render():
-    assert refs.text({"kind": "game", "id": "abc", "relay": "r.example:8088"}) == "game:abc@r.example:8088"
+    assert refs.text({"kind": "game", "id": "abc", "relay": "r.example:8088"}) == "session:abc@r.example:8088"
     assert refs.parse("lab_patch:" + "a" * 64) == {"kind": "lab_patch", "id": "a" * 64}
     assert refs.tag("post:p1") == ["ref", "post", "p1"]
     for bad in ("nope:x", "post:", "post", "post:x@https://r.example", {"kind": "post"}):
@@ -79,14 +97,21 @@ def test_kinds_labels_tags_and_pointers():
     assert wire.post_problem("note", "", "x", [["t", "A"]])              # hashtag charset
     assert wire.post_problem("note", "", "x", [["tool", "npm", "x"]])    # ecosystem enum
     assert wire.post_problem("note", "", "x", [["t", "a"]] * 13)
-    assert wire.post_problem("note", "", "x", [["zzz", "anything", "goes"]]) == "", "unknown tags are allowed"
-    assert wire.post_problem("note", "", "x", [], reply_to="post:p1") == ""
+    assert wire.post_problem("note", "", "x", [["vendor.zzz", "anything", "goes"]]) == "", "unknown tags are allowed"
+    assert wire.post_problem("note", "", "x", [], reply_to="post:p1", root="post:p1") == ""
+    assert wire.post_problem("note", "", "x", [], reply_to="post:p1")                # a reply names its root
+    assert wire.post_problem("note", "", "x", [], root="post:p1")                    # a root needs a reply
+    assert wire.post_problem("note", "", "x", [["expiration", "1999999999"]]) == ""
+    assert wire.post_problem("note", "", "x", [["expiration", "soon"]])
+    assert wire.post_problem("note", "", "x", [["vendor.thing", "v"]]) == ""
+    assert wire.post_problem("note", "", "x", [["Vendor.Thing", "v"]])               # lowercase
+    assert wire.post_problem("note", "", "x", [["a.b.c", "v"]])                      # one dot
     assert wire.post_problem("note", "", "x", [], reply_to="p1")
 
 
 def test_post_feed_filters_and_untrusted(client):
     a, b = _agent(client), _agent(client)
-    r = _post(client, a, kind="idea", text="a thing", tags=[["t", "games"], ["zzz", "weird", "x"]])
+    r = _post(client, a, kind="idea", text="a thing", tags=[["t", "games"], ["vendor.zzz", "weird", "x"]])
     assert r.status_code == 200, r.text
     assert _post(client, a, kind="other", label="dev-log", text="day 1").status_code == 200
     assert _post(client, a, kind="other", text="x").status_code == 400
@@ -97,15 +122,15 @@ def test_post_feed_filters_and_untrusted(client):
     assert client.post("/posts", json=forged, headers=_as(a)).status_code == 403
     ideas = client.get("/feed", params={"kind": "idea", "author": a}).json()
     assert [p["text"] for p in ideas["posts"]] == ["a thing"] and "untrusted" in ideas
-    assert ideas["posts"][0]["tags"][1] == ["zzz", "weird", "x"], "unknown tags are returned"
+    assert ideas["posts"][0]["tags"][1] == ["vendor.zzz", "weird", "x"], "unknown tags are returned"
     lbl = client.get("/feed", params={"other_label": "dev-log", "author": a}).json()["posts"]
     assert len(lbl) == 1 and lbl[0]["label"] == "dev-log"
     assert len(client.get("/feed", params={"tag": "games", "author": a}).json()["posts"]) == 1
-    assert len(client.get("/feed", params={"tag": "zzz:weird", "author": a}).json()["posts"]) == 1
+    assert len(client.get("/feed", params={"tag": "vendor.zzz:weird", "author": a}).json()["posts"]) == 1
     # follow, then the following-only feed
     at = datetime.now(UTC).isoformat()
-    sig = signing.sign(b, "follow", b, a, True, at)
-    assert client.post("/follows", json={"target": a, "following": True, "at": at, "signature": sig},
+    sig = signing.sign(b, "follow", _stable(b), _stable(a), True, at)
+    assert client.post("/follows", json={"target": _stable(a), "following": True, "at": at, "signature": sig},
                        headers=_as(b)).status_code == 200
     assert client.get("/follows", params={"agent_id": b}).json()["following"] == [a]
     fo = client.get("/feed", params={"following_only": True}, headers=_as(b)).json()["posts"]
@@ -137,11 +162,11 @@ def test_replies_hang_from_any_object_and_threads_read_in_one_query(client):
     assert [p["text"] for p in th["posts"]] == ["because", "really"]
     assert client.get(f"/posts/{root}").json()["replies"] == 2
     game = _session("emporia:blotto:v2", [a, b], {"wins": {a: 2, b: 0}, "history": [{}, {}], "rounds": 3})
-    assert _post(client, b, text="gg", reply_to=f"game:{game}").status_code == 200
-    assert [p["text"] for p in client.get("/thread", params={"ref": f"game:{game}"}).json()["posts"]] == ["gg"]
-    assert _post(client, b, text="hi", reply_to=f"agent:{a}").status_code == 200
+    assert _post(client, b, text="gg", reply_to=f"session:{game}").status_code == 200
+    assert [p["text"] for p in client.get("/thread", params={"ref": f"session:{game}"}).json()["posts"]] == ["gg"]
+    assert _post(client, b, text="hi", reply_to=f"agent:{_stable(a)}").status_code == 200
     assert _post(client, b, text="x", reply_to="post:pst2_missing").status_code == 404
-    assert _post(client, b, text="x", reply_to="game:nope").status_code == 404
+    assert _post(client, b, text="x", reply_to="session:nope").status_code == 404
     assert _post(client, b, text="x", reply_to="bogus").status_code == 400
     assert client.get("/thread", params={"ref": "nonsense"}).status_code == 400
 
@@ -187,7 +212,7 @@ def test_listings_v1_is_refused_by_name(client):
 
 def test_a_reply_to_an_object_on_another_relay_stores_a_ref_and_fetches_nothing(client):
     a = _agent(client)
-    ref = "game:abc123@far.example:8088"
+    ref = "session:abc123@far.example:8088"
     assert _post(client, a, text="gg from here", reply_to=ref).status_code == 200
     th = client.get("/thread", params={"ref": ref}).json()
     assert th["remote_ref"] == {"kind": "game", "id": "abc123", "relay": "far.example:8088"}
@@ -363,9 +388,10 @@ async def test_a_pointer_pull_keeps_what_checks_out_and_refuses_the_rest(client)
     def make(kind="pointer", text="a lead", tags=(("tool", "mcp-server", "files"),), origin=peer, tamper=False):
         nonce, at = secrets.token_hex(16), datetime.now(UTC).isoformat()
         tags = [list(t) for t in tags]
-        sig = identity.sign(wire.signed_post_payload(row["stable_id"], origin, nonce, kind, "", text, tags, None,
-                                                     None, None, at), a)
-        return {"post_id": wire.post_id_for(row["stable_id"], nonce), "author_id": a,
+        signed = wire.signed_post_payload(row["stable_id"], origin, nonce, kind, "", text, tags, None,
+                                          None, None, None, at)
+        sig = identity.sign(signed, a)
+        return {"post_id": wire.post_id_for(signed), "author_id": a,
                 "author_stable_id": row["stable_id"], "author_public_key_hex": row["public_key_hex"],
                 "origin_relay": origin, "nonce": nonce, "kind": kind, "label": "", "text": "changed" if tamper else text,
                 "tags": tags, "topic": None, "reply_to": None, "quote_of": None, "at": at, "signature": sig,

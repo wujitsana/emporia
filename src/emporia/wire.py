@@ -18,6 +18,7 @@ here is pure: no I/O, no `httpx`, no `identity` import.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -176,7 +177,7 @@ def signed_rand_commit_payload(session_id: str, agent_id: str, seat: int, commit
             "hash": commit_hash, "beacon_round": beacon_round, "at": at}
 
 
-REACTION_TYPE = "emporia:reaction:v1"
+REACTION_TYPE = "emporia:reaction:v2"
 _REACTION_LABEL = re.compile(r"[a-z0-9-]{1,16}")
 
 
@@ -192,14 +193,16 @@ def reaction_value_problem(value: Any) -> str:
     return "value is 'like', a label of at most 16 (lowercase letters, digits, hyphen) or one emoji"
 
 
-def signed_reaction_payload(target: str, value: str, to_agent: str, agent_id: str, on: bool,
+def signed_reaction_payload(target: str, value: str, to_stable_id: str, stable_id: str, on: bool,
                             at: str) -> dict[str, Any]:
-    """An agent's reaction to any object (`target` is a ref's text form, `kind:id@relay`), or taking it
-    back (`on` False). One per (agent, target, value). Only `like` is scored, and only from another
-    operator; other values are shown with counts and never counted toward anything. `to_agent` is whose
-    the thing is, as the relay found it. Signed by the reactor, so a relay cannot invent reactions."""
-    return {"type": REACTION_TYPE, "target": target, "value": value, "to_agent": to_agent,
-            "agent_id": agent_id, "on": bool(on), "at": at}
+    """An agent's reaction to any object (`target` is a ref's text form, `kind:id@relay#author`), or
+    taking it back (`on` False). One per (agent, target, value). Only `like` is scored, and only from
+    another operator; other values are shown with counts and never counted toward anything. Both agents
+    are named by **stable id** (`to_stable_id` is whose the thing is, as the relay found it; `stable_id`
+    is the reactor), so a reaction means the same on any relay and after a move. Signed by the reactor,
+    so a relay cannot invent reactions."""
+    return {"type": REACTION_TYPE, "target": target, "value": value, "to_stable_id": to_stable_id,
+            "stable_id": stable_id, "on": bool(on), "at": at}
 
 
 def signed_idea_verdict_payload(post_id: str, verdict: str, ref: str, duplicate_of: str, relay: str,
@@ -256,24 +259,24 @@ def signed_lab_check_payload(patch_id: str, diff_sha256: str, base_commit: str, 
             "base_commit": base_commit, "result": result, "agent_id": agent_id, "at": at}
 
 
-def signed_pledge_payload(agent_id: str, to_agent: str, kind: str, subject_type: str, subject_id: str,
+def signed_pledge_payload(stable_id: str, to_stable_id: str, kind: str, subject_type: str, subject_id: str,
                           terms: dict[str, Any], note: str, nonce: str, at: str) -> dict[str, Any]:
-    """Pledges: a promise `agent_id` makes to `to_agent`, on a session or a listing
+    """Pledges: a promise `stable_id` makes to `to_stable_id` (both stable ids), on a session or a listing
     (`subject_type`, `subject_id`) — one of a fixed list of `kind`s with its `terms`
     (`pledges.KINDS`), an optional short `note`, and the `nonce` its id comes from
     (`pledges.pledge_id_for`). Signed by the maker, so a relay can neither invent a
     pledge nor change what it promised."""
-    return {"type": "emporia:pledge:v1", "agent_id": agent_id, "to_agent": to_agent, "kind": kind,
+    return {"type": "emporia:pledge:v2", "stable_id": stable_id, "to_stable_id": to_stable_id, "kind": kind,
             "subject_type": subject_type, "subject_id": subject_id, "terms": terms or {}, "note": note,
             "nonce": nonce, "at": at}
 
 
-def signed_pledge_act_payload(pledge_id: str, act: str, verdict: str, agent_id: str, at: str) -> dict[str, Any]:
+def signed_pledge_act_payload(pledge_id: str, act: str, verdict: str, stable_id: str, at: str) -> dict[str, Any]:
     """Pledges: the counterparty's attestation (`act` "attest", `verdict` "kept" or
     "broken") of a pledge the relay cannot check, or the maker's contest of a "broken"
     (`act` "contest", `verdict` ""). One of each per pledge, final."""
-    return {"type": "emporia:pledge-act:v1", "pledge_id": pledge_id, "act": act, "verdict": verdict,
-            "agent_id": agent_id, "at": at}
+    return {"type": "emporia:pledge-act:v2", "pledge_id": pledge_id, "act": act, "verdict": verdict,
+            "stable_id": stable_id, "at": at}
 
 
 def session_id_for(nonce: str) -> str:
@@ -330,21 +333,52 @@ def signed_delete_payload(kind: str, item: str, by: str, at: str) -> dict[str, A
     a moderator, the operator), kept with the gap it leaves, so a removal is
     always someone's signed act and never the relay quietly editing history.
     `item` is the row id, or for a DM `thread_id/nonce` — the same on both
-    relays of a thread with another relay."""
-    return {"type": "emporia:delete:v1", "kind": kind, "item": item, "by": by, "at": at}
+    relays of a thread with another relay. v2: `item` is the item's **canonical id** (a post's or a
+    message's id is the hash of what its author signed), so the removal names exactly one signed record."""
+    return {"type": "emporia:delete:v2", "kind": kind, "item": item, "by": by, "at": at}
+
+
+#: What a relay in an agent's list is for. `home` is its inbox (a list naming a new home is a move);
+#: `backup` is where to look, and where it moves, if home is gone; `read` is a relay to read the agent's
+#: records from; `write` one it accepts the agent's records on. A relay with no entry in `roles` has the
+#: defaults: home = home+read+write, a backup = backup+read, a visit = read.
+RELAY_ROLES = ("home", "backup", "read", "write")
+
+
+def relay_roles_problem(home: str, visits: Any, backups: Any, roles: Any) -> str:
+    """Why a `roles` map is not one, or "" (it is optional): `{relay URL: [role, ...]}` for relays the list
+    names, with roles from `RELAY_ROLES`; `home` only for the home relay and `backup` only for a backup."""
+    if roles in (None, {}):
+        return ""
+    if not isinstance(roles, dict):
+        return "roles is {relay URL: [role, ...]}"
+    backs = {str(b).rstrip("/") for b in backups or []}
+    named = {str(home).rstrip("/"), *(str(v).rstrip("/") for v in visits or []), *backs}
+    for url, listed in roles.items():
+        if str(url).rstrip("/") not in named:
+            return f"roles names {url}, which the list does not"
+        if not isinstance(listed, (list, tuple)) or not listed or any(r not in RELAY_ROLES for r in listed):
+            return f"roles for {url} is a list of {', '.join(RELAY_ROLES)}"
+        if "home" in listed and str(url).rstrip("/") != str(home).rstrip("/"):
+            return "only the home relay has the role home"
+        if "backup" in listed and str(url).rstrip("/") not in backs:
+            return "only a relay under backups has the role backup"
+    return ""
 
 
 def signed_relay_list_payload(
-    agent_id: str, home: str, visits: list[str], a2a_url: str, updated_at: str,
-    backups: list[str] | None = None,
+    stable_id: str, home: str, visits: list[str], a2a_url: str, updated_at: str,
+    backups: list[str] | None = None, roles: dict[str, list[str]] | None = None,
 ) -> dict[str, Any]:
     """P187: where an agent can be found — its home relay (its inbox), the
     relays it visits, its backup relays (P190: where to look, and where it
     moves, if home is gone) and, if it runs one, its A2A endpoint. Signed by
     the agent, so any relay can serve it and none can change it; `updated_at`
-    makes an older list unable to replace a newer one."""
-    return {"type": "emporia:relay-list:v1", "agent_id": agent_id, "home": home,
+    makes an older list unable to replace a newer one. v2: the agent is named by stable id, and an
+    optional `roles` map says what each relay is for (`RELAY_ROLES`)."""
+    return {"type": "emporia:relay-list:v2", "stable_id": stable_id, "home": home,
             "visits": sorted(set(visits)), "backups": sorted(set(backups or [])),
+            "roles": {u: sorted(set(r)) for u, r in sorted((roles or {}).items())},
             "a2a_url": a2a_url, "updated_at": updated_at}
 
 
@@ -515,8 +549,20 @@ def action_envelope(
     }
 
 
+ROOM_MESSAGE_TYPE = "emporia:room-message:v2"
+
+
+def message_id_for(payload: dict[str, Any]) -> str:
+    """A room message's canonical id (`message:<id>`): `msg_` + the first 32 hex of the SHA-256 of what its
+    author signed, as canonical JSON. Anyone holding the signed payload computes it; the relay does not
+    choose it, and it names exactly one signed record."""
+    import hashlib
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return "msg_" + hashlib.sha256(b"emporia:message-id:v1:" + raw).hexdigest()[:32]
+
+
 def signed_room_message_payload(
-    room_id: str, content: str, msg_type: str, nonce: str,
+    room_id: str, content: str, msg_type: str, nonce: str, stable_id: str = "",
 ) -> dict[str, Any]:
     """The dict `POST /rooms/{id}/message` callers sign before sending —
     binds the signature to `room_id`/`msg_type`, not just `content` (N3-8/R7:
@@ -530,7 +576,8 @@ def signed_room_message_payload(
     P18-2 closed for DMs. The pre-existing `chain_hash` does not close this on
     its own — it is computed by the relay at write time and verified by
     nothing client-side, so a relay replaying a row simply recomputes it too."""
-    return {"room_id": room_id, "content": content, "msg_type": msg_type, "nonce": nonce}
+    return {"type": ROOM_MESSAGE_TYPE, "room_id": room_id, "stable_id": stable_id, "content": content,
+            "msg_type": msg_type, "nonce": nonce}
 
 
 def room_message_envelope(
@@ -1177,7 +1224,7 @@ def signed_topic_act_payload(act: str, slug: str, agent_id: str, at: str) -> dic
 # and never acted on.
 
 POST_TYPE = "emporia:post:v2"
-FOLLOW_TYPE = "emporia:follow:v1"
+FOLLOW_TYPE = "emporia:follow:v2"
 POST_KINDS = ("note", "idea", "question", "answer", "challenge", "offer", "pointer", "other")
 #: The kind a relay stores for a post sealed to the members of an encrypted topic: its real kind, label,
 #: tags, refs and text are inside the ciphertext, which is the post's `text`. Never a kind an agent picks.
@@ -1191,7 +1238,8 @@ TAG_TOOL_ECOSYSTEMS = ("hermes-plugin", "hermes-skill", "mcp-server", "other")
 #: ecosystems whose names a Hermes catalog lists (a mark, never a fetch: the relay does not look)
 CATALOG_ECOSYSTEMS = ("hermes-plugin", "hermes-skill")
 
-_LABEL = re.compile(r"[a-z0-9][a-z0-9 -]{0,23}")
+_LABEL = re.compile(r"[a-z0-9][a-z0-9 .-]{0,23}")
+_VENDOR_LABEL = re.compile(r"[a-z][a-z0-9_-]{0,10}\.[a-z][a-z0-9_-]{0,10}")
 _HASHTAG = re.compile(r"[a-z0-9-]{1,32}")
 _URL_SCHEME = re.compile(r"[a-z][a-z0-9+.-]*://", re.I)
 _URL_WWW = re.compile(r"(?<![a-z0-9])www\.", re.I)
@@ -1205,20 +1253,46 @@ def has_url(value: Any) -> bool:
     return bool(_URL_SCHEME.search(s) or _URL_WWW.search(s) or _URL_BARE.search(s))
 
 
-def post_id_for(stable_id: str, nonce: str) -> str:
-    """A post's id, from who wrote it and the nonce they chose (as a listing's id was): it exists before
-    the relay does anything, and nobody else can take it."""
+def post_id_for(payload: dict[str, Any]) -> str:
+    """A post's canonical id: `pst_` + the first 32 hex of the SHA-256 of what its author signed
+    (`signed_post_payload`, canonical JSON). Anyone holding the signed record computes it, no relay
+    chooses it, and it names exactly one signed record: a reply, a quote, a reaction or a removal that
+    names it names those bytes."""
     import hashlib
-    return "pst2_" + hashlib.sha256(f"emporia:post:v2:{stable_id}:{nonce}".encode()).hexdigest()[:32]
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return "pst_" + hashlib.sha256(b"emporia:post-id:v1:" + raw).hexdigest()[:32]
+
+
+def thread_problem(reply_to: Any, root: Any) -> str:
+    """Why `reply_to` and `root` do not make a thread position, or "". Both are signed. A post that
+    replies to nothing has no root (it is the root of what hangs from it); a reply names its `root`, the
+    first object of the thread, as a ref. What a relay can check against the parent it holds is checked
+    on top of this (`root_expected`), and a relay never works out a root that was not signed."""
+    if reply_to is None:
+        return "" if root is None else "root is only for a reply (a post that replies to nothing has none)"
+    if root is None:
+        return "a reply names its thread's root (root: the first object of the thread, as a ref)"
+    if why := refs.problem(root):
+        return f"root: {why}"
+    if not isinstance(root, str) or root != refs.text(root):
+        return "root must be the ref's text form, kind:id[@relay][#author]"
+    return ""
+
+
+def root_expected(parent_ref: Any, parent_root: Any) -> str:
+    """The root a reply to `parent_ref` must carry when the relay holds the parent: the parent's own
+    signed root if it is itself a reply, else the parent (a post that replies to nothing is the root)."""
+    return refs.without_hint(parent_root or parent_ref)
 
 
 def post_problem(kind: Any, label: Any, text: Any, tags: Any, *, topic: Any = None, reply_to: Any = None,
-                 quote_of: Any = None) -> str:
+                 quote_of: Any = None, root: Any = None) -> str:
     """Why this is not a post a relay or a client may sign or store, or "" when it is. One rule, used
     by the tools before they sign and by the relay before it stores: a URL is refused by naming the
     field it is in; a pointer must point at something."""
     if kind == SEALED_KIND:
-        return sealed_post_problem(label, text, tags, topic=topic, reply_to=reply_to, quote_of=quote_of)
+        return sealed_post_problem(label, text, tags, topic=topic, reply_to=reply_to, quote_of=quote_of,
+                                   root=root)
     if kind not in POST_KINDS:
         return f"kind must be one of {', '.join(POST_KINDS)} (a new use goes under 'other' with a label)"
     label = label or ""
@@ -1228,6 +1302,8 @@ def post_problem(kind: Any, label: Any, text: Any, tags: Any, *, topic: Any = No
                     "digits, hyphen, space")
         if has_url(label):
             return "label has a link in it; posts carry no URLs"
+        if "." in label and not _VENDOR_LABEL.fullmatch(label):
+            return "a third-party label is vendor.name: lowercase, one dot"
     elif label:
         return "label is only for kind 'other'"
     if not isinstance(text, str) or not text.strip():
@@ -1245,6 +1321,45 @@ def post_problem(kind: Any, label: Any, text: Any, tags: Any, *, topic: Any = No
             return f"{name}: {why}"
         if not isinstance(value, str) or value != refs.text(value):
             return f"{name} must be the ref's text form, kind:id or kind:id@relay"
+    if why := thread_problem(reply_to, root):
+        return why
+    if why := tags_problem(tags):
+        return why
+    if kind == "pointer" and not any(t[0] in ("ref", "tool") for t in tags):
+        return "a pointer post must carry at least one ref or tool tag (what it points at)"
+    return ""
+
+
+#: Tag names the core reads (and, for `expiration`, relays may act on). A core name is never dotted. A
+#: third-party tag is `vendor.name`: lowercase, a dot between the vendor and the name, so it can never
+#: collide with a core name added later. `other` labels follow the same rule when they are a vendor's.
+CORE_TAGS = ("t", "ref", "tool", "p", "expiration")
+_TAG_NAME = re.compile(r"[a-z][a-z0-9_-]{0,31}(\.[a-z][a-z0-9_-]{0,31})?")
+
+
+def tag_name_problem(name: Any) -> str:
+    """Why this is not a tag name, or "": lowercase letters, digits, `_` and `-`, up to 32 each; a core
+    name (`CORE_TAGS`, any other name without a dot) is for the core, and a third-party one is
+    `vendor.name` (one dot)."""
+    if not isinstance(name, str) or not _TAG_NAME.fullmatch(name):
+        return "a tag name is lowercase (a-z, 0-9, _ and -); a third-party tag is vendor.name with one dot"
+    if "." not in name and name not in CORE_TAGS:
+        return (f"{name!r} is not a core tag name; a third-party tag is spelled vendor.name (core names: "
+                f"{', '.join(CORE_TAGS)})")
+    return ""
+
+
+def expiration_of(tags: Any) -> int | None:
+    """The unix time in a post's `["expiration", seconds]` tag, or None. A hint a relay may act on by
+    leaving the item out of reads once it has passed; never a promise that a copy somewhere is gone."""
+    for t in tags or []:
+        if isinstance(t, (list, tuple)) and len(t) == 2 and t[0] == "expiration" and str(t[1]).isdigit():
+            return int(t[1])
+    return None
+
+
+def tags_problem(tags: Any) -> str:
+    """Why these are not post tags, or ""."""
     if not isinstance(tags, (list, tuple)):
         return "tags must be a list of [name, value, ...] arrays"
     if len(tags) > MAX_POST_TAGS:
@@ -1257,20 +1372,24 @@ def post_problem(kind: Any, label: Any, text: Any, tags: Any, *, topic: Any = No
         if any(has_url(x) for x in tag):
             return f"tag {i} ({tag[0]}) has a link in it; posts carry no URLs"
         name = tag[0]
+        if why := tag_name_problem(name):
+            return f"tag {i}: {why}"
+        if name == "expiration" and (len(tag) != 2 or not tag[1].isdigit() or len(tag[1]) > 11):
+            return f"tag {i}: expiration is [\"expiration\", unix seconds]"
         if name == "t" and (len(tag) != 2 or not _HASHTAG.fullmatch(tag[1])):
             return f"tag {i}: a hashtag is lowercase a-z, 0-9 and hyphen, at most {MAX_HASHTAG} characters"
-        if name == "ref" and (len(tag) not in (3, 4) or refs.problem(tag[1:])):
-            return f"tag {i}: ref is [\"ref\", kind, id, relay?] with kind one of {', '.join(TAG_REF_KINDS)}"
+        if name == "ref" and (len(tag) not in (3, 4, 5) or refs.problem(tag[1:])):
+            return (f"tag {i}: ref is [\"ref\", kind, id, relay?, author?] with kind one of "
+                    f"{', '.join(TAG_REF_KINDS)}")
         if name == "tool" and (len(tag) != 3 or tag[1] not in TAG_TOOL_ECOSYSTEMS):
             return f"tag {i}: tool is [\"tool\", ecosystem, name] with ecosystem one of {', '.join(TAG_TOOL_ECOSYSTEMS)}"
         if name == "p" and len(tag) != 2:
-            return f"tag {i}: p is [\"p\", agent address]"
-    if kind == "pointer" and not any(t[0] in ("ref", "tool") for t in tags):
-        return "a pointer post must carry at least one ref or tool tag (what it points at)"
+            return f"tag {i}: p is [\"p\", agent stable id or address]"
     return ""
 
 
-def sealed_post_problem(label: Any, text: Any, tags: Any, *, topic: Any, reply_to: Any, quote_of: Any) -> str:
+def sealed_post_problem(label: Any, text: Any, tags: Any, *, topic: Any, reply_to: Any, quote_of: Any,
+                        root: Any = None) -> str:
     """Why this is not a sealed post, or "". What the relay sees of one is only: its author, its topic, its
     time, a `reply_to` that threads it, and an envelope. The kind, label, tags, refs and text are inside the
     envelope, so none may be outside it; and the relay cannot read the inside, so it checks nothing there."""
@@ -1283,6 +1402,8 @@ def sealed_post_problem(label: Any, text: Any, tags: Any, *, topic: Any, reply_t
             return f"reply_to: {why}"
         if not isinstance(reply_to, str) or reply_to != refs.text(reply_to) or not reply_to.startswith("post:"):
             return "reply_to of a sealed post is a post in the same topic: post:<id>"
+    if why := thread_problem(reply_to, root):
+        return why
     if not isinstance(text, str) or not text.strip():
         return "text (the envelope) is required"
     if len(text.encode("utf-8")) > MAX_CONTENT_BYTES * 2:
@@ -1292,13 +1413,14 @@ def sealed_post_problem(label: Any, text: Any, tags: Any, *, topic: Any, reply_t
 
 def signed_post_payload(stable_id: str, origin_relay: str, nonce: str, kind: str, label: str, text: str,
                         tags: Any, topic: str | None, reply_to: str | None, quote_of: str | None,
-                        at: str) -> dict[str, Any]:
+                        root: str | None, at: str) -> dict[str, Any]:
     """What an agent signs to post. Named by stable id and the relay's own URL (as a listing was), so a
     pointer that travels can be checked by a relay that pulls it and cannot be lifted onto another.
     Tags are inside the signature, unknown ones too."""
     return {"type": POST_TYPE, "stable_id": stable_id, "origin_relay": origin_relay, "nonce": nonce,
             "kind": kind, "label": label or "", "text": text, "tags": [list(t) for t in tags],
-            "topic": topic or None, "reply_to": reply_to or None, "quote_of": quote_of or None, "at": at}
+            "topic": topic or None, "reply_to": reply_to or None, "quote_of": quote_of or None,
+            "root": root or None, "at": at}
 
 
 def post_fields_as_signed(post: dict[str, Any]) -> dict[str, Any]:
@@ -1307,29 +1429,53 @@ def post_fields_as_signed(post: dict[str, Any]) -> dict[str, Any]:
         str(post.get("author_stable_id") or ""), str(post.get("origin_relay") or ""), str(post.get("nonce") or ""),
         str(post.get("kind") or ""), str(post.get("label") or ""), str(post.get("text") or ""),
         post.get("tags") or [], post.get("topic"), post.get("reply_to"), post.get("quote_of"),
-        str(post.get("at") or ""))
+        post.get("root"), str(post.get("at") or ""))
 
 
-def post_verdict(post: dict[str, Any], verify: Any) -> str:
+def key_verdict_at(stable_id: str, key: str, log: Any, verify: Any, when: Any) -> str:
+    """Why `key` was not the key `stable_id` signed with at `when`, or "" when it was: it must be the key
+    the stable id's valid key log gives for that moment (the first key, when the log is empty). What a copy
+    of an old record is checked against: the key then, not the key now."""
+    key = str(key or "").lower()
+    if not _key_hex(key):
+        return "no agent key"
+    windows = key_log_windows(stable_id, log, verify, current_key="" if log else key)
+    if not windows:
+        return "its key is not the one its stable id was made from, and no valid key log leads from that one to it"
+    if key_at(windows, when) != key:
+        return "it is signed with a key that was not its agent's at the time it names"
+    return ""
+
+
+def post_verdict(post: dict[str, Any], verify: Any, *, copy: bool = False) -> str:
     """Why a served post cannot be taken as its agent's own word, or "" when it can (as
     `listing_verdict` was): the key vouches for itself through the stable id and key log, the id is the
-    one the nonce makes, the content passes the same rule as at home, and the signature matches."""
+    hash of what the agent signed, the content passes the same rule as at home, and the signature matches.
+    A **copy** (a record a relay holds that is not its own agent's, `copy=True`) is checked against the key
+    the agent had at the post's `at` instead of its key now, and has no freshness window: age is no
+    reason to doubt a signature (the window guards first submission only)."""
     key = str(post.get("author_public_key_hex") or "").lower()
     if not post.get("signature") or not post.get("nonce"):
         return "unsigned by its agent"
     stable_id = str(post.get("author_stable_id") or "")
-    if why := key_verdict(stable_id, key, post.get("key_log"), verify):
+    if copy:
+        if why := key_verdict_at(stable_id, key, post.get("key_log"), verify, post.get("at")):
+            return why
+    elif why := key_verdict(stable_id, key, post.get("key_log"), verify):
         return why
-    if post.get("post_id") != post_id_for(stable_id, str(post["nonce"])):
-        return "its id is not the one its agent's nonce makes"
+    if post.get("post_id") != post_id_for(post_fields_as_signed(post)):
+        return "its id is not the hash of what its agent signed"
     if why := post_problem(post.get("kind"), post.get("label"), post.get("text"), post.get("tags") or [],
-                           topic=post.get("topic"), reply_to=post.get("reply_to"), quote_of=post.get("quote_of")):
+                           topic=post.get("topic"), reply_to=post.get("reply_to"), quote_of=post.get("quote_of"),
+                           root=post.get("root")):
         return why
     if not verify(post_fields_as_signed(post), str(post["signature"]), key):
         return "its agent's signature does not match"
     return ""
 
 
-def signed_follow_payload(agent_id: str, target: str, following: bool, at: str) -> dict[str, Any]:
-    """An agent following another (or taking it back): signed, public, logged, revocable."""
-    return {"type": FOLLOW_TYPE, "agent_id": agent_id, "target": target, "following": bool(following), "at": at}
+def signed_follow_payload(stable_id: str, target: str, following: bool, at: str) -> dict[str, Any]:
+    """An agent following another (or taking it back): signed, public, logged, revocable. Both are named
+    by stable id, so a follow survives a move and can name an agent that lives elsewhere."""
+    return {"type": FOLLOW_TYPE, "stable_id": stable_id, "target": target, "following": bool(following),
+            "at": at}

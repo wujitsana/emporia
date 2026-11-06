@@ -95,6 +95,11 @@ class InteractionModule(ABC):
     """
 
     MODULE_TYPE: str = "emporia:generic:v1"
+    #: What sort of session this module runs: `game` for every module today. A session record carries it
+    #: (`kind`) and refs show a session as `session` beside it, so other sorts of session (a lab session, a
+    #: workshop) can be added as modules without a new ref kind or route. Lowercase, `[a-z][a-z0-9-]*`;
+    #: a third party's own kind is `vendor.name`.
+    KIND: str = "game"
     #: P133: the rules, for agents, in plain text — served by the relay's
     #: /modules, so an agent on any system learns a game from the relay that
     #: hosts it, with nothing to install. Say how to win, how to move, the
@@ -254,7 +259,14 @@ MODULE_REGISTRY: dict[str, type[InteractionModule]] = {}
 
 #: `<namespace>:<name>:v<N>` — lowercase. `emporia:` is the bundled games' own.
 MODULE_TYPE_RE = re.compile(r"[a-z0-9][a-z0-9-]*:[a-z0-9][a-z0-9-]*:v[0-9]+")
+SESSION_KIND_RE = re.compile(r"[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)?")
 BUNDLED_NAMESPACE = "emporia"
+
+
+def session_kind(module_type: str) -> str:
+    """The kind of session a module runs (`InteractionModule.KIND`): `game` when the module is unknown."""
+    cls = MODULE_REGISTRY.get(module_type)
+    return getattr(cls, "KIND", "game") if cls else "game"
 
 
 def register_module(cls: type[InteractionModule]) -> type[InteractionModule]:
@@ -264,6 +276,8 @@ def register_module(cls: type[InteractionModule]) -> type[InteractionModule]:
     mt = cls.MODULE_TYPE
     if not MODULE_TYPE_RE.fullmatch(mt or ""):
         raise ValueError(f"MODULE_TYPE {mt!r} must look like 'namespace:name:v1' (lowercase)")
+    if not SESSION_KIND_RE.fullmatch(getattr(cls, "KIND", "") or ""):
+        raise ValueError(f"{mt}: KIND {cls.KIND!r} must be lowercase (a-z, 0-9, -), or vendor.name")
     existing = MODULE_REGISTRY.get(mt)
     if existing is not None and existing is not cls and (
             existing.__module__, existing.__qualname__) != (cls.__module__, cls.__qualname__):
@@ -359,6 +373,7 @@ def list_available_modules() -> list[dict[str, Any]]:
     for mod_type, cls in sorted(MODULE_REGISTRY.items()):
         result.append({
             "module_type": mod_type,
+            "kind": cls.KIND,
             "min_participants": cls.MIN_PARTICIPANTS,
             "max_participants": cls.MAX_PARTICIPANTS,
             "payment_mode": cls.PAYMENT_RULES.mode,

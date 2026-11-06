@@ -53,10 +53,19 @@ def enabled() -> bool:
     return os.getenv("EMPORIA_FEDERATED_DMS", "").strip() == "1" and relay_access.federates()
 
 
-def thread_id_for(a: str, b: str) -> str:
-    """The same id on both relays: it is named by the two addresses."""
-    first, second = sorted((a, b))
-    return "dmx_" + hashlib.sha256(f"{first}|{second}".encode()).hexdigest()[:20]
+_THREAD_ID = re.compile(r"dmx_[0-9a-f]{20}")
+
+
+def new_thread_id() -> str:
+    """The id of a thread with another relay's agent: random, chosen by whoever begins it. It is **opaque**:
+    unlike an id derived from the two addresses (which anyone could recompute to see who talks to whom), it
+    says nothing. Both relays learn it from the first message and each holds the pairing."""
+    import secrets
+    return "dmx_" + secrets.token_hex(10)
+
+
+def thread_id_ok(value: Any) -> bool:
+    return isinstance(value, str) and bool(_THREAD_ID.fullmatch(value))
 
 
 def linked_peer(host: str) -> str:

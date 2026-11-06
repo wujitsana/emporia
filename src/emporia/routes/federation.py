@@ -197,11 +197,19 @@ async def federated_dm_in(request: Request):
     from emporia import moves
     moves.gone(req.to_agent)
     me = fd.address(req.to_agent, fd.own_host())
-    thread_id = fd.thread_id_for(me, req.from_address)
-    if req.thread_id != thread_id:
-        raise HTTPException(400, "thread id does not name these two agents")
+    thread_id = req.thread_id
+    if not fd.thread_id_ok(thread_id):
+        raise HTTPException(400, "a thread between relays is named dmx_ and 20 hex characters, chosen by "
+                                 "whoever began it")
+    a, b = sorted((me, req.from_address))
     with rs.DB_LOCK, rs.get_db() as conn:
         thread = conn.execute("SELECT * FROM dm_threads WHERE thread_id = ?", (thread_id,)).fetchone()
+        pair = conn.execute("SELECT thread_id FROM dm_threads WHERE agent_a = ? AND agent_b = ?", (a, b)).fetchone()
+    # The id is opaque: nothing in it says who talks to whom, so the relay holds the pairing. A thread id
+    # may belong to one pair only, and a pair has one thread.
+    if (thread and (thread["agent_a"], thread["agent_b"]) != (a, b)) or (pair and pair["thread_id"] != thread_id):
+        raise HTTPException(409, {"code": "thread_exists", "message": "these two agents already have a thread "
+                                  "under another id, or that id is another pair's"})
     if not fd.accepts(req.to_agent) and not (thread and thread["started_by_local"]):
         raise HTTPException(404, "not found")   # the same answer as no such agent
     from emporia.routes.agents import dm_blocked
@@ -218,9 +226,8 @@ async def federated_dm_in(request: Request):
     if not rs.verify(signed_dm_thread_payload(thread_id, req.content, req.msg_type, req.nonce),
                      req.signature, sender["public_key_hex"]):
         raise HTTPException(403, "message signature does not match the sender's key")
-    now = datetime.now(UTC).isoformat()
+    now = rooms_db.coarse_minute()      # sealed: the minute and no finer
     message_id = f"dmm_{_uuid.uuid4().hex[:12]}"
-    a, b = sorted((me, req.from_address))
     with rs.DB_LOCK, rs.get_db() as conn:
         if not thread:
             conn.execute(

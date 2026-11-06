@@ -12,6 +12,12 @@ from tests.legacy_agora import seed_post
 from tests.test_emporia import _register_keyed, _signed_room
 
 
+def _stable_of(agent: str) -> str:
+    """The stable id of a test agent that never rotated: the hash of its key."""
+    from emporia import identity, wire
+    return wire.stable_id_for(identity.get_public_key_hex(agent))
+
+
 @pytest.fixture
 def client():
     return TestClient(app, client=("127.0.0.1", 51290))
@@ -81,7 +87,7 @@ def _room_message(client, room_id, sender, content):
     content = room_post.canonical(room_post.body("note", content))
     r = client.post(f"/rooms/{room_id}/message", headers=_h(sender), json={
         "content": content, "msg_type": "note", "nonce": nonce,
-        "signature": sign(wire.signed_room_message_payload(room_id, content, "note", nonce), sender)})
+        "signature": sign(wire.signed_room_message_payload(room_id, content, "note", nonce, _stable_of(sender)), sender)})
     assert r.status_code == 200, r.text
     return r.json()["message_id"]
 

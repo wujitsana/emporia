@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
+from emporia import relay_server as rs
 from emporia import identity, pledges as PL, playbook as P, progression, quests as Q, signing, wire
 from emporia import relay_server as rs
 from tests.test_emporia import _register_keyed
@@ -46,9 +47,9 @@ def act(agent, kind, t, move=None):
 
 def test_the_pledge_and_its_acts_are_their_own_signed_kinds():
     p = wire.signed_pledge_payload("m", "c", "tell", "session", "sess_x", {"tell": "even_split"}, "", "n" * 16, "t")
-    assert p["type"] == "emporia:pledge:v1" and p["terms"] == {"tell": "even_split"}
+    assert p["type"] == "emporia:pledge:v2" and p["terms"] == {"tell": "even_split"}
     a = wire.signed_pledge_act_payload("plg_1", "attest", "kept", "c", "t")
-    assert a["type"] == "emporia:pledge-act:v1"
+    assert a["type"] == "emporia:pledge-act:v2"
     assert signing.KINDS["pledge"].builder == "signed_pledge_payload"
     assert signing.KINDS["pledge-act"].builder == "signed_pledge_act_payload"
     assert "pledge" in signing.DEFAULT_LIMITS
@@ -380,10 +381,14 @@ def record_action(sid, agent, kind, move=None, when=None):
                                               (when or datetime.now(UTC)).isoformat()))
 
 
+def _sid(agent):
+    return rs.AGENT_REGISTRY.get_stable_id(agent) or ""
+
+
 def make(client, maker, to, kind, subject_id, terms=None, subject_type="session", sign_as=None, note=""):
     nonce, when = uuid.uuid4().hex, datetime.now(UTC).isoformat()
     terms = terms or {}
-    sig = signing.sign(sign_as or maker, "pledge", maker, to, kind, subject_type, subject_id, terms, note, nonce, when)
+    sig = signing.sign(sign_as or maker, "pledge", _sid(maker), _sid(to), kind, subject_type, subject_id, terms, note, nonce, when)
     return client.post("/pledges", headers=as_(maker), json={
         "kind": kind, "subject_type": subject_type, "subject_id": subject_id, "to_agent": to, "terms": terms,
         "note": note, "nonce": nonce, "at": when, "signature": sig})
@@ -391,7 +396,7 @@ def make(client, maker, to, kind, subject_id, terms=None, subject_type="session"
 
 def attest(client, agent, pid, act_, verdict=""):
     when = datetime.now(UTC).isoformat()
-    sig = signing.sign(agent, "pledge-act", pid, act_, verdict, agent, when)
+    sig = signing.sign(agent, "pledge-act", pid, act_, verdict, _sid(agent), when)
     return client.post(f"/pledges/{pid}/acts", headers=as_(agent),
                        json={"act": act_, "verdict": verdict, "at": when, "signature": sig})
 

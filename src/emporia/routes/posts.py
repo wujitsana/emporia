@@ -41,12 +41,13 @@ class PostIn(BaseModel):
     topic: str | None = None
     reply_to: str | None = None
     quote_of: str | None = None
+    root: str | None = None
     at: str
     signature: str
 
 
 class FollowIn(BaseModel):
-    target: str
+    target: str          # the agent's stable id
     following: bool = True
     at: str
     signature: str
@@ -107,7 +108,8 @@ def _item(r, host: str, likes: int, replies: int, reactions: dict | None = None)
     return {
         "post_id": r["post_id"], "kind": r["kind"], "label": r["label"], "text": r["text"], "tags": tags,
         "topic": r["topic"], "reply_to": r["reply_to"], "quote_of": r["quote_of"], "at": r["at"],
-        "author_id": r["author_id"], "nonce": r["nonce"], "signature": r["signature"],
+        "author_id": r["author_id"], "author_stable_id": r["author_stable_id"], "nonce": r["nonce"],
+        "signature": r["signature"], "copy": bool(r["is_copy"]),
         "author_address": r["author_id"] if federated else address(r["author_id"], host),
         "author_fingerprint": fingerprint(r["author_public_key_hex"]),
         "origin_relay": r["origin_relay"], "elsewhere": federated,
@@ -165,7 +167,8 @@ def topic_posts(conn, caller: str | None, slug: str, limit: int, flair: str = ""
     """The top-level post:v2 posts of a topic the caller may read, newest first, decorated."""
     host = rs._own_host()
     rows = conn.execute("SELECT * FROM posts WHERE topic = ? AND reply_to IS NULL AND is_deleted = 0 "
-                        "ORDER BY at DESC, rowid DESC LIMIT ?", (slug, limit * 3)).fetchall()
+                        "AND (expires_at IS NULL OR expires_at > ?) ORDER BY at DESC, rowid DESC LIMIT ?",
+                        (slug, int(datetime.now(UTC).timestamp()), limit * 3)).fetchall()
     if flair:
         rows = [r for r in rows if flair in (r["label"], r["kind"])]
     rows = rows[:limit]
@@ -181,9 +184,9 @@ def _reply_counts(conn, ids: list[str]) -> dict[str, int]:
     if not ids:
         return {}
     marks = ",".join("?" * len(ids))
-    return {r["reply_to"]: r["n"] for r in conn.execute(
-        f"SELECT reply_to, COUNT(*) AS n FROM posts WHERE is_deleted = 0 AND reply_to IN ({marks}) "
-        f"GROUP BY reply_to", [f"post:{i}" for i in ids])}
+    return {r["reply_key"]: r["n"] for r in conn.execute(
+        f"SELECT reply_key, COUNT(*) AS n FROM posts WHERE is_deleted = 0 AND reply_key IN ({marks}) "
+        f"GROUP BY reply_key", [f"post:{i}" for i in ids])}
 
 
 def _object_problem(conn, caller: str, ref: dict[str, str], cache: dict) -> tuple[int, str] | None:
@@ -210,9 +213,9 @@ def _object_problem(conn, caller: str, ref: dict[str, str], cache: dict) -> tupl
                                            t["topic_id"], conn):
             return 403, "a topic you are not a member of"
     elif k == "agent":
-        if not conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (i,)).fetchone():
-            return 404, "no agent by that id"
-    elif k == "game":
+        if not conn.execute("SELECT 1 FROM authorized_agents WHERE stable_id = ?", (i,)).fetchone():
+            return 404, "no agent by that stable id"
+    elif k == "session":
         row = conn.execute("SELECT * FROM sessions WHERE session_id = ?", (i,)).fetchone()
         if not row or (rs._session_visibility(rs._session_row_to_dict(row)) != "public"
                        and caller not in rs._session_row_to_dict(row)["participants"]):
@@ -255,7 +258,7 @@ async def create_post(req: PostIn, request: Request):
         raise HTTPException(400, "nonce must be 32-64 hex characters")
     sealed = req.kind == wire.SEALED_KIND
     if why := wire.post_problem(req.kind, req.label, req.text, req.tags, topic=req.topic,
-                                reply_to=req.reply_to, quote_of=req.quote_of):
+                                reply_to=req.reply_to, quote_of=req.quote_of, root=req.root):
         raise HTTPException(400, why)
     _fresh(req.at)
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -264,7 +267,7 @@ async def create_post(req: PostIn, request: Request):
     key = (row["public_key_hex"] or "").lower() if row else ""
     stable_id = row["stable_id"] if row else ""
     signed = wire.signed_post_payload(stable_id, rs.RELAY_BASE_URL, req.nonce, req.kind, req.label, req.text,
-                                      req.tags, req.topic, req.reply_to, req.quote_of, req.at)
+                                      req.tags, req.topic, req.reply_to, req.quote_of, req.root, req.at)
     if not key or not rs.verify(signed, req.signature, key):
         raise HTTPException(403, "post signature does not match this agent's key (sign emporia:post:v2 for "
                                  "this relay's relay_url, as /health gives it)")
@@ -273,7 +276,7 @@ async def create_post(req: PostIn, request: Request):
             await rs._assert_payload_safe_counted({"text": req.text, "label": req.label, "tags": req.tags})
         except PermissionError as e:
             raise HTTPException(403, str(e))
-    post_id = wire.post_id_for(stable_id, req.nonce)
+    post_id = wire.post_id_for(signed)
     now = datetime.now(UTC).isoformat()
     with rs.DB_LOCK, rs.get_db() as conn:
         if req.topic:
@@ -292,25 +295,26 @@ async def create_post(req: PostIn, request: Request):
                 raise HTTPException(400, bad)
         if bad := _starter_limit(conn, caller, req.kind):
             raise HTTPException(*bad)
-        root = None
+        root = req.root
         for name, ref in (("reply_to", req.reply_to), ("quote_of", req.quote_of)):
             if not ref:
                 continue
             parsed = refs.parse(ref)
             if bad := _object_problem(conn, caller, parsed, {}):
                 raise HTTPException(bad[0], f"{name}: {bad[1]}")
-            if name == "reply_to":
-                parent = conn.execute("SELECT root FROM posts WHERE post_id = ?", (parsed["id"],)).fetchone() \
-                    if parsed["kind"] == "post" and not parsed.get("relay") else None
-                root = (parent["root"] if parent and parent["root"] else ref)
+            if name == "reply_to" and (why := _root_problem(conn, parsed, ref, req.root)):
+                raise HTTPException(400, why)
         try:
             conn.execute(
                 "INSERT INTO posts (post_id, author_id, author_stable_id, author_public_key_hex, origin_relay, "
                 "federated_from, nonce, kind, label, text, tags_json, topic, reply_to, quote_of, root, at, signature, "
-                "key_log_json, is_deleted, recorded_at) VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?,?,?,?,?,?,?,0,?)",
+                "key_log_json, is_deleted, recorded_at, reply_key, root_key, is_copy, expires_at) "
+                "VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,0,?)",
                 (post_id, caller, stable_id, key, rs.RELAY_BASE_URL, req.nonce, req.kind, req.label, req.text,
                  json.dumps(req.tags), req.topic, req.reply_to, req.quote_of, root, req.at, req.signature,
-                 json.dumps(rs.agent_key_log(conn, stable_id)), now))
+                 json.dumps(rs.agent_key_log(conn, stable_id)), now,
+                 refs.without_hint(req.reply_to) if req.reply_to else None,
+                 refs.without_hint(root) if root else None, wire.expiration_of(req.tags)))
         except sqlite3.IntegrityError as e:
             raise HTTPException(409, {"code": wire.ERR_DUPLICATE_NONCE, "message": "already posted"}) from e
         opened = _record_openings(conn, caller, post_id, req.reply_to, req.tags, now)
@@ -321,6 +325,49 @@ async def create_post(req: PostIn, request: Request):
         await rs.broadcast_global({"type": "post_created", "post_id": post_id, "kind": req.kind,
                                    "author_id": caller, "preview": req.text[:200]})
     return {"post_id": post_id, "kind": req.kind, "author_id": caller, "root": root, "opened": opened}
+
+
+def _expected_root(conn, parsed: dict[str, str], reply_to: str) -> str:
+    """The root a reply to `parsed` must carry, when this relay can tell: the root its parent is in (the
+    parent's own signed root, or the parent itself when it replies to nothing). "" for a parent on another
+    relay, which is taken as the author named it."""
+    local = not parsed.get("relay") or same_host(parsed["relay"], rs._own_host())
+    if not local:
+        return ""
+    if parsed["kind"] == "post":
+        row = conn.execute("SELECT root FROM posts WHERE post_id = ?", (parsed["id"],)).fetchone()
+        return wire.root_expected(reply_to, row["root"] if row else None)
+    if parsed["kind"] == "message":
+        row = conn.execute("SELECT root FROM room_messages WHERE message_id = ?", (parsed["id"],)).fetchone()
+        return wire.root_expected(reply_to, row["root"] if row else None) if row else ""
+    return refs.without_hint(reply_to)    # an object with no parent of its own is its thread's root
+
+
+def _root_problem(conn, parsed: dict[str, str], reply_to: str, root: str | None) -> str:
+    """Why the signed `root` of a reply is not the root of the thread its parent is in, or "". The relay
+    only checks it against a parent it holds; it never fills one in."""
+    expected = _expected_root(conn, parsed, reply_to)
+    if expected and not refs.same_object(root or "", expected):
+        return (f"root must be {expected}: the first object of the thread the post you reply to is in "
+                "(it is signed, so the relay checks it and never works it out for you)")
+    return ""
+
+
+@router.get("/roots")
+async def thread_root(ref: str, request: Request):
+    """The `root` to sign in a reply to `ref`: what the relay would accept for it. A convenience for clients
+    that have not read the parent; the relay still checks the signed value and never fills one in."""
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    try:
+        parsed = refs.parse(ref)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if bad := _object_problem(conn, caller, parsed, {}):
+            raise HTTPException(bad[0], bad[1])
+        return {"ref": refs.text(parsed), "root": _expected_root(conn, parsed, ref) or refs.without_hint(ref)}
 
 
 def _sealing_problem(conn, t, sealed: bool, req: PostIn) -> tuple[int, Any] | None:
@@ -472,7 +519,8 @@ async def read_feed(request: Request, kind: str = "", tag: str = "", following_o
     # `best` counts likes over a window (7d unless told); the old `likes` counts them all
     cutoff = _since_iso(window or "7d") if raw_sort == "best" or (sort == "best" and window) else ""
     with rs.DB_LOCK, rs.get_db() as conn:
-        where, params = ["is_deleted = 0", "reply_to IS NULL"], []
+        where, params = ["is_deleted = 0", "reply_to IS NULL", "(expires_at IS NULL OR expires_at > ?)"], \
+            [int(datetime.now(UTC).timestamp())]    # a post past its `expiration` tag is left out of reads
         if kind:
             where.append("kind = ?")
             params.append(kind)
@@ -533,7 +581,8 @@ async def read_feed(request: Request, kind: str = "", tag: str = "", following_o
 
 
 def _thread_rows(conn, caller: str | None, ref: str, limit: int) -> list:
-    rows = conn.execute("SELECT * FROM posts WHERE is_deleted = 0 AND (reply_to = ? OR root = ?) "
+    ref = refs.without_hint(ref)
+    rows = conn.execute("SELECT * FROM posts WHERE is_deleted = 0 AND (reply_key = ? OR root_key = ?) "
                         "ORDER BY at, rowid LIMIT ?", (ref, ref, limit * 3)).fetchall()
     cache: dict = {}
     return [r for r in rows if _readable(conn, caller, r["topic"], cache)][:limit]
@@ -631,29 +680,34 @@ async def follow(req: FollowIn, request: Request):
     if when is None:
         raise HTTPException(400, "at must be an ISO 8601 time")
     _fresh(req.at)
-    if req.target == caller:
+    if not refs.is_stable_id(req.target):
+        raise HTTPException(400, "target is the agent's stable id (64 hex characters), not a name")
+    mine = rs.AGENT_REGISTRY.get_stable_id(caller) or ""
+    if req.target == mine:
         raise HTTPException(400, "you cannot follow yourself")
     with rs.DB_LOCK, rs.get_db() as conn:
-        if not conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (req.target,)).fetchone():
-            raise HTTPException(404, "no agent by that id on this relay (following an agent on another "
-                                     "relay is not supported yet)")
+        row = conn.execute("SELECT agent_id FROM authorized_agents WHERE stable_id = ?", (req.target,)).fetchone()
+    if not row:
+        raise HTTPException(404, "no agent by that stable id on this relay (an agent that lives elsewhere "
+                                 "cannot be followed from here yet)")
+    target = row["agent_id"]
     if not rs.AGENT_REGISTRY.verify_signature(
-            caller, wire.signed_follow_payload(caller, req.target, req.following, req.at), req.signature):
-        raise HTTPException(403, "the follow's signature does not verify against your key (sign agent_id, "
-                                 "target, following, at)")
+            caller, wire.signed_follow_payload(mine, req.target, req.following, req.at), req.signature):
+        raise HTTPException(403, "the follow's signature does not verify against your key (sign stable_id, "
+                                 "target (a stable id), following, at)")
     with rs.DB_LOCK, rs.get_db() as conn:
         prev = conn.execute("SELECT at FROM follows WHERE agent_id = ? AND target = ?",
-                            (caller, req.target)).fetchone()
+                            (caller, target)).fetchone()
         if prev:
             recorded = wire.when_of(prev["at"])
             if recorded is None or recorded >= when:
                 raise HTTPException(409, "a newer follow or unfollow of this agent is already recorded")
         conn.execute("INSERT OR REPLACE INTO follows (agent_id, target, following, at, signature) "
-                     "VALUES (?,?,?,?,?)", (caller, req.target, int(req.following), req.at, req.signature))
+                     "VALUES (?,?,?,?,?)", (caller, target, int(req.following), req.at, req.signature))
         row = conn.execute("SELECT rowid FROM follows WHERE agent_id = ? AND target = ?",
-                           (caller, req.target)).fetchone()
+                           (caller, target)).fetchone()
         translog.log_row(conn, "follow", row[0] if row else None)
-    return {"agent_id": caller, "target": req.target, "following": req.following}
+    return {"agent_id": caller, "target": target, "target_stable_id": req.target, "following": req.following}
 
 
 @router.get("/follows")
@@ -663,6 +717,69 @@ async def list_follows(agent_id: str):
         out = sorted(_following(conn, agent_id))
         n = conn.execute("SELECT COUNT(*) FROM follows WHERE target = ? AND following = 1", (agent_id,)).fetchone()[0]
     return {"agent_id": agent_id, "following": out, "followers": n}
+
+
+class CopyIn(BaseModel):
+    post: dict[str, Any]      # a post as `served()` gives it: the signed fields, key, key log and signature
+
+
+def copies_enabled() -> bool:
+    """Whether this relay keeps signed records of agents that do not live here (`EMPORIA_ACCEPT_COPIES=1`):
+    its operator's choice, off by default. What it keeps is flagged `copy`."""
+    import os
+    return os.getenv("EMPORIA_ACCEPT_COPIES", "").strip() == "1"
+
+
+@router.post("/posts/copy")
+async def accept_copy(req: CopyIn, request: Request):
+    """Keep a post an agent of another relay signed, as a **copy**. The freshness window of first
+    submission (`at` within ten minutes) does not apply: the record is old by nature, and its signature
+    is what vouches for it. What is checked instead: the agent's signature, that the key was the agent's
+    at the post's `at` (its stable id and key log), that the id is the hash of what it signed, the post
+    rules, and that the agent does not live here (a resident posts first-hand). Flagged `copy: true`
+    with the `origin_relay` the post names; a copy is served, never counted toward anything."""
+    from emporia.addresses import address, host_of
+    from emporia.identity import normalize_peer_url
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    rs._require_registered(caller)
+    rs._enforce_agent_rate_limit(caller)
+    if not copies_enabled():
+        raise HTTPException(403, "this relay does not keep copies of other relays' posts (its operator decides: "
+                                 "EMPORIA_ACCEPT_COPIES)")
+    post = req.post
+    if why := wire.post_verdict(post, rs.verify, copy=True):
+        raise HTTPException(400, f"not a post its agent signed: {why}")
+    origin = str(post.get("origin_relay") or "")
+    if not origin or same_host(host_of(origin), rs._own_host()):
+        raise HTTPException(400, "a post of this relay's own is not a copy")
+    if post.get("kind") == wire.SEALED_KIND or post.get("topic"):
+        raise HTTPException(400, "only feed posts are copied (not a topic's, and never a sealed one)")
+    try:
+        await rs._assert_payload_safe_counted({"text": post["text"], "label": post.get("label", ""),
+                                               "tags": post.get("tags") or []})
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if conn.execute("SELECT 1 FROM authorized_agents WHERE stable_id = ?",
+                        (post["author_stable_id"],)).fetchone():
+            raise HTTPException(409, "that agent lives here: its posts are made here, not copied")
+        if conn.execute("SELECT 1 FROM posts WHERE post_id = ?", (post["post_id"],)).fetchone():
+            return {"post_id": post["post_id"], "copy": True, "kept": False, "note": "already held"}
+        conn.execute(
+            "INSERT INTO posts (post_id, author_id, author_stable_id, author_public_key_hex, origin_relay, "
+            "federated_from, nonce, kind, label, text, tags_json, topic, reply_to, quote_of, root, at, signature, "
+            "key_log_json, is_deleted, recorded_at, reply_key, root_key, is_copy, expires_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,?,?,?,?,?,?,0,?,?,?,1,?)",
+            (post["post_id"], address(str(post.get("author_id") or ""), host_of(origin)), post["author_stable_id"],
+             str(post["author_public_key_hex"]).lower(), origin, normalize_peer_url(origin), post["nonce"],
+             post["kind"], post.get("label") or "", post["text"], json.dumps(post.get("tags") or []),
+             post.get("reply_to"), post.get("quote_of"), post.get("root"), post["at"], post["signature"],
+             json.dumps(post.get("key_log") or []), datetime.now(UTC).isoformat(),
+             refs.without_hint(post["reply_to"]) if post.get("reply_to") else None,
+             refs.without_hint(post["root"]) if post.get("root") else None, wire.expiration_of(post.get("tags"))))
+    return {"post_id": post["post_id"], "copy": True, "kept": True, "origin_relay": origin}
 
 
 @router.get("/federation/v1/posts")
@@ -691,5 +808,5 @@ def served(r) -> dict[str, Any]:
             "author_public_key_hex": r["author_public_key_hex"], "origin_relay": r["origin_relay"],
             "nonce": r["nonce"], "kind": r["kind"], "label": r["label"], "text": r["text"],
             "tags": json.loads(r["tags_json"]), "topic": r["topic"], "reply_to": r["reply_to"],
-            "quote_of": r["quote_of"], "at": r["at"], "signature": r["signature"],
+            "quote_of": r["quote_of"], "root": r["root"], "at": r["at"], "signature": r["signature"],
             "key_log": json.loads(r["key_log_json"] or "[]")}

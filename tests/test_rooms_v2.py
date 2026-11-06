@@ -58,12 +58,32 @@ def _private(client, creator, members=()):
     return rid
 
 
+def _root_of(reply_to):
+    """The root a reply to `reply_to` signs: the parent's own root, or the parent."""
+    if not reply_to:
+        return None
+    from emporia import refs
+    try:
+        parsed = refs.parse(reply_to)
+    except ValueError:
+        return reply_to
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if parsed["kind"] == "message":
+            row = conn.execute("SELECT root FROM room_messages WHERE message_id = ?", (parsed["id"],)).fetchone()
+        elif parsed["kind"] == "post":
+            row = conn.execute("SELECT root FROM posts WHERE post_id = ?", (parsed["id"],)).fetchone()
+        else:
+            row = None
+    return (row["root"] if row and row["root"] else reply_to)
+
+
 def _say(client, room_id, sender, text, kind="note", reply_to=None, tags=(), msg_type=None, content=None):
     nonce = wire.new_message_nonce()
     msg_type = msg_type or kind
     content = content if content is not None else room_post.canonical(
-        room_post.body(kind, text, tags, reply_to))
-    sig = signing.sign(sender, "room-message", room_id, content, msg_type, nonce)
+        room_post.body(kind, text, tags, reply_to, root=_root_of(reply_to)))
+    sig = signing.sign(sender, "room-message", room_id, content, msg_type, nonce,
+                       rs.AGENT_REGISTRY.get_stable_id(sender) or "")
     return client.post(f"/rooms/{room_id}/message", headers=_as(sender), json={
         "content": content, "msg_type": msg_type, "nonce": nonce, "signature": sig})
 
@@ -205,15 +225,15 @@ def test_table_talk_is_a_thread_rooted_at_the_game_and_can_be_liked(client):
                                                                    "tags": [["t", "bluff"]]})
     assert r.status_code == 200, r.text
     first = r.json()
-    assert first["root"] == f"game:{sid}" and first["ref"].startswith("message:gchat_")
+    assert first["root"] == f"session:{sid}" and first["ref"].startswith("message:gchat_")
     reply = client.post(f"/sessions/{sid}/chat", headers=_as(b), json={
         "content": "sure you will", "kind": "answer", "reply_to": first["ref"]})
-    assert reply.status_code == 200 and reply.json()["root"] == f"game:{sid}"
+    assert reply.status_code == 200 and reply.json()["root"] == f"session:{sid}"
     assert client.post(f"/sessions/{sid}/chat", headers=_as(b), json={
         "content": "x", "reply_to": "message:gchat_nope"}).status_code == 404
     assert client.post(f"/sessions/{sid}/chat", headers=_as(b), json={
         "content": "see https://x.example"}).status_code == 400
-    t = client.get("/thread", params={"ref": f"game:{sid}"}, headers=_as(c)).json()
+    t = client.get("/thread", params={"ref": f"session:{sid}"}, headers=_as(c)).json()
     assert [p["text"] for p in t["posts"]] == ["I will go heavy left", "sure you will"] and "untrusted" in t
     assert t["posts"][0]["tags"] == [["t", "bluff"]] and t["posts"][1]["reply_to"] == first["ref"]
     sub = client.get("/thread", params={"ref": first["ref"]}, headers=_as(c)).json()
@@ -232,10 +252,10 @@ def test_a_line_sent_with_a_move_is_a_post_replying_to_the_game_and_is_visible_a
     sid = _chat_game(a, b)
     s = rs.load_session(sid)
     from emporia.routes import sessions as sess_routes
-    said, _ = sess_routes._store_chat(s, a, "committing now", kind="note", reply_to=f"game:{sid}", step=2)
-    assert said["reply_to"] == f"game:{sid}" and said["step"] == 2
-    t = client.get("/thread", params={"ref": f"game:{sid}"}, headers=_as(b)).json()["posts"]
-    assert t[0]["text"] == "committing now" and t[0]["step"] == 2 and t[0]["root"] == f"game:{sid}"
+    said, _ = sess_routes._store_chat(s, a, "committing now", kind="note", reply_to=f"session:{sid}", step=2)
+    assert said["reply_to"] == f"session:{sid}" and said["step"] == 2
+    t = client.get("/thread", params={"ref": f"session:{sid}"}, headers=_as(b)).json()["posts"]
+    assert t[0]["text"] == "committing now" and t[0]["step"] == 2 and t[0]["root"] == f"session:{sid}"
 
 
 def test_a_dm_is_a_post_inside_the_seal_and_takes_no_reaction(client):
@@ -334,7 +354,7 @@ def _post_body(agent):
     nonce, at = secrets.token_hex(16), datetime.now(UTC).isoformat()
     with rs.DB_LOCK, rs.get_db() as conn:
         stable = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent,)).fetchone()[0]
-    args = (stable, rs.RELAY_BASE_URL, nonce, "note", "", "an older post", [], None, None, None, at)
+    args = (stable, rs.RELAY_BASE_URL, nonce, "note", "", "an older post", [], None, None, None, None, at)
     sig = signing.sign(agent, "post", *args)
     return {"nonce": nonce, "kind": "note", "label": "", "text": "an older post", "tags": [], "topic": None,
             "reply_to": None, "quote_of": None, "at": at, "signature": sig}

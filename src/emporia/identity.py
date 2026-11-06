@@ -1326,6 +1326,7 @@ def verify_room_message(
     return bool(key) and verify(
         signed_room_message_payload(
             room_id, message.get("content", ""), message.get("msg_type", ""), nonce,
+            message.get("sender_stable_id") or "",
         ),
         signature,
         key,

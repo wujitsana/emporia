@@ -98,6 +98,7 @@ from emporia.module_sdk import (
     MODULE_REGISTRY,
     SessionState,
     get_interaction_module,
+    session_kind,
 )
 from emporia import __version__
 from emporia import rooms as rooms_db
@@ -928,7 +929,8 @@ def init_db() -> None:
                 status TEXT NOT NULL DEFAULT 'waiting',
                 participants_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                kind TEXT NOT NULL DEFAULT 'game'
             );
 
             CREATE TABLE IF NOT EXISTS participants (
@@ -1410,12 +1412,16 @@ def init_db() -> None:
                 signature TEXT NOT NULL,
                 key_log_json TEXT,
                 is_deleted INTEGER NOT NULL DEFAULT 0,
-                recorded_at TEXT NOT NULL
+                recorded_at TEXT NOT NULL,
+                reply_key TEXT,
+                root_key TEXT,
+                is_copy INTEGER NOT NULL DEFAULT 0,
+                expires_at INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_posts_feed ON posts(kind, at);
             CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id, at);
-            CREATE INDEX IF NOT EXISTS idx_posts_reply ON posts(reply_to);
-            CREATE INDEX IF NOT EXISTS idx_posts_root ON posts(root);
+            CREATE INDEX IF NOT EXISTS idx_posts_reply ON posts(reply_key);
+            CREATE INDEX IF NOT EXISTS idx_posts_root ON posts(root_key);
             CREATE INDEX IF NOT EXISTS idx_posts_topic ON posts(topic, at);
             CREATE TABLE IF NOT EXISTS follows (
                 agent_id TEXT NOT NULL,
@@ -4853,6 +4859,7 @@ def _session_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "participants": json.loads(row["participants_json"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "kind": row["kind"] if "kind" in row.keys() else "game",
     }
 
 
@@ -4873,11 +4880,11 @@ def save_session(
         conn.execute(
             "INSERT OR REPLACE INTO sessions "
             "(session_id, module_type, config_json, payment_rules_json, state_json, "
-            "current_agent, step_number, status, participants_json, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "current_agent, step_number, status, participants_json, created_at, updated_at, kind) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (session_id, module_type, json.dumps(config), json.dumps(payment_rules),
              json.dumps(state.to_dict()), current_agent, step_number, status,
-             json.dumps(participants), created_at, updated_at),
+             json.dumps(participants), created_at, updated_at, session_kind(module_type)),
         )
 
 
@@ -7722,9 +7729,9 @@ async def _pull_federated_posts(peer_url: str) -> int:
         from emporia.addresses import address, host_of
         with DB_LOCK, get_db() as conn:
             # Ownership (P83/P87): a peer may refresh only the rows it served before, never a local one.
-            existing = conn.execute("SELECT federated_from FROM posts WHERE post_id = ?",
+            existing = conn.execute("SELECT federated_from, is_copy FROM posts WHERE post_id = ?",
                                     (post["post_id"],)).fetchone()
-            if existing and existing["federated_from"] != peer_url:
+            if existing and (existing["federated_from"] != peer_url or existing["is_copy"]):
                 refused["its id is already taken here"] = refused.get("its id is already taken here", 0) + 1
                 continue
             conn.execute(
@@ -7742,7 +7749,8 @@ async def _pull_federated_posts(peer_url: str) -> int:
     # The batch is the peer's whole current list: a post it no longer sends was withdrawn there.
     if peer_batch_size <= _MAX_LIMIT:
         with DB_LOCK, get_db() as conn:
-            for r in conn.execute("SELECT post_id FROM posts WHERE federated_from = ?", (peer_url,)).fetchall():
+            for r in conn.execute("SELECT post_id FROM posts WHERE federated_from = ? AND is_copy = 0",
+                                  (peer_url,)).fetchall():
                 if r["post_id"] not in kept:
                     conn.execute("DELETE FROM posts WHERE post_id = ? AND federated_from = ?",
                                  (r["post_id"], peer_url))

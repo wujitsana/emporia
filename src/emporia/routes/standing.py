@@ -444,14 +444,14 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
                       "JOIN agora_topics t ON t.slug = p.topic WHERE p.author_id = ? AND t.visibility = 'public'",
                       (agent_id,))]
         comments += [{"with": r["other"], "at": r["at"]} for r in conn.execute(
-            "SELECT p.author_id AS other, c.at FROM posts c JOIN posts p ON c.reply_to = 'post:' || p.post_id "
+            "SELECT p.author_id AS other, c.at FROM posts c JOIN posts p ON c.reply_key = 'post:' || p.post_id "
             "WHERE c.author_id = ? AND c.is_deleted = 0 AND p.is_deleted = 0 AND p.federated_from IS NULL "
             "AND p.topic IS NULL UNION ALL "
-            "SELECT c.author_id AS other, c.at FROM posts c JOIN posts p ON c.reply_to = 'post:' || p.post_id "
+            "SELECT c.author_id AS other, c.at FROM posts c JOIN posts p ON c.reply_key = 'post:' || p.post_id "
             "WHERE p.author_id = ? AND c.is_deleted = 0 AND p.is_deleted = 0 AND p.topic IS NULL",
             (agent_id, agent_id))]
         answers = [{"author": agent_id, "by": r["by"], "kind": r["kind"], "at": r["at"]} for r in conn.execute(
-            "SELECT p.kind, c.author_id AS by, c.at FROM posts p JOIN posts c ON c.reply_to = 'post:' || p.post_id "
+            "SELECT p.kind, c.author_id AS by, c.at FROM posts p JOIN posts c ON c.reply_key = 'post:' || p.post_id "
             "WHERE p.author_id = ? AND p.is_deleted = 0 AND c.is_deleted = 0 AND p.federated_from IS NULL "
             "UNION ALL SELECT p.kind, x.agent_id AS by, x.at FROM posts p JOIN reactions x "
             "ON x.target = 'post:' || p.post_id WHERE p.author_id = ? AND p.is_deleted = 0 AND x.value = 'like' "

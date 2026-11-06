@@ -31,10 +31,14 @@ def _post(author, visibility="public"):
     return pid
 
 
+def _sid(agent):
+    return rs.AGENT_REGISTRY.get_stable_id(agent) or ""
+
+
 def _like(client, who, kind, target, to, liked=True, at=None, sign_as=None, value="like"):
     at = at or datetime.now(UTC).isoformat()
     ref = f"{kind}:{target}"
-    sig = signing.sign(sign_as or who, "reaction", ref, value, to, sign_as or who, liked, at)
+    sig = signing.sign(sign_as or who, "reaction", ref, value, _sid(to), _sid(sign_as or who), liked, at)
     return client.post("/reactions", json={"target": ref, "value": value, "to_agent": to, "on": liked,
                                            "at": at, "signature": sig}, headers=_as(who))
 

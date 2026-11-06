@@ -574,8 +574,8 @@ def _post(conn, r):
     return public, r["post_id"], {
         "post_id": r["post_id"], "author_id": r["author_id"], "author_stable_id": r["author_stable_id"],
         "kind": r["kind"], "content_hash": content_hash(r["label"], r["text"], r["tags_json"]),
-        "topic": topic, "reply_to": r["reply_to"], "quote_of": r["quote_of"], "nonce": r["nonce"],
-        "signature": r["signature"], "at": r["at"], "is_deleted": r["is_deleted"]}
+        "topic": topic, "reply_to": r["reply_to"], "quote_of": r["quote_of"], "root": r["root"],
+        "nonce": r["nonce"], "signature": r["signature"], "at": r["at"], "is_deleted": r["is_deleted"]}
 
 
 def _room_message(conn, r):

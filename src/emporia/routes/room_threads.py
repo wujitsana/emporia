@@ -25,6 +25,7 @@ from typing import Any
 
 from emporia import relay_server as rs
 from emporia import room_post
+from emporia.module_sdk import session_kind as _session_kind
 
 
 def _readable_room(conn, caller: str, room_id: str):
@@ -67,8 +68,9 @@ def _chat_item(c, s: dict[str, Any], likes: int, others: dict) -> dict[str, Any]
     sealed = rs.session_sealed(s)
     item: dict[str, Any] = {
         "message_id": c["message_id"], "ref": f"message:{c['message_id']}", "author_id": c["agent_id"],
-        "at": c["created_at"], "root": c["root"] or f"game:{s['session_id']}", "step": c["step"],
-        "in": {"kind": "game", "id": s["session_id"], "name": s["module_type"]},
+        "at": c["created_at"], "root": c["root"] or f"session:{s['session_id']}", "step": c["step"],
+        "in": {"kind": "session", "id": s["session_id"], "name": s["module_type"],
+               "session_kind": _session_kind(s["module_type"])},
         "likes": likes, "reactions": others, "sealed": sealed, "deleted": bool(c["deleted_at"]),
     }
     if sealed or c["deleted_at"]:
@@ -124,7 +126,7 @@ def thread_items(conn, caller: str, ref: dict[str, str], limit: int, after: str 
                             "(root = ? OR reply_to = ?) ORDER BY created_at, rowid LIMIT ?",
                             (room["room_id"], ident, canon, canon, limit)).fetchall()
         return _room_items(conn, rows, room)
-    if kind == "game":
+    if kind == "session":
         row = conn.execute("SELECT * FROM sessions WHERE session_id = ?", (ident,)).fetchone()
         if not row:
             return []
@@ -143,7 +145,7 @@ def best_public_room_messages(window: int = 7, since: str | None = None, limit: 
     "best". Only what anyone could read: a public, open (not paid), unencrypted room's messages, and a
     public game's table talk (sealed text never). `likes` counts like `reaction:v1` does everywhere: from
     other operators only, the house and the author's own operator nothing. Each item carries
-    `in: {kind: "room" | "game", id, name}` (a topic's post carries `kind: "topic"`) -- one shape.
+    `in: {kind: "room" | "session", id, name}` (a topic's post carries `kind: "topic"`) -- one shape.
 
     `window` is days back from now, and `since` an ISO time that replaces it. A message with no like
     counting is not "best" and is left out. Returns message items (see the module doc); the feed adds

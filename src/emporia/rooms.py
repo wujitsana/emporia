@@ -107,7 +107,8 @@ CREATE TABLE IF NOT EXISTS room_messages (
     created_at TEXT NOT NULL,
     deleted_at TEXT,
     reply_to TEXT,
-    root TEXT
+    root TEXT,
+    sender_stable_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_room_messages_room ON room_messages(room_id);
@@ -194,6 +195,8 @@ class RoomMessage:
     # Rooms v2: the reply link and thread root a plain room keeps (None in an encrypted room).
     reply_to: str | None = None
     root: str | None = None
+    # The sender's stable id, as it signed it into the message (what a reader verifies the signature with).
+    sender_stable_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -252,6 +255,7 @@ def _row_to_message(row: sqlite3.Row) -> RoomMessage:
         deleted_at=row["deleted_at"] if "deleted_at" in row.keys() else None,
         reply_to=row["reply_to"] if "reply_to" in row.keys() else None,
         root=row["root"] if "root" in row.keys() else None,
+        sender_stable_id=row["sender_stable_id"] if "sender_stable_id" in row.keys() else None,
     )
 
 
@@ -708,6 +712,13 @@ def remove_invite(room_id: str, agent_id: str, db_path: Path | None = None) -> N
 # Messages
 # ============================================================================
 
+def coarse_minute(now: datetime | None = None) -> str:
+    """The current time rounded down to the minute (UTC, ISO 8601): what the relay stores and serves as the
+    time of a sealed message, so it learns the minute and no finer. Ordering within a thread is the
+    relay's sequence number (`seq`), which does not depend on the clock."""
+    return (now or datetime.now(UTC)).replace(second=0, microsecond=0).isoformat()
+
+
 def post_message(
     room_id: str,
     sender_id: str,
@@ -720,9 +731,15 @@ def post_message(
     db_path: Path | None = None,
     reply_to: str | None = None,
     root: str | None = None,
+    message_id: str | None = None,
+    coarse_time: bool = False,
+    sender_stable_id: str = "",
 ) -> RoomMessage:
-    message_id = f"rmsg_{uuid.uuid4().hex[:12]}"
-    created_at = datetime.now(UTC).isoformat()
+    """Store a message. `message_id` is its canonical id (`wire.message_id_for` of what its author signed);
+    `coarse_time` rounds the stored time down to the minute, for a sealed room (ordering is the table's
+    sequence, not the clock)."""
+    message_id = message_id or f"rmsg_{uuid.uuid4().hex[:12]}"
+    created_at = (coarse_minute() if coarse_time else datetime.now(UTC).isoformat())
     if root == "self":          # a message that starts a thread is its own root
         root = f"message:{message_id}"
 
@@ -732,11 +749,11 @@ def post_message(
         conn.execute(
             "INSERT INTO room_messages "
             "(message_id, room_id, sender_id, msg_type, content, "
-            "parent_message_id, chain_hash, signature, nonce, metadata_json, created_at, reply_to, root) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "parent_message_id, chain_hash, signature, nonce, metadata_json, created_at, reply_to, root, "
+            "sender_stable_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (message_id, room_id, sender_id, msg_type, content,
              parent_message_id, chain_hash, signature, nonce,
-             json.dumps(metadata or {}), created_at, reply_to, root),
+             json.dumps(metadata or {}), created_at, reply_to, root, sender_stable_id or None),
         )
         row = conn.execute(
             "SELECT * FROM room_messages WHERE message_id = ?", (message_id,)

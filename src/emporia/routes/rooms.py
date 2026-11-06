@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from emporia import entitlements, room_post
+from emporia import entitlements, room_post, wire
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
 from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
@@ -687,7 +687,8 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
     # check over the scan and stopped one statement short of this one, so a
     # registered member sending a garbage signature still burned scan budget on
     # every request until now.
-    signed_envelope = signed_room_message_payload(room_id, req.content, effective_msg_type, req.nonce)
+    signed_envelope = signed_room_message_payload(room_id, req.content, effective_msg_type, req.nonce,
+                                                  rs.AGENT_REGISTRY.get_stable_id(caller) or "")
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
         raise HTTPException(403, "Invalid message signature")
 
@@ -698,7 +699,7 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
         body = room_post.parse(req.content)
         if body is None or room_post.canonical(body) != req.content:
             raise HTTPException(400, "a room message's content is a post body, as canonical JSON "
-                                     "(room_post.canonical): kind, label, text, tags, reply_to, quote_of")
+                                     "(room_post.canonical): kind, label, text, tags, reply_to, quote_of, root")
         if why := room_post.problem(body, effective_msg_type):
             raise HTTPException(400, why)
         reply_to, root, parent_id = _reply_links(room_id, body)
@@ -720,6 +721,9 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
             db_path=rs.DATABASE_PATH,
             reply_to=reply_to,
             root=root,
+            message_id=wire.message_id_for(signed_envelope),
+            coarse_time=bool(room.encrypted),
+            sender_stable_id=signed_envelope["stable_id"],
         )
     except sqlite3.IntegrityError as e:
         # P19-5 (H4): idx_room_messages_nonce's UNIQUE(room_id, nonce) is the
@@ -745,23 +749,28 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
 
 
 def _reply_links(room_id: str, body: dict[str, Any]) -> tuple[str | None, str, str | None]:
-    """`(reply_to, root, parent message id)` of a plain room's message. A reply to a message must name one
-    in this same room (a thread stays in its room); its root is that message's root. A message that
-    replies to nothing starts a thread, and is its own root. A reply to any other object (a post, a game)
-    has that object as its root. The ref is checked for form already (`room_post.problem`)."""
+    """`(reply_to, root, parent message id)` of a plain room's message, as the relay keeps them (without
+    author hints: what threads are read by). A reply to a message must name one in this same room (a
+    thread stays in its room). The body's `root` is signed, so the relay only **checks** it: it must be the
+    root of the thread the parent is in (`routes.posts._expected_root`); it never fills one in. A message
+    that replies to nothing starts a thread and is its own root (stored as itself: there is nothing to sign)."""
     from emporia import refs
+    from emporia.routes import posts as posts_routes
     ref = body["reply_to"]
     if not ref:
         return None, "self", None
     parsed = refs.parse(ref)
-    if parsed["kind"] != "message" or parsed.get("relay"):
-        return ref, ref, None
+    parent_id = None
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT root FROM room_messages WHERE message_id = ? AND room_id = ?",
-                           (parsed["id"], room_id)).fetchone()
-    if not row:
-        raise HTTPException(404, "reply_to: no such message in this room")
-    return ref, row["root"] or ref, parsed["id"]
+        if parsed["kind"] == "message" and not parsed.get("relay"):
+            row = conn.execute("SELECT 1 FROM room_messages WHERE message_id = ? AND room_id = ?",
+                               (parsed["id"], room_id)).fetchone()
+            if not row:
+                raise HTTPException(404, "reply_to: no such message in this room")
+            parent_id = parsed["id"]
+        if why := posts_routes._root_problem(conn, parsed, ref, body["root"]):
+            raise HTTPException(400, why)
+    return refs.without_hint(ref), refs.without_hint(body["root"]), parent_id
 
 
 def _shown_message(m: dict[str, Any], encrypted: bool) -> dict[str, Any]:
@@ -771,7 +780,9 @@ def _shown_message(m: dict[str, Any], encrypted: bool) -> dict[str, Any]:
         m["sealed"] = bool(encrypted or m.get("msg_type") == "sealed")
         m["ref"] = f"message:{m['message_id']}"
         return m
-    return {**m, **room_post.view(m.get("msg_type", ""), m.get("content", "")), "ref": f"message:{m['message_id']}"}
+    shown = room_post.view(m.get("msg_type", ""), m.get("content", ""))
+    # a message that starts a thread is its own root (nothing to sign); a reply's root is the signed one
+    return {**m, **shown, "root": shown["root"] or m.get("root"), "ref": f"message:{m['message_id']}"}
 
 
 @router.get("/rooms/{room_id}/encryption-keys")

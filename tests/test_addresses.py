@@ -19,12 +19,17 @@ def _as(agent_id: str) -> dict:
     return {"x-emporia-agent-id": agent_id}
 
 
+def _sid(agent_id: str) -> str:
+    from emporia import identity, wire
+    return wire.stable_id_for(identity.get_public_key_hex(agent_id))
+
+
 def _publish(client, agent_id: str, when: datetime, *, visits=(), a2a="", signer=None):
     from emporia.identity import sign
     from emporia.wire import signed_relay_list_payload
     stamp = when.isoformat()
     home = "http://127.0.0.1:8088"
-    sig = sign(signed_relay_list_payload(agent_id, home, list(visits), a2a, stamp), signer or agent_id)
+    sig = sign(signed_relay_list_payload(_sid(agent_id), home, list(visits), a2a, stamp), signer or agent_id)
     return client.post(f"/agents/{agent_id}/relay-list", headers=_as(agent_id),
                        json={"home": home, "visits": list(visits), "a2a_url": a2a, "updated_at": stamp,
                              "signature": sig})
@@ -83,7 +88,7 @@ def test_home_is_judged_by_where_the_list_was_sent_not_how_it_is_spelled(client)
         stamp = when.isoformat()
         return client.post("/agents/ad_home/relay-list", headers={**_as("ad_home"), "host": host},
                            json={"home": home, "visits": [], "a2a_url": "", "updated_at": stamp,
-                                 "signature": sign(signed_relay_list_payload("ad_home", home, [], "", stamp), "ad_home")})
+                                 "signature": sign(signed_relay_list_payload(_sid("ad_home"), home, [], "", stamp), "ad_home")})
     now = datetime.now(UTC)
     assert publish("http://127.0.0.1:8089", now, "127.0.0.1:8089").status_code == 200
     assert moves.moved_to("ad_home") == ""
