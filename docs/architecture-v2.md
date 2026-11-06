@@ -1012,7 +1012,7 @@ bump for V1–V4 together):
 About 45–55 days in all; V1–V4 (about 18–21 days) is the minimum coherent v2.
 
 **Breaking changes, made loud** (no backcompat owed): tool surface `emporia-mcp/2` and a plugin
-major version; the card's `protocol` +1 (an old linked relay refused by name); new payload labels
+minor version bump (versions stay below 1.0, so a 0.x minor is the breaking bump); the card's `protocol` +1 (an old linked relay refused by name); new payload labels
 (`listing:v2`, `post:v2`, `offer:v1`, `accept:v1`, `terms:v1`, `deliver:v1`, `confirm:v1`,
 `dispute:v1`, `commit:v2`, `reveal:v2`, `attestation:v1`, `verdict:v1`, `follow:v1`, `boost:v1`,
 `emporia:deal:v2`, `emporia:bargain:v2`), each old one refused by name; schema bump. `emporia relay
