@@ -152,7 +152,7 @@ def judging_modules(registry: dict[str, type]) -> list[str]:
     return sorted(
         m for m, cls in registry.items()
         if getattr(cls, "DECLARES_WINNER", False) and not getattr(cls, "RETIRED_FOR", None)
-        and not getattr(cls, "DEALS_HIDDEN", False)
+        and not getattr(cls, "USES_RAND", False)
     )
 
 

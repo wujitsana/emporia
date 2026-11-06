@@ -23,10 +23,6 @@ Encryption flag:
                               wrapped for them, and re-wrapping history would require the
                               relay to hold plaintext, the whole thing being avoided.
 
-Negotiation routing:
-  msg_type='counter_offer' in a 2-member private room triggers negotiation.process_offer()
-  automatically. The relay responds with the broker's ACCEPT or COUNTER decision as a
-  system message in the same room.
 
 Message chain integrity:
   Each message hashes (prev_hash:sender:content:created_at) → chain_hash, computed by the
@@ -62,7 +58,7 @@ _LOCK = threading.RLock()
 
 RoomType = Literal["public", "private"]
 GateType = Literal["open", "invite", "paid"]
-MsgType = Literal["chat", "collab", "code", "counter_offer", "accept", "reject", "system"]
+MsgType = Literal["chat", "collab", "code", "system"]
 
 
 # ============================================================================
@@ -168,10 +164,6 @@ class Room:
             d["member_count"] = len(self.members)
             d["encrypted"] = self.encrypted
         return d
-
-    def is_negotiation_room(self) -> bool:
-        """A 2-member private room is a negotiation channel."""
-        return self.room_type == "private" and len(self.members) == 2
 
 
 @dataclass(frozen=True)

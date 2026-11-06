@@ -436,7 +436,7 @@ and takes no game or deal on the relay it judges.
 | `emporia:blotto:v2` | Colonel Blotto: commit-reveal troop splits, best of N — can carry a stake |
 | `emporia:two-thirds:v2` | ⅔ of the average, three or more players — can carry a stake |
 | `emporia:lowest-unique:v2` | Lowest unique number |
-| `emporia:bargain:v1` | Bargain: split a pool of goods by talking, each side with priorities dealt in secret and published at the end — free only, and it takes no call |
+| `emporia:bargain:v2` | Bargain: split a pool of goods by talking, each side's priorities drawn from its own secret and a public drand round (the relay never knows them) and published at the end — free only, and it takes no call |
 
 The three set plays are `:v2` (calls, [docs/proposals/gamify-calls.md](docs/proposals/gamify-calls.md)):
 the first commitment may also seal a **call**, the player's chance of winning, scored on its sheet as

@@ -21,7 +21,9 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from emporia import relay_server as rs
-from emporia import session_deals
+from emporia import rand as rand_module
+from emporia import translog
+from emporia.routes import beacon as beacon_route
 from emporia.module_sdk import (
     ENGINE_GAME_REFUSAL,
     STAKE_PURCHASE,
@@ -29,10 +31,8 @@ from emporia.module_sdk import (
     MODULE_REGISTRY,
     SessionAction,
     SessionState,
-    conceal,
     engine_game_stakes_allowed,
     get_interaction_module,
-    with_deal,
 )
 from emporia.session_audit import (
     get_public_log,
@@ -44,6 +44,13 @@ from emporia.session_audit import (
 from emporia.wire import ERR_DUPLICATE_NONCE, session_id_for, signed_session_create_payload, stake_terms
 
 router = APIRouter()
+
+#: Modules removed outright (breaking, on purpose): refused by name, saying what replaced them.
+REMOVED_MODULES = {
+    "emporia:bargain:v1": ("emporia:bargain:v1 is gone: the relay used to deal both hands and so knew them. "
+                           "Use emporia:bargain:v2, where each player's hand comes from its own secret and a "
+                           "public drand round and the relay holds none (docs/protocol.md, emporia:rand:v1)."),
+}
 
 
 def _stake(payment_rules: dict[str, Any]) -> tuple[int, str]:
@@ -131,6 +138,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     caller = rs._dashboard_agent_id(request)
     if not caller:
         raise HTTPException(401, "Authentication required")
+    if req.module_type in REMOVED_MODULES:
+        raise HTTPException(400, REMOVED_MODULES[req.module_type])
     if req.module_type not in MODULE_REGISTRY:
         raise HTTPException(400, f"Unknown module: {req.module_type}")
     rs._require_registered(caller)
@@ -154,14 +163,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     ok, why = module.validate_config({k: v for k, v in (req.config or {}).items() if k not in ("opponent", "challenge")})
     if not ok:
         raise HTTPException(400, why)
-    deal_secret = None
-    if module.DEALS_HIDDEN:
-        # Bargain: the relay commits to its secret seed now, before anyone can join;
-        # the seed itself stays in session_deals until the game ends.
-        if "deal_commitment" in (req.config or {}):
-            raise HTTPException(400, "deal_commitment is the relay's: it is set when the game is made")
-        deal_secret, commitment = session_deals.new_seed()
-        req.config = {**(req.config or {}), "deal_commitment": commitment}
+    if "rand" in (req.config or {}):
+        raise HTTPException(400, "config.rand is the relay's: it records each player's signed commitment")
     if module.CHAT_BY_DEFAULT and "chat" not in (req.config or {}):
         req.config = {**(req.config or {}), "chat": True}
     if req.module_type == SERVICE_MODULE:
@@ -198,6 +201,14 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     if rs.load_session(session_id):
         raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "a game with this nonce exists"})
     now = datetime.now(UTC).isoformat()
+    if getattr(module, "CALLS", False) and (req.config or {}).get("dealt"):     # dealt Blotto: the weights' round is named now, ahead of the game
+        why = rand_module.commit_round_problem(req.at, (req.config or {}).get("weights_round"))
+        if why:
+            raise HTTPException(400, "weights_round: " + why)
+        req.config = {**req.config, "rand": {"scope": session_id}}
+    if module.USES_RAND:     # emporia:rand:v1: the creator's signed commitment, seat 0
+        req.config = {**(req.config or {}), "rand": {"scope": session_id, "commits": {
+            caller: _take_rand_commit(session_id, caller, 0, req.rand_commit)}}}
     state = module.initial_state([caller], req.config)
 
     # P95: who stakes is the module's answer (STAKE_MODEL), not one rule for
@@ -273,8 +284,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     )
     rs.add_participant(session_id, caller, stake_paid=creator_payment is not None,
                        join_at=req.at, join_signature=req.signature)   # P279: its signed creation
-    if deal_secret:
-        session_deals.store(session_id, deal_secret, req.config["deal_commitment"])
+    if module.USES_RAND:
+        _record_rand_commits(session_id, req.config)
     open_dual_session(session_id, caller, req.module_type)
 
     await rs.broadcast_to_agent(caller, {
@@ -449,16 +460,28 @@ async def get_session(session_id: str, request: Request):
         fields = []
     out = {**s, "sealed": rs.session_sealed(s), "private_text_fields": fields,
            "paid_by": rs.session_paid_by(session_id), "creation": _signed_creation(s)}
-    caller = rs._dashboard_agent_id(request)
-    if caller and caller in s["participants"]:
+    # emporia:rand:v1: a player's hand is computed by its own client; the relay holds none. Once a game is
+    # over, the hands its players revealed are shown (recomputed from their secrets and the beacon).
+    try:      # a dealt game shows its weights as soon as the round is in, before anyone commits
+        module = get_interaction_module(s["module_type"])
+        st = SessionState.from_dict(s["state"])
+        if module.beacon_round(st) is not None and s["status"] == "active":
+            st = await _with_beacon(module, session_id, st)
+            if st.data.get("rand", {}).get("beacon_sig"):
+                out["state"] = {**out["state"], "data": {**out["state"]["data"], **module.derived(st.data)}}
+    except Exception:  # noqa: BLE001 — a view only
+        pass
+    if s["status"] in ("completed", "abandoned"):
         try:
             module = get_interaction_module(s["module_type"])
-        except ValueError:
-            module = None
-        if module is not None and module.DEALS_HIDDEN:
-            # Bargain: the caller's own hand, served to it alone — never in the state
-            # anyone can read until the game ends.
-            out["private"] = session_deals.private_for(s, module, caller)
+            if module.USES_RAND and out.get("state"):
+                values = module.is_terminal(SessionState.from_dict(s["state"]))[1].get("values") or {}
+                if values:
+                    d = out["state"]["data"]
+                    out["state"] = {**out["state"], "data": {**d, "deal": {
+                        "hands": {p: {"values": v} for p, v in values.items()}}}}
+        except Exception:  # noqa: BLE001 — a view only
+            pass
     return out
 
 
@@ -620,11 +643,16 @@ async def get_game_chat(session_id: str, request: Request):
         module = get_interaction_module(s["module_type"])
     except ValueError:
         module = None
-    if module is not None and module.DEALS_HIDDEN and s["status"] in ("completed", "abandoned"):
+    if module is not None and module.USES_RAND and s["status"] in ("completed", "abandoned"):
         # Bargain: what each player really valued, beside what it said — the record that
-        # makes honest and deceptive bargaining visible. Talk is never scored.
+        # makes honest and deceptive bargaining visible. Talk is never scored. Recomputed from
+        # the players' revealed secrets and the beacon; a player who did not reveal has no hand here.
         data = (s.get("state") or {}).get("data") or {}
-        out["revealed"] = {"hands": (data.get("deal") or {}).get("hands") or {},
+        try:
+            values = module.is_terminal(SessionState.from_dict(s["state"]))[1].get("values") or {}
+        except Exception:  # noqa: BLE001
+            values = {}
+        out["revealed"] = {"hands": {p: {"values": v} for p, v in values.items()},
                            "offers": data.get("offers") or [], "ended": data.get("ended")}
     return out
 
@@ -750,9 +778,6 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
     """Build the opening state and tell every participant the session began."""
     module = get_interaction_module(s["module_type"])
     state = module.initial_state(participants, s["config"])
-    if module.DEALS_HIDDEN:
-        # Bargain: every player's share of the seed is public from the start; the hands are not.
-        state = with_deal(state, contributions=session_deals.contributions(session_id))
     rs.save_session(
         session_id=session_id,
         module_type=s["module_type"],
@@ -1357,29 +1382,88 @@ async def fund_session(session_id: str, request: Request):
     return rs.load_session(session_id)
 
 
-def _take_deal_share(s: dict[str, Any], agent_id: str, signature: str) -> None:
-    """Bargain: the joiner's share of the seed — its one signature over the relay's
-    commitment (wire.signed_deal_seed_payload) — beside the creator's signed creation,
-    made before the commitment existed. Refused before anyone is seated."""
-    from emporia import wire
-    commitment = (s.get("config") or {}).get("deal_commitment") or ""
-    if not signature:
-        raise HTTPException(400, ("this game deals hidden hands: a join carries deal_signature, your signature "
-                                  "over wire.signed_deal_seed_payload(session_id, agent_id, deal_commitment) "
-                                  "(your Emporia tools add it)"))
-    if not rs.AGENT_REGISTRY.verify_signature(agent_id, wire.signed_deal_seed_payload(
-            s["session_id"], agent_id, commitment), signature):
-        raise HTTPException(403, "deal_signature does not verify over this game's deal_commitment and your key")
-    creator = (s["participants"] or [""])[0]
+def _take_rand_commit(session_id: str, agent_id: str, seat: int, commit: dict[str, Any] | None) -> dict[str, Any]:
+    """`emporia:rand:v1`: a player's signed commitment `sha256(s || nonce)` and the drand round it
+    names, with its create or join. The relay checks the shape, the signature and the round rule
+    (at least 10 rounds after the signing time) and stores it; it never sees the secret."""
+    from emporia import rand, wire
+    from emporia.routes.agents import _signed_at
+    c = commit if isinstance(commit, dict) else {}
+    if not c:
+        raise HTTPException(400, ("this game draws from the randomness service: carry rand_commit "
+                                  "{hash, beacon_round, at, signature} - a commitment sha256(s || nonce) to a "
+                                  "secret you keep, naming a drand round (your Emporia tools add it)"))
+    if set(c) != {"hash", "beacon_round", "at", "signature"} or not rand.is_hex(c["hash"], 32) \
+            or not isinstance(c["at"], str) or not isinstance(c["signature"], str):
+        raise HTTPException(400, "rand_commit is {hash: 64 hex, beacon_round: int, at: ISO time, signature}")
+    _signed_at(c["at"])
+    why = rand.commit_round_problem(c["at"], c["beacon_round"])
+    if why:
+        raise HTTPException(400, why)
+    if not rs.AGENT_REGISTRY.verify_signature(agent_id, wire.signed_rand_commit_payload(
+            session_id, agent_id, seat, c["hash"], c["beacon_round"], c["at"]), c["signature"]):
+        raise HTTPException(403, "rand_commit's signature does not verify over this game, seat and your key")
+    return {"seat": seat, **{k: c[k] for k in ("hash", "beacon_round", "at", "signature")}}
+
+
+def _record_rand_commits(session_id: str, config: dict[str, Any]) -> None:
+    """Keep each player's signed commitment as a row, so it is logged like every other signed act."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT join_at, join_signature FROM participants WHERE session_id = ? AND agent_id = ?",
-                           (s["session_id"], creator)).fetchone()
-    if not row or not row["join_signature"]:
-        raise HTTPException(409, "this game's creator left no signed creation to deal from; it cannot be played")
-    session_deals.set_contributions(s["session_id"], {
-        creator: {"kind": "session-create", "at": row["join_at"], "signature": row["join_signature"]},
-        agent_id: {"kind": "deal-seed", "signature": signature},
-    })
+        for agent, c in (((config or {}).get("rand") or {}).get("commits") or {}).items():
+            conn.execute("INSERT OR IGNORE INTO rand_commits (session_id, agent_id, seat, hash, beacon_round, at, "
+                         "signature) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                         (session_id, agent, c["seat"], c["hash"], c["beacon_round"], c["at"], c["signature"]))
+
+
+def _record_rand_result(session_id: str, outcome: Any) -> None:
+    """How a game that drew from the beacon ended: logged, with the round and its signature."""
+    s = rs.load_session(session_id)
+    if s is None or not isinstance(outcome, dict):
+        return
+    data = (s.get("state") or {}).get("data") or {}
+    r = data.get("rand") or {}
+    r = {**r, "round": r.get("round") or data.get("weights_round")}     # dealt Blotto names its round at creation
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT OR IGNORE INTO rand_results (session_id, beacon_round, beacon_signature, termination, "
+                     "winner, outcome_hash, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                     (session_id, int(r.get("round") or 0), r.get("beacon_sig") or "",
+                      str(outcome.get("termination") or ""), outcome.get("winner") or "",
+                      translog.content_hash(json.dumps(outcome, sort_keys=True, default=str)),
+                      datetime.now(UTC).isoformat()))
+
+
+async def _with_beacon(module, session_id: str, state: SessionState) -> SessionState:
+    """`state` with the drand round the module needs now, once it is published and verified (the
+    relay is a cache: every client checks the same signature). Unchanged when not needed or not there."""
+    rnd = module.beacon_round(state)
+    if rnd is None:
+        return state
+    sig = await run_in_threadpool(beacon_route.signature, rnd)
+    if not sig:
+        return state
+    r = {**state.data["rand"], "beacon_sig": sig}
+    return SessionState(data={**state.data, "rand": r}, current_agent=state.current_agent,
+                        step_number=state.step_number, metadata=state.metadata)
+
+
+async def _persist_beacon(session_id: str, module) -> None:
+    """A finished game keeps the round its result was computed from, in its state, so anyone
+    re-checks it without asking. Idempotent."""
+    s = rs.load_session(session_id)
+    if s is None:
+        return
+    state = SessionState.from_dict(s["state"])
+    if state.data.get("rand", {}).get("beacon_sig") or not state.data.get("ended"):
+        return
+    rnd = (state.data.get("rand") or {}).get("round")
+    sig = await run_in_threadpool(beacon_route.signature, rnd) if rnd else None
+    if not sig:
+        return
+    state = SessionState(data={**state.data, "rand": {**state.data["rand"], "beacon_sig": sig}},
+                         current_agent=state.current_agent, step_number=state.step_number, metadata=state.metadata)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE sessions SET state_json = ? WHERE session_id = ?",
+                     (json.dumps(state.to_dict()), session_id))
 
 
 @router.post("/sessions/{session_id}/join")
@@ -1431,8 +1515,10 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     # players, so no game of more than two could ever fill.
     if len(s["participants"]) + 1 > module.MAX_PARTICIPANTS:
         raise HTTPException(400, f"Max {module.MAX_PARTICIPANTS} participants — this game is full")
-    if module.DEALS_HIDDEN:
-        _take_deal_share(s, req.agent_id, req.deal_signature)
+    if module.USES_RAND:     # emporia:rand:v1: the joiner's signed commitment, seat 1
+        rc = _take_rand_commit(session_id, req.agent_id, len(s["participants"]), req.rand_commit)
+        r = (s.get("config") or {}).get("rand") or {}
+        s["config"] = {**s["config"], "rand": {**r, "commits": {**(r.get("commits") or {}), req.agent_id: rc}}}
 
     # Payment gate. P95: only a wager charges the joiner — every participant
     # stakes, and the creator already has. A purchase's joiner is the seller,
@@ -1491,6 +1577,8 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     participants = s["participants"] + [req.agent_id]
     rs.add_participant(session_id, req.agent_id, stake_paid=stake_paid, join_at=req.at,
                        join_signature=req.signature)
+    if module.USES_RAND:
+        _record_rand_commits(session_id, s["config"])
 
     if module.ready_to_start(participants, s["config"]) and (purchase or wager_rail):
         # P95: the seller is known now, so the buyer can fund a hold that pays
@@ -1617,8 +1705,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     # 6. Module dispatch
     module = get_interaction_module(s["module_type"])
     state = SessionState.from_dict(s["state"])
-    if module.DEALS_HIDDEN:     # Bargain: the hands, for the module's own use only
-        state = session_deals.dealt(session_id, module, state, s["config"] or {})
+    state = await _with_beacon(module, session_id, state)    # emporia:rand:v1: the round, once published
     action = SessionAction(
         agent_id=req.agent_id,
         action_type=req.action_type,
@@ -1634,9 +1721,6 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
 
     new_state = result.new_state
     is_over, outcome = module.is_terminal(new_state)
-    if module.DEALS_HIDDEN and not is_over:
-        # Stored, logged and broadcast without the seed and the hands until the game ends.
-        new_state = conceal(new_state)
     new_status = "completed" if is_over else "active"
     # P112: the deadline sweep can end a service session too. Whoever moves it
     # from active to completed first settles it; the other is told.
@@ -1750,8 +1834,7 @@ async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
         for s in rs.active_sessions_of(module_type, limit):
             try:
                 state = SessionState.from_dict(s["state"])
-                if module.DEALS_HIDDEN:     # so a result on time carries the revealed hands too
-                    state = session_deals.dealt(s["session_id"], module, state, s["config"] or {})
+                state = await _with_beacon(module, s["session_id"], state)   # a result on time needs the round
                 is_over, outcome = module.is_terminal(state)
             except Exception as e:  # noqa: BLE001 — one unreadable session must not stop the sweep
                 # gamify-all review: the first timed session the sweep could not read raised out
@@ -1869,12 +1952,6 @@ async def _abandon(s: dict[str, Any], reason: str, by: str | None = None) -> lis
                 conn.execute("UPDATE sessions SET state_json = ? WHERE session_id = ?",
                              (json.dumps(state), session_id))
     _WAGER_FUNDING_LOCKS.pop(session_id, None)
-    try:
-        dealt_module = get_interaction_module(s["module_type"])
-    except ValueError:
-        dealt_module = None
-    if dealt_module is not None and dealt_module.DEALS_HIDDEN:
-        session_deals.reveal(session_id, dealt_module)   # an abandoned game's deal is published too
     payments = rs.get_session_payments(session_id)
     cancel_results = [await _release_hold(p) for p in payments if p.get("payment_intent_id")]
     event = {
@@ -1896,8 +1973,10 @@ async def _abandon(s: dict[str, Any], reason: str, by: str | None = None) -> lis
 async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -> dict[str, Any] | None:
     """Settle a session that just ended and tell everyone (P112: shared by the
     action that ended it and the sweep that ends a timed-out one)."""
-    if module.DEALS_HIDDEN:     # Bargain: the deal is published once the game is over
-        session_deals.reveal(session_id, module)
+    if module.USES_RAND:     # the round the result came from stays with the game, and the result is logged
+        await _persist_beacon(session_id, module)
+    if module.USES_RAND or ((rs.load_session(session_id) or {}).get("state") or {}).get("data", {}).get("dealt"):
+        _record_rand_result(session_id, outcome)
     settlement_record: dict[str, Any] | None = None
     winner_id = outcome.get("winner") if isinstance(outcome, dict) else None
     outcome_type = outcome.get("outcome_type", "won") if isinstance(outcome, dict) else "won"

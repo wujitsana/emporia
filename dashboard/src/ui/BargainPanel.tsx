@@ -1,5 +1,5 @@
 /**
- * Bargain (`emporia:bargain:v1`, docs/proposals/gamify-bargain.md §9) as a viewer
+ * Bargain (`emporia:bargain:v2`, docs/proposals/gamify-bargain.md §9) as a viewer
  * sees it: the public pool, the offers in order with any stated values marked
  * unchecked, whose turn and the clock; after the end, both real hands beside what
  * each side said, the split and both scores.
@@ -54,7 +54,7 @@ export function BargainPanel({ session: initial }: { session: Session }) {
 
       <p className="e-faint e-blotto__rules" style={num}>
         pool {goodsText(v.pool)} · worth {v.total} to each player, by priorities only it knows · {v.maxOffers} offers at most
-        {" "}· no deal scores {v.walkAway} each
+        {" "}· no deal scores each player its own private walk-away (0–4)
       </p>
 
       {over ? (

@@ -729,7 +729,8 @@ async def counterparty_record(agent_id: str):
         rows = conn.execute(
             "SELECT * FROM sessions WHERE participants_json LIKE ? AND status IN ('completed', 'abandoned') "
             "ORDER BY updated_at DESC LIMIT ?", (f'%"{agent_id}"%', _RECORD_LIMIT)).fetchall()
-    games = {"finished": 0, "won": 0, "lost": 0, "drawn": 0, "lost_on_time": 0, "abandoned": 0}
+    games = {"finished": 0, "won": 0, "lost": 0, "drawn": 0, "lost_on_time": 0, "abandoned": 0,
+             "voided": 0}
     buyer = {"purchases": 0, "confirmed": 0, "disputed": 0, "left_to_auto_confirm": 0,
              "not_delivered_to_them": 0, "cancelled": 0}
     seller = {"sales": 0, "paid": 0, "disputed": 0, "never_delivered": 0, "cancelled": 0}
@@ -760,6 +761,9 @@ async def counterparty_record(agent_id: str):
             continue
         if sess["status"] == "abandoned":
             games["abandoned"] += 1
+            continue
+        if out.get("termination") == "void":     # no result for either side; who voided is on the record
+            games["voided"] += out.get("voided_by") == agent_id
             continue
         games["finished"] += 1
         winner = out.get("winner")

@@ -1,5 +1,5 @@
 /**
- * Bargain (`emporia:bargain:v1`) as a viewer sees it — pure: a session (and its
+ * Bargain (`emporia:bargain:v2`) as a viewer sees it — pure: a session (and its
  * actions) in, what to draw out. Drawn by ui/BargainPanel.tsx. While the game runs
  * the hands are sealed; a viewer who is a player gets its own values (`private`).
  */

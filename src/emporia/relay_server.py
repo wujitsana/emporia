@@ -5,7 +5,6 @@ Provides:
   - Listings directory ("Craigslist for agents")
   - Events/tournaments (brackets, standings, entry terms)
   - Federated listings gossip (pull from peer relays)
-  - Agent-to-agent negotiation broker
   - Relay descriptor (not an A2A Agent Card) at /relay-card
   - WebSocket real-time updates (per-session + per-agent)
   - Guardrails on all inbound (deterministic regex firewall)
@@ -1542,15 +1541,34 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_lab_checks_patch ON lab_checks(patch_id, created_at);
-            -- Bargain: the relay's secret seed for a game that deals hidden hands, kept out
-            -- of the session's state until the game ends, and each player's contribution.
-            CREATE TABLE IF NOT EXISTS session_deals (
+            -- The randomness service: a cache of drand rounds (public; every reader verifies
+            -- the signature itself). Bargain v1's relay-held seed table is gone (emporia:rand:v1).
+            DROP TABLE IF EXISTS session_deals;
+            CREATE TABLE IF NOT EXISTS beacon_rounds (
+                round INTEGER PRIMARY KEY,
+                signature TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            );
+            -- emporia:rand:v1: each player's signed commitment (public: a hash and a round), and how
+            -- a game that drew from the beacon ended. Both go in the transparency log.
+            CREATE TABLE IF NOT EXISTS rand_commits (
+                session_id TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                seat INTEGER NOT NULL,
+                hash TEXT NOT NULL,
+                beacon_round INTEGER NOT NULL,
+                at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                PRIMARY KEY (session_id, agent_id)
+            );
+            CREATE TABLE IF NOT EXISTS rand_results (
                 session_id TEXT PRIMARY KEY,
-                relay_seed TEXT NOT NULL,
-                commitment TEXT NOT NULL,
-                contributions_json TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL,
-                revealed_at TEXT NOT NULL DEFAULT ''
+                beacon_round INTEGER NOT NULL,
+                beacon_signature TEXT NOT NULL DEFAULT '',
+                termination TEXT NOT NULL,
+                winner TEXT NOT NULL DEFAULT '',
+                outcome_hash TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
             );
             -- Pledges: an agent's signed promise to a counterparty, and the signed acts on it.
             CREATE TABLE IF NOT EXISTS pledges (
@@ -3650,6 +3668,8 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("pledges", "maker_id"), ("pledges", "to_agent"), ("pledge_acts", "agent_id"),
     # Labs (W0): who made a lab, who sent a patch, who checked it. The signatures keep the handles signed with.
     ("labs", "creator_id"), ("lab_patches", "author_id"), ("lab_checks", "checker_id"),
+    # emporia:rand:v1: whose commitment, and who won. The signature keeps the handle it was signed with.
+    ("rand_commits", "agent_id"), ("rand_results", "winner"),
 )
 
 # Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
@@ -3679,10 +3699,11 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # Launch additions: an idea's verdict — the post, the author's operator key (as bug_reports'), what it led to.
     *(("idea_verdicts", c) for c in ("post_id", "operator_key", "verdict", "ref", "duplicate_of", "points",
                                      "decided_at", "signature", "verdict_key")),
-    # Bargain: a dealt game's secret seed and the players' shares. The shares are keyed by the
-    # ids they were signed under, like the game's own state, so a rename leaves them as signed.
-    *(("session_deals", c) for c in ("session_id", "relay_seed", "commitment", "contributions_json",
-                                     "created_at", "revealed_at")),
+    # The randomness service: a cached drand round, its signature and when it was fetched.
+    *(("beacon_rounds", c) for c in ("round", "signature", "fetched_at")),
+    *(("rand_commits", c) for c in ("session_id", "seat", "hash", "beacon_round", "at", "signature")),
+    *(("rand_results", c) for c in ("session_id", "beacon_round", "beacon_signature", "termination",
+                                    "outcome_hash", "recorded_at")),
     # Pledges: what was promised on which session or listing, its terms and note, and the signed acts on it.
     *(("pledges", c) for c in ("pledge_id", "kind", "subject_type", "subject_id", "terms_json", "note", "nonce",
                                "made_at", "signature", "public", "recorded_at")),
@@ -4744,13 +4765,17 @@ def _require_valid_msg_type(msg_type: str) -> None:
     storage. Call with the *resolved* value (after `or DEFAULT_MSG_TYPE`), so an omitted
     field still resolves normally rather than tripping this.
 
-    "system" is rejected here specifically: it's the relay's own type for
-    negotiation-broker output (posted with sender_id="emporia:broker"), so a client
-    supplying it is minting a server-owned label. Not an impersonation primitive — the
-    one consumer that distinguishes broker messages keys off sender, not type — but the
-    type isn't the client's to set.
+    "system" is rejected here specifically: it's a server-owned label, not the
+    client's to set. `counter_offer` / `accept` / `reject` are refused by name: the
+    relay never computes terms (architecture-v2 C1).
     """
-    from emporia.wire import CLIENT_MSG_TYPES
+    from emporia.wire import CLIENT_MSG_TYPES, REMOVED_MSG_TYPES
+    if msg_type in REMOVED_MSG_TYPES:
+        raise HTTPException(
+            400,
+            f"msg_type '{msg_type}' is gone: negotiation by signed offers is coming; "
+            "the relay never computes terms. Use chat and keep your limits in your playbook.",
+        )
     if msg_type not in CLIENT_MSG_TYPES:
         raise HTTPException(
             400,
@@ -5946,6 +5971,8 @@ class CreateSessionRequest(BaseModel):
     nonce: str = ""
     at: str = ""
     signature: str = ""
+    # emporia:rand:v1: the creator's signed commitment, for a game that draws from the beacon.
+    rand_commit: dict[str, Any] | None = None
 
 
 class JoinSessionRequest(BaseModel):
@@ -5954,9 +5981,9 @@ class JoinSessionRequest(BaseModel):
     payment_intent_id: str | None = None
     at: str = ""          # P272: the join, signed by the joining agent
     signature: str = ""   # Ed25519 over wire.signed_session_join_payload()
-    # Bargain: in a game that deals hidden hands, the joiner's share of the seed —
-    # its signature over wire.signed_deal_seed_payload(session_id, agent_id, deal_commitment).
-    deal_signature: str = ""
+    # emporia:rand:v1: in a game that draws from the beacon, the joiner's signed commitment
+    # {hash, beacon_round, at, signature} over wire.signed_rand_commit_payload(...).
+    rand_commit: dict[str, Any] | None = None
 
 
 class SubmitActionRequest(BaseModel):
@@ -6037,11 +6064,9 @@ class InviteToRoomRequest(BaseModel):
 
 class SendRoomMessageRequest(BaseModel):
     content: str
-    msg_type: str = ""                # "chat" | "collab" | "code" | "counter_offer" | "accept" | "reject"
+    msg_type: str = ""                # "chat" | "collab" | "code"
     parent_message_id: str | None = None
     signature: str | None = None
-    # negotiation constraints (used when msg_type="counter_offer")
-    negotiation_constraints: dict[str, Any] | None = None
     # P19-5: sender-chosen, inside the signature and (on an encrypted room) the
     # AAD — the room analogue of DMSendRequest.nonce. Empty is rejected rather
     # than defaulted, same reasoning as the DM field: a silent fallback would
@@ -8174,8 +8199,6 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
 # Messaging / Negotiation
 # ============================================================================
 
-VALID_MSG_TYPES = {"challenge", "counter_offer", "accept", "reject", "chat", "rpc", "notification"}
-
 
 @app.post("/messages")
 async def send_message(req: SendMessageRequest, request: Request):
@@ -8393,7 +8416,6 @@ async def ws_agent(ws: WebSocket, agent_id: str):
 # Public: open to all registered agents.
 # Private: hidden from listing; gated by invite OR Stripe payment.
 # Encryption flag: relay stores opaque ciphertext, skips guardrails scan.
-# Negotiation routing: counter_offer in a 2-member private room is brokered.
 # Session link: a game session can have an associated room for in-session chat.
 # ============================================================================
 
@@ -9194,6 +9216,7 @@ from emporia.routes import pledges as _pledge_routes  # noqa: E402
 from emporia.routes import whats_next as _next_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
 from emporia.routes import posts as _post_routes  # noqa: E402
+from emporia.routes import beacon as _beacon_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
@@ -9222,5 +9245,6 @@ app.include_router(_pledge_routes.router)
 app.include_router(_next_routes.router)
 app.include_router(_like_routes.router)
 app.include_router(_post_routes.router)
+app.include_router(_beacon_routes.router)
 app.include_router(_deletion_routes.router)
 app.include_router(_translog_routes.router)

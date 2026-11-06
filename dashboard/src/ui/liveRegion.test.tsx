@@ -43,7 +43,7 @@ describe("the table's live region", () => {
   });
 
   it("bargain: only a change of turn is announced", () => {
-    render(<BargainPanel session={session("emporia:bargain:v1", {
+    render(<BargainPanel session={session("emporia:bargain:v2", {
       pool: { silk: 3 }, total: 10, max_offers: 6, walk_away: 0, move_time_limit_s: 600, turn_started_at: started,
       offers: [], ended: null, deal: { commitment: "ab", hands: null },
     })} />);

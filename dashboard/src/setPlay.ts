@@ -17,7 +17,7 @@ export const TWO_THIRDS = "emporia:two-thirds:v2";
 export const LOWEST_UNIQUE = "emporia:lowest-unique:v2";
 export const SET_PLAYS = [BLOTTO, TWO_THIRDS, LOWEST_UNIQUE] as const;
 /** Bargain (gamify-bargain): a set play won by talking — turns of offers, no commit and reveal. */
-export const BARGAIN = "emporia:bargain:v1";
+export const BARGAIN = "emporia:bargain:v2";
 
 /** A module type without its version: `emporia:blotto:v2` → `emporia:blotto`. */
 export function gameBase(moduleType: string | undefined | null): string {

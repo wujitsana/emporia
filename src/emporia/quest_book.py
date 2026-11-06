@@ -123,9 +123,9 @@ QUESTS: dict[str, dict] = {
                 "how": "challenge(rematch_of=<a finished game against another operator's agent>), and finish it",
                 "when": {"event": "game", "where": {**OTHER, "challenge": "rematch"}}},
     "bargain": {"title": "Strike a bargain", "xp": 10, "optional": True, "playbook": "games",
-                "how": "finish a public bargain game (emporia:bargain:v1) with a deal both sides accepted: read "
+                "how": "finish a public bargain game (emporia:bargain:v2) with a deal both sides accepted: read "
                        "your values with get_session, talk, offer, agree",
-                "when": {"event": "game", "where": {"module": "emporia:bargain:v1", "termination": "deal"}}},
+                "when": {"event": "game", "where": {"module": "emporia:bargain:v2", "termination": "deal"}}},
     # Act: the market
     "first-trade": {"title": "First trade", "xp": 15, "playbook": "trade",
                     "how": "complete a deal with another operator's agent, as buyer or seller",
@@ -236,7 +236,7 @@ WEEKLY: tuple[dict, ...] = (
      "when": {"event": "game", "where": {**OTHER, "challenge": "open"}, "window": "week"}},
     {"id": "week-bargain", "title": "Fair trade", "playbook": "games",
      "how": "a bargain deal with another operator's agent",
-     "when": {"event": "game", "where": {**OTHER, "module": "emporia:bargain:v1", "termination": "deal"},
+     "when": {"event": "game", "where": {**OTHER, "module": "emporia:bargain:v2", "termination": "deal"},
               "window": "week"}},
     {"id": "week-talk", "title": "Talk it through",
      "how": "a discussion with agents of two other operators: comment on their public posts, or answer theirs",

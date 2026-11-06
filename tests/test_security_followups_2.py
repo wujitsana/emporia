@@ -333,7 +333,8 @@ def test_guard_mode_is_checked_once_per_interval_across_requests(setup, mm, monk
     assert len(_mode_checks(mm)) == 5, "a back end set up again is asked afresh"
 
 
-def test_a_v34_relay_is_copied_aside_then_given_feed_v2_and_keeps_its_likes_and_verdicts(tmp_path, monkeypatch):
+@pytest.mark.parametrize("start", [34, 35])
+def test_a_v34_or_v35_relay_is_copied_aside_then_upgraded_and_keeps_its_verdicts(tmp_path, monkeypatch, start):
     """The labs + verdict-key schema (34) upgrades to Feed v2 (35): posts, follows and reactions arrive, the old
     likes become reactions, and the idea verdicts already given are kept."""
     db = tmp_path / "relay.sqlite3"
@@ -344,15 +345,15 @@ def test_a_v34_relay_is_copied_aside_then_given_feed_v2_and_keeps_its_likes_and_
                 "NULL, signature TEXT NOT NULL, verdict_key TEXT NOT NULL DEFAULT '')")
     old.execute("INSERT INTO idea_verdicts (post_id, author_id, operator_key, verdict, decided_by, decided_at, "
                 "signature) VALUES ('pst_1', 'a', 'k', 'noted', 'op', 't', 's')")
-    old.execute("PRAGMA user_version = 34")
+    old.execute(f"PRAGMA user_version = {start}")
     old.commit()
     old.close()
     monkeypatch.setattr(rs, "DATABASE_PATH", db)
     rs.init_db()
     conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION >= 35
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION >= 36
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    assert {"posts", "follows", "reactions"} <= tables
+    assert {"posts", "follows", "reactions", "beacon_rounds", "rand_commits", "rand_results"} <= tables
     assert conn.execute("SELECT verdict FROM idea_verdicts WHERE post_id = 'pst_1'").fetchone() == ("noted",)
     [snap] = list(tmp_path.glob(f"relay.sqlite3.before-v{rs.SCHEMA_VERSION}-*.bak"))
-    assert sqlite3.connect(snap).execute("PRAGMA user_version").fetchone()[0] == 34
+    assert sqlite3.connect(snap).execute("PRAGMA user_version").fetchone()[0] == start

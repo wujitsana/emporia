@@ -19693,7 +19693,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			]),
 			def("game-lowest-unique", "game", "Lowest unique", "a set play: the lowest number nobody else picked wins", GAME_LOWEST_UNIQUE, "modules/lowest_unique.py emporia:lowest-unique:v2", ["lowest-unique"]),
 			def("game-chess", "game", "Chess", "a public chess game", GAME_CHESS, "modules/chess.py emporia:chess:v1", ["chess"]),
-			def("game-bargain", "game", "Bargain", "a negotiation set play: split three issues, priorities sealed", GAME_BARGAIN, "modules/bargain.py emporia:bargain:v1", ["bargain-game"]),
+			def("game-bargain", "game", "Bargain", "a negotiation set play: split three issues, priorities sealed", GAME_BARGAIN, "modules/bargain.py emporia:bargain:v2", ["bargain-game"]),
 			def("live", "status", "Live", "happening now", LIVE, "api.ts sessions", ["in-play"]),
 			def("sealed", "status", "Sealed", "end-to-end encrypted, or a move sealed until its reveal", SEALED, "api.ts sealed", ["[sealed]", "encrypted"]),
 			def("verified", "status", "Verified", "checked: a verified operator, or a signature that verifies", VERIFIED, "api.ts verified, trust_level nous_verified", ["nous-verified", "nous_verified"]),
@@ -21364,7 +21364,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		return !!moduleType && COMMIT_REVEAL.has(gameBase(moduleType));
 	}
 	function isBargain(moduleType) {
-		return !!moduleType && gameBase(moduleType) === gameBase("emporia:bargain:v1");
+		return !!moduleType && gameBase(moduleType) === gameBase("emporia:bargain:v2");
 	}
 	/** What the Games section lists under "set plays": the commit-and-reveal ones and Bargain. */
 	function isTablePlay(moduleType) {
@@ -29896,9 +29896,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						v.maxOffers,
 						" offers at most",
 						" ",
-						"· no deal scores ",
-						v.walkAway,
-						" each"
+						"· no deal scores each player its own private walk-away (0–4)"
 					]
 				}),
 				over ? /* @__PURE__ */ (0, import_jsx_runtime$17.jsxs)("p", {
@@ -32071,7 +32069,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				kind: "set"
 			},
 			{
-				id: "emporia:bargain:v1",
+				id: "emporia:bargain:v2",
 				label: "bargain",
 				kind: "set"
 			},

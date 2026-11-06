@@ -15,10 +15,12 @@ What it checks:
 - **Every receipt this agent holds is the relay's signature, and its move is
   in the log** with the same content. A receipt whose move is missing is the
   relay having accepted a move and then dropped it.
-- **A dealt game's hands are what nobody could choose** (Bargain): the revealed
-  relay seed hashes to the commitment published in the config, each player's
-  share is its own signature (the creator's signed creation, the joiner's
-  signature over that commitment), and re-dealing the seed gives the same hands.
+- **A game that draws from the randomness service is what nobody could choose**
+  (Bargain v2, `emporia:rand:v1`): every player's commitment is its own signature and
+  names a round at least 10 rounds after it was signed, the beacon round in the state
+  is drand's (its BLS signature is checked here, against the pinned key), every
+  revealed secret hashes to its commitment, and recomputing both hands gives the
+  values and points the relay published.
 - **The relay's verdict is what the rules give.** The moves are replayed
   through the game's own module, here. A game ended by the clock cannot be
   replayed without the times, so it is reported as such, with the receipts'
@@ -109,57 +111,69 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
     if cls is None:
         note("verdict", UNCHECKED, f"{session['module_type']} is not installed here, so its rules cannot be replayed")
     else:
-        if getattr(cls, "DEALS_HIDDEN", False):
-            note(*_deal_check(cls(), session, public_keys))
-        note(*_replay(cls(), session, entries, relay_verdict))
+        if getattr(cls, "USES_RAND", False):
+            note(*_rand_check(cls(), session, public_keys, relay_verdict))    # its clock-bound end is not replayed
+        else:
+            note(*_replay(cls(), session, entries, relay_verdict))
 
     failed = [f for f in findings if f["status"] == FAIL]
     return {"session_id": sid, "verdict": "fail" if failed else "ok", "failures": len(failed),
             "unchecked": sum(f["status"] == UNCHECKED for f in findings), "findings": findings}
 
 
-def _deal_check(module, session: dict[str, Any], public_keys: dict[str, str]) -> tuple[str, str, str]:
-    """Bargain: the hands were dealt from a seed neither the relay nor a player chose."""
-    from emporia import wire
-    from emporia.module_sdk import check_deal
+def _rand_check(module, session: dict[str, Any], public_keys: dict[str, str],
+                relay_verdict: dict[str, Any] | None) -> tuple[str, str, str]:
+    """`emporia:rand:v1`: the draws were what nobody could choose, and the published result follows."""
+    from emporia import beacon, rand, wire
     players = list(session.get("participants") or [])
-    deal = ((session.get("state") or {}).get("data") or {}).get("deal") or {}
+    data = (session.get("state") or {}).get("data") or {}
+    r = data.get("rand") or {}
+    commits = ((session.get("config") or {}).get("rand") or {}).get("commits") or {}
+    sid = session["session_id"]
     if session.get("status") not in ("completed", "abandoned"):
-        return "deal", UNCHECKED, "the game is not over, so its deal is not published yet"
-    # Review pass 2: a game that ended before it started (its creator abandoned it while it
-    # waited for a player) was never dealt — there are no hands to check, which is no failure.
-    # Only with too few players to start: a full table's deal is always checked.
-    if not deal.get("hands") and not deal.get("seed") and len(players) < module.MIN_PARTICIPANTS:
-        from emporia.module_sdk import deal_commitment
-        if deal.get("relay_seed") and deal_commitment(deal["relay_seed"]) != (session.get("config") or {}).get(
-                "deal_commitment"):
-            return "deal", FAIL, "the revealed relay seed does not match the commitment published before the game"
-        return "deal", UNCHECKED, "the game ended before it started, so no hands were dealt"
-    if why := check_deal(module, players, session.get("config") or {}, deal):
-        return "deal", FAIL, why
-    contrib, sid = deal["contributions"], session["session_id"]
-    terms = (session.get("payment_rules") or {}).get("signed_terms")
-    for i, p in enumerate(players):
-        c, key = contrib[p], public_keys.get(p)
+        return "rand", UNCHECKED, "the game is not over, so its secrets are not revealed yet"
+    if len(players) < module.MIN_PARTICIPANTS:
+        return "rand", UNCHECKED, "the game ended before it started, so nothing was drawn"
+    for seat, p in enumerate(players):
+        c = commits.get(p)
+        if not c or c.get("seat") != seat:
+            return "rand", FAIL, f"{p} has no commitment for seat {seat}"
+        key = public_keys.get(p)
         if not key:
-            return "deal", UNCHECKED, f"the seed matches; no public key for {p} to check its share"
-        if i == 0:
-            signed = wire.signed_session_create_payload(sid, p, session["module_type"], c.get("at", ""), terms)
-        else:
-            signed = wire.signed_deal_seed_payload(sid, p, deal["commitment"])
+            return "rand", UNCHECKED, f"no public key for {p} to check its commitment"
+        signed = wire.signed_rand_commit_payload(sid, p, seat, c["hash"], c["beacon_round"], c["at"])
         at_key = identity.signing_key_for(key, c.get("at")) if c.get("at") else key
         if not (at_key and identity.verify(signed, c.get("signature", ""), at_key)):
-            return "deal", FAIL, f"{p}'s share of the seed is not its own signature"
-    return "deal", OK, ("the hands are the seed's: the relay's seed matches its commitment and every "
-                        "player's share is its own signature")
+            return "rand", FAIL, f"{p}'s commitment is not its own signature"
+        if why := rand.commit_round_problem(c["at"], c["beacon_round"]):
+            return "rand", FAIL, f"{p}'s commitment: {why}"
+    rnd = max(int(c["beacon_round"]) for c in commits.values())
+    if r.get("round") != rnd or r.get("scope") != sid:
+        return "rand", FAIL, "the game's round or scope is not the one its commitments name"
+    sig = r.get("beacon_sig")
+    if not sig:
+        return "rand", UNCHECKED, "the game ended before its beacon round was needed: no hands were drawn"
+    if not beacon.verify(rnd, sig):
+        return "rand", FAIL, f"the stored beacon for round {rnd} is not drand's signature (pinned key)"
+    for p, rev in (r.get("reveals") or {}).items():
+        if why := module.reveal_problem(commits[p], rev):
+            return "rand", FAIL, f"{p}'s reveal: {why}"
+    hands = module._hands(data, players)
+    if relay_verdict and relay_verdict.get("values"):
+        for p, v in relay_verdict["values"].items():
+            if p not in hands or v != module._as_dict(hands[p][0]):
+                return "rand", FAIL, f"{p}'s published hand is not the one its secret and the beacon give"
+    if relay_verdict and relay_verdict.get("walk_aways"):
+        for p, w in relay_verdict["walk_aways"].items():
+            if p not in hands or w != hands[p][1]:
+                return "rand", FAIL, f"{p}'s published walk-away is not the one its secret and the beacon give"
+    return "rand", OK, (f"commitments are the players' own, round {rnd} is drand's, "
+                        f"{len(hands)} revealed hand(s) recompute to what was published")
 
 
 def _replay(module, session: dict[str, Any], entries: list[dict[str, Any]],
             relay_verdict: dict[str, Any] | None) -> tuple[str, str, str]:
     state = module.initial_state(list(session["participants"]), session.get("config") or {})
-    if getattr(module, "DEALS_HIDDEN", False):
-        from emporia.module_sdk import with_deal
-        state = with_deal(state, **(((session.get("state") or {}).get("data") or {}).get("deal") or {}))
     outcome: dict[str, Any] | None = None
     for i, e in enumerate(entries):
         try:

@@ -25,47 +25,6 @@ def test_the_signer_takes_its_agent_id_in_one_spelling_only(held):  # noqa: F811
     assert r.status_code == 401
 
 
-def test_a_bargain_joiner_signs_one_deal_share_per_game(monkeypatch):
-    """A hostile relay that refused the join and served another deal_commitment on the retry
-    got a second share — a second deal — and could keep the hands it liked. The client now
-    signs a share for the first commitment it saw, and refuses a game whose commitment moved."""
-    import uuid
-
-    from emporia import identity, wire
-    from emporia import mcp_server as m
-
-    class R:
-        def __init__(self, body, code=200):
-            self._b, self.status_code = body, code
-
-        def json(self):
-            return self._b
-
-    served = {"c": "ab" * 32}
-    posted = []
-
-    def fake(method, url, **kw):
-        if method == "post":
-            posted.append(kw.get("json"))
-            return R({"detail": "try again"}, 503)
-        return R({"session_id": "sess_g", "module_type": "emporia:bargain:v1", "status": "waiting",
-                  "config": {"deal_commitment": served["c"]}, "payment_rules": {}, "participants": ["x"]})
-    monkeypatch.setattr(m, "_bearer_request", fake)
-    me = f"gr_{uuid.uuid4().hex[:6]}"
-    identity.get_public_key_hex(me)
-    m.join_session("sess_g", agent_id=me)
-    m.join_session("sess_g", agent_id=me)                       # a retry of the same game: the same share
-    assert len(posted) == 2 and posted[0]["deal_signature"] == posted[1]["deal_signature"]
-    served["c"] = "cd" * 32                                     # the relay deals again
-    r = m.join_session("sess_g", agent_id=me)
-    assert not r["success"] and "not the one you signed" in r["error"]
-    assert len(posted) == 2, "no share signed for the new commitment"
-    assert not any(identity.verify(wire.signed_deal_seed_payload("sess_g", me, "cd" * 32), b["deal_signature"],
-                                   identity.get_public_key_hex(me)) for b in posted)
-    served["c"] = {"not": "hex"}
-    assert not m.join_session("sess_g2", agent_id=me)["success"]
-
-
 def test_the_key_guard_keeps_mainnet_and_limits_out_of_the_agents_own_config():
     """`emporia wallet mainnet` is person-only and `wallet limits` waits for the person's yes,
     but the settings themselves went straight into the agent's config with no word from the

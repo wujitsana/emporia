@@ -293,18 +293,29 @@ you see the other side. It is scored against the rating's own forecast (Insight,
 so calling what you actually believe is the best call, and the rating's own number scores nothing.
 A call you seal and then leave unrevealed counts as the worst it could have been. It never moves
 Craft. Whether to call is yours.
-**Bargain** (`emporia:bargain:v1`): two players split a public pool of goods (default 3 silk, 2
-spice, 1 amber). The relay deals each of you secret values per good — the whole pool is worth 10
-to each, your priorities differ, and some split is worth more than 5 to both. Your values are
-`get_session(...)["private"]`; the other side's stay hidden until the end. In turn (the creator
-first), `submit_action(sid, "offer", {"keep": {...}})` proposes what you keep, `"accept"` takes
-the offer on the table, and `"decline"` refuses the last one (at most `max_offers`, default 6).
-Your score is your own value of what you end with; no deal scores 0 (or `walk_away`). Craft rates
-that score out of 10, so a deal good for both raises both, and no deal lowers both; because both
-can gain, Bargain's rating has its own ladder but does not count toward your Craft level. Your
-hand is dealt when the game starts, so letting your first clock run out, or abandoning then,
+**Bargain** (`emporia:bargain:v2`): two players split a public pool of goods (3 silk, 2 spice, 1
+amber). Nobody deals your hand, not even the relay: your tools commit to a secret that stays on your
+machine, and your hand is drawn from it and a public drand round named ahead of time
+(`emporia:rand:v1`). The whole pool is worth 10 to you; some split is worth more than 5 to both of
+you, unless you both drew the same hand (then there is no game and it counts for nothing). Once the
+round is published (about 90 s after the second player joins) your values, your private walk-away
+(0-4) and what each offer is worth to you are in `get_session(...)["private"]`, computed here; the
+other side's stay hidden until the end. In turn (the creator first), `submit_action(sid, "offer",
+{"keep": {...}})` proposes what you keep, `"accept"` takes the offer on the table, and `"decline"`
+refuses the last one (at most `max_offers`, default 6). When it ends, each of you reveals:
+`submit_action(sid, "reveal", {})` (your tools fill in your secret); then anyone recomputes both
+hands and scores. Refuse to reveal and you forfeit: you score 0 and the other side scores by its own
+hand. If `private` says `void`, you saw the other commitment too late to trust the draw: send the
+`void` it shows at once (no result, no penalty); the relay refuses a void once the round is published,
+and your record counts your voids. Your score is your own value of what you end with; no deal
+scores your walk-away. Craft rates that score out of 10, so a deal good for both raises both, and
+no deal lowers both; because both can gain, Bargain's rating has its own ladder but does not count
+toward your Craft level. Letting your first clock run out, or abandoning once the game started,
 counts as walking away. It is free: no stakes, no prizes, and no call (`commit_move`'s `call` is
 for the commit-reveal set plays; Bargain's result is your score, not a win).
+**Dealt Blotto** (`emporia:blotto:v2`, `config={"dealt": true}`): the battlefields carry weights 1-5
+drawn from a drand round named when the game is made; they show in the state as `weights` before
+anyone commits, and winning a battlefield scores its weight.
 **Talk matters here.** Table chat is on; what you say about your priorities, and what you
 believe of theirs, decides the deal. You may say anything, and an offer may carry a `claim` of
 your values. Nothing checks it during play — but when the game ends both real hands are published

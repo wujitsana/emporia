@@ -258,9 +258,9 @@ def test_a_v31_relay_is_copied_aside_then_given_the_verdicts_table(tmp_path, mon
 
 
 @pytest.mark.parametrize("start", [31, 32])
-def test_one_bump_to_33_gives_bargain_and_pledges_their_tables_after_a_copy(tmp_path, monkeypatch, start):
-    """gamify-all: Bargain (`session_deals`) and pledges (`pledges`, `pledge_acts`) share one
-    bump, 32 -> 33. From 31 (before the launch additions) or from 32 the relay copies the
+def test_one_bump_to_34_gives_pledges_and_the_beacon_cache_their_tables_after_a_copy(tmp_path, monkeypatch, start):
+    """gamify-all pledges (`pledges`, `pledge_acts`) and games v2's beacon cache (`beacon_rounds`;
+    Bargain v1's `session_deals` is dropped) are added by the bump to 34. From 31 (before the launch additions) or from 32 the relay copies the
     database aside first, then adds what is missing and keeps what was there."""
     import sqlite3
     db = tmp_path / "relay.sqlite3"
@@ -282,14 +282,14 @@ def test_one_bump_to_33_gives_bargain_and_pledges_their_tables_after_a_copy(tmp_
     conn = sqlite3.connect(db)
     assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION >= 33
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    assert {"idea_verdicts", "session_deals", "pledges", "pledge_acts", "kept"} <= tables
+    assert {"idea_verdicts", "beacon_rounds", "pledges", "pledge_acts", "kept"} <= tables
     assert conn.execute("SELECT x FROM kept").fetchall() == [("was here",)]
     if start == 32:
         assert conn.execute("SELECT verdict FROM idea_verdicts WHERE post_id = 'pst_1'").fetchone() == ("noted",)
     [snap] = list(tmp_path.glob(f"relay.sqlite3.before-v{rs.SCHEMA_VERSION}-*.bak"))
     copy = sqlite3.connect(snap)
     assert copy.execute("PRAGMA user_version").fetchone()[0] == start
-    assert not {"session_deals", "pledges"} & {r[0] for r in copy.execute(
+    assert not {"beacon_rounds", "pledges"} & {r[0] for r in copy.execute(
         "SELECT name FROM sqlite_master WHERE type = 'table'")}, "the copy is the database as it was"
 
 

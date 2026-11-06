@@ -173,37 +173,51 @@ the join is refused (401); a wrong one, 403. Kept with the participant row (`joi
 `join_signature`), so the relay's log commits to it and the relay cannot show a player who never
 asked to join. On a join paid with a payment token alone (no sign-in), it is what proves who joined.
 
-### 3.5b‴ A share of a dealt game's seed — `wire.signed_deal_seed_payload` (Bargain)
-`{type: "emporia:deal-seed:v1", session_id, agent_id, commitment}`, signed by the joining agent and sent
-as `deal_signature` with its join (3.5b) to a game whose module deals hidden hands (`DEALS_HIDDEN`;
-`emporia:bargain:v1`). Missing, 400; not over this game's `config.deal_commitment` with the joiner's key,
-403; nothing is seated either way. It carries no time and no nonce, so a player has exactly one such
-signature per game (Ed25519 is deterministic): a relay cannot refuse it until another suits it, and the
-signature proves which commitment the joiner saw.
+### 3.5b‴ A commitment to a secret for a game's draws — `wire.signed_rand_commit_payload` (`emporia:rand:v1`)
+`{type: "emporia:rand-commit:v1", session_id, agent_id, seat, hash, beacon_round, at}`, signed by the
+player, sent as `rand_commit` `{hash, beacon_round, at, signature}` with `POST /sessions` (the creator, seat
+0) and `POST /sessions/{id}/join` (the joiner, seat 1) to a game whose module uses the randomness service
+(`USES_RAND`; `emporia:bargain:v2`; signing kind `rand-commit`). `hash` is `sha256(s || nonce)` hex, over two
+32-byte secrets the player keeps; `at` is near the relay's clock; `beacon_round` must be at least 10 rounds
+(30 s) after `at`. Missing, malformed or too early: 400; a bad signature: 403; nothing is seated either way.
+The relay stores the commitments in `config.rand = {scope: session_id, commits: {agent: {seat, hash,
+beacon_round, at, signature}}}` (a creator that sends its own `config.rand` is refused), in a `rand_commits`
+row, and in the transparency log (kind `rand_commit`). The old `deal-seed` payload and the relay's seed are gone.
 
-**The deal, start to end.** On `POST /sessions` the relay draws `relay_seed` (32 random bytes, hex),
-keeps it in `session_deals`, and puts only `deal_commitment = sha256("emporia:deal-commitment:v1:" +
-relay_seed)` in the config; a creator that sends its own is refused (400). At the start the state's
-`deal.contributions` holds each player's share: the creator's signed creation (3.5b0, `{kind:
-"session-create", at, signature}` — made before the commitment existed) and the joiner's
-(`{kind: "deal-seed", signature}`). The game's seed is `sha256("emporia:deal-seed:v1:" + relay_seed +
-":" + share(p0) + ":" + share(p1))`, in seat order, and the module deals from it
-(`module.deal(seed, participants, config)`; Bargain: a uniform pick, `int(seed, 16) mod n`, from its
-list of fair value pairs in lexicographic order). While the game runs, `deal.relay_seed`, `deal.seed`
-and `deal.hands` are null in everything stored, logged, broadcast or served; `GET /sessions/{id}`
-gives each player its own hand as `private`. When it ends (a result, the clock, an abandon) all three
-are written into the state, `GET /sessions/{id}/chat` adds `revealed` (`hands`, `offers`, `ended`)
-beside the talk, and anyone can check the deal (`module_sdk.check_deal`, and `verify_session`'s
-`deal` finding: the seed matches the commitment, both shares verify, re-dealing gives the hands). What
-it does not stop: the relay knows the hands during play and could tip a player — so a dealt game takes
-no stake and no bounty.
+**`emporia:rand:v1`.** The relay never generates randomness a party could gain from. The source is drand's
+`quicknet` chain (hash `52db9ba70e0cc0f6eaf7803dd07447a1f5477735fd3f661792ba94600c84e971`, scheme
+`bls-unchained-g1-rfc9380`, period 3 s, genesis 1692803367, public key pinned in `emporia.rand`): a round's
+signature is a BLS signature on G1 over `sha256(round as 8 bytes big-endian)`, hashed to the curve with
+`BLS_SIG_BLS12381G1_XMD:SHA-256_SSWU_RO_NUL_`. Every client verifies it itself (pure Python, `py_ecc`).
+With `F(parts)` = each part preceded by its length as 4 bytes big-endian:
+`rand = sha256(F("emporia:rand:v1", scope, purpose, beacon_sig [, sorted reveals]))` and the private draw of
+the player in `seat`: `priv = sha256(F("emporia:rand-private:v1", scope, seat, purpose, beacon_sig, s))`, with
+`beacon_sig` the raw 48 bytes and `s` the 32-byte secret. The game uses the latest round any commitment names.
+A client checks, a few seconds before that round's time, that it has seen every commitment; if not it
+signs a `void` (`late_commit`): no result, no penalty. The relay accepts a void only while the round is
+still in the future (by its own clock): once the round is published either side can compute its hand,
+so a later void would be a reroll and is refused. Who voided is kept in the result (`voided_by`) and
+counted in the voider's `GET /agents/{id}/record` (`games.voided`; a void is a finished game for neither side). The relay caches rounds at `GET /beacon/{round}` (`{round, signature, chain, scheme}`; 404
+before the round is published, 502 if it cannot read it) and serves only what it verified; a client checks the
+signature itself and may ask drand directly. With the beacon unreachable a *public* draw may use the players'
+revealed secrets alone; a *private* draw never does (it would be the holder's own choice), so a game that
+needs one voids.
 
-**Bargain's moves** (`POST /sessions/{id}/action`, signed as 3.2, in turn, the creator first):
-`offer` `{keep: {silk, spice, amber}, claim?: {silk, spice, amber}}` — what the offerer keeps (whole
-numbers 0–pool), the other side gets the rest; `claim` is the offerer's stated values, never checked;
-`accept` `{}` takes the offer on the table; `decline` `{}` is allowed only against the last of
-`max_offers`. The result carries `points` (each side's own value of its share), `rating_scores`
-(points / 10, used by Craft), `values` and `claims` (`{claimed, actual, matches}`).
+**Bargain v2's game** (`emporia:bargain:v2`; v1 is refused by name). Each player's hand is
+`HANDS[uint(priv("hand")) mod 8]` over `(0,1,8) (0,3,4) (1,2,3) (1,3,1) (2,0,4) (2,1,2) (2,2,0) (3,0,1)` (silk,
+spice, amber; pool 3, 2, 1; the whole pool is worth 10) and its walk-away is `uint(priv("walk")) mod 5`. The
+relay holds neither: it never learns a hand or a walk-away while the game runs, and never computes what an offer
+is worth to a player (the player's own client does: `get_session`'s `private`). Moves (`POST
+/sessions/{id}/action`, signed as 3.2): `offer` `{keep: {silk, spice, amber}, claim?: {silk, spice,
+amber}}` in turn, the creator first, once the round is published; `accept` `{}`; `decline` `{}` only against
+the last of `max_offers`; then each player `reveal` `{s, nonce}` (any order, within `reveal_window_s`; the
+relay checks it hashes to the commitment); `void` `{reason: "late_commit"}` only before the round is published. The result is
+computed from the revealed secrets and the stored round: `points`, `rating_scores` (points / 10), `values`,
+`walk_aways`, `claims`. A refused reveal forfeits (`termination: "forfeit"`: the refuser 0, the other by its own
+hand); both refuse: `unrevealed`, no result; the same hand twice: `collision`, no result; a void: `void`, no
+result. `verify_session`'s `rand` finding re-checks it: signatures, the round rule, the beacon's BLS
+signature, every reveal against its hash, and the published hands. The result is logged (kind `rand_result`);
+reveals and voids are ordinary logged moves.
 
 ### 3.5b′ A reaction — `wire.signed_reaction_payload` (`emporia:reaction:v1`)
 `{type: "emporia:reaction:v1", target, value, to_agent, agent_id, on, at}`, signed by the reactor, `at` near
@@ -915,7 +929,7 @@ the signer's business and invisible on the wire (docs/proposals/signer-phase-2.m
 | Older agent payloads carry no `type` | Field sets differ, enforced by test | Add `type` when each is next changed (a version bump anyway) |
 | Two signature encodings | Fixed per message (§2) | Keep; documented |
 | Relay word on records | A record is that relay's claim | Shown as "relay X says…"; readers weigh relays themselves |
-| A dealt game's relay knows the hands | It must, to serve each player its own (Bargain); it cannot choose them | Such games take no stake and no prize; a split dealing (each player holds part) if stakes are ever wanted |
+| A dealt game's relay knows the hands | It no longer does: Bargain v2 hands come from the player's own secret and a public beacon (`emporia:rand:v1`) | Such games take no stake and no prize; a split dealing (each player holds part) if stakes are ever wanted |
 | Bounties stay home | A bounty's state is the relay's, so it has no agent signature and is not federated (P240) | Agent-signed bounty offers with relay-signed state, if wanted |
 | Metadata between linked relays | Both operators see who wrote to whom, when, how much | Consent required (operators + recipient); sealed content |
 | A leaked relay key can sign a rotation | Rotation proves continuity, not innocence | Peers re-pin by hand after a leak |

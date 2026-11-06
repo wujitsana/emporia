@@ -1249,7 +1249,7 @@ def test_relay_jwt_secret_persists_across_restart():
 def test_dashboard_jwt_survives_simulated_relay_restart():
     """End-to-end proof: a token minted before a simulated restart (in-process JWT secret
     cache cleared, forcing a reload from disk) still verifies after."""
-    from emporia import identity, relay_server
+    from emporia import identity
 
     with __import__("conftest").header_shim_off():
         client = TestClient(app, client=("127.0.0.1", 51216))
@@ -2446,6 +2446,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/thread"): "the replies to any object: a private room or topic needs membership (403)",
         ("GET", "/follows"): "whom an agent follows, and a count: signed, public acts",
         ("GET", "/federation/v1/posts"): "pointer posts agents here wrote, signed for linked relays; nothing in a topic or a reply",
+        ("GET", "/beacon/{round_no}"): "games v2: drand's public signed rounds, verified by the relay and again by every client",
         ("GET", "/agents/{agent_id}/quests"): "P297: welcome quests — computed from records the relay already publishes; XP and badges, no standing",
         ("GET", "/quests/book"): "quests:v4: the quest definitions — the same data for everyone, nobody's records",
         ("GET", "/challenges"): "quests:v4: open challenges — public waiting games anyone may join, as /sessions lists them",
@@ -3468,53 +3469,6 @@ def test_audit_chain_detects_tampering():
                     log_path.write_text("\n".join(lines) + "\n")
                     ok, msg = verify_chain(sid)
                     assert not ok
-
-
-# ============================================================================
-# Negotiation
-# ============================================================================
-
-def test_negotiation_buyer_accept():
-    from emporia.negotiation import process_offer
-    decision, resp = process_offer(
-        "vendor_a",
-        {"price_usd": "8.00"},
-        {"role": "buyer", "max_budget_usd": "10"},
-    )
-    assert decision == "ACCEPT"
-    assert float(resp["price_usd"]) == 8.0
-
-
-def test_negotiation_buyer_counter():
-    from emporia.negotiation import process_offer
-    decision, resp = process_offer(
-        "vendor_a",
-        {"price_usd": "20.00"},
-        {"role": "buyer", "max_budget_usd": "10"},
-    )
-    assert decision == "COUNTER"
-    assert float(resp["price_usd"]) <= 10.0
-
-
-def test_negotiation_vendor_accept():
-    from emporia.negotiation import process_offer
-    decision, resp = process_offer(
-        "buyer_b",
-        {"price_usd": "6.00"},
-        {"role": "vendor", "min_acceptable_usd": "5"},
-    )
-    assert decision == "ACCEPT"
-
-
-def test_negotiation_vendor_counter():
-    from emporia.negotiation import process_offer
-    decision, resp = process_offer(
-        "buyer_b",
-        {"price_usd": "2.00"},
-        {"role": "vendor", "min_acceptable_usd": "5"},
-    )
-    assert decision == "COUNTER"
-    assert float(resp["price_usd"]) >= 5.0
 
 
 # ============================================================================
@@ -8689,16 +8643,6 @@ def test_verify_chain_page_empty_page_fails_closed(rooms_db_path):
     assert new_expected is None
 
 
-def test_is_negotiation_room(rooms_db_path):
-    from emporia.rooms import create_room, add_member, get_room
-    room = create_room("Negotiation", "agent_alice", room_type="private",
-                       gate_type="invite", db_path=rooms_db_path)
-    assert not room.is_negotiation_room()  # 1 member
-    add_member(room.room_id, "agent_bob", db_path=rooms_db_path)
-    room2 = get_room(room.room_id, db_path=rooms_db_path)
-    assert room2.is_negotiation_room()  # 2 members, private → negotiation room
-
-
 def test_list_rooms_visibility(rooms_db_path):
     from emporia.rooms import create_room, list_rooms
     create_room("Public One", "agent_alice", room_type="public", db_path=rooms_db_path)
@@ -9664,7 +9608,6 @@ def test_agent_sdk_send_dm_uses_shared_wire_contract_and_relay_accepts_it():
 
     import httpx as httpx_module
 
-    from emporia import wire
     from emporia.agent_sdk import EmporiaAgent
     from emporia.identity import get_public_key_hex
     from emporia.relay_server import app as relay_app
@@ -11382,7 +11325,6 @@ def test_agent_sdk_confirm_delivery_and_dispute_delivery_use_shared_wire_contrac
 
     import httpx as httpx_module
 
-    from emporia import wire
     from emporia.agent_sdk import EmporiaAgent
     from emporia.identity import get_public_key_hex
     from emporia.relay_server import app as relay_app
@@ -11675,7 +11617,6 @@ def test_relay_server_verifies_signed_action_and_room_message_via_wire_contract(
 
     import httpx as httpx_module
 
-    from emporia import wire
     from emporia.agent_sdk import EmporiaAgent
     from emporia.identity import get_public_key_hex
     from emporia.relay_server import app as relay_app
@@ -11747,7 +11688,6 @@ def test_relay_server_verifies_dm_signature_via_wire_contract():
 
     import httpx as httpx_module
 
-    from emporia import wire
     from emporia.agent_sdk import EmporiaAgent
     from emporia.identity import get_public_key_hex
     from emporia.relay_server import app as relay_app
@@ -13225,7 +13165,6 @@ def test_x402_credential_declined_explicitly_for_non_usd_currency(mock_verify, m
     payer = "p1brr2_eur_payer"
     _register_keyed(client, owner)
     _register(client, payer)
-    from emporia.relay_server import AGENT_REGISTRY
     __import__("conftest").give_wallet(owner, "evm", "0x" + "aa" * 20)
 
     r = client.post("/rooms", json=_signed_room(owner, {
@@ -13345,7 +13284,7 @@ def test_x402_challenge_output_round_trips_through_verification_without_mismatch
     import asyncio
 
     from emporia.payments import build_x402_challenge
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1br2_roundtrip_creator"
     _register(client, creator)
@@ -13647,7 +13586,7 @@ def test_x402_pay_to_by_network_excludes_unconfigured_or_walletless_networks(cli
     """P1b-4: a network the creator has no wallet for, or one not in
     EMPORIA_X402_NETWORKS at all, is silently excluded rather than raising —
     matches P1b-2's no-auto-provision posture."""
-    from emporia.relay_server import _x402_pay_to_by_network, AGENT_REGISTRY
+    from emporia.relay_server import _x402_pay_to_by_network
 
     creator = "p1b4_resolve_creator"
     _register(client, creator)
@@ -13678,7 +13617,7 @@ def test_x402_pay_to_by_network_reads_wallets_once_not_per_network(client):
     registered, connection count must be 1 and must not grow with the
     network count. Must fail pre-fix with count == 2."""
     from emporia import relay_server
-    from emporia.relay_server import _x402_pay_to_by_network, AGENT_REGISTRY
+    from emporia.relay_server import _x402_pay_to_by_network
 
     creator = "p1brr3_walletcount_creator"
     _register(client, creator)
@@ -13739,7 +13678,7 @@ def test_verify_x402_payment_rejects_wrong_payto_before_any_facilitator_call(moc
     client's claim outright."""
     import asyncio
 
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1b5_payto_creator"
     _register(client, creator)
@@ -13771,7 +13710,7 @@ def test_verify_x402_payment_rejects_tampered_amount(mock_verify, mock_settle, c
     down is caught the same way, before any facilitator call."""
     import asyncio
 
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1b5_amount_creator"
     _register(client, creator)
@@ -13835,7 +13774,7 @@ def test_verify_x402_payment_rejects_when_facilitator_says_invalid(mock_verify, 
     calling /settle."""
     import asyncio
 
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1b5_invalid_creator"
     _register(client, creator)
@@ -13868,7 +13807,7 @@ def test_verify_x402_payment_rejects_when_settlement_fails(mock_verify, mock_set
     spent between verify and settle) — must 402, not silently return success."""
     import asyncio
 
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1b5_settlefail_creator"
     _register(client, creator)
@@ -13901,7 +13840,7 @@ def test_verify_x402_payment_happy_path_returns_payment_ref(mock_verify, mock_se
     import asyncio
 
     from emporia.payments import RAIL_X402
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1b5_happy_creator"
     _register(client, creator)
@@ -14042,7 +13981,7 @@ async def test_x402_verify_payment_facilitator_error_surfaces_as_402(client):
     raises."""
     import httpx as httpx_module
 
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1brr4_facerr_creator"
     _register(client, creator)
@@ -14092,7 +14031,7 @@ async def test_verify_x402_payment_forwards_relay_computed_requirements_not_clie
     EIP-712 signing domain), so the probe moved to a key that is still outside
     — and the relay's own `extra` is asserted to be present and equal to what
     config says, which is a second, stronger version of the same property."""
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1brr4_forward_creator"
     _register(client, creator)
@@ -14493,7 +14432,6 @@ def test_dashboard_jwt_round_trip_authenticates_with_header_auth_off():
     test_header_auth_not_trusted_when_flag_off so the JWT path is exercised in isolation,
     not incidentally alongside still-trusted loopback headers.
     """
-    from emporia import relay_server
 
     with __import__("conftest").header_shim_off():
         client = TestClient(app, client=("127.0.0.1", 51216))
@@ -14508,7 +14446,6 @@ def test_dashboard_jwt_round_trip_authenticates_with_header_auth_off():
 
 
 def test_dashboard_jwt_rejects_wrong_key_signature():
-    from emporia import relay_server
 
     with __import__("conftest").header_shim_off():
         client = TestClient(app, client=("127.0.0.1", 51216))
@@ -17638,14 +17575,9 @@ def test_room_encryption_keys_is_one_query_not_two_per_member(client):
     assert spy.call_count == 1, spy.call_args_list
 
 
-def test_encrypted_negotiation_room_refuses_the_broker(client):
-    """P19-6 (M8): the broker used to run unconditionally — on an encrypted
-    room, req.content is the envelope (a JSON dict), so the "looks like JSON"
-    check passed and process_offer() got handed the envelope's structural
-    fields as if they were an offer. Worse: on ACCEPT/COUNTER it then wrote a
-    *plaintext* system message into the encrypted room via rooms_db.post_message(),
-    bypassing validate_envelope_for() entirely. Now it refuses cleanly, and
-    nothing — encrypted or not — gets written."""
+def test_negotiation_msg_types_are_refused_by_name(client):
+    """C1: the relay never computes terms. counter_offer / accept / reject are
+    refused with a clear error in rooms and DMs, encrypted or not; nothing is stored."""
     _enc_agents(client, "p19_neg_a", "p19_neg_b")
     room = client.post("/rooms", json=_signed_room("p19_neg_a", {
         "name": "p19 neg room", "description": "", "room_type": "private",
@@ -17655,16 +17587,17 @@ def test_encrypted_negotiation_room_refuses_the_broker(client):
                headers={"X-Emporia-Agent-Id": "p19_neg_a"})
     assert client.post(f"/rooms/{room}/join", json={"agent_id": "p19_neg_b"},
                        headers={"X-Emporia-Agent-Id": "p19_neg_b"}).status_code == 200
-
-    sealed = _seal_room(room, "p19_neg_a", ["p19_neg_a", "p19_neg_b"],
-                        json.dumps({"price_usd": "8.50"}), msg_type="counter_offer")
-    r = _send_room_raw(client, room, "p19_neg_a", sealed, msg_type="counter_offer")
-    assert r.status_code == 400, r.text
-    assert "encrypted" in r.text.lower()
-
+    for mt in ("counter_offer", "accept", "reject"):
+        sealed = _seal_room(room, "p19_neg_a", ["p19_neg_a", "p19_neg_b"],
+                            json.dumps({"price_usd": "8.50"}), msg_type=mt)
+        r = _send_room_raw(client, room, "p19_neg_a", sealed, msg_type=mt)
+        assert r.status_code == 400, r.text
+        assert "never computes terms" in r.text
     msgs = client.get(f"/rooms/{room}/messages",
                       headers={"X-Emporia-Agent-Id": "p19_neg_b"}).json()["messages"]
-    assert msgs == [], "a refused broker call must not reach storage, plaintext or not"
+    assert msgs == []
+    with pytest.raises(ImportError):
+        __import__("emporia.negotiation")
 
 
 def test_room_encryption_keys_is_members_only(client):
@@ -24786,7 +24719,6 @@ def test_one_purchase_settles_once_even_when_the_retry_signs_a_fresh_nonce(
     """
     import asyncio
 
-    from emporia.relay_server import AGENT_REGISTRY
     creator, payer = "p48_once_creator", "p48_once_payer"
     _register(client, creator)
     _register(client, payer)
@@ -24834,7 +24766,6 @@ def test_an_interrupted_settlement_is_never_retried_on_an_unknown_chain_state(
     """
     import asyncio
 
-    from emporia.relay_server import AGENT_REGISTRY
     creator, payer = "p48_unknown_creator", "p48_unknown_payer"
     _register(client, creator)
     _register(client, payer)
@@ -24899,7 +24830,6 @@ def test_an_interrupted_settlement_the_chain_says_landed_is_recovered_not_repaid
     AuthorizationUsed log, completes the purchase — and never settles again."""
     import asyncio
 
-    from emporia.relay_server import AGENT_REGISTRY
     creator, payer = "p48_recover_creator", "p48_recover_payer"
     _register(client, creator)
     _register(client, payer)
@@ -24951,7 +24881,6 @@ def test_an_unspent_authorization_is_only_retried_once_it_can_no_longer_land(
     """
     import asyncio
 
-    from emporia.relay_server import AGENT_REGISTRY
     creator, payer = "p48_interlock_creator", "p48_interlock_payer"
     _register(client, creator)
     _register(client, payer)
@@ -25020,7 +24949,7 @@ def test_the_intent_retires_when_the_entitlement_it_bought_exists(
     re-purchase after the first entitlement expires would collide with the
     settled intent and be handed free access, months later.
     """
-    from emporia.relay_server import AGENT_REGISTRY, DB_LOCK, get_db
+    from emporia.relay_server import DB_LOCK, get_db
 
     creator, payer = "p48_retire_creator", "p48_retire_payer"
     _register_keyed(client, creator)
@@ -25079,7 +25008,6 @@ def test_the_crash_window_survives_a_real_join_request_not_just_a_direct_call(
     unrecorded here — and the payer then retries the join exactly as they
     would have to.
     """
-    from emporia.relay_server import AGENT_REGISTRY
 
     creator, payer = "p48_route_creator", "p48_route_payer"
     _register_keyed(client, creator)
@@ -25587,7 +25515,7 @@ def test_the_x402_intent_retires_when_the_retry_finishes_the_purchase(
     crash is at the grant rather than simulated at the seam.
     """
     from emporia import entitlements
-    from emporia.relay_server import AGENT_REGISTRY, DATABASE_PATH, DB_LOCK, get_db
+    from emporia.relay_server import DATABASE_PATH, DB_LOCK, get_db
 
     creator, payer = "p50_x402_creator", "p50_x402_payer"
     _register_keyed(client, creator)
@@ -27219,6 +27147,8 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V31 -> V32 (launch additions): `idea_verdicts`, the operator's signed verdict on an idea.
 #
+# V33 -> V34 (games v2): `session_deals` is dropped, `beacon_rounds` (a cache of drand rounds), `rand_commits` and `rand_results` added.
+#
 # V32 -> V33 (gamify-all: Bargain and pledges in one bump): `session_deals`, the relay's secret
 # seed for a game that deals hidden hands, kept out of the session's state until the game ends
 # (a V32 relay would serve a dealt game it cannot deal or reveal); `pledges` and `pledge_acts`,
@@ -27229,7 +27159,9 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # `bug_reports.verdict_key` / `verdict_signature`, `idea_verdicts.verdict_key` (the operator's verdict key).
 #
 # V34 -> V35 (Feed v2): `posts`, `follows`, `opened_from`, `reactions` (replacing `likes`).
-_SCHEMA_FINGERPRINT_V35 = "18e936c0bc118bcc64a4045fc403603267da6371415902fdc465bf527f6fdb53"  # labs + verdict key (V34) + Feed v2: posts, follows, reactions
+#
+# V35 -> V36 (games v2): `session_deals` dropped (Bargain v1); `beacon_rounds`, `rand_commits`, `rand_results` added.
+_SCHEMA_FINGERPRINT_V36 = "938248da42eabb5bd965750a66c0dc8343738972e2e2e83e3ef52e03f03f5393"  # labs + verdict key + Feed v2 + the randomness service
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27269,9 +27201,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (35, _SCHEMA_FINGERPRINT_V35), (
+    assert (SCHEMA_VERSION, fingerprint) == (36, _SCHEMA_FINGERPRINT_V36), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V35 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V36 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
@@ -27518,6 +27450,7 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/posts/{}": "one post — the Feed lists them with the same fields",
     "/follows": "whom an agent follows — a tool's and the Feed's filter, not a page",
     "/federation/v1/posts": "peer-to-peer federation of pointer posts; humans read the Feed",
+    "/beacon/{}": "games v2: drand's public rounds for the randomness service; machine-facing, nothing to watch",
     "/pledges/{}": "pledges: one pledge — the sheet's pledge list (GET /pledges) carries the same fields",
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",

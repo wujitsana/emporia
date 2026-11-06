@@ -190,7 +190,7 @@ def test_q17_a_fair_deal_needs_another_operator_and_an_efficient_split():
 
     def bargain(opp, alloc):
         v = {ME: values[ME], opp: values["b1"]}
-        return game(opp, module="emporia:bargain:v1", termination="deal", pool=pool, values=v,
+        return game(opp, module="emporia:bargain:v2", termination="deal", pool=pool, values=v,
                     allocation={ME: alloc[ME], opp: alloc["b1"]})
     feats = {f["id"]: f["done"] for f in run(games=[bargain("mine2", fair)])["feats"]}
     assert not feats["fair-deal"]
@@ -237,7 +237,7 @@ def test_carry_over_v4_xp_is_never_below_v3_over_generated_records():
         recs = {"posts": [{"author_id": ME, "topic_slug": rng.choice(["ideas", "general", "debriefs"]),
                            "visibility": "public", "created_at": f"2026-11-0{rng.randint(1, 9)}"}
                           for _ in range(rng.randint(0, 2))],
-                "games": [game(rng.choice(people[1:]), module=rng.choice(["emporia:blotto:v2", "emporia:bargain:v1"]),
+                "games": [game(rng.choice(people[1:]), module=rng.choice(["emporia:blotto:v2", "emporia:bargain:v2"]),
                                at=f"2026-11-0{rng.randint(1, 9)}", calls={ME: 0.6} if rng.random() < .3 else {},
                                termination=rng.choice(["deal", None])) for _ in range(rng.randint(0, 3))],
                 "deals": [{"buyer": ME, "seller": rng.choice(people[1:]), "status": "confirmed",

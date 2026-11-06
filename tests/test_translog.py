@@ -519,3 +519,53 @@ def test_a_private_records_removal_is_salted_a_public_ones_is_not(tmp_path):
 def test_the_epochs_route(client):
     r = client.get("/log/epochs")
     assert r.status_code == 200 and r.json()["epoch"] >= 1 and r.json()["epochs"]
+
+
+def test_the_log_verifies_across_the_games_v2_migration_and_still_reads_retired_v1_records(tmp_path, monkeypatch):
+    """Removing Bargain v1 rewrites nothing in the log: its sessions and moves stay as logged, the old table
+    (never logged) is dropped, the new commitment and result kinds join, and the log is consistent throughout."""
+    import sqlite3
+    monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
+    db = tmp_path / "relay.sqlite3"
+    monkeypatch.setattr(rs, "DATABASE_PATH", db)
+    rs.init_db()
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    v1 = {"session_id": "sess_v1", "module_type": "emporia:bargain:v1", "status": "completed",
+          "participants_json": '["a", "b"]', "created_at": "2026-11-01T00:00:00+00:00"}
+    translog.append(conn, "session", "sess_v1", v1)
+    translog.append(conn, "session_action", "act_v1", {"action_id": "act_v1", "session_id": "sess_v1",
+                                                       "agent_id": "a", "action_type": "offer",
+                                                       "payload_hash": "ab" * 32, "created_at": "2026-11-01"})
+    conn.execute("CREATE TABLE session_deals (session_id TEXT PRIMARY KEY, relay_seed TEXT)")   # a v33 database
+    conn.execute("PRAGMA user_version = 33")
+    conn.commit()
+    before = translog.sign_state(conn, lambda b: "sig", "ab" * 32)
+    old_entries = translog.entries(conn, 0, limit=1000)
+    old_root = translog.stored_root(conn, translog.size(conn))
+    conn.close()
+
+    rs.init_db()                                                   # the migration: copied aside, then upgraded
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION
+    assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'session_deals'").fetchone()
+    assert list(tmp_path.glob(f"relay.sqlite3.before-v{rs.SCHEMA_VERSION}-*.bak"))
+    n = len(old_entries)
+    assert translog.entries(conn, 0, n, limit=1000) == old_entries, "no entry was rewritten or removed"
+    assert translog.stored_root(conn, n) == old_root
+    assert any(e["record"]["module_type"] == "emporia:bargain:v1" for e in translog.entries(conn, 0, limit=1000)
+               if e["record"]["kind"] == "session")
+
+    # a v2 commitment and a result go in, and the log stays consistent with what it was
+    conn.execute("INSERT INTO rand_commits VALUES ('sess_v2', 'a', 0, ?, 5000, 'now', 'sig')", ("cd" * 32,))
+    conn.execute("INSERT INTO rand_results VALUES ('sess_v2', 5000, ?, 'forfeit', 'a', ?, 'now')", ("ee" * 48, "ff" * 32))
+    conn.commit()
+    translog.fold_all(conn)
+    kinds = [e["record"]["kind"] for e in translog.entries(conn, 0, limit=1000)]
+    assert "rand_commit" in kinds and "rand_result" in kinds
+    top = translog.size(conn)
+    assert top > n
+    proof = translog.stored_consistency_proof(conn, n, top)
+    assert translog.verify_consistency(n, top, old_root, translog.stored_root(conn, top), proof)
+    assert before["size"] == n

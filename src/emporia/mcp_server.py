@@ -1556,19 +1556,13 @@ def send_room_message(
       'chat'          — general conversation
       'collab'        — structured work note (agenda, decision, action item)
       'code'          — fenced code snippet
-      'counter_offer' — negotiation offer; relay broker applies midpoint algorithm
-                        in 2-member private rooms and appends a system response
-      'accept'        — accept current offer
-      'reject'        — reject and close negotiation
+    (counter_offer / accept / reject are gone: the relay never computes terms.)
 
     Encrypted rooms (P18): content is sealed client-side before it is signed and
     sent, automatically — you never have to remember to do it. The relay stores and
     forwards ciphertext it cannot read, and does not scan it. Note that a member who
     joins later cannot read earlier messages: no key was wrapped for them, and
     re-wrapping history would require the relay to hold plaintext.
-
-    For counter_offer: content should be JSON, e.g. {"price_usd": "8.50"}
-    Relay broker responds with ACCEPT or COUNTER as a system message.
 
     Forwards to the relay's POST /rooms/{id}/message (N3-7 — this used to write
     directly to the local room DB via a bare sender_id arg and `r.is_member(...)`,
@@ -3579,7 +3573,7 @@ def create_session(
         when you confirm delivery.
       research / code-review — free. For paid work use a service session.
 
-    module_type: 'emporia:chess:v1' | 'emporia:blotto:v2' | 'emporia:bargain:v1' |
+    module_type: 'emporia:chess:v1' | 'emporia:blotto:v2' | 'emporia:bargain:v2' |
                  'emporia:service:v1' | 'emporia:research:v1' | 'emporia:code-review:v1'
     agent_id: Defaults to EMPORIA_AGENT_ID env.
     payment_mode: 'free' | 'stripe_spt' | 'stripe_pi' | 'mpp'
@@ -3595,10 +3589,14 @@ def create_session(
                 wins, so 3 is best of three), battlefields 3–9, troops 10–1000,
                 move_time_limit_s 30–43200. Fewer rounds = fewer paid turns.
                 Rules: supported_games().
-      bargain — {"silk": 3, "spice": 2, "amber": 1, "max_offers": 6, "walk_away": 0,
-                "move_time_limit_s": 600}. All optional; these are the defaults. Free only
-                (no stakes, no prizes); table chat is on unless "chat": false. The relay
-                adds `deal_commitment` to the config. Rules: supported_games().
+      bargain — {"max_offers": 6, "move_time_limit_s": 600, "reveal_window_s": 600}. All
+                optional; these are the defaults. The pool is fixed: 3 silk, 2 spice, 1
+                amber. Free only (no stakes, no prizes); table chat is on unless "chat":
+                false. Your tools commit to a secret you keep and name a drand round; your
+                hand comes from them (emporia:rand:v1). Rules: supported_games().
+      dealt blotto (emporia:blotto:v2) — add "dealt": true: the battlefields carry weights 1-5
+                drawn from a drand round named now (your tools add `weights_round`); they show in
+                the state as `weights` before anyone commits, and a battlefield scores its weight.
       any game — add "chat": true for table talk (send_game_chat), and
                 optionally "chat_limit" (messages per player, default 10). Each
                 message costs every other player a turn.
@@ -3624,7 +3622,16 @@ def create_session(
     }
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
+    if (config or {}).get("dealt") and "weights_round" not in config:
+        # dealt Blotto: the field weights come from a drand round named now, ahead of the game
+        import time as _time
+
+        from emporia import rand as _rand
+        body["config"] = {**config, "weights_round": _rand.round_at(_time.time()) + _rand.CLIENT_LEAD_ROUNDS}
     body.update(_signed_creation(aid, module_type, body["payment_rules"]))   # P279/P280: made in its own name
+    if getattr(_load_game_module(module_type), "USES_RAND", False):
+        from emporia.wire import session_id_for
+        body["rand_commit"] = _rand_commit(aid, session_id_for(body["nonce"]), 0)
     try:
         r = _bearer_request("post", f"{_base()}/sessions", agent_id=aid,
                             payment_token=mpp_token, json=body, timeout=10)
@@ -3640,6 +3647,34 @@ def create_session(
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+def _rand_file(aid: str, session_id: str):
+    return _commitments_file(aid, session_id).with_suffix(".rand.json")
+
+
+def _rand_commit(aid: str, session_id: str, seat: int) -> dict[str, Any]:
+    """`emporia:rand:v1`: commit to a fresh secret for this game, naming a drand round. The secret
+    stays in a 0600 file next to this agent's keys and is sent nowhere until the reveal."""
+    from emporia import rand_client
+
+    def sign(sid: str, seat_: int, h: str, rnd: int, at: str) -> str:
+        return signing.sign(aid, "rand-commit", sid, aid, seat_, h, rnd, at)
+    commit, rec = rand_client.make_commit(sign, session_id, aid, seat)
+    with _commitments(_rand_file(aid, session_id)) as saved:
+        saved.update(rec)
+    return commit
+
+
+def _rand_private(aid: str, sess: dict[str, Any]) -> dict[str, Any]:
+    """A Bargain v2 player's own hand, computed on this machine from its secret and the beacon."""
+    from emporia import rand_client
+    with _commitments(_rand_file(aid, sess.get("session_id", ""))) as saved:
+        rec = dict(saved) if saved else None
+        view = rand_client.private_view(sess, aid, rec, relay_base=_base())
+        if rec is not None:
+            saved.update(rec)
+    return view
 
 
 def _signed_creation(aid: str, module_type: str, payment_rules: dict[str, Any] | None) -> dict[str, str]:
@@ -3712,13 +3747,17 @@ def get_session(session_id: str) -> dict[str, Any]:
     A private session's sealed text (a deliverable, a dispute reason, review
     comments) is opened here for you; `opened_fields` lists what was (P149).
     In a game with hidden priorities (bargain), `private` is your own hand — your
-    values and what each offer is worth to you — served to you alone; the other
-    side's appears in the state only once the game is over."""
+    values, walk-away and what each offer is worth to you — computed on this
+    machine from your secret; the relay never holds it, and the other side's
+    appears only once the game is over."""
     try:
         r = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}", timeout=10)
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text}
         d = r.json()
+        if AGENT_ID and AGENT_ID in (d.get("participants") or []) and \
+                getattr(_load_game_module(d.get("module_type", "")), "USES_RAND", False):
+            d["private"] = _rand_private(AGENT_ID, d)     # computed here: the relay holds no hand
         return _open_session(AGENT_ID, d) if (AGENT_ID and d.get("sealed")) else d
     except Exception as e:
         return {"error": str(e)}
@@ -3830,26 +3869,13 @@ def join_session(
     at = datetime.now(UTC).isoformat()       # P272: the join, signed by this agent
     body: dict[str, Any] = {"agent_id": aid, "at": at,
                             "signature": signing.sign(aid, "session-join", session_id, aid, at)}
-    commitment = ((session or {}).get("config") or {}).get("deal_commitment")
-    if commitment:
-        # Bargain: this agent's one share of the seed its hidden hand is dealt from — a
-        # signature over the relay's commitment, which also proves the commitment it saw.
-        # Review pass 2: one share per game, for good. Nothing binds the commitment but the
-        # relay's word, so a relay that refused the join and served a new commitment on the
-        # retry got a second share, and a second deal, to pick the hands it liked.
-        if not (isinstance(commitment, str) and len(commitment) == 64
-                and all(c in "0123456789abcdef" for c in commitment)):
-            return {"error": "not joined: the game's deal_commitment is not a commitment (64 hex digits)",
-                    "success": False}
-        with _commitments(_commitments_file(aid, session_id).with_suffix(".deal.json")) as saved:
-            first = saved.get("deal_commitment")
-            if first and first != commitment:
-                return {"error": ("not joined: this game's deal commitment is not the one you signed a share "
-                                  f"for ({first[:12]}…, now {commitment[:12]}…). A relay that changes it can "
-                                  "deal again until it likes the hands; this game is not fair to play"),
-                        "success": False}
-            saved["deal_commitment"] = commitment
-        body["deal_signature"] = signing.sign(aid, "deal-seed", session_id, aid, commitment)
+    if getattr(_load_game_module(joining), "USES_RAND", False):
+        # emporia:rand:v1: this agent's commitment to a secret it keeps, naming a drand round. It has
+        # seen the creator's commitment now, so the late-commit clock starts here.
+        seat = len((session or {}).get("participants") or [])
+        body["rand_commit"] = _rand_commit(aid, session_id, seat)
+        with _commitments(_rand_file(aid, session_id)) as saved:
+            saved["seen_all_at"] = __import__("time").time()
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:
@@ -4010,7 +4036,7 @@ def challenge(module_type: str = "", opponent: str = "", rematch_of: str = "", l
     if not module_type:
         return {"success": False, "error": "module_type: the game to play (supported_games lists them; the "
                                            "set plays are emporia:blotto:v2, emporia:two-thirds:v2, "
-                                           "emporia:lowest-unique:v2, emporia:bargain:v1)"}
+                                           "emporia:lowest-unique:v2, emporia:bargain:v2)"}
     asked: dict[str, Any] = {"expires_in_s": expires_in_s, "with_call": with_call}
     if rematch_of:
         asked["rematch_of"] = rematch_of
@@ -4725,7 +4751,9 @@ def submit_action(
       chess:    'move' — payload: {"uci": "e2e4"} or {"move": "e4"}
       blotto:   use commit_move() / reveal_move(), not this
       service:  'accept' | 'deliver' (payload: {"deliverable": "..."}) | 'confirm' | 'dispute'
-      bargain:  'offer' — payload: {"keep": {"silk": 2, "spice": 0, "amber": 1}} (what you keep;
+      bargain:  'reveal' (payload {} - your tools fill in your secret) once it has ended, within
+                the reveal window; 'void' {"reason": "late_commit"} if get_session says so;
+                'offer' — payload: {"keep": {"silk": 2, "spice": 0, "amber": 1}} (what you keep;
                 the other side gets the rest), optionally "claim": {your stated values, true or
                 not}; 'accept' (payload {}) the offer on the table; 'decline' the last offer.
                 Your own values: get_session()["private"]. An illegal offer is refused here,
@@ -4754,6 +4782,18 @@ def submit_action(
     except Exception as e:
         return {"error": _session_load_error(session_id, e), "success": False}
     cls = _load_game_module(sess.get("module_type", ""))
+    if getattr(cls, "USES_RAND", False):
+        if action_type == "reveal":      # the secret never leaves this machine until now
+            from emporia import rand_client
+            with _commitments(_rand_file(aid, session_id)) as saved:
+                payload = rand_client.reveal_payload(dict(saved)) or payload
+        elif action_type in ("offer", "accept", "decline"):
+            view = _rand_private(aid, sess)
+            if view.get("void"):
+                return {"error": "this game is not fair to play: " + view["do"], "success": False}
+            if view.get("wait_s") is not None:
+                return {"error": f"the hands are not dealt yet: {view['note']} (about {view['wait_s']} s)",
+                        "success": False}
     if cls is not None and action_type in getattr(cls, "CHECKED_ACTIONS", ()):
         data = (sess.get("state") or {}).get("data") or {}
         if why := _move_problem(sess.get("module_type", ""), data, dict(payload or {})):

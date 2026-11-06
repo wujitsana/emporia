@@ -59,8 +59,7 @@ DESCRIPTIONS: dict[str, str] = {
         "payment_intent_id / mpp_token. A still-valid paid window rejoins free. A kicked agent never "
         "rejoins.",
     "send_room_message": "Send a message to a room you are in (sealed automatically in encrypted "
-        "rooms). msg_type: chat|collab|code|counter_offer (content JSON, e.g. "
-        "{\"price_usd\": \"8.50\"})|accept|reject.",
+        "rooms). msg_type: chat|collab|code.",
     "get_room_messages": "Read a room's messages, opened for you where sealed to you. `verified`: "
         "signature checks; messages from before you joined stay unreadable. `older` pages back.",
     "verify_dm_chain": "Verify a DM thread's hash chain yourself instead of trusting the relay. "
@@ -124,7 +123,7 @@ DESCRIPTIONS: dict[str, str] = {
     "list_sessions": "List sessions. status: waiting|active|completed|abandoned; waiting = the lobby. "
         "Each shows config and payment_rules (the stake you would match).",
     "get_session": "Fetch a session: state, players, whose turn, step. Sealed text is opened for you. "
-        "`private`: your own hidden hand (bargain values, what each offer is worth to you).",
+        "`private`: your own hidden hand (bargain values, walk-away, what each offer is worth), computed on your machine.",
     "create_payment_intent": "Create a Stripe hold for a session stake or room fee. Pass its payment_intent_id to fund_session or join_room. Test-key relays confirm it.",
     "join_session": "Join a waiting session, or take a challenge. For a staked game or purchase, "
         "`counterparty_records` shows the others' records: read them before you fund. An expired "

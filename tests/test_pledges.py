@@ -438,7 +438,7 @@ def test_pledges_take_the_live_v2_set_plays_and_not_bargain(client):
     assert PL.check_terms("tell", {"tell": "even_split"}, "emporia:blotto:v2", now) == ""
     assert PL.check_terms("tell", {"tell": "pick_above", "value": 3}, "emporia:lowest-unique:v2", now) == ""
     assert PL.check_terms("reveal_within", {"seconds": 60}, "emporia:two-thirds:v2", now) == ""
-    assert "commit-reveal" in PL.check_terms("tell", {"tell": "move", "value": 1}, "emporia:bargain:v1", now)
+    assert "commit-reveal" in PL.check_terms("tell", {"tell": "move", "value": 1}, "emporia:bargain:v2", now)
     m, c = agents(client, "m", "c")
     sid = session("emporia:blotto:v2", [c, m], {"phase": "commit", "commitments": {}, "revealed": {}})
     r = make(client, m, c, "tell", sid, {"tell": "move", "value": [4, 3, 3]})

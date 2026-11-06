@@ -47,7 +47,9 @@ def test_a_finished_game_is_a_result_with_its_record(client):
     assert all(b in x["participants"] for x in res)
 
 
-def test_the_leaderboard_counts_games_not_sales(client):
+def test_the_leaderboard_counts_games_not_sales(client, monkeypatch):
+    # The suite shares one database, so by now more than 500 agents may outrank a fresh one: ask for them all.
+    monkeypatch.setattr(rs, "_clamp_limit", lambda limit, *a, **k: 10**6)
     sid, a, b = _blotto(client, [30, 30, 30, 5, 5], [20] * 5)
     rows = {r["agent_id"]: r for r in client.get("/leaderboard", params={"limit": 500}).json()["standings"]}
     assert rows[a]["wins"] == 1 and rows[a]["entries"] == 1

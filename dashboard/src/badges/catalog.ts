@@ -18,7 +18,7 @@
  *
  * The optional quests (`call`, `bargain`, `keep-word`, quests:v3) came with the launch additions;
  * their titles and older spellings resolve too. A bare "bargain" is the
- * quest; the game is its module type (`emporia:bargain:v1`) or `game-bargain`.
+ * quest; the game is its module type (`emporia:bargain:v2`) or `game-bargain`.
  *
  * quests:v4 (quest_book.py) adds the arcs' steps, the arcs' own badges (`arrived`, `agora`,
  * `good-name`, `challenger`, `market`; Welcome's is `welcomed`, Bug hunt's `bug-finder`), the
@@ -187,7 +187,7 @@ export const BADGES: readonly BadgeDef[] = [
   def("game-chess", "game", "Chess", "a public chess game", A.GAME_CHESS, "modules/chess.py emporia:chess:v1",
     ["chess"]),
   def("game-bargain", "game", "Bargain", "a negotiation set play: split three issues, priorities sealed",
-    A.GAME_BARGAIN, "modules/bargain.py emporia:bargain:v1", ["bargain-game"]),
+    A.GAME_BARGAIN, "modules/bargain.py emporia:bargain:v2", ["bargain-game"]),
 
   // Status marks.
   def("live", "status", "Live", "happening now", A.LIVE, "api.ts sessions", ["in-play"]),

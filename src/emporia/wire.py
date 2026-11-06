@@ -167,15 +167,13 @@ def signed_session_join_payload(session_id: str, agent_id: str, at: str) -> dict
     return {"type": "emporia:session-join:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
 
 
-def signed_deal_seed_payload(session_id: str, agent_id: str, commitment: str) -> dict[str, Any]:
-    """Bargain: a joining player's share of the seed its hidden priorities are dealt
-    from — its signature over the relay's commitment to its own secret seed. No
-    time and no nonce in it, so the player has exactly one such signature for
-    the game (Ed25519 is deterministic): the relay cannot ask for another until
-    the deal suits it, and the signature itself proves which commitment the
-    player saw before it joined."""
-    return {"type": "emporia:deal-seed:v1", "session_id": session_id, "agent_id": agent_id,
-            "commitment": commitment}
+def signed_rand_commit_payload(session_id: str, agent_id: str, seat: int, commit_hash: str, beacon_round: int,
+                               at: str) -> dict[str, Any]:
+    """`emporia:rand:v1`: a player's commitment `sha256(s || nonce)` to a secret it keeps, for one game
+    and seat, naming the drand round the game's draws may come from. `at` is when it was signed: the
+    round must be at least `rand.MIN_LEAD_ROUNDS` after it, so nobody can pick a round already known."""
+    return {"type": "emporia:rand-commit:v1", "session_id": session_id, "agent_id": agent_id, "seat": seat,
+            "hash": commit_hash, "beacon_round": beacon_round, "at": at}
 
 
 REACTION_TYPE = "emporia:reaction:v1"
@@ -416,11 +414,12 @@ DEFAULT_MSG_TYPE = "chat"
 
 # P15: the msg_type values a *client* may post. `rooms.MsgType` (rooms.py) is the full
 # declared domain and includes "system", which is server-owned — the relay posts it
-# itself for negotiation-broker output, under sender_id="emporia:broker". Clients get
-# everything except that. Lives here rather than in rooms.py because both the room route
+# itself. Clients get everything except that. Lives here rather than in rooms.py because both the room route
 # and the thread-DM route validate against it and only this module is shared by all of
 # them; a test pins it against rooms.MsgType so the two can't drift.
-CLIENT_MSG_TYPES = frozenset({"chat", "collab", "code", "counter_offer", "accept", "reject"})
+CLIENT_MSG_TYPES = frozenset({"chat", "collab", "code"})
+# Removed with the negotiation broker (architecture-v2 C1): refused by name.
+REMOVED_MSG_TYPES = frozenset({"counter_offer", "accept", "reject"})
 
 # P21-3 (B4): the room message route answers 409 for two unrelated conditions —
 # a duplicate nonce (idx_room_messages_nonce's UNIQUE constraint, unrecoverable by

@@ -388,14 +388,12 @@ def _signed_join(request):
     body["at"] = datetime.now(UTC).isoformat()
     make = wire.signed_session_join_payload if kind.group(1) == "sessions" else wire.signed_room_join_payload
     body["signature"] = identity.sign(make(sid, body["agent_id"], body["at"]), body["agent_id"])
-    if kind.group(1) == "sessions" and "deal_signature" not in body:
-        # Bargain: a dealt game's join carries the joiner's share of the seed, as the tools add it.
+    if kind.group(1) == "sessions" and "rand_commit" not in body:
+        # emporia:rand:v1: a game that draws from the beacon takes the joiner's commitment, as the tools add it.
         rs = sys.modules.get("emporia.relay_server")
         s = rs.load_session(sid) if rs else None
-        commitment = ((s or {}).get("config") or {}).get("deal_commitment")
-        if commitment:
-            body["deal_signature"] = identity.sign(wire.signed_deal_seed_payload(sid, body["agent_id"], commitment),
-                                                   body["agent_id"])
+        if s and _uses_rand(s.get("module_type")):
+            body["rand_commit"] = make_test_commit(sid, body["agent_id"], len(s.get("participants") or []))
     headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
     return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
                          extensions=request.extensions)
@@ -502,9 +500,57 @@ def _signed_creation(request, named, at):
     body["signature"] = identity.sign(wire.signed_session_create_payload(
         wire.session_id_for(body["nonce"]), named, str(body.get("module_type") or ""), at,
         wire.stake_terms(body.get("payment_rules"))), named)
+    if _uses_rand(body.get("module_type")) and "rand_commit" not in body:
+        body["rand_commit"] = make_test_commit(wire.session_id_for(body["nonce"]), named, 0)
     headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
     return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
                          extensions=request.extensions)
+
+
+#: (session_id, agent_id) -> (s, nonce) hex: the secrets the shim committed for tests, standing in for
+#: the file a player's tools keep. A test reveals with `reveal_body(...)`.
+RAND_SECRETS: dict = {}
+
+
+def _uses_rand(module_type) -> bool:
+    from emporia.module_sdk import MODULE_REGISTRY, load_bundled_modules
+    load_bundled_modules()
+    return bool(getattr(MODULE_REGISTRY.get(str(module_type or "")), "USES_RAND", False))
+
+
+def make_test_commit(session_id: str, agent_id: str, seat: int, *, round_offset: int = -5) -> dict:
+    """A signed `rand_commit` for `agent_id`, naming the round `round_offset` rounds from now (default: one
+    already published, which the autouse `rand_testmode` fixture allows), keeping its secret in RAND_SECRETS."""
+    import time
+    from datetime import UTC, datetime
+
+    from emporia import identity, rand, wire
+    s, nonce = rand.new_secret()
+    h = rand.commit_hash(bytes.fromhex(s), bytes.fromhex(nonce))
+    now = time.time()
+    rnd = rand.round_at(now) + round_offset
+    at = datetime.fromtimestamp(now, UTC).isoformat()
+    RAND_SECRETS[(session_id, agent_id)] = (s, nonce)
+    return {"hash": h, "beacon_round": rnd, "at": at,
+            "signature": identity.sign(wire.signed_rand_commit_payload(session_id, agent_id, seat, h, rnd, at),
+                                       agent_id)}
+
+
+def fake_beacon_sig(rnd: int) -> str:
+    """A stand-in 48-byte beacon signature for a round (tests never touch the network or the BLS check)."""
+    import hashlib
+    return hashlib.sha512(f"test-beacon-{rnd}".encode()).hexdigest()[:96]
+
+
+@pytest.fixture(autouse=True)
+def rand_testmode(monkeypatch):
+    """Games that draw from `emporia:rand:v1` are played at once in tests: any round may be named, and a round is
+    'published' with a fake signature. Tests of the real rules put these back."""
+    from emporia import rand
+    from emporia.routes import beacon as beacon_route
+    monkeypatch.setattr(rand, "MIN_LEAD_ROUNDS", -10**6)
+    monkeypatch.setattr(beacon_route, "signature", fake_beacon_sig)
+    yield
 
 
 def signed_session_body(creator: str, body: dict) -> dict:
