@@ -332,6 +332,16 @@ Abandoning once the game has started counts as walking away. No stakes and no pr
                 out[p] = draw(r["scope"], seat, sig, bytes.fromhex(rev["s"]))
         return out
 
+    def rand_problem(self, data: dict[str, Any], players: list[str], relay_verdict: dict[str, Any] | None) -> str:
+        """verify_session: the published hands and walk-aways are the ones the secrets and the beacon give."""
+        hands = self._hands(data, players)
+        for key, pick in (("values", lambda h: _as_dict(h[0])), ("walk_aways", lambda h: h[1])):
+            for p, v in ((relay_verdict or {}).get(key) or {}).items():
+                if p not in hands or v != pick(hands[p]):
+                    return (f"{p}'s published {'hand' if key == 'values' else 'walk-away'} "
+                            "is not the one its secret and the beacon give")
+        return ""
+
     def _settle(self, data: dict[str, Any], participants: list[str]) -> tuple[bool, dict[str, Any]]:
         r, ended = data["rand"], data["ended"]
         revealed = [p for p in participants if p in (r.get("reveals") or {})]

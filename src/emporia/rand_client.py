@@ -47,10 +47,22 @@ def _commits(sess: dict[str, Any]) -> dict[str, Any]:
         or ((sess.get("config") or {}).get("rand") or {}).get("commits") or {}
 
 
+def module_of(sess: dict[str, Any]):
+    from emporia.module_sdk import MODULE_REGISTRY, load_bundled_modules
+    load_bundled_modules()
+    return MODULE_REGISTRY.get(str(sess.get("module_type") or ""))
+
+
+def need_of(sess: dict[str, Any]) -> int:
+    """How many commitments the game waits for: two for Bargain, its `players` setting for the rest."""
+    cls = module_of(sess)
+    return cls().seats(sess.get("config") or {}) if cls else 2
+
+
 def note_other_seen(rec: dict[str, Any], sess: dict[str, Any], agent_id: str, now: float | None = None) -> None:
     """Remember when this client first saw every other commitment (the late-commit rule)."""
     commits = _commits(sess)
-    if len(commits) >= 2 and agent_id in commits and "seen_all_at" not in rec:
+    if len(commits) >= need_of(sess) and agent_id in commits and "seen_all_at" not in rec:
         rec["seen_all_at"] = time.time() if now is None else now
 
 
@@ -75,11 +87,12 @@ def private_view(sess: dict[str, Any], agent_id: str, rec: dict[str, Any] | None
         return {"error": "no secret for this game on this machine: it was made by another install, "
                          "or this agent never committed"}
     commits = _commits(sess)
-    if agent_id not in commits or len(commits) < 2:
-        return {"waiting": "for the other player's commitment"}
+    need = need_of(sess)
+    if agent_id not in commits or len(commits) < need:
+        return {"waiting": f"for the other players' commitments ({len(commits)} of {need} in)"}
     note_other_seen(rec, sess, agent_id, now)
     data = (sess.get("state") or {}).get("data") or {}
-    rnd = BG.game_round(commits)
+    rnd = max(int(c["beacon_round"]) for c in commits.values())
     ready_at = rand.round_time(rnd)
     base = {"round": rnd, "ready_at": datetime.fromtimestamp(ready_at, UTC).isoformat()}
     if late_commit(rec, rnd) and now < ready_at:
@@ -89,11 +102,15 @@ def private_view(sess: dict[str, Any], agent_id: str, rec: dict[str, Any] | None
                       "relay refuses a void"}
     if now < ready_at:
         return {**base, "wait_s": round(ready_at - now, 1),
-                "note": "the hands are dealt when this drand round is published; offers wait for it"}
+                "note": "the draw is made when this drand round is published; moves wait for it"}
     sig = rec.get("beacon_sig") or fetch(rnd, relay_base)
     if not sig:
         return {**base, "error": "the beacon round could not be read from the relay or drand; try again"}
     rec["beacon_sig"] = sig
+    mod = module_of(sess)
+    if mod is not None and hasattr(mod, "private"):      # the game's own reading of what only this player knows
+        return {**base, **mod().private(data, r_scope(sess), int(rec["seat"]), bytes.fromhex(sig),
+                                        bytes.fromhex(rec["s"]), sess)}
     hand, walk = BG.draw(r_scope(sess), int(rec["seat"]), bytes.fromhex(sig), bytes.fromhex(rec["s"]))
     pool = BG._as_vec(data.get("pool") or BG.POOL)
     return {**base, "values": BG._as_dict(hand), "total": BG.TOTAL, "walk_away": walk,

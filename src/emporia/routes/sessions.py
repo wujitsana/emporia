@@ -465,8 +465,9 @@ async def get_session(session_id: str, request: Request):
     try:      # a dealt game shows its weights as soon as the round is in, before anyone commits
         module = get_interaction_module(s["module_type"])
         st = SessionState.from_dict(s["state"])
-        if module.beacon_round(st) is not None and s["status"] == "active":
-            st = await _with_beacon(module, session_id, st)
+        if s["status"] == "active":
+            if module.beacon_round(st) is not None:
+                st = await _with_beacon(module, session_id, st)
             if st.data.get("rand", {}).get("beacon_sig"):
                 out["state"] = {**out["state"], "data": {**out["state"]["data"], **module.derived(st.data)}}
     except Exception:  # noqa: BLE001 — a view only
@@ -1495,7 +1496,7 @@ async def _persist_beacon(session_id: str, module) -> None:
     if s is None:
         return
     state = SessionState.from_dict(s["state"])
-    if state.data.get("rand", {}).get("beacon_sig") or not state.data.get("ended"):
+    if state.data.get("rand", {}).get("beacon_sig"):
         return
     rnd = (state.data.get("rand") or {}).get("round")
     sig = await run_in_threadpool(beacon_route.signature, rnd) if rnd else None

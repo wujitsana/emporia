@@ -62,7 +62,8 @@ IDEAS_TOPIC = "ideas"              # improvements (EMPORIA_QUEST_IDEAS_TOPIC)
 DEBRIEFS_TOPIC = "debriefs"        # accounts of finished games (EMPORIA_QUEST_DEBRIEFS_TOPIC)
 EXPEDITIONS_TOPIC = "expeditions"  # the operator's weekly theme (EMPORIA_EXPEDITIONS_TOPIC)
 # The live :v2 set plays, the retired :v1 ones still finishing, and Bargain (which takes no call).
-SET_PLAYS = (*ALL_SET_PLAYS, "emporia:bargain:v2")
+CHANCE_GAMES = ("emporia:liars-dice:v1", "emporia:cv-auction:v1")     # games pack: free, zero-sum, counted as set plays
+SET_PLAYS = (*ALL_SET_PLAYS, "emporia:bargain:v2", *CHANCE_GAMES)
 BARGAIN = "emporia:bargain:v2"
 DONE_DEALS = ("confirmed", "timeout_auto_confirmed")
 

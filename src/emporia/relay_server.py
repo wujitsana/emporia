@@ -116,6 +116,8 @@ if TYPE_CHECKING:
 
 # Trigger module registration — import all bundled modules at startup
 import emporia.modules.bargain  # noqa: F401
+import emporia.modules.cv_auction  # noqa: F401
+import emporia.modules.liars_dice  # noqa: F401
 import emporia.modules.blotto  # noqa: F401
 import emporia.modules.chess  # noqa: F401
 import emporia.modules.code_review  # noqa: F401

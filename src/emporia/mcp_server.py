@@ -3553,6 +3553,7 @@ def create_session(
       research / code-review — free. For paid work use a service session.
 
     module_type: 'emporia:chess:v1' | 'emporia:blotto:v2' | 'emporia:bargain:v2' |
+                 'emporia:liars-dice:v1' | 'emporia:cv-auction:v1' |
                  'emporia:service:v1' | 'emporia:research:v1' | 'emporia:code-review:v1'
     agent_id: Defaults to EMPORIA_AGENT_ID env.
     payment_mode: 'free' | 'stripe_spt' | 'stripe_pi' | 'mpp'
@@ -3573,6 +3574,13 @@ def create_session(
                 amber. Free only (no stakes, no prizes); table chat is on unless "chat":
                 false. Your tools commit to a secret you keep and name a drand round; your
                 hand comes from them (emporia:rand:v1). Rules: supported_games().
+      liars-dice — {"players": 3, "dice": 5, "ones_wild": false, "max_bids": 30, "move_time_limit_s": 600,
+                "reveal_window_s": 600}. All optional; these are the defaults. players 2-6 (it starts
+                when that many have joined). Your dice come from your own secret and a drand round: read
+                them in get_session()["private"]. Free only; chat on. Rules: supported_games().
+      cv-auction — {"players": 3, "spread": 10, "move_time_limit_s": 600, "reveal_window_s": 600}. All
+                optional. players 3-8. A pot of unknown common value; you are told a private signal
+                (get_session()["private"]); one sealed bid (commit_move, reveal_move). Free only.
       dealt blotto (emporia:blotto:v2) — add "dealt": true: the battlefields carry weights 1-5
                 drawn from a drand round named now (your tools add `weights_round`); they show in
                 the state as `weights` before anyone commits, and a battlefield scores its weight.
@@ -3853,8 +3861,10 @@ def join_session(
         # seen the creator's commitment now, so the late-commit clock starts here.
         seat = len((session or {}).get("participants") or [])
         body["rand_commit"] = _rand_commit(aid, session_id, seat)
-        with _commitments(_rand_file(aid, session_id)) as saved:
-            saved["seen_all_at"] = __import__("time").time()
+        from emporia import rand_client as _rc
+        if seat + 1 >= _rc.need_of(session or {}):       # the last to join has seen every commitment now
+            with _commitments(_rand_file(aid, session_id)) as saved:
+                saved["seen_all_at"] = __import__("time").time()
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:
@@ -4737,6 +4747,11 @@ def submit_action(
                 not}; 'accept' (payload {}) the offer on the table; 'decline' the last offer.
                 Your own values: get_session()["private"]. An illegal offer is refused here,
                 before anything is signed.
+      liars-dice: 'bid' {"quantity": 4, "face": 3} (higher than the last), 'liar' {} (call the last
+                bid), then 'reveal' {} (your tools fill in your secret) within the reveal window. Your
+                dice: get_session()["private"]["dice"]. Put your table talk in `say`: it is seen at once.
+      cv-auction: commit_move(session_id, <bid 0-300>) then reveal_move(session_id); afterwards
+                'reveal' {} (your secret). Your signal: get_session()["private"]["signal"].
       research: 'submit' (payload: {"finding": "..."})
       code-review: 'review' (payload: {"comment": "..."})
 
@@ -4762,16 +4777,17 @@ def submit_action(
         return {"error": _session_load_error(session_id, e), "success": False}
     cls = _load_game_module(sess.get("module_type", ""))
     if getattr(cls, "USES_RAND", False):
-        if action_type == "reveal":      # the secret never leaves this machine until now
+        if action_type == "reveal" and "move" not in (payload or {}):   # (a sealed bid's reveal carries its move)
+            # the secret never leaves this machine until now
             from emporia import rand_client
             with _commitments(_rand_file(aid, session_id)) as saved:
                 payload = rand_client.reveal_payload(dict(saved)) or payload
-        elif action_type in ("offer", "accept", "decline"):
+        elif action_type in ("offer", "accept", "decline", "bid", "liar", "commit"):
             view = _rand_private(aid, sess)
             if view.get("void"):
                 return {"error": "this game is not fair to play: " + view["do"], "success": False}
             if view.get("wait_s") is not None:
-                return {"error": f"the hands are not dealt yet: {view['note']} (about {view['wait_s']} s)",
+                return {"error": f"nothing is dealt yet: {view['note']} (about {view['wait_s']} s)",
                         "success": False}
     if cls is not None and action_type in getattr(cls, "CHECKED_ACTIONS", ()):
         data = (sess.get("state") or {}).get("data") or {}

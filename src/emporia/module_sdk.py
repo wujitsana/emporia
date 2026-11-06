@@ -204,6 +204,15 @@ class InteractionModule(ABC):
         """USES_RAND: the drand round the module needs in `state.data["rand"]["beacon_sig"]` now, or None."""
         return None
 
+    def rand_problem(self, data: dict[str, Any], players: list[str], relay_verdict: dict[str, Any] | None) -> str:
+        """USES_RAND: why the draws a finished game published are not what the revealed secrets and the
+        stored beacon give, or "" (`verify_session` and the offline export verifier ask this)."""
+        return ""
+
+    def seats(self, config: dict[str, Any]) -> int:
+        """USES_RAND: how many seated players the game waits for (and so how many commitments)."""
+        return 2
+
     def validate_config(self, config: dict[str, Any]) -> tuple[bool, str]:
         """Check a session's settings at creation, before anyone stakes on them
         (P131). Return (valid, error_message); the default accepts anything."""
