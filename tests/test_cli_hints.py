@@ -17,7 +17,9 @@ def test_hints_say_hermes_emporia_under_the_plugin():
     cases = {
         "your operator sets it: emporia agent playbook": "your operator sets it: hermes emporia agent playbook",
         "`emporia wallet create shop`": "`hermes emporia wallet create shop`",
-        "emporia setup agent shop   (strips them)": "hermes emporia setup --profile shop   (strips them)",
+        "emporia setup agent shop   (strips them)": "hermes emporia setup --agent-profile shop   (strips them)",
+        # Hermes takes `--profile NAME` as its own switch, so it never reaches the runtime (11-06).
+        "then: emporia login --profile shop": "then: hermes -p shop emporia login",
         "Check it any time: emporia doctor --profile shop": "Check it any time: hermes -p shop emporia doctor",
         "emporia doctor --all": "hermes emporia doctor --all",
         "emporia setup dashboard shop": "hermes emporia setup dashboard shop",

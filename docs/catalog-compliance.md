@@ -1,24 +1,27 @@
 # Emporia and the Hermes plugin catalog
 
 An audit of the Emporia Hermes plugin (`hermes_plugin/emporia/`) against the 18 admission
-rules in Hermes's `plugin-catalog/README.md` (Hermes 0.22.6) and its submission guide, with
-evidence, the validator's output, and how each rule is met.
+rules in Hermes's `plugin-catalog/README.md` and its submission guide, with evidence, the
+validator's output, and how each rule is met. Re-derived on 2026-11-06 against the catalog README
+and the submission guide as published that day (Hermes v0.23.0 is the current release; this
+machine runs 0.22.6), for `preview-2`; see `docs/review-pass-2026-11-06-release.md`.
 
 - The draft entry is in [`docs/catalog/emporia.yaml`](catalog/emporia.yaml).
 - The draft PR text is in [`docs/catalog/PR.md`](catalog/PR.md).
 - The draft Hermes issue for a public WebSocket check is in
   [`docs/catalog/hermes-issue-ws-auth.md`](catalog/hermes-issue-ws-auth.md).
-- Everything here is on branch `catalog-rule11`, which is built on `catalog-compliance`.
 
 **What the plugin is.** A `kind: platform` plugin. It registers:
 - three hooks;
 - a gateway platform (`emporia`);
 - two skills;
 - the `hermes emporia` CLI command;
-- a dashboard tab.
+- a dashboard tab;
+- a Hermes Desktop page (`desktop/plugin.js`: a route, a sidebar row, palette commands, a
+  status-bar chip and one setting), through the Desktop plugin SDK.
 
 The agent's Emporia tools are not plugin registrations. They are an MCP server,
-`emporia.mcp_server` (91 tools), in Emporia's *runtime* (`src/emporia`).
+`emporia.mcp_server` (95 tools), in Emporia's *runtime* (`src/emporia`).
 `hermes emporia setup` installs that runtime from this same repo, at a pinned commit, into
 `<HERMES_HOME>/plugin-data/emporia/runtime`, and adds the server to the profile's
 `config.yaml`. A reviewer therefore reads two things at the pin: the plugin subdir, and the
@@ -35,16 +38,16 @@ runtime it installs.
 | 5 | Owner submissions | pass | Submitted by the repo owner. |
 | 6 | Capabilities match | pass | Generated from Hermes's own probe, and kept in step with the manifest by a test. |
 | 7 | Install scanner | pass | `security scan — safe`, with no findings. |
-| 8 | Desktop SDK surface | pass (n/a) | No `desktop/plugin.js`. |
+| 8 | Desktop SDK surface | pass | `desktop/plugin.js` imports only `@hermes/plugin-sdk`, `react` and `react/jsx-runtime`; no `eval`, `new Function`, dynamic `import()`, script tags, prototype patching (the one `.prototype.` write is the bundled PEG parser's own class) or reads of Desktop's markup; `desktop surface` passes. |
 | 9 | No core overrides | pass | No rebinds. One reviewer warning (a private import): no public route exists, the bundled kanban plugin is precedent, it fails closed, and an issue is drafted. |
 | 10 | Dependency policy | pass | The plugin declares no Python dependencies. The runtime's are bounded and locked (`uv lock --check` passes). |
 | 11 | Credentials through Hermes | pass | Every profile setting and key is read and written through Hermes. The MCP server gets them as `${NAME}`. Nothing opens a profile's `.env` or `auth.json`. Nous verification is opt-in. |
 | 12 | Approvals, unattended runs | pass | No child inherits an approval bypass. Nothing waits on a terminal that is not there. |
 | 13 | Disclosure | pass | The README and PR text disclose network calls, background processes, reads outside plugin-data, shell commands and stored credentials. |
-| 14 | Compatibility metadata | pass | `requires_hermes: ">=0.22.6"` in both places (the current release); `version` matches. |
+| 14 | Compatibility metadata | pass | `requires_hermes: ">=0.22.6"` in both places (a floor below the current release, v0.23.0); `version` matches `plugin.yaml` and the dashboard manifest (the runtime's pyproject says 0.2.0: an open decision). |
 | 15 | No skins/forks of bundled | pass | Not a bundled plugin. |
 | 16 | One listing per lineage | pass | Original work. |
-| 17 | No unscannable payloads | pass | No binaries or bytecode. The dashboard bundle is unminified source with a checked digest. |
+| 17 | No unscannable payloads | pass | No binaries or bytecode. The dashboard and Desktop bundles are unminified source, each with a checked digest. |
 | 18 | Password managers from vendor | pass (n/a) | No `register_login_backend`. |
 
 ## Validator
@@ -60,7 +63,7 @@ throwaway `HERMES_HOME` and `HOME`. It gave the same output before this work
 ✓ config schema — not declared
 ✓ requires_env — all entries UPPER_SNAKE
 ✓ oauth — not declared
-✓ loadable — entry: __init__.py
+✓ loadable — entry: __init__.py, desktop/plugin.js
 ✓ python dependencies — none declared
 ✓ capability probe — register() ran in isolation
 ✓ declared tools — matches registrations
@@ -69,7 +72,8 @@ throwaway `HERMES_HOME` and `HOME`. It gave the same output before this work
 ✓ built-in tool collisions — no tools to check
 ✓ security scan — safe
 ✓ no core override — no runtime rebinds of Hermes core
-⚠ private core imports (catalog rule 9 ...): dashboard/plugin_api.py:131 hermes_cli.web_server_chat.
+✓ desktop surface — stays inside the plugin SDK surface
+⚠ private core imports (catalog rule 9 ...): dashboard/plugin_api.py:245 hermes_cli.web_server_chat.
 ◇ Isolation — in-process only: kind 'platform' ...
 Validation passed.
 ```
@@ -131,7 +135,7 @@ tools, no middleware, and the `emporia` command. The entry lists exactly those h
 
 ### 9. No core overrides — pass, one reviewer warning
 - `no core override` passes.
-- The warning is `dashboard/plugin_api.py:131`, an import of
+- The warning is `dashboard/plugin_api.py:245`, an import of
   `hermes_cli.web_server_chat._ws_auth_ok`, used to authenticate the tab's WebSocket.
 - Hermes offers no public way to check a socket's credential:
   - `hermes_cli.dashboard_auth` has ticket helpers, not the full check;
@@ -224,21 +228,25 @@ Payments are on testnets. Any other payment network is a person-only unlock in t
 terminal, which the key guard blocks from the agent; the README says so.
 
 ### 14. Compatibility metadata — pass
-- `requires_hermes: ">=0.22.6"` is in `plugin.yaml` and the entry. It is the current Hermes
-  release, and the turn cap's `pre_llm_call` block needs it.
-- The entry's `version: "1.0.0"` is `plugin.yaml`'s.
+- `requires_hermes: ">=0.22.6"` is in `plugin.yaml` and the entry. It is not newer than the current
+  Hermes release (v0.23.0, 2026-11-05), and the turn cap's `pre_llm_call` block needs it. Tested on
+  0.22.6 only.
+- The entry's `version: "1.0.0"` is `plugin.yaml`'s, the dashboard manifest's and the Desktop page's.
+  The runtime package (`pyproject.toml`, `emporia.__version__`, which the relay reports) is still
+  0.2.0; aligning it is a decision for the release.
 
 ### 17. No unscannable payloads — pass
 - A header scan of every tracked file found no ELF, Mach-O, PE, wasm, archive or bytecode. The
   only binaries are three images outside the plugin.
 - `dashboard/dist` is an unminified IIFE built from `dashboard/src`
-  (`npm ci && npm run build:hermes-plugin`). `dist/SOURCE` is a digest of its inputs, and
+  (`npm ci && npm run build:tab`; `build:plugin` builds the tab, the Desktop page and the console). `dist/SOURCE` is a digest of its inputs, and
   `tests/test_dashboard_plugin.py` fails when they change without a rebuild.
 - No source map is needed, because the output is not minified.
 
 ### 1, 4, 5, 8, 15, 16, 18 — pass
 - **1, 4, 5:** process rules. The owner submits, and a re-pin is a new PR.
-- **8, 18:** do not apply. There is no Desktop plugin and no login backend.
+- **8:** see the summary row: SDK imports only, checked by `desktop surface` and by hand.
+- **18:** does not apply. There is no login backend.
 - **15, 16:** Emporia is not a bundled plugin, and not a fork.
 
 ## What a release still needs

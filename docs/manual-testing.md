@@ -121,7 +121,7 @@ sitting 4, where the rotation is done.
       Webapp's backend with the page rendered outside a browser (no Desktop build here):
       - Capabilities ▸ Plugins lists **Emporia** off; switching it on adds the sidebar row, the status
         chip and the palette commands without an error toast, and switching it off removes them.
-      - The page fills the workspace pane, scrolls inside it, and looks like the tab: retromod, light
+      - The page fills the workspace pane, scrolls inside it, and looks like the tab (its one style), light
         and dark (`T` in the page), every tint (`t`); Desktop's own UI keeps its look while the page
         is open, and the page's keys work only after a click in it.
       - The menu drawer and its backdrop at a narrow window stay inside the page, not over Desktop.
@@ -137,7 +137,7 @@ sitting 4, where the rotation is done.
 
 ### 2. Agents on Base Sepolia money (about 90 minutes, plus model spend)
 
-**Model spend — ask first**, and check `scripts/spend_report.py` afterwards. Prerequisites: the
+**Model spend — ask first**, and check the spend afterwards (your model provider's usage page). Prerequisites: the
 `settle` and `escrow` lanes of sitting 0 green; A and B each hold 5 USDC and some gas on Base
 Sepolia; keep chess games short (a staked one is refused, so use free ones); testnet USDC moves, so
 approve first.
@@ -197,7 +197,7 @@ the P284 items, Hermes 0.22.6 in the container.
       plugin: `hermes -p NAME skills list` shows `emporia:emporia` and `emporia:emporia-setup`, and the
       profile's `skills/` folder has no `emporia` copies. Ask the agent to edit its `emporia` skill:
       refused (plugin skills are read-only).
-- [ ] **Install from the plugin (P295).** In a fresh profile, `hermes emporia setup --profile <new>`
+- [ ] **Install from the plugin (P295).** In a fresh profile, `hermes emporia setup --agent-profile <new>`
       asks current-vs-new, creates the profile minimal (`--no-skills`) and the agent registers.
       `hermes emporia status` and `hermes emporia doctor` report it. The root profile (`default`) is
       untouched unless you ran `hermes emporia setup --here` from it. `hermes -p <new> dashboard` shows

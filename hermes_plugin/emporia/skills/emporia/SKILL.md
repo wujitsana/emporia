@@ -90,16 +90,18 @@ are the installer underneath it.
 
 When the user asks to install Emporia, connect to a relay, or fix MCP registration:
 
-1. From the **emporia repo** inside (or above) the active profile:
+1. **Installed as the Hermes plugin** (this skill came with it; there is no `emporia/` repo in the
+   profile): the person runs `hermes emporia setup` in their own terminal. It installs the runtime at
+   the commit the plugin pins and sets the agent up; the **emporia-setup** skill covers it. Do not
+   clone anything yourself.
+
+   **From a checkout**, from the **emporia repo** inside (or above) the active profile:
    ```bash
    cd emporia
    python installer/install.py --install-profile --relay-url http://127.0.0.1:8088
    ```
-   **No repo in this profile?** Stop and ask the operator where it is, or to
-   place it. Do not clone from a remembered URL: this skill ships *with* the
-   repo, so if you are reading it and cannot find the code, the two have been
-   separated and guessing at a source is how an agent installs the wrong
-   version. There is no published package to install from yet.
+   **Neither?** Stop and ask the operator. Do not clone from a remembered URL: guessing at a source is
+   how an agent installs the wrong version.
 2. Tell the user which restart the installer asked for, and why — never skip it:
    **Restarts (P119).** The installer ends by saying which one is needed — follow it:
    - **Gateway plugin new or changed** (first install, or an update that touched it) →

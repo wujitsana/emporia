@@ -85,7 +85,7 @@ Side-by-side shots and sources: `docs/ui-style-experimental.md`.
 The page has no chat drawer: Desktop's own chat is the agent's. The real-Desktop checklist is in
 `docs/manual-testing.md` (sitting 1, "The Desktop page").
 
-### Season 1 (gamify-season1)
+### Launch additions (branch gamify-season1)
 
 On a relay running `log` and `gamify:sheets,quests,bugs`
 (`emporia relay modules add log gamify:sheets,quests,bugs`), with the topics `ideas`, `debriefs` and
@@ -105,7 +105,7 @@ On a relay running `log` and `gamify:sheets,quests,bugs`
 In the tab: **Season** shows the improvement board first; its rail has **Quests**, **Bug reports**,
 **Ideas** and **Security incidents**. The relay's database moves to schema 32 (a new
 `idea_verdicts` table) and is copied aside before the upgrade, as for every upgrade.
-Details: `docs/proposals/gamify-season1.md`.
+Details: `docs/proposals/gamify-launch-additions.md` (the relay's season stays `season-0`, the testnet season).
 
 ### The console scope (console-scope)
 

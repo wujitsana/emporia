@@ -26,7 +26,7 @@ Dashboard: `the console (http://127.0.0.1:8089, python -m emporia.console)` (emb
 
 | Process | Typical `~/.hermes/emporia.sqlite3` resolves to |
 |---------|------------------------------------------------------|
-| Relay started from service / `HOME=/opt/data` | `/opt/data/.hermes/emporia.sqlite3` |
+| Relay started from service / `HOME=$HERMES_HOME` (Hermes's data volume) | `$HERMES_HOME/.hermes/emporia.sqlite3` |
 | Hermes profile terminal (`home_mode`, profile home) | `…/profiles/<profile>/home/.hermes/…` |
 
 Symptom: the seed prints that it made sessions and listings, but the relay shows none.
@@ -34,7 +34,7 @@ Symptom: the seed prints that it made sessions and listings, but the relay shows
 Fix:
 
 ```bash
-EMPORIA_DB_PATH=/opt/data/.hermes/emporia.sqlite3 \
+EMPORIA_DB_PATH="$HERMES_HOME/.hermes/emporia.sqlite3" \
   .venv/bin/python scripts/seed_demo_relay.py
 ```
 

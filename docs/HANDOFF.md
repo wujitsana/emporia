@@ -1,5 +1,10 @@
 # Handoff — `post-hackathon`, 2026-11-03
 
+> **11-06:** the hackathon entry is built on `preview-2` (`hackathon-v2` with the waiting branches:
+> gamify-all, the ui-v2 dashboard, the Desktop page). Its release checklist and the decisions still
+> open are in [review-pass-2026-11-06-release.md](review-pass-2026-11-06-release.md). What follows is
+> the plan as of 11-03/11-04.
+
 For whoever picks this branch up next (a cloud coding agent, or a person). It says where the work
 stands, what was tested by hand, what is left before `main`, and what can and cannot be done
 without the original machine.
@@ -103,7 +108,7 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
     `hermes emporia setup|status|doctor|update`. `hermes_plugin/emporia_dashboard` and the repo's
     `skills/emporia*` are gone.
   - **Install:** `hermes plugins install emporia`, then `hermes emporia setup` (new profile or the
-    current one; `--profile NAME` or `--here` without a terminal). It clones the runtime at the commit in
+    current one; `--agent-profile NAME` or `--here` without a terminal). It clones the runtime at the commit in
     `emporia_source.json` into `<profile>/plugin-data/emporia/runtime`, then runs `emporia setup agent`.
     The checkout route (`--install-profile`, `emporia setup agent`) still works.
   - **In a profile:** `<profile>/plugins/emporia`, key `emporia` in `plugins.enabled`

@@ -37,6 +37,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -195,14 +196,27 @@ def _hermes_profile_create(name: str) -> None:
 # Profile discovery
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _is_named_profile(path: Path) -> bool:
+    """A Hermes named profile, which `hermes profile create` makes without a config.yaml
+    (Hermes writes one on first use): a folder in a `profiles/` folder, with Hermes's files."""
+    return path.parent.name == "profiles" and any((path / f).exists() for f in ("config.yaml", ".env", "SOUL.md"))
+
+
 def find_profile_dir_from_cwd() -> Path | None:
-    """Walk up from CWD looking for a Hermes config.yaml (up to 4 levels)."""
+    """Walk up from CWD looking for the Hermes profile it is in (up to 4 levels): a folder with a
+    config.yaml, or a named profile that has none yet. Found by the 11-06 release review: a profile
+    fresh from `hermes profile create` has no config.yaml, so a checkout cloned into it (as the
+    README says) was taken for the Hermes root's, and the root was wired as agent '.hermes'."""
     current = Path.cwd().resolve()
     for _ in range(4):
-        if (current / "config.yaml").exists():
+        if (current / "config.yaml").exists() or _is_named_profile(current):
             return current
         current = current.parent
     return None
+
+
+# The relay's agent-id rule (emporia.relay_server._AGENT_ID_RE).
+AGENT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$")
 
 
 def find_profile_dir_by_name(name: str) -> Path | None:
@@ -216,8 +230,10 @@ def find_profile_dir_by_name(name: str) -> Path | None:
 
 def _profile_base_dirs() -> list[Path]:
     """Ordered list of directories that may contain profiles."""
+    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser()
+    root = home.parent.parent if home.parent.name == "profiles" else home
     candidates = [
-        Path("/opt/data/profiles"),
+        root / "profiles",                     # wherever Hermes's data is (never a fixed path)
         Path.home() / "profiles",
         Path.home() / ".hermes" / "profiles",
         Path.cwd(),
@@ -830,7 +846,15 @@ def install_into_profile(
     dry_run: bool = False,
 ) -> bool:
     config_path = profile_dir / "config.yaml"
-    if not config_path.exists():
+    if not config_path.exists() and _is_named_profile(profile_dir):
+        # A profile fresh from `hermes profile create`: Hermes writes its config.yaml on first use.
+        if dry_run:
+            print(f"  [dry-run] Would create {config_path} (a new profile has none yet)")
+        else:
+            config_path.write_text("{}\n")
+            os.chmod(config_path, 0o600)
+            print(f"  + {config_path} (a new profile has none yet)")
+    if not config_path.exists() and not dry_run:
         print(f"  ERROR: no config.yaml at {config_path}")
         return False
 
@@ -840,7 +864,7 @@ def install_into_profile(
         keys_dir=Path(_profile_runtime_env(profile_dir)["EMPORIA_KEYS_DIR"]),
     )
 
-    config = load_yaml(config_path)
+    config = load_yaml(config_path) if config_path.exists() else {}   # a dry run of a new profile
     changed = False
 
     _warn_if_a2a_enabled(config)
@@ -1282,13 +1306,16 @@ def _ensure_project_dependencies(*, dry_run: bool = False) -> None:
         # "No module named ruff", with nothing connecting it to the setup step
         # that caused it. Measured, not guessed: both imports were gone after a
         # local-demo run.
+        # The x402 extra (eth-account, eth-abi): the relay imports it at start for its money
+        # module, and an agent's wallet signs with it. Found by the 11-06 release review: a
+        # plain install's relay stopped at start with "No module named 'eth_abi'".
         subprocess.run(
-            [uv, "sync", "--inexact", "--directory", str(_EMPORIA_DIR)],
+            [uv, "sync", "--inexact", "--extra", "x402", "--directory", str(_EMPORIA_DIR)],
             cwd=str(_EMPORIA_DIR), check=False,
         )
     else:
         subprocess.run(
-            [py, "-m", "pip", "install", "-e", str(_EMPORIA_DIR)],
+            [py, "-m", "pip", "install", "-e", f"{_EMPORIA_DIR}[x402]"],
             cwd=str(_EMPORIA_DIR),
             check=False,
         )
@@ -1902,6 +1929,13 @@ def main() -> None:
             or os.getenv("HERMES_AGENT_ID")
             or current_profile_dir.name
         )
+        if not AGENT_ID_RE.match(agent_id):
+            # The relay's own rule. Found by the 11-06 release review: the Hermes root
+            # (~/.hermes) gave the agent id '.hermes', which no relay registers.
+            print(f"ERROR: {agent_id!r} (from {current_profile_dir}) is not an agent id a relay accepts: "
+                  "lowercase letters, digits, - and _, 3-64 characters, starting and ending with a letter "
+                  "or digit. Pass --agent-id NAME, or run this inside a named profile's folder.")
+            sys.exit(1)
         print(f"Installing into: {current_profile_dir}  agent_id={agent_id!r}")
 
         stripe_key, stripe_profile_id = resolve_provider_secrets(

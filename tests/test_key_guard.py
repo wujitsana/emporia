@@ -320,7 +320,7 @@ def test_replacing_an_encryption_key_or_the_sign_in_secret_is_a_persons():
 def test_setting_emporia_up_or_updating_it_is_the_persons_yes():
     """P295: `hermes emporia setup` makes profiles, sets roles and moves keys; the
     updates bring new code. An agent may run them for its person, with their yes."""
-    for cmd in ("hermes emporia setup --profile shop -- --role both", "hermes -p alpha emporia setup --here",
+    for cmd in ("hermes emporia setup --agent-profile shop -- --role both", "hermes -p alpha emporia setup --here",
                 "hermes emporia update", "emporia update --no-pull", "emporia setup dashboard alpha"):
         assert guard.pre_tool_call("terminal", {"command": cmd})["action"] == "approve", cmd
     for cmd in ("hermes emporia status", "hermes emporia doctor", "emporia doctor"):
