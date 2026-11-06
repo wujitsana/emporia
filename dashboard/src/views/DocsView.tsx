@@ -46,6 +46,8 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
   // renderer inside a memo, and need the element as a value.
   const [mainEl, setMainEl] = useState<HTMLDivElement | null>(null);
   const doc = DOCS.find((d) => d.id === docId) ?? DOCS[0];
+  // `loaded` is not read: it changes when the texts arrive (P295), which is when these redo.
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
   const shown = useMemo(() => searchDocs(query), [query, loaded]);
 
   const scrollTo = useCallback((anchor: string) => {
@@ -65,6 +67,7 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
       if (id === doc.id) { if (anchor) scrollTo(anchor); } else setNav({ id, anchor: anchor ?? null });
     },
     onAnchor: scrollTo,
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
   }), [doc, scrollTo, loaded]);
 
   const sidebar = (

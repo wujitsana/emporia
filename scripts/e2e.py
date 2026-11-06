@@ -11,6 +11,8 @@ hand in a throwaway Hermes home:
 * playbook refusals that name how to change them; a free blotto between A and B (an illegal commit
   refused, a like, quests, the character sheet, the season, the relay's activity count);
 * a house agent that adopts a waiting free blotto and plays it to the end;
+* the operator section: the relay names the merchant its operator; its desk shows a player's
+  open bug report with the verdict command, and the player is refused the desk;
 * `hermes emporia update`, twice: the runtime is already at the pinned commit, so each verifies it
   and changes nothing.
 
@@ -220,7 +222,10 @@ class Run:
             EMPORIA_RELAY_ID="e2e", EMPORIA_RELAY_ACCESS="open", EMPORIA_DB_PATH=str(r / "relay.sqlite3"),
             EMPORIA_KEYS_DIR=str(r / "keys"), EMPORIA_LOG_DIR=str(r / "logs"), EMPORIA_AUDIT_DIR=str(r / "audit"),
             EMPORIA_X402_ENABLED="0", RATE_LIMIT_PER_MINUTE="5000",
-            EMPORIA_GAMIFY="sheets,quests", EMPORIA_HOUSE_AGENTS=self.house_agent)
+            # The operator section: the merchant is this relay's operator; bug quests (with
+            # the transparency log they need) give its desk a queue.
+            EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1",
+            EMPORIA_GAMIFY="sheets,quests,bugs", EMPORIA_HOUSE_AGENTS=self.house_agent)
         py = self.repo / ".venv" / "bin" / "python"
         # The relay runs --repo's code even under another checkout's interpreter (a git worktree
         # has no .venv; the fallback's editable install is the main checkout): found by the review
@@ -467,6 +472,27 @@ class Run:
             raise StepFailed("the house's game did not finish in 8 passes")
         check(self.house_agent in g["participants"], f"participants: {g['participants']}")
 
+    def operator(self) -> None:
+        """The relay's operator (the merchant) sees its desk — a player's open bug report waiting,
+        with the claimed severity, its test and the verdict command — and the player is refused."""
+        r = self.tool(self.player, "report_bug", self.sha[:12], "e2e: a waiting report",
+                      "def test_it():\n    assert 1 + 1 == 2", "filed by the end-to-end run", "high", False)
+        check(r.get("success") and r.get("report_id"), f"report_bug: {r}")
+        rid = r["report_id"]
+        me = self.emporia(self.merchant, "operator", self.merchant, "whoami")
+        check("this relay's operator" in me, f"whoami as the operator: {me.strip()[-200:]}")
+        desk = self.emporia(self.merchant, "operator", self.merchant)
+        check(rid in desk and "claimed high" in desk and "assert 1 + 1 == 2" in desk,
+              f"the operator's desk does not show the report: {desk.strip()[-400:]}")
+        check(f"hermes emporia bugs {self.merchant} verdict {rid} accepted --severity high --fix FIX_COMMIT" in desk,
+              "the desk names no verdict command")
+        check(f"hermes emporia house start {self.house_agent}" in desk, "the desk names no house command")
+        them = self.emporia(self.player, "operator", self.player, "whoami", ok_codes=(1,))
+        check("not this relay's operator" in them, f"whoami as a player: {them.strip()[-200:]}")
+        refused = self.emporia(self.player, "operator", self.player, ok_codes=(1,))
+        check("relay operator access required" in refused and rid not in refused,
+              f"a player reached the operator's desk: {refused.strip()[-200:]}")
+
     def update(self) -> None:
         """At the pinned commit, update is a verified no-op: twice, nothing moves or installs."""
         rt = self.runtime_python().parent.parent.parent
@@ -610,6 +636,7 @@ def main(argv: list[str] | None = None) -> int:
         run.step("quests, sheet, season, activity", run.standing)
         run.step(f"setup {run.house_agent} (house)", run.setup_agent, run.house_agent, "--playbook", "host")
         run.step("house adopts a waiting blotto and finishes it", run.house)
+        run.step("the operator sees its desk; a player is refused", run.operator)
         run.step("update at the pinned commit is a verified no-op", run.update)
     except StepFailed:
         pass

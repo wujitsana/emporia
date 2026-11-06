@@ -50,3 +50,14 @@ describe("navForHotkey", () => {
     }
   });
 });
+
+describe("the operator section", () => {
+  it("is the relay operator's alone, by the nav and by its key", () => {
+    for (const isSpectator of [true, false]) {
+      expect(visibleNav({ isSpectator }).map((n) => n.id)).not.toContain("operator");
+      expect(navForHotkey("o", { isSpectator })).toBeUndefined();
+    }
+    expect(visibleNav({ isSpectator: false, isOperator: true }).map((n) => n.id)).toContain("operator");
+    expect(navForHotkey("o", { isSpectator: false, isOperator: true })?.id).toBe("operator");
+  });
+});

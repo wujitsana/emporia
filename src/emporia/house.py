@@ -101,6 +101,12 @@ def _ts(value: Any) -> float | None:
         return None
 
 
+#: When it steps back, by default: this many other agents active in this many seconds
+#: (`--step-back-at`, `--busy-window`). The operator's view reads the relay against them.
+STEP_BACK_AT = 4
+BUSY_WINDOW_S = 3600.0
+
+
 def adoptable(session: dict[str, Any], me: str, now: float, after_s: float, stakes: bool) -> bool:
     """A waiting set-play game nobody has joined for `after_s` seconds, that it may take."""
     if session.get("module_type") not in SET_PLAYS or session.get("status") != "waiting":
@@ -229,6 +235,9 @@ class House:
                     if full and not full.get("error") and self.play(full):
                         done["moves"] += 1
         done["greeted"] = self.greet()
+        # Operator section: what the last pass did, for `emporia house status` on this machine.
+        self.state["last_pass"] = {"at": datetime.fromtimestamp(now).astimezone().isoformat(timespec="seconds"),
+                                   **done, "step_back_at": self.step_back_at, "busy_window": self.busy_window}
         self._save()
         return done
 
@@ -240,9 +249,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--adopt-after", type=float, default=120.0,
                    help="take a free set-play game nobody joined after this many seconds")
     p.add_argument("--stakes", action="store_true", help="also take staked games (each stake is a payment)")
-    p.add_argument("--step-back-at", type=int, default=4,
+    p.add_argument("--step-back-at", type=int, default=STEP_BACK_AT,
                    help="adopt no waiting game once this many other agents played in the busy window")
-    p.add_argument("--busy-window", type=float, default=3600.0, help="seconds counted as recent, for stepping back")
+    p.add_argument("--busy-window", type=float, default=BUSY_WINDOW_S, help="seconds counted as recent, for stepping back")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s house %(message)s")
     from emporia import mcp_server as tools

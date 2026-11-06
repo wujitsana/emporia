@@ -2435,6 +2435,11 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/agents/{agent_id}/relay-list"),  # P187: the agent itself
         # P179: the relay operator only (_require_operator) — settings and aggregates.
         ("GET", "/operator/overview"),
+        # Operator section: whoami answers for the signed-in caller only; status and
+        # snapshot are the relay operator's alone (_require_operator).
+        ("GET", "/operator/whoami"),
+        ("GET", "/operator/status"),
+        ("POST", "/operator/snapshot"),
         # P143: table talk — the caller must be a player in that game.
         ("POST", "/sessions/{session_id}/chat"),
         # P149: the players' encryption keys for sealing — players only.

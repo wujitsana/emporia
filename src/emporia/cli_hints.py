@@ -22,7 +22,7 @@ def via_plugin(runtime: Path = _RUNTIME) -> bool:
 
 # The CLI's commands (tests keep this in step with emporia.cli).
 COMMANDS = ("agent", "archive", "bugs", "delete", "dms", "doctor", "guardians", "house", "identity", "log",
-            "login", "relay", "role", "setup", "sheet", "signer", "stats", "update", "visits", "wallet")
+            "login", "operator", "relay", "role", "setup", "sheet", "signer", "stats", "update", "visits", "wallet")
 _COMMAND = re.compile(r"(?<![\w./-])emporia (?:setup agent(?: (?P<agent>[\w-]+))?\b|doctor --profile (?P<doc>[\w-]+)"
                       r"|(?:" + "|".join(COMMANDS) + r")\b)")
 _LAUNCHED = re.compile(r"hermes(?: -p [\w-]+)? $")

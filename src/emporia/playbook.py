@@ -52,6 +52,10 @@ PRESETS: dict[str, Playbook] = {
     "merchant": Playbook("merchant", NONE, None, "anyone", True, False, "model"),
     "scout": Playbook("scout", NONE, None, "anyone", False, True, "model"),
     "host": Playbook("host", (*SET_PLAYS, CHESS), 100, "anyone", True, False, "rules"),
+    # Operator section: the agent of the person who runs the relay. It answers questions, posts
+    # and greets; it takes no game and no deal on the relay it judges. Verdicts are not in any
+    # playbook: they are its person's signed decisions, a command the key guard refuses it.
+    "operator": Playbook("operator", NONE, None, "anyone", False, False, "model"),
 }
 ABOUT = {
     "custom": "no bounds beyond its limits — its own instructions decide (the default)",
@@ -59,6 +63,8 @@ ABOUT = {
     "merchant": "sells its listings; plays and buys nothing",
     "scout": "browses and buys within its limits; plays and sells nothing",
     "host": "the house agent: takes set plays (and unstaked chess) up to $1.00, sells, runs on rules",
+    "operator": "the relay operator's agent: answers anyone, plays, sells and buys nothing; verdicts stay "
+                "with its person",
 }
 
 _FIELD_WORDS = {"games": "games", "max_stake_cents": "stake limit", "answers": "who it answers",

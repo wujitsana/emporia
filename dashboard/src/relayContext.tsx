@@ -33,7 +33,21 @@ export function RelayContextProvider({ children }: { children: React.ReactNode }
 
   const viewerId = VIEWER_ID;
   const relayOwner = cfg?.owner_agent_id ?? null;
-  const isRelayOperator = !!(viewerId && relayOwner && viewerId === relayOwner);
+  // Operator section: the relay's public config names its operator, and the viewer's id is
+  // only what this page was opened as — a claim. The operator's sections open once the
+  // relay itself says so from the viewer's signed sign-in (GET /operator/whoami).
+  const claimsOperator = !!(viewerId && relayOwner && viewerId === relayOwner);
+  const [verifiedOperator, setVerifiedOperator] = useState<string | null>(null);
+  useEffect(() => {
+    if (!claimsOperator) return;      // no claim: not the operator, whatever was verified before
+    let live = true;
+    api.operatorWhoami()
+      .then((w) => { if (live) setVerifiedOperator(w.is_operator ? w.agent_id : null); })
+      // A refusal (401/403) is an answer; a relay that did not answer keeps the last one.
+      .catch((e) => { if (live && /^40[13]\b/.test(String(e?.message ?? ""))) setVerifiedOperator(null); });
+    return () => { live = false; };
+  }, [claimsOperator, viewerId, tick, dashboardToken]);
+  const isRelayOperator = claimsOperator && verifiedOperator === viewerId;
   const relayUrl = cfg?.relay_url ?? RELAY;
 
   const value: RelayCtxValue = {
