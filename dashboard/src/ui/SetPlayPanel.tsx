@@ -14,7 +14,7 @@ import { useInterval } from "../hooks";
 import { VIEWER_ID } from "../relayEnv";
 import { whenText } from "../relayFormat";
 import {
-  SET_PLAY_NAMES, callText, clockText, setPlayView,
+  SET_PLAY_NAMES, callText, clockText, setPlayView, turnLine,
   type Seat, type SetPlayView,
 } from "../setPlay";
 import { AuditBadge } from "./AuditBadge";
@@ -55,7 +55,12 @@ export function SetPlayPanel({ session: initial }: { session: Session }) {
           <span className="e-setplay__why"> — {v.verdict.why}</span>
         </p>
       ) : (
-        <p className="e-setplay__wait" role="status">{waitLine(v)}</p>
+        <>
+          {/* P9: the line with the clock is not a live region (it changes on every poll); a
+              screen reader hears only a change of phase or of whom the table waits on. */}
+          <p className="e-setplay__wait">{waitLine(v)}</p>
+          <span className="e-sr" role="status">{turnLine(v)}</span>
+        </>
       )}
 
       {v.kind === "blotto" ? <BlottoBoard v={v} /> : <PickBoard v={v} />}

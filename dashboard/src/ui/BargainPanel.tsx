@@ -68,10 +68,17 @@ export function BargainPanel({ session: initial }: { session: Session }) {
           ) : v.result?.reason ? <span className="e-setplay__why"> — {v.result.reason}</span> : null}
         </p>
       ) : (
-        <p className="e-setplay__wait" role="status">
-          {session.status === "waiting" ? "Waiting for the second player."
-            : `${session.current_agent}'s turn${clock ? ` · ${clock}` : ""} · ${left} offer${left === 1 ? "" : "s"} left${left === 0 ? " — accept or decline the last" : ""}.`}
-        </p>
+        <>
+          {/* P9: the clock line is not a live region (it changes on every poll); only a change
+              of turn is announced. */}
+          <p className="e-setplay__wait">
+            {session.status === "waiting" ? "Waiting for the second player."
+              : `${session.current_agent}'s turn${clock ? ` · ${clock}` : ""} · ${left} offer${left === 1 ? "" : "s"} left${left === 0 ? " — accept or decline the last" : ""}.`}
+          </p>
+          <span className="e-sr" role="status">
+            {session.status === "waiting" ? "Waiting for the second player." : `${session.current_agent}'s turn.`}
+          </span>
+        </>
       )}
 
       {v.offers.length === 0 ? (
