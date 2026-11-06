@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from eth_account import Account
 
-from emporia import commit_reveal, escrow
+from emporia import calls, commit_reveal, escrow
 from emporia import relay_server as rs
 from tests.test_emporia import _register_keyed, _signed_action_body
 from tests.test_escrow_purchase import AMOUNT, _sql, chain, client  # noqa: F401  (fixtures)
@@ -29,7 +29,7 @@ def _hdr(a):
     return {"x-emporia-agent-id": a}
 
 
-def _wager(client, module="emporia:blotto:v1"):
+def _wager(client, module="emporia:blotto:v2"):
     (a, ka), (b, kb) = _player(client), _player(client)
     r = client.post("/sessions", json={"module_type": module, "creator_agent_id": a,
                                        "payment_rules": WAGER}, headers=_hdr(a))
@@ -53,7 +53,7 @@ def _play(client, sid, a, b, move_a, move_b):
     r = None
     for action in ("commit", "reveal"):
         for who in (a, b):
-            payload = ({"commitment": commit_reveal.commitment(moves[who], nonces[who])}
+            payload = ({"commitment": calls.commitment(moves[who], None, nonces[who])}
                        if action == "commit" else {"move": moves[who], "nonce": nonces[who]})
             r = client.post(f"/sessions/{sid}/action",
                             json=_signed_action_body(client, sid, who, action, payload, "Reading this opponent"))
@@ -114,12 +114,12 @@ def test_a_wager_left_half_staked_is_voided_by_the_idle_sweep(client, chain, mon
 
 def test_an_x402_wager_is_for_two_players_with_wallets(client, chain):
     (a, _), _ = _player(client), None
-    r = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "creator_agent_id": a,
+    r = client.post("/sessions", json={"module_type": "emporia:two-thirds:v2", "creator_agent_id": a,
                                        "config": {"players": 3}, "payment_rules": WAGER}, headers=_hdr(a))
     assert r.status_code == 400 and "two players" in r.text
     nowallet = "xn_" + uuid.uuid4().hex[:8]
     _register_keyed(client, nowallet)
-    r = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": nowallet,
+    r = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": nowallet,
                                        "payment_rules": WAGER}, headers=_hdr(nowallet))
     assert r.status_code == 409 and "x402 wallet" in r.text
 

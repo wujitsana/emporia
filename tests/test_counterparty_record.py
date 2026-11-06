@@ -39,7 +39,7 @@ def test_a_new_agent_has_an_empty_record_and_a_stranger_none(client):
 def test_an_abandoned_game_counts(client):
     _register(client, "cr_a")
     _register(client, "cr_b")
-    r = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": "cr_a",
+    r = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": "cr_a",
                                        "config": {}}, headers={"x-emporia-agent-id": "cr_a"})
     sid = r.json()["session_id"]
     client.post(f"/sessions/{sid}/join", json={"agent_id": "cr_b"}, headers={"x-emporia-agent-id": "cr_b"})

@@ -19,7 +19,8 @@ def client():
     return TestClient(app, client=("127.0.0.1", 51216), raise_server_exceptions=False)
 
 
-@pytest.mark.parametrize("module_type", sorted(MODULE_REGISTRY))
+# Calls: a retired module (the :v1 set plays) is refused instead; tests/test_calls.py holds that.
+@pytest.mark.parametrize("module_type", sorted(t for t, c in MODULE_REGISTRY.items() if not c.RETIRED_FOR))
 def test_every_module_can_be_created(client, module_type):
     creator = "mod_" + uuid.uuid4().hex[:8]
     _register(client, creator)

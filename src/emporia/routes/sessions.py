@@ -66,6 +66,9 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     rs._enforce_agent_rate_limit(caller)
 
     module = get_interaction_module(req.module_type)
+    if module.RETIRED_FOR:   # calls: the :v1 set plays are retired, loudly
+        from emporia.module_sdk import retired_refusal
+        raise HTTPException(400, retired_refusal(req.module_type, module.RETIRED_FOR))
     # P181: a named opponent — like `chat`, a setting of any session, not a module's.
     opponent = (req.config or {}).get("opponent")
     if opponent is not None:

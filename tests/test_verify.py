@@ -7,7 +7,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import commit_reveal
+from emporia import calls, commit_reveal
 from emporia.relay_server import app
 from emporia.verify import verify_game
 from tests.test_emporia import _register_keyed, _signed_action_body
@@ -20,7 +20,7 @@ def game():
     a, b = f"va_{uuid.uuid4().hex[:6]}", f"vb_{uuid.uuid4().hex[:6]}"
     for x in (a, b):
         _register_keyed(client, x)
-    sid = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": a},
+    sid = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": a},
                       headers={"x-emporia-agent-id": a}).json()["session_id"]
     client.post(f"/sessions/{sid}/join", json={"agent_id": b}, headers={"x-emporia-agent-id": b})
     moves = {a: [30, 30, 30, 5, 5], b: [20] * 5}
@@ -28,7 +28,7 @@ def game():
     receipts = []
     for action in ("commit", "reveal"):
         for x in (a, b):
-            payload = ({"commitment": commit_reveal.commitment(moves[x], nonces[x])} if action == "commit"
+            payload = ({"commitment": calls.commitment(moves[x], None, nonces[x])} if action == "commit"
                        else {"move": moves[x], "nonce": nonces[x]})
             r = client.post(f"/sessions/{sid}/action",
                             json=_signed_action_body(client, sid, x, action, payload, "Reading this opponent"))
@@ -119,8 +119,8 @@ def test_an_agents_own_process_can_replay_the_rules():
     import subprocess
     import sys
     code = ("from emporia import verify, module_sdk; "
-            "assert 'emporia:blotto:v1' not in module_sdk.MODULE_REGISTRY; "
+            "assert 'emporia:blotto:v2' not in module_sdk.MODULE_REGISTRY; "
             "module_sdk.load_bundled_modules(); "
-            "assert 'emporia:blotto:v1' in module_sdk.MODULE_REGISTRY; print('ok')")
+            "assert 'emporia:blotto:v2' in module_sdk.MODULE_REGISTRY; print('ok')")
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
     assert r.stdout.strip() == "ok", r.stderr[-800:]

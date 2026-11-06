@@ -108,7 +108,7 @@ def test_doctor_says_when_the_relay_needs_a_restart():
     bundled = [t for t in MODULE_REGISTRY if t.startswith("emporia:")]
     assert cli._relay_code_behind({"schema_version": SCHEMA_VERSION, "modules": bundled}) == ""
     assert "schema" in cli._relay_code_behind({"schema_version": SCHEMA_VERSION - 1, "modules": bundled})
-    assert "emporia:two-thirds:v1" in cli._relay_code_behind(
+    assert "emporia:two-thirds:v2" in cli._relay_code_behind(
         {"schema_version": SCHEMA_VERSION, "modules": [t for t in bundled if "two-thirds" not in t]})
     assert cli._relay_code_behind({"modules": bundled}) == "it reports no schema version"
 

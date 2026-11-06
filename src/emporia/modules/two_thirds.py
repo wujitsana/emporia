@@ -13,6 +13,10 @@ A player who has not committed when the clock runs out ends the game as a
 draw (nobody has seen anything yet). A player who committed and does not reveal
 in time — say, having seen the others' picks — is out, and the game is decided
 among those who revealed.
+
+`emporia:two-thirds:v2` and `emporia:lowest-unique:v2` (calls): the commitment
+may also seal a call, the player's probability of winning (`emporia.calls`). The
+`:v1` types are retired: no new game, and a running one finishes as it started.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ from datetime import UTC, datetime
 from fractions import Fraction
 from typing import Any
 
-from emporia import commit_reveal
+from emporia import calls, commit_reveal
 from emporia.module_sdk import (
     STAKE_WAGER,
     InteractionModule,
@@ -63,6 +67,7 @@ class PickGame(InteractionModule):
     STAKE_MODEL = STAKE_WAGER
     TIMED = True
     TURN_ORDER = False
+    CALLS = False          # True in the :v2 types: the commitment may seal a call
     DEFAULTS: dict[str, int] = DEFAULTS
     BOUNDS: dict[str, tuple[int, int]] = BOUNDS
 
@@ -99,6 +104,8 @@ class PickGame(InteractionModule):
                 "commitments": {},
                 "guesses": {},
                 "phase_started_at": _now().isoformat(),
+                # v2: who sealed a call (said at commit), and the calls revealed.
+                **({"called": [], "calls": {}} if self.CALLS else {}),
             },
             current_agent=participants[0],
             step_number=0,
@@ -120,9 +127,18 @@ class PickGame(InteractionModule):
         if action.action_type == "commit":
             if not commit_reveal.is_commitment(action.payload.get("commitment")):
                 return False, "commitment must be a sha256 hex digest (use commit_move())"
+            if self.CALLS and (why := calls.commit_problem(action.payload, first_move=True)):
+                return False, why
             return True, ""
         move, nonce = action.payload.get("move"), action.payload.get("nonce")
-        if not commit_reveal.matches(data["commitments"][action.agent_id], move, nonce):
+        committed = data["commitments"][action.agent_id]
+        if self.CALLS:
+            if why := calls.reveal_problem(action.payload, declared=action.agent_id in data.get("called", [])):
+                return False, why
+            ok = calls.matches(committed, move, action.payload.get("call_pct"), nonce)
+        else:
+            ok = commit_reveal.matches(committed, move, nonce)
+        if not ok:
             return False, "This reveal does not match your commitment"
         why = self.move_problem(data, move)
         return (False, f"Your committed pick is not legal: {why}") if why else (True, "")
@@ -132,13 +148,19 @@ class PickGame(InteractionModule):
         data = {**state.data, "commitments": dict(state.data["commitments"]),
                 "guesses": dict(state.data["guesses"]),
                 "pending": [p for p in state.data["pending"] if p != action.agent_id]}
+        if self.CALLS:
+            data["called"], data["calls"] = list(state.data.get("called", [])), dict(state.data.get("calls", {}))
         if action.action_type == "commit":
             data["commitments"][action.agent_id] = action.payload["commitment"]
+            if self.CALLS and action.payload.get("called") and action.agent_id not in data["called"]:
+                data["called"].append(action.agent_id)
             if not data["pending"]:
                 data.update(phase="reveal", pending=list(participants),
                             phase_started_at=_now().isoformat())
         else:
             data["guesses"][action.agent_id] = action.payload["move"]
+            if self.CALLS and action.payload.get("call_pct") is not None:
+                data["calls"][action.agent_id] = action.payload["call_pct"]
         over = data["phase"] == "reveal" and not data["pending"]
         new_state = SessionState(data=data, current_agent=(data["pending"] or participants)[0],
                                  step_number=state.step_number + 1, metadata=state.metadata)
@@ -163,7 +185,9 @@ class PickGame(InteractionModule):
 
 @register_module
 class TwoThirdsModule(PickGame):
+    """`emporia:two-thirds:v1`, retired: its running games finish under these rules."""
     MODULE_TYPE = "emporia:two-thirds:v1"
+    RETIRED_FOR = "emporia:two-thirds:v2"
     MAX_PARTICIPANTS = 8
     RULES = """
 Guess two-thirds of the average. 3–8 players (config `players`, default 3; the
@@ -179,3 +203,12 @@ deeply these opponents think — their past games are in game_results().
 
     def verdict(self, picks: dict[str, int], data: dict[str, Any]) -> dict[str, Any]:
         return _verdict(picks)
+
+
+@register_module
+class TwoThirdsV2Module(TwoThirdsModule):
+    """`emporia:two-thirds:v2`: guess ⅔ whose commitment may seal a call (gamify calls)."""
+    MODULE_TYPE = "emporia:two-thirds:v2"
+    RETIRED_FOR = None
+    CALLS = True
+    RULES = TwoThirdsModule.RULES.rstrip() + "\n" + calls.RULES

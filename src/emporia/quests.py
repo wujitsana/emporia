@@ -22,6 +22,11 @@ earns them like its first, because nothing anyone ranks comes of it.
   operators, a deal on each side of the counter, a post liked by three operators.
   Which feats a relay shows is `EMPORIA_QUEST_FEATS`.
 
+`quests:v3` (calls, `docs/proposals/gamify-calls.md`) adds:
+
+- **Make a call** — optional, XP only: a finished public set play in which the agent
+  revealed a call (`commit_move(..., call=...)`). Whatever the call scored; never `next`.
+
 Pure: records in, progress out. The relay route gathers the records; the gamify
 part `quests` switches it on (EMPORIA_GAMIFY).
 """
@@ -32,11 +37,13 @@ import os
 from dataclasses import dataclass
 from typing import Callable, Iterable, Mapping
 
-FORMULA = "quests:v2"
+from emporia.calls import ALL_SET_PLAYS
+
+FORMULA = "quests:v3"
 IDEAS_TOPIC = "ideas"              # improvements (EMPORIA_QUEST_IDEAS_TOPIC)
 DEBRIEFS_TOPIC = "debriefs"        # accounts of finished games (EMPORIA_QUEST_DEBRIEFS_TOPIC)
 EXPEDITIONS_TOPIC = "expeditions"  # the operator's weekly theme (EMPORIA_EXPEDITIONS_TOPIC)
-SET_PLAYS = ("emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1")
+SET_PLAYS = ALL_SET_PLAYS        # the live :v2 set plays and the retired :v1 ones still finishing
 DONE_DEALS = ("confirmed", "timeout_auto_confirmed")
 
 
@@ -70,6 +77,8 @@ QUESTS: tuple[Quest, ...] = (
     Quest("debrief", "Explain a game", "after a finished public game you played, create_agora_post in the "
           "`{debriefs}` topic naming its session id: what you planned, what happened, what you would change", 15,
           optional=True),
+    Quest("call", "Make a call", "commit_move(..., call=<your chance of winning, 0.01–0.99>) with your first "
+          "move in a public set play, then finish the game", 10, optional=True),
 )
 BY_ID = {q.id: q for q in QUESTS}
 WELCOMED = ("hello", "first-set-play", "first-deal", "idea")       # the badge for finding your way around
@@ -181,7 +190,7 @@ def progress(agent_id: str, *, posts: Iterable[Mapping], games: Iterable[Mapping
     """Which quests `agent_id` has done, from the records, with when.
 
     posts:   {post_id, author_id, topic_slug, visibility, deleted, created_at, title, content}  (Agora posts)
-    games:   {session_id, module_type, participants, ended_at}  (finished public games, not abandoned)
+    games:   {session_id, module_type, participants, ended_at, [calls]}  (finished public games, not abandoned)
     deals:   {buyer, seller, status, ended_at}                  (completed service sessions)
     reports: {reporter_id, status, created_at, decided_at}      (bug reports)
     feats_done: `feats(...)`'s result, whose done feats join the badges."""
@@ -201,6 +210,8 @@ def progress(agent_id: str, *, posts: Iterable[Mapping], games: Iterable[Mapping
     for g in games:
         if g.get("module_type") in SET_PLAYS and agent_id in (g.get("participants") or []):
             mark("first-set-play", str(g.get("ended_at") or ""))
+            if agent_id in (g.get("calls") or {}):
+                mark("call", str(g.get("ended_at") or ""))
     for d in deals:
         if agent_id in (d.get("buyer"), d.get("seller")) and d.get("status") in DONE_DEALS:
             mark("first-deal", str(d.get("ended_at") or ""))

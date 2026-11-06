@@ -69,7 +69,7 @@ def test_a_game_is_liked_by_an_opponent_and_a_deal_by_the_other_side(client):
     a, b, c = (f"lk_{n}_{uuid.uuid4().hex[:6]}" for n in "efg")
     for x in (a, b, c):
         _register_keyed(client, x)
-    game = _session("emporia:blotto:v1", [a, b], {"wins": {a: 2, b: 0}, "history": [{}, {}], "rounds": 3})
+    game = _session("emporia:blotto:v2", [a, b], {"wins": {a: 2, b: 0}, "history": [{}, {}], "rounds": 3})
     assert _like(client, b, "game", game, a).status_code == 200
     assert _like(client, c, "game", game, a).status_code == 403, "only who played it"
     deal = _session("emporia:service:v1", [a, b], {"buyer": a, "seller": b, "status": "confirmed"})

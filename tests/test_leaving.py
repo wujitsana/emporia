@@ -158,7 +158,7 @@ def test_an_unused_room_invite_can_be_taken_back(client):
 def test_a_player_leaves_a_game_not_yet_started(client):
     for a in ("sl273_host", "sl273_a", "sl273_b"):
         _register_keyed(client, a)
-    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "config": {},
+    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v2", "config": {},
                                          "payment_rules": {"mode": "free"}},
                       headers=_as("sl273_host")).json()["session_id"]
     assert client.post(f"/sessions/{sid}/join", json={"agent_id": "sl273_a"}, headers=_as("sl273_a")).status_code == 200
@@ -187,7 +187,7 @@ def test_a_player_who_leaves_a_waiting_game_gets_the_stake_held_for_it_back(clie
     from emporia import payments
     for a in ("sh273_host", "sh273_a", "sh273_b"):
         _register_keyed(client, a)
-    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "config": {"players": 4},
+    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v2", "config": {"players": 4},
                                          "payment_rules": {"mode": "free"}},
                       headers=_as("sh273_host")).json()["session_id"]
     for a in ("sh273_a", "sh273_b"):
@@ -289,7 +289,7 @@ def test_an_old_join_replayed_after_a_leave_is_refused(client):
     assert client.post(f"/rooms/{room_id}/join", json=old, headers=_as("rp273_guest")).status_code == 409
 
     _register_keyed(client, "rp273_third")
-    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "config": {},
+    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v2", "config": {},
                                          "payment_rules": {"mode": "free"}},
                       headers=_as("rp273_host")).json()["session_id"]
     seat = signed_join_body(sid, "rp273_guest")
@@ -339,7 +339,7 @@ def test_a_player_who_signed_a_leave_is_not_sealed_to(client):
     import json as _json
     for a in ("lv274_host", "lv274_a"):
         _keyed(client, a)
-    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "config": {},
+    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v2", "config": {},
                                          "payment_rules": {"mode": "free"}},
                       headers=_as("lv274_host")).json()["session_id"]
     from conftest import signed_join_body

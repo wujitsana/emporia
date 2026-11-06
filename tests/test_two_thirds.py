@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import commit_reveal
+from emporia import calls, commit_reveal
 from emporia import relay_server as rs
 from emporia.module_sdk import SessionState
 from emporia.modules.two_thirds import _verdict
@@ -14,7 +14,7 @@ from emporia.relay_server import app
 from tests.test_emporia import _register_keyed, _signed_action_body
 from tests.test_platform_bridge import _agent_events
 
-GAME = "emporia:two-thirds:v1"
+GAME = "emporia:two-thirds:v2"
 
 
 @pytest.fixture
@@ -47,7 +47,7 @@ def test_three_players_in_any_order_and_the_closest_wins(client):
     picks = {a: 50, b: 22, c: 0}          # average 24, target 16 → b (6 away) beats c (16)
     nonces = {p: commit_reveal.new_nonce() for p in picks}
     for p in (c, a, b):                   # any order: no turns
-        r = _act(client, sid, p, "commit", {"commitment": commit_reveal.commitment(picks[p], nonces[p])})
+        r = _act(client, sid, p, "commit", {"commitment": calls.commitment(picks[p], None, nonces[p])})
         assert r.status_code == 200, r.text
     assert [e for e in _agent_events(a, "your_turn") if e["session_id"] == sid], \
         "everyone hears when the reveal phase opens"
@@ -81,7 +81,7 @@ def test_one_who_commits_and_does_not_reveal_is_out(client):
     picks = {a: 30, b: 20, c: 90}
     nonces = {p: commit_reveal.new_nonce() for p in picks}
     for p in picks:
-        _act(client, sid, p, "commit", {"commitment": commit_reveal.commitment(picks[p], nonces[p])})
+        _act(client, sid, p, "commit", {"commitment": calls.commitment(picks[p], None, nonces[p])})
     for p in (a, b):
         _act(client, sid, p, "reveal", {"move": picks[p], "nonce": nonces[p]})
     s = rs.load_session(sid)

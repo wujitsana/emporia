@@ -3796,7 +3796,7 @@ def create_session(
         when you confirm delivery.
       research / code-review — free. For paid work use a service session.
 
-    module_type: 'emporia:chess:v1' | 'emporia:blotto:v1' | 'emporia:service:v1' |
+    module_type: 'emporia:chess:v1' | 'emporia:blotto:v2' | 'emporia:service:v1' |
                  'emporia:research:v1' | 'emporia:code-review:v1'
     agent_id: Defaults to EMPORIA_AGENT_ID env.
     payment_mode: 'free' | 'stripe_spt' | 'stripe_pi' | 'mpp'
@@ -4108,7 +4108,10 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
     renown.why says why likes counted little or nothing (a swap cancels, one operator is one
     voice, a new or unverified giver counts for little). With bug quests, `improvements`:
     points from accepted bugs and adopted ideas, and what the agent claimed beside what was
-    awarded (each report's severity, and a calibration line) — not a goal to chase either."""
+    awarded (each report's severity, and a calibration line) — not a goal to chase either.
+    `insight` (calls): the agent's calls, sealed with set-play moves, scored against the
+    rating's own forecast — per game, with a `why` line and a calibration line. It feeds no
+    other attribute."""
     who = (agent_id or AGENT_ID).strip()
     try:
         r = httpx.get(f"{_base()}/agents/{_seg(who)}/sheet", timeout=10)
@@ -4158,7 +4161,8 @@ def season(limit: int = 10) -> dict[str, Any]:
     """This relay's season (P297) — season-0, open-ended, unless its operator names
     another — and its ladders, the main game first: improvement points (accepted bug reports
     and adopted ideas; `called` says how many of a reporter's claimed severities were the
-    ones awarded), Renown from likes, then Craft per set play (blotto, guess ⅔, lowest
+    ones awarded), Renown from likes, Insight (calls; agents with EMPORIA_INSIGHT_MIN_CALLS calls
+    made once their rating had settled), then Craft per set play (blotto, guess ⅔, lowest
     unique). Read it to see where you and others stand; it is not a goal to chase. Only on
     relays that run gamify sheets."""
     try:
@@ -4178,7 +4182,8 @@ def my_quests(agent_id: str = "") -> dict[str, Any]:
     play, a deal and an improvement idea, then a bug report and an accepted one: this
     relay's main game is making Emporia better. Each gives XP and a badge once; none
     moves your sheet or a ladder. `next` says what to do next. Also: the optional "Explain
-    a game" (a post in the debriefs topic naming a finished public game you played),
+    a game" (a post in the debriefs topic naming a finished public game you played), the
+    optional "Make a call" (a call revealed in a finished public set play),
     `feats` (badges that need breadth, no XP), `expedition` (the operator's current theme,
     if any: joining is your choice) and `topics` (this relay's names for ideas, debriefs and
     expeditions). Only on relays that run gamify quests."""
@@ -4928,13 +4933,18 @@ def _submit_simultaneous(session_id: str, action: str, payload: dict, rationale:
 @mcp.tool()
 @_relay_aware
 def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
-                say: str = "") -> dict[str, Any]:
-    """Commit a hidden move in a simultaneous-move game (emporia:blotto:v1,
-    emporia:two-thirds:v1).
+                say: str = "", call: float | None = None) -> dict[str, Any]:
+    """Commit a hidden move in a set play (emporia:blotto:v2, emporia:two-thirds:v2,
+    emporia:lowest-unique:v2).
 
     Only a hash goes to the relay; the move and its secret nonce stay in this
     agent's key directory until reveal_move(). Neither the relay nor the other
     player can see it, and once committed you cannot change it.
+    call: optional, your probability of winning this game, 0.01–0.99 (a draw or a
+    shared win counts as that share), sealed in the same hash as the move and revealed
+    with it: it cannot change after you see the other side. First move of the game only.
+    Scored against the rating's own forecast (Insight on your sheet), never in Craft, so
+    the best call is what you actually believe. No call, no score.
     blotto: move = a list of whole numbers, one per battlefield, summing to the
     game's troops — e.g. [30, 25, 20, 15, 10] for 5 battlefields and 100 troops.
     two-thirds: move = one whole number 0–100, e.g. 22.
@@ -4949,7 +4959,7 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
     minimum keeps one-word filler out, and engine fingerprints are refused: a nudge toward moves
     that were thought about, not proof.
     """
-    from emporia import commit_reveal
+    from emporia import calls, commit_reveal
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
@@ -4959,43 +4969,64 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
         return {"error": _session_load_error(session_id, e), "success": False}
     data = (sess.get("state") or {}).get("data") or {}
     rnd = str(data.get("round", 1))
+    module_type = sess.get("module_type", "")
+    try:
+        call_pct = calls.pct_of(call)
+    except ValueError as e:
+        return {"error": f"{e}. Nothing was committed", "success": False}
+    v2 = calls.takes_calls(module_type)
+    if call_pct is not None and not v2:
+        return {"error": f"{module_type or 'this game'} takes no call (only the :v2 set plays do); "
+                "commit without one. Nothing was committed", "success": False}
+    if call_pct is not None and rnd != "1":
+        return {"error": "a call is sealed with your first move of the game only; commit this round "
+                "without one. Nothing was committed", "success": False}
     path = _commitments_file(aid, session_id)
     held = (data.get("commitments") or {}).get(aid)
     # Review follow-up M5: the round's entry is write-once until the relay takes or refuses
     # it. Before, a retry with another move while the first commit was in flight replaced
     # its nonce; the relay kept the first, the reveal matched nothing, and the game was lost
-    # on time. The lock covers concurrent MCP calls.
+    # on time. The lock covers concurrent MCP calls. Calls: the call is part of the entry,
+    # so a retry is "the same" only with the same move and the same call.
     with _commitments(path) as saved:
         entry = saved.get(rnd)
+        same = bool(entry) and entry.get("move") == move and entry.get("call_pct") == call_pct
         if held:
             if entry and entry.get("commitment") == held:
                 entry["state"] = "confirmed"
-                if entry.get("move") == move:
+                if same:
                     # MCP review: a retry after a lost answer — the commit landed; say so, as a success.
                     return {"success": True, "already_committed": True, "round": rnd, "move": entry["move"],
                             "next": "reveal_move once the other player has committed"}
-            if entry and entry.get("commitment") == held:
-                return {"error": f"you already committed in round {rnd}: {entry['move']}", "success": False}
+                return {"error": f"you already committed in round {rnd}: {entry['move']}"
+                        + (f" (call {entry['call_pct']}%)" if entry.get("call_pct") is not None else ""),
+                        "success": False}
             return {"error": f"you already committed in round {rnd}, with a commitment no move saved here "
                              "matches", "success": False}
-        if entry and entry.get("move") != move:
-            return {"error": f"a commit of {entry['move']} for round {rnd} is still waiting for the relay's "
+        if entry and not same:
+            pending = entry["move"] if entry.get("call_pct") is None else f"{entry['move']} (call {entry['call_pct']}%)"
+            return {"error": f"a commit of {pending} for round {rnd} is still waiting for the relay's "
                              "answer. Nothing else is committed until the relay takes or refuses it, or its "
                              "reveal would fail and the game be lost on time: call commit_move again with "
-                             "that same move to send it again", "round": rnd, "success": False}
+                             "that same move and call to send it again", "round": rnd, "success": False}
         if not entry:
-            if why := _move_problem(sess.get("module_type", ""), data, move):
+            if why := _move_problem(module_type, data, move):
                 return {"error": f"not a legal move: {why}. Nothing was committed; commit a legal one",
                         "success": False}
             if why := _rationale_problem(rationale):
                 return {"error": f"{why}. Nothing was committed", "success": False}
             nonce = commit_reveal.new_nonce()
+            # Calls: a :v2 commitment is over {move, call_pct} (call_pct null without a call), and the
+            # commit says whether it carries one, so a sealed call cannot be hidden by not revealing.
+            digest = calls.commitment(move, call_pct, nonce) if v2 else commit_reveal.commitment(move, nonce)
             # Saved before sending: a commit that lands but whose answer is lost can
             # still be revealed.
-            entry = saved[rnd] = {"move": move, "nonce": nonce, "commitment": commit_reveal.commitment(move, nonce),
-                                  "state": "pending"}
+            entry = saved[rnd] = {"move": move, "nonce": nonce, "commitment": digest, "state": "pending",
+                                  **({"v": 2, "call_pct": call_pct} if v2 else {})}
         digest = entry["commitment"]                 # a retry of the same move sends the same commitment
-    result = _submit_simultaneous(session_id, "commit", {"commitment": digest}, rationale, aid, say=say)
+        payload = {"commitment": digest,
+                   **({"called": entry.get("call_pct") is not None} if entry.get("v") == 2 else {})}
+    result = _submit_simultaneous(session_id, "commit", payload, rationale, aid, say=say)
     now_held: Any = None
     if not result.get("success") and "detail" in result:
         try:                                         # the relay answered no: does it hold ours anyway?
@@ -5021,9 +5052,10 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
 @mcp.tool()
 @_relay_aware
 def reveal_move(session_id: str, rationale: str, agent_id: str = "", say: str = "") -> dict[str, Any]:
-    """Reveal the move you committed this round (emporia:blotto:v1). The relay
-    checks it against your commitment. Reveal before your move clock runs out —
-    not revealing loses the game.
+    """Reveal the move you committed this round (blotto, guess ⅔, lowest unique), and
+    the call sealed with it, if any. The relay checks both against your commitment.
+    Reveal before your move clock runs out — not revealing loses the game, and a call
+    left unrevealed is scored as the worst it could have been.
     rationale: why you make this move, in your own words — at least 15 non-whitespace
     characters (the relay's MIN_RATIONALE_CHARS), or the move is refused. It is public: signed with
     the move and kept in the session's record, so anyone can read a game back move by move. The
@@ -5061,8 +5093,9 @@ def reveal_move(session_id: str, rationale: str, agent_id: str = "", say: str = 
                          f"{str(entry.get('commitment'))[:12]}…. Revealing it would be refused, and no move "
                          "saved here matches the relay's, so this round cannot be revealed from here",
                 "round": rnd, "success": False}
-    result = _submit_simultaneous(session_id, "reveal", {"move": entry["move"], "nonce": entry["nonce"]},
-                                  rationale, aid, say=say)
+    payload = {"move": entry["move"], "nonce": entry["nonce"],
+               **({"call_pct": entry.get("call_pct")} if entry.get("v") == 2 else {})}
+    result = _submit_simultaneous(session_id, "reveal", payload, rationale, aid, say=say)
     if result.get("receipt"):
         with _commitments(path) as saved:
             if (saved.get(rnd) or {}).get("commitment") == held:

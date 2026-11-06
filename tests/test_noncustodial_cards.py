@@ -165,7 +165,7 @@ def test_an_interrupted_entry_is_finished_from_what_stripe_says(client, stripe_e
 def _card_wager(client, accounts=True):
     a, b = _agents(client, 2, "cw")
     with _accounts(**({a: "acct_a", b: "acct_b"} if accounts else {})):
-        r = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": a,
+        r = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": a,
                                            "payment_rules": CARD_WAGER}, headers=_hdr(a))
         assert r.status_code == 200, r.text
         sid = r.json()["session_id"]
@@ -213,11 +213,11 @@ def test_a_card_wager_draw_cancels_both(client, stripe):
 def test_a_card_wager_needs_two_players_who_can_be_paid(client, stripe):
     a, nobody = _agents(client, 2, "cx")
     with _accounts(**{a: "acct_a"}):
-        r = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "creator_agent_id": a,
+        r = client.post("/sessions", json={"module_type": "emporia:two-thirds:v2", "creator_agent_id": a,
                                            "config": {"players": 3}, "payment_rules": CARD_WAGER},
                         headers=_hdr(a))
         assert r.status_code == 400 and "two players" in r.text, "a pot of three would sit with the relay"
-        r = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": nobody,
+        r = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": nobody,
                                            "payment_rules": CARD_WAGER}, headers=_hdr(nobody))
         assert r.status_code == 409 and "Stripe account" in r.text
 
@@ -225,7 +225,7 @@ def test_a_card_wager_needs_two_players_who_can_be_paid(client, stripe):
 def test_the_opt_in_brings_back_the_held_pot(client, stripe, monkeypatch):
     monkeypatch.setenv("EMPORIA_CUSTODIAL_CARDS", "1")
     a, = _agents(client, 1, "co")
-    r = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "creator_agent_id": a,
+    r = client.post("/sessions", json={"module_type": "emporia:two-thirds:v2", "creator_agent_id": a,
                                        "config": {"players": 3}, "payment_rules": CARD_WAGER},
                     headers={**_hdr(a), **PAY})
     assert r.status_code == 200, r.text
@@ -256,7 +256,7 @@ def test_a_held_card_prize_is_refused(client, stripe):
     funder, = _agents(client, 1, "bf")
     deadline = (datetime.now(UTC) + timedelta(days=1)).isoformat()
     r = client.post("/bounties", json={"title": "Prize", "description": "d", "prize_cents": 1000,
-                                       "module_type": "emporia:blotto:v1", "rail": "stripe",
+                                       "module_type": "emporia:blotto:v2", "rail": "stripe",
                                        "entry_deadline": deadline},
                     headers={**_hdr(funder), **PAY})
     assert r.status_code == 400 and "does not hold card prizes" in r.text
@@ -296,15 +296,15 @@ def test_by_default_games_are_staked_in_usdc_not_on_cards(client, stripe, monkey
     monkeypatch.delenv("EMPORIA_CARD_GAME_STAKES")
     a, = _agents(client, 1, "dg")
     with _accounts(**{a: "acct_a"}):
-        r = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": a,
+        r = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": a,
                                            "payment_rules": CARD_WAGER}, headers={**_hdr(a), **PAY})
         assert r.status_code == 400 and "payment_mode='x402'" in r.text
         deadline = (datetime.now(UTC) + timedelta(days=1)).isoformat()
         r = client.post("/bounties", json={"title": "Prize", "description": "d", "prize_cents": 1000,
-                                           "module_type": "emporia:blotto:v1", "rail": "stripe",
+                                           "module_type": "emporia:blotto:v2", "rail": "stripe",
                                            "entry_deadline": deadline}, headers={**_hdr(a), **PAY})
         assert r.status_code == 400 and "promise" in r.text
-        free = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": a},
+        free = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": a},
                            headers=_hdr(a))
     assert free.status_code == 200, "free play is untouched"
     assert stripe.pis == {}

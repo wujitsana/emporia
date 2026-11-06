@@ -13,6 +13,10 @@ with commit-reveal the relay itself never holds a move before both are fixed.
 A player who stops — including one who sees from the other's reveal that they
 have lost and declines to reveal — loses the game when their move clock runs
 out. Without that, refusing to reveal would turn a loss into a refund.
+
+`emporia:blotto:v2` (calls): the round-1 commitment may also seal a call, the
+player's probability of winning the game (`emporia.calls`). `:v1` is retired: no
+new game, and a running one finishes as it started.
 """
 
 from __future__ import annotations
@@ -20,7 +24,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from emporia import commit_reveal
+from emporia import calls, commit_reveal
 from emporia.module_sdk import (
     STAKE_WAGER,
     InteractionModule,
@@ -51,7 +55,10 @@ def _score(a: list[int], b: list[int]) -> tuple[int, int]:
 
 @register_module
 class BlottoModule(InteractionModule):
+    """`emporia:blotto:v1`, retired: its running games finish under these rules."""
     MODULE_TYPE = "emporia:blotto:v1"
+    RETIRED_FOR = "emporia:blotto:v2"
+    CALLS = False
     DECLARES_WINNER = True
     STAKE_MODEL = STAKE_WAGER
     MIN_PARTICIPANTS = 2
@@ -90,6 +97,8 @@ by concentrating. Think about what this opponent does.
                 "history": [],
                 "wins": {p: 0 for p in participants},
                 "turn_started_at": _now().isoformat(),
+                # v2: who sealed a call (said at commit), and the calls revealed.
+                **({"called": [], "calls": {}} if self.CALLS else {}),
             },
             current_agent=participants[0],
             step_number=0,
@@ -123,9 +132,19 @@ by concentrating. Think about what this opponent does.
         if action.action_type == "commit":
             if not commit_reveal.is_commitment(action.payload.get("commitment")):
                 return False, "commitment must be a sha256 hex digest (use commit_move())"
+            if self.CALLS and (why := calls.commit_problem(action.payload, first_move=data["round"] == 1)):
+                return False, why
             return True, ""
         move, nonce = action.payload.get("move"), action.payload.get("nonce")
-        if not commit_reveal.matches(data["commitments"][action.agent_id], move, nonce):
+        committed = data["commitments"][action.agent_id]
+        if self.CALLS:
+            declared = data["round"] == 1 and action.agent_id in data.get("called", [])
+            if why := calls.reveal_problem(action.payload, declared=declared):
+                return False, why
+            ok = calls.matches(committed, move, action.payload.get("call_pct"), nonce)
+        else:
+            ok = commit_reveal.matches(committed, move, nonce)
+        if not ok:
             return False, "This reveal does not match your commitment"
         why = self._valid_allocation(data, move)
         return (False, f"Your committed move is not legal: {why}") if why else (True, "")
@@ -140,15 +159,21 @@ by concentrating. Think about what this opponent does.
         data = {**state.data, "commitments": dict(state.data["commitments"]),
                 "revealed": dict(state.data["revealed"]), "wins": dict(state.data["wins"]),
                 "history": list(state.data["history"]), "turn_started_at": _now().isoformat()}
+        if self.CALLS:
+            data["called"], data["calls"] = list(state.data.get("called", [])), dict(state.data.get("calls", {}))
         me = action.agent_id
         if action.action_type == "commit":
             data["commitments"][me] = action.payload["commitment"]
+            if self.CALLS and action.payload.get("called") and me not in data["called"]:
+                data["called"].append(me)
             if me == first:
                 nxt = second
             else:
                 data["phase"], nxt = "reveal", first
         else:
             data["revealed"][me] = action.payload["move"]
+            if self.CALLS and action.payload.get("call_pct") is not None:
+                data["calls"][me] = action.payload["call_pct"]
             if me == first:
                 nxt = second
             else:
@@ -197,3 +222,12 @@ by concentrating. Think about what this opponent does.
             return True, {"winner": winner, "outcome_type": "won", "termination": "timeout",
                           "reason": f"{loser} did not {state.data['phase']} in time"}
         return False, {}
+
+
+@register_module
+class BlottoV2Module(BlottoModule):
+    """`emporia:blotto:v2`: blotto whose commitment may seal a call (gamify calls)."""
+    MODULE_TYPE = "emporia:blotto:v2"
+    RETIRED_FOR = None
+    CALLS = True
+    RULES = BlottoModule.RULES.rstrip() + "\n" + calls.RULES

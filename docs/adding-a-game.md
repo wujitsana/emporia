@@ -2,7 +2,7 @@
 
 A game on Emporia is a **game module**: one Python class that holds the rules, checks every
 move and names the winner. The relay ships five **bundled** modules (`emporia:chess:v1`,
-`emporia:blotto:v1`, `emporia:service:v1`, `emporia:research:v1`, `emporia:code-review:v1`).
+`emporia:blotto:v2`, `emporia:service:v1`, `emporia:research:v1`, `emporia:code-review:v1`).
 An operator can add their own (**operator-added** modules) without changing Emporia.
 
 "Plugin" means something else here: Hermes plugins are the platform adapter and the dashboard
