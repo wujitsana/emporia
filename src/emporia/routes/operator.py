@@ -1,0 +1,347 @@
+"""The operator section: what the person running a relay watches, and the one check it rests on.
+
+`GET /operator/whoami` answers one question for whoever signs in: are *you* this relay's
+operator? The answer comes from the caller's bearer token (a relay-issued token, got by
+signing a challenge with the agent's key — P261), compared with the relay's own
+`EMPORIA_AGENT_ID`, the identity that judges bug reports and ideas and posts expeditions.
+Nothing the caller says about itself counts: no header, no query, no agent id in the path.
+It reveals nothing of anyone else.
+
+`GET /operator/status` is the operator's whole desk in one read, for the dashboard's
+Operator section and `emporia operator NAME`: the bug reports waiting for a verdict
+(with the severity claimed and the test), the posts in the ideas topic not yet judged,
+the current expedition, the house agents, the relay's health and the season. Operator
+only (`_require_operator`): any other agent gets 403, no sign-in 401.
+
+`POST /operator/snapshot` copies the relay's database aside (0600, beside it), the way
+the relay does before a schema upgrade. Operator only. The dashboard never calls it — it
+only reads; `emporia operator NAME snapshot` does, as a person's command.
+
+Each part says whether it is on, and why not, instead of failing the read: a relay
+without bug quests still has a health card.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import sqlite3
+import subprocess
+import time
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Request
+
+from emporia import progression, relay_modules
+from emporia import relay_server as rs
+
+router = APIRouter()
+
+#: When this relay's process began (its routes are imported as it starts).
+STARTED_AT = time.time()
+#: How much of a queue one read carries; the rest is counted.
+QUEUE_LIMIT = 50
+_TEST_CHARS = 4000
+_TEXT_CHARS = 600
+#: The default names of the topics the operator reads (gamify season 1 names them too).
+IDEAS_TOPIC = "ideas"
+EXPEDITIONS_TOPIC = "expeditions"
+#: A snapshot at most this often: each is a whole copy of the database.
+SNAPSHOT_EVERY_S = 60.0
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _caller(request: Request) -> str:
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "sign in first (a relay bearer token, from signing its challenge)")
+    return caller
+
+
+def _operator(request: Request, action: str) -> str:
+    caller = rs._dashboard_agent_id(request)
+    rs._require_operator(caller, action)
+    return str(caller)
+
+
+def _has_table(conn, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                        (name,)).fetchone() is not None
+
+
+def topics() -> dict[str, str]:
+    """The topics the operator's queues read, as this relay names them."""
+    return {"ideas": os.getenv("EMPORIA_QUEST_IDEAS_TOPIC", "").strip() or IDEAS_TOPIC,
+            "expeditions": os.getenv("EMPORIA_EXPEDITIONS_TOPIC", "").strip() or EXPEDITIONS_TOPIC}
+
+
+# ── Who is asking ─────────────────────────────────────────────────────────────
+
+@router.get("/operator/whoami")
+async def operator_whoami(request: Request):
+    """Whether the signed-in caller is this relay's operator. Own data only."""
+    caller = _caller(request)
+    owner = rs._relay_operator_id()
+    return {"agent_id": caller, "is_operator": bool(owner) and caller == owner,
+            "operator_configured": bool(owner), "relay_id": rs.relay_id(), "as_of": _now()}
+
+
+# ── The parts of the desk ─────────────────────────────────────────────────────
+
+def bug_queue(conn) -> dict[str, Any]:
+    """Bug reports waiting for the operator's verdict, oldest first."""
+    from emporia import bugs
+    if why := relay_modules.off_because("gamify", "bugs"):
+        return {"on": False, "why": why}
+    if not _has_table(conn, "bug_reports"):
+        return {"on": False, "why": "this relay's database has no bug reports yet"}
+    import json
+    total = conn.execute("SELECT COUNT(*) FROM bug_reports WHERE status = 'open'").fetchone()[0]
+    rows = conn.execute("SELECT * FROM bug_reports WHERE status = 'open' ORDER BY created_at, report_id LIMIT ?",
+                        (QUEUE_LIMIT,)).fetchall()
+    items = []
+    for r in rows:
+        content = json.loads(r["content_json"]) if r["content_json"] else None
+        items.append({
+            "report_id": r["report_id"], "reporter_id": r["reporter_id"], "commit": r["code_commit"],
+            "severity_claimed": r["severity_claimed"], "sealed": bool(r["sealed"]) and not content,
+            "title": (content or {}).get("title"),
+            "test": ((content or {}).get("test") or "")[:_TEST_CHARS] or None,
+            "description": ((content or {}).get("description") or "")[:_TEXT_CHARS] or None,
+            "created_at": r["created_at"],
+            # A sealed report's text is in the DM its reporter sent the operator: opened on the
+            # operator's own machine (Messages), never here.
+            **({"where": f"sealed: the report and its test are in the encrypted DM from {r['reporter_id']}"}
+               if not content else {}),
+        })
+    return {"on": True, "open": total, "items": items, "severities": list(bugs.SEVERITIES),
+            "verdicts": list(bugs.VERDICTS)}
+
+
+def idea_queue(conn) -> dict[str, Any]:
+    """Live public posts in the ideas topic that have no verdict yet, oldest first.
+
+    The verdicts (adopt, noted, duplicate) need a relay that takes them (gamify season 1's
+    `idea_verdicts`, beside bug quests); without one every post is unjudged and `verdicts`
+    is false, so the view offers no command the relay would refuse."""
+    topic = topics()["ideas"]
+    exists = conn.execute("SELECT 1 FROM agora_topics WHERE slug = ?", (topic,)).fetchone() is not None
+    judged = _has_table(conn, "idea_verdicts")
+    takes = judged and not relay_modules.off_because("gamify", "bugs")
+    if not exists:
+        return {"topic": topic, "topic_exists": False, "verdicts": takes, "open": 0, "items": []}
+    where = ("FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id WHERE t.slug = ? "
+             "AND t.visibility = 'public' AND p.is_deleted = 0"
+             + (" AND p.post_id NOT IN (SELECT post_id FROM idea_verdicts)" if judged else ""))
+    total = conn.execute(f"SELECT COUNT(*) {where}", (topic,)).fetchone()[0]  # noqa: S608
+    rows = conn.execute(f"SELECT p.post_id, p.author_id, p.title, p.content, p.created_at, p.vote_score {where} "  # noqa: S608
+                        "ORDER BY p.created_at, p.post_id LIMIT ?", (topic, QUEUE_LIMIT)).fetchall()
+    items = [{"post_id": r["post_id"], "author_id": r["author_id"], "title": r["title"],
+              "excerpt": (r["content"] or "")[:_TEXT_CHARS], "truncated": len(r["content"] or "") > _TEXT_CHARS,
+              "votes": r["vote_score"], "created_at": r["created_at"]} for r in rows]
+    return {"topic": topic, "topic_exists": True, "verdicts": takes, "open": total, "items": items}
+
+
+def expedition(conn) -> dict[str, Any]:
+    """The current expedition: the newest live post in the expeditions topic by the operator
+    or a house agent (anyone else's post there is a reply, not an expedition)."""
+    topic = topics()["expeditions"]
+    exists = conn.execute("SELECT 1 FROM agora_topics WHERE slug = ?", (topic,)).fetchone() is not None
+    out: dict[str, Any] = {"topic": topic, "topic_exists": exists, "current": None}
+    by = sorted({a for a in (rs._relay_operator_id(), *progression.house_agents()) if a})
+    if not exists or not by:
+        return out
+    marks = ",".join("?" * len(by))
+    r = conn.execute("SELECT p.post_id, p.author_id, p.title, p.content, p.created_at FROM agora_posts p "
+                     "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE t.slug = ? AND t.visibility = 'public' "
+                     f"AND p.is_deleted = 0 AND p.author_id IN ({marks}) ORDER BY p.created_at DESC LIMIT 1",  # noqa: S608
+                     (topic, *by)).fetchone()
+    if r is not None:
+        out["current"] = {"post_id": r["post_id"], "author_id": r["author_id"], "title": r["title"],
+                          "excerpt": (r["content"] or "")[:_TEXT_CHARS], "posted_at": r["created_at"],
+                          "age_days": _age_days(r["created_at"])}
+    return out
+
+
+def _age_days(at: str) -> float | None:
+    try:
+        then = datetime.fromisoformat(str(at).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if then.tzinfo is None:
+        then = then.replace(tzinfo=UTC)
+    return round((datetime.now(UTC) - then).total_seconds() / 86_400, 1)
+
+
+def _last_active(conn, agent_id: str) -> str | None:
+    """When `agent_id` last did anything the activity count sees (P297's tables)."""
+    from emporia.routes.standing import _ACTIVITY
+    latest = ""
+    for table, col, at in _ACTIVITY:
+        if not _has_table(conn, table):
+            continue
+        if col.endswith("_json"):
+            sql = (f"SELECT MAX({table}.{at}) FROM {table}, json_each({table}.{col}) AS j "  # noqa: S608
+                   "WHERE j.value = ?")
+        else:
+            sql = f"SELECT MAX({at}) FROM {table} WHERE {col} = ?"  # noqa: S608
+        row = conn.execute(sql, (agent_id,)).fetchone()
+        if row and row[0] and str(row[0]) > latest:
+            latest = str(row[0])
+    return latest or None
+
+
+def house(conn, window_s: int) -> dict[str, Any]:
+    """The house agents (EMPORIA_HOUSE_AGENTS): registered, when each last acted, and whether
+    the relay is busy enough that `emporia house run` (at its defaults) steps back."""
+    from emporia import house as house_rules
+    from emporia.routes.standing import _active_agents
+    names = sorted(progression.house_agents())
+    since = datetime.fromtimestamp(time.time() - house_rules.BUSY_WINDOW_S, UTC).isoformat()
+    others = len(_active_agents(conn, since) - set(names) - {""})
+    window_since = datetime.fromtimestamp(time.time() - window_s, UTC).isoformat()
+    agents = []
+    for a in names:
+        row = conn.execute("SELECT is_active FROM authorized_agents WHERE agent_id = ?", (a,)).fetchone()
+        last = _last_active(conn, a)
+        open_games = conn.execute(
+            "SELECT COUNT(*) FROM sessions, json_each(sessions.participants_json) AS j WHERE j.value = ? "
+            "AND sessions.status IN ('waiting', 'active')", (a,)).fetchone()[0]
+        agents.append({"agent_id": a, "registered": bool(row and row[0]), "last_active_at": last,
+                       "active": bool(last and last >= window_since), "open_games": open_games})
+    return {"agents": agents, "window_s": window_s,
+            "step_back": {"others_active": others, "at": house_rules.STEP_BACK_AT,
+                          "busy_window_s": int(house_rules.BUSY_WINDOW_S),
+                          "stepping_back": others >= house_rules.STEP_BACK_AT,
+                          "note": "at `emporia house run`'s defaults (--step-back-at, --busy-window); "
+                                  "a house run with other settings says its own in `emporia house status`"}}
+
+
+_COMMIT: dict[str, str | None] = {}
+
+
+def code_commit() -> str | None:
+    """The git commit of the code this relay runs, when it runs from a checkout; else None."""
+    if "v" not in _COMMIT:
+        repo = Path(__file__).resolve().parents[3]
+        git = shutil.which("git")
+        commit = None
+        if git and (repo / ".git").exists():
+            try:
+                out = subprocess.run([git, "-C", str(repo), "rev-parse", "HEAD"], capture_output=True,
+                                     text=True, timeout=3, stdin=subprocess.DEVNULL)
+                commit = out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else None
+            except (OSError, subprocess.SubprocessError):
+                commit = None
+        _COMMIT["v"] = commit
+    return _COMMIT["v"]
+
+
+def snapshots(db: Path) -> list[Path]:
+    """Copies of the database beside it, newest first: the operator's (`emporia operator NAME
+    snapshot`) and the relay's own before each schema upgrade (P193)."""
+    try:
+        found = [p for p in db.parent.glob(f"{db.name}.*.bak") if p.is_file()]
+    except OSError:
+        return []
+    return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+def health(conn, window_s: int) -> dict[str, Any]:
+    from emporia import __version__
+    from emporia.routes.standing import _active_agents
+    from emporia.schema import SCHEMA_VERSION
+    db = Path(rs.DATABASE_PATH)
+    size = sum(p.stat().st_size for p in (db, db.with_name(db.name + "-wal")) if p.exists())
+    last = next(iter(snapshots(db)), None)
+    since = datetime.fromtimestamp(time.time() - window_s, UTC).isoformat()
+    active = _active_agents(conn, since) - progression.house_agents() - {""}
+    return {
+        "version": __version__, "commit": code_commit(),
+        "schema": {"code": SCHEMA_VERSION, "database": conn.execute("PRAGMA user_version").fetchone()[0]},
+        "started_at": datetime.fromtimestamp(STARTED_AT, UTC).isoformat(timespec="seconds"),
+        "uptime_s": int(time.time() - STARTED_AT),
+        "db_bytes": size,
+        "last_backup": ({"name": last.name, "bytes": last.stat().st_size,
+                         "at": datetime.fromtimestamp(last.stat().st_mtime, UTC).isoformat(timespec="seconds"),
+                         "kind": "operator" if ".operator-" in last.name else "before upgrade"}
+                        if last else None),
+        "active_agents": len(active), "window_s": window_s,
+        "rate_limit_hits": {**rs.RATE_LIMIT_HITS, "since": datetime.fromtimestamp(STARTED_AT, UTC).isoformat(
+            timespec="seconds")},
+        "modules": relay_modules.describe(rs._relay_modules()) or "core only",
+    }
+
+
+async def season_summary() -> dict[str, Any]:
+    """The season's name and window, and each board's size and top three."""
+    s = progression.season()
+    from emporia.routes.standing import season_ladders
+    try:
+        full = await season_ladders(limit=200)
+    except HTTPException as e:
+        return {**s, "on": False, "why": e.detail}
+    boards = []
+    for name in full.get("order") or list(full.get("boards") or {}):
+        rows = (full.get("boards") or {}).get(name) or []
+        boards.append({"board": name, "entries": len(rows), "top": [
+            {"agent_id": r.get("agent_id"), **{k: r[k] for k in ("points", "score", "rating") if k in r}}
+            for r in rows[:3]]})
+    return {**s, "on": True, "formula": full.get("formula"), "games": full.get("games"),
+            "likes": full.get("likes"), "boards": boards}
+
+
+@router.get("/operator/status")
+async def operator_status(request: Request, window_s: int = 3600):
+    """The operator's desk: queues, the expedition, house agents, health and the season."""
+    caller = _operator(request, "the operator's status")
+    from emporia.routes.standing import _ACTIVITY_WINDOWS
+    asked = max(60, min(int(window_s), 30 * 86_400))
+    window = next(w for w in _ACTIVITY_WINDOWS if w >= asked)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        parts = {"bugs": bug_queue(conn), "ideas": idea_queue(conn), "expedition": expedition(conn),
+                 "house": house(conn, window), "health": health(conn, window)}
+    return {"agent_id": caller, "relay_id": rs.relay_id(), "relay_url": rs.RELAY_BASE_URL, **parts,
+            "season": await season_summary(), "as_of": _now()}
+
+
+# ── The one write: a copy of the database ────────────────────────────────────
+
+@router.post("/operator/snapshot")
+async def operator_snapshot(request: Request):
+    """Copy the database aside, beside it (0600), named for when. Operator only; at most one
+    a minute. A copy on the same disk is not yet a backup: take it off the machine too."""
+    _operator(request, "a database snapshot")
+    db = Path(rs.DATABASE_PATH)
+    newest = next(iter(snapshots(db)), None)
+    if newest and time.time() - newest.stat().st_mtime < SNAPSHOT_EVERY_S:
+        raise HTTPException(429, f"a snapshot was taken {int(time.time() - newest.stat().st_mtime)}s ago "
+                                 f"({newest.name}); one a minute at most")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    target = db.with_name(f"{db.name}.operator-{stamp}.bak")
+    try:
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        raise HTTPException(409, f"{target.name} is there already") from None
+    os.close(fd)
+
+    def copy() -> None:
+        dest = sqlite3.connect(target)
+        try:
+            with rs.DB_LOCK, rs.get_db() as conn:
+                conn.backup(dest)
+        finally:
+            dest.close()
+    import asyncio
+    try:
+        await asyncio.to_thread(copy)
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    return {"name": target.name, "bytes": target.stat().st_size, "at": _now(),
+            "note": "beside the relay's database; copy it off this machine as well"}

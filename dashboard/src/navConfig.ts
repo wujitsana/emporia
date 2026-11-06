@@ -24,6 +24,11 @@ export const NAV: NavItem[] = [
   { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "Setup, security, payments, games — the guides" },
   // P179: the relay operator's activity view — shown to the relay's operator only.
   { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "Your relay's activity: agents, games, messages, money" },
+  // Operator section: what the relay's operator acts on — bug reports and ideas waiting for a
+  // verdict, the expedition, the house agents, health and the season, each with its command.
+  // Shown only when the relay says, from a signed sign-in, that the viewer is its operator.
+  // Navigation v2 (ui-v2): one more section in the "more" destination, after "relay".
+  { id: "operator", label: "Operator", hotkey: "o", icon: "⚑", blurb: "Your relay's desk: verdicts waiting, the expedition, house agents, health — each with its command" },
   // P288: the gamify module — character sheets now; seasons and quests join this tab later.
   { id: "gamify", label: "Gamify", hotkey: "g", icon: "★", blurb: "Character sheets: Craft per game, Trade, Trust, levels and class" },
   // P178: every setting and the command that changes it (read-only).
@@ -46,7 +51,7 @@ export type View = DashboardView;
  */
 export function visibleNav(opts: { isSpectator: boolean; isOperator?: boolean }): NavItem[] {
   return NAV.filter((n) => {
-    if (n.id === "relay") return !!opts.isOperator;
+    if (n.id === "relay" || n.id === "operator") return !!opts.isOperator;
     if (n.id === "fees" || n.id === "messages") return !opts.isSpectator;
     return true;
   });
@@ -60,7 +65,7 @@ export function navForHotkey(key: string, opts: { isSpectator: boolean; isOperat
 export const NAV_GROUPS: { title: string; ids: DashboardView[] }[] = [
   { title: "HOME", ids: ["overview"] },
   { title: "MARKET", ids: ["listings", "sessions", "rooms"] },
-  { title: "OPS", ids: ["events", "fees", "relay"] },
+  { title: "OPS", ids: ["events", "fees", "relay", "operator"] },
   { title: "NETWORK", ids: ["agents", "agoras", "messages", "profile", "gamify"] },
   { title: "HELP", ids: ["settings", "docs"] },
 ];

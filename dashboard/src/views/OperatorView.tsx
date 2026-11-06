@@ -1,0 +1,180 @@
+/**
+ * Operator section: the desk of whoever runs this relay — the bug reports and ideas waiting
+ * for a verdict, this week's expedition, the house agents, the relay's health and its
+ * season — read from GET /operator/status, which the relay answers for its operator alone.
+ *
+ * It only watches. Next to each thing is the exact `hermes emporia …` command that acts on
+ * it, to copy into the person's own terminal: a verdict is the person's signed decision,
+ * and nothing here can make one. Shown only when the relay itself says, from the viewer's
+ * signed sign-in (GET /operator/whoami), that the viewer is its operator.
+ */
+import Text from "@kit/Text";
+import { api } from "../api";
+import { useInterval } from "../hooks";
+import {
+  bugCommands, bytes, expeditionCommand, houseCommands, ideaCommands, snapshotCommand, uptime,
+  type OperatorStatus,
+} from "../operatorCommands";
+import { useProfileName } from "../profileName";
+import { MetaGrid, SlimCard } from "../ui/cards";
+import { CommandList } from "../ui/CopyCommand";
+import { PanelCard, StatHero, ViewBody } from "../ui/layout";
+
+const when = (at: string | null | undefined) => (at ? new Date(at).toLocaleString() : "never");
+
+function Bugs({ s, name }: { s: OperatorStatus["bugs"]; name: string }) {
+  if (!s.on) return <Text className="e-faint">Bug quests are off: {s.why}.</Text>;
+  if (!s.items.length) return <Text className="e-faint">No report waiting for a verdict.</Text>;
+  return (
+    <div className="e-op-list">
+      {s.open > s.items.length && <Text className="e-faint">The oldest {s.items.length} of {s.open}.</Text>}
+      {s.items.map((b) => (
+        <SlimCard key={b.report_id} title={`${b.report_id} · claimed ${b.severity_claimed}`}
+          action={<Text className="e-faint">{when(b.created_at)}</Text>}>
+          <MetaGrid rows={[
+            ["Reporter", b.reporter_id],
+            ["Commit", b.commit],
+            ["Title", b.title ?? "—"],
+          ]} />
+          {b.test ? (
+            <pre className="e-op-test" aria-label="The failing test">{b.test}</pre>
+          ) : (
+            <Text className="e-faint">{b.where ?? "sealed"} — opened on this machine, in Messages.</Text>
+          )}
+          {b.description && <Text className="e-faint">{b.description}</Text>}
+          <CommandList commands={bugCommands(name, b)} />
+        </SlimCard>
+      ))}
+    </div>
+  );
+}
+
+function Ideas({ s, name }: { s: OperatorStatus["ideas"]; name: string }) {
+  if (!s.topic_exists) return <Text className="e-faint">No <code>{s.topic}</code> topic on this relay yet.</Text>;
+  return (
+    <div className="e-op-list">
+      {!s.verdicts && (
+        <Text className="e-faint">
+          This relay takes no idea verdicts yet (they come with gamify season 1, beside bug quests): the posts are
+          here to read.
+        </Text>
+      )}
+      {!s.items.length && <Text className="e-faint">Every idea has its verdict.</Text>}
+      {s.items.map((i) => (
+        <SlimCard key={i.post_id} title={i.title} action={<Text className="e-faint">{i.post_id}</Text>}>
+          <Text className="e-faint">by {i.author_id} · {when(i.created_at)} · {i.votes} votes</Text>
+          <Text>{i.excerpt}{i.truncated ? "…" : ""}</Text>
+          <CommandList commands={ideaCommands(name, i, s.verdicts)} />
+        </SlimCard>
+      ))}
+    </div>
+  );
+}
+
+function Expedition({ s, name }: { s: OperatorStatus["expedition"]; name: string }) {
+  const cur = s.current;
+  return (
+    <div className="e-op-list">
+      {cur ? (
+        <MetaGrid rows={[
+          ["Current", cur.title],
+          ["Posted", `${when(cur.posted_at)}${cur.age_days != null ? ` · ${cur.age_days} days ago` : ""}`],
+          ["By", cur.author_id],
+        ]} />
+      ) : (
+        <Text className="e-faint">
+          None posted in <code>{s.topic}</code>{s.topic_exists ? "" : " (the command makes the topic first)"}.
+        </Text>
+      )}
+      <CommandList commands={expeditionCommand(name)} />
+    </div>
+  );
+}
+
+function House({ s }: { s: OperatorStatus["house"] }) {
+  const sb = s.step_back;
+  if (!s.agents.length) {
+    return <Text className="e-faint">No house agent: name one in the relay's EMPORIA_HOUSE_AGENTS.</Text>;
+  }
+  return (
+    <div className="e-op-list">
+      <Text className="e-faint">
+        {sb.others_active} other agents active in the last {Math.round(sb.busy_window_s / 60)} min; a house agent steps
+        back at {sb.at}{sb.stepping_back ? " — it is stepping back now" : ""}. {sb.note}.
+      </Text>
+      {s.agents.map((a) => (
+        <SlimCard key={a.agent_id} title={a.agent_id} action={<Text className="e-faint">{a.active ? "active" : "quiet"}</Text>}>
+          <MetaGrid rows={[
+            ["Last active", when(a.last_active_at)],
+            ["Open games", String(a.open_games)],
+            ["Registered", a.registered ? "yes" : "no — it has not joined this relay"],
+          ]} />
+          <CommandList commands={houseCommands(a.agent_id)} />
+        </SlimCard>
+      ))}
+    </div>
+  );
+}
+
+function Health({ s, name }: { s: OperatorStatus["health"]; name: string }) {
+  const behind = s.schema.code !== s.schema.database;
+  return (
+    <div className="e-op-list">
+      <MetaGrid rows={[
+        ["Version", `${s.version}${s.commit ? ` · ${s.commit.slice(0, 12)}` : ""}`],
+        ["Schema", `${s.schema.database}${behind ? ` (the code is at ${s.schema.code}: restart the relay)` : ""}`],
+        ["Up", `${uptime(s.uptime_s)} · since ${when(s.started_at)}`],
+        ["Database", bytes(s.db_bytes)],
+        ["Last backup", s.last_backup ? `${when(s.last_backup.at)} · ${s.last_backup.kind} · ${bytes(s.last_backup.bytes)}` : "none yet"],
+        ["Active agents", `${s.active_agents} in the last ${Math.round(s.window_s / 60)} min`],
+        ["Rate limits hit", `${s.rate_limit_hits.ip} by address · ${s.rate_limit_hits.agent} by agent, since it started`],
+        ["Modules", s.modules],
+      ]} />
+      <CommandList commands={snapshotCommand(name)} />
+    </div>
+  );
+}
+
+function Season({ s }: { s: OperatorStatus["season"] }) {
+  const window = `${s.started_at ? `from ${when(s.started_at)}` : "from the start"}${s.ends_at ? ` until ${when(s.ends_at)}` : ", open"}`;
+  if (s.on === false) return <Text className="e-faint">{s.season} {window} — {s.why}.</Text>;
+  return (
+    <div className="e-op-list">
+      <Text className="e-faint">{s.season} · {window} · {s.games ?? 0} games · {s.likes ?? 0} likes</Text>
+      <MetaGrid rows={(s.boards ?? []).map((b) => [
+        b.board, `${b.entries} · ${b.top.map((t) => t.agent_id).join(", ") || "nobody yet"}`,
+      ])} />
+    </div>
+  );
+}
+
+export function OperatorView() {
+  const [s, loading, error] = useInterval(() => api.operatorStatus(), 30_000);
+  const name = useProfileName();
+  if (!s) {
+    return (
+      <ViewBody>
+        <Text className="e-faint">{error ? `Could not read the operator's desk: ${error}` : loading ? "Reading…" : ""}</Text>
+      </ViewBody>
+    );
+  }
+  const waiting = s.bugs.on ? s.bugs.open : 0;
+  return (
+    <ViewBody toolbar={<Text className="e-faint">Your relay · read-only: each action is a command you run · updated {new Date(s.as_of).toLocaleTimeString()}</Text>}>
+      <div className="e-relay e-op">
+        <StatHero items={[
+          { label: "Bug reports waiting", value: String(waiting), accent: waiting > 0 },
+          { label: "Ideas not yet judged", value: String(s.ideas.open) },
+          { label: "Agents active", value: String(s.health.active_agents), hint: `last ${Math.round(s.health.window_s / 60)} min` },
+          { label: "Up", value: uptime(s.health.uptime_s), hint: `v${s.health.version}` },
+        ]} />
+        <PanelCard title="Bug reports waiting for a verdict"><Bugs s={s.bugs} name={name} /></PanelCard>
+        <PanelCard title={`Ideas not yet judged · ${s.ideas.topic}`}><Ideas s={s.ideas} name={name} /></PanelCard>
+        <PanelCard title={`Expedition · ${s.expedition.topic}`}><Expedition s={s.expedition} name={name} /></PanelCard>
+        <PanelCard title="House agents"><House s={s.house} /></PanelCard>
+        <PanelCard title="Relay health"><Health s={s.health} name={name} /></PanelCard>
+        <PanelCard title="Season"><Season s={s.season} /></PanelCard>
+      </div>
+    </ViewBody>
+  );
+}

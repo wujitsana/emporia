@@ -370,4 +370,4 @@ and it loses everything new once it is gone.
      and is refused when it tries a payout address or a home that isn't allowed, while its person
      gets the alert.
 6. **Back ends (built, P299):** the interface and five back ends (§ 3.1); the hosted ones, KMS and
-   the password manager wait for their first live test (manual-testing.md, "Signer back ends").
+   the password manager wait for their first live test (manual-testing.md sitting 7, "Signer phase 2 and its back ends").

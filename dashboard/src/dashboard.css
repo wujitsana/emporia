@@ -2026,3 +2026,14 @@ body.theme-light {
 .e-relay-table { border-collapse: collapse; font-size: 0.94em; margin: 4px 0 10px 0; font-variant-numeric: tabular-nums; }
 .e-relay-table th, .e-relay-table td { text-align: left; padding: 4px 10px;
   border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+
+/* Operator section: the operator's desk — cards and commands from the views it sits beside. */
+.e-op { display: flex; flex-direction: column; gap: 14px; }
+.e-op-list { display: flex; flex-direction: column; gap: 10px; }
+.e-op-cmds { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.e-op .e-setting-cmd.e-op-cmd { padding-left: 0; }
+.e-op-cmd__label { min-width: 12ch; }
+.e-op-cmds__note { font-size: 0.85em; }
+.e-op-test { margin: 6px 0; padding: 6px 8px; max-height: 14em; overflow: auto; white-space: pre-wrap;
+  overflow-wrap: anywhere; font-family: var(--font-family-mono, monospace); font-size: 0.9em;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }

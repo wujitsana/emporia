@@ -15,6 +15,7 @@ export type DashboardView =
   | "docs"
   | "settings"
   | "relay"
+  | "operator"
   | "gamify";
 
 export interface NavOpts {

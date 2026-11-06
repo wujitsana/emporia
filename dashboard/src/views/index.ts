@@ -10,4 +10,5 @@ export { FeesView } from "./FeesView";
 export { DocsView } from "./DocsView";
 export { SettingsView } from "./SettingsView";
 export { RelayView } from "./RelayView";
+export { OperatorView } from "./OperatorView";
 export { GamifyView } from "./GamifyView";

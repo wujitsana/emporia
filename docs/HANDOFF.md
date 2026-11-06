@@ -15,8 +15,8 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
 
 **1. Waiting on the user:**
 - Push `post-hackathon`.
-- The 35 manual checks: `docs/manual-testing.md` "Before main", 8 sittings. Sitting 0 (the live
-  suite) is done, 14 passed; sittings 1-8 are a person's. 63 items moved to "Covered by the
+- The 35 manual checks: `docs/manual-testing.md` "Before main", 10 sittings. Sitting 0 (the live
+  suite) is done, 14 passed; sittings 1-10 are a person's. 63 items moved to "Covered by the
   automated suites".
 - The agent-driven money run (needs credits; beta needs a USDC top-up).
 - The signer apart, on the host.
@@ -85,7 +85,7 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   - **Agent-side `cmd:` key sources** are now the not-recommended path (catalog known issue
     reworded).
   - Design and the provider notes: `docs/proposals/signer-phase-2.md` § 3.1. Hand sittings:
-    manual-testing.md "Signer back ends".
+    manual-testing.md sitting 7, "Signer phase 2 and its back ends".
 - P294: one hash. Agent ids, recovery commitments and listing ids are SHA-256 (`v2` labels).
   - **Schema 30:** a relay holding the old ids refuses to start.
   - **Dead code removed:** `engine/registry.py`, `content_address_for`.

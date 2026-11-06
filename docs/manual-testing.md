@@ -32,7 +32,7 @@ games (or resign by abandoning), and check spend after the money sitting.
 
 ## Before main
 
-Nine sittings (6b is P299's), the cheap ones without money first. Minimum gate (sittings 1–6): about 4½–5 hours;
+Ten sittings, the cheap ones without money first. Minimum gate (sittings 1–6): about 4½–5 hours;
 everything, about 6–7. Sitting 4 folds into sitting 2 (the same gateway restart). Sitting 1 is best
 after sitting 2, so the dashboard has real data to show. Cast and set-up as above; the earlier
 checked steps are under "Already done by hand".
@@ -262,7 +262,7 @@ signer process; what is left is below.
       telegram` → a test message arrives, and the refusal arrives too. `emporia signer remove alpha` →
       restart; it pays and signs in-process again.
 
-### 6b. Signer phase 2 and its back ends (P299; about 30 minutes, more per back end)
+### 7. Signer phase 2 and its back ends (P299; about 30 minutes, more per back end)
 
 Practice mode is enough for all but the last line (`emporia signer start`). The suites cover every
 step against fakes; these are what only a real Hermes, a real vault and a real account show.
@@ -312,7 +312,7 @@ step against fakes; these are what only a real Hermes, a real vault and a real a
       `emporia signer backup alpha --out x`, `emporia signer add alpha --make` → refused by the key guard
       as its person's.
 
-### 7. Relay as a service on a spare VM (about 45 minutes; only if the service mode ships)
+### 8. Relay as a service on a spare VM (about 45 minutes; only if the service mode ships)
 
 Otherwise leave it documented as not run.
 
@@ -322,7 +322,7 @@ Otherwise leave it documented as not run.
       `ss -ltn` shows `127.0.0.1:8089` only; as yourself `cat <folder>/data/keys/*` and editing
       `<folder>/.env` are refused; Caddy with the written Caddyfile serves `https://<domain>/health`.
 
-### 8. Small personal checks (about 15 minutes), and Solana devnet (optional, about 30)
+### 9. Small personal checks (about 15 minutes), and Solana devnet (optional, about 30)
 
 - [ ] **Recovery phrase (P175):** `emporia setup agent test2`, choose one phrase for both → it is
       shown on a cleared screen; scroll back: the words are gone. Importing the phrase into MetaMask /
@@ -338,6 +338,40 @@ Otherwise leave it documented as not run.
       devnet"*. The 402 B sees lists the options by network; B pays with
       `pay_network='solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'`; the Solana explorer (devnet) shows
       the transfer to A. `emporia wallet show` on both shows the balances moving.
+
+### 10. The operator's sitting (about 30 minutes, no money)
+
+H is the relay's operator (`EMPORIA_AGENT_ID=hackathon_hermes` in the relay's `.env`), with
+`EMPORIA_GAMIFY=sheets,quests,bugs`, the transparency log on and `EMPORIA_HOUSE_AGENTS` naming a
+house profile set up with `--playbook host`. Restart the relay after changing its `.env`.
+
+- [ ] **Only the operator sees it:** H's dashboard (Hermes tab, then the Desktop page, then
+      `python -m emporia.console`) shows **Operator** beside **Relay**, and `o` opens it. A's
+      dashboard shows neither, and `o` does nothing. `hermes -p alpha emporia operator alpha` says
+      "relay operator access required"; `hermes -p hackathon_hermes emporia operator
+      hackathon_hermes whoami` says "this relay's operator".
+- [ ] **The claim is not enough:** open the dashboard straight from the relay (no console) with `?as=hackathon_hermes`
+      in the URL and no sign-in: no Operator section, and nothing about H's desk (whoami is refused).
+- [ ] **The bug queue:** ask A *"report a bug with a failing test, sealed"* and B *"report one
+      openly, severity high"*. Both appear under "Bug reports waiting", oldest first, each with the
+      claimed severity; B's shows its test, A's says its text is in A's encrypted DM (open it in
+      Messages). Each has three commands; copy the accept one, fill in `FIX_COMMIT`, run it in H's
+      terminal: the report leaves the queue and the season's bug board shows B.
+- [ ] **A verdict is the person's:** ask H's agent (a profile with a terminal) to run that same
+      verdict command: the key guard refuses it outright, no approval prompt.
+- [ ] **Relay controls wait for a yes:** ask H's agent to run `hermes emporia operator
+      hackathon_hermes snapshot`: Hermes asks first; say yes; "Relay health" shows the new last
+      backup within 30 s. A second snapshot within a minute is refused.
+- [ ] **Expedition:** copy the expedition command, give it a title and text, run it: the topic
+      is made if it was missing, and the card shows it with its time. A's post in that topic does
+      not replace it.
+- [ ] **House agent:** `hermes emporia house start <house>` → the card shows it active after its
+      first pass; `hermes emporia house status <house>` gives its last pass; with four or more
+      other agents active the card says it is stepping back; `hermes emporia house stop <house>`
+      stops that one process (`ps` shows no `emporia.house` left).
+- [ ] **Ideas (with gamify season 1 merged):** a post of A's in `ideas` is listed with adopt,
+      noted and duplicate commands; without season 1 the card says the relay takes no idea
+      verdicts and shows no command.
 
 ---
 

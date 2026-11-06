@@ -1502,6 +1502,11 @@ def cmd_bugs(args: argparse.Namespace) -> int:
         else:
             print("bugs: list, verdict, incident or fixed")
             return 1
+        if not _persons_terminal():
+            # Operator section: a verdict gives points and an incident is on the record for good —
+            # the person's signed decision, in their own terminal (the key guard refuses it too).
+            print(f"bugs: only a person gives a {act}, in their own terminal — never through an agent.")
+            return 1
         # Signed with the operator's own key, the way the console signs: a person's command.
         _, agent_id, _env = _agent(args.name)
         status, d = _signed_get(agent_id, _key_file(agents[args.name], agent_id, "identity").parent,
@@ -2233,7 +2238,7 @@ def _signer_backend(args: argparse.Namespace) -> int:
             print(f"  {name}: a {type_} back end, settings {', '.join(pairs) or 'none'}"
                   + (f", secrets {', '.join(secrets_)} in {signer.signer_dir() / 'backends'}" if secrets_ else "")
                   + ("" if sb.LIVE_TESTED.get(type_) else f".\n  Note: the {type_} adapter is {sb.NOT_LIVE_NOTE} "
-                     "— try it on testnet first (docs/manual-testing.md, \"Signer back ends\")."))
+                     "— try it on testnet first (docs/manual-testing.md sitting 7)."))
             return 0
         if verb == "remove":
             signer.remove_backend(name)
@@ -4717,17 +4722,63 @@ def _as_agent(profile: Path, code: str, **env_over: str) -> subprocess.Completed
                           timeout=120)
 
 
+def _house_files(profile: Path) -> tuple[Path, Path, Path]:
+    """Operator section: where `emporia house start` records the runner it started, its log,
+    and the state the runner keeps (whom it greeted, its last pass) — all in its profile."""
+    return profile / "emporia_house.pid", profile / "logs" / "emporia_house.log", profile / "emporia_house.json"
+
+
+def _house_pid(profile: Path) -> int | None:
+    """The runner `emporia house start` started for this profile, if it still runs — checked
+    by its command line, never a number reused after a reboot."""
+    pid_file = _house_files(profile)[0]
+    try:
+        pid = int(pid_file.read_text().strip())
+    except (OSError, ValueError):
+        return None
+    return pid if _is_our_pid(pid, b"emporia.house") else None
+
+
 def cmd_house(args: argparse.Namespace) -> int:
     """P297: `emporia house run NAME` — the house agent's rules runner, as NAME (its own
     keys, relay and playbook, the env its MCP server runs with). No model, no tokens.
-    The relay should list NAME in EMPORIA_HOUSE_AGENTS so nothing done with it counts."""
-    if args.action != "run":
-        print("emporia house: run NAME")
+    The relay should list NAME in EMPORIA_HOUSE_AGENTS so nothing done with it counts.
+
+    Operator section: `emporia house start NAME` runs it in the background (its PID kept in
+    the profile), `emporia house stop NAME` stops that one process and no other, and
+    `emporia house status NAME` says whether it runs and what its last pass did."""
+    if args.action not in ("run", "start", "stop", "status"):
+        print("emporia house: run|start|stop|status NAME")
         return 2
     profile, agent_id, env = _agent(args.name)
     if not env:
-        print(f"house run: {args.name or '(none)'} is not an Emporia agent profile")
+        print(f"house {args.action}: {args.name or '(none)'} is not an Emporia agent profile")
         return 1
+    pid_file, log_file, state_file = _house_files(profile)
+    running = _house_pid(profile)
+    if args.action == "status":
+        try:
+            last = json.loads(state_file.read_text()).get("last_pass") or {}
+        except (OSError, ValueError):
+            last = {}
+        print(f"house {agent_id}: " + (f"running (pid {running}, log {log_file})" if running else "not running here"))
+        if last:
+            print(f"  last pass {last.get('at')}: {last.get('moves', 0)} moves, {last.get('joined', 0)} joined, "
+                  f"{last.get('greeted', 0)} greeted" + (" — stepped back (the relay is busy: "
+                  f"{last.get('step_back_at')} or more others active in {int(last.get('busy_window') or 0)}s)"
+                                                         if last.get("stepped_back") else ""))
+        else:
+            print("  no pass yet")
+        return 0
+    if args.action == "stop":
+        if not running:
+            pid_file.unlink(missing_ok=True)
+            print(f"house stop: no runner started by `emporia house start {args.name}` is running")
+            return 1
+        os.kill(running, signal.SIGTERM)
+        pid_file.unlink(missing_ok=True)
+        print(f"house {agent_id}: stopped (pid {running})")
+        return 0
     playbook = installer().harvest_env(profile).get("EMPORIA_PLAYBOOK", "")
     if playbook != "host":
         print(f"  ! {args.name}'s playbook is {playbook or 'custom'}; a house agent's is host: "
@@ -4740,7 +4791,124 @@ def cmd_house(args: argparse.Namespace) -> int:
             "--busy-window", str(args.busy_window)] + (["--once"] if args.once else []) + \
         (["--stakes"] if args.stakes else [])
     run_env = {"PATH": os.defpath, "HOME": str(Path.home()), "HERMES_HOME": str(profile), **_mcp_env(profile)}
-    return subprocess.call(argv, env=run_env)
+    if args.action == "run":
+        return subprocess.call(argv, env=run_env)
+    if running:
+        print(f"house {agent_id}: already running (pid {running}); `emporia house stop {args.name}` first")
+        return 1
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_file, "ab") as out:
+        proc = subprocess.Popen(argv, env=run_env, stdout=out, stderr=out, stdin=subprocess.DEVNULL,
+                                start_new_session=True)
+    pid_file.write_text(str(proc.pid))
+    time.sleep(0.5)
+    if proc.poll() is not None:
+        pid_file.unlink(missing_ok=True)
+        print(f"house {agent_id}: did not start — see {log_file}")
+        return 1
+    print(f"house {agent_id}: started (pid {proc.pid}, log {log_file}); `emporia house stop {args.name}` stops it")
+    return 0
+
+
+def _operator_call(profile: Path, method: str, path: str, body: dict | None = None,
+                   params: dict | None = None) -> tuple[int, Any]:
+    """Operator section: one call to the agent's own relay, signed in as the agent, the way
+    its MCP server calls (its env: its relay and its keys). (status, JSON body). A query goes
+    in `params`: the MCP client refuses a `?` in the path (found by the end-to-end run)."""
+    code = ("import json\nfrom emporia import mcp_server as m\n"
+            f"r = m._bearer_request({method.lower()!r}, m._base() + {path!r}, agent_id=m.AGENT_ID, timeout=20"
+            + (f", json={body!r}" if body is not None else "")
+            + (f", params={params!r}" if params else "") + ")\n"
+            "try:\n    d = r.json() if r.content else None\nexcept ValueError:\n    d = r.text[-300:]\n"
+            "print(json.dumps({'status': r.status_code, 'body': d}))")
+    r = _as_agent(profile, code, EMPORIA_NO_ARCHIVE="1")
+    try:
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return 0, (r.stderr or r.stdout).strip()[-300:]
+    return int(out.get("status") or 0), out.get("body")
+
+
+def _relay_refusal(status: int, body: Any) -> str:
+    detail = body.get("detail", body) if isinstance(body, dict) else body
+    return f"{detail}" if status else f"could not reach the relay ({detail})"
+
+
+def cmd_operator(args: argparse.Namespace) -> int:
+    """Operator section: `emporia operator NAME` — the relay's operator desk, as NAME, when NAME
+    is the relay's operator (EMPORIA_AGENT_ID there; the relay checks NAME's signed sign-in,
+    `GET /operator/whoami`): bug reports and ideas waiting for a verdict, the expedition, the
+    house agents, the relay's health and its season, each with the command that acts on it.
+
+    `emporia operator NAME whoami` asks only that question. As a person, in your terminal (an
+    agent asking waits for your yes): `emporia operator NAME snapshot` copies the relay's
+    database aside; `emporia operator NAME expedition TITLE --text TEXT` posts this week's
+    expedition in the expeditions topic, making the topic first if it is not there."""
+    from emporia import operator_desk
+    profile, agent_id, env = _agent(args.name)
+    if not env:
+        print(f"operator: {args.name or '(none)'} is not an Emporia agent profile")
+        return 1
+    act = args.act or "status"
+    if act == "whoami":
+        status, d = _operator_call(profile, "GET", "/operator/whoami")
+        if status != 200:
+            print(f"operator: {_relay_refusal(status, d)}")
+            return 1
+        if args.json:
+            print(json.dumps(d, indent=2))
+        else:
+            print(f"{agent_id}: " + ("this relay's operator" if d.get("is_operator") else
+                                     "not this relay's operator" + ("" if d.get("operator_configured")
+                                                                    else " (the relay names none: EMPORIA_AGENT_ID)")))
+        return 0 if d.get("is_operator") else 1
+    if act == "status":
+        status, d = _operator_call(profile, "GET", "/operator/status", params={"window_s": int(args.window)})
+        if status != 200:
+            print(f"operator: {_relay_refusal(status, d)}")
+            return 1
+        if args.json:
+            print(json.dumps(d, indent=2))
+        else:
+            print("\n".join(operator_desk.render(d, args.name)))
+        return 0
+    if act == "snapshot":
+        status, d = _operator_call(profile, "POST", "/operator/snapshot", {})
+        if status != 200:
+            print(f"operator snapshot: {_relay_refusal(status, d)}")
+            return 1
+        print(f"operator snapshot: {d.get('name')} ({d.get('bytes')} bytes) — {d.get('note')}")
+        return 0
+    if act == "expedition":
+        title = " ".join(args.rest).strip()
+        if not title or not (args.text or "").strip():
+            print("operator expedition: emporia operator NAME expedition 'TITLE' --text 'WHAT TO TRY'")
+            return 1
+        status, d = _operator_call(profile, "GET", "/operator/status")
+        if status != 200:
+            print(f"operator expedition: {_relay_refusal(status, d)}")
+            return 1
+        exp = d.get("expedition") or {}
+        topic = exp.get("topic") or "expeditions"
+        lines = ["import json", "from emporia import mcp_server as m"]
+        if not exp.get("topic_exists"):
+            lines.append(f"t = m.create_agora_topic('Expeditions', 'A theme for the week, from the relay operator.', "
+                         f"slug={topic!r})")
+            lines.append("assert t.get('success', True) and not t.get('error'), t")
+        lines.append(f"print(json.dumps(m.create_agora_post({topic!r}, {title!r}, {args.text.strip()!r})))")
+        r = _as_agent(profile, "\n".join(lines), EMPORIA_NO_ARCHIVE="1")
+        try:
+            out = json.loads(r.stdout.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            print(f"operator expedition: {(r.stderr or r.stdout).strip()[-300:]}")
+            return 1
+        if out.get("success") is False or out.get("error"):
+            print(f"operator expedition: {out.get('detail') or out.get('error')}")
+            return 1
+        print(f"operator expedition: posted in `{topic}` — {out.get('post_id') or (out.get('post') or {}).get('post_id')}")
+        return 0
+    print("operator: status, whoami, snapshot or expedition")
+    return 2
 
 
 # The relay's own rule (relay_server._AGENT_ID_RE), checked here before anything is written.
@@ -7027,7 +7195,7 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("--recovery-key-source", default="",
                      help="recover: where the recovery key is kept, e.g. cmd:op read op://Vault/Item/field "
                           "(without either, you are asked to type it)")
-    ag2.add_argument("--preset", default="", help="playbook: custom, player, merchant, scout or host")
+    ag2.add_argument("--preset", default="", help="playbook: custom, player, merchant, scout, host or operator")
     ag2.add_argument("--games", default=None, help="playbook: all, none, set-plays, or games (blotto,chess,…)")
     ag2.add_argument("--max-stake", default=None, help="playbook: largest stake it takes, in cents (none: its limits)")
     ag2.add_argument("--answers", default=None, choices=["anyone", "nobody"],
@@ -7049,8 +7217,9 @@ def build_parser() -> argparse.ArgumentParser:
         argparse.Namespace(action=a.action, url=a.url_or_name if a.action == "leave" else "",
                            name=a.name if a.action == "leave" else a.url_or_name, home=a.home)))
 
-    hs = sub.add_parser("house", help="the house agent's rules runner: run NAME (P297)")
-    hs.add_argument("action", choices=["run"])
+    hs = sub.add_parser("house", help="the house agent's rules runner: run NAME (P297); start, stop or "
+                                      "status NAME in the background (the operator's)")
+    hs.add_argument("action", choices=["run", "start", "stop", "status"])
     hs.add_argument("name", help="the house agent's profile")
     hs.add_argument("--once", action="store_true", help="one pass, then stop")
     hs.add_argument("--interval", type=float, default=20.0, help="seconds between passes")
@@ -7061,6 +7230,16 @@ def build_parser() -> argparse.ArgumentParser:
                     help="adopt no waiting game once this many other agents played within --busy-window")
     hs.add_argument("--busy-window", type=float, default=3600.0, help="seconds counted as recent (default an hour)")
     hs.set_defaults(func=cmd_house)
+
+    op = sub.add_parser("operator", help="the relay operator's desk, as NAME: queues, expedition, house agents, "
+                                         "health, season; snapshot and expedition (a person's)")
+    op.add_argument("name", help="the operator agent's profile")
+    op.add_argument("act", nargs="?", choices=["status", "whoami", "snapshot", "expedition"])
+    op.add_argument("rest", nargs="*", help="expedition: its title")
+    op.add_argument("--text", default="", help="expedition: what to try this week")
+    op.add_argument("--window", type=int, default=3600, help="status: seconds counted as recent activity")
+    op.add_argument("--json", action="store_true")
+    op.set_defaults(func=cmd_operator)
 
     sg = sub.add_parser("signer", help="agents' wallet keys in a process of their own — needed for real money, "
                                        "optional on testnet (start, add NAME; remove NAME undoes it)")
@@ -7180,7 +7359,7 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("--role", choices=["marketplace", "developer", "both"], default="",
                     help="marketplace (wallet, no terminal/files — recommended for money), developer "
                          "(tools, no wallet) or both (not recommended on the local backend)")
-    ag.add_argument("--playbook", choices=["custom", "player", "merchant", "scout", "host"], default="",
+    ag.add_argument("--playbook", choices=["custom", "player", "merchant", "scout", "host", "operator"], default="",
                     help="what it may do on its own (P297; default custom: no bounds beyond its limits). "
                          "Change it later with `emporia agent playbook NAME`")
     ag.add_argument("--keys", choices=["env", "files"], default="",

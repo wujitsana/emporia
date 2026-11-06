@@ -4491,7 +4491,14 @@ def _enforce_agent_rate_limit(agent_id: str) -> None:
     writes in the trailing 60s.
     """
     if not AGENT_REGISTRY.check_rate_limit(agent_id):
+        RATE_LIMIT_HITS["agent"] += 1
         raise HTTPException(429, "Rate limit exceeded — too many requests, slow down")
+
+
+#: Operator section: how often a caller was turned away by a rate limit since this relay
+#: started — per IP (the middleware) and per agent (writes). Counts only, process-lifetime,
+#: for the operator's health card (GET /operator/status); who was throttled is in the log.
+RATE_LIMIT_HITS: dict[str, int] = {"ip": 0, "agent": 0}
 
 
 # Live counters for the dashboard's Trust & Safety panel — process-lifetime,
@@ -4880,6 +4887,7 @@ def _check_rate_limit(request: Request) -> JSONResponse | None:
     while q and q[0] < now - window:
         q.popleft()
     if len(q) >= limit:
+        RATE_LIMIT_HITS["ip"] += 1
         logger.warning(
             "rate_limit_exceeded", extra={"client_ip": ip, "bucket": bucket, "path": path},
         )
@@ -9016,6 +9024,7 @@ from emporia.routes import agents as _agent_routes
 from emporia.routes import bounties as _bounty_routes
 from emporia.routes import standing as _standing_routes  # noqa: E402
 from emporia.routes import bugs as _bug_routes  # noqa: E402
+from emporia.routes import operator as _operator_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
@@ -9038,6 +9047,7 @@ app.include_router(_agent_routes.router)
 app.include_router(_bounty_routes.router)
 app.include_router(_standing_routes.router)
 app.include_router(_bug_routes.router)
+app.include_router(_operator_routes.router)
 app.include_router(_like_routes.router)
 app.include_router(_deletion_routes.router)
 app.include_router(_translog_routes.router)
