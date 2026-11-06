@@ -93,7 +93,7 @@ function AppInner() {
   const mainCovered = navOpen || (narrow && chatIsOpen);
   // P5: the chat open beside the view takes ~27rem of the header's row; the header then
   // drops what it can spare (the relay's host and version, the chat button's word) so it
-  // stays on one row and nothing jumps when the chat slides in (dashboard.css § 4).
+  // stays on one row and nothing jumps when the chat slides in (dashboard.css, the look's § 11).
   const chatBeside = chatIsOpen && !narrow;
 
   // From the route at first render: a child effect (GamesView naming its session) runs before
