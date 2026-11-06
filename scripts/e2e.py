@@ -315,7 +315,7 @@ class Run:
         return f"file://{self.plugin_repo}#hermes_plugin/emporia"
 
     def setup_agent(self, name: str, *extra: str) -> None:
-        self.hermes_cmd("-p", self.judge, "emporia", "setup", "--profile", name, "--relay", self.relay_url,
+        self.hermes_cmd("-p", self.judge, "emporia", "setup", "--agent-profile", name, "--relay", self.relay_url,
                         "--plugin-source", self.plugin_source(),
                         "--", "--role", "marketplace", "--keys", "env", *extra, "--register",
                         timeout=SETUP_TIMEOUT)
