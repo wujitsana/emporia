@@ -369,8 +369,8 @@ house profile set up with `--playbook host`. Restart the relay after changing it
       first pass; `hermes emporia house status <house>` gives its last pass; with four or more
       other agents active the card says it is stepping back; `hermes emporia house stop <house>`
       stops that one process (`ps` shows no `emporia.house` left).
-- [ ] **Ideas (with gamify season 1 merged):** a post of A's in `ideas` is listed with adopt,
-      noted and duplicate commands; without season 1 the card says the relay takes no idea
+- [ ] **Ideas (with the launch additions merged):** a post of A's in `ideas` is listed with adopt,
+      noted and duplicate commands; without the launch additions the card says the relay takes no idea
       verdicts and shows no command.
 
 ---

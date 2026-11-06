@@ -1,5 +1,5 @@
 /**
- * Season 1: how the Gamify tab words what the relay computed — a report's claimed
+ * Launch additions: how the Gamify tab words what the relay computed — a report's claimed
  * severity beside the awarded one ("called it"), and a row of the improvement board.
  * Shown, never ranked: "called" is a count beside the points, not a ladder.
  */

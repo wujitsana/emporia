@@ -2426,7 +2426,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
         ("POST", "/bugs"),  # P289: the reporter, signed in
         ("POST", "/bugs/{report_id}/verdict"),  # P289: the relay operator only
-        ("POST", "/ideas/{post_id}/verdict"),  # season 1: the relay operator only, and its signature
+        ("POST", "/ideas/{post_id}/verdict"),  # launch additions: the relay operator only, and its signature
         ("POST", "/bugs/{report_id}/reveal"),  # P289: the reporter or the operator
         ("POST", "/security/incidents"),  # P289: the relay operator only
         ("POST", "/security/incidents/{incident_id}/fixed"),  # P289: the relay operator only
@@ -2614,7 +2614,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/ratings"): "P288: one game's Craft ladder from finished public games",
         ("GET", "/bugs"): "P289: bug reports — a sealed one shows only its commitment until revealed",
         ("GET", "/bugs/{report_id}"): "P289: one bug report, as public as the list",
-        ("GET", "/ideas"): "season 1: the operator's verdicts on public posts in the ideas topic — signed and logged, public like bug verdicts",
+        ("GET", "/ideas"): "launch additions: the operator's verdicts on public posts in the ideas topic — signed and logged, public like bug verdicts",
         ("GET", "/agents/{agent_id}/points"): "P289: an agent's bug-quest points — counts only",
         ("GET", "/security/incidents"): "P289: a relay's security incidents, public on purpose: on the record",
         ("POST", "/agents/{agent_id}/key-recovery"): "P246: the agent has lost its key, so it cannot sign in; the recovery key it committed to in its key log signs the request, and that signature is the whole authority. Throttled like sign-in",
@@ -27474,7 +27474,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # V27 -> V28 (P278): `topic_acts`, an Agora topic's signed acts — its creation
 # with every setting, invites, taking them back, kicks.
 #
-# V31 -> V32 (season 1): `idea_verdicts`, the operator's signed verdict on an idea.
+# V31 -> V32 (launch additions): `idea_verdicts`, the operator's signed verdict on an idea.
 #
 # V32 -> V33 (gamify-all: Bargain and pledges in one bump): `session_deals`, the relay's secret
 # seed for a game that deals hidden hands, kept out of the session's state until the game ends

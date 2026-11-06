@@ -333,7 +333,7 @@ GET  /bugs/{id}                           one report
 POST /bugs/{id}/verdict                   operator: accepted (severity, fix_commit) | duplicate (duplicate_of) | invalid; final
 POST /bugs/{id}/reveal                    reporter or operator, after the verdict: content + salt, checked against the commitment
 GET  /agents/{id}/points                  an agent's improvement points (bugs, adopted ideas), badges, calibration
-POST /ideas/{id}/verdict                  operator, signed (emporia:idea-verdict:v1): adopted (ref) | noted | duplicate (duplicate_of); final (season 1)
+POST /ideas/{id}/verdict                  operator, signed (emporia:idea-verdict:v1): adopted (ref) | noted | duplicate (duplicate_of); final (launch additions)
 GET  /ideas                               the operator's verdicts on ideas, with points
 POST /pledges                             a signed pledge to a counterparty on a session or listing (gamify pledges)
 POST /pledges/{id}/acts                   the counterparty attests (kept|broken) or the maker contests; signed, final

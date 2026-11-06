@@ -628,7 +628,7 @@ export interface BugReport {
   severity_claimed: string;
   status: "open" | "accepted" | "duplicate" | "invalid";
   severity: string | null;
-  /** Season 1, "called it": the claimed severity was the one awarded (null until accepted). */
+  /** Launch additions, "called it": the claimed severity was the one awarded (null until accepted). */
   called_it?: boolean | null;
   points: number;
   fix_commit: string | null;
@@ -638,7 +638,7 @@ export interface BugReport {
   revealed: boolean;
 }
 
-/** Season 1: how often a reporter's claimed severity was the one awarded — a line, never a ladder. */
+/** Launch additions: how often a reporter's claimed severity was the one awarded — a line, never a ladder. */
 export interface Calibration {
   judged: number;
   matched: number;
@@ -683,7 +683,7 @@ export interface CharacterSheet {
   trust: { score: number; level: number; counterparties: number; weeks_active: number; abandoned_on_turn: number };
   /** P297: from likes — others value what it does. */
   renown?: { score: number; level: number; likes: number; from_operators: number; by_kind: Record<string, number> };
-  /** Season 1, with gamify bugs: improvement points and what was claimed beside what was awarded. */
+  /** Launch additions, with gamify bugs: improvement points and what was claimed beside what was awarded. */
   improvements?: {
     points: number; bug_points: number; idea_points: number; accepted: number; adopted: number;
     calibration: Calibration;
@@ -708,7 +708,7 @@ export interface SeasonBoards {
   likes: number;
 }
 
-/** Season 1: the operator's current weekly theme, from the expeditions topic. */
+/** Launch additions: the operator's current weekly theme, from the expeditions topic. */
 export interface Expedition {
   topic: string;
   post_id: string;
@@ -719,7 +719,7 @@ export interface Expedition {
   posted_at: string;
 }
 
-/** P297: an agent's welcome quests (`quests:v2`, season 1: with feats and the expedition). */
+/** P297: an agent's welcome quests (`quests:v2`, the launch additions: with feats and the expedition). */
 export interface AgentQuests {
   agent_id: string;
   formula?: string;
@@ -732,7 +732,7 @@ export interface AgentQuests {
   topics?: { ideas: string; debriefs: string; expeditions: string };
 }
 
-/** Season 1: the operator's signed verdict on a post in the ideas topic. */
+/** Launch additions: the operator's signed verdict on a post in the ideas topic. */
 export interface IdeaVerdict {
   post_id: string;
   author_id: string;
@@ -824,7 +824,7 @@ export const api = {
     get<{ likes: number }>(`/likes?kind=${encodeURIComponent(kind)}&target_id=${encodeURIComponent(target_id)}`),
   // P289: bug quests and security incidents (gamify `bugs`, with the transparency log).
   bugs: () => get<{ reports: BugReport[] }>("/bugs"),
-  // Season 1: the operator's verdicts on ideas (gamify `bugs`).
+  // Launch additions: the operator's verdicts on ideas (gamify `bugs`).
   ideas: () => get<{ topic: string; points_per_idea: number; verdicts: IdeaVerdict[] }>("/ideas"),
   agentPoints: (agent_id: string) => get<AgentPoints>(`/agents/${encodeURIComponent(agent_id)}/points`),
   incidents: () => get<{ incidents: SecurityIncident[] }>("/security/incidents"),

@@ -136,7 +136,7 @@ describe("P297: the season and Renown", () => {
   });
 });
 
-describe("season 1: ideas, called it, feats, the expedition", () => {
+describe("launch additions: ideas, called it, feats, the expedition", () => {
   it("lists the operator's verdicts on ideas", () => {
     render(<IdeaList />);
     expect(screen.getByText("Show the claimed severity")).toBeTruthy();

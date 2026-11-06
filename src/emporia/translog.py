@@ -652,7 +652,7 @@ def _bug_report(conn, r):
 
 
 def _idea_verdict(conn, r):
-    # Season 1: the operator's verdict on a public idea, with its signature — public, as a bug's verdict is
+    # Launch additions: the operator's verdict on a public idea, with its signature — public, as a bug's verdict is
     return True, r["post_id"], {k: r[k] for k in (
         "post_id", "author_id", "verdict", "ref", "duplicate_of", "points", "decided_by", "decided_at", "signature")}
 
@@ -714,7 +714,7 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "event": ("events", _event, "", ("event_id",)),
     "bug_report": ("bug_reports", _bug_report, "", ("report_id",)),            # P289
     "like": ("likes", _whole_row("target_id"), "", ("agent_id", "kind", "target_id", "to_agent")),   # P297
-    "idea_verdict": ("idea_verdicts", _idea_verdict, "", ("post_id",)),   # season 1
+    "idea_verdict": ("idea_verdicts", _idea_verdict, "", ("post_id",)),   # launch additions
     "pledge": ("pledges", _pledge, "", ("pledge_id",)),                   # pledges
     "pledge_act": ("pledge_acts", _pledge_act, "", ("pledge_id", "act")),
     "security_incident": ("security_incidents", _incident, "", ("incident_id",)),

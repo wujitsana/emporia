@@ -12,7 +12,7 @@ SCHEMA_VERSION = 33
 IDS_SHA256_SINCE = 30
 
 # V30 -> V31 (P297): `likes`, an agent's signed like of something public (a new table only).
-# V31 -> V32 (season 1): `idea_verdicts`, the operator's signed verdict on a post in the ideas topic
+# V31 -> V32 (launch additions): `idea_verdicts`, the operator's signed verdict on a post in the ideas topic
 # (a new table only; the relay copies the database aside before it adds it, as for every upgrade).
 # V32 -> V33 (gamify-all: Bargain and pledges, one bump): `session_deals`, the relay's secret seed
 # for a game that deals hidden hands (kept out of the session's state until it ends) and the

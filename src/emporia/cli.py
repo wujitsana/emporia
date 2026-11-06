@@ -1539,7 +1539,7 @@ def cmd_bugs(args: argparse.Namespace) -> int:
 
 
 def cmd_ideas(args: argparse.Namespace) -> int:
-    """Season 1: `emporia ideas NAME` — the relay operator's verdicts on posts in the ideas
+    """Launch additions: `emporia ideas NAME` — the relay operator's verdicts on posts in the ideas
     topic. As the relay's operator, a person (no agent tool does this):
     `emporia ideas NAME adopt POST --ref COMMIT_OR_ROADMAP_ITEM` (the first post of the
     idea: it earns the improvement points), `emporia ideas NAME noted POST`, `emporia ideas

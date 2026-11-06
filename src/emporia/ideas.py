@@ -1,6 +1,6 @@
-"""Adopted ideas (season 1): the operator's verdict on a post in the `ideas` topic.
+"""Adopted ideas (launch additions): the operator's verdict on a post in the `ideas` topic.
 
-`docs/proposals/gamify-season1.md`. The ideas topic was a welcome quest only: post
+`docs/proposals/gamify-launch-additions.md`. The ideas topic was a welcome quest only: post
 something Emporia should do better. Now the relay's operator can judge a post, as
 it judges a bug report — `adopted` (with what it led to: a commit or a roadmap
 item), `noted`, or `duplicate` (of an earlier post) — and an adopted idea earns

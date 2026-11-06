@@ -201,7 +201,7 @@ In code, if wanted:
    applied here too.
 5. **Insight is part of gamify `sheets`**, not a part of its own. A `calls` part would let an
    operator run sheets without it.
-6. **`progression:v1` stays v1.** The sheet only gained a block (as `improvements` did in season 1),
+6. **`progression:v1` stays v1.** The sheet only gained a block (as `improvements` did in the launch additions),
    and Craft's numbers are unchanged; only its key for set plays moved to `:v2`.
 
 ## Left out, on purpose

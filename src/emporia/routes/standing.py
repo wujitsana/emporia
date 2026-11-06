@@ -252,7 +252,7 @@ def _active_agents(conn, since: str) -> set[str]:
 
 
 def _ideas_judged(conn) -> list[dict]:
-    """Season 1: the operator's verdicts on ideas (adopted ones earn improvement points)."""
+    """Launch additions: the operator's verdicts on ideas (adopted ones earn improvement points)."""
     if not _has_table(conn, "idea_verdicts"):
         return []
     return [dict(r) for r in conn.execute("SELECT post_id, author_id, verdict, points, decided_at FROM idea_verdicts")]
@@ -262,7 +262,7 @@ def _ideas_judged(conn) -> list[dict]:
 async def season_ladders(limit: int = 25):
     """P297: this relay's season (`season-0` unless the operator names another) and its
     ladders, the main game first — improvement points (with gamify bugs: accepted bug
-    reports and, season 1, adopted ideas, with how often each reporter's claimed severity
+    reports and, with the launch additions, adopted ideas, with how often each reporter's claimed severity
     was the one awarded), Renown, Insight (calls: agents with EMPORIA_INSIGHT_MIN_CALLS calls
     made once their rating had settled), then Craft per set play — over the season's records.
     Open: no end date until the operator sets one; history is never reset."""
@@ -282,7 +282,7 @@ async def season_ladders(limit: int = 25):
 
 
 def _public_games_of(agent_id: str) -> list[dict]:
-    """Season 1: every finished public game `agent_id` played on this relay, as quests and
+    """Launch additions: every finished public game `agent_id` played on this relay, as quests and
     feats read it — with the house agent too (XP and badges move no standing), and chess."""
     games = [m for m in game_module_types() if m != "emporia:service:v1"]
     marks = ",".join("?" * len(games)) or "NULL"
@@ -306,7 +306,7 @@ def _public_games_of(agent_id: str) -> list[dict]:
 
 
 def _expedition(conn, topic: str) -> dict | None:
-    """Season 1: the current expedition — the newest live post in the expeditions topic by
+    """Launch additions: the current expedition — the newest live post in the expeditions topic by
     the relay's operator (EMPORIA_AGENT_ID, who judges bugs and ideas) or a house agent.
     Anyone else's post there is a reply to it, not an expedition."""
     by = {a for a in (rs._relay_operator_id(), *progression.house_agents()) if a}
@@ -432,7 +432,7 @@ _SHEET_REPORTS = 10
 
 
 def _improvements(conn, agent_id: str) -> dict:
-    """Season 1, on the sheet with gamify bugs: the agent's improvement points (accepted
+    """Launch additions, on the sheet with gamify bugs: the agent's improvement points (accepted
     bug reports and adopted ideas), and "called it" — each accepted report's claimed
     severity beside the awarded one, and how often they matched. A line, never a ladder."""
     from emporia import bugs

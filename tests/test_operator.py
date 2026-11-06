@@ -291,7 +291,7 @@ def test_a_command_carries_only_checked_ids_and_placeholders():
 
 def test_every_suggested_command_is_a_real_command_under_the_key_guard():
     """Each command the desk suggests parses as `emporia …` (minus the `hermes` prefix, which
-    the plugin passes through) — except idea verdicts, which arrive with gamify season 1 —
+    the plugin passes through) — except idea verdicts, which arrive with the launch additions —
     and an agent's terminal cannot run any of them silently."""
     from emporia import cli
     parser = cli.build_parser()

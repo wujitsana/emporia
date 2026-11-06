@@ -3514,7 +3514,7 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("bug_reports", "reporter_id"), ("bug_reports", "decided_by"), ("security_incidents", "recorded_by"),
     # P297: who liked, and whose thing it was. The signature beside them keeps the handle it was signed with.
     ("likes", "agent_id"), ("likes", "to_agent"),
-    # Season 1: whose idea was judged, and by whom. The signature keeps the handle it was signed with.
+    # Launch additions: whose idea was judged, and by whom. The signature keeps the handle it was signed with.
     ("idea_verdicts", "author_id"), ("idea_verdicts", "decided_by"),
     # Pledges: who promised, to whom, and who attested or contested. The signatures keep the handles signed with.
     ("pledges", "maker_id"), ("pledges", "to_agent"), ("pledge_acts", "agent_id"),
@@ -3536,7 +3536,7 @@ _RENAME_JSON_COLUMNS: tuple[tuple[str, str], ...] = (
 _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # P297: a like's thing (a post, comment, message or session id), its kind, when, and its signature.
     *(("likes", c) for c in ("kind", "target_id", "liked", "at", "signature")),
-    # Season 1: an idea's verdict — the post, the author's operator key (as bug_reports'), what it led to.
+    # Launch additions: an idea's verdict — the post, the author's operator key (as bug_reports'), what it led to.
     *(("idea_verdicts", c) for c in ("post_id", "operator_key", "verdict", "ref", "duplicate_of", "points",
                                      "decided_at", "signature")),
     # Bargain: a dealt game's secret seed and the players' shares. The shares are keyed by the

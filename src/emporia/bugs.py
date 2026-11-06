@@ -117,7 +117,7 @@ def points_of(agent_id: str, reports: Iterable[Mapping], ideas: Iterable[Mapping
     return out
 
 
-# ── Called it (season 1): the severity a reporter claimed, beside the one awarded ──────
+# ── Called it (launch additions): the severity a reporter claimed, beside the one awarded ──────
 #
 # Read-only over the reports: nothing here scores. Points follow the awarded severity, as
 # always; showing the claim beside it is what makes inflating one visible. A line on the

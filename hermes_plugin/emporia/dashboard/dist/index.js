@@ -27611,7 +27611,7 @@
 			children: [
 				!s.verdicts && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
 					className: "e-faint",
-					children: "This relay takes no idea verdicts yet (they come with gamify season 1, beside bug quests): the posts are here to read."
+					children: "This relay takes no idea verdicts yet (they come with gamify bug quests): the posts are here to read."
 				}),
 				!s.items.length && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
 					className: "e-faint",

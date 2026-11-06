@@ -4501,7 +4501,7 @@ def bug_reports(status: str = "", agent_id: str = "") -> dict[str, Any]:
 
 
 def _ideas_judged(verdict: str = "") -> dict[str, Any]:
-    """Season 1: the operator's verdicts on ideas, for `emporia ideas NAME`."""
+    """Launch additions: the operator's verdicts on ideas, for `emporia ideas NAME`."""
     try:
         r = httpx.get(f"{_base()}/ideas", params={"verdict": verdict} if verdict else {}, timeout=10)
         d = r.json() if r.content else {}

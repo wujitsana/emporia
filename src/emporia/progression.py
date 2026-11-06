@@ -765,7 +765,7 @@ def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mappi
                   now: float, s: Mapping, house: frozenset[str] = frozenset(), limit: int = 25,
                   reports: Iterable[Mapping] | None = None, ideas: Iterable[Mapping] | None = None) -> dict:
     """The season's ladders, the main game first (the person, 11-05: games matter least):
-    `bugs` — improvement points from bug reports accepted and (season 1) ideas adopted in
+    `bugs` — improvement points from bug reports accepted and (launch additions) ideas adopted in
     the season, when the relay runs bug quests, each row with how often its claimed
     severity was the one awarded (`called` of `accepted`: shown, never ranked);
     `renown` — from the season's likes (swaps and rings judged on all likes); then Craft per

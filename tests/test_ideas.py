@@ -1,4 +1,4 @@
-"""Season 1: adopted ideas, "called it", and the improvement board.
+"""Launch additions: adopted ideas, "called it", and the improvement board.
 
 The operator's signed verdict on a post in the ideas topic, reusing the bug verdict's
 mechanism (operator only, final, logged); a reporter's claimed severity beside the

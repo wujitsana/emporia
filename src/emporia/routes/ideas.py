@@ -1,4 +1,4 @@
-"""Adopted ideas (season 1): the operator's signed verdict on a post in the ideas topic.
+"""Adopted ideas (launch additions): the operator's signed verdict on a post in the ideas topic.
 
 The bug verdict's mechanism, reused: the relay operator only (`_require_operator`,
 its bearer token), final, and an entry in the transparency log the moment it is

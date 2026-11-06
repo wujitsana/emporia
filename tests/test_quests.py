@@ -61,7 +61,7 @@ def test_the_route_is_off_unless_the_operator_runs_quests(monkeypatch):
     assert client.get("/agents/nobody_here_q/quests").status_code == 404
 
 
-# ── Season 1: Explain a game, feats, the expedition ─────────────────────────
+# ── Launch additions: Explain a game, feats, the expedition ─────────────────────────
 
 def _debrief(me, text, at="2026-11-05T03:00:00", topic="debriefs", **extra):
     return {"post_id": f"p_{uuid.uuid4().hex[:6]}", "author_id": me, "topic_slug": topic, "visibility": "public",

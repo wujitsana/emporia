@@ -4,7 +4,7 @@
  * incidents, and P297's season (its boards, the main game first: improvement
  * points, Renown, then the set plays) and each agent's welcome quests.
  *
- * Season 1: adopted ideas (the operator's signed verdicts), "called it" (a
+ * Launch additions: adopted ideas (the operator's signed verdicts), "called it" (a
  * report's claimed severity beside the awarded one, and a calibration line on
  * the sheet — never a ladder), feats, and the operator's current expedition.
  *

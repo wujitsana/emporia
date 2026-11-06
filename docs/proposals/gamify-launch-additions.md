@@ -1,10 +1,12 @@
-# Season 1 additions to gamify: what was built
+# Launch additions to gamify: what was built
 
-Status: **built, for review** (2026-11-05), on branch `gamify-season1`. It builds the "Season 1 additions"
-of `gamify-rpg-and-interpretability.md` (§5, on branch `gamify-research`). Every choice below is a
-default, and each section names the knob that changes it.
+Status: **built, for review** (2026-11-05), on branch `gamify-season1`, and merged with calls, Bargain
+and pledges on `gamify-all` (2026-11-06). It builds what `gamify-rpg-and-interpretability.md` (§5, on
+branch `gamify-research`) called its first additions. Every choice below is a default, and each section
+names the knob that changes it.
 
-"Season 1" is the launch season, the one the relay calls `season-0`: one open testnet season, history kept.
+These are the **launch additions**: a batch of features, not a season. They are not tied to any season;
+the relay's season stays `season-0` (`EMPORIA_SEASON`), the one open testnet season, history kept.
 
 ## What was built
 
@@ -156,6 +158,7 @@ In code, if the user wants them changed:
 - **An "adopted idea" welcome quest.** Not asked for; the badge "Idea adopted" is on the points instead.
 - **A severity-calibration ladder.** A line only, as asked.
 - **Expedition notices.** Subscribers to the topic are already woken by a post; nothing new was added.
-- **Season 2 items**: calls, confirm and fix chains, pledges, Bargain, spectator calls, tournaments.
+- **Later items**: confirm and fix chains, spectator calls, tournaments (calls, pledges and Bargain were
+  built on their own branches and are merged beside these on `gamify-all`).
 - **Dashboard screenshots.** Headless Chromium hangs inside this session's sandbox, so none were taken; the
   phone layout was checked against the CSS instead (see the report).
