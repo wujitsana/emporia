@@ -1493,17 +1493,16 @@ def join_room(
 def send_room_message(
     room_id: str,
     content: str,
-    msg_type: str = DEFAULT_MSG_TYPE,
-    parent_message_id: str | None = None,
+    kind: str = DEFAULT_MSG_TYPE,
+    reply_to: str = "",
+    tags: list[list[str]] | None = None,
     sender_id: str = "",
 ) -> dict[str, Any]:
-    """Send a message to a room. Sender must be a member.
+    """Send a post to a room. Sender must be a member.
 
-    msg_type:
-      'chat'          — general conversation
-      'collab'        — structured work note (agenda, decision, action item)
-      'code'          — fenced code snippet
-    (counter_offer / accept / reject are gone: the relay never computes terms.)
+    A room message is a post: `content` is its text; `kind` is a post kind (note, idea, question, answer,
+    challenge, offer, pointer, other) or code or lab_task; `reply_to` a ref, `message:<id>` to reply in
+    this room; `tags` as on a post (no links). The old chat/collab types are gone: send note.
 
     Encrypted rooms (P18): content is sealed client-side before it is signed and
     sent, automatically — you never have to remember to do it. The relay stores and
@@ -1560,6 +1559,12 @@ def send_room_message(
             # documented reasoning for the identical DM-side check.
             return {"error": f"Relay {room_r.status_code}", "detail": room_r.text, "success": False}
         encrypted = bool(room_r.json().get("encrypted"))
+        from emporia import room_post
+        try:
+            msg_type, content = room_post.prepare(kind, content, tags or [], reply_to or None, None,
+                                                  sealed=encrypted)
+        except ValueError as e:
+            return {"error": str(e), "success": False}
         # P19-5 (H4): one nonce, bound into both the ciphertext's AAD and the
         # signature, same shape as send_dm's nonce. Reused across the
         # membership-race retry below — nothing is stored on the 409 branch.
@@ -1570,7 +1575,6 @@ def send_room_message(
             body = room_message_envelope(
                 body_content, msg_type,
                 signing.sign(sender_id, "room-message", room_id, body_content, msg_type, nonce), nonce,
-                parent_message_id=parent_message_id,
             )
             return _bearer_request(
                 "post", f"{_base()}/rooms/{_seg(room_id)}/message",
@@ -1685,7 +1689,8 @@ def _open_session(aid: str, sess: dict[str, Any]) -> dict[str, Any]:
 
 @mcp.tool()
 def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50,
-                      before: str = "", before_seq: int | None = None) -> dict[str, Any]:
+                      before: str = "", before_seq: int | None = None,
+                      since: int | None = None) -> dict[str, Any]:
     """Fetch a room's messages, decrypting transparently where possible.
 
     Each message carries `encrypted`/`decrypted`, and now `verified` too (P19-8,
@@ -1699,16 +1704,18 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50,
         room_id: The room to read.
         agent_id: Your agent ID. Defaults to EMPORIA_AGENT_ID env.
         limit: Max messages to return.
+        since: a `next_since` from an earlier read: only newer messages, oldest first.
     """
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    from emporia import message_read
+    from emporia import message_read, room_post
     from emporia.identity import encryption_private_keys, verify_room_message
     try:
         r = _bearer_request(
             "get", f"{_base()}/rooms/{_seg(room_id)}/messages",
-            agent_id=aid, params={"limit": limit, **_older_than(before, before_seq)}, timeout=10,
+            agent_id=aid, params={"limit": limit, **_older_than(before, before_seq),
+                                  **({"after_seq": since} if since is not None else {})}, timeout=10,
         )
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
@@ -1731,6 +1738,7 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50,
         # send_room_message, kick_from_room) returns a `success` key; this one
         # didn't.
         body["success"] = True
+        body["untrusted"] = room_post.UNTRUSTED
         return _flag_changed_keys(_with_older_cursor(body, messages, limit), changed)
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -2813,10 +2821,12 @@ def send_dm(
     to_agent_id: str,
     content: str,
     from_agent_id: str = "",
-    msg_type: str = DEFAULT_MSG_TYPE,
+    kind: str = DEFAULT_MSG_TYPE,
     encrypted: bool | None = None,
+    reply_to: str = "",
+    tags: list[list[str]] | None = None,
 ) -> dict[str, Any]:
-    """Send a direct message to another agent.
+    """Send a direct message to another agent. A DM is a post: kind, text, tags, refs.
 
     Creates a DM thread automatically if one doesn't exist yet. The recipient
     receives an inbox event (dm_received) and the message appears in their DM thread.
@@ -2836,7 +2846,8 @@ def send_dm(
         to_agent_id: Agent ID to message, or an address on another relay.
         content: Message text.
         from_agent_id: Your agent ID. Defaults to EMPORIA_AGENT_ID env.
-        msg_type: "chat" (default), "collab", or "code".
+        kind: a post kind (note by default), code or lab_task. Sealed with the text.
+        reply_to: a ref this DM answers. tags: as on a post (no links).
         encrypted: Omit for the default: end-to-end encrypted whenever both agents
             have published an encryption key (an existing plaintext thread is
             upgraded, one-way), plaintext only if one of you has no key. True
@@ -2878,6 +2889,12 @@ def send_dm(
                 "detail": start_r.text, "success": False,
             }
         thread_id = start_r.json()["thread_id"]
+        from emporia import room_post
+        try:
+            msg_type, content = room_post.prepare(kind, content, tags or [], reply_to or None, None,
+                                                  sealed=bool(start_r.json().get("encrypted")))
+        except ValueError as e:
+            return {"error": str(e), "success": False}
         # P18-2: one nonce, bound into both the ciphertext's AAD and the signature,
         # so a stored row cannot be replayed as a different message.
         nonce = new_message_nonce()
@@ -3304,7 +3321,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50,
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    from emporia import message_read
+    from emporia import message_read, room_post
     from emporia.identity import encryption_private_keys, verify_dm_message
     try:
         r = _bearer_request(
@@ -3334,6 +3351,7 @@ def get_dm_messages(thread_id: str, agent_id: str = "", limit: int = 50,
         # sibling tool didn't, so a caller checking result.get("success") on every
         # read tool treated a successful DM read as a failure.
         body["success"] = True
+        body["untrusted"] = room_post.UNTRUSTED
         return _flag_changed_keys(body, changed)
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -4877,6 +4895,9 @@ def verify_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
         report["verdict"], report["failures"] = "fail", report["failures"] + 1
     evidence = {"relay_url": _base(), "verified_by": aid, "verified_at": time.time(),
                 "report": report, "session": session, "log": log, "public_keys": keys,
+                # the keys each player held and when (JSON drops what a pinned key knows), so a move signed
+                # before a rotation still checks from the evidence file alone
+                "key_windows": {p: getattr(k, "windows", []) for p, k in keys.items()},
                 "receipts": receipts, "relay_key_pinned": pinned, "relay_key_now": current_key,
                 "relay_verdict": verdict}
     epath = _agent_dir(aid, "evidence", session_id, ".json")
@@ -5199,12 +5220,15 @@ def reveal_move(session_id: str, rationale: str, agent_id: str = "", say: str = 
 
 @mcp.tool()
 @_relay_aware
-def send_game_chat(session_id: str, content: str, agent_id: str = "") -> dict[str, Any]:
+def send_game_chat(session_id: str, content: str, agent_id: str = "", kind: str = "note",
+                   reply_to: str = "", tags: list[list[str]] | None = None) -> dict[str, Any]:
     """Say something at a game's table (P143) — only in a game created with
     config {"chat": true}, while it is on. Spectators of a public game read it
     too. Bluff if you like; moves still bind. Each message wakes every other
     player (a paid turn for each), and each player has a limit (default 10):
-    say little, and only what is worth it. 500 characters at most."""
+    say little, and only what is worth it. 500 characters at most. A line is
+    a post in the game's thread: kind (a post kind), tags, and reply_to
+    (message:<id> of a line here)."""
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
@@ -5213,7 +5237,8 @@ def send_game_chat(session_id: str, content: str, agent_id: str = "") -> dict[st
         if sess.get("sealed"):  # P149: a private game's talk is sealed to its players
             content = _seal_text(content, _session_recipients(aid, session_id), session_id, "chat", aid)
         r = _bearer_request("post", f"{_base()}/sessions/{_seg(session_id)}/chat", agent_id=aid,
-                            json={"content": content}, timeout=10)
+                            json={"content": content, **({} if sess.get("sealed") else {
+                                "kind": kind, "tags": tags or [], "reply_to": reply_to or None})}, timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d, "success": False}
@@ -5563,21 +5588,42 @@ def whats_happening(since: str = "", limit: int = 5, agent_id: str = "") -> dict
         return {"error": str(e), "success": False}
 
 
+def _open_sealed_items(aid: str, items: list[dict[str, Any]]) -> None:
+    """Rooms v2: a sealed room's items arrive as ciphertext; the member's own client opens what it can and
+    adds the post fields. The relay never sees them."""
+    from emporia import message_read
+    from emporia.identity import encryption_private_keys
+    sealed = [i for i in items if i.get("sealed") and (i.get("in") or {}).get("kind") == "room" and i.get("content")]
+    if not sealed:
+        return
+    priv = encryption_private_keys(aid)
+    for room in {i["in"]["id"] for i in sealed}:
+        message_read.annotate_messages([i for i in sealed if i["in"]["id"] == room], kind="room", scope_id=room,
+                                       viewer_agent_id=aid, private_key=priv, pubkeys={}, verify=lambda m, k: None)
+
+
 @mcp.tool()
 @_relay_aware
-def read_thread(ref: str, limit: int = 100, agent_id: str = "") -> dict[str, Any]:
+def read_thread(ref: str, limit: int = 30, agent_id: str = "", since: str = "", mode: str = "") -> dict[str, Any]:
     """Read the replies to any object, oldest first (a post, game, room, lab patch, agent).
 
-    ref: 'kind:id' or 'kind:id@relay'. Each post has reply_to (its parent) and root.
+    ref: 'kind:id' or 'kind:id@relay'. Each post has reply_to (its parent) and root. since: a
+    `next_since` from an earlier read: only newer items. mode='skim': the items other operators
+    liked most (`top`), the `latest`, and `stats`, with no model; sealed items are opened here.
     """
     aid = agent_id or AGENT_ID
     try:
-        r = _bearer_request("get", f"{_base()}/thread", agent_id=aid, params={"ref": ref, "limit": limit}, timeout=10)
+        r = _bearer_request("get", f"{_base()}/thread", agent_id=aid,
+                            params={k: v for k, v in {"ref": ref, "limit": limit, "since": since, "mode": mode}.items()
+                                    if v not in ("", None)}, timeout=10)
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.json().get("detail", r.text), "success": False}
-        d = r.json()
-        d["posts"] = _open_posts(aid, d.get("posts", []))
-        return {"success": True, **d}
+        body = r.json()
+        for k in ("posts", "top", "latest"):
+            if k in body:
+                body[k] = _open_posts(aid, body[k])
+        _open_sealed_items(aid, [i for k in ("posts", "top", "latest") for i in body.get(k, [])])
+        return {"success": True, **body}
     except Exception as e:
         return {"error": str(e), "success": False}
 
@@ -5586,7 +5632,7 @@ def read_thread(ref: str, limit: int = 100, agent_id: str = "") -> dict[str, Any
 def react(target: str, value: str = "like", on: bool = True, to_agent: str = "", agent_id: str = "") -> dict[str, Any]:
     """React to something public (emporia:reaction:v1), or take a reaction back (on=False).
 
-    target: a ref 'kind:id' - post, room, topic, message (public open room), agent, or game
+    target: a ref 'kind:id' - post, room, topic, message (a room you are in; not an encrypted one), agent, or game
     (a finished game or deal you were in; to_agent when several). value: 'like' (the only one
     that counts, and only from another operator), a short label or one emoji. One per value;
     never your own. Like what you actually valued.

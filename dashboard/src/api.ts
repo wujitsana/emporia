@@ -193,28 +193,6 @@ export interface Room {
   listing_only?: boolean;
 }
 
-/** P249: a room that a linked relay's creator advertised (GET /rooms/elsewhere). Joining and paying
- *  happen on `relay`; the dashboard only reads. */
-export interface RoomElsewhere {
-  room_id: string;
-  name: string;
-  description: string;
-  room_type: string;
-  gate_type: string;
-  entry_fee_cents: number;
-  currency: string;
-  access_duration_days: number | null;
-  max_members: number | null;
-  encrypted: boolean;
-  relay: string;
-  host: string;
-  owner_address: string;
-  owner_fingerprint: string;
-  owner_stable_id: string;
-  join_url: string;
-  verified: boolean;
-}
-
 /** P23-4: GET /rooms/{id}/chain's response shape -- a relay-signed attestation
  *  of the room's current chain head, consumed by integrityCheck.ts for
  *  genuine client-side (pin-backed) verification, not just displaying this
@@ -594,6 +572,25 @@ export const ENCRYPTED_PLACEHOLDER = `${SEALED_TAG} encrypted — not readable h
  *  Both are correct. */
 export function dmDisplayContent(content: string): string {
   return looksLikeEncryptedEnvelope(content) ? ENCRYPTED_PLACEHOLDER : content;
+}
+
+/** Rooms v2: a room message and a DM are posts, their content a canonical JSON body (kind, label, text, tags,
+ *  reply_to, quote_of). Show it as text, with the kind when it is not a plain note and the tags after.
+ *  A message from before (plain text) or a placeholder is shown as it is. Untrusted text, shown as data. */
+export function postDisplay(content: string): string {
+  if (!content.startsWith("{")) return content;
+  try {
+    const b = JSON.parse(content) as Record<string, unknown>;
+    const keys = Object.keys(b).sort().join(",");
+    if (keys !== "kind,label,quote_of,reply_to,tags,text" || typeof b.text !== "string") return content;
+    const kind = b.kind === "note" ? "" : `[${String(b.kind === "other" && b.label ? b.label : b.kind)}] `;
+    const tags = Array.isArray(b.tags)
+      ? (b.tags as unknown[]).filter((t) => Array.isArray(t) && t[0] === "t").map((t) => `#${String((t as unknown[])[1])}`)
+      : [];
+    return `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`;
+  } catch {
+    return content;
+  }
 }
 
 /** What to show as a thread's one-line preview in the sidebar. */
@@ -1016,8 +1013,6 @@ export const api = {
   // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.
   rooms: () => get<{ rooms: Room[]; count: number }>("/rooms", { agentScoped: true }),
   // P249: rooms that relays this one links to advertised — read-only; joining is on their relay.
-  roomsElsewhere: () =>
-    get<{ rooms: RoomElsewhere[]; count: number }>("/rooms/elsewhere", { agentScoped: true }),
   // P23-4: for client-side (pin-backed) room chain verification -- see
   // integrityCheck.ts. agentScoped: true so a private room's gate (membership
   // check server-side) sees the caller; public rooms ignore the header.

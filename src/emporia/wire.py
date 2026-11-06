@@ -410,16 +410,21 @@ DEFAULT_CONFIRM_RATIONALE = "Buyer confirmed delivery."
 # constants, and reuses that one resolved value for both signature verification and
 # persistence — msg_type is also stored/routed on, not signature-only, so nothing here
 # can land as an empty string the way a bare field default could).
-DEFAULT_MSG_TYPE = "chat"
+#
+# Rooms v2: a room message or a DM is a post. Its `msg_type` slot (still signed, and bound into a
+# sealed message's AAD) now holds the post's `kind` (a post kind, or a room-only kind below) or, on an
+# end-to-end encrypted room or thread, the constant `sealed`: the real kind, tags, refs and text are all
+# inside the ciphertext, so the relay learns none of them. `system` stays server-owned (a lab's own
+# notices). `rooms.MsgType` is the full declared domain; a test pins it against CLIENT_MSG_TYPES.
+DEFAULT_MSG_TYPE = "note"
 
-# P15: the msg_type values a *client* may post. `rooms.MsgType` (rooms.py) is the full
-# declared domain and includes "system", which is server-owned — the relay posts it
-# itself. Clients get everything except that. Lives here rather than in rooms.py because both the room route
-# and the thread-DM route validate against it and only this module is shared by all of
-# them; a test pins it against rooms.MsgType so the two can't drift.
-CLIENT_MSG_TYPES = frozenset({"chat", "collab", "code"})
-# Removed with the negotiation broker (architecture-v2 C1): refused by name.
-REMOVED_MSG_TYPES = frozenset({"counter_offer", "accept", "reject"})
+#: kinds only a room (or DM) message has, beside the post kinds: a code snippet, and a lab's task.
+ROOM_ONLY_KINDS = ("code", "lab_task")
+SEALED_MSG_TYPE = "sealed"
+# The post kinds, spelled out because POST_KINDS is defined further down; a test pins the two.
+CLIENT_MSG_TYPES = frozenset({"note", "idea", "question", "answer", "challenge", "offer", "pointer", "other",
+                              *ROOM_ONLY_KINDS, SEALED_MSG_TYPE})
+
 
 # P21-3 (B4): the room message route answers 409 for two unrelated conditions —
 # a duplicate nonce (idx_room_messages_nonce's UNIQUE constraint, unrecoverable by
@@ -533,14 +538,9 @@ def room_message_envelope(
     msg_type: str,
     signature: str,
     nonce: str,
-    *,
-    parent_message_id: str | None = None,
 ) -> dict[str, Any]:
-    """The actual `POST /rooms/{id}/message` body. `parent_message_id` is a
-    keyword-only optional param here — P19-8 (A12/P20-7) added the matching
-    parameter to agent_sdk.py's `send_room_message()`, closing the gap this
-    docstring used to describe; kept keyword-only/optional so a future third
-    caller without the concept of a parent message doesn't have to pass it.
+    """The actual `POST /rooms/{id}/message` body. `content` is a post body (`room_post`), sealed in an
+    encrypted room; `msg_type` its kind, or `sealed`. A reply is in the body (`reply_to`), not beside it.
 
     P19-5: `nonce` is positional and required, unlike DM's
     `dm_thread_message_envelope()` (keyword, defaulted `""`) — that default
@@ -550,8 +550,6 @@ def room_message_envelope(
     body: dict[str, Any] = {
         "content": content, "msg_type": msg_type, "signature": signature, "nonce": nonce,
     }
-    if parent_message_id:
-        body["parent_message_id"] = parent_message_id
     return body
 
 

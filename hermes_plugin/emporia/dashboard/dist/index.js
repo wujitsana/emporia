@@ -12101,6 +12101,21 @@ var EmporiaHermesPlugin = (function(exports) {
 	function dmDisplayContent(content) {
 		return looksLikeEncryptedEnvelope(content) ? ENCRYPTED_PLACEHOLDER : content;
 	}
+	/** Rooms v2: a room message and a DM are posts, their content a canonical JSON body (kind, label, text, tags,
+	*  reply_to, quote_of). Show it as text, with the kind when it is not a plain note and the tags after.
+	*  A message from before (plain text) or a placeholder is shown as it is. Untrusted text, shown as data. */
+	function postDisplay(content) {
+		if (!content.startsWith("{")) return content;
+		try {
+			const b = JSON.parse(content);
+			if (Object.keys(b).sort().join(",") !== "kind,label,quote_of,reply_to,tags,text" || typeof b.text !== "string") return content;
+			const kind = b.kind === "note" ? "" : `[${String(b.kind === "other" && b.label ? b.label : b.kind)}] `;
+			const tags = Array.isArray(b.tags) ? b.tags.filter((t) => Array.isArray(t) && t[0] === "t").map((t) => `#${String(t[1])}`) : [];
+			return `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`;
+		} catch {
+			return content;
+		}
+	}
 	/** What to show as a thread's one-line preview in the sidebar. */
 	function dmThreadPreview(thread) {
 		if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
@@ -12166,7 +12181,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			openSessions: () => get("/federation/v1/open-sessions"),
 			events: () => get("/events"),
 			rooms: () => get("/rooms", { agentScoped: true }),
-			roomsElsewhere: () => get("/rooms/elsewhere", { agentScoped: true }),
 			roomChain: (room_id) => get(`/rooms/${encodeURIComponent(room_id)}/chain`, { agentScoped: true }),
 			roomMessages: (room_id, opts) => get(`/rooms/${encodeURIComponent(room_id)}/messages?limit=${opts?.limit ?? 200}` + (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : "") + (opts?.before && opts?.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ""), { agentScoped: true }),
 			agents: (search) => get(`/agents${search ? `?search=${encodeURIComponent(search)}` : ""}`, { agentScoped: true }),
@@ -14594,14 +14608,14 @@ var EmporiaHermesPlugin = (function(exports) {
 		import_jsx_runtime$61 = require_jsx_runtime();
 	}));
 	// src/chat/AskAgent.module.css
-	var root$3, row$2, glyph$1, AskAgent_module_default;
+	var root$3, row$1, glyph$1, AskAgent_module_default;
 	var init_AskAgent_module = __esmMin((() => {
 		root$3 = "AskAgent_root_n8p84";
-		row$2 = "AskAgent_row_n8p84";
+		row$1 = "AskAgent_row_n8p84";
 		glyph$1 = "AskAgent_glyph_n8p84";
 		AskAgent_module_default = {
 			root: root$3,
-			row: row$2,
+			row: row$1,
 			glyph: glyph$1
 		};
 	}));
@@ -20795,10 +20809,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		]);
 	}));
 	// src/ui/kit/RowSpaceBetween.module.css
-	var row$1, RowSpaceBetween_module_default;
+	var row, RowSpaceBetween_module_default;
 	var init_RowSpaceBetween_module = __esmMin((() => {
-		row$1 = "RowSpaceBetween_row_1rf1p";
-		RowSpaceBetween_module_default = { row: row$1 };
+		row = "RowSpaceBetween_row_1rf1p";
+		RowSpaceBetween_module_default = { row };
 	}));
 	// src/ui/kit/RowSpaceBetween.tsx
 	var import_react$21, import_jsx_runtime$48, RowSpaceBetween;
@@ -24016,55 +24030,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: ["on ", host]
 		});
 	}
-	/**
-	* P249: rooms or topics that relays this one links to advertised. Nothing here
-	* can be acted on from the dashboard: each says which relay holds it, who
-	* offers it and what it costs, and that joining happens there.
-	*/
-	function OnOtherRelays({ what, rows, loading, error }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("section", {
-			className: "e-elsewhere",
-			"aria-label": `${what} on other relays`,
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)(Text, {
-				className: "e-dim e-elsewhere__title",
-				children: [
-					"On other relays (",
-					rows.length,
-					")"
-				]
-			}), rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(Text, {
-				className: "e-faint",
-				children: loading ? "Looking…" : error ? `Could not read ${what} from other relays.` : `No ${what} advertised by relays this one links to.`
-			}) : rows.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("div", {
-				className: "e-elsewhere__row",
-				title: r.note,
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)("div", {
-						className: "e-elsewhere__head",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(Text, {
-							style: { fontSize: 13 },
-							children: r.name
-						}), /* @__PURE__ */ (0, import_jsx_runtime$33.jsx)("span", {
-							className: `e-gate-badge${r.fee === "free" ? "" : " e-gate-badge--paid"}`,
-							children: r.fee
-						})]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)(Text, {
-						className: "e-dim",
-						children: ["on ", r.host]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$33.jsxs)(Text, {
-						className: "e-faint",
-						children: [r.owner || "unknown owner", r.fingerprint ? ` · ${r.fingerprint}` : ""]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$33.jsx)(Text, {
-						className: "e-faint",
-						children: r.note
-					})
-				]
-			}, r.key))]
-		});
-	}
 	var import_jsx_runtime$33;
 	var init_Adverts = __esmMin((() => {
 		init_Text();
@@ -24078,31 +24043,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		const cur = (currency ?? "").toUpperCase();
 		return cur && cur !== "USD" ? `${amount} ${cur}` : amount;
 	}
-	function row(key, name, relay, host, owner, fingerprint, fee, extra) {
-		const where = relayHost(host || relay) || "another relay";
-		return {
-			key,
-			name,
-			host: where,
-			owner: owner ?? "",
-			fingerprint: fingerprint ?? "",
-			fee,
-			note: `${extra}Joining happens on ${where}, not here.`
-		};
-	}
-	function roomRow(r) {
-		const access = r.access_duration_days ? `${r.access_duration_days} days of access per payment. ` : "";
-		return row(`${r.relay}/${r.room_id}`, r.name, r.relay, r.host, r.owner_address, r.owner_fingerprint, feeLabel(r.entry_fee_cents, r.currency), access);
-	}
-	var init_advertFormat = __esmMin((() => {
-		init_relayFormat();
-	}));
+	var init_advertFormat = __esmMin((() => {}));
 	// src/views/RoomsView.tsx
 	function RoomsView({ initialRoomId, navigate }) {
 		const [data, loading, error] = useInterval(() => api.rooms(), 8e3);
 		const rooms = (0, import_react$19.useMemo)(() => data?.rooms ?? [], [data]);
-		const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.roomsElsewhere(), 3e4);
-		const elsewhereRows = (0, import_react$19.useMemo)(() => (elsewhere?.rooms ?? []).map(roomRow), [elsewhere]);
 		const [selected, setSelected] = (0, import_react$19.useState)(null);
 		const endRef = (0, import_react$19.useRef)(null);
 		const { messages, connected: wsConnected } = useRoomWs(RELAY$1, selected && !selected.listing_only ? selected.room_id : null, VIEWER_ID, (id) => api.roomMessages(id).then((r) => r.messages));
@@ -24124,7 +24069,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		(0, import_react$19.useEffect)(() => {
 			endRef.current?.scrollIntoView({ behavior: "smooth" });
 		}, [messages.length]);
-		const roomSidebar = /* @__PURE__ */ (0, import_jsx_runtime$32.jsxs)(import_jsx_runtime$32.Fragment, { children: [rooms.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(Text, {
+		const roomSidebar = /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(import_jsx_runtime$32.Fragment, { children: rooms.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(Text, {
 			className: "e-faint",
 			children: loading ? "Loading rooms…" : error ? "" : EMPTY_SEED_HINT
 		}) }) : rooms.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$32.jsxs)(FlatRailItem, {
@@ -24179,12 +24124,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					children: ["⊙ session …", r.linked_session_id.slice(-8)]
 				})
 			]
-		}, r.room_id)), /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(OnOtherRelays, {
-			what: "rooms",
-			rows: elsewhereRows,
-			loading: elsewhereLoading,
-			error: elsewhereError
-		})] });
+		}, r.room_id)) });
 		const roomId = selected && !selected.listing_only ? selected.room_id : "";
 		const [opened, setOpened] = (0, import_react$19.useState)({});
 		const sealedKey = messages.filter((m) => looksLikeEncryptedEnvelope(m.content)).map((m) => m.message_id).join(",");
@@ -24208,7 +24148,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const chatLines = markReplayedNonces(messages).map((m) => ({
 			id: m.message_id,
 			sender_id: m.sender_id,
-			content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : dmDisplayContent(m.content),
+			content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}` : postDisplay(dmDisplayContent(m.content)),
 			msg_type: m.msg_type,
 			created_at: m.created_at,
 			verified: m.deleted_at ? null : verifyMessageSignature("room", roomId, m, pubkeys[m.sender_id] ?? ""),
@@ -29074,7 +29014,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const chatLines = markReplayedNonces(messages).map((m) => ({
 			id: m.message_id,
 			sender_id: m.sender_id,
-			content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : dmDisplayContent(m.content),
+			content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}` : postDisplay(dmDisplayContent(m.content)),
 			created_at: m.created_at,
 			verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] ?? ""),
 			replayed: m.replayed,

@@ -14,7 +14,7 @@ import Text from "@kit/Text";
 import RowSpaceBetween from "@kit/RowSpaceBetween";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { OPENED_TAG, SEALED_TAG, dmDisplayContent, dmThreadPreview, looksLikeEncryptedEnvelope } from "../api";
+import { OPENED_TAG, SEALED_TAG, dmDisplayContent, dmThreadPreview, looksLikeEncryptedEnvelope, postDisplay } from "../api";
 import type { DMMessage, DMThread, InboxEvent } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { FlatRailItem } from "../ui/FlatRailItem";
@@ -209,8 +209,8 @@ export function ThreadPane({
     // P17-4: an encrypted DM shows a lock; the dashboard holds no key, by design.
     // P125: unless the local reader opened it, on this machine.
     content: opened[m.message_id] !== undefined
-      ? `${OPENED_TAG} ${opened[m.message_id]}`
-      : dmDisplayContent(m.content),
+      ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}`
+      : postDisplay(dmDisplayContent(m.content)),
     created_at: m.created_at,
     verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] ?? ""),
     replayed: m.replayed,

@@ -74,7 +74,7 @@ def _operators() -> tuple[dict[str, str], frozenset[str]]:
 
 
 def _like_counts(conn, post_ids: list[str], author_of: dict[str, str],
-                 since: str = "") -> tuple[dict[str, int], dict[str, dict]]:
+                 since: str = "", kind: str = "post") -> tuple[dict[str, int], dict[str, dict]]:
     """(likes, other reactions) per post. Likes count from other operators only: the author's own
     operator and the house count nothing. Other reaction values are shown with counts, never scored.
     `since` (an ISO time) counts only the likes given after it: the window of a `best` sort."""
@@ -83,7 +83,7 @@ def _like_counts(conn, post_ids: list[str], author_of: dict[str, str],
     ops, house = _operators()
     likes = {p: 0 for p in post_ids}
     others: dict[str, dict] = {p: {} for p in post_ids}
-    targets = {f"post:{p}": p for p in post_ids}
+    targets = {f"{kind}:{p}": p for p in post_ids}
     marks = ",".join("?" * len(targets))
     for r in conn.execute(f"SELECT agent_id, target, value, at FROM reactions WHERE active = 1 AND target IN ({marks})",
                           list(targets)):
@@ -205,11 +205,20 @@ def _object_problem(conn, caller: str, ref: dict[str, str], cache: dict) -> tupl
             return 404, "no agent by that id"
     elif k == "game":
         row = conn.execute("SELECT * FROM sessions WHERE session_id = ?", (i,)).fetchone()
-        if not row or rs._session_visibility(rs._session_row_to_dict(row)) != "public":
+        if not row or (rs._session_visibility(rs._session_row_to_dict(row)) != "public"
+                       and caller not in rs._session_row_to_dict(row)["participants"]):
             return 404, "no public game by that id"
     elif k == "message":
-        m = conn.execute("SELECT r.room_type, r.gate_type FROM room_messages m JOIN rooms r ON m.room_id = r.room_id "
-                         "WHERE m.message_id = ?", (i,)).fetchone()
+        m = conn.execute("SELECT r.room_type, r.gate_type, r.members_json FROM room_messages m JOIN rooms r "
+                         "ON m.room_id = r.room_id WHERE m.message_id = ?", (i,)).fetchone()
+        if m and (caller in json.loads(m["members_json"] or "[]")):
+            return None
+        if not m:   # table talk is a message too (`gchat_...`): a public game's, or a player's
+            g = conn.execute("SELECT s.* FROM game_chat c JOIN sessions s ON s.session_id = c.session_id "
+                             "WHERE c.message_id = ?", (i,)).fetchone()
+            if g and (rs._session_visibility(rs._session_row_to_dict(g)) == "public"
+                      or caller in rs._session_row_to_dict(g)["participants"]):
+                return None
         if not m or m["room_type"] != "public" or m["gate_type"] != "open":
             return 404, "no message by that id in a public, open room"
     return None
@@ -481,8 +490,11 @@ async def read_feed(request: Request, kind: str = "", tag: str = "", following_o
             if r["topic"]:
                 it["in"] = {"kind": "topic", "id": r["topic"], "name": names.get(r["topic"], r["topic"])}
             items.append(it)
-    if sort == "best":
-        items.sort(key=lambda i: (i["likes"], i["at"]), reverse=True)
+        if sort == "best":
+            if scope == "public" and not (kind or tag or author or topic or following_only or elsewhere):
+                from emporia.routes import room_threads
+                items += room_threads.best_public_room_messages(since=cutoff or None, limit=limit, conn=conn)
+            items.sort(key=lambda i: (i["likes"], i["at"]), reverse=True)
     items = items[:limit]
     out = {"posts": items, "count": len(items), "sort": sort, "scope": scope, "untrusted": UNTRUSTED}
     if sort == "best":
@@ -495,6 +507,13 @@ def _thread_rows(conn, caller: str | None, ref: str, limit: int) -> list:
                         "ORDER BY at, rowid LIMIT ?", (ref, ref, limit * 3)).fetchall()
     cache: dict = {}
     return [r for r in rows if _readable(conn, caller, r["topic"], cache)][:limit]
+
+
+_THREAD_CAP = 500
+
+
+def _item_id(item: dict[str, Any]) -> str:
+    return str(item.get("post_id") or item.get("message_id") or "")
 
 
 def _decorate(conn, rows: list, host: str) -> list[dict[str, Any]]:
@@ -521,7 +540,7 @@ async def get_post(post_id: str, request: Request):
 
 
 @router.get("/thread")
-async def read_thread(request: Request, ref: str, limit: int = 100):
+async def read_thread(request: Request, ref: str, limit: int = 30, since: str = "", mode: str = ""):
     """Every reply to any object, oldest first: a post, a game, a lab patch, a challenge, an agent, a
     room. `ref` is `kind:id` or `kind:id@relay`. Each post carries `reply_to` (its parent) and `root`
     (the thread's first object), so the tree is rebuilt from one query. An Agora comment is a post
@@ -532,13 +551,36 @@ async def read_thread(request: Request, ref: str, limit: int = 100):
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     limit = rs._clamp_limit(limit)
+    if mode not in ("", "skim"):
+        raise HTTPException(400, "mode is empty (the replies, oldest first) or skim")
+    after_at, _, after_id = since.partition("|")
     with rs.DB_LOCK, rs.get_db() as conn:
         parsed = refs.parse(canon)
         if bad := _object_problem(conn, caller or "", parsed, {}):    # a private room or topic needs membership
             raise HTTPException(bad[0], bad[1])
-        rows = _thread_rows(conn, caller, canon, limit)
+        rows = _thread_rows(conn, caller, canon, _THREAD_CAP)
         items = _decorate(conn, rows, rs._own_host())
-    out = {"ref": canon, "posts": items, "count": len(items), "untrusted": UNTRUSTED}
+        # Rooms v2: the messages of a room, replies to a message, and a game's table talk are posts too.
+        from emporia.routes import room_threads
+        items = sorted(items + room_threads.thread_items(conn, caller or "", parsed, _THREAD_CAP, after=after_at),
+                       key=lambda i: (i["at"], _item_id(i)))
+        ops, _house = _operators()
+    if since:
+        items = [i for i in items if (i["at"], _item_id(i)) > (after_at, after_id)]
+    out: dict[str, Any] = {"ref": canon, "untrusted": UNTRUSTED}
+    if mode == "skim":
+        # Deterministic, no model: the stats, the items other operators liked most (`likes` already counts
+        # other operators only: the author's own operator and the house lift nothing), and the latest.
+        # A sealed place's items carry no text here; a member's client opens what it can.
+        liked = sorted((i for i in items if i["likes"] > 0), key=lambda i: (i["likes"], i["at"]), reverse=True)
+        out.update(mode="skim", top=liked[:limit], latest=items[-limit:], stats={
+            "items": len(items), "operators": len({ops.get(i["author_id"], i["author_id"]) for i in items}),
+            "first": items[0]["at"] if items else None, "last": items[-1]["at"] if items else None})
+        out["count"] = len(out["top"]) + len(out["latest"])
+    else:
+        items = items[:limit]
+        out.update(posts=items, count=len(items),
+                   next_since=f"{items[-1]['at']}|{_item_id(items[-1])}" if items else since)
     parsed = refs.parse(canon)
     if parsed.get("relay") and not same_host(parsed["relay"], rs._own_host()):
         # A thread on an object of another relay: what this relay holds is returned, with the remote ref.

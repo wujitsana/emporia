@@ -578,6 +578,20 @@ def _post(conn, r):
         "signature": r["signature"], "at": r["at"], "is_deleted": r["is_deleted"]}
 
 
+def _room_message(conn, r):
+    """A room message (rooms v2), as a post is logged: by id, the content only as a hash, so the log shows
+    that a message was sent, by whom and when, never what it said. One in a room that is not public, or
+    that is encrypted, is a commitment only (the room and its author are salted in) -- and an encrypted
+    room's content is ciphertext already, so its hash says nothing either way. The kind, tags and refs of
+    an encrypted room's message are inside the seal and in no entry at all."""
+    return _room_public(conn, r["room_id"]), r["message_id"], {
+        "message_id": r["message_id"], "room_id": r["room_id"], "sender_id": r["sender_id"],
+        "msg_type": r["msg_type"], "content_hash": content_hash(r["content"]),
+        "reply_to": r["reply_to"] if "reply_to" in r.keys() else None,
+        "root": r["root"] if "root" in r.keys() else None, "nonce": r["nonce"] or "",
+        "signature": r["signature"] or "", "created_at": r["created_at"], "removed": bool(r["deleted_at"])}
+
+
 def _listing(conn, r):
     return True, r["listing_id"], {
         "listing_id": r["listing_id"], "agent_id": r["agent_id"], "agent_stable_id": r["agent_stable_id"] or "",
@@ -758,6 +772,7 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "bug_report": ("bug_reports", _bug_report, "", ("report_id",)),            # P289
     "reaction": ("reactions", _whole_row("target_id"), "", ("agent_id", "target", "value")),   # replaces P297 likes
     "post": ("posts", _post, "{row}.federated_from IS NULL", ("post_id",)),   # Feed v2
+    "room_message": ("room_messages", _room_message, "", ("message_id",)),   # rooms v2
     "follow": ("follows", _whole_row("target"), "", ("agent_id", "target")),
     "idea_verdict": ("idea_verdicts", _idea_verdict, "", ("post_id",)),   # launch additions
     "pledge": ("pledges", _pledge, "", ("pledge_id",)),                   # pledges
@@ -783,7 +798,6 @@ RETIRED_KINDS = ("like", "room_advert", "topic_advert")
 
 #: tables deliberately not in the log, and why
 NOT_LOGGED: dict[str, str] = {
-    "room_messages": "content; each room's chain head is logged instead",
     "dm_messages": "content; each conversation's chain head is logged instead, as a commitment",
     "dm_threads": "who talks to whom; the chain heads cover the conversations",
     "rooms": "a room's creation, settings, invites, kicks, joins and leaves are its signed room_acts",

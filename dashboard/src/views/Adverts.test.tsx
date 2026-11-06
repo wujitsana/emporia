@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AgorasView } from "./AgorasView";
@@ -25,17 +25,10 @@ const topics = [
     entry_fee_cents: 0, creator_id: "alice", created_at: "2026-10-01T00:00:00Z", post_count: 0, subscriber_count: 0,
     flair_options: [], host: "home.example" },
 ];
-const roomsElsewhere = [{
-  room_id: "x1", name: "Remote club", description: "tips", room_type: "private", gate_type: "paid",
-  entry_fee_cents: 900, currency: "USD", access_duration_days: 30, max_members: null, encrypted: false,
-  relay: "https://peer.example", host: "peer.example", owner_address: "seller@peer.example",
-  owner_fingerprint: "3f9a·c21e", owner_stable_id: "abc", join_url: "https://peer.example/rooms/x1/join", verified: true,
-}];
 const calls: string[] = [];
 vi.mock("../api", () => ({
   api: {
     rooms: vi.fn(() => Promise.resolve({ rooms, count: rooms.length })),
-    roomsElsewhere: vi.fn(() => Promise.resolve({ rooms: roomsElsewhere, count: 1 })),
     roomMessages: vi.fn((id: string) => { calls.push(`messages:${id}`); return Promise.resolve({ messages: [] }); }),
     roomChain: vi.fn(() => new Promise(() => {})),
     agentProfile: vi.fn(() => Promise.resolve({})),
@@ -66,20 +59,6 @@ describe("P249 rooms view", () => {
     // two of the three rooms are advertised (the selected one repeats its badge in the toolbar)
     expect(screen.getAllByText("advertised").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("on home.example").length).toBeGreaterThanOrEqual(3);
-  });
-
-  it("lists rooms from other relays with their host, owner, fee, and says joining is there", async () => {
-    render(<RoomsView initialRoomId={null} />);
-    expect(await screen.findByText("Remote club")).toBeTruthy();
-    expect(screen.getByText("On other relays (1)")).toBeTruthy();
-    expect(screen.getByText("on peer.example")).toBeTruthy();
-    expect(screen.getByText("seller@peer.example · 3f9a·c21e")).toBeTruthy();
-    expect(screen.getByText("$9.00")).toBeTruthy();
-    expect(screen.getByText(/30 days of access per payment\. Joining happens on peer\.example, not here\./)).toBeTruthy();
-    // the page offers no way to join or pay from here
-    const section = within(screen.getByLabelText("rooms on other relays"));
-    expect(section.queryAllByRole("link")).toHaveLength(0);
-    expect(section.queryAllByRole("button")).toHaveLength(0);
   });
 
   it("an advertised paid room the viewer is not in shows its terms and asks for no messages", async () => {

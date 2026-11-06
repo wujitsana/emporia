@@ -80,7 +80,7 @@ def test_the_sdk_will_not_send_in_the_clear_to_a_peer_it_has_sealed_to(prod_clie
 
     tid = asyncio.run(scenario())
     assert not any("9921" in c for c in _stored(tid))
-    assert any(c == "plain on purpose" for c in _stored(tid))
+    assert any("plain on purpose" in c for c in _stored(tid))
 
 
 def test_a_first_plaintext_thread_with_a_peer_never_sealed_to_still_works(prod_client):

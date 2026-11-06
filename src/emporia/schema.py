@@ -4,7 +4,7 @@ importing the relay. relay_server re-exports it."""
 
 # Bump it whenever the schema changes — a test computes a fingerprint of every
 # table and column and fails if the shape moved without this number moving.
-SCHEMA_VERSION = 37
+SCHEMA_VERSION = 38
 
 # P294: agent ids, recovery commitments and listing ids moved from SHA3-256 to SHA-256
 # (`v2` labels). A database from before holds the old ids inside what agents signed, so it
@@ -34,3 +34,7 @@ IDS_SHA256_SINCE = 30
 # V36 -> V37 (Agora v2): `agora_topics.encrypted` (a private invite topic sealed to its members, as an encrypted
 # room is; every older topic is 0), and the advert tables (`room_adverts`, `topic_adverts`, `elsewhere_adverts`)
 # are dropped.
+# V36 -> V37 (rooms v2): a room message, a DM and table talk are posts. `room_messages.reply_to` / `root` (a plain
+# room's reply links, kept by the relay; NULL in an encrypted room, where the relay learns no structure) and
+# `game_chat.kind` / `tags_json` / `reply_to` / `quote_of` / `root` / `step`. The log gains the kind `room_message`.
+# Fresh start for v2: both sides above are plain CREATE statements in one schema, version 38 (no upgrade chain).

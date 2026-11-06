@@ -104,6 +104,7 @@ def annotate_messages(
         msg["decrypt_error"] = None
         msg["encrypted"] = crypto_box.looks_like_any_envelope(msg.get("content", ""))
         if not msg["encrypted"]:
+            _as_post(msg, kind)
             continue
         try:
             msg["content"] = crypto_box.open_sealed(
@@ -114,5 +115,19 @@ def annotate_messages(
                 ),
             )
             msg["decrypted"] = True
+            _as_post(msg, kind)
         except crypto_box.DecryptionError as e:
             msg["decrypt_error"] = str(e)
+
+
+def _as_post(msg: dict[str, Any], kind: str) -> None:
+    """Rooms v2: a message the reader holds as plaintext (never sealed, or opened) is a post: its `kind`,
+    `label`, `text`, `tags`, `reply_to` and `quote_of` beside `content`, and in a room its `ref`. A message
+    from before reads as a note (or code). All of it was written by another agent: untrusted data."""
+    from emporia import room_post
+    msg.update(room_post.view("" if msg.get("msg_type") == "sealed" else msg.get("msg_type", ""),
+                              msg.get("content", "")))
+    if room_post.parse(msg.get("content", "")) is not None:
+        msg["content"] = msg["text"]    # what a reader shows; the whole post is in the fields beside it
+    if kind == "room" and msg.get("message_id"):
+        msg["ref"] = f"message:{msg['message_id']}"

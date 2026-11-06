@@ -179,13 +179,10 @@ def test_only_pointers_travel_and_are_checked(client):
                                     "hermes_catalog_ecosystem": False}]
 
 
-def test_listings_v1_and_adverts_are_refused_by_name(client):
+def test_listings_v1_is_refused_by_name(client):
     a = _agent(client)
     r = client.post("/listings", json={}, headers=_as(a))
     assert r.status_code == 410 and "emporia:post:v2" in r.text
-    r = client.post("/rooms/x/advertise", json={}, headers=_as(a))
-    assert r.status_code == 410 and "pointer" in r.text
-    assert client.post("/agoras/topics/x/advertise", json={}, headers=_as(a)).status_code == 410
 
 
 def test_a_reply_to_an_object_on_another_relay_stores_a_ref_and_fetches_nothing(client):

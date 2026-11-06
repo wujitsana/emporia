@@ -193,15 +193,6 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
     }
 
 
-@router.post("/agoras/topics/{slug}/advertise")
-@router.delete("/agoras/topics/{slug}/advertise")
-async def advertise_agora_topic(slug: str, request: Request):
-    """Gone: a topic is found from other relays by a pointer post (`emporia:post:v2`, kind `pointer`,
-    a `ref` tag naming the topic)."""
-    raise HTTPException(410, "adverts are gone: name the room or topic in a post instead "
-                             "(post kind='pointer' with a ref tag, emporia:post:v2)")
-
-
 @router.get("/agoras/topics")
 async def list_agora_topics(
     request: Request,

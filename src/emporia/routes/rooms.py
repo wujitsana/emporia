@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
-from emporia import adverts, entitlements
+from emporia import entitlements, room_post
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
 from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
@@ -112,28 +112,6 @@ def ask_unsigned_members_to_sign() -> int:
     return told
 
 
-class AdvertRequest(BaseModel):
-    signature: str
-
-
-def advertiser_identity(caller: str) -> tuple[str, str]:
-    """P247: (public key, stable id) an advert by this agent is signed with —
-    its key now, and the identity that key has carried since its first (P245)."""
-    with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
-                           (caller,)).fetchone()
-    return ((row["public_key_hex"] or "").lower(), row["stable_id"]) if row else ("", "")
-
-
-@router.post("/rooms/{room_id}/advertise")
-@router.delete("/rooms/{room_id}/advertise")
-async def advertise_room(room_id: str, request: Request):
-    """Gone: a room is found from other relays by a pointer post (`emporia:post:v2`, kind `pointer`,
-    a `ref` tag naming the room)."""
-    raise HTTPException(410, "adverts are gone: name the room or topic in a post instead "
-                             "(post kind='pointer' with a ref tag, emporia:post:v2)")
-
-
 @router.post("/rooms")
 async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
     caller = rs._dashboard_agent_id(request)
@@ -214,27 +192,17 @@ async def create_room_endpoint(req: rs.CreateRoomRequest, request: Request):
         return room.to_dict(viewer_id=caller, db_path=rs.DATABASE_PATH)
     except Exception as e:
         raise HTTPException(422, str(e))
-def _card(room: rooms_db.Room, *, advertised: bool) -> dict[str, Any]:
-    """P249: what anyone may see of a paid room its creator advertised — the
-    terms of joining and the head count, never who is in it, what was said, or
-    which game session it is tied to."""
+def _card(room: rooms_db.Room) -> dict[str, Any]:
+    """What an invitee may see of a room before joining: the terms of joining and the head count, never
+    who is in it, what was said, or which game session it is tied to."""
     return {
         "room_id": room.room_id, "name": room.name, "description": room.description,
         "room_type": room.room_type, "gate_type": room.gate_type, "entry_fee_cents": room.entry_fee_cents,
         "currency": room.currency, "access_duration_days": room.access_duration_days,
         "max_members": room.max_members, "member_count": len(room.members), "encrypted": room.encrypted,
         "creator_id": room.creator_id, "created_at": room.created_at,
-        "listing_only": True, "advertised": advertised, "host": rs._own_host(),
+        "listing_only": True, "host": rs._own_host(),
     }
-
-
-def _shown(room: rooms_db.Room, viewer_id: str | None, advertised: bool) -> dict[str, Any]:
-    """A room as `viewer_id` may see it: in full for a public room or one they are
-    in, as a card for an advertised paid room they are not."""
-    if room.room_type == "public" or rooms_db.is_member(room.room_id, viewer_id or "", db_path=rs.DATABASE_PATH):
-        return {**room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH),
-                "advertised": advertised, "host": rs._own_host()}
-    return _card(room, advertised=advertised)
 
 
 @router.get("/rooms")
@@ -243,33 +211,17 @@ async def list_rooms_endpoint(
     room_type: str | None = None,
     limit: int = 50,
 ):
-    """Public rooms, the private ones the caller is in, and — P249 — any paid room
-    its creator advertised, as a card (terms and head count only). Each says
-    which relay hosts it and whether it is advertised to other relays."""
+    """Public rooms and the private ones the caller is in; each says which relay hosts it. A room is
+    found from other relays by a pointer post naming it, not by an advert."""
     viewer_id = rs._dashboard_agent_id(request)
     limit = rs._clamp_limit(limit)
     room_list = rooms_db.list_rooms(viewer_id=viewer_id, room_type=room_type, limit=limit,
                                     db_path=rs.DATABASE_PATH)
-    adverts_here = {room.room_id: room for room, _ in adverts.own_room_adverts()}
-    seen = {r.room_id for r in room_list}
-    room_list += [r for rid, r in adverts_here.items()
-                  if rid not in seen and (not room_type or r.room_type == room_type)]
-    room_list = sorted(room_list, key=lambda r: r.created_at, reverse=True)[:limit]
     return {
-        "rooms": [_shown(r, viewer_id, r.room_id in adverts_here) for r in room_list],
+        "rooms": [{**r.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), "host": rs._own_host()}
+                  for r in room_list],
         "count": len(room_list),
     }
-
-
-@router.get("/rooms/elsewhere")
-async def rooms_elsewhere(request: Request):
-    """P249: rooms their creators advertised on relays this one links to — each
-    checked against the creator's signature when pulled and again now. Joining
-    and paying happen on the relay named in `relay`, not here."""
-    if not rs._dashboard_agent_id(request):
-        raise HTTPException(401, "Authentication required")
-    found = adverts.elsewhere("rooms")
-    return {"rooms": found, "count": len(found)}
 
 
 @router.get("/rooms/{room_id}")
@@ -278,19 +230,20 @@ async def get_room_endpoint(room_id: str, request: Request):
     room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
-    advertised = room_id in {r.room_id for r, _ in adverts.own_room_adverts({room_id})}
     if room.room_type == "private" and not rooms_db.is_member(room_id, viewer_id or "", db_path=rs.DATABASE_PATH):
-        # P275: an invitee too — who it would pay is checked against the creator's signed room.
-        if not advertised and not (viewer_id and rooms_db.has_invite(room_id, viewer_id, db_path=rs.DATABASE_PATH)):
+        # P275: an invitee may read the card and the creator's signed settings before joining: who it
+        # would pay is checked against the creator's signed room.
+        if not (viewer_id and rooms_db.has_invite(room_id, viewer_id, db_path=rs.DATABASE_PATH)):
             raise HTTPException(403, "Private room — not a member")
-        # An advertised paid room: its terms and the creator's signed settings, to check before paying.
-        # P277: a room signed before then names its game in its signed settings — not shown.
-        return {**_card(room, advertised=advertised),
+        # P277: a room signed before then names its game in its signed settings: not shown.
+        return {**_card(room),
                 "signed_acts": [a for a in _acts(room_id) if a["act"] == "create" and not (
                     room.linked_session_id and a["payload"].get("type") == ROOM_TYPE_V1)]}
     # P243: the creator's signed acts, for a member to check the room against.
     return {**room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), "signed_acts": _acts(room_id),
-            "advertised": advertised, "host": rs._own_host()}
+            "host": rs._own_host()}
+
+
 @router.post("/rooms/{room_id}/join")
 async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
     identity_verified = rs._require_caller_unless_mpp_payment(req.agent_id, request)
@@ -637,8 +590,8 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
         signed_room_message_payload,
     )
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
-    rs._require_valid_msg_type(effective_msg_type)
     rs._require_content_within_limit(req.content)
+    rs._require_valid_msg_type(effective_msg_type, sealed=room.encrypted)
 
     # Encrypted rooms: relay stores opaque ciphertext — never scan it.
     # Ciphertext is binary/base64 and WILL false-positive on injection patterns.
@@ -738,9 +691,20 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed_envelope, req.signature):
         raise HTTPException(403, "Invalid message signature")
 
+    reply_to = root = parent_id = None
     if not room.encrypted:
+        # Rooms v2: the message is a post body (kind, text, tags, refs); the relay checks it as it checks a
+        # post. An encrypted room's body is inside the ciphertext, so none of this is seen there.
+        body = room_post.parse(req.content)
+        if body is None or room_post.canonical(body) != req.content:
+            raise HTTPException(400, "a room message's content is a post body, as canonical JSON "
+                                     "(room_post.canonical): kind, label, text, tags, reply_to, quote_of")
+        if why := room_post.problem(body, effective_msg_type):
+            raise HTTPException(400, why)
+        reply_to, root, parent_id = _reply_links(room_id, body)
         try:
-            await rs._assert_payload_safe_counted({"content": req.content})
+            await rs._assert_payload_safe_counted(
+                {"text": body["text"], "label": body["label"], "tags": body["tags"]})
         except PermissionError as e:
             raise HTTPException(403, str(e))
 
@@ -750,10 +714,12 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
             sender_id=caller,
             content=req.content,
             msg_type=effective_msg_type,
-            parent_message_id=req.parent_message_id,
+            parent_message_id=parent_id,
             signature=req.signature,
             nonce=req.nonce,
             db_path=rs.DATABASE_PATH,
+            reply_to=reply_to,
+            root=root,
         )
     except sqlite3.IntegrityError as e:
         # P19-5 (H4): idx_room_messages_nonce's UNIQUE(room_id, nonce) is the
@@ -774,8 +740,40 @@ async def send_room_message(room_id: str, req: rs.SendRoomMessageRequest, reques
     for member in members:
         await rs.broadcast_to_agent(member, event)
 
-    result = msg.to_dict()
+    result = _shown_message(msg.to_dict(), room.encrypted)
     return result
+
+
+def _reply_links(room_id: str, body: dict[str, Any]) -> tuple[str | None, str, str | None]:
+    """`(reply_to, root, parent message id)` of a plain room's message. A reply to a message must name one
+    in this same room (a thread stays in its room); its root is that message's root. A message that
+    replies to nothing starts a thread, and is its own root. A reply to any other object (a post, a game)
+    has that object as its root. The ref is checked for form already (`room_post.problem`)."""
+    from emporia import refs
+    ref = body["reply_to"]
+    if not ref:
+        return None, "self", None
+    parsed = refs.parse(ref)
+    if parsed["kind"] != "message" or parsed.get("relay"):
+        return ref, ref, None
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT root FROM room_messages WHERE message_id = ? AND room_id = ?",
+                           (parsed["id"], room_id)).fetchone()
+    if not row:
+        raise HTTPException(404, "reply_to: no such message in this room")
+    return ref, row["root"] or ref, parsed["id"]
+
+
+def _shown_message(m: dict[str, Any], encrypted: bool) -> dict[str, Any]:
+    """A stored message as served: with the post fields of a plain room's message beside `content`. An
+    encrypted room's message is ciphertext, and shows none (`sealed`)."""
+    if encrypted or m.get("msg_type") == "sealed" or m.get("deleted_at"):
+        m["sealed"] = bool(encrypted or m.get("msg_type") == "sealed")
+        m["ref"] = f"message:{m['message_id']}"
+        return m
+    return {**m, **room_post.view(m.get("msg_type", ""), m.get("content", "")), "ref": f"message:{m['message_id']}"}
+
+
 @router.get("/rooms/{room_id}/encryption-keys")
 async def get_room_encryption_keys(room_id: str, request: Request):
     """Every member's encryption key in one round trip — what a client needs to
@@ -806,6 +804,7 @@ async def get_room_messages(
     limit: int = 50,
     before: str | None = None,
     before_seq: int | None = None,
+    after_seq: int | None = None,
 ):
     viewer_id = rs._dashboard_agent_id(request)
     room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
@@ -816,9 +815,9 @@ async def get_room_messages(
     # P31-3: `before_seq` completes the pagination cursor — see get_messages().
     msgs = rooms_db.get_messages(
         room_id, limit=rs._clamp_limit(limit), before=before,
-        before_seq=before_seq, db_path=rs.DATABASE_PATH,
+        before_seq=before_seq, after_seq=after_seq, db_path=rs.DATABASE_PATH,
     )
-    out = [m.to_dict() for m in msgs]
+    out = [_shown_message(m.to_dict(), room.encrypted) for m in msgs]
     gone = [m["message_id"] for m in out if m.get("deleted_at")]
     if gone:                    # P192: who removed each, signed — the gap's explanation
         from emporia import deletion
@@ -827,7 +826,8 @@ async def get_room_messages(
         for m in out:
             if m["message_id"] in removals:
                 m["removed"] = removals[m["message_id"]]
-    return {"messages": out, "count": len(msgs)}
+    return {"messages": out, "count": len(msgs), "untrusted": room_post.UNTRUSTED,
+            "next_since": max((m["seq"] for m in out if m.get("seq") is not None), default=after_seq)}
 @router.get("/rooms/{room_id}/chain")
 async def get_room_chain(room_id: str, request: Request):
     """Chain-integrity verification for a room — the fix direction docs/security-log.md

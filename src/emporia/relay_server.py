@@ -985,7 +985,13 @@ def init_db() -> None:
                 session_id TEXT NOT NULL,
                 agent_id TEXT NOT NULL,
                 content TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                kind TEXT,
+                tags_json TEXT,
+                reply_to TEXT,
+                quote_of TEXT,
+                root TEXT,
+                step INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS bounty_entries (
@@ -3854,6 +3860,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
     ("dm_messages", "deleted_at"), ("game_chat", "deleted_at"),
+    ("room_messages", "reply_to"), ("room_messages", "root"), ("game_chat", "kind"), ("game_chat", "tags_json"),
+    ("game_chat", "reply_to"), ("game_chat", "quote_of"), ("game_chat", "root"), ("game_chat", "step"),
     ("listings", "metadata_json"), ("listings", "created_at"),
     # messages
     ("messages", "message_id"), ("messages", "session_id"), ("messages", "type"),
@@ -4736,31 +4744,15 @@ SAFETY_STATS: dict[str, int] = {
 }
 
 
-def _require_valid_msg_type(msg_type: str) -> None:
-    """P15: enforce the msg_type domain both message routes already declare but never
-    checked. rooms.py has declared `MsgType` as a closed Literal since rooms shipped,
-    and rooms.post_message() is annotated with it — but annotations aren't runtime
-    checks and both request models type the field as bare `str`, so any string reached
-    storage. Call with the *resolved* value (after `or DEFAULT_MSG_TYPE`), so an omitted
-    field still resolves normally rather than tripping this.
-
-    "system" is rejected here specifically: it's a server-owned label, not the
-    client's to set. `counter_offer` / `accept` / `reject` are refused by name: the
-    relay never computes terms (architecture-v2 C1).
-    """
-    from emporia.wire import CLIENT_MSG_TYPES, REMOVED_MSG_TYPES
-    if msg_type in REMOVED_MSG_TYPES:
-        raise HTTPException(
-            400,
-            f"msg_type '{msg_type}' is gone: negotiation by signed offers is coming; "
-            "the relay never computes terms. Use chat and keep your limits in your playbook.",
-        )
-    if msg_type not in CLIENT_MSG_TYPES:
-        raise HTTPException(
-            400,
-            f"Invalid msg_type '{msg_type}' — must be one of "
-            f"{', '.join(sorted(CLIENT_MSG_TYPES))}",
-        )
+def _require_valid_msg_type(msg_type: str, sealed: bool = False) -> None:
+    """The `msg_type` slot of a room message or DM (rooms v2): a post kind, or a room-only kind
+    (`code`, `lab_task`), or `sealed` where the place is end-to-end encrypted -- and then nothing else.
+    Call with the *resolved* value (after `or DEFAULT_MSG_TYPE`). "system" is server-owned, never a
+    client's. The old types (`chat`, `collab`, the negotiation ones) are refused by name, saying what
+    replaced them (`room_post.type_problem`)."""
+    from emporia import room_post
+    if why := room_post.type_problem(msg_type, sealed=sealed):
+        raise HTTPException(400, why)
 
 
 async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
@@ -6043,8 +6035,7 @@ class InviteToRoomRequest(BaseModel):
 
 class SendRoomMessageRequest(BaseModel):
     content: str
-    msg_type: str = ""                # "chat" | "collab" | "code"
-    parent_message_id: str | None = None
+    msg_type: str = ""                # a post kind | code | lab_task, or "sealed" in an encrypted room
     signature: str | None = None
     # P19-5: sender-chosen, inside the signature and (on an encrypted room) the
     # AAD — the room analogue of DMSendRequest.nonce. Empty is rejected rather

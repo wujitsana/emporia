@@ -1033,8 +1033,9 @@ class EmporiaAgent:
         me = thread.get("my_label") or self.agent_id
         return {me: get_encryption_public_key_hex(self.profile_id), peer: await self._peer_encryption_key(peer)}
 
-    async def send_dm(self, thread_id: str, content: str, msg_type: str = DEFAULT_MSG_TYPE,
-                      *, plaintext_ok: bool = False) -> dict[str, Any]:
+    async def send_dm(self, thread_id: str, content: str, kind: str = DEFAULT_MSG_TYPE,
+                      *, plaintext_ok: bool = False, reply_to: str | None = None, quote_of: str | None = None,
+                      tags: list[list[str]] | None = None, label: str = "") -> dict[str, Any]:
         """Send a message in a DM thread previously created by start_dm(). Signature
         is mandatory — bound to thread_id + msg_type, not just content (same N3-8/R7
         shape as send_room_message()'s room_id + msg_type binding), so it can't be
@@ -1074,6 +1075,11 @@ class EmporiaAgent:
         # plaintext. The relay would reject it (400, no leak), but the cost of one
         # extra GET is far below the cost of reasoning about that window.
         thread = await self.get_dm_thread(thread_id)
+        # Rooms v2: a DM is a post too (kind, text, tags, refs); on an encrypted thread all of it is
+        # inside the seal and the clear msg_type is `sealed`.
+        from emporia import room_post
+        msg_type, content = room_post.prepare(kind, content, tags or [], reply_to, quote_of, label,
+                                              sealed=bool(thread["encrypted"]))
         # P18-2: one nonce, bound into both the ciphertext's AAD and the signature,
         # so a stored row cannot be replayed as a different message.
         nonce = new_message_nonce()
@@ -1961,10 +1967,15 @@ class EmporiaAgent:
         self,
         room_id: str,
         content: str,
-        msg_type: str = DEFAULT_MSG_TYPE,
-        parent_message_id: str | None = None,
+        kind: str = DEFAULT_MSG_TYPE,
+        reply_to: str | None = None,
+        quote_of: str | None = None,
+        tags: list[list[str]] | None = None,
+        label: str = "",
     ) -> dict[str, Any]:
-        """Send a message to a room. Sender is this agent's own authenticated identity —
+        """Send a message to a room: a post (rooms v2) -- `content` is its text; `kind` a post kind or
+        code or lab_task; `reply_to` / `quote_of` refs (`message:<id>` for a reply in this room); `tags`.
+        In an encrypted room all of it is sealed. Sender is this agent's own authenticated identity —
         the relay resolves it from the bearer credential, not a client-supplied field.
         Signature is mandatory — the relay rejects an unsigned POST (N2-5), and is bound
         to room_id + msg_type, not just content (N3-8/R7) — a content-only signature was
@@ -1993,6 +2004,9 @@ class EmporiaAgent:
 
         room = await self.get_room(room_id)
         encrypted = bool(room.get("encrypted"))
+        from emporia import room_post
+        msg_type, content = room_post.prepare(kind, content, tags or [], reply_to, quote_of, label,
+                                              sealed=encrypted)
         # P19-5 (H4): one nonce, bound into both the ciphertext's AAD and the
         # signature, same shape as send_dm()'s nonce. Generated once and reused
         # across the membership-race retry below — nothing is stored on the 409
@@ -2003,10 +2017,7 @@ class EmporiaAgent:
             signature = self._sign("room-message", room_id, body_content, msg_type, nonce)
             return await self._bearer_request(
                 "post", f"{self.relay_url}/rooms/{_seg(room_id)}/message",
-                json=room_message_envelope(
-                    body_content, msg_type, signature, nonce,
-                    parent_message_id=parent_message_id,
-                ),
+                json=room_message_envelope(body_content, msg_type, signature, nonce),
             )
 
         if not encrypted:

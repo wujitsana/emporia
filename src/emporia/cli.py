@@ -1698,13 +1698,17 @@ def _lab_sign(profile: Path, kind: str, *args: Any) -> tuple[str, str]:
     return d["at"], d["signature"]
 
 
-def _lab_key_of(profile: Path, agent_id: str) -> tuple[str, str]:
-    """(public key, stable id) of an agent, from its relay."""
+def _lab_key_of(profile: Path, agent_id: str, at: Any = "") -> tuple[str, str]:
+    """(the public key the agent signed with at `at`, stable id), from its relay: a record is checked
+    against the key its agent had when it signed it, from the agent's signed key log, so a key rotated
+    since does not break an older patch, check or lab (`identity.key_for_record`)."""
+    from emporia.identity import key_for_record
     from emporia.wire import path_id
     status, d = _operator_call(profile, "GET", f"/agents/{path_id(agent_id)}")
     if status != 200 or not isinstance(d, dict):
         return "", ""
-    return str(d.get("public_key_hex") or ""), str(d.get("stable_id") or "")
+    stable = str(d.get("stable_id") or "")
+    return key_for_record(str(d.get("public_key_hex") or ""), stable, d.get("key_log"), at), stable
 
 
 def _lab_patch_verdict(profile: Path, patch: dict) -> str:
@@ -1713,7 +1717,7 @@ def _lab_patch_verdict(profile: Path, patch: dict) -> str:
     from emporia.identity import verify
     if labs.sha256(str(patch.get("diff") or "")) != patch.get("diff_sha256"):
         return "the diff is not the one its author signed (hash differs)"
-    key, _ = _lab_key_of(profile, str(patch.get("author_id")))
+    key, _ = _lab_key_of(profile, str(patch.get("author_id")), patch.get("at"))
     signed = wire.signed_lab_patch_payload(patch["lab"], patch["thread"], patch["base_commit"], patch["diff_sha256"],
                                            patch["files"], labs.sha256(str(patch.get("summary") or "")),
                                            patch["nonce"], patch["author_id"], patch["at"])
@@ -1726,7 +1730,7 @@ def _lab_record_verdict(profile: Path, lab: dict) -> tuple[str, str]:
     """('' or why not, the creator's stable id): the lab is its creator's signed word."""
     from emporia import wire
     from emporia.identity import verify
-    key, stable = _lab_key_of(profile, str(lab.get("creator_id")))
+    key, stable = _lab_key_of(profile, str(lab.get("creator_id")), lab.get("at"))
     signed = wire.signed_lab_payload(lab["slug"], lab["name"], lab["room_id"], lab["repo_url"], lab["branch"],
                                      lab["commit"], lab["checkers"], lab["licence"], lab["creator_id"], lab["at"])
     if not key or not verify(signed, lab.get("signature") or "", key):
@@ -1955,7 +1959,7 @@ def _lab_land(profile: Path, rest: list[str], args: argparse.Namespace, call) ->
     for c in reversed(patch.get("checks") or []):
         if c["checker_id"] not in lab.get("checkers") or []:
             continue
-        key, _ = _lab_key_of(profile, c["checker_id"])
+        key, _ = _lab_key_of(profile, c["checker_id"], c.get("at"))
         signed = wire.signed_lab_check_payload(pid, patch["diff_sha256"], patch["base_commit"], c["result"],
                                                c["checker_id"], c["at"])
         if key and verify(signed, c.get("signature") or "", key):
