@@ -92,6 +92,11 @@ export function visibleNav(opts: { isSpectator: boolean; isOperator?: boolean })
   });
 }
 
+/** Whether this viewer may see a section: the same rule the nav and the keys use. */
+export function canSee(view: View, opts: { isSpectator: boolean; isOperator?: boolean }): boolean {
+  return visibleNav(opts).some((n) => n.id === view);
+}
+
 /** The destinations this viewer may reach, each with its visible sections; an empty one is dropped. */
 export function visibleDestinations(opts: { isSpectator: boolean; isOperator?: boolean }): (DestItem & { items: NavItem[] })[] {
   const byId = new Map(visibleNav(opts).map((n) => [n.id, n]));
