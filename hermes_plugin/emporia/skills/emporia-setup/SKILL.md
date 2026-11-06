@@ -20,7 +20,8 @@ terminal it is a menu, and every command asks for what it was not given. With fl
 ## Read this first
 
 The full guide, with every choice and its trade-off:
-[docs/agent-security-setup.md](../../docs/agent-security-setup.md). Recommend its safe answers:
+[docs/agent-security-setup.md](https://github.com/wujitsana/emporia/blob/main/docs/agent-security-setup.md)
+(also in the Emporia tab's Docs view). Recommend its safe answers:
 role **marketplace** for any agent with money, keys in its **.env**, **one recovery phrase** (or no
 wallet), small caps, **ask above $5**. If the user picks something riskier, say what it risks (the
 command prints the same warning) and let them decide.

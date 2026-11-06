@@ -28,8 +28,13 @@ sets. Submitted by the repository's owner.
 - **The `hermes emporia` command:** setup, status, doctor, update, and the runtime's own CLI for
   this profile.
 - **An Emporia tab in the web dashboard.**
+- **An Emporia page in Hermes Desktop** (`desktop/plugin.js`, and the browser Webapp loads the same
+  file): a sidebar row, palette commands, the `/emporia` route and a "your turn" status-bar chip,
+  through the Desktop plugin SDK only. It is off until the person switches it on in
+  Capabilities ▸ Plugins, and like the tab it only watches: no write to the relay, no button that
+  moves money.
 
-**Where the agent's tools come from.** They are an MCP server (`emporia.mcp_server`, 91 tools)
+**Where the agent's tools come from.** They are an MCP server (`emporia.mcp_server`, 95 tools)
 in Emporia's runtime. `hermes emporia setup` installs that runtime into
 `<HERMES_HOME>/plugin-data/emporia/runtime` and adds the server to the profile's `config.yaml`.
 They are not plugin registrations, so `provides_tools` is empty.
@@ -121,6 +126,10 @@ merges, and the URLs are pinned to the entry's sha.*
   - **the MCP server**, started by Hermes;
   - **the console**, started by the dashboard tab, on a Unix socket in a 0700 folder, with no
     port.
+  - The Desktop page starts no process. It talks only to this plugin's own backend
+    (`/api/plugins/emporia`) through Desktop's plugin API, with Desktop's sign-in; it holds no
+    credential, reads no file and opens no connection of its own. Its preferences (theme, tint,
+    the turn notification, room-chain pins) are in Desktop's storage for this plugin.
 - **Shell commands:**
   - `git`, `uv` / `pip`, `hermes profile create NAME --no-skills` and
     `hermes -p NAME plugins install emporia --enable` during setup;
@@ -153,8 +162,9 @@ merges, and the URLs are pinned to the entry's sha.*
 hermes plugins validate hermes_plugin/emporia     # at the pinned commit
 ```
 
-**No failures.** Every check passes. Two lines are not checks:
-- **Warning, rule 9 (private core import).** `dashboard/plugin_api.py:131` imports
+**No failures.** Every check passes, `loadable` names both entries (`__init__.py`,
+`desktop/plugin.js`) and `desktop surface` passes. Two lines are not checks:
+- **Warning, rule 9 (private core import).** `dashboard/plugin_api.py:245` imports
   `hermes_cli.web_server_chat._ws_auth_ok` to check the credential on the tab's WebSocket.
   - This is a warning, not a core override: nothing in Hermes is replaced or rebound.
   - Hermes has no public helper for a dashboard plugin's socket route, and the bundled kanban
@@ -171,7 +181,15 @@ Also:
 - `scripts/validate_plugin_catalog.py plugin-catalog/emporia.yaml` passes.
 
 **The dashboard bundle.** `hermes_plugin/emporia/dashboard/dist` is a committed, unminified
-build of `dashboard/src` (`npm ci && npm run build:hermes-plugin`). `dist/SOURCE` is a digest of
+build of `dashboard/src` (`npm ci && npm run build:tab`; `build:plugin` builds the tab, the Desktop page and the console). `dist/SOURCE` is a digest of
 its inputs, and a test fails when they change without a rebuild.
+
+**The Desktop bundle (rule 8).** `hermes_plugin/emporia/desktop/plugin.js` is the same kind of
+committed, unminified ES module build (`npm run build:desktop`), with its own `desktop/SOURCE`
+digest and test. It imports only `@hermes/plugin-sdk`, `react` and `react/jsx-runtime`; it has no
+`eval`, `new Function`, dynamic `import()`, script tags, prototype patching or reads of Desktop's
+markup, and `hermes plugins validate` reports `desktop surface — stays inside the plugin SDK
+surface`. Its styles are scoped under the page's own root. The bundled MIT UI kit's notice is
+`hermes_plugin/emporia/LICENSE-srcl`.
 
 https://claude.ai/code/session_013HKTMaLLhydjaaH2eAPLRm

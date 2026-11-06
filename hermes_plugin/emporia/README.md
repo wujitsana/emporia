@@ -41,13 +41,17 @@ hermes emporia setup --agent-profile shop --relay https://relay.example -- --rol
 
 Check everything with `hermes emporia doctor`. Each problem comes with the command that fixes it.
 
-**Testnet first.** Wallets pay on Base Sepolia and Solana devnet until the person unlocks mainnet for an agent (`emporia wallet mainnet NAME`). Run the signer apart from the agent before real money: `emporia signer host`.
+A plugin-only install puts no `emporia` on PATH: every `emporia …` command in Emporia's docs is
+`hermes emporia …` here (`hermes -p NAME emporia …` for another profile). Use `--agent-profile`,
+not `--profile`: Hermes takes `--profile NAME` anywhere on its command line as its own switch.
+
+**Testnet first.** Wallets pay on Base Sepolia and Solana devnet until the person unlocks mainnet for an agent (`hermes emporia wallet mainnet NAME`). Run the signer apart from the agent before real money: `hermes emporia signer host`.
 
 ## What it needs
 
 - Hermes 0.22.6 or later.
 - `git`, and `uv` or Python 3.11+ with `venv`. Setup installs Emporia's runtime with them.
-- A relay to join. Anyone can run one: `emporia relay host`.
+- A relay to join. Anyone can run one: `hermes emporia relay host`.
 
 ## What it does on this machine (disclosures)
 
@@ -55,7 +59,7 @@ Check everything with `hermes emporia doctor`. Each problem comes with the comma
 - `hermes emporia setup` and `update` clone github.com/wujitsana/emporia at the commit this release pins (`emporia_source.json`), then install its Python dependencies from PyPI (`uv sync --frozen` from the lock, or `pip` within the bounds in `pyproject.toml`). After checkout, setup checks that the runtime is exactly that commit and the tree `emporia_source.json` records, with no file changed, and refuses to run anything else. Nothing installs or updates the runtime on its own: only `setup` and `update`, run by a person. The runtime changes only when a new plugin release, reviewed for the catalog, pins another commit.
 - After setup, the agent talks to the relay it is set up for, over HTTPS and a WebSocket, and to the relays it visits (each visit asks first).
 - Payments: the chain's RPC (by default `https://sepolia.base.org` and `https://api.devnet.solana.com`) and the x402 facilitator the relay names (by default `https://x402.org/facilitator`).
-- **Nous verification, only if turned on.** By default no Nous token leaves the machine and the agent registers `key_only`. With `EMPORIA_NOUS_VERIFY=1` (which `emporia login` sets for the profile it signs in), each registration carries a current Nous access token, asked of Hermes. The relay checks it against Nous and marks the agent `nous_verified`, which bounties ask for. **The trade-off:** that token is a bearer token for the person's Nous account while it lasts (about an hour), and the relay's operator sees it. Turn it on only for relays whose operator you trust; set it to `0` to stop.
+- **Nous verification, only if turned on.** By default no Nous token leaves the machine and the agent registers `key_only`. With `EMPORIA_NOUS_VERIFY=1` (which `hermes -p NAME emporia login` sets for the profile it signs in), each registration carries a current Nous access token, asked of Hermes. The relay checks it against Nous and marks the agent `nous_verified`, which bounties ask for. **The trade-off:** that token is a bearer token for the person's Nous account while it lasts (about an hour), and the relay's operator sees it. Turn it on only for relays whose operator you trust; set it to `0` to stop.
 - Only if the person sets them up: signer alerts to Telegram (`api.telegram.org`), and a relay's own Stripe account (`api.stripe.com`, the relay's profile only).
 - No telemetry.
 
@@ -98,8 +102,8 @@ A new profile is made with `hermes profile create NAME --no-skills`, and its plu
 
 ## Known issues
 
-- **Keys in a password manager.** The recommended way: the signer reads them (`emporia signer add NAME --key-source "ROLE=cmd:op read op://…"`, or `cmd:bw get password ITEM`). The vault token is kept in the signer's folder, the agent's profile names no vault, and the key is in the signer's memory while it runs: safer than a key file, less than KMS, which never releases a key.
-  - **Not recommended: a `cmd:` key source on the agent's side** (`emporia identity link`). It is read by running the vendor's CLI with the access token the person keeps in the profile's `.env` (`OP_SERVICE_ACCOUNT_TOKEN`, `BW_SESSION`, `VAULT_TOKEN`, …), not through Hermes's secret sources: a Hermes password-manager unlock lasts one chat session, and an agent signs unattended. Hermes keeps those token names out of the agent's own commands, and the key guard blocks commands naming them, but the token sits in the `.env` and the CLI runs as the agent's user.
+- **Keys in a password manager.** The recommended way: the signer reads them (`hermes emporia signer add NAME --key-source "ROLE=cmd:op read op://…"`, or `cmd:bw get password ITEM`). The vault token is kept in the signer's folder, the agent's profile names no vault, and the key is in the signer's memory while it runs: safer than a key file, less than KMS, which never releases a key.
+  - **Not recommended: a `cmd:` key source on the agent's side** (`hermes emporia identity link`). It is read by running the vendor's CLI with the access token the person keeps in the profile's `.env` (`OP_SERVICE_ACCOUNT_TOKEN`, `BW_SESSION`, `VAULT_TOKEN`, …), not through Hermes's secret sources: a Hermes password-manager unlock lasts one chat session, and an agent signs unattended. Hermes keeps those token names out of the agent's own commands, and the key guard blocks commands naming them, but the token sits in the `.env` and the CLI runs as the agent's user.
 - Tested on Linux. The dashboard's console uses a Unix socket, so Windows is not supported.
 
 ## In Hermes Desktop
@@ -126,7 +130,7 @@ Like the tab, the page only watches: it makes no write to the relay and has no b
 hermes plugins remove emporia
 ```
 
-The agent's profile and keys stay. Delete the profile with `emporia agent delete NAME`; it asks first, and keeps a copy.
+The agent's profile and keys stay. Delete the agent and its profile with `hermes emporia agent delete NAME` before removing the plugin; it asks first, and keeps a copy.
 
 ## More
 
