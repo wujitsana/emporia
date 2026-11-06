@@ -254,7 +254,7 @@ class Run:
             EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1",
             EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent,
             # quests:v4: the run's agents are key-only (no Nous sign-in), so each counts as its own operator.
-            EMPORIA_QUEST_OTHERS="any",
+            EMPORIA_QUEST_OTHERS="any", EMPORIA_STARTER_LIMITS="0",
             # Labs: on, with local file:// repositories allowed (a test relay's only)
             EMPORIA_LABS="1", EMPORIA_LAB_HOSTS="file",
             # Security review pass 2 (P1): the only key a verdict is taken from — the person's
@@ -632,7 +632,7 @@ class Run:
         mine = self.tool(self.player, "my_quests")
         done = {x["id"] for x in mine.get("quests", []) if x.get("done")}
         arc = next((a for a in mine.get("arcs", []) if a.get("id") == "challenger"), {})
-        check({"open-table", "first-contact"} <= done and arc.get("done", 0) >= 2 and mine.get("formula") == "quests:v4",
+        check({"open-table", "first-contact"} <= done and arc.get("done", 0) >= 2 and mine.get("formula") == "quests:v5",
               f"the open challenge completed no arc step: {sorted(done)} {arc}")
         theirs = {x["id"] for x in self.tool(self.merchant, "my_quests").get("quests", []) if x.get("done")}
         check("taken-up" in theirs, f"taking it did not count: {sorted(theirs)}")

@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from emporia import levels as L
 from emporia import quest_book as B
 from emporia.calls import ALL_SET_PLAYS
 from emporia.quests import BARGAIN, DEBRIEFS_TOPIC, DONE_DEALS, IDEAS_TOPIC, SET_PLAYS, V3, debriefs
@@ -417,6 +418,67 @@ def play_xp(agent_id: str, games: Iterable[Mapping], ctx: Ctx, now: float | None
             "pair_week_cap": cfg["pair_week"]}
 
 
+SEASON_FORMULA = "season:v1/xp"
+
+
+def _before(rows: Iterable[Mapping], key: str, cut: float | None) -> list[Mapping]:
+    """The records whose time is before `cut` (all of them when `cut` is None); an unreadable time is out."""
+    out = []
+    for r in rows:
+        d = _iso(r.get(key))
+        if d is not None and (cut is None or d.timestamp() < cut):
+            out.append(r)
+    return out
+
+
+def season_row(agent_id: str, evs: Iterable[Mapping], play_games: Iterable[Mapping], ctx: Ctx, window: Mapping,
+               now: float | None = None, expeditions: Iterable[Mapping] = ()) -> dict:
+    """An agent's season: `xp` earned in the window, and its `level` and `badges` as of the window's end.
+
+    Season XP is the XP whose qualifying records fall in [start, end): the total XP over the records before
+    the end minus the total over the records before the start (v3's carry-over left out: only records count).
+    Each part is `evaluate`, so quests, arcs, tracks, weekly quests and play XP are counted as they always are;
+    XP never falls as records are added, so the difference is never negative. `window`: {started_at, ends_at}
+    as ISO times, either may be empty (no start: all history; no end: up to now)."""
+    def cut(t) -> float | None:
+        d = _iso(t) if t else None
+        return d.timestamp() if d else None
+    start, end = cut(window.get("started_at")), cut(window.get("ends_at"))
+    evs, play_games, expeditions = list(evs), list(play_games), list(expeditions)
+    now = datetime.now(UTC).timestamp() if now is None else now
+
+    def total(c: float | None) -> dict:
+        return evaluate(agent_id, _before(evs, "at", c), ctx, now=now if c is None else min(now, c),
+                        expeditions=expeditions, play_games=_before(play_games, "ended_at", c))
+    upto = total(end)
+    base = total(start)["xp"] if start is not None else 0
+    return {"xp": max(0, upto["xp"] - base), "level": upto["level"]["level"], "badges": len(upto["badges"])}
+
+
+def records_hash(per_agent: Mapping[str, tuple[Iterable[Mapping], Iterable[Mapping]]]) -> str:
+    """A hash of the records a standing was computed from: each agent's events and play games, sorted."""
+    import hashlib
+    import json
+    rows = {a: {"events": [dict(e) for e in evs],
+                "games": sorted((str(g.get("session_id")), str(g.get("ended_at")), str(g.get("termination")),
+                                 sorted(g.get("participants") or [])) for g in games)}
+            for a, (evs, games) in sorted(per_agent.items())}
+    return hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def season_standings(per_agent: Mapping[str, tuple[Iterable[Mapping], Iterable[Mapping]]], ctx: Ctx,
+                     window: Mapping, now: float | None = None, expeditions: Iterable[Mapping] = ()) -> list[dict]:
+    """Everyone with season XP, most first (ties by agent id): [{rank, agent_id, season_xp, level, badges}].
+    Ordered by season XP only; the level and badge count are shown, never ranked."""
+    rows = []
+    for a, (evs, games) in per_agent.items():
+        r = season_row(a, evs, games, ctx, window, now, expeditions)
+        if r["xp"] > 0:
+            rows.append({"agent_id": a, "season_xp": r["xp"], "level": r["level"], "badges": r["badges"]})
+    rows.sort(key=lambda r: (-r["season_xp"], r["agent_id"]))
+    return [{"rank": i, **r} for i, r in enumerate(rows, 1)]
+
+
 def _rival(evs: Iterable[Mapping]) -> dict | None:
     """P4 rivalries: the other operator's agent it has finished most public games against (2+)."""
     tally: dict[str, dict] = {}
@@ -560,7 +622,8 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
 
     play = play_xp(me, play_games, ctx, now)
     xp = sum(B.QUESTS[q]["xp"] for q in done) + xp_arcs + xp_tracks + B.WEEKLY_XP * len(weekly_done) + play["xp"]
-    return {"formula": FORMULA, "agent_id": me, "xp": xp, "play": play, "quests": quests, "arcs": arcs, "tracks": tracks,
+    crossed = play["xp"] > 0 or any(q["done"] and _wants_other(B.QUESTS[q["id"]]["when"]) for q in quests)
+    return {"formula": FORMULA, "agent_id": me, "xp": xp, "play": play, "level": L.describe(xp, crossed), "quests": quests, "arcs": arcs, "tracks": tracks,
             "weekly": {**current, "weeks_done": len(weekly_done)}, "feats": feats, "badges": badges,
             "next": next((a["next"]["how"] for a in arcs if a["next"]), ""), "rival": _rival(evs),
             "rules": {"others": ctx.others},

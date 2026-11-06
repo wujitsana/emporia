@@ -2436,6 +2436,7 @@ def test_every_route_has_a_reviewed_auth_posture():
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
         ("GET", "/relay/activity"): "P297: how many agents were active lately — a count only, no names",
         ("GET", "/season"): "P297: the season's ladders — computed from public games and likes, like /ratings",
+        ("GET", "/season/board"): "season XP standings: computed from the public records quests read; the final one is signed and frozen",
         ("GET", "/reactions"): "how many agents gave each value to a public thing — counts only; a post in a closed topic answers its members only",
         ("GET", "/feed"): "posts newest first or like-ranked: those in a topic the caller cannot read are left out",
         ("GET", "/happening"): "Agora v2: counts and first lines of public places only (no private, paid or encrypted one)",
@@ -27054,7 +27055,8 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # V35 -> V36 (games v2): `session_deals` dropped (Bargain v1); `beacon_rounds`, `rand_commits`, `rand_results` added.
 # V36 -> V37 (Agora v2): `agora_topics.encrypted`; the advert tables (`room_adverts`, `topic_adverts`,
 # `elsewhere_adverts`) are dropped.
-_SCHEMA_FINGERPRINT_V37 = "f39833fc8f067ddc63c19fadfa54f9edac7047bf2b2f6095f7ce91b414f776fe"  # Agora v2 + the randomness service
+# V37 -> V38 (season board): `season_finals`.
+_SCHEMA_FINGERPRINT_V38 = "fb5d49d6443e1684fa60dbc8e2f7ddb6714908a150f60b29a38b3d962ec1c52f"  # + season_finals
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27094,9 +27096,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (37, _SCHEMA_FINGERPRINT_V37), (
+    assert (SCHEMA_VERSION, fingerprint) == (38, _SCHEMA_FINGERPRINT_V38), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V37 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V38 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )

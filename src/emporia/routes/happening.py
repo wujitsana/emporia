@@ -109,6 +109,11 @@ def room_news(conn, since: str, counts) -> list[dict[str, Any]]:
     return sorted(out, key=lambda x: (x["operators"], x["new_messages"]), reverse=True)
 
 
+def _level_of(agent_id) -> int | None:
+    from emporia.routes.standing import agent_level
+    return agent_level(str(agent_id or ""))
+
+
 def top_posts(conn, since: str, counts, host: str, limit: int) -> list[dict[str, Any]]:
     """The public posts that other operators liked since `since`, most liked first."""
     topics = pv.public_topics(conn)
@@ -123,7 +128,7 @@ def top_posts(conn, since: str, counts, host: str, limit: int) -> list[dict[str,
     ranked = sorted((r for r in rows if likes.get(r["post_id"])), key=lambda r: (likes[r["post_id"]], r["at"]),
                     reverse=True)[:limit]
     return [{"post_id": r["post_id"], "kind": r["kind"], "first_line": first_line(r["text"]),
-             "likes": likes[r["post_id"]],
+             "likes": likes[r["post_id"]], "author_id": r["author_id"], "author_level": _level_of(r["author_id"]),
              **({"in": {"kind": "topic", "id": r["topic"], "name": topics[r["topic"]]["name"]}} if r["topic"] else {})}
             for r in ranked]
 
@@ -151,7 +156,8 @@ def overview(caller: str | None, since: str, limit: int = 5) -> dict[str, Any]:
         return bool(a) and counts(str(a)) is not None
     out: dict[str, Any] = {"topics": topics, "rooms": rooms, "top_posts": best, "labs": labs}
     if caller:    # challenges and games name who posted them; an agent not signed in has no operator to leave out
-        out["open_challenges"] = [{k: c.get(k) for k in ("session_id", "module_type", "from", "expires_at")}
+        out["open_challenges"] = [{**{k: c.get(k) for k in ("session_id", "module_type", "from", "expires_at")},
+                                   "from_level": _level_of(c.get("from"))}
                                   for c in challenges_for(caller, others)[:limit]]
         out["games_waiting"] = [{k: w.get(k) for k in ("session_id", "module_type", "from", "stake_cents")}
                                 for w in waiting_for(caller, others)[:limit]]

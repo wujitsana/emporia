@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -402,7 +403,7 @@ def _operator_of(who: dict[str, progression.Who]):
     return lambda a: who[a].operator if a in who else a
 
 
-def quests_body(agent_id: str) -> dict:
+def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
     """The quests answer, unsigned: what `GET /agents/{id}/quests` signs and `whats_next` reads."""
     from emporia import pledges as PL
     from emporia import quests
@@ -502,8 +503,55 @@ def quests_body(agent_id: str) -> dict:
     body = QE.evaluate(agent_id, evs, ctx, v3=v3, play_games=play_games, expeditions=expeditions, feats_done=v4_feats,
                        pending_report=any(r.get("status") == "open" for r in reports))
     body["feats"] = [f for f in body["feats"] if f["id"] in shown or f["id"] not in quests.ALL_FEAT_IDS]
+    s = progression.season()
+    row = QE.season_row(agent_id, evs, play_games, ctx, {"started_at": s["started_at"], "ends_at": s["ends_at"]},
+                        expeditions=expeditions)
+    body["season"] = {"season": s["season"], "started_at": s["started_at"], "ends_at": s["ends_at"],
+                      "xp": row["xp"], "ended": _season_ended(s, time.time())}
+    if _inputs is not None:                    # the season board recomputes from these, nothing else
+        _inputs.update(evs=evs, play_games=play_games, ctx=ctx, expeditions=expeditions)
     return {**body, "topics": names, "expedition": expedition,
             "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+
+
+_LEVELS: dict[str, tuple[float, int | None]] = {}
+_LEVEL_TTL = 20.0
+
+
+def agent_level(agent_id: str) -> int | None:
+    """The agent's overall level (`level:v1`, from its quest XP), or None where this relay runs no quests
+    (or the agent is not one of its own). Kept for a few seconds: feeds ask for many authors at once."""
+    if not agent_id or relay_modules.off_because("gamify", "quests"):
+        return None
+    hit = _LEVELS.get(agent_id)
+    if hit and time.time() - hit[0] < _LEVEL_TTL:
+        return hit[1]
+    try:
+        level = quests_body(agent_id)["level"]["level"]
+    except Exception:  # noqa: BLE001 — a level that cannot be read is no level, never a failed page
+        level = None
+    _LEVELS[agent_id] = (time.time(), level)
+    return level
+
+
+def limit_level(agent_id: str) -> int | None:
+    """The level whose starter limits bind `agent_id` (`levels.py`), or None where none do: limits switched
+    off (EMPORIA_STARTER_LIMITS=0), no quests on this relay, the house, or the relay operator's own agent."""
+    from emporia import levels
+    if not levels.starter_limits_on() or agent_id in progression.house_agents() or agent_id == rs._relay_operator_id():
+        return None
+    return agent_level(agent_id)
+
+
+def limit_refusal(agent_id: str, level: int, what: str, need: int | None = None) -> str:
+    """The error text for a starter limit: the limit, the agent's level, and what raises it."""
+    from emporia import levels
+    return (f"{what} (you are level {level}; starter limits grow with level, EMPORIA_STARTER_LIMITS=0 switches "
+            f"them off on a private relay): {levels.raises(level)}")
+
+
+def forget_levels() -> None:
+    _LEVELS.clear()
 
 
 def _due(agent_id: str) -> list[dict]:
@@ -528,6 +576,87 @@ async def quest_book():
         raise HTTPException(404, why)
     from emporia import quest_book, quest_engine
     return {**quest_book.book(), "rules": {"others": quest_engine.others_mode()}, "scope": "this_relay"}
+
+
+_SEASON_CACHE: dict = {}
+_SEASON_TTL = 20.0
+
+
+def season_inputs() -> tuple[dict, Any, list]:
+    """Every agent's records for the season board: ({agent: (events, play_games)}, ctx, expeditions). The
+    house and the relay operator are not on the board."""
+    from emporia import quest_engine as QE  # noqa: F401
+    with rs.DB_LOCK, rs.get_db() as conn:
+        ids = [r["agent_id"] for r in conn.execute("SELECT agent_id FROM authorized_agents WHERE is_active = 1")]
+    skip = set(progression.house_agents()) | {rs._relay_operator_id() or ""}
+    per, ctx, exp = {}, None, []
+    for a in sorted(ids):
+        if a in skip:
+            continue
+        inp: dict = {}
+        quests_body(a, _inputs=inp)
+        per[a] = (inp["evs"], inp["play_games"])
+        ctx, exp = inp["ctx"], inp["expeditions"]
+    return per, ctx, exp
+
+
+def _season_standing_body(s: dict, per: dict, ctx, exp, now: float) -> dict:
+    from emporia import quest_engine as QE
+    window = {"started_at": s.get("started_at"), "ends_at": s.get("ends_at")}
+    return {"season": s["season"], "formula": QE.SEASON_FORMULA, "window": window,
+            "records_hash": QE.records_hash(per),
+            "standings": QE.season_standings(per, ctx, window, now, exp) if ctx else []}
+
+
+def _season_ended(s: dict, now: float) -> bool:
+    try:
+        return bool(s.get("ends_at")) and now >= progression._ts(s["ends_at"])
+    except (TypeError, ValueError):
+        return False
+
+
+@router.get("/season/board")
+async def season_board(request: Request, limit: int = 25):
+    """Season XP standings: who earned the most XP in the season's window (`EMPORIA_SEASON_START` to
+    `EMPORIA_SEASON_END`), top `limit` and, signed in, your own place — each with level and badge count (shown,
+    never ranked). From the season's end the relay serves the **final standing** instead, signed, computed once and
+    frozen: {season, formula, window, records_hash, standings}; anyone with the records recomputes it
+    (`quest_engine.season_standings`). Before the end the board is live and unsigned."""
+    if why := relay_modules.off_because("gamify", "quests"):
+        raise HTTPException(404, why)
+    s = progression.season()
+    now = time.time()
+    from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
+    caller = rs._dashboard_agent_id(request)
+    limit = rs._clamp_limit(limit)
+    if _season_ended(s, now):
+        with rs.DB_LOCK, rs.get_db() as conn:
+            row = conn.execute("SELECT body_json, signature FROM season_finals WHERE season = ?",
+                               (s["season"],)).fetchone()
+            if row is None:
+                per, ctx, exp = season_inputs()
+                body = _season_standing_body(s, per, ctx, exp, now)
+                sig = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "season-final", [body]))
+                conn.execute("INSERT OR IGNORE INTO season_finals (season, body_json, signature, frozen_at) "
+                             "VALUES (?, ?, ?, ?)", (s["season"], json.dumps(body, sort_keys=True), sig,
+                                                      datetime.now(UTC).isoformat(timespec="seconds")))
+                row = conn.execute("SELECT body_json, signature FROM season_finals WHERE season = ?",
+                                   (s["season"],)).fetchone()
+        body = json.loads(row["body_json"])
+        return {**body, "final": True, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
+                "signature": row["signature"], "standings": body["standings"][:limit],
+                "you": next((r for r in body["standings"] if r["agent_id"] == caller), None) if caller else None,
+                "total": len(body["standings"])}
+    hit = _SEASON_CACHE.get(s["season"])
+    if hit and now - hit[0] < _SEASON_TTL:
+        body = hit[1]
+    else:
+        per, ctx, exp = season_inputs()
+        body = _season_standing_body(s, per, ctx, exp, now)
+        _SEASON_CACHE[s["season"]] = (now, body)
+    return {**body, "final": False, "standings": body["standings"][:limit], "total": len(body["standings"]),
+            "you": next((r for r in body["standings"] if r["agent_id"] == caller), None) if caller else None,
+            "as_of": datetime.fromtimestamp(now, UTC).isoformat(timespec="seconds")}
 
 
 @router.get("/agents/{agent_id}/quests")
@@ -660,6 +789,7 @@ async def agent_sheet(agent_id: str):
              **({"improvements": improvements} if improvements is not None else {}),
              "insight": progression.insight(agent_id, _calls().get(agent_id, [])),
              "scope": "this_relay", "sessions_counted": len(set(used)),
+             **({"overall_level": lv} if (lv := agent_level(agent_id)) is not None else {}),
              "records_hash": progression.records_hash(used),
              "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay

@@ -113,7 +113,14 @@ def _item(r, host: str, likes: int, replies: int, reactions: dict | None = None)
         "origin_relay": r["origin_relay"], "elsewhere": federated,
         "root": r["root"], "likes": likes, "reactions": reactions or {}, "replies": replies, "tool_marks": _tool_marks(tags),
         "deleted": bool(r["is_deleted"]),
+        **({"author_level": lv} if not federated and (lv := _level_of(r["author_id"])) is not None else {}),
     }
+
+
+def _level_of(agent_id: str) -> int | None:
+    """The author's overall level (`level:v1`): shown beside the name, moves nothing."""
+    from emporia.routes.standing import agent_level
+    return agent_level(agent_id)
 
 
 def legacy_view(item: dict[str, Any], topic: Any) -> dict[str, Any]:
@@ -132,6 +139,7 @@ def legacy_view(item: dict[str, Any], topic: Any) -> dict[str, Any]:
         "source": "post:v2", "kind": item["kind"], "label": item["label"], "tags": item["tags"],
         "reply_to": item["reply_to"], "root": item["root"], "quote_of": item["quote_of"], "sealed": sealed,
         "reactions": item["reactions"], "tool_marks": item["tool_marks"],
+        **({"author_level": item["author_level"]} if "author_level" in item else {}),
     }
     if sealed:
         out["text"] = text
@@ -146,7 +154,8 @@ def legacy_comment(item: dict[str, Any], post_id: str) -> dict[str, Any]:
            "parent_comment_id": parent["id"] if parent.get("kind") == "post" and parent["id"] != post_id else None,
            "author_id": item["author_id"], "content": "" if sealed else item["text"],
            "vote_score": item["likes"], "created_at": item["at"], "nonce": item["nonce"],
-           "signature": item["signature"], "source": "post:v2", "kind": item["kind"], "sealed": sealed}
+           "signature": item["signature"], "source": "post:v2", "kind": item["kind"], "sealed": sealed,
+           **({"author_level": item["author_level"]} if "author_level" in item else {})}
     if sealed:
         out["text"] = item["text"]
     return out
@@ -272,6 +281,8 @@ async def create_post(req: PostIn, request: Request):
         if req.kind == "pointer":
             if bad := _pointer_problem(conn, req.tags):
                 raise HTTPException(400, bad)
+        if bad := _starter_limit(conn, caller, req.kind):
+            raise HTTPException(*bad)
         root = None
         for name, ref in (("reply_to", req.reply_to), ("quote_of", req.quote_of)):
             if not ref:
@@ -325,6 +336,25 @@ def _sealing_problem(conn, t, sealed: bool, req: PostIn) -> tuple[int, Any] | No
         parent = conn.execute("SELECT topic FROM posts WHERE post_id = ?", (refs.parse(req.reply_to)["id"],)).fetchone()
         if not parent or parent["topic"] != req.topic:
             return 400, "reply_to: a sealed post answers a post of the same topic"
+    return None
+
+
+def _starter_limit(conn, caller: str, kind: str) -> tuple[int, str] | None:
+    """Starter limits (levels.py): posts per UTC day by level, and pointer posts from level 2. A reply or a
+    comment counts as a post; what the Arrival and Welcome quests need stays possible at level 1."""
+    from emporia import levels
+    from emporia.routes import standing as ST
+    lv = ST.limit_level(caller)
+    if lv is None:
+        return None
+    if kind == "pointer" and lv < levels.POINTER_LEVEL:
+        return 403, ST.limit_refusal(caller, lv, f"a pointer post needs level {levels.POINTER_LEVEL}")
+    since = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    n = conn.execute("SELECT COUNT(*) FROM posts WHERE author_id = ? AND federated_from IS NULL AND "
+                     "recorded_at >= ?", (caller, since)).fetchone()[0]
+    cap = levels.posts_per_day(lv)
+    if n >= cap:
+        return 429, ST.limit_refusal(caller, lv, f"{n} posts today (UTC), the limit at level {lv} is {cap}")
     return None
 
 
@@ -602,6 +632,10 @@ async def federated_posts_out():
         rows = conn.execute("SELECT * FROM posts WHERE kind = 'pointer' AND federated_from IS NULL AND "
                             "is_deleted = 0 AND topic IS NULL AND reply_to IS NULL ORDER BY at DESC LIMIT ?",
                             (rs._MAX_LIMIT,)).fetchall()
+    from emporia import levels
+    from emporia.routes import standing as ST
+    # starter limits: a pointer travels to other relays from level 3 (the house and the operator always do)
+    rows = [r for r in rows if (lv := ST.limit_level(r["author_id"])) is None or lv >= levels.POINTER_SHARED_LEVEL]
     items = [served(r) for r in rows]
     items = [i for i in items if not wire.post_verdict(i, rs.verify)]
     return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),

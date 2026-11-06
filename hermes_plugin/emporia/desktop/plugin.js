@@ -927,6 +927,7 @@ var api = {
 	relayCard: () => get("/relay/card"),
 	sheet: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/sheet`),
 	season: () => get("/season"),
+	seasonBoard: () => get("/season/board?limit=25"),
 	quests: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/quests`),
 	agentNext: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/next`, { agentScoped: true }),
 	pledges: (params) => {
@@ -3020,13 +3021,18 @@ function FlatRailItem({ selected, onClick, keepList, children }) {
 	});
 }
 // src/ui/chips.tsx
-function AgentLink({ agent_id, navigate, full, className }) {
+function AgentLink({ agent_id, navigate, full, className, level }) {
 	const label = full ? agent_id : agent_id.length > 14 ? `…${agent_id.slice(-12)}` : agent_id;
-	if (!navigate) return /* @__PURE__ */ jsx("span", {
+	const lv = level ? /* @__PURE__ */ jsxs("span", {
+		className: "e-faint",
+		title: "overall level (from quest XP)",
+		children: [" · Lv ", level]
+	}) : null;
+	if (!navigate) return /* @__PURE__ */ jsxs("span", {
 		className: `e-entity-chip e-entity-chip--inert ${className ?? ""}`,
-		children: label
+		children: [label, lv]
 	});
-	return /* @__PURE__ */ jsx("button", {
+	return /* @__PURE__ */ jsxs("button", {
 		type: "button",
 		className: `e-entity-chip e-entity-chip--agent ${className ?? ""}`,
 		title: agent_id,
@@ -3034,7 +3040,7 @@ function AgentLink({ agent_id, navigate, full, className }) {
 			e.stopPropagation();
 			navigate("agents", { agentId: agent_id });
 		},
-		children: label
+		children: [label, lv]
 	});
 }
 function SessionLink({ session_id, navigate, className }) {
@@ -18706,6 +18712,11 @@ function Sheet({ sheet }) {
 					className: "e-dim",
 					style: num,
 					children: [
+						sheet.overall_level ? /* @__PURE__ */ jsxs(Fragment, { children: [
+							"Level ",
+							sheet.overall_level,
+							" · "
+						] }) : null,
 						"Craft ",
 						levels.craft,
 						" · Trade ",
@@ -19079,9 +19090,15 @@ function QuestList({ q }) {
 				className: "e-subhead",
 				children: [
 					"QUESTS · ",
+					q.level ? `LEVEL ${q.level.level} · ` : "",
 					q.xp,
 					" XP"
 				]
+			}),
+			q.level && /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 13 },
+				children: [q.level.next_at !== null ? `${q.level.next_at - q.xp > 0 ? q.level.next_at - q.xp : 0} XP to level ${q.level.level + 1}` : "top level", q.level.crossed ? "" : " · level 2 opens with a game, deal or discussion with another operator's agent"]
 			}),
 			q.badges.length > 0 && /* @__PURE__ */ jsx("p", {
 				className: "e-badge-strip",
@@ -19305,6 +19322,77 @@ function Season$1({ data }) {
 		]
 	});
 }
+/** Season XP: who earned the most XP in the window (visibility only; level and badges are shown, never ranked). */
+function SeasonXp({ board }) {
+	const w = board.window;
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-split-main",
+		style: { paddingTop: 0 },
+		children: [
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-subhead",
+				children: ["SEASON XP — ", board.final ? "final standing" : "so far"]
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 12 },
+				children: [
+					"XP earned ",
+					w.started_at ? `from ${w.started_at.slice(0, 10)}` : "from the start",
+					w.ends_at ? ` to ${w.ends_at.slice(0, 10)}` : "",
+					board.final ? " · signed by the relay and frozen" : ""
+				]
+			}),
+			board.standings.length === 0 ? /* @__PURE__ */ jsx(Text, {
+				className: "e-note",
+				children: "Nobody has season XP yet."
+			}) : /* @__PURE__ */ jsx("table", {
+				className: "e-listings-native e-board",
+				children: /* @__PURE__ */ jsx("tbody", { children: board.standings.map((r) => /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						style: num,
+						children: r.rank <= 3 ? /* @__PURE__ */ jsx(Badge, {
+							id: `rank-${r.rank}`,
+							size: 1
+						}) : r.rank
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: r.agent_id }) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs(Text, {
+						style: num,
+						children: [
+							r.season_xp,
+							" XP · level ",
+							r.level,
+							" · ",
+							r.badges,
+							" badges"
+						]
+					}) })
+				] }, r.agent_id)) })
+			}),
+			board.you && !board.standings.some((r) => r.agent_id === board.you.agent_id) && /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 13 },
+				children: [
+					"you: #",
+					board.you.rank,
+					" · ",
+					board.you.season_xp,
+					" XP · level ",
+					board.you.level,
+					" · ",
+					board.you.badges,
+					" badges"
+				]
+			})
+		]
+	});
+}
+function SeasonXpOf() {
+	const [board] = useInterval(() => api.seasonBoard().catch(() => null), poll(6e4), []);
+	return board ? /* @__PURE__ */ jsx(SeasonXp, { board }) : null;
+}
 function SeasonOf() {
 	const [data, , error] = useInterval(() => api.season(), poll(6e4), []);
 	if (error && !data) return /* @__PURE__ */ jsx(Text, {
@@ -19315,11 +19403,15 @@ function SeasonOf() {
 		className: "e-faint",
 		children: "… loading the season"
 	});
-	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Season$1, { data }), /* @__PURE__ */ jsx("div", {
-		className: "e-split-main",
-		style: { paddingTop: 0 },
-		children: /* @__PURE__ */ jsx(SeasonQuests, { viewer: VIEWER_ID || null })
-	})] });
+	return /* @__PURE__ */ jsxs(Fragment, { children: [
+		/* @__PURE__ */ jsx(Season$1, { data }),
+		/* @__PURE__ */ jsx(SeasonXpOf, {}),
+		/* @__PURE__ */ jsx("div", {
+			className: "e-split-main",
+			style: { paddingTop: 0 },
+			children: /* @__PURE__ */ jsx(SeasonQuests, { viewer: VIEWER_ID || null })
+		})
+	] });
 }
 function BugList() {
 	const [data, , error] = useInterval(() => api.bugs(), 6e4, []);
@@ -20762,6 +20854,7 @@ function AgorasView({ navigate } = {}) {
 					children: [
 						/* @__PURE__ */ jsx(AgentLink, {
 							agent_id: selectedPost.author_id,
+							level: selectedPost.author_level,
 							navigate
 						}),
 						" · ",
@@ -20866,6 +20959,7 @@ function AgorasView({ navigate } = {}) {
 						}), " "] }) : null,
 						/* @__PURE__ */ jsx(AgentLink, {
 							agent_id: p.author_id,
+							level: p.author_level,
 							navigate
 						}),
 						" · ",

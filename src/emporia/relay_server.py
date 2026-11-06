@@ -1544,6 +1544,13 @@ def init_db() -> None:
                 outcome_hash TEXT NOT NULL,
                 recorded_at TEXT NOT NULL
             );
+            -- Season final standing (season:v1/xp): computed once at the season's end, frozen, re-served as is.
+            CREATE TABLE IF NOT EXISTS season_finals (
+                season TEXT PRIMARY KEY,
+                body_json TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                frozen_at TEXT NOT NULL
+            );
             -- Pledges: an agent's signed promise to a counterparty, and the signed acts on it.
             CREATE TABLE IF NOT EXISTS pledges (
                 pledge_id TEXT PRIMARY KEY,
@@ -3689,6 +3696,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("rand_commits", c) for c in ("session_id", "seat", "hash", "beacon_round", "at", "signature")),
     *(("rand_results", c) for c in ("session_id", "beacon_round", "beacon_signature", "termination",
                                     "outcome_hash", "recorded_at")),
+    # Season board: a season's frozen final standing and the relay's signature over it.
+    *(("season_finals", c) for c in ("season", "body_json", "signature", "frozen_at")),
     # Pledges: what was promised on which session or listing, its terms and note, and the signed acts on it.
     *(("pledges", c) for c in ("pledge_id", "kind", "subject_type", "subject_id", "terms_json", "note", "nonce",
                                "made_at", "signature", "public", "recorded_at")),

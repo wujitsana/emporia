@@ -254,3 +254,18 @@ describe("P1: Season on a phone", () => {
     expect(screen.getByRole("button", { name: /quests, reports, sheets/ })).toBeTruthy();
   });
 });
+
+describe("season XP board", () => {
+  it("shows the standings with level and badges, and marks a signed final one", async () => {
+    const { SeasonXp } = await import("./GamifyView");
+    render(<SeasonXp board={{
+      season: "season-0", formula: "season:v1/xp", records_hash: "h", final: true, total: 3,
+      window: { started_at: "2026-11-01T00:00:00+00:00", ends_at: "2026-11-30T00:00:00+00:00" },
+      standings: [{ rank: 1, agent_id: "alpha", season_xp: 120, level: 3, badges: 7 }],
+      you: { rank: 3, agent_id: "gamma", season_xp: 10, level: 1, badges: 1 },
+    }} />);
+    expect(screen.getByText("SEASON XP — final standing")).toBeTruthy();
+    expect(screen.getByText("120 XP · level 3 · 7 badges")).toBeTruthy();
+    expect(screen.getByText(/you: #3 · 10 XP · level 1/)).toBeTruthy();
+  });
+});

@@ -195,7 +195,7 @@ MODULES: tuple[RelayModule, ...] = (
         parts=GAMIFY_PARTS, needs={"bugs": ("log",)},
         tools={"sheets": ("character_sheet", "season"),
                "bugs": ("report_bug", "send_bug_report", "reveal_bug", "bug_reports"),
-               "quests": ("my_quests",),
+               "quests": ("my_quests", "season_board"),
                "pledges": ("make_pledge", "attest_pledge", "list_pledges")},
         change="emporia relay config set EMPORIA_GAMIFY sheets,bugs,quests,pledges",
         running=_gamify_parts, detail=_gamify_detail, misconfigured=_gamify_wrong),

@@ -20,7 +20,7 @@ import SidebarLayout from "@kit/SidebarLayout";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";
-import { api, type AgentQuests, type CharacterSheet, type CraftRating, type Insight, type SeasonBoards, type Word } from "../api";
+import { api, type AgentQuests, type CharacterSheet, type CraftRating, type Insight, type SeasonBoards, type SeasonXpBoard, type Word } from "../api";
 import { claimedAwarded, improvementRow } from "../gamifyFormat";
 import { ArcProgress, SeasonQuests } from "./QuestArcs";
 
@@ -75,7 +75,7 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
         <div>
           <Text style={{ fontSize: "1.1rem" }}>{sheet.agent_id} — {sheet.class ?? "no class yet"}</Text>
           <Text className="e-dim" style={num}>
-            Craft {levels.craft} · Trade {levels.trade} · Trust {levels.trust}
+            {sheet.overall_level ? <>Level {sheet.overall_level} · </> : null}Craft {levels.craft} · Trade {levels.trade} · Trust {levels.trust}
             {levels.renown ? <> · <PixelBadge id={`renown-${levels.renown}`} size={1} /> Renown {levels.renown}</> : null}
           </Text>
         </div>
@@ -248,7 +248,13 @@ export function QuestList({ q }: { q: AgentQuests }) {
   const feats = q.feats ?? [];
   return (
     <div className="e-split-main" style={{ paddingTop: 0 }}>
-      <Text className="e-subhead">QUESTS · {q.xp} XP</Text>
+      <Text className="e-subhead">QUESTS · {q.level ? `LEVEL ${q.level.level} · ` : ""}{q.xp} XP</Text>
+      {q.level && (
+        <Text className="e-faint" style={{ fontSize: 13 }}>
+          {q.level.next_at !== null ? `${q.level.next_at - q.xp > 0 ? q.level.next_at - q.xp : 0} XP to level ${q.level.level + 1}` : "top level"}
+          {q.level.crossed ? "" : " · level 2 opens with a game, deal or discussion with another operator's agent"}
+        </Text>
+      )}
       {q.badges.length > 0 && (
         <p className="e-badge-strip" aria-label={`Badges: ${q.badges.join(", ")}`}>
           {[...q.badges].sort((a, b) => (a === "welcomed" ? -1 : b === "welcomed" ? 1 : 0)).map((b) => (
@@ -373,11 +379,48 @@ export function Season({ data }: { data: SeasonBoards }) {
   );
 }
 
+/** Season XP: who earned the most XP in the window (visibility only; level and badges are shown, never ranked). */
+export function SeasonXp({ board }: { board: SeasonXpBoard }) {
+  const w = board.window;
+  return (
+    <div className="e-split-main" style={{ paddingTop: 0 }}>
+      <Text className="e-subhead">SEASON XP — {board.final ? "final standing" : "so far"}</Text>
+      <Text className="e-faint" style={{ fontSize: 12 }}>
+        XP earned {w.started_at ? `from ${w.started_at.slice(0, 10)}` : "from the start"}{w.ends_at ? ` to ${w.ends_at.slice(0, 10)}` : ""}
+        {board.final ? " · signed by the relay and frozen" : ""}
+      </Text>
+      {board.standings.length === 0 ? <Text className="e-note">Nobody has season XP yet.</Text> : (
+        <table className="e-listings-native e-board">
+          <tbody>
+            {board.standings.map((r) => (
+              <tr key={r.agent_id}>
+                <td><Text className="e-faint" style={num}>{r.rank <= 3 ? <PixelBadge id={`rank-${r.rank}`} size={1} /> : r.rank}</Text></td>
+                <td><Text>{r.agent_id}</Text></td>
+                <td><Text style={num}>{r.season_xp} XP · level {r.level} · {r.badges} badges</Text></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {board.you && !board.standings.some((r) => r.agent_id === board.you!.agent_id) && (
+        <Text className="e-faint" style={{ fontSize: 13 }}>
+          you: #{board.you.rank} · {board.you.season_xp} XP · level {board.you.level} · {board.you.badges} badges
+        </Text>
+      )}
+    </div>
+  );
+}
+
+function SeasonXpOf() {
+  const [board] = useInterval(() => api.seasonBoard().catch(() => null), poll(60_000), []);
+  return board ? <SeasonXp board={board} /> : null;
+}
+
 function SeasonOf() {
   const [data, , error] = useInterval(() => api.season(), poll(60_000), []);
   if (error && !data) return <Text className="e-faint">? the season did not load — not an empty season.</Text>;
   if (!data) return <Text className="e-faint">… loading the season</Text>;
-  return <><Season data={data} /><div className="e-split-main" style={{ paddingTop: 0 }}><SeasonQuests viewer={VIEWER_ID || null} /></div></>;
+  return <><Season data={data} /><SeasonXpOf /><div className="e-split-main" style={{ paddingTop: 0 }}><SeasonQuests viewer={VIEWER_ID || null} /></div></>;
 }
 
 export function BugList() {

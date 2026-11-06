@@ -89,6 +89,9 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "EMPORIA_WRITE_REQUIRES_NOUS": "0",
     "EMPORIA_REQUIRE_NOUS": "0",
     "EMPORIA_REQUIRE_CHALLENGE": "0",
+    # Starter limits (levels.py) grow with level; the suite's agents are brand new, so they start off.
+    # Tests of the limits themselves turn them on.
+    "EMPORIA_STARTER_LIMITS": "0",
 
     # Credentials: obviously-fake, never blank. A blank key makes a forgotten
     # mock fail with "not configured", which reads like a test-setup problem; a

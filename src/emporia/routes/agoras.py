@@ -119,6 +119,10 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
         raise HTTPException(401, "Authentication required")
     rs._require_registered(caller)
     rs._enforce_agent_rate_limit(caller)
+    from emporia import levels
+    from emporia.routes import standing as ST
+    if (lv := ST.limit_level(caller)) is not None and lv < levels.TOPIC_LEVEL:
+        raise HTTPException(403, ST.limit_refusal(caller, lv, f"creating an Agora topic needs level {levels.TOPIC_LEVEL}"))
     # P21-5 (B5): name/description bounded automatically — see
     # _require_payload_content_within_limit.
     try:

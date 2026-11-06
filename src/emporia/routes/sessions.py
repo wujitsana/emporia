@@ -122,9 +122,14 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
         waiting = [json.loads(r["config_json"] or "{}") for r in rows
                    if (json.loads(r["participants_json"] or "[]") or [""])[0] == caller]   # the ones it issued
         waiting = [w for w in waiting if isinstance(w.get("challenge"), dict) and not C.expired(w["challenge"])]
-        if len(waiting) >= C.MAX_OPEN:
-            raise C.ChallengeError(f"you have {len(waiting)} challenges waiting (at most {C.MAX_OPEN}): withdraw "
-                                   "one with abandon_session, or let one expire")
+        cap, lv = C.MAX_OPEN, ST.limit_level(caller)
+        if lv is not None:
+            from emporia import levels
+            cap = min(cap, levels.challenge_cap(lv))
+        if len(waiting) >= cap:
+            more = ST.limit_refusal(caller, lv, "") if lv is not None and cap < C.MAX_OPEN else ""
+            raise C.ChallengeError(f"you have {len(waiting)} challenges waiting (at most {cap}): withdraw "
+                                   f"one with abandon_session, or let one expire{more.replace(' (', '; (', 1) if more else ''}")
         if opponent and any(w.get("opponent") == opponent for w in waiting):
             raise C.ChallengeError(f"you already have a challenge waiting for {opponent}: one at a time per opponent")
     except C.ChallengeError as e:
