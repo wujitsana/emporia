@@ -6,8 +6,11 @@ report, verdict, reveal and incident is a row in a logged table
 it is folded in, and no later change goes unrecorded.
 
 Verdicts and incidents are the relay operator's; the operator's own reports earn
-no points. The relay never runs a reported test — a maintainer does, in their
-own sandbox.
+no points. A verdict awards points, so beyond the operator's sign-in it must carry the
+signature of the operator's **verdict key** (security review pass 2, P1): a person's key no
+agent holds, registered with the relay as `EMPORIA_OPERATOR_VERDICT_KEY`
+(`emporia.operator_verdicts`). The operator agent's own token or key awards nothing.
+The relay never runs a reported test — a maintainer does, in their own sandbox.
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from emporia import bugs, translog
+from emporia import bugs, identity, operator_verdicts, translog, wire
 from emporia import relay_server as rs
 
 router = APIRouter()
@@ -39,6 +42,10 @@ class VerdictIn(BaseModel):
     severity: str = ""
     fix_commit: str = ""
     duplicate_of: str = ""
+    # Security review pass 2 (P1): signed by the operator's verdict key (wire.signed_bug_verdict_payload)
+    at: str = ""
+    signature: str = ""
+    verdict_key: str = ""        # optional: named only so a refusal can say "another key"
 
 
 class RevealIn(BaseModel):
@@ -87,6 +94,30 @@ def _operator_key(conn, agent_id: str) -> str:
     return f"key:{stable}" if stable else f"agent:{agent_id}"
 
 
+def _verdict_key_signed(build, at: str, signature: str, sent_key: str) -> str:
+    """Security review pass 2 (P1): the verdict's signature by this relay's registered verdict
+    key, or a 403 saying why not. `build(key)` is the payload signed. Returns the key."""
+    key, why = operator_verdicts.registered()
+    if not key:
+        raise HTTPException(403, why)
+    sent = (sent_key or "").strip().lower()
+    if sent and sent != key:
+        raise HTTPException(403, f"signed with the verdict key {sent[:16]}…, but this relay's is {key[:16]}… "
+                                 f"({operator_verdicts.ENV}) — after a rotation the person running the relay "
+                                 "sets the new public key in its .env and restarts it")
+    if not signature or not at:
+        raise HTTPException(403, "unsigned: a verdict is signed by the operator's verdict key, a person's key — "
+                                 "the operator agent's sign-in alone awards nothing (the person runs `emporia bugs "
+                                 "NAME verdict …` or `emporia ideas NAME adopt …` in their own terminal)")
+    from emporia.routes.agents import _signed_at
+    _signed_at(at)
+    if not identity.verify(build(key), signature, key):
+        raise HTTPException(403, "the verdict's signature does not verify against this relay's verdict key "
+                                 f"({key[:16]}…): sign every field of the verdict, with relay = this relay's id "
+                                 f"({rs.relay_id()})")
+    return key
+
+
 def _log_now(conn, kind: str, table: str, id_col: str, ident: str) -> None:
     """Log this row now, in this transaction — not at the next fold, where a verdict
     and a reveal made between two folds would be one entry. Each step is its own."""
@@ -103,7 +134,9 @@ def _public(r) -> dict:
             "called_it": bugs.called_it(dict(r)),    # launch additions: the claim beside the award, once accepted
             "points": r["points"], "fix_commit": r["fix_commit"] or None, "duplicate_of": r["duplicate_of"] or None,
             "created_at": r["created_at"], "decided_at": r["decided_at"] or None,
-            "revealed": bool(r["revealed_at"]), "content": content}
+            "revealed": bool(r["revealed_at"]), "content": content,
+            "verdict_key": (r["verdict_key"] if "verdict_key" in r.keys() else "") or None,
+            "verdict_signature": (r["verdict_signature"] if "verdict_signature" in r.keys() else "") or None}
 
 
 @router.post("/bugs")
@@ -189,7 +222,8 @@ async def get_bug(report_id: str):
 @router.post("/bugs/{report_id}/verdict")
 async def bug_verdict(report_id: str, request: Request, req: VerdictIn):
     """The operator's verdict: accepted (a severity and the fix commit), duplicate
-    (of another report) or invalid. Final. One award per fix commit."""
+    (of another report) or invalid. Final. One award per fix commit. Signed by the
+    operator's verdict key (`wire.signed_bug_verdict_payload`), kept beside it."""
     body = req.model_dump()
     _on()
     caller = rs._dashboard_agent_id(request)
@@ -197,9 +231,12 @@ async def bug_verdict(report_id: str, request: Request, req: VerdictIn):
     verdict = str(body.get("verdict") or "")
     if verdict not in bugs.VERDICTS:
         raise HTTPException(422, f"verdict: one of {', '.join(bugs.VERDICTS)}")
-    severity = str(body.get("severity") or "")
-    fix = str(body.get("fix_commit") or "")
-    dup = str(body.get("duplicate_of") or "")
+    severity = str(body.get("severity") or "") if verdict == "accepted" else ""
+    fix = str(body.get("fix_commit") or "") if verdict == "accepted" else ""
+    dup = str(body.get("duplicate_of") or "") if verdict == "duplicate" else ""
+    at = str(body.get("at") or "")
+    key = _verdict_key_signed(lambda k: wire.signed_bug_verdict_payload(
+        report_id, verdict, severity, fix, dup, rs.relay_id(), k, at), at, req.signature, req.verdict_key)
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute("SELECT * FROM bug_reports WHERE report_id = ?", (report_id,)).fetchone()
         if row is None:
@@ -221,11 +258,10 @@ async def bug_verdict(report_id: str, request: Request, req: VerdictIn):
             if not dup or not conn.execute("SELECT 1 FROM bug_reports WHERE report_id = ?", (dup,)).fetchone() \
                     or dup == report_id:
                 raise HTTPException(422, "duplicate_of: the earlier report's id")
+        # decided_at is the signed `at`, so the row alone recomputes what the verdict key signed
         conn.execute("UPDATE bug_reports SET status = ?, severity = ?, points = ?, fix_commit = ?, duplicate_of = ?, "
-                     "decided_by = ?, decided_at = ? WHERE report_id = ?",
-                     (verdict, severity if verdict == "accepted" else "", points,
-                      fix if verdict == "accepted" else "", dup if verdict == "duplicate" else "", caller, _now(),
-                      report_id))
+                     "decided_by = ?, decided_at = ?, verdict_key = ?, verdict_signature = ? WHERE report_id = ?",
+                     (verdict, severity, points, fix, dup, caller, at, key, req.signature, report_id))
         _log_now(conn, "bug_report", "bug_reports", "report_id", report_id)
         conn.commit()
         row = conn.execute("SELECT * FROM bug_reports WHERE report_id = ?", (report_id,)).fetchone()

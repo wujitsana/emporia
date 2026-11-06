@@ -648,13 +648,22 @@ def _bug_report(conn, r):
     return True, r["report_id"], {k: r[k] for k in (
         "report_id", "reporter_id", "code_commit", "commitment", "sealed", "severity_claimed", "status",
         "severity", "points", "fix_commit", "duplicate_of", "decided_by", "created_at", "decided_at",
-        "revealed_at")} | {"content_hash": revealed}
+        "revealed_at")} | {"content_hash": revealed} | _verdict_signed(r, "verdict_signature")
 
 
 def _idea_verdict(conn, r):
     # Launch additions: the operator's verdict on a public idea, with its signature — public, as a bug's verdict is
     return True, r["post_id"], {k: r[k] for k in (
-        "post_id", "author_id", "verdict", "ref", "duplicate_of", "points", "decided_by", "decided_at", "signature")}
+        "post_id", "author_id", "verdict", "ref", "duplicate_of", "points", "decided_by", "decided_at", "signature")} \
+        | _verdict_signed(r, "")
+
+
+def _verdict_signed(r, sig_col: str) -> dict:
+    # Security review pass 2 (P1): the operator's verdict key and (a bug's) signature, once a verdict
+    # is signed by one. Absent before, so a record built from an older row is as it was.
+    if "verdict_key" not in r.keys() or not r["verdict_key"]:
+        return {}
+    return {"verdict_key": r["verdict_key"], **({sig_col: r[sig_col]} if sig_col else {})}
 
 
 def _pledge(conn, r):

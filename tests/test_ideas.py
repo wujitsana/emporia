@@ -2,16 +2,18 @@
 
 The operator's signed verdict on a post in the ideas topic, reusing the bug verdict's
 mechanism (operator only, final, logged); a reporter's claimed severity beside the
-awarded one; adopted ideas' points on the season's bug board and the sheet."""
+awarded one; adopted ideas' points on the season's bug board and the sheet. Since the
+security review's pass 2 (P1) a verdict is signed by the operator's verdict key, never the
+operator agent's own."""
 import os
 import uuid
-from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
 
 from emporia import bugs, ideas, progression, signing, translog, wire
 from emporia import relay_server as rs
+from tests import verdict_key as vk
 from tests.test_bugs import file
 from tests.test_emporia import _register_keyed
 
@@ -21,6 +23,7 @@ def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,bugs")
     monkeypatch.delenv("EMPORIA_IDEA_POINTS", raising=False)
     monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
+    vk.register(monkeypatch)
     return TestClient(rs.app, client=("127.0.0.1", 51297))
 
 
@@ -47,13 +50,8 @@ def idea(author, title="Show the claimed severity", at="2026-11-05T00:00:00+00:0
     return pid
 
 
-def verdict(client, op, post_id, v, ref="", dup="", sign_as=None):
-    at = datetime.now(UTC).isoformat()
-    ref = ref if v == "adopted" else ""
-    dup = dup if v == "duplicate" else ""
-    sig = signing.sign(sign_as or op, "idea-verdict", post_id, v, ref, dup, op, at)
-    return client.post(f"/ideas/{post_id}/verdict", headers=as_(op),
-                       json={"verdict": v, "ref": ref, "duplicate_of": dup, "at": at, "signature": sig})
+def verdict(client, op, post_id, v, ref="", dup="", key=vk.KEY):
+    return client.post(f"/ideas/{post_id}/verdict", headers=as_(op), json=vk.idea(post_id, v, ref, dup, key=key))
 
 
 def setup(client, monkeypatch, *tags):
@@ -91,10 +89,10 @@ def test_called_it_compares_the_claim_with_the_award_once_accepted():
     assert "no accepted reports" in bugs.calibration(rows[3:])["line"]
 
 
-def test_the_verdict_payload_is_its_own_kind():
-    p = wire.signed_idea_verdict_payload("p", "adopted", "abc1234", "", "op", "t")
-    assert p["type"] == "emporia:idea-verdict:v1" and signing.KINDS["idea-verdict"].builder == \
-        "signed_idea_verdict_payload"
+def test_the_verdict_payload_is_its_own_kind_and_no_agents():
+    p = wire.signed_idea_verdict_payload("p", "adopted", "abc1234", "", "relay", "k", "t")
+    assert p["type"] == "emporia:idea-verdict:v2" and "idea-verdict" not in signing.KINDS
+    assert (p["relay"], p["verdict_key"]) == ("relay", "k")
 
 
 # ── the relay ──────────────────────────────────────────────────────────────
@@ -108,7 +106,8 @@ def test_only_the_operator_judges_signed_and_final(client, monkeypatch):
     op, author, other = setup(client, monkeypatch, "a", "o")
     pid = idea(author)
     assert verdict(client, other, pid, "adopted", ref="a1b2c3d").status_code == 403, "not the operator"
-    assert verdict(client, op, pid, "adopted", ref="a1b2c3d", sign_as=other).status_code == 403, "not its signature"
+    stranger = vk.ed25519.Ed25519PrivateKey.generate()
+    assert verdict(client, op, pid, "adopted", ref="a1b2c3d", key=stranger).status_code == 403, "not its key"
     assert verdict(client, op, pid, "adopted").status_code == 422, "an adopted idea names what it led to"
     assert verdict(client, op, pid, "maybe").status_code == 422
     ref = uuid.uuid4().hex[:10]
@@ -169,11 +168,11 @@ def test_adopted_ideas_and_called_it_reach_the_board_the_points_and_the_sheet(cl
     op, finder, thinker = setup(client, monkeypatch, "f", "t")
     bug = file(client, finder)[0].json()             # claimed medium (tests.test_bugs.report's default)
     assert client.post(f"/bugs/{bug['report_id']}/verdict", headers=as_(op),
-                       json={"verdict": "accepted", "severity": "medium",
-                             "fix_commit": uuid.uuid4().hex[:12]}).json()["called_it"] is True
+                       json=vk.bug(bug["report_id"], "accepted", "medium",
+                                   uuid.uuid4().hex[:12])).json()["called_it"] is True
     bug2 = file(client, finder)[0].json()
     client.post(f"/bugs/{bug2['report_id']}/verdict", headers=as_(op),
-                json={"verdict": "accepted", "severity": "low", "fix_commit": uuid.uuid4().hex[:12]})
+                json=vk.bug(bug2["report_id"], "accepted", "low", uuid.uuid4().hex[:12]))
     listed = {b["report_id"]: b for b in client.get("/bugs").json()["reports"]}
     assert listed[bug2["report_id"]]["called_it"] is False and listed[bug2["report_id"]]["severity_claimed"] == "medium"
     monkeypatch.setenv("EMPORIA_IDEA_POINTS", "12")
@@ -192,34 +191,27 @@ def test_adopted_ideas_and_called_it_reach_the_board_the_points_and_the_sheet(cl
     assert "improvements" not in client.get(f"/agents/{finder}/sheet").json(), "with bug quests only"
 
 
-def test_the_operators_command_signs_and_sends_the_verdict(client, monkeypatch, capsys, tmp_path):
-    """`emporia ideas NAME adopt POST --ref X`: signed with the operator agent's key (run as
-    its MCP server runs), sent with its sign-in — a person's command, never an MCP tool."""
+def test_the_operators_command_signs_with_the_verdict_key_and_sends_the_verdict(client, monkeypatch, capsys,
+                                                                                 tmp_path):
+    """`emporia ideas NAME adopt POST --ref X`: signed with the operator's verdict key — a
+    person's key in the signer's folder, made by `emporia operator NAME verdict-key new` —
+    and sent with the operator's sign-in. A person's command, never an MCP tool."""
     import json
-    import subprocess
     from pathlib import Path
 
-    from emporia import cli
+    from emporia import cli, operator_verdicts
     op, a = setup(client, monkeypatch, "a")
     pid = idea(a)
     profile = tmp_path / "alpha"
+    monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(tmp_path / "signer"))
     monkeypatch.setattr(cli, "_agent_profiles", lambda root: [(profile, {})])
     monkeypatch.setattr(cli, "_agent", lambda n: (profile, op, {"EMPORIA_AGENT_ID": op}))
     monkeypatch.setattr(cli, "_key_file", lambda p, aid, which: Path(tmp_path / "keys" / "k"))
-
-    def as_agent(prof, code, **env):             # the agent's own process, here in this one
-        import contextlib
-        import io
-        out = io.StringIO()
-        with contextlib.redirect_stdout(out):
-            exec(code, {})                        # noqa: S102 — the CLI's own code string
-        return subprocess.CompletedProcess([], 0, out.getvalue(), "")
-    monkeypatch.setattr(cli, "_as_agent", as_agent)
     sent = []
 
     def signed(agent_id, key_dir, path, method="GET", body=None):
         sent.append((path, body))
-        r = client.post("/" + path, json=body, headers=as_(agent_id))
+        r = client.request(method, "/" + path, json=body, headers=as_(agent_id))
         return r.status_code, r.json()
     monkeypatch.setattr(cli, "_signed_get", signed)
     ref = uuid.uuid4().hex[:10]
@@ -230,11 +222,22 @@ def test_the_operators_command_signs_and_sends_the_verdict(client, monkeypatch, 
     monkeypatch.setattr(cli, "_TTY", True)
     for k in [k for k in os.environ if k.startswith("HERMES_SESSION_")]:
         monkeypatch.delenv(k)
+    assert cli.cmd_ideas(args) == 1 and "no verdict key here" in capsys.readouterr().out
+    keygen = cli.build_parser().parse_args(["operator", "alpha", "verdict-key", "new"])
+    assert cli.cmd_operator(keygen) == 0
+    shown = capsys.readouterr().out
+    pub = operator_verdicts.public_hex()
+    assert pub in shown and f"{operator_verdicts.ENV}={pub}" in shown, shown
+    assert oct(operator_verdicts.key_path().stat().st_mode & 0o777) == "0o600"
+    assert cli.cmd_ideas(args) == 1 and "the relay takes verdicts from the verdict key" in capsys.readouterr().out
+    monkeypatch.setenv(operator_verdicts.ENV, pub)            # the person registers it on the relay
+    sent.clear()
     assert cli.cmd_ideas(args) == 0, capsys.readouterr().out
     out = json.loads(capsys.readouterr().out)
-    assert out["points"] == 10 and sent[0][0] == f"ideas/{pid}/verdict" and sent[0][1]["duplicate_of"] == ""
+    assert out["points"] == 10 and out["verdict_key"] == pub
+    assert sent[-1][0] == f"ideas/{pid}/verdict" and sent[-1][1]["duplicate_of"] == ""
     src = (Path(__file__).parent.parent / "src" / "emporia" / "mcp_server.py").read_text()
-    assert "/verdict" not in src, "no MCP tool reaches a verdict"
+    assert "/verdict" not in src and "operator_verdicts" not in src, "no MCP tool reaches a verdict"
 
 
 def test_a_v31_relay_is_copied_aside_then_given_the_verdicts_table(tmp_path, monkeypatch):

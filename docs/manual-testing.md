@@ -383,6 +383,17 @@ H is the relay's operator (`EMPORIA_AGENT_ID=hackathon_hermes` in the relay's `.
 `EMPORIA_GAMIFY=sheets,quests,bugs`, the transparency log on and `EMPORIA_HOUSE_AGENTS` naming a
 house profile set up with `--playbook host`. Restart the relay after changing its `.env`.
 
+- [ ] **The verdict key (security review pass 2, P1):** before any verdict, in your own terminal:
+      `hermes -p hackathon_hermes emporia operator hackathon_hermes verdict-key new`. It says where
+      the key is kept (the signer's folder, `…/operator/verdict.priv`, 0600 — not under any profile)
+      and prints `EMPORIA_OPERATOR_VERDICT_KEY=…`. Before you register it, a verdict is refused:
+      "the relay takes verdicts from no key yet". Put the line in the relay's `.env`, restart the
+      relay; `… verdict-key` (no word after it) now says "registered".
+- [ ] **The operator agent cannot award points:** ask H's agent to run `… operator hackathon_hermes
+      verdict-key`, to read the key's file, or to put `EMPORIA_OPERATOR_VERDICT_KEY=…` in an `.env`:
+      the key guard refuses each outright. (The relay itself refuses a verdict with H's sign-in and
+      H's own key: `tests/test_security_followups_2.py`.)
+
 - [ ] **Only the operator sees it:** H's dashboard (Hermes tab, then the Desktop page, then
       `python -m emporia.console`) shows **Operator** beside **Relay**, and `o` opens it. A's
       dashboard shows neither, and `o` does nothing. `hermes -p alpha emporia operator alpha` says
@@ -394,7 +405,8 @@ house profile set up with `--playbook host`. Restart the relay after changing it
       openly, severity high"*. Both appear under "Bug reports waiting", oldest first, each with the
       claimed severity; B's shows its test, A's says its text is in A's encrypted DM (open it in
       Messages). Each has three commands; copy the accept one, fill in `FIX_COMMIT`, run it in H's
-      terminal: the report leaves the queue and the season's bug board shows B.
+      terminal: the report leaves the queue and the season's bug board shows B. `GET /bugs/<id>`
+      shows the verdict's `verdict_key` (yours) and `verdict_signature`.
 - [ ] **A verdict is the person's:** ask H's agent (a profile with a terminal) to run that same
       verdict command: the key guard refuses it outright, no approval prompt.
 - [ ] **Relay controls wait for a yes:** ask H's agent to run `hermes emporia operator
@@ -410,6 +422,13 @@ house profile set up with `--playbook host`. Restart the relay after changing it
 - [ ] **Ideas (with the launch additions merged):** a post of A's in `ideas` is listed with adopt,
       noted and duplicate commands; without the launch additions the card says the relay takes no idea
       verdicts and shows no command.
+- [ ] **Rotating the verdict key:** `… verdict-key rotate` (the old file is kept, `.retired-…`); before
+      the relay's `.env` has the new key a verdict is refused ("the relay takes verdicts from the
+      verdict key …, and yours is …"); after the line and a restart it is taken. The earlier verdicts
+      still show the old key beside their signature.
+- [ ] **House stop is its own:** with two house profiles running, write one's PID into the other's
+      `emporia_house.pid` and run `hermes emporia house stop <the other>`: "not … house runner —
+      nothing stopped", and both keep running (`ps` shows both `emporia.house --home …`).
 
 ### 11. A lab sitting (labs W0; about 40 minutes, no money, a little model spend)
 

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from emporia import bugs, translog
 from emporia import relay_server as rs
 from emporia.relay_server import app
+from tests import verdict_key as vk
 from tests.test_emporia import _register
 
 COMMIT, FIX = "a1b2c3d4e5f6", "f6e5d4c3b2a1"
@@ -15,6 +16,7 @@ COMMIT, FIX = "a1b2c3d4e5f6", "f6e5d4c3b2a1"
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,bugs")
+    vk.register(monkeypatch)            # security review pass 2 (P1): the operator's verdict key
     return TestClient(app, client=("127.0.0.1", 51289))
 
 
@@ -111,7 +113,7 @@ def test_a_sealed_report_shows_only_its_commitment_until_revealed(client, monkey
     assert client.post(f"/bugs/{bug['report_id']}/reveal", headers=as_(finder),
                        json={"content": f, "salt": salt}).status_code == 409        # not before the verdict
     v = client.post(f"/bugs/{bug['report_id']}/verdict", headers=as_(op),
-                    json={"verdict": "accepted", "severity": "high", "fix_commit": FIX}).json()
+                    json=vk.bug(bug["report_id"], "accepted", "high", FIX)).json()
     assert v["status"] == "accepted" and v["points"] == 40
     wrong = client.post(f"/bugs/{bug['report_id']}/reveal", headers=as_(finder),
                         json={"content": {**f, "title": "something else"}, "salt": salt})
@@ -137,7 +139,7 @@ def test_a_revealed_report_is_held_to_the_same_limits_as_an_open_one(client, mon
     monkeypatch.setenv("EMPORIA_AGENT_ID", op)
     big = report(test="x" * (bugs.MAX_TEXT + 1), title="too big")
     bug = file(client, finder, fields=big)[0].json()
-    client.post(f"/bugs/{bug['report_id']}/verdict", headers=as_(op), json={"verdict": "invalid"})
+    client.post(f"/bugs/{bug['report_id']}/verdict", headers=as_(op), json=vk.bug(bug["report_id"], "invalid"))
     r = client.post(f"/bugs/{bug['report_id']}/reveal", headers=as_(finder), json={"content": big[0], "salt": big[1]})
     assert r.status_code == 422, r.text
     assert client.get(f"/bugs/{bug['report_id']}").json()["content"] is None
@@ -164,11 +166,11 @@ def test_only_the_operator_judges_and_a_verdict_is_final(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_AGENT_ID", op)
     bug = file(client, finder)[0].json()
     assert client.post(f"/bugs/{bug['report_id']}/verdict", headers=as_(finder),
-                       json={"verdict": "accepted", "severity": "critical", "fix_commit": FIX}).status_code == 403
+                       json=vk.bug(bug["report_id"], "accepted", "critical", FIX)).status_code == 403
     assert client.post(f"/bugs/{bug['report_id']}/verdict", headers=as_(op),
-                       json={"verdict": "invalid"}).json()["status"] == "invalid"
+                       json=vk.bug(bug["report_id"], "invalid")).json()["status"] == "invalid"
     assert client.post(f"/bugs/{bug['report_id']}/verdict", headers=as_(op),
-                       json={"verdict": "accepted", "severity": "low", "fix_commit": FIX}).status_code == 409
+                       json=vk.bug(bug["report_id"], "accepted", "low", FIX)).status_code == 409
 
 
 def test_one_fix_one_award(client, monkeypatch):
@@ -179,12 +181,12 @@ def test_one_fix_one_award(client, monkeypatch):
     fix = uuid.uuid4().hex[:12]
     first, second = file(client, a)[0].json(), file(client, b)[0].json()
     assert client.post(f"/bugs/{first['report_id']}/verdict", headers=as_(op),
-                       json={"verdict": "accepted", "severity": "medium", "fix_commit": fix}).status_code == 200
+                       json=vk.bug(first["report_id"], "accepted", "medium", fix)).status_code == 200
     again = client.post(f"/bugs/{second['report_id']}/verdict", headers=as_(op),
-                        json={"verdict": "accepted", "severity": "medium", "fix_commit": fix})
+                        json=vk.bug(second["report_id"], "accepted", "medium", fix))
     assert again.status_code == 409 and "duplicate" in again.json()["detail"]
     dup = client.post(f"/bugs/{second['report_id']}/verdict", headers=as_(op),
-                      json={"verdict": "duplicate", "duplicate_of": first["report_id"]}).json()
+                      json=vk.bug(second["report_id"], "duplicate", duplicate_of=first["report_id"])).json()
     assert dup["status"] == "duplicate" and dup["points"] == 0
 
 
@@ -203,7 +205,7 @@ def test_an_operators_agents_share_one_cap_and_the_operator_earns_nothing(client
     capped = file(client, sock2)[0]
     assert capped.status_code == 429 and "already open" in capped.json()["detail"]   # one operator, one cap
     v = client.post(f"/bugs/{filed[0].json()['report_id']}/verdict", headers=as_(op),
-                    json={"verdict": "accepted", "severity": "critical", "fix_commit": uuid.uuid4().hex[:12]}).json()
+                    json=vk.bug(filed[0].json()["report_id"], "accepted", "critical", uuid.uuid4().hex[:12])).json()
     assert v["status"] == "accepted" and v["points"] == 0                         # an operator does not pay itself
 
 

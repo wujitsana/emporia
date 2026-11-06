@@ -27492,9 +27492,10 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # (a V32 relay would serve a dealt game it cannot deal or reveal); `pledges` and `pledge_acts`,
 # signed promises and their attestations.
 #
-# V33 -> V34 (labs, W0): `labs`, `lab_patches` and `lab_checks` — a room bound to a repo, an
-# agent's signed patch kept as data, and a checker's signed result.
-_SCHEMA_FINGERPRINT_V34 = "689c3d5704118585d191c15b204ddd25a1d53904dc991b2f26d4f0f898d472cd"  # labs (W0)
+# V33 -> V34 (labs W0 and security review pass 2, one bump): `labs`, `lab_patches` and `lab_checks` — a
+# room bound to a repo, an agent's signed patch kept as data, a checker's signed result — and
+# `bug_reports.verdict_key` / `verdict_signature`, `idea_verdicts.verdict_key` (the operator's verdict key).
+_SCHEMA_FINGERPRINT_V34 = "cd3bb804835da927f279e4318a94d47db683ec288e012619beb507f40a21446a"  # labs (W0) + the verdict key
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:

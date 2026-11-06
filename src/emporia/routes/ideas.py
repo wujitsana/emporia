@@ -2,9 +2,10 @@
 
 The bug verdict's mechanism, reused: the relay operator only (`_require_operator`,
 its bearer token), final, and an entry in the transparency log the moment it is
-given. Unlike a bug verdict, the operator also signs the verdict itself
-(`wire.signed_idea_verdict_payload`), kept beside it, so the record carries the
-operator's own word and not only the relay's.
+given. As a bug verdict (security review pass 2, P1), it is signed by the operator's
+verdict key (`wire.signed_idea_verdict_payload`, v2), a person's key no agent holds,
+kept beside it — so the record carries the person's own word, and neither the relay
+nor a takeover of the operator's agent can award the points.
 
 On with `bugs` in EMPORIA_GAMIFY (which needs the log): adopted ideas earn points on
 the same board as accepted bug reports. Rules in `emporia.ideas`.
@@ -17,7 +18,7 @@ from pydantic import BaseModel
 
 from emporia import ideas, progression, quests, wire
 from emporia import relay_server as rs
-from emporia.routes.bugs import _log_now, _on, _operator_key
+from emporia.routes.bugs import _log_now, _on, _operator_key, _verdict_key_signed
 
 router = APIRouter()
 
@@ -26,8 +27,9 @@ class IdeaVerdictIn(BaseModel):
     verdict: str
     ref: str = ""
     duplicate_of: str = ""
-    at: str
-    signature: str
+    at: str = ""
+    signature: str = ""
+    verdict_key: str = ""        # optional: named only so a refusal can say "another key"
 
 
 def _idea_post(conn, post_id: str, topic: str):
@@ -45,6 +47,7 @@ def _public(r) -> dict:
     return {"post_id": r["post_id"], "author_id": r["author_id"], "verdict": r["verdict"], "ref": r["ref"] or None,
             "duplicate_of": r["duplicate_of"] or None, "points": r["points"], "decided_by": r["decided_by"],
             "decided_at": r["decided_at"], "signature": r["signature"],
+            "verdict_key": (r["verdict_key"] if "verdict_key" in keys else "") or None,
             "title": r["title"] if "title" in keys else None,
             "posted_at": r["created_at"] if "created_at" in keys else None}
 
@@ -69,13 +72,8 @@ async def idea_verdict(post_id: str, request: Request, req: IdeaVerdictIn):
         ref = ""
     if verdict != "duplicate":
         dup = ""
-    from emporia.routes.agents import _signed_at
-    _signed_at(req.at)
-    if not rs.AGENT_REGISTRY.verify_signature(caller, wire.signed_idea_verdict_payload(
-            post_id, verdict, ref, dup, caller, req.at), req.signature):
-        raise HTTPException(403, "the verdict's signature does not verify against your key (sign post_id, verdict, "
-                                 "ref, duplicate_of, agent_id, at — ref only when adopted, duplicate_of only when "
-                                 "a duplicate)")
+    key = _verdict_key_signed(lambda k: wire.signed_idea_verdict_payload(
+        post_id, verdict, ref, dup, rs.relay_id(), k, req.at), req.at, req.signature, req.verdict_key)
     topic = quests.topics()["ideas"]
     with rs.DB_LOCK, rs.get_db() as conn:
         post = _idea_post(conn, post_id, topic)
@@ -98,9 +96,9 @@ async def idea_verdict(post_id: str, request: Request, req: IdeaVerdictIn):
             if str(earlier["created_at"]) > str(post["created_at"]):
                 raise HTTPException(422, "duplicate_of: the earlier post — that one came after this")
         conn.execute("INSERT INTO idea_verdicts (post_id, author_id, operator_key, verdict, ref, duplicate_of, points, "
-                     "decided_by, decided_at, signature) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                     "decided_by, decided_at, signature, verdict_key) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                      (post_id, post["author_id"], _operator_key(conn, post["author_id"]), verdict, ref, dup, points,
-                      caller, req.at, req.signature))
+                      caller, req.at, req.signature, key))
         _log_now(conn, "idea_verdict", "idea_verdicts", "post_id", post_id)
         conn.commit()
         row = conn.execute(f"{_SELECT} WHERE v.post_id = ?", (post_id,)).fetchone()  # noqa: S608
@@ -110,7 +108,7 @@ async def idea_verdict(post_id: str, request: Request, req: IdeaVerdictIn):
 @router.get("/ideas")
 async def list_ideas(verdict: str | None = None, limit: int = 50):
     """The operator's verdicts on ideas, newest first: adopted (with what each led to and
-    its points), noted, duplicate. Every one is signed by the operator and logged."""
+    its points), noted, duplicate. Every one is signed by the operator's verdict key and logged."""
     _on()
     q, params = _SELECT, []
     if verdict:
@@ -120,5 +118,7 @@ async def list_ideas(verdict: str | None = None, limit: int = 50):
     params.append(rs._clamp_limit(limit))
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute(q, params).fetchall()
+    from emporia import operator_verdicts
     return {"scope": "this_relay", "formula": ideas.FORMULA, "topic": quests.topics()["ideas"],
-            "points_per_idea": ideas.points(), "verdicts": [_public(r) for r in rows]}
+            "points_per_idea": ideas.points(), "verdict_key": operator_verdicts.registered()[0] or None,
+            "verdicts": [_public(r) for r in rows]}

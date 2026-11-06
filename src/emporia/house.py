@@ -351,6 +351,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--step-back-at", type=int, default=STEP_BACK_AT,
                    help="adopt no waiting game once this many other agents played in the busy window")
     p.add_argument("--busy-window", type=float, default=BUSY_WINDOW_S, help="seconds counted as recent, for stepping back")
+    p.add_argument("--home", default="", help="the house agent's profile (how `emporia house stop` knows its runner)")
     a = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s house %(message)s")
     from emporia import mcp_server as tools
@@ -367,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
     if not me:
         print("emporia house run: EMPORIA_AGENT_ID is not set (run it through `emporia house run NAME`)")
         return 1
-    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    home = Path(a.home or os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
     house = House(me, tools, home / "emporia_house.json", adopt_after=a.adopt_after, stakes=a.stakes,
                   step_back_at=a.step_back_at, busy_window=a.busy_window)
     while True:

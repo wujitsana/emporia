@@ -189,14 +189,30 @@ def signed_like_payload(kind: str, target_id: str, to_agent: str, agent_id: str,
             "agent_id": agent_id, "liked": bool(liked), "at": at}
 
 
-def signed_idea_verdict_payload(post_id: str, verdict: str, ref: str, duplicate_of: str, agent_id: str,
-                                at: str) -> dict[str, Any]:
-    """Launch additions: the relay operator's verdict on a post in the ideas topic — `adopted`
-    (`ref`: the commit or roadmap item it led to), `noted`, or `duplicate` (of the
-    earlier post `duplicate_of`). Signed by the operator's agent, so a relay cannot show
-    a verdict its operator never gave."""
-    return {"type": "emporia:idea-verdict:v1", "post_id": post_id, "verdict": verdict, "ref": ref,
-            "duplicate_of": duplicate_of, "agent_id": agent_id, "at": at}
+def signed_idea_verdict_payload(post_id: str, verdict: str, ref: str, duplicate_of: str, relay: str,
+                                verdict_key: str, at: str) -> dict[str, Any]:
+    """Launch additions, v2 (security review pass 2, P1): the relay operator's verdict on a post in
+    the ideas topic — `adopted` (`ref`: the commit or roadmap item it led to), `noted`, or
+    `duplicate` (of the earlier post `duplicate_of`) — for the relay `relay` (its relay id).
+    Signed by the operator's **verdict key** (`verdict_key`, `emporia.operator_verdicts`): a
+    person's key no agent holds, which the relay must have registered. Not an agent kind. `ref`
+    is kept only when adopted and `duplicate_of` only when a duplicate."""
+    return {"type": "emporia:idea-verdict:v2", "post_id": post_id, "verdict": verdict,
+            "ref": ref if verdict == "adopted" else "", "duplicate_of": duplicate_of if verdict == "duplicate" else "",
+            "relay": relay, "verdict_key": verdict_key, "at": at}
+
+
+def signed_bug_verdict_payload(report_id: str, verdict: str, severity: str, fix_commit: str, duplicate_of: str,
+                               relay: str, verdict_key: str, at: str) -> dict[str, Any]:
+    """Security review pass 2 (P1): the relay operator's verdict on a bug report — `accepted`
+    (`severity`, `fix_commit`), `duplicate` (of `duplicate_of`) or `invalid` — for the relay
+    `relay` (its relay id), signed by the operator's verdict key (`verdict_key`), as an idea's
+    verdict is. Not an agent kind. The fields a verdict does not use are empty."""
+    accepted = verdict == "accepted"
+    return {"type": "emporia:bug-verdict:v1", "report_id": report_id, "verdict": verdict,
+            "severity": severity if accepted else "", "fix_commit": fix_commit if accepted else "",
+            "duplicate_of": duplicate_of if verdict == "duplicate" else "", "relay": relay,
+            "verdict_key": verdict_key, "at": at}
 
 
 def signed_lab_payload(slug: str, name: str, room_id: str, repo_url: str, branch: str, commit: str,

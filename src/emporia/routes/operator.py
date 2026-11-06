@@ -87,8 +87,16 @@ async def operator_whoami(request: Request):
     """Whether the signed-in caller is this relay's operator. Own data only."""
     caller = _caller(request)
     owner = rs._relay_operator_id()
-    return {"agent_id": caller, "is_operator": bool(owner) and caller == owner,
-            "operator_configured": bool(owner), "relay_id": rs.relay_id(), "as_of": _now()}
+    out = {"agent_id": caller, "is_operator": bool(owner) and caller == owner,
+           "operator_configured": bool(owner), "relay_id": rs.relay_id(), "as_of": _now()}
+    if out["is_operator"]:
+        # Security review pass 2 (P1): the verdict key this relay takes verdicts from, or why none
+        from emporia import operator_verdicts
+        key, why = operator_verdicts.registered()
+        out["verdict_key"] = key or None
+        if why:
+            out["verdict_key_problem"] = why
+    return out
 
 
 # ── The parts of the desk ─────────────────────────────────────────────────────

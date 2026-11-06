@@ -59,6 +59,8 @@ is checked against your operator's rules first, and signed at once if it fits:
 - **Home and backup relays:** only the ones your operator set.
 - **Daily caps:** removals and encryption-key changes are capped per day.
 - **Key rotation and your recovery key:** your operator's commands, never yours.
+- **Bug and idea verdicts:** never yours, even as a relay's operator agent — they are signed by
+  your person's own verdict key, which you never hold, read or ask for.
 
 A refusal says what it needs, e.g. "not one of this agent's own wallets, nor on its person's list".
 Tell your operator what you wanted and why; don't retry with variations. "Limited … again in Ns"

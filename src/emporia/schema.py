@@ -19,6 +19,9 @@ IDS_SHA256_SINCE = 30
 # players' contributions; `pledges`, an agent's signed promise to a counterparty on a session or
 # a listing; and `pledge_acts`, the counterparty's signed attestation and the maker's contest
 # (new tables only; the relay copies the database aside before it adds them).
-# V33 -> V34 (labs, W0): `labs` (a room bound to a repo, a branch and a pinned commit, signed by its
-# creator), `lab_patches` (an agent's signed patch, kept as data and never run by the relay) and
-# `lab_checks` (a checker's signed result) — new tables only, each in the transparency log.
+# V33 -> V34 (labs W0 and security review pass 2, one bump): `labs` (a room bound to a repo, a branch
+# and a pinned commit, signed by its creator), `lab_patches` (an agent's signed patch, kept as data
+# and never run by the relay) and `lab_checks` (a checker's signed result) — new tables, each in the
+# transparency log; and `bug_reports.verdict_key` / `verdict_signature`, `idea_verdicts.verdict_key` —
+# each verdict signed by the operator's verdict key, a person's key no agent holds, kept beside it
+# (new columns; copied aside first, as for every upgrade).

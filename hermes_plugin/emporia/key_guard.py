@@ -47,6 +47,10 @@ _KEY_PATHS = re.compile(
     r"|new_agent_token|admin_token)\b|-m\s+emporia\.signer\b"
     # P293: its back ends' code (credentials, keys in KMS or a provider) is the signer's too
     r"|\bemporia\.signer_backends\b|\bfrom\s+emporia\s+import\s+[\w\s,]*\bsigner_backends\b"
+    # Security review pass 2 (P1): the operator's verdict key (signer folder, operator/verdict.priv —
+    # `.priv` above) and its code, called directly: it signs the verdicts that award points
+    r"|\boperator/verdict\.priv\b|\bemporia\.operator_verdicts\b"
+    r"|\bfrom\s+emporia\s+import\s+[\w\s,]*\boperator_verdicts\b"
     # and a MetaMask Agent Wallet back end's: the signer user's `mm` session (~/.metamask)
     # and the `mm` commands that sign, move money or change its wallets and policy
     # (review pass 2: also mid-command, `tar … ~/.metamask && …`, and `mm` run through npx)
@@ -118,6 +122,8 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate", 
                 # Labs (W0): making a lab, the checker (it signs results and runs patches in its
                 # sandbox) and landing a patch in a checkout are a person's
                 ("lab", {"create", "check", "land"}),
+                # Security review pass 2 (P1): the verdict key that signs both — made and used by a person
+                ("operator", {"verdict"}),
                 # P290: the guardians of a relay's key are people, not agents
                 ("guardians", {"key", "set", "propose", "sign", "apply"}),
                 # P203: the signer is what an agent cannot change — its keys, limits and approvals
@@ -183,7 +189,8 @@ BLOCKED = ("Blocked by Emporia: that would reach this agent's keys. Keys are use
 
 PERSON_ONLY = ("Blocked by Emporia: only a person runs this, in their own terminal — `emporia wallet "
                "backup` shows a recovery phrase, `emporia wallet mainnet` turns on real money, `emporia "
-               "relay host` opens a relay to other machines. Tell your operator; never ask for the phrase.")
+               "relay host` opens a relay to other machines, a verdict (and the operator's verdict key) "
+               "awards points. Tell your operator; never ask for the phrase.")
 HOME_RELAY = ("Blocked by Emporia: only a person changes which relay this agent lives on "
               "(`emporia relay use URL NAME`). To act on another relay, use visit_relay, which asks.")
 _HOME_SETTING = re.compile(r"\bEMPORIA_RELAY_URL\b")
@@ -206,6 +213,14 @@ def _setting_written(names: tuple[str, ...]):
 
 
 _MAINNET_WRITE, _LIMITS_WRITE = _setting_written(_MAINNET_SETTING), _setting_written(_LIMIT_SETTINGS)
+# Security review pass 2 (P1): which key a relay takes verdicts from is its person's to say —
+# assigned in any command, or written into a config file, it is refused outright.
+_VERDICT_KEY_WRITE = _setting_written(("EMPORIA_OPERATOR_VERDICT_KEY",))
+
+
+def _writes_verdict_key(args: dict) -> bool:
+    return _writes_setting(args, _VERDICT_KEY_WRITE) or any(
+        _VERDICT_KEY_WRITE.search(t) for key in ("command", "cmd", "code", "script") for t in _strings(args.get(key)))
 
 
 def _writes_setting(args: dict, pattern: re.Pattern) -> bool:
@@ -227,6 +242,41 @@ RELAY_OPEN = ("Blocked by Emporia: only a person opens a relay to other machines
               "their own terminal). The relay on this machine listens on 127.0.0.1.")
 # The block the CLI prints around a recovery phrase (cli.PHRASE_BEGIN / PHRASE_END).
 _PHRASE_BLOCK = re.compile(r"──── RECOVERY PHRASE ────.*?(?:──── END OF RECOVERY PHRASE ────|\Z)", re.S)
+
+
+# P6 (security review pass 2): a path is matched as it would resolve, not only as written —
+# `~/.hermes//keys`, `~/.hermes/./keys`, `a/../.hermes/keys`, and a relative path after
+# `cd DIR &&` (or the terminal tool's `workdir`). Cheap, and it adds no false positive: each
+# variant is a spelling of a path the command really names.
+_SLASHES = re.compile(r"/(?:\.?/)+")
+_DOTDOT = re.compile(r"(?<![^/\s'\"=:])(?!\.\.?/)[^/\s'\"]+/\.\./")
+_CD = re.compile(r"(?:^|[;&|(\n]\s*)(?:cd|pushd)\s+(['\"]?)([^\s;&|'\")]+)\1\s*(?:&&|;|\n)")
+_TOKEN = re.compile(r"(?<=[\s=<>'\"])(?![-/~$])([\w.@-][^\s;&|'\"<>]*)")
+
+
+def _normal(text: str) -> str:
+    text = _SLASHES.sub("/", text)
+    for _ in range(8):                      # a/b/../../c: one level a pass
+        resolved = _DOTDOT.sub("", text)
+        if resolved == text:
+            break
+        text = resolved
+    return text
+
+
+def _variants(text: str, workdir: str = ""):
+    """`text`, normalised, and each relative word after a `cd DIR` (or in `workdir`) as DIR/word."""
+    yield text
+    norm = _normal(text)
+    if norm != text:
+        yield norm
+    bases = [(m.group(2), m.end()) for m in _CD.finditer(norm)]
+    if workdir:
+        bases.insert(0, (workdir, 0))
+    for base, start in bases:
+        base = base.rstrip("/")
+        rest = " " + norm[start:]
+        yield _normal(_TOKEN.sub(lambda m: f"{base}/{m.group(1)}", rest))
 
 
 def _strings(value: Any):
@@ -252,16 +302,19 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
     operator (Hermes's approval prompt — the agent cannot answer it)."""
     if not isinstance(args, dict):
         return None
+    workdir = next((w for k in ("workdir", "cwd") for w in _strings(args.get(k))), "")
     for key in _READ_ARGS:
-        for text in _strings(args.get(key)):
-            if _KEY_PATHS.search(text) or _KEY_NAMES.search(text) or _ENV_READS.search(text):
-                return {"action": "block", "message": BLOCKED}
+        for raw in _strings(args.get(key)):
+            for text in _variants(raw, workdir):
+                if _KEY_PATHS.search(text) or _KEY_NAMES.search(text) or _ENV_READS.search(text):
+                    return {"action": "block", "message": BLOCKED}
     if any(_RELAY_SETTING.search(text) for text in _strings(args)) or any(
-            _RELAY_FOLDER.search(text) for key in _READ_ARGS for text in _strings(args.get(key))):
+            _RELAY_FOLDER.search(text) for key in _READ_ARGS for raw in _strings(args.get(key))
+            for text in _variants(raw, workdir)):
         return {"action": "block", "message": RELAY_OPEN}
     if _changes_home_relay(args):
         return {"action": "block", "message": HOME_RELAY}
-    if _writes_setting(args, _MAINNET_WRITE):
+    if _writes_setting(args, _MAINNET_WRITE) or _writes_verdict_key(args):
         return {"action": "block", "message": PERSON_ONLY}
     if _writes_setting(args, _LIMITS_WRITE):
         import hashlib
