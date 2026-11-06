@@ -90,7 +90,6 @@ export interface AgentEvent {
 export interface RoomWsState {
   messages: WsMessage[];
   connected: boolean;
-  send: (data: string) => void;
 }
 
 export interface AgentWsState {
@@ -292,8 +291,8 @@ export function useRoomWs(
     };
   }, [relayUrl, roomId, agentId]);
 
-  const send = (data: string) => wsRef.current?.send(data);
-  return { messages, connected, send };
+  // Watch only: the dashboard never sends on a room's socket (no `send` here, review pass 2).
+  return { messages, connected };
 }
 
 // ─── Sender pubkeys ──────────────────────────────────────────────────────────
