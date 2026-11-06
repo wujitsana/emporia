@@ -751,6 +751,18 @@ def signing_key_for(key: str, when: Any = "") -> str:
     return key_at(windows, when)
 
 
+def key_for_record(public_key_hex: str, stable_id: str = "", key_log: Any = None, at: Any = "") -> str:
+    """The key to check a record against that its agent signed at `at`: as an agent's served profile gives
+    it (`public_key_hex`, `stable_id`, `key_log`). An agent that rotated its key still has its older records
+    verify: the signed key log says which key was its then. No (valid) log, or no time: the current key.
+    "" when the agent had no key at that time, which is a failed check. Every verifier of a stored record
+    goes through this (or `signing_key_for`, which it ends in); none checks an old record against the
+    current key alone."""
+    key = (public_key_hex or "").lower()
+    windows = key_log_windows(stable_id, key_log, key) if stable_id and key_log else []
+    return key_at(windows, at) if windows and at else key
+
+
 def key_log_windows(stable_id: str, log: Any, current_key: str = "") -> list[dict[str, str]]:
     """P245: the keys an agent has held and when, from its signed key log — []
     unless the log is valid for this stable id. See `wire.key_log_windows`."""
