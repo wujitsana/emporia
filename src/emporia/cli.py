@@ -1538,6 +1538,89 @@ def cmd_bugs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ideas(args: argparse.Namespace) -> int:
+    """Launch additions: `emporia ideas NAME` — the relay operator's verdicts on posts in the ideas
+    topic. As the relay's operator, a person (no agent tool does this):
+    `emporia ideas NAME adopt POST --ref COMMIT_OR_ROADMAP_ITEM` (the first post of the
+    idea: it earns the improvement points), `emporia ideas NAME noted POST`, `emporia ideas
+    NAME duplicate POST --of EARLIER_POST`. Each verdict is signed with NAME's key and is an
+    entry in the relay's transparency log; it is final."""
+    import json as _json
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    if args.name not in agents:
+        print(f"ideas: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    act = args.act or "list"
+    if act == "list":
+        code = "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m._ideas_judged()))"
+    else:
+        if not args.rest:
+            print(f"ideas: {act} POST_ID")
+            return 1
+        if act == "adopt" and not args.ref:
+            print("ideas: adopt POST_ID --ref COMMIT_OR_ROADMAP_ITEM (what the idea led to)")
+            return 1
+        if act == "duplicate" and not args.of:
+            print("ideas: duplicate POST_ID --of EARLIER_POST_ID")
+            return 1
+        verdict = {"adopt": "adopted", "noted": "noted", "duplicate": "duplicate"}[act]
+        if not _persons_terminal():
+            # As a bug verdict: points on the board and an entry in the log for good — the
+            # person's signed decision, in their own terminal (the key guard refuses it too).
+            print(f"ideas: only a person gives a verdict ({act}), in their own terminal — never through an agent.")
+            return 1
+        return _idea_verdict(agents[args.name], args.rest[0], verdict, args.ref or "", args.of or "")
+    r = _as_agent(agents[args.name], code, EMPORIA_NO_ARCHIVE="1")
+    try:
+        out = _json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"ideas: {(r.stderr or r.stdout).strip()[-300:]}")
+        return 1
+    if not out.get("success"):
+        print(f"ideas: {out.get('detail') or out.get('error')}")
+        return 1
+    if args.json or act != "list":
+        print(_json.dumps({k: v for k, v in out.items() if k != "success"}, indent=2))
+        return 0
+    print(f"ideas topic `{out.get('topic')}` · {out.get('points_per_idea')} points per adopted idea")
+    for v in out.get("verdicts") or []:
+        what = v.get("ref") or (f"duplicate of {v['duplicate_of']}" if v.get("duplicate_of") else "")
+        print(f"  {v['post_id']}  {v['verdict']:<9} {v['points']:>3} pts  {v['author_id']:<12} "
+              f"{(v.get('title') or '')[:40]:<40}  {what}")
+    return 0
+
+
+def _idea_verdict(profile: Path, post_id: str, verdict: str, ref: str, duplicate_of: str) -> int:
+    """Sign an idea verdict with the operator agent's key (`emporia:idea-verdict:v1`, run the
+    way its MCP server runs, so its own key source signs) and send it with the operator's
+    sign-in, the way a bug verdict goes. No MCP tool reaches `/ideas/{id}/verdict`."""
+    import json as _json
+
+    from emporia.wire import path_id
+    _, agent_id, _env = _agent(profile.name)
+    ref = ref.strip() if verdict == "adopted" else ""
+    duplicate_of = duplicate_of.strip() if verdict == "duplicate" else ""
+    code = ("import json\nfrom datetime import UTC, datetime\nfrom emporia import signing\n"
+            "at = datetime.now(UTC).isoformat()\n"
+            f"sig = signing.sign({agent_id!r}, 'idea-verdict', {post_id!r}, {verdict!r}, {ref!r}, "
+            f"{duplicate_of!r}, {agent_id!r}, at)\n"
+            f"print(json.dumps({{'verdict': {verdict!r}, 'ref': {ref!r}, 'duplicate_of': {duplicate_of!r}, "
+            "'at': at, 'signature': sig}))")
+    r = _as_agent(profile, code, EMPORIA_NO_ARCHIVE="1")
+    try:
+        body = _json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"ideas: {(r.stderr or r.stdout).strip()[-300:]}")
+        return 1
+    status, d = _signed_get(agent_id, _key_file(profile, agent_id, "identity").parent,
+                            f"ideas/{path_id(post_id)}/verdict", "POST", body)
+    if status != 200:
+        print(f"ideas: {(d or {}).get('detail', d) if isinstance(d, dict) else d}")
+        return 1
+    print(_json.dumps(d, indent=2))
+    return 0
+
+
 def cmd_archive(args: argparse.Namespace) -> int:
     """P194: `emporia archive NAME` — refresh NAME's own archive of everything it
     is part of on its relay (DMs, rooms, its posts and listings, its sessions);
@@ -2960,7 +3043,7 @@ def _show_playbook(name: str, pb) -> None:
     print(f"  Playbook    {pb.preset} — {P.about(pb)}")
     print(f"  Games       {games}; stakes up to {stake}")
     print(f"  Answers     {pb.answers}   Sells {'yes' if pb.sells else 'no'}   Buys {'yes' if pb.buys else 'no'}"
-          f"   Runs on {pb.runs}")
+          f"   Runs on {pb.runs}   Pledges {'yes' if pb.pledges else 'no'}")
 
 
 def _setup_playbook(profile: Path, name: str, chosen: str, existing: bool) -> None:
@@ -2989,8 +3072,8 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
     dotenv = installer().harvest_env(profile)
     updates: dict[str, str] = {}
     preset = args.preset
-    if not preset and _TTY and not any(getattr(args, a) is not None for a in
-                                       ("games", "max_stake", "answers", "sells", "buys", "runs")):
+    if not preset and _TTY and not any(getattr(args, a, None) is not None for a in
+                                       ("games", "max_stake", "answers", "sells", "buys", "runs", "pledges")):
         heading(f"Playbook: {name}", "What it may do on its own. Its style stays its own (SOUL.md).")
         _show_playbook(name, P.resolve(dotenv))
         preset = choose("Start from", [(k, P.ABOUT[k]) for k in P.PRESETS],
@@ -3004,8 +3087,9 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
         updates.update({var: "" for var in P.SETTINGS})          # a preset starts clean
     for attr, var in (("games", "EMPORIA_PLAYBOOK_GAMES"), ("max_stake", "EMPORIA_PLAYBOOK_MAX_STAKE_CENTS"),
                       ("answers", "EMPORIA_PLAYBOOK_ANSWERS"), ("sells", "EMPORIA_PLAYBOOK_SELLS"),
-                      ("buys", "EMPORIA_PLAYBOOK_BUYS"), ("runs", "EMPORIA_PLAYBOOK_RUNS")):
-        if getattr(args, attr) is not None:
+                      ("buys", "EMPORIA_PLAYBOOK_BUYS"), ("runs", "EMPORIA_PLAYBOOK_RUNS"),
+                      ("pledges", "EMPORIA_PLAYBOOK_PLEDGES")):
+        if getattr(args, attr, None) is not None:
             updates[var] = str(getattr(args, attr))
     try:
         pb = P.resolve({**dotenv, **updates})
@@ -7205,6 +7289,8 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("--sells", default=None, choices=["yes", "no"], help="playbook: may it sell")
     ag2.add_argument("--buys", default=None, choices=["yes", "no"], help="playbook: may it buy")
     ag2.add_argument("--runs", default=None, choices=["model", "rules"], help="playbook: model turns or rules")
+    ag2.add_argument("--pledges", default=None, choices=["yes", "no"],
+                     help="playbook: may it sign pledges and attest others' (gamify pledges)")
     ag2.add_argument("--compromised-since", default="",
                      help="recover: when the old key stopped being only yours (ISO time; default now)")
     ag2.set_defaults(func=lambda a: cmd_agent_secure(a.url_or_name) if a.action == "secure" else
@@ -7311,6 +7397,15 @@ def build_parser() -> argparse.ArgumentParser:
     bg.add_argument("--report", help="incident: the report that found it")
     bg.add_argument("--json", action="store_true")
     bg.set_defaults(func=cmd_bugs)
+
+    ix = sub.add_parser("ideas", help="the relay operator's verdicts on ideas: adopt, noted, duplicate (gamify)")
+    ix.add_argument("name")
+    ix.add_argument("act", nargs="?", choices=["list", "adopt", "noted", "duplicate"])
+    ix.add_argument("rest", nargs="*")
+    ix.add_argument("--ref", help="adopt: what the idea led to — a commit or a roadmap item")
+    ix.add_argument("--of", help="duplicate: the earlier post of the same idea")
+    ix.add_argument("--json", action="store_true")
+    ix.set_defaults(func=cmd_ideas)
 
     de = sub.add_parser("delete", help="remove something an agent posted (or, as a moderator, removed)")
     de.add_argument("name")

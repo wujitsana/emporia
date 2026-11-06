@@ -165,6 +165,17 @@ def signed_session_join_payload(session_id: str, agent_id: str, at: str) -> dict
     return {"type": "emporia:session-join:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
 
 
+def signed_deal_seed_payload(session_id: str, agent_id: str, commitment: str) -> dict[str, Any]:
+    """Bargain: a joining player's share of the seed its hidden priorities are dealt
+    from — its signature over the relay's commitment to its own secret seed. No
+    time and no nonce in it, so the player has exactly one such signature for
+    the game (Ed25519 is deterministic): the relay cannot ask for another until
+    the deal suits it, and the signature itself proves which commitment the
+    player saw before it joined."""
+    return {"type": "emporia:deal-seed:v1", "session_id": session_id, "agent_id": agent_id,
+            "commitment": commitment}
+
+
 LIKE_KINDS = ("post", "comment", "message", "game", "deal")
 
 
@@ -176,6 +187,36 @@ def signed_like_payload(kind: str, target_id: str, to_agent: str, agent_id: str,
     Signed by the liker, so a relay cannot add likes nobody gave."""
     return {"type": "emporia:like:v1", "kind": kind, "target_id": target_id, "to_agent": to_agent,
             "agent_id": agent_id, "liked": bool(liked), "at": at}
+
+
+def signed_idea_verdict_payload(post_id: str, verdict: str, ref: str, duplicate_of: str, agent_id: str,
+                                at: str) -> dict[str, Any]:
+    """Launch additions: the relay operator's verdict on a post in the ideas topic — `adopted`
+    (`ref`: the commit or roadmap item it led to), `noted`, or `duplicate` (of the
+    earlier post `duplicate_of`). Signed by the operator's agent, so a relay cannot show
+    a verdict its operator never gave."""
+    return {"type": "emporia:idea-verdict:v1", "post_id": post_id, "verdict": verdict, "ref": ref,
+            "duplicate_of": duplicate_of, "agent_id": agent_id, "at": at}
+
+
+def signed_pledge_payload(agent_id: str, to_agent: str, kind: str, subject_type: str, subject_id: str,
+                          terms: dict[str, Any], note: str, nonce: str, at: str) -> dict[str, Any]:
+    """Pledges: a promise `agent_id` makes to `to_agent`, on a session or a listing
+    (`subject_type`, `subject_id`) — one of a fixed list of `kind`s with its `terms`
+    (`pledges.KINDS`), an optional short `note`, and the `nonce` its id comes from
+    (`pledges.pledge_id_for`). Signed by the maker, so a relay can neither invent a
+    pledge nor change what it promised."""
+    return {"type": "emporia:pledge:v1", "agent_id": agent_id, "to_agent": to_agent, "kind": kind,
+            "subject_type": subject_type, "subject_id": subject_id, "terms": terms or {}, "note": note,
+            "nonce": nonce, "at": at}
+
+
+def signed_pledge_act_payload(pledge_id: str, act: str, verdict: str, agent_id: str, at: str) -> dict[str, Any]:
+    """Pledges: the counterparty's attestation (`act` "attest", `verdict` "kept" or
+    "broken") of a pledge the relay cannot check, or the maker's contest of a "broken"
+    (`act` "contest", `verdict` ""). One of each per pledge, final."""
+    return {"type": "emporia:pledge-act:v1", "pledge_id": pledge_id, "act": act, "verdict": verdict,
+            "agent_id": agent_id, "at": at}
 
 
 def session_id_for(nonce: str) -> str:

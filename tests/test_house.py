@@ -10,8 +10,8 @@ def test_its_moves_are_legal():
     for _ in range(20):
         a = H.blotto_allocation(5, 100, rng)
         assert len(a) == 5 and sum(a) == 100 and all(x >= 0 for x in a)
-        assert 0 <= H.pick({}, "emporia:two-thirds:v1", rng) <= 100
-        assert 1 <= H.pick({"max_pick": 10}, "emporia:lowest-unique:v1", rng) <= 10
+        assert 0 <= H.pick({}, "emporia:two-thirds:v2", rng) <= 100
+        assert 1 <= H.pick({"max_pick": 10}, "emporia:lowest-unique:v2", rng) <= 10
     import chess
     assert chess.Move.from_uci(H.chess_move(chess.STARTING_FEN, rng)) in chess.Board().legal_moves
     assert H.chess_move("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3", rng) is None   # mated
@@ -24,16 +24,16 @@ def _s(mt, status="active", parts=("house", "x"), current="house", **data):
 
 
 def test_it_knows_when_it_is_its_turn():
-    assert H.my_turn(_s("emporia:blotto:v1", phase="commit"), "house") == "commit"
-    assert H.my_turn(_s("emporia:blotto:v1", current="x", phase="commit"), "house") == ""
-    assert H.my_turn(_s("emporia:two-thirds:v1", current="x", phase="reveal", pending=["house"]), "house") == "reveal"
+    assert H.my_turn(_s("emporia:blotto:v2", phase="commit"), "house") == "commit"
+    assert H.my_turn(_s("emporia:blotto:v2", current="x", phase="commit"), "house") == ""
+    assert H.my_turn(_s("emporia:two-thirds:v2", current="x", phase="reveal", pending=["house"]), "house") == "reveal"
     assert H.my_turn(_s("emporia:chess:v1"), "house") == "move"
     assert H.my_turn(_s("emporia:service:v1"), "house") == ""
 
 
 def test_it_adopts_only_free_set_plays_left_waiting():
     now = datetime.now(UTC).timestamp()
-    waiting = _s("emporia:blotto:v1", status="waiting", parts=("x",))
+    waiting = _s("emporia:blotto:v2", status="waiting", parts=("x",))
     assert H.adoptable(waiting, "house", now, 120, False)
     assert not H.adoptable(waiting, "house", now, 600, False), "not yet"
     staked = {**waiting, "payment_rules": {"stake_per_participant": "1.00"}}
@@ -58,7 +58,7 @@ class Tools:
         for s in self.active:
             if s["session_id"] == sid:
                 return s
-        return {"session_id": sid, "module_type": "emporia:blotto:v1", "payment_rules": {}}
+        return {"session_id": sid, "module_type": "emporia:blotto:v2", "payment_rules": {}}
 
     def join_session(self, sid):
         self.calls.append(("join", sid))
@@ -92,7 +92,7 @@ class Tools:
 
 
 def test_a_pass_joins_invites_plays_and_greets_only_newcomers(tmp_path):
-    t = Tools(agents=["old"], invites=["inv1"], active=[_s("emporia:blotto:v1", phase="commit")])
+    t = Tools(agents=["old"], invites=["inv1"], active=[_s("emporia:blotto:v2", phase="commit")])
     h = H.House("house", t, tmp_path / "state.json")
     assert h.step() == {"moves": 1, "joined": 1, "greeted": 0, "stepped_back": 0}, "first run: those already here are not new"
     assert ("join", "inv1") in t.calls and ("commit", "s1") in t.calls and ("read", ("i0",)) in t.calls
@@ -106,7 +106,7 @@ def test_a_pass_joins_invites_plays_and_greets_only_newcomers(tmp_path):
 def test_it_steps_back_when_the_relay_is_busy(tmp_path):
     """Busy means agents doing anything on the relay — posting, talking, trading, liking,
     reporting bugs — not only playing (the person, 11-05)."""
-    waiting = _s("emporia:blotto:v1", status="waiting", parts=("newcomer",))
+    waiting = _s("emporia:blotto:v2", status="waiting", parts=("newcomer",))
     busy = Tools(waiting=[waiting], others=4)
     done = H.House("house", busy, tmp_path / "busy.json").step()
     assert done["stepped_back"] == 1 and ("join", "s1") not in busy.calls, "four others active: it leaves them to it"
@@ -151,3 +151,25 @@ def test_house_run_does_not_log_every_http_request(monkeypatch):
     finally:
         for n, level in levels.items():
             logging.getLogger(n).setLevel(level)
+
+
+def test_the_greeting_names_ideas_debriefs_and_expeditions_as_the_relay_calls_them(tmp_path):
+    assert all(f"`{t}`" in H.GREETING for t in ("ideas", "debriefs", "expeditions"))
+    said = []
+
+    class Renamed(Tools):
+        def my_quests(self):
+            return {"success": True, "topics": {"ideas": "ideas", "debriefs": "war-stories", "expeditions": "quests"}}
+
+        def send_dm(self, to, content):
+            said.append(content)
+            return {"success": True}
+
+    t = Renamed(agents=["old"])
+    h = H.House("house", t, tmp_path / "state.json")
+    h.step()
+    t.agents.append("new")
+    h.step()
+    assert "`war-stories`" in said[0] and "`quests`" in said[0]
+    assert H.House("house", Tools(agents=[]), tmp_path / "s2.json").greeting() == H.GREETING, \
+        "a relay that does not say: the default names"

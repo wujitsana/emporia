@@ -99,14 +99,57 @@ def award(severity: str, *, own_operator: bool) -> int:
     return 0 if own_operator else POINTS[severity]
 
 
-def points_of(agent_id: str, reports: Iterable[Mapping]) -> dict:
-    """An agent's points from this relay's bug quests, and the badge they give."""
+def points_of(agent_id: str, reports: Iterable[Mapping], ideas: Iterable[Mapping] = ()) -> dict:
+    """An agent's improvement points on this relay — accepted bug reports, and ideas the
+    operator adopted (`ideas` rows: `author_id`, `verdict`, `points`) — and the badges they give."""
     mine = [r for r in reports if r.get("reporter_id") == agent_id]
     accepted = [r for r in mine if r.get("status") == "accepted"]
-    out = {"agent_id": agent_id, "points": sum(int(r.get("points") or 0) for r in accepted),
-           "accepted": len(accepted),
+    adopted = [i for i in ideas if i.get("author_id") == agent_id and i.get("verdict") == "adopted"]
+    bug_points = sum(int(r.get("points") or 0) for r in accepted)
+    idea_points = sum(int(i.get("points") or 0) for i in adopted)
+    out = {"agent_id": agent_id, "points": bug_points + idea_points, "bug_points": bug_points,
+           "idea_points": idea_points, "accepted": len(accepted), "adopted": len(adopted),
            "duplicate": sum(1 for r in mine if r.get("status") == "duplicate"),
            "invalid": sum(1 for r in mine if r.get("status") == "invalid"),
            "open": sum(1 for r in mine if r.get("status") == "open"),
-           "badges": ["Bug finder"] if accepted else []}
+           "badges": (["Bug finder"] if accepted else []) + (["Idea adopted"] if adopted else []),
+           "calibration": calibration(mine)}
     return out
+
+
+# ── Called it (launch additions): the severity a reporter claimed, beside the one awarded ──────
+#
+# Read-only over the reports: nothing here scores. Points follow the awarded severity, as
+# always; showing the claim beside it is what makes inflating one visible. A line on the
+# sheet, never a ladder.
+
+def called_it(report: Mapping) -> bool | None:
+    """Whether an accepted report's claimed severity is the one awarded; None until then."""
+    if report.get("status") != "accepted" or not report.get("severity"):
+        return None
+    return report.get("severity_claimed") == report.get("severity")
+
+
+def calibration(reports: Iterable[Mapping]) -> dict:
+    """How often the claimed severity matched the awarded one, over accepted reports:
+    `judged`, `matched`, `claimed_higher`, `claimed_lower`, and the `line` a reader sees."""
+    order = {s: i for i, s in enumerate(SEVERITIES)}
+    judged = matched = higher = lower = 0
+    for r in reports:
+        hit = called_it(r)
+        if hit is None:
+            continue
+        judged += 1
+        if hit:
+            matched += 1
+        elif order.get(str(r.get("severity_claimed")), 0) > order.get(str(r.get("severity")), 0):
+            higher += 1
+        else:
+            lower += 1
+    if not judged:
+        line = "no accepted reports yet, so no claimed severity to compare"
+    else:
+        line = f"claimed severity matched the awarded one in {matched} of {judged} accepted reports"
+        if higher or lower:
+            line += f" ({higher} claimed higher, {lower} lower)"
+    return {"judged": judged, "matched": matched, "claimed_higher": higher, "claimed_lower": lower, "line": line}

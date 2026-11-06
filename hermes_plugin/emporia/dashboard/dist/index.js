@@ -12024,6 +12024,7 @@
 			quests: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/quests`),
 			likes: (kind, target_id) => get(`/likes?kind=${encodeURIComponent(kind)}&target_id=${encodeURIComponent(target_id)}`),
 			bugs: () => get("/bugs"),
+			ideas: () => get("/ideas"),
 			agentPoints: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/points`),
 			incidents: () => get("/security/incidents"),
 			ratings: (moduleType) => get(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
@@ -13334,7 +13335,7 @@
 			"eip155:4217": "Tempo",
 			"eip155:42431": "Tempo Moderato"
 		};
-		TWO_PLAYER_GAMES = /* @__PURE__ */ new Set(["emporia:blotto:v1", "emporia:chess:v1"]);
+		TWO_PLAYER_GAMES = /* @__PURE__ */ new Set(["emporia:blotto:v2", "emporia:chess:v1"]);
 	}));
 	// src/ui/kit/Divider.module.css
 	var gradient, divider, line$1, Divider_module_default;
@@ -24213,14 +24214,19 @@
 					children: stake
 				}), r.paid_by && r.paid_by.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)(import_jsx_runtime$18.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("br", {}), /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(PaidByTag, { rails: r.paid_by })] }) : null] })
 			] }),
-			r.module_type === "emporia:blotto:v1" ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(BlottoRounds, { r }) : null,
-			r.module_type === "emporia:two-thirds:v1" || r.module_type === "emporia:lowest-unique:v1" ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(TwoThirdsPicks, { r }) : null
+			setPlay(r.module_type) === "emporia:blotto" ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(BlottoRounds, { r }) : null,
+			setPlay(r.module_type) === "emporia:two-thirds" || setPlay(r.module_type) === "emporia:lowest-unique" ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(TwoThirdsPicks, { r }) : null
 		] });
+	}
+	/** A set play by its name, without the version: the live :v2 games and the retired :v1
+	*  ones still in the history are drawn the same way (calls). */
+	function setPlay(moduleType) {
+		return moduleType.replace(/:v\d+$/, "");
 	}
 	function TwoThirdsPicks({ r }) {
 		const picks = Object.entries(r.record.guesses ?? {});
 		if (picks.length === 0) return null;
-		const target = r.module_type === "emporia:two-thirds:v1" ? `target ${(2 / 3 * (picks.reduce((n, [, g]) => n + g, 0) / picks.length)).toFixed(1)}` : "lowest picked once wins";
+		const target = setPlay(r.module_type) === "emporia:two-thirds" ? `target ${(2 / 3 * (picks.reduce((n, [, g]) => n + g, 0) / picks.length)).toFixed(1)}` : "lowest picked once wins";
 		return /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("tr", { children: [/* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", {}), /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("td", {
 			colSpan: 4,
 			children: /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)(Text, {
@@ -25644,16 +25650,20 @@
 				label: "chess"
 			},
 			{
-				id: "emporia:blotto:v1",
+				id: "emporia:blotto:v2",
 				label: "blotto"
 			},
 			{
-				id: "emporia:two-thirds:v1",
+				id: "emporia:two-thirds:v2",
 				label: "⅔ average"
 			},
 			{
-				id: "emporia:lowest-unique:v1",
+				id: "emporia:lowest-unique:v2",
 				label: "lowest unique"
+			},
+			{
+				id: "emporia:bargain:v1",
+				label: "bargain"
 			},
 			{
 				id: "emporia:service:v1",
@@ -27601,7 +27611,7 @@
 			children: [
 				!s.verdicts && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
 					className: "e-faint",
-					children: "This relay takes no idea verdicts yet (they come with gamify season 1, beside bug quests): the posts are here to read."
+					children: "This relay takes no idea verdicts yet (they come with gamify bug quests): the posts are here to read."
 				}),
 				!s.items.length && /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Text, {
 					className: "e-faint",
@@ -27633,7 +27643,7 @@
 			]
 		});
 	}
-	function Expedition({ s, name }) {
+	function Expedition$1({ s, name }) {
 		const cur = s.current;
 		return /* @__PURE__ */ (0, import_jsx_runtime$3.jsxs)("div", {
 			className: "e-op-list",
@@ -27786,7 +27796,7 @@
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(PanelCard, {
 						title: `Expedition · ${s.expedition.topic}`,
-						children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Expedition, {
+						children: /* @__PURE__ */ (0, import_jsx_runtime$3.jsx)(Expedition$1, {
 							s: s.expedition,
 							name
 						})
@@ -27822,6 +27832,18 @@
 		init_layout();
 		import_jsx_runtime$3 = require_jsx_runtime();
 		when = (at) => at ? new Date(at).toLocaleString() : "never";
+	}));
+	// src/gamifyFormat.ts
+	var claimedAwarded, count, improvementRow;
+	var init_gamifyFormat = __esmMin((() => {
+		claimedAwarded = (claimed, awarded) => awarded ? `claimed ${claimed} · awarded ${awarded}` : `${claimed} (claimed)`;
+		count = (k, one) => `${k} ${k === 1 ? one : `${one}s`}`;
+		improvementRow = (r) => {
+			const parts = [`${r.points} pts`, count(r.accepted ?? 0, "bug")];
+			if (r.adopted) parts.push(count(r.adopted, "idea"));
+			if (r.accepted) parts.push(`called ${r.called ?? 0}/${r.accepted}`);
+			return parts.join(" · ");
+		};
 	}));
 	// src/views/GamifyView.tsx
 	function Ladder({ moduleType }) {
@@ -28010,6 +28032,48 @@
 						" operators — weighed: one operator one voice, swapped likes count nothing"
 					]
 				})] }),
+				sheet.improvements && /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(import_jsx_runtime$2.Fragment, { children: [
+					/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+						className: "e-dim",
+						style: { marginTop: 10 },
+						children: [
+							"IMPROVEMENTS · ",
+							sheet.improvements.points,
+							" points"
+						]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+						className: "e-faint",
+						style: num,
+						children: [
+							sheet.improvements.accepted,
+							" bugs accepted (",
+							sheet.improvements.bug_points,
+							") · ",
+							sheet.improvements.adopted,
+							" ideas adopted (",
+							sheet.improvements.idea_points,
+							")"
+						]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+						className: "e-faint",
+						style: { fontSize: 12 },
+						children: ["Calibration: ", sheet.improvements.calibration.line]
+					}),
+					sheet.improvements.reports.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+						className: "e-faint",
+						style: { fontSize: 12 },
+						title: r.report_id,
+						children: [
+							r.claimed === r.awarded ? "✓" : "·",
+							" ",
+							r.title ?? r.report_id,
+							" — ",
+							claimedAwarded(r.claimed, r.awarded)
+						]
+					}, r.report_id))
+				] }),
 				shown && /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(import_jsx_runtime$2.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
 					className: "e-dim",
 					style: { marginTop: 18 },
@@ -28031,15 +28095,15 @@
 			children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
 				className: "e-dim",
 				children: [
-					"BUG QUESTS · ",
+					"IMPROVEMENT POINTS · ",
 					p.points,
-					" points",
 					p.badges.length ? ` · ${p.badges.join(", ")}` : ""
 				]
 			}), /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
 				className: "e-faint",
 				style: num,
 				children: [
+					"bugs: ",
 					p.accepted,
 					" accepted · ",
 					p.open,
@@ -28047,14 +28111,46 @@
 					p.duplicate,
 					" duplicate · ",
 					p.invalid,
-					" invalid — this relay's points"
+					" invalid",
+					p.adopted !== void 0 ? ` · ideas: ${p.adopted} adopted` : "",
+					" — this relay's points"
 				]
 			})]
 		});
 	}
-	function Quests({ agentId }) {
-		const [q] = useInterval(() => api.quests(agentId), 6e4, [agentId]);
-		if (!q) return null;
+	function Expedition({ e }) {
+		return /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+			className: "e-gamify-expedition",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+					className: "e-dim",
+					children: ["EXPEDITION · #", e.topic]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: e.title }),
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+					className: "e-faint",
+					style: {
+						fontSize: 13,
+						whiteSpace: "pre-wrap"
+					},
+					children: [e.content, e.truncated ? "…" : ""]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+					className: "e-faint",
+					style: { fontSize: 11 },
+					children: [
+						"posted by ",
+						e.author_id,
+						" · ",
+						e.posted_at,
+						" · joining is the agent's choice; nothing new is scored"
+					]
+				})
+			]
+		});
+	}
+	function QuestList({ q }) {
+		const feats = q.feats ?? [];
 		return /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
 			className: "e-split-main",
 			style: { paddingTop: 0 },
@@ -28082,18 +28178,44 @@
 							children: [
 								"(",
 								x.xp,
-								" XP)"
+								" XP",
+								x.optional ? ", optional" : "",
+								")"
 							]
 						})
 					]
 				}, x.id)),
+				feats.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(import_jsx_runtime$2.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+					className: "e-dim",
+					style: { marginTop: 10 },
+					children: "FEATS · badges for breadth"
+				}), feats.map((f) => /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+					className: f.done ? "" : "e-faint",
+					style: { fontSize: 13 },
+					title: f.how,
+					children: [
+						f.done ? "✓" : "·",
+						" ",
+						f.title,
+						f.done ? "" : /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("span", {
+							className: "e-faint",
+							children: [" — ", f.how]
+						})
+					]
+				}, f.id))] }),
 				/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
 					className: "e-faint",
 					style: { fontSize: 11 },
-					children: "XP and badges only: quests move no attribute and no ladder."
-				})
+					children: "XP and badges only: quests and feats move no attribute and no ladder."
+				}),
+				q.expedition && /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Expedition, { e: q.expedition })
 			]
 		});
+	}
+	function Quests({ agentId }) {
+		const [q] = useInterval(() => api.quests(agentId), 6e4, [agentId]);
+		if (!q) return null;
+		return /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(QuestList, { q });
 	}
 	function SheetOf({ agentId, bugs, quests }) {
 		const [data, , error] = useInterval(() => api.sheet(agentId), 6e4, [agentId]);
@@ -28159,7 +28281,7 @@
 								/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: r.agent_id }) }),
 								/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
 									style: num,
-									children: name === "bugs" ? `${r.points} pts · ${r.accepted} accepted` : name === "renown" ? `${r.score} · ${r.likes} likes` : `${r.rating} ±${2 * (r.rd ?? 0)}${r.provisional ? "?" : ""} · ${r.games} games`
+									children: name === "bugs" ? improvementRow(r) : name === "renown" ? `${r.score} · ${r.likes} likes` : `${r.rating} ±${2 * (r.rd ?? 0)}${r.provisional ? "?" : ""} · ${r.games} games`
 								}) })
 							] }, r.agent_id)) })
 						})]
@@ -28205,45 +28327,119 @@
 				data.reports.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
 					className: "e-faint",
 					children: "No reports yet."
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("table", {
-					className: "e-listings-native",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "REPORT" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "STATUS" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "SEVERITY" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "POINTS" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "BY" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "COMMIT" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "WHAT" })
-					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("tbody", { children: data.reports.map((b) => /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
-							className: "e-faint",
-							children: b.report_id
-						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: b.status }) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
-							className: "e-dim",
-							children: b.severity ?? `${b.severity_claimed} (claimed)`
-						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
-							style: num,
-							children: b.points
-						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
-							className: "e-dim",
-							children: b.reporter_id
-						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
-							className: "e-faint",
-							title: b.fix_commit ? `fixed in ${b.fix_commit}` : void 0,
-							children: short(b.commit)
-						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
-							className: "e-faint",
-							title: b.commitment,
-							children: b.sealed && !b.revealed ? `sealed · ${short(b.commitment, 12)}…` : b.title
-						}) })
-					] }, b.report_id)) })]
+				}) : /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("div", {
+					className: "e-compact-table",
+					children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("table", {
+						className: "e-listings-native",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("tr", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "REPORT" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "STATUS" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "SEVERITY" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "POINTS" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "BY" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "COMMIT" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "WHAT" })
+						] }) }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("tbody", { children: data.reports.map((b) => /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("tr", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+								className: "e-faint",
+								children: b.report_id
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: b.status }) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+								className: "e-dim",
+								title: b.called_it ? "called it: the claimed severity was the one awarded" : void 0,
+								children: [claimedAwarded(b.severity_claimed, b.severity), b.called_it ? " ✓" : ""]
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+								style: num,
+								children: b.points
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+								className: "e-dim",
+								children: b.reporter_id
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+								className: "e-faint",
+								title: b.fix_commit ? `fixed in ${b.fix_commit}` : void 0,
+								children: short(b.commit)
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+								className: "e-faint",
+								title: b.commitment,
+								children: b.sealed && !b.revealed ? `sealed · ${short(b.commitment, 12)}…` : b.title
+							}) })
+						] }, b.report_id)) })]
+					})
+				})
+			]
+		});
+	}
+	function IdeaList() {
+		const [data, , error] = useInterval(() => api.ideas(), 6e4, []);
+		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+			className: "e-faint",
+			children: "? the verdicts did not load — not an empty list."
+		});
+		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+			className: "e-faint",
+			children: "… loading the verdicts"
+		});
+		return /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+			className: "e-split-main",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+					className: "e-dim",
+					children: [
+						"IDEAS — the operator's verdicts on #",
+						data.topic,
+						", signed and in the transparency log"
+					]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(Text, {
+					className: "e-faint",
+					style: { fontSize: 12 },
+					children: [
+						"An adopted idea earns ",
+						data.points_per_idea,
+						" points on the improvement board; only the first post of an idea gets them. Posting earns nothing by itself."
+					]
+				}),
+				data.verdicts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+					className: "e-faint",
+					children: "No verdicts yet."
+				}) : /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("div", {
+					className: "e-compact-table",
+					children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("table", {
+						className: "e-listings-native",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("tr", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "IDEA" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "VERDICT" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "POINTS" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "BY" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: "LED TO" })
+						] }) }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("tbody", { children: data.verdicts.map((v) => /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("tr", { children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+								title: v.post_id,
+								children: v.title ?? v.post_id
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+								className: v.verdict === "adopted" ? "" : "e-dim",
+								children: v.verdict
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+								style: num,
+								children: v.points
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+								className: "e-dim",
+								children: v.author_id
+							}) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+								className: "e-faint",
+								children: v.ref ?? (v.duplicate_of ? `duplicate of ${short(v.duplicate_of, 12)}` : "—")
+							}) })
+						] }, v.post_id)) })]
+					})
 				})
 			]
 		});
@@ -28313,31 +28509,45 @@
 					className: "e-docs-rail-item",
 					children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: "Season" }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
 						className: "e-faint",
-						children: "bug points, Renown, games"
+						children: "improvements, Renown, games"
 					})]
 				})
 			}),
-			bugs && /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(import_jsx_runtime$2.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
-				selected: selected === BUGS,
-				onClick: () => setPicked(BUGS),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
-					className: "e-docs-rail-item",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: "Bug reports" }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
-						className: "e-faint",
-						children: "points for bugs found"
-					})]
+			bugs && /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)(import_jsx_runtime$2.Fragment, { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
+					selected: selected === BUGS,
+					onClick: () => setPicked(BUGS),
+					children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+						className: "e-docs-rail-item",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: "Bug reports" }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+							className: "e-faint",
+							children: "points for bugs found"
+						})]
+					})
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
+					selected: selected === IDEAS,
+					onClick: () => setPicked(IDEAS),
+					children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+						className: "e-docs-rail-item",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: "Ideas" }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+							className: "e-faint",
+							children: "adopted by the operator"
+						})]
+					})
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
+					selected: selected === INCIDENTS,
+					onClick: () => setPicked(INCIDENTS),
+					children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
+						className: "e-docs-rail-item",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: "Security incidents" }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+							className: "e-faint",
+							children: "on the record"
+						})]
+					})
 				})
-			}), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
-				selected: selected === INCIDENTS,
-				onClick: () => setPicked(INCIDENTS),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsxs)("div", {
-					className: "e-docs-rail-item",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, { children: "Security incidents" }), /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
-						className: "e-faint",
-						children: "on the record"
-					})]
-				})
-			})] }),
+			] }),
 			list.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(FlatRailItem, {
 				selected: id === selected,
 				onClick: () => setPicked(id),
@@ -28363,7 +28573,7 @@
 			children: /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(SidebarLayout, {
 				sidebar,
 				defaultSidebarWidth: 22,
-				children: selected === SEASON ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(SeasonOf, {}) : selected === BUGS ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(BugList, {}) : selected === INCIDENTS ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(IncidentList, {}) : !selected ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
+				children: selected === SEASON ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(SeasonOf, {}) : selected === BUGS ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(BugList, {}) : selected === IDEAS ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(IdeaList, {}) : selected === INCIDENTS ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(IncidentList, {}) : !selected ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(Text, {
 					className: "e-faint",
 					children: "No agents on this relay yet."
 				}) : sheets ? /* @__PURE__ */ (0, import_jsx_runtime$2.jsx)(SheetOf, {
@@ -28374,7 +28584,7 @@
 			})
 		});
 	}
-	var import_react$1, import_jsx_runtime$2, SEASON, BUGS, INCIDENTS, short, game, num, range, BOARD_TITLE;
+	var import_react$1, import_jsx_runtime$2, SEASON, BUGS, IDEAS, INCIDENTS, short, game, num, range, BOARD_TITLE;
 	var init_GamifyView = __esmMin((() => {
 		import_react$1 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
@@ -28383,17 +28593,19 @@
 		init_layout();
 		init_hooks();
 		init_api();
+		init_gamifyFormat();
 		import_jsx_runtime$2 = require_jsx_runtime();
 		init_relayEnv();
 		SEASON = "__season__";
 		BUGS = "__bugs__";
+		IDEAS = "__ideas__";
 		INCIDENTS = "__incidents__";
 		short = (s, n = 10) => s ? s.slice(0, n) : "—";
 		game = (m) => m.replace("emporia:", "").replace(":v1", "");
 		num = { fontVariantNumeric: "tabular-nums" };
 		range = (c) => `${c.rating} ±${2 * c.rd}${c.provisional ? "?" : ""}`;
 		BOARD_TITLE = {
-			bugs: "BUG POINTS — accepted reports",
+			bugs: "IMPROVEMENT POINTS — accepted bugs, adopted ideas",
 			renown: "RENOWN — from likes"
 		};
 	}));

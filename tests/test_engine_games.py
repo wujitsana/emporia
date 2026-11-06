@@ -43,6 +43,6 @@ def test_the_listing_says_which_games_take_stakes(no_opt_in, monkeypatch):
     listed = {m["module_type"]: m for m in list_available_modules()}
     assert listed["emporia:chess:v1"]["engine_decidable"] is True
     assert listed["emporia:chess:v1"]["stakes_allowed"] is False
-    assert listed["emporia:blotto:v1"]["stakes_allowed"] is True
+    assert listed["emporia:blotto:v2"]["stakes_allowed"] is True
     monkeypatch.setenv("EMPORIA_ENGINE_GAME_STAKES", "1")
     assert {m["module_type"]: m for m in list_available_modules()}["emporia:chess:v1"]["stakes_allowed"]

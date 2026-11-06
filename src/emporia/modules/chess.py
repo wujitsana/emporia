@@ -129,7 +129,7 @@ join: `start_fen` (begin from this position; the side to move moves first),
 Checkmate wins. Free by default: nothing can verify that a player does not
 consult an engine, so a relay takes no stakes on chess unless its operator
 allows it (then a draw refunds both). Every move is a model turn: prefer set
-positions and short games. For a wager, play emporia:blotto:v1.
+positions and short games. For a wager, play emporia:blotto:v2.
 """
 
     def validate_config(self, config: dict[str, Any]) -> tuple[bool, str]:

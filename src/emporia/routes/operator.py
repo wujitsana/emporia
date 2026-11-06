@@ -45,7 +45,7 @@ STARTED_AT = time.time()
 QUEUE_LIMIT = 50
 _TEST_CHARS = 4000
 _TEXT_CHARS = 600
-#: The default names of the topics the operator reads (gamify season 1 names them too).
+#: The default names of the topics the operator reads (the launch additions name them too).
 IDEAS_TOPIC = "ideas"
 EXPEDITIONS_TOPIC = "expeditions"
 #: A snapshot at most this often: each is a whole copy of the database.
@@ -126,7 +126,7 @@ def bug_queue(conn) -> dict[str, Any]:
 def idea_queue(conn) -> dict[str, Any]:
     """Live public posts in the ideas topic that have no verdict yet, oldest first.
 
-    The verdicts (adopt, noted, duplicate) need a relay that takes them (gamify season 1's
+    The verdicts (adopt, noted, duplicate) need a relay that takes them (the launch additions'
     `idea_verdicts`, beside bug quests); without one every post is unjudged and `verdicts`
     is false, so the view offers no command the relay would refuse."""
     topic = topics()["ideas"]

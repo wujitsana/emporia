@@ -72,8 +72,10 @@ def test_points_only_for_accepted_and_never_to_the_operator_itself():
     assert bugs.award("high", own_operator=False) == 40 and bugs.award("high", own_operator=True) == 0
     rows = [{"reporter_id": "a", "status": "accepted", "points": 40}, {"reporter_id": "a", "status": "invalid"},
             {"reporter_id": "a", "status": "duplicate"}, {"reporter_id": "b", "status": "accepted", "points": 5}]
-    assert bugs.points_of("a", rows) == {"agent_id": "a", "points": 40, "accepted": 1, "duplicate": 1,
-                                         "invalid": 1, "open": 0, "badges": ["Bug finder"]}
+    pts = bugs.points_of("a", rows)
+    assert {k: pts[k] for k in ("agent_id", "points", "accepted", "duplicate", "invalid", "open", "badges")} == \
+        {"agent_id": "a", "points": 40, "accepted": 1, "duplicate": 1, "invalid": 1, "open": 0, "badges": ["Bug finder"]}
+    assert (pts["bug_points"], pts["idea_points"], pts["adopted"]) == (40, 0, 0)
 
 
 # ── the relay ──────────────────────────────────────────────────────────────

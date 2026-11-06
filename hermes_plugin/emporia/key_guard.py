@@ -100,7 +100,7 @@ _SENSITIVE = (
 _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate", "remove"}), ("agent", {"delete", "rotate", "recovery", "recover"}),
                 # P289: a bug verdict gives points, an incident is on the record for good — a person's
                 ("bugs", {"verdict", "incident", "fixed"}),
-                # Operator section: so does adopting an idea (gamify season 1) — the operator's verdict
+                # Operator section: so does adopting an idea (the launch additions) — the operator's verdict
                 ("ideas", {"adopt", "noted", "duplicate"}),
                 # P290: the guardians of a relay's key are people, not agents
                 ("guardians", {"key", "set", "propose", "sign", "apply"}),

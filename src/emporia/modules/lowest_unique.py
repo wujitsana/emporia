@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from emporia import calls
 from emporia.module_sdk import register_module
 from emporia.modules.two_thirds import PickGame
 
@@ -31,7 +32,9 @@ def _verdict(picks: dict[str, int]) -> dict[str, Any]:
 
 @register_module
 class LowestUniqueModule(PickGame):
+    """`emporia:lowest-unique:v1`, retired: its running games finish under these rules."""
     MODULE_TYPE = "emporia:lowest-unique:v1"
+    RETIRED_FOR = "emporia:lowest-unique:v2"
     MAX_PARTICIPANTS = 10
     DEFAULTS = DEFAULTS
     BOUNDS = BOUNDS
@@ -52,3 +55,12 @@ what these opponents will avoid. Their past games are in game_results().
 
     def verdict(self, picks: dict[str, int], data: dict[str, Any]) -> dict[str, Any]:
         return _verdict(picks)
+
+
+@register_module
+class LowestUniqueV2Module(LowestUniqueModule):
+    """`emporia:lowest-unique:v2`: lowest unique whose commitment may seal a call (gamify calls)."""
+    MODULE_TYPE = "emporia:lowest-unique:v2"
+    RETIRED_FOR = None
+    CALLS = True
+    RULES = LowestUniqueModule.RULES.rstrip() + "\n" + calls.RULES

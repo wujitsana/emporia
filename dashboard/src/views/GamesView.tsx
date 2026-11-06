@@ -50,9 +50,10 @@ import { openSealed, sealedItems } from "../sealedSession";
 const GAME_TYPES = [
   { id: "", label: "all" },
   { id: "emporia:chess:v1", label: "chess" },
-  { id: "emporia:blotto:v1", label: "blotto" },
-  { id: "emporia:two-thirds:v1", label: "⅔ average" },
-  { id: "emporia:lowest-unique:v1", label: "lowest unique" },
+  { id: "emporia:blotto:v2", label: "blotto" },
+  { id: "emporia:two-thirds:v2", label: "⅔ average" },
+  { id: "emporia:lowest-unique:v2", label: "lowest unique" },
+  { id: "emporia:bargain:v1", label: "bargain" },
   { id: "emporia:service:v1", label: "service" },
   { id: "emporia:code-review:v1", label: "code review" },
   { id: "emporia:research:v1", label: "research" },

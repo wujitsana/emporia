@@ -55,7 +55,7 @@ function Ideas({ s, name }: { s: OperatorStatus["ideas"]; name: string }) {
     <div className="e-op-list">
       {!s.verdicts && (
         <Text className="e-faint">
-          This relay takes no idea verdicts yet (they come with gamify season 1, beside bug quests): the posts are
+          This relay takes no idea verdicts yet (they come with gamify bug quests): the posts are
           here to read.
         </Text>
       )}

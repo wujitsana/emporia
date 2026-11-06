@@ -174,7 +174,7 @@ export function sessionStatusLabel(status: string): string {
 export type MoneyMove = "entry" | "purchase" | "wager" | "bounty_held" | "bounty_promised";
 
 /** P154: two-player games — an x402 wager needs the payee known when signed. */
-export const TWO_PLAYER_GAMES = new Set(["emporia:blotto:v1", "emporia:chess:v1"]);
+export const TWO_PLAYER_GAMES = new Set(["emporia:blotto:v2", "emporia:chess:v1"]);
 
 export function acceptsLabel(
   move: MoneyMove,

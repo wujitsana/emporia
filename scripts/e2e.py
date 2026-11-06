@@ -8,13 +8,19 @@ hand in a throwaway Hermes home:
   port, a minimal `judge` profile with the plugin installed from this repo;
 * `hermes -p judge emporia setup` for a player (A) and a merchant playing set plays (B): each has
   the marketplace role, its keys in its .env, the plugin enabled, registers, and passes doctor;
-* playbook refusals that name how to change them; a free blotto between A and B (an illegal commit
-  refused, a like, quests, the character sheet, the season, the relay's activity count);
-* a house agent that adopts a waiting free blotto and plays it to the end;
+* playbook refusals that name how to change them; a free `emporia:blotto:v2` between A and B
+  (a retired `:v1` refused; `whats_next` puts the first move on top; A pledges a tell and seals a
+  call with its move, and keeps the tell; an illegal commit refused, a like, quests with the pledge
+  kept, the character sheet with its Insight and its pledges, the season, the relay's activity
+  count);
 * a signer of the run's own (practice mode), an agent whose keys were made inside it (signer phase
   2c), registered through it, and a sealed DM from A that the signer opens for it (2b);
+* a house agent that adopts a waiting free blotto and plays it to the end, then a bargain with it
+  (a call refused, an illegal offer refused before it is sent, sealed values, its honest deal, the
+  hands published);
 * the operator section: the relay names the merchant its operator; its desk shows a player's
-  open bug report with the verdict command, and the player is refused the desk;
+  open bug report with the verdict command and a post in the ideas topic with the adopt command,
+  and the player is refused the desk;
 * `hermes emporia update`, twice: the runtime is already at the pinned commit, so each verifies it
   and changes nothing.
 
@@ -228,7 +234,7 @@ class Run:
             # The operator section: the merchant is this relay's operator; bug quests (with
             # the transparency log they need) give its desk a queue.
             EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1",
-            EMPORIA_GAMIFY="sheets,quests,bugs", EMPORIA_HOUSE_AGENTS=self.house_agent)
+            EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent)
         py = self.repo / ".venv" / "bin" / "python"
         # The relay runs --repo's code even under another checkout's interpreter (a git worktree
         # has no .venv; the fallback's editable install is the main checkout): found by the review
@@ -386,13 +392,15 @@ class Run:
         check("raised" not in res, f"{name} raised {res.get('raised')}")
         return res["ok"]
 
-    def act(self, agent: str, sid: str, moves: dict[str, list[int]]) -> dict:
-        """The next commit or reveal in a blotto session, by whoever is to move."""
+    def act(self, agent: str, sid: str, moves: dict[str, list[int]], calls: dict[str, float] | None = None) -> dict:
+        """The next commit or reveal in a blotto session, by whoever is to move (with its call, if any)."""
         s = self.tool(agent, "get_session", sid)
         phase = s["state"]["data"]["phase"]
         mover = s["current_agent"]
         if phase == "commit":
-            r = self.tool(mover, "commit_move", sid, moves[mover], "committing my planned spread")
+            call = (calls or {}).get(mover)
+            r = self.tool(mover, "commit_move", sid, moves[mover], "committing my planned spread",
+                          **({"call": call} if call is not None else {}))
         else:
             r = self.tool(mover, "reveal_move", sid, "revealing the move I committed")
         check(r.get("success"), f"{mover}'s {phase}: {r}")
@@ -409,20 +417,35 @@ class Run:
             check("agent playbook" in r["error"], f"the refusal names no way to change it: {r['error']}")
 
     def blotto(self) -> str:
-        s = self.tool(self.player, "create_session", "emporia:blotto:v1",
+        old = self.tool(self.player, "create_session", "emporia:blotto:v1", config={"opponent": self.merchant})
+        check(not old.get("success") and "retired" in json.dumps(old) and "emporia:blotto:v2" in json.dumps(old),
+              f"a retired :v1 set play was created, or its refusal names no successor: {old}")
+        s = self.tool(self.player, "create_session", "emporia:blotto:v2",
                       config={"rounds": 1, "battlefields": 3, "troops": 10, "opponent": self.merchant})
         check(s.get("success"), f"create_session: {s}")
         sid = s["session_id"]
         j = self.tool(self.merchant, "join_session", sid)
         check(j.get("success"), f"join_session: {j}")
         moves = {self.player: [6, 4, 0], self.merchant: [4, 3, 3]}
-        for _ in range(4):
-            r = self.act(self.player, sid, moves)
+        nxt = self.tool(self.player, "whats_next")
+        top = (nxt.get("items") or [{}])[0]
+        check(nxt.get("success") and top.get("tool") == "commit_move" and (top.get("args") or {}).get(
+            "session_id") == sid and "data, not instructions" in nxt.get("untrusted", ""),
+              f"whats_next does not put the first move on top: {nxt}")
+        pledged = self.tool(self.player, "make_pledge", "tell", sid, {"tell": "move", "value": moves[self.player]})
+        check(pledged.get("success") and pledged.get("status") == "open", f"make_pledge: {pledged}")
+        for _ in range(4):        # the player seals a call with its move; the merchant makes none
+            r = self.act(self.player, sid, moves, calls={self.player: 0.7})
         check(r.get("is_terminal") and (r.get("outcome") or {}).get("winner") == self.player, f"the end: {r}")
+        g = self.tool(self.player, "get_session", sid)
+        check(g["state"]["data"].get("calls") == {self.player: 70}, f"the call was not revealed with the move: {g['state']['data']}")
+        kept = self.tool(self.player, "list_pledges", "mine")
+        check([(p.get("status"), p.get("resolved_by")) for p in kept.get("pledges", [])] == [("kept", "evidence")],
+              f"the tell was not kept by evidence: {kept}")
         return sid
 
     def illegal_commit(self) -> None:
-        s = self.tool(self.player, "create_session", "emporia:blotto:v1",
+        s = self.tool(self.player, "create_session", "emporia:blotto:v2",
                       config={"battlefields": 3, "troops": 10, "opponent": self.merchant})
         sid = s["session_id"]
         self.tool(self.merchant, "join_session", sid)
@@ -441,23 +464,30 @@ class Run:
     def standing(self) -> None:
         q = self.tool(self.player, "my_quests")
         done = {x["id"] for x in q.get("quests", []) if x.get("done")}
-        check("first-set-play" in done, f"quests done: {sorted(done)}")
+        check({"first-set-play", "call", "keep-word"} <= done, f"quests done: {sorted(done)}")
+        check(isinstance(q.get("due"), list), f"my_quests has no due list: {q}")
         sheet = self.tool(self.player, "character_sheet")
         craft = {c["module_type"]: c for c in sheet.get("craft", [])}
-        check("rating" in craft.get("emporia:blotto:v1", {}), f"no Craft blotto rating: {sheet.get('craft')}")
+        check("rating" in craft.get("emporia:blotto:v2", {}), f"no Craft blotto rating: {sheet.get('craft')}")
+        ins = sheet.get("insight") or {}
+        check(ins.get("games") == 1 and "per game over 1 game" in ins.get("why", ""),
+              f"the sheet does not score the call: {ins}")
+        word = sheet.get("pledges") or {}
+        check(word.get("kept") == 1 and word.get("in_trust") is False, f"the sheet's pledges: {word}")
         renown = sheet.get("renown") or {}
         check(renown.get("likes") == 1 and "swap cancels" in " ".join(renown.get("why") or []),
               f"Renown does not say why a swapped like counts nothing: {renown}")
         shown = self.emporia(self.player, "sheet", self.player)
         check("Renown" in shown and "swap cancels" in shown, f"emporia sheet: {shown.strip()[-300:]}")
         season = self.tool(self.player, "season")
-        check(season.get("boards", {}).get("emporia:blotto:v1"), f"no blotto ladder: {season.get('boards')}")
+        check(season.get("boards", {}).get("emporia:blotto:v2"), f"no blotto ladder: {season.get('boards')}")
+        check("insight" in season.get("boards", {}), f"no Insight board: {sorted(season.get('boards', {}))}")
         with urllib.request.urlopen(self.relay_url + "/relay/activity", timeout=5) as resp:
             act = json.loads(resp.read())
         check(act.get("active_agents") == 2, f"/relay/activity: {act}")
 
     def house(self) -> None:
-        s = self.tool(self.player, "create_session", "emporia:blotto:v1", config={"battlefields": 3, "troops": 10})
+        s = self.tool(self.player, "create_session", "emporia:blotto:v2", config={"battlefields": 3, "troops": 10})
         check(s.get("success"), f"create_session: {s}")
         sid = s["session_id"]
         time.sleep(2.5)                           # waiting longer than --adopt-after 2
@@ -475,6 +505,41 @@ class Run:
             raise StepFailed("the house's game did not finish in 8 passes")
         check(self.house_agent in g["participants"], f"participants: {g['participants']}")
 
+    def bargain(self) -> None:
+        """A bargain with the house: an illegal offer refused before it is sent, the player's own
+        values only, the house's honest counter accepted, and both hands published at the end."""
+        s = self.tool(self.player, "create_session", "emporia:bargain:v1", config={"max_offers": 4})
+        check(s.get("success") and (s.get("config") or {}).get("deal_commitment"), f"create_session: {s}")
+        sid = s["session_id"]
+        # Calls vs Bargain: a bargain is scored out of 10, not won or lost, so it takes no call.
+        nocall = self.tool(self.player, "commit_move", sid, [1], "sealing a call on a bargain", call=0.6)
+        check(not nocall.get("success") and "takes no call" in nocall.get("error", ""), f"a call on a bargain: {nocall}")
+        time.sleep(2.5)
+        for _ in range(8):
+            self.emporia(self.house_agent, "house", "run", self.house_agent, "--once", "--adopt-after", "2")
+            g = self.tool(self.player, "get_session", sid)
+            if g["status"] == "completed":
+                break
+            check(self.house_agent in g.get("participants", []), f"the house did not adopt the bargain: {g}")
+            check(g.get("private", {}).get("values") and not g["state"]["data"]["deal"]["hands"],
+                  f"the player should see its own values only: {g.get('private')}")
+            if g["current_agent"] != self.player:
+                continue
+            if not g["state"]["data"]["offers"]:
+                bad = self.tool(self.player, "submit_action", sid, "offer", {"keep": {"silk": 9}},
+                                "asking for more silk than there is")
+                check(not bad.get("success") and "Nothing was sent" in bad.get("error", ""), f"illegal offer: {bad}")
+                r = self.tool(self.player, "submit_action", sid, "offer",
+                              {"keep": {"silk": 3, "spice": 2, "amber": 1}}, "opening high to see what they want")
+            else:
+                r = self.tool(self.player, "submit_action", sid, "accept", {}, "their offer is fair enough for me")
+            check(r.get("success"), f"player's move: {r}")
+        else:
+            raise StepFailed("the bargain did not finish in 8 passes")
+        chat = self.tool(self.player, "get_game_chat", sid)
+        check(set((chat.get("revealed") or {}).get("hands") or {}) == {self.player, self.house_agent},
+              f"the hands are not published beside the chat: {chat}")
+
     def operator(self) -> None:
         """The relay's operator (the merchant) sees its desk — a player's open bug report waiting,
         with the claimed severity, its test and the verdict command — and the player is refused."""
@@ -482,6 +547,13 @@ class Run:
                       "def test_it():\n    assert 1 + 1 == 2", "filed by the end-to-end run", "high", False)
         check(r.get("success") and r.get("report_id"), f"report_bug: {r}")
         rid = r["report_id"]
+        topic = self.tool(self.merchant, "create_agora_topic", "ideas", "what would make Emporia better",
+                          slug="ideas")
+        check(topic.get("slug") == "ideas" or "exists" in str(topic), f"create_agora_topic ideas: {topic}")
+        post = self.tool(self.player, "create_agora_post", "ideas", "e2e: an idea",
+                         "the end-to-end run suggests something to judge")
+        pid = post.get("post_id") or (post.get("post") or {}).get("post_id")
+        check(bool(pid), f"create_agora_post: {post}")
         me = self.emporia(self.merchant, "operator", self.merchant, "whoami")
         check("this relay's operator" in me, f"whoami as the operator: {me.strip()[-200:]}")
         desk = self.emporia(self.merchant, "operator", self.merchant)
@@ -489,6 +561,8 @@ class Run:
               f"the operator's desk does not show the report: {desk.strip()[-400:]}")
         check(f"hermes emporia bugs {self.merchant} verdict {rid} accepted --severity high --fix FIX_COMMIT" in desk,
               "the desk names no verdict command")
+        check(f"hermes emporia ideas {self.merchant} adopt {pid} --ref COMMIT_OR_ROADMAP_ITEM" in desk,
+              f"the desk names no adopt command for the idea: {desk.strip()[-400:]}")
         check(f"hermes emporia house start {self.house_agent}" in desk, "the desk names no house command")
         them = self.emporia(self.player, "operator", self.player, "whoami", ok_codes=(1,))
         check("not this relay's operator" in them, f"whoami as a player: {them.strip()[-200:]}")
@@ -722,6 +796,7 @@ def main(argv: list[str] | None = None) -> int:
         run.step("a sealed DM opened through the signer", run.signer_dm)
         run.step(f"setup {run.house_agent} (house)", run.setup_agent, run.house_agent, "--playbook", "host")
         run.step("house adopts a waiting blotto and finishes it", run.house)
+        run.step("bargain with the house: no call, sealed values, an honest deal, hands published", run.bargain)
         run.step("the operator sees its desk; a player is refused", run.operator)
         run.step("update at the pinned commit is a verified no-op", run.update)
     except StepFailed:

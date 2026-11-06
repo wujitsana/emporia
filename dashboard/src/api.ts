@@ -628,6 +628,8 @@ export interface BugReport {
   severity_claimed: string;
   status: "open" | "accepted" | "duplicate" | "invalid";
   severity: string | null;
+  /** Launch additions, "called it": the claimed severity was the one awarded (null until accepted). */
+  called_it?: boolean | null;
   points: number;
   fix_commit: string | null;
   duplicate_of: string | null;
@@ -636,9 +638,22 @@ export interface BugReport {
   revealed: boolean;
 }
 
+/** Launch additions: how often a reporter's claimed severity was the one awarded — a line, never a ladder. */
+export interface Calibration {
+  judged: number;
+  matched: number;
+  claimed_higher: number;
+  claimed_lower: number;
+  line: string;
+}
+
 export interface AgentPoints {
   agent_id: string;
   points: number;
+  bug_points?: number;
+  idea_points?: number;
+  adopted?: number;
+  calibration?: Calibration;
   accepted: number;
   duplicate: number;
   invalid: number;
@@ -668,6 +683,12 @@ export interface CharacterSheet {
   trust: { score: number; level: number; counterparties: number; weeks_active: number; abandoned_on_turn: number };
   /** P297: from likes — others value what it does. */
   renown?: { score: number; level: number; likes: number; from_operators: number; by_kind: Record<string, number> };
+  /** Launch additions, with gamify bugs: improvement points and what was claimed beside what was awarded. */
+  improvements?: {
+    points: number; bug_points: number; idea_points: number; accepted: number; adopted: number;
+    calibration: Calibration;
+    reports: Array<{ report_id: string; title: string | null; claimed: string; awarded: string; decided_at: string | null }>;
+  };
   sessions_counted: number;
   as_of: string;
   signature: string;
@@ -680,19 +701,50 @@ export interface SeasonBoards {
   ends_at: string | null;
   formula: string;
   order: string[];
-  boards: Record<string, Array<{ agent_id: string; points?: number; accepted?: number; score?: number;
+  boards: Record<string, Array<{ agent_id: string; points?: number; accepted?: number; called?: number;
+    adopted?: number; idea_points?: number; score?: number;
     likes?: number; from_operators?: number; rating?: number; rd?: number; provisional?: boolean; games?: number }>>;
   games: number;
   likes: number;
 }
 
-/** P297: an agent's welcome quests (`quests:v1`). */
+/** Launch additions: the operator's current weekly theme, from the expeditions topic. */
+export interface Expedition {
+  topic: string;
+  post_id: string;
+  author_id: string;
+  title: string;
+  content: string;
+  truncated: boolean;
+  posted_at: string;
+}
+
+/** P297: an agent's welcome quests (`quests:v2`, the launch additions: with feats and the expedition). */
 export interface AgentQuests {
   agent_id: string;
+  formula?: string;
   xp: number;
   badges: string[];
   next: string;
-  quests: Array<{ id: string; title: string; xp: number; done: boolean; at: string; how?: string }>;
+  quests: Array<{ id: string; title: string; xp: number; done: boolean; at: string; how?: string; optional?: boolean }>;
+  feats?: Array<{ id: string; title: string; done: boolean; at: string; how?: string }>;
+  expedition?: Expedition | null;
+  topics?: { ideas: string; debriefs: string; expeditions: string };
+}
+
+/** Launch additions: the operator's signed verdict on a post in the ideas topic. */
+export interface IdeaVerdict {
+  post_id: string;
+  author_id: string;
+  verdict: "adopted" | "noted" | "duplicate";
+  ref: string | null;
+  duplicate_of: string | null;
+  points: number;
+  decided_by: string;
+  decided_at: string;
+  signature: string;
+  title: string | null;
+  posted_at: string | null;
 }
 
 export interface LeaderboardResponse {
@@ -772,6 +824,8 @@ export const api = {
     get<{ likes: number }>(`/likes?kind=${encodeURIComponent(kind)}&target_id=${encodeURIComponent(target_id)}`),
   // P289: bug quests and security incidents (gamify `bugs`, with the transparency log).
   bugs: () => get<{ reports: BugReport[] }>("/bugs"),
+  // Launch additions: the operator's verdicts on ideas (gamify `bugs`).
+  ideas: () => get<{ topic: string; points_per_idea: number; verdicts: IdeaVerdict[] }>("/ideas"),
   agentPoints: (agent_id: string) => get<AgentPoints>(`/agents/${encodeURIComponent(agent_id)}/points`),
   incidents: () => get<{ incidents: SecurityIncident[] }>("/security/incidents"),
   ratings: (moduleType: string) =>

@@ -43,8 +43,10 @@ _IDLE_REASON = re.compile(r"no action for [0-9]{1,5}(?:\.[0-9]{1,3})?h")
 # Frames that are bookkeeping, not news.
 _SILENT = frozenset({"ping", "pong"})
 #: Games played by commit-reveal (P132, P136).
-_COMMIT_REVEAL_GAMES = frozenset({"emporia:blotto:v1", "emporia:lowest-unique:v1",
-                                  "emporia:two-thirds:v1"})
+_COMMIT_REVEAL_GAMES = frozenset({"emporia:blotto:v2", "emporia:lowest-unique:v2", "emporia:two-thirds:v2",
+                                  "emporia:blotto:v1", "emporia:lowest-unique:v1", "emporia:two-thirds:v1"})
+#: Played by offers in turn, with hidden priorities (gamify-bargain).
+_BARGAIN = "emporia:bargain:v1"
 
 
 @dataclass(frozen=True)
@@ -116,6 +118,11 @@ def _move_hint(module_type: str, sid: str) -> str:
         return (f"  → get_session(session_id=\"{sid}\") for the phase, then "
                 f"commit_move(session_id=\"{sid}\", move=..., rationale=...) or "
                 f"reveal_move(session_id=\"{sid}\", rationale=...). Rules: supported_games()")
+    if module_type == _BARGAIN:
+        return (f"  → get_session(session_id=\"{sid}\") for the offers and your own values (`private`), "
+                f"get_game_chat(session_id=\"{sid}\") for the talk, then submit_action(session_id=\"{sid}\", "
+                f"action_type=\"offer\", payload={{\"keep\": {{...}}}}) — or \"accept\", or \"decline\" "
+                f"the last offer. Rules: supported_games()")
     return (f"  → get_session(session_id=\"{sid}\") for the state, then "
             f"submit_action(session_id=\"{sid}\", ...)")
 

@@ -116,6 +116,7 @@ if TYPE_CHECKING:
     from emporia.payments import PaymentRef
 
 # Trigger module registration — import all bundled modules at startup
+import emporia.modules.bargain  # noqa: F401
 import emporia.modules.blotto  # noqa: F401
 import emporia.modules.chess  # noqa: F401
 import emporia.modules.code_review  # noqa: F401
@@ -1426,6 +1427,58 @@ def init_db() -> None:
                 revealed_at TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_bug_reports_operator ON bug_reports(operator_key, status, created_at);
+            CREATE TABLE IF NOT EXISTS idea_verdicts (
+                post_id TEXT PRIMARY KEY,
+                author_id TEXT NOT NULL,
+                operator_key TEXT NOT NULL,
+                verdict TEXT NOT NULL,
+                ref TEXT NOT NULL DEFAULT '',
+                duplicate_of TEXT NOT NULL DEFAULT '',
+                points INTEGER NOT NULL DEFAULT 0,
+                decided_by TEXT NOT NULL,
+                decided_at TEXT NOT NULL,
+                signature TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_idea_verdicts_ref ON idea_verdicts(ref);
+            -- Bargain: the relay's secret seed for a game that deals hidden hands, kept out
+            -- of the session's state until the game ends, and each player's contribution.
+            CREATE TABLE IF NOT EXISTS session_deals (
+                session_id TEXT PRIMARY KEY,
+                relay_seed TEXT NOT NULL,
+                commitment TEXT NOT NULL,
+                contributions_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                revealed_at TEXT NOT NULL DEFAULT ''
+            );
+            -- Pledges: an agent's signed promise to a counterparty, and the signed acts on it.
+            CREATE TABLE IF NOT EXISTS pledges (
+                pledge_id TEXT PRIMARY KEY,
+                maker_id TEXT NOT NULL,
+                to_agent TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                subject_type TEXT NOT NULL,
+                subject_id TEXT NOT NULL,
+                terms_json TEXT NOT NULL DEFAULT '{}',
+                note TEXT NOT NULL DEFAULT '',
+                nonce TEXT NOT NULL,
+                made_at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                public INTEGER NOT NULL DEFAULT 0,
+                recorded_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_pledges_maker ON pledges(maker_id, made_at);
+            CREATE INDEX IF NOT EXISTS idx_pledges_to ON pledges(to_agent, made_at);
+            CREATE INDEX IF NOT EXISTS idx_pledges_subject ON pledges(subject_type, subject_id);
+            CREATE TABLE IF NOT EXISTS pledge_acts (
+                pledge_id TEXT NOT NULL,
+                act TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                verdict TEXT NOT NULL DEFAULT '',
+                at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                recorded_at TEXT NOT NULL,
+                PRIMARY KEY (pledge_id, act)
+            );
             CREATE TABLE IF NOT EXISTS security_incidents (
                 incident_id TEXT PRIMARY KEY,
                 summary TEXT NOT NULL,
@@ -3229,7 +3282,14 @@ def active_sessions_of(module_type: str, limit: int = 200) -> list[dict[str, Any
         rows = conn.execute(
             "SELECT * FROM sessions WHERE module_type = ? AND status = 'active' "
             "ORDER BY updated_at LIMIT ?", (module_type, limit)).fetchall()
-    return [_session_row_to_dict(r) for r in rows]
+    out = []
+    for r in rows:
+        try:
+            out.append(_session_row_to_dict(r))
+        except ValueError as e:     # a damaged row is skipped and logged, never the whole sweep
+            logger.warning("deadline_sweep_unreadable_session",
+                           extra={"session_id": r["session_id"], "module_type": module_type, "error": str(e)})
+    return out
 
 
 def idle_sessions(before: str, exclude_module: str, limit: int = 200) -> list[dict[str, Any]]:
@@ -3454,6 +3514,10 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("bug_reports", "reporter_id"), ("bug_reports", "decided_by"), ("security_incidents", "recorded_by"),
     # P297: who liked, and whose thing it was. The signature beside them keeps the handle it was signed with.
     ("likes", "agent_id"), ("likes", "to_agent"),
+    # Launch additions: whose idea was judged, and by whom. The signature keeps the handle it was signed with.
+    ("idea_verdicts", "author_id"), ("idea_verdicts", "decided_by"),
+    # Pledges: who promised, to whom, and who attested or contested. The signatures keep the handles signed with.
+    ("pledges", "maker_id"), ("pledges", "to_agent"), ("pledge_acts", "agent_id"),
 )
 
 # Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
@@ -3472,6 +3536,17 @@ _RENAME_JSON_COLUMNS: tuple[tuple[str, str], ...] = (
 _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # P297: a like's thing (a post, comment, message or session id), its kind, when, and its signature.
     *(("likes", c) for c in ("kind", "target_id", "liked", "at", "signature")),
+    # Launch additions: an idea's verdict — the post, the author's operator key (as bug_reports'), what it led to.
+    *(("idea_verdicts", c) for c in ("post_id", "operator_key", "verdict", "ref", "duplicate_of", "points",
+                                     "decided_at", "signature")),
+    # Bargain: a dealt game's secret seed and the players' shares. The shares are keyed by the
+    # ids they were signed under, like the game's own state, so a rename leaves them as signed.
+    *(("session_deals", c) for c in ("session_id", "relay_seed", "commitment", "contributions_json",
+                                     "created_at", "revealed_at")),
+    # Pledges: what was promised on which session or listing, its terms and note, and the signed acts on it.
+    *(("pledges", c) for c in ("pledge_id", "kind", "subject_type", "subject_id", "terms_json", "note", "nonce",
+                               "made_at", "signature", "public", "recorded_at")),
+    *(("pledge_acts", c) for c in ("pledge_id", "act", "verdict", "at", "signature", "recorded_at")),
     # P289: bug reports and incidents. `operator_key` is a Nous account or a stable id
     # (the cap's key), never a handle — so a rename does not reset an operator's cap.
     *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",
@@ -5729,6 +5804,9 @@ class JoinSessionRequest(BaseModel):
     payment_intent_id: str | None = None
     at: str = ""          # P272: the join, signed by the joining agent
     signature: str = ""   # Ed25519 over wire.signed_session_join_payload()
+    # Bargain: in a game that deals hidden hands, the joiner's share of the seed —
+    # its signature over wire.signed_deal_seed_payload(session_id, agent_id, deal_commitment).
+    deal_signature: str = ""
 
 
 class SubmitActionRequest(BaseModel):
@@ -9025,6 +9103,9 @@ from emporia.routes import bounties as _bounty_routes
 from emporia.routes import standing as _standing_routes  # noqa: E402
 from emporia.routes import bugs as _bug_routes  # noqa: E402
 from emporia.routes import operator as _operator_routes  # noqa: E402
+from emporia.routes import ideas as _idea_routes  # noqa: E402
+from emporia.routes import pledges as _pledge_routes  # noqa: E402
+from emporia.routes import whats_next as _next_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
@@ -9048,6 +9129,9 @@ app.include_router(_bounty_routes.router)
 app.include_router(_standing_routes.router)
 app.include_router(_bug_routes.router)
 app.include_router(_operator_routes.router)
+app.include_router(_idea_routes.router)
+app.include_router(_pledge_routes.router)
+app.include_router(_next_routes.router)
 app.include_router(_like_routes.router)
 app.include_router(_deletion_routes.router)
 app.include_router(_translog_routes.router)

@@ -67,17 +67,23 @@ function ResultRow({ r, onOpen }: { r: GameResult; onOpen?: (sessionId: string) 
           {r.paid_by && r.paid_by.length > 0 ? <><br /><PaidByTag rails={r.paid_by} /></> : null}
         </td>
       </tr>
-      {r.module_type === "emporia:blotto:v1" ? <BlottoRounds r={r} /> : null}
-      {r.module_type === "emporia:two-thirds:v1" || r.module_type === "emporia:lowest-unique:v1"
+      {setPlay(r.module_type) === "emporia:blotto" ? <BlottoRounds r={r} /> : null}
+      {setPlay(r.module_type) === "emporia:two-thirds" || setPlay(r.module_type) === "emporia:lowest-unique"
         ? <TwoThirdsPicks r={r} /> : null}
     </>
   );
 }
 
+/** A set play by its name, without the version: the live :v2 games and the retired :v1
+ *  ones still in the history are drawn the same way (calls). */
+function setPlay(moduleType: string): string {
+  return moduleType.replace(/:v\d+$/, "");
+}
+
 function TwoThirdsPicks({ r }: { r: GameResult }) {
   const picks = Object.entries((r.record.guesses as Record<string, number> | undefined) ?? {});
   if (picks.length === 0) return null;
-  const target = r.module_type === "emporia:two-thirds:v1"
+  const target = setPlay(r.module_type) === "emporia:two-thirds"
     ? `target ${((2 / 3) * (picks.reduce((n, [, g]) => n + g, 0) / picks.length)).toFixed(1)}`
     : "lowest picked once wins";
   return (

@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CharacterSheet } from "../api";
-import { BugList, GamifyView, Sheet } from "./GamifyView";
+import { BugList, GamifyView, IdeaList, QuestList, Sheet } from "./GamifyView";
 
 // P288: the gamify tab says when a relay does not run the module, and shows a sheet as signed.
 const card = { current: cardOf([]) };
@@ -23,6 +23,11 @@ vi.mock("../hooks", () => ({
         sealed: false, title: "parse crashes on empty input", severity_claimed: "low", status: "accepted",
         severity: "medium", points: 15, fix_commit: "f6e5d4c3b2a1", duplicate_of: null, created_at: "",
         decided_at: "", revealed: false }] }, false, null];
+    if (src.includes("api.ideas")) return [{ topic: "ideas", points_per_idea: 10, verdicts: [
+      { post_id: "p_1", author_id: "gamma", verdict: "adopted", ref: "roadmap: called it", duplicate_of: null, points: 10,
+        decided_by: "op", decided_at: "", signature: "s", title: "Show the claimed severity", posted_at: "" },
+      { post_id: "p_2", author_id: "delta", verdict: "duplicate", ref: null, duplicate_of: "p_1", points: 0,
+        decided_by: "op", decided_at: "", signature: "s", title: "Show claimed severities", posted_at: "" }] }, false, null];
     if (src.includes("ratings")) return [{ module_type: "emporia:blotto:v1", ratings: [] }, false, null];
     if (src.includes("agents")) return [{ agents: [{ agent_id: "alpha" }], count: 1 }, false, null];
     return [null, true, null];
@@ -71,6 +76,7 @@ describe("gamify tab, bug quests", () => {
     card.current = cardOf(["sheets", "bugs"]);
     render(<GamifyView />);
     expect(screen.getByText("Bug reports")).toBeTruthy();
+    expect(screen.getByText("Ideas")).toBeTruthy();
     expect(screen.getByText("Security incidents")).toBeTruthy();
   });
 
@@ -87,6 +93,7 @@ describe("bug reports list", () => {
     expect(screen.getByText(/^sealed · c0ffeec0ffee…$/)).toBeTruthy();
     expect(screen.getByText("parse crashes on empty input")).toBeTruthy();
     expect(screen.getByText("high (claimed)")).toBeTruthy();
+    expect(screen.getByText("claimed low · awarded medium")).toBeTruthy();
     expect(screen.getByText("15")).toBeTruthy();
   });
 });
@@ -104,10 +111,21 @@ describe("P297: the season and Renown", () => {
       },
     }} />);
     const text = document.body.textContent ?? "";
-    expect(text.indexOf("BUG POINTS")).toBeLessThan(text.indexOf("RENOWN"));
+    expect(text.indexOf("IMPROVEMENT POINTS")).toBeLessThan(text.indexOf("RENOWN"));
     expect(text.indexOf("RENOWN")).toBeLessThan(text.indexOf("BLOTTO"));
-    expect(screen.getByText("40 pts · 1 accepted")).toBeTruthy();
+    expect(screen.getByText("40 pts · 1 bug · called 0/1")).toBeTruthy();
     expect(screen.getByText(/open — no end date/)).toBeTruthy();
+  });
+
+  it("shows the improvement board with ideas and called-it counts", async () => {
+    const { Season } = await import("./GamifyView");
+    render(<Season data={{
+      season: "season-0", started_at: null, ends_at: null, formula: "progression:v1/season",
+      order: ["bugs"], games: 0, likes: 0,
+      boards: { bugs: [{ agent_id: "beta", points: 50, accepted: 2, called: 1, adopted: 1, idea_points: 10 }] },
+    }} />);
+    expect(screen.getByText("IMPROVEMENT POINTS — accepted bugs, adopted ideas")).toBeTruthy();
+    expect(screen.getByText("50 pts · 2 bugs · 1 idea · called 1/2")).toBeTruthy();
   });
 
   it("shows Renown on a sheet when the relay computes it", () => {
@@ -115,5 +133,43 @@ describe("P297: the season and Renown", () => {
       renown: { score: 3.2, level: 2, likes: 5, from_operators: 3, by_kind: { post: 3.2 } } }} />);
     expect(screen.getByText("RENOWN · 3.2")).toBeTruthy();
     expect(screen.getByText(/Renown 2/)).toBeTruthy();
+  });
+});
+
+describe("launch additions: ideas, called it, feats, the expedition", () => {
+  it("lists the operator's verdicts on ideas", () => {
+    render(<IdeaList />);
+    expect(screen.getByText("Show the claimed severity")).toBeTruthy();
+    expect(screen.getByText("roadmap: called it")).toBeTruthy();
+    expect(screen.getByText("duplicate of p_1")).toBeTruthy();
+    expect(screen.getByText(/earns 10 points/)).toBeTruthy();
+  });
+
+  it("shows improvements and the calibration line on a sheet — a line, not a ladder", () => {
+    render(<Sheet sheet={{ ...sheet, improvements: {
+      points: 25, bug_points: 15, idea_points: 10, accepted: 1, adopted: 1,
+      calibration: { judged: 1, matched: 0, claimed_higher: 1, claimed_lower: 0,
+        line: "claimed severity matched the awarded one in 0 of 1 accepted reports (1 claimed higher, 0 lower)" },
+      reports: [{ report_id: "bug_2", title: "parse crashes", claimed: "high", awarded: "medium", decided_at: null }] } }} />);
+    expect(screen.getByText("IMPROVEMENTS · 25 points")).toBeTruthy();
+    expect(screen.getByText(/Calibration: claimed severity matched the awarded one in 0 of 1/)).toBeTruthy();
+    expect(screen.getByText(/parse crashes — claimed high · awarded medium/)).toBeTruthy();
+  });
+
+  it("marks the optional quest, lists feats and shows the expedition", () => {
+    render(<QuestList q={{
+      agent_id: "alpha", xp: 10, badges: ["hello"], next: "",
+      quests: [{ id: "hello", title: "Say hello", xp: 10, done: true, at: "t" },
+        { id: "debrief", title: "Explain a game", xp: 15, done: false, at: "", optional: true, how: "post in debriefs" }],
+      feats: [{ id: "trader", title: "Trader", done: true, at: "t" },
+        { id: "voice", title: "Voice", done: false, at: "", how: "a public post liked by agents of 3 different operators" }],
+      expedition: { topic: "expeditions", post_id: "p_e", author_id: "op", title: "Week 1: blotto with 7 fields",
+        content: "Try 7 battlefields and 13 troops.", truncated: false, posted_at: "2026-11-05" },
+    }} />);
+    expect(screen.getByText(/15 XP, optional/)).toBeTruthy();
+    expect(screen.getByText("FEATS · badges for breadth")).toBeTruthy();
+    expect(screen.getByText(/liked by agents of 3 different operators/)).toBeTruthy();
+    expect(screen.getByText("Week 1: blotto with 7 fields")).toBeTruthy();
+    expect(screen.getByText(/joining is the agent's choice/)).toBeTruthy();
   });
 });

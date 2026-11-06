@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from emporia import relay_server as rs
+from emporia import session_deals
 from emporia.module_sdk import (
     ENGINE_GAME_REFUSAL,
     STAKE_PURCHASE,
@@ -27,8 +28,10 @@ from emporia.module_sdk import (
     MODULE_REGISTRY,
     SessionAction,
     SessionState,
+    conceal,
     engine_game_stakes_allowed,
     get_interaction_module,
+    with_deal,
 )
 from emporia.session_audit import (
     get_public_log,
@@ -66,6 +69,9 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     rs._enforce_agent_rate_limit(caller)
 
     module = get_interaction_module(req.module_type)
+    if module.RETIRED_FOR:   # calls: the :v1 set plays are retired, loudly
+        from emporia.module_sdk import retired_refusal
+        raise HTTPException(400, retired_refusal(req.module_type, module.RETIRED_FOR))
     # P181: a named opponent — like `chat`, a setting of any session, not a module's.
     opponent = (req.config or {}).get("opponent")
     if opponent is not None:
@@ -78,6 +84,16 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     ok, why = module.validate_config({k: v for k, v in (req.config or {}).items() if k != "opponent"})
     if not ok:
         raise HTTPException(400, why)
+    deal_secret = None
+    if module.DEALS_HIDDEN:
+        # Bargain: the relay commits to its secret seed now, before anyone can join;
+        # the seed itself stays in session_deals until the game ends.
+        if "deal_commitment" in (req.config or {}):
+            raise HTTPException(400, "deal_commitment is the relay's: it is set when the game is made")
+        deal_secret, commitment = session_deals.new_seed()
+        req.config = {**(req.config or {}), "deal_commitment": commitment}
+    if module.CHAT_BY_DEFAULT and "chat" not in (req.config or {}):
+        req.config = {**(req.config or {}), "chat": True}
     if req.module_type == SERVICE_MODULE:
         from emporia.modules.service import MAX_DEADLINE_HOURS
         try:
@@ -187,6 +203,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     )
     rs.add_participant(session_id, caller, stake_paid=creator_payment is not None,
                        join_at=req.at, join_signature=req.signature)   # P279: its signed creation
+    if deal_secret:
+        session_deals.store(session_id, deal_secret, req.config["deal_commitment"])
     open_dual_session(session_id, caller, req.module_type)
 
     await rs.broadcast_to_agent(caller, {
@@ -282,8 +300,19 @@ async def get_session(session_id: str, request: Request):
         fields = list(get_interaction_module(s["module_type"]).PRIVATE_TEXT_FIELDS)
     except ValueError:
         fields = []
-    return {**s, "sealed": rs.session_sealed(s), "private_text_fields": fields,
-            "paid_by": rs.session_paid_by(session_id), "creation": _signed_creation(s)}
+    out = {**s, "sealed": rs.session_sealed(s), "private_text_fields": fields,
+           "paid_by": rs.session_paid_by(session_id), "creation": _signed_creation(s)}
+    caller = rs._dashboard_agent_id(request)
+    if caller and caller in s["participants"]:
+        try:
+            module = get_interaction_module(s["module_type"])
+        except ValueError:
+            module = None
+        if module is not None and module.DEALS_HIDDEN:
+            # Bargain: the caller's own hand, served to it alone — never in the state
+            # anyone can read until the game ends.
+            out["private"] = session_deals.private_for(s, module, caller)
+    return out
 
 
 def _signed_creation(s: dict[str, Any]) -> dict[str, Any]:
@@ -438,8 +467,19 @@ async def get_game_chat(session_id: str, request: Request):
         rows = conn.execute("SELECT message_id, agent_id, content, created_at FROM game_chat "
                             "WHERE session_id = ? AND deleted_at IS NULL ORDER BY created_at",
                             (session_id,)).fetchall()
-    return {"session_id": session_id, "chat_enabled": bool((s.get("config") or {}).get("chat")),
-            "messages": [dict(r) for r in rows]}
+    out = {"session_id": session_id, "chat_enabled": bool((s.get("config") or {}).get("chat")),
+           "messages": [dict(r) for r in rows]}
+    try:
+        module = get_interaction_module(s["module_type"])
+    except ValueError:
+        module = None
+    if module is not None and module.DEALS_HIDDEN and s["status"] in ("completed", "abandoned"):
+        # Bargain: what each player really valued, beside what it said — the record that
+        # makes honest and deceptive bargaining visible. Talk is never scored.
+        data = (s.get("state") or {}).get("data") or {}
+        out["revealed"] = {"hands": (data.get("deal") or {}).get("hands") or {},
+                           "offers": data.get("offers") or [], "ended": data.get("ended")}
+    return out
 
 
 @router.get("/sessions/{session_id}/actions")
@@ -563,6 +603,9 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
     """Build the opening state and tell every participant the session began."""
     module = get_interaction_module(s["module_type"])
     state = module.initial_state(participants, s["config"])
+    if module.DEALS_HIDDEN:
+        # Bargain: every player's share of the seed is public from the start; the hands are not.
+        state = with_deal(state, contributions=session_deals.contributions(session_id))
     rs.save_session(
         session_id=session_id,
         module_type=s["module_type"],
@@ -1167,6 +1210,31 @@ async def fund_session(session_id: str, request: Request):
     return rs.load_session(session_id)
 
 
+def _take_deal_share(s: dict[str, Any], agent_id: str, signature: str) -> None:
+    """Bargain: the joiner's share of the seed — its one signature over the relay's
+    commitment (wire.signed_deal_seed_payload) — beside the creator's signed creation,
+    made before the commitment existed. Refused before anyone is seated."""
+    from emporia import wire
+    commitment = (s.get("config") or {}).get("deal_commitment") or ""
+    if not signature:
+        raise HTTPException(400, ("this game deals hidden hands: a join carries deal_signature, your signature "
+                                  "over wire.signed_deal_seed_payload(session_id, agent_id, deal_commitment) "
+                                  "(your Emporia tools add it)"))
+    if not rs.AGENT_REGISTRY.verify_signature(agent_id, wire.signed_deal_seed_payload(
+            s["session_id"], agent_id, commitment), signature):
+        raise HTTPException(403, "deal_signature does not verify over this game's deal_commitment and your key")
+    creator = (s["participants"] or [""])[0]
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT join_at, join_signature FROM participants WHERE session_id = ? AND agent_id = ?",
+                           (s["session_id"], creator)).fetchone()
+    if not row or not row["join_signature"]:
+        raise HTTPException(409, "this game's creator left no signed creation to deal from; it cannot be played")
+    session_deals.set_contributions(s["session_id"], {
+        creator: {"kind": "session-create", "at": row["join_at"], "signature": row["join_signature"]},
+        agent_id: {"kind": "deal-seed", "signature": signature},
+    })
+
+
 @router.post("/sessions/{session_id}/join")
 async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Request):
     identity_verified = rs._require_caller_unless_mpp_payment(req.agent_id, request)
@@ -1212,6 +1280,8 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     # players, so no game of more than two could ever fill.
     if len(s["participants"]) + 1 > module.MAX_PARTICIPANTS:
         raise HTTPException(400, f"Max {module.MAX_PARTICIPANTS} participants — this game is full")
+    if module.DEALS_HIDDEN:
+        _take_deal_share(s, req.agent_id, req.deal_signature)
 
     # Payment gate. P95: only a wager charges the joiner — every participant
     # stakes, and the creator already has. A purchase's joiner is the seller,
@@ -1396,6 +1466,8 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     # 6. Module dispatch
     module = get_interaction_module(s["module_type"])
     state = SessionState.from_dict(s["state"])
+    if module.DEALS_HIDDEN:     # Bargain: the hands, for the module's own use only
+        state = session_deals.dealt(session_id, module, state, s["config"] or {})
     action = SessionAction(
         agent_id=req.agent_id,
         action_type=req.action_type,
@@ -1411,6 +1483,9 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
 
     new_state = result.new_state
     is_over, outcome = module.is_terminal(new_state)
+    if module.DEALS_HIDDEN and not is_over:
+        # Stored, logged and broadcast without the seed and the hands until the game ends.
+        new_state = conceal(new_state)
     new_status = "completed" if is_over else "active"
     # P112: the deadline sweep can end a service session too. Whoever moves it
     # from active to completed first settles it; the other is told.
@@ -1433,7 +1508,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     rs.record_action(session_id, req.agent_id, req.action_type, req.payload, {
         "success": result.success,
         "artifacts": result.artifacts,
-        "new_state": result.new_state.data if result.new_state else None,
+        "new_state": new_state.data if new_state else None,
     })
 
     # Public audit receipt
@@ -1453,7 +1528,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         "payload": req.payload,
         "success": True,
         "artifacts": result.artifacts,
-        "new_state": result.new_state.data if result.new_state else None,
+        "new_state": new_state.data if new_state else None,
     }
     await rs.broadcast_to_session(session_id, action_event)
     if rs._session_visibility(s) == "public":
@@ -1522,7 +1597,19 @@ async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
             continue
         key = "service_timeouts" if module_type == SERVICE_MODULE else "game_timeouts"
         for s in rs.active_sessions_of(module_type, limit):
-            is_over, outcome = module.is_terminal(SessionState.from_dict(s["state"]))
+            try:
+                state = SessionState.from_dict(s["state"])
+                if module.DEALS_HIDDEN:     # so a result on time carries the revealed hands too
+                    state = session_deals.dealt(s["session_id"], module, state, s["config"] or {})
+                is_over, outcome = module.is_terminal(state)
+            except Exception as e:  # noqa: BLE001 — one unreadable session must not stop the sweep
+                # gamify-all review: the first timed session the sweep could not read raised out
+                # of it, so no later session (of this game or any after it) was ever ended on time.
+                rs.logger.warning("deadline_sweep_skipped_session",
+                                  extra={"session_id": s.get("session_id"), "module_type": module_type,
+                                         "error": f"{type(e).__name__}: {e}"})
+                counts["skipped"] = counts.get("skipped", 0) + 1
+                continue
             if not is_over:
                 continue
             # Claimed like a fund, so a racing submit_action and this sweep
@@ -1597,6 +1684,12 @@ async def _abandon(s: dict[str, Any], reason: str) -> list[dict[str, Any]] | Non
     if not rs.claim_session_status(session_id, s["status"], "abandoned"):
         return None
     _WAGER_FUNDING_LOCKS.pop(session_id, None)
+    try:
+        dealt_module = get_interaction_module(s["module_type"])
+    except ValueError:
+        dealt_module = None
+    if dealt_module is not None and dealt_module.DEALS_HIDDEN:
+        session_deals.reveal(session_id, dealt_module)   # an abandoned game's deal is published too
     payments = rs.get_session_payments(session_id)
     cancel_results = [await _release_hold(p) for p in payments if p.get("payment_intent_id")]
     event = {
@@ -1618,6 +1711,8 @@ async def _abandon(s: dict[str, Any], reason: str) -> list[dict[str, Any]] | Non
 async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -> dict[str, Any] | None:
     """Settle a session that just ended and tell everyone (P112: shared by the
     action that ended it and the sweep that ends a timed-out one)."""
+    if module.DEALS_HIDDEN:     # Bargain: the deal is published once the game is over
+        session_deals.reveal(session_id, module)
     settlement_record: dict[str, Any] | None = None
     winner_id = outcome.get("winner") if isinstance(outcome, dict) else None
     outcome_type = outcome.get("outcome_type", "won") if isinstance(outcome, dict) else "won"

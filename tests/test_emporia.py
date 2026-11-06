@@ -2237,6 +2237,7 @@ def test_no_new_identity_as_proof_params():
     # inline) or pure public-lookup keys — not identity-as-proof.
     _SAFE_LOOKUPS = {
         ("GET", "/agents/{agent_id}/quests"),  # P297: whose quests; public lookup, no auth decision
+        ("GET", "/agents/{agent_id}/next"),  # whats_next: the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/available"),  # P296: is this name free; yes/no, no auth decision
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
         ("GET", "/agents/{agent_id}/card"),  # P187: whose card; public once the agent published a relay list
@@ -2420,8 +2421,12 @@ def test_every_route_has_a_reviewed_auth_posture():
     _AUTHENTICATED: set[tuple[str, str]] = {
         ("POST", "/likes"),  # P297: the liker, signed in, and its signature
         ("GET", "/likes/whose"),  # P297: signed in; a game's or deal's other side only to who was in it
+        ("POST", "/pledges"),  # pledges: the maker, signed in, and its signature
+        ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
+        ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
         ("POST", "/bugs"),  # P289: the reporter, signed in
         ("POST", "/bugs/{report_id}/verdict"),  # P289: the relay operator only
+        ("POST", "/ideas/{post_id}/verdict"),  # launch additions: the relay operator only, and its signature
         ("POST", "/bugs/{report_id}/reveal"),  # P289: the reporter or the operator
         ("POST", "/security/incidents"),  # P289: the relay operator only
         ("POST", "/security/incidents/{incident_id}/fixed"),  # P289: the relay operator only
@@ -2554,6 +2559,10 @@ def test_every_route_has_a_reviewed_auth_posture():
     }
     _VISIBILITY_FILTERED: set[tuple[str, str]] = {
         ("GET", "/agents/{agent_id}/sessions"),
+        # Pledges: public ones (a listing, a public game) to anyone; a private deal's to its
+        # maker, its counterparty and the operator; `due` only to the signed-in agent.
+        ("GET", "/pledges"),
+        ("GET", "/pledges/{pledge_id}"),
         ("GET", "/agents/{agent_id}/posts"),
         ("GET", "/payments/records"),
         # P105: 401 anonymous; operator sees all, an agent only holds it is party to.
@@ -2605,6 +2614,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/ratings"): "P288: one game's Craft ladder from finished public games",
         ("GET", "/bugs"): "P289: bug reports — a sealed one shows only its commitment until revealed",
         ("GET", "/bugs/{report_id}"): "P289: one bug report, as public as the list",
+        ("GET", "/ideas"): "launch additions: the operator's verdicts on public posts in the ideas topic — signed and logged, public like bug verdicts",
         ("GET", "/agents/{agent_id}/points"): "P289: an agent's bug-quest points — counts only",
         ("GET", "/security/incidents"): "P289: a relay's security incidents, public on purpose: on the record",
         ("POST", "/agents/{agent_id}/key-recovery"): "P246: the agent has lost its key, so it cannot sign in; the recovery key it committed to in its key log signs the request, and that signature is the whole authority. Throttled like sign-in",
@@ -21284,11 +21294,30 @@ def test_dashboard_game_types_match_the_relay_module_registry():
     assert block, "GAME_TYPES not found in GamesView.tsx"
     ids = {m for m in re.findall(r'id:\s*"([^"]*)"', block.group(1)) if m}
 
-    assert ids == set(MODULE_REGISTRY), (
-        "GamesView.GAME_TYPES has drifted from the relay's MODULE_REGISTRY.\n"
-        f"  only in dashboard: {sorted(ids - set(MODULE_REGISTRY))}\n"
-        f"  only in relay:     {sorted(set(MODULE_REGISTRY) - ids)}"
+    # Calls: the :v1 set plays are retired (their classes stay for games still running);
+    # the dashboard names the live ones, exactly.
+    live = {t for t, cls in MODULE_REGISTRY.items() if not cls.RETIRED_FOR}
+    assert ids == live, (
+        "GamesView.GAME_TYPES has drifted from the relay's live MODULE_REGISTRY.\n"
+        f"  only in dashboard: {sorted(ids - live)}\n"
+        f"  only in relay:     {sorted(live - ids)}"
     )
+
+
+def test_dashboard_names_the_live_set_plays():
+    """Calls moved the set plays to :v2: the game rail, the results' set-play rendering and
+    the two-player wager list name the :v2 types (GameResults matches by name, so a retired
+    :v1 game in the history still draws its rounds)."""
+    import re
+
+    from emporia import calls
+    root = Path(__file__).parent.parent / "dashboard" / "src"
+    src = (root / "views" / "GamesView.tsx").read_text()
+    assert set(calls.SET_PLAYS) <= set(re.findall(r'id:\s*"([^"]*)"', src))
+    for f in ("views/GamesView.tsx", "ui/GameResults.tsx", "paymentFormat.ts"):
+        text = (root / f).read_text()
+        assert not re.search(r"emporia:(blotto|two-thirds|lowest-unique):v1", text), f
+    assert '"emporia:blotto:v2"' in (root / "paymentFormat.ts").read_text()
 
 
 def test_relay_reports_one_version_everywhere():
@@ -27444,7 +27473,14 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V27 -> V28 (P278): `topic_acts`, an Agora topic's signed acts — its creation
 # with every setting, invites, taking them back, kicks.
-_SCHEMA_FINGERPRINT_V31 = "5c11d7de26ace1f236637c58423ac325d81528f0b325b063a8a5d6dcfb761e01"  # P297: likes
+#
+# V31 -> V32 (launch additions): `idea_verdicts`, the operator's signed verdict on an idea.
+#
+# V32 -> V33 (gamify-all: Bargain and pledges in one bump): `session_deals`, the relay's secret
+# seed for a game that deals hidden hands, kept out of the session's state until the game ends
+# (a V32 relay would serve a dealt game it cannot deal or reveal); `pledges` and `pledge_acts`,
+# signed promises and their attestations.
+_SCHEMA_FINGERPRINT_V33 = "312c85d45bceb7b1e96e3394c74fdd93b2026fa09a91a7e74bb0fbe0ad0936f7"  # Bargain's session deals and pledges
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27484,9 +27520,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (31, _SCHEMA_FINGERPRINT_V31), (
+    assert (SCHEMA_VERSION, fingerprint) == (33, _SCHEMA_FINGERPRINT_V33), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V31 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V33 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
@@ -27728,6 +27764,9 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",
     "/likes/whose": "P297: whom a like would be for — the like tool's own lookup, machine-facing",
+    "/agents/{}/next": "whats_next: the agent's own to-do facts, signed in as that agent only — the tool's input, not a view",
+    "/pledges": "pledges: the Gamify tab's pledge list is ui-v2's (docs/proposals/gamify-pledges.md §5); no dashboard views on this branch",
+    "/pledges/{}": "pledges: one pledge — the list's detail, for ui-v2 with the list",
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     "/bugs/{}": "P289: one bug report — the Gamify tab lists them all, with the same fields",

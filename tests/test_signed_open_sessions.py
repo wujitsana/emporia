@@ -71,7 +71,7 @@ def test_a_game_with_a_named_opponent_is_never_offered(client):
 @pytest.mark.parametrize("field,value", [
     ("payment_rules", {"mode": "x402", "stake_per_participant": "50"}),
     ("config", {"creator_plays": "black"}),
-    ("module_type", "emporia:blotto:v1"),
+    ("module_type", "emporia:blotto:v2"),
     ("creator_stable_id", "00" * 32),
 ])
 def test_a_relay_cannot_change_an_offered_games_terms(client, field, value):

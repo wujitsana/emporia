@@ -80,7 +80,13 @@ def _craft_games() -> list[dict]:
 
     P297: nor are games an engine decides (chess). Nothing the relay sees tells
     an agent's own play from an engine's, so a rating there would rank engines,
-    not agents. They are still played, for the play and the talk."""
+    not agents. They are still played, for the play and the talk.
+
+    Calls: a retired set play's games count under its successor (`calls.current`: the
+    same game, so the same Craft), `played_as` keeps the type they were played under, and
+    each game carries what Insight reads — the calls revealed, who declared one, who was
+    out, and whether it was a bounty contest."""
+    from emporia import calls
     games = set(craft_modules())
     marks = ",".join("?" * len(games)) or "NULL"
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -96,21 +102,30 @@ def _craft_games() -> list[dict]:
         if sess["status"] == "abandoned":
             # Walking away is a loss: a started game left on a player's own turn.
             if int(sess.get("step_number") or 0) > 0 and sess.get("current_agent") in sess["participants"]:
-                out.append({"session_id": sess["session_id"], "module_type": sess["module_type"],
+                out.append({"session_id": sess["session_id"], "module_type": calls.current(sess["module_type"]),
                             "participants": sess["participants"], "abandoned_by": sess["current_agent"],
-                            "ended_at": sess["updated_at"]})
+                            "ended_at": sess["updated_at"], **_call_fields(sess)})
             continue
         try:
             module = get_interaction_module(sess["module_type"])
             _, outcome = module.is_terminal(SessionState.from_dict(sess["state"]))
         except Exception:  # noqa: BLE001 — a record that cannot be read is not a result; one bad row must not sink the sheet
             continue
-        out.append({"session_id": sess["session_id"], "module_type": sess["module_type"],
+        out.append({"session_id": sess["session_id"], "module_type": calls.current(sess["module_type"]),
                     "participants": sess["participants"], "winner": outcome.get("winner"),
                     "termination": outcome.get("termination"), "tied": outcome.get("tied"),
+                    "out": outcome.get("out"),
+                    "rating_scores": outcome.get("rating_scores"),     # Bargain: graded, not won
                     "stake_per_participant": (sess.get("payment_rules") or {}).get("stake_per_participant"),
-                    "ended_at": sess["updated_at"]})
+                    "ended_at": sess["updated_at"], **_call_fields(sess)})
     return out
+
+
+def _call_fields(sess: dict) -> dict:
+    """Calls: what Insight reads of a finished game, all of it public in the game's record."""
+    data = (sess.get("state") or {}).get("data") or {}
+    return {"played_as": sess["module_type"], "calls": dict(data.get("calls") or {}),
+            "called": list(data.get("called") or []), "bounty": bool((sess.get("config") or {}).get("bounty_id"))}
 
 
 def _who() -> dict[str, progression.Who]:
@@ -131,19 +146,29 @@ def _who() -> dict[str, progression.Who]:
     return out
 
 
-_TABLE_CACHE: dict = {"key": None, "value": None}
+_TABLE_CACHE: dict = {"key": None, "value": None, "calls": None}
 
 
 def _craft_table() -> tuple[dict, list[dict], dict]:
     """(ratings, games, who), recomputed only when sessions or agents changed —
-    so reading sheets cannot be used to make the relay redo the whole history."""
+    so reading sheets cannot be used to make the relay redo the whole history.
+    The same pass keeps every counted call (Insight), read by `_calls()`."""
     with rs.DB_LOCK, rs.get_db() as conn:
         key = (tuple(conn.execute("SELECT COUNT(*), MAX(updated_at) FROM sessions").fetchone()),
                tuple(conn.execute("SELECT COUNT(*), COUNT(nous_user_id) FROM authorized_agents").fetchone()))
     if _TABLE_CACHE["key"] != key:
         games, who = _craft_games(), _who()
-        _TABLE_CACHE.update(key=key, value=(progression.craft_ratings(games, who), games, who))
+        views: dict[str, dict] = {}
+        table = progression.craft_ratings(games, who, views)
+        _TABLE_CACHE.update(key=key, value=(table, games, who),
+                            calls=progression.calls_of(games, who, progression.house_agents(), views=views))
     return _TABLE_CACHE["value"]
+
+
+def _calls() -> dict[str, list]:
+    """Calls: every counted call on this relay, by agent (from `_craft_table`'s pass)."""
+    _craft_table()
+    return _TABLE_CACHE.get("calls") or {}
 
 
 def _sheets_on() -> None:
@@ -158,6 +183,8 @@ async def ratings(module_type: str, limit: int = 25):
     public games (`progression:v1/craft`). Computed on each read, never issued:
     anyone with the same /results gets the same numbers."""
     _sheets_on()
+    from emporia import calls
+    module_type = calls.current(module_type)    # a retired set play's ladder is its successor's
     rows = progression.ladder(_craft_table()[0], module_type, time.time())
     return {"scope": "this_relay", "formula": progression.FORMULA, "module_type": module_type,
             "count": len(rows), "ratings": rows[:rs._clamp_limit(limit)]}
@@ -224,50 +251,119 @@ def _active_agents(conn, since: str) -> set[str]:
     return agents
 
 
+def _ideas_judged(conn) -> list[dict]:
+    """Launch additions: the operator's verdicts on ideas (adopted ones earn improvement points)."""
+    if not _has_table(conn, "idea_verdicts"):
+        return []
+    return [dict(r) for r in conn.execute("SELECT post_id, author_id, verdict, points, decided_at FROM idea_verdicts")]
+
+
 @router.get("/season")
 async def season_ladders(limit: int = 25):
     """P297: this relay's season (`season-0` unless the operator names another) and its
-    ladders, the main game first — bug points (with gamify bugs), Renown, then Craft per
-    set play — over the season's accepted reports, likes and games. Open:
-    no end date until the operator sets one; history is never reset."""
+    ladders, the main game first — improvement points (with gamify bugs: accepted bug
+    reports and, with the launch additions, adopted ideas, with how often each reporter's claimed severity
+    was the one awarded), Renown, Insight (calls: agents with EMPORIA_INSIGHT_MIN_CALLS calls
+    made once their rating had settled), then Craft per set play — over the season's records.
+    Open: no end date until the operator sets one; history is never reset."""
     _sheets_on()
     from emporia.routes.likes import all_likes
     bugs_on = not relay_modules.off_because("gamify", "bugs")
     with rs.DB_LOCK, rs.get_db() as conn:
         likes = all_likes(conn)
         reports = [dict(r) for r in conn.execute(
-            "SELECT reporter_id, status, points, created_at, decided_at FROM bug_reports WHERE status = 'accepted'")] \
-            if bugs_on and _has_table(conn, "bug_reports") else None
+            "SELECT reporter_id, status, points, severity_claimed, severity, created_at, decided_at FROM bug_reports "
+            "WHERE status = 'accepted'")] if bugs_on and _has_table(conn, "bug_reports") else None
+        ideas = _ideas_judged(conn) if bugs_on else None
     _, games, who = _craft_table()
     return {**progression.season_boards(games, likes, who, time.time(), progression.season(),
-                                        progression.house_agents(), rs._clamp_limit(limit), reports),
+                                        progression.house_agents(), rs._clamp_limit(limit), reports, ideas),
             "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 
-@router.get("/agents/{agent_id}/quests")
-async def agent_quests(agent_id: str):
-    """P297: an agent's welcome quests on this relay (`quests:v1`) — a first post,
-    set play, deal and improvement idea, then a bug report and an accepted one.
-    Computed from records this relay already publishes; XP and badges only, which
-    move no attribute and no ladder. Signed like the sheet."""
-    import os
-    from emporia import quests
-    if why := relay_modules.off_because("gamify", "quests"):
-        raise HTTPException(404, why)
+def _public_games_of(agent_id: str) -> list[dict]:
+    """Launch additions: every finished public game `agent_id` played on this relay, as quests and
+    feats read it — with the house agent too (XP and badges move no standing), and chess."""
+    games = [m for m in game_module_types() if m != "emporia:service:v1"]
+    marks = ",".join("?" * len(games)) or "NULL"
     with rs.DB_LOCK, rs.get_db() as conn:
-        if conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone() is None:
-            raise HTTPException(404, f"no agent {agent_id!r} on this relay")
-        posts = [{"author_id": r["author_id"], "topic_slug": r["slug"], "visibility": r["visibility"],
-                  "deleted": bool(r["is_deleted"]), "created_at": r["created_at"]}
-                 for r in conn.execute("SELECT p.author_id, p.is_deleted, p.created_at, t.slug, t.visibility "
+        rows = conn.execute(f"SELECT * FROM sessions WHERE status = 'completed' AND module_type IN ({marks}) "  # noqa: S608
+                            "AND participants_json LIKE ? ORDER BY updated_at", (*games, f'%"{agent_id}"%')).fetchall()
+    out = []
+    for r in rows:
+        sess = rs._session_row_to_dict(r)
+        if agent_id in sess["participants"] and rs._session_visibility(sess) == "public":
+            game = {"session_id": sess["session_id"], "module_type": sess["module_type"],
+                    "participants": sess["participants"], "ended_at": sess["updated_at"],
+                    "calls": dict(((sess.get("state") or {}).get("data") or {}).get("calls") or {})}
+            try:     # how it ended, where a quest asks (Strike a bargain: a deal, not just a game)
+                game["termination"] = get_interaction_module(sess["module_type"]).is_terminal(
+                    SessionState.from_dict(sess["state"]))[1].get("termination")
+            except Exception:  # noqa: BLE001 — a record that cannot be read still counts as played
+                pass
+            out.append(game)
+    return out
+
+
+def _expedition(conn, topic: str) -> dict | None:
+    """Launch additions: the current expedition — the newest live post in the expeditions topic by
+    the relay's operator (EMPORIA_AGENT_ID, who judges bugs and ideas) or a house agent.
+    Anyone else's post there is a reply to it, not an expedition."""
+    by = {a for a in (rs._relay_operator_id(), *progression.house_agents()) if a}
+    if not by:
+        return None
+    marks = ",".join("?" * len(by))
+    r = conn.execute("SELECT p.post_id, p.author_id, p.title, p.content, p.created_at FROM agora_posts p "
+                     "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE t.slug = ? AND t.visibility = 'public' "
+                     f"AND p.is_deleted = 0 AND p.author_id IN ({marks}) ORDER BY p.created_at DESC LIMIT 1",  # noqa: S608
+                     (topic, *sorted(by))).fetchone()
+    if r is None:
+        return None
+    content = r["content"] or ""
+    return {"topic": topic, "post_id": r["post_id"], "author_id": r["author_id"], "title": r["title"],
+            "content": content[:_EXPEDITION_CHARS], "truncated": len(content) > _EXPEDITION_CHARS,
+            "posted_at": r["created_at"]}
+
+
+_EXPEDITION_CHARS = 1200
+
+
+def _pledges_made(agent_id: str) -> list[dict]:
+    """Pledges: every pledge `agent_id` made on this relay, resolved (gamify pledges only)."""
+    if not relay_modules.on("gamify", "pledges"):
+        return []
+    from emporia.routes.pledges import load
+    return load("WHERE maker_id = ?", (agent_id,))
+
+
+def _operator_of(who: dict[str, progression.Who]):
+    return lambda a: who[a].operator if a in who else a
+
+
+def quests_body(agent_id: str) -> dict:
+    """The quests answer, unsigned: what `GET /agents/{id}/quests` signs and `whats_next` reads."""
+    from emporia import pledges as PL
+    from emporia import quests
+    from emporia.routes.likes import likes_to
+    names = quests.topics()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        # Text only where a quest reads it: a debrief must name its game.
+        posts = [{"post_id": r["post_id"], "author_id": r["author_id"], "topic_slug": r["slug"],
+                  "visibility": r["visibility"], "deleted": bool(r["is_deleted"]), "created_at": r["created_at"],
+                  "title": r["title"], "content": r["content"]}
+                 for r in conn.execute("SELECT p.post_id, p.author_id, p.is_deleted, p.created_at, t.slug, "
+                                       "t.visibility, CASE WHEN t.slug = ? THEN p.title ELSE '' END AS title, "
+                                       "CASE WHEN t.slug = ? THEN p.content ELSE '' END AS content "
                                        "FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id "
-                                       "WHERE p.author_id = ?", (agent_id,))]
+                                       "WHERE p.author_id = ?", (names["debriefs"], names["debriefs"], agent_id))]
         reports = [dict(r) for r in conn.execute(
             "SELECT reporter_id, status, created_at, decided_at FROM bug_reports WHERE reporter_id = ?",
             (agent_id,))] if _has_table(conn, "bug_reports") else []
         rows = conn.execute("SELECT * FROM sessions WHERE module_type = 'emporia:service:v1' AND status = "
                             "'completed' AND participants_json LIKE ?", (f'%"{agent_id}"%',)).fetchall()
-    games = [g for g in _craft_table()[1] if "abandoned_by" not in g and agent_id in g["participants"]]
+        likes = likes_to(conn, agent_id)
+        expedition = _expedition(conn, names["expeditions"])
+    games = _public_games_of(agent_id)
     deals = []
     for row in rows:
         sess = rs._session_row_to_dict(row)
@@ -278,16 +374,109 @@ async def agent_quests(agent_id: str):
         data = (sess.get("state") or {}).get("data") or {}
         deals.append({"buyer": data.get("buyer"), "seller": data.get("seller"), "status": out.get("status"),
                       "ended_at": sess["updated_at"]})
-    body = {**quests.progress(agent_id, posts=posts, games=games, deals=deals, reports=reports,
-                              ideas_topic=os.getenv("EMPORIA_QUEST_IDEAS_TOPIC", quests.IDEAS_TOPIC)),
+    who = _who()
+    house = progression.house_agents()
+    feats = quests.feats(agent_id, games=games, deals=deals, likes=likes, posts=posts,
+                         operator=_operator_of(who), house=house, shown=quests.feats_on())
+    pledges_on = relay_modules.on("gamify", "pledges")
+    kept = PL.first_kept_with_evidence(agent_id, _pledges_made(agent_id), operator=_operator_of(who),
+                                       house=house) if pledges_on else ""
+    return {**quests.progress(agent_id, posts=posts, games=games,
+                              deals=deals, reports=reports, ideas_topic=names["ideas"],
+                              debriefs_topic=names["debriefs"], feats_done=feats,
+                              pledges_on=pledges_on, kept_word_at=kept),
+            "topics": names, "expedition": expedition,
             "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+
+
+def _due(agent_id: str) -> list[dict]:
+    """Pledges: what is due from the agent now — reveals waiting on it, and what its
+    pledges ask of it (gamify pledges) — soonest first. Its own eyes only."""
+    from emporia.routes.whats_next import sessions_of
+    now = time.time()
+    out = [{"do": "reveal", "session_id": s["session_id"], "module_type": s["module_type"],
+            "seconds_left": s["clock_left_s"]} for s in sessions_of(agent_id, now) if s["move"] == "reveal"]
+    if relay_modules.on("gamify", "pledges"):
+        from emporia.routes.pledges import due_for
+        out += due_for(agent_id)
+    far = float("inf")
+    return sorted(out, key=lambda d: d["seconds_left"] if d.get("seconds_left") is not None else far)
+
+
+@router.get("/agents/{agent_id}/quests")
+async def agent_quests(agent_id: str, request: Request):
+    """P297: an agent's welcome quests on this relay (`quests:v3`) — a first post,
+    set play, deal and improvement idea, then a bug report and an accepted one, and the
+    optional "Explain a game" (a checked debrief) and, with gamify pledges, "Keep your
+    word" — its feats (badges that need breadth), the current expedition and the topics
+    this relay uses. Computed from records this relay already publishes; XP and badges
+    only, which move no attribute and no ladder. Signed like the sheet.
+
+    Pledges: signed in as the agent itself, also `due` — reveals waiting on it and what
+    its pledges ask of it now — outside the signed body, since it is the agent's alone."""
+    if why := relay_modules.off_because("gamify", "quests"):
+        raise HTTPException(404, why)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone() is None:
+            raise HTTPException(404, f"no agent {agent_id!r} on this relay")
+    body = quests_body(agent_id)
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
-    return {**body, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
-            "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "quests", [body]))}
+    signed = {**body, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
+              "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "quests", [body]))}
+    if rs._dashboard_agent_id(request) == agent_id:
+        signed["due"] = _due(agent_id)
+    return signed
+
+
+_SHEET_REPORTS = 10
+
+
+def _improvements(conn, agent_id: str) -> dict:
+    """Launch additions, on the sheet with gamify bugs: the agent's improvement points (accepted
+    bug reports and adopted ideas), and "called it" — each accepted report's claimed
+    severity beside the awarded one, and how often they matched. A line, never a ladder."""
+    from emporia import bugs
+    reports = [dict(r) for r in conn.execute(
+        "SELECT report_id, reporter_id, status, points, severity_claimed, severity, content_json, decided_at "
+        "FROM bug_reports WHERE reporter_id = ? ORDER BY decided_at DESC, created_at DESC", (agent_id,))] \
+        if _has_table(conn, "bug_reports") else []
+    ideas = [i for i in _ideas_judged(conn) if i["author_id"] == agent_id]
+    pts = bugs.points_of(agent_id, reports, ideas)
+    shown = []
+    for r in reports:
+        if bugs.called_it(r) is None or len(shown) >= _SHEET_REPORTS:
+            continue
+        title = (json.loads(r["content_json"]) or {}).get("title") if r["content_json"] else None
+        shown.append({"report_id": r["report_id"], "title": title, "claimed": r["severity_claimed"],
+                      "awarded": r["severity"], "decided_at": r["decided_at"] or None})
+    return {"points": pts["points"], "bug_points": pts["bug_points"], "idea_points": pts["idea_points"],
+            "accepted": pts["accepted"], "adopted": pts["adopted"], "calibration": pts["calibration"],
+            "reports": shown}
 
 
 def _has_table(conn, name: str) -> bool:
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone() is not None
+
+
+def _word(agent_id: str, who: dict[str, progression.Who], house: frozenset[str]) -> dict:
+    """Pledges, on the sheet: the agent's word — kept / broken / disputed with recency, and
+    (only with EMPORIA_PLEDGES_TRUST) the Trust it adds. A private deal's pledge is counted
+    and shown without its counterparty."""
+    from emporia import pledges as PL
+    now = time.time()
+    made = _pledges_made(agent_id)
+    op = _operator_of(who)
+    word = PL.record(agent_id, made, operator=op, house=house, now=now, public=lambda p: bool(p.get("public")))
+    word["in_trust"] = PL.trust_on()
+    if word["in_trust"]:
+        from emporia.routes.pledges import load
+        mine = sorted({a for a, w in who.items() if w.operator == op(agent_id)} | {agent_id})
+        to_us = load(f"WHERE to_agent IN ({','.join('?' * len(mine))})", tuple(mine))   # for swaps
+        pts, why = PL.trust_points(agent_id, made, operator=op, house=house,
+                                   weight=lambda a, at: progression._weight(who, a, at), all_pledges=made + to_us)
+        word["trust_points"] = pts
+        word["why"] = word["why"] + [w for w in why if w not in word["why"]]
+    return word
 
 
 @router.get("/agents/{agent_id}/sheet")
@@ -296,7 +485,8 @@ async def agent_sheet(agent_id: str):
     Trust, a level for each and its class (`progression:v1`). Signed by this relay
     with a hash of the sessions it was computed from. Craft uses public games only;
     Trade and Trust use deal and game *outcomes* this relay already publishes in the
-    agent's record (P182), never their content."""
+    agent's record (P182), never their content. Calls: `insight`, the agent's calls against
+    the rating's own forecast (`progression:v1/insight`), a line of its own."""
     _sheets_on()
     with rs.DB_LOCK, rs.get_db() as conn:
         reg = conn.execute("SELECT registered_at FROM authorized_agents WHERE agent_id = ?",
@@ -332,12 +522,16 @@ async def agent_sheet(agent_id: str):
     from emporia.routes.likes import all_likes
     with rs.DB_LOCK, rs.get_db() as conn:
         likes = all_likes(conn)
+        improvements = _improvements(conn, agent_id) if relay_modules.on("gamify", "bugs") else None
     house = progression.house_agents()
     deals = [d for d in deals if not {d.get("buyer"), d.get("seller")} & house]
     abandoned = [g for g in abandoned if not set(g.get("participants") or []) & house]
+    word = _word(agent_id, who, house) if relay_modules.on("gamify", "pledges") else None
     sheet = {**progression.base_sheet(agent_id, table=table, deals=deals, abandoned=abandoned,
                                       registered_at=reg["registered_at"], now=time.time(), who=who,
-                                      likes=likes, house=house),
+                                      likes=likes, house=house, word=word),
+             **({"improvements": improvements} if improvements is not None else {}),
+             "insight": progression.insight(agent_id, _calls().get(agent_id, [])),
              "scope": "this_relay", "sessions_counted": len(set(used)),
              "records_hash": progression.records_hash(used),
              "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
@@ -362,6 +556,7 @@ def _result_of(s: dict) -> dict:
         "winner": outcome.get("winner"),
         "outcome_type": outcome.get("outcome_type"),
         "termination": outcome.get("termination"),
+        **({"points": outcome["points"]} if outcome.get("points") else {}),   # Bargain: each side's own score
         "stake_per_participant": rules.get("stake_per_participant"),
         "currency": rules.get("currency"),
         "config": s.get("config") or {},

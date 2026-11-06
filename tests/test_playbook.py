@@ -15,7 +15,7 @@ def test_custom_adds_no_bounds_and_is_the_default():
 def test_a_preset_with_the_persons_changes_on_top():
     pb = P.resolve({"EMPORIA_PLAYBOOK": "player", "EMPORIA_PLAYBOOK_GAMES": "blotto,chess",
                     "EMPORIA_PLAYBOOK_MAX_STAKE_CENTS": "250", "EMPORIA_PLAYBOOK_SELLS": "yes"})
-    assert pb.games == ("emporia:blotto:v1", "emporia:chess:v1") and pb.max_stake_cents == 250 and pb.sells
+    assert pb.games == ("emporia:blotto:v2", "emporia:chess:v1") and pb.max_stake_cents == 250 and pb.sells
     assert P.resolve({"EMPORIA_PLAYBOOK": "player", "EMPORIA_PLAYBOOK_GAMES": "set-plays"}).games == P.SET_PLAYS
 
 
@@ -40,8 +40,8 @@ def test_an_unreadable_setting_is_an_error_and_bounds_everything(env, monkeypatc
 
 def test_what_a_player_may_play():
     pb = P.PRESETS["player"]
-    assert P.may_play(pb, "emporia:blotto:v1", 100) == ""
-    assert "up to $1.00" in P.may_play(pb, "emporia:blotto:v1", 500)
+    assert P.may_play(pb, "emporia:blotto:v2", 100) == ""
+    assert "up to $1.00" in P.may_play(pb, "emporia:blotto:v2", 500)
     assert "does not take" in P.may_play(pb, "emporia:chess:v1")
     assert P.may_sell(pb) and P.may_buy(pb)
 
@@ -53,7 +53,7 @@ def test_the_bridge_wakes_only_for_what_the_playbook_takes():
     assert P.wakes_for(quiet, {"type": "your_turn"}), "a game already under way always wakes it"
     player = P.PRESETS["player"]
     assert not P.wakes_for(player, {"type": "challenge", "payload": {"module_type": "emporia:chess:v1"}})
-    assert not P.wakes_for(player, {"type": "challenge", "payload": {"module_type": "emporia:blotto:v1",
+    assert not P.wakes_for(player, {"type": "challenge", "payload": {"module_type": "emporia:blotto:v2",
                                                                        "stake_per_participant": "5.00"}})
     assert P.wakes_for(player, {"type": "challenge", "payload": {"session_id": "s"}}), "join_session checks it"
 
@@ -66,9 +66,9 @@ def test_the_tools_refuse_what_the_playbook_does_not_take(monkeypatch):
     monkeypatch.setattr(m, "_bearer_request", no_relay)
     assert "does not sell" in m.create_listing("a service")["error"]
     assert "does not take" in m.create_session("emporia:chess:v1")["error"]
-    assert "up to $1.00" in m.create_session("emporia:blotto:v1", stake_per_participant="2.00")["error"]
+    assert "up to $1.00" in m.create_session("emporia:blotto:v2", stake_per_participant="2.00")["error"]
     assert "does not buy" in m.create_session("emporia:service:v1")["error"]
-    assert "does not buy" in m.post_bounty("t", "emporia:blotto:v1", 100, "2026-12-01T00:00:00Z")["error"]
+    assert "does not buy" in m.post_bounty("t", "emporia:blotto:v2", 100, "2026-12-01T00:00:00Z")["error"]
 
 
 def test_joining_checks_the_sessions_game_and_stake(monkeypatch):
@@ -81,7 +81,7 @@ def test_joining_checks_the_sessions_game_and_stake(monkeypatch):
 
         def json(self):
             return self._d
-    session = {"module_type": "emporia:blotto:v1", "payment_rules": {"stake_per_participant": "3.00"}}
+    session = {"module_type": "emporia:blotto:v2", "payment_rules": {"stake_per_participant": "3.00"}}
     monkeypatch.setattr(m, "_bearer_request", lambda method, url, **k: R(session))
     assert "up to $1.00" in m.join_session("s1")["error"]
     session["module_type"] = "emporia:service:v1"
@@ -162,6 +162,13 @@ def test_the_person_sets_it_with_a_command(tmp_path, monkeypatch, capsys):
     env = cli.installer().harvest_env(profile)
     assert env["EMPORIA_PLAYBOOK"] == "player" and env["EMPORIA_PLAYBOOK_MAX_STAKE_CENTS"] == "250"
     assert "stakes up to $2.50" in capsys.readouterr().out
+    no_pledges = argparse.Namespace(preset="", games=None, max_stake=None, answers=None, sells=None, buys=None,
+                                    runs=None, pledges="no")
+    assert cli.cmd_agent_playbook("shop", no_pledges) == 0
+    assert cli.installer().harvest_env(profile)["EMPORIA_PLAYBOOK_PLEDGES"] == "no"
+    assert "Pledges no" in capsys.readouterr().out
+    args = cli.build_parser().parse_args(["agent", "playbook", "shop", "--pledges", "yes"])
+    assert args.pledges == "yes"
     bad = argparse.Namespace(preset="", games=None, max_stake="lots", answers=None, sells=None, buys=None, runs=None)
     assert cli.cmd_agent_playbook("shop", bad) == 1
     assert cli.installer().harvest_env(profile)["EMPORIA_PLAYBOOK_MAX_STAKE_CENTS"] == "250", "nothing written"
@@ -169,9 +176,9 @@ def test_the_person_sets_it_with_a_command(tmp_path, monkeypatch, capsys):
 
 def test_an_invite_to_a_game_says_its_game_and_stake():
     player = P.PRESETS["player"]
-    assert P.wakes_for(player, {"type": "session_invite", "module_type": "emporia:blotto:v1", "stake_cents": 0})
+    assert P.wakes_for(player, {"type": "session_invite", "module_type": "emporia:blotto:v2", "stake_cents": 0})
     assert not P.wakes_for(player, {"type": "session_invite", "module_type": "emporia:chess:v1"})
-    assert not P.wakes_for(player, {"type": "session_invite", "module_type": "emporia:blotto:v1", "stake_cents": 500})
+    assert not P.wakes_for(player, {"type": "session_invite", "module_type": "emporia:blotto:v2", "stake_cents": 500})
 
 
 def test_a_fresh_mcp_process_knows_which_sessions_are_games():
@@ -182,10 +189,10 @@ def test_a_fresh_mcp_process_knows_which_sessions_are_games():
     import subprocess
     import sys
     code = ("from emporia import mcp_server as m, module_sdk; "
-            "assert 'emporia:blotto:v1' not in module_sdk.MODULE_REGISTRY; "
+            "assert 'emporia:blotto:v2' not in module_sdk.MODULE_REGISTRY; "
             "m._bearer_request = lambda *a, **k: (_ for _ in ()).throw(AssertionError('no relay')); "
             "print(m.create_session('emporia:chess:v1', agent_id='pb_me')['error']); "
-            "print(m.create_session('emporia:blotto:v1', agent_id='pb_me', stake_per_participant='2.00')['error'])")
+            "print(m.create_session('emporia:blotto:v2', agent_id='pb_me', stake_per_participant='2.00')['error'])")
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60,
                        env={**os.environ, "EMPORIA_PLAYBOOK": "player"})
     chess, blotto = r.stdout.strip().splitlines()[-2:] if r.stdout.strip() else ("", "")
@@ -212,7 +219,7 @@ def test_the_stake_limit_holds_to_the_stake_its_creator_signed(monkeypatch):
         _publish_enc_key(client, a)
 
     def game(stake: str) -> str:
-        r = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "payment_rules": {
+        r = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "payment_rules": {
             "stake_per_participant": stake, "currency": "USD"}},
             headers={"x-emporia-agent-id": "pbs_maker"})
         assert r.status_code == 200, r.text
