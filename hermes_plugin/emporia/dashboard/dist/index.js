@@ -25589,6 +25589,10 @@
 				label: "lowest unique"
 			},
 			{
+				id: "emporia:bargain:v1",
+				label: "bargain"
+			},
+			{
 				id: "emporia:service:v1",
 				label: "service"
 			},
