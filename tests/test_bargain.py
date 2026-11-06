@@ -285,15 +285,22 @@ def test_running_out_of_time_loses_and_scores_zero(client):
     assert progression._scores({"participants": [a, b], **out}) == {(a, b): 1.0, (b, a): 0.0}
 
 
-def test_an_opener_who_never_opens_is_a_draw_and_no_result(client):
+def test_an_opener_who_never_opens_loses_on_time_review2_p2(client):
+    """Review pass 2, P2 (F11): both have seen their hands when the game starts, so letting the first
+    clock run out is no free reroll: the opener loses on time. A game made before the rule (its state
+    has no `leaving_counts`) still reads as a draw with no result, as it did when it was played."""
     sid, a, b = _game(client, {"move_time_limit_s": 60})
     _expire(sid)
     from emporia.routes.sessions import sweep_service_deadlines
     asyncio.run(sweep_service_deadlines())
     s = rs.load_session(sid)
     _, out = get_interaction_module(BARGAIN).is_terminal(SessionState.from_dict(s["state"]))
-    assert s["status"] == "completed" and out["winner"] is None and out["termination"] == "timeout"
-    assert progression._scores({"participants": [a, b], **out}) is None
+    assert s["status"] == "completed" and out["winner"] == b and out["termination"] == "timeout"
+    assert progression._scores({"participants": [a, b], **out}) == {(b, a): 1.0, (a, b): 0.0}
+    old = SessionState.from_dict(s["state"])
+    old.data.pop("leaving_counts")
+    _, before = get_interaction_module(BARGAIN).is_terminal(old)
+    assert before["winner"] is None and progression._scores({"participants": [a, b], **before}) is None
 
 
 def test_no_stakes_and_no_bounty_on_a_game_whose_relay_holds_the_hands(client):

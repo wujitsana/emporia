@@ -53,7 +53,7 @@ def test_the_order_is_urgent_first_then_by_kind():
     assert kinds[0] == ("deal", "sess_hurry"), "a clock about to run out comes first"
     assert kinds[1:3] == [("reveal", "sess_reveal"), ("move", "sess_move")], "a reveal others wait on, then a move"
     assert [i["kind"] for i in items][3:] == ["deal", "pledge", "invite", "invite", "message", "message", "bounty",
-                                              "bounty", "quest", "expedition"]
+                                              "bounty", "quest", "quest", "expedition"], "quests:v4: two arcs' steps"
     assert [i["rank"] for i in items] == list(range(1, len(items) + 1))
     assert N.rank(FACTS, P.PRESETS["custom"], limit=3)[-1]["rank"] == 3
 

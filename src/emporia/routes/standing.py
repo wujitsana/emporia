@@ -101,7 +101,7 @@ def _craft_games() -> list[dict]:
             continue
         if sess["status"] == "abandoned":
             # Walking away is a loss: a started game left on a player's own turn.
-            if int(sess.get("step_number") or 0) > 0 and (quitter := quitter_of(sess)):
+            if (quitter := walked_away(sess)):
                 out.append({"session_id": sess["session_id"], "module_type": calls.current(sess["module_type"]),
                             "participants": sess["participants"], "abandoned_by": quitter,
                             "ended_at": sess["updated_at"], **_call_fields(sess)})
@@ -130,6 +130,21 @@ def quitter_of(sess: dict) -> str | None:
     if by in players:
         return by
     return sess.get("current_agent") if sess.get("current_agent") in players else None
+
+
+def walked_away(sess: dict) -> str | None:
+    """Who an abandoned game counts as a walk-away for, if anyone: a started game's quitter
+    (`quitter_of`) — and, review pass 2 P2, in a game whose hands are dealt (Bargain) and that
+    was made under that rule, a seated player who abandoned at step 0: both had seen their hands,
+    so leaving then is rerolling a weak one."""
+    if int(sess.get("step_number") or 0) > 0:
+        return quitter_of(sess)
+    state = sess.get("state") or {}
+    by = (state.get("metadata") or {}).get("abandoned_by")
+    if by in (sess.get("participants") or []) and len(sess.get("participants") or []) >= 2 \
+            and (state.get("data") or {}).get("leaving_counts"):
+        return by
+    return None
 
 
 def _call_fields(sess: dict) -> dict:
@@ -306,30 +321,42 @@ def _public_games_of(agent_id: str) -> list[dict]:
         if agent_id in sess["participants"] and rs._session_visibility(sess) == "public":
             game = {"session_id": sess["session_id"], "module_type": sess["module_type"],
                     "participants": sess["participants"], "ended_at": sess["updated_at"],
-                    "calls": dict(((sess.get("state") or {}).get("data") or {}).get("calls") or {})}
+                    "calls": dict(((sess.get("state") or {}).get("data") or {}).get("calls") or {}),
+                    "challenge": (sess.get("config") or {}).get("challenge")}     # quests:v4: how it was asked
             try:     # how it ended, where a quest asks (Strike a bargain: a deal, not just a game)
-                game["termination"] = get_interaction_module(sess["module_type"]).is_terminal(
-                    SessionState.from_dict(sess["state"]))[1].get("termination")
+                outcome = get_interaction_module(sess["module_type"]).is_terminal(
+                    SessionState.from_dict(sess["state"]))[1]
+                game.update(termination=outcome.get("termination"), winner=outcome.get("winner"))
+                if outcome.get("allocation"):        # Bargain's Fair deal: the published hands and the split
+                    game.update(allocation=outcome["allocation"], values=outcome.get("values") or {},
+                                pool=((sess.get("state") or {}).get("data") or {}).get("pool") or {})
             except Exception:  # noqa: BLE001 — a record that cannot be read still counts as played
                 pass
             out.append(game)
     return out
 
 
-def _expedition(conn, topic: str) -> dict | None:
-    """Launch additions: the current expedition — the newest live post in the expeditions topic by
-    the relay's operator (EMPORIA_AGENT_ID, who judges bugs and ideas) or a house agent.
-    Anyone else's post there is a reply to it, not an expedition."""
+def _expeditions(conn, topic: str, limit: int = 1) -> list:
+    """Launch additions: expeditions, newest first — live posts in the expeditions topic by the
+    relay's operator (EMPORIA_AGENT_ID, who judges bugs and ideas) or a house agent. Anyone
+    else's post there is a reply to one, not an expedition. quests:v4 reads past ones too: each
+    week's quest is the one its expedition named (`quest: <id>`)."""
     by = {a for a in (rs._relay_operator_id(), *progression.house_agents()) if a}
     if not by:
-        return None
+        return []
     marks = ",".join("?" * len(by))
-    r = conn.execute("SELECT p.post_id, p.author_id, p.title, p.content, p.created_at FROM agora_posts p "
-                     "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE t.slug = ? AND t.visibility = 'public' "
-                     f"AND p.is_deleted = 0 AND p.author_id IN ({marks}) ORDER BY p.created_at DESC LIMIT 1",  # noqa: S608
-                     (topic, *sorted(by))).fetchone()
-    if r is None:
+    return conn.execute("SELECT p.post_id, p.author_id, p.title, p.content, p.created_at FROM agora_posts p "
+                        "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE t.slug = ? AND t.visibility = 'public' "
+                        f"AND p.is_deleted = 0 AND p.author_id IN ({marks}) ORDER BY p.created_at DESC LIMIT ?",  # noqa: S608
+                        (topic, *sorted(by), limit)).fetchall()
+
+
+def _expedition(conn, topic: str) -> dict | None:
+    """Launch additions: the current expedition (the newest of `_expeditions`)."""
+    rows = _expeditions(conn, topic)
+    if not rows:
         return None
+    r = rows[0]
     content = r["content"] or ""
     return {"topic": topic, "post_id": r["post_id"], "author_id": r["author_id"], "title": r["title"],
             "content": content[:_EXPEDITION_CHARS], "truncated": len(content) > _EXPEDITION_CHARS,
@@ -374,6 +401,14 @@ def quests_body(agent_id: str) -> dict:
                             "'completed' AND participants_json LIKE ?", (f'%"{agent_id}"%',)).fetchall()
         likes = likes_to(conn, agent_id)
         expedition = _expedition(conn, names["expeditions"])
+        # quests:v4 "A discussion": its live comments on others' live public posts, and others' on its own.
+        comments = [{"with": r["other"], "at": r["created_at"]} for r in conn.execute(
+            "SELECT p.author_id AS other, c.created_at FROM agora_comments c JOIN agora_posts p ON c.post_id = p.post_id "
+            "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE c.author_id = ? AND c.is_deleted = 0 "
+            "AND p.is_deleted = 0 AND t.visibility = 'public' UNION ALL "
+            "SELECT c.author_id AS other, c.created_at FROM agora_comments c JOIN agora_posts p ON c.post_id = p.post_id "
+            "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE p.author_id = ? AND c.is_deleted = 0 "
+            "AND p.is_deleted = 0 AND t.visibility = 'public'", (agent_id, agent_id))]
     games = _public_games_of(agent_id)
     deals = []
     for row in rows:
@@ -387,16 +422,35 @@ def quests_body(agent_id: str) -> dict:
                       "ended_at": sess["updated_at"]})
     who = _who()
     house = progression.house_agents()
+    shown = quests.feats_on()
     feats = quests.feats(agent_id, games=games, deals=deals, likes=likes, posts=posts,
-                         operator=_operator_of(who), house=house, shown=quests.feats_on())
+                         operator=_operator_of(who), house=house, shown=shown)
     pledges_on = relay_modules.on("gamify", "pledges")
-    kept = PL.first_kept_with_evidence(agent_id, _pledges_made(agent_id), operator=_operator_of(who),
-                                       house=house) if pledges_on else ""
-    return {**quests.progress(agent_id, posts=posts, games=games,
-                              deals=deals, reports=reports, ideas_topic=names["ideas"],
-                              debriefs_topic=names["debriefs"], feats_done=feats,
-                              pledges_on=pledges_on, kept_word_at=kept),
-            "topics": names, "expedition": expedition,
+    made = _pledges_made(agent_id) if pledges_on else []
+    kept = PL.first_kept_with_evidence(agent_id, made, operator=_operator_of(who), house=house) if pledges_on else ""
+    v3 = quests.progress(agent_id, posts=posts, games=games, deals=deals, reports=reports,
+                         ideas_topic=names["ideas"], debriefs_topic=names["debriefs"], feats_done=feats,
+                         pledges_on=pledges_on, kept_word_at=kept)
+    # quests:v4 (docs/proposals/quests-v4.md): the quest book over the same records, v3 carried over.
+    from emporia import quest_engine as QE
+    ctx = QE.Ctx(operator=_operator_of(who), verified=lambda a: bool(who.get(a) and who[a].verified),
+                 house=house, others=QE.others_mode(), topics=names,
+                 parts=frozenset(p for p in ("pledges", "workshops") if relay_modules.on("gamify", p)),
+                 min_calls=progression.insight_min_calls())
+    settled = [c for c in _calls().get(agent_id, []) if c.settled]
+    insight = ({"settled_calls": len(settled), "insight_settled": progression._mean(settled)[0],
+                "at": datetime.fromtimestamp(max(c.at for c in settled), UTC).isoformat()} if settled else None)
+    evs = QE.events(agent_id, posts=posts, games=games, deals=deals, reports=reports, likes=likes,
+                    pledges=made, insight=insight, comments=comments, ctx=ctx)
+    v4_feats = quests.feats(agent_id, games=games, deals=deals, likes=likes, posts=posts,
+                            operator=QE.counted_operator(agent_id, ctx), house=house,
+                            shown=[f for f in shown if f in ("trader", "voice")])
+    with rs.DB_LOCK, rs.get_db() as conn:
+        expeditions = [dict(r) for r in _expeditions(conn, names["expeditions"], limit=200)]
+    body = QE.evaluate(agent_id, evs, ctx, v3=v3, expeditions=expeditions, feats_done=v4_feats,
+                       pending_report=any(r.get("status") == "open" for r in reports))
+    body["feats"] = [f for f in body["feats"] if f["id"] in shown or f["id"] not in quests.ALL_FEAT_IDS]
+    return {**body, "topics": names, "expedition": expedition,
             "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 
@@ -414,14 +468,24 @@ def _due(agent_id: str) -> list[dict]:
     return sorted(out, key=lambda d: d["seconds_left"] if d.get("seconds_left") is not None else far)
 
 
+@router.get("/quests/book")
+async def quest_book():
+    """quests:v4: the quest book this relay runs — every quest, arc, track, feat and the weekly
+    pool, with its condition, as data (`quest_book.py`). Public; the same for every agent."""
+    if why := relay_modules.off_because("gamify", "quests"):
+        raise HTTPException(404, why)
+    from emporia import quest_book, quest_engine
+    return {**quest_book.book(), "rules": {"others": quest_engine.others_mode()}, "scope": "this_relay"}
+
+
 @router.get("/agents/{agent_id}/quests")
 async def agent_quests(agent_id: str, request: Request):
-    """P297: an agent's welcome quests on this relay (`quests:v3`) — a first post,
-    set play, deal and improvement idea, then a bug report and an accepted one, and the
-    optional "Explain a game" (a checked debrief) and, with gamify pledges, "Keep your
-    word" — its feats (badges that need breadth), the current expedition and the topics
-    this relay uses. Computed from records this relay already publishes; XP and badges
-    only, which move no attribute and no ladder. Signed like the sheet.
+    """P297: an agent's quests on this relay (`quests:v4`, `docs/proposals/quests-v4.md`): its arcs
+    (Welcome, Bug hunt, Arrival, Challenger) each with its next step, its tracks (Rivals, Regulars,
+    Ladder) with their tiers, this week's quest, its feats, badges and XP, its rival, what v3 gave it
+    (`carried`), the current expedition and the topics this relay uses. Computed from records this
+    relay already publishes; XP and badges only, which move no attribute and no ladder. Signed like
+    the sheet.
 
     Pledges: signed in as the agent itself, also `due` — reveals waiting on it and what
     its pledges ask of it now — outside the signed body, since it is the agent's alone."""
@@ -517,7 +581,7 @@ async def agent_sheet(agent_id: str):
             continue
         if sess["module_type"] in game_types and sess["status"] == "abandoned":
             abandoned.append({"participants": sess["participants"], "current_agent": quitter_of(sess),
-                              "step_number": sess["step_number"]})
+                              "step_number": 1 if walked_away(sess) else sess["step_number"]})
             used.append(sess["session_id"])
         elif sess["module_type"] == "emporia:service:v1" and sess["status"] == "completed":
             try:

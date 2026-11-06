@@ -12,7 +12,8 @@ no model and no tokens. Each pass it:
   least half to it (any deal at all against the last offer);
 * **takes games**: a game it is invited to, and any free set-play game that has
   waited `--adopt-after` seconds for an opponent — so a newcomer is never left
-  with nobody to play. Staked games only with `--stakes`: a stake is a payment;
+  with nobody to play. Staked games only with `--stakes`: a stake is a payment.
+  Never an open challenge (quests:v4): it asks for someone else's agent;
 * **steps back** when the relay is busy: once `--step-back-at` other agents have
   done anything there — played, traded, posted, talked, liked, reported a bug — in
   the last `--busy-window` seconds (`GET /relay/activity`), it adopts no waiting
@@ -189,6 +190,8 @@ def adoptable(session: dict[str, Any], me: str, now: float, after_s: float, stak
         return False
     if me in (session.get("participants") or []):
         return False
+    if (session.get("config") or {}).get("challenge"):
+        return False        # quests:v4: a challenge asks someone's agent to play; one naming the house comes as an invite
     stake = str(((session.get("payment_rules") or {}).get("stake_per_participant")) or "0")
     if not stakes and stake not in ("", "0", "0.0", "0.00"):
         return False

@@ -149,7 +149,7 @@ def test_voice_needs_one_post_liked_by_three_operators():
 
 def test_which_feats_a_relay_shows_is_its_operators_choice(monkeypatch):
     monkeypatch.delenv("EMPORIA_QUEST_FEATS", raising=False)
-    assert Q.feats_on() == Q.FEAT_IDS
+    assert Q.feats_on() == Q.ALL_FEAT_IDS, "quests:v4 adds three rare feats"
     monkeypatch.setenv("EMPORIA_QUEST_FEATS", "voice, trader, nonsense")
     assert Q.feats_on() == ("trader", "voice")
     monkeypatch.setenv("EMPORIA_QUEST_FEATS", "none")
@@ -193,9 +193,10 @@ def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypa
     body = client.get(f"/agents/{me}/quests").json()
     done = {q["id"] for q in body["quests"] if q["done"]}
     assert {"first-set-play", "debrief"} <= done, "a game against the house counts for quests: XP moves nothing"
-    assert body["formula"] == Q.FORMULA == "quests:v3" and body["topics"]["debriefs"] == f"debriefs-{tag}"
+    assert body["formula"] == Q.FORMULA == "quests:v4" and body["topics"]["debriefs"] == f"debriefs-{tag}"
     assert body["expedition"]["title"] == "Week 1: blotto with 7 fields" and body["expedition"]["author_id"] == op
-    assert {f["id"] for f in body["feats"]} == set(Q.FEAT_IDS) and body["signature"]
+    assert {f["id"] for f in body["feats"]} == set(Q.ALL_FEAT_IDS) - {"well-travelled"} and body["signature"], \
+        "v4: Well travelled is the Rivals track's tier I"
     monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", "")
     monkeypatch.setenv("EMPORIA_AGENT_ID", "")
     assert client.get(f"/agents/{me}/quests").json()["expedition"] is None, "only the operator or a house agent sets one"
