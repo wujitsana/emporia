@@ -571,8 +571,8 @@ class Run:
     def rooms_v2(self) -> None:
         """A room message is a post: reply, reaction, the feed's best, and table talk read as a thread."""
         made = self.tool(self.player, "create_room", f"e2e-room-{secrets.token_hex(3)}")
-        check(made.get("success", True) and made.get("room_id"), f"create_room: {str(made)[:200]}")
-        rid = made["room_id"]
+        rid = (made.get("room") or made).get("room_id")
+        check(made.get("success") and rid, f"create_room: {str(made)[:200]}")
         check(self.tool(self.merchant, "join_room", rid).get("success"), "join_room")
         first = self.tool(self.player, "send_room_message", rid, "which opening is strongest?", kind="question")
         check(first.get("success") and first.get("ref", "").startswith("message:"), f"send_room_message: {first}")
