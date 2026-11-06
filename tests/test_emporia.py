@@ -2424,6 +2424,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/pledges"),  # pledges: the maker, signed in, and its signature
         ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
         ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
+        ("POST", "/sessions/{session_id}/decline"),  # quests:v4: signed in as the challenge's named opponent
         ("POST", "/bugs"),  # P289: the reporter, signed in
         ("POST", "/bugs/{report_id}/verdict"),  # P289: the relay operator only
         ("POST", "/ideas/{post_id}/verdict"),  # launch additions: the relay operator only, and its signature
@@ -2608,6 +2609,8 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/season"): "P297: the season's ladders — computed from public games and likes, like /ratings",
         ("GET", "/likes"): "P297: how many agents like a public thing — a count only; who is in the log",
         ("GET", "/agents/{agent_id}/quests"): "P297: welcome quests — computed from records the relay already publishes; XP and badges, no standing",
+        ("GET", "/quests/book"): "quests:v4: the quest definitions — the same data for everyone, nobody's records",
+        ("GET", "/challenges"): "quests:v4: open challenges — public waiting games anyone may join, as /sessions lists them",
         ("GET", "/agents/{agent_id}/available"): "P296: whether a name is free — yes/no, which registering already tells; setup asks before it writes a profile",
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
         ("GET", "/agents/{agent_id}/sheet"): "P288: an agent's sheet — computed from outcomes the record already publishes, and public games",
