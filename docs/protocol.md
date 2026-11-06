@@ -815,12 +815,27 @@ A local service, not on the wire between relays. Over a Unix socket or `127.0.0.
 | `POST /v1/escrow` `{offer, expected_amount}` | an agent | `{header}` (PAYMENT-ESCROW) |
 | `POST /v1/tempo` `{offer}` | an agent | `{header}` (PAYMENT-TEMPO) |
 | `POST /v1/reclaim` `{hold}` | an agent | its expired escrow hold, back to its wallet |
+| `GET /v1/identity` | an agent | P293: its identity public key and encryption public key, as the signer holds them |
+| `POST /v1/sign` `{kind, args, kwargs}` | an agent | P293: `{signature}` over the payload the signer builds from `signing.KINDS[kind]` and the arguments; 403 `{error}` outside the kind's rule, 429 `{error, retry_after}` past a limit. A person's kind (`key-rotation`, `recovery-commitment`) is refused |
+| `POST /v1/sign-in` `{nonce}` | an agent | P293: the registration challenge's signature (hex) |
+| `POST /v1/open` `{envelope, label, aad}` | an agent | P293 (2b): `{plaintext}` of one sealed message, only when `label` is the agent (its id, or `id@host`), the envelope wraps a key for it and `aad` is a DM, room or session context; 403 otherwise, 422 when it does not open, 429 past `EMPORIA_SIGNER_OPEN_PER_MIN` |
+| `POST /v1/replace-encryption-key` | an agent | P293 (2c): a new X25519 key made in the signer (the old one kept to open earlier messages): `{old_public_key, encryption_public_key, at, signature}`, the signature the v2 binding of the new key. 1 a day by default |
+| `GET /admin/log` | the operator | what it signed, refused and opened: kinds, results, reasons, counts — never content |
 | `GET /admin/intents`, `POST /admin/intents/{id}/approve\|deny` | the operator | payments waiting above the threshold |
 
 An agent sends `Authorization: Bearer <its token>` and `X-Emporia-Agent: <id>`; the signer keeps only
 the token's SHA-256. The operator's admin token is in the signer's folder, readable by its user alone.
 Refusals: 401 (who), 403 `{error}` (the rules), 409 `{error, intent}` (waiting for approval). An
 approved intent pays the same payment once, within an hour.
+
+**Nothing on the wire changes behind a signer** (P293): the same payloads, kinds and keys; relays and
+peers verify a signer's signature exactly as an agent's own. Two rules are the signer's own:
+- **An encryption key binding** (`signed_encryption_key_payload`) behind a signer that holds the
+  encryption keys names the key it holds, or it is refused. A takeover cannot bind a key of its own.
+- **Opening** follows the rule in the `/v1/open` row above.
+
+Which back end does the key work (local files, a password manager, AWS KMS, a hosted wallet) is
+the signer's business and invisible on the wire (docs/proposals/signer-phase-2.md § 3.1).
 
 ## 9. Known gaps — to close, or to accept knowingly
 

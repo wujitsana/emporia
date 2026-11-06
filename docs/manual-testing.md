@@ -32,7 +32,7 @@ games (or resign by abandoning), and check spend after the money sitting.
 
 ## Before main
 
-Nine sittings, the cheap ones without money first. Minimum gate (sittings 1–6): about 4½–5 hours;
+Ten sittings, the cheap ones without money first. Minimum gate (sittings 1–6): about 4½–5 hours;
 everything, about 6–7. Sitting 4 folds into sitting 2 (the same gateway restart). Sitting 1 is best
 after sitting 2, so the dashboard has real data to show. Cast and set-up as above; the earlier
 checked steps are under "Already done by hand".
@@ -262,7 +262,57 @@ signer process; what is left is below.
       telegram` → a test message arrives, and the refusal arrives too. `emporia signer remove alpha` →
       restart; it pays and signs in-process again.
 
-### 7. Relay as a service on a spare VM (about 45 minutes; only if the service mode ships)
+### 7. Signer phase 2 and its back ends (P299; about 30 minutes, more per back end)
+
+Practice mode is enough for all but the last line (`emporia signer start`). The suites cover every
+step against fakes; these are what only a real Hermes, a real vault and a real account show.
+
+- [ ] **Keys made in the signer (2c):** a fresh profile (`emporia setup agent signed1 --keys files`,
+      no wallet) → `emporia signer add signed1 --make` → it lists four public keys "made in the signer";
+      `ls` of its keys folder shows only `signed1.signer.pub` and `signed1.x25519.signer.pub`. Restart the
+      gateway; signed1 registers, plays a free blotto, and reads a sealed DM from alpha. Ask signed1 to
+      DM bob a long message: it goes. `emporia signer log signed1` lists kinds, results and opening counts
+      only.
+- [ ] **Opening is the agent's only (2b):** from signed1's terminal (developer role, or by hand with its
+      token) `curl --unix-socket … /v1/open` naming alpha as the label → 403 "opens only what is sealed to
+      its own agent", and the alert arrives (if Telegram is on).
+- [ ] **Replacing and rotating inside the signer:** `emporia agent rotate-encryption-key signed1` → a new
+      key "made in the signer"; alpha's next DM opens, and so does the old thread. `emporia agent
+      recovery-key signed1 --out ~/signed1.recovery` then `emporia agent rotate-key signed1` → "made in its
+      signer and stays there"; the dashboard still shows signed1 with its history. Then `emporia agent
+      recover signed1 --recovery-key-file ~/signed1.recovery` → a new key, still no `*.priv` in the profile.
+- [ ] **Backup:** `emporia signer backup signed1 --out ~/signed1.backup` (a passphrase twice). Move
+      `<signer>/agents/signed1/keys` aside, `emporia signer restore signed1 --from ~/signed1.backup` →
+      signed1 signs again. Delete the backup copy afterwards, or keep it off the machine.
+- [ ] **A password manager, read by the signer** (1Password service account or Bitwarden): put a new
+      agent's identity and encryption keys in the vault as 64-hex fields. Then, on one line:
+      `emporia signer add NAME --key-source "identity=cmd:op read op://…" --key-source "encryption=cmd:op read op://…"`
+      → asks the token hidden; the profile's `.env` has no `OP_SERVICE_ACCOUNT_TOKEN` and no
+      `*_KEY_SOURCE`. `emporia signer stop`, then `emporia signer start`, reads them (a wrong token: the
+      signer's log says so at start, without a value). The agent plays and reads DMs.
+- [ ] **AWS KMS** (needs an AWS account; testnet only): install the extra where the signer runs
+      (`uv sync --extra kms`), give the signer's user credentials (its own `~/.aws`, never the agent's)
+      allowed `kms:CreateKey`, `kms:GetPublicKey`, `kms:Sign`. `emporia signer backend kms1 add aws-kms
+      region=…` → listed "not yet tested against the live service". `emporia signer add kmsagent --make
+      --backend evm=kms1 --backend identity=kms1` → KMS shows the two keys. Fund the EVM address with
+      Base Sepolia USDC; the agent pays a game; the x402 payment settles (the facilitator accepted a KMS
+      signature). A DM longer than ~3.5 KB is refused with "4096", and a short one goes. Note the result
+      in this file so the "not yet tested" mark can go.
+- [ ] **Privy** (needs a Privy app; testnet only): make a policy allowing `eth_signTypedData_v4` with the
+      USDC contract on Base Sepolia as `verifyingContract` and `value` ≤ 2 USDC. `emporia signer backend
+      privy1 add privy app_id=… policy_id=…` (app secret, and the authorization key if its wallets have an
+      owner, asked hidden). `emporia signer backend privy1 make alpha2 evm` for a fresh agent made with
+      `--make` → a Privy wallet; fund it; a 1 USDC game pays; a 3 USDC one is refused "Policy violation"
+      even though the signer's own cap allows it. Optionally the same with `svm` on Solana devnet.
+- [ ] **Coinbase Developer Platform** (needs a CDP project: an API key and a wallet secret; testnet
+      only): a policy with a `signEvmTypedData` rule (`evmTypedDataVerifyingContract` the USDC contract).
+      `emporia signer backend cdp1 add cdp api_key_id=… policy_id=…` → both secrets asked hidden.
+      `emporia signer backend cdp1 make alpha3 evm` → a CDP account; fund it; a game pays on Base Sepolia.
+- [ ] **The agent cannot do any of it:** from an agent with a terminal, `emporia signer backend`,
+      `emporia signer backup alpha --out x`, `emporia signer add alpha --make` → refused by the key guard
+      as its person's.
+
+### 8. Relay as a service on a spare VM (about 45 minutes; only if the service mode ships)
 
 Otherwise leave it documented as not run.
 
@@ -272,7 +322,7 @@ Otherwise leave it documented as not run.
       `ss -ltn` shows `127.0.0.1:8089` only; as yourself `cat <folder>/data/keys/*` and editing
       `<folder>/.env` are refused; Caddy with the written Caddyfile serves `https://<domain>/health`.
 
-### 8. Small personal checks (about 15 minutes), and Solana devnet (optional, about 30)
+### 9. Small personal checks (about 15 minutes), and Solana devnet (optional, about 30)
 
 - [ ] **Recovery phrase (P175):** `emporia setup agent test2`, choose one phrase for both → it is
       shown on a cleared screen; scroll back: the words are gone. Importing the phrase into MetaMask /
@@ -289,7 +339,7 @@ Otherwise leave it documented as not run.
       `pay_network='solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'`; the Solana explorer (devnet) shows
       the transfer to A. `emporia wallet show` on both shows the balances moving.
 
-### 9. The operator's sitting (about 30 minutes, no money)
+### 10. The operator's sitting (about 30 minutes, no money)
 
 H is the relay's operator (`EMPORIA_AGENT_ID=hackathon_hermes` in the relay's `.env`), with
 `EMPORIA_GAMIFY=sheets,quests,bugs`, the transparency log on and `EMPORIA_HOUSE_AGENTS` naming a

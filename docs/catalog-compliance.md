@@ -182,8 +182,17 @@ tools, no middleware, and the `emporia` command. The entry lists exactly those h
   documented as an opt-in outside the catalog's guarantees.
 - **Key protection.** Keys in a child's environment are behind `key_guard`, which blocks
   `/proc/<pid>/environ` and `ps e` for the agent's own tools.
-- **Linked keys** (a `cmd:` key source run with a vault CLI) are a disclosed known issue, and
-  off unless the person links one.
+- **Keys in a password manager** (P293): the recommended path is the signer's. `emporia signer
+  add NAME --key-source "ROLE=cmd:op read op://…"` (or `cmd:bw get password ITEM`, quoted the same way) has the signer
+  read each key itself, at its start, with the vault token kept in the signer's folder
+  (`backends/vault.secret`, 0600) or the signer user's own environment. The agent's profile
+  names no vault and holds no token, so nothing of the vault passes through the agent's
+  settings at all. The command is a person's (`key_guard` refuses it from an agent's tools;
+  `tests/test_signer_phase2.py`). Trade-off, disclosed: a password manager stores keys but does
+  not sign, so the key is in the signer's memory while it runs.
+- **Linked keys on the agent's side** (a `cmd:` key source run with a vault CLI in the agent's
+  process) still work, are **not recommended**, and remain a disclosed known issue: the vault
+  token is in the profile's settings. Off unless the person links one.
 - **The console** lists agents through Hermes's reads. Branch `console-scope` (another agent's
   work) narrows it to the dashboard's own profile. Merge that branch after this one: it touches
   the same `_profile_env`, which here only changes how it reads.

@@ -354,6 +354,14 @@ def rotate_encryption_keypair(profile_id: str) -> tuple[str, str]:
     from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
     from emporia import key_source
+    if old_pub_hex := encryption_in_signer(profile_id):
+        # P293 (2c): behind a signer the new key is made inside it, and its binding
+        # signed there; only the new public half comes here.
+        from emporia import signer_client
+        made = signer_client.Opener.for_agent(profile_id).client.replace_encryption_key()
+        new_pub_hex = made["encryption_public_key"]
+        _enc_signer_pub_path(profile_id).write_text(new_pub_hex + "\n")
+        return old_pub_hex, new_pub_hex
     source = os.environ.get(ENCRYPTION_KEY_SOURCE_VAR, "").strip()
     if source.startswith("cmd:"):
         raise ValueError("this agent's encryption key comes from a password manager (cmd:): put a new key "

@@ -23,7 +23,8 @@ from typing import Any
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
 from emporia import identity, wire
-from emporia.key_rotation import RotationError, _public_hex, _session, install_identity_key, load_agent_key
+from emporia.key_rotation import (RotationError, _public_hex, _session, _sign, in_signer, install_identity_key,
+                                  load_agent_key)
 
 #: What a recovery key looks like on paper or in a password manager.
 RECOVERY_KEY_PREFIX = "emporia-recovery-v1:"
@@ -74,8 +75,8 @@ def make_recovery_key(
     identity._write_secret_atomically(out, (encode_recovery_key(recovery) + "\n").encode())
     at = datetime.now(UTC).isoformat()
     r = http.post(f"/agents/{agent_id}/recovery-commitment", headers=headers, json={
-        "commitment": commitment, "at": at, "signature": identity.sign_payload(
-            priv, wire.signed_recovery_commitment_payload(profile["stable_id"], commitment, at))})
+        "commitment": commitment, "at": at,
+        "signature": _sign(priv, "recovery-commitment", profile["stable_id"], commitment, at)})
     if r.status_code != 200:
         if 400 <= r.status_code < 500:          # refused: nothing was committed to
             out.unlink(missing_ok=True)
@@ -97,6 +98,7 @@ def recover_identity_key(
     Returns what `key_rotation.rotate_identity_key` does, and `superseded`."""
     stem = identity._keyfile_stem(agent_id)
     new_file = key_dir / f"{stem}.priv.new"
+    held = in_signer(agent_id, key_dir)          # P293 (2c): the new key is made in the signer
     r = http.get(f"/agents/{agent_id}/key-log")
     if r.status_code != 200:
         raise RotationError(f"the relay would not show {agent_id}'s key log ({r.status_code}) — is it registered there?")
@@ -109,8 +111,15 @@ def recover_identity_key(
     recovery_pub = _public_hex(recovery)
     live = wire.live_commitment(log)
 
+    if held:
+        from emporia import signer
+        pending = signer.identity_pending(agent_id)
+        if pending == on_relay and any(s.get("by") == "recovery" and s.get("recovery_public_key") == recovery_pub
+                                       for s in log):
+            return _finish_in_signer(agent_id, key_dir, old=_recovered_from(log), log=log,
+                                     superseded=served.get("superseded") or [])
     # An earlier run that got as far as the relay and stopped: the key in the .new file is the agent's.
-    if new_file.exists():
+    if not held and new_file.exists():
         try:
             held = ed25519.Ed25519PrivateKey.from_private_bytes(new_file.read_bytes())
         except ValueError:
@@ -132,11 +141,14 @@ def recover_identity_key(
     old = wire.key_before(windows, since)
     if not old:
         raise RotationError(f"{agent_id} had no key at {since}")
-    new_priv = ed25519.Ed25519PrivateKey.generate()
-    new_pub = _public_hex(new_priv)
-    # On disk before the relay hears of it: this key is the agent from the next line on.
-    key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    identity._write_secret_atomically(new_file, new_priv.private_bytes_raw())
+    if held:
+        new_pub = pending                       # made, and kept, in the signer
+    else:
+        new_priv = ed25519.Ed25519PrivateKey.generate()
+        new_pub = _public_hex(new_priv)
+        # On disk before the relay hears of it: this key is the agent from the next line on.
+        key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        identity._write_secret_atomically(new_file, new_priv.private_bytes_raw())
     stamp = at.isoformat()
     body = {"old_public_key_hex": old, "new_public_key_hex": new_pub, "recovery_public_key_hex": recovery_pub,
             "compromised_since": since, "at": stamp, "signature": identity.sign_payload(
@@ -144,9 +156,15 @@ def recover_identity_key(
     r = http.post(f"/agents/{agent_id}/key-recovery", json=body)
     if r.status_code != 200:
         if 400 <= r.status_code < 500:          # refused: the new key was never taken
-            new_file.unlink(missing_ok=True)
+            if held:
+                signer.identity_abort(agent_id)
+            else:
+                new_file.unlink(missing_ok=True)
         raise RotationError(f"the relay refused the recovery ({r.status_code}): {_detail(r)}")
     done = r.json()
+    if held:
+        return _finish_in_signer(agent_id, key_dir, old=old, log=done["key_log"],
+                                 superseded=done.get("superseded") or [])
     return _finish(agent_id, key_dir, new_file, source, old=old, new=new_pub, log=done["key_log"],
                    superseded=done.get("superseded") or [])
 
@@ -163,3 +181,13 @@ def _finish(agent_id: str, key_dir: Path, new_file: Path, source: str, *, old: s
     if not source:
         out.update(install_identity_key(agent_id, key_dir, new_file, kept="recovered"))
     return out
+
+
+def _finish_in_signer(agent_id: str, key_dir: Path, *, old: str, log: list[dict[str, Any]],
+                      superseded: list[dict[str, Any]]) -> dict[str, Any]:
+    """P293 (2c): the signer's pending key becomes the agent's; the profile's marker follows."""
+    from emporia import signer
+    new = signer.identity_commit(agent_id)
+    (key_dir / f"{identity._keyfile_stem(agent_id)}.signer.pub").write_text(new + "\n")
+    return {"old_public_key": old, "new_public_key": new, "new_key_file": None, "installed": True,
+            "kept_old_key_file": None, "key_log": log, "superseded": superseded, "in_signer": True}

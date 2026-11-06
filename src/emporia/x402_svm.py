@@ -112,7 +112,8 @@ def build_payment_payload(requirement: dict[str, Any], seed: bytes, *,
     if len(memo.encode()) > 256:
         raise SvmPayError("extra.memo is longer than the 256 bytes the spec allows")
 
-    keypair = keypair_from_seed(seed)
+    # P293: a seed here, or the signer's back end (pubkey() and sign_message(), as a Keypair).
+    keypair = keypair_from_seed(seed) if isinstance(seed, (bytes, bytearray)) else seed
     owner = keypair.pubkey()
     if str(owner) == fee_payer:
         raise SvmPayError("the fee payer must not be the payer")

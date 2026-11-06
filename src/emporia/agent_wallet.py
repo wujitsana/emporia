@@ -65,6 +65,9 @@ class Scope:
     env: dict
     key_dir: Path
     approver: Callable | None = None
+    # P293 (signer phase 2): in the signer, the keys by their back ends — families,
+    # addresses and signers (emporia.signer.Wallet). None: the files in key_dir.
+    wallet: Any = None
 
 
 _SCOPE: contextvars.ContextVar[Scope | None] = contextvars.ContextVar("emporia_wallet_scope", default=None)
@@ -87,6 +90,30 @@ def _getenv(name: str, default: str = "") -> str:
 def _key_base(agent_id: str) -> Path:
     s = _SCOPE.get()
     return s.key_dir / f"{identity._keyfile_stem(agent_id)}.priv" if s is not None else identity._key_path(agent_id)
+
+
+def _scoped_wallet():
+    s = _SCOPE.get()
+    return s.wallet if s is not None else None
+
+
+def evm_signer(agent_id: str):
+    """What signs for this agent's EVM wallet: in the signer, its back end's
+    (`emporia.signer.Wallet`); else a signer around the key here. `.address`,
+    `.sign_typed_data(full_message)`, `.sign_transaction(tx)`."""
+    if (w := _scoped_wallet()) is not None:
+        return w.evm()
+    from eth_account import Account
+
+    from emporia.operator_signer import LocalKeySigner
+    return LocalKeySigner(Account.from_key(load_key(agent_id)))
+
+
+def solana_signer(agent_id: str):
+    """What signs for this agent's Solana wallet: its back end's in the signer, else its seed here."""
+    if (w := _scoped_wallet()) is not None:
+        return w.svm()
+    return _load_solana_seed(agent_id)
 
 
 def remote():
@@ -416,6 +443,8 @@ def _load_solana_seed(agent_id: str) -> bytes:
 def solana_address(agent_id: str) -> str:
     if (r := remote()) is not None:
         return r.wallet()["solana_address"]
+    if (w := _scoped_wallet()) is not None:
+        return w.solana_address()
     from emporia import x402_svm
     return x402_svm.address_of(_load_solana_seed(agent_id))
 
@@ -424,6 +453,8 @@ def _families(agent_id: str) -> tuple[str, ...]:
     """The networks families this agent holds a key for."""
     if (r := remote()) is not None:
         return tuple(r.wallet()["families"])
+    if (w := _scoped_wallet()) is not None:
+        return w.families()
     return tuple(f for f, p in (("evm", wallet_path(agent_id)), ("svm", solana_wallet_path(agent_id)))
                  if p.exists() or source_for(f))
 
@@ -449,6 +480,8 @@ def load_key(agent_id: str) -> str:
 def address(agent_id: str) -> str:
     if (r := remote()) is not None:
         return r.wallet()["address"]
+    if (w := _scoped_wallet()) is not None:
+        return w.address()
     from eth_account import Account
     return Account.from_key(load_key(agent_id)).address
 
@@ -685,11 +718,11 @@ def sign_exact(agent_id: str, body: dict, network: str = "") -> str:
     if x402_network_family(requirement.get("network") or "") == "svm":
         # P155: Solana — a partially signed transaction, the facilitator pays fees.
         from emporia import x402_svm
-        seed = _load_solana_seed(agent_id)
+        seed = solana_signer(agent_id)
         _charge_daily(agent_id, amount)
         return x402_payer.payment_signature_header(x402_svm.build_payment_payload(
             requirement, seed, resource=challenge.get("resource")))
-    key = load_key(agent_id)
+    key = evm_signer(agent_id)
     _charge_daily(agent_id, amount)
     return x402_payer.payment_signature_header(x402_payer.build_payment_payload(
         requirement, key, resource=challenge.get("resource")))
@@ -721,7 +754,7 @@ def pay_tempo(agent_id: str, offer: dict) -> str:
                      {"rail": "tempo", "network": network, "currency": request.get("currency"),
                       "recipient": str(request.get("recipient") or "").lower(), "amount": str(amount),
                       "chain_id": (request.get("methodDetails") or {}).get("chainId")})
-    key = load_key(agent_id)
+    key = evm_signer(agent_id)
     _charge_daily(agent_id, amount)
     return tempo.pay(offer, key)
 
@@ -736,7 +769,7 @@ def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
     if expected_amount > max_payment_cents() * _USDC_ATOMIC_PER_CENT:
         raise AgentWalletError(
             f"the hold is {expected_amount / 1e6:.2f} USDC, above this agent's per-payment cap")
-    key, networks = load_key(agent_id), allowed_networks()
+    key, networks = evm_signer(agent_id), allowed_networks()
     from emporia.networks import label
     info = offer.get("payment_info") or {}
     receiver = info.get("receiver")
@@ -765,10 +798,7 @@ def reclaim_escrow(agent_id: str, hold: dict) -> dict:
         return r.call("reclaim", {"hold": hold})
     import asyncio
 
-    from eth_account import Account
-
     from emporia import escrow, escrow_chain
-    from emporia.operator_signer import LocalKeySigner
     offer = hold["offer"]
     info = escrow.PaymentInfo.from_json({**offer["payment_info"], "payer": hold["payer"]})
     cfg = escrow_chain.payer_config(offer)
@@ -780,7 +810,7 @@ def reclaim_escrow(agent_id: str, hold: dict) -> dict:
     if time.time() < info.authorization_expiry:
         raise AgentWalletError("too early: the contract allows a reclaim from " + time.strftime(
             "%Y-%m-%d %H:%M UTC", time.gmtime(info.authorization_expiry)))
-    tx = asyncio.run(escrow_chain.reclaim(cfg, LocalKeySigner(Account.from_key(load_key(agent_id))), info))
+    tx = asyncio.run(escrow_chain.reclaim(cfg, evm_signer(agent_id), info))
     return {"transaction": tx, "reclaimed_atomic": state["capturable"], "network": cfg.network}
 
 

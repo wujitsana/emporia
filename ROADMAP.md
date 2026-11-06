@@ -46,7 +46,10 @@ from the Hermes plugin catalog (`hermes plugins install emporia`) or from a chec
    - **Limits, not approvals:** agents act on their own within their person's limits.
    - **Alerts:** the signer sends its own, Telegram first; other connectors are deferred.
    - **Back ends:** one interface, ready for hosted wallets.
-   - **Progress:** 2a's in-process half is built (`signing.py`). — 2a signing through `sign(kind, args)` with its table (in-process first, then
+   - **Progress:** 2a, 2b, 2c and the back ends (local, password manager, AWS KMS, Privy, Coinbase
+     Developer Platform) are built (P293, P299; branch `signer-phase2`). The KMS, hosted-wallet and
+     password-manager back ends wait for their first live test. The optional delay (§ 4.2) is not
+     built. — 2a signing through `sign(kind, args)` with its table (in-process first, then
    the signer), 2b opening sealed messages, 2c keys made in the signer; the live suite run again with
    every agent behind a signer. Why now: an agent's identity and encryption keys are still files its
    own process reads — the `hackathon_hermes` profile held a second identity key in a `.env` its
@@ -294,7 +297,9 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
   which keys): the person only. **Starts after phase 1 has been tested by hand** (manual-testing.md:
   "Signer" — scripted since P275 bar the gateway restart and a game paid on chain — and "Signer
   apart"). Design (P275): docs/proposals/signer-phase-2.md — every signature at once or with the
-  person, payloads built by the signer itself, five questions for the person.
+  person, payloads built by the signer itself, five questions for the person. **Revised (P293) to
+  limits instead of approvals, and built (P293, P299):** the identity and encryption keys in the
+  signer, opened and made there, rotations and backups inside it.
 
 - **External signers.** P203 built the signer service (`emporia signer`): wallet keys and limits
   apart from the agent, a local backend, pending approvals. Next behind it: the identity and
@@ -311,7 +316,14 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
   identity key only where a provider does raw Ed25519 signing; opening sealed messages stays with our
   signer. Check each provider's current API before choosing the first. Each must support
   what Emporia signs: EIP-712 (x402, escrow holds), raw EVM transactions (Tempo), and a partially
-  signed Solana transaction (x402 on Solana).
+  signed Solana transaction (x402 on Solana). **Built (P299), against fakes:**
+  - AWS KMS: wallets, the identity key up to 4096 bytes, Solana;
+  - Privy: EVM typed data, Solana transactions;
+  - Coinbase Developer Platform: EVM typed data;
+  - a password manager read by the signer.
+
+  Next: each tried live on testnet, then MetaMask Agent Wallet and Phantom checked the same way.
+  Solana Pay is a payment rail for a separate wallet plugin, not a signer back end.
 - **Encrypting the phrase and keys at rest** with a passphrase (today: 0600 files, or linked to
   a password manager since P162).
 - **Keys the model can never read.** Hermes denies its tools reads of its own credential stores
