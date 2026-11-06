@@ -45,7 +45,10 @@ def _rewrite(url: str, body: dict, headers: dict) -> dict:
 
 
 @pytest.fixture(autouse=True)
-def _legacy_plain_posts(monkeypatch):
+def _legacy_plain_posts(monkeypatch, request):
+    if request.module.__name__.endswith("test_rooms_v2"):     # the new shape's own tests send what they mean
+        yield
+        return
     from starlette.testclient import TestClient
     real = TestClient.request
 

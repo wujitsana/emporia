@@ -53,7 +53,7 @@ def test_archive_keeps_dms_rooms_posts_listings_and_sessions_and_only_fetches_wh
     assert saved["sessions"] >= 1
     root = tmp_path / "archive"
     dm = next(root.glob(f"*/dms/{thread}.jsonl"))
-    assert json.loads(dm.read_text().splitlines()[0])["content"] == "hi"
+    assert json.loads(json.loads(dm.read_text().splitlines()[0])["content"])["text"] == "hi"
     assert oct(dm.stat().st_mode)[-3:] == "600"
     again = mcp_server.archive_now(agent_id="ar_me")
     assert again["saved"].get("dm_messages", 0) == 0 and again["saved"].get("room_messages", 0) == 0

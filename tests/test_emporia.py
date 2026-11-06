@@ -17155,9 +17155,7 @@ def test_sdk_room_message_functions_gain_limit_and_parent_message_id_parity(clie
             room = await a.create_room(name="p19 l3 sdk room", room_type="public", gate_type="open")
             room_id = room["room_id"]
             first = await a.send_room_message(room_id, "parent")
-            reply = await a.send_room_message(
-                room_id, "child", parent_message_id=first["message_id"],
-            )
+            reply = await a.send_room_message(room_id, "child", reply_to=first["ref"])
             assert reply["parent_message_id"] == first["message_id"]
             msgs = await a.get_room_messages(room_id, limit=1)
             assert len(msgs) == 1
