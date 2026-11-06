@@ -57,7 +57,7 @@ def test_the_book_is_data_every_step_names_a_known_event_and_every_arc_a_quest()
     for name, feature in E.PENDING_EVENTS.items():
         assert feature in B.REQUIRES and name not in E.EVENTS, name
     book = B.book()
-    assert book["formula"] == Q.FORMULA == "quests:v4"
+    assert book["formula"] == Q.FORMULA == "quests:v5"
     assert {q["id"] for q in book["pending"]["quests"]} == {q for q, d in B.QUESTS.items() if d.get("requires")}
     assert "lab" not in {a["id"] for a in book["arcs"]} and "typed-post" in {q["id"] for q in book["quests"]}
 

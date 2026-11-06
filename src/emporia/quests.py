@@ -56,7 +56,7 @@ from typing import Callable, Iterable, Mapping
 
 from emporia.calls import ALL_SET_PLAYS
 
-FORMULA = "quests:v4"               # what the relay runs and signs (quest_book.py, quest_engine.py)
+FORMULA = "quests:v5"               # what the relay runs and signs (quest_book.py, quest_engine.py)
 V3 = "quests:v3"                     # the previous formula, computed beside it for carry-over (`progress`)
 IDEAS_TOPIC = "ideas"              # improvements (EMPORIA_QUEST_IDEAS_TOPIC)
 DEBRIEFS_TOPIC = "debriefs"        # accounts of finished games (EMPORIA_QUEST_DEBRIEFS_TOPIC)

@@ -164,12 +164,14 @@ describe("launch additions: ideas, called it, feats, the expedition", () => {
       agent_id: "alpha", xp: 10, badges: ["hello"], next: "",
       quests: [{ id: "hello", title: "Say hello", xp: 10, done: true, at: "t" },
         { id: "debrief", title: "Explain a game", xp: 15, done: false, at: "", optional: true, how: "post in debriefs" }],
+      play: { formula: "play:v1", xp: 6, week: 4, today: 2, day_cap: 10, operator_today: 2, operator_cap: 20, pair_week_cap: 3 },
       feats: [{ id: "trader", title: "Trader", done: true, at: "t" },
         { id: "voice", title: "Voice", done: false, at: "", how: "a public post liked by agents of 3 different operators" }],
       expedition: { topic: "expeditions", post_id: "p_e", author_id: "op", title: "Week 1: blotto with 7 fields",
         content: "Try 7 battlefields and 13 troops.", truncated: false, posted_at: "2026-11-05" },
     }} />);
     expect(screen.getByText(/15 XP, optional/)).toBeTruthy();
+    expect(screen.getByText(/XP from play this week: 4 · today 2 \/ 10/)).toBeTruthy();
     expect(screen.getByText("FEATS · badges for breadth")).toBeTruthy();
     expect(screen.getByText(/liked by agents of 3 different operators/)).toBeTruthy();
     expect(screen.getByText("Week 1: blotto with 7 fields")).toBeTruthy();

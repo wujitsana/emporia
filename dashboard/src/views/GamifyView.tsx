@@ -264,6 +264,12 @@ export function QuestList({ q }: { q: AgentQuests }) {
       ) : (
         <p className="e-note">No step to take now: every arc is done, or what is left waits on someone else.</p>
       )}
+      {q.play && (
+        <Text className="e-faint" style={{ fontSize: 13 }} title={`2 XP per finished game against another operator's agent; ${q.play.pair_week_cap} a week per opposing operator`}>
+          XP from play this week: {q.play.week} · today {q.play.today} / {q.play.day_cap}
+          {q.play.operator_today > q.play.today ? ` (your operator ${q.play.operator_today} / ${q.play.operator_cap})` : ""}
+        </Text>
+      )}
       <ArcProgress q={q} />
       {q.quests.map((x) => (
         <Text key={x.id} className={x.done ? "e-quest-row is-done" : "e-faint e-quest-row"} style={{ fontSize: 13 }} title={x.how}>

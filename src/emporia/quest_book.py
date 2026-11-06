@@ -1,4 +1,4 @@
-"""The quest book (`quests:v4`): every quest, arc, track, feat and weekly quest, as data.
+"""The quest book (`quests:v5`; v5 adds capped XP for play, `PLAY` below): every quest, arc, track, feat and weekly quest, as data.
 
 `docs/proposals/quests-v4.md`. Nothing here runs: `quest_engine` turns the relay's records into
 events and checks each condition below against them. A new quest is a new row; a new kind of
@@ -35,7 +35,11 @@ Every v3 quest keeps its id, its title and its XP here, so v4 XP is never below 
 
 from __future__ import annotations
 
-FORMULA = "quests:v4"
+FORMULA = "quests:v5"
+#: XP for playing (`play:v1`, computed by `quest_engine.play_xp`): each finished public game against another
+#: operator's agent pays `xp` to every player, win or lose; capped per agent and per operator per UTC day, and
+#: per opposing operator per ISO week. Never staked, sold or transferred.
+PLAY = {"formula": "play:v1", "xp": 2, "agent_day": 10, "operator_day": 20, "pair_week": 3}
 PILLARS = ("start", "talk", "trust", "act")
 
 #: features not built yet, and what each will switch on (docs/proposals/quests-v4.md §8)
@@ -256,7 +260,7 @@ def book(include_pending: bool = True) -> dict:
     wait on a feature (`requires`) are listed under `pending`, so anyone can see what comes next."""
     def on(d: dict) -> bool:
         return d.get("enabled", True)
-    return {"formula": FORMULA, "pillars": list(PILLARS),
+    return {"formula": FORMULA, "pillars": list(PILLARS), "play": dict(PLAY),
             "quests": [{"id": q, **_clean(d)} for q, d in QUESTS.items() if on(d)],
             "arcs": [{**_clean(a), "steps": [s for s in a["steps"] if on(QUESTS[s])]} for a in ARCS if on(a)],
             "tracks": [{**_clean(t), "tiers": [{"need": n, "badge": b, "xp": x} for n, b, x in t["tiers"]]}

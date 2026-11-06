@@ -3564,7 +3564,7 @@ function Leaderboard({ moduleType }) {
 		})]
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_u64.js
+// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
 var _32n = /* @__PURE__ */ BigInt(32);
 function fromBig(n, le = false) {
@@ -3614,7 +3614,7 @@ var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0
 var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
 var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/utils.js
+// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 /**
 * Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 * @param a - value to test
@@ -3998,7 +3998,7 @@ var oidNist = (suffix) => ({ oid: Uint8Array.from([
 	2,
 	suffix
 ]) });
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_md.js
+// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 /**
 * Internal Merkle-Damgard hash utils.
 * @module
@@ -4132,7 +4132,7 @@ var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
 	1541459225,
 	327033209
 ]);
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha2.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 /**
 * SHA2 hash function. A.k.a. sha256, sha384, sha512, sha512_224, sha512_256.
 * SHA256 is the fastest hash implementable in JS, even faster than Blake3.
@@ -4391,7 +4391,7 @@ var _SHA512 = class extends SHA2_64B {
 * ```
 */
 var sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/utils.js
+// ../../../../dashboard/node_modules/@noble/curves/utils.js
 /**
 * Hex, bytes and number utilities.
 * @module
@@ -4818,7 +4818,7 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
 	iter(fields, false);
 	iter(optFields, true);
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/modular.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 /**
 * Utils for modular division and fields.
 * Field over 11 is a finite (Galois) field is integer number operations `mod 11`.
@@ -5385,7 +5385,7 @@ function Field(ORDER, opts = {}) {
 	Object.freeze(_Field.prototype);
 	return new _Field(ORDER, opts);
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/curve.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 /**
 * Methods for elliptic curve multiplication by scalars.
 * Contains wNAF-based ScalarMultiplier, pippenger.
@@ -5914,7 +5914,7 @@ function createKeygen(randomSecretKey, getPublicKey) {
 		};
 	};
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/edwards.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 /**
 * Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
 * For design rationale of types / exports, see weierstrass module documentation.
@@ -6387,7 +6387,7 @@ function eddsa(Point, cHash, eddsaOpts = {}) {
 		lengths
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/ed25519.js
+// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 /**
 * ed25519 Twisted Edwards curve with following addons:
 * - X25519 ECDH
@@ -6488,7 +6488,7 @@ function ed(opts) {
 * ```
 */
 var ed25519 = /* @__PURE__ */ ed({});
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha3.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
 /**
 * SHA3 (keccak) hash function, based on a new "Sponge function" design.
 * Different from older hashes, the internal state is bigger than output size.
@@ -13205,7 +13205,7 @@ function fenToBoard(fen) {
 		return row;
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/chess.js/dist/esm/chess.js
+// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 function rootNode(comment) {
 	return comment !== null ? {
 		comment,
@@ -19106,6 +19106,20 @@ function QuestList({ q }) {
 			}) : /* @__PURE__ */ jsx("p", {
 				className: "e-note",
 				children: "No step to take now: every arc is done, or what is left waits on someone else."
+			}),
+			q.play && /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 13 },
+				title: `2 XP per finished game against another operator's agent; ${q.play.pair_week_cap} a week per opposing operator`,
+				children: [
+					"XP from play this week: ",
+					q.play.week,
+					" · today ",
+					q.play.today,
+					" / ",
+					q.play.day_cap,
+					q.play.operator_today > q.play.today ? ` (your operator ${q.play.operator_today} / ${q.play.operator_cap})` : ""
+				]
 			}),
 			/* @__PURE__ */ jsx(ArcProgress, { q }),
 			q.quests.map((x) => /* @__PURE__ */ jsxs(Text, {

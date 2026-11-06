@@ -308,18 +308,21 @@ async def season_ladders(limit: int = 25):
             "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 
-def _public_games_of(agent_id: str) -> list[dict]:
-    """Launch additions: every finished public game `agent_id` played on this relay, as quests and
-    feats read it — with the house agent too (XP and badges move no standing), and chess."""
+def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]:
+    """Launch additions: every finished public game `agent_id` (or an agent in `also`) played on this
+    relay, as quests and feats read it — with the house agent too (XP and badges move no standing), and
+    chess. `also`: the agent's operator's other agents, for quests:v5's operator-wide play cap."""
     games = [m for m in game_module_types() if m != "emporia:service:v1"]
     marks = ",".join("?" * len(games)) or "NULL"
+    agents = list(dict.fromkeys((agent_id, *also)))
+    like = " OR ".join("participants_json LIKE ?" for _ in agents)
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute(f"SELECT * FROM sessions WHERE status = 'completed' AND module_type IN ({marks}) "  # noqa: S608
-                            "AND participants_json LIKE ? ORDER BY updated_at", (*games, f'%"{agent_id}"%')).fetchall()
+                            f"AND ({like}) ORDER BY updated_at", (*games, *(f'%"{a}"%' for a in agents))).fetchall()
     out = []
     for r in rows:
         sess = rs._session_row_to_dict(r)
-        if agent_id in sess["participants"] and rs._session_visibility(sess) == "public":
+        if any(a in sess["participants"] for a in agents) and rs._session_visibility(sess) == "public":
             game = {"session_id": sess["session_id"], "module_type": sess["module_type"],
                     "participants": sess["participants"], "ended_at": sess["updated_at"],
                     "calls": dict(((sess.get("state") or {}).get("data") or {}).get("calls") or {}),
@@ -327,7 +330,8 @@ def _public_games_of(agent_id: str) -> list[dict]:
             try:     # how it ended, where a quest asks (Strike a bargain: a deal, not just a game)
                 outcome = get_interaction_module(sess["module_type"]).is_terminal(
                     SessionState.from_dict(sess["state"]))[1]
-                game.update(termination=outcome.get("termination"), winner=outcome.get("winner"))
+                game.update(termination=outcome.get("termination"), winner=outcome.get("winner"),
+                            refused_by=outcome.get("refused_by"))
                 if outcome.get("allocation"):        # Bargain's Fair deal: the published hands and the split
                     game.update(allocation=outcome["allocation"], values=outcome.get("values") or {},
                                 pool=((sess.get("state") or {}).get("data") or {}).get("pool") or {})
@@ -452,6 +456,8 @@ def quests_body(agent_id: str) -> dict:
             "ON x.target = 'post:' || p.post_id WHERE p.author_id = ? AND p.is_deleted = 0 AND x.value = 'like' "
             "AND x.active = 1 AND p.federated_from IS NULL", (agent_id, agent_id))]
     lab_findings = _lab_findings(agent_id)
+    who = _who()
+    mine = who[agent_id].operator if agent_id in who else agent_id
     games = _public_games_of(agent_id)
     deals = []
     for row in rows:
@@ -463,7 +469,6 @@ def quests_body(agent_id: str) -> dict:
         data = (sess.get("state") or {}).get("data") or {}
         deals.append({"buyer": data.get("buyer"), "seller": data.get("seller"), "status": out.get("status"),
                       "ended_at": sess["updated_at"]})
-    who = _who()
     house = progression.house_agents()
     shown = quests.feats_on()
     feats = quests.feats(agent_id, games=games, deals=deals, likes=likes, posts=posts,
@@ -492,7 +497,9 @@ def quests_body(agent_id: str) -> dict:
                             shown=[f for f in shown if f in ("trader", "voice")])
     with rs.DB_LOCK, rs.get_db() as conn:
         expeditions = [dict(r) for r in _expeditions(conn, names["expeditions"], limit=200)]
-    body = QE.evaluate(agent_id, evs, ctx, v3=v3, expeditions=expeditions, feats_done=v4_feats,
+    siblings = tuple(a for a, w in who.items() if w.operator == mine and a != agent_id)
+    play_games = _public_games_of(agent_id, also=siblings) if siblings else games
+    body = QE.evaluate(agent_id, evs, ctx, v3=v3, play_games=play_games, expeditions=expeditions, feats_done=v4_feats,
                        pending_report=any(r.get("status") == "open" for r in reports))
     body["feats"] = [f for f in body["feats"] if f["id"] in shown or f["id"] not in quests.ALL_FEAT_IDS]
     return {**body, "topics": names, "expedition": expedition,

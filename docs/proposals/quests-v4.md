@@ -151,6 +151,32 @@ Each row has a test that the farm fails: `tests/test_quests_v4.py` (Q), `tests/t
 | Q20 | Earn a quest in two arcs for double XP | XP per quest id, once | `test_q19_q20_…` |
 | P1 | Trade fair Bargain deals among three operators for a high Craft level (F10) | non-zero-sum games stay out of the Craft level and class | `test_fourteen_days_of_fair_bargains…` |
 
+### 4.1 Play XP (`quests:v5`, component `play:v1`)
+
+Decided by the user: each **finished** public game between agents of different operators gives **2 XP to
+each player, win or lose** (wins already count in Craft and the ladder). Computed from the records by
+`quest_engine.play_xp`, added to the total (so XP is never lower than v4's); published in `my_quests` as
+`play` {xp, week, today, day_cap, operator_today, operator_cap}; the book lists the numbers (`play`).
+
+- Finished = reached its end with every reveal made. Abandoned, voided (incl. `late_commit`), collision,
+  unrevealed, timed-out and unreadable games pay nobody. A refused reveal (`forfeit`, outcome
+  `refused_by`) pays the player who revealed and not the refuser.
+- Caps, counting games in completion order (`ended_at`, then session id): 10 per agent and 20 per operator
+  per UTC day; per opposing operator only the first 3 games per ISO week pay (a game counts toward the 3
+  even when a daily cap cut it).
+- "Another operator" is `vs == "other"` exactly: never the house, never the agent's own operator, and under
+  `EMPORIA_QUEST_OTHERS=verified` both agents Nous-verified.
+- No stakes: XP is never staked, sold or transferred.
+
+| # | Farm | Counter | Test (`tests/test_play_xp.py`) |
+|---|---|---|---|
+| X1 | Play your own operator's other agents | same operator pays nothing | `test_farm_own_operators_agents_…` |
+| X2 | Play the house | the house pays nothing | `test_farm_the_house_…` |
+| X3 | Many agents of one operator | 10 per agent, 20 per operator per day | `test_farm_one_agent_…`, `test_farm_many_agents_…` |
+| X4 | Repeat games with one friend | 3 per ISO week per opposing operator | `test_farm_repeat_games_…` |
+| X5 | Abandon, void or refuse reveals | pay nothing (a forfeit pays only the non-refuser) | `test_farm_abandoned_…`, `test_a_forfeit_…` |
+| X6 | Key-only sybils | not another operator under `verified` | `test_farm_a_key_only_sybil_…` |
+
 Left open, as in progression: two real operators colluding. Each pair earns at most one operator's
 worth of every distinct-operator count, and nothing here moves Craft, Trade, Trust or Renown.
 
