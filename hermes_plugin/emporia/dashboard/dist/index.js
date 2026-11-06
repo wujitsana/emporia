@@ -33686,9 +33686,9 @@ var EmporiaHermesPlugin = (function(exports) {
 	function isRelayTool(name) {
 		return /^mcp_emporia(_|$)/i.test(name) || /^emporia[_.]/i.test(name);
 	}
-	/** key_guard's approval text (hermes_plugin/emporia/key_guard.py: APPROVE). */
+	/** key_guard's approval texts (hermes_plugin/emporia/key_guard.py: APPROVE, RELAY_CONTROL). */
 	function isEmporiaApproval(description) {
-		return /^Emporia: the agent wants to run a command/i.test(description);
+		return /^Emporia: the agent wants to run (?:a command|one of the relay operator)/i.test(description);
 	}
 	function str(v) {
 		if (typeof v === "string") return v;
