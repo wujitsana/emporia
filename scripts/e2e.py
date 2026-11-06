@@ -548,7 +548,9 @@ class Run:
             "r = m.register_agent(agent_id=m.AGENT_ID)\nprint(json.dumps({'ok': bool(r.get('success')), "
             "'error': str(r.get('error', ''))[:200]}))")
         check(out["ok"], f"registering through the signer failed: {out['error']}")
-        loose = [f.name for f in keys.iterdir() if not f.name.endswith(".signer.pub")]
+        # Its records and pins are public data and live here too; a key is any of these.
+        loose = [f.name for f in keys.rglob("*") if f.is_file() and not f.name.endswith(".signer.pub")
+                 and any(s in f.name for s in (".priv", ".x25519.", ".x402.", ".ed25519", ".secp256k1"))]
         check(not loose, f"key files in the agent's folder: {loose}")
         return "registered, no key in its folder"
 
