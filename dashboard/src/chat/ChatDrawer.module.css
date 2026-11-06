@@ -736,7 +736,8 @@
     min-height: 48px;
   }
 
-  .input {
+  .input,
+  .answerInput {
     font-size: 16px; /* no zoom-on-focus on a phone */
   }
 }

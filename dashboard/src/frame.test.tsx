@@ -87,6 +87,17 @@ describe("the chat drawer", () => {
     expect(find("chat/ChatDrawer.module.css", ".input", "max-height")[0]?.value).toMatch(/^calc\(4 \*/);
     expect(find("chat/ChatDrawer.module.css", ".send", "height")[0]?.value).toBe("42px");
   });
+
+  // Review pass 2: iOS zooms the page when a field under 16px takes focus. The composer had
+  // 16px on a phone; the agent's question box (0.86rem) and the menu's viewer select (12px) did not.
+  it("keeps every field on a phone at 16px, so focusing one never zooms the page", () => {
+    const phone = /max-width: 900px/;
+    const sized = (file: string, cls: string) => ALL.some((d) => d.file === file && phone.test(d.media)
+      && d.prop === "font-size" && d.value === "16px" && d.sel.split(",").map((s) => s.trim()).includes(cls));
+    expect(sized("chat/ChatDrawer.module.css", ".input")).toBe(true);
+    expect(sized("chat/ChatDrawer.module.css", ".answerInput")).toBe(true);
+    expect(sized("dashboard.css", ".e-viewer-switch select")).toBe(true);
+  });
 });
 
 describe("the brand", () => {
