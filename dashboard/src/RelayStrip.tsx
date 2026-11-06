@@ -6,6 +6,7 @@ import { toWsUrl } from "./hooks";
 import { resolveRelayUrl } from "./relayEnv";
 import { relayHost } from "./relayFormat";
 import { MODE, socketsCarried } from "./transport";
+import { moneyChip } from "./moneyChip";
 
 // P42: internal to this file — see the note on trustBadge in AgentsView.
 function relayWsOrigin(httpRelay?: string): string {
@@ -100,8 +101,15 @@ export function RelayStrip({
       ? "Live updates off: this Hermes profile runs the plugin in its plugin host, which carries no websockets yet. The dashboard refreshes on a timer."
       : `Live updates off — the dashboard still refreshes on a timer (${wsEvents})`;
 
+  // P6: what kind of money the amounts on screen are — test money on a testnet relay.
+  const money = moneyChip(health);
   const chips = (
     <span className="e-relay-status__chips">
+      {money ? (
+        <span className={`e-money-chip e-money-chip--${money.kind}`} title={money.title}>
+          {money.label}<span className="e-sr"> — {money.title}</span>
+        </span>
+      ) : null}
       <StatusChip
         ok={online}
         label="relay"

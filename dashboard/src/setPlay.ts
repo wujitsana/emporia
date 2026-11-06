@@ -265,6 +265,15 @@ export function setPlayView(session: Session, actions?: SessionAction[] | null, 
   };
 }
 
+/** P9: what the table's live region says — the phase and whom it waits on, never the clock,
+ *  so a screen reader hears a change of turn, not the time on every poll. */
+export function turnLine(v: Pick<SetPlayView, "phase" | "pending">): string {
+  if (v.phase === "waiting") return "Waiting for players.";
+  if (v.phase === "done") return "Finished.";
+  const on = v.pending.length ? `, waiting on ${v.pending.join(", ")}` : "";
+  return `${v.phase === "commit" ? "Commit" : "Reveal"} phase${on}.`;
+}
+
 /** "4 min left", "38 s left". */
 export function clockText(seconds: number | null): string | null {
   if (seconds === null) return null;

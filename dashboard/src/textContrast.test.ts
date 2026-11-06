@@ -11,7 +11,7 @@
  */
 import postcss, { type Rule } from "postcss";
 import { describe, expect, it } from "vitest";
-import { contrast, mixOver, type Gamut } from "./badges/color.ts";
+import { contrast, mixOver, relativeOklch, type Gamut } from "./badges/color.ts";
 import { allThemes } from "./badges/tokens.ts";
 
 type Fs = { readFileSync(p: string, enc: "utf8"): string };
@@ -39,6 +39,34 @@ describe("the look's text tokens", () => {
           ["text on the wash", contrast(t.ink, wash)],
         ];
         for (const [what, r] of checks) if (r < AA) fails.push(`${t.theme} ${t.label} ${what}: ${r.toFixed(2)}`);
+      }
+      expect(fails).toEqual([]);
+    });
+  }
+});
+
+/** P10: the look's graphics line (brackets, the active sub-tab's underline, rules) as the CSS writes it. */
+const LINE_L = { light: 0.58, dark: 0.72 } as const;
+
+describe("the look's graphics line (P10)", () => {
+  it("is written in dashboard.css with the lightness checked here", () => {
+    const decls: string[] = [];
+    postcss.parse(CSS).walkDecls("--anim-line", (d) => { decls.push(d.value.trim()); });
+    expect(decls).toContain(`oklch(from var(--anim-tint) ${LINE_L.light} c h)`);
+    expect(decls).toContain(`oklch(from var(--anim-tint) ${LINE_L.dark} c h)`);
+  });
+
+  // The canvas is where the line is drawn: the brackets frame panels that have no fill of
+  // their own, the sub-tab underline sits on the header. (L 0.62 measured 2.89:1 under the
+  // green tint; 0.58 is the smallest step that clears 3:1 in every tint, both gamuts.)
+  for (const gamut of ["css", "clip"] as Gamut[]) {
+    it(`reaches 3:1 on the canvas in both themes and all 8 tints (${gamut} gamut)`, () => {
+      const fails: string[] = [];
+      for (const t of allThemes(gamut)) {
+        const line = relativeOklch(t.tintHex, LINE_L[t.theme], (c) => c, gamut);
+        const canvas = t.surfaces.find((s) => s.name === "canvas")!.rgb;
+        const r = contrast(line, canvas);
+        if (r < 3) fails.push(`${t.theme} ${t.label} line on the canvas: ${r.toFixed(2)}`);
       }
       expect(fails).toEqual([]);
     });

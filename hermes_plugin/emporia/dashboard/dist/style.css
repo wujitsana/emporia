@@ -3142,7 +3142,9 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   --anim-tint: var(--tint, #f0a832);                                   /* amber when no tint is set */
   --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */
   --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */
-  --anim-line: oklch(from var(--anim-tint) 0.62 c h);                  /* brackets, rules, ticks: graphics only */
+  /* brackets, rules, ticks: graphics only. P10: L 0.58, not 0.62, so it clears 3:1 on the light
+     canvas in every tint (green measured 2.89:1); textContrast.test.ts holds it there. */
+  --anim-line: oklch(from var(--anim-tint) 0.58 c h);
   --anim-pixel: "EmporiaPixel", var(--font-family-mono, monospace);
   --anim-bracket: 12px;
   --anim-bracket-w: 2px;
@@ -3535,6 +3537,121 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   .e-look .e-anim-hud--top .e-anim-hud__where { flex-basis: 100%; }
   .e-look .e-anim-hud--foot { padding: 8px 16px 0; max-width: calc(100% - 16px); }
   .e-look .e-setplay__game { font-size: 1.4rem; }
+}
+
+/* ─── 11. HOME'S FIRST FRAME, THE MONEY CHIP, PLEDGES (review pass 2: P2, P3, P5, P6) ── */
+
+/* Home leads with the agent: "your agent now" beside "next up" (one column when narrow,
+   or when next up is not shown: auto-fit drops the empty track). */
+.e-home-lead {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 0 16px;
+  align-items: start;
+}
+.e-now__row--badges { align-items: center; }
+.e-now__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.e-now__more { font-size: 0.75rem; }
+
+/* Next up: one row per thing to do, its clock, and the exact call (copy-only). */
+.e-next__why { overflow-wrap: anywhere; }
+.e-next__clock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.e-next__row.is-urgent .e-next__clock { color: var(--theme-focused-foreground); font-weight: 700; }
+.e-next__open {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--theme-focused-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.e-next__call { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; opacity: 1; }
+.e-next__call code { overflow-wrap: anywhere; }
+.e-next__foot {
+  margin: 0;
+  padding: 8px 14px 10px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+}
+/* Text another agent wrote: quoted and underlined as data, never styled as the dashboard's own words. */
+.e-untrusted { font-style: italic; border-bottom: 1px dotted currentColor; }
+.e-untrusted::before { content: "\201C"; }
+.e-untrusted::after { content: "\201D"; }
+
+/* The relay's pipeline, folded to one chip beside the status line; it opens to the sentence. */
+.e-overview-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 14px;
+}
+.e-overview-status-row .e-overview-status { margin-bottom: 0; }
+.e-pipeline-chip { font-size: 0.726rem; max-width: 100%; }
+.e-pipeline-chip > summary {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--e-rule);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  list-style: none;
+}
+.e-pipeline-chip > summary::-webkit-details-marker { display: none; }
+.e-pipeline-chip > summary::after { content: " +"; }
+.e-pipeline-chip[open] > summary::after { content: " \2212"; }
+.e-pipeline-chip__text {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+}
+.e-look .e-pipeline-chip > summary { background: var(--anim-fill); color: var(--anim-ink); font-weight: 700; border-color: transparent; }
+
+/* P6: what kind of money the amounts are, beside the relay chip. */
+.e-money-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.3));
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.e-money-chip--test { background: var(--theme-border, transparent); }
+.e-money-chip--real { border-color: currentColor; }
+.e-look .e-money-chip--test { background: var(--anim-fill); color: var(--anim-ink); border-color: transparent; }
+
+/* The agent's pledges, under its Word line on the sheet. */
+.e-pledges { margin-top: 6px; }
+.e-pledge__status { white-space: nowrap; }
+.e-pledge.is-kept .e-pledge__status { color: var(--theme-focused-foreground); }
+.e-pledge.is-broken .e-pledge__status,
+.e-pledge.is-disputed .e-pledge__status { font-weight: 700; }
+
+/* P5: with the chat open beside the view the header keeps one row: it drops the relay's host
+   and version and the chat button's word, tightens its gaps, and lets the tabs scroll in
+   their own row rather than wrap (App sets .has-chat only above the header-nav width). */
+@media (min-width: 901px) {
+  .e-app-shell.has-chat .e-app-top__row { flex-wrap: nowrap; gap: 10px; padding-left: 14px; padding-right: 14px; }
+  .e-app-shell.has-chat .e-brand-title--header { flex-shrink: 0; }
+  .e-app-shell.has-chat .e-section-tabs--horizontal { flex-wrap: nowrap; }
+  .e-app-shell.has-chat .e-section-tab { padding: 6px 7px; }
+  .e-app-shell.has-chat .e-app-top__actions { flex-shrink: 0; gap: 10px; }
+  .e-app-shell.has-chat .e-relay-status { gap: 8px; flex-wrap: nowrap; }
+  .e-app-shell.has-chat .e-relay-status__chips { gap: 6px; }
+  .e-app-shell.has-chat .e-relay-status__host,
+  .e-app-shell.has-chat .e-relay-status__meta { display: none; }
 }
 .Text_text_1shpo {
   white-space: pre-wrap;

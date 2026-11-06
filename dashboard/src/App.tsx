@@ -91,6 +91,10 @@ function AppInner() {
   // What an overlay covers is out of reach of Tab and of a screen reader: the view under
   // the menu, and the view under full-page chat.
   const mainCovered = navOpen || (narrow && chatIsOpen);
+  // P5: the chat open beside the view takes ~27rem of the header's row; the header then
+  // drops what it can spare (the relay's host and version, the chat button's word) so it
+  // stays on one row and nothing jumps when the chat slides in (dashboard.css, the look's § 11).
+  const chatBeside = chatIsOpen && !narrow;
 
   // From the route at first render: a child effect (GamesView naming its session) runs before
   // App's own effects, so reading the hash later would read the one it just rewrote.
@@ -294,7 +298,7 @@ function AppInner() {
 
   return (
     <RelayHealthCtx.Provider value={relayHealth}>
-    <div ref={shellRef} className={`e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}`}>
+    <div ref={shellRef} className={`e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}${chatBeside ? " has-chat" : ""}`}>
         <aside ref={drawerRef} className="e-app-drawer" aria-label="Menu" inert={!navOpen}>
           <MobileNavDrawer
             view={view}
@@ -332,7 +336,7 @@ function AppInner() {
                   onTint={setTintAndApply}
                 />
                 <ViewerSwitcher />
-                <ChatToggle />
+                <ChatToggle compact={chatBeside} />
                 <RelayStrip
                   relayUrl={RELAY}
                   wsConnected={wsConnected}

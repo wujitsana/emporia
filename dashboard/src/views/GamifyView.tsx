@@ -33,6 +33,7 @@ const short = (s: string | null | undefined, n = 10) => (s ? s.slice(0, n) : "�
 import { VIEWER_ID } from "../relayEnv";
 import { poll } from "../capture";
 import { PixelBadge } from "../badges";
+import { PledgeList } from "../ui/PledgeList";
 
 const game = (m: string) => m.replace("emporia:", "").replace(/:v\d+$/, "");
 const num = { fontVariantNumeric: "tabular-nums" as const };
@@ -121,7 +122,7 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
       <Text className="e-faint" style={num}>
         {trust.counterparties} counterparties · {trust.weeks_active} weeks active · games left on its turn {trust.abandoned_on_turn}
       </Text>
-      {sheet.pledges && <WordLine w={sheet.pledges} />}
+      {sheet.pledges && <><WordLine w={sheet.pledges} /><PledgeList agentId={sheet.agent_id} /></>}
 
       {sheet.renown && (
         <>
@@ -535,7 +536,9 @@ export function GamifyView({ initialAgentId = null }: { initialAgentId?: string 
   );
   return (
     <ViewBody flush toolbar={<Text className="e-faint">This relay runs: {runs.join(", ")} · read-only · computed from outcomes, never issued</Text>}>
-      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={22} initialPane={initialAgentId ? "detail" : "list"}>
+      {/* P1: a phone opens on the detail — the season's boards, or the linked agent's sheet;
+          the rail (Quests, Bug reports, the sheets) is one "← back" away. */}
+      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={22} initialPane="detail" backLabel="quests, reports, sheets">
         {selected === SEASON ? <SeasonOf /> : selected === BUGS ? <BugList /> : selected === IDEAS ? <IdeaList />
           : selected === INCIDENTS ? <IncidentList />
           : selected === QUESTS && VIEWER_ID ? <Quests agentId={VIEWER_ID} />

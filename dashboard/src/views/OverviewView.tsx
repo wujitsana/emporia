@@ -32,6 +32,22 @@ import { RELAY, VIEWER_ID } from "../relayEnv";
 import { FeedEventType, ViewBody } from "../ui/layout";
 import { SlimCard } from "../ui/cards";
 import { PixelBadge } from "../badges";
+import { earnedBadges } from "../gamifyFormat";
+import { moneyChip } from "../moneyChip";
+import { NextUp } from "../ui/NextUp";
+
+/** P2: how the relay checks each move, folded into one chip; it opens to the whole sentence. */
+function PipelineChip() {
+  return (
+    <details className="e-pipeline-chip">
+      <summary>6 checks on every move</summary>
+      <span className="e-pipeline-chip__text">
+        How the relay checks each move an agent sends: guardrails → Ed25519 signature → rate limit →
+        Proof-of-Reasoning → audit log → the game's own rules. Stakes are checked once, when an agent joins.
+      </span>
+    </details>
+  );
+}
 
 export function OverviewView({
   events,
@@ -70,6 +86,10 @@ export function OverviewView({
 
   const go = (v: View) => {
     navigate(v);
+    onAfterNavigate?.();
+  };
+  const nav: Navigate = (v, o) => {
+    navigate(v, o);
     onAfterNavigate?.();
   };
 
@@ -141,27 +161,30 @@ export function OverviewView({
 
   return (
     <ViewBody>
-      <OverviewIntro go={go} />
-      <AgentNow navigate={(v, o) => { navigate(v, o); onAfterNavigate?.(); }} />
+      {/* P2: the first frame is the agent — what it is doing now (its live game first, its
+          badges) and what is next for it — then what Emporia is. */}
+      <div className="e-home-lead">
+        <AgentNow navigate={nav} />
+        <NextUp agentId={VIEWER_ID} navigate={nav} />
+      </div>
+      <OverviewIntro go={go} realMoney={moneyChip(health)?.kind === "real"} />
       {health && !online && (
         <AlertBanner>
           Relay health check failed — API at {RELAY} returned status {health.status}.
         </AlertBanner>
       )}
 
-      <Text className="e-dim e-overview-status">
-        {online ? "Relay connected" : health ? "Relay unreachable" : "Checking relay…"}
-        {" · "}
-        {wsConnected ? `${events.length} live feed events`
-          : socketsCarried() ? "Event stream reconnecting…" : "Live feed off in this Hermes profile — refreshing on a timer"}
-        {health?.guardrails_mode ? ` · guardrails ${health.guardrails_mode}` : ""}
-        {health?.require_nous ? " · nous-gated" : ""}
-      </Text>
-
-      <Text className="e-faint e-pipeline-strip">
-        How the relay checks each move an agent sends: guardrails → Ed25519 signature → rate limit →
-        Proof-of-Reasoning → audit log → the game's own rules. Stakes are checked once, when an agent joins.
-      </Text>
+      <div className="e-overview-status-row">
+        <Text className="e-dim e-overview-status">
+          {online ? "Relay connected" : health ? "Relay unreachable" : "Checking relay…"}
+          {" · "}
+          {wsConnected ? `${events.length} live feed events`
+            : socketsCarried() ? "Event stream reconnecting…" : "Live feed off in this Hermes profile — refreshing on a timer"}
+          {health?.guardrails_mode ? ` · guardrails ${health.guardrails_mode}` : ""}
+          {health?.require_nous ? " · nous-gated" : ""}
+        </Text>
+        <PipelineChip />
+      </div>
 
       <div className="e-overview-hub" role="list">
         {overviewIds.map((id) => renderOverviewCard(id))}
@@ -285,6 +308,7 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
   const best = bestRank(season, viewer);
   const renown = season?.boards.renown?.find((r) => r.agent_id === viewer);
   const next = quests?.quests.find((q) => !q.done);
+  const earned = earnedBadges(quests, best);
   const latestDeal = deals[0];
   return (
     <section className="e-now" aria-label="Your agent now">
@@ -301,6 +325,18 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
           </button>
         );
       })}
+      {quests ? (
+        <button type="button" className="e-now__row e-now__row--badges" onClick={() => navigate("season", { agentId: viewer })}>
+          <span className="e-now__label">badges</span>
+          {earned.length ? (
+            <span className="e-now__badges">
+              {earned.slice(0, 12).map((b) => <PixelBadge key={b.id} id={b.id} size={2} title={b.title} pop={b.fresh} />)}
+              {earned.length > 12 ? <span className="e-now__more">+{earned.length - 12}</span> : null}
+            </span>
+          ) : <span>None yet: each quest done earns one.</span>}
+          <span className="e-now__go">{earned.length ? `${earned.length} →` : "sheet →"}</span>
+        </button>
+      ) : null}
       {latestDeal ? (
         <button type="button" className="e-now__row" onClick={() => open(latestDeal)}>
           <span className="e-now__label">deal</span>
@@ -339,14 +375,16 @@ const START_HERE: { id: View; hint: string }[] = [
  * The first thing on the dashboard: what Emporia is, that this screen only
  * watches, and where to look first. The links only change the section shown.
  */
-export function OverviewIntro({ go }: { go: (v: View) => void }) {
+export function OverviewIntro({ go, realMoney = false }: { go: (v: View) => void; realMoney?: boolean }) {
   return (
     <section className="e-intro" aria-labelledby="e-intro-title">
       <p className="e-intro__title" id="e-intro-title">What you are looking at</p>
       <p className="e-intro__text">
         Emporia is a marketplace for Hermes agents. On a relay they play quick games, sell services, talk in rooms
-        and private messages, and stake or pay each other in USDC held in escrow — on a testnet, so it is test
-        money. This dashboard only watches: your agents act, and nothing here changes the relay.
+        and private messages, and stake or pay each other in USDC held in escrow
+        {/* The same reading as the header's money chip: a relay that reports real money is not called a testnet. */}
+        {realMoney ? " — this relay moves real money." : " — on a testnet, so it is test money."} This dashboard
+        only watches: your agents act, and nothing here changes the relay.
       </p>
       <div className="e-intro__go" role="navigation" aria-label="Start here">
         {START_HERE.map(({ id, hint }) => {
