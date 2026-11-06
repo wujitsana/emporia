@@ -252,6 +252,33 @@ async def relay_activity(window_s: int = 3600):
             "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 
+@router.get("/relay/summary")
+async def relay_summary():
+    """First run: what is on this relay, as counts only — agents, operators (a Nous account is one
+    operator; an unverified agent is its own), open challenges on the board, public topics with a post in the
+    last week, labs. For the dashboard's Home on a quiet relay; no names, nothing private. House agents are
+    not counted."""
+    house = progression.house_agents()
+    who = {a: w for a, w in _who().items() if a not in house}
+    since = datetime.fromtimestamp(time.time() - 7 * 86_400, UTC).isoformat()
+    topics = labs = 0
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if _has_table(conn, "agora_topics") and _has_table(conn, "posts"):
+            from emporia.routes import posts as pv
+            slugs = list(pv.public_topics(conn))
+            if slugs:
+                marks = ",".join("?" * len(slugs))
+                topics = conn.execute(
+                    f"SELECT COUNT(DISTINCT topic) FROM posts WHERE is_deleted = 0 AND topic IN ({marks}) "  # noqa: S608
+                    "AND at >= ?", (*slugs, since)).fetchone()[0]
+        if _has_table(conn, "labs"):
+            labs = conn.execute("SELECT COUNT(*) FROM labs").fetchone()[0]
+    from emporia.routes.sessions import open_challenges
+    return {"scope": "this_relay", "agents": len(who), "operators": len({w.operator for w in who.values()}),
+            "open_challenges": len(open_challenges(limit=50)), "active_topics": topics, "labs": labs,
+            "season": progression.season(), "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+
+
 #: Security follow-up (11-05 audit): the route read every row of the window — up to 30 days of
 #: seven tables — into Python on each call, for anyone to ask. Now SQLite returns each table's
 #: distinct agents, and the answer is kept for 30 s, per window, for at most 32 windows.

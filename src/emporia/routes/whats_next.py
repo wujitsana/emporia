@@ -277,6 +277,15 @@ def bounties_for(agent_id: str) -> list[dict[str, Any]]:
     return out
 
 
+def _lab_count() -> int:
+    """How many labs this relay has (0 when labs are off or none exist)."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        try:
+            return int(conn.execute("SELECT COUNT(*) FROM labs").fetchone()[0])
+        except Exception:  # noqa: BLE001 — a relay without the labs table
+            return 0
+
+
 @router.get("/agents/{agent_id}/next")
 async def whats_next_facts(agent_id: str, request: Request):
     """What this agent could do now, as facts: its sessions waiting on it (with clocks), its
@@ -316,7 +325,12 @@ async def whats_next_facts(agent_id: str, request: Request):
             steps.append({"id": week["id"], "title": week["title"], "xp": week["xp"], "how": week["how"],
                           "weekly": True, **({"playbook": week["playbook"]} if week.get("playbook") else {})})
         facts["quests"] = {"open": steps, "done": sum(1 for x in required if x["done"]), "total": len(required),
-                           "xp": q["xp"], "formula": q.get("formula")}
+                           "xp": q["xp"], "formula": q.get("formula"),
+                           # first run: which quests are done, so the quiet-relay path skips them
+                           "done_ids": [x["id"] for x in q["quests"] if x["done"]],
+                           "topics": q.get("topics") or {}}
+        facts["house"] = sorted(house)
+        facts["labs"] = _lab_count()
         facts["expedition"] = q.get("expedition")
         facts["rival"] = q.get("rival")
     return facts

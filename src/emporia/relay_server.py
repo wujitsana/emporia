@@ -6197,6 +6197,10 @@ async def health(request: Request):
         "session_count": session_count,
         "guardrails_mode": guardrails.DEFAULT_MODE,
         "require_nous": REQUIRE_NOUS,
+        # First run: what a new agent's `emporia doctor` explains — the season this relay runs and
+        # whether starter limits bind new agents (levels.py).
+        "season": _season_public(),
+        "starter_limits": _starter_limits_on(),
         "operator_fee_bps": OPERATOR_FEE_BPS,
         "mpp_enabled": bool(payment_methods),
         "payment_methods": payment_methods,
@@ -6230,6 +6234,16 @@ async def health(request: Request):
         "card_game_stakes": card_game_stakes_allowed(),
         "custodial_cards": custodial_cards_allowed(),
     }
+
+
+def _season_public() -> dict:
+    from emporia import progression
+    return progression.season()
+
+
+def _starter_limits_on() -> bool:
+    from emporia import levels
+    return levels.starter_limits_on()
 
 
 def _chess_lib_available() -> bool:
