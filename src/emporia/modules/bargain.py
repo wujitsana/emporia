@@ -362,7 +362,8 @@ Abandoning once the game has started counts as walking away. No stakes and no pr
             points = {ok: score(ok), refuser: 0}
             winner = ok if points[ok] > 0 else None
             return True, {"winner": winner, "outcome_type": "won" if winner else "draw", "termination": "forfeit",
-                          "reason": f"{refuser} did not reveal its secret", "points": points,
+                          "reason": f"{refuser} did not reveal its secret", "refused_by": refuser,
+                          "points": points,
                           "rating_scores": {p: points[p] / TOTAL for p in participants}, **base}
         a, b = participants
         if hands[a][0] == hands[b][0]:

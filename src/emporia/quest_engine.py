@@ -1,4 +1,4 @@
-"""`quests:v4`: the engine that reads the quest book (`quest_book.py`) against the relay's records.
+"""`quests:v5`: the engine that reads the quest book (`quest_book.py`) against the relay's records.
 
 `docs/proposals/quests-v4.md`. Records become events once (`events`); every condition in the book is
 checked against them (`judge`); `evaluate` puts the answer together — quests, arcs, tracks, the weekly
@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from emporia import levels as L
 from emporia import quest_book as B
 from emporia.calls import ALL_SET_PLAYS
 from emporia.quests import BARGAIN, DEBRIEFS_TOPIC, DONE_DEALS, IDEAS_TOPIC, SET_PLAYS, V3, debriefs
@@ -347,6 +348,137 @@ def _how(text: str, ctx: Ctx) -> str:
     return text.format(ideas=names["ideas"], debriefs=names["debriefs"])
 
 
+#: how a game ended without every reveal made or a result: it pays nobody (`forfeit` pays the non-refuser)
+_NO_PLAY = frozenset({"no_reveals", "unrevealed", "void", "collision", "timeout", "forfeit", "late_commit"})
+
+
+def _payable(g: Mapping, p: str) -> bool:
+    """Whether the game finished for `p`: it reached its end with every reveal made. A refused reveal
+    (`forfeit`, `refused_by`) pays the player who revealed, never the refuser; a void, a collision, a
+    timeout or an unreadable ending pays nobody."""
+    t = g.get("termination")
+    if not t:
+        return False
+    if t == "forfeit":
+        return bool(g.get("refused_by")) and g.get("refused_by") != p
+    return t not in _NO_PLAY and not g.get("abandoned_by")
+
+
+def play_xp(agent_id: str, games: Iterable[Mapping], ctx: Ctx, now: float | None = None) -> dict:
+    """`play:v1`: XP for playing, from finished public games — `games` are those of the agent and of its
+    operator's other agents (the operator cap needs them). Each game against another operator's agent
+    (`vs`: never the house, never the agent's own operator, under `verified` both Nous-verified) pays
+    `PLAY.xp` to each player, win or lose. Caps, counting games in completion order (ended_at, then session
+    id): PLAY.agent_day per agent and PLAY.operator_day per operator per UTC day; only the first
+    PLAY.pair_week games per ISO week against one opposing operator pay (a game counts toward it whether or
+    not a daily cap then cut it). Returns {formula, xp, week, today, day_cap, operator_today, operator_cap}."""
+    cfg = B.PLAY
+    now = datetime.now(UTC).timestamp() if now is None else now
+    today = datetime.fromtimestamp(now, UTC).date().isoformat()
+    this_week = week_of(datetime.fromtimestamp(now, UTC).isoformat())
+    mine = ctx.operator(agent_id)
+    ordered: dict[str, Mapping] = {}
+    for g in games:
+        ordered.setdefault(str(g.get("session_id")), g)
+    ordered_games = sorted(ordered.values(), key=lambda g: (_iso(g.get("ended_at")) or datetime.max.replace(tzinfo=UTC),
+                                                            str(g.get("session_id"))))
+    agent_day: dict[tuple[str, str], int] = {}
+    op_day: dict[str, int] = {}
+    pair_week: dict[tuple[str, str], int] = {}
+    total = week = 0
+    for g in ordered_games:
+        players = list(dict.fromkeys(g.get("participants") or []))
+        d = _iso(g.get("ended_at"))
+        if len(players) < 2 or d is None:
+            continue
+        day = d.astimezone(UTC).date().isoformat()
+        wk = week_of(g.get("ended_at"))
+        for p in players:
+            if p in ctx.house or ctx.operator(p) != mine or not _payable(g, p):
+                continue
+            opps = [o for o in players if o != p]
+            if any(vs(p, o, ctx) != "other" for o in opps):
+                continue
+            keys = [(wk, ctx.operator(o)) for o in opps]
+            fresh = all(pair_week.get(k, 0) < cfg["pair_week"] for k in keys)
+            for k in keys:
+                pair_week[k] = pair_week.get(k, 0) + 1
+            if not fresh:
+                continue
+            got = min(cfg["xp"], cfg["agent_day"] - agent_day.get((p, day), 0), cfg["operator_day"] - op_day.get(day, 0))
+            if got <= 0:
+                continue
+            agent_day[(p, day)] = agent_day.get((p, day), 0) + got
+            op_day[day] = op_day.get(day, 0) + got
+            if p == agent_id:
+                total += got
+                week += got if wk == this_week else 0
+    return {"formula": cfg["formula"], "xp": total, "week": week, "today": agent_day.get((agent_id, today), 0),
+            "day_cap": cfg["agent_day"], "operator_today": op_day.get(today, 0), "operator_cap": cfg["operator_day"],
+            "pair_week_cap": cfg["pair_week"]}
+
+
+SEASON_FORMULA = "season:v1/xp"
+
+
+def _before(rows: Iterable[Mapping], key: str, cut: float | None) -> list[Mapping]:
+    """The records whose time is before `cut` (all of them when `cut` is None); an unreadable time is out."""
+    out = []
+    for r in rows:
+        d = _iso(r.get(key))
+        if d is not None and (cut is None or d.timestamp() < cut):
+            out.append(r)
+    return out
+
+
+def season_row(agent_id: str, evs: Iterable[Mapping], play_games: Iterable[Mapping], ctx: Ctx, window: Mapping,
+               now: float | None = None, expeditions: Iterable[Mapping] = ()) -> dict:
+    """An agent's season: `xp` earned in the window, and its `level` and `badges` as of the window's end.
+
+    Season XP is the XP whose qualifying records fall in [start, end): the total XP over the records before
+    the end minus the total over the records before the start (v3's carry-over left out: only records count).
+    Each part is `evaluate`, so quests, arcs, tracks, weekly quests and play XP are counted as they always are;
+    XP never falls as records are added, so the difference is never negative. `window`: {started_at, ends_at}
+    as ISO times, either may be empty (no start: all history; no end: up to now)."""
+    def cut(t) -> float | None:
+        d = _iso(t) if t else None
+        return d.timestamp() if d else None
+    start, end = cut(window.get("started_at")), cut(window.get("ends_at"))
+    evs, play_games, expeditions = list(evs), list(play_games), list(expeditions)
+    now = datetime.now(UTC).timestamp() if now is None else now
+
+    def total(c: float | None) -> dict:
+        return evaluate(agent_id, _before(evs, "at", c), ctx, now=now if c is None else min(now, c),
+                        expeditions=expeditions, play_games=_before(play_games, "ended_at", c))
+    upto = total(end)
+    base = total(start)["xp"] if start is not None else 0
+    return {"xp": max(0, upto["xp"] - base), "level": upto["level"]["level"], "badges": len(upto["badges"])}
+
+
+def records_hash(per_agent: Mapping[str, tuple[Iterable[Mapping], Iterable[Mapping]]]) -> str:
+    """A hash of the records a standing was computed from: each agent's events and play games, sorted."""
+    import hashlib
+    import json
+    rows = {a: {"events": [dict(e) for e in evs],
+                "games": sorted((str(g.get("session_id")), str(g.get("ended_at")), str(g.get("termination")),
+                                 sorted(g.get("participants") or [])) for g in games)}
+            for a, (evs, games) in sorted(per_agent.items())}
+    return hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def season_standings(per_agent: Mapping[str, tuple[Iterable[Mapping], Iterable[Mapping]]], ctx: Ctx,
+                     window: Mapping, now: float | None = None, expeditions: Iterable[Mapping] = ()) -> list[dict]:
+    """Everyone with season XP, most first (ties by agent id): [{rank, agent_id, season_xp, level, badges}].
+    Ordered by season XP only; the level and badge count are shown, never ranked."""
+    rows = []
+    for a, (evs, games) in per_agent.items():
+        r = season_row(a, evs, games, ctx, window, now, expeditions)
+        if r["xp"] > 0:
+            rows.append({"agent_id": a, "season_xp": r["xp"], "level": r["level"], "badges": r["badges"]})
+    rows.sort(key=lambda r: (-r["season_xp"], r["agent_id"]))
+    return [{"rank": i, **r} for i, r in enumerate(rows, 1)]
+
+
 def _rival(evs: Iterable[Mapping]) -> dict | None:
     """P4 rivalries: the other operator's agent it has finished most public games against (2+)."""
     tally: dict[str, dict] = {}
@@ -366,10 +498,11 @@ def _rival(evs: Iterable[Mapping]) -> dict | None:
 
 def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = None, now: float | None = None,
              expeditions: Iterable[Mapping] = (), pending_report: bool = False,
-             feats_done: Iterable[Mapping] = ()) -> dict:
-    """`quests:v4` for one agent: from its events, the v3 answer to carry over (`quests.progress`), the
+             feats_done: Iterable[Mapping] = (), play_games: Iterable[Mapping] = ()) -> dict:
+    """`quests:v5` for one agent: from its events, the v3 answer to carry over (`quests.progress`), the
     expeditions posted so far (the weekly quest), whether a bug report of its waits on a verdict, and
-    v3's Trader and Voice feats computed with v4's rule (`quests.feats(operator=counted_operator(...))`)."""
+    v3's Trader and Voice feats computed with v4's rule (`quests.feats(operator=counted_operator(...))`), and
+    `play_games`: the finished public games of the agent and its operator's other agents (`play_xp`)."""
     me = agent_id
     now = datetime.now(UTC).timestamp() if now is None else now
     nous = ctx.others != "any" and not ctx.verified(me)
@@ -487,8 +620,10 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
     for b in carried_badges:
         add(b)
 
-    xp = sum(B.QUESTS[q]["xp"] for q in done) + xp_arcs + xp_tracks + B.WEEKLY_XP * len(weekly_done)
-    return {"formula": FORMULA, "agent_id": me, "xp": xp, "quests": quests, "arcs": arcs, "tracks": tracks,
+    play = play_xp(me, play_games, ctx, now)
+    xp = sum(B.QUESTS[q]["xp"] for q in done) + xp_arcs + xp_tracks + B.WEEKLY_XP * len(weekly_done) + play["xp"]
+    crossed = play["xp"] > 0 or any(q["done"] and _wants_other(B.QUESTS[q["id"]]["when"]) for q in quests)
+    return {"formula": FORMULA, "agent_id": me, "xp": xp, "play": play, "level": L.describe(xp, crossed), "quests": quests, "arcs": arcs, "tracks": tracks,
             "weekly": {**current, "weeks_done": len(weekly_done)}, "feats": feats, "badges": badges,
             "next": next((a["next"]["how"] for a in arcs if a["next"]), ""), "rival": _rival(evs),
             "rules": {"others": ctx.others},

@@ -4,12 +4,15 @@ importing the relay. relay_server re-exports it."""
 
 # Bump it whenever the schema changes — a test computes a fingerprint of every
 # table and column and fails if the shape moved without this number moving.
-SCHEMA_VERSION = 38
+SCHEMA_VERSION = 39
 
 # P294: agent ids, recovery commitments and listing ids moved from SHA3-256 to SHA-256
 # (`v2` labels). A database from before holds the old ids inside what agents signed, so it
 # cannot be migrated — the relay refuses it (relay_server._assert_ids_are_sha256).
 IDS_SHA256_SINCE = 30
+
+# Season board (in the fresh v2 schema): `season_finals`, a season's signed final standing, frozen when first served after the
+# season's end (a new table only; the relay starts fresh, so nothing is migrated).
 
 # V30 -> V31 (P297): `likes`, an agent's signed like of something public (a new table only).
 # V31 -> V32 (launch additions): `idea_verdicts`, the operator's signed verdict on a post in the ideas topic
@@ -37,4 +40,4 @@ IDS_SHA256_SINCE = 30
 # V36 -> V37 (rooms v2): a room message, a DM and table talk are posts. `room_messages.reply_to` / `root` (a plain
 # room's reply links, kept by the relay; NULL in an encrypted room, where the relay learns no structure) and
 # `game_chat.kind` / `tags_json` / `reply_to` / `quote_of` / `root` / `step`. The log gains the kind `room_message`.
-# Fresh start for v2: both sides above are plain CREATE statements in one schema, version 38 (no upgrade chain).
+# Fresh start for v2: both sides above are plain CREATE statements in one schema, version 39 (no upgrade chain; the season board is season_finals).

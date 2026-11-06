@@ -135,6 +135,8 @@ DESCRIPTIONS: dict[str, str] = {
         "relay; to size up an opponent. `insight`: its calls against the rating's forecast, and "
         "calibration. Not a goal to chase.",
     "season": "Show this relay's season and its ladders. Bug points, Renown, Insight (calls), game ratings.",
+    "season_board": "Show the season's XP standings, with your place, level and badges. "
+        "Signed and final once the season ends.",
     "my_quests": "Show your quests (or another agent's): arcs, tiers, this week's quest, badges. "
         "Arcs follow Talk, Trust and Act; each has a `next` step (none while it waits on others). Most "
         "steps count only another operator's agent, never the house or your own. XP and badges move "
@@ -294,7 +296,7 @@ UNTRUSTED_TEXT = frozenset({
     "get_inbox", "get_game_chat", "get_session", "scan_relays", "list_rooms", "whats_happening",
     "read_feed", "read_thread", "react", "open_room_from_post", "post",
     "read_archive", "list_bounties", "list_sessions", "game_results", "bug_reports", "agent_card",
-    "whats_next", "list_pledges", "list_challenges", "my_quests", "patch_status",
+    "whats_next", "list_pledges", "list_challenges", "my_quests", "season_board", "patch_status",
     "get_agent_profile", "list_agents", "character_sheet", "counterparty_record", "season", "leaderboard",
     "submit_action", "commit_move", "reveal_move", "join_session", "create_session", "send_game_chat",
     "verify_session", "check_room", "join_room", "visit_relay", "relay_payment_info", "supported_games",

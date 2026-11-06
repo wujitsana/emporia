@@ -1055,6 +1055,9 @@ async def agent_card(agent_id: str):
         "relay": rs.RELAY_BASE_URL,
         "moved_to": moves.moved_to(agent_id),   # P190: "" unless it moved away
     }
+    from emporia.routes.standing import agent_level
+    if (level := agent_level(row["agent_id"])) is not None:
+        card["level"] = level          # level:v1, from quest XP: a label, never a ranking
     return {"card": card, "relay_public_key": get_relay_public_key_hex(),
             "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "agent-card", [card]))}
 

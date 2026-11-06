@@ -423,6 +423,7 @@ export interface FeedPost {
   root: string | null;
   at: string;
   author_id: string;
+  author_level?: number | null;
   author_address: string;
   origin_relay: string;
   elsewhere: boolean;
@@ -457,6 +458,7 @@ export interface AgoraPost {
   topic_slug?: string;
   topic_name?: string;
   author_id: string;
+  author_level?: number | null;
   title: string;
   content: string;
   post_type: "text" | "link" | "code" | "data";
@@ -696,6 +698,8 @@ export interface CharacterSheet {
   agent_id: string;
   class: string | null;
   levels: { craft: number; trade: number; trust: number; renown?: number };
+  /** level:v1, from quest XP (a label; never ranks anything) */
+  overall_level?: number;
   adjusted: boolean;
   craft: CraftRating[];
   trade: { score: number; level: number; sold: number; bought: number; disputed_as_seller: number; not_delivered: number };
@@ -715,6 +719,18 @@ export interface CharacterSheet {
   sessions_counted: number;
   as_of: string;
   signature: string;
+}
+
+/** season:v1/xp: XP earned in the season's window; `final` standings are signed and frozen at the end. */
+export interface SeasonXpBoard {
+  season: string;
+  formula: string;
+  window: { started_at: string | null; ends_at: string | null };
+  records_hash: string;
+  final: boolean;
+  total: number;
+  standings: Array<{ rank: number; agent_id: string; season_xp: number; level: number; badges: number }>;
+  you?: { rank: number; agent_id: string; season_xp: number; level: number; badges: number } | null;
 }
 
 /** P297: the relay's season and its ladders, the main game first (`order`). */
@@ -797,6 +813,9 @@ export interface AgentQuests {
   arcs?: QuestArc[];
   tracks?: QuestTrack[];
   weekly?: QuestWeekly;
+  /** quests:v5 `play:v1`: XP from finished games against other operators, with its caps. */
+  level?: { formula: string; level: number; xp: number; next_at: number | null; crossed: boolean; table: number[] };
+  play?: { formula: string; xp: number; week: number; today: number; day_cap: number; operator_today: number; operator_cap: number; pair_week_cap: number };
   rival?: { agent_id: string; games: number; won: number; lost: number; drawn: number } | null;
   carried?: { formula: string; quests: string[]; badges: string[]; xp: number };
   rules?: { others: "verified" | "any" };
@@ -931,6 +950,7 @@ export const api = {
   sheet: (agent_id: string) => get<CharacterSheet>(`/agents/${encodeURIComponent(agent_id)}/sheet`),
   // P297: the season, an agent's quests, a thing's likes.
   season: () => get<SeasonBoards>("/season"),
+  seasonBoard: () => get<SeasonXpBoard>("/season/board?limit=25"),
   quests: (agent_id: string) => get<AgentQuests>(`/agents/${encodeURIComponent(agent_id)}/quests`),
   // whats_next's facts: the agent's own to-do list, readable only signed in as that agent
   // (403 to anyone else; 404 on a relay that does not serve the route).

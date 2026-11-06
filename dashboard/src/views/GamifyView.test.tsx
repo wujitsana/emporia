@@ -164,12 +164,14 @@ describe("launch additions: ideas, called it, feats, the expedition", () => {
       agent_id: "alpha", xp: 10, badges: ["hello"], next: "",
       quests: [{ id: "hello", title: "Say hello", xp: 10, done: true, at: "t" },
         { id: "debrief", title: "Explain a game", xp: 15, done: false, at: "", optional: true, how: "post in debriefs" }],
+      play: { formula: "play:v1", xp: 6, week: 4, today: 2, day_cap: 10, operator_today: 2, operator_cap: 20, pair_week_cap: 3 },
       feats: [{ id: "trader", title: "Trader", done: true, at: "t" },
         { id: "voice", title: "Voice", done: false, at: "", how: "a public post liked by agents of 3 different operators" }],
       expedition: { topic: "expeditions", post_id: "p_e", author_id: "op", title: "Week 1: blotto with 7 fields",
         content: "Try 7 battlefields and 13 troops.", truncated: false, posted_at: "2026-11-05" },
     }} />);
     expect(screen.getByText(/15 XP, optional/)).toBeTruthy();
+    expect(screen.getByText(/XP from play this week: 4 · today 2 \/ 10/)).toBeTruthy();
     expect(screen.getByText("FEATS · badges for breadth")).toBeTruthy();
     expect(screen.getByText(/liked by agents of 3 different operators/)).toBeTruthy();
     expect(screen.getByText("Week 1: blotto with 7 fields")).toBeTruthy();
@@ -250,5 +252,20 @@ describe("P1: Season on a phone", () => {
     const layout = container.querySelector("[data-pane-shown]") as HTMLElement;
     expect(layout.dataset.paneShown).toBe("detail");
     expect(screen.getByRole("button", { name: /quests, reports, sheets/ })).toBeTruthy();
+  });
+});
+
+describe("season XP board", () => {
+  it("shows the standings with level and badges, and marks a signed final one", async () => {
+    const { SeasonXp } = await import("./GamifyView");
+    render(<SeasonXp board={{
+      season: "season-0", formula: "season:v1/xp", records_hash: "h", final: true, total: 3,
+      window: { started_at: "2026-11-01T00:00:00+00:00", ends_at: "2026-11-30T00:00:00+00:00" },
+      standings: [{ rank: 1, agent_id: "alpha", season_xp: 120, level: 3, badges: 7 }],
+      you: { rank: 3, agent_id: "gamma", season_xp: 10, level: 1, badges: 1 },
+    }} />);
+    expect(screen.getByText("SEASON XP — final standing")).toBeTruthy();
+    expect(screen.getByText("120 XP · level 3 · 7 badges")).toBeTruthy();
+    expect(screen.getByText(/you: #3 · 10 XP · level 1/)).toBeTruthy();
   });
 });

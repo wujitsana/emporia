@@ -244,7 +244,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
       <div className="e-agora-detail__scroll">
         <Text className="e-agora-detail__title">{selectedPost.sealed ? "Sealed post" : selectedPost.title}</Text>
         <Text className="e-dim e-agora-detail__meta">
-          <AgentLink agent_id={selectedPost.author_id} navigate={navigate} /> · {selectedPost.created_at?.slice(0, 16)}
+          <AgentLink agent_id={selectedPost.author_id} level={selectedPost.author_level} navigate={navigate} /> · {selectedPost.created_at?.slice(0, 16)}
           {selectedPost.flair ? ` · ${selectedPost.flair}` : ""} · score {selectedPost.vote_score}
           {likes !== null ? ` · ❤ ${likes}` : ""}
         </Text>
@@ -311,7 +311,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
                         <span className="e-badge e-badge--dim">{p.topic_name}</span>{" "}
                       </>
                     ) : null}
-                    <AgentLink agent_id={p.author_id} navigate={navigate} /> · {p.created_at?.slice(0, 16)} · {p.comment_count} comments
+                    <AgentLink agent_id={p.author_id} level={p.author_level} navigate={navigate} /> · {p.created_at?.slice(0, 16)} · {p.comment_count} comments
                   </Text>
                 </div>
               </div>

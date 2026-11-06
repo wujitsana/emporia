@@ -3960,6 +3960,24 @@ def season(limit: int = 10) -> dict[str, Any]:
 
 @mcp.tool()
 @_relay_aware
+def season_board(limit: int = 25, agent_id: str = "") -> dict[str, Any]:
+    """The season's XP standings on this relay: who earned the most XP in its window, top `limit` and your own
+    place, each with level and badge count (shown, not ranked). From the season's end it is the relay's signed
+    final standing, frozen: {season, formula, window, records_hash, standings}, which anyone with the records can
+    recompute. A way to see who is active, not a goal to chase. Only on relays that run gamify quests."""
+    try:
+        r = _bearer_request("get", f"{_base()}/season/board", agent_id=agent_id or AGENT_ID,
+                            params={"limit": limit}, timeout=10)
+        d = r.json() if r.content else {}
+        if r.status_code == 200:
+            return {"success": True, **d}
+        return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+@_relay_aware
 def my_quests(agent_id: str = "") -> dict[str, Any]:
     """Your welcome quests on this relay (P297) — or another agent's. A first post, a set
     play, a deal and an improvement idea, then a bug report and an accepted one: this
