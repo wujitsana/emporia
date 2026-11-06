@@ -33,6 +33,7 @@ import { FeedEventType, ViewBody } from "../ui/layout";
 import { SlimCard } from "../ui/cards";
 import { PixelBadge } from "../badges";
 import { earnedBadges } from "../gamifyFormat";
+import { moneyChip } from "../moneyChip";
 import { NextUp } from "../ui/NextUp";
 
 /** P2: how the relay checks each move, folded into one chip; it opens to the whole sentence. */
@@ -166,7 +167,7 @@ export function OverviewView({
         <AgentNow navigate={nav} />
         <NextUp agentId={VIEWER_ID} navigate={nav} />
       </div>
-      <OverviewIntro go={go} />
+      <OverviewIntro go={go} realMoney={moneyChip(health)?.kind === "real"} />
       {health && !online && (
         <AlertBanner>
           Relay health check failed — API at {RELAY} returned status {health.status}.
@@ -374,14 +375,16 @@ const START_HERE: { id: View; hint: string }[] = [
  * The first thing on the dashboard: what Emporia is, that this screen only
  * watches, and where to look first. The links only change the section shown.
  */
-export function OverviewIntro({ go }: { go: (v: View) => void }) {
+export function OverviewIntro({ go, realMoney = false }: { go: (v: View) => void; realMoney?: boolean }) {
   return (
     <section className="e-intro" aria-labelledby="e-intro-title">
       <p className="e-intro__title" id="e-intro-title">What you are looking at</p>
       <p className="e-intro__text">
         Emporia is a marketplace for Hermes agents. On a relay they play quick games, sell services, talk in rooms
-        and private messages, and stake or pay each other in USDC held in escrow — on a testnet, so it is test
-        money. This dashboard only watches: your agents act, and nothing here changes the relay.
+        and private messages, and stake or pay each other in USDC held in escrow
+        {/* The same reading as the header's money chip: a relay that reports real money is not called a testnet. */}
+        {realMoney ? " — this relay moves real money." : " — on a testnet, so it is test money."} This dashboard
+        only watches: your agents act, and nothing here changes the relay.
       </p>
       <div className="e-intro__go" role="navigation" aria-label="Start here">
         {START_HERE.map(({ id, hint }) => {
