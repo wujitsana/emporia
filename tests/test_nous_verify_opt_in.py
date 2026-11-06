@@ -58,6 +58,34 @@ def test_login_turns_verification_on_for_the_profile_it_signs_in(tmp_path, monke
     assert oct((profile / ".env").stat().st_mode)[-3:] == "600"
 
 
+def test_login_signs_in_the_profile_hermes_ran_it_for(tmp_path, monkeypatch):
+    """Release review (11-06): `hermes -p shop emporia login` signed in the profile holding the
+    runtime (a profile setup made shares the runtime of the one that made it), and
+    `hermes emporia login --profile shop` cannot say otherwise: Hermes takes `--profile` as its
+    own switch. The plugin hands the runtime the calling profile's HERMES_HOME; login uses it."""
+    import argparse
+
+    from emporia import cli
+    root = tmp_path / "root"
+    for name in ("maker", "shop"):
+        (root / "profiles" / name).mkdir(parents=True)
+        (root / "profiles" / name / "config.yaml").write_text("model: {}\n")
+    monkeypatch.setattr(cli, "this_profile", lambda: root / "profiles" / "maker")
+    monkeypatch.setattr(cli, "hermes_root", lambda: root)
+    signed = []
+    monkeypatch.setattr(cli, "profile_dir", lambda name: root / "profiles" / name)
+    monkeypatch.setattr(cli.subprocess, "run", lambda argv, **k: signed.append(argv[2]))
+    monkeypatch.setattr(nous_token, "from_hermes", lambda p=None: "")
+    monkeypatch.setenv("HERMES_HOME", str(root / "profiles" / "shop"))
+    cli.cmd_login(argparse.Namespace(profile=""))
+    monkeypatch.setenv("HERMES_HOME", str(root))                  # the root: no profile named
+    cli.cmd_login(argparse.Namespace(profile=""))
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "elsewhere" / "profiles" / "shop"))
+    cli.cmd_login(argparse.Namespace(profile=""))                  # another root's: not ours
+    cli.cmd_login(argparse.Namespace(profile="shop"))              # a name given still wins
+    assert signed == ["shop", "maker", "maker", "shop"], signed
+
+
 @pytest.mark.parametrize("verify,sent", [("", False), ("1", True)])
 def test_register_agent_carries_the_token_only_when_verification_is_on(monkeypatch, verify, sent):
     from emporia import mcp_server, wire

@@ -142,7 +142,7 @@ That folder is self-contained:
 1. **Export the hash-locked requirements** (`scripts/pin_plugin_runtime.py --export`, needs uv) and commit `installer/runtime-requirements.txt` with the code: it is what pip installs when a machine has no uv.
 2. **Commit and push the code,** then pin the runtime: `scripts/pin_plugin_runtime.py`. It writes `emporia_source.json` and refuses a dirty tree or a commit `origin` lacks. It also refuses a commit whose `installer/runtime-requirements.txt` is not what its own uv.lock exports.
 3. **Commit that file and push.** This second commit is the one the catalog pins.
-4. **Check from a clean Hermes home.** Install the pinned plugin, then run `hermes emporia setup --profile test-agent`, then `hermes emporia doctor`.
+4. **Check from a clean Hermes home.** Install the pinned plugin, then run `hermes emporia setup --agent-profile test-agent`, then `hermes emporia doctor`.
 
 **The catalog entry (draft, not submitted):** `plugin-catalog/emporia.yaml` in NousResearch/hermes-agent.
 

@@ -38,7 +38,30 @@ def test_without_a_terminal_it_asks_nothing_and_needs_the_choice_as_a_flag(capsy
         assert setup_cli.cmd_setup(_args()) == 2
     finally:
         sys.stdin = real
-    assert "--profile" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "--agent-profile shop" in out and "--profile shop" not in out.replace("--agent-profile", "")
+
+
+def _option_strings(parser):
+    for action in parser._actions:
+        yield from action.option_strings
+        if isinstance(action, argparse._SubParsersAction):
+            for sub in action.choices.values():
+                yield from _option_strings(sub)
+
+
+def test_no_option_of_hermes_emporia_is_one_hermes_takes_for_itself():
+    """Release review (11-06): Hermes reads `--profile NAME`, `--profile=NAME` and `-p NAME` anywhere
+    on its command line as its own profile switch, and strips them before a plugin's parser runs.
+    `hermes emporia setup --profile shop` therefore never reached setup ("Profile 'shop' does not
+    exist"). The agent profile is `--agent-profile`."""
+    parser = argparse.ArgumentParser()
+    setup_cli.register_cli(parser)
+    options = set(_option_strings(parser))
+    assert not {o for o in options if o in ("-p", "--profile") or o.startswith("--profile=")}, options
+    setup = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction)).choices["setup"]
+    args = setup.parse_args(["--agent-profile", "shop", "--relay", "https://r.test", "--", "--role", "marketplace"])
+    assert (args.profile, args.relay, args.rest) == ("shop", "https://r.test", ["--", "--role", "marketplace"])
 
 
 @pytest.mark.parametrize("bad", ["../escape", "a/b", "-dash", "Bad Name", "x" * 65, "root", "default"])

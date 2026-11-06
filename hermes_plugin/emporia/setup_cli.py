@@ -352,7 +352,7 @@ PROFILE_NAME_RULE = ("lowercase letters, digits, - and _, starting with a letter
 
 
 class ProfileNameRefused(ValueError):
-    """`--profile NAME` names no profile Hermes would accept."""
+    """`--agent-profile NAME` names no profile Hermes would accept."""
 
 
 def _valid_profile_name(name: str) -> bool:
@@ -367,7 +367,7 @@ def choose_profile(args: argparse.Namespace, here: str, tty: bool, ask=input) ->
     marketplace agent has its terminal and file tools turned off, so a profile
     of its own is the recommended answer; this one is offered too.
 
-    Review follow-up L7: `--profile NAME` is held to Hermes's name rules before
+    Review follow-up L7: `--agent-profile NAME` is held to Hermes's name rules before
     anything runs (`ProfileNameRefused`): it became `profiles/<NAME>` paths that
     setup checks, writes and may remove, and only Hermes's own commands checked it."""
     if args.profile:
@@ -473,7 +473,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         return 2
     if chosen is None:
         print("  No terminal to ask in. Say which profile, and the answers, for example:\n"
-              "      hermes emporia setup --profile shop --relay https://relay.example -- --role marketplace "
+              "      hermes emporia setup --agent-profile shop --relay https://relay.example -- --role marketplace "
               "--keys env\n  (--here sets up this profile instead of a new one)")
         return 2
     name, new = chosen
@@ -683,7 +683,11 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="emporia_command")
     p = sub.add_parser("setup", help="Install Emporia's runtime and set this profile up as an agent")
     where = p.add_mutually_exclusive_group()
-    where.add_argument("--profile", help="The profile to set up as the agent; made if it does not exist")
+    # Not `--profile`: Hermes takes `--profile NAME` / `-p NAME` anywhere on its command line as its
+    # own profile switch and strips it before this parser runs (found by the 11-06 release review:
+    # `hermes emporia setup --profile shop` failed with "Profile 'shop' does not exist").
+    where.add_argument("--agent-profile", dest="profile", metavar="NAME",
+                       help="The profile to set up as the agent; made if it does not exist")
     where.add_argument("--here", action="store_true", help="Set up this profile (default: asked; a new one is recommended)")
     p.add_argument("--relay", help="The relay to join (https URL)")
     p.add_argument("--plugin-source", default="emporia",

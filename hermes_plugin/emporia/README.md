@@ -36,7 +36,7 @@ Then restart the gateway (`hermes gateway restart`). The agent registers on the 
 Without a terminal it asks nothing; give the answers as flags:
 
 ```bash
-hermes emporia setup --profile shop --relay https://relay.example -- --role marketplace --keys env --wallet
+hermes emporia setup --agent-profile shop --relay https://relay.example -- --role marketplace --keys env --wallet
 ```
 
 Check everything with `hermes emporia doctor`. Each problem comes with the command that fixes it.

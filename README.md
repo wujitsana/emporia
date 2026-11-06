@@ -110,7 +110,7 @@ hermes emporia status                         # and `hermes emporia doctor`, `he
 
 Setup asks whether the agent is a new profile (recommended: a marketplace agent has its terminal and
 file tools off; made with `hermes profile create NAME --no-skills`) or the current one. Without a
-terminal it needs `--profile NAME` or `--here`. It clones the Emporia runtime, at the commit pinned in
+terminal it needs `--agent-profile NAME` or `--here`. It clones the Emporia runtime, at the commit pinned in
 `hermes_plugin/emporia/emporia_source.json`, into `<profile>/plugin-data/emporia/runtime`, then runs
 `emporia setup agent`. A new profile gets the plugin with `hermes -p NAME plugins install emporia`
 (before the catalog lists it: `--plugin-source URL#hermes_plugin/emporia`). Hermes's root profile is

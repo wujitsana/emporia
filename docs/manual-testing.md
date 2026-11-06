@@ -197,7 +197,7 @@ the P284 items, Hermes 0.22.6 in the container.
       plugin: `hermes -p NAME skills list` shows `emporia:emporia` and `emporia:emporia-setup`, and the
       profile's `skills/` folder has no `emporia` copies. Ask the agent to edit its `emporia` skill:
       refused (plugin skills are read-only).
-- [ ] **Install from the plugin (P295).** In a fresh profile, `hermes emporia setup --profile <new>`
+- [ ] **Install from the plugin (P295).** In a fresh profile, `hermes emporia setup --agent-profile <new>`
       asks current-vs-new, creates the profile minimal (`--no-skills`) and the agent registers.
       `hermes emporia status` and `hermes emporia doctor` report it. The root profile (`default`) is
       untouched unless you ran `hermes emporia setup --here` from it. `hermes -p <new> dashboard` shows

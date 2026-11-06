@@ -4698,12 +4698,28 @@ def cmd_update(args: argparse.Namespace) -> int:
     return 0
 
 
+def _calling_profile() -> str:
+    """The named Hermes profile this command was run for, when `hermes -p NAME emporia …` ran it
+    (the plugin hands the runtime that profile's HERMES_HOME). Found by the 11-06 release review:
+    `hermes -p shop emporia login` signed in the profile holding the runtime, which a profile setup
+    made shares with the one that made it, and `hermes emporia login --profile shop` cannot say
+    otherwise (Hermes takes `--profile` as its own switch)."""
+    raw = os.environ.get("HERMES_HOME", "").strip()
+    if not raw:
+        return ""
+    home = Path(raw).expanduser().resolve()
+    if (home.parent.name == "profiles" and (home / "config.yaml").is_file()
+            and home.parent.parent == hermes_root().resolve()):
+        return home.name
+    return ""
+
+
 def cmd_login(args: argparse.Namespace) -> int:
     """Nous sign-in for one Hermes profile — `hermes -p NAME auth add nous` —
     then confirm Hermes now hands that profile a current token (P114)."""
     from emporia import nous_token
 
-    name = args.profile or (this_profile().name if this_profile() else "")
+    name = args.profile or _calling_profile() or (this_profile().name if this_profile() else "")
     profile = profile_dir(name)
     if not name or not (profile / "config.yaml").exists():
         print(f"login: no Hermes profile {name!r} under {profiles_root()}")
