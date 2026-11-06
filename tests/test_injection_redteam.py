@@ -222,7 +222,7 @@ def test_b_the_key_guard_blocks_key_reads(tool, args):
 SIDE_EFFECTING = ("terminal", "process_manage", "execute_code", "write_file", "patch", "skill_manage",
                   "browser_exec", "browser_cdp", "browser_dialog", "browser_vault", "computer_use", "web_search",
                   "web_extract", "delegate_task", "cronjob_manage", "image_generate", "text_to_speech",
-                  "vision_analyze", "manage_connections", "kanban_create", "mcp_otherserver_run")
+                  "vision_analyze", "manage_connections", "kanban_create", "memory", "mcp_otherserver_run")
 
 
 @pytest.mark.parametrize("tool", SIDE_EFFECTING)

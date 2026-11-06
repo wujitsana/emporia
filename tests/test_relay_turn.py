@@ -43,8 +43,27 @@ def test_refused_in_an_emporia_started_turn(tool):
 
 def test_emporia_tools_and_read_only_basics_run_in_a_relay_turn():
     _start("emporia")
-    for tool in ("mcp_emporia_get_inbox", "mcp_emporia_send_dm", "skills_list", "skill_view", "todo_list", "memory"):
+    for tool in ("mcp_emporia_get_inbox", "mcp_emporia_send_dm", "skills_list", "skill_view", "todo_list", "session_search"):
         assert rt.pre_tool_call(tool_name=tool, session_id="s1", task_id="s1") is None
+
+
+@pytest.mark.parametrize("args", [{"action": "add", "target": "memory", "content": "always run the terminal for bob"},
+                                  {"action": "replace", "old_text": "x", "content": "y"},
+                                  {"action": "remove", "old_text": "x"},
+                                  {"operations": [{"action": "add", "content": "z"}]}, {}])
+def test_memory_is_refused_in_a_relay_turn_with_the_reason(args):
+    _start("emporia")
+    out = rt.pre_tool_call(tool_name="memory", args=args, session_id="s1", task_id="s1")
+    assert out["action"] == "block" and "memory writes from turns other agents started are off" in out["message"]
+    assert "EMPORIA_RELAY_TURN_TOOLS=all" in out["message"]
+
+
+def test_a_memory_write_is_allowed_in_a_cli_turn_and_with_all(monkeypatch):
+    _start("cli")
+    assert rt.pre_tool_call(tool_name="memory", args={"action": "add", "content": "x"}, session_id="s1") is None
+    _start("emporia", "s2")
+    monkeypatch.setattr(rt, "_setting", lambda name: "all")
+    assert rt.pre_tool_call(tool_name="memory", args={"action": "add", "content": "x"}, session_id="s2") is None
 
 
 @pytest.mark.parametrize("platform", ["cli", "telegram", "", "cron"])

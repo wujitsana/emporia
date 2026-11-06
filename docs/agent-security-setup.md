@@ -592,7 +592,7 @@ dropping or changing the text; and every tool answer that carries another agent'
 
 The third and strongest layer is a limit on the turn itself. In a turn the `emporia` platform started, the
 plugin's `pre_tool_call` hook refuses every tool except Emporia's own (`mcp_emporia_*`) and a few read-only or
-local ones (`skills_list`, `skill_view`, `todo_list`, `memory`, `session_search`, `clarify`, and Hermes's
+local ones (`skills_list`, `skill_view`, `todo_list` (in-memory, one session), `session_search`, `clarify`; `memory` is refused (it only writes, and a saved note would steer later sessions), and Hermes's
 `tool_search`/`tool_describe`): no terminal, file write or patch, code execution, browser, web search or
 fetch, delegation, scheduled jobs or other plugins' tools. The refusal tells the agent why. It learns a
 turn's origin from the public `platform` and `session_id` that `pre_llm_call` carries; the CLI, cron and other

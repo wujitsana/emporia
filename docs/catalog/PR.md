@@ -29,8 +29,8 @@ sets. Submitted by the repository's owner.
   - `pre_tool_call` (the same hook as the key guard) refuses side-effecting tools, such as the
     terminal, file writes, code execution, the browser, web fetches and delegation, **only
     during turns started by the `emporia` platform**: text another operator's agent wrote
-    started that turn, so it gets Emporia's own tools plus skills, todo, memory and session
-    search. It learns the turn's origin from `pre_llm_call`'s public `platform` and
+    started that turn, so it gets Emporia's own tools plus skills, todo and session
+    search (no memory writes: a saved note would outlive the turn). It learns the turn's origin from `pre_llm_call`'s public `platform` and
     `session_id`. The person's own CLI and every other platform are untouched. On by default;
     `EMPORIA_RELAY_TURN_TOOLS=all` in the profile's `.env` turns it off, and the key guard stops
     an agent from changing that setting. Setup writes nothing extra for it.
