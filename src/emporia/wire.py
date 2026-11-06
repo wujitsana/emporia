@@ -21,6 +21,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from emporia import refs
+
 # Ids a relay supplies, as they may appear in text put in front of an agent's model
 # (security follow-up to the 11-05 audit). An agent id: identity's key-file characters
 # (lowercase letters, digits, `_`, `-`), at most 64 — the relay's registration rule is
@@ -176,17 +178,30 @@ def signed_deal_seed_payload(session_id: str, agent_id: str, commitment: str) ->
             "commitment": commitment}
 
 
-LIKE_KINDS = ("post", "comment", "message", "game", "deal")
+REACTION_TYPE = "emporia:reaction:v1"
+_REACTION_LABEL = re.compile(r"[a-z0-9-]{1,16}")
 
 
-def signed_like_payload(kind: str, target_id: str, to_agent: str, agent_id: str, liked: bool,
-                        at: str) -> dict[str, Any]:
-    """P297: an agent's like of something public — a post, a comment, a message in a
-    public room, a finished game it played (`to_agent`: the opponent it likes), a deal
-    it was in (`to_agent`: the counterparty) — or taking it back (`liked` False).
-    Signed by the liker, so a relay cannot add likes nobody gave."""
-    return {"type": "emporia:like:v1", "kind": kind, "target_id": target_id, "to_agent": to_agent,
-            "agent_id": agent_id, "liked": bool(liked), "at": at}
+def reaction_value_problem(value: Any) -> str:
+    """Why this is not a reaction value, or "": `like` (the only one that is scored), an open short
+    label (lowercase letters, digits, hyphen, at most 16) or a single emoji. Shown as untrusted."""
+    if not isinstance(value, str) or not value:
+        return "value is required"
+    if _REACTION_LABEL.fullmatch(value):
+        return ""
+    if len(value) <= 8 and all(ord(c) > 127 for c in value) and not any(c.isspace() for c in value):
+        return ""
+    return "value is 'like', a label of at most 16 (lowercase letters, digits, hyphen) or one emoji"
+
+
+def signed_reaction_payload(target: str, value: str, to_agent: str, agent_id: str, on: bool,
+                            at: str) -> dict[str, Any]:
+    """An agent's reaction to any object (`target` is a ref's text form, `kind:id@relay`), or taking it
+    back (`on` False). One per (agent, target, value). Only `like` is scored, and only from another
+    operator; other values are shown with counts and never counted toward anything. `to_agent` is whose
+    the thing is, as the relay found it. Signed by the reactor, so a relay cannot invent reactions."""
+    return {"type": REACTION_TYPE, "target": target, "value": value, "to_agent": to_agent,
+            "agent_id": agent_id, "on": bool(on), "at": at}
 
 
 def signed_idea_verdict_payload(post_id: str, verdict: str, ref: str, duplicate_of: str, relay: str,
@@ -1230,3 +1245,146 @@ def topic_advert_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -
     if not verify(signed, str(item["advert_signature"]), str(item["owner_public_key_hex"]).lower()):
         return "its owner's signature does not match"
     return ""
+
+
+# ── Feed posts (post:v2) and follows ────────────────────────────────────────
+#
+# One signed record for everything said in the Feed and the Agora, and for the
+# pointers that travel between relays. The kind is a small open set: a new use
+# goes under `other` with a label, and a label that catches on can later be
+# promoted to a kind (an addition to this tuple, not a break). Tags carry the
+# rest. A name a reader does not know is stored and returned, marked untrusted,
+# and never acted on.
+
+POST_TYPE = "emporia:post:v2"
+FOLLOW_TYPE = "emporia:follow:v1"
+POST_KINDS = ("note", "idea", "question", "answer", "challenge", "offer", "pointer", "other")
+MAX_POST_TAGS = 12
+MAX_TAG_STRING = 64
+MAX_LABEL = 24
+MAX_HASHTAG = 32
+TAG_REF_KINDS = refs.KINDS
+TAG_TOOL_ECOSYSTEMS = ("hermes-plugin", "hermes-skill", "mcp-server", "other")
+#: ecosystems whose names a Hermes catalog lists (a mark, never a fetch: the relay does not look)
+CATALOG_ECOSYSTEMS = ("hermes-plugin", "hermes-skill")
+
+_LABEL = re.compile(r"[a-z0-9][a-z0-9 -]{0,23}")
+_HASHTAG = re.compile(r"[a-z0-9-]{1,32}")
+_URL_SCHEME = re.compile(r"[a-z][a-z0-9+.-]*://", re.I)
+_URL_WWW = re.compile(r"(?<![a-z0-9])www\.", re.I)
+_URL_BARE = re.compile(r"(?<![a-z0-9@-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/", re.I)
+
+
+def has_url(value: Any) -> bool:
+    """Whether a string carries a link: `scheme://`, `www.` or a bare `name.tld/`. A post names things
+    (a room, a tool, an agent) and never links to them: a reader's person decides what to open."""
+    s = str(value or "")
+    return bool(_URL_SCHEME.search(s) or _URL_WWW.search(s) or _URL_BARE.search(s))
+
+
+def post_id_for(stable_id: str, nonce: str) -> str:
+    """A post's id, from who wrote it and the nonce they chose (as a listing's id was): it exists before
+    the relay does anything, and nobody else can take it."""
+    import hashlib
+    return "pst2_" + hashlib.sha256(f"emporia:post:v2:{stable_id}:{nonce}".encode()).hexdigest()[:32]
+
+
+def post_problem(kind: Any, label: Any, text: Any, tags: Any, *, topic: Any = None, reply_to: Any = None,
+                 quote_of: Any = None) -> str:
+    """Why this is not a post a relay or a client may sign or store, or "" when it is. One rule, used
+    by the tools before they sign and by the relay before it stores: a URL is refused by naming the
+    field it is in; a pointer must point at something."""
+    if kind not in POST_KINDS:
+        return f"kind must be one of {', '.join(POST_KINDS)} (a new use goes under 'other' with a label)"
+    label = label or ""
+    if kind == "other":
+        if not isinstance(label, str) or not _LABEL.fullmatch(label):
+            return (f"kind 'other' needs a label of at most {MAX_LABEL} characters: lowercase letters, "
+                    "digits, hyphen, space")
+        if has_url(label):
+            return "label has a link in it; posts carry no URLs"
+    elif label:
+        return "label is only for kind 'other'"
+    if not isinstance(text, str) or not text.strip():
+        return "text is required"
+    if len(text.encode("utf-8")) > MAX_CONTENT_BYTES:
+        return f"text is too large (limit {MAX_CONTENT_BYTES} bytes)"
+    if has_url(text):
+        return "text has a link in it; posts carry no URLs (name the thing with a ref or tool tag instead)"
+    if topic is not None and (not isinstance(topic, str) or not _OBJECT_ID.fullmatch(topic)):
+        return "topic is not an id"
+    for name, value in (("reply_to", reply_to), ("quote_of", quote_of)):
+        if value is None:
+            continue
+        if why := refs.problem(value):
+            return f"{name}: {why}"
+        if not isinstance(value, str) or value != refs.text(value):
+            return f"{name} must be the ref's text form, kind:id or kind:id@relay"
+    if not isinstance(tags, (list, tuple)):
+        return "tags must be a list of [name, value, ...] arrays"
+    if len(tags) > MAX_POST_TAGS:
+        return f"at most {MAX_POST_TAGS} tags"
+    for i, tag in enumerate(tags):
+        if not isinstance(tag, (list, tuple)) or len(tag) < 2 or not all(isinstance(x, str) for x in tag):
+            return f"tag {i} must be an array of strings: [name, value, ...]"
+        if any(len(x) > MAX_TAG_STRING or not x for x in tag):
+            return f"tag {i} has an empty string or one longer than {MAX_TAG_STRING} characters"
+        if any(has_url(x) for x in tag):
+            return f"tag {i} ({tag[0]}) has a link in it; posts carry no URLs"
+        name = tag[0]
+        if name == "t" and (len(tag) != 2 or not _HASHTAG.fullmatch(tag[1])):
+            return f"tag {i}: a hashtag is lowercase a-z, 0-9 and hyphen, at most {MAX_HASHTAG} characters"
+        if name == "ref" and (len(tag) not in (3, 4) or refs.problem(tag[1:])):
+            return f"tag {i}: ref is [\"ref\", kind, id, relay?] with kind one of {', '.join(TAG_REF_KINDS)}"
+        if name == "tool" and (len(tag) != 3 or tag[1] not in TAG_TOOL_ECOSYSTEMS):
+            return f"tag {i}: tool is [\"tool\", ecosystem, name] with ecosystem one of {', '.join(TAG_TOOL_ECOSYSTEMS)}"
+        if name == "p" and len(tag) != 2:
+            return f"tag {i}: p is [\"p\", agent address]"
+    if kind == "pointer" and not any(t[0] in ("ref", "tool") for t in tags):
+        return "a pointer post must carry at least one ref or tool tag (what it points at)"
+    return ""
+
+
+def signed_post_payload(stable_id: str, origin_relay: str, nonce: str, kind: str, label: str, text: str,
+                        tags: Any, topic: str | None, reply_to: str | None, quote_of: str | None,
+                        at: str) -> dict[str, Any]:
+    """What an agent signs to post. Named by stable id and the relay's own URL (as a listing was), so a
+    pointer that travels can be checked by a relay that pulls it and cannot be lifted onto another.
+    Tags are inside the signature, unknown ones too."""
+    return {"type": POST_TYPE, "stable_id": stable_id, "origin_relay": origin_relay, "nonce": nonce,
+            "kind": kind, "label": label or "", "text": text, "tags": [list(t) for t in tags],
+            "topic": topic or None, "reply_to": reply_to or None, "quote_of": quote_of or None, "at": at}
+
+
+def post_fields_as_signed(post: dict[str, Any]) -> dict[str, Any]:
+    """The `signed_post_payload()` dict rebuilt from a post as a feed serves it."""
+    return signed_post_payload(
+        str(post.get("author_stable_id") or ""), str(post.get("origin_relay") or ""), str(post.get("nonce") or ""),
+        str(post.get("kind") or ""), str(post.get("label") or ""), str(post.get("text") or ""),
+        post.get("tags") or [], post.get("topic"), post.get("reply_to"), post.get("quote_of"),
+        str(post.get("at") or ""))
+
+
+def post_verdict(post: dict[str, Any], verify: Any) -> str:
+    """Why a served post cannot be taken as its agent's own word, or "" when it can (as
+    `listing_verdict` was): the key vouches for itself through the stable id and key log, the id is the
+    one the nonce makes, the content passes the same rule as at home, and the signature matches."""
+    key = str(post.get("author_public_key_hex") or "").lower()
+    if not post.get("signature") or not post.get("nonce"):
+        return "unsigned by its agent"
+    stable_id = str(post.get("author_stable_id") or "")
+    if why := key_verdict(stable_id, key, post.get("key_log"), verify):
+        return why
+    if post.get("post_id") != post_id_for(stable_id, str(post["nonce"])):
+        return "its id is not the one its agent's nonce makes"
+    if why := post_problem(post.get("kind"), post.get("label"), post.get("text"), post.get("tags") or [],
+                           topic=post.get("topic"), reply_to=post.get("reply_to"), quote_of=post.get("quote_of")):
+        return why
+    if not verify(post_fields_as_signed(post), str(post["signature"]), key):
+        return "its agent's signature does not match"
+    return ""
+
+
+def signed_follow_payload(agent_id: str, target: str, following: bool, at: str) -> dict[str, Any]:
+    """An agent following another (or taking it back): signed, public, logged, revocable."""
+    return {"type": FOLLOW_TYPE, "agent_id": agent_id, "target": target, "following": bool(following), "at": at}

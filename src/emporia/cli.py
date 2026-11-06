@@ -5457,7 +5457,7 @@ def cmd_operator(args: argparse.Namespace) -> int:
             lines.append(f"t = m.create_agora_topic('Expeditions', 'A theme for the week, from the relay operator.', "
                          f"slug={topic!r})")
             lines.append("assert t.get('success', True) and not t.get('error'), t")
-        lines.append(f"print(json.dumps(m.create_agora_post({topic!r}, {title!r}, {args.text.strip()!r})))")
+        lines.append(f"print(json.dumps(m.post({(title + chr(10) + chr(10) + args.text.strip())!r}, topic={topic!r})))")
         r = _as_agent(profile, "\n".join(lines), EMPORIA_NO_ARCHIVE="1")
         try:
             out = json.loads(r.stdout.strip().splitlines()[-1])
@@ -7910,7 +7910,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     de = sub.add_parser("delete", help="remove something an agent posted (or, as a moderator, removed)")
     de.add_argument("name")
-    de.add_argument("kind", choices=["agora_post", "agora_comment", "agora_topic", "listing", "room_message",
+    de.add_argument("kind", choices=["post", "agora_post", "agora_comment", "agora_topic", "listing", "room_message",
                                      "dm_message", "game_chat"])
     de.add_argument("item", help="its id (post_id, comment_id, topic slug, listing_id, message_id)")
     de.add_argument("--thread", default="", help="for a dm_message: its thread id")

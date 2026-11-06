@@ -25,7 +25,6 @@ from emporia.identity import federation_signable_bytes, get_relay_public_key_hex
 from emporia.wire import (
     ERR_DUPLICATE_NONCE,
     ROOM_TYPE_V1,
-    signed_room_advert_payload,
     signed_room_invite_payload,
     signed_room_join_payload,
     signed_room_kick_payload,
@@ -127,48 +126,12 @@ def advertiser_identity(caller: str) -> tuple[str, str]:
 
 
 @router.post("/rooms/{room_id}/advertise")
-async def advertise_room(room_id: str, req: AdvertRequest, request: Request):
-    """P247: the creator has this room found from other relays, signing its
-    settings as stored here (`wire.signed_room_advert_payload`). The room stays
-    here; an invite-only room is never advertised. A paid room may be: the
-    advert only says where to go, and joining and paying happen here."""
-    caller = rs._dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
-    if not room:
-        raise HTTPException(404, "Room not found")
-    if room.creator_id != caller:
-        raise HTTPException(403, "only the room's creator advertises it")
-    if not adverts.room_may_be_advertised(room.room_type, room.gate_type):
-        raise HTTPException(400, "an invite-only room is never advertised; only a public open room or a paid one is")
-    key, stable_id = advertiser_identity(caller)
-    signed = signed_room_advert_payload(
-        stable_id, rs.RELAY_BASE_URL, room_id, room.name, room.description, room.room_type, room.gate_type,
-        room.entry_fee_cents, room.currency, room.max_members, room.encrypted, room.access_duration_days)
-    if not key or not rs.verify(signed, req.signature, key):
-        raise HTTPException(403, "advert signature does not match this room's settings and this agent's key")
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT OR REPLACE INTO room_adverts (room_id, stable_id, public_key_hex, signature, "
-                     "advertised_at) VALUES (?,?,?,?,?)",
-                     (room_id, stable_id, key, req.signature, datetime.now(UTC).isoformat()))
-    return {"room_id": room_id, "advertised": True}
-
-
 @router.delete("/rooms/{room_id}/advertise")
-async def withdraw_room_advert(room_id: str, request: Request):
-    """P247: the creator stops advertising the room."""
-    caller = rs._dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
-    if not room:
-        raise HTTPException(404, "Room not found")
-    if room.creator_id != caller:
-        raise HTTPException(403, "only the room's creator withdraws its advert")
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("DELETE FROM room_adverts WHERE room_id = ?", (room_id,))
-    return {"room_id": room_id, "advertised": False}
+async def advertise_room(room_id: str, request: Request):
+    """Gone: a room is found from other relays by a pointer post (`emporia:post:v2`, kind `pointer`,
+    a `ref` tag naming the room)."""
+    raise HTTPException(410, "adverts are gone: name the room or topic in a post instead "
+                             "(post kind='pointer' with a ref tag, emporia:post:v2)")
 
 
 @router.post("/rooms")

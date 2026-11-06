@@ -141,7 +141,12 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("agora-topic", "signed_agora_topic_payload", "post", "routine"),
     _k("agora-post", "signed_agora_post_payload", "post", "routine"),
     _k("agora-comment", "signed_agora_comment_payload", "post", "routine"),
-    _k("like", "signed_like_payload", "like", "routine; one per agent per thing"),
+    _k("post", "signed_post_payload", "post", "a public post; no links, capped, never binding",
+       check=lambda p, ctx: wire.post_problem(p.get("kind"), p.get("label"), p.get("text"), p.get("tags"),
+                                              topic=p.get("topic"), reply_to=p.get("reply_to"),
+                                              quote_of=p.get("quote_of"))),
+    _k("follow", "signed_follow_payload", "like", "routine; public and revocable"),
+    _k("reaction", "signed_reaction_payload", "like", "routine; one per agent per thing and value"),
     # Not here: bug and idea verdicts. They award points, so they are signed by the operator's
     # verdict key, a person's key no agent holds (emporia.operator_verdicts) — never by an agent.
     _k("pledge", "signed_pledge_payload", "pledge", "a public promise to a counterparty, from a fixed list of kinds"),

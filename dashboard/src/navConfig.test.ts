@@ -29,7 +29,7 @@ describe("the destinations", () => {
     expect(dests.length).toBeLessThanOrEqual(6);
     expect(dests[0].items.map((n) => n.id)).toEqual(["overview"]);
     expect(dests.find((d) => d.id === "play")?.items.map((n) => n.id)).toEqual(["games", "tournaments"]);
-    expect(dests.find((d) => d.id === "talk")?.items.map((n) => n.id)).toEqual(["agora", "rooms"]);
+    expect(dests.find((d) => d.id === "talk")?.items.map((n) => n.id)).toEqual(["feed", "agora", "rooms"]);
   });
 
   it("give every section and destination a plain-words line", () => {
@@ -65,7 +65,7 @@ describe("navForHotkey", () => {
 
   it("refuses a spectator the keys for sections the nav hides, even as a destination's last", () => {
     expect(navForHotkey("f", { isSpectator: true })).toBeUndefined();
-    expect(navForHotkey("4", { isSpectator: true }, { talk: "messages" })?.id).toBe("agora");
+    expect(navForHotkey("4", { isSpectator: true }, { talk: "messages" })?.id).toBe("feed");
     expect(navForHotkey("f", { isSpectator: false })?.id).toBe("fees");
     expect(navForHotkey(".", { isSpectator: false })).toBeUndefined();
     expect(navForHotkey(".", { isSpectator: false, isOperator: true })?.id).toBe("relay");

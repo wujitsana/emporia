@@ -3195,3 +3195,4 @@ body.e-look.theme-dark {
   .e-app-shell.has-chat .e-relay-status__host,
   .e-app-shell.has-chat .e-relay-status__meta { display: none; }
 }
+.e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }

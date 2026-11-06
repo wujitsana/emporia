@@ -869,20 +869,6 @@ def _foreign_bounty(agent_id, **meta):
                          **meta}}
 
 
-def test_a_peer_cannot_overwrite_a_local_bounty(client, _escrow):
-    from emporia import relay_server as rs
-
-    funder = _mk_agent(client, nous_id="nous_fo_" + uuid.uuid4().hex[:6])
-    listing_id = _post_bounty(client, funder).json()["listing_id"]
-    forged = _foreign_bounty(funder, payment_intent_id="pi_attacker", rail="stripe")
-    forged["listing_id"] = listing_id
-
-    assert _Peer().push([forged]) == 0
-    with rs.DB_LOCK, rs.get_db() as conn:
-        meta = json.loads(conn.execute(
-            "SELECT metadata_json FROM listings WHERE listing_id = ?", (listing_id,),
-        ).fetchone()[0])
-    assert meta["payment_intent_id"] != "pi_attacker"
 
 
 def _pulled_before_p240(listing, peer_url):
@@ -898,13 +884,6 @@ def _pulled_before_p240(listing, peer_url):
              datetime.now(UTC).isoformat(), peer_url))
 
 
-def test_a_peers_bounty_is_not_pulled(client, _escrow):
-    """P240: a bounty carries no agent signature (the relay writes its state),
-    so a linked relay refuses it rather than take the peer's word."""
-    from emporia import relay_server as rs
-    peer = _Peer()
-    assert peer.push([_foreign_bounty("someone_remote")]) == 0
-    assert rs._FEDERATION_LAST_SYNC[peer.url]["refused_why"] == {"unsigned by its agent": 1}
 
 
 def test_a_peer_cannot_plant_a_default_on_a_local_agent(client, _escrow):
@@ -942,14 +921,6 @@ def _resigned(listing, **changes):
     return x
 
 
-def test_a_peer_still_refreshes_its_own_listing(client, _escrow):
-    from tests.test_emporia import _peer_listing
-
-    peer = _Peer()
-    listing = _peer_listing(peer.url, metadata={"state": "open"})
-    assert peer.push([listing]) == 1
-    assert peer.push([_resigned(listing, metadata={"state": "running"})]) == 1
-    assert json.loads(_stored(listing["listing_id"])["metadata_json"])["state"] == "running"
 
 
 # P84 -- a promise binds the account, and can actually be paid ---------------
@@ -1082,57 +1053,10 @@ def _stored(listing_id):
                                  (listing_id,)).fetchone())
 
 
-def test_a_peer_cannot_overwrite_another_peers_listing_by_claiming_its_origin(client, _escrow):
-    from emporia import relay_server as rs
-    from tests.test_emporia import _peer_listing
-
-    honest, impostor = _Peer(), _Peer()
-    listing = _peer_listing(honest.url, metadata={"state": "open"})
-    assert honest.push([listing]) == 1
-
-    # Even the agent's own re-signed words, served by a relay that does not own the row.
-    forged = _resigned(listing, metadata={"state": "defaulted"})
-    assert impostor.push([forged], origin=honest.url) == 0
-    # P264: refused before ownership is even asked — a peer speaks only for itself
-    assert "not the relay linked" in rs._FEDERATION_LAST_SYNC[impostor.url]["error"]
-    row = _stored(listing["listing_id"])
-    assert json.loads(row["metadata_json"])["state"] == "open"
-    assert row["federated_from"] == honest.url
 
 
-def test_a_row_pulled_before_ownership_was_recorded_is_adopted_by_its_origin(client, _escrow):
-    from emporia import relay_server as rs
-
-    from tests.test_emporia import _peer_listing
-
-    peer = _Peer()
-    listing = _peer_listing(peer.url, metadata={"state": "open"})
-    assert peer.push([listing]) == 1
-    with rs.DB_LOCK, rs.get_db() as conn:     # what a V2 database holds
-        conn.execute("UPDATE listings SET federated_from = NULL WHERE listing_id = ?",
-                     (listing["listing_id"],))
-    assert _Peer().push([listing], origin=peer.url) == 0, "a stranger adopted it"
-    assert peer.push([_resigned(listing, metadata={"state": "running"})]) == 1
-    assert _stored(listing["listing_id"])["federated_from"] == peer.url
 
 
-def test_who_funded_a_bounty_and_its_payment_never_leave_the_relay(client):
-    """The funder's Nous account links an agent to a person, and the payment id
-    is the hold itself: kept for the relay's own rules, never in a listing that
-    anyone — or a linked relay — reads."""
-    nous = "nous_private_" + uuid.uuid4().hex[:6]
-    funder = _mk_agent(client, nous_id=nous)
-    listing_id = _post_bounty(client, funder).json()["listing_id"]
-    reads = [client.get("/listings", params={"include_rooms": "false", "limit": 200}).json()["listings"],
-             client.get(f"/agents/{funder}/listings", headers=_hdr(funder)).json()["listings"]]
-    # P240: a bounty is the relay's own record, never in the feed linked relays pull.
-    assert listing_id not in [x["listing_id"] for x in
-                              client.get("/gaming/v1/federate/listings").json()["listings"]]
-    for listings in reads:
-        mine = next(item for item in listings if item["listing_id"] == listing_id)
-        text = json.dumps(mine)
-        assert nous not in text and "payment_intent_id" not in text and "metadata_json" not in text
-        assert mine["metadata"]["prize_cents"] == 5000          # what an entrant needs stays
 
 
 def test_an_entry_can_be_withdrawn_while_the_bounty_is_open(client):

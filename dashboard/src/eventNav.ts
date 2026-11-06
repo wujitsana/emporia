@@ -10,6 +10,7 @@ export type DashboardView =
   | "deals"
   | "fees"
   | "stats"
+  | "feed"
   | "agora"
   | "rooms"
   | "messages"

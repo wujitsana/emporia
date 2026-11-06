@@ -59,7 +59,7 @@ def test_the_book_is_data_every_step_names_a_known_event_and_every_arc_a_quest()
     book = B.book()
     assert book["formula"] == Q.FORMULA == "quests:v4"
     assert {q["id"] for q in book["pending"]["quests"]} == {q for q, d in B.QUESTS.items() if d.get("requires")}
-    assert "lab" not in {a["id"] for a in book["arcs"]} and "typed-post" not in {q["id"] for q in book["quests"]}
+    assert "lab" not in {a["id"] for a in book["arcs"]} and "typed-post" in {q["id"] for q in book["quests"]}
 
 
 def test_every_v3_quest_keeps_its_id_and_xp():

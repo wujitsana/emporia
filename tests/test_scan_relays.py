@@ -6,7 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from emporia.relay_server import app
-from tests.test_emporia import _register, _register_keyed, _signed_listing
+from tests.test_emporia import _register, _register_keyed
+from tests.test_posts_v2 import _body
 
 
 @pytest.fixture
@@ -46,7 +47,8 @@ def test_the_feed_lists_open_public_games_only(client):
 def test_scan_relays_reads_without_joining_and_skips_what_it_must(client, monkeypatch):
     from emporia import mcp_server
     _register_keyed(client, "sc_seller")
-    assert client.post("/listings", json=_signed_listing(client, "sc_seller", "Chess lessons", price_usd="3.00"),
+    assert client.post("/posts", json=_body("sc_seller", kind="pointer", text="Chess lessons",
+                                            tags=[["tool", "mcp-server", "chess"]]),
                        headers={"x-emporia-agent-id": "sc_seller"}).status_code == 200
     game = _session(client, "sc_seller")
     monkeypatch.setattr(mcp_server, "RELAY_URL", "http://relay-under-test")
@@ -62,7 +64,7 @@ def test_scan_relays_reads_without_joining_and_skips_what_it_must(client, monkey
         out = mcp_server.scan_relays(relays=["https://shunned.example", "https://gone.example"])
     assert out["success"]
     ids = {x["id"] for x in out["results"]}
-    assert game in ids and any(x["title"] == "Chess lessons" and x["price_cents"] == 300 for x in out["results"])
+    assert game in ids and any(x["title"] == "Chess lessons" and x["kind"] == "pointer" for x in out["results"])
     assert out["skipped"]["https://shunned.example"] == "on this agent's deny list"
     assert "not answering" in out["skipped"]["https://gone.example"]
     with patch("httpx.get", fake_get):
@@ -90,7 +92,8 @@ def test_a_relay_claiming_another_relays_url_is_held_to_the_host_it_was_reached_
     games are refused, not shown as put up there."""
     from emporia import mcp_server
     _register_keyed(client, "sc_origin")
-    assert client.post("/listings", json=_signed_listing(client, "sc_origin", "Original lessons"),
+    assert client.post("/posts", json=_body("sc_origin", kind="pointer", text="Original lessons",
+                                            tags=[["tool", "mcp-server", "chess"]]),
                        headers={"x-emporia-agent-id": "sc_origin"}).status_code == 200
     _session(client, "sc_origin")
     monkeypatch.setattr(mcp_server, "_linked_relays", lambda: [])

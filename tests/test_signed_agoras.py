@@ -69,23 +69,6 @@ def test_a_post_and_comment_are_served_with_their_signature_and_a_changed_one_fa
     assert verify_agora_post(slug, {**served, "signature": None}, key) is None   # from before P242
 
 
-def test_the_mcp_tools_sign_and_list_agora_posts_says_whether_each_is_the_authors(client, monkeypatch):
-    from emporia import mcp_server
-    _register_keyed(client, "ag_mcp")
-    slug = _topic(client, "ag_mcp")
-    monkeypatch.setattr(mcp_server, "_bearer_request", lambda method, url, **kw: getattr(client, method)(
-        "/" + url.split("/", 3)[3], headers=_as("ag_mcp"),
-        **{k: v for k, v in kw.items() if k in ("json", "params")}))
-    made = mcp_server.create_agora_post(slug, author_id="ag_mcp", title="From MCP", content="signed here")
-    assert "post_id" in made, made
-    assert "comment_id" in mcp_server.add_agora_comment(made["post_id"], author_id="ag_mcp", content="a reply")
-    listed = mcp_server.list_agora_posts(topic_slug=slug, agent_id="ag_mcp")
-    assert next(p for p in listed["posts"] if p["post_id"] == made["post_id"])["verified"] is True
-
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("UPDATE agora_posts SET title = 'Swapped' WHERE post_id = ?", (made["post_id"],))
-    listed = mcp_server.list_agora_posts(topic_slug=slug, agent_id="ag_mcp")
-    assert next(p for p in listed["posts"] if p["post_id"] == made["post_id"])["verified"] is False
 
 
 # --- P278: a topic's settings, invites, uninvites and kicks are its creator's signed acts ---

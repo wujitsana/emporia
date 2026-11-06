@@ -3669,6 +3669,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   .e-app-shell.has-chat .e-relay-status__host,
   .e-app-shell.has-chat .e-relay-status__meta { display: none; }
 }
+.e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }
 .Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;

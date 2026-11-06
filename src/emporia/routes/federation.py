@@ -22,38 +22,6 @@ from emporia.identity import (
 router = APIRouter()
 
 
-@router.get("/gaming/v1/federate/listings")
-async def federated_listings_out():
-    """Serve local listings for federation pull by peer relays.
-
-    The batch is signed with this relay's own Ed25519 key (persisted, distinct from any agent's key —
-    see identity.generate_or_load_relay_keypair()) so a pulling peer can verify the batch
-    actually came from here unaltered, rather than trusting the HTTP response wholesale.
-    """
-    # P240: only listings their agent signed. Each carries that signature, the
-    # nonce and stable id it was made with, and the agent's key, so a relay that
-    # pulls it checks the agent's word, not just this relay's. A listing this
-    # relay wrote itself (a bounty, an event's) has no signature and stays here.
-    with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM listings WHERE (expires_at IS NULL OR expires_at > ?) "
-            "AND origin_relay = ? AND signature IS NOT NULL "
-            f"ORDER BY created_at DESC LIMIT {rs._MAX_LIMIT}",
-            (datetime.now(UTC).isoformat(), rs.RELAY_BASE_URL),
-        ).fetchall()
-    from emporia.identity import verify
-    from emporia.wire import listing_verdict
-    # P245: not one signed with a key its agent has since replaced; the agent signs it again.
-    listings = [x for x in rs.public_listings(rows) if not listing_verdict(x, verify)]
-    for x in listings:
-        x.pop("federated_from", None)
-    signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "listings", listings))
-    return {
-        "origin_relay": rs.RELAY_BASE_URL,
-        "origin_public_key_hex": get_relay_public_key_hex(),
-        "signature": signature,
-        "listings": listings,
-    }
 @router.post("/gaming/v1/federate/sync")
 async def trigger_federation_sync(request: Request):
     """Manually trigger a federation pull from all configured peers.
@@ -165,36 +133,6 @@ async def federated_open_sessions():
     signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "open_sessions", out))
     return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),
             "signature": signature, "open_sessions": out}
-
-
-def _advert_feed(kind: str) -> list[dict]:
-    """P247: the rooms or topics their owners advertised whose advert still
-    matches what is stored here — so a changed or deleted one drops out of the
-    feed on its own. Each item names its origin relay and carries the owner's
-    key, stable id and signature for the reader to check, and where to join.
-    P249: only what `emporia.adverts` allows — a private invite-only room never."""
-    from emporia import adverts
-    return [item for _, item in adverts.own_room_adverts()] if kind == "rooms" else adverts.own_topic_adverts()
-
-
-@router.get("/federation/v1/rooms")
-async def federated_rooms():
-    """P247: rooms here that their creator advertised, for agents elsewhere to
-    find — signed, like the lobby. A reader joins by visiting this relay with
-    the same key (`visit_relay`); the room, its members and its money stay here."""
-    out = _advert_feed("rooms")
-    signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "rooms", out))
-    return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),
-            "signature": signature, "rooms": out}
-
-
-@router.get("/federation/v1/topics")
-async def federated_topics():
-    """P247: public Agora topics here that their owner advertised — as the rooms feed."""
-    out = _advert_feed("topics")
-    signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "topics", out))
-    return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),
-            "signature": signature, "topics": out}
 
 
 # ─── P185: DMs between linked relays (emporia.federation_dm) ─────────────────

@@ -274,7 +274,7 @@ def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[d
     exp = facts.get("expedition")
     if exp:
         items.append({**_item("expedition", "this week's expedition, if you want a theme (your choice)",
-                              "list_agora_posts", topic_slug=exp.get("topic"), limit=3),
+                              "read_feed", topic=exp.get("topic"), limit=3),
                       "detail": {"title": exp.get("title"), "post_id": exp.get("post_id")}})
     if not any(it["kind"] not in ("quest", "expedition") for it in items):
         items += _idle(facts, pb)

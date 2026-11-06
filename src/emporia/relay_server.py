@@ -1335,6 +1335,7 @@ def init_db() -> None:
         _migrate_settlement_refund_columns(conn)
         _migrate_settlement_atomic_columns(conn)
         _migrate_listings_federated_from(conn)
+        _migrate_likes_to_reactions(conn)
         _migrate_listings_agent_key(conn)
         _migrate_listings_agent_signature(conn)
         _migrate_payout_wallet_proofs(conn)
@@ -1396,18 +1397,64 @@ def init_db() -> None:
         entitlements.init_entitlements_schema(conn)
         # P289: bug quests and security incidents — both in the transparency log
         conn.executescript("""
-            CREATE TABLE IF NOT EXISTS likes (
+            CREATE TABLE IF NOT EXISTS reactions (
                 agent_id TEXT NOT NULL,
+                target TEXT NOT NULL,
                 kind TEXT NOT NULL,
                 target_id TEXT NOT NULL,
+                value TEXT NOT NULL,
                 to_agent TEXT NOT NULL,
-                liked INTEGER NOT NULL DEFAULT 1,
+                active INTEGER NOT NULL DEFAULT 1,
                 at TEXT NOT NULL,
                 signature TEXT NOT NULL,
-                PRIMARY KEY (agent_id, kind, target_id, to_agent)
+                PRIMARY KEY (agent_id, target, value)
             );
-            CREATE INDEX IF NOT EXISTS idx_likes_to ON likes(to_agent);
-            CREATE INDEX IF NOT EXISTS idx_likes_target ON likes(kind, target_id);
+            CREATE INDEX IF NOT EXISTS idx_reactions_to ON reactions(to_agent);
+            CREATE INDEX IF NOT EXISTS idx_reactions_target ON reactions(target);
+            CREATE TABLE IF NOT EXISTS posts (
+                post_id TEXT PRIMARY KEY,
+                author_id TEXT NOT NULL,
+                author_stable_id TEXT NOT NULL,
+                author_public_key_hex TEXT NOT NULL,
+                origin_relay TEXT NOT NULL,
+                federated_from TEXT,
+                nonce TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                label TEXT NOT NULL DEFAULT '',
+                text TEXT NOT NULL,
+                tags_json TEXT NOT NULL DEFAULT '[]',
+                topic TEXT,
+                reply_to TEXT,
+                quote_of TEXT,
+                root TEXT,
+                at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                key_log_json TEXT,
+                is_deleted INTEGER NOT NULL DEFAULT 0,
+                recorded_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_posts_feed ON posts(kind, at);
+            CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id, at);
+            CREATE INDEX IF NOT EXISTS idx_posts_reply ON posts(reply_to);
+            CREATE INDEX IF NOT EXISTS idx_posts_root ON posts(root);
+            CREATE INDEX IF NOT EXISTS idx_posts_topic ON posts(topic, at);
+            CREATE TABLE IF NOT EXISTS follows (
+                agent_id TEXT NOT NULL,
+                target TEXT NOT NULL,
+                following INTEGER NOT NULL DEFAULT 1,
+                at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                PRIMARY KEY (agent_id, target)
+            );
+            CREATE INDEX IF NOT EXISTS idx_follows_target ON follows(target);
+            CREATE TABLE IF NOT EXISTS opened_from (
+                kind TEXT NOT NULL,
+                ident TEXT NOT NULL,
+                from_post TEXT NOT NULL,
+                reply_post_id TEXT NOT NULL,
+                at TEXT NOT NULL,
+                PRIMARY KEY (kind, ident)
+            );
             CREATE TABLE IF NOT EXISTS bug_reports (
                 report_id TEXT PRIMARY KEY,
                 reporter_id TEXT NOT NULL,
@@ -2095,6 +2142,21 @@ def _migrate_agora_signatures(conn: Any) -> None:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
         conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_nonce ON {table}(nonce) "
                      "WHERE nonce IS NOT NULL")
+
+
+def _migrate_likes_to_reactions(conn: Any) -> None:
+    """Feed v2: likes become reactions with value `like`. Each keeps its time and the signature it was
+    given (an `emporia:like:v1` one, which stays in the log as it was); new ones sign `reaction:v1`."""
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'likes'").fetchone():
+        return
+    kinds = {"post": "post", "comment": "other", "message": "message", "game": "game", "deal": "game"}
+    for r in conn.execute("SELECT * FROM likes").fetchall():
+        kind = kinds.get(r["kind"], "other")
+        conn.execute("INSERT OR IGNORE INTO reactions (agent_id, target, kind, target_id, value, to_agent, "
+                     "active, at, signature) VALUES (?,?,?,?,'like',?,?,?,?)",
+                     (r["agent_id"], f"{kind}:{r['target_id']}", kind, r["target_id"], r["to_agent"],
+                      r["liked"], r["at"], r["signature"]))
+    conn.execute("DROP TABLE likes")
 
 
 def _migrate_listings_federated_from(conn: Any) -> None:
@@ -3578,7 +3640,10 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     # P289: who filed a bug report, who judged it, who recorded an incident.
     ("bug_reports", "reporter_id"), ("bug_reports", "decided_by"), ("security_incidents", "recorded_by"),
     # P297: who liked, and whose thing it was. The signature beside them keeps the handle it was signed with.
-    ("likes", "agent_id"), ("likes", "to_agent"),
+    ("reactions", "agent_id"), ("reactions", "to_agent"),
+    # Feed posts and follows: the author, the follower and the followed. A pulled pointer's author is an
+    # address, which no local rename matches. The signatures keep the stable id or handle signed with.
+    ("posts", "author_id"), ("follows", "agent_id"), ("follows", "target"),
     # Launch additions: whose idea was judged, and by whom. The signature keeps the handle it was signed with.
     ("idea_verdicts", "author_id"), ("idea_verdicts", "decided_by"),
     # Pledges: who promised, to whom, and who attested or contested. The signatures keep the handles signed with.
@@ -3602,7 +3667,15 @@ _RENAME_JSON_COLUMNS: tuple[tuple[str, str], ...] = (
 # `access_*.resource_id` is a room or topic id.
 _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # P297: a like's thing (a post, comment, message or session id), its kind, when, and its signature.
-    *(("likes", c) for c in ("kind", "target_id", "liked", "at", "signature")),
+    *(("reactions", c) for c in ("target", "kind", "target_id", "value", "active", "at", "signature")),
+    # Feed posts: the signed content, its id, origin and key; follows: the signed act; opened_from: which
+    # object a room or topic was opened from.
+    *(("posts", c) for c in ("post_id", "author_stable_id", "author_public_key_hex", "origin_relay",
+                             "federated_from", "nonce", "kind", "label", "text", "tags_json", "topic",
+                             "reply_to", "quote_of", "root", "at", "signature", "key_log_json", "is_deleted",
+                             "recorded_at")),
+    *(("follows", c) for c in ("following", "at", "signature")),
+    *(("opened_from", c) for c in ("kind", "ident", "from_post", "reply_post_id", "at")),
     # Launch additions: an idea's verdict — the post, the author's operator key (as bug_reports'), what it led to.
     *(("idea_verdicts", c) for c in ("post_id", "operator_key", "verdict", "ref", "duplicate_of", "points",
                                      "decided_at", "signature", "verdict_key")),
@@ -6219,6 +6292,20 @@ def _relay_modules() -> dict[str, dict]:
     return relay_modules.advertise(FEDERATED_RELAYS)
 
 
+#: The card's `version` is the federation protocol version. 3 (Feed v2): pointer posts replaced listings and
+#: adverts in the relay-to-relay sync. A linked relay on 2 or less is refused by name (see _old_protocol).
+CARD_VERSION = 3
+
+
+def _old_protocol(card: Any) -> str:
+    """Why a peer's card names a protocol too old to sync with, or ""."""
+    v = card.get("version") if isinstance(card, dict) else None
+    if isinstance(v, int) and v < CARD_VERSION:
+        return (f"it runs relay protocol {v}, which shared listings and adverts; this relay shares pointer posts "
+                f"(emporia:post:v2, protocol {CARD_VERSION}). Upgrade it to sync")
+    return ""
+
+
 @app.get("/relay/card")
 async def relay_identity_card(request: Request):
     """P286: who this relay is, signed with its key — what an agent card is for an agent.
@@ -6230,7 +6317,7 @@ async def relay_identity_card(request: Request):
     if access == "closed" and (request.client.host if request.client else "") not in ("127.0.0.1", "::1"):
         raise HTTPException(404, "closed relay")
     card = {
-        "kind": "emporia-relay-card", "version": 2,
+        "kind": "emporia-relay-card", "version": CARD_VERSION,
         "relay_id": relay_id(),
         "relay_public_key": get_relay_public_key_hex(),
         "relay_key_history": relay_key_history(),
@@ -7532,58 +7619,52 @@ async def _repin_if_rotated(peer_url: str, presented: str) -> bool:
     return True
 
 
-async def _pull_federated_listings(peer_url: str) -> int:
-    """Pull listings from a peer relay and upsert locally (federation gossip).
+async def _pull_federated_posts(peer_url: str) -> int:
+    """Pull the pointer posts a linked relay's agents wrote, and keep those whose agent signature checks.
 
-    Rejects the batch unless it carries a valid Ed25519 signature from the peer's own
-    relay key (see federated_listings_out()) — an unsigned or badly-signed response is
-    trusted no further than any other unauthenticated internet traffic. A peer's key is
-    pinned on first successful verification (_FEDERATION_PEER_PUBKEYS) and any later pull
-    presenting a different key for the same peer_url is rejected rather than silently
-    re-trusted, so a URL/DNS hijack can't swap in a different signer unnoticed.
+    Only `pointer` posts travel. The batch must be signed by the peer's own relay key (pinned on the
+    first good pull; a later key must follow from the pinned one by a signed rotation, or the batch is
+    refused as a possible URL hijack), must name the relay it was fetched from, and each post must carry
+    its agent's own signature, key log and the origin it names (`wire.post_verdict`): the batch
+    signature says which relay sent it, a separate fact. Nothing a post points at is fetched.
     """
     peer_url = normalize_peer_url(peer_url)  # N13-2 (R2): one identity for this peer
     try:
-        data = await _fetch_federation_batch(f"{peer_url}/gaming/v1/federate/listings")
+        data = await _fetch_federation_batch(f"{peer_url}/federation/v1/posts")
     except Exception as e:
+        why = str(e)
+        try:    # an older relay has no posts feed: say which protocol it runs rather than that a path is missing
+            from emporia import fetch
+            old = _old_protocol((await fetch.request("GET", f"{peer_url}/relay/card", timeout=10)).json())
+            why = f"refused: {old}" if old else why
+        except Exception:  # noqa: BLE001
+            pass
         _FEDERATION_LAST_SYNC[peer_url] = {
-            "ok": False,
-            "imported": 0,
-            "error": str(e),
-            "synced_at": datetime.now(UTC).isoformat(),
-        }
+            "ok": False, "imported": 0, "error": why, "synced_at": datetime.now(UTC).isoformat()}
         return 0
 
     origin = data.get("origin_relay", peer_url)
-    listings = data.get("listings", [])
+    posts = data.get("posts", [])
     pubkey_hex = data.get("origin_public_key_hex", "")
     signature_hex = data.get("signature", "")
 
     def _reject(reason: str) -> int:
         _FEDERATION_LAST_SYNC[peer_url] = {
-            "ok": False,
-            "imported": 0,
-            "error": reason,
-            "synced_at": datetime.now(UTC).isoformat(),
-        }
+            "ok": False, "imported": 0, "error": reason, "synced_at": datetime.now(UTC).isoformat()}
         return 0
 
-    if not pubkey_hex or not signature_hex:
+    if not pubkey_hex or not signature_hex or not isinstance(posts, list):
         return _reject("peer response is unsigned — refusing to import (upgrade the peer relay)")
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex)).verify(
             bytes.fromhex(signature_hex),
-            federation_signable_bytes(origin, "listings", listings),
+            federation_signable_bytes(origin, "posts", posts),
         )
     except Exception:
         return _reject("signature verification failed — batch may be tampered or corrupt")
 
-    # P264: a peer speaks only for itself, as the advert pull already required:
-    # the origin it names must be the URL it was linked and fetched at. Before,
-    # the origin was the peer's own claim and each listing was checked against
-    # it, so a linked relay could re-serve another relay's signed listings —
-    # one it had stopped serving included — as if it were that relay.
+    # A peer speaks only for itself: the origin it names must be the URL it was linked and fetched at.
     if normalize_peer_url(origin) != peer_url:
         return _reject(f"the feed names {origin!r} as its origin, not the relay linked as {peer_url!r}")
 
@@ -7600,210 +7681,79 @@ async def _pull_federated_listings(peer_url: str) -> int:
         _FEDERATION_PEER_PUBKEYS[peer_url] = pubkey_hex
         save_federation_peer_pubkeys(_FEDERATION_PEER_PUBKEYS)
 
-    # Skip our own relay to prevent loops. Checked by public key, not just URL — the key is
-    # a persistent identity tied to a key file, while RELAY_BASE_URL is an env var an
-    # operator can change; a URL-only check would miss "this is actually our own batch,
-    # reflected back by a peer" once the URL has drifted from what old listings recorded.
-    # Both sides normalized (N13-2, R2) — a trailing-slash mismatch between a peer's
-    # self-reported origin_relay and our own RELAY_BASE_URL must not defeat this check.
+    # Skip our own relay, by key as well as URL, to prevent loops.
     if normalize_peer_url(origin) == normalize_peer_url(RELAY_BASE_URL) or pubkey_hex == get_relay_public_key_hex():
         _FEDERATION_LAST_SYNC[peer_url] = {
-            "ok": True,
-            "imported": 0,
-            "note": "skipped — peer reported our own relay as origin",
-            "synced_at": datetime.now(UTC).isoformat(),
-        }
+            "ok": True, "imported": 0, "note": "skipped — peer reported our own relay as origin",
+            "synced_at": datetime.now(UTC).isoformat()}
         return 0
 
-    # N13-3 (R3): cap what we accept, mirroring the LIMIT this relay already applies to
-    # what it serves (federated_listings_out). Applied after signature verification
-    # (which covers the full, untruncated list) so this never invalidates a genuinely
-    # signed batch; only caps the unbounded CPU/DB-write/guardrails-scan (N12-6,
-    # including paid NIM calls when enabled) cost of importing it. A peer oversending
-    # isn't silently dropped — noted in the sync record below, which
-    # GET /federation/peers already surfaces.
-    peer_batch_size = len(listings)
+    # N13-3 (R3): cap what we accept, after the signature (which covers the whole list) is checked.
+    peer_batch_size = len(posts)
     if peer_batch_size > _MAX_LIMIT:
-        listings = listings[:_MAX_LIMIT]
+        posts = posts[:_MAX_LIMIT]
 
-    from emporia.wire import listing_verdict
+    from emporia.wire import post_verdict
 
     imported = 0
-    rejected_foreign = 0
     refused: dict[str, int] = {}
     kept: set[str] = set()
-    for listing in listings:
-        if not listing.get("listing_id"):
+    for post in posts:
+        if not isinstance(post, dict) or not post.get("post_id"):
             continue
-        # P240: the agent's own word, checked here, not taken from the relay
-        # that sent it — the batch signature says which relay sent it, a
-        # separate fact. One hop still: a listing must name the relay that
-        # served it as its origin.
-        why = listing_verdict(listing, verify)
-        if not why and listing.get("origin_relay") != origin:
-            why = "it was put up on another relay than the one serving it"
+        why = post_verdict(post, verify)
+        if not why and post.get("origin_relay") != origin:
+            why = "it was posted on another relay than the one serving it"
+        if not why and (post.get("kind") != "pointer" or post.get("topic") or post.get("reply_to")):
+            why = "only pointer posts travel between relays"
         if why:
             refused[why] = refused.get(why, 0) + 1
             continue
         try:
-            # N12-6: untrusted external content landing in a store the dashboard
-            # renders — matches the scan MCP sync_lobby_from_peer already does for
-            # challenges. Rejects the individual item, not the whole batch.
-            await _assert_payload_safe_counted(listing)
+            # N12-6: untrusted external text landing in a store the dashboard renders.
+            await _assert_payload_safe_counted({"text": post["text"], "label": post.get("label", ""),
+                                                "tags": post.get("tags") or []})
         except Exception:
             continue
+        from emporia.addresses import address, host_of
         with DB_LOCK, get_db() as conn:
-            # P83: ownership, the rule N12-3 put on lobby imports and this
-            # importer never got. A signature proves who sent the batch, not
-            # what they may say about someone else's row: `INSERT OR REPLACE`
-            # let any configured peer overwrite a *local* listing by reusing its
-            # id — a bounty's payment_intent_id, state and funder included.
-            #
-            # P87: owned by the peer it was pulled from, not by the origin that
-            # peer claimed. `origin` is self-reported, so P83's origin check let
-            # one peer claim another's origin and overwrite that peer's rows.
-            # `peer_url` is the URL we fetched and whose key we pinned.
-            existing = conn.execute(
-                "SELECT origin_relay, federated_from FROM listings WHERE listing_id = ?",
-                (listing["listing_id"],),
-            ).fetchone()
-            if existing and not _peer_owns_listing(existing, peer_url):
-                rejected_foreign += 1
+            # Ownership (P83/P87): a peer may refresh only the rows it served before, never a local one.
+            existing = conn.execute("SELECT federated_from FROM posts WHERE post_id = ?",
+                                    (post["post_id"],)).fetchone()
+            if existing and existing["federated_from"] != peer_url:
+                refused["its id is already taken here"] = refused.get("its id is already taken here", 0) + 1
                 continue
             conn.execute(
-                "INSERT OR REPLACE INTO listings "
-                "(listing_id, title, description, listing_type, agent_id, payment_mode, "
-                "price_usd, module_type, origin_relay, expires_at, metadata_json, created_at, "
-                "federated_from, agent_public_key_hex, agent_stable_id, listing_nonce, signature, "
-                "agent_key_log_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    listing["listing_id"],
-                    listing.get("title", ""),
-                    listing.get("description", ""),
-                    listing.get("listing_type", "service"),
-                    listing.get("agent_id", ""),
-                    listing.get("payment_mode", "free"),
-                    listing.get("price_usd", "0"),
-                    listing.get("module_type"),
-                    origin,
-                    listing.get("expires_at"),
-                    json.dumps(listing.get("metadata") or {}),
-                    listing.get("created_at", datetime.now(UTC).isoformat()),
-                    peer_url,
-                    str(listing["agent_public_key_hex"]).lower(),
-                    listing["agent_stable_id"],
-                    listing["listing_nonce"],
-                    listing["signature"],
-                    json.dumps(listing.get("key_log") or []),
-                ),
-            )
+                "INSERT OR REPLACE INTO posts (post_id, author_id, author_stable_id, author_public_key_hex, "
+                "origin_relay, federated_from, nonce, kind, label, text, tags_json, topic, reply_to, quote_of, "
+                "at, signature, key_log_json, is_deleted, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,?,"
+                "?,?,?,0,?)",
+                (post["post_id"], address(str(post.get("author_id") or ""), host_of(origin)), post["author_stable_id"],
+                 str(post["author_public_key_hex"]).lower(), origin, peer_url, post["nonce"], "pointer",
+                 post.get("label") or "", post["text"], json.dumps(post.get("tags") or []),
+                 post.get("quote_of"), post["at"], post["signature"], json.dumps(post.get("key_log") or []),
+                 datetime.now(UTC).isoformat()))
         imported += 1
-        kept.add(listing["listing_id"])
-    # P184: the batch is the peer's whole current list, so a row it no longer
-    # sends was withdrawn or sold there. Only when the batch was not cut short.
+        kept.add(post["post_id"])
+    # The batch is the peer's whole current list: a post it no longer sends was withdrawn there.
     if peer_batch_size <= _MAX_LIMIT:
         with DB_LOCK, get_db() as conn:
-            stale = [r["listing_id"] for r in conn.execute(
-                "SELECT listing_id FROM listings WHERE federated_from = ?", (peer_url,)).fetchall()
-                if r["listing_id"] not in kept]
-            for listing_id in stale:
-                conn.execute("DELETE FROM listings WHERE listing_id = ? AND federated_from = ?",
-                             (listing_id, peer_url))
+            for r in conn.execute("SELECT post_id FROM posts WHERE federated_from = ?", (peer_url,)).fetchall():
+                if r["post_id"] not in kept:
+                    conn.execute("DELETE FROM posts WHERE post_id = ? AND federated_from = ?",
+                                 (r["post_id"], peer_url))
     sync_record: dict[str, Any] = {
-        "ok": True,
-        "imported": imported,
-        "origin_relay": origin,
+        "ok": True, "imported": imported, "origin_relay": origin,
         "synced_at": datetime.now(UTC).isoformat(),
     }
     if peer_batch_size > _MAX_LIMIT:
         sync_record["truncated"] = True
         sync_record["peer_batch_size"] = peer_batch_size
-    if rejected_foreign:
-        sync_record["rejected_not_owner"] = rejected_foreign
     if refused:
         sync_record["refused"] = sum(refused.values())
         sync_record["refused_why"] = refused
     _FEDERATION_LAST_SYNC[peer_url] = sync_record
     return imported
-
-
-
-
-async def _pull_federated_adverts(peer_url: str) -> None:
-    """P249: pull the rooms and Agora topics a linked relay's owners advertised,
-    keep the ones whose owner's signature checks out, and drop what the relay no
-    longer sends — a withdrawn advert leaves here on the next pull.
-
-    The feed must be signed by the relay key this relay pinned for that peer
-    (the same pin the listings use) and must name the relay it was fetched from;
-    each advert must then carry its owner's own signature over the terms and
-    that relay (`wire.room_advert_verdict`). Forged ones are counted in the
-    peer's sync record (`adverts_refused`, `adverts_refused_why`), as listings
-    are. A peer that does not serve the feeds is left as it was."""
-    from emporia.adverts import verdict_for
-    peer_url = normalize_peer_url(peer_url)
-    _ensure_federation_pins_loaded()
-    record: dict[str, Any] = {}
-    refused: dict[str, int] = {}
-    kept_total = 0
-    for kind in ("rooms", "topics"):
-        try:
-            data = await _fetch_federation_batch(f"{peer_url}/federation/v1/{kind}")
-        except Exception as e:  # noqa: BLE001 — an older peer has no feed; keep what we have
-            record["adverts_error"] = str(e)[:200]
-            continue
-        origin = data.get("origin_relay", peer_url)
-        items = data.get(kind) or []
-        pubkey_hex, signature_hex = data.get("origin_public_key_hex", ""), data.get("signature", "")
-        pinned = _FEDERATION_PEER_PUBKEYS.get(peer_url)
-        try:
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-            Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex)).verify(
-                bytes.fromhex(signature_hex), federation_signable_bytes(origin, kind, items))
-        except Exception:  # noqa: BLE001
-            record["adverts_error"] = f"the {kind} feed is not signed by the relay's key"
-            continue
-        if pinned != pubkey_hex or normalize_peer_url(origin) != peer_url or not isinstance(items, list):
-            # Only a relay already pinned by a listings pull is believed, and only about itself.
-            record["adverts_error"] = f"the {kind} feed is not from the relay this one linked"
-            continue
-        truncated = len(items) > _MAX_LIMIT
-        keep: dict[str, str] = {}
-        for item in items[:_MAX_LIMIT]:
-            if not isinstance(item, dict):
-                why = "not an advert"
-            else:
-                ident = str(item.get("room_id" if kind == "rooms" else "slug") or "")
-                why = verdict_for(kind, item, origin) if ident else "it names nothing"
-            if not why:
-                try:
-                    await _assert_payload_safe_counted(item)
-                except Exception:  # noqa: BLE001
-                    why = "its text was refused by the guardrails"
-            if why:
-                refused[why] = refused.get(why, 0) + 1
-                continue
-            keep[ident] = json.dumps(item)
-        now = datetime.now(UTC).isoformat()
-        with DB_LOCK, get_db() as conn:
-            for ident, item_json in keep.items():
-                conn.execute("INSERT OR REPLACE INTO elsewhere_adverts (kind, peer_url, ident, item_json, pulled_at) "
-                             "VALUES (?,?,?,?,?)", (kind, peer_url, ident, item_json, now))
-            if not truncated:
-                for r in conn.execute("SELECT ident FROM elsewhere_adverts WHERE kind = ? AND peer_url = ?",
-                                      (kind, peer_url)).fetchall():
-                    if r["ident"] not in keep:
-                        conn.execute("DELETE FROM elsewhere_adverts WHERE kind = ? AND peer_url = ? AND ident = ?",
-                                     (kind, peer_url, r["ident"]))
-        kept_total += len(keep)
-    sync = _FEDERATION_LAST_SYNC.get(peer_url)
-    if sync is not None:
-        sync["adverts"] = kept_total
-        sync.update(record)
-        if refused:
-            sync["adverts_refused"] = sum(refused.values())
-            sync["adverts_refused_why"] = refused
 
 
 async def _sync_all_federated_peers() -> dict[str, int]:
@@ -7835,19 +7785,13 @@ async def _sync_all_federated_peers() -> dict[str, int]:
     peers = list(FEDERATED_RELAYS)
     drop_unlinked_federated_rows()
     async def _pull_peer(peer: str) -> int:
-        imported = await _pull_federated_listings(peer)
+        imported = await _pull_federated_posts(peer)
         # P291: then what it runs, from its card signed by the key the listings pinned —
         # what is kept from it below, and what is offered to it, follows that
         try:
             await _pull_peer_modules(normalize_peer_url(peer))
         except Exception:
             logger.exception("federation_modules_pull_raised_unexpectedly", extra={"peer_url": peer})
-        # P249: the adverts come after the listings, which pin the peer's key; a failure
-        # here never fails the sync, and one peer's slowness holds up only that peer.
-        try:
-            await _pull_federated_adverts(peer)
-        except Exception:
-            logger.exception("federation_advert_pull_raised_unexpectedly", extra={"peer_url": peer})
         try:   # P281: and its log's state, checked against the one kept from last time
             if peer_runs(peer, "log") is False:
                 _note_peer_log_off(normalize_peer_url(peer))
@@ -7896,6 +7840,9 @@ async def _pull_peer_modules(peer_url: str) -> dict[str, Any] | None:
     if not (isinstance(card, dict) and pinned and card.get("relay_public_key") == pinned
             and verify_relay_card(card)["ok"] and isinstance(card.get("relay_modules"), dict)):
         sync["relay_modules_error"] = "its card is not signed by the key pinned for it, or names no modules"
+        return None
+    if old := _old_protocol(card):
+        sync["relay_modules_error"] = f"refused: {old}"
         return None
     mods = card["relay_modules"]
     _FEDERATION_PEER_MODULES[peer_url] = mods
@@ -7957,12 +7904,12 @@ def drop_unlinked_federated_rows() -> int:
     linked = [normalize_peer_url(u) for u in FEDERATED_RELAYS]
     with DB_LOCK, get_db() as conn:
         q = "DELETE FROM listings WHERE federated_from IS NOT NULL"
-        advert_q = "DELETE FROM elsewhere_adverts"        # P249: adverts follow the link too
+        post_q = "DELETE FROM posts WHERE federated_from IS NOT NULL"      # pointers follow the link too
         if linked:
             marks = ",".join("?" * len(linked))
             q += f" AND federated_from NOT IN ({marks})"
-            advert_q += f" WHERE peer_url NOT IN ({marks})"
-        conn.execute(advert_q, linked)
+            post_q += f" AND federated_from NOT IN ({marks})"
+        conn.execute(post_q, linked)
         return conn.execute(q, linked).rowcount
 
 
@@ -9246,6 +9193,7 @@ from emporia.routes import labs as _lab_routes  # noqa: E402
 from emporia.routes import pledges as _pledge_routes  # noqa: E402
 from emporia.routes import whats_next as _next_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
+from emporia.routes import posts as _post_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
@@ -9273,5 +9221,6 @@ app.include_router(_lab_routes.router)
 app.include_router(_pledge_routes.router)
 app.include_router(_next_routes.router)
 app.include_router(_like_routes.router)
+app.include_router(_post_routes.router)
 app.include_router(_deletion_routes.router)
 app.include_router(_translog_routes.router)

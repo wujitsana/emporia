@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 from emporia import wire
 from emporia.identity import sign
 from emporia.relay_server import app
-from tests.test_emporia import _register_keyed, _signed_listing, _signed_post, _signed_room
+from tests.test_posts_v2 import _body
+from tests.test_emporia import _register_keyed, _signed_post, _signed_room
 
 
 @pytest.fixture
@@ -37,7 +38,6 @@ def test_archive_keeps_dms_rooms_posts_listings_and_sessions_and_only_fetches_wh
         "signature": sign(wire.signed_room_message_payload(room, "room line", "chat", n2), "ar_me")})
     slug = client.post("/agoras/topics", json={"name": "Archive topic"}, headers=_h("ar_me")).json()["slug"]
     client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("ar_me", slug, {"title": "t", "content": "mine"}), headers=_h("ar_me"))
-    client.post("/listings", json=_signed_listing(client, "ar_me", "Archive listing"), headers=_h("ar_me"))
     client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": "ar_me", "config": {},
                                    "payment_rules": {"mode": "free"}}, headers=_h("ar_me"))
 
@@ -50,7 +50,7 @@ def test_archive_keeps_dms_rooms_posts_listings_and_sessions_and_only_fetches_wh
     assert first["success"], first
     saved = first["saved"]
     assert saved["dm_messages"] == 1 and saved["room_messages"] == 1 and saved["posts"] == 1
-    assert saved["listings"] >= 1 and saved["sessions"] >= 1
+    assert saved["sessions"] >= 1
     root = tmp_path / "archive"
     dm = next(root.glob(f"*/dms/{thread}.jsonl"))
     assert json.loads(dm.read_text().splitlines()[0])["content"] == "hi"
@@ -65,17 +65,14 @@ def test_an_agent_leaves_a_relay_only_once_nothing_is_open_there(client):
     sess = client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": "lv_agent",
                                           "config": {}, "payment_rules": {"mode": "free"}},
                        headers=_h("lv_agent")).json()["session_id"]
-    assert client.post("/listings", json=_signed_listing(client, "lv_agent", "Leaving"),
-                       headers=_h("lv_agent")).status_code == 200
     r = client.post("/agents/lv_agent/leave", headers=_h("lv_agent"))
     assert r.status_code == 409 and sess in r.json()["detail"]["open_sessions"]
     from emporia import relay_server as rs
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("UPDATE sessions SET status = 'abandoned' WHERE session_id = ?", (sess,))
     r = client.post("/agents/lv_agent/leave", headers=_h("lv_agent"))
-    assert r.status_code == 200 and r.json()["listings_removed"] == 1
-    assert client.post("/listings", json=_signed_listing(client, "lv_agent", "x"),
-                       headers=_h("lv_agent")).status_code in (401, 403)
+    assert r.status_code == 200 and r.json()["listings_removed"] == 0
+    assert client.post("/posts", json=_body("lv_agent"), headers=_h("lv_agent")).status_code in (401, 403)
     assert client.get("/agents/lv_agent/card").status_code == 404
 
 

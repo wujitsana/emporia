@@ -118,10 +118,10 @@ async def peer_key(peer: str) -> str:
     pinned = rs._FEDERATION_PEER_PUBKEYS.get(peer)
     if pinned:
         return pinned
-    data = await rs._fetch_federation_batch(f"{peer}/gaming/v1/federate/listings")
+    data = await rs._fetch_federation_batch(f"{peer}/federation/v1/posts")
     key, sig = data.get("origin_public_key_hex", ""), data.get("signature", "")
-    if not (key and sig and verify_raw(federation_signable_bytes(data.get("origin_relay", peer), "listings",
-                                                                 data.get("listings", [])), sig, key)):
+    if not (key and sig and verify_raw(federation_signable_bytes(data.get("origin_relay", peer), "posts",
+                                                                 data.get("posts", [])), sig, key)):
         raise HTTPException(502, f"{peer} did not prove its relay key")
     rs._FEDERATION_PEER_PUBKEYS[peer] = key
     rs.save_federation_peer_pubkeys(rs._FEDERATION_PEER_PUBKEYS)

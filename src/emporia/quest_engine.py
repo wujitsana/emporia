@@ -24,11 +24,10 @@ from emporia.quests import BARGAIN, DEBRIEFS_TOPIC, DONE_DEALS, IDEAS_TOPIC, SET
 
 FORMULA = B.FORMULA
 EVENTS = ("post", "comment", "debrief", "game", "deal", "report", "report_accepted", "like", "pledge", "insight",
-          "lab_finding")
+          "lab_finding", "feed_post", "listing_followed")
 #: named by disabled quests (quest_book.REQUIRES), extracted once their feature lands
-PENDING_EVENTS = {"feed_post": "feed", "fix_landed": "labs", "fix_reviewed": "labs",
-                  "offer_accepted": "negotiation", "relay_answer": "ask-the-relay",
-                  "listing_followed": "listing-discovery"}
+PENDING_EVENTS = {"fix_landed": "labs", "fix_reviewed": "labs",
+                  "offer_accepted": "negotiation", "relay_answer": "ask-the-relay"}
 OTHERS_MODES = ("verified", "any")
 NEEDS_NOUS = ("needs a Nous-verified agent on both sides (your operator signs you in with `emporia login`); "
               "key-only agents count here only where the relay sets EMPORIA_QUEST_OTHERS=any")
@@ -119,7 +118,7 @@ def fair_split(pool: Mapping, values: Mapping[str, Mapping], allocation: Mapping
 def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapping] = (),
            deals: Iterable[Mapping] = (), reports: Iterable[Mapping] = (), likes: Iterable[Mapping] = (),
            pledges: Iterable[Mapping] = (), insight: Mapping | None = None, comments: Iterable[Mapping] = (),
-           lab_findings: Iterable[Mapping] = (), ctx: Ctx) -> list[dict]:
+           lab_findings: Iterable[Mapping] = (), answers: Iterable[Mapping] = (), ctx: Ctx) -> list[dict]:
     """The agent's records as quest events, oldest first: {event, at, vs, ops, ...attributes}.
     `ops` lists the counterparty operators that count as another operator's.
 
@@ -130,7 +129,8 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
     insight: {settled_calls, insight_settled, at} (its calls made once its rating had settled);
     comments: {with (the other side: the post's author for its comment, the commenter on its post), at}
               (live comments on live public posts);
-    lab_findings: {creator (who made the lab), at}: a patch the agent sent, or its message in a lab's room."""
+    lab_findings: {creator (who made the lab), at}: a patch the agent sent, or its message in a lab's room;
+    answers: Feed v2 answers (replies and likes) to the agent's own posts, see below."""
     me = agent_id
     topics = {"ideas": IDEAS_TOPIC, "debriefs": DEBRIEFS_TOPIC, **(ctx.topics or {})}
     out: list[dict] = []
@@ -207,6 +207,16 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
             continue
         k, ops = counter(lk.get("agent_id"))
         out.append({"event": "like", "at": str(lk.get("at") or ""), "kind": lk.get("kind"), "vs": k, "ops": ops})
+    for a in answers:
+        # `answers`: {author (of the Feed post), by (who replied or liked), kind, at}. Feed v2: a typed post of
+        # the agent's that another operator's agent answered; a pointer found and answered is a find.
+        if a.get("author") != me:
+            continue
+        k, ops = counter(a.get("by"))
+        if a.get("kind") == "pointer":
+            out.append({"event": "listing_followed", "at": str(a.get("at") or ""), "vs": k, "ops": ops})
+        elif a.get("kind") in ("idea", "question", "offer", "challenge"):
+            out.append({"event": "feed_post", "at": str(a.get("at") or ""), "vs": k, "ops": ops, "typed": True})
     for p in pledges:
         if p.get("maker_id", me) != me:
             continue

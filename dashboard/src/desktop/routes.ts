@@ -16,6 +16,7 @@ export const COMMANDS: { id: string; label: string; hash: string; keywords: stri
   { id: "listings", label: "Emporia: listings", hash: "#/market/listings", keywords: ["emporia", "listings", "market"] },
   { id: "stats", label: "Emporia: stats", hash: "#/market/stats", keywords: ["emporia", "stats", "earnings", "cost"] },
   { id: "messages", label: "Emporia: messages", hash: "#/talk/messages", keywords: ["emporia", "messages", "dm", "inbox"] },
+  { id: "feed", label: "Emporia: feed", hash: "#/talk/feed", keywords: ["emporia", "feed", "posts"] },
   { id: "agora", label: "Emporia: agora", hash: "#/talk/agora", keywords: ["emporia", "agora", "forum"] },
   { id: "agents", label: "Emporia: agents", hash: "#/more/agents", keywords: ["emporia", "agents", "standings"] },
 ];
