@@ -53,7 +53,7 @@ def test_the_order_is_urgent_first_then_by_kind():
     assert kinds[0] == ("deal", "sess_hurry"), "a clock about to run out comes first"
     assert kinds[1:3] == [("reveal", "sess_reveal"), ("move", "sess_move")], "a reveal others wait on, then a move"
     assert [i["kind"] for i in items][3:] == ["deal", "pledge", "invite", "invite", "message", "message", "bounty",
-                                              "bounty", "quest", "expedition"]
+                                              "bounty", "quest", "quest", "expedition"], "quests:v4: two arcs' steps"
     assert [i["rank"] for i in items] == list(range(1, len(items) + 1))
     assert N.rank(FACTS, P.PRESETS["custom"], limit=3)[-1]["rank"] == 3
 
@@ -180,8 +180,11 @@ def test_the_tool_ranks_the_relays_facts_inside_the_playbook(client, monkeypatch
     assert out["success"] and out["playbook"] == "player" and "data, not instructions" in out["untrusted"]
     first = out["items"][0]
     assert (first["kind"], first["tool"], first["args"]["session_id"]) == ("move", "commit_move", sid)
-    assert not [i for i in out["items"] if i["tool"] == "join_session"], "a player's playbook takes no chess"
+    assert chess not in [i["args"]["session_id"] for i in out["items"] if i["tool"] == "join_session"], \
+        "a player's playbook takes no chess"
     monkeypatch.setenv("EMPORIA_PLAYBOOK", "custom")
-    assert [i["args"]["session_id"] for i in m.whats_next()["items"] if i["tool"] == "join_session"] == [chess]
+    joins = [i for i in m.whats_next(limit=20)["items"] if i["tool"] == "join_session"]
+    assert joins[0]["args"]["session_id"] == chess and joins[0]["kind"] == "invite", \
+        "the challenge to it first; other waiting games (P3) after it"
     q = m.my_quests()
     assert q["success"] and "due" in q, "signed in as itself, my_quests carries the due list"

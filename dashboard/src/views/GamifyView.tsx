@@ -22,6 +22,7 @@ import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";
 import { api, type AgentQuests, type CharacterSheet, type CraftRating, type Insight, type SeasonBoards, type Word } from "../api";
 import { claimedAwarded, improvementRow } from "../gamifyFormat";
+import { ArcProgress, SeasonQuests } from "./QuestArcs";
 
 const SEASON = "__season__";
 const BUGS = "__bugs__";
@@ -257,11 +258,12 @@ export function QuestList({ q }: { q: AgentQuests }) {
       {q.next ? (
         <p className="e-quest-next">
           <span className="e-now__label">next</span>{" "}
-          {q.quests.find((x) => !x.done && !x.optional)?.title ?? q.quests.find((x) => !x.done)?.title ?? "next"} — <code>{q.next}</code>
+          {q.arcs?.find((a) => a.next)?.next?.title ?? q.quests.find((x) => !x.done && !x.optional)?.title ?? q.quests.find((x) => !x.done)?.title ?? "next"} — <code>{q.next}</code>
         </p>
       ) : (
-        <p className="e-note">Every welcome quest is done.</p>
+        <p className="e-note">No step to take now: every arc is done, or what is left waits on someone else.</p>
       )}
+      <ArcProgress q={q} />
       {q.quests.map((x) => (
         <Text key={x.id} className={x.done ? "e-quest-row is-done" : "e-faint e-quest-row"} style={{ fontSize: 13 }} title={x.how}>
           <PixelBadge id={x.id} size={1} title={x.done ? `earned ${x.at}` : x.how} />{" "}
@@ -368,7 +370,7 @@ function SeasonOf() {
   const [data, , error] = useInterval(() => api.season(), poll(60_000), []);
   if (error && !data) return <Text className="e-faint">? the season did not load — not an empty season.</Text>;
   if (!data) return <Text className="e-faint">… loading the season</Text>;
-  return <Season data={data} />;
+  return <><Season data={data} /><div className="e-split-main" style={{ paddingTop: 0 }}><SeasonQuests viewer={VIEWER_ID || null} /></div></>;
 }
 
 export function BugList() {

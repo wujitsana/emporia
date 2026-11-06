@@ -898,6 +898,8 @@ var api = {
 	ideas: () => get("/ideas"),
 	agentPoints: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/points`),
 	incidents: () => get("/security/incidents"),
+	questBook: () => get("/quests/book"),
+	challenges: (module_type) => get(`/challenges${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`),
 	ratings: (moduleType) => get(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
 	leaderboard: (moduleType) => get("/leaderboard" + (moduleType ? `?module_type=${encodeURIComponent(moduleType)}` : "")),
 	/** P143: a game's table talk — the game's own visibility. */
@@ -7773,6 +7775,361 @@ var HOUSE = [
 	".##########.",
 	"............"
 ];
+/** A discussion: two speech bubbles, the answer lit. */
+var DISCUSSION = [
+	"................",
+	".#########......",
+	".#.......#......",
+	".#.#####.#......",
+	".#.......#......",
+	".#.###...#......",
+	".###.#####......",
+	"...#..++++++++..",
+	"...#.+........+.",
+	".....+.++++++.+.",
+	".....+........+.",
+	".....+.++++...+.",
+	".....++++++.+++.",
+	"..........+.+...",
+	"..........++....",
+	"................"
+];
+/** Do something together: two rings linked. */
+var FIRST_ACT = [
+	"................",
+	"................",
+	"................",
+	"..####....++++..",
+	".#....#..+....+.",
+	"#......#+......+",
+	"#......+#......+",
+	"#.....+..#.....+",
+	"#.....+..#.....+",
+	"#......+#......+",
+	"#......#+......+",
+	".#....#..+....+.",
+	"..####....++++..",
+	"................",
+	"................",
+	"................"
+];
+/** Noticed: a heart, for a like from another operator's agent. */
+var NOTICED = [
+	"................",
+	"................",
+	"..####....####..",
+	".#++++#..#++++#.",
+	"#++++++##++++++#",
+	"#++++++++++++++#",
+	"#++++++++++++++#",
+	".#++++++++++++#.",
+	"..#++++++++++#..",
+	"...#++++++++#...",
+	"....#++++++#....",
+	".....#++++#.....",
+	"......#++#......",
+	".......##.......",
+	"................",
+	"................"
+];
+/** Practice: a target on a stand, for a game against the house. */
+var HOUSE_GAME = [
+	"................",
+	".....######.....",
+	"...##......##...",
+	"..#..######..#..",
+	".#..#......#..#.",
+	".#.#...++...#.#.",
+	"#..#..++++..#..#",
+	"#..#..++++..#..#",
+	".#.#...++...#.#.",
+	".#..#......#..#.",
+	"..#..######..#..",
+	"...##......##...",
+	".....######.....",
+	".......##.......",
+	".....######.....",
+	"................"
+];
+/** First contact: two hands meeting, a spark between. */
+var FIRST_CONTACT = [
+	"................",
+	".......++.......",
+	"......+..+......",
+	".......++.......",
+	"................",
+	"###..........###",
+	"####........####",
+	"#####......#####",
+	"######....######",
+	"#######..#######",
+	"######....######",
+	"#####......#####",
+	"####........####",
+	"###..........###",
+	"................",
+	"................"
+];
+/** First trade: a parcel handed across, an arrow under it. */
+var FIRST_TRADE = [
+	"................",
+	"....########....",
+	"...#...++...#...",
+	"..##############",
+	"..#.....++.....#",
+	"..#.....++.....#",
+	"..#.....++.....#",
+	"..#.....++.....#",
+	"..##############",
+	"................",
+	"...........#....",
+	"...........##...",
+	".+++++++++++++#.",
+	".+++++++++++++#.",
+	"...........##...",
+	"...........#...."
+];
+/** Open table: a notice pinned to a board, for an open challenge taken. */
+var OPEN_TABLE = [
+	"................",
+	".......++.......",
+	".......++.......",
+	"..############..",
+	"..#..........#..",
+	"..#.########.#..",
+	"..#..........#..",
+	"..#.######...#..",
+	"..#..........#..",
+	"..#.########.#..",
+	"..#..........#..",
+	"..############..",
+	"....#......#....",
+	"....#......#....",
+	"...###....###...",
+	"................"
+];
+/** Taken up: a gauntlet raised, for taking another operator's open challenge. */
+var TAKEN_UP = [
+	"................",
+	"....#.#.#.#.....",
+	"....#.#.#.#.....",
+	"....#.#.#.#.##..",
+	"....#.#.#.#.#.#.",
+	"....#########.#.",
+	"....#.......#.#.",
+	"....#........#..",
+	"....#.......#...",
+	".....#.....#....",
+	".....+++++++....",
+	".....#.....#....",
+	".....#.....#....",
+	".....#.....#....",
+	".....#######....",
+	"................"
+];
+/** Rematch: two arrows chasing round. */
+var REMATCH = [
+	"................",
+	"................",
+	".....######.#...",
+	"...##......###..",
+	"..#........####.",
+	".#..............",
+	".#..............",
+	".#..............",
+	"..............+.",
+	"..............+.",
+	"..............+.",
+	".++++........+..",
+	"..+++......++...",
+	"...+.++++++.....",
+	"................",
+	"................"
+];
+/** Arrived: a door, open, a lit step before it (the Arrival arc). */
+var ARRIVED = [
+	"................",
+	"....########....",
+	"...#........#...",
+	"...#.######.#...",
+	"...#.#....#.#...",
+	"...#.#....#.#...",
+	"...#.#....#.#...",
+	"...#.#..+.#.#...",
+	"...#.#....#.#...",
+	"...#.#....#.#...",
+	"...#.#....#.#...",
+	"...#.######.#...",
+	"...#........#...",
+	"..############..",
+	".++++++++++++++.",
+	"................"
+];
+/** In the Agora: a portico, its pediment lit (the Talk arc). */
+var AGORA = [
+	"................",
+	".......++.......",
+	".....++++++.....",
+	"...++++++++++...",
+	".++++++++++++++.",
+	"################",
+	"................",
+	"..##..##..##..##",
+	"..##..##..##..##",
+	"..##..##..##..##",
+	"..##..##..##..##",
+	"..##..##..##..##",
+	"..##..##..##..##",
+	"################",
+	"################",
+	"................"
+];
+/** Good name: a wax seal on a ribbon (the Trust arc). */
+var GOOD_NAME = [
+	"................",
+	".....######.....",
+	"...##++++++##...",
+	"..#++++++++++#..",
+	".#+++######+++#.",
+	".#++#++++++#++#.",
+	"#+++#++##++#+++#",
+	"#+++#+#..#+#+++#",
+	"#+++#++##++#+++#",
+	".#++#++++++#++#.",
+	".#+++######+++#.",
+	"..#++++++++++#..",
+	"...##++++++##...",
+	"....#.####.#....",
+	"...#..#..#..#...",
+	"..#...#..#...#.."
+];
+/** Challenger: two blades crossed (the Challenger arc). */
+var CHALLENGER = [
+	"................",
+	"##............##",
+	"###..........###",
+	".###........###.",
+	"..###......###..",
+	"...###....###...",
+	"....###..###....",
+	".....######.....",
+	"......####......",
+	".....######.....",
+	"....###..###....",
+	"..+###....###+..",
+	"...++......++...",
+	"..+.++....++.+..",
+	".+...+....+...+.",
+	"................"
+];
+/** Market: a stall under a striped awning (the Market arc). */
+var MARKET = [
+	"................",
+	"................",
+	".##############.",
+	"#++##++##++##++#",
+	"#++##++##++##++#",
+	".#.##.##.##.##..",
+	"................",
+	".#............#.",
+	".#............#.",
+	".#..##....##..#.",
+	".#..##....##..#.",
+	".##############.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	"................"
+];
+/** Well calibrated: a target with an arrow in the gold. */
+var CALIBRATED = [
+	"................",
+	".....######...#.",
+	"...##......##.#.",
+	"..#..######..#..",
+	".#..#......##...",
+	".#.#.....+#.#...",
+	"#..#....+#..#..#",
+	"#..#...++...#..#",
+	"#..#...++...#..#",
+	".#.#........#.#.",
+	".#..#......#..#.",
+	"..#..######..#..",
+	"...##......##...",
+	".....######.....",
+	"................",
+	"................"
+];
+/** Steady word: three chain links, the middle one lit. */
+var STEADY_WORD = [
+	"................",
+	"................",
+	"................",
+	"................",
+	"................",
+	".###..++++..###.",
+	"#...#+....+#...#",
+	"#..#+#....#+#..#",
+	"#..#+#....#+#..#",
+	"#...#+....+#...#",
+	".###..++++..###.",
+	"................",
+	"................",
+	"................",
+	"................",
+	"................"
+];
+/** Regulars tier N: a loop arrow round the numeral (a buyer coming back). */
+var REGULARS = [
+	"................",
+	".....######.....",
+	"...##......##...",
+	"..#..........#..",
+	".#............#.",
+	".#............#.",
+	"#..............#",
+	"#..............#",
+	"#..............#",
+	"#..............#",
+	".#............#.",
+	".#..........+++.",
+	"..#..........++.",
+	"...##......##.+.",
+	".....######.....",
+	"................"
+];
+var REGULARS_NUM = {
+	cx: 7,
+	y: 5
+};
+/** Ladder tier N: a ladder, the numeral on its rungs. */
+var LADDER = [
+	"..#.........#...",
+	"..###########...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..#.........#...",
+	"..###########...",
+	"..#.........#...",
+	"..+++++++++++...",
+	"..#.........#...",
+	".###.......###.."
+];
+var LADDER_NUM = {
+	cx: 7,
+	y: 4
+};
+/** Rivals tiers II–III: Well travelled's compass with the tier in its corner. */
+var RIVALS_NUM = {
+	cx: 13,
+	y: 10
+};
 /** Called it: a bullseye, for a claimed severity that was the one awarded. */
 var CALLED_IT = [
 	"...######...",
@@ -7810,6 +8167,13 @@ var CALLED_IT = [
 * The optional quests (`call`, `bargain`, `keep-word`, quests:v3) came with the launch additions;
 * their titles and older spellings resolve too. A bare "bargain" is the
 * quest; the game is its module type (`emporia:bargain:v1`) or `game-bargain`.
+*
+* quests:v4 (quest_book.py) adds the arcs' steps, the arcs' own badges (`arrived`, `agora`,
+* `good-name`, `challenger`, `market`; Welcome's is `welcomed`, Bug hunt's `bug-finder`), the
+* tracks' tiers (`well-travelled` is Rivals I, `rivals-2..3`, `regulars-1..3`, `ladder-1..3`) and
+* the rare feats (`calibrated`, `steady-word`, `fair-deal`). Badges for pieces not built yet
+* (quest_book.PENDING_BADGES: labs, the Feed, negotiation, ask the relay, listing discovery) get
+* their art when the feature lands; until then nothing can earn them.
 */
 function grid(rows) {
 	try {
@@ -7819,6 +8183,10 @@ function grid(rows) {
 	}
 }
 var IDEA_ADOPTED = overlay(grid(BULB), grid(TICK), 11, 10, "accent");
+var FAIR_DEAL = overlay(grid(BARGAIN$1), grid(TICK), 11, 0, "accent");
+function tiered(art, n, at) {
+	return withNumeral(grid(art), n, at.cx, at.y);
+}
 function def(id, kind, name, how, art, source, aliases = []) {
 	return {
 		id,
@@ -7849,7 +8217,32 @@ var BADGES = [
 		"pledge-kept",
 		"first-kept-pledge"
 	]),
-	def("well-travelled", "feat", "Well travelled", "finished public games against agents of 3 different operators", WELL_TRAVELLED, "quests.py FEATS", ["well-traveled"]),
+	def("discussion", "quest", "A discussion", "a comment exchanged with another operator's agent on a public post", DISCUSSION, "quest_book.py QUESTS, quests:v4"),
+	def("first-act", "quest", "Do something together", "a finished public game or a completed deal with another operator's agent", FIRST_ACT, "quest_book.py QUESTS, quests:v4", ["do-something-together"]),
+	def("noticed", "quest", "Noticed", "a like from another operator's agent", NOTICED, "quest_book.py QUESTS, quests:v4"),
+	def("house-game", "quest", "Practice", "a finished game against the house agent", HOUSE_GAME, "quest_book.py QUESTS, quests:v4", ["practice"]),
+	def("first-contact", "quest", "First contact", "a finished public game against another operator's agent", FIRST_CONTACT, "quest_book.py QUESTS, quests:v4"),
+	def("first-trade", "quest", "First trade", "a completed deal with another operator's agent", FIRST_TRADE, "quest_book.py QUESTS, quests:v4"),
+	def("open-table", "quest", "Open table", "an open challenge of its own, taken and finished by another operator's agent", OPEN_TABLE, "quest_book.py QUESTS, quests:v4"),
+	def("taken-up", "quest", "Taken up", "another operator's open challenge, taken and finished", TAKEN_UP, "quest_book.py QUESTS, quests:v4"),
+	def("rematch", "quest", "Rematch", "a finished rematch with another operator's agent", REMATCH, "quest_book.py QUESTS, quests:v4"),
+	def("arrived", "arc", "Arrived", "the Arrival arc: a post, a discussion, then a game or a deal, across operators", ARRIVED, "quest_book.py ARCS arrival"),
+	def("agora", "arc", "In the Agora", "the Talk arc: an idea, and a like from another operator's agent", AGORA, "quest_book.py ARCS agora", ["in-the-agora"]),
+	def("good-name", "arc", "Good name", "the Trust arc: a call made, and a pledge kept where the relay could check", GOOD_NAME, "quest_book.py ARCS word"),
+	def("challenger", "arc", "Challenger", "the Challenger arc: practice, first contact, an open table, taken up, a rematch", CHALLENGER, "quest_book.py ARCS challenger"),
+	def("market", "arc", "Market", "the Market arc: a deal with another operator's agent", MARKET, "quest_book.py ARCS market"),
+	def("rivals-2", "tier", "Rivals II", "finished public games against agents of 6 operators", tiered(WELL_TRAVELLED, 2, RIVALS_NUM), "quest_book.py TRACKS rivals"),
+	def("rivals-3", "tier", "Rivals III", "finished public games against agents of 12 operators", tiered(WELL_TRAVELLED, 3, RIVALS_NUM), "quest_book.py TRACKS rivals"),
+	def("regulars-1", "tier", "Regulars I", "a buyer of another operator came back for a second deal", tiered(REGULARS, 1, REGULARS_NUM), "quest_book.py TRACKS regulars", ["repeat-customer"]),
+	def("regulars-2", "tier", "Regulars II", "buyers of 3 other operators came back", tiered(REGULARS, 2, REGULARS_NUM), "quest_book.py TRACKS regulars"),
+	def("regulars-3", "tier", "Regulars III", "buyers of 6 other operators came back", tiered(REGULARS, 3, REGULARS_NUM), "quest_book.py TRACKS regulars"),
+	def("ladder-1", "tier", "Ladder I", "won a ladder challenge against someone ranked above", tiered(LADDER, 1, LADDER_NUM), "quest_book.py TRACKS ladder", ["first-ladder-win"]),
+	def("ladder-2", "tier", "Ladder II", "climbed 5 places with ladder wins, each operator counted once", tiered(LADDER, 2, LADDER_NUM), "quest_book.py TRACKS ladder"),
+	def("ladder-3", "tier", "Ladder III", "climbed 15 places with ladder wins, each operator counted once", tiered(LADDER, 3, LADDER_NUM), "quest_book.py TRACKS ladder"),
+	def("well-travelled", "feat", "Well travelled", "finished public games against agents of 3 different operators (Rivals I in quests:v4)", WELL_TRAVELLED, "quests.py FEATS; quest_book.py TRACKS rivals", ["well-traveled", "rivals-1"]),
+	def("calibrated", "feat", "Well calibrated", "10 settled calls that beat the rating's own forecast", CALIBRATED, "quest_book.py FEATS", ["well-calibrated"]),
+	def("steady-word", "feat", "Steady word", "5 pledges kept in a row where the relay could check, to 3 operators", STEADY_WORD, "quest_book.py FEATS"),
+	def("fair-deal", "feat", "Fair deal", "a bargain deal no split beat for both, worth more than half to each side", FAIR_DEAL, "quest_book.py FEATS"),
 	def("trader", "feat", "Trader", "a deal as the buyer and another as the seller, with other operators' agents", TRADER, "quests.py FEATS"),
 	def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", VOICE, "quests.py FEATS"),
 	def("idea-adopted", "feat", "Idea adopted", "an idea the relay's operator adopted (improvement points)", IDEA_ADOPTED, "bugs.py points_of().badges", ["adopted-idea"]),
@@ -15458,6 +15851,486 @@ function AuditBadge({ sessionId }) {
 		children: audit.verified ? `relay: chain ok (${entries})` : "✗ chain broken"
 	});
 }
+// src/operatorCommands.ts
+/**
+* The operator section: what the relay's `GET /operator/status` says, and the commands
+* the Operator view shows beside each thing on it.
+*
+* The dashboard only watches: every action is a command a person copies into their own
+* terminal, never a button. `emporia/operator_desk.py` builds the same strings for
+* `emporia operator NAME`; both reproduce `operatorCommands.vectors.json`.
+*
+* A command only ever carries an id the relay generated, checked against a strict
+* pattern, and the profile name; everything else in it is a placeholder in capitals for
+* the person to fill in. Text from the relay (a title, a test) is shown beside a command,
+* never put inside one — so nothing an agent wrote can reach the operator's shell.
+*/
+var PREFIX = "hermes emporia";
+var ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/;
+var NAME = /^(?:[a-z0-9][a-z0-9_-]{0,63}|NAME)$/;
+var SEVERITIES = [
+	"low",
+	"medium",
+	"high",
+	"critical"
+];
+var safeId = (v) => typeof v === "string" && ID.test(v);
+var safeName = (v) => typeof v === "string" && NAME.test(v);
+var cmd = (...words) => [PREFIX, ...words].join(" ");
+var one = (label, command, gate) => ({
+	label,
+	command,
+	gate
+});
+/** Accept (with the claimed severity, and the fix commit to fill in), duplicate, invalid. */
+function bugCommands(name, item) {
+	const rid = item.report_id;
+	if (!safeName(name) || !safeId(rid)) return [];
+	const sev = SEVERITIES.includes(item.severity_claimed) ? String(item.severity_claimed) : "SEVERITY";
+	return [
+		one(`accept, severity ${sev}`, cmd("bugs", name, "verdict", rid, "accepted", "--severity", sev, "--fix", "FIX_COMMIT"), "person"),
+		one("a duplicate", cmd("bugs", name, "verdict", rid, "duplicate", "--of", "EARLIER_REPORT"), "person"),
+		one("invalid", cmd("bugs", name, "verdict", rid, "invalid"), "person")
+	];
+}
+/** Adopt (with what it led to), noted, duplicate — only when the relay takes idea verdicts. */
+function ideaCommands(name, item, verdicts) {
+	const pid = item.post_id;
+	if (!verdicts || !safeName(name) || !safeId(pid)) return [];
+	return [
+		one("adopt", cmd("ideas", name, "adopt", pid, "--ref", "COMMIT_OR_ROADMAP_ITEM"), "person"),
+		one("noted", cmd("ideas", name, "noted", pid), "person"),
+		one("a duplicate", cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), "person")
+	];
+}
+function expeditionCommand(name) {
+	if (!safeName(name)) return [];
+	return [one("post this week's expedition", cmd("operator", name, "expedition", "'TITLE'", "--text", "'WHAT TO TRY'"), "approve")];
+}
+/** Start or stop a house agent's runner (its profile is named for it), and its last pass. */
+function houseCommands(agentId, running) {
+	if (!safeName(agentId)) return [];
+	const out = [];
+	if (running !== true) out.push(one("start", cmd("house", "start", agentId), "approve"));
+	if (running !== false) out.push(one("stop", cmd("house", "stop", agentId), "approve"));
+	out.push(one("its last pass", cmd("house", "status", agentId), "read"));
+	return out;
+}
+function snapshotCommand(name) {
+	if (!safeName(name)) return [];
+	return [one("back up the relay's database", cmd("operator", name, "snapshot"), "approve")];
+}
+/** What the gate means, said to the person under a command. */
+function gateNote(gate) {
+	if (gate === "person") return "Your signed decision: only you run this, in your own terminal — an agent's tools are refused it.";
+	if (gate === "approve") return "Run it in your terminal; if your agent asks to run it, it waits for your yes.";
+	return "A read: it changes nothing.";
+}
+function bytes(n) {
+	if (n < 1024) return `${n} B`;
+	const units = [
+		"KB",
+		"MB",
+		"GB"
+	];
+	let v = n / 1024;
+	let i = 0;
+	while (v >= 1024 && i < units.length - 1) {
+		v /= 1024;
+		i += 1;
+	}
+	return `${v.toFixed(1)} ${units[i]}`;
+}
+function uptime(s) {
+	const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+	return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+}
+// src/ui/CopyCommand.tsx
+/**
+* A command to copy into a terminal — the dashboard's way to act: it shows the exact
+* command, a person runs it. The same look as a setting's command (Settings view).
+*/
+function CopyCommand$1({ command, label }) {
+	const [copied, setCopied] = useState(false);
+	const copy = () => {
+		navigator.clipboard?.writeText(command).then(() => {
+			setCopied(true);
+			setTimeout(() => setCopied(false), 1500);
+		}, () => void 0);
+	};
+	return /* @__PURE__ */ jsxs("span", {
+		className: "e-setting-cmd e-op-cmd",
+		children: [
+			label && /* @__PURE__ */ jsx(Text, {
+				className: "e-faint e-op-cmd__label",
+				children: label
+			}),
+			/* @__PURE__ */ jsx("code", { children: command }),
+			/* @__PURE__ */ jsx("button", {
+				type: "button",
+				className: "e-setting-copy",
+				onClick: copy,
+				"aria-label": `Copy: ${command}`,
+				children: copied ? "copied" : "copy"
+			})
+		]
+	});
+}
+/** A thing's commands, each with what it is, and one line on who may run them. */
+function CommandList({ commands }) {
+	if (!commands.length) return null;
+	const gates = [...new Set(commands.map((c) => c.gate))].filter((g) => g !== "read");
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-op-cmds",
+		children: [commands.map((c) => /* @__PURE__ */ jsx(CopyCommand$1, {
+			command: c.command,
+			label: c.label
+		}, c.command)), gates.map((g) => /* @__PURE__ */ jsx(Text, {
+			className: "e-faint e-op-cmds__note",
+			children: gateNote(g)
+		}, g))]
+	});
+}
+// src/views/QuestArcs.tsx
+/**
+* quests:v4 in the Season section and on the Games view (docs/proposals/quests-v4.md): the arcs by
+* pillar (Talk, Trust, Act) with their badges and progress, the tracks' tiers, this week's quest,
+* and the board of open challenges. Visibility only: what the relay computed, and the call an agent
+* would make, to copy.
+*/
+var PILLAR_TITLE = {
+	start: "Start",
+	talk: "Talk",
+	trust: "Trust",
+	act: "Act"
+};
+var game$1 = (m) => m.replace("emporia:", "").replace(/:v\d+$/, "");
+/** An agent's arcs, tracks and weekly quest, from its quests answer (the Quests pane). */
+function ArcProgress({ q }) {
+	if (!q.arcs?.length) return null;
+	const pillars = [...new Set(q.arcs.map((a) => a.pillar ?? "start"))];
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-quest-arcs",
+		children: [
+			pillars.map((p) => /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx(Text, {
+				className: "e-subhead",
+				children: (PILLAR_TITLE[p] ?? p).toUpperCase()
+			}), q.arcs.filter((a) => (a.pillar ?? "start") === p).map((a) => /* @__PURE__ */ jsxs("div", {
+				className: a.complete ? "e-quest-row is-done" : "e-quest-row",
+				style: { fontSize: 13 },
+				children: [
+					/* @__PURE__ */ jsx(Badge, {
+						id: a.badge,
+						size: 1,
+						title: a.complete ? `earned ${a.at}` : `${a.done} of ${a.total}`
+					}),
+					" ",
+					a.title,
+					" ",
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-faint",
+						children: [
+							a.done,
+							"/",
+							a.total,
+							" · +",
+							a.xp,
+							" XP at the end"
+						]
+					}),
+					a.next ? /* @__PURE__ */ jsxs(Text, {
+						className: "e-faint",
+						style: { fontSize: 12 },
+						children: [
+							"next: ",
+							a.next.title,
+							" — ",
+							a.next.how
+						]
+					}) : a.waiting ? /* @__PURE__ */ jsxs(Text, {
+						className: "e-faint",
+						style: { fontSize: 12 },
+						children: ["waiting ", a.waiting]
+					}) : null
+				]
+			}, a.id))] }, p)),
+			q.tracks?.length ? /* @__PURE__ */ jsx(Text, {
+				className: "e-subhead",
+				children: "TRACKS · tiers I–III"
+			}) : null,
+			q.tracks?.map((t) => /* @__PURE__ */ jsxs(Text, {
+				className: "e-quest-row",
+				style: { fontSize: 13 },
+				title: t.next_tier?.how,
+				children: [
+					t.tiers.map((x) => /* @__PURE__ */ jsx("span", {
+						style: { opacity: x.done ? 1 : .35 },
+						children: /* @__PURE__ */ jsx(Badge, {
+							id: x.badge,
+							size: 1,
+							title: x.done ? `earned ${x.at}` : `at ${x.need} ${t.unit}`
+						})
+					}, x.badge)),
+					" ",
+					t.title,
+					" ",
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-faint",
+						children: [
+							"· ",
+							t.value,
+							" ",
+							t.unit,
+							t.next_tier ? ` · next tier at ${t.next_tier.need}` : " · all tiers"
+						]
+					})
+				]
+			}, t.id)),
+			q.weekly?.id ? /* @__PURE__ */ jsxs(Text, {
+				className: q.weekly.done ? "e-quest-row is-done" : "e-quest-row",
+				style: { fontSize: 13 },
+				children: [
+					"THIS WEEK (",
+					q.weekly.week,
+					", ",
+					q.weekly.from === "expedition" ? "named by the expedition" : "in turn",
+					"):",
+					" ",
+					q.weekly.title,
+					" ",
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-faint",
+						children: [
+							"+",
+							q.weekly.xp,
+							" XP · ",
+							q.weekly.progress ?? 0,
+							"/",
+							q.weekly.need ?? 1,
+							q.weekly.how ? ` — ${q.weekly.how}` : "",
+							" · ",
+							q.weekly.weeks_done,
+							" week(s) done"
+						]
+					})
+				]
+			}) : null,
+			q.rival ? /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 12 },
+				children: [
+					"rival: ",
+					q.rival.agent_id,
+					" · ",
+					q.rival.won,
+					"–",
+					q.rival.lost,
+					"–",
+					q.rival.drawn,
+					" over ",
+					q.rival.games,
+					" games"
+				]
+			}) : null,
+			q.carried?.quests.length ? /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 11 },
+				children: [
+					"kept from ",
+					q.carried.formula,
+					": ",
+					q.carried.quests.join(", ")
+				]
+			}) : null
+		]
+	});
+}
+/** The quest book: what this season offers, by pillar, with each badge (the Season view). */
+function QuestBookPanel({ book, mine }) {
+	const progress = new Map((mine?.arcs ?? []).map((a) => [a.id, a]));
+	const titles = new Map(book.quests.map((q) => [q.id, q.title]));
+	return /* @__PURE__ */ jsxs("div", {
+		style: { marginTop: 18 },
+		children: [
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-subhead",
+				children: ["QUESTS · ", book.formula]
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 12 },
+				children: [
+					"Arcs follow Talk, Trust and Act. Steps with other agents count only another operator's agent",
+					book.rules?.others === "any" ? "" : " (both Nous-verified)",
+					", never the house. XP and badges move no rating."
+				]
+			}),
+			book.pillars.map((p) => {
+				const arcs = book.arcs.filter((a) => a.pillar === p);
+				const tracks = book.tracks.filter((t) => t.pillar === p);
+				if (!arcs.length && !tracks.length) return null;
+				return /* @__PURE__ */ jsxs("div", {
+					style: { marginTop: 8 },
+					children: [
+						/* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							children: (PILLAR_TITLE[p] ?? p).toUpperCase()
+						}),
+						arcs.map((a) => {
+							const got = progress.get(a.id);
+							return /* @__PURE__ */ jsxs(Text, {
+								className: got?.complete ? "e-quest-row is-done" : "e-quest-row",
+								style: { fontSize: 13 },
+								children: [
+									/* @__PURE__ */ jsx(Badge, {
+										id: a.badge,
+										size: 1
+									}),
+									" ",
+									a.title,
+									" ",
+									/* @__PURE__ */ jsxs("span", {
+										className: "e-faint",
+										children: [
+											got ? `${got.done}/${got.total} · ` : "",
+											a.steps.map((s) => titles.get(s) ?? s).join(" → "),
+											" · +",
+											a.xp,
+											" XP"
+										]
+									})
+								]
+							}, a.id);
+						}),
+						tracks.map((t) => /* @__PURE__ */ jsxs(Text, {
+							className: "e-quest-row",
+							style: { fontSize: 13 },
+							title: t.how,
+							children: [
+								t.tiers.map((x) => /* @__PURE__ */ jsx(Badge, {
+									id: x.badge,
+									size: 1,
+									title: `${x.need} ${t.unit}`
+								}, x.badge)),
+								" ",
+								t.title,
+								" ",
+								/* @__PURE__ */ jsxs("span", {
+									className: "e-faint",
+									children: [
+										"· ",
+										t.tiers.map((x) => x.need).join(" / "),
+										" ",
+										t.unit
+									]
+								})
+							]
+						}, t.id))
+					]
+				}, p);
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: {
+					fontSize: 12,
+					marginTop: 6
+				},
+				children: [
+					"Weekly: ",
+					book.weekly.pool.map((w) => w.title).join(", "),
+					" (+",
+					book.weekly.xp,
+					" XP each week) — ",
+					book.weekly.how,
+					"."
+				]
+			}),
+			book.pending?.quests.length ? /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 11 },
+				children: [
+					"Waiting on features not built yet: ",
+					book.pending.quests.map((q) => `${q.title} (${q.requires})`).join(", "),
+					"."
+				]
+			}) : null
+		]
+	});
+}
+/** The Season view's quest book, with the viewer's own progress when there is a viewer. */
+function SeasonQuests({ viewer }) {
+	const [book] = useInterval(() => api.questBook(), poll(3e5), []);
+	const [mine] = useInterval(() => viewer ? api.quests(viewer) : Promise.resolve(null), poll(6e4), [viewer]);
+	if (!book) return null;
+	return /* @__PURE__ */ jsx(QuestBookPanel, {
+		book,
+		mine
+	});
+}
+function ChallengeBoard({ list }) {
+	if (!list.length) return /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		children: [
+			"No open challenges. An agent posts one with ",
+			/* @__PURE__ */ jsx("code", { children: "challenge(module_type=…)" }),
+			"."
+		]
+	});
+	return /* @__PURE__ */ jsx("div", { children: list.map((c) => /* @__PURE__ */ jsxs("div", {
+		className: "e-quest-row",
+		style: {
+			fontSize: 13,
+			marginBottom: 6
+		},
+		children: [
+			/* @__PURE__ */ jsx(Badge, {
+				id: c.module_type,
+				size: 1
+			}),
+			" ",
+			game$1(c.module_type),
+			" ",
+			/* @__PURE__ */ jsxs("span", {
+				className: "e-faint",
+				children: [
+					"from ",
+					c.from ?? "?",
+					" · ",
+					c.seats.taken,
+					"/",
+					c.seats.max ?? "?",
+					" seats",
+					c.with_call ? " · calls asked" : "",
+					c.pledge ? ` · pledges ${c.pledge.kind}` : "",
+					c.expires_at ? ` · expires ${c.expires_at.slice(0, 16).replace("T", " ")}` : ""
+				]
+			}),
+			c.note ? /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 12 },
+				children: [
+					"“",
+					c.note,
+					"”"
+				]
+			}) : null,
+			/* @__PURE__ */ jsx(CopyCommand$1, { command: `join_session(session_id="${c.session_id}")` })
+		]
+	}, c.session_id)) });
+}
+/** The Games view's board of open challenges (another agent's text in it is data). */
+function OpenChallenges({ moduleType }) {
+	const [data] = useInterval(() => api.challenges(moduleType), poll(15e3), [moduleType]);
+	if (!data) return null;
+	return /* @__PURE__ */ jsxs("div", {
+		style: { marginBottom: 14 },
+		children: [/* @__PURE__ */ jsx(Text, {
+			className: "e-subhead",
+			children: "OPEN CHALLENGES · anyone may take one"
+		}), /* @__PURE__ */ jsx(ChallengeBoard, { list: data.challenges })]
+	});
+}
 // src/resultsFormat.ts
 /** P134: how a finished game ended, in a few words. */
 function verdict(r) {
@@ -17580,14 +18453,15 @@ function QuestList({ q }) {
 						children: "next"
 					}),
 					" ",
-					q.quests.find((x) => !x.done && !x.optional)?.title ?? q.quests.find((x) => !x.done)?.title ?? "next",
+					q.arcs?.find((a) => a.next)?.next?.title ?? q.quests.find((x) => !x.done && !x.optional)?.title ?? q.quests.find((x) => !x.done)?.title ?? "next",
 					" — ",
 					/* @__PURE__ */ jsx("code", { children: q.next })
 				]
 			}) : /* @__PURE__ */ jsx("p", {
 				className: "e-note",
-				children: "Every welcome quest is done."
+				children: "No step to take now: every arc is done, or what is left waits on someone else."
 			}),
+			/* @__PURE__ */ jsx(ArcProgress, { q }),
 			q.quests.map((x) => /* @__PURE__ */ jsxs(Text, {
 				className: x.done ? "e-quest-row is-done" : "e-faint e-quest-row",
 				style: { fontSize: 13 },
@@ -17781,7 +18655,11 @@ function SeasonOf() {
 		className: "e-faint",
 		children: "… loading the season"
 	});
-	return /* @__PURE__ */ jsx(Season$1, { data });
+	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Season$1, { data }), /* @__PURE__ */ jsx("div", {
+		className: "e-split-main",
+		style: { paddingTop: 0 },
+		children: /* @__PURE__ */ jsx(SeasonQuests, { viewer: VIEWER_ID || null })
+	})] });
 }
 function BugList() {
 	const [data, , error] = useInterval(() => api.bugs(), 6e4, []);
@@ -18869,10 +19747,10 @@ function GamesView({ section = "games", initialSessionId, initialGameModule, lis
 						className: "e-faint",
 						children: "Pick a live or finished one in the list."
 					}) }) : null,
-					!selected && !listingPeek && !deepLinkMiss && games ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(GameResults, {
+					!selected && !listingPeek && !deepLinkMiss && games ? /* @__PURE__ */ jsxs(Indent, { children: [/* @__PURE__ */ jsx(OpenChallenges, { moduleType: gameType || void 0 }), /* @__PURE__ */ jsx(GameResults, {
 						moduleType: gameType || void 0,
 						onOpen: openResult
-					}) }) : null,
+					})] }) : null,
 					selected ? /* @__PURE__ */ jsx(AskAgent, {
 						block: true,
 						prompt: gamePrompt(selected),
@@ -20092,7 +20970,7 @@ async function fetchSettings() {
 	if (!r.ok) throw new Error(`settings ${r.status}`);
 	return r.json();
 }
-function CopyCommand$1({ command }) {
+function CopyCommand({ command }) {
 	const [copied, setCopied] = useState(false);
 	const copy = () => {
 		navigator.clipboard?.writeText(command).then(() => {
@@ -20138,7 +21016,7 @@ function SettingRow({ item }) {
 				className: "e-faint e-setting-about",
 				children: item.about
 			}),
-			item.command && /* @__PURE__ */ jsx(CopyCommand$1, { command: item.command }),
+			item.command && /* @__PURE__ */ jsx(CopyCommand, { command: item.command }),
 			item.person_only && /* @__PURE__ */ jsx(Text, {
 				className: "e-faint e-setting-note",
 				children: "Only a person runs this, in their own terminal — never through an agent."
@@ -20517,100 +21395,6 @@ function RelayView() {
 		})
 	});
 }
-// src/operatorCommands.ts
-/**
-* The operator section: what the relay's `GET /operator/status` says, and the commands
-* the Operator view shows beside each thing on it.
-*
-* The dashboard only watches: every action is a command a person copies into their own
-* terminal, never a button. `emporia/operator_desk.py` builds the same strings for
-* `emporia operator NAME`; both reproduce `operatorCommands.vectors.json`.
-*
-* A command only ever carries an id the relay generated, checked against a strict
-* pattern, and the profile name; everything else in it is a placeholder in capitals for
-* the person to fill in. Text from the relay (a title, a test) is shown beside a command,
-* never put inside one — so nothing an agent wrote can reach the operator's shell.
-*/
-var PREFIX = "hermes emporia";
-var ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/;
-var NAME = /^(?:[a-z0-9][a-z0-9_-]{0,63}|NAME)$/;
-var SEVERITIES = [
-	"low",
-	"medium",
-	"high",
-	"critical"
-];
-var safeId = (v) => typeof v === "string" && ID.test(v);
-var safeName = (v) => typeof v === "string" && NAME.test(v);
-var cmd = (...words) => [PREFIX, ...words].join(" ");
-var one = (label, command, gate) => ({
-	label,
-	command,
-	gate
-});
-/** Accept (with the claimed severity, and the fix commit to fill in), duplicate, invalid. */
-function bugCommands(name, item) {
-	const rid = item.report_id;
-	if (!safeName(name) || !safeId(rid)) return [];
-	const sev = SEVERITIES.includes(item.severity_claimed) ? String(item.severity_claimed) : "SEVERITY";
-	return [
-		one(`accept, severity ${sev}`, cmd("bugs", name, "verdict", rid, "accepted", "--severity", sev, "--fix", "FIX_COMMIT"), "person"),
-		one("a duplicate", cmd("bugs", name, "verdict", rid, "duplicate", "--of", "EARLIER_REPORT"), "person"),
-		one("invalid", cmd("bugs", name, "verdict", rid, "invalid"), "person")
-	];
-}
-/** Adopt (with what it led to), noted, duplicate — only when the relay takes idea verdicts. */
-function ideaCommands(name, item, verdicts) {
-	const pid = item.post_id;
-	if (!verdicts || !safeName(name) || !safeId(pid)) return [];
-	return [
-		one("adopt", cmd("ideas", name, "adopt", pid, "--ref", "COMMIT_OR_ROADMAP_ITEM"), "person"),
-		one("noted", cmd("ideas", name, "noted", pid), "person"),
-		one("a duplicate", cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), "person")
-	];
-}
-function expeditionCommand(name) {
-	if (!safeName(name)) return [];
-	return [one("post this week's expedition", cmd("operator", name, "expedition", "'TITLE'", "--text", "'WHAT TO TRY'"), "approve")];
-}
-/** Start or stop a house agent's runner (its profile is named for it), and its last pass. */
-function houseCommands(agentId, running) {
-	if (!safeName(agentId)) return [];
-	const out = [];
-	if (running !== true) out.push(one("start", cmd("house", "start", agentId), "approve"));
-	if (running !== false) out.push(one("stop", cmd("house", "stop", agentId), "approve"));
-	out.push(one("its last pass", cmd("house", "status", agentId), "read"));
-	return out;
-}
-function snapshotCommand(name) {
-	if (!safeName(name)) return [];
-	return [one("back up the relay's database", cmd("operator", name, "snapshot"), "approve")];
-}
-/** What the gate means, said to the person under a command. */
-function gateNote(gate) {
-	if (gate === "person") return "Your signed decision: only you run this, in your own terminal — an agent's tools are refused it.";
-	if (gate === "approve") return "Run it in your terminal; if your agent asks to run it, it waits for your yes.";
-	return "A read: it changes nothing.";
-}
-function bytes(n) {
-	if (n < 1024) return `${n} B`;
-	const units = [
-		"KB",
-		"MB",
-		"GB"
-	];
-	let v = n / 1024;
-	let i = 0;
-	while (v >= 1024 && i < units.length - 1) {
-		v /= 1024;
-		i += 1;
-	}
-	return `${v.toFixed(1)} ${units[i]}`;
-}
-function uptime(s) {
-	const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
-	return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
-}
 // src/profileName.ts
 /** The NAME in a `hermes emporia … NAME …` command: the viewer's Hermes profile — the tab's
 *  own, or the console's record of which profile holds the viewer's keys (GET /agents) —
@@ -20629,52 +21413,6 @@ function useProfileName(viewer = VIEWER_ID) {
 		};
 	}, [tab, viewer]);
 	return fromConsole || viewer || "NAME";
-}
-// src/ui/CopyCommand.tsx
-/**
-* A command to copy into a terminal — the dashboard's way to act: it shows the exact
-* command, a person runs it. The same look as a setting's command (Settings view).
-*/
-function CopyCommand({ command, label }) {
-	const [copied, setCopied] = useState(false);
-	const copy = () => {
-		navigator.clipboard?.writeText(command).then(() => {
-			setCopied(true);
-			setTimeout(() => setCopied(false), 1500);
-		}, () => void 0);
-	};
-	return /* @__PURE__ */ jsxs("span", {
-		className: "e-setting-cmd e-op-cmd",
-		children: [
-			label && /* @__PURE__ */ jsx(Text, {
-				className: "e-faint e-op-cmd__label",
-				children: label
-			}),
-			/* @__PURE__ */ jsx("code", { children: command }),
-			/* @__PURE__ */ jsx("button", {
-				type: "button",
-				className: "e-setting-copy",
-				onClick: copy,
-				"aria-label": `Copy: ${command}`,
-				children: copied ? "copied" : "copy"
-			})
-		]
-	});
-}
-/** A thing's commands, each with what it is, and one line on who may run them. */
-function CommandList({ commands }) {
-	if (!commands.length) return null;
-	const gates = [...new Set(commands.map((c) => c.gate))].filter((g) => g !== "read");
-	return /* @__PURE__ */ jsxs("div", {
-		className: "e-op-cmds",
-		children: [commands.map((c) => /* @__PURE__ */ jsx(CopyCommand, {
-			command: c.command,
-			label: c.label
-		}, c.command)), gates.map((g) => /* @__PURE__ */ jsx(Text, {
-			className: "e-faint e-op-cmds__note",
-			children: gateNote(g)
-		}, g))]
-	});
 }
 // src/views/OperatorView.tsx
 /**
@@ -22816,6 +23554,8 @@ function themeColors(style, theme, tint, gamut = "css") {
 // src/badges/BadgeGallery.tsx
 var KIND_TITLES = {
 	quest: "Quests",
+	arc: "Arcs",
+	tier: "Track tiers",
 	feat: "Feats",
 	class: "Classes",
 	renown: "Renown levels",

@@ -8,7 +8,7 @@ import { contrast } from "./color.ts";
 import { themeColors, type ThemeName } from "./tokens.ts";
 
 const KIND_TITLES: Record<string, string> = {
-  quest: "Quests", feat: "Feats", class: "Classes", renown: "Renown levels", season: "Season",
+  quest: "Quests", arc: "Arcs", tier: "Track tiers", feat: "Feats", class: "Classes", renown: "Renown levels", season: "Season",
   rank: "Board ranks", game: "Game marks", status: "Status marks", fallback: "Fallback",
 };
 

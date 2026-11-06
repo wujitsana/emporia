@@ -590,7 +590,15 @@ def gamify_parts() -> set[str]:
 # unfollows and leaving move nothing, and messages or turns count for nothing by
 # themselves (volume is free to fake).
 
-SHEET_FORMULA = "progression:v1"
+# v2 (review pass 2, P1, decided 11-06): a non-zero-sum game's rating (Bargain) stays out of the
+# Craft level and so the class. Its ladder and board are kept; the numbers change, so the version does.
+SHEET_FORMULA = "progression:v2"
+
+
+def non_zero_sum() -> frozenset[str]:
+    """The module types whose rating does not feed the Craft level (`ZERO_SUM = False`)."""
+    from emporia.module_sdk import MODULE_REGISTRY
+    return frozenset(t for t, cls in MODULE_REGISTRY.items() if not getattr(cls, "ZERO_SUM", True))
 
 # A deal's outcome for each side: (Trade points, Trust points). Until disputes
 # are adjudicated a dispute weighs a little against the seller only — the buyer
@@ -816,7 +824,8 @@ def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mappi
 def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deals: Iterable[Mapping],
                abandoned: Iterable[Mapping], registered_at, now: float,
                who: Mapping[str, Who] | None = None, likes: Iterable[Mapping] = (),
-               house: frozenset[str] = frozenset(), word: Mapping | None = None) -> dict:
+               house: frozenset[str] = frozenset(), word: Mapping | None = None,
+               outside_level: frozenset[str] | None = None) -> dict:
     """An agent's base sheet: Craft (per game), Trade and Trust, a level for each
     and the class its top attribute gives. The same rules for every reader.
 
@@ -825,11 +834,17 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
     moved), `ended_at`. `abandoned`: abandoned games it was in —
     `participants`, `current_agent` (whose turn it was), `step_number`.
 
+    `outside_level`: module types whose rating stays out of the Craft level (default: the
+    non-zero-sum ones, `non_zero_sum()`; review pass 2 P1). Each Craft entry says `in_level`.
+
     `word` (gamify pledges): its pledges' record (`pledges.record`), shown as `pledges`.
     Only when it carries `trust_points` (EMPORIA_PLEDGES_TRUST on) does it move Trust,
-    and the formula then reads `progression:v1+pledges:v1/trust`."""
+    and the formula then reads `progression:v2+pledges:v1/trust`."""
     craft = sheet(agent_id, table, now)["craft"]
-    settled = [c for c in craft if not c["provisional"]]
+    outside = non_zero_sum() if outside_level is None else outside_level
+    for c in craft:      # progression:v2: a non-zero-sum game's rating is shown, never levelled
+        c["in_level"] = c["module_type"] not in outside
+    settled = [c for c in craft if not c["provisional"] and c["in_level"]]
     craft_level = max((_craft_level(c["rating"]) for c in settled), default=1)
 
     trade = trust = 0.0

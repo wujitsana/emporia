@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -58,6 +59,73 @@ def _is_bounty(s: dict[str, Any]) -> bool:
     return bool((s.get("config") or {}).get("bounty_id"))
 
 
+def _challenge_config(caller: str, module_type: str, module, config: dict[str, Any]) -> dict[str, Any]:
+    """quests:v4: check a game's `config.challenge` and return the config the relay stores — the
+    challenge with its kind, issue and expiry times, a rematch's opponent and settings, a ladder
+    challenge's ranks. Every refusal says what to change (`challenges.ChallengeError`)."""
+    from emporia import challenges as C
+    from emporia import progression
+    from emporia.calls import ALL_SET_PLAYS, current
+    from emporia.quest_engine import Ctx, others_mode, vs
+    from emporia.routes import standing as ST
+    from emporia.standing import game_module_types
+    if module_type not in game_module_types():
+        raise HTTPException(400, "a challenge is a game: pick one from supported_games (a purchase is "
+                                 "create_session with emporia:service:v1)")
+    takes_calls = module_type in ALL_SET_PLAYS and not module.RETIRED_FOR
+    try:
+        asked = C.parse(config.get("challenge"), opponent=config.get("opponent"), takes_calls=takes_calls)
+        relay: dict[str, Any] = {}
+        if asked["kind"] == "rematch":
+            old = rs.load_session(asked["rematch_of"])
+            if not old or old["status"] != "completed" or caller not in (old.get("participants") or []):
+                raise C.ChallengeError(f"rematch_of {asked['rematch_of']!r} is not a finished game you played "
+                                       "(game_results lists yours)")
+            if current(old["module_type"]) != current(module_type) or len(old["participants"]) != 2:
+                raise C.ChallengeError(f"a rematch is the same two-player game: {old['module_type']} with "
+                                       f"{', '.join(p for p in old['participants'] if p != caller)}")
+            given = {k: v for k, v in config.items() if k != "challenge"}
+            config = {**{k: v for k, v in (old.get("config") or {}).items() if k not in C.NOT_COPIED}, **given}
+            config["opponent"] = next(p for p in old["participants"] if p != caller)
+        who = ST._who()
+        ctx = Ctx(operator=lambda a: who[a].operator if a in who else a,
+                  verified=lambda a: bool(who.get(a) and who[a].verified),
+                  house=progression.house_agents(), others=others_mode())
+        if asked["kind"] == "ladder":
+            them = config["opponent"]
+            if module_type not in ST.craft_modules() or not module.ZERO_SUM:
+                raise C.ChallengeError("ladder challenges are for the rated zero-sum games (blotto, two-thirds, "
+                                       "lowest-unique): chess has no ladder, and bargain's rating stays out of "
+                                       "the Craft level, so it climbs nothing")
+            k = vs(caller, them, ctx)
+            if k == "house" or k == "self":
+                raise C.ChallengeError("a ladder challenge is to another operator's agent: your own agents and the "
+                                       "house count for no ladder; challenge them directly instead")
+            if k == "unverified":
+                raise C.ChallengeError("a ladder challenge needs a Nous-verified agent on both sides (emporia "
+                                       "login); this relay counts key-only agents only with EMPORIA_QUEST_OTHERS=any")
+            table, _, _ = ST._craft_table()
+            relay["ladder"] = C.ladder_ranks(progression.ladder(table, current(module_type), time.time()), caller, them)
+        opponent = config.get("opponent")
+        with rs.DB_LOCK, rs.get_db() as conn:
+            rows = conn.execute(
+                "SELECT s.config_json, s.participants_json FROM sessions s JOIN participants p "
+                "ON s.session_id = p.session_id WHERE p.agent_id = ? AND s.status = 'waiting' "
+                "AND s.config_json LIKE '%\"challenge\"%'", (caller,)).fetchall()
+        waiting = [json.loads(r["config_json"] or "{}") for r in rows
+                   if (json.loads(r["participants_json"] or "[]") or [""])[0] == caller]   # the ones it issued
+        waiting = [w for w in waiting if isinstance(w.get("challenge"), dict) and not C.expired(w["challenge"])]
+        if len(waiting) >= C.MAX_OPEN:
+            raise C.ChallengeError(f"you have {len(waiting)} challenges waiting (at most {C.MAX_OPEN}): withdraw "
+                                   "one with abandon_session, or let one expire")
+        if opponent and any(w.get("opponent") == opponent for w in waiting):
+            raise C.ChallengeError(f"you already have a challenge waiting for {opponent}: one at a time per opponent")
+    except C.ChallengeError as e:
+        raise HTTPException(400, str(e))
+    config["challenge"] = C.issue(asked, **relay)
+    return config
+
+
 @router.post("/sessions")
 async def create_session(req: rs.CreateSessionRequest, request: Request):
     caller = rs._dashboard_agent_id(request)
@@ -72,6 +140,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     if module.RETIRED_FOR:   # calls: the :v1 set plays are retired, loudly
         from emporia.module_sdk import retired_refusal
         raise HTTPException(400, retired_refusal(req.module_type, module.RETIRED_FOR))
+    if (req.config or {}).get("challenge") is not None:   # quests:v4: open, direct, rematch or ladder
+        req.config = _challenge_config(caller, req.module_type, module, dict(req.config or {}))
     # P181: a named opponent — like `chat`, a setting of any session, not a module's.
     opponent = (req.config or {}).get("opponent")
     if opponent is not None:
@@ -81,7 +151,7 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
             raise HTTPException(400, "a named opponent is for two-player games and purchases")
         if not rs.AGENT_REGISTRY.is_authorized(opponent):
             raise HTTPException(400, f"opponent {opponent!r} is not registered on this relay")
-    ok, why = module.validate_config({k: v for k, v in (req.config or {}).items() if k != "opponent"})
+    ok, why = module.validate_config({k: v for k, v in (req.config or {}).items() if k not in ("opponent", "challenge")})
     if not ok:
         raise HTTPException(400, why)
     deal_secret = None
@@ -219,6 +289,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
             "module_type": req.module_type,
             "from_agent_id": caller,
             "stake_cents": amount_cents,
+            **({"challenge": req.config["challenge"]["kind"], "expires_at": req.config["challenge"]["expires_at"]}
+               if isinstance((req.config or {}).get("challenge"), dict) else {}),
         })
     session = rs.load_session(session_id)
     if rs._session_visibility(session) == "public":
@@ -287,6 +359,81 @@ async def list_sessions(request: Request, status: str | None = None, module_type
         except ValueError:      # one damaged row is left out, not the whole list
             continue
     return {"sessions": [s for s in sessions if rs._session_viewer_allowed(s, caller)]}
+def open_challenges(module_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    """quests:v4: the board — open challenges waiting for a player, public, unexpired, with a seat,
+    newest first, as `challenges.summary` shows them."""
+    from emporia import challenges as C
+    q = ("SELECT * FROM sessions WHERE status = 'waiting' AND config_json LIKE '%\"challenge\"%'"
+         + (" AND module_type = ?" if module_type else "") + " ORDER BY created_at DESC LIMIT 400")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute(q, (module_type,) if module_type else ()).fetchall()
+    out = []
+    for r in rows:
+        try:
+            s = rs._session_row_to_dict(r)
+            module = get_interaction_module(s["module_type"])
+        except ValueError:
+            continue
+        ch = C.of(s)
+        if (not ch or ch["kind"] != "open" or C.expired(ch) or not rs._session_viewer_allowed(s, None)
+                or len(s["participants"]) >= module.MAX_PARTICIPANTS):
+            continue
+        out.append({**C.summary(s), "seats": {"taken": len(s["participants"]), "max": module.MAX_PARTICIPANTS}})
+        if len(out) >= limit:
+            break
+    return out
+
+
+@router.get("/challenges")
+async def list_challenges(module_type: str | None = None, limit: int = 20):
+    """quests:v4: open challenges anyone may take with join_session (`docs/proposals/quests-v4.md` §5.3).
+    A direct, rematch or ladder challenge is not listed: its opponent sees it in its inbox."""
+    return {"scope": "this_relay", "module_type": module_type,
+            "challenges": open_challenges(module_type, rs._clamp_limit(limit)),
+            "note": "join_session(session_id) takes one; games against your own operator's agents or the "
+                    "house count for no quest or ladder"}
+
+
+class DeclineRequest(BaseModel):
+    reason: str | None = None
+
+
+@router.post("/sessions/{session_id}/decline")
+async def decline_challenge(session_id: str, req: DeclineRequest, request: Request):
+    """quests:v4: the named opponent declines a challenge (or any game naming it) that has not started.
+    It ends unstarted, holds released, the challenger told; nothing counts against anyone."""
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    s = rs.load_session(session_id)
+    if not s:
+        raise HTTPException(404, "Session not found")
+    if (s.get("config") or {}).get("opponent") != caller:
+        raise HTTPException(403, "only the agent a challenge names may decline it; an open challenge needs no "
+                                 "answer (leave it), and a challenger withdraws its own with abandon_session")
+    if s["status"] != "waiting":
+        raise HTTPException(400, f"this game is {s['status']}, not waiting: a started game is played or "
+                                 "abandoned, not declined")
+    reason = (req.reason or "").strip()[:200]
+    if await _abandon(s, reason=f"declined by {caller}" + (f": {reason}" if reason else "")) is None:
+        raise HTTPException(409, "the game changed meanwhile: read it again with get_session")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT state_json FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
+        try:
+            state = json.loads(row["state_json"]) if row else None
+        except ValueError:
+            state = None
+        if isinstance(state, dict):
+            state["metadata"] = {**(state.get("metadata") or {}), "declined_by": caller}
+            conn.execute("UPDATE sessions SET state_json = ? WHERE session_id = ?", (json.dumps(state), session_id))
+    creator = (s.get("participants") or [""])[0]
+    await rs.broadcast_to_agent(creator, {"type": "challenge_declined", "session_id": session_id,
+                                          "module_type": s["module_type"], "from_agent_id": caller,
+                                          **({"reason": reason} if reason else {})})
+    return {"session_id": session_id, "declined": True,
+            "note": "declined without penalty: a game that never started counts for nothing"}
+
+
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, request: Request):
     s = rs.load_session(session_id)
@@ -1268,6 +1415,10 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     named = (s.get("config") or {}).get("opponent")
     if named and req.agent_id != named:
         raise HTTPException(403, f"This session is for {named} only: its creator named the opponent")
+    from emporia import challenges as C
+    if C.expired(ch := C.of(s)):
+        raise HTTPException(400, f"this challenge expired at {ch['expires_at']}: ask its creator for a new one, "
+                                 "or post your own (challenge)")
     rs._require_registered(req.agent_id)
     # N12-5 (R5): identity_verified is False on the MPP-payment branch, where agent_id is
     # an unproven claim — don't spend someone else's write budget on the strength of it.
@@ -1618,7 +1769,25 @@ async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
                 continue
             await _finish_session(s["session_id"], s, module, outcome)
             counts[key] += 1
+    counts["challenges_expired"] = await _sweep_expired_challenges(limit)
     return counts
+
+
+async def _sweep_expired_challenges(limit: int) -> int:
+    """quests:v4: end challenges nobody took before they expired — unstarted, so no fault, holds released."""
+    from emporia import challenges as C
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute("SELECT * FROM sessions WHERE status = 'waiting' AND config_json LIKE '%\"challenge\"%' "
+                            "ORDER BY created_at LIMIT ?", (limit,)).fetchall()
+    n = 0
+    for r in rows:
+        try:
+            s = rs._session_row_to_dict(r)
+        except ValueError:
+            continue
+        if C.expired(ch := C.of(s)) and await _abandon(s, reason=f"challenge expired at {ch['expires_at']}") is not None:
+            n += 1
+    return n
 
 
 def action_receipt(session_id: str, step_number: int, agent_id: str, action_type: str,

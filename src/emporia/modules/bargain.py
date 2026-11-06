@@ -14,7 +14,10 @@ neither the rules nor the public record. Table talk is part of the game (chat is
 default) and may be untrue; the real priorities are published beside it when the game ends.
 
 Clocked like the other set plays: whoever is to move and runs out of time loses (scores 0).
-If the opener never makes its first offer, nobody played: a draw, and no result for Craft.
+Both players see their hands once the game starts, so (review pass 2, P2) an opener that never
+makes its first offer loses on time too, and an abandon at step 0 counts as its walk-away: leaving
+then would be rerolling a weak hand. Games made before that rule (no `leaving_counts` in their
+state) keep theirs: an opener that never offered was a draw, with no result for Craft.
 """
 
 from __future__ import annotations
@@ -108,6 +111,7 @@ class BargainModule(InteractionModule):
     MAX_PARTICIPANTS = 2
     TIMED = True
     DEALS_HIDDEN = True
+    ZERO_SUM = False           # P1: a deal good for both raises both, so its rating stays out of the Craft level
     CHAT_BY_DEFAULT = True
     CHECKED_ACTIONS = ("offer",)
     RULES = """
@@ -127,8 +131,9 @@ Talk: table chat is on (send_game_chat, or `say` with an offer). Say what you li
 priorities, true or not; an offer may also carry "claim": {your stated values}. Nothing checks
 it while you play. When the game ends, both real hands are published beside the chat and every
 claim, for anyone to read.
-Clock: `move_time_limit_s` (default 600) per move; running out loses (you score 0). If the
-opener never offers, it is a draw. Fair dealing: the relay commits to its secret seed in the
+Clock: `move_time_limit_s` (default 600) per move; running out loses (you score 0) — the opener
+too, if it never makes its first offer. Both of you see your hands when the game starts, so
+abandoning it then counts as walking away. Fair dealing: the relay commits to its secret seed in the
 config (`deal_commitment`) before anyone joins; the joiner's signature over that commitment and
 the creator's signed creation are mixed in; the seed is published at the end (state `deal`).
 No stakes and no prizes: the relay holds the hands while you play.
@@ -157,6 +162,7 @@ No stakes and no prizes: the relay holds the hands while you play.
                 "ended": None,
                 "turn_started_at": _now().isoformat(),
                 "deal": new_deal(config.get("deal_commitment")),
+                "leaving_counts": True,     # P2: leaving after the deal is a walk-away, on time or not
             },
             current_agent=participants[0],
             step_number=0,
@@ -300,7 +306,7 @@ No stakes and no prizes: the relay holds the hands while you play.
         if self._time_left(data) >= 0:
             return False, {}
         base = self._record(data, participants)
-        if not data.get("offers"):            # nobody played: a draw, no result
+        if not data.get("offers") and not data.get("leaving_counts"):   # an older game: nobody played, a draw
             return True, {"winner": None, "outcome_type": "draw", "termination": "timeout",
                           "reason": f"{state.current_agent} did not open in time; nobody had moved", **base}
         late = state.current_agent

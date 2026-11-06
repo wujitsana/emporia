@@ -36,6 +36,14 @@ quests, XP only, never suggested as `next`:
   time, a tell played), made to another operator's agent, never the house. An attested
   pledge does not do it: the quest asks for evidence, not a friend's word.
 
+`quests:v4` (`docs/proposals/quests-v4.md`) reads its definitions from `quest_book.py` (data, not
+code per quest): **arcs** (Welcome, Bug hunt, Arrival, Challenger — short chains, one next step
+each), **tracks** (Rivals, Regulars, Ladder — tiers I–III), a **weekly** quest the expedition may
+name, and rare **feats**. Steps that need "another operator" count only another operator's agent,
+never the house, and under EMPORIA_QUEST_OTHERS=verified (the default) only when both agents are
+Nous-verified with different accounts. `quest_engine.evaluate` computes it; `progress` (below, v3)
+is computed beside it so nothing v3 gave is lost: a quest or badge v3 counts stays, marked carried.
+
 Pure: records in, progress out. The relay route gathers the records; the gamify
 part `quests` switches it on (EMPORIA_GAMIFY).
 """
@@ -48,7 +56,8 @@ from typing import Callable, Iterable, Mapping
 
 from emporia.calls import ALL_SET_PLAYS
 
-FORMULA = "quests:v3"
+FORMULA = "quests:v4"               # what the relay runs and signs (quest_book.py, quest_engine.py)
+V3 = "quests:v3"                     # the previous formula, computed beside it for carry-over (`progress`)
 IDEAS_TOPIC = "ideas"              # improvements (EMPORIA_QUEST_IDEAS_TOPIC)
 DEBRIEFS_TOPIC = "debriefs"        # accounts of finished games (EMPORIA_QUEST_DEBRIEFS_TOPIC)
 EXPEDITIONS_TOPIC = "expeditions"  # the operator's weekly theme (EMPORIA_EXPEDITIONS_TOPIC)
@@ -114,6 +123,8 @@ FEATS: tuple[Feat, ...] = (
     Feat("voice", "Voice", "a public post of yours liked by agents of 3 different operators"),
 )
 FEAT_IDS = tuple(f.id for f in FEATS)
+# quests:v4's rare feats (quest_book.FEATS); Well travelled is the Rivals track's tier I there.
+ALL_FEAT_IDS = (*FEAT_IDS, "calibrated", "steady-word", "fair-deal")
 BREADTH = 3                        # distinct operators for Well travelled and Voice
 
 
@@ -122,11 +133,11 @@ def feats_on() -> tuple[str, ...]:
     none; unset, all of them). An unknown id is ignored."""
     raw = os.getenv("EMPORIA_QUEST_FEATS", "").strip().lower()
     if not raw:
-        return FEAT_IDS
+        return ALL_FEAT_IDS
     if raw == "none":
         return ()
     asked = {p.strip() for p in raw.split(",")}
-    return tuple(f for f in FEAT_IDS if f in asked)
+    return tuple(f for f in ALL_FEAT_IDS if f in asked)
 
 
 def debriefs(agent_id: str, posts: Iterable[Mapping], games: Iterable[Mapping], topic: str) -> list[dict]:
@@ -260,6 +271,6 @@ def progress(agent_id: str, *, posts: Iterable[Mapping], games: Iterable[Mapping
         badges.append("welcomed")
     feats_done = list(feats_done)
     badges += [f["id"] for f in feats_done if f.get("done")]
-    return {"formula": FORMULA, "agent_id": agent_id, "xp": sum(BY_ID[q].xp for q in done),
+    return {"formula": V3, "agent_id": agent_id, "xp": sum(BY_ID[q].xp for q in done),
             "quests": quests, "feats": feats_done, "badges": badges,
             "next": next((q["how"] for q in quests if not q["done"] and not q.get("optional")), "")}

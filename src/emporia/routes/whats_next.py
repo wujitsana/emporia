@@ -88,17 +88,72 @@ def sessions_of(agent_id: str, now: float) -> list[dict[str, Any]]:
         paid = {r[0] for r in conn.execute("SELECT DISTINCT session_id FROM payments WHERE agent_id = ? AND "
                                            "payment_type = 'session_stake'", (agent_id,))}
     out = []
+    from emporia import challenges as C
     for r in rows:
         sess = rs._session_row_to_dict(r)
         others = [p for p in sess["participants"] if p != agent_id]
         base = {"session_id": sess["session_id"], "module_type": sess["module_type"], "status": sess["status"],
                 "opponents": others}
+        if (ch := C.of(sess)) is not None:     # quests:v4: what the challenge asked of this game
+            base["challenge"] = {"kind": ch["kind"], "with_call": bool(ch.get("with_call")),
+                                 **({"pledge": ch["pledge"], "issuer": sess["participants"][0] == agent_id}
+                                    if ch.get("pledge") else {})}
+            if ch.get("pledge") and sess["status"] == "active" and sess["participants"][0] == agent_id \
+                    and others and not _pledged(agent_id, sess["session_id"]):
+                out.append({**base, "move": "promised_pledge", "clock_left_s": None, "to_agent": others[0]})
         if sess["session_id"] in unfunded and sess["session_id"] not in paid:
             out.append({**base, "move": "fund", "clock_left_s": None})
             continue
         got = waiting_on(agent_id, sess, now)
         if got:
             out.append({**base, "move": got[0], "clock_left_s": got[1]})
+    return out
+
+
+def _pledged(agent_id: str, session_id: str) -> bool:
+    """Whether the agent made any pledge about this game (the one its challenge promised)."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        try:
+            return conn.execute("SELECT 1 FROM pledges WHERE maker_id = ? AND subject_id = ? LIMIT 1",
+                                (agent_id, session_id)).fetchone() is not None
+        except Exception:  # noqa: BLE001 — a relay without the pledges table: nothing was pledged
+            return False
+
+
+def challenges_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
+    """quests:v4: open challenges on the board it could take — not its own, not its operator's or the
+    house's (they count for nothing), soonest to expire first."""
+    from emporia.routes.sessions import open_challenges
+    out = [c for c in open_challenges(limit=50) if c.get("from") != agent_id and others(c.get("from"))]
+    return sorted(out, key=lambda c: str(c.get("expires_at") or ""))[:_BOUNTIES]
+
+
+def waiting_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
+    """Review pass 2, P3: public games waiting for a player that are not challenges — not its own, not its
+    operator's or the house's, with a seat — newest first (its creator is likeliest still there)."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute("SELECT * FROM sessions WHERE status = 'waiting' AND config_json NOT LIKE '%\"challenge\"%' "
+                            "AND config_json NOT LIKE '%\"opponent\"%' ORDER BY created_at DESC LIMIT 100").fetchall()
+    out = []
+    for r in rows:
+        try:
+            s = rs._session_row_to_dict(r)
+            module = MODULE_REGISTRY[s["module_type"]]
+        except (KeyError, ValueError):
+            continue
+        if s["module_type"] == "emporia:service:v1" or not getattr(module, "DECLARES_WINNER", False) \
+                or getattr(module, "RETIRED_FOR", None):
+            continue
+        players = s["participants"]
+        if agent_id in players or not players or not others(players[0]) or len(players) >= module.MAX_PARTICIPANTS \
+                or not rs._session_viewer_allowed(s, None):
+            continue
+        rules = s.get("payment_rules") or {}
+        out.append({"session_id": s["session_id"], "module_type": s["module_type"], "from": players[0],
+                    "seats": {"taken": len(players), "max": module.MAX_PARTICIPANTS},
+                    "stake_cents": _stake_cents(rules), "created_at": s["created_at"]})
+        if len(out) >= _BOUNTIES:
+            break
     return out
 
 
@@ -154,7 +209,7 @@ def inbox_of(agent_id: str) -> dict[str, Any]:
                                 "stake_cents": _stake_cents({**inner, **payload}),
                                 "payload": {k: v for k, v in {**inner, **payload}.items()
                                             if k in ("type", "module_type", "stake_cents", "stake_per_participant",
-                                                     "session_id")},
+                                                     "session_id", "challenge", "expires_at")},
                                 "created_at": r["created_at"]})
             elif t == "dm_received":
                 tid = payload.get("thread_id")
@@ -219,12 +274,30 @@ async def whats_next_facts(agent_id: str, request: Request):
     if relay_modules.on("gamify", "pledges"):
         from emporia.routes.pledges import due_for
         facts["pledges"] = {"due": due_for(agent_id)}
+    from emporia import progression
+    from emporia.routes.standing import _who
+    who = _who()
+    house = progression.house_agents()
+    mine = who[agent_id].operator if agent_id in who else agent_id
+
+    def others(a: Any) -> bool:      # another operator's agent, not the house: what counts for quests
+        return bool(a) and a not in house and (who[a].operator if a in who else a) != mine
+    facts["challenges"] = challenges_for(agent_id, others)       # quests:v4
+    facts["waiting"] = waiting_for(agent_id, others)             # review pass 2, P3
     if relay_modules.on("gamify", "quests"):
         from emporia.routes.standing import quests_body
         q = quests_body(agent_id)
         required = [x for x in q["quests"] if not x.get("optional")]
-        facts["quests"] = {"open": [{k: x.get(k) for k in ("id", "title", "xp", "how")}
-                                    for x in required if not x["done"]],
-                           "done": sum(1 for x in required if x["done"]), "total": len(required), "xp": q["xp"]}
+        # quests:v4: each arc's next step, in the book's order (a step waiting on someone else is never
+        # one: review pass 2, P7), then this week's quest.
+        steps = [{**a["next"], "arc": a["id"], "arc_title": a["title"], "arc_done": a["done"],
+                  "arc_total": a["total"]} for a in q.get("arcs") or [] if a.get("next")]
+        week = q.get("weekly") or {}
+        if week.get("id") and not week.get("done") and not week.get("blocked"):
+            steps.append({"id": week["id"], "title": week["title"], "xp": week["xp"], "how": week["how"],
+                          "weekly": True, **({"playbook": week["playbook"]} if week.get("playbook") else {})})
+        facts["quests"] = {"open": steps, "done": sum(1 for x in required if x["done"]), "total": len(required),
+                           "xp": q["xp"], "formula": q.get("formula")}
         facts["expedition"] = q.get("expedition")
+        facts["rival"] = q.get("rival")
     return facts

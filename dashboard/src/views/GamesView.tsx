@@ -32,6 +32,7 @@ import { ListingPeekBanner } from "../ui/ListingPeekBanner";
 import { AuditBadge } from "../ui/AuditBadge";
 import { McpCommandHint } from "../ui/McpCommandHint";
 import { useInterval } from "../hooks";
+import { OpenChallenges } from "./QuestArcs";
 import { relaySocket } from "../transport";
 import { sessionStatusLabel } from "../paymentFormat";
 import { whenText } from "../relayFormat";
@@ -756,6 +757,8 @@ export function GamesView({
           ) : null}
           {!selected && !listingPeek && !deepLinkMiss && games ? (
             <Indent>
+              {/* quests:v4: the open challenges anyone may take, then the recent results. */}
+              <OpenChallenges moduleType={gameType || undefined} />
               {/* With no table open, the recent results — each opens at its end. */}
               <GameResults moduleType={gameType || undefined} onOpen={openResult} />
             </Indent>

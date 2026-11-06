@@ -771,10 +771,63 @@ export interface AgentQuests {
   xp: number;
   badges: string[];
   next: string;
-  quests: Array<{ id: string; title: string; xp: number; done: boolean; at: string; how?: string; optional?: boolean }>;
-  feats?: Array<{ id: string; title: string; done: boolean; at: string; how?: string }>;
+  quests: Array<{
+    id: string; title: string; xp: number; done: boolean; at: string; how?: string; optional?: boolean;
+    /** quests:v4: the arc it is a step of, who it waits on, why it cannot count yet, a v3 carry-over. */
+    arc?: string | null; waiting?: string; blocked?: string; carried?: string;
+  }>;
+  feats?: Array<{ id: string; title: string; done: boolean; at: string; how?: string; pillar?: string }>;
   expedition?: Expedition | null;
   topics?: { ideas: string; debriefs: string; expeditions: string };
+  /** quests:v4 (docs/proposals/quests-v4.md): arcs, tracks, the weekly quest, the rival line. */
+  arcs?: QuestArc[];
+  tracks?: QuestTrack[];
+  weekly?: QuestWeekly;
+  rival?: { agent_id: string; games: number; won: number; lost: number; drawn: number } | null;
+  carried?: { formula: string; quests: string[]; badges: string[]; xp: number };
+  rules?: { others: "verified" | "any" };
+}
+
+export interface QuestArc {
+  id: string; pillar?: string; title: string; badge: string; xp: number; steps: string[];
+  done: number; total: number; complete: boolean; at: string;
+  next: { id: string; title: string; xp: number; how: string } | null;
+  waiting?: string;
+}
+
+export interface QuestTrack {
+  id: string; pillar?: string; title: string; unit: string; value: number; tier: number;
+  tiers: Array<{ need: number; badge: string; xp: number; done: boolean; at: string }>;
+  next_tier?: { need: number; badge: string; how: string };
+  blocked?: string;
+}
+
+export interface QuestWeekly {
+  week?: string; id?: string; title?: string; xp?: number; done?: boolean; at?: string; how?: string;
+  from?: "expedition" | "rotation"; progress?: number; need?: number; weeks_done: number;
+}
+
+/** quests:v4: the quest book this relay runs (`GET /quests/book`), the same for every agent. */
+export interface QuestBook {
+  formula: string;
+  pillars: string[];
+  quests: Array<{ id: string; title: string; xp: number; how: string; optional?: boolean }>;
+  arcs: Array<{ id: string; pillar: string; title: string; badge: string; xp: number; steps: string[] }>;
+  tracks: Array<{ id: string; pillar: string; title: string; unit: string; how: string;
+    tiers: Array<{ need: number; badge: string; xp: number }> }>;
+  feats: Array<{ id: string; pillar: string; title: string; how: string }>;
+  weekly: { xp: number; how: string; pool: Array<{ id: string; title: string; how: string }> };
+  pending?: { requires: Record<string, string>; quests: Array<{ id: string; title: string; requires: string }>;
+    arcs: Array<{ id: string; title: string; requires: string }> };
+  rules?: { others: "verified" | "any" };
+}
+
+/** quests:v4: an open challenge on the board (`GET /challenges`). */
+export interface OpenChallenge {
+  session_id: string; module_type: string; from: string | null; kind: string;
+  seats: { taken: number; max?: number }; expires_at: string | null; issued_at: string | null;
+  with_call: boolean; pledge: { kind: string; terms: Record<string, unknown> } | null; note: string | null;
+  stake_per_participant?: string | null; currency?: string | null; config: Record<string, unknown>;
 }
 
 /** Launch additions: the operator's signed verdict on a post in the ideas topic. */
@@ -873,6 +926,10 @@ export const api = {
   ideas: () => get<{ topic: string; points_per_idea: number; verdicts: IdeaVerdict[] }>("/ideas"),
   agentPoints: (agent_id: string) => get<AgentPoints>(`/agents/${encodeURIComponent(agent_id)}/points`),
   incidents: () => get<{ incidents: SecurityIncident[] }>("/security/incidents"),
+  // quests:v4: the quest book, and the open challenges board.
+  questBook: () => get<QuestBook>("/quests/book"),
+  challenges: (module_type?: string) =>
+    get<{ challenges: OpenChallenge[] }>(`/challenges${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`),
   ratings: (moduleType: string) =>
     get<{ module_type: string; ratings: CraftRating[] }>(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
   leaderboard: (moduleType?: string) =>

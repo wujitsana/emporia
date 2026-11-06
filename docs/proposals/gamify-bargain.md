@@ -217,6 +217,11 @@ Everything is in the API already.
 
 1. **Rating rule:** keep normalised own score (both can gain), or centre it on the best joint
    split (no drift, but a fair efficient deal is neutral rather than a gain)? *Built: normalised.*
+   **Decided 2026-11-06 (review pass 2, P1):** keep the normalised rating and its ladder, but leave
+   non-zero-sum games out of the Craft *level*: a module declares `ZERO_SUM = False` (Bargain does),
+   its rating is shown and has its board, and it feeds neither the Craft level, the class, nor a
+   ladder challenge. The sheet's formula is `progression:v2` (built on `quests-v4`;
+   `tests/test_progression_v2.py`: three operators trading fair deals for 14 days stay Craft level 1).
 2. **Walk-away:** default 0, as asked. Should it be dealt privately (a third sealed number) in a
    `:v2`?
 3. **Honesty on the sheet:** add a "said vs held" line computed from `claims`, or keep it in the

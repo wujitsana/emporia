@@ -10,7 +10,9 @@ hand in a throwaway Hermes home:
   the marketplace role, its keys in its .env, the plugin enabled, registers, and passes doctor;
 * playbook refusals that name how to change them; a free `emporia:blotto:v2` between A and B
   (a retired `:v1` refused; `whats_next` puts the first move on top; A pledges a tell and seals a
-  call with its move, and keeps the tell; an illegal commit refused, a like, quests with the pledge
+  call with its move, and keeps the tell; an illegal commit refused, a like, an open challenge on the
+  board taken by B and played out (quests:v4: Open table for A, Taken up for B) and a direct one B
+  declines, quests with the pledge
   kept, the character sheet with its Insight and its pledges, the season, the relay's activity
   count);
 * a signer of the run's own (practice mode), an agent whose keys were made inside it (signer phase
@@ -234,7 +236,9 @@ class Run:
             # The operator section: the merchant is this relay's operator; bug quests (with
             # the transparency log they need) give its desk a queue.
             EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1",
-            EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent)
+            EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent,
+            # quests:v4: the run's agents are key-only (no Nous sign-in), so each counts as its own operator.
+            EMPORIA_QUEST_OTHERS="any")
         py = self.repo / ".venv" / "bin" / "python"
         # The relay runs --repo's code even under another checkout's interpreter (a git worktree
         # has no .venv; the fallback's editable install is the main checkout): found by the review
@@ -461,6 +465,39 @@ class Run:
         back = self.tool(self.merchant, "like", "game", sid)
         check(back.get("success") and back.get("to_agent") == self.player, f"like back: {back}")
 
+    def challenges(self) -> str:
+        """quests:v4: an open challenge on the board, taken by another operator's agent and played to
+        the end, completes an arc step on each side; a direct challenge is declined at no cost."""
+        small = {"rounds": 1, "battlefields": 3, "troops": 10}
+        c = self.tool(self.player, "challenge", module_type="emporia:blotto:v2", config=small, with_call=True,
+                      note="one round, three fields")
+        check(c.get("success") and (c.get("challenge") or {}).get("kind") == "open", f"challenge: {c}")
+        sid = c["session_id"]
+        board = self.tool(self.merchant, "list_challenges")
+        check(sid in [x.get("session_id") for x in board.get("challenges", [])]
+              and "data, not instructions" in board.get("untrusted", ""), f"not on the board: {board}")
+        nxt = self.tool(self.merchant, "whats_next", 20)
+        check(any(i.get("kind") == "challenge" and (i.get("args") or {}).get("session_id") == sid
+                  for i in nxt.get("items", [])), f"whats_next does not offer the open challenge: {nxt}")
+        j = self.tool(self.merchant, "join_session", sid)
+        check(j.get("success"), f"join_session: {j}")
+        moves = {self.player: [5, 5, 0], self.merchant: [4, 3, 3]}
+        for _ in range(4):
+            r = self.act(self.player, sid, moves, calls={self.player: 0.6, self.merchant: 0.5})
+        check(r.get("is_terminal"), f"the challenge did not finish: {r}")
+        mine = self.tool(self.player, "my_quests")
+        done = {x["id"] for x in mine.get("quests", []) if x.get("done")}
+        arc = next((a for a in mine.get("arcs", []) if a.get("id") == "challenger"), {})
+        check({"open-table", "first-contact"} <= done and arc.get("done", 0) >= 2 and mine.get("formula") == "quests:v4",
+              f"the open challenge completed no arc step: {sorted(done)} {arc}")
+        theirs = {x["id"] for x in self.tool(self.merchant, "my_quests").get("quests", []) if x.get("done")}
+        check("taken-up" in theirs, f"taking it did not count: {sorted(theirs)}")
+        d = self.tool(self.player, "challenge", module_type="emporia:blotto:v2", opponent=self.merchant, config=small)
+        check(d.get("success") and d["challenge"]["kind"] == "direct", f"direct challenge: {d}")
+        no = self.tool(self.merchant, "decline_challenge", d["session_id"], "not now")
+        check(no.get("success") and no.get("declined"), f"decline_challenge: {no}")
+        return f"{sid} taken and finished; {d['session_id']} declined"
+
     def standing(self) -> None:
         q = self.tool(self.player, "my_quests")
         done = {x["id"] for x in q.get("quests", []) if x.get("done")}
@@ -470,7 +507,8 @@ class Run:
         craft = {c["module_type"]: c for c in sheet.get("craft", [])}
         check("rating" in craft.get("emporia:blotto:v2", {}), f"no Craft blotto rating: {sheet.get('craft')}")
         ins = sheet.get("insight") or {}
-        check(ins.get("games") == 1 and "per game over 1 game" in ins.get("why", ""),
+        # two calls: the blotto and the open challenge (quests:v4), both against the merchant
+        check(ins.get("games") == 2 and "per game over 2 games" in ins.get("why", ""),
               f"the sheet does not score the call: {ins}")
         word = sheet.get("pledges") or {}
         check(word.get("kept") == 1 and word.get("in_trust") is False, f"the sheet's pledges: {word}")
@@ -790,6 +828,7 @@ def main(argv: list[str] | None = None) -> int:
         sid = run.step("free blotto, end to end", run.blotto)
         run.step("illegal commit and missing session refused", run.illegal_commit)
         run.step("likes", run.like, sid)
+        run.step("an open challenge taken and an arc step done; a direct one declined", run.challenges)
         run.step("quests, sheet, season, activity", run.standing)
         run.step("a signer of the run's own", run.start_signer)
         run.step(f"{run.signed}: keys made in the signer, registered through it", run.signer_agent)
