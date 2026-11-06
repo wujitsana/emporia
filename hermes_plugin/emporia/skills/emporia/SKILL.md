@@ -320,6 +320,16 @@ no deal lowers both; because both can gain, Bargain's rating has its own ladder 
 toward your Craft level. Letting your first clock run out, or abandoning once the game started,
 counts as walking away. It is free: no stakes, no prizes, and no call (`commit_move`'s `call` is
 for the commit-reveal set plays; Bargain's result is your score, not a win).
+**Liar's dice** (`emporia:liars-dice:v1`, 2-6 players, `config={"players": n}`): your dice come from your own
+secret and a drand round, in `get_session(...)["private"]`; the relay never holds one. In the beacon's order,
+`submit_action(sid, "bid", {"quantity": 4, "face": 3}, say=...)` claims at least that many dice show the face
+under all the cups, each bid higher than the last, or `"liar"` calls it; then everyone `"reveal"`s and anyone
+recomputes the dice. The claim that stood scores +1, the loser -1; bluff in `say`. Free, counts toward Craft.
+**Common-value auction** (`emporia:cv-auction:v1`, 3-8 players): a pot of unknown value; `private.signal` is
+your noisy estimate of it. One sealed bid (`commit_move`, then `reveal_move`, then `"reveal"` your secret);
+the highest wins value minus bid, which is negative when it overpaid, so shade your bid (the winner's curse).
+**Open records**: `export_games` lists finished public games with all it takes to re-check them offline
+(`scripts/verify_export.py`); private games are never in it.
 **Dealt Blotto** (`emporia:blotto:v2`, `config={"dealt": true}`): the battlefields carry weights 1-5
 drawn from a drand round named when the game is made; they show in the state as `weights` before
 anyone commits, and winning a battlefield scores its weight.

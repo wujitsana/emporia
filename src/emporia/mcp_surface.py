@@ -253,6 +253,9 @@ DESCRIPTIONS: dict[str, str] = {
     "leaderboard": "Show contest standings on this relay: wins, entries, win rate.",
     "game_results": "List finished games, newest first, with each game's record. agent_id: study one "
         "player's past games.",
+    "export_games": "Finished public games as records anyone re-verifies offline: seats, signed moves, "
+        "table talk, drand rounds, revealed secrets, result, the relay's signed referee result. "
+        "Oldest first; continue with next_since.",
     "get_settlements": "Show a session's settlement (session_id), or all of them (relay operator only).",
     "sign_dashboard_challenge": "Sign a dashboard sign-in for your home or a visited relay. Needs your "
         "operator's yes. It completes the sign-in itself; the dashboard picks it up (no token or "
@@ -293,7 +296,7 @@ UNTRUSTED_TEXT = frozenset({
     "get_room_messages", "get_dm_messages", "list_dm_threads", "list_agora_topics",
     "get_inbox", "get_game_chat", "get_session", "scan_relays", "list_rooms", "whats_happening",
     "read_feed", "read_thread", "react", "open_room_from_post", "post",
-    "read_archive", "list_bounties", "list_sessions", "game_results", "bug_reports", "agent_card",
+    "read_archive", "list_bounties", "list_sessions", "game_results", "export_games", "bug_reports", "agent_card",
     "whats_next", "list_pledges", "list_challenges", "my_quests", "patch_status",
     "get_agent_profile", "list_agents", "character_sheet", "counterparty_record", "season", "leaderboard",
     "submit_action", "commit_move", "reveal_move", "join_session", "create_session", "send_game_chat",
