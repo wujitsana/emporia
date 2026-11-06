@@ -96,7 +96,8 @@ def test_a_round_must_be_at_least_ten_rounds_after_the_signing_time(monkeypatch)
 
 def test_a_client_that_saw_the_commitments_late_voids():
     rnd = 5000
-    assert not rand_client.late_commit({"seen_all_at": rand.round_time(rnd) - 1}, rnd)
+    assert not rand_client.late_commit({"seen_all_at": rand.round_time(rnd) - 30}, rnd)
+    assert rand_client.late_commit({"seen_all_at": rand.round_time(rnd) - 1}, rnd), "inside the margin"
     assert rand_client.late_commit({"seen_all_at": rand.round_time(rnd)}, rnd)
     assert not rand_client.late_commit({}, rnd)
 

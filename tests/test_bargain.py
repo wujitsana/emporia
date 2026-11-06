@@ -344,13 +344,70 @@ def test_two_players_dealt_the_same_hand_have_no_game(client, monkeypatch):
     assert progression._scores({"participants": [a, b], **out}) is None, "a collision counts nothing"
 
 
-def test_a_late_commit_voids_the_game_without_a_result(client):
-    sid, a, b = _game(client)
+def _future_game(client, ahead=1000):
+    """A game whose round is `ahead` rounds away: the hands cannot be seen yet."""
+    from conftest import signed_session_body
+
+    from emporia import wire
+    a, b = f"gz_{uuid.uuid4().hex[:6]}", f"gy_{uuid.uuid4().hex[:6]}"
+    _register_keyed(client, a)
+    _register_keyed(client, b)
+    body = signed_session_body(a, {"module_type": BARGAIN})
+    sid = wire.session_id_for(body["nonce"])
+    commit = make_test_commit(sid, a, 0, round_offset=ahead)
+    assert client.post("/sessions", json={**body, "rand_commit": commit}, headers=_hdr(a)).status_code == 200
+    assert client.post(f"/sessions/{sid}/join", json={"agent_id": b}, headers=_hdr(b)).status_code == 200
+    return sid, a, b
+
+
+def test_a_late_commit_void_before_the_round_is_accepted_and_is_no_result(client):
+    sid, a, b = _future_game(client)
     assert _act(client, sid, b, "void", {"reason": "other"}).status_code == 400
     assert _act(client, sid, b, "void", {"reason": "late_commit"}).status_code == 200
     s, out = _outcome(sid)
     assert s["status"] == "completed" and out["termination"] == "void" and out["voided_by"] == b
     assert progression._scores({"participants": [a, b], **out}) is None, "no result, no penalty"
+
+
+def test_a_void_after_the_round_is_published_is_refused(client):
+    sid, a, b = _game(client)          # the shim names a round already published
+    r = _act(client, sid, b, "void", {"reason": "late_commit"})
+    assert r.status_code == 400 and "Too late to void" in r.text
+    assert rs.load_session(sid)["status"] == "active"
+
+
+def test_seeing_the_hand_and_then_voiding_to_reroll_fails(client):
+    sid, a, b = _game(client)
+    hand, _walk = _hand(sid, b)       # the round is out: b can see its hand and dislikes it
+    assert hand in B.HANDS
+    assert _act(client, sid, b, "void", {"reason": "late_commit"}).status_code == 400
+    assert _act(client, sid, a, "offer", {"keep": {"silk": 1}}).status_code == 200, "the game goes on"
+
+
+def test_the_void_is_on_the_voiders_record_and_not_the_others(client):
+    sid, a, b = _future_game(client)
+    _act(client, sid, b, "void", {"reason": "late_commit"})
+    rec_b = client.get(f"/agents/{b}/record", headers=_hdr(a)).json()["games"]
+    rec_a = client.get(f"/agents/{a}/record", headers=_hdr(b)).json()["games"]
+    assert rec_b["voided"] == 1 and rec_a["voided"] == 0
+    assert rec_b["finished"] == 0 and rec_a["finished"] == 0, "a void is no finished game for either"
+
+
+def test_the_client_voids_at_round_time_minus_a_margin_not_after():
+    from emporia import rand_client
+    sess_id, now = "sess_v", rand.GENESIS + 1_000_000 * rand.PERIOD_S
+    (ca, sa), (cb, _sb) = (rand_client.make_commit(lambda *x: "s", sess_id, "a", 0, now=now),
+                           rand_client.make_commit(lambda *x: "s", sess_id, "b", 1, now=now + 3))
+    sess = {"session_id": sess_id, "config": {"rand": {"scope": sess_id, "commits": {
+        "a": {**ca, "seat": 0}, "b": {**cb, "seat": 1}}}}, "state": {"data": {"pool": B._as_dict(POOL), "offers": []}}}
+    rnd = B.game_round(sess["config"]["rand"]["commits"])
+    t = rand.round_time(rnd)
+    seen_late = dict(sa, seen_all_at=t - 2)          # inside the margin: too late to trust
+    assert rand_client.private_view(sess, "a", seen_late, now=t - 1)["void"] == "late_commit"
+    seen_ok = dict(sa, seen_all_at=t - 30)
+    assert "void" not in rand_client.private_view(sess, "a", seen_ok, now=t - 1)
+    after = rand_client.private_view(sess, "a", dict(seen_late), now=t + 1, fetch=lambda r, base=None: fake_beacon_sig(r))
+    assert "void" not in after and "values" in after, "after the round a void is refused, so none is offered"
 
 
 def test_running_out_of_time_loses_and_scores_zero(client):
@@ -451,8 +508,8 @@ def test_the_players_view_is_computed_client_side_from_its_secret(monkeypatch):
     assert view["values"] == B._as_dict(hand) and view["walk_away"] == walk and view["all_goods_worth"] == 10
     assert view["offers"] == [{"n": 1, "by": "a", "worth_to_you": B.worth(hand, (3, 0, 0))}]
     # a client that first saw the other commitment only after the round voids
-    late = dict(sa, seen_all_at=rand.round_time(rnd) + 1)
-    assert rand_client.private_view(sess, "a", late, now=ready, fetch=lambda r, base=None: fake_beacon_sig(r))["void"] == "late_commit"
+    late = dict(sa, seen_all_at=rand.round_time(rnd) - 1)
+    assert rand_client.private_view(sess, "a", late, now=rand.round_time(rnd) - 0.5)["void"] == "late_commit"
 
 
 def test_the_mcp_tools_commit_on_create_and_join_and_reveal_from_the_local_secret(monkeypatch, tmp_path):

@@ -54,9 +54,14 @@ def note_other_seen(rec: dict[str, Any], sess: dict[str, Any], agent_id: str, no
         rec["seen_all_at"] = time.time() if now is None else now
 
 
+#: A client checks that it has seen every commitment this long before the round is published, and
+#: voids then if not: the relay refuses a void once the round is out (a hand could be seen).
+VOID_MARGIN_S = 6
+
+
 def late_commit(rec: dict[str, Any], rnd: int) -> bool:
-    """True when this client first saw every commitment only at or after the round's time."""
-    return rec.get("seen_all_at") is not None and rec["seen_all_at"] >= rand.round_time(rnd)
+    """True when this client first saw every commitment only after the check time (round time minus a margin)."""
+    return rec.get("seen_all_at") is not None and rec["seen_all_at"] >= rand.round_time(rnd) - VOID_MARGIN_S
 
 
 def private_view(sess: dict[str, Any], agent_id: str, rec: dict[str, Any] | None,
@@ -77,10 +82,11 @@ def private_view(sess: dict[str, Any], agent_id: str, rec: dict[str, Any] | None
     rnd = BG.game_round(commits)
     ready_at = rand.round_time(rnd)
     base = {"round": rnd, "ready_at": datetime.fromtimestamp(ready_at, UTC).isoformat()}
-    if late_commit(rec, rnd):
+    if late_commit(rec, rnd) and now < ready_at:
         return {**base, "void": "late_commit",
-                "do": "submit_action(session_id, 'void', {'reason': 'late_commit'}): you saw the other "
-                      "commitment only after the round was published, so the game is not fair to play"}
+                "do": "submit_action(session_id, 'void', {'reason': 'late_commit'}) NOW, before the round is "
+                      "published: you saw the other commitment too late to trust the draw. After the round the "
+                      "relay refuses a void"}
     if now < ready_at:
         return {**base, "wait_s": round(ready_at - now, 1),
                 "note": "the hands are dealt when this drand round is published; offers wait for it"}

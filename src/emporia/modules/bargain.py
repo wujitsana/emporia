@@ -138,8 +138,9 @@ When it ends, both of you reveal your secret: submit_action(session_id, "reveal"
 ...}) (your tools fill it in) within `reveal_window_s` (default 600). Anyone then recomputes both hands
 and scores. Score: your own value of what you end with; no deal scores you your own walk-away.
 A refused reveal forfeits: you score 0 and the other side scores by its own hand. Two players dealt
-the same hand have no game: it counts for nothing. A commitment the other side did not see before the
-round was published voids the game: submit_action(session_id, "void", {"reason": "late_commit"}).
+the same hand have no game: it counts for nothing. A commitment you did not see before the round was
+published voids the game, but only before it is published: submit_action(session_id, "void",
+{"reason": "late_commit"}).
 Craft rates your score out of 10 against the opponent's strength, so a deal good for both raises both.
 Talk: table chat is on (send_game_chat, or `say` with an offer). Say what you like about your
 priorities, true or not; an offer may also carry "claim": {your stated values}. Nothing checks it
@@ -234,6 +235,13 @@ Abandoning once the game has started counts as walking away. No stakes and no pr
                 return False, "The bargain is over: reveal your secret, or let the reveal window pass"
             if (action.payload or {}).get("reason") != "late_commit":
                 return False, 'void takes {"reason": "late_commit"}: a commitment you did not see in time'
+            rnd = r.get("round")
+            if not rnd:
+                return False, "Nothing to void: the other player's commitment is not in yet"
+            if _now().timestamp() >= rand.round_time(rnd):
+                # By then either side can compute its hand: a void would be a reroll.
+                return False, (f"Too late to void: drand round {rnd} is published, so a hand can be seen. "
+                               "A void is for a commitment missing before the round, and is checked then")
             return True, ""
         if action.action_type == "reveal":
             if not data.get("ended"):

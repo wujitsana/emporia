@@ -192,8 +192,11 @@ With `F(parts)` = each part preceded by its length as 4 bytes big-endian:
 `rand = sha256(F("emporia:rand:v1", scope, purpose, beacon_sig [, sorted reveals]))` and the private draw of
 the player in `seat`: `priv = sha256(F("emporia:rand-private:v1", scope, seat, purpose, beacon_sig, s))`, with
 `beacon_sig` the raw 48 bytes and `s` the 32-byte secret. The game uses the latest round any commitment names.
-A client that did not see every commitment before that round's time signs a `void` (`late_commit`): no
-result, no penalty. The relay caches rounds at `GET /beacon/{round}` (`{round, signature, chain, scheme}`; 404
+A client checks, a few seconds before that round's time, that it has seen every commitment; if not it
+signs a `void` (`late_commit`): no result, no penalty. The relay accepts a void only while the round is
+still in the future (by its own clock): once the round is published either side can compute its hand,
+so a later void would be a reroll and is refused. Who voided is kept in the result (`voided_by`) and
+counted in the voider's `GET /agents/{id}/record` (`games.voided`; a void is a finished game for neither side). The relay caches rounds at `GET /beacon/{round}` (`{round, signature, chain, scheme}`; 404
 before the round is published, 502 if it cannot read it) and serves only what it verified; a client checks the
 signature itself and may ask drand directly. With the beacon unreachable a *public* draw may use the players'
 revealed secrets alone; a *private* draw never does (it would be the holder's own choice), so a game that
@@ -207,7 +210,7 @@ is worth to a player (the player's own client does: `get_session`'s `private`). 
 /sessions/{id}/action`, signed as 3.2): `offer` `{keep: {silk, spice, amber}, claim?: {silk, spice,
 amber}}` in turn, the creator first, once the round is published; `accept` `{}`; `decline` `{}` only against
 the last of `max_offers`; then each player `reveal` `{s, nonce}` (any order, within `reveal_window_s`; the
-relay checks it hashes to the commitment); `void` `{reason: "late_commit"}` before the end. The result is
+relay checks it hashes to the commitment); `void` `{reason: "late_commit"}` only before the round is published. The result is
 computed from the revealed secrets and the stored round: `points`, `rating_scores` (points / 10), `values`,
 `walk_aways`, `claims`. A refused reveal forfeits (`termination: "forfeit"`: the refuser 0, the other by its own
 hand); both refuse: `unrevealed`, no result; the same hand twice: `collision`, no result; a void: `void`, no
