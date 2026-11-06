@@ -1296,7 +1296,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   word-break: break-all;
 }
 .e-mcp-hint__code:hover { text-decoration: underline; }
-.e-mcp-hint__copied { font-size: 0.682rem; opacity: 0.7; }
 
 /* Rail chips (payment rail badges) */
 .e-rail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -2401,6 +2400,10 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   background: var(--theme-background, transparent); color: inherit;
   border: 1px solid var(--theme-border, rgba(128,128,128,0.4)); border-radius: 4px;
 }
+/* A phone (the switcher sits in the menu): under 16px, iOS zooms the page when the select takes focus. */
+@media (max-width: 900px) {
+  .e-viewer-switch select { font-size: 16px; min-height: 40px; }
+}
 
 /* P124: inbox / sent / all above the conversation list. */
 .e-messages-boxes { padding: 8px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12)); }
@@ -3477,6 +3480,23 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-look .e-slim-card__title,
 .e-look .e-blotto__grid td.is-hidden,
 .e-look .e-phase-strip__step.is-next,
+.e-look .e-meta-grid dt,
+.e-look .e-overview-card__body p,
+.e-look .e-overview-card--failed .e-overview-card__body,
+.e-look .e-empty-pane__hint,
+.e-look .e-slim-card__foot,
+.e-look .e-hero-stat__label,
+.e-look .e-hero-stat__hint,
+.e-look .e-chess-players__vs,
+.e-look .e-chess-speed__lbl,
+.e-look .e-lowest__tag,
+.e-look .e-chess-move-idx,
+.e-look .e-role-pill--spectator,
+.e-look .e-entity-chip--inert,
+.e-look .e-inbox-event--read,
+.e-look .e-seat.is-to_commit,
+.e-look .e-trust-key,
+.e-look [style*="opacity: 0.4"],
 .e-look [style*="opacity: 0.5"],
 .e-look [style*="opacity: 0.6"] {
   opacity: 1 !important;
@@ -4156,7 +4176,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
    see. Below the header-nav width it covers the frame (absolute, inside the
    shell's `contain: layout paint`), never the Hermes app around it. */
 
-.ChatDrawer_root_1ucu2 {
+.ChatDrawer_root_58yj2 {
   display: none;
   flex: none;
   flex-direction: column;
@@ -4173,26 +4193,26 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   line-height: 1.5;
 }
 
-.ChatDrawer_open_1ucu2 {
+.ChatDrawer_open_58yj2 {
   display: flex;
 }
 
 /* ── head ─────────────────────────────────────────────────────────────── */
 
-.ChatDrawer_head_1ucu2 {
+.ChatDrawer_head_58yj2 {
   flex: none;
   padding: 12px 16px 10px;
   border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
 }
 
-.ChatDrawer_headRow_1ucu2 {
+.ChatDrawer_headRow_58yj2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.ChatDrawer_heading_1ucu2 {
+.ChatDrawer_heading_58yj2 {
   margin: 0;
   display: flex;
   align-items: baseline;
@@ -4204,16 +4224,16 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   text-transform: uppercase;
 }
 
-.ChatDrawer_headIcon_1ucu2 {
+.ChatDrawer_headIcon_58yj2 {
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_close_1ucu2 {
+.ChatDrawer_close_58yj2 {
   min-width: 40px !important;
   min-height: 40px !important;
 }
 
-.ChatDrawer_meta_1ucu2 {
+.ChatDrawer_meta_58yj2 {
   display: flex;
   flex-wrap: wrap;
   gap: 0 1ch;
@@ -4222,18 +4242,18 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   opacity: 0.62;
 }
 
-.ChatDrawer_conn_1ucu2[data-conn="open"] {
+.ChatDrawer_conn_58yj2[data-conn="open"] {
   color: var(--theme-focused-foreground);
   opacity: 1;
 }
 
-.ChatDrawer_sessionBar_1ucu2 {
+.ChatDrawer_sessionBar_58yj2 {
   display: flex;
   gap: 8px;
   margin-top: 10px;
 }
 
-.ChatDrawer_sessionPick_1ucu2 {
+.ChatDrawer_sessionPick_58yj2 {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -4250,18 +4270,18 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: pointer;
 }
 
-.ChatDrawer_sessionPick_1ucu2:hover,
-.ChatDrawer_sessionPick_1ucu2[aria-expanded="true"] {
+.ChatDrawer_sessionPick_58yj2:hover,
+.ChatDrawer_sessionPick_58yj2[aria-expanded="true"] {
   border-color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_sessionPickTitle_1ucu2 {
+.ChatDrawer_sessionPickTitle_58yj2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ChatDrawer_smallButton_1ucu2 {
+.ChatDrawer_smallButton_58yj2 {
   flex: none;
   min-height: 36px;
   padding: 4px 12px;
@@ -4275,11 +4295,11 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   white-space: nowrap;
 }
 
-.ChatDrawer_smallButton_1ucu2:hover {
+.ChatDrawer_smallButton_58yj2:hover {
   border-color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_error_1ucu2 {
+.ChatDrawer_error_58yj2 {
   margin: 8px 0 0;
   font-size: 0.78rem;
   color: var(--theme-focused-foreground);
@@ -4287,7 +4307,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 
 /* ── transcript ───────────────────────────────────────────────────────── */
 
-.ChatDrawer_transcript_1ucu2 {
+.ChatDrawer_transcript_58yj2 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -4298,71 +4318,71 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   gap: 12px;
 }
 
-.ChatDrawer_intro_1ucu2 {
+.ChatDrawer_intro_58yj2 {
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
   border-left: 3px solid var(--theme-focused-foreground);
   padding: 10px 14px 12px;
   line-height: 1.55;
 }
 
-.ChatDrawer_intro_1ucu2 p {
+.ChatDrawer_intro_58yj2 p {
   margin: 0 0 6px;
 }
 
-.ChatDrawer_introTitle_1ucu2 {
+.ChatDrawer_introTitle_58yj2 {
   font-size: 0.72rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   opacity: 0.6;
 }
 
-.ChatDrawer_introNote_1ucu2 {
+.ChatDrawer_introNote_58yj2 {
   font-size: 0.78rem;
   opacity: 0.65;
 }
 
-.ChatDrawer_line_1ucu2 {
+.ChatDrawer_line_58yj2 {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.ChatDrawer_who_1ucu2 {
+.ChatDrawer_who_58yj2 {
   font-size: 0.68rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  opacity: 0.55;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
 }
 
-.ChatDrawer_line_1ucu2[data-who="you"] .ChatDrawer_who_1ucu2 {
+.ChatDrawer_line_58yj2[data-who="you"] .ChatDrawer_who_58yj2 {
   color: var(--theme-focused-foreground);
   opacity: 1;
 }
 
-.ChatDrawer_line_1ucu2[data-who="you"] .ChatDrawer_text_1ucu2 {
+.ChatDrawer_line_58yj2[data-who="you"] .ChatDrawer_text_58yj2 {
   padding: 6px 10px;
   background: var(--e-accent-wash, rgba(128, 128, 128, 0.08));
   border-left: 2px solid var(--theme-focused-foreground);
 }
 
-.ChatDrawer_text_1ucu2 {
+.ChatDrawer_text_58yj2 {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.ChatDrawer_caret_1ucu2 {
+.ChatDrawer_caret_58yj2 {
   color: var(--theme-focused-foreground);
-  animation: ChatDrawer_blink_1ucu2 1s steps(1) infinite;
+  animation: ChatDrawer_blink_58yj2 1s steps(1) infinite;
 }
 
-@keyframes ChatDrawer_blink_1ucu2 {
+@keyframes ChatDrawer_blink_58yj2 {
   50% {
     opacity: 0;
   }
 }
 
-.ChatDrawer_working_1ucu2 {
+.ChatDrawer_working_58yj2 {
   display: flex;
   gap: 1ch;
   align-items: center;
@@ -4370,7 +4390,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   opacity: 0.7;
 }
 
-.ChatDrawer_notice_1ucu2 {
+.ChatDrawer_notice_58yj2 {
   font-size: 0.78rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -4381,29 +4401,29 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   overflow-y: auto;
 }
 
-.ChatDrawer_notice_1ucu2[data-tone="error"] {
+.ChatDrawer_notice_58yj2[data-tone="error"] {
   opacity: 1;
   border-left: 2px solid var(--theme-focused-foreground);
 }
 
-.ChatDrawer_notice_1ucu2[data-tone="command"] {
+.ChatDrawer_notice_58yj2[data-tone="command"] {
   border-left: 0;
   padding-left: 0;
   opacity: 0.9;
 }
 
-.ChatDrawer_prompt_1ucu2 {
+.ChatDrawer_prompt_58yj2 {
   color: var(--theme-focused-foreground);
 }
 
 /* ── tool cards ───────────────────────────────────────────────────────── */
 
-.ChatDrawer_tool_1ucu2 {
+.ChatDrawer_tool_58yj2 {
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
   min-width: 0;
 }
 
-.ChatDrawer_toolHead_1ucu2 {
+.ChatDrawer_toolHead_58yj2 {
   display: flex;
   align-items: center;
   gap: 1ch;
@@ -4419,28 +4439,28 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: pointer;
 }
 
-.ChatDrawer_toolHead_1ucu2:hover .ChatDrawer_toolName_1ucu2 {
+.ChatDrawer_toolHead_58yj2:hover .ChatDrawer_toolName_58yj2 {
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_toolMark_1ucu2 {
+.ChatDrawer_toolMark_58yj2 {
   flex: none;
   width: 1.5ch;
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_tool_1ucu2[data-status="failed"] .ChatDrawer_toolMark_1ucu2,
-.ChatDrawer_tool_1ucu2[data-status="blocked"] .ChatDrawer_toolMark_1ucu2 {
+.ChatDrawer_tool_58yj2[data-status="failed"] .ChatDrawer_toolMark_58yj2,
+.ChatDrawer_tool_58yj2[data-status="blocked"] .ChatDrawer_toolMark_58yj2 {
   color: inherit;
   opacity: 0.8;
 }
 
-.ChatDrawer_toolName_1ucu2 {
+.ChatDrawer_toolName_58yj2 {
   flex: none;
   font-weight: 600;
 }
 
-.ChatDrawer_toolContext_1ucu2 {
+.ChatDrawer_toolContext_58yj2 {
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -4449,18 +4469,18 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   opacity: 0.65;
 }
 
-.ChatDrawer_toolTime_1ucu2 {
+.ChatDrawer_toolTime_58yj2 {
   flex: none;
-  opacity: 0.5;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
   font-size: 0.72rem;
 }
 
-.ChatDrawer_toolCaret_1ucu2 {
+.ChatDrawer_toolCaret_58yj2 {
   flex: none;
   opacity: 0.5;
 }
 
-.ChatDrawer_toolOut_1ucu2 {
+.ChatDrawer_toolOut_58yj2 {
   margin: 0;
   padding: 8px 10px;
   border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
@@ -4473,16 +4493,16 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 }
 
 /* Relay content: dashed rule, a label that says so. */
-.ChatDrawer_untrusted_1ucu2 {
+.ChatDrawer_untrusted_58yj2 {
   border-style: dashed;
 }
 
-.ChatDrawer_line_1ucu2.ChatDrawer_untrusted_1ucu2 {
+.ChatDrawer_line_58yj2.ChatDrawer_untrusted_58yj2 {
   border: 1px dashed var(--e-rule, rgba(128, 128, 128, 0.35));
   padding: 6px 10px;
 }
 
-.ChatDrawer_untrustedLabel_1ucu2 {
+.ChatDrawer_untrustedLabel_58yj2 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -4492,11 +4512,11 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   opacity: 0.8;
 }
 
-.ChatDrawer_line_1ucu2 .ChatDrawer_untrustedLabel_1ucu2 {
+.ChatDrawer_line_58yj2 .ChatDrawer_untrustedLabel_58yj2 {
   padding: 0;
 }
 
-.ChatDrawer_untrustedLabel_1ucu2 [class*="Badge_root"] {
+.ChatDrawer_untrustedLabel_58yj2 [class*="Badge_root"] {
   font-size: 0.66rem;
   letter-spacing: 0.08em;
   background: transparent;
@@ -4505,14 +4525,14 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 
 /* ── approval / clarify ───────────────────────────────────────────────── */
 
-.ChatDrawer_approval_1ucu2 {
+.ChatDrawer_approval_58yj2 {
   border: 1px solid var(--theme-focused-foreground);
   border-left-width: 3px;
   padding: 10px 12px;
   background: var(--e-accent-wash, transparent);
 }
 
-.ChatDrawer_cardTitle_1ucu2 {
+.ChatDrawer_cardTitle_58yj2 {
   font-size: 0.72rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -4520,23 +4540,23 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   margin-bottom: 6px;
 }
 
-.ChatDrawer_cardText_1ucu2 {
+.ChatDrawer_cardText_58yj2 {
   margin: 0 0 6px;
 }
 
-.ChatDrawer_cardNote_1ucu2 {
+.ChatDrawer_cardNote_58yj2 {
   margin: 6px 0;
   font-size: 0.78rem;
   font-weight: 600;
 }
 
-.ChatDrawer_cardFoot_1ucu2 {
+.ChatDrawer_cardFoot_58yj2 {
   margin: 8px 0 0;
   font-size: 0.7rem;
   opacity: 0.6;
 }
 
-.ChatDrawer_command_1ucu2 {
+.ChatDrawer_command_58yj2 {
   margin: 0 0 8px;
   padding: 6px 8px;
   border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
@@ -4549,13 +4569,13 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   overflow: auto;
 }
 
-.ChatDrawer_choices_1ucu2 {
+.ChatDrawer_choices_58yj2 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.ChatDrawer_choice_1ucu2 {
+.ChatDrawer_choice_58yj2 {
   min-height: 36px;
   padding: 4px 12px;
   border: 1px solid var(--theme-focused-foreground);
@@ -4566,31 +4586,31 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: pointer;
 }
 
-.ChatDrawer_choice_1ucu2:hover:not(:disabled),
-.ChatDrawer_picked_1ucu2 {
+.ChatDrawer_choice_58yj2:hover:not(:disabled),
+.ChatDrawer_picked_58yj2 {
   background: var(--theme-focused-foreground);
   color: var(--theme-background);
 }
 
-.ChatDrawer_choice_1ucu2:disabled {
+.ChatDrawer_choice_58yj2:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
-.ChatDrawer_deny_1ucu2 {
+.ChatDrawer_deny_58yj2 {
   border-color: var(--e-rule, rgba(128, 128, 128, 0.4));
 }
 
-.ChatDrawer_answered_1ucu2 {
+.ChatDrawer_answered_58yj2 {
   font-size: 0.8rem;
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_question_1ucu2 + .ChatDrawer_question_1ucu2 {
+.ChatDrawer_question_58yj2 + .ChatDrawer_question_58yj2 {
   margin-top: 10px;
 }
 
-.ChatDrawer_answerInput_1ucu2 {
+.ChatDrawer_answerInput_58yj2 {
   box-sizing: border-box;
   width: 100%;
   margin-top: 6px;
@@ -4604,7 +4624,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 
 /* ── sessions ─────────────────────────────────────────────────────────── */
 
-.ChatDrawer_sessions_1ucu2 {
+.ChatDrawer_sessions_58yj2 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -4612,7 +4632,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   padding-bottom: 16px;
 }
 
-.ChatDrawer_sessionsHead_1ucu2 {
+.ChatDrawer_sessionsHead_58yj2 {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4620,13 +4640,13 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   padding: 4px 12px 4px 0;
 }
 
-.ChatDrawer_sessionList_1ucu2 {
+.ChatDrawer_sessionList_58yj2 {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.ChatDrawer_sessionRow_1ucu2 {
+.ChatDrawer_sessionRow_58yj2 {
   display: flex !important;
   flex-direction: column;
   align-items: flex-start;
@@ -4641,11 +4661,11 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: pointer;
 }
 
-.ChatDrawer_sessionRow_1ucu2:hover .ChatDrawer_sessionTitle_1ucu2 {
+.ChatDrawer_sessionRow_58yj2:hover .ChatDrawer_sessionTitle_58yj2 {
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_sessionTitle_1ucu2 {
+.ChatDrawer_sessionTitle_58yj2 {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -4653,12 +4673,12 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   overflow-wrap: anywhere;
 }
 
-.ChatDrawer_sessionMeta_1ucu2 {
+.ChatDrawer_sessionMeta_58yj2 {
   font-size: 0.74rem;
-  opacity: 0.55;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
 }
 
-.ChatDrawer_tag_1ucu2 {
+.ChatDrawer_tag_58yj2 {
   font-size: 0.64rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -4668,7 +4688,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   white-space: nowrap;
 }
 
-.ChatDrawer_empty_1ucu2 {
+.ChatDrawer_empty_58yj2 {
   padding: 8px 12px;
   margin: 0;
   font-size: 0.8rem;
@@ -4677,7 +4697,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 
 /* ── composer ─────────────────────────────────────────────────────────── */
 
-.ChatDrawer_composer_1ucu2 {
+.ChatDrawer_composer_58yj2 {
   position: relative;
   flex: none;
   padding: 8px 12px 10px;
@@ -4685,7 +4705,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   background: var(--theme-background);
 }
 
-.ChatDrawer_inputRow_1ucu2 {
+.ChatDrawer_inputRow_58yj2 {
   display: flex;
   align-items: flex-end;
   gap: 8px;
@@ -4693,7 +4713,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 
 /* One slim line (42px) by default; it grows with the text (ChatDrawer's
    layout effect) up to about four lines, then scrolls inside. */
-.ChatDrawer_input_1ucu2 {
+.ChatDrawer_input_58yj2 {
   flex: 1;
   min-width: 0;
   box-sizing: border-box;
@@ -4710,11 +4730,11 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   overflow-y: auto;
 }
 
-.ChatDrawer_input_1ucu2:focus {
+.ChatDrawer_input_58yj2:focus {
   border-color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_send_1ucu2 {
+.ChatDrawer_send_58yj2 {
   flex: none;
   box-sizing: border-box;
   min-width: 48px;
@@ -4730,7 +4750,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: pointer;
 }
 
-.ChatDrawer_send_1ucu2:disabled {
+.ChatDrawer_send_58yj2:disabled {
   background: transparent;
   color: inherit;
   border-color: var(--e-rule, rgba(128, 128, 128, 0.35));
@@ -4738,18 +4758,18 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: default;
 }
 
-.ChatDrawer_stop_1ucu2 {
+.ChatDrawer_stop_58yj2 {
   background: transparent;
   color: var(--theme-focused-foreground);
 }
 
-.ChatDrawer_readOnly_1ucu2 {
+.ChatDrawer_readOnly_58yj2 {
   margin: 0 0 8px;
   font-size: 0.78rem;
   opacity: 0.7;
 }
 
-.ChatDrawer_typeahead_1ucu2 {
+.ChatDrawer_typeahead_58yj2 {
   position: absolute;
   left: 16px;
   right: 16px;
@@ -4764,7 +4784,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   background: var(--theme-background);
 }
 
-.ChatDrawer_typeRow_1ucu2 {
+.ChatDrawer_typeRow_58yj2 {
   display: grid;
   grid-template-columns: auto auto 1fr;
   align-items: baseline;
@@ -4782,22 +4802,22 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   cursor: pointer;
 }
 
-.ChatDrawer_typeRow_1ucu2[data-reach="terminal"],
-.ChatDrawer_typeRow_1ucu2[data-reach="voice"],
-.ChatDrawer_typeRow_1ucu2[data-reach="settings"] {
+.ChatDrawer_typeRow_58yj2[data-reach="terminal"],
+.ChatDrawer_typeRow_58yj2[data-reach="voice"],
+.ChatDrawer_typeRow_58yj2[data-reach="settings"] {
   opacity: 0.6;
 }
 
-.ChatDrawer_typeRowOn_1ucu2 {
+.ChatDrawer_typeRowOn_58yj2 {
   background: var(--e-accent-wash, rgba(128, 128, 128, 0.1));
 }
 
-.ChatDrawer_typeName_1ucu2 {
+.ChatDrawer_typeName_58yj2 {
   color: var(--theme-focused-foreground);
   white-space: nowrap;
 }
 
-.ChatDrawer_typeMeta_1ucu2 {
+.ChatDrawer_typeMeta_58yj2 {
   grid-column: 1 / -1;
   font-size: 0.72rem;
   opacity: 0.6;
@@ -4808,7 +4828,7 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 
 /* ── back control (phone) ─────────────────────────────────────────────── */
 
-.ChatDrawer_back_1ucu2 {
+.ChatDrawer_back_58yj2 {
   display: flex;
   align-items: center;
   gap: 1ch;
@@ -4830,18 +4850,18 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 }
 
 /* "← back to the dashboard", then the menu: the full-page chat's top row. */
-.ChatDrawer_backRow_1ucu2 {
+.ChatDrawer_backRow_58yj2 {
   align-items: stretch;
   flex: none;
   border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
 }
 
-.ChatDrawer_backRow_1ucu2 .ChatDrawer_back_1ucu2 {
+.ChatDrawer_backRow_58yj2 .ChatDrawer_back_58yj2 {
   flex: 1;
   border-bottom: 0;
 }
 
-.ChatDrawer_menu_1ucu2 {
+.ChatDrawer_menu_58yj2 {
   flex: none;
   min-width: 48px;
   min-height: 44px;
@@ -4849,13 +4869,13 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
 }
 
-.ChatDrawer_phoneOnly_1ucu2 {
+.ChatDrawer_phoneOnly_58yj2 {
   display: none;
 }
 
 /* Below the header-nav breakpoint: one full-screen panel, "← back" on top. */
 @media (max-width: 900px) {
-  .ChatDrawer_root_1ucu2 {
+  .ChatDrawer_root_58yj2 {
     position: absolute;
     inset: 0;
     z-index: 120;
@@ -4864,63 +4884,64 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
     border-left: 0;
   }
 
-  .ChatDrawer_phoneOnly_1ucu2 {
+  .ChatDrawer_phoneOnly_58yj2 {
     display: flex;
   }
 
-  .ChatDrawer_close_1ucu2 {
+  .ChatDrawer_close_58yj2 {
     display: none !important;
   }
 
-  .ChatDrawer_sessionPick_1ucu2,
-  .ChatDrawer_smallButton_1ucu2,
-  .ChatDrawer_choice_1ucu2,
-  .ChatDrawer_toolHead_1ucu2,
-  .ChatDrawer_typeRow_1ucu2 {
+  .ChatDrawer_sessionPick_58yj2,
+  .ChatDrawer_smallButton_58yj2,
+  .ChatDrawer_choice_58yj2,
+  .ChatDrawer_toolHead_58yj2,
+  .ChatDrawer_typeRow_58yj2 {
     min-height: 44px;
   }
 
-  .ChatDrawer_sessionRow_1ucu2 {
+  .ChatDrawer_sessionRow_58yj2 {
     min-height: 48px;
   }
 
-  .ChatDrawer_input_1ucu2 {
+  .ChatDrawer_input_58yj2,
+  .ChatDrawer_answerInput_58yj2 {
     font-size: 16px; /* no zoom-on-focus on a phone */
   }
 }
 
 /* The kit gives every `ul li` an inline :before spacer (global.css), which
    opens an empty line above a block button. Lists here are rows, not prose. */
-.ChatDrawer_typeahead_1ucu2 > li::before,
-.ChatDrawer_sessionList_1ucu2 > li::before {
+.ChatDrawer_typeahead_58yj2 > li::before,
+.ChatDrawer_sessionList_58yj2 > li::before {
   content: none;
   display: none;
 }
 
 /* A flex column shrinks its scrollable children to nothing when it overflows;
    transcript items keep their height and the transcript scrolls instead. */
-.ChatDrawer_transcript_1ucu2 > * {
+.ChatDrawer_transcript_58yj2 > * {
   flex-shrink: 0;
 }
 
 /* A short screen (the 540 × 540 capture frame, a phone held sideways): the
    "← back" row already says where you are, so the title row goes. */
 @media (max-width: 900px) and (max-height: 640px) {
-  .ChatDrawer_headRow_1ucu2 {
+  .ChatDrawer_headRow_58yj2 {
     display: none;
   }
 
-  .ChatDrawer_head_1ucu2 {
+  .ChatDrawer_head_58yj2 {
     padding-top: 8px;
   }
 
-  .ChatDrawer_sessionBar_1ucu2 {
+  .ChatDrawer_sessionBar_58yj2 {
     margin-top: 6px;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ChatDrawer_caret_1ucu2 {
+  .ChatDrawer_caret_58yj2 {
     animation: none;
   }
 }
