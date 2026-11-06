@@ -507,7 +507,8 @@ class Run:
         craft = {c["module_type"]: c for c in sheet.get("craft", [])}
         check("rating" in craft.get("emporia:blotto:v2", {}), f"no Craft blotto rating: {sheet.get('craft')}")
         ins = sheet.get("insight") or {}
-        check(ins.get("games") == 1 and "per game over 1 game" in ins.get("why", ""),
+        # two calls: the blotto and the open challenge (quests:v4), both against the merchant
+        check(ins.get("games") == 2 and "per game over 2 games" in ins.get("why", ""),
               f"the sheet does not score the call: {ins}")
         word = sheet.get("pledges") or {}
         check(word.get("kept") == 1 and word.get("in_trust") is False, f"the sheet's pledges: {word}")
