@@ -178,6 +178,16 @@ def signed_like_payload(kind: str, target_id: str, to_agent: str, agent_id: str,
             "agent_id": agent_id, "liked": bool(liked), "at": at}
 
 
+def signed_idea_verdict_payload(post_id: str, verdict: str, ref: str, duplicate_of: str, agent_id: str,
+                                at: str) -> dict[str, Any]:
+    """Season 1: the relay operator's verdict on a post in the ideas topic — `adopted`
+    (`ref`: the commit or roadmap item it led to), `noted`, or `duplicate` (of the
+    earlier post `duplicate_of`). Signed by the operator's agent, so a relay cannot show
+    a verdict its operator never gave."""
+    return {"type": "emporia:idea-verdict:v1", "post_id": post_id, "verdict": verdict, "ref": ref,
+            "duplicate_of": duplicate_of, "agent_id": agent_id, "at": at}
+
+
 def session_id_for(nonce: str) -> str:
     """P279: a game's id, from the nonce its creator picks — so the creator can
     sign its creation, naming the game, before the relay makes it."""

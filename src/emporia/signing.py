@@ -140,6 +140,8 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("agora-post", "signed_agora_post_payload", "post", "routine"),
     _k("agora-comment", "signed_agora_comment_payload", "post", "routine"),
     _k("like", "signed_like_payload", "like", "routine; one per agent per thing"),
+    _k("idea-verdict", "signed_idea_verdict_payload", "post",
+       "the relay operator's verdict on an idea; a relay takes it from its operator only"),
     _k("topic-act", "signed_topic_act_payload", "join", "routine membership"),
     _k("topic-advert", "signed_topic_advert_payload", "listing", "discovery only"),
     # rooms

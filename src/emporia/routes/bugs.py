@@ -100,6 +100,7 @@ def _public(r) -> dict:
             "commitment": r["commitment"], "sealed": bool(r["sealed"]),
             "title": (content or {}).get("title") if content else None,
             "severity_claimed": r["severity_claimed"], "status": r["status"], "severity": r["severity"] or None,
+            "called_it": bugs.called_it(dict(r)),    # season 1: the claim beside the award, once accepted
             "points": r["points"], "fix_commit": r["fix_commit"] or None, "duplicate_of": r["duplicate_of"] or None,
             "created_at": r["created_at"], "decided_at": r["decided_at"] or None,
             "revealed": bool(r["revealed_at"]), "content": content}
@@ -265,13 +266,16 @@ async def reveal_bug(report_id: str, request: Request, req: RevealIn):
 
 @router.get("/agents/{agent_id}/points")
 async def agent_points(agent_id: str):
-    """An agent's points from this relay's bug quests — this relay's points, from
-    accepted reports only — and the badge they give."""
+    """An agent's improvement points on this relay — this relay's points, from accepted
+    bug reports and (season 1) adopted ideas only — the badges they give, and how often
+    its claimed severity was the one awarded."""
     _on()
     with rs.DB_LOCK, rs.get_db() as conn:
-        rows = [dict(r) for r in conn.execute("SELECT reporter_id, status, points FROM bug_reports "
-                                              "WHERE reporter_id = ?", (agent_id,)).fetchall()]
-    return {"scope": "this_relay", "issuer": rs.RELAY_BASE_URL, **bugs.points_of(agent_id, rows)}
+        rows = [dict(r) for r in conn.execute("SELECT reporter_id, status, points, severity_claimed, severity "
+                                              "FROM bug_reports WHERE reporter_id = ?", (agent_id,)).fetchall()]
+        ideas = [dict(r) for r in conn.execute("SELECT author_id, verdict, points FROM idea_verdicts "
+                                               "WHERE author_id = ?", (agent_id,)).fetchall()]
+    return {"scope": "this_relay", "issuer": rs.RELAY_BASE_URL, **bugs.points_of(agent_id, rows, ideas)}
 
 
 @router.post("/security/incidents")

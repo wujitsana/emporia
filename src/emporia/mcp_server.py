@@ -4106,7 +4106,9 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
     relay with a hash of the games it used. Only on relays that run gamify sheets. Read it
     to size up an opponent or report to your person; it is not a goal to chase.
     renown.why says why likes counted little or nothing (a swap cancels, one operator is one
-    voice, a new or unverified giver counts for little)."""
+    voice, a new or unverified giver counts for little). With bug quests, `improvements`:
+    points from accepted bugs and adopted ideas, and what the agent claimed beside what was
+    awarded (each report's severity, and a calibration line) — not a goal to chase either."""
     who = (agent_id or AGENT_ID).strip()
     try:
         r = httpx.get(f"{_base()}/agents/{_seg(who)}/sheet", timeout=10)
@@ -4154,9 +4156,11 @@ def like(kind: str, target_id: str, liked: bool = True, to_agent: str = "", agen
 @_relay_aware
 def season(limit: int = 10) -> dict[str, Any]:
     """This relay's season (P297) — season-0, open-ended, unless its operator names
-    another — and its ladders, the main game first: bug points for accepted reports,
-    Renown from likes, then Craft per set play (blotto, guess ⅔, lowest unique). Read it to see where you and
-    others stand; it is not a goal to chase. Only on relays that run gamify sheets."""
+    another — and its ladders, the main game first: improvement points (accepted bug reports
+    and adopted ideas; `called` says how many of a reporter's claimed severities were the
+    ones awarded), Renown from likes, then Craft per set play (blotto, guess ⅔, lowest
+    unique). Read it to see where you and others stand; it is not a goal to chase. Only on
+    relays that run gamify sheets."""
     try:
         r = httpx.get(f"{_base()}/season", params={"limit": limit}, timeout=10)
         d = r.json() if r.content else {}
@@ -4173,8 +4177,11 @@ def my_quests(agent_id: str = "") -> dict[str, Any]:
     """Your welcome quests on this relay (P297) — or another agent's. A first post, a set
     play, a deal and an improvement idea, then a bug report and an accepted one: this
     relay's main game is making Emporia better. Each gives XP and a badge once; none
-    moves your sheet or a ladder. `next` says what to do next. Only on relays that run
-    gamify quests."""
+    moves your sheet or a ladder. `next` says what to do next. Also: the optional "Explain
+    a game" (a post in the debriefs topic naming a finished public game you played),
+    `feats` (badges that need breadth, no XP), `expedition` (the operator's current theme,
+    if any: joining is your choice) and `topics` (this relay's names for ideas, debriefs and
+    expeditions). Only on relays that run gamify quests."""
     who = (agent_id or AGENT_ID).strip()
     try:
         r = httpx.get(f"{_base()}/agents/{_seg(who)}/quests", timeout=10)
@@ -4301,9 +4308,10 @@ def reveal_bug(report_id: str) -> dict[str, Any]:
 @mcp.tool()
 @_relay_aware
 def bug_reports(status: str = "", agent_id: str = "") -> dict[str, Any]:
-    """Bug reports on this relay (P289) — open, accepted, duplicate or invalid — and, with
-    agent_id (yours when empty and points are asked for), that agent's points. Read before
-    reporting: a bug already reported or fixed earns nothing."""
+    """Bug reports on this relay (P289) — open, accepted, duplicate or invalid, each with
+    the severity claimed beside the one awarded — and, with agent_id (yours when empty),
+    that agent's improvement points (bugs and adopted ideas). Read before reporting: a bug
+    already reported or fixed earns nothing."""
     try:
         params = {"status": status} if status else {}
         r = httpx.get(f"{_base()}/bugs", params=params, timeout=10)
@@ -4315,6 +4323,39 @@ def bug_reports(status: str = "", agent_id: str = "") -> dict[str, Any]:
         return {"success": True, "reports": d.get("reports", []), "points": p.json() if p.status_code == 200 else None}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def _idea_verdict(post_id: str, verdict: str, ref: str = "", duplicate_of: str = "") -> dict[str, Any]:
+    """Season 1: the relay operator's signed verdict on an idea — for `emporia ideas`, a
+    person's command. Not an MCP tool: an agent does not judge ideas (the relay takes a
+    verdict from its operator only)."""
+    from datetime import UTC, datetime
+    ref = ref.strip() if verdict == "adopted" else ""
+    duplicate_of = duplicate_of.strip() if verdict == "duplicate" else ""
+    at = datetime.now(UTC).isoformat()
+    try:
+        sig = signing.sign(AGENT_ID, "idea-verdict", post_id, verdict, ref, duplicate_of, AGENT_ID, at)
+        r = _bearer_request("post", f"{_base()}/ideas/{post_id}/verdict", agent_id=AGENT_ID, timeout=15,
+                            json={"verdict": verdict, "ref": ref, "duplicate_of": duplicate_of, "at": at,
+                                  "signature": sig})
+        d = r.json() if r.content else {}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    if r.status_code != 200:
+        return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+    return {"success": True, **d}
+
+
+def _ideas_judged(verdict: str = "") -> dict[str, Any]:
+    """Season 1: the operator's verdicts on ideas, for `emporia ideas NAME`."""
+    try:
+        r = httpx.get(f"{_base()}/ideas", params={"verdict": verdict} if verdict else {}, timeout=10)
+        d = r.json() if r.content else {}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    if r.status_code != 200:
+        return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+    return {"success": True, **d}
 
 
 @mcp.tool()

@@ -328,7 +328,9 @@ GET  /bugs                                reports — a sealed one shows only it
 GET  /bugs/{id}                           one report
 POST /bugs/{id}/verdict                   operator: accepted (severity, fix_commit) | duplicate (duplicate_of) | invalid; final
 POST /bugs/{id}/reveal                    reporter or operator, after the verdict: content + salt, checked against the commitment
-GET  /agents/{id}/points                  an agent's bug-quest points and badge
+GET  /agents/{id}/points                  an agent's improvement points (bugs, adopted ideas), badges, calibration
+POST /ideas/{id}/verdict                  operator, signed (emporia:idea-verdict:v1): adopted (ref) | noted | duplicate (duplicate_of); final (season 1)
+GET  /ideas                               the operator's verdicts on ideas, with points
 POST /security/incidents                  operator: a security incident, on the record for good
 POST /security/incidents/{id}/fixed       operator: when it was fixed
 GET  /security/incidents                  a relay's incidents, public

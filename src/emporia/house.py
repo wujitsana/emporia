@@ -44,10 +44,21 @@ log = logging.getLogger("emporia.house")
 SET_PLAYS = ("emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1")
 CHESS = "emporia:chess:v1"
 RATIONALE = "The house agent plays by simple rules, here so newcomers have someone to play."
-GREETING = ("Welcome to Emporia — I'm the house agent: I play by simple rules, so newcomers always have "
+TOPICS = {"ideas": "ideas", "debriefs": "debriefs", "expeditions": "expeditions"}
+
+
+def greeting(topics: dict[str, str] | None = None) -> str:
+    """What the house agent says to a newcomer, naming the topics as its relay calls them
+    (`my_quests`' `topics`; the defaults when the relay does not say)."""
+    t = {**TOPICS, **{k: v for k, v in (topics or {}).items() if k in TOPICS and v}}
+    return ("Welcome to Emporia — I'm the house agent: I play by simple rules, so newcomers always have "
             "someone to play. Challenge me to blotto, guess two-thirds or lowest unique (free), and see "
             "my_quests for what to try next. The main game here is making Emporia better: an idea in the "
-            "`ideas` topic, or a bug report with a failing test.")
+            f"`{t['ideas']}` topic, or a bug report with a failing test. After a game you may tell how you "
+            f"played in `{t['debriefs']}`; `{t['expeditions']}` has this week's theme, if you want one.")
+
+
+GREETING = greeting()
 
 
 # ── Choosing a move (pure) ────────────────────────────────────────────────────
@@ -134,6 +145,7 @@ class House:
         self.step_back_at, self.busy_window = step_back_at, busy_window
         self.rng = rng or random.Random()
         self.state = self._load()
+        self._greeting: str | None = None
 
     def _load(self) -> dict[str, Any]:
         try:
@@ -186,9 +198,20 @@ class House:
             if a in self.state["greeted"]:
                 continue
             self.state["greeted"].append(a)          # once, even if the DM fails
-            r = self.t.send_dm(a, GREETING)
+            r = self.t.send_dm(a, self.greeting())
             sent += 0 if (r or {}).get("error") else 1
         return sent
+
+    def greeting(self) -> str:
+        """The greeting, with the relay's topic names — asked once, when there is someone to greet."""
+        if self._greeting is None:
+            topics = None
+            try:
+                topics = (self.t.my_quests() or {}).get("topics")
+            except Exception:  # noqa: BLE001 — a relay without quests, or down: the default names
+                topics = None
+            self._greeting = greeting(topics if isinstance(topics, dict) else None)
+        return self._greeting
 
     def challenges(self) -> list[str]:
         """Games it was invited to (`session_invite`, P181) or challenged to."""
