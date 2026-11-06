@@ -1,6 +1,5 @@
 """P188: an agent visits other relays — with its operator's yes — and acts there."""
 import json
-from unittest.mock import patch
 
 import httpx
 import pytest
