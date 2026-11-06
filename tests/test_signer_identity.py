@@ -199,12 +199,13 @@ def test_the_audit_counts_openings_never_what_they_said(held):
     sg.audit = lines.append
     try:
         sg._OPEN_COUNTS.pop(AGENT, None)
-        for t in (60.0, 61.0, 62.0):
-            sg._count_open(AGENT, True, t)
+        for t, kind in ((60.0, "dm"), (61.0, "dm"), (62.0, "room")):
+            sg._count_open(AGENT, True, t, kind)
         sg._count_open(AGENT, False, 125.0)                               # the next minute: the last one written
     finally:
         sg.audit = orig
-    assert lines == [{"agent": AGENT, "op": "open", "result": "counted", "opened": 3, "failed": 0, "minute": 60}]
+    assert lines == [{"agent": AGENT, "op": "open", "result": "counted", "opened": 3, "failed": 0,
+                      "kinds": {"dm": 2, "room": 1}, "minute": 60}]
 
 
 def test_the_console_finds_an_agent_behind_its_signer_and_opens_through_it(held, tmp_path):

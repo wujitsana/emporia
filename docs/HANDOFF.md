@@ -15,8 +15,8 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
 
 **1. Waiting on the user:**
 - Push `post-hackathon`.
-- The 35 manual checks: `docs/manual-testing.md` "Before main", 8 sittings. Sitting 0 (the live
-  suite) is done, 14 passed; sittings 1-8 are a person's. 63 items moved to "Covered by the
+- The 35 manual checks: `docs/manual-testing.md` "Before main", 10 sittings. Sitting 0 (the live
+  suite) is done, 14 passed; sittings 1-10 are a person's. 63 items moved to "Covered by the
   automated suites".
 - The agent-driven money run (needs credits; beta needs a USDC top-up).
 - The signer apart, on the host.
@@ -65,6 +65,27 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   - **Alerts:** the signer sends its own (`emporia signer alerts telegram`), never through an agent.
   - **Log:** `emporia signer log NAME`.
   - **Still to build:** 2b (opening sealed messages in the signer) and 2c (keys made inside it).
+    Both built in P299.
+- P299 (branch `signer-phase2`, for review): signer phase 2 finished, and its back ends.
+  - **2b:** the signer opens only what is sealed to its own agent (id or `id@host`, a key wrapped for
+    it, a DM/room/session context); refusals logged and alerted, openings counted per context.
+  - **2c:** `emporia signer add NAME --make` (keys made in the signer; the profile gets only the public
+    halves). Encryption key replacement made there (`/v1/replace-encryption-key`); a binding must name
+    the signer's key. Identity rotation, recovery and recovery-key commitments with the key inside it.
+    `emporia signer backup|restore` (passphrase-sealed, from the signer's side).
+  - **Back ends** (`signer_backends.py`, `emporia signer backend`):
+    - `local`;
+    - `vault`: 1Password or Bitwarden read by the signer, via `emporia signer add NAME --key-source
+      ROLE=cmd:…`, the vault token the signer's;
+    - `aws-kms`: secp256k1 wallets; Ed25519 identity and Solana keys, payloads ≤ 4096 bytes;
+    - `privy`: EVM typed data and Solana transactions;
+    - `cdp`: EVM typed data.
+
+    The KMS, hosted-wallet and vault back ends are tested against fakes only; none is tried live yet.
+  - **Agent-side `cmd:` key sources** are now the not-recommended path (catalog known issue
+    reworded).
+  - Design and the provider notes: `docs/proposals/signer-phase-2.md` § 3.1. Hand sittings:
+    manual-testing.md sitting 7, "Signer phase 2 and its back ends".
 - P294: one hash. Agent ids, recovery commitments and listing ids are SHA-256 (`v2` labels).
   - **Schema 30:** a relay holding the old ids refuses to start.
   - **Dead code removed:** `engine/registry.py`, `content_address_for`.

@@ -11,6 +11,8 @@ hand in a throwaway Hermes home:
 * playbook refusals that name how to change them; a free blotto between A and B (an illegal commit
   refused, a like, quests, the character sheet, the season, the relay's activity count);
 * a house agent that adopts a waiting free blotto and plays it to the end;
+* a signer of the run's own (practice mode), an agent whose keys were made inside it (signer phase
+  2c), registered through it, and a sealed DM from A that the signer opens for it (2b);
 * the operator section: the relay names the merchant its operator; its desk shows a player's
   open bug report with the verdict command, and the player is refused the desk;
 * `hermes emporia update`, twice: the runtime is already at the pinned commit, so each verifies it
@@ -134,6 +136,7 @@ class Run:
         self.judge = f"e2e-judge-{tag}"
         self.player, self.merchant, self.house_agent = (f"e2e-player-{tag}", f"e2e-merchant-{tag}",
                                                         f"e2e-house-{tag}")
+        self.signed = f"e2e-signed-{tag}"        # an agent whose keys its signer made and holds
         self.services_before = self._services()
         self.pids: list[int] = []                # every process this run started and still owns
         self.procs: dict[int, subprocess.Popen] = {}
@@ -511,6 +514,86 @@ class Run:
         check("Relay   : registered" in self.emporia(self.player, "status"), "status after update")
 
     # ── teardown ────────────────────────────────────────────────────────────
+    # ── the signer (phase 2): keys made inside it, a sealed DM opened through it ──
+    def repo_python(self) -> str:
+        py = self.repo / ".venv" / "bin" / "python"
+        return str(py if py.exists() else sys.executable)
+
+    def repo_env(self, **extra: str) -> dict[str, str]:
+        env = self.env(EMPORIA_NO_DOTENV="1", **extra)
+        env["PYTHONPATH"] = os.pathsep.join(p for p in (str(self.repo / "src"), env.get("PYTHONPATH", "")) if p)
+        return env
+
+    def start_signer(self) -> str:
+        """A signer of this run's own, in practice mode (this user), on a socket in the run's folder
+        (relative: a Unix socket's path has 107 bytes at most, and this folder's is long)."""
+        folder = self.root / "signer"
+        out = (self.root / "signer.log").open("ab")
+        proc = subprocess.Popen([self.repo_python(), "-m", "emporia.cli", "signer", "serve", "--dir", str(folder),
+                                 "--socket", "signer.sock"], cwd=self.root, stdin=subprocess.DEVNULL,
+                                env=self.repo_env(EMPORIA_SIGNER_DIR=str(folder)), stdout=out, stderr=out)
+        self.pids.append(proc.pid)
+        self.procs[proc.pid] = proc
+        deadline = time.time() + 30
+        while time.time() < deadline and not (self.root / "signer.sock").is_socket():
+            check(proc.poll() is None, f"the signer exited ({proc.returncode}); see signer.log")
+            time.sleep(0.2)
+        check((self.root / "signer.sock").is_socket(), "the signer made no socket in 30s")
+        return f"pid {proc.pid}"
+
+    def signer_as_agent(self, code: str) -> dict:
+        """Run `code` as the signer-held agent: its env names the signer and its markers, no key."""
+        token = (self.root / "signer-agent.token").read_text().strip()
+        env = self.repo_env(EMPORIA_SIGNER_URL="unix://signer.sock", EMPORIA_SIGNER_TOKEN=token,
+                            EMPORIA_AGENT_ID=self.signed, EMPORIA_KEYS_DIR=str(self.root / "signed-keys"),
+                            EMPORIA_RELAY_URL=self.relay_url, HERMES_HOME=str(self.root / "signed-home"))
+        p = self.run([self.repo_python(), "-c", code], env=env, timeout=120)
+        return json.loads(p.stdout.strip().splitlines()[-1])
+
+    def signer_agent(self) -> str:
+        """2c: the agent's identity, encryption and wallet keys made inside the signer; its keys
+        folder gets only the public halves; it registers, every signature the signer's."""
+        folder = self.root / "signer"
+        keys = self.root / "signed-keys"
+        keys.mkdir()
+        (self.root / "signed-home").mkdir()
+        made = self.run([self.repo_python(), "-c", (
+            "import json, os\nfrom pathlib import Path\nfrom emporia import identity, signer\n"
+            f"aid = {self.signed!r}\n"
+            "made = signer.make_agent_keys(aid)\n"
+            f"signer.save_policy(aid, {{'EMPORIA_RELAY_URL': {self.relay_url!r}}})\n"
+            f"t = Path({str(self.root / 'signer-agent.token')!r})\n"
+            "identity._write_secret_atomically(t, signer.new_agent_token(aid).encode())\n"
+            f"k = Path({str(keys)!r})\n"
+            "(k / (aid + '.signer.pub')).write_text(made['identity'] + '\\n')\n"
+            "(k / (aid + '.x25519.signer.pub')).write_text(made['encryption'] + '\\n')\n"
+            "print(json.dumps(sorted(made)))")], env=self.repo_env(EMPORIA_SIGNER_DIR=str(folder))).stdout
+        check(json.loads(made.strip().splitlines()[-1]) == ["encryption", "evm", "identity", "svm"], made[-200:])
+        out = self.signer_as_agent(
+            "import json\nfrom emporia import mcp_server as m\n"
+            "r = m.register_agent(agent_id=m.AGENT_ID)\nprint(json.dumps({'ok': bool(r.get('success')), "
+            "'error': str(r.get('error', ''))[:200]}))")
+        check(out["ok"], f"registering through the signer failed: {out['error']}")
+        # Its records and pins are public data and live here too; a key is any of these.
+        loose = [f.name for f in keys.rglob("*") if f.is_file() and not f.name.endswith(".signer.pub")
+                 and any(s in f.name for s in (".priv", ".x25519.", ".x402.", ".ed25519", ".secp256k1"))]
+        check(not loose, f"key files in the agent's folder: {loose}")
+        return "registered, no key in its folder"
+
+    def signer_dm(self) -> str:
+        """2b: the player seals a DM to it; the signer opens it for the agent, which holds no key."""
+        text = f"sealed for the signer {secrets.token_hex(4)}"
+        sent = self.tool(self.player, "send_dm", self.signed, text, encrypted=True)
+        check(sent.get("success"), f"send_dm: {str(sent)[:200]}")
+        out = self.signer_as_agent(
+            "import json\nfrom emporia import mcp_server as m\n"
+            "threads = m.list_dm_threads().get('threads') or []\n"
+            "tid = threads[0]['thread_id'] if threads else ''\n"
+            "msgs = (m.get_dm_messages(tid) if tid else {}).get('messages') or []\n"
+            "print(json.dumps([[x.get('content'), x.get('decrypted'), x.get('encrypted')] for x in msgs]))")
+        check([text, True, True] in out, f"the DM was not opened through the signer: {str(out)[:300]}")
+        return "opened by the signer"
+
     def teardown(self) -> None:
         if self._torn_down:
             return
@@ -634,6 +717,9 @@ def main(argv: list[str] | None = None) -> int:
         run.step("illegal commit and missing session refused", run.illegal_commit)
         run.step("likes", run.like, sid)
         run.step("quests, sheet, season, activity", run.standing)
+        run.step("a signer of the run's own", run.start_signer)
+        run.step(f"{run.signed}: keys made in the signer, registered through it", run.signer_agent)
+        run.step("a sealed DM opened through the signer", run.signer_dm)
         run.step(f"setup {run.house_agent} (house)", run.setup_agent, run.house_agent, "--playbook", "host")
         run.step("house adopts a waiting blotto and finishes it", run.house)
         run.step("the operator sees its desk; a player is refused", run.operator)

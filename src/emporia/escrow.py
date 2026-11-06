@@ -257,11 +257,11 @@ def sign_offer(offer: dict, private_key: str, *, expected_amount: int,
     import base64
     import json
 
-    from eth_account import Account
 
     if allowed_networks is not None and offer.get("network") not in allowed_networks:
         raise EscrowError(f"network {offer.get('network')!r} is not one this agent pays on")
-    account = Account.from_key(private_key)
+    from emporia.operator_signer import as_evm_signer
+    account = as_evm_signer(private_key)      # P293: a key here, or the signer's back end
     info = PaymentInfo.from_json({**offer["payment_info"], "payer": account.address})
     if info.max_amount != expected_amount:
         raise EscrowError(f"offer is for {info.max_amount}, expected {expected_amount}")
@@ -271,7 +271,7 @@ def sign_offer(offer: dict, private_key: str, *, expected_amount: int,
         info, chain_id=int(offer["chain_id"]), escrow=offer["escrow"],
         collector=offer["collector"], token_name=offer["token_name"],
         token_version=offer["token_version"])
-    signature = account.sign_typed_data(full_message=msg).signature
+    signature = account.sign_typed_data(msg)
     return base64.b64encode(json.dumps({
-        "payment_info": info.to_json(), "signature": "0x" + bytes(signature).hex(),
+        "payment_info": info.to_json(), "signature": signature,
     }).encode()).decode()
