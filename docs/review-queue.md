@@ -4,29 +4,11 @@ What is waiting for you. Good-confidence work is merged into `hackathon-v2`; any
 on its own branch. Nothing is pushed or submitted. Rewritten 11-05 against the actual branch state,
 after the independent review found this file out of date.
 
-## Start here: `preview-all`
+## Start here: `preview-2` (being built 11-06)
 
-Branch `preview-all` is hackathon-v2 with every waiting branch merged on top, so you can try the
-whole product at once. The individual branches below are unchanged, so you can still take them
-one by one.
-- **In order:** retromod → retromod-ux → style-experimental → dashboard-chat → desktop-plugin
-  → gamify-season1 → console-scope.
-- **How to try it:** see `docs/preview-all.md` on that branch. For example: `scripts/e2e.py --keep`
-  for a throwaway relay and agents; the tab with the `›_ chat` button; `s` for the style; Desktop
-  via Capabilities ▸ Plugins; `emporia ideas …` for season 1.
-- **Verified there:**
-  - 325 dashboard tests and 2436 Python tests (plus the 2 known worktree-only failures);
-  - typecheck and lint;
-  - the secret scan;
-  - the e2e run;
-  - `hermes plugins validate`, including the desktop surface check.
-- **Two small fixes from integrating it, to carry along when those branches merge:**
-  - season-1's settings added to the catalog names list (c4e2074);
-  - `e2e.py` running the relay from `--repo`'s source (f8a5254).
-- **What the merge changed:** the chat drawer is hidden in Desktop (Desktop has its own chat),
-  and the `s` key only counts inside the Desktop page.
-- **Not yet checked:** a real Desktop, screenshots of this combination, and chat against a live
-  Hermes socket.
+`preview-2` is hackathon-v2 + `gamify-all` + `ui-v2`: everything waiting, in one branch, loaded
+into the sandbox (`sandbox/try-1105`, see its TRY-ME.md). Review it there; the branches below
+are its parts and can still be taken one at a time. `preview-all` is superseded by it.
 
 ## Merged into hackathon-v2 (latest verified at 274f96a)
 
@@ -44,6 +26,7 @@ end-to-end run passes (twice), and `hermes plugins validate` passes with one doc
 | `review-followups` (f2a4063, plus 8329310) | The SDK keeps a DM thread's peer (M3); write-once commits (M5); the sign-in names its relay (M4; relays reached by another name need `EMPORIA_RELAY_SIGN_IN_ORIGINS`); Renown v2 (swaps judged on all-time likes, rings of three count a quarter); `join_session` says a session cannot be read (L9); the pre-push hook works on branches without the scanner (L8); setup checks profile names (L7) with a mirrored copy of Hermes's rule, tested against Hermes, so no core import (catalog rule 9). Verified at 8329310: 2450 tests, the secret scan, e2e twice (19/19), `hermes plugins validate`. |
 | `operator` (176dfaa) | The Operator section: `GET /operator/whoami` (signed, only the relay's `EMPORIA_AGENT_ID`), `/operator/status` (bug and idea queues, expedition, house agents, health, season), `/operator/snapshot`; a dashboard view (copy-only commands, key `o`); `emporia operator`, `house start/stop/status`; an `operator` playbook preset; README "Run your own relay"; manual-testing sitting 10. Idea `adopt` commands appear once the launch additions merge. When `ui-v2` merges, add `operator` to More after Relay. |
 | `signer-phase2` (274f96a) | Signer 2b (opens only sealed messages addressed to its own agent) and 2c (`signer add --make`: keys made in the signer; rotation, recovery and encryption-key replacement inside it; sealed backup/restore, person-only). Back ends: local, 1Password/Bitwarden (signer-side `--key-source`), AWS KMS, Privy, CDP — the last four tested against fakes only and labelled so; your own accounts needed (manual-testing sitting 7). KMS Ed25519 signs ≤ 4096 bytes. boto3 is an optional `kms` extra. Verified at 274f96a: full suite 2545 passed (main checkout), e2e 23/23 on the branch, secret scan clean. |
+| `signer-metamask` (merged after 274f96a) | MetaMask Agent Wallet as a signer back end, through its `mm` command: x402 and escrow typed data and making wallets only; Guard Mode required; its own limits (USDC transfer types, Base Sepolia, the USDC contract, an optional max) because MetaMask's outflow limit does not count signatures yet. Tested against a fake `mm`; your own sign-in needed (sitting 7). |
 | `scripts/secret_scan.py` (3e74a92) | Installed as the `pre-push` hook. Pushed history was checked 11-05 (615 commits on the public repo): no secret files or values ever pushed. |
 
 Also done on 11-05: the old 0.3.0 tab was removed from the root home; the profile repo ignores
@@ -55,81 +38,51 @@ main checkout's code. Each branch reruns its tests when it is merged.
 
 ## Built on branches, waiting for you
 
-**1. Catalog compliance is merged (see above). For the release, yours:**
-- **README wording:** the plugin README's "Testnet first" paragraph mentions the person-only
-  unlock for real-money networks. Keep or cut?
-- **Release steps:** run `scripts/pin_plugin_runtime.py` and commit (it records sha and tree);
-  put the sha in `docs/catalog/emporia.yaml` and the screenshot URLs; add the screenshots;
-  re-validate at that commit. The PR text is `docs/catalog/PR.md`.
-- **Version labels:** `desktop-plugin` sets the dashboard manifest to 1.0.0, matching
-  plugin.yaml; pyproject is still 0.2.0. Align it?
+**1. `ui-v2` — the dashboard (contains `preview-all`: retromod, retromod-ux, the animatic style,
+dashboard-chat, desktop-plugin, gamify-season1, console-scope).**
+- **From your sandbox test:** the ASGI handshake error (the tab no longer dials sockets where
+  Hermes's plugin host carries none); chat composer always visible and slim, full-page chat has a
+  back button and menu; the app is one contained frame, so nothing spills into Hermes; the animatic
+  look is the only style (classic, `s`, Settings › Look removed); EMPORIA decodes from E#P0R!A.
+- **Navigation:** six destinations Home · Play · Market · Talk · Season · More (`docs/ui-nav-v2.md`);
+  keys 1–6 and `[` `]`; every old route still opens.
+- **Badges:** pixel art in the theme colour on quests, feats, boards, agent and game rows; gallery at
+  More › Badges.
+- **Yours:** the look in a real browser (no screenshots possible here); chat approvals (a) as built,
+  (b) chat without approvals, (c) no chat; console-scope's breaking change (`--uds` needs
+  `--profile`); a real Desktop check (`docs/manual-testing.md`).
 
-**2. Dashboard UI: `retromod`, then `retromod-ux`.**
-- **`retromod`:** the redesign. Phone list/detail views, grouped navigation, section headings,
-  plus fixes for dead styles, hotkeys firing while typing, and one view's crash blanking the app.
-- **`retromod-ux`:**
-  - sections Start / Play / Market / Talk / Agents / Help;
-  - a live set-play view (commit → reveal → winner);
-  - "Your agent now" on the Overview;
-  - testnet wording;
-  - colour fades;
-  - capture mode;
-  - text instead of emoji that render as boxes;
-  - 262 tests.
-- **Ideas it did not build, for you to decide:** Talk with sub-tabs, a "You" section, a bottom
-  tab bar on phones, and an address for every detail view.
-- **To decide:** merge both (you wanted to look first).
+**2. `gamify-all` — launch additions + calls/Insight + Bargain + pledges/whats_next.**
+- Integrated on hackathon-v2; full suite 2673 passed, e2e 24/24. Schema 31 → 33 (backed up first),
+  set plays `:v2` (`:v1` refused at create; running games finish), `quests:v3`.
+- **Launch additions** (was "season 1"): debriefs, weekly expeditions, called it, adopted ideas
+  (a signed operator verdict, person-only), feats.
+- **Calls and Insight:** a forecast sealed with the first move, scored against the rating; an
+  Insight board.
+- **Bargain:** a negotiation set play with private values dealt fairly; no stakes.
+- **Pledges and `whats_next`:** signed promises with a track record (not in Trust for season-0);
+  one ranked to-do call that the skill starts with.
+- **Fixed on the way:** idea verdicts posted from an agent tool (now a person's terminal); a merge
+  that dropped a schema line; pledges that only knew `:v1`; one unreadable session stopping the
+  deadline sweep.
+- **Your decisions (19, deduplicated):** in the gamify-all report and each proposal doc
+  (`gamify-calls.md`, `gamify-bargain.md` §10, `gamify-pledges.md` §4,
+  `gamify-launch-additions.md`). Every one works today with the built default.
+- **Live relay:** this changes the agent↔relay protocol (`:v2`, schema 33). Restart the relay
+  first, then the gateway.
 
-**3. Experimental "animatic" style (`style-experimental`, on `retromod-ux`).**
-- **What it is:** the animatic's informational cards as a switchable style — the `s` key,
-  Settings › Look, or `?style=animatic`. The current look stays the default.
-- **To pick:** from the 15-item "promote to default?" list in `docs/ui-style-experimental.md` §6.
-  The first items are readability fixes the default needs (some secondary text is at
-  1.3–2.4:1 contrast).
+**3. `purse` (v0.1) and `purse-solana-pay` (v0.2) — a separate catalog entry, go/no-go Nov 9.**
+- A self-custody testnet wallet for any Hermes agent: Base Sepolia, then Solana devnet with
+  Solana Pay links. Caps $1 a payment / $5 a day across both, approval above a threshold, every
+  other network refused in code. Validator safe; 207 tests.
+- **Yours:** the go/no-go; the two testnet proofs (real testnet transactions, free faucet funds;
+  commands in the conversation); the catalog PR.
 
-**4. Chat with your agent in the dashboard (`dashboard-chat`, on `retromod-ux`).**
-- **What it is:** through Hermes's own chat API, with streaming, tool and approval cards, 130
-  slash commands, a session switcher for this profile only, and "ask agent" prefill. It works in
-  the Hermes tab only.
-- **To decide on approvals:** (a) as built — Emporia key, wallet, limit and role changes get
-  "allow once" or "deny" only; (b) chat without approvals; (c) no chat.
-- **After that:** a real-model test on a test profile.
-
-**5. Console scoping (`console-scope`).**
-- **What it is:** the local console serves only its own profile, behind a per-start socket
-  secret.
-- **Trade-offs:** it is breaking (`--uds` needs `--profile`); there is one console per profile
-  opened; options are in `docs/proposals/console-scope.md`.
-- **Order:** merge after the catalog work.
-
-**6. Season-1 gamify (`gamify-season1`).**
-- **What it adds:**
-  - debriefs (the "Explain a game" quest);
-  - weekly expeditions;
-  - "called it";
-  - adopted ideas, a signed operator verdict worth 10 points;
-  - three feat badges;
-  - all of it in the Gamify tab.
-- **What it changes:** schema 31 → 32 (backed up first), and a new signed payload
-  `emporia:idea-verdict:v1`. It also fixes "a game against the house never completed its quest".
-- **Yours:**
-  - merge?
-  - should key-only agents count as operators for feats?
-  - should ideas get their own gamify part?
-
-**7. Hermes Desktop half (`desktop-plugin`, on `retromod-ux`, built).**
-- **What it is:** the whole dashboard as a native Desktop page, built from the same source as the
-  tab with one `npm run build:plugin`. It adds a sidebar row, 8 palette commands, a "your turn" or
-  unread status chip, and an opt-in notification. It is off until enabled in
-  Capabilities ▸ Plugins.
-- **Shared with the tab:** a test fails if either bundle is stale; the version (1.0.0) comes from
-  one source.
-- **Checks:** Hermes's desktop-surface lint passes with 0 hits, and validate passes. 17 checks
-  pass against a real throwaway Webapp backend; 279 tests pass.
-- **Not seen yet:** the sandbox's browser won't start, so there are no screenshots. A real
-  Desktop session is needed (checklist in `docs/manual-testing.md`, about half a day,
-  likely some CSS tuning).
-- **Order:** it merges after the UI branches.
+**4. Release steps (catalog) — yours.**
+- README "Testnet first" paragraph: keep or cut? Version labels: plugin.yaml/dashboard 1.0.0,
+  pyproject 0.2.0 — align?
+- Run `scripts/pin_plugin_runtime.py` and commit; the sha into `docs/catalog/emporia.yaml` and the
+  screenshot URLs; screenshots; re-validate; the PR text is `docs/catalog/PR.md`.
 
 ## The demo video
 
