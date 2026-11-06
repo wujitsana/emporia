@@ -3,8 +3,9 @@ import type { OperatorStatus, OperatorWhoami } from "./operatorCommands";
 import { SESSION_TOKEN_KEY } from "./relayEnv";
 import { VIA_CONSOLE, httpFetch, relayHttpBase } from "./transport";
 
-// P126: the relay directly, or the local console signed in as the viewer.
-const BASE = relayHttpBase();
+// P126: the relay directly, or the local console signed in as the viewer — read
+// per request, because the Desktop page's viewer follows Hermes's profile.
+const base = () => relayHttpBase();
 
 // Sent on requests that scope data to the current agent: Authorization: Bearer
 // <jwt> from the dashboard/challenge flow. P261: the relay believes nothing else.
@@ -26,7 +27,7 @@ function agentHeaders(): HeadersInit {
 }
 
 async function get<T>(path: string, opts?: { agentScoped?: boolean }): Promise<T> {
-  const r = await httpFetch(`${BASE}${path}`, {
+  const r = await httpFetch(`${base()}${path}`, {
     headers: opts?.agentScoped ? agentHeaders() : {},
   });
   if (!r.ok) throw new Error(`${r.status} ${path}`);
@@ -34,7 +35,7 @@ async function get<T>(path: string, opts?: { agentScoped?: boolean }): Promise<T
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const r = await httpFetch(`${BASE}${path}`, {
+  const r = await httpFetch(`${base()}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...agentHeaders() },
     body: JSON.stringify(body),
@@ -560,7 +561,11 @@ export function looksLikeEncryptedEnvelope(content: string | null | undefined): 
   }
 }
 
-export const ENCRYPTED_PLACEHOLDER = "🔒 encrypted — not readable here";
+/** Plain-text markers for sealed (end-to-end encrypted) text and text opened on this
+ *  machine: emoji locks render as empty boxes where no emoji font is installed. */
+export const SEALED_TAG = "[sealed]";
+export const OPENED_TAG = "[opened]";
+export const ENCRYPTED_PLACEHOLDER = `${SEALED_TAG} encrypted — not readable here`;
 
 /** What to show in a chat transcript for one DM.
  *
@@ -576,7 +581,7 @@ export function dmDisplayContent(content: string): string {
 
 /** What to show as a thread's one-line preview in the sidebar. */
 export function dmThreadPreview(thread: DMThread): string {
-  if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return "🔒 encrypted";
+  if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
   return (thread.last_content ?? "—").slice(0, 36);
 }
 
@@ -689,12 +694,49 @@ export interface CharacterSheet {
     calibration: Calibration;
     reports: Array<{ report_id: string; title: string | null; claimed: string; awarded: string; decided_at: string | null }>;
   };
+  /** Calls: its calls scored against the rating's own forecast (`progression:v1/insight`) — a line of its own. */
+  insight?: Insight;
+  /** Pledges (gamify `pledges`): the agent's word — kept, broken, disputed — shown, not in Trust unless `in_trust`. */
+  pledges?: Word;
   sessions_counted: number;
   as_of: string;
   signature: string;
 }
 
 /** P297: the relay's season and its ladders, the main game first (`order`). */
+export interface Insight {
+  formula: string;
+  games: number;
+  insight: number;
+  se: number;
+  total: number;
+  settled_games: number;
+  forfeited: number;
+  why: string;
+  board: string;
+  calibration: { bins: Array<{ near: number; calls: number; won: number; rate: number }>; line: string };
+  recent: Array<{ session_id: string; module_type: string; call: number | null; forfeited?: boolean;
+    forecast: number; outcome: number; edge: number }>;
+}
+
+export interface Word {
+  formula?: string;
+  kept: number;
+  broken: number;
+  disputed: number;
+  kept_with_evidence: number;
+  open: number;
+  void: number;
+  last_30_days: { kept: number; broken: number; disputed: number };
+  recent: Array<{ kind: string; status: string; resolved_by?: string | null; resolved_at?: string | null;
+    private?: boolean; pledge_id?: string; to_agent?: string; subject_type?: string | null; subject_id?: string | null }>;
+  line: string;
+  not_counted: number;
+  why: string[];
+  in_trust: boolean;
+  trust_points?: number;
+}
+
 export interface SeasonBoards {
   season: string;
   started_at: string | null;
@@ -703,9 +745,12 @@ export interface SeasonBoards {
   order: string[];
   boards: Record<string, Array<{ agent_id: string; points?: number; accepted?: number; called?: number;
     adopted?: number; idea_points?: number; score?: number;
-    likes?: number; from_operators?: number; rating?: number; rd?: number; provisional?: boolean; games?: number }>>;
+    likes?: number; from_operators?: number; rating?: number; rd?: number; provisional?: boolean; games?: number;
+    insight?: number; se?: number; total?: number }>>;
   games: number;
   likes: number;
+  /** Calls: settled calls an agent needs before it is on the Insight board. */
+  insight_min_calls?: number;
 }
 
 /** Launch additions: the operator's current weekly theme, from the expeditions topic. */

@@ -10,7 +10,7 @@ import { VIA_CONSOLE, consoleUrl, httpFetch } from "../transport";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
 import { EMPTY_SEED_HINT } from "../navigation";
-import { api, dmDisplayContent, looksLikeEncryptedEnvelope } from "../api";
+import { OPENED_TAG, SEALED_TAG, api, dmDisplayContent, looksLikeEncryptedEnvelope } from "../api";
 import type { Room } from "../api";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Text from "@kit/Text";
@@ -21,6 +21,8 @@ import { useInterval, useRoomWs, useSenderPubkeys, type WsMessage } from "../hoo
 import { senderKeyFrom } from "../keyLog";
 import type { Navigate } from "../navigation";
 import { markReplayedNonces, verifyMessageSignature } from "../integrityCheck";
+import { AskAgent } from "../chat/AskAgent";
+import { roomPrompt } from "../chat/askPrompts";
 
 export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string | null; navigate?: Navigate }) {
   const [data, loading, error] = useInterval(() => api.rooms(), 8_000);
@@ -97,7 +99,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
             <RowSpaceBetween>
               <Text style={{ fontSize: 13 }}>{r.name}</Text>
               <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                {r.encrypted && <span title="Encrypted" style={{ fontSize: 11 }}>🔒</span>}
+                {r.encrypted && <span title="Encrypted" style={{ fontSize: 11 }}>{SEALED_TAG}</span>}
                 <AdvertisedBadge advertised={r.advertised} />
                 {r.entry_fee_cents > 0 && (
                   <>
@@ -121,7 +123,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
                 title={`Linked session: ${r.linked_session_id}`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  navigate?.("sessions", { sessionId: r.linked_session_id! });
+                  navigate?.("session", { sessionId: r.linked_session_id! });
                 }}
               >
                 ⊙ session …{r.linked_session_id.slice(-8)}
@@ -167,7 +169,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     // access by design and cannot decrypt — the honest render is a lock, not base64.
     // Same helper the DM views use; the shape is identical, so the name is generic
     // rather than dm-specific in spirit even though it kept its original name.
-    content: opened[m.message_id] !== undefined ? `🔓 ${opened[m.message_id]}` : dmDisplayContent(m.content),
+    content: opened[m.message_id] !== undefined ? `${OPENED_TAG} ${opened[m.message_id]}` : dmDisplayContent(m.content),
     msg_type: m.msg_type,
     created_at: m.created_at,
     // P23-4: verified against the *stored* content (m.content, pre-display-
@@ -195,11 +197,12 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
                 not reset on a dep change (EventsView/ListingsView rely on that to
                 avoid blanking on a manual refresh), so the reset has to happen here. */}
             {!selected.listing_only && <RoomChainBadge key={selected.room_id} roomId={selected.room_id} />}
+            <AskAgent prompt={roomPrompt(selected)} label="ask agent" />
           </div>
         ) : undefined
       }
     >
-      <SidebarLayout sidebar={roomSidebar} defaultSidebarWidth={26}>
+      <SidebarLayout sidebar={roomSidebar} defaultSidebarWidth={26} initialPane={initialRoomId ? "detail" : "list"}>
         <div className="e-split-main">
           <ViewStatus loading={loading} error={error} />
           {selected?.listing_only ? (

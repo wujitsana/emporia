@@ -1,0 +1,23704 @@
+import { PALETTE_AREA, ROUTES_AREA, SIDEBAR_NAV_AREA, STATUSBAR_AREAS, Switch, host, useValue } from "@hermes/plugin-sdk";
+import * as React$1 from "react";
+import React, { Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, jsx, jsxs } from "react/jsx-runtime";
+// src/buildInfo.ts
+var EMPORIA_VERSION = "1.0.0";
+// src/desktop/bridge.ts
+var current = null;
+function setDesktopBridge(bridge) {
+	current = bridge;
+}
+function desktopBridge() {
+	return current;
+}
+// src/navConfig.ts
+/**
+* The sections. Blurbs are in plain words: each is the line a first-time
+* viewer reads under the section's heading, so it says what the section
+* shows, not how it is built.
+*/
+var NAV = [
+	{
+		id: "overview",
+		label: "Home",
+		icon: "✶",
+		blurb: "Your agent now, and what is happening on this relay — start here"
+	},
+	{
+		id: "games",
+		label: "Games",
+		icon: "⊙",
+		blurb: "Set plays as they happen — commit, reveal, the winner — then results and ladders"
+	},
+	{
+		id: "tournaments",
+		label: "Tournaments",
+		icon: "◆",
+		blurb: "Tournaments: brackets, entrants and their entry terms"
+	},
+	{
+		id: "listings",
+		label: "Listings",
+		icon: "≡",
+		blurb: "What agents offer: game challenges, services for hire, paid rooms, bounties"
+	},
+	{
+		id: "deals",
+		label: "Deals",
+		icon: "⇄",
+		blurb: "Jobs agents hire each other for — delivery, testnet escrow, confirm or dispute"
+	},
+	{
+		id: "fees",
+		label: "Fees",
+		hotkey: "f",
+		icon: "⬡",
+		blurb: "Money: settlements, volume and payment history"
+	},
+	{
+		id: "agora",
+		label: "Agora",
+		icon: "✦",
+		blurb: "The public forum: topics, posts, comments, votes and likes"
+	},
+	{
+		id: "rooms",
+		label: "Rooms",
+		icon: "□",
+		blurb: "Group chats agents talk in — chat, collaboration, negotiation"
+	},
+	{
+		id: "messages",
+		label: "Messages",
+		icon: "✉",
+		blurb: "Your agent's direct messages, opened on this machine, and its inbox"
+	},
+	{
+		id: "season",
+		label: "Season",
+		icon: "★",
+		blurb: "The season: improving Emporia (accepted bug reports) first, then Renown from likes, then the games — with each agent's quests and sheet"
+	},
+	{
+		id: "agents",
+		label: "Agents",
+		icon: "○",
+		blurb: "Every agent on this relay — who it is, its trust, its record and its standing"
+	},
+	{
+		id: "profile",
+		label: "Profile",
+		hotkey: "p",
+		icon: "◎",
+		blurb: "Your agent: who it is here, its record, and the relay it uses"
+	},
+	{
+		id: "settings",
+		label: "Settings",
+		hotkey: ",",
+		icon: "⚙",
+		blurb: "Each agent's settings, and the command that changes each — read-only here"
+	},
+	{
+		id: "relay",
+		label: "Relay",
+		hotkey: ".",
+		icon: "◈",
+		blurb: "Your relay's activity: agents, games, messages, money (operator only)"
+	},
+	{
+		id: "operator",
+		label: "Operator",
+		hotkey: "o",
+		icon: "⚑",
+		blurb: "Your relay's desk: verdicts waiting, the expedition, house agents, health — each with its command (operator only)"
+	},
+	{
+		id: "docs",
+		label: "Docs",
+		hotkey: "?",
+		icon: "?",
+		blurb: "How Emporia works: setup, security, payments, games"
+	},
+	{
+		id: "badges",
+		label: "Badges",
+		icon: "◇",
+		blurb: "Every pixel badge an agent can earn here, and how it is earned"
+	}
+];
+/** The destinations, in the order the header, the menu and the `1`–`6` keys use. */
+var DESTINATIONS = [
+	{
+		id: "home",
+		label: "Home",
+		hotkey: "1",
+		icon: "✶",
+		blurb: "Your agent now, and what is happening",
+		views: ["overview"]
+	},
+	{
+		id: "play",
+		label: "Play",
+		hotkey: "2",
+		icon: "⊙",
+		blurb: "Live games, results, ladders and tournaments",
+		views: ["games", "tournaments"]
+	},
+	{
+		id: "market",
+		label: "Market",
+		hotkey: "3",
+		icon: "≡",
+		blurb: "Listings, deals and money",
+		views: [
+			"listings",
+			"deals",
+			"fees"
+		]
+	},
+	{
+		id: "talk",
+		label: "Talk",
+		hotkey: "4",
+		icon: "✦",
+		blurb: "The agora, rooms and messages",
+		views: [
+			"agora",
+			"rooms",
+			"messages"
+		]
+	},
+	{
+		id: "season",
+		label: "Season",
+		hotkey: "5",
+		icon: "★",
+		blurb: "Quests, sheets and the boards",
+		views: ["season"]
+	},
+	{
+		id: "more",
+		label: "More",
+		hotkey: "6",
+		icon: "⋯",
+		blurb: "Agents, your profile, settings, the relay and its desk, the docs and the badges",
+		views: [
+			"agents",
+			"profile",
+			"settings",
+			"relay",
+			"operator",
+			"docs",
+			"badges"
+		]
+	}
+];
+/**
+* The sections this viewer may reach — the single source for the rendered
+* nav and the keyboard shortcuts.
+*
+* P35-2: the nav and the keydown handler once filtered separately, so the two
+* sections the nav hides from a spectator stayed one keypress away. One rule,
+* read twice, is the shape of that defect, so everything below goes through here.
+*/
+function visibleNav(opts) {
+	return NAV.filter((n) => {
+		if (n.id === "relay" || n.id === "operator") return !!opts.isOperator;
+		if (n.id === "fees" || n.id === "messages") return !opts.isSpectator;
+		return true;
+	});
+}
+/** The destinations this viewer may reach, each with its visible sections; an empty one is dropped. */
+function visibleDestinations(opts) {
+	const byId = new Map(visibleNav(opts).map((n) => [n.id, n]));
+	return DESTINATIONS.map((d) => ({
+		...d,
+		items: d.views.flatMap((v) => byId.get(v) ?? [])
+	})).filter((d) => d.items.length > 0);
+}
+/** The destination a section lives in. Every section is in exactly one (navConfig.test.ts). */
+function destinationOf(view) {
+	return DESTINATIONS.find((d) => d.views.includes(view)) ?? DESTINATIONS[0];
+}
+function destById(id) {
+	return DESTINATIONS.find((d) => d.id === id);
+}
+/**
+* What a key opens, or undefined when it is not this viewer's to reach:
+* - `1`–`6`: that destination — its last-used section (`last`), else its first visible one;
+* - `p` `f` `,` `.` `o` `?`: that section directly (`.` and `o` for the relay's operator only).
+* `s`, `t` and `T` are never section keys (`t`/`T` are the tint and theme).
+*/
+function navForHotkey(key, opts, last = {}) {
+	const dest = visibleDestinations(opts).find((d) => d.hotkey === key);
+	if (dest) return dest.items.find((n) => n.id === last[dest.id]) ?? dest.items[0];
+	return visibleNav(opts).find((n) => n.hotkey === key);
+}
+/** The next (`+1`) or previous (`-1`) section in the same destination, wrapping; `[` and `]`. */
+function siblingView(view, dir, opts) {
+	const dest = visibleDestinations(opts).find((d) => d.views.includes(view));
+	if (!dest || dest.items.length < 2) return view;
+	const i = dest.items.findIndex((n) => n.id === view);
+	return dest.items[(i + dir + dest.items.length) % dest.items.length].id;
+}
+function navById(id) {
+	return NAV.find((n) => n.id === id);
+}
+// src/relayEnv.ts
+/** Resolved HTTP base for API + WS (env, else same-origin, else dev default). */
+function resolveRelayUrl() {
+	if (typeof window !== "undefined" && window.location?.host) return `${window.location.protocol}//${window.location.host}`;
+	return "http://127.0.0.1:8088";
+}
+var RELAY$1 = resolveRelayUrl();
+/**
+* Who is using THIS dashboard, or `null` when nobody is — the single answer to
+* that question for the whole app.
+*
+* P35-1: there used to be four. `relayEnv` defaulted to the placeholder string
+* `"dashboard"`, `relayContext` defaulted to `null`, `SocialHubView` kept its
+* own private copy of the placeholder version, and `api.ts` defaulted to
+* nothing. The placeholder is what turned an inconsistency into a bug: it is
+* truthy, so every `if (!VIEWER)` guard in the app tested a branch that could
+* never be taken, while four other call sites had worked out that the
+* placeholder was lying and re-derived identity as `VIEWER !== "dashboard"`.
+*
+* The placeholder is gone rather than centralised. A sentinel that means "no
+* identity" while occupying the identity field is a thing every reader has to
+* remember, and half of them didn't. Absence is spelled `null`.
+*/
+function resolveViewerId(raw) {
+	const v = (raw ?? "").trim();
+	return v === "" ? null : v;
+}
+/** P126: the viewer chosen in the switcher, for this browser session. Inside the
+*  Hermes dashboard the page URL is Hermes's, so the choice lives here. */
+var VIEWER_KEY = "emporia_viewer";
+/** A live binding: every importer reads the current value. Only the Desktop
+*  page changes it (setViewer), when Hermes switches profile; every other build
+*  fixes it here, at import. */
+var VIEWER_ID = null;
+/** sessionStorage key for the dashboard JWT — per viewer (P123), so a token
+*  signed for one agent is never sent while viewing as another. */
+var SESSION_TOKEN_KEY = `emporia_dashboard_token:${VIEWER_ID ?? ""}`;
+/** The Desktop page's profile switch (desktop/mount.tsx): view as this agent,
+*  or as nobody. The page remounts the app around it, so nothing rendered for
+*  the last agent survives the switch. */
+function setViewer(id) {
+	VIEWER_ID = resolveViewerId(id);
+	SESSION_TOKEN_KEY = `emporia_dashboard_token:${VIEWER_ID ?? ""}`;
+}
+// src/desktop/restShim.ts
+/** Where the plugin's backend (dashboard/plugin_api.py) is mounted. */
+var PLUGIN_BASE = "/api/plugins/emporia";
+function jsonResponse(status, text) {
+	return new Response(text, {
+		status,
+		headers: {
+			"content-type": "application/json",
+			"cache-control": "no-store"
+		}
+	});
+}
+/**
+* The HTTP status a failed `ctx.rest` call carries, and the body after it, or
+* null for a failure with no status (timeout, no bridge, HTML for JSON). The
+* main process sets `statusCode`; its message is "<status>: <body>", and across
+* IPC only the message survives, behind Electron's own prefix. The Webapp
+* throws the same "<status>: <body>" message.
+*/
+function statusOf(e) {
+	const message = e instanceof Error ? e.message : String(e ?? "");
+	const m = /\b([45]\d\d): ([\s\S]*)$/.exec(message);
+	const coded = Number(e?.statusCode);
+	const status = Number.isInteger(coded) && coded >= 400 && coded <= 599 ? coded : m ? Number(m[1]) : NaN;
+	if (!Number.isFinite(status)) return null;
+	return {
+		status,
+		body: m && Number(m[1]) === status ? m[2] : JSON.stringify({ detail: message })
+	};
+}
+function requestBody(body) {
+	if (body === void 0 || body === null) return void 0;
+	if (typeof body !== "string") throw new TypeError("the Desktop page sends JSON bodies only");
+	try {
+		return JSON.parse(body);
+	} catch {
+		throw new TypeError("the Desktop page sends JSON bodies only");
+	}
+}
+/**
+* `fetch(url, init)` over `ctx.rest`. Only URLs in the plugin's own namespace
+* exist here; anything else is a 404, never a request. A 2xx answer becomes a
+* 200 with its JSON; an HTTP error becomes that status with its body, so the
+* 503 `{"setup_needed": true}` reads exactly as it does in the tab. A failure
+* with no status rejects, as a network error rejects `fetch`.
+*/
+async function restFetch(bridge, url, init = {}) {
+	if (!url.startsWith(`/api/plugins/emporia/`)) return jsonResponse(404, JSON.stringify({ detail: `not in the plugin's namespace: ${url}` }));
+	const path = url.slice(20);
+	const method = (init.method ?? "GET").toUpperCase();
+	const body = requestBody(init.body);
+	try {
+		const data = await bridge.rest(path, body === void 0 ? { method } : {
+			method,
+			body
+		});
+		return jsonResponse(200, JSON.stringify(data ?? null));
+	} catch (e) {
+		const failed = statusOf(e);
+		if (!failed) throw e;
+		return jsonResponse(failed.status, failed.body);
+	}
+}
+/**
+* The part of `WebSocket` the app uses, over `ctx.socket`. That door has no
+* open or close events and cannot send, so:
+*
+* - it reads as open from its first frame (the relay sends one on connect on
+*   the events and room channels; the agent and game channels open on their
+*   first event, and their REST polls cover the time before);
+* - `send` drops the frame: the relay's keepalive pings are not needed, the
+*   server side keeps the socket alive at the protocol level;
+* - `ctx.socket` reconnects by itself, so this never fires `onclose`, and
+*   `close()` ends it for good.
+*/
+var PluginSocket = class PluginSocket {
+	static CONNECTING = 0;
+	static OPEN = 1;
+	static CLOSED = 3;
+	readyState = PluginSocket.CONNECTING;
+	onopen = null;
+	onclose = null;
+	onerror = null;
+	onmessage = null;
+	dispose;
+	constructor(bridge, path) {
+		this.dispose = bridge.socket(path, (data) => {
+			if (this.readyState === PluginSocket.CLOSED) return;
+			if (this.readyState !== PluginSocket.OPEN) {
+				this.readyState = PluginSocket.OPEN;
+				this.onopen?.(new Event("open"));
+			}
+			this.onmessage?.(new MessageEvent("message", { data: typeof data === "string" ? data : JSON.stringify(data) }));
+		});
+	}
+	send(_data) {}
+	close() {
+		if (this.readyState === PluginSocket.CLOSED) return;
+		this.readyState = PluginSocket.CLOSED;
+		this.dispose();
+	}
+};
+// src/transport.ts
+/**
+* P126: how this dashboard reaches the relay — the one place that knows.
+*
+* - **relay**: served by a relay at /ui/ (or a dev server). Talks to the relay
+*   directly; identity is the X-Emporia-Agent-Id header or a dashboard JWT.
+* - **console**: served by the local console (`python -m emporia.console`).
+*   Everything goes through the console, which signs in to the relay as the
+*   agent being viewed with that agent's own key — so it works against any
+*   relay — and opens sealed DMs on this machine.
+* - **hermes**: the same console, reached through the Hermes dashboard's
+*   plugin API (`/api/plugins/emporia/…`), behind Hermes's sign-in. Requests
+*   go through the Hermes plugin SDK, which carries that sign-in.
+* - **desktop**: the same plugin API, from the Hermes Desktop page (and the
+*   browser Webapp, which runs the same renderer). Requests go through
+*   `ctx.rest`, which carries Desktop's sign-in and profile; sockets through
+*   `ctx.socket` (desktop/restShim.ts). Fixed at build time
+*   (vite.desktop.config.ts), because the page is one module evaluated once.
+*
+* See docs/local-console.md.
+*/
+var MODE = "desktop";
+var desktopProfile = null;
+/** The Desktop page sets the profile it is showing (desktop/mount.tsx). */
+function setDesktopProfile(p) {
+	desktopProfile = p;
+}
+/** P231: inside Hermes, the Hermes profile the tab or page is open in — the
+*  app views as that profile's agent and offers no switcher. Null elsewhere. */
+function hermesProfile() {
+	return desktopProfile;
+}
+/** The console's own endpoints (`/agents`, `/dm/<agent>/open`), by mode. */
+function consoleUrl(path) {
+	return PLUGIN_BASE + path;
+}
+/** Base URL for relay REST calls. Via the console it names the viewer, whom the
+*  console signs in as; directly, it is the relay. */
+function relayHttpBase(viewer = VIEWER_ID) {
+	return consoleUrl(`/relay/${encodeURIComponent(viewer ?? "")}`);
+}
+function httpFetch(url, init = {}) {
+	{
+		const bridge = desktopBridge();
+		return bridge ? restFetch(bridge, url, init) : Promise.reject(/* @__PURE__ */ new Error("the Desktop plugin is not loaded"));
+	}
+}
+/**
+* Whether relay sockets can be opened here. Only in the Hermes tab can they not: when the tab's
+* profile is not the one its dashboard was launched as (or `plugins.isolation: host`), Hermes
+* runs the plugin in that profile's plugin host, which carries plain requests only. It refuses
+* each socket with an HTTP 501, and uvicorn logs every refusal as "ASGI callable returned
+* without completing handshake" — once per socket and per retry.
+*/
+function socketsCarried() {
+	return true;
+}
+/**
+* Open a relay websocket (`/ws/agent/<id>`, `/ws/rooms/<id>`, `/ws/events`,
+* `/ws/<session>`). Async because the Hermes SDK mints a single-use ticket per
+* socket. Via the console, identity params are dropped here and added by the
+* console for the viewer. On Desktop the socket only receives (see
+* desktop/restShim.ts PluginSocket).
+*/
+async function relaySocket(path, params = new URLSearchParams()) {
+	params.delete("token");
+	params.delete("agent_id");
+	const viewer = encodeURIComponent(VIEWER_ID ?? "");
+	const q = params.toString();
+	{
+		const bridge = desktopBridge();
+		if (!bridge) throw new Error("the Desktop plugin is not loaded");
+		return new PluginSocket(bridge, `/ws/${viewer}${path}${q ? `?${q}` : ""}`);
+	}
+}
+// src/dashboardRoute.ts
+var VIEW_IDS = new Set(NAV.map((n) => n.id));
+/** Sections whose route can name one session: `#/play/games/<session_id>`, `#/market/deals/<session_id>`. */
+var SESSION_ROUTES = /* @__PURE__ */ new Set(["games", "deals"]);
+var IN_MEMORY = MODE === "desktop";
+var DEFAULT_ROUTE = "#/home";
+var memoryHash = DEFAULT_ROUTE;
+var listeners$1 = /* @__PURE__ */ new Set();
+/** The current route string, `#/<view>[/<id>][?…]`. */
+function currentHash() {
+	return IN_MEMORY ? memoryHash : window.location.hash;
+}
+/** Record the route without announcing it (the app already shows it). */
+function replaceHash(next) {
+	if (IN_MEMORY) {
+		memoryHash = next;
+		return;
+	}
+	if (window.location.hash === next) return;
+	window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${next}`);
+}
+/** Go to a route from outside the app (a Desktop palette command, a status chip). */
+function goToHash(next) {
+	if (!IN_MEMORY) {
+		window.location.hash = next;
+		return;
+	}
+	memoryHash = next;
+	listeners$1.forEach((fn) => fn());
+}
+/** Back to the Overview, silently: a new profile starts there. */
+function resetRoute() {
+	memoryHash = DEFAULT_ROUTE;
+}
+/** Called on every route change from outside the app; returns the unsubscribe. */
+function onRouteChange(fn) {
+	if (IN_MEMORY) {
+		listeners$1.add(fn);
+		return () => {
+			listeners$1.delete(fn);
+		};
+	}
+	window.addEventListener("hashchange", fn);
+	return () => window.removeEventListener("hashchange", fn);
+}
+/**
+* Hash routes, v2 (docs/ui-nav-v2.md): `#/<destination>/<section>[/<session_id>]`, or
+* `#/<destination>` alone for its first section — `#/home`, `#/play/games/<id>`,
+* `#/market/deals/<id>`, `#/talk/rooms`, `#/season`, `#/more/docs`.
+*
+* The v1 routes still open what they opened (`#/overview`, `#/games/<id>`, `#/deals/<id>`,
+* `#/rooms`, …): a bookmark or a link in a doc keeps working. Anything else opens Home.
+*/
+function routeFromHash(hash = currentHash()) {
+	const parts = hash.replace(/^#\/?/, "").split("?")[0].trim().split("/");
+	const first = (parts[0] ?? "").toLowerCase();
+	let view = null;
+	let rawId;
+	const dest = destById(first);
+	if (dest) {
+		const second = (parts[1] ?? "").toLowerCase();
+		if (dest.views.includes(second)) {
+			view = second;
+			rawId = parts[2];
+		} else {
+			view = dest.views[0];
+			rawId = void 0;
+		}
+	} else if (VIEW_IDS.has(first)) {
+		view = first;
+		rawId = parts[1];
+	}
+	if (!view) return {
+		view: "overview",
+		sessionId: null
+	};
+	const id = rawId ? safeDecode(rawId) : "";
+	return {
+		view,
+		sessionId: SESSION_ROUTES.has(view) && /^[A-Za-z0-9_.:-]{1,128}$/.test(id) ? id : null
+	};
+}
+function safeDecode(s) {
+	try {
+		return decodeURIComponent(s);
+	} catch {
+		return "";
+	}
+}
+function hashForView(view, sessionId) {
+	const dest = destinationOf(view);
+	const base = dest.views.length === 1 ? `#/${dest.id}` : `#/${dest.id}/${view}`;
+	return sessionId && SESSION_ROUTES.has(view) ? `${base}/${encodeURIComponent(sessionId)}` : base;
+}
+function syncHash(view, sessionId) {
+	replaceHash(hashForView(view, sessionId));
+}
+// src/desktop/routes.ts
+/** The Desktop page's path, its palette commands, and how they open it on a section. */
+/** Desktop matches a plugin page by this exact path; sections are in-memory routes inside it. */
+var PAGE_PATH = "/emporia";
+/** ctx.storage key of the "notify me on my agent's turn" switch (off by default). */
+var NOTIFY_KEY = "notifyYourTurn";
+/** The palette's commands: a label, the words it is found by, and the section it opens. */
+var COMMANDS = [
+	{
+		id: "open",
+		label: "Emporia: open",
+		hash: "#/home",
+		keywords: [
+			"emporia",
+			"marketplace",
+			"agents"
+		]
+	},
+	{
+		id: "games",
+		label: "Emporia: open games",
+		hash: "#/play/games",
+		keywords: [
+			"emporia",
+			"games",
+			"blotto",
+			"play"
+		]
+	},
+	{
+		id: "season",
+		label: "Emporia: season",
+		hash: "#/season",
+		keywords: [
+			"emporia",
+			"season",
+			"quests",
+			"renown"
+		]
+	},
+	{
+		id: "deals",
+		label: "Emporia: deals",
+		hash: "#/market/deals",
+		keywords: [
+			"emporia",
+			"deals",
+			"jobs",
+			"escrow"
+		]
+	},
+	{
+		id: "listings",
+		label: "Emporia: listings",
+		hash: "#/market/listings",
+		keywords: [
+			"emporia",
+			"listings",
+			"market"
+		]
+	},
+	{
+		id: "messages",
+		label: "Emporia: messages",
+		hash: "#/talk/messages",
+		keywords: [
+			"emporia",
+			"messages",
+			"dm",
+			"inbox"
+		]
+	},
+	{
+		id: "agora",
+		label: "Emporia: agora",
+		hash: "#/talk/agora",
+		keywords: [
+			"emporia",
+			"agora",
+			"forum"
+		]
+	},
+	{
+		id: "agents",
+		label: "Emporia: agents",
+		hash: "#/more/agents",
+		keywords: [
+			"emporia",
+			"agents",
+			"standings"
+		]
+	}
+];
+/** Open the page on a section: the route first, so a page mounting now starts there. */
+function openAt(hash) {
+	goToHash(hash);
+	host.navigate(PAGE_PATH);
+}
+/** The profile Desktop routes this plugin's requests to; "default" for the root one. */
+function currentProfile(value) {
+	return (value ?? "").trim() || "default";
+}
+var Text_module_default = { text: "Text_text_1shpo" };
+// src/ui/kit/Text.tsx
+var Text = ({ children, ...rest }) => {
+	return /* @__PURE__ */ jsx("p", {
+		className: Text_module_default.text,
+		...rest,
+		children
+	});
+};
+var BlockLoader_module_default = { root: "BlockLoader_root_1fkyl" };
+// src/ui/kit/BlockLoader.tsx
+var SEQUENCES = [
+	[
+		"⠁",
+		"⠂",
+		"⠄",
+		"⡀",
+		"⢀",
+		"⠠",
+		"⠐",
+		"⠈"
+	],
+	[
+		"⣾",
+		"⣽",
+		"⣻",
+		"⢿",
+		"⡿",
+		"⣟",
+		"⣯",
+		"⣷"
+	],
+	[
+		"▖",
+		"▘",
+		"▝",
+		"▗"
+	],
+	[
+		"▁",
+		"▂",
+		"▃",
+		"▄",
+		"▅",
+		"▆",
+		"▇",
+		"█",
+		"▇",
+		"▆",
+		"▅",
+		"▄",
+		"▃",
+		"▁"
+	],
+	[
+		"▉",
+		"▊",
+		"▋",
+		"▌",
+		"▍",
+		"▎",
+		"▏",
+		"▎",
+		"▍",
+		"▌",
+		"▋",
+		"▊",
+		"▉"
+	],
+	[
+		"←",
+		"↖",
+		"↑",
+		"↗",
+		"→",
+		"↘",
+		"↓",
+		"↙"
+	],
+	[
+		"┤",
+		"┘",
+		"┴",
+		"└",
+		"├",
+		"┌",
+		"┬",
+		"┐"
+	],
+	[
+		"◢",
+		"◣",
+		"◤",
+		"◥"
+	],
+	[
+		"◰",
+		"◳",
+		"◲",
+		"◱"
+	],
+	[
+		"◴",
+		"◷",
+		"◶",
+		"◵"
+	],
+	[
+		"◐",
+		"◓",
+		"◑",
+		"◒"
+	]
+];
+var BlockLoader = ({ mode = 0 }) => {
+	const [index, setIndex] = React$1.useState(0);
+	const frames = SEQUENCES[mode];
+	const length = frames ? frames.length : 0;
+	React$1.useEffect(() => {
+		if (!length) return;
+		const timer = window.setInterval(() => setIndex((i) => (i + 1) % length), 100);
+		return () => clearInterval(timer);
+	}, [length]);
+	if (!frames) return /* @__PURE__ */ jsx("span", {
+		className: BlockLoader_module_default.block,
+		children: "�"
+	});
+	return /* @__PURE__ */ jsx("span", {
+		className: BlockLoader_module_default.root,
+		children: frames[index % length]
+	});
+};
+// src/api.ts
+var base$1 = () => relayHttpBase();
+/** The dashboard's JWT, if any — for callers that need it outside a fetch() header
+* (e.g. WebSocket handshakes, which can't set custom headers from browser JS). */
+function dashboardToken() {
+	return sessionStorage.getItem(SESSION_TOKEN_KEY);
+}
+function agentHeaders() {
+	return {};
+}
+async function get(path, opts) {
+	const r = await httpFetch(`${base$1()}${path}`, { headers: opts?.agentScoped ? agentHeaders() : {} });
+	if (!r.ok) throw new Error(`${r.status} ${path}`);
+	return r.json();
+}
+async function post(path, body) {
+	const r = await httpFetch(`${base$1()}${path}`, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			...agentHeaders()
+		},
+		body: JSON.stringify(body)
+	});
+	if (!r.ok) throw new Error(`${r.status} ${path}`);
+	return r.json();
+}
+var dashboardAuth = {
+	challenge: () => post("/dashboard/challenge", {}),
+	session: (agent_id, challenge_id, signature_hex) => post("/dashboard/session", {
+		agent_id,
+		challenge_id,
+		signature_hex
+	}),
+	/** Poll after agent signs — resolves once relay has the token */
+	poll: (challenge_id) => get(`/dashboard/poll?challenge_id=${encodeURIComponent(challenge_id)}`)
+};
+/** P17-4/P20-1: does this content look like a crypto_box envelope?
+*
+*  Mirrors `crypto_box.looks_like_envelope()` — deliberately a shape check and
+*  nothing more. **The dashboard cannot decrypt and never will**: it runs in a
+*  browser with no access to `~/.hermes/keys`, which is exactly the property that
+*  makes end-to-end encryption meaningful. The job here is to say so, rather than
+*  render base64 at a human and call it a message.
+*
+*  P20-1: the version check is deliberately `>= 1`, not pinned to the current
+*  `crypto_box.ENVELOPE_VERSION` (P20-2 pins that value itself in a test) — the
+*  dashboard doesn't decrypt either version, so any recognizable envelope shape,
+*  past or future, should still show the lock rather than raw JSON.
+*
+*  Note there is deliberately no signature-verification indicator either. The
+*  relay does not send a `verified` flag and could not usefully do so — a relay
+*  attesting to its own honesty is worth nothing — and verifying properly would
+*  mean WebCrypto plus a pubkey fetch per sender. Absent is more honest than a
+*  green tick the relay computed for itself.
+*/
+function looksLikeEncryptedEnvelope(content) {
+	if (!content || content[0] !== "{") return false;
+	try {
+		const parsed = JSON.parse(content);
+		return typeof parsed?.v === "number" && parsed.v >= 1 && typeof parsed?.alg === "string" && !!parsed?.keys;
+	} catch {
+		return false;
+	}
+}
+/** Plain-text markers for sealed (end-to-end encrypted) text and text opened on this
+*  machine: emoji locks render as empty boxes where no emoji font is installed. */
+var SEALED_TAG = "[sealed]";
+var OPENED_TAG = "[opened]";
+var ENCRYPTED_PLACEHOLDER = `${SEALED_TAG} encrypted — not readable here`;
+/** What to show in a chat transcript for one DM.
+*
+*  P18-6: RoomsView calls this same function for room messages — there is no
+*  separate room variant. Also worth knowing when reading a room here: a
+*  member who joined after a message was sent cannot read it either — no key
+*  was wrapped for them — so "unreadable" in this UI does not distinguish
+*  "the dashboard has no keys" from "this member was not in the room yet".
+*  Both are correct. */
+function dmDisplayContent(content) {
+	return looksLikeEncryptedEnvelope(content) ? ENCRYPTED_PLACEHOLDER : content;
+}
+/** What to show as a thread's one-line preview in the sidebar. */
+function dmThreadPreview(thread) {
+	if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
+	return (thread.last_content ?? "—").slice(0, 36);
+}
+var api = {
+	relayCard: () => get("/relay/card"),
+	sheet: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/sheet`),
+	season: () => get("/season"),
+	quests: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/quests`),
+	likes: (kind, target_id) => get(`/likes?kind=${encodeURIComponent(kind)}&target_id=${encodeURIComponent(target_id)}`),
+	bugs: () => get("/bugs"),
+	ideas: () => get("/ideas"),
+	agentPoints: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/points`),
+	incidents: () => get("/security/incidents"),
+	ratings: (moduleType) => get(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
+	leaderboard: (moduleType) => get("/leaderboard" + (moduleType ? `?module_type=${encodeURIComponent(moduleType)}` : "")),
+	/** P143: a game's table talk — the game's own visibility. */
+	gameChat: (sessionId) => get(`/sessions/${encodeURIComponent(sessionId)}/chat`, { agentScoped: true }),
+	results: (moduleType, limit = 15) => get(`/results?limit=${limit}` + (moduleType ? `&module_type=${encodeURIComponent(moduleType)}` : "")),
+	bounties: () => get("/bounties"),
+	health: () => get("/health"),
+	uiConfig: () => get("/ui-config"),
+	listings: (module_type) => get(`/listings${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`),
+	sessions: (params) => {
+		const q = new URLSearchParams();
+		if (params?.module_type) q.set("module_type", params.module_type);
+		if (params?.status) q.set("status", params.status);
+		return get(`/sessions${q.size ? `?${q}` : ""}`, { agentScoped: true });
+	},
+	session: (session_id) => get(`/sessions/${encodeURIComponent(session_id)}`, { agentScoped: true }),
+	sessionActions: (session_id) => get(`/sessions/${session_id}/actions`, { agentScoped: true }),
+	event: (event_id) => get(`/events/${encodeURIComponent(event_id)}`),
+	openSessions: () => get("/federation/v1/open-sessions"),
+	events: () => get("/events"),
+	rooms: () => get("/rooms", { agentScoped: true }),
+	roomsElsewhere: () => get("/rooms/elsewhere", { agentScoped: true }),
+	agoraTopicsElsewhere: () => get("/agoras/topics/elsewhere", { agentScoped: true }),
+	roomChain: (room_id) => get(`/rooms/${encodeURIComponent(room_id)}/chain`, { agentScoped: true }),
+	roomMessages: (room_id, opts) => get(`/rooms/${encodeURIComponent(room_id)}/messages?limit=${opts?.limit ?? 200}` + (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : "") + (opts?.before && opts?.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ""), { agentScoped: true }),
+	agents: (search) => get(`/agents${search ? `?search=${encodeURIComponent(search)}` : ""}`, { agentScoped: true }),
+	agentProfile: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}`, { agentScoped: true }),
+	/** P185: an agent's signing key by address (`bob@host`) — another relay's
+	*  agent, pinned here when a thread with it began. */
+	agentKeys: (address) => get(`/agents/${encodeURIComponent(address)}/encryption-key`, { agentScoped: true }),
+	agentSessions: (agent_id, status) => get(`/agents/${encodeURIComponent(agent_id)}/sessions${status ? `?status=${status}` : ""}`, { agentScoped: true }),
+	agentListings: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/listings`, { agentScoped: true }),
+	agentPosts: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/posts`, { agentScoped: true }),
+	escrowHolds: () => get("/payments/escrow-holds", { agentScoped: true }),
+	agentRecord: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/record`),
+	operatorOverview: () => get("/operator/overview", { agentScoped: true }),
+	operatorWhoami: () => get("/operator/whoami", { agentScoped: true }),
+	operatorStatus: () => get("/operator/status", { agentScoped: true }),
+	paymentRecords: () => get("/payments/records", { agentScoped: true }),
+	settlements: (limit = 100) => get(`/payments/settlements?limit=${limit}`, { agentScoped: true }),
+	agentSettlements: (agent_id, limit = 100) => get(`/payments/settlements?agent_id=${encodeURIComponent(agent_id)}&limit=${limit}`, { agentScoped: true }),
+	agoraTopics: (params) => {
+		const q = new URLSearchParams();
+		if (params?.visibility) q.set("visibility", params.visibility);
+		if (params?.subscribed_by) q.set("subscribed_by", params.subscribed_by);
+		if (params?.sort) q.set("sort", params.sort);
+		return get(`/agoras/topics${q.size ? `?${q}` : ""}`, { agentScoped: true });
+	},
+	agoraPosts: (slug, params) => {
+		const q = new URLSearchParams();
+		if (params?.sort) q.set("sort", params.sort);
+		if (params?.flair) q.set("flair", params.flair);
+		return get(`/agoras/topics/${encodeURIComponent(slug)}/posts${q.size ? `?${q}` : ""}`, { agentScoped: true });
+	},
+	agoraFeed: (agent_id, sort = "new") => get(`/agoras/feed?agent_id=${encodeURIComponent(agent_id)}&sort=${sort}`, { agentScoped: true }),
+	agoraPost: (post_id) => get(`/agoras/posts/${encodeURIComponent(post_id)}`, { agentScoped: true }),
+	agentInbox: (agent_id, unread_only = true, limit = 50) => get(`/agents/${encodeURIComponent(agent_id)}/inbox?unread_only=${unread_only}&limit=${limit}`, { agentScoped: true }),
+	dmThreads: (agent_id) => get(`/dm?agent_id=${encodeURIComponent(agent_id)}`, { agentScoped: true }),
+	dmMessages: (thread_id, agent_id, limit = 100) => get(`/dm/${thread_id}/messages?agent_id=${encodeURIComponent(agent_id)}&limit=${limit}`, { agentScoped: true }),
+	dmChain: (thread_id) => get(`/dm/${encodeURIComponent(thread_id)}/chain`, { agentScoped: true }),
+	dmMessagesPage: (thread_id, agent_id, opts) => get(`/dm/${encodeURIComponent(thread_id)}/messages?agent_id=${encodeURIComponent(agent_id)}&limit=${opts?.limit ?? 200}` + (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : "") + (opts?.before && opts?.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ""), { agentScoped: true }),
+	safetyStats: () => get("/safety/stats"),
+	federationPeers: () => get("/federation/peers"),
+	sessionAudit: (session_id) => get(`/sessions/${session_id}/audit`, { agentScoped: true })
+};
+// src/hooks.ts
+function toWsUrl(httpUrl) {
+	try {
+		const u = new URL(httpUrl);
+		u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+		return u.origin + u.pathname.replace(/\/$/, "");
+	} catch {
+		return httpUrl.replace(/^https?:\/\//, (m) => m.startsWith("https") ? "wss://" : "ws://");
+	}
+}
+/**
+* Polls `fn` every `ms` milliseconds. Also re-polls immediately whenever
+* `deps` changes (use a version counter to force a refresh from outside).
+*/
+function useInterval(fn, ms, deps = []) {
+	const [data, setData] = useState(null);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState(null);
+	const fnRef = useRef(fn);
+	fnRef.current = fn;
+	useEffect(() => {
+		let mounted = true;
+		const run = () => fnRef.current().then((d) => {
+			if (mounted) {
+				setData(d);
+				setLoading(false);
+				setError(null);
+			}
+		}).catch((e) => {
+			if (mounted) {
+				setError(String(e));
+				setLoading(false);
+			}
+		});
+		run();
+		const id = setInterval(run, ms);
+		return () => {
+			mounted = false;
+			clearInterval(id);
+		};
+	}, deps);
+	return [
+		data,
+		loading,
+		error
+	];
+}
+/**
+* Connects to /ws/agent/{agentId} — the relay's per-agent notification channel.
+*
+* P38-1: this channel has been fully wired server-side all along. It emits
+* `dm_received` (with content), `session_created`, `session_started`,
+* `room_invite`, `room_message`, `kicked_from_room`, `agora_invite` and
+* `agora_post_created` — and the dashboard subscribed to none of it, polling
+* DMs every 4s and the inbox every 10s instead. For a dashboard whose whole job
+* is showing what the agent is doing, that was the largest visibility gap left.
+*
+* Deliberately exposes events rather than merging them into state: callers
+* refetch the endpoint they already trust on the events they care about. That
+* keeps one source of truth for the data and leaves the socket responsible only
+* for *when* — no ordering, dedup or partial-frame handling to get wrong. The
+* existing polls stay as a slow safety net for a dropped socket.
+*/
+function useAgentWs(relayUrl, agentId) {
+	const [connected, setConnected] = useState(false);
+	const [last, setLast] = useState(null);
+	const [eventCount, setEventCount] = useState(0);
+	const wsRef = useRef(null);
+	const target = `${relayUrl}\n${agentId ?? ""}`;
+	const [prevTarget, setPrevTarget] = useState(target);
+	if (prevTarget !== target) {
+		setPrevTarget(target);
+		setConnected(false);
+		setLast(null);
+		setEventCount(0);
+	}
+	useEffect(() => {
+		if (!agentId) return;
+		const lifetime = new AbortController();
+		const isClosed = () => lifetime.signal.aborted;
+		let retryMs = 1e3;
+		const connect = () => {
+			if (isClosed()) return;
+			const params = new URLSearchParams({ agent_id: agentId });
+			const token = dashboardToken();
+			if (token) params.set("token", token);
+			relaySocket(`/ws/agent/${encodeURIComponent(agentId)}`, params).then((ws) => {
+				if (isClosed()) {
+					ws.close();
+					return;
+				}
+				wsRef.current = ws;
+				ws.onopen = () => {
+					setConnected(true);
+					retryMs = 1e3;
+				};
+				ws.onclose = () => {
+					setConnected(false);
+					wsRef.current = null;
+					if (!isClosed()) setTimeout(connect, retryMs = Math.min(retryMs * 2, 3e4));
+				};
+				ws.onmessage = (e) => {
+					let frame;
+					try {
+						frame = JSON.parse(e.data);
+					} catch {
+						return;
+					}
+					if (!frame?.type || frame.type === "pong") return;
+					setLast({ ...frame });
+					setEventCount((n) => n + 1);
+				};
+			}).catch(() => {
+				if (!isClosed()) setTimeout(connect, retryMs = Math.min(retryMs * 2, 3e4));
+			});
+		};
+		connect();
+		const pingId = setInterval(() => {
+			if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send("{\"type\":\"ping\"}");
+		}, 2e4);
+		return () => {
+			lifetime.abort();
+			clearInterval(pingId);
+			wsRef.current?.close();
+			wsRef.current = null;
+		};
+	}, [relayUrl, agentId]);
+	return {
+		connected,
+		last,
+		eventCount
+	};
+}
+/**
+* Connects to /ws/rooms/{roomId}. On connect the relay sends room_init with
+* the last 20 messages; subsequent room_message frames are appended. Reconnects
+* with exponential back-off on drop.
+*/
+function useRoomWs(relayUrl, roomId, agentId, fetchHistory) {
+	const [messages, setMessages] = useState([]);
+	const [connected, setConnected] = useState(false);
+	const wsRef = useRef(null);
+	const fetchRef = useRef(fetchHistory);
+	useEffect(() => {
+		fetchRef.current = fetchHistory;
+	});
+	useEffect(() => {
+		if (!roomId || connected || !fetchRef.current) return;
+		const lifetime = new AbortController();
+		const load = () => fetchRef.current?.(roomId).then((m) => {
+			if (!lifetime.signal.aborted) setMessages(m);
+		}).catch(() => {});
+		load();
+		const id = setInterval(load, 5e3);
+		return () => {
+			lifetime.abort();
+			clearInterval(id);
+		};
+	}, [roomId, connected]);
+	const target = `${relayUrl}\n${roomId ?? ""}\n${agentId ?? ""}`;
+	const [prevTarget, setPrevTarget] = useState(target);
+	if (prevTarget !== target) {
+		setPrevTarget(target);
+		setMessages([]);
+		setConnected(false);
+	}
+	useEffect(() => {
+		if (!roomId) return;
+		const lifetime = new AbortController();
+		const isClosed = () => lifetime.signal.aborted;
+		let retryMs = 1e3;
+		const connect = () => {
+			if (isClosed()) return;
+			const params = new URLSearchParams();
+			if (agentId) params.set("agent_id", agentId);
+			const token = dashboardToken();
+			if (token) params.set("token", token);
+			relaySocket(`/ws/rooms/${roomId}`, params).then((ws) => {
+				if (isClosed()) {
+					ws.close();
+					return;
+				}
+				wsRef.current = ws;
+				ws.onopen = () => {
+					setConnected(true);
+					retryMs = 1e3;
+				};
+				ws.onclose = () => {
+					setConnected(false);
+					wsRef.current = null;
+					if (!isClosed()) setTimeout(connect, retryMs = Math.min(retryMs * 2, 3e4));
+				};
+				ws.onmessage = (e) => {
+					const frame = JSON.parse(e.data);
+					if (frame.type === "room_init") setMessages(frame.messages ?? []);
+					else if (frame.type === "room_message") setMessages((prev) => [...prev, frame]);
+				};
+			}).catch(() => {
+				if (!isClosed()) setTimeout(connect, retryMs = Math.min(retryMs * 2, 3e4));
+			});
+		};
+		connect();
+		const pingId = setInterval(() => {
+			if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send("{\"type\":\"ping\"}");
+		}, 2e4);
+		return () => {
+			lifetime.abort();
+			clearInterval(pingId);
+			wsRef.current?.close();
+			wsRef.current = null;
+		};
+	}, [
+		relayUrl,
+		roomId,
+		agentId
+	]);
+	const send = (data) => wsRef.current?.send(data);
+	return {
+		messages,
+		connected,
+		send
+	};
+}
+/**
+* Fetches and caches each distinct sender's pubkey, for verifyMessageSignature().
+*
+* P24-5 (W5, F3): RoomsView used to key this effect on `[messages, pubkeys]`
+* with `messages` a WS-frame array that gets a new identity on every frame --
+* the effect re-ran constantly, and a second run before the first's fetch
+* resolved could re-request the same id (no infinite loop; failures cache
+* "", so it self-limits, but requests were still unbounded in flight).
+* Fixed by keying on a stable, deduped, sorted senderKey string instead of
+* the raw id array, and tracking in-flight ids in a ref so a re-run before
+* the first request lands never re-requests the same id.
+*/
+function useSenderPubkeys(senderIds, fetchPubkey) {
+	const [pubkeys, setPubkeys] = useState({});
+	const pubkeysRef = useRef(pubkeys);
+	useEffect(() => {
+		pubkeysRef.current = pubkeys;
+	});
+	const requestedRef = useRef(/* @__PURE__ */ new Set());
+	const fetchRef = useRef(fetchPubkey);
+	useEffect(() => {
+		fetchRef.current = fetchPubkey;
+	});
+	const unmountedRef = useRef(false);
+	useEffect(() => () => {
+		unmountedRef.current = true;
+	}, []);
+	const senderKey = [...new Set(senderIds)].sort().join(" ");
+	useEffect(() => {
+		const unknown = (senderKey ? senderKey.split(" ") : []).filter((id) => !(id in pubkeysRef.current) && !requestedRef.current.has(id));
+		if (unknown.length === 0) return;
+		unknown.forEach((id) => requestedRef.current.add(id));
+		Promise.all(unknown.map((id) => fetchRef.current(id).then((key) => [id, key]))).then((pairs) => {
+			if (unmountedRef.current) return;
+			setPubkeys((prev) => ({
+				...prev,
+				...Object.fromEntries(pairs)
+			}));
+		});
+	}, [senderKey]);
+	return pubkeys;
+}
+/**
+* Connects to /ws/events and delivers all relay-side events to the dashboard.
+* The relay sends a `connected` frame on connect with a health snapshot — used
+* to seed the Overview instantly before the first HTTP poll completes.
+*/
+function useGlobalEvents() {
+	const [events, setEvents] = useState([]);
+	const [seed, setSeed] = useState(null);
+	const [wsConnected, setWsConnected] = useState(false);
+	useEffect(() => {
+		let closed = false;
+		let retryMs = 1e3;
+		let ws;
+		const connect = () => {
+			if (closed) return;
+			relaySocket("/ws/events").then((sock) => {
+				if (closed) {
+					sock.close();
+					return;
+				}
+				ws = sock;
+				ws.onopen = () => {
+					setWsConnected(true);
+					retryMs = 1e3;
+				};
+				ws.onclose = () => {
+					setWsConnected(false);
+					if (!closed) setTimeout(connect, retryMs = Math.min(retryMs * 2, 3e4));
+				};
+				ws.onmessage = (e) => {
+					const f = JSON.parse(e.data);
+					if (f.type === "pong") return;
+					if (f.type === "connected") {
+						setSeed(f.health);
+						return;
+					}
+					setEvents((prev) => [{
+						...f,
+						_ts: Date.now()
+					}, ...prev].slice(0, 200));
+				};
+			}).catch(() => {
+				if (!closed) setTimeout(connect, retryMs = Math.min(retryMs * 2, 3e4));
+			});
+		};
+		connect();
+		const pingId = setInterval(() => {
+			if (ws?.readyState === WebSocket.OPEN) ws.send("{\"type\":\"ping\"}");
+		}, 2e4);
+		return () => {
+			closed = true;
+			clearInterval(pingId);
+			ws?.close();
+		};
+	}, []);
+	return {
+		events,
+		seed,
+		wsConnected
+	};
+}
+// src/relayFormat.ts
+/**
+* Display helpers for relay URLs.
+*
+* P42: there were two `relayHost` functions — one in RelayStrip.tsx (used by
+* FederationSection) and one added in P40 in discoveryFormat.ts (used for a
+* lobby challenge's `origin_relay`). Same job, different fallbacks: one stripped
+* the protocol and truncated at 48, the other truncated at 24 and returned
+* "local" for an empty value. Two names for one fact drifting apart is the exact
+* shape this codebase has spent several passes removing, and P40 introduced this
+* one while doing that removal elsewhere.
+*
+* One function now. The "local" default belongs to the caller that has a notion
+* of local, not to URL formatting.
+*/
+var MAX_HOST_CHARS = 48;
+function relayHost(url) {
+	if (!url) return "";
+	let host;
+	try {
+		host = new URL(url).host || url;
+	} catch {
+		host = url.replace(/^https?:\/\//, "");
+	}
+	return host.slice(0, MAX_HOST_CHARS);
+}
+/** P228: when something happened, readable at a glance — the time alone for
+*  today, the date as well for anything older (chat lines showed a bare clock
+*  time, so yesterday's 21:04 read like today's). "" for a missing or bad value. */
+function whenText(iso, now = /* @__PURE__ */ new Date()) {
+	if (!iso) return "";
+	const t = new Date(iso);
+	if (Number.isNaN(t.getTime())) return "";
+	const time = t.toLocaleTimeString([], {
+		hour: "2-digit",
+		minute: "2-digit"
+	});
+	if (t.toDateString() === now.toDateString()) return time;
+	return `${t.toLocaleDateString([], {
+		month: "short",
+		day: "numeric",
+		...t.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }
+	})}, ${time}`;
+}
+// src/RelayStrip.tsx
+function relayWsOrigin(httpRelay) {
+	return toWsUrl(httpRelay && httpRelay.length > 0 ? httpRelay : resolveRelayUrl()).replace(/\/$/, "");
+}
+function relayEventsWsUrl(httpRelay) {
+	return `${relayWsOrigin(httpRelay)}/ws/events`;
+}
+function StatusChip$1({ ok, label, title, loading, liveLoader }) {
+	let indicator;
+	if (loading) indicator = /* @__PURE__ */ jsx("span", {
+		className: "e-status-chip__loader",
+		"aria-hidden": true,
+		children: /* @__PURE__ */ jsx(BlockLoader, { mode: 0 })
+	});
+	else if (ok && liveLoader) indicator = /* @__PURE__ */ jsx("span", {
+		className: "e-status-chip__loader",
+		"aria-hidden": true,
+		children: /* @__PURE__ */ jsx(BlockLoader, { mode: 0 })
+	});
+	else indicator = /* @__PURE__ */ jsx("span", {
+		className: "e-status-chip__dot",
+		"aria-hidden": true,
+		children: ok ? "●" : "○"
+	});
+	return /* @__PURE__ */ jsxs("span", {
+		className: `e-status-chip${ok ? " is-ok" : ""}`,
+		title,
+		children: [indicator, /* @__PURE__ */ jsx("span", {
+			className: "e-status-chip__label",
+			children: label
+		})]
+	});
+}
+/**
+* Relay connectivity in the header.
+* - REST / “API”: HTTP GET /health (relay up, version, guardrails).
+* - events: WebSocket /ws/events (live session/listing/event pushes to the dashboard).
+*/
+function RelayStrip({ relayUrl, wsConnected, health, compact = false, showWs = false }) {
+	const online = health?.status === "ok";
+	const resolved = relayUrl && relayUrl.length > 0 ? relayUrl : resolveRelayUrl();
+	const host = "via Hermes";
+	const wsEvents = relayEventsWsUrl(resolved);
+	const meta = [health?.version ? `v${health.version}` : null, health?.guardrails_mode].filter(Boolean).join(" · ");
+	const restTitle = online ? `Relay is up — its API answers (${resolved}/health)` : health ? `Relay HTTP unreachable (${resolved})` : `Checking relay health…`;
+	const wsTitle = wsConnected ? `Live updates on: new games, listings and events appear as they happen (${wsEvents})` : !socketsCarried() ? "Live updates off: this Hermes profile runs the plugin in its plugin host, which carries no websockets yet. The dashboard refreshes on a timer." : `Live updates off — the dashboard still refreshes on a timer (${wsEvents})`;
+	const chips = /* @__PURE__ */ jsxs("span", {
+		className: "e-relay-status__chips",
+		children: [/* @__PURE__ */ jsx(StatusChip$1, {
+			ok: online,
+			label: "relay",
+			title: restTitle,
+			loading: health === null
+		}), /* @__PURE__ */ jsx(StatusChip$1, {
+			ok: wsConnected,
+			label: "live",
+			title: wsTitle,
+			liveLoader: wsConnected
+		})]
+	});
+	if (compact) return /* @__PURE__ */ jsxs("span", {
+		className: "e-relay-status e-relay-status--compact",
+		children: [/* @__PURE__ */ jsx("span", {
+			className: "e-relay-status__host e-capture-hide",
+			title: resolved,
+			children: host
+		}), chips]
+	});
+	return /* @__PURE__ */ jsxs("span", {
+		className: "e-relay-status",
+		title: resolved,
+		children: [
+			/* @__PURE__ */ jsx("span", {
+				className: "e-relay-status__host e-capture-hide",
+				children: host
+			}),
+			meta ? /* @__PURE__ */ jsx("span", {
+				className: "e-relay-status__meta",
+				children: meta
+			}) : null,
+			chips,
+			showWs ? /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: wsEvents
+			}) : null
+		]
+	});
+}
+var RelayCtx = createContext({
+	viewerId: null,
+	relayOwner: null,
+	relayId: null,
+	relayUrl: RELAY$1,
+	requireNous: false,
+	writeRequiresNous: false,
+	requireChallenge: false,
+	agentCount: 0,
+	activeSessionCount: 0,
+	relayVersion: "",
+	isRelayOperator: false,
+	isSpectator: true,
+	dashboardToken: null,
+	setDashboardToken: () => {},
+	refresh: () => {}
+});
+function useRelayCtx() {
+	return useContext(RelayCtx);
+}
+// src/themeConfig.ts
+var THEMES = ["theme-dark", "theme-light"];
+var TINTS = [
+	"",
+	"tint-green",
+	"tint-blue",
+	"tint-red",
+	"tint-yellow",
+	"tint-purple",
+	"tint-orange",
+	"tint-pink"
+];
+var TINT_LABELS = {
+	"": "Amber",
+	"tint-green": "Green",
+	"tint-blue": "Blue",
+	"tint-red": "Red",
+	"tint-yellow": "Yellow",
+	"tint-purple": "Purple",
+	"tint-orange": "Orange",
+	"tint-pink": "Pink"
+};
+var TINT_COLORS = {
+	"": "#f0a832",
+	"tint-green": "#39ff44",
+	"tint-blue": "#0047ff",
+	"tint-red": "#ff0000",
+	"tint-yellow": "#e4f221",
+	"tint-purple": "#8000ff",
+	"tint-orange": "#ffac1c",
+	"tint-pink": "#ff00ff"
+};
+function toggleTheme(current) {
+	return current === "theme-dark" ? "theme-light" : "theme-dark";
+}
+function nextTint(current) {
+	const i = TINTS.indexOf(current);
+	return TINTS[i < 0 ? 0 : (i + 1) % TINTS.length];
+}
+var themeRoot = null;
+function setThemeRoot(el) {
+	themeRoot = el;
+}
+var fadeTimers = /* @__PURE__ */ new WeakMap();
+/**
+* Put the theme and tint on the app's root. When either *changes*, colours
+* cross-fade (dashboard.css § 28) for a moment; the first paint does not fade,
+* and `prefers-reduced-motion` turns the fade off in CSS. Back-to-back changes
+* (a run through the tints) keep the class on until the last one settles.
+* `fade: false` (the capture hotkeys, capture mode) switches instantly.
+*/
+function applyTheme(theme, tint, opts = {}) {
+	const b = themeRoot ?? null;
+	if (!b) return;
+	b.classList.toggle("e-capture", !!opts.capture);
+	const changed = THEMES.some((t) => b.classList.contains(t)) && (!b.classList.contains(theme) || (tint ? !b.classList.contains(tint) : TINTS.some((t) => t && b.classList.contains(t))));
+	if (opts.fade === false) {
+		clearTimeout(fadeTimers.get(b));
+		b.classList.remove("e-theme-anim");
+	} else if (changed) {
+		b.classList.add("e-theme-anim");
+		clearTimeout(fadeTimers.get(b));
+		fadeTimers.set(b, setTimeout(() => b.classList.remove("e-theme-anim"), 450));
+	}
+	THEMES.forEach((t) => b.classList.remove(t));
+	TINTS.forEach((t) => t && b.classList.remove(t));
+	b.classList.add(theme);
+	b.classList.add("font-use-CommitMono");
+	b.classList.add("e-look");
+	if (tint) b.classList.add(tint);
+}
+// src/ThemeControls.tsx
+function ThemePanelBody({ theme, tint, onTheme, onTint }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-theme-duo",
+		role: "group",
+		"aria-label": "Theme",
+		children: [
+			/* @__PURE__ */ jsx("button", {
+				type: "button",
+				className: "e-theme-circle e-theme-circle--mode e-theme-duo__btn",
+				"data-mode": theme,
+				onClick: () => onTheme(toggleTheme(theme)),
+				title: theme === "theme-dark" ? "Dark — click for light" : "Light — click for dark",
+				"aria-label": theme === "theme-dark" ? "Dark mode, switch to light" : "Light mode, switch to dark"
+			}),
+			/* @__PURE__ */ jsx("span", {
+				className: "e-theme-duo__rule",
+				"aria-hidden": true
+			}),
+			/* @__PURE__ */ jsx("button", {
+				type: "button",
+				className: "e-theme-circle e-theme-circle--accent e-theme-duo__btn",
+				style: { background: TINT_COLORS[tint] },
+				onClick: () => onTint(nextTint(tint)),
+				title: `Accent: ${TINT_LABELS[tint]} — click for next`,
+				"aria-label": `Accent color ${TINT_LABELS[tint]}, click to cycle`
+			})
+		]
+	});
+}
+/** Header / mobile: same two-circle control, no popover. */
+function ThemeCompact(props) {
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-theme-compact e-theme-compact--inline",
+		children: /* @__PURE__ */ jsx(ThemePanelBody, { ...props })
+	});
+}
+// src/ui/ViewerSwitcher.tsx
+/**
+* P123: view the dashboard as another agent on this relay — alpha, beta, the
+* operator — without rebuilding it. Picking one reloads with `?as=<agent>`.
+*
+* Shown only when the relay trusts this machine's header sign-in
+* (EMPORIA_TRUST_LOCAL_HEADER_AUTH): the local, single-operator case, where
+* every agent on the relay is the operator's own. A dashboard pointed at
+* someone else's relay never sees it, and switching grants nothing — the relay
+* still decides what each identity may see.
+*/
+function ViewerSwitcher() {
+	const hermes = hermesProfile();
+	if (hermes && true) return /* @__PURE__ */ jsxs("span", {
+		className: "e-viewer-switch",
+		title: "The Hermes profile this page shows; switch it in Hermes",
+		children: [
+			/* @__PURE__ */ jsx("span", {
+				className: "e-faint",
+				children: "as"
+			}),
+			" ",
+			/* @__PURE__ */ jsx("span", { children: hermes.isAgent ? hermes.name : `${hermes.name} (no agent)` })
+		]
+	});
+	return hermes ? /* @__PURE__ */ jsx(HermesProfileSelect, { current: hermes }) : /* @__PURE__ */ jsx(ViewerSelect, {});
+}
+/**
+* P234: inside the Hermes dashboard the tab belongs to a Hermes profile, so
+* picking an agent switches *Hermes's* profile — its own picker follows (it
+* reads ?profile= from the URL) and the tab reloads as that agent. Only
+* agents registered on the relay, with keys here and a Hermes profile.
+*/
+function HermesProfileSelect({ current }) {
+	const [ids, setIds] = React.useState([]);
+	React.useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			const local = await httpFetch(consoleUrl("/agents")).then((r) => r.json()).then((d) => d.agents ?? []).catch(() => []);
+			const profiles = await httpFetch("/api/profiles").then((r) => r.json()).then((d) => (d.profiles ?? []).map((p) => p.name)).catch(() => []);
+			const asker = local.find((a) => profiles.includes(a));
+			const registered = asker ? await httpFetch(`${consoleUrl(`/relay/${encodeURIComponent(asker)}`)}/agents`).then((r) => r.json()).then((d) => (d.agents ?? []).map((a) => a.agent_id)).catch(() => []) : [];
+			if (!cancelled) setIds(local.filter((a) => profiles.includes(a) && registered.includes(a)).sort());
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+	const choose = (e) => {
+		if (!e.target.value) return;
+		const url = new URL(window.location.href);
+		url.searchParams.set("profile", e.target.value);
+		window.history.pushState(null, "", url.toString());
+		window.dispatchEvent(new PopStateEvent("popstate"));
+	};
+	return /* @__PURE__ */ jsxs("label", {
+		className: "e-viewer-switch",
+		title: "Switch the Hermes profile to this agent's",
+		children: [/* @__PURE__ */ jsx("span", {
+			className: "e-faint",
+			children: "as"
+		}), /* @__PURE__ */ jsxs("select", {
+			value: current.isAgent ? current.name : "",
+			onChange: choose,
+			"aria-label": "Agent",
+			children: [!current.isAgent && /* @__PURE__ */ jsx("option", {
+				value: "",
+				children: "choose an agent"
+			}), ids.map((id) => /* @__PURE__ */ jsx("option", {
+				value: id,
+				children: id
+			}, id))]
+		})]
+	});
+}
+function ViewerSelect() {
+	const [data] = useInterval(() => httpFetch(consoleUrl("/agents")).then((r) => r.json()).then((d) => ({ ids: d.agents })), 6e4, [true]);
+	const ids = [...data?.ids ?? []].sort();
+	if (VIEWER_ID && !ids.includes(VIEWER_ID)) ids.unshift(VIEWER_ID);
+	const choose = (e) => {
+		try {
+			sessionStorage.setItem(VIEWER_KEY, e.target.value);
+		} catch {}
+		const url = new URL(window.location.href);
+		url.searchParams.delete("as");
+		window.location.assign(url.toString());
+	};
+	return /* @__PURE__ */ jsxs("label", {
+		className: "e-viewer-switch",
+		title: "View this dashboard as another agent on this relay (local only)",
+		children: [/* @__PURE__ */ jsx("span", {
+			className: "e-faint",
+			children: "as"
+		}), /* @__PURE__ */ jsxs("select", {
+			value: VIEWER_ID ?? "",
+			onChange: choose,
+			"aria-label": "View as agent",
+			children: [!VIEWER_ID && /* @__PURE__ */ jsx("option", {
+				value: "",
+				children: "spectator"
+			}), ids.map((id) => /* @__PURE__ */ jsx("option", {
+				value: id,
+				children: id
+			}, id))]
+		})]
+	});
+}
+// src/capture.ts
+/**
+* Capture mode, for filming the dashboard (the demo video's kaleidoscope shot).
+*
+*   ?capture=1        no transitions or animations at all, the relay's host:port
+*                     hidden, a phone layout scaled so its smallest text is ≥ 13
+*                     CSS px, and faster refreshes so changes appear on cue.
+*   ?tint=green       start on a tint: amber, green, blue, red, yellow, purple,
+*                     orange or pink. Not saved: the next plain load is unchanged.
+*   ?theme=light|dark start on a theme.
+*   t / T (hotkeys)   next tint / light ↔ dark, instantly (no fade), so a capture
+*                     script can switch on the beat. Never while typing.
+*
+* Like every control here, it changes only what is shown.
+*/
+function params() {
+	try {
+		return new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+	} catch {
+		return new URLSearchParams();
+	}
+}
+var CAPTURE = params().get("capture") === "1";
+/** `?tint=green` → "tint-green"; `amber` (the default) → ""; anything else → null. */
+function tintFromParam(raw) {
+	const v = (raw ?? "").trim().toLowerCase().replace(/^tint-/, "");
+	if (!v) return null;
+	if (v === "amber" || v === "default") return "";
+	const t = `tint-${v}`;
+	return TINTS.includes(t) ? t : null;
+}
+function themeFromParam(raw) {
+	const v = (raw ?? "").trim().toLowerCase().replace(/^theme-/, "");
+	return v === "light" ? "theme-light" : v === "dark" ? "theme-dark" : null;
+}
+var PARAM_TINT = tintFromParam(params().get("tint"));
+var PARAM_THEME = themeFromParam(params().get("theme"));
+/** A poll interval, shortened in capture mode so a quest tick or a reveal shows up on cue. */
+function poll(ms) {
+	return CAPTURE ? Math.min(ms, 3e3) : ms;
+}
+// src/look.ts
+/**
+* The look's moving parts, shared by the section heading and the header's brand:
+* whether they may move, and the scramble they decode from (the demo's title card,
+* `E#P0R!A` → `EMPORIA`).
+*
+* There is one style (dashboard.css § 30). Light/dark and the eight tints stay the
+* viewer's choice (`t`, `T`, `?tint=`, `?theme=`); nothing else about the look is.
+*/
+/** Whether arrivals may move: not when filming, not when the viewer asked for less motion. */
+function motionAllowed() {
+	if (CAPTURE) return false;
+	try {
+		return !(typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
+	} catch {
+		return true;
+	}
+}
+var GLYPHS = "#!%&*+=?<>/\\0123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+/** `text` with its first `resolved` letters in place and the rest scrambled; spaces stay spaces. */
+function scrambleFrame(text, resolved, rnd = Math.random) {
+	let out = "";
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		out += i < resolved || ch === " " ? ch : GLYPHS[Math.floor(rnd() * 46)];
+	}
+	return out;
+}
+// src/ui/LookChrome.tsx
+/**
+* The look's moving parts (look.ts, dashboard.css § 30): the header's brand and
+* the section heading decode from scrambled glyphs, the line under the heading
+* types out with a block cursor, and two status lines frame the view.
+*
+* Motion is short and only on arrival: the brand decodes from the demo's title
+* card (`E#P0R!A` → `EMPORIA`) once when the dashboard opens and, more briefly,
+* when a section opens; the heading resolves in about 0.4 s and its line types
+* in about 0.6 s. With `prefers-reduced-motion`, or in capture mode, all of them
+* are shown finished.
+*/
+var SCRAMBLE_MS = 420;
+var TYPE_MS_PER_CHAR = 9;
+var TYPE_MAX_MS = 650;
+/** power2.out: fast, then settling — the animatic's easing. */
+var ease = (t) => 1 - (1 - t) * (1 - t);
+/**
+* Milliseconds since `key` arrived, counting up to `ms` and then holding there.
+* `ms` straight away when not moving. A new key reads 0 on its first render, so
+* an entrance never shows its end state first.
+*/
+function useArrival(key, ms, moving, stepMs = 0) {
+	const [tick, setTick] = useState({
+		key: "",
+		at: 0
+	});
+	useEffect(() => {
+		if (!moving) return;
+		const h = {
+			raf: 0,
+			last: 0
+		};
+		const t0 = performance.now();
+		const loop = (now) => {
+			const at = now - t0;
+			if (at >= ms) {
+				setTick({
+					key,
+					at: ms
+				});
+				return;
+			}
+			if (now - h.last >= stepMs) {
+				h.last = now;
+				setTick({
+					key,
+					at
+				});
+			}
+			h.raf = requestAnimationFrame(loop);
+		};
+		h.raf = requestAnimationFrame(loop);
+		return () => cancelAnimationFrame(h.raf);
+	}, [
+		key,
+		ms,
+		moving,
+		stepMs
+	]);
+	if (!moving) return ms;
+	return tick.key === key ? tick.at : 0;
+}
+/** A heading that decodes from scrambled glyphs into its word, once per text. */
+function ScrambleText({ text }) {
+	const moving = motionAllowed();
+	const at = useArrival(text, SCRAMBLE_MS, moving, 45);
+	if (!moving || at >= SCRAMBLE_MS) return /* @__PURE__ */ jsx(Fragment, { children: text });
+	return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("span", {
+		"aria-hidden": true,
+		children: scrambleFrame(text, Math.floor(ease(at / SCRAMBLE_MS) * text.length))
+	}), /* @__PURE__ */ jsx("span", {
+		className: "e-sr",
+		children: text
+	})] });
+}
+/** The brand as the demo's title card first shows it, before it resolves. */
+var BRAND = "EMPORIA";
+var BRAND_SCRAMBLED = "E#P0R!A";
+/**
+* The header's EMPORIA, in the pixel face. It opens on `E#P0R!A` and decodes left
+* to right (the video's title card), once on load; each `replay` change (a section
+* opening) runs a short, gentler decode. Still, finished, under reduced motion and
+* in capture mode. Screen readers read the word, never the glyphs.
+*/
+function BrandTitle({ replay = "" }) {
+	const moving = motionAllowed();
+	const first = useRef(true);
+	const [run, setRun] = useState({
+		key: `open:${replay}`,
+		ms: 900
+	});
+	useEffect(() => {
+		if (first.current) {
+			first.current = false;
+			return;
+		}
+		setRun({
+			key: `replay:${replay}`,
+			ms: 320
+		});
+	}, [replay]);
+	const at = useArrival(run.key, run.ms, moving, 55);
+	let shown = BRAND;
+	if (moving && at < run.ms) {
+		const opening = run.ms === 900;
+		const from = opening ? 0 : 2;
+		const resolved = from + Math.floor(ease(at / run.ms) * (7 - from));
+		shown = opening && at < 160 ? BRAND_SCRAMBLED : scrambleFrame(BRAND, resolved);
+	}
+	return /* @__PURE__ */ jsxs("span", {
+		className: "e-brand",
+		"data-decoding": shown !== "EMPORIA" ? "true" : void 0,
+		children: [/* @__PURE__ */ jsx("span", {
+			"aria-hidden": true,
+			children: shown
+		}), /* @__PURE__ */ jsx("span", {
+			className: "e-sr",
+			children: "Emporia"
+		})]
+	});
+}
+/** A line typed out with a block cursor after it; the cursor stays, blinking. */
+function TypedText({ text }) {
+	const moving = motionAllowed();
+	const per = Math.min(TYPE_MS_PER_CHAR, TYPE_MAX_MS / Math.max(1, text.length));
+	const total = per * text.length;
+	const at = useArrival(text, total, moving);
+	const n = at >= total ? text.length : Math.floor(at / per);
+	return /* @__PURE__ */ jsxs(Fragment, { children: [n < text.length ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("span", {
+		"aria-hidden": true,
+		children: text.slice(0, n)
+	}), /* @__PURE__ */ jsx("span", {
+		className: "e-sr",
+		children: text
+	})] }) : text, /* @__PURE__ */ jsx("span", {
+		className: "e-anim-cursor",
+		"aria-hidden": true
+	})] });
+}
+var WHERE = "emporia ~ dashboard";
+/** The status line above a section: where this runs, its destination's key and place, and the section. */
+function AnimaticHudTop({ item }) {
+	const shown = visibleDestinations({
+		isSpectator: VIEWER_ID === null,
+		isOperator: item.id === "relay"
+	});
+	const dest = destinationOf(item.id);
+	const n = Math.max(0, shown.findIndex((d) => d.id === dest.id)) + 1;
+	const pad = (x) => String(x).padStart(2, "0");
+	const where = dest.views.length > 1 ? `${dest.id} › ${item.id}` : dest.id;
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-anim-hud e-anim-hud--top",
+		"aria-hidden": true,
+		children: [
+			/* @__PURE__ */ jsx("span", {
+				className: "e-anim-hud__where",
+				children: WHERE
+			}),
+			/* @__PURE__ */ jsx("span", {
+				className: "e-anim-hud__key",
+				children: item.hotkey ?? dest.hotkey
+			}),
+			/* @__PURE__ */ jsxs("span", {
+				className: "e-anim-hud__at",
+				children: [
+					pad(n),
+					" / ",
+					pad(shown.length),
+					" · ",
+					where
+				]
+			}),
+			/* @__PURE__ */ jsx("span", { className: "e-anim-flash" }, item.id)
+		]
+	});
+}
+var OPENED = Date.now();
+function clock(ms) {
+	const s = Math.max(0, Math.floor(ms / 1e3));
+	const h = Math.floor(s / 3600);
+	const mm = String(Math.floor(s % 3600 / 60)).padStart(2, "0");
+	const ss = String(s % 60).padStart(2, "0");
+	return h ? `T+${h}:${mm}:${ss}` : `T+${mm}:${ss}`;
+}
+/** The status line under the view: time since this dashboard opened, who it views as, and that it only watches. */
+function AnimaticHudFoot({ section }) {
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		const t = setInterval(() => setNow(Date.now()), 1e3);
+		return () => clearInterval(t);
+	}, []);
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-anim-hud e-anim-hud--foot",
+		"aria-hidden": true,
+		children: [/* @__PURE__ */ jsxs("span", { children: [
+			clock(now - OPENED),
+			" · ",
+			VIEWER_ID ? `as ${VIEWER_ID}` : "spectator"
+		] }), /* @__PURE__ */ jsxs("span", { children: [section, " · watch only · 1–6 · [ ] · t T"] })]
+	});
+}
+// src/AppNav.tsx
+function useDestinations() {
+	const { isSpectator, isRelayOperator } = useRelayCtx();
+	return visibleDestinations({
+		isSpectator,
+		isOperator: isRelayOperator
+	});
+}
+function Count({ n }) {
+	return n > 0 ? /* @__PURE__ */ jsx("span", {
+		className: "e-nav-badge",
+		children: n > 99 ? "99+" : n
+	}) : null;
+}
+/** A destination's badge: the sum of its sections' (Talk carries Messages' unread). */
+function destBadge(views, badges) {
+	return views.reduce((sum, v) => sum + (badges[v] ?? 0), 0);
+}
+/**
+* The six destinations (navigation v2, docs/ui-nav-v2.md): a row of tabs in the
+* desktop header, or the menu's list on a phone. A destination opens its last
+* section, else its first.
+*/
+function SectionTabs({ view, onGoDest, variant = "horizontal", badges = {} }) {
+	const dests = useDestinations();
+	const here = destinationOf(view).id;
+	return /* @__PURE__ */ jsx("nav", {
+		className: `e-section-tabs e-section-tabs--${variant}`,
+		"aria-label": "Sections",
+		children: dests.map((d) => {
+			const active = d.id === here;
+			return /* @__PURE__ */ jsxs("button", {
+				type: "button",
+				className: `e-section-tab${active ? " is-active" : ""}`,
+				onClick: () => onGoDest(d.id),
+				title: d.blurb,
+				"aria-current": active ? "page" : void 0,
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						className: "e-section-tab__icon",
+						"aria-hidden": true,
+						children: d.icon
+					}),
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-section-tab__label",
+						children: [d.label, /* @__PURE__ */ jsx(Count, { n: destBadge(d.views, badges) })]
+					}),
+					variant === "drawer" ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("span", {
+						className: "e-section-tab__sub",
+						children: d.items.map((n) => n.label).join(" · ")
+					}), /* @__PURE__ */ jsx("kbd", {
+						className: "e-section-tab__key",
+						children: d.hotkey
+					})] }) : null
+				]
+			}, d.id);
+		})
+	});
+}
+/**
+* The sections inside the current destination — `Games · Tournaments`, `Agora ·
+* Rooms · Messages` — one strip under the header, on every width. Not drawn for a
+* destination with a single section (Home, Season).
+*/
+function SubNav({ view, onGo, badges = {} }) {
+	const dests = useDestinations();
+	const here = destinationOf(view).id;
+	const dest = dests.find((d) => d.id === here);
+	if (!dest || dest.items.length < 2) return null;
+	return /* @__PURE__ */ jsxs("nav", {
+		className: "e-subnav",
+		"aria-label": `${dest.label}: sections`,
+		children: [
+			/* @__PURE__ */ jsx("span", {
+				className: "e-subnav__dest",
+				"aria-hidden": true,
+				children: dest.label
+			}),
+			dest.items.map((n) => {
+				const active = n.id === view;
+				return /* @__PURE__ */ jsxs("button", {
+					type: "button",
+					className: `e-subnav__tab${active ? " is-active" : ""}`,
+					onClick: () => onGo(n.id),
+					title: n.blurb,
+					"aria-current": active ? "page" : void 0,
+					children: [n.label, /* @__PURE__ */ jsx(Count, { n: badges[n.id] ?? 0 })]
+				}, n.id);
+			}),
+			/* @__PURE__ */ jsx("span", {
+				className: "e-subnav__keys",
+				"aria-hidden": true,
+				children: "[ ]"
+			})
+		]
+	});
+}
+/** The phone's menu: the agent chat, the six destinations, then who you view as and the theme. */
+function MobileNavDrawer({ view, onGoDest, onClose, theme, tint, onTheme, onTint, badges, lead }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-mobile-drawer",
+		children: [
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-mobile-drawer__head",
+				children: [/* @__PURE__ */ jsx("span", {
+					className: "e-brand-title",
+					children: /* @__PURE__ */ jsx(BrandTitle, {})
+				}), onClose ? /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "e-icon-button",
+					onClick: onClose,
+					"aria-label": "Close menu",
+					children: "✕"
+				}) : null]
+			}),
+			lead,
+			/* @__PURE__ */ jsx(SectionTabs, {
+				view,
+				onGoDest,
+				variant: "drawer",
+				badges
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-mobile-drawer__foot",
+				children: [/* @__PURE__ */ jsx(ViewerSwitcher, {}), /* @__PURE__ */ jsx(ThemePanelBody, {
+					theme,
+					tint,
+					onTheme,
+					onTint
+				})]
+			})
+		]
+	});
+}
+var Indent_module_default = { root: "Indent_root_9k7l5" };
+// src/ui/kit/Indent.tsx
+var Indent = ({ children, ...rest }) => {
+	return /* @__PURE__ */ jsx("div", {
+		className: Indent_module_default.root,
+		...rest,
+		children
+	});
+};
+// src/AgentMoireAvatar.tsx
+var MOIRE_HUES = [
+	210,
+	0,
+	145,
+	280,
+	35,
+	175,
+	320,
+	60,
+	255,
+	100
+];
+function hashSeed(s) {
+	let h = 2166136261;
+	for (let i = 0; i < s.length; i++) {
+		h ^= s.charCodeAt(i);
+		h = Math.imul(h, 16777619);
+	}
+	return h >>> 0;
+}
+/** Deterministic moiré tile per agent_id */
+function AgentMoireAvatar({ agentId, size = 28 }) {
+	const seed = hashSeed(agentId || "?");
+	const hue = MOIRE_HUES[seed % MOIRE_HUES.length];
+	const rotA = seed % 7 * 13 - 40;
+	const rotB = rotA + 55 + seed % 20;
+	const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 12) || "x";
+	const idA = `moire-a-${safe}-${size}`;
+	const idB = `moire-b-${safe}-${size}`;
+	return /* @__PURE__ */ jsxs("svg", {
+		width: size,
+		height: size,
+		className: "e-moire-avatar",
+		viewBox: "0 0 32 32",
+		"aria-hidden": true,
+		children: [
+			/* @__PURE__ */ jsxs("defs", { children: [/* @__PURE__ */ jsx("pattern", {
+				id: idA,
+				width: "4",
+				height: "4",
+				patternUnits: "userSpaceOnUse",
+				patternTransform: `rotate(${rotA}, 16, 16)`,
+				children: /* @__PURE__ */ jsx("line", {
+					x1: "0",
+					y1: "0",
+					x2: "0",
+					y2: "4",
+					stroke: `hsl(${hue}, 70%, 60%)`,
+					strokeWidth: "1"
+				})
+			}), /* @__PURE__ */ jsx("pattern", {
+				id: idB,
+				width: "4",
+				height: "4",
+				patternUnits: "userSpaceOnUse",
+				patternTransform: `rotate(${rotB}, 16, 16)`,
+				children: /* @__PURE__ */ jsx("line", {
+					x1: "0",
+					y1: "0",
+					x2: "4",
+					y2: "0",
+					stroke: `hsl(${(hue + 72) % 360}, 60%, 68%)`,
+					strokeWidth: "0.8"
+				})
+			})] }),
+			/* @__PURE__ */ jsx("rect", {
+				width: "32",
+				height: "32",
+				fill: `hsl(${hue}, 28%, 18%)`
+			}),
+			/* @__PURE__ */ jsx("rect", {
+				width: "32",
+				height: "32",
+				fill: `url(#${idA})`,
+				opacity: "0.85"
+			}),
+			/* @__PURE__ */ jsx("rect", {
+				width: "32",
+				height: "32",
+				fill: `url(#${idB})`,
+				opacity: "0.65"
+			})
+		]
+	});
+}
+var Badge_module_default = { root: "Badge_root_1obhs" };
+// src/ui/kit/Badge.tsx
+var Badge$1 = ({ children, ...rest }) => {
+	return /* @__PURE__ */ jsx("span", {
+		className: Badge_module_default.root,
+		...rest,
+		children
+	});
+};
+// src/ui/layout.tsx
+/**
+* The section's own heading: its name, and one line on what it shows. Every
+* section opens with it, so a first-time viewer always knows where they are —
+* on a phone the tabs are folded into the menu and this is the only label.
+*/
+function PageHeading({ item }) {
+	if (!item) return null;
+	return /* @__PURE__ */ jsxs("header", {
+		className: "e-page-head",
+		children: [
+			/* @__PURE__ */ jsx(AnimaticHudTop, { item }),
+			/* @__PURE__ */ jsx("h1", {
+				className: "e-page-head__title",
+				children: /* @__PURE__ */ jsx(ScrambleText, { text: item.label })
+			}),
+			/* @__PURE__ */ jsx("p", {
+				className: "e-page-head__blurb",
+				children: /* @__PURE__ */ jsx(TypedText, { text: item.blurb })
+			})
+		]
+	});
+}
+/**
+* One section failing to render must not blank the whole dashboard (header and
+* nav included) until a reload. The boundary names the section and keeps the
+* nav working; App keys it by section, so moving to another section resets it.
+*/
+var ViewBoundary = class extends Component {
+	state = { error: null };
+	static getDerivedStateFromError(error) {
+		return { error };
+	}
+	render() {
+		if (!this.state.error) return this.props.children;
+		return /* @__PURE__ */ jsx("div", {
+			className: "e-view-body",
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-empty-pane",
+				role: "alert",
+				children: [/* @__PURE__ */ jsxs("div", {
+					className: "e-empty-pane__title",
+					children: [this.props.name, " could not be shown."]
+				}), /* @__PURE__ */ jsxs("div", {
+					className: "e-empty-pane__hint",
+					children: [
+						"Something in what the relay sent did not fit this view (",
+						this.state.error.message || "unknown error",
+						"). The other sections still work — pick one from the menu, or reload to try again."
+					]
+				})]
+			})
+		});
+	}
+};
+/** Page content shell — the section's name and blurb come from PageHeading above it. */
+function ViewBody({ children, toolbar, flush }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: `e-view-body${flush ? " e-view-body--flush" : ""}`,
+		children: [toolbar ? /* @__PURE__ */ jsx("div", {
+			className: "e-view-toolbar",
+			children: toolbar
+		}) : null, /* @__PURE__ */ jsx("div", {
+			className: "e-view-body__inner",
+			children
+		})]
+	});
+}
+function StatHero({ items }) {
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-hero-stats",
+		role: "list",
+		children: items.map((it) => /* @__PURE__ */ jsxs("div", {
+			className: `e-hero-stat${it.accent ? " e-hero-stat--accent" : ""}`,
+			role: "listitem",
+			children: [
+				/* @__PURE__ */ jsx("span", {
+					className: "e-hero-stat__value",
+					children: it.value
+				}),
+				/* @__PURE__ */ jsx("span", {
+					className: "e-hero-stat__label",
+					children: it.label
+				}),
+				it.hint ? /* @__PURE__ */ jsx("span", {
+					className: "e-hero-stat__hint",
+					children: it.hint
+				}) : null
+			]
+		}, it.label))
+	});
+}
+function PanelCard({ title, children, action }) {
+	return /* @__PURE__ */ jsxs("section", {
+		className: "e-panel-card",
+		children: [/* @__PURE__ */ jsxs("header", {
+			className: "e-panel-card__head",
+			children: [/* @__PURE__ */ jsx(Text, {
+				className: "e-panel-card__title",
+				children: title
+			}), action]
+		}), /* @__PURE__ */ jsx("div", {
+			className: "e-panel-card__body",
+			children
+		})]
+	});
+}
+function FeedEventType({ type }) {
+	const label = type.replace(/_/g, " ");
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-feed-type",
+		children: label
+	});
+}
+// src/ui/cards.tsx
+/** Minimal retro panel — thin border, small label, no SRCL Card chrome. */
+function SlimCard({ title, children, action, foot }) {
+	return /* @__PURE__ */ jsxs("section", {
+		className: "e-slim-card",
+		children: [
+			(title || action) && /* @__PURE__ */ jsxs("header", {
+				className: "e-slim-card__head",
+				children: [title ? /* @__PURE__ */ jsx("span", {
+					className: "e-slim-card__title",
+					children: title
+				}) : /* @__PURE__ */ jsx("span", {}), action]
+			}),
+			/* @__PURE__ */ jsx("div", {
+				className: "e-slim-card__body",
+				children
+			}),
+			foot ? /* @__PURE__ */ jsx("footer", {
+				className: "e-slim-card__foot",
+				children: foot
+			}) : null
+		]
+	});
+}
+function MetaGrid({ rows }) {
+	return /* @__PURE__ */ jsx("dl", {
+		className: "e-meta-grid",
+		children: rows.map(([k, v]) => /* @__PURE__ */ jsxs("div", {
+			className: "e-meta-grid__row",
+			children: [/* @__PURE__ */ jsx("dt", { children: k }), /* @__PURE__ */ jsx("dd", { children: v })]
+		}, k))
+	});
+}
+/** Empty detail pane — add context instead of a single faint line. */
+function EmptyPane({ title = "Nothing selected", hint, facts }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-empty-pane",
+		children: [
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-empty-pane__title",
+				children: title
+			}),
+			hint ? /* @__PURE__ */ jsx(Text, {
+				className: "e-empty-pane__hint",
+				children: hint
+			}) : null,
+			facts && facts.length > 0 ? /* @__PURE__ */ jsx("dl", {
+				className: "e-meta-grid e-meta-grid--inline",
+				children: facts.map(([k, v]) => /* @__PURE__ */ jsxs("div", {
+					className: "e-meta-grid__row",
+					children: [/* @__PURE__ */ jsx("dt", { children: k }), /* @__PURE__ */ jsx("dd", { children: v })]
+				}, k))
+			}) : null
+		]
+	});
+}
+function RailChips({ rails }) {
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-rail-chips",
+		children: rails.map((r) => /* @__PURE__ */ jsx("span", {
+			className: "e-rail-chip",
+			children: r.replace(/_/g, " ")
+		}, r))
+	});
+}
+// src/healthCtx.ts
+/**
+* The relay's `/health` snapshot, polled once for the whole app.
+*
+* P43-2: four components polled `/health` on their own timers — `App` (5s),
+* `OverviewView` (5s), `PaymentsFeesSection` (10s) and `ProfileView` (30s) —
+* and `OverviewView` rendered `<PaymentsFeesSection seed={health} />`, so one
+* of them was handed the value it then re-fetched. Measured at 20 requests per
+* minute from the Overview subtree alone, before counting App's.
+*
+* `App` owns the single poll and provides it here; everything else reads it.
+* Deliberately its own context rather than a field on `RelayCtx`: that
+* provider re-renders every 30s, and moving a 5s value into it would re-render
+* the whole tree six times as often — trading a network cost for a render one.
+*
+* No provider component lives here, so this file exports no component and
+* stays clear of the Fast-Refresh rule that forced P42's `relayCtx` split:
+* `App` renders `<RelayHealthCtx.Provider>` directly.
+*/
+var RelayHealthCtx = createContext(null);
+/** The current `/health` snapshot, or null before the first response. */
+function useRelayHealth() {
+	return useContext(RelayHealthCtx);
+}
+// src/paymentFormat.ts
+var FAILED_TRANSFERS = /* @__PURE__ */ new Set(["capture_failed", "transfer_failed"]);
+var DIRECT_TRANSFERS = /* @__PURE__ */ new Set([
+	"direct",
+	"escrow_captured",
+	"destination",
+	"transferred"
+]);
+function settlementHealth(s) {
+	if (s.status === "refunded") return "refunded";
+	const t = s.transfer_status ?? "";
+	if (FAILED_TRANSFERS.has(t) || t.startsWith("capture_failed")) return "failed";
+	if (DIRECT_TRANSFERS.has(t) || t === "no_payment") return "settled";
+	return t ? "pending" : "settled";
+}
+function settlementHealthTitle(s) {
+	switch (settlementHealth(s)) {
+		case "failed": return "The payment could not be captured, so nothing was paid out.";
+		case "pending": return `Owed to the payee, not yet paid out (${s.transfer_status}).`;
+		case "refunded": return "Returned to the payer.";
+		default: return "Paid to the payee.";
+	}
+}
+/** The settlement rail as a reader thinks of it. */
+function railLabel(rail, transferStatus) {
+	if (!rail) return "—";
+	if (rail === "x402") return transferStatus === "escrow_captured" ? "x402 escrow" : "x402";
+	if (rail === "stripe") return transferStatus === "destination" ? "card (direct)" : "card";
+	return rail;
+}
+var EXPLORERS = {
+	"eip155:8453": "https://basescan.org",
+	"eip155:84532": "https://sepolia.basescan.org"
+};
+/** A block-explorer link for a transaction, or null on a network without one. */
+function explorerTxUrl(network, tx) {
+	const base = EXPLORERS[network];
+	return base && tx ? `${base}/tx/${tx}` : null;
+}
+/** P160: the same names as src/emporia/networks.py. */
+var NETWORK_NAMES = {
+	"eip155:8453": "Base",
+	"eip155:84532": "Base Sepolia",
+	"solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "Solana",
+	"solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "Solana devnet",
+	"eip155:4217": "Tempo",
+	"eip155:42431": "Tempo Moderato"
+};
+function networkLabel(network) {
+	return NETWORK_NAMES[network] ?? network;
+}
+/** Micro-dollars (= USDC atomic units, 6 decimals) as dollars. Whole cents as
+*  cents; a sub-cent amount (a fee split) keeps its digits rather than
+*  rounding — $0.975 is what the seller received, not $0.98. */
+function formatMicros(n) {
+	if (!Number.isFinite(n)) return "—";
+	return n % 1e4 === 0 ? `$${(n / 1e6).toFixed(2)}` : `$${(n / 1e6).toFixed(6).replace(/0+$/, "")}`;
+}
+/** USDC atomic units (6 decimals) as dollars. */
+function usdcAtomicToUsd(amount) {
+	const n = Number(amount);
+	return Number.isFinite(n) ? formatMicros(n) : amount;
+}
+function micros(atomic, cents) {
+	const n = atomic == null ? NaN : Number(atomic);
+	return Number.isFinite(n) ? n : cents * 1e4;
+}
+/** P129: a settlement's fee in micro-dollars — the contract's exact split for
+*  an escrow capture, the cents column everywhere else. Sum these, then
+*  formatMicros(), so totals agree with what the chain paid. */
+function settlementFeeMicros(s) {
+	return micros(s.platform_fee_atomic, s.platform_fee_cents);
+}
+function settlementPayoutMicros(s) {
+	return micros(s.winner_payout_atomic, s.winner_payout_cents);
+}
+/** P111: a hold the seller may not be paid from — shown as a warning. */
+function holdNeedsAttention(state) {
+	return state === "capture_pending" || state === "expired";
+}
+function holdStateTitle(state) {
+	switch (state) {
+		case "authorized": return "Held in the escrow contract — captured to the seller on confirm, voided back on dispute.";
+		case "captured": return "Captured: the seller was paid, less the fee.";
+		case "voided": return "Voided: returned to the buyer.";
+		case "reclaimed": return "Reclaimed by the buyer after the hold expired.";
+		case "capture_pending": return "Capturing to the seller failed once; the relay retries until the hold expires.";
+		case "void_pending": return "Returning it to the buyer failed once; the relay retries.";
+		case "expired": return "The hold expired before it could be captured; the buyer can reclaim it.";
+		default: return state;
+	}
+}
+/** A bounty state, for the board: a short label and what it means. */
+function bountyStateLabel(state, full) {
+	switch (state) {
+		case "open": return full ? {
+			label: "ready",
+			title: "Seats are full; waiting to be started."
+		} : {
+			label: "open",
+			title: "Open for entry."
+		};
+		case "running": return {
+			label: "running",
+			title: "Being played now."
+		};
+		case "awaiting_payment": return {
+			label: "awaiting payment",
+			title: "A winner is named; the funder owes the promised prize."
+		};
+		case "defaulted": return {
+			label: "defaulted",
+			title: "The funder did not pay the promised prize in time.",
+			failed: true
+		};
+		case "unfunded": return {
+			label: "unfunded",
+			title: "The held prize could not be captured, so the winner was not paid.",
+			failed: true
+		};
+		case "settled": return {
+			label: "paid",
+			title: "The prize was paid to the winner."
+		};
+		case "refunded": return {
+			label: "refunded",
+			title: "No winner; the prize went back to the funder."
+		};
+		case "cancelling": return {
+			label: "cancelling",
+			title: "Being withdrawn; the hold is being released."
+		};
+		case "cancelled": return {
+			label: "cancelled",
+			title: "Withdrawn by the funder before anyone entered."
+		};
+		default: return {
+			label: state,
+			title: `This bounty is ${state}.`
+		};
+	}
+}
+/** A session status, for the session lists. */
+function sessionStatusLabel(status) {
+	if (status === "awaiting_funding") return "awaiting funding";
+	if (status === "funding") return "funding…";
+	return status;
+}
+/** P154: two-player games — an x402 wager needs the payee known when signed. */
+var TWO_PLAYER_GAMES = /* @__PURE__ */ new Set(["emporia:blotto:v2", "emporia:chess:v1"]);
+function acceptsLabel(move, h, moduleType) {
+	const card = !!h?.stripe_enabled;
+	const usdc = !!h?.x402_enabled;
+	const on = (nets) => {
+		const names = nets.filter((n) => !!n).map(networkWithKind);
+		return names.length ? ` (${names.join(", ")})` : "";
+	};
+	const ways = [];
+	switch (move) {
+		case "entry":
+			if (card) ways.push("card");
+			if (usdc) ways.push(`USDC${on(h?.x402_networks ?? [])}`);
+			if (h?.tempo_network) ways.push(`Tempo${on([h.tempo_network])}`);
+			break;
+		case "purchase":
+			if (card) ways.push("card");
+			if (h?.x402_escrow_network) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
+			break;
+		case "wager":
+			if (card && h?.card_game_stakes) ways.push("card");
+			if (h?.x402_escrow_network && moduleType && TWO_PLAYER_GAMES.has(moduleType)) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
+			break;
+		case "bounty_held":
+			if (card && h?.card_game_stakes && h?.custodial_cards) ways.push("card");
+			break;
+		case "bounty_promised": if (usdc) ways.push("USDC, paid after the result");
+	}
+	return ways.length ? `accepts ${ways.join(" · ")}` : "no payment rail on this relay";
+}
+/** The test networks (src/emporia/networks.py marks the same ones). */
+var TESTNETS = /* @__PURE__ */ new Set([
+	"eip155:84532",
+	"solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+	"eip155:42431"
+]);
+/**
+* Whether stakes on this escrow network are test money. A relay that does not
+* name its escrow network is holding test funds: agents pay on testnets unless
+* a person unlocks a real-money network for that agent in their own terminal.
+*/
+function isTestnet(network) {
+	return !network || TESTNETS.has(network);
+}
+/** "Base Sepolia testnet", "Solana devnet": a network's name that says when it is a test one. */
+function networkWithKind(network) {
+	const name = networkLabel(network);
+	return TESTNETS.has(network) && !/devnet|testnet/i.test(name) ? `${name} testnet` : name;
+}
+/**
+* The money line under a game or a deal, in two parts: what is staked or paid
+* ("1.00 USDC (testnet)") and how it is held ("escrow", "card"), or null when
+* nobody has paid yet. USDC on a session is always held in escrow.
+*/
+function stakeText(amount, currency, opts) {
+	const rails = opts.rails ?? [];
+	const unit = rails.includes("x402") || opts.mode === "x402" ? `USDC${isTestnet(opts.escrowNetwork) ? " (testnet)" : ""}` : (currency ?? "").toUpperCase();
+	const via = rails.length ? rails.map((r) => r === "x402" ? "escrow" : r === "stripe" ? "card" : r === "tempo" ? "Tempo" : r).join(" + ") : null;
+	return {
+		amount: `${amount.toFixed(2)} ${unit}`.trim(),
+		via
+	};
+}
+var Divider_module_default = {
+	gradient: "Divider_gradient_hx4se",
+	divider: "Divider_divider_hx4se",
+	line: "Divider_line_hx4se"
+};
+// src/ui/kit/Divider.tsx
+var Divider = ({ style, type }) => {
+	if (type === "GRADIENT") return /* @__PURE__ */ jsx("div", {
+		className: Divider_module_default.gradient,
+		style
+	});
+	if (type === "DOUBLE") return /* @__PURE__ */ jsxs("div", {
+		className: Divider_module_default.divider,
+		style,
+		children: [/* @__PURE__ */ jsx("div", {
+			className: Divider_module_default.line,
+			style: { marginBottom: `2px` }
+		}), /* @__PURE__ */ jsx("div", { className: Divider_module_default.line })]
+	});
+	return /* @__PURE__ */ jsx("div", {
+		className: Divider_module_default.divider,
+		style,
+		children: /* @__PURE__ */ jsx("div", { className: Divider_module_default.line })
+	});
+};
+// src/ui/kit/utilities.ts
+function classNames(...args) {
+	const out = [];
+	for (const arg of args) {
+		if (!arg) continue;
+		if (typeof arg === "string" || typeof arg === "number") out.push(String(arg));
+		else if (Array.isArray(arg)) {
+			const inner = classNames(...arg);
+			if (inner) out.push(inner);
+		} else if (typeof arg === "object") {
+			for (const [key, on] of Object.entries(arg)) if (on) out.push(key);
+		}
+	}
+	return out.join(" ");
+}
+function isEmpty(text) {
+	if (text === 0) return false;
+	if (!text || typeof text === "object") return true;
+	return !String(text).trim();
+}
+var FOCUSABLE = [
+	"a[href]",
+	"button",
+	"input",
+	"select",
+	"textarea",
+	"[tabindex]:not([tabindex=\"-1\"])",
+	"[contenteditable=\"true\"]"
+].join(", ");
+function findNextFocusable(element, direction = "next") {
+	if (!element) return null;
+	const scope = element.closest(".e-host-body") ?? document;
+	const all = Array.from(scope.querySelectorAll(FOCUSABLE));
+	const i = all.indexOf(element);
+	if (i === -1) return null;
+	return all[direction === "next" ? (i + 1) % all.length : (i - 1 + all.length) % all.length];
+}
+var Input_module_default = {
+	root: "Input_root_zrgvd",
+	label: "Input_label_zrgvd",
+	placeholder: "Input_placeholder_zrgvd",
+	displayed: "Input_displayed_zrgvd",
+	focused: "Input_focused_zrgvd",
+	block: "Input_block_zrgvd",
+	blink: "Input_blink_zrgvd",
+	inputContainer: "Input_inputContainer_zrgvd",
+	hidden: "Input_hidden_zrgvd"
+};
+// src/ui/kit/Input.tsx
+function Input({ caretChars, isBlink = true, label, placeholder, onChange, type, id, ...rest }) {
+	const generatedId = React$1.useId();
+	const inputId = id || generatedId;
+	const inputRef = React$1.useRef(null);
+	const [text, setText] = React$1.useState(rest.defaultValue?.toString() || rest.value?.toString() || "");
+	const [isFocused, setIsFocused] = React$1.useState(false);
+	const [selectionStart, setSelectionStart] = React$1.useState(text.length);
+	const lastFocusDirectionRef = React$1.useRef(null);
+	const [prevValue, setPrevValue] = React$1.useState(rest.value);
+	if (prevValue !== rest.value) {
+		setPrevValue(rest.value);
+		if (rest.value !== void 0) {
+			const val = rest.value.toString();
+			setText(val);
+			setSelectionStart(val.length);
+		}
+	}
+	const onHandleChange = (e) => {
+		const value = e.target.value;
+		setText(value);
+		if (onChange) onChange(e);
+		setSelectionStart(e.target.selectionStart ?? value.length);
+	};
+	const onHandleFocus = () => {
+		setIsFocused(true);
+		if (!inputRef.current) return;
+		if (lastFocusDirectionRef.current === "down") {
+			setSelectionStart(text.length);
+			inputRef.current.setSelectionRange(text.length, text.length);
+		} else if (lastFocusDirectionRef.current === "up") {
+			setSelectionStart(0);
+			inputRef.current.setSelectionRange(0, 0);
+		}
+	};
+	const onHandleBlur = () => {
+		setIsFocused(false);
+	};
+	const onHandleSelect = (e) => {
+		const inputEl = e.currentTarget;
+		setSelectionStart(inputEl.selectionStart ?? text.length);
+	};
+	const onHandleClick = (e) => {
+		const inputEl = e.currentTarget;
+		inputEl.focus();
+		setSelectionStart(inputEl.selectionStart ?? text.length);
+	};
+	const onHandleKeyDown = (e) => {
+		if (e.key === "ArrowUp") {
+			e.preventDefault();
+			lastFocusDirectionRef.current = "up";
+			findNextFocusable(document.activeElement, "previous")?.focus();
+		} else if (e.key === "ArrowDown") {
+			e.preventDefault();
+			lastFocusDirectionRef.current = "down";
+			findNextFocusable(document.activeElement, "next")?.focus();
+		}
+	};
+	const isPlaceholderVisible = !text && placeholder;
+	const containerClasses = classNames(Input_module_default.root, isFocused && Input_module_default.focused);
+	const maskText = (t) => type === "password" ? "•".repeat(t.length) : t;
+	const beforeCaretText = isPlaceholderVisible ? placeholder ?? "" : maskText(text.substring(0, selectionStart));
+	const afterCaretText = isPlaceholderVisible ? "" : maskText(text.substring(selectionStart));
+	return /* @__PURE__ */ jsxs("div", {
+		className: containerClasses,
+		children: [label && /* @__PURE__ */ jsx("label", {
+			htmlFor: inputId,
+			className: Input_module_default.label,
+			children: label
+		}), /* @__PURE__ */ jsxs("div", {
+			className: Input_module_default.inputContainer,
+			children: [/* @__PURE__ */ jsxs("div", {
+				className: classNames(Input_module_default.displayed, isPlaceholderVisible && Input_module_default.placeholder),
+				children: [
+					beforeCaretText,
+					!isPlaceholderVisible && /* @__PURE__ */ jsx("span", {
+						className: classNames(Input_module_default.block, isBlink && Input_module_default.blink),
+						children: caretChars || ""
+					}),
+					!isPlaceholderVisible && afterCaretText
+				]
+			}), /* @__PURE__ */ jsx("input", {
+				id: inputId,
+				ref: inputRef,
+				className: Input_module_default.hidden,
+				value: text,
+				"aria-placeholder": placeholder,
+				type,
+				onFocus: onHandleFocus,
+				onBlur: onHandleBlur,
+				onChange: onHandleChange,
+				onSelect: onHandleSelect,
+				onClick: onHandleClick,
+				onKeyDown: onHandleKeyDown,
+				...rest
+			})]
+		})]
+	});
+}
+var SidebarLayout_module_default = {
+	root: "SidebarLayout_root_1g3qb",
+	sidebar: "SidebarLayout_sidebar_1g3qb",
+	handle: "SidebarLayout_handle_1g3qb",
+	line: "SidebarLayout_line_1g3qb",
+	content: "SidebarLayout_content_1g3qb",
+	back: "SidebarLayout_back_1g3qb",
+	showList: "SidebarLayout_showList_1g3qb",
+	showDetail: "SidebarLayout_showDetail_1g3qb"
+};
+// src/ui/kit/SidebarLayout.tsx
+var CHARACTER_WIDTH = 9.6;
+/**
+* Rail beside detail on a wide screen. On a narrow one (see the module CSS) it is
+* list *then* detail: tapping a rail row (`.e-rail-item`) opens its detail on a
+* screen of its own, and a back control returns to the list. A row inside an
+* element marked `data-keep-list` (a filter, say) changes the list and stays on it.
+* Only what is shown changes — nothing here acts on the relay.
+*/
+var SidebarLayout = ({ defaultSidebarWidth = 20, children, sidebar, isShowingHandle = false, isReversed = false, initialPane = "list", backLabel = "back to list", className, ...rest }) => {
+	const [sidebarWidth, setSidebarWidth] = React$1.useState(defaultSidebarWidth);
+	const [pane, setPane] = React$1.useState(initialPane);
+	const handleRef = React$1.useRef(null);
+	const rootRef = React$1.useRef(null);
+	const show = (next) => {
+		setPane(next);
+		requestAnimationFrame(() => {
+			const el = rootRef.current;
+			if (el && el.getBoundingClientRect().top < 0) el.scrollIntoView({ block: "start" });
+		});
+	};
+	const onSidebarClick = (event) => {
+		const target = event.target;
+		if (target?.closest?.(".e-rail-item") && !target.closest("[data-keep-list]")) show("detail");
+	};
+	const handleMouseDown = (event) => {
+		const startX = event.clientX;
+		const startWidth = sidebarWidth;
+		const onMouseMove = (moveEvent) => {
+			const deltaX = moveEvent.clientX - startX;
+			const increment = Math.round(deltaX / CHARACTER_WIDTH);
+			setSidebarWidth(Math.max(CHARACTER_WIDTH, startWidth + increment));
+		};
+		const onMouseUp = () => {
+			document.removeEventListener("mousemove", onMouseMove);
+			document.removeEventListener("mouseup", onMouseUp);
+		};
+		document.addEventListener("mousemove", onMouseMove);
+		document.addEventListener("mouseup", onMouseUp);
+	};
+	const rootClass = [
+		SidebarLayout_module_default.root,
+		pane === "detail" ? SidebarLayout_module_default.showDetail : SidebarLayout_module_default.showList,
+		className
+	].filter(Boolean).join(" ");
+	const sidebarEl = /* @__PURE__ */ jsx("div", {
+		className: SidebarLayout_module_default.sidebar,
+		style: { width: `${sidebarWidth}ch` },
+		onClick: onSidebarClick,
+		"data-pane": "list",
+		children: sidebar
+	});
+	const contentEl = /* @__PURE__ */ jsxs("div", {
+		className: SidebarLayout_module_default.content,
+		"data-pane": "detail",
+		children: [/* @__PURE__ */ jsxs("button", {
+			type: "button",
+			className: SidebarLayout_module_default.back,
+			onClick: () => show("list"),
+			children: [
+				/* @__PURE__ */ jsx("span", {
+					"aria-hidden": true,
+					children: "←"
+				}),
+				" ",
+				backLabel
+			]
+		}), children]
+	});
+	if (isReversed) return /* @__PURE__ */ jsxs("div", {
+		className: rootClass,
+		ref: rootRef,
+		"data-pane-shown": pane,
+		...rest,
+		children: [contentEl, sidebarEl]
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		className: rootClass,
+		ref: rootRef,
+		"data-pane-shown": pane,
+		...rest,
+		children: [
+			sidebarEl,
+			isShowingHandle ? /* @__PURE__ */ jsx("div", {
+				className: SidebarLayout_module_default.handle,
+				ref: handleRef,
+				role: "button",
+				tabIndex: 0,
+				onMouseDown: handleMouseDown,
+				children: /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("div", { className: SidebarLayout_module_default.line }), /* @__PURE__ */ jsx("div", { className: SidebarLayout_module_default.line })] })
+			}) : null,
+			contentEl
+		]
+	});
+};
+var SimpleTable_module_default = {
+	scrollWrapper: "SimpleTable_scrollWrapper_x98rn",
+	root: "SimpleTable_root_x98rn",
+	alignRight: "SimpleTable_alignRight_x98rn",
+	statusOk: "SimpleTable_statusOk_x98rn",
+	statusOff: "SimpleTable_statusOff_x98rn"
+};
+// src/ui/kit/SimpleTable.tsx
+var STATUS_OK = /* @__PURE__ */ new Set([
+	"ACTIVE",
+	"OPEN",
+	"APPROVED"
+]);
+var STATUS_OFF = /* @__PURE__ */ new Set([
+	"CLOSED",
+	"PAID",
+	"SUSPENDED"
+]);
+var SimpleTable = ({ data, align }) => {
+	if (!data || data.length === 0) return null;
+	const [header, ...rows] = data;
+	const alignAt = (col) => align && align[col] === "right" ? SimpleTable_module_default.alignRight : void 0;
+	return /* @__PURE__ */ jsx("div", {
+		className: SimpleTable_module_default.scrollWrapper,
+		children: /* @__PURE__ */ jsxs("table", {
+			className: SimpleTable_module_default.root,
+			children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: header.map((cell, i) => /* @__PURE__ */ jsx("td", {
+				className: alignAt(i),
+				children: cell
+			}, i)) }) }), /* @__PURE__ */ jsx("tbody", { children: rows.map((row, ri) => /* @__PURE__ */ jsx("tr", {
+				tabIndex: 0,
+				children: row.map((cell, ci) => {
+					let statusClass;
+					if (STATUS_OK.has(cell)) statusClass = SimpleTable_module_default.statusOk;
+					else if (STATUS_OFF.has(cell)) statusClass = SimpleTable_module_default.statusOff;
+					const className = [alignAt(ci), statusClass].filter(Boolean).join(" ") || void 0;
+					return /* @__PURE__ */ jsx("td", {
+						className,
+						children: cell
+					}, ci);
+				})
+			}, ri)) })]
+		})
+	});
+};
+// src/ui/listSelection.ts
+/** ActionListItem does not accept className — use borderLeft for .e-sel parity */
+function listItemSelectStyle(selected) {
+	return {
+		cursor: "pointer",
+		borderLeft: selected ? "2px solid var(--theme-focused-foreground)" : "2px solid transparent",
+		paddingLeft: 8
+	};
+}
+// src/ui/FlatRailItem.tsx
+/** Left-rail row — no SRCL ActionListItem gray/amber gutters. */
+function FlatRailItem({ selected, onClick, keepList, children }) {
+	return /* @__PURE__ */ jsx("button", {
+		type: "button",
+		className: `e-rail-item${selected ? " is-selected" : ""}`,
+		onClick,
+		style: listItemSelectStyle(!!selected),
+		"aria-current": selected ? "true" : void 0,
+		"data-keep-list": keepList ? "" : void 0,
+		children
+	});
+}
+// src/ui/chips.tsx
+function AgentLink({ agent_id, navigate, full, className }) {
+	const label = full ? agent_id : agent_id.length > 14 ? `…${agent_id.slice(-12)}` : agent_id;
+	if (!navigate) return /* @__PURE__ */ jsx("span", {
+		className: `e-entity-chip e-entity-chip--inert ${className ?? ""}`,
+		children: label
+	});
+	return /* @__PURE__ */ jsx("button", {
+		type: "button",
+		className: `e-entity-chip e-entity-chip--agent ${className ?? ""}`,
+		title: agent_id,
+		onClick: (e) => {
+			e.stopPropagation();
+			navigate("agents", { agentId: agent_id });
+		},
+		children: label
+	});
+}
+function SessionLink({ session_id, navigate, className }) {
+	const label = `…${session_id.slice(-10)}`;
+	if (!navigate) return /* @__PURE__ */ jsx("span", {
+		className: `e-entity-chip e-entity-chip--inert ${className ?? ""}`,
+		children: label
+	});
+	return /* @__PURE__ */ jsx("button", {
+		type: "button",
+		className: `e-entity-chip e-entity-chip--session ${className ?? ""}`,
+		title: session_id,
+		onClick: (e) => {
+			e.stopPropagation();
+			navigate("session", { sessionId: session_id });
+		},
+		children: label
+	});
+}
+// src/ui/McpCommandHint.tsx
+/**
+* Shows the exact MCP tool call an agent would run to take a write action
+* (join a session, challenge another agent, ...). The dashboard itself never
+* performs writes — this is the bridge from "look" to "do" without building
+* a parallel write UI.
+*/
+function McpCommandHint({ label, tool, args }) {
+	const [copied, setCopied] = useState(false);
+	const command = `${tool}(${Object.entries(args).map(([k, v]) => `${k}="${v}"`).join(", ")})`;
+	const copy = () => {
+		navigator.clipboard?.writeText(command).then(() => {
+			setCopied(true);
+			setTimeout(() => setCopied(false), 1500);
+		});
+	};
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-mcp-hint",
+		children: [
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-faint e-mcp-hint__label",
+				children: label
+			}),
+			/* @__PURE__ */ jsx("code", {
+				className: "e-mcp-hint__code",
+				onClick: copy,
+				title: "Click to copy",
+				children: command
+			}),
+			copied && /* @__PURE__ */ jsx(Text, {
+				className: "e-mcp-hint__copied",
+				children: "copied"
+			})
+		]
+	});
+}
+var AskAgent_module_default = {
+	root: "AskAgent_root_n8p84",
+	row: "AskAgent_row_n8p84",
+	glyph: "AskAgent_glyph_n8p84"
+};
+// src/chat/gateway.ts
+var RpcError = class extends Error {
+	code;
+	constructor(code, message) {
+		super(message);
+		this.code = code;
+	}
+};
+/** JSON-RPC "method not found": how a client says it will not answer a request. */
+var METHOD_NOT_FOUND = -32601;
+var ChatGateway = class {
+	ws = null;
+	seq = 0;
+	pending = /* @__PURE__ */ new Map();
+	eventHandlers = /* @__PURE__ */ new Set();
+	requestHandlers = /* @__PURE__ */ new Set();
+	stateHandlers = /* @__PURE__ */ new Set();
+	state = "idle";
+	factory;
+	profile;
+	constructor(factory, profile) {
+		this.factory = factory;
+		this.profile = profile;
+	}
+	onEvent(fn) {
+		this.eventHandlers.add(fn);
+		return () => this.eventHandlers.delete(fn);
+	}
+	onRequest(fn) {
+		this.requestHandlers.add(fn);
+		return () => this.requestHandlers.delete(fn);
+	}
+	onState(fn) {
+		this.stateHandlers.add(fn);
+		return () => this.stateHandlers.delete(fn);
+	}
+	setState(s) {
+		this.state = s;
+		this.stateHandlers.forEach((fn) => fn(s));
+	}
+	async connect() {
+		if (this.ws && (this.state === "open" || this.state === "connecting")) return;
+		this.setState("connecting");
+		let ws;
+		try {
+			ws = await this.factory();
+		} catch (e) {
+			this.setState("closed");
+			throw e;
+		}
+		this.ws = ws;
+		await new Promise((resolve, reject) => {
+			ws.onopen = () => resolve();
+			ws.onerror = () => reject(/* @__PURE__ */ new Error("could not reach Hermes"));
+			ws.onclose = () => reject(/* @__PURE__ */ new Error("Hermes closed the connection"));
+		});
+		ws.onmessage = (m) => this.receive(typeof m.data === "string" ? m.data : "");
+		ws.onclose = () => {
+			this.ws = null;
+			this.setState("closed");
+			this.pending.forEach((p) => {
+				clearTimeout(p.timer);
+				p.reject(/* @__PURE__ */ new Error("connection to Hermes closed"));
+			});
+			this.pending.clear();
+		};
+		ws.onerror = () => {};
+		this.setState("open");
+		await this.call("client.capabilities", { server_requests: true }).catch(() => void 0);
+	}
+	close() {
+		this.ws?.close();
+		this.ws = null;
+	}
+	/** Call a method. `profile` is always set to this tab's profile — a caller cannot widen it. */
+	call(method, params = {}, timeoutMs = 6e4) {
+		const ws = this.ws;
+		if (!ws || this.state !== "open") return Promise.reject(/* @__PURE__ */ new Error("not connected to Hermes"));
+		const id = `emp${++this.seq}`;
+		const scoped = method === "client.capabilities" ? params : {
+			...params,
+			profile: this.profile
+		};
+		return new Promise((resolve, reject) => {
+			const timer = setTimeout(() => {
+				this.pending.delete(id);
+				reject(/* @__PURE__ */ new Error(`Hermes did not answer ${method}`));
+			}, timeoutMs);
+			this.pending.set(id, {
+				resolve,
+				reject,
+				timer
+			});
+			ws.send(JSON.stringify({
+				jsonrpc: "2.0",
+				id,
+				method,
+				params: scoped
+			}));
+		});
+	}
+	/** Answer a server→client request (an approval or a clarify). A write to Hermes, never to the relay. */
+	respond(id, result) {
+		this.ws?.send(JSON.stringify({
+			jsonrpc: "2.0",
+			id,
+			result
+		}));
+	}
+	/** Decline a server→client request this UI does not answer (a password, a secret). */
+	decline(id, message) {
+		this.ws?.send(JSON.stringify({
+			jsonrpc: "2.0",
+			id,
+			error: {
+				code: METHOD_NOT_FOUND,
+				message
+			}
+		}));
+	}
+	/** Exposed for tests. */
+	receive(raw) {
+		let frame;
+		try {
+			frame = JSON.parse(raw);
+		} catch {
+			return;
+		}
+		const id = frame.id;
+		const method = frame.method;
+		if (method === "event") {
+			const params = frame.params;
+			if (params && typeof params.type === "string") this.eventHandlers.forEach((fn) => fn(params));
+			return;
+		}
+		if (typeof id === "string" && typeof method === "string") {
+			const req = {
+				id,
+				method,
+				params: frame.params ?? {}
+			};
+			if (this.requestHandlers.size === 0) this.decline(id, "no handler");
+			else this.requestHandlers.forEach((fn) => fn(req));
+			return;
+		}
+		if (typeof id === "string" && this.pending.has(id)) {
+			const p = this.pending.get(id);
+			this.pending.delete(id);
+			clearTimeout(p.timer);
+			const err = frame.error;
+			if (err) p.reject(new RpcError(err.code ?? 0, err.message ?? "error"));
+			else p.resolve(frame.result);
+		}
+	}
+};
+// src/chat/chatAccess.ts
+/**
+* Whether this dashboard can chat with an agent, and how "ask about this"
+* reaches the drawer.
+*
+* Chat exists only in the Hermes tab: there the Hermes plugin SDK opens
+* Hermes's own chat socket (`/api/ws`) with Hermes's sign-in, for the profile
+* the tab is open in. The standalone console has no Hermes chat API behind it,
+* so it shows no chat (docs/proposals/dashboard-chat.md).
+*/
+/** Hermes REST reads (a relay session's transcript), with Hermes's sign-in. */
+function chatFetch(url) {
+	const s = sdk();
+	return s ? s.authedFetch(url) : Promise.reject(/* @__PURE__ */ new Error("no Hermes here"));
+}
+function sdk() {
+	if (typeof window === "undefined") return null;
+	return window.__EMPORIA_HERMES_SDK__ ?? null;
+}
+/** The Hermes profile the tab was loaded for; chat never names another. */
+function chatProfile() {
+	if (typeof window === "undefined") return null;
+	const p = window.__EMPORIA_HERMES_PROFILE__;
+	return p?.name ? p.name : null;
+}
+/** Never on the Desktop page: Desktop's own chat is the agent's, so the page has no drawer. */
+function chatAvailable() {
+	return false;
+}
+/** A gateway for this tab's profile, over Hermes's own chat socket. */
+function makeGateway() {
+	const s = sdk();
+	const profile = chatProfile();
+	if (!s || !profile) return null;
+	return new ChatGateway(async () => new WebSocket(await s.buildWsUrl("/api/ws")), profile);
+}
+var open$1 = false;
+var openSubs = /* @__PURE__ */ new Set();
+function setChatOpen(v) {
+	open$1 = v;
+	openSubs.forEach((fn) => fn());
+}
+function chatOpen() {
+	return open$1;
+}
+function subscribeChatOpen(fn) {
+	openSubs.add(fn);
+	return () => openSubs.delete(fn);
+}
+var listeners = /* @__PURE__ */ new Set();
+/** Open the chat with `text` in the composer. The person reads it and sends it — or not. */
+function askAgent(text) {
+	listeners.forEach((fn) => fn(text));
+}
+function onAsk(fn) {
+	listeners.add(fn);
+	return () => listeners.delete(fn);
+}
+// src/chat/AskAgent.tsx
+/**
+* "Ask the agent about this": opens the chat with a question about what is on
+* screen already typed in. It fills text only; the person decides to send it.
+* Draws nothing where there is no chat (outside the Hermes tab).
+*/
+function AskAgent({ prompt, label = "ask agent", block = false }) {
+	if (!chatAvailable()) return null;
+	const button = /* @__PURE__ */ jsxs("button", {
+		type: "button",
+		className: AskAgent_module_default.root,
+		onClick: () => askAgent(prompt),
+		title: "Opens the chat with this question typed in. Nothing is sent until you send it.",
+		children: [
+			/* @__PURE__ */ jsx("span", {
+				"aria-hidden": true,
+				className: AskAgent_module_default.glyph,
+				children: "›_"
+			}),
+			" ",
+			label
+		]
+	});
+	return block ? /* @__PURE__ */ jsx("div", {
+		className: AskAgent_module_default.row,
+		children: button
+	}) : button;
+}
+// src/chat/askPrompts.ts
+/**
+* The questions "ask agent" types into the composer.
+*
+* They carry ids only — never a title, description or message another agent
+* wrote. Whatever the person sends goes to their agent as *their* words; relay
+* text pasted in here would be another agent's words with the person's
+* authority. The agent looks the item up with its own tools, where the relay's
+* text arrives as tool output, which it treats as data.
+*/
+var ID$1 = /[^A-Za-z0-9_.:@-]/g;
+var clean$1 = (s) => (s ?? "").replace(ID$1, "").slice(0, 80);
+function gamePrompt(s) {
+	const kind = clean$1(s.module_type).replace("emporia:", "").replace(/:v\d$/, "");
+	if (kind === "service") return `About deal ${clean$1(s.session_id)} (${clean$1(s.status)}): `;
+	return `About ${kind} session ${clean$1(s.session_id)} (${clean$1(s.status)}): `;
+}
+function roomPrompt(r) {
+	return `About room ${clean$1(r.room_id)}: `;
+}
+function listingPrompt(p) {
+	return `About ${p.listingId ? `listing ${clean$1(p.listingId)}` : `the ${clean$1(p.moduleType) || "listing"} offer`} from agent ${clean$1(p.agentId)}: `;
+}
+// src/ui/ListingPeekBanner.tsx
+function ListingPeekBanner({ peek }) {
+	const mod = peek.moduleType?.replace("emporia:", "").replace(/:v\d$/, "") ?? "listing";
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-listing-peek",
+		children: [
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-listing-peek__title",
+				children: peek.title
+			}),
+			peek.description ? /* @__PURE__ */ jsx(Text, {
+				className: "e-dim e-listing-peek__desc",
+				children: peek.description.slice(0, 240)
+			}) : null,
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint e-listing-peek__meta",
+				children: [
+					mod,
+					" · agent …",
+					peek.agentId.slice(-10)
+				]
+			}),
+			/* @__PURE__ */ jsx(AskAgent, {
+				prompt: listingPrompt(peek),
+				label: "ask agent about this offer"
+			}),
+			peek.moduleType && /* @__PURE__ */ jsx(McpCommandHint, {
+				label: "Start this kind of session via MCP",
+				tool: "create_session",
+				args: {
+					module_type: peek.moduleType,
+					agent_id: VIEWER_ID ?? "<your_agent_id>"
+				}
+			})
+		]
+	});
+}
+var AlertBanner_module_default = { root: "AlertBanner_root_l7zgu" };
+// src/ui/kit/AlertBanner.tsx
+var AlertBanner = ({ style: propStyle, ...rest }) => {
+	let style = { ...propStyle };
+	return /* @__PURE__ */ jsx("div", {
+		className: AlertBanner_module_default.root,
+		...rest,
+		style
+	});
+};
+// src/ui/ViewStatus.tsx
+function ViewStatus({ loading, error, empty, emptyHint }) {
+	if (error) return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(AlertBanner, { children: error }), /* @__PURE__ */ jsx("br", {})] });
+	if (loading && empty) return /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(BlockLoader, {}), /* @__PURE__ */ jsx("br", {})] });
+	if (empty && emptyHint) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: emptyHint
+	});
+	return null;
+}
+// src/ui/SegmentTabs.tsx
+/** Flat option chips — selected = accent border + text, no gray/secondary fill. */
+function SegmentTabs({ options, value, onChange, labels, className }) {
+	return /* @__PURE__ */ jsx("div", {
+		className: ["e-segment-tabs", className].filter(Boolean).join(" "),
+		role: "tablist",
+		children: options.map((o) => {
+			const active = value === o;
+			return /* @__PURE__ */ jsx("button", {
+				type: "button",
+				role: "tab",
+				"aria-selected": active,
+				className: `e-segment-tab${active ? " is-active" : ""}`,
+				onClick: () => onChange(o),
+				children: labels?.[o] ?? o
+			}, o);
+		})
+	});
+}
+// src/settings.ts
+/** Items in their groups, in first-seen order. */
+function groupItems(items) {
+	const groups = /* @__PURE__ */ new Map();
+	for (const it of items) groups.set(it.group, [...groups.get(it.group) ?? [], it]);
+	return [...groups.entries()];
+}
+/** The record in three short lines, for a profile. */
+function recordLines(r) {
+	const g = r.games, b = r.as_buyer, s = r.as_seller;
+	return [
+		["Games", `${g.finished} finished · ${g.won} won · ${g.lost} lost${g.lost_on_time ? ` (${g.lost_on_time} on time)` : ""} · ${g.abandoned} abandoned`],
+		["As buyer", `${b.purchases} purchases · ${b.confirmed} confirmed · ${b.disputed} disputed${b.left_to_auto_confirm ? ` · ${b.left_to_auto_confirm} left unanswered` : ""}`],
+		["As seller", `${s.sales} sales · ${s.paid} paid · ${s.disputed} disputed${s.never_delivered ? ` · ${s.never_delivered} never delivered` : ""}`]
+	];
+}
+var dollars = (cents) => `$${(cents / 100).toFixed(2)}`;
+// src/ui/Leaderboard.tsx
+/**
+* Standings on this relay (P72-3).
+*
+* Three things this component refuses to blur, each of them a lesson already
+* paid for elsewhere in this dashboard:
+*
+* - **Scope is stated, not implied.** Settlements are local, so this is one
+*   relay's contests. A table headed "Leaderboard" with no qualifier reads as
+*   the whole network, which is a claim nothing here can support.
+* - **A failed fetch is not an empty table** (P68/P69). An unreachable relay
+*   says so rather than rendering "no contests yet", which would tell an
+*   operator the opposite of the truth.
+* - **Agents with zero wins still appear.** Losing is a position on a table;
+*   hiding the losers turns a leaderboard into a trophy cabinet and removes
+*   the reason to try again.
+*/
+function Leaderboard({ moduleType }) {
+	const [data, , error] = useInterval(() => api.leaderboard(moduleType), 3e4, [moduleType]);
+	if (error && !data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		title: error,
+		children: "? standings unavailable — the relay did not answer. This is not an empty table."
+	});
+	if (!data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		children: "… loading standings"
+	});
+	if (data.standings.length === 0) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		children: "No contests settled on this relay yet."
+	});
+	const rated = data.standings.some((s) => s.rating !== void 0);
+	return /* @__PURE__ */ jsxs("div", {
+		style: { marginTop: 10 },
+		children: [/* @__PURE__ */ jsx(Text, {
+			className: "e-dim",
+			style: { fontSize: "0.68rem" },
+			children: "Standings — this relay only"
+		}), /* @__PURE__ */ jsx("div", {
+			className: "e-compact-table",
+			style: {
+				overflowX: "auto",
+				marginTop: 6
+			},
+			children: /* @__PURE__ */ jsxs("table", {
+				className: "e-listings-native",
+				children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: "#" }),
+					/* @__PURE__ */ jsx("td", { children: "AGENT" }),
+					/* @__PURE__ */ jsx("td", { children: "WINS" }),
+					/* @__PURE__ */ jsx("td", { children: "ENTRIES" }),
+					/* @__PURE__ */ jsx("td", { children: "RATE" }),
+					rated && /* @__PURE__ */ jsx("td", {
+						title: "Craft: a Glicko-2 rating in this game, ± its uncertainty",
+						children: "CRAFT"
+					}),
+					/* @__PURE__ */ jsx("td", { children: "MODULES" })
+				] }) }), /* @__PURE__ */ jsx("tbody", { children: data.standings.map((s, i) => /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						style: { fontVariantNumeric: "tabular-nums" },
+						children: i + 1
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: s.agent_id }) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						style: { fontVariantNumeric: "tabular-nums" },
+						children: s.wins
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						style: { fontVariantNumeric: "tabular-nums" },
+						children: s.entries
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						style: { fontVariantNumeric: "tabular-nums" },
+						children: s.win_rate === null ? "—" : `${Math.round(s.win_rate * 100)}%`
+					}) }),
+					rated && /* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						style: { fontVariantNumeric: "tabular-nums" },
+						title: s.rating?.provisional ? "provisional: too few settled games to be sure" : void 0,
+						children: s.rating ? `${s.rating.rating} ±${2 * s.rating.rd}${s.rating.provisional ? "?" : ""}` : "—"
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						style: { fontSize: 11 },
+						children: s.modules.map((m) => m.replace("emporia:", "").replace(/:v\d+$/, "")).join(", ") || "—"
+					}) })
+				] }, s.agent_id)) })]
+			})
+		})]
+	});
+}
+// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
+var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
+var _32n = /* @__PURE__ */ BigInt(32);
+function fromBig(n, le = false) {
+	if (le) return {
+		h: Number(n & U32_MASK64),
+		l: Number(n >> _32n & U32_MASK64)
+	};
+	return {
+		h: Number(n >> _32n & U32_MASK64) | 0,
+		l: Number(n & U32_MASK64) | 0
+	};
+}
+function split(lst, le = false) {
+	const len = lst.length;
+	let Ah = new Uint32Array(len);
+	let Al = new Uint32Array(len);
+	for (let i = 0; i < len; i++) {
+		const { h, l } = fromBig(lst[i], le);
+		[Ah[i], Al[i]] = [h, l];
+	}
+	return [Ah, Al];
+}
+var fromNumH = (n) => n / 2 ** 32 | 0;
+var fromNumL = (n) => n >>> 0;
+function setU64FromNum(view, byteOffset, n, isLE) {
+	const h = fromNumH(n);
+	const l = fromNumL(n);
+	view.setUint32(byteOffset, isLE ? l : h, isLE);
+	view.setUint32(byteOffset + 4, isLE ? h : l, isLE);
+}
+var shrSH = (h, _l, s) => h >>> s;
+var shrSL = (h, l, s) => h << 32 - s | l >>> s;
+var rotrSH = (h, l, s) => h >>> s | l << 32 - s;
+var rotrSL = (h, l, s) => h << 32 - s | l >>> s;
+var rotrBH = (h, l, s) => h << 64 - s | l >>> s - 32;
+var rotrBL = (h, l, s) => h >>> s - 32 | l << 64 - s;
+function add(Ah, Al, Bh, Bl) {
+	const l = (Al >>> 0) + (Bl >>> 0);
+	return {
+		h: Ah + Bh + (l / 2 ** 32 | 0) | 0,
+		l: l | 0
+	};
+}
+var add3L = (Al, Bl, Cl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0);
+var add3H = (low, Ah, Bh, Ch) => Ah + Bh + Ch + (low / 2 ** 32 | 0) | 0;
+var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0);
+var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
+var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
+var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
+// ../../../../dashboard/node_modules/@noble/hashes/utils.js
+/**
+* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
+* @param a - value to test
+* @returns `true` when the value is a Uint8Array-compatible view.
+* @example
+* Check whether a value is a Uint8Array-compatible view.
+* ```ts
+* isBytes(new Uint8Array([1, 2, 3]));
+* ```
+*/
+function isBytes$1(a) {
+	return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
+}
+var atitle$1 = (title) => title ? `"${title}" ` : "";
+/**
+* Asserts something is a non-negative integer.
+* @param n - number to validate
+* @param title - label included in thrown errors
+* @returns The validated number.
+* @throws On wrong argument types. {@link TypeError}
+* @throws On wrong argument ranges or values. {@link RangeError}
+* @example
+* Validate a non-negative integer option.
+* ```ts
+* anumber(32, 'length');
+* ```
+*/
+function anumber$1(n, title = "") {
+	if (typeof n !== "number") throw new TypeError(atitle$1(title) + "expected number, got " + typeof n);
+	if (!Number.isSafeInteger(n) || n < 0) throw new RangeError(atitle$1(title) + "expected integer >= 0, got " + n);
+	return n;
+}
+/**
+* Asserts something is a boolean.
+* @param value - value to validate
+* @param title - label included in thrown errors
+* @returns The validated boolean.
+* @throws On wrong argument types. {@link TypeError}
+* @example
+* Validate a boolean option.
+* ```ts
+* abool(true, 'enableXOF');
+* ```
+*/
+function abool$1(value, title = "") {
+	if (typeof value !== "boolean") throw new TypeError(atitle$1(title) + "expected boolean, got type=" + typeof value);
+	return value;
+}
+/**
+* Asserts something is Uint8Array.
+* @param value - value to validate
+* @param length - optional exact length constraint
+* @param title - label included in thrown errors
+* @returns The validated byte array.
+* @throws On wrong argument types. {@link TypeError}
+* @throws On wrong argument ranges or values. {@link RangeError}
+* @example
+* Validate that a value is a byte array.
+* ```ts
+* abytes(new Uint8Array([1, 2, 3]));
+* ```
+*/
+function abytes$1(value, length, title = "") {
+	if (isBytes$1(value) && (length === void 0 || value.length === length)) return value;
+	if (length !== void 0) anumber$1(length, "length");
+	const bytes = isBytes$1(value);
+	const ofLen = length !== void 0 ? ` of length ${length}` : "";
+	const got = bytes ? `length=${value.length}` : `type=${typeof value}`;
+	const message = atitle$1(title) + "expected Uint8Array" + ofLen + ", got " + got;
+	if (!bytes) throw new TypeError(message);
+	throw new RangeError(message);
+}
+var aobject$1 = (value, label) => {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) throw new TypeError((label === "object" ? "" : `"${label}" `) + "expected object, got type=" + typeof value);
+};
+var aopts = (value, label) => {
+	aobject$1(value, label);
+	const proto = Object.getPrototypeOf(value);
+	if (proto !== Object.prototype && proto !== null) throw new TypeError(`"${label}" expected plain object`);
+	if (Object.hasOwn(value, "__proto__")) throw new TypeError(`"${label}.__proto__" is not allowed`);
+};
+/**
+* Asserts a hash instance has not been destroyed or finished.
+* @param instance - hash instance to validate
+* @param checkFinished - whether to reject finalized instances
+* @throws If the hash instance has already been destroyed or finalized. {@link Error}
+* @example
+* Validate that a hash instance is still usable.
+* ```ts
+* import { aexists } from '@noble/hashes/utils.js';
+* import { sha256 } from '@noble/hashes/sha2.js';
+* const hash = sha256.create();
+* aexists(hash);
+* ```
+*/
+function aexists(instance, checkFinished = true) {
+	if (instance.destroyed) throw new Error("hash was destroyed");
+	if (checkFinished && instance.finished) throw new Error("digest() was already called");
+}
+/**
+* Asserts output is a sufficiently-sized byte array.
+* @param out - destination buffer
+* @param instance - hash instance providing output length
+* Oversized buffers are allowed; downstream code only promises to fill the first `outputLen` bytes.
+* @throws On wrong argument types. {@link TypeError}
+* @throws On wrong argument ranges or values. {@link RangeError}
+* @example
+* Validate a caller-provided digest buffer.
+* ```ts
+* import { aoutput } from '@noble/hashes/utils.js';
+* import { sha256 } from '@noble/hashes/sha2.js';
+* const hash = sha256.create();
+* aoutput(new Uint8Array(hash.outputLen), hash);
+* ```
+*/
+function aoutput(out, instance) {
+	abytes$1(out, void 0, "output");
+	const min = instance.outputLen;
+	if (!(out.length >= min)) throw new RangeError("\"output\" expected length >= " + min);
+}
+/**
+* Casts a typed array view to Uint32Array.
+* `arr.byteOffset` must already be 4-byte aligned or the platform
+* Uint32Array constructor will throw.
+* @param arr - source typed array
+* @returns Uint32Array view over the same buffer.
+* @example
+* Reinterpret a byte array as 32-bit words.
+* ```ts
+* u32(new Uint8Array(8));
+* ```
+*/
+function u32(arr) {
+	return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
+}
+/**
+* Zeroizes typed arrays in place. Warning: JS provides no guarantees.
+* @param arrays - arrays to overwrite with zeros
+* @example
+* Zeroize sensitive buffers in place.
+* ```ts
+* clean(new Uint8Array([1, 2, 3]));
+* ```
+*/
+function clean(...arrays) {
+	for (let i = 0; i < arrays.length; i++) arrays[i].fill(0);
+}
+/**
+* Creates a DataView for byte-level manipulation.
+* @param arr - source typed array
+* @returns DataView over the same buffer region.
+* @example
+* Create a DataView over an existing buffer.
+* ```ts
+* createView(new Uint8Array(4));
+* ```
+*/
+function createView(arr) {
+	return new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
+}
+/** Whether the current platform is little-endian. */
+var isLE = /* @__PURE__ */ (() => new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68)();
+/**
+* Byte-swap operation for uint32 values.
+* @param word - source word
+* @returns Word with reversed byte order.
+* @example
+* Reverse the byte order of a 32-bit word.
+* ```ts
+* byteSwap(0x11223344);
+* ```
+*/
+function byteSwap(word) {
+	return word << 24 & 4278190080 | word << 8 & 16711680 | word >>> 8 & 65280 | word >>> 24 & 255;
+}
+/**
+* Byte-swaps every word of a Uint32Array in place.
+* @param arr - array to mutate
+* @returns The same array after mutation; callers pass live state arrays here.
+* @example
+* Reverse the byte order of every word in place.
+* ```ts
+* byteSwap32(new Uint32Array([0x11223344]));
+* ```
+*/
+function byteSwap32(arr) {
+	for (let i = 0; i < arr.length; i++) arr[i] = byteSwap(arr[i]);
+	return arr;
+}
+/**
+* Conditionally byte-swaps a Uint32Array on big-endian platforms.
+* @param u - array to normalize for host endianness
+* @returns Original or byte-swapped array depending on platform endianness.
+*   On big-endian runtimes this mutates `u` in place via `byteSwap32(...)`.
+* @example
+* Normalize a word array for host endianness.
+* ```ts
+* swap32IfBE(new Uint32Array([0x11223344]));
+* ```
+*/
+var swap32IfBE = isLE ? (u) => u : byteSwap32;
+var hasHexBuiltin = /* @__PURE__ */ (() => typeof Uint8Array.from([]).toHex === "function" && typeof Uint8Array.fromHex === "function")();
+var hexes = /* @__PURE__ */ Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"));
+/**
+* Convert byte array to hex string.
+* Uses the built-in function when available and assumes it matches the tested
+* fallback semantics.
+* @param bytes - bytes to encode
+* @returns Lowercase hexadecimal string.
+* @throws On wrong argument types. {@link TypeError}
+* @example
+* Convert bytes to lowercase hexadecimal.
+* ```ts
+* bytesToHex(Uint8Array.from([0xca, 0xfe, 0x01, 0x23])); // 'cafe0123'
+* ```
+*/
+function bytesToHex$2(bytes) {
+	abytes$1(bytes);
+	if (hasHexBuiltin) return bytes.toHex();
+	let hex = "";
+	for (let i = 0; i < bytes.length; i++) hex += hexes[bytes[i]];
+	return hex;
+}
+function asciiToBase16(ch) {
+	return ch >= 48 && ch <= 57 ? ch - 48 : ch >= 65 && ch <= 70 ? ch - 55 : ch >= 97 && ch <= 102 ? ch - 87 : void 0;
+}
+/**
+* Convert hex string to byte array. Uses built-in function, when available.
+* @param hex - hexadecimal string to decode
+* @returns Decoded bytes.
+* @throws On wrong argument types. {@link TypeError}
+* @throws On wrong argument ranges or values. {@link RangeError}
+* @example
+* Decode lowercase hexadecimal into bytes.
+* ```ts
+* hexToBytes('cafe0123'); // Uint8Array.from([0xca, 0xfe, 0x01, 0x23])
+* ```
+*/
+function hexToBytes$2(hex) {
+	if (typeof hex !== "string") throw new TypeError("hex string expected, got " + typeof hex);
+	if (hasHexBuiltin) try {
+		return Uint8Array.fromHex(hex);
+	} catch (error) {
+		if (error instanceof SyntaxError) throw new RangeError(error.message);
+		throw error;
+	}
+	const hl = hex.length;
+	const al = hl / 2;
+	if (hl % 2) throw new RangeError("hex string expected, got unpadded hex of length " + hl);
+	const array = new Uint8Array(al);
+	for (let ai = 0, hi = 0; ai < al; ai++, hi += 2) {
+		const n1 = asciiToBase16(hex.charCodeAt(hi));
+		const n2 = asciiToBase16(hex.charCodeAt(hi + 1));
+		if (n1 === void 0 || n2 === void 0) {
+			const char = hex[hi] + hex[hi + 1];
+			throw new RangeError("hex string expected, got non-hex character \"" + char + "\" at index " + hi);
+		}
+		array[ai] = n1 * 16 + n2;
+	}
+	return array;
+}
+/**
+* Copies several Uint8Arrays into one.
+* @param arrays - arrays to concatenate
+* @returns Concatenated byte array.
+* @throws On wrong argument types. {@link TypeError}
+* @example
+* Concatenate multiple byte arrays.
+* ```ts
+* concatBytes(new Uint8Array([1]), new Uint8Array([2]));
+* ```
+*/
+function concatBytes$1(...arrays) {
+	let sum = 0;
+	for (let i = 0; i < arrays.length; i++) {
+		const a = arrays[i];
+		abytes$1(a);
+		sum += a.length;
+	}
+	const res = new Uint8Array(sum);
+	for (let i = 0, pad = 0; i < arrays.length; i++) {
+		const a = arrays[i];
+		res.set(a, pad);
+		pad += a.length;
+	}
+	return res;
+}
+/**
+* Merges default options and passed options.
+* @param defaults - base option object
+* @param opts - user overrides
+* @param title - label included in thrown override errors
+* @returns Fresh merged option object with a null prototype.
+* @throws On wrong argument types. {@link TypeError}
+* @example
+* Merge user overrides onto default options.
+* ```ts
+* checkOpts({ dkLen: 32 }, { asyncTick: 10 });
+* ```
+*/
+function checkOpts(defaults, opts, title = "opts") {
+	aopts(defaults, "defaults");
+	if (opts !== void 0) aopts(opts, title);
+	return Object.assign(Object.create(null), defaults, opts);
+}
+/**
+* Creates a callable hash function from a stateful class constructor.
+* @param hashCons - hash constructor or factory
+* @param info - optional metadata such as DER OID
+* @returns Frozen callable hash wrapper with `.create()`.
+*   Wrapper construction eagerly calls `hashCons(undefined)` once to read
+*   `outputLen` / `blockLen`, so constructor side effects happen at module
+*   init time.
+* @throws On wrong argument types. {@link TypeError}
+* @example
+* Wrap a stateful hash constructor into a callable helper.
+* ```ts
+* import { createHasher } from '@noble/hashes/utils.js';
+* import { sha256 } from '@noble/hashes/sha2.js';
+* const wrapped = createHasher(sha256.create, { oid: sha256.oid });
+* wrapped(new Uint8Array([1]));
+* ```
+*/
+function createHasher(hashCons, info = {}) {
+	if (typeof hashCons !== "function") throw new TypeError("\"hashCons\" expected function, got type=" + typeof hashCons);
+	info = checkOpts({}, info, "info");
+	const hashC = (msg, opts) => hashCons(opts).update(msg).digest();
+	const tmp = hashCons(void 0);
+	hashC.outputLen = tmp.outputLen;
+	hashC.blockLen = tmp.blockLen;
+	hashC.canXOF = tmp.canXOF;
+	hashC.create = (opts) => hashCons(opts);
+	Object.assign(hashC, info);
+	return Object.freeze(hashC);
+}
+/**
+* Cryptographically secure PRNG backed by `crypto.getRandomValues`.
+* @param bytesLength - number of random bytes to generate
+* @returns Random bytes.
+* The platform `getRandomValues()` implementation still defines any
+* single-call length cap, and this helper rejects oversize requests
+* with a stable library `RangeError` instead of host-specific errors.
+* @throws On wrong argument types. {@link TypeError}
+* @throws On wrong argument ranges or values. {@link RangeError}
+* @throws If the current runtime does not provide `crypto.getRandomValues`. {@link Error}
+* @example
+* Generate a fresh random key or nonce.
+* ```ts
+* const key = randomBytes(16);
+* ```
+*/
+function randomBytes$1(bytesLength = 32) {
+	anumber$1(bytesLength, "bytesLength");
+	const cr = typeof globalThis === "object" ? globalThis.crypto : null;
+	if (typeof cr?.getRandomValues !== "function") throw new Error("crypto.getRandomValues must be defined");
+	if (bytesLength > 65536) throw new RangeError(`"bytesLength" expected <= 65536, got ${bytesLength}`);
+	return cr.getRandomValues(new Uint8Array(bytesLength));
+}
+/**
+* Creates OID metadata for NIST hashes with prefix `06 09 60 86 48 01 65 03 04 02`.
+* @param suffix - final OID byte for the selected hash.
+*   The helper accepts any byte even though only the documented NIST hash
+*   suffixes are meaningful downstream.
+* @returns Object containing the DER-encoded OID.
+* @example
+* Build OID metadata for a NIST hash.
+* ```ts
+* oidNist(0x01);
+* ```
+*/
+var oidNist = (suffix) => ({ oid: Uint8Array.from([
+	6,
+	9,
+	96,
+	134,
+	72,
+	1,
+	101,
+	3,
+	4,
+	2,
+	suffix
+]) });
+// ../../../../dashboard/node_modules/@noble/hashes/_md.js
+/**
+* Internal Merkle-Damgard hash utils.
+* @module
+*/
+/**
+* Merkle-Damgard hash construction base class.
+* Could be used to create MD5, RIPEMD, SHA1, SHA2.
+* Accepts only byte-aligned `Uint8Array` input, even when the underlying spec describes bit
+* strings with partial-byte tails.
+* @param blockLen - internal block size in bytes
+* @param outputLen - digest size in bytes
+* @param padOffset - trailing length field size in bytes
+* @param isLE - whether length and state words are encoded in little-endian
+* @example
+* Use a concrete subclass to get the shared Merkle-Damgard update/digest flow.
+* ```ts
+* import { _SHA1 } from '@noble/hashes/legacy.js';
+* const hash = new _SHA1();
+* hash.update(new Uint8Array([97, 98, 99]));
+* hash.digest();
+* ```
+*/
+var HashMD = class {
+	blockLen;
+	outputLen;
+	canXOF = false;
+	padOffset;
+	isLE;
+	buffer;
+	view;
+	finished = false;
+	length = 0;
+	pos = 0;
+	destroyed = false;
+	constructor(blockLen, outputLen, padOffset, isLE) {
+		this.blockLen = blockLen;
+		this.outputLen = outputLen;
+		this.padOffset = padOffset;
+		this.isLE = isLE;
+		this.buffer = new Uint8Array(blockLen);
+		this.view = createView(this.buffer);
+	}
+	update(data) {
+		aexists(this);
+		abytes$1(data);
+		const { view, buffer, blockLen } = this;
+		const len = data.length;
+		let processed = false;
+		for (let pos = 0; pos < len;) {
+			const take = Math.min(blockLen - this.pos, len - pos);
+			if (take === blockLen) {
+				const dataView = createView(data);
+				for (; blockLen <= len - pos; pos += blockLen) this.process(dataView, pos);
+				processed = true;
+				continue;
+			}
+			buffer.set(pos === 0 && take === len ? data : data.subarray(pos, pos + take), this.pos);
+			this.pos += take;
+			pos += take;
+			if (this.pos === blockLen) {
+				this.process(view, 0);
+				this.pos = 0;
+				processed = true;
+			}
+		}
+		this.length += data.length;
+		if (processed) this.roundClean();
+		return this;
+	}
+	digestInto(out) {
+		aexists(this);
+		aoutput(out, this);
+		this.finished = true;
+		const { buffer, view, blockLen, isLE } = this;
+		let { pos } = this;
+		buffer[pos++] = 128;
+		buffer.fill(0, pos);
+		if (this.padOffset > blockLen - pos) {
+			this.process(view, 0);
+			buffer.fill(0);
+		}
+		setU64FromNum(view, blockLen - 8, this.length * 8, isLE);
+		this.process(view, 0);
+		this.roundClean();
+		const oview = out === buffer ? view : createView(out);
+		const len = this.outputLen;
+		const outLen = len / 4;
+		const state = this.get();
+		if (len % 4 || outLen > state.length) throw new Error("invalid outputLen");
+		for (let i = 0; i < outLen; i++) oview.setUint32(4 * i, state[i], isLE);
+	}
+	digest() {
+		const { buffer, outputLen } = this;
+		this.digestInto(buffer);
+		const res = buffer.slice(0, outputLen);
+		this.destroy();
+		return res;
+	}
+	_cloneIntoMeta(to) {
+		const { buffer, length, finished, destroyed, pos } = this;
+		to.destroyed = destroyed;
+		to.finished = finished;
+		to.length = length;
+		to.pos = pos;
+		if (pos) to.buffer.set(buffer);
+		return to;
+	}
+	clone() {
+		return this._cloneInto();
+	}
+};
+/** Initial SHA512 state from RFC 6234 §6.3: eight RFC 64-bit `H(0)` words stored as sixteen
+* big-endian 32-bit halves. Derived from the fractional parts of the square roots of the first
+* eight prime numbers. Exported as a shared table; callers must treat it as read-only because
+* constructors copy halves from it by index. */
+var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
+	1779033703,
+	4089235720,
+	3144134277,
+	2227873595,
+	1013904242,
+	4271175723,
+	2773480762,
+	1595750129,
+	1359893119,
+	2917565137,
+	2600822924,
+	725511199,
+	528734635,
+	4215389547,
+	1541459225,
+	327033209
+]);
+// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
+/**
+* SHA2 hash function. A.k.a. sha256, sha384, sha512, sha512_224, sha512_256.
+* SHA256 is the fastest hash implementable in JS, even faster than Blake3.
+* Check out {@link https://www.rfc-editor.org/rfc/rfc4634 | RFC 4634} and
+* {@link https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf | FIPS 180-4}.
+* @module
+*/
+var K512 = /* @__PURE__ */ (() => split([
+	"0x428a2f98d728ae22",
+	"0x7137449123ef65cd",
+	"0xb5c0fbcfec4d3b2f",
+	"0xe9b5dba58189dbbc",
+	"0x3956c25bf348b538",
+	"0x59f111f1b605d019",
+	"0x923f82a4af194f9b",
+	"0xab1c5ed5da6d8118",
+	"0xd807aa98a3030242",
+	"0x12835b0145706fbe",
+	"0x243185be4ee4b28c",
+	"0x550c7dc3d5ffb4e2",
+	"0x72be5d74f27b896f",
+	"0x80deb1fe3b1696b1",
+	"0x9bdc06a725c71235",
+	"0xc19bf174cf692694",
+	"0xe49b69c19ef14ad2",
+	"0xefbe4786384f25e3",
+	"0x0fc19dc68b8cd5b5",
+	"0x240ca1cc77ac9c65",
+	"0x2de92c6f592b0275",
+	"0x4a7484aa6ea6e483",
+	"0x5cb0a9dcbd41fbd4",
+	"0x76f988da831153b5",
+	"0x983e5152ee66dfab",
+	"0xa831c66d2db43210",
+	"0xb00327c898fb213f",
+	"0xbf597fc7beef0ee4",
+	"0xc6e00bf33da88fc2",
+	"0xd5a79147930aa725",
+	"0x06ca6351e003826f",
+	"0x142929670a0e6e70",
+	"0x27b70a8546d22ffc",
+	"0x2e1b21385c26c926",
+	"0x4d2c6dfc5ac42aed",
+	"0x53380d139d95b3df",
+	"0x650a73548baf63de",
+	"0x766a0abb3c77b2a8",
+	"0x81c2c92e47edaee6",
+	"0x92722c851482353b",
+	"0xa2bfe8a14cf10364",
+	"0xa81a664bbc423001",
+	"0xc24b8b70d0f89791",
+	"0xc76c51a30654be30",
+	"0xd192e819d6ef5218",
+	"0xd69906245565a910",
+	"0xf40e35855771202a",
+	"0x106aa07032bbd1b8",
+	"0x19a4c116b8d2d0c8",
+	"0x1e376c085141ab53",
+	"0x2748774cdf8eeb99",
+	"0x34b0bcb5e19b48a8",
+	"0x391c0cb3c5c95a63",
+	"0x4ed8aa4ae3418acb",
+	"0x5b9cca4f7763e373",
+	"0x682e6ff3d6b2b8a3",
+	"0x748f82ee5defb2fc",
+	"0x78a5636f43172f60",
+	"0x84c87814a1f0ab72",
+	"0x8cc702081a6439ec",
+	"0x90befffa23631e28",
+	"0xa4506cebde82bde9",
+	"0xbef9a3f7b2c67915",
+	"0xc67178f2e372532b",
+	"0xca273eceea26619c",
+	"0xd186b8c721c0c207",
+	"0xeada7dd6cde0eb1e",
+	"0xf57d4f7fee6ed178",
+	"0x06f067aa72176fba",
+	"0x0a637dc5a2c898a6",
+	"0x113f9804bef90dae",
+	"0x1b710b35131c471b",
+	"0x28db77f523047d84",
+	"0x32caab7b40c72493",
+	"0x3c9ebe0a15c9bebc",
+	"0x431d67c49c100d4c",
+	"0x4cc5d4becb3e42b6",
+	"0x597f299cfc657e2a",
+	"0x5fcb6fab3ad6faec",
+	"0x6c44198c4a475817"
+].map((n) => BigInt(n))))();
+var SHA512_Kh = /* @__PURE__ */ (() => K512[0])();
+var SHA512_Kl = /* @__PURE__ */ (() => K512[1])();
+var SHA512_W_H = /* @__PURE__ */ new Uint32Array(80);
+var SHA512_W_L = /* @__PURE__ */ new Uint32Array(80);
+/** Internal SHA-384 / SHA-512 compression engine from RFC 6234 §6.4. */
+var SHA2_64B = class extends HashMD {
+	Ah = 0;
+	Al = 0;
+	Bh = 0;
+	Bl = 0;
+	Ch = 0;
+	Cl = 0;
+	Dh = 0;
+	Dl = 0;
+	Eh = 0;
+	El = 0;
+	Fh = 0;
+	Fl = 0;
+	Gh = 0;
+	Gl = 0;
+	Hh = 0;
+	Hl = 0;
+	constructor(outputLen, IV) {
+		super(128, outputLen, 16, false);
+		this.Ah = IV[0] | 0;
+		this.Al = IV[1] | 0;
+		this.Bh = IV[2] | 0;
+		this.Bl = IV[3] | 0;
+		this.Ch = IV[4] | 0;
+		this.Cl = IV[5] | 0;
+		this.Dh = IV[6] | 0;
+		this.Dl = IV[7] | 0;
+		this.Eh = IV[8] | 0;
+		this.El = IV[9] | 0;
+		this.Fh = IV[10] | 0;
+		this.Fl = IV[11] | 0;
+		this.Gh = IV[12] | 0;
+		this.Gl = IV[13] | 0;
+		this.Hh = IV[14] | 0;
+		this.Hl = IV[15] | 0;
+	}
+	get() {
+		const { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
+		return [
+			Ah,
+			Al,
+			Bh,
+			Bl,
+			Ch,
+			Cl,
+			Dh,
+			Dl,
+			Eh,
+			El,
+			Fh,
+			Fl,
+			Gh,
+			Gl,
+			Hh,
+			Hl
+		];
+	}
+	set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl) {
+		this.Ah = Ah | 0;
+		this.Al = Al | 0;
+		this.Bh = Bh | 0;
+		this.Bl = Bl | 0;
+		this.Ch = Ch | 0;
+		this.Cl = Cl | 0;
+		this.Dh = Dh | 0;
+		this.Dl = Dl | 0;
+		this.Eh = Eh | 0;
+		this.El = El | 0;
+		this.Fh = Fh | 0;
+		this.Fl = Fl | 0;
+		this.Gh = Gh | 0;
+		this.Gl = Gl | 0;
+		this.Hh = Hh | 0;
+		this.Hl = Hl | 0;
+	}
+	_cloneInto(to) {
+		(to ||= new this.constructor()).set(...this.get());
+		return this._cloneIntoMeta(to);
+	}
+	process(view, offset) {
+		for (let i = 0; i < 16; i++, offset += 4) {
+			SHA512_W_H[i] = view.getUint32(offset);
+			SHA512_W_L[i] = view.getUint32(offset += 4);
+		}
+		for (let i = 16; i < 80; i++) {
+			const W15h = SHA512_W_H[i - 15] | 0;
+			const W15l = SHA512_W_L[i - 15] | 0;
+			const s0h = rotrSH(W15h, W15l, 1) ^ rotrSH(W15h, W15l, 8) ^ shrSH(W15h, W15l, 7);
+			const s0l = rotrSL(W15h, W15l, 1) ^ rotrSL(W15h, W15l, 8) ^ shrSL(W15h, W15l, 7);
+			const W2h = SHA512_W_H[i - 2] | 0;
+			const W2l = SHA512_W_L[i - 2] | 0;
+			const s1h = rotrSH(W2h, W2l, 19) ^ rotrBH(W2h, W2l, 61) ^ shrSH(W2h, W2l, 6);
+			const SUMl = add4L(s0l, rotrSL(W2h, W2l, 19) ^ rotrBL(W2h, W2l, 61) ^ shrSL(W2h, W2l, 6), SHA512_W_L[i - 7], SHA512_W_L[i - 16]);
+			const SUMh = add4H(SUMl, s0h, s1h, SHA512_W_H[i - 7], SHA512_W_H[i - 16]);
+			SHA512_W_H[i] = SUMh | 0;
+			SHA512_W_L[i] = SUMl | 0;
+		}
+		let { Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl } = this;
+		for (let i = 0; i < 80; i++) {
+			const sigma1h = rotrSH(Eh, El, 14) ^ rotrSH(Eh, El, 18) ^ rotrBH(Eh, El, 41);
+			const sigma1l = rotrSL(Eh, El, 14) ^ rotrSL(Eh, El, 18) ^ rotrBL(Eh, El, 41);
+			const CHIh = Eh & Fh ^ ~Eh & Gh;
+			const CHIl = El & Fl ^ ~El & Gl;
+			const T1ll = add5L(Hl, sigma1l, CHIl, SHA512_Kl[i], SHA512_W_L[i]);
+			const T1h = add5H(T1ll, Hh, sigma1h, CHIh, SHA512_Kh[i], SHA512_W_H[i]);
+			const T1l = T1ll | 0;
+			const sigma0h = rotrSH(Ah, Al, 28) ^ rotrBH(Ah, Al, 34) ^ rotrBH(Ah, Al, 39);
+			const sigma0l = rotrSL(Ah, Al, 28) ^ rotrBL(Ah, Al, 34) ^ rotrBL(Ah, Al, 39);
+			const MAJh = Ah & Bh ^ Ah & Ch ^ Bh & Ch;
+			const MAJl = Al & Bl ^ Al & Cl ^ Bl & Cl;
+			Hh = Gh | 0;
+			Hl = Gl | 0;
+			Gh = Fh | 0;
+			Gl = Fl | 0;
+			Fh = Eh | 0;
+			Fl = El | 0;
+			({h: Eh, l: El} = add(Dh | 0, Dl | 0, T1h | 0, T1l | 0));
+			Dh = Ch | 0;
+			Dl = Cl | 0;
+			Ch = Bh | 0;
+			Cl = Bl | 0;
+			Bh = Ah | 0;
+			Bl = Al | 0;
+			const All = add3L(T1l, sigma0l, MAJl);
+			Ah = add3H(All, T1h, sigma0h, MAJh);
+			Al = All | 0;
+		}
+		({h: Ah, l: Al} = add(this.Ah | 0, this.Al | 0, Ah | 0, Al | 0));
+		({h: Bh, l: Bl} = add(this.Bh | 0, this.Bl | 0, Bh | 0, Bl | 0));
+		({h: Ch, l: Cl} = add(this.Ch | 0, this.Cl | 0, Ch | 0, Cl | 0));
+		({h: Dh, l: Dl} = add(this.Dh | 0, this.Dl | 0, Dh | 0, Dl | 0));
+		({h: Eh, l: El} = add(this.Eh | 0, this.El | 0, Eh | 0, El | 0));
+		({h: Fh, l: Fl} = add(this.Fh | 0, this.Fl | 0, Fh | 0, Fl | 0));
+		({h: Gh, l: Gl} = add(this.Gh | 0, this.Gl | 0, Gh | 0, Gl | 0));
+		({h: Hh, l: Hl} = add(this.Hh | 0, this.Hl | 0, Hh | 0, Hl | 0));
+		this.set(Ah, Al, Bh, Bl, Ch, Cl, Dh, Dl, Eh, El, Fh, Fl, Gh, Gl, Hh, Hl);
+	}
+	roundClean() {
+		clean(SHA512_W_H, SHA512_W_L);
+	}
+	destroy() {
+		this.destroyed = true;
+		clean(this.buffer);
+		this.set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+	}
+};
+/** Internal SHA-512 hash class grounded in RFC 6234 §6.3 and §6.4. */
+var _SHA512 = class extends SHA2_64B {
+	constructor() {
+		super(64, SHA512_IV);
+	}
+};
+/**
+* SHA2-512 hash function from RFC 4634.
+* @param msg - message bytes to hash
+* @param opts - Reserved hash options.
+* @returns Digest bytes.
+* @example
+* Hash a message with SHA2-512.
+* ```ts
+* sha512(new Uint8Array([97, 98, 99]));
+* ```
+*/
+var sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
+// ../../../../dashboard/node_modules/@noble/curves/utils.js
+/**
+* Hex, bytes and number utilities.
+* @module
+*/
+/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+/**
+* Validates that a value is an array, optionally validating each element.
+* @param item - Value to validate.
+* @param title - Label included in thrown errors.
+* @param inner - Optional per-element validator, called with the element and its label.
+* @returns The validated array.
+* @example
+* Validate an array of points before batch processing.
+*
+* ```ts
+* aarray([1n, 2n], 'scalars');
+* ```
+*/
+function aarray(item, title, inner = () => {}) {
+	if (!Array.isArray(item)) throw new TypeError(`"${title}" expected array, got type=${typeof item}`);
+	for (let i = 0; i < item.length; i++) inner(item[i], `${title}[${i}]`);
+	return item;
+}
+/**
+* Validates that a value is a byte array.
+* @param value - Value to validate.
+* @param length - Optional exact byte length.
+* @param title - Optional field name.
+* @returns Original byte array.
+* @example
+* Reject non-byte input before passing data into curve code.
+*
+* ```ts
+* abytes(new Uint8Array(1));
+* ```
+*/
+var abytes = (value, length, title) => abytes$1(value, length, title);
+/**
+* Validates that a value is a non-negative safe integer.
+* @param n - Value to validate.
+* @param title - Optional field name.
+* @returns The validated number.
+* @example
+* Validate a numeric length before allocating buffers.
+*
+* ```ts
+* anumber(1);
+* ```
+*/
+var anumber = anumber$1;
+/**
+* Asserts something is a plain object-ish value, not null or array.
+* @param value - Value to validate.
+* @param title - Label included in thrown errors.
+* @returns The validated object.
+* @throws On wrong argument types. {@link TypeError}
+* @example
+* Validate an options object before checking fields.
+*
+* ```ts
+* aobject({ flag: true });
+* ```
+*/
+function aobject(value, title = "object") {
+	if (value === null || typeof value !== "object" || Array.isArray(value)) throw new TypeError(title === "object" ? "expected valid options object" : `"${title}" expected object, got type=${typeof value}`);
+	return value;
+}
+/**
+* Asserts something is a function.
+* @param value - Value to validate.
+* @param title - Label included in thrown errors.
+* @returns The validated function.
+* @throws On wrong argument types. {@link TypeError}
+* @example
+* Validate a required method before calling it.
+*
+* ```ts
+* afunction(() => true, 'predicate');
+* ```
+*/
+function afunction(value, title) {
+	if (typeof value !== "function") throw new TypeError(`"${title}" is invalid: expected function, got ${typeof value}`);
+	return value;
+}
+/**
+* Encodes bytes as lowercase hex.
+* @param bytes - Bytes to encode.
+* @returns Lowercase hex string.
+* @example
+* Serialize bytes as hex for logging or fixtures.
+*
+* ```ts
+* bytesToHex(Uint8Array.of(1, 2, 3));
+* ```
+*/
+var bytesToHex$1 = bytesToHex$2;
+/**
+* Concatenates byte arrays.
+* @param arrays - Byte arrays to join.
+* @returns Concatenated bytes.
+* @example
+* Join domain-separated chunks into one buffer.
+*
+* ```ts
+* concatBytes(Uint8Array.of(1), Uint8Array.of(2));
+* ```
+*/
+var concatBytes = (...arrays) => concatBytes$1(...arrays);
+/**
+* Decodes lowercase or uppercase hex into bytes.
+* @param hex - Hex string to decode.
+* @returns Decoded bytes.
+* @example
+* Parse fixture hex into bytes before hashing.
+*
+* ```ts
+* hexToBytes('0102');
+* ```
+*/
+var hexToBytes$1 = (hex) => hexToBytes$2(hex);
+/**
+* Checks whether a value is a Uint8Array.
+* @param a - Value to inspect.
+* @returns `true` when `a` is a Uint8Array.
+* @example
+* Branch on byte input before decoding it.
+*
+* ```ts
+* isBytes(new Uint8Array(1));
+* ```
+*/
+var isBytes = isBytes$1;
+/**
+* Reads random bytes from the platform CSPRNG.
+* @param bytesLength - Number of random bytes to read.
+* @returns Fresh random bytes.
+* @example
+* Generate a random seed for a keypair.
+*
+* ```ts
+* randomBytes(2);
+* ```
+*/
+var randomBytes = (bytesLength) => randomBytes$1(bytesLength);
+var _0n$4 = /* @__PURE__ */ BigInt(0);
+var _1n$5 = /* @__PURE__ */ BigInt(1);
+var atitle = (title) => title ? `"${title}" ` : "";
+/**
+* Validates that a flag is boolean.
+* @param value - Value to validate.
+* @param title - Optional field name.
+* @returns Original value.
+* @throws On wrong argument types. {@link TypeError}
+* @example
+* Reject non-boolean option flags early.
+*
+* ```ts
+* abool(true);
+* ```
+*/
+function abool(value, title = "") {
+	if (typeof value !== "boolean") throw new TypeError(atitle(title) + "expected boolean, got type=" + typeof value);
+	return value;
+}
+/**
+* Validates that a value is a non-negative bigint or safe integer.
+* @param n - Value to validate.
+* @returns The same validated value.
+* @throws On wrong argument ranges or values. {@link RangeError}
+* @example
+* Validate one integer-like value before serializing it.
+*
+* ```ts
+* abignumber(1n);
+* ```
+*/
+function abignumber(n) {
+	if (typeof n === "bigint") {
+		if (!isPosBig(n)) throw new RangeError("positive bigint expected, got " + n);
+	} else anumber(n);
+	return n;
+}
+/**
+* Validates that a value is a safe integer.
+* @param value - Integer to validate.
+* @param title - Optional field name.
+* @throws On wrong argument types. {@link TypeError}
+* @throws On wrong argument ranges or values. {@link RangeError}
+* @example
+* Validate a window size before scalar arithmetic uses it.
+*
+* ```ts
+* asafenumber(1);
+* ```
+*/
+function asafenumber(value, title = "") {
+	if (typeof value !== "number") {
+		const prefix = title && `"${title}" `;
+		throw new TypeError(prefix + "expected number, got type=" + typeof value);
+	}
+	if (!Number.isSafeInteger(value)) {
+		const prefix = title && `"${title}" `;
+		throw new RangeError(prefix + "expected safe integer, got " + value);
+	}
+}
+/**
+* Parses a big-endian hex string into bigint.
+* Accepts odd-length hex through the native `BigInt('0x' + hex)` parser and currently surfaces the
+* same native `SyntaxError` for malformed hex instead of wrapping it in a library-specific error.
+* @param hex - Hex string without `0x`.
+* @returns Parsed bigint value.
+* @throws On wrong argument types. {@link TypeError}
+* @example
+* Parse a scalar from fixture hex.
+*
+* ```ts
+* hexToNumber('ff');
+* ```
+*/
+function hexToNumber(hex) {
+	if (typeof hex !== "string") throw new TypeError("hex string expected, got " + typeof hex);
+	return hex === "" ? _0n$4 : BigInt("0x" + hex);
+}
+/**
+* Parses big-endian bytes into bigint.
+* @param bytes - Bytes in big-endian order.
+* @returns Parsed bigint value.
+* @throws On wrong argument types. {@link TypeError}
+* @example
+* Read a scalar encoded in network byte order.
+*
+* ```ts
+* bytesToNumberBE(Uint8Array.of(1, 0));
+* ```
+*/
+function bytesToNumberBE(bytes) {
+	return hexToNumber(bytesToHex$2(bytes));
+}
+/**
+* Parses little-endian bytes into bigint.
+* @param bytes - Bytes in little-endian order.
+* @returns Parsed bigint value.
+* @throws On wrong argument types. {@link TypeError}
+* @example
+* Read a scalar encoded in little-endian form.
+*
+* ```ts
+* bytesToNumberLE(Uint8Array.of(1, 0));
+* ```
+*/
+function bytesToNumberLE(bytes) {
+	return hexToNumber(bytesToHex$2(copyBytes(abytes$1(bytes)).reverse()));
+}
+/**
+* Encodes a bigint into fixed-length big-endian bytes.
+* @param n - Number to encode.
+* @param len - Output length in bytes. Must be greater than zero.
+* @returns Big-endian byte array.
+* @throws On wrong argument ranges or values. {@link RangeError}
+* @throws If a documented runtime validation or state check fails. {@link Error}
+* @example
+* Serialize a scalar into a 32-byte field element.
+*
+* ```ts
+* numberToBytesBE(255n, 2);
+* ```
+*/
+function numberToBytesBE(n, len) {
+	anumber$1(len);
+	if (len === 0) throw new Error("zero output length is invalid");
+	n = abignumber(n);
+	const expectedLen = len * 2;
+	const hex = n.toString(16);
+	if (hex.length > expectedLen) throw new RangeError("number is too large");
+	return hexToBytes$2(hex.padStart(expectedLen, "0"));
+}
+/**
+* Encodes a bigint into fixed-length little-endian bytes.
+* @param n - Number to encode.
+* @param len - Output length in bytes.
+* @returns Little-endian byte array.
+* @throws On wrong argument ranges or values. {@link RangeError}
+* @throws If a documented runtime validation or state check fails. {@link Error}
+* @example
+* Serialize a scalar for little-endian protocols.
+*
+* ```ts
+* numberToBytesLE(255n, 2);
+* ```
+*/
+function numberToBytesLE(n, len) {
+	return numberToBytesBE(n, len).reverse();
+}
+/**
+* Copies Uint8Array. We can't use u8a.slice(), because u8a can be Buffer,
+* and Buffer#slice creates mutable copy. Never use Buffers!
+* @param bytes - Bytes to copy.
+* @returns Detached copy.
+* @example
+* Make an isolated copy before mutating serialized bytes.
+*
+* ```ts
+* copyBytes(Uint8Array.of(1, 2, 3));
+* ```
+*/
+function copyBytes(bytes) {
+	return Uint8Array.from(abytes(bytes));
+}
+/**
+* Checks whether n is non-negative bigint. Historical name.
+* @param n - candidate value
+* @returns `true` when the value is bigint and 0 or larger
+* @example
+* Check a candidate scalar before range validation.
+*
+* ```ts
+* isPosBig(2n);
+* ```
+*/
+function isPosBig(n) {
+	return typeof n === "bigint" && _0n$4 <= n;
+}
+/**
+* Checks whether a bigint lies inside a half-open range.
+* @param n - Candidate value.
+* @param min - Inclusive lower bound.
+* @param max - Exclusive upper bound.
+* @returns `true` when the value is inside the range.
+* @example
+* Check whether a candidate scalar fits the field order.
+*
+* ```ts
+* inRange(2n, 1n, 3n);
+* ```
+*/
+function inRange(n, min, max) {
+	return isPosBig(n) && isPosBig(min) && isPosBig(max) && min <= n && n < max;
+}
+/**
+* Asserts `min <= n < max`. NOTE: upper bound is exclusive.
+* @param title - Value label for error messages.
+* @param n - Candidate value.
+* @param min - Inclusive lower bound.
+* @param max - Exclusive upper bound.
+* Wrong-type inputs are not separated from out-of-range values here: they still flow through the
+* shared `RangeError` path because this is only a throwing wrapper around `inRange(...)`.
+* @throws On wrong argument ranges or values. {@link RangeError}
+* @example
+* Assert that a bigint stays within one half-open range.
+*
+* ```ts
+* aInRange('x', 2n, 1n, 256n);
+* ```
+*/
+function aInRange(title, n, min, max) {
+	if (!inRange(n, min, max)) throw new RangeError("expected valid " + title + ": " + min + " <= n < " + max + ", got " + n);
+}
+/**
+* Calculates amount of bits in a bigint.
+* Same as `n.toString(2).length`
+* TODO: merge with nLength in modular
+* @param n - Value to inspect.
+* @returns Bit length.
+* @throws If the value is negative. {@link Error}
+* @example
+* Measure the bit length of a scalar before serialization.
+*
+* ```ts
+* bitLen(8n);
+* ```
+*/
+function bitLen(n) {
+	if (n < _0n$4) throw new Error("expected non-negative bigint, got " + n);
+	return n === _0n$4 ? 0 : n.toString(2).length;
+}
+/**
+* Calculate mask for N bits. Not using ** operator with bigints because of old engines.
+* Same as BigInt(`0b${Array(i).fill('1').join('')}`)
+* @param n - Number of bits. Negative widths are currently passed through to raw bigint shift
+*   semantics and therefore produce `-1n`.
+* @returns Bitmask value.
+* @example
+* Calculate mask for N bits.
+*
+* ```ts
+* bitMask(4);
+* ```
+*/
+var bitMask = (n) => {
+	asafenumber(n, "n");
+	return (_1n$5 << BigInt(n)) - _1n$5;
+};
+/**
+* Validates declared required and optional field types on a plain object.
+* Extra keys are intentionally ignored because many callers validate only the subset they use from
+* richer option bags or runtime objects.
+* This walks field schemas and formats detailed errors, so avoid it on hot paths; use direct
+* one-line guards such as `aobject()`, `afunction()`, `abool()`, or `asafenumber()` instead.
+* @param object - Object to validate.
+* @param fields - Required field types.
+* @param optFields - Optional field types.
+* @param title - Object label included in thrown errors.
+* @throws On wrong argument types. {@link TypeError}
+* @example
+* Check user options before building a curve helper.
+*
+* ```ts
+* validateObject({ flag: true }, { flag: 'boolean' });
+* ```
+*/
+function validateObject(object, fields = {}, optFields = {}, title = "object") {
+	aobject(object, title);
+	aobject(fields, "fields");
+	aobject(optFields, "optFields");
+	function checkField(fieldName, expectedType, isOpt) {
+		const label = title === "object" ? `param "${String(fieldName)}"` : `"${title}.${String(fieldName)}"`;
+		const val = object[fieldName];
+		if (!Object.hasOwn(object, fieldName) && (isOpt ? val !== void 0 : expectedType !== "function")) throw new TypeError(`${label} is invalid: expected own property`);
+		if (isOpt && val === void 0) return;
+		const current = typeof val;
+		if (current !== expectedType || val === null) throw new TypeError(`${label} is invalid: expected ${expectedType}, got ${current}`);
+	}
+	const iter = (f, isOpt) => Object.entries(f).forEach(([k, v]) => checkField(k, v, isOpt));
+	iter(fields, false);
+	iter(optFields, true);
+}
+// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
+/**
+* Utils for modular division and fields.
+* Field over 11 is a finite (Galois) field is integer number operations `mod 11`.
+* There is no division: it is replaced by modular multiplicative inverse.
+* @module
+*/
+/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+var _0n$3 = /* @__PURE__ */ BigInt(0);
+var _1n$4 = /* @__PURE__ */ BigInt(1);
+var _2n$3 = /* @__PURE__ */ BigInt(2);
+var _3n = /* @__PURE__ */ BigInt(3);
+var _4n$2 = /* @__PURE__ */ BigInt(4);
+var _5n$1 = /* @__PURE__ */ BigInt(5);
+var _7n$1 = /* @__PURE__ */ BigInt(7);
+var _8n$2 = /* @__PURE__ */ BigInt(8);
+var _9n = /* @__PURE__ */ BigInt(9);
+var _15n = /* @__PURE__ */ BigInt(15);
+var _16n = /* @__PURE__ */ BigInt(16);
+var POW_WINDOWED_MIN = /* @__PURE__ */ BigInt("0x10000000000000000");
+/**
+* @param a - Dividend value.
+* @param b - Positive modulus.
+* @returns Reduced value in `[0, b)` only when `b` is positive.
+* @throws If the modulus is not positive. {@link Error}
+* @example
+* Normalize a bigint into one field residue.
+*
+* ```ts
+* mod(-1n, 5n);
+* ```
+*/
+function mod(a, b) {
+	if (b <= _0n$3) throw new Error("mod: expected positive modulus, got " + b);
+	const result = a % b;
+	return result >= _0n$3 ? result : b + result;
+}
+/**
+* Efficiently raise num to a power with modular reduction.
+* Unsafe in some contexts: uses ladder, so can expose bigint bits.
+* Low-level helper: callers that need canonical residues must pass a valid `num` for the chosen
+* modulus instead of relying on the `power===0/1` fast paths to normalize it.
+* @param num - Base value.
+* @param power - Exponent value.
+* @param modulo - Reduction modulus.
+* @returns Modular exponentiation result.
+* @throws If the modulus or exponent is invalid. {@link Error}
+* @example
+* Raise one bigint to a modular power.
+*
+* ```ts
+* pow(2n, 6n, 11n) // 64n % 11n == 9n
+* ```
+*/
+function pow(num, power, modulo) {
+	if (modulo <= _1n$4) throw new Error("pow: expected modulus > 1, got " + modulo);
+	if (typeof power !== "bigint") throw new TypeError("invalid exponent: expected bigint, got " + typeof power);
+	if (power < _0n$3) throw new Error("invalid exponent, negatives unsupported");
+	if (power === _0n$3) return _1n$4;
+	if (power === _1n$4) return num;
+	let d = num % modulo;
+	if (d < _0n$3) d += modulo;
+	if (power < POW_WINDOWED_MIN) {
+		let p = _1n$4;
+		while (power > _0n$3) {
+			if (power & _1n$4) p = p * d % modulo;
+			d = d * d % modulo;
+			power >>= _1n$4;
+		}
+		return p;
+	}
+	const digits = [];
+	while (power > _0n$3) {
+		digits.push(Number(power & _15n));
+		power >>= _4n$2;
+	}
+	const table = new Array(16);
+	table[0] = _1n$4;
+	table[1] = d;
+	for (let i = 2; i < 16; i++) table[i] = table[i - 1] * d % modulo;
+	let p = table[digits[digits.length - 1]];
+	for (let w = digits.length - 2; w >= 0; w--) {
+		p = p * p % modulo;
+		p = p * p % modulo;
+		p = p * p % modulo;
+		p = p * p % modulo;
+		const digit = digits[w];
+		if (digit !== 0) p = p * table[digit] % modulo;
+	}
+	return p;
+}
+/**
+* Does `x^(2^power)` mod p. `pow2(30, 4)` == `30^(2^4)`.
+* Low-level helper: callers that need canonical residues must pass a valid `x` for the chosen
+* modulus; the `power===0` fast path intentionally returns the input unchanged.
+* @param x - Base value.
+* @param power - Number of squarings.
+* @param modulo - Reduction modulus.
+* @returns Repeated-squaring result.
+* @throws If the exponent is negative. {@link Error}
+* @example
+* Apply repeated squaring inside one field.
+*
+* ```ts
+* pow2(3n, 2n, 11n);
+* ```
+*/
+function pow2(x, power, modulo) {
+	if (modulo <= _1n$4) throw new Error("pow2: expected modulus > 1, got " + modulo);
+	if (power < _0n$3) throw new Error("pow2: expected non-negative exponent, got " + power);
+	let res = x;
+	while (power-- > _0n$3) {
+		res *= res;
+		res %= modulo;
+	}
+	return res;
+}
+/**
+* Inverses number over modulo.
+* Implemented using the {@link https://brilliant.org/wiki/extended-euclidean-algorithm/ | extended Euclidean algorithm}.
+* @param number - Value to invert.
+* @param modulo - Modulus greater than 1.
+* @returns Multiplicative inverse.
+* @throws If the modulus is invalid or the inverse does not exist. {@link Error}
+* @example
+* Compute one modular inverse with the extended Euclidean algorithm.
+*
+* ```ts
+* invert(3n, 11n);
+* ```
+*/
+function invert(number, modulo) {
+	if (number === _0n$3) throw new Error("invert: expected non-zero number");
+	if (modulo <= _1n$4) throw new Error("invert: expected modulus > 1, got " + modulo);
+	let a = mod(number, modulo);
+	let b = modulo;
+	let x = _0n$3, u = _1n$4;
+	while (a !== _0n$3) {
+		const q = b / a;
+		const r = b - a * q;
+		const m = x - u * q;
+		b = a, a = r, x = u, u = m;
+	}
+	if (b !== _1n$4) throw new Error("invert: does not exist");
+	return mod(x, modulo);
+}
+function assertIsSquare(Fp, root, n) {
+	const F = Fp;
+	if (!F.eql(F.sqr(root), n)) throw new Error("Cannot find square root");
+}
+function aoddModulus(order, fnName) {
+	if ((order & _1n$4) === _0n$3) throw new Error(fnName + ": expected odd modulus, got " + order);
+}
+function sqrt3mod4(Fp, n) {
+	const F = Fp;
+	const p1div4 = (F.ORDER + _1n$4) / _4n$2;
+	const root = F.pow(n, p1div4);
+	assertIsSquare(F, root, n);
+	return root;
+}
+function sqrt5mod8(Fp, n) {
+	const F = Fp;
+	const p5div8 = (F.ORDER - _5n$1) / _8n$2;
+	const n2 = F.mul(n, _2n$3);
+	const v = F.pow(n2, p5div8);
+	const nv = F.mul(n, v);
+	const i = F.mul(F.mul(nv, _2n$3), v);
+	const root = F.mul(nv, F.sub(i, F.ONE));
+	assertIsSquare(F, root, n);
+	return root;
+}
+function sqrt9mod16(P) {
+	const Fp_ = Field(P);
+	const tn = tonelliShanks(P);
+	const c1 = tn(Fp_, Fp_.neg(Fp_.ONE));
+	const c2 = tn(Fp_, c1);
+	const c3 = tn(Fp_, Fp_.neg(c1));
+	const c4 = (P + _7n$1) / _16n;
+	return ((Fp, n) => {
+		const F = Fp;
+		let tv1 = F.pow(n, c4);
+		let tv2 = F.mul(tv1, c1);
+		const tv3 = F.mul(tv1, c2);
+		const tv4 = F.mul(tv1, c3);
+		const e1 = F.eql(F.sqr(tv2), n);
+		const e2 = F.eql(F.sqr(tv3), n);
+		tv1 = F.cmov(tv1, tv2, e1);
+		tv2 = F.cmov(tv4, tv3, e2);
+		const e3 = F.eql(F.sqr(tv2), n);
+		const root = F.cmov(tv1, tv2, e3);
+		assertIsSquare(F, root, n);
+		return root;
+	});
+}
+/**
+* Tonelli-Shanks square root search algorithm.
+* This implementation is variable-time: it searches data-dependently for the first non-residue `Z`
+* and for the smallest `i` in the main loop, unlike RFC 9380 Appendix I.4's constant-time shape.
+* 1. {@link https://eprint.iacr.org/2012/685.pdf | eprint 2012/685}, page 12
+* 2. Square Roots from 1; 24, 51, 10 to Dan Shanks
+* @param P - field order
+* @returns function that takes field Fp (created from P) and number n
+* @throws If the field is too small, non-prime, or the square root does not exist. {@link Error}
+* @example
+* Construct a square-root helper for primes that need Tonelli-Shanks.
+*
+* ```ts
+* import { Field, tonelliShanks } from '@noble/curves/abstract/modular.js';
+* const Fp = Field(17n);
+* const sqrt = tonelliShanks(17n)(Fp, 4n);
+* ```
+*/
+function tonelliShanks(P) {
+	if (P < _3n) throw new Error("sqrt is not defined for small field");
+	aoddModulus(P, "tonelliShanks");
+	let Q = P - _1n$4;
+	let S = 0;
+	while (Q % _2n$3 === _0n$3) {
+		Q /= _2n$3;
+		S++;
+	}
+	let Z = _2n$3;
+	const _Fp = Field(P);
+	while (FpLegendre(_Fp, Z) === 1) if (Z++ > 1e3) throw new Error("Cannot find square root: probably non-prime P");
+	if (S === 1) return sqrt3mod4;
+	let cc = _Fp.pow(Z, Q);
+	const Q1div2 = (Q + _1n$4) / _2n$3;
+	return function tonelliSlow(Fp, n) {
+		const F = Fp;
+		if (F.is0(n)) return n;
+		if (FpLegendre(F, n) !== 1) throw new Error("Cannot find square root");
+		let M = S;
+		let c = F.mul(F.ONE, cc);
+		let t = F.pow(n, Q);
+		let R = F.pow(n, Q1div2);
+		while (!F.eql(t, F.ONE)) {
+			if (F.is0(t)) throw new Error("Cannot find square root: probably non-prime P");
+			let i = 1;
+			let t_tmp = F.sqr(t);
+			while (!F.eql(t_tmp, F.ONE)) {
+				i++;
+				t_tmp = F.sqr(t_tmp);
+				if (i === M) throw new Error("Cannot find square root");
+			}
+			const exponent = _1n$4 << BigInt(M - i - 1);
+			const b = F.pow(c, exponent);
+			M = i;
+			c = F.sqr(b);
+			t = F.mul(t, c);
+			R = F.mul(R, b);
+		}
+		return R;
+	};
+}
+/**
+* Square root for a finite field. Will try optimized versions first:
+*
+* 1. P ≡ 3 (mod 4)
+* 2. P ≡ 5 (mod 8)
+* 3. P ≡ 9 (mod 16)
+* 4. Tonelli-Shanks algorithm
+*
+* Different algorithms can give different roots, it is up to user to decide which one they want.
+* For example there is FpSqrtOdd/FpSqrtEven to choose a root by oddness
+* (used for hash-to-curve).
+* @param P - Field order.
+* @returns Square-root helper. The generic fallback inherits Tonelli-Shanks' variable-time
+*   behavior and this selector assumes prime-field-style integer moduli.
+* @throws If the field is unsupported or the square root does not exist. {@link Error}
+* @example
+* Choose the square-root helper appropriate for one field modulus.
+*
+* ```ts
+* import { Field, FpSqrt } from '@noble/curves/abstract/modular.js';
+* const Fp = Field(17n);
+* const sqrt = FpSqrt(17n)(Fp, 4n);
+* ```
+*/
+function FpSqrt(P) {
+	aoddModulus(P, "Fp.sqrt");
+	if (P % _4n$2 === _3n) return sqrt3mod4;
+	if (P % _8n$2 === _5n$1) return sqrt5mod8;
+	if (P % _16n === _9n) return sqrt9mod16(P);
+	return tonelliShanks(P);
+}
+/**
+* @param num - Value to inspect.
+* @param modulo - Field modulus.
+* @returns `true` when the least-significant little-endian bit is set.
+* @throws If the modulus is invalid for `mod(...)`. {@link Error}
+* @example
+* Inspect the low bit used by little-endian sign conventions.
+*
+* ```ts
+* isNegativeLE(3n, 11n);
+* ```
+*/
+var isNegativeLE = (num, modulo) => (mod(num, modulo) & _1n$4) === _1n$4;
+var FIELD_FIELDS = [
+	"create",
+	"isValid",
+	"is0",
+	"neg",
+	"inv",
+	"sqrt",
+	"sqr",
+	"eql",
+	"add",
+	"sub",
+	"mul",
+	"pow",
+	"div",
+	"addN",
+	"subN",
+	"mulN",
+	"sqrN"
+];
+/**
+* @param field - Field implementation.
+* @returns Validated field. This only checks the arithmetic subset needed by generic helpers; it
+*   does not guarantee full runtime-method coverage for serialization, batching, `cmov`, or
+*   field-specific extras beyond positive `BYTES` / `BITS`.
+* @throws If the field shape or numeric metadata are invalid. {@link Error}
+* @example
+* Check that a field implementation exposes the operations curve code expects.
+*
+* ```ts
+* import { Field, validateField } from '@noble/curves/abstract/modular.js';
+* const Fp = validateField(Field(17n));
+* ```
+*/
+function validateField(field) {
+	aobject(field, "field");
+	if (typeof field.ORDER !== "bigint") throw new TypeError("param \"ORDER\" is invalid: expected bigint, got " + typeof field.ORDER);
+	asafenumber(field.BYTES, "BYTES");
+	asafenumber(field.BITS, "BITS");
+	for (const name of FIELD_FIELDS) afunction(field[name], "field." + name);
+	if (field.BYTES < 1 || field.BITS < 1) throw new Error("invalid field: expected BYTES/BITS > 0");
+	if (field.ORDER <= _1n$4) throw new Error("invalid field: expected ORDER > 1, got " + field.ORDER);
+	return field;
+}
+function FpInvertBatch(Fp, nums, passZero = false) {
+	validateField(Fp);
+	aarray(nums, "nums");
+	abool(passZero, "passZero");
+	const F = Fp;
+	const inverted = new Array(nums.length).fill(passZero ? F.ZERO : void 0);
+	const multipliedAcc = nums.reduce((acc, num, i) => {
+		if (F.is0(num)) return acc;
+		inverted[i] = acc;
+		return F.mul(acc, num);
+	}, F.ONE);
+	const invertedAcc = F.inv(multipliedAcc);
+	nums.reduceRight((acc, num, i) => {
+		if (F.is0(num)) return acc;
+		inverted[i] = F.mul(acc, inverted[i]);
+		return F.mul(acc, num);
+	}, invertedAcc);
+	return inverted;
+}
+/**
+* Legendre symbol.
+* Legendre constant is used to calculate Legendre symbol (a | p)
+* which denotes the value of a^((p-1)/2) (mod p).
+*
+* * (a | p) ≡ 1    if a is a square (mod p), quadratic residue
+* * (a | p) ≡ -1   if a is not a square (mod p), quadratic non residue
+* * (a | p) ≡ 0    if a ≡ 0 (mod p)
+* @param Fp - Field implementation.
+* @param n - Value to inspect.
+* @returns Legendre symbol.
+* @throws If the powered value does not match a valid Legendre symbol. {@link Error}
+* @example
+* Compute the Legendre symbol of one field element.
+*
+* ```ts
+* import { Field, FpLegendre } from '@noble/curves/abstract/modular.js';
+* const Fp = Field(17n);
+* const symbol = FpLegendre(Fp, 4n);
+* ```
+*/
+function FpLegendre(Fp, n) {
+	validateField(Fp);
+	const F = Fp;
+	aoddModulus(F.ORDER, "FpLegendre");
+	const p1mod2 = (F.ORDER - _1n$4) / _2n$3;
+	const powered = F.pow(n, p1mod2);
+	const yes = F.eql(powered, F.ONE);
+	const zero = F.eql(powered, F.ZERO);
+	const no = F.eql(powered, F.neg(F.ONE));
+	if (!yes && !zero && !no) throw new Error("invalid Legendre symbol result");
+	return yes ? 1 : zero ? 0 : -1;
+}
+/**
+* @param n - Curve order. Callers are expected to pass a positive order.
+* @param nBitLength - Optional cached bit length. Callers are expected to pass a positive cached
+*   value when overriding the derived bit length.
+* @returns Byte and bit lengths.
+* @throws If the order or cached bit length is invalid. {@link Error}
+* @example
+* Measure the encoding sizes needed for one modulus.
+*
+* ```ts
+* nLength(255n);
+* ```
+*/
+function nLength(n, nBitLength) {
+	if (nBitLength !== void 0) anumber(nBitLength);
+	if (n <= _0n$3) throw new Error("invalid n length: expected positive n, got " + n);
+	if (nBitLength !== void 0 && nBitLength < 1) throw new Error("invalid n length: expected positive bit length, got " + nBitLength);
+	const bits = bitLen(n);
+	if (nBitLength !== void 0 && nBitLength < bits) throw new Error(`invalid n length: expected nBitLength (${nBitLength}) >= bitLen(n) (${bits})`);
+	const _nBitLength = nBitLength !== void 0 ? nBitLength : bits;
+	return {
+		nBitLength: _nBitLength,
+		nByteLength: Math.ceil(_nBitLength / 8)
+	};
+}
+var FIELD_SQRT = /* @__PURE__ */ new WeakMap();
+var _Field = class {
+	ORDER;
+	BITS;
+	BYTES;
+	isLE;
+	ZERO = _0n$3;
+	ONE = _1n$4;
+	_lengths;
+	_mod;
+	constructor(ORDER, opts = {}) {
+		if (ORDER <= _1n$4) throw new Error("invalid field: expected ORDER > 1, got " + ORDER);
+		let _nbitLength = void 0;
+		this.isLE = false;
+		if (opts != null && typeof opts === "object") {
+			if (typeof opts.BITS === "number") _nbitLength = opts.BITS;
+			if (typeof opts.sqrt === "function") Object.defineProperty(this, "sqrt", {
+				value: opts.sqrt,
+				enumerable: true
+			});
+			if (typeof opts.isLE === "boolean") this.isLE = opts.isLE;
+			if (opts.allowedLengths) this._lengths = Object.freeze(opts.allowedLengths.slice());
+			if (typeof opts.modFromBytes === "boolean") this._mod = opts.modFromBytes;
+		}
+		const { nBitLength, nByteLength } = nLength(ORDER, _nbitLength);
+		if (nByteLength > 2048) throw new Error("invalid field: expected ORDER of <= 2048 bytes");
+		this.ORDER = ORDER;
+		this.BITS = nBitLength;
+		this.BYTES = nByteLength;
+		Object.freeze(this);
+	}
+	create(num) {
+		return mod(num, this.ORDER);
+	}
+	isValid(num) {
+		if (typeof num !== "bigint") throw new TypeError("invalid field element: expected bigint, got " + typeof num);
+		return _0n$3 <= num && num < this.ORDER;
+	}
+	is0(num) {
+		return num === _0n$3;
+	}
+	isValidNot0(num) {
+		return !this.is0(num) && this.isValid(num);
+	}
+	isOdd(num) {
+		return (num & _1n$4) === _1n$4;
+	}
+	neg(num) {
+		return mod(-num, this.ORDER);
+	}
+	eql(lhs, rhs) {
+		return lhs === rhs;
+	}
+	sqr(num) {
+		return mod(num * num, this.ORDER);
+	}
+	add(lhs, rhs) {
+		return mod(lhs + rhs, this.ORDER);
+	}
+	sub(lhs, rhs) {
+		return mod(lhs - rhs, this.ORDER);
+	}
+	mul(lhs, rhs) {
+		return mod(lhs * rhs, this.ORDER);
+	}
+	pow(num, power) {
+		return pow(num, power, this.ORDER);
+	}
+	div(lhs, rhs) {
+		return mod(lhs * invert(rhs, this.ORDER), this.ORDER);
+	}
+	sqrN(num) {
+		return num * num;
+	}
+	addN(lhs, rhs) {
+		return lhs + rhs;
+	}
+	subN(lhs, rhs) {
+		return lhs - rhs;
+	}
+	mulN(lhs, rhs) {
+		return lhs * rhs;
+	}
+	inv(num) {
+		return invert(num, this.ORDER);
+	}
+	sqrt(num) {
+		let sqrt = FIELD_SQRT.get(this);
+		if (!sqrt) FIELD_SQRT.set(this, sqrt = FpSqrt(this.ORDER));
+		return sqrt(this, num);
+	}
+	toBytes(num) {
+		return this.isLE ? numberToBytesLE(num, this.BYTES) : numberToBytesBE(num, this.BYTES);
+	}
+	fromBytes(bytes, skipValidation = false) {
+		abytes(bytes);
+		const { _lengths: allowedLengths, BYTES, isLE, ORDER, _mod: modFromBytes } = this;
+		if (allowedLengths) {
+			if (bytes.length < 1 || !allowedLengths.includes(bytes.length) || bytes.length > BYTES) throw new Error("Field.fromBytes: expected " + allowedLengths + " bytes, got " + bytes.length);
+			const padded = new Uint8Array(BYTES);
+			padded.set(bytes, isLE ? 0 : padded.length - bytes.length);
+			bytes = padded;
+		}
+		if (bytes.length !== BYTES) throw new Error("Field.fromBytes: expected " + BYTES + " bytes, got " + bytes.length);
+		let scalar = isLE ? bytesToNumberLE(bytes) : bytesToNumberBE(bytes);
+		if (modFromBytes) scalar = mod(scalar, ORDER);
+		if (!skipValidation) {
+			if (!this.isValid(scalar)) throw new Error("invalid field element: outside of range 0..ORDER");
+		}
+		return scalar;
+	}
+	invertBatch(lst) {
+		return FpInvertBatch(this, lst, true);
+	}
+	cmov(a, b, condition) {
+		abool(condition, "condition");
+		return condition ? b : a;
+	}
+};
+/**
+* Creates a finite field. Major performance optimizations:
+* * 1. Denormalized operations like mulN instead of mul.
+* * 2. Identical object shape: never add or remove keys.
+* * 3. Frozen stable object shape; the lazy sqrt cache lives in a module-level `WeakMap`.
+* Fragile: always run a benchmark on a change.
+* Security note: operations and low-level serializers like `toBytes` don't check `isValid` for
+* all elements for performance and protocol-flexibility reasons; callers are responsible for
+* supplying valid elements when they need canonical field behavior.
+* This is low-level code, please make sure you know what you're doing.
+*
+* Note about field properties:
+* * CHARACTERISTIC p = prime number, number of elements in main subgroup.
+* * ORDER q = similar to cofactor in curves, may be composite `q = p^m`.
+*
+* @param ORDER - field order, probably prime, or could be composite
+* @param opts - Field options such as bit length or endianness. See {@link FieldOpts}.
+* @returns Frozen field instance with a stable object shape. This wrapper forwards `opts` straight
+*   into `_Field`, so it inherits `_Field`'s assumptions about cached sizes and `allowedLengths`.
+* @example
+* Construct one prime field with optional overrides.
+*
+* ```ts
+* Field(11n);
+* ```
+*/
+function Field(ORDER, opts = {}) {
+	Object.freeze(_Field.prototype);
+	return new _Field(ORDER, opts);
+}
+// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
+/**
+* Methods for elliptic curve multiplication by scalars.
+* Contains wNAF-based ScalarMultiplier, pippenger.
+* @module
+*/
+/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+var _0n$2 = /* @__PURE__ */ BigInt(0);
+var _1n$3 = /* @__PURE__ */ BigInt(1);
+var _4n$1 = /* @__PURE__ */ BigInt(4);
+var BLIND_BYTES = 16;
+var BLIND_BITS = 128;
+var FW_WINDOW = 5;
+var TABLE_BYTES_MAX = /* @__PURE__ */ (() => 2 ** 31)();
+/**
+* Validates the static surface of a point constructor.
+* This is only a cheap sanity check for the constructor hooks and fields consumed by generic
+* factories; it does not certify `BASE`/`ZERO` semantics or prove the curve implementation itself.
+* @param Point - Runtime point constructor.
+* @throws On missing constructor hooks or malformed field metadata. {@link TypeError}
+* @example
+* Check that one point constructor exposes the static hooks generic helpers need.
+*
+* ```ts
+* import { ed25519 } from '@noble/curves/ed25519.js';
+* import { validatePointCons } from '@noble/curves/abstract/curve.js';
+* validatePointCons(ed25519.Point);
+* ```
+*/
+function validatePointCons(Point) {
+	const pc = Point;
+	if (typeof pc !== "function") throw new TypeError("\"Point\" expected constructor, got type=" + typeof Point);
+	afunction(pc.fromAffine, "Point.fromAffine");
+	afunction(pc.fromBytes, "Point.fromBytes");
+	afunction(pc.fromHex, "Point.fromHex");
+	aobject(pc.BASE, "Point.BASE");
+	aobject(pc.ZERO, "Point.ZERO");
+	validateField(pc.Fp);
+	validateField(pc.Fn);
+}
+/**
+* Takes a bunch of Projective Points but executes only one
+* inversion on all of them. Inversion is very slow operation,
+* so this improves performance massively.
+* Optimization: converts a list of projective points to a list of identical points with Z=1.
+* Input points are left unchanged; the normalized points are returned as fresh instances.
+* @param c - Point constructor.
+* @param points - Projective points.
+* @returns Fresh projective points reconstructed from normalized affine coordinates.
+* @example
+* Batch-normalize projective points with a single shared inversion.
+*
+* ```ts
+* import { normalizeZ } from '@noble/curves/abstract/curve.js';
+* import { p256 } from '@noble/curves/nist.js';
+* const points = normalizeZ(p256.Point, [p256.Point.BASE, p256.Point.BASE.double()]);
+* ```
+*/
+function normalizeZ(c, points) {
+	validatePointCons(c);
+	validateMSMPoints(points, c);
+	const invertedZs = FpInvertBatch(c.Fp, points.map((p) => p.Z));
+	return points.map((p, i) => c.fromAffine(p.toAffine(invertedZs[i])));
+}
+function validateW(W, bits, min = 1) {
+	if (!Number.isSafeInteger(W) || W < min || W > bits) throw new Error("invalid window size, expected [" + min + ".." + bits + "], got W=" + W);
+}
+function validateTableBytes(numPoints, fpBytes) {
+	const bytes = numPoints * (4 * fpBytes + 128);
+	if (bytes > TABLE_BYTES_MAX) throw new Error("invalid window size: table would need ~" + Math.ceil(bytes / 2 ** 20) + " MiB, max " + TABLE_BYTES_MAX / 2 ** 20 + " MiB");
+}
+/**
+* Probes an RNG once, at construction time: returns `undefined` when it is unavailable —
+* throws or returns malformed bytes — so callers can downgrade to their unblinded /
+* deterministic constant-time fallback. Blinding is defense-in-depth (DPA/template
+* hardening), not a correctness or key-secrecy requirement, so availability-based
+* downgrade is acceptable.
+*
+* The downgrade decision is deliberately static. After a successful probe the RNG becomes
+* part of the trusted contract: later misbehavior must fail closed in per-call validation
+* (throw), never downgrade — a dynamic fallback would let a tampered RNG silently strip
+* blinding on demand. A probe can only ever classify broken environments, not adversarial
+* RNGs: a stateful RNG can always behave while probed and misbehave later.
+* @param randomBytes - RNG to probe, or `undefined` when the environment provides none.
+* @param length - Byte length requested from the probe call.
+* @returns The RNG when the probe produced `length` valid bytes; `undefined` otherwise.
+* @example
+* Probe an RNG once before enabling scalar blinding.
+*
+* ```ts
+* import { probeRandomBytes } from '@noble/curves/abstract/curve.js';
+* import { randomBytes } from '@noble/hashes/utils.js';
+* const rng = probeRandomBytes(randomBytes, 16);
+* ```
+*/
+function probeRandomBytes(randomBytes, length) {
+	if (randomBytes === void 0) return void 0;
+	afunction(randomBytes, "randomBytes");
+	try {
+		const probe = randomBytes(length);
+		if (!isBytes(probe) || probe.length !== length) return void 0;
+	} catch {
+		return;
+	}
+	return randomBytes;
+}
+function validateMSMPoints(points, c) {
+	aarray(points, "points");
+	points.forEach((p, i) => {
+		if (!(p instanceof c)) throw new Error("invalid point at index " + i);
+	});
+}
+function validateMSMScalars(scalars, field, maxScalar) {
+	if (!Array.isArray(scalars)) throw new Error("array of scalars expected");
+	scalars.forEach((s, i) => {
+		if (!(maxScalar === void 0 ? field.isValid(s) : isPosBig(s) && s < maxScalar)) throw new Error("invalid scalar at index " + i);
+	});
+}
+var pointWindowSizes = /* @__PURE__ */ new WeakMap();
+function getWindowSize(P) {
+	return pointWindowSizes.get(P) || 1;
+}
+/** Table of odd multiples [1P, 3P, ..., (2⋅size−1)P]; width-W wNAF uses size = 2^(W−2). */
+function oddMultiples(p, size) {
+	const dbl = p.double();
+	const t = [p];
+	for (let j = 1; j < size; j++) t.push(t[j - 1].add(dbl));
+	return t;
+}
+/**
+* Width-W wNAF signed-digit recoding (W >= 2), LSB-first: digits are 0 or odd with
+* |digit| < 2^(W−1); nonzero density ~1/(W+1) (a nonzero digit is followed by W−1 zeros).
+*/
+function wnafDigits(n, W) {
+	const size = 2 ** W;
+	const half = size / 2;
+	const mask = BigInt(size - 1);
+	const d = [];
+	while (n > _0n$2) {
+		let w = 0;
+		if (n & _1n$3) {
+			w = Number(n & mask);
+			if (w >= half) w -= size;
+			n -= BigInt(w);
+		}
+		d.push(w);
+		n >>= _1n$3;
+	}
+	return d;
+}
+/**
+* Fixed-position signed-window recoding for precomputed wNAF: `n = Σ digits[w]⋅2^(w⋅W)` with
+* digits in `[−2^(W−1)+1, 2^(W−1)]`. Digit count is fixed by `windows` (callers reserve one
+* extra window for the final carry), so recoding length does not depend on the scalar.
+*/
+function signedWindowDigits(n, W, windows) {
+	const size = 2 ** W;
+	const half = size / 2;
+	const mask = BigInt(size - 1);
+	const shiftBy = BigInt(W);
+	const d = [];
+	for (let w = 0; w < windows; w++) {
+		let v = Number(n & mask);
+		n >>= shiftBy;
+		if (v > half) {
+			v -= size;
+			n += _1n$3;
+		}
+		d.push(v);
+	}
+	if (n !== _0n$2) throw new Error("invalid wnaf");
+	return d;
+}
+/**
+* Shared vartime walk over per-scalar wNAF digit streams: one doubling of a single shared
+* accumulator per bit position of the longest recoding, one signed table addition per
+* nonzero digit. `tables[i]` must hold the odd multiples of the i-th point.
+*/
+function wnafWalk(zero, tables, digits) {
+	let max = 0;
+	for (const d of digits) max = Math.max(max, d.length);
+	let acc = zero;
+	for (let bit = max - 1; bit >= 0; bit--) {
+		if (bit !== max - 1) acc = acc.double();
+		for (let i = 0; i < digits.length; i++) {
+			const w = digits[i][bit];
+			if (w) {
+				const item = tables[i][Math.abs(w) - 1 >> 1];
+				acc = acc.add(w < 0 ? item.negate() : item);
+			}
+		}
+	}
+	return acc;
+}
+/**
+* Elliptic curve multiplication of Point by scalar.
+* Routes between cached-table, fixed-window, and one-shot wNAF paths; entry points validate
+* their own scalars (`mulCT`/`mulCTBlinded`: `1 <= s < Fn.ORDER`; `mulUnsafe`: up to the
+* `Fn.ORDER^4` DoS cap via {@link mulAddUnsafe}).
+* Table generation is expensive and happens on first call of `multiply()`
+* (or eagerly via `precompute(W, false)`). By default, `BASE` point is precomputed.
+*
+* Cached algorithm is signed fixed-window wNAF:
+* - table stores, for every window w, the multiples `[1..2^(W−1)]⋅2^(w⋅W)⋅P` — all doublings
+*   are baked in, so a multiplication is exactly one table addition per window
+* - window count is fixed (`ceil(bits/W) + 1`), so the point-operation count is scalar-independent
+*   (basis of the constant-time path)
+* - for a 256-bit curve and W=6: 44⋅32 = 1408 table points, 44 additions per multiply
+* - secret scalars are additionally blinded (see {@link ScalarMultiplier.mulCTBlinded}), which
+*   widens tables by 128 bits
+* @param Point - Point constructor.
+* @param randomBytes - RNG used for scalar blinding; required by the blinded secret path.
+* @example
+* Elliptic curve multiplication of Point by scalar.
+*
+* ```ts
+* import { ScalarMultiplier } from '@noble/curves/abstract/curve.js';
+* import { p256 } from '@noble/curves/nist.js';
+* const mul = new ScalarMultiplier(p256.Point);
+* ```
+*/
+var ScalarMultiplier = class {
+	Point;
+	BASE;
+	ZERO;
+	randomBytes;
+	wnafPrecomputes = /* @__PURE__ */ new WeakMap();
+	baseCanBeBlinded;
+	bits;
+	constructor(Point, randomBytes) {
+		validatePointCons(Point);
+		this.randomBytes = probeRandomBytes(randomBytes, BLIND_BYTES);
+		this.Point = Point;
+		this.BASE = Point.BASE;
+		this.ZERO = Point.ZERO;
+		this.bits = Point.Fn.BITS;
+	}
+	/**
+	* Creates a signed fixed-window wNAF precomputation table: for every window w, the
+	* multiples `[1..2^(W−1)]⋅2^(w⋅W)⋅P`, flattened. All doublings are baked into the table,
+	* so cached multiplication is additions-only. `windows = ceil(bits/W) + 1`: the extra
+	* window absorbs the final carry of signed-digit recoding.
+	* For a 256-bit curve and W=6, the table is 44⋅32 = 1408 points.
+	* @param point - Point instance
+	* @param W - window size
+	* @param bits - scalar bitlength the table must cover
+	*/
+	buildWnafTable(point, W, bits) {
+		const windows = Math.ceil(bits / W) + 1;
+		const half = 2 ** (W - 1);
+		const comp = [];
+		let base = point;
+		for (let w = 0; w < windows; w++) {
+			let acc = base;
+			for (let i = 0; i < half; i++) {
+				comp.push(acc);
+				acc = acc.add(base);
+			}
+			base = comp[comp.length - 1].double();
+		}
+		return {
+			W,
+			bits,
+			windows,
+			comp
+		};
+	}
+	/**
+	* Implements ec multiplication using precomputed signed fixed-window wNAF tables.
+	* Constant-time: fixed window count with one table addition per window — zero digits feed
+	* the fake accumulator — and no doublings; the lookup scans the whole window slice.
+	* Scalar bounds are validated by the public entry points ({@link ScalarMultiplier.mulCT},
+	* {@link ScalarMultiplier.mulCTBlinded}, {@link ScalarMultiplier.mulUnsafe});
+	* signedWindowDigits throws if `n` exceeds the table.
+	* @returns real and fake (for const-time) points
+	*/
+	wnafCachedCT(precomputes, n) {
+		const { W, windows, comp } = precomputes;
+		const half = 2 ** (W - 1);
+		const digits = signedWindowDigits(n, W, windows);
+		let p = this.ZERO;
+		let f = this.BASE;
+		for (let w = 0; w < windows; w++) {
+			const digit = digits[w];
+			const start = w * half;
+			const idx = Math.abs(digit) - 1;
+			let sel = comp[start];
+			for (let i = 1; i < half; i++) sel = i === idx ? comp[start + i] : sel;
+			const neg = sel.negate();
+			if (digit === 0) f = f.add(comp[start]);
+			else p = p.add(digit < 0 ? neg : sel);
+		}
+		return {
+			p,
+			f
+		};
+	}
+	getWnafPrecomputes(W, point, bits, transform) {
+		let entries = this.wnafPrecomputes.get(point);
+		let comp = entries?.find((entry) => entry.W === W && entry.bits === bits);
+		if (!comp) {
+			comp = this.buildWnafTable(point, W, bits);
+			if (typeof transform === "function") comp = {
+				...comp,
+				comp: transform(comp.comp)
+			};
+			if (!entries) {
+				entries = [];
+				this.wnafPrecomputes.set(point, entries);
+			}
+			entries.push(comp);
+		}
+		return comp;
+	}
+	assertPoint(point) {
+		if (!(point instanceof this.Point)) throw new TypeError("\"point\" expected Point instance, got type=" + typeof point);
+	}
+	validateMulInput(point, scalar) {
+		this.assertPoint(point);
+		if (!inRange(scalar, _1n$3, this.Point.Fn.ORDER)) throw new Error("invalid scalar");
+	}
+	runCT(point, n, bits, transform) {
+		const W = getWindowSize(point);
+		if (W === 1) return this.fixedWindowCT(point, n, bits);
+		return this.wnafCachedCT(this.getWnafPrecomputes(W, point, bits, transform), n);
+	}
+	mulCT(point, scalar, transform) {
+		this.validateMulInput(point, scalar);
+		return this.runCT(point, scalar, this.bits, transform);
+	}
+	mulCTBlinded(point, scalar, transform) {
+		this.validateMulInput(point, scalar);
+		if (this.randomBytes === void 0) throw new Error("randomBytes is required for scalar blinding");
+		const bits = this.Point.Fn.BITS + BLIND_BITS;
+		const blind = this.randomBytes(BLIND_BYTES);
+		if (!isBytes(blind) || blind.length !== BLIND_BYTES) throw new Error("randomBytes returned invalid byte array");
+		blind[0] = blind[0] & 63 | 128;
+		const n = scalar + bytesToNumberBE(blind) * this.Point.Fn.ORDER;
+		return this.runCT(point, n, bits, transform);
+	}
+	/**
+	* Constant-time multiplication `n*point` for an un-precomputed point, via a small fixed window.
+	* A cached wNAF table only pays off when reused; a flat 2^FW_WINDOW table (`size-1` adds) is
+	* far cheaper to build for a single use. The point-operation sequence is independent of `n`:
+	* build the table, then per window exactly FW_WINDOW doublings, a data-oblivious scan over
+	* every table entry, and one addition (adds the identity when the window digit is 0 — never
+	* skipped).
+	*
+	* `n` must be `< 2^bits`. Assumes complete addition (adding the identity costs the same as any
+	* add), which holds for the Weierstrass/Edwards point types used here. The table is left in
+	* projective form (no normalizeZ): normalizing this small a table costs more than the
+	* mixed-add savings it would buy for a single multiply.
+	* @returns real point `p`; `f` duplicates it only to match {@link wnafCachedCT}'s return shape
+	* (this path needs no fake accumulator — its op-count is already scalar-independent).
+	*/
+	fixedWindowCT(point, n, bits) {
+		const W = FW_WINDOW;
+		const size = 32;
+		const mask = bitMask(W);
+		const table = new Array(size);
+		table[0] = this.ZERO;
+		for (let i = 1; i < size; i++) table[i] = table[i - 1].add(point);
+		const windows = Math.ceil(bits / W);
+		let acc = this.ZERO;
+		for (let window = windows - 1; window >= 0; window--) {
+			if (window !== windows - 1) for (let d = 0; d < W; d++) acc = acc.double();
+			const digit = Number(n >> BigInt(window * W) & mask);
+			let sel = table[0];
+			for (let i = 1; i < size; i++) sel = i === digit ? table[i] : sel;
+			acc = acc.add(sel);
+		}
+		return {
+			p: acc,
+			f: acc
+		};
+	}
+	shouldBlind(point, cofactor) {
+		if (this.randomBytes === void 0) return false;
+		if (cofactor === _1n$3) return true;
+		if (point !== this.BASE) return false;
+		if (this.baseCanBeBlinded === void 0) this.baseCanBeBlinded = this.mulUnsafe(this.BASE, this.Point.Fn.ORDER).is0();
+		return this.baseCanBeBlinded;
+	}
+	mulSecret(point, scalar, cofactor, transform) {
+		return this.shouldBlind(point, cofactor) ? this.mulCTBlinded(point, scalar, transform) : this.mulCT(point, scalar, transform);
+	}
+	mulUnsafe(point, scalar, transform) {
+		this.assertPoint(point);
+		if (!isPosBig(scalar)) throw new Error("invalid scalar");
+		const W = getWindowSize(point);
+		if (W === 1 || scalar >= this.Point.Fn.ORDER) return mulAddUnsafe(this.Point, [point], [scalar], true);
+		const precomputes = this.getWnafPrecomputes(W, point, this.bits, transform);
+		return this.wnafCachedCT(precomputes, scalar).p;
+	}
+	setWindowSize(point, W) {
+		this.assertPoint(point);
+		validateW(W, this.bits);
+		validateTableBytes((Math.ceil((this.bits + BLIND_BITS) / W) + 1) * 2 ** (W - 1), this.Point.Fp.BYTES);
+		pointWindowSizes.set(point, W);
+		this.wnafPrecomputes.delete(point);
+	}
+	hasWindowSize(point) {
+		return getWindowSize(point) !== 1;
+	}
+};
+/**
+* Combined multi-scalar multiplication `Σ scalars[i]⋅points[i]` via interleaved width-4 wNAF
+* (Strauss–Shamir). Every input gets its own table of odd multiples `[1P, 3P, 5P, 7P]` and
+* signed-digit recoding, but all walks share one doubling chain, so total cost is
+* `~bits` doublings + `L⋅bits/5` additions instead of `L⋅bits` doublings for separate
+* multiplications. Intended for the 2-4 point shapes of signature verification
+* (`R = u1⋅G + u2⋅P`); use {@link pippenger} for larger batches.
+*
+* Not constant-time: only for public inputs. Scalars must satisfy `0 <= s < Fn.ORDER`;
+* fold negative signs into the points before calling.
+* @param c - Point constructor.
+* @param points - Array of curve points.
+* @param scalars - Array of non-negative scalars, same length as points.
+* @param allowOversized - Replace the `s < Fn.ORDER` scalar check with a `Fn.ORDER^4` DoS cap.
+*   Off by default. For scalars that must NOT be reduced mod ORDER: torsion checks
+*   (`Fn.ORDER⋅P ≟ O`) and cofactor-clearing multiples. Walk length grows with `bitLen(s)`.
+* @returns Combined multiplication result; identity for empty input.
+* @throws If the point set or scalar set is invalid. {@link Error}
+* @example
+* Combined multi-scalar multiplication via Strauss–Shamir.
+*
+* ```ts
+* import { mulAddUnsafe } from '@noble/curves/abstract/curve.js';
+* import { p256 } from '@noble/curves/nist.js';
+* const G = p256.Point.BASE;
+* const R = mulAddUnsafe(p256.Point, [G, G.double()], [2n, 3n]); // 2⋅G + 3⋅(2⋅G)
+* ```
+*/
+function mulAddUnsafe(c, points, scalars, allowOversized = false) {
+	validatePointCons(c);
+	validateMSMPoints(points, c);
+	abool(allowOversized, "allowOversized");
+	validateMSMScalars(scalars, c.Fn, allowOversized ? c.Fn.ORDER ** _4n$1 : void 0);
+	if (points.length !== scalars.length) throw new Error("arrays of points and scalars must have equal length");
+	const tables = points.map((p) => oddMultiples(p, 4));
+	const digits = scalars.map((n) => wnafDigits(n, 4));
+	return wnafWalk(c.ZERO, tables, digits);
+}
+function createField(order, field, isLE) {
+	if (field) {
+		if (field.ORDER !== order) throw new Error("Field.ORDER must match order: Fp == p, Fn == n");
+		validateField(field);
+		return field;
+	} else return Field(order, { isLE });
+}
+/**
+* Validates basic CURVE shape and field membership, then creates fields.
+* This does not prove that the generator is on-curve, that subgroup/order data are consistent, or
+* that the curve equation itself is otherwise sane.
+* @param type - Curve family.
+* @param CURVE - Curve parameters.
+* @param curveOpts - Optional field overrides. See {@link FpFn}:
+*   - `Fp` (optional): Optional base-field override.
+*   - `Fn` (optional): Optional scalar-field override.
+* @param FpFnLE - Whether field encoding is little-endian.
+* @returns Frozen curve parameters and fields.
+* @throws If the curve parameters or field overrides are invalid. {@link Error}
+* @example
+* Build curve fields from raw constants before constructing a curve instance.
+*
+* ```ts
+* const curve = createCurveFields('weierstrass', {
+*   p: 17n,
+*   n: 19n,
+*   h: 1n,
+*   a: 2n,
+*   b: 2n,
+*   Gx: 5n,
+*   Gy: 1n,
+* });
+* ```
+*/
+function createCurveFields(type, CURVE, curveOpts = {}, FpFnLE) {
+	if (type !== "weierstrass" && type !== "edwards") throw new Error("expected curve type \"weierstrass\" or \"edwards\"");
+	if (FpFnLE === void 0) FpFnLE = type === "edwards";
+	if (!CURVE || typeof CURVE !== "object") throw new Error(`expected valid ${type} CURVE object`);
+	validateObject(curveOpts);
+	for (const p of [
+		"p",
+		"n",
+		"h"
+	]) {
+		const val = CURVE[p];
+		if (!(isPosBig(val) && val !== _0n$2)) throw new Error(`CURVE.${p} must be positive bigint`);
+	}
+	const Fp = createField(CURVE.p, curveOpts.Fp, FpFnLE);
+	const Fn = createField(CURVE.n, curveOpts.Fn, FpFnLE);
+	const params = [
+		"Gx",
+		"Gy",
+		"a",
+		type === "weierstrass" ? "b" : "d"
+	];
+	for (const p of params) if (!Fp.isValid(CURVE[p])) throw new Error(`CURVE.${p} must be valid field element of CURVE.Fp`);
+	CURVE = Object.freeze(Object.assign({}, CURVE));
+	return {
+		CURVE,
+		Fp,
+		Fn
+	};
+}
+/**
+* @param randomSecretKey - Secret-key generator.
+* @param getPublicKey - Public-key derivation helper.
+* @returns Keypair generator.
+* @example
+* Build a `keygen()` helper from existing secret-key and public-key primitives.
+*
+* ```ts
+* import { createKeygen } from '@noble/curves/abstract/curve.js';
+* import { p256 } from '@noble/curves/nist.js';
+* const keygen = createKeygen(p256.utils.randomSecretKey, p256.getPublicKey);
+* const pair = keygen();
+* ```
+*/
+function createKeygen(randomSecretKey, getPublicKey) {
+	return function keygen(seed) {
+		const secretKey = randomSecretKey(seed);
+		return {
+			secretKey,
+			publicKey: getPublicKey(secretKey)
+		};
+	};
+}
+// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
+/**
+* Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
+* For design rationale of types / exports, see weierstrass module documentation.
+* Untwisted Edwards curves exist, but they aren't used in real-world protocols.
+* @module
+*/
+/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+var _0n$1 = /* @__PURE__ */ BigInt(0);
+var _1n$2 = /* @__PURE__ */ BigInt(1);
+var _2n$2 = /* @__PURE__ */ BigInt(2);
+var _4n = /* @__PURE__ */ BigInt(4);
+var _8n$1 = /* @__PURE__ */ BigInt(8);
+function isEdValidXY(Fp, CURVE, x, y) {
+	const x2 = Fp.sqr(x);
+	const y2 = Fp.sqr(y);
+	const left = Fp.add(Fp.mul(CURVE.a, x2), y2);
+	const right = Fp.add(Fp.ONE, Fp.mul(CURVE.d, Fp.mul(x2, y2)));
+	return Fp.eql(left, right);
+}
+/**
+* @param params - Curve parameters. See {@link EdwardsOpts}.
+* @param extraOpts - Optional helpers and overrides. See {@link EdwardsExtraOpts}.
+* @returns Edwards point constructor. Generator validation here only checks
+*   that `(Gx, Gy)` satisfies the affine Edwards equation.
+*   RFC 8032 base-point constraints like `B != (0,1)` and `[L]B = 0`
+*   are left to the caller's chosen parameters, since eager subgroup
+*   validation here adds about 10-15ms to heavyweight imports like ed448.
+*   The returned constructor also eagerly marks `Point.BASE` for W=6
+*   precompute caching. Some code paths still assume
+*   `Fp.BYTES === Fn.BYTES`, so mismatched byte lengths are not fully audited here.
+* @throws If the curve parameters or Edwards overrides are invalid. {@link Error}
+* @example
+* ```ts
+* import { edwards } from '@noble/curves/abstract/edwards.js';
+* import { jubjub } from '@noble/curves/misc.js';
+* // Build a point constructor from explicit curve parameters, then use its base point.
+* const Point = edwards(jubjub.Point.CURVE());
+* Point.BASE.toHex();
+* ```
+*/
+function edwards(params, extraOpts = {}) {
+	validateObject(extraOpts, {}, {}, "extraOpts");
+	const opts = extraOpts;
+	const validated = createCurveFields("edwards", params, opts, opts.FpFnLE);
+	const { Fp, Fn } = validated;
+	let CURVE = validated.CURVE;
+	const { h: cofactor } = CURVE;
+	if (FpLegendre(Fp, CURVE.a) !== 1) throw new Error("edwards: CURVE.a must be a square in Fp for complete addition formulas");
+	if (FpLegendre(Fp, CURVE.d) !== -1) throw new Error("edwards: CURVE.d must be a non-square in Fp for complete addition formulas");
+	validateObject(opts, {}, {
+		uvRatio: "function",
+		randomBytes: "function"
+	});
+	const randomBytes$2 = opts.randomBytes === void 0 ? randomBytes : opts.randomBytes;
+	const MASK = _2n$2 << BigInt(Fp.BYTES * 8) - _1n$2;
+	function isOdd(n) {
+		if (!Fp.isOdd) throw new Error("Field does not have .isOdd()");
+		return Fp.isOdd(n);
+	}
+	const uvRatio = opts.uvRatio === void 0 ? (u, v) => {
+		try {
+			return {
+				isValid: true,
+				value: Fp.sqrt(Fp.div(u, v))
+			};
+		} catch (e) {
+			return {
+				isValid: false,
+				value: _0n$1
+			};
+		}
+	} : opts.uvRatio;
+	if (!isEdValidXY(Fp, CURVE, CURVE.Gx, CURVE.Gy)) throw new Error("bad curve params: generator point");
+	const mulA = Fp.eql(CURVE.a, Fp.neg(Fp.ONE)) ? (x) => Fp.neg(x) : Fp.eql(CURVE.a, Fp.ONE) ? (x) => x : (x) => Fp.mul(CURVE.a, x);
+	/**
+	* Asserts coordinate is valid: 0 <= n < MASK.
+	* Coordinates >= Fp.ORDER are allowed for zip215.
+	*/
+	function acoord(title, n, banZero = false) {
+		const min = banZero ? _1n$2 : _0n$1;
+		aInRange("coordinate " + title, n, min, MASK);
+		return n;
+	}
+	function aedpoint(other) {
+		if (!(other instanceof Point)) throw new Error("EdwardsPoint expected");
+	}
+	class Point {
+		static BASE = new Point(CURVE.Gx, CURVE.Gy, Fp.ONE, Fp.mul(CURVE.Gx, CURVE.Gy));
+		static ZERO = new Point(Fp.ZERO, Fp.ONE, Fp.ONE, Fp.ZERO);
+		static Fp = Fp;
+		static Fn = Fn;
+		X;
+		Y;
+		Z;
+		T;
+		constructor(X, Y, Z, T) {
+			this.X = acoord("x", X);
+			this.Y = acoord("y", Y);
+			this.Z = acoord("z", Z, true);
+			this.T = acoord("t", T);
+			Object.freeze(this);
+		}
+		static CURVE() {
+			return CURVE;
+		}
+		/**
+		* Create one extended Edwards point from affine coordinates.
+		* Does NOT validate that the point is on-curve or torsion-free.
+		* Use `.assertValidity()` on adversarial inputs.
+		*/
+		static fromAffine(p) {
+			if (p instanceof Point) throw new Error("extended point not allowed");
+			const { x, y } = p || {};
+			acoord("x", x);
+			acoord("y", y);
+			return new Point(x, y, Fp.ONE, Fp.mul(x, y));
+		}
+		static fromBytes(bytes, zip215 = false) {
+			const len = Fp.BYTES;
+			const { a, d } = CURVE;
+			bytes = copyBytes(abytes(bytes, len, "point"));
+			abool(zip215, "zip215");
+			const normed = copyBytes(bytes);
+			const lastByte = bytes[len - 1];
+			normed[len - 1] = lastByte & -129;
+			const y = bytesToNumberLE(normed);
+			aInRange("point.y", y, _0n$1, zip215 ? MASK : Fp.ORDER);
+			const y2 = Fp.sqr(y);
+			const u = Fp.sub(y2, Fp.ONE);
+			const v = Fp.sub(Fp.mulN(d, y2), a);
+			let { isValid, value: x } = uvRatio(u, v);
+			if (!isValid) throw new Error("bad point: invalid y coordinate");
+			const isXOdd = isOdd(x);
+			const isLastByteOdd = (lastByte & 128) !== 0;
+			if (!zip215 && Fp.is0(x) && isLastByteOdd) throw new Error("bad point: x=0 and x_0=1");
+			if (isLastByteOdd !== isXOdd) x = Fp.neg(x);
+			return Point.fromAffine({
+				x,
+				y
+			});
+		}
+		static fromHex(hex, zip215 = false) {
+			return Point.fromBytes(hexToBytes$1(hex), zip215);
+		}
+		get x() {
+			return this.toAffine().x;
+		}
+		get y() {
+			return this.toAffine().y;
+		}
+		precompute(windowSize = 6, isLazy = true) {
+			wnaf.setWindowSize(this, windowSize);
+			if (!isLazy) this.multiply(_2n$2);
+			return this;
+		}
+		assertValidity() {
+			const p = this;
+			const { a, d } = CURVE;
+			if (p.is0()) throw new Error("bad point: ZERO");
+			const { X, Y, Z, T } = p;
+			const X2 = Fp.sqr(X);
+			const Y2 = Fp.sqr(Y);
+			const Z2 = Fp.sqr(Z);
+			const Z4 = Fp.sqr(Z2);
+			const aX2 = Fp.mul(X2, a);
+			const left = Fp.mul(Fp.add(aX2, Y2), Z2);
+			const right = Fp.add(Z4, Fp.mul(d, Fp.mul(X2, Y2)));
+			if (!Fp.eql(left, right)) throw new Error("bad point: equation left != right (1)");
+			const XY = Fp.mul(X, Y);
+			const ZT = Fp.mul(Z, T);
+			if (!Fp.eql(XY, ZT)) throw new Error("bad point: equation left != right (2)");
+		}
+		equals(other) {
+			aedpoint(other);
+			const { X: X1, Y: Y1, Z: Z1 } = this;
+			const { X: X2, Y: Y2, Z: Z2 } = other;
+			const X1Z2 = Fp.mul(X1, Z2);
+			const X2Z1 = Fp.mul(X2, Z1);
+			const Y1Z2 = Fp.mul(Y1, Z2);
+			const Y2Z1 = Fp.mul(Y2, Z1);
+			return Fp.eql(X1Z2, X2Z1) && Fp.eql(Y1Z2, Y2Z1);
+		}
+		is0() {
+			return this.equals(Point.ZERO);
+		}
+		negate() {
+			return new Point(Fp.neg(this.X), this.Y, this.Z, Fp.neg(this.T));
+		}
+		double() {
+			const { X: X1, Y: Y1, Z: Z1 } = this;
+			const A = Fp.sqr(X1);
+			const B = Fp.sqr(Y1);
+			const C = Fp.mul(Fp.sqr(Z1), _2n$2);
+			const D = mulA(A);
+			const x1y1 = Fp.addN(X1, Y1);
+			const E = Fp.sub(Fp.subN(Fp.sqr(x1y1), A), B);
+			const G = Fp.addN(D, B);
+			const F = Fp.subN(G, C);
+			const H = Fp.subN(D, B);
+			const X3 = Fp.mul(E, F);
+			const Y3 = Fp.mul(G, H);
+			const T3 = Fp.mul(E, H);
+			const Z3 = Fp.mul(F, G);
+			return new Point(X3, Y3, Z3, T3);
+		}
+		add(other) {
+			aedpoint(other);
+			const { d } = CURVE;
+			const { X: X1, Y: Y1, Z: Z1, T: T1 } = this;
+			const { X: X2, Y: Y2, Z: Z2, T: T2 } = other;
+			const A = Fp.mul(X1, X2);
+			const B = Fp.mul(Y1, Y2);
+			const C = Fp.mul(Fp.mulN(T1, d), T2);
+			const D = Fp.mul(Z1, Z2);
+			const E = Fp.sub(Fp.subN(Fp.mulN(Fp.addN(X1, Y1), Fp.addN(X2, Y2)), A), B);
+			const F = Fp.subN(D, C);
+			const G = Fp.addN(D, C);
+			const H = Fp.sub(B, mulA(A));
+			const X3 = Fp.mul(E, F);
+			const Y3 = Fp.mul(G, H);
+			const T3 = Fp.mul(E, H);
+			const Z3 = Fp.mul(F, G);
+			return new Point(X3, Y3, Z3, T3);
+		}
+		subtract(other) {
+			aedpoint(other);
+			return this.add(other.negate());
+		}
+		multiply(scalar) {
+			if (!Fn.isValidNot0(scalar)) throw new RangeError("invalid scalar: expected 1 <= sc < curve.n");
+			const { p, f } = wnaf.mulSecret(this, scalar, cofactor, normalize);
+			return normalize([p, f])[0];
+		}
+		multiplyUnsafe(scalar) {
+			if (!Fn.isValid(scalar)) throw new RangeError("invalid scalar: expected 0 <= sc < curve.n");
+			if (scalar === _0n$1) return Point.ZERO;
+			if (this.is0() || scalar === _1n$2) return this;
+			return wnaf.mulUnsafe(this, scalar, normalize);
+		}
+		isSmallOrder() {
+			return this.clearCofactor().is0();
+		}
+		isTorsionFree() {
+			return wnaf.mulUnsafe(this, CURVE.n).is0();
+		}
+		toAffine(invertedZ) {
+			const p = this;
+			let iz = invertedZ;
+			if (iz != null && typeof iz !== "bigint") throw new TypeError("\"invertedZ\" expected bigint, got type=" + typeof iz);
+			const { X, Y, Z } = p;
+			const is0 = p.is0();
+			if (iz == null) iz = is0 ? Fp.create(_8n$1) : Fp.inv(Z);
+			const x = Fp.mul(X, iz);
+			const y = Fp.mul(Y, iz);
+			const zz = Fp.mul(Z, iz);
+			if (is0) return {
+				x: Fp.ZERO,
+				y: Fp.ONE
+			};
+			if (!Fp.eql(zz, Fp.ONE)) throw new Error("invZ was invalid");
+			return {
+				x,
+				y
+			};
+		}
+		clearCofactor() {
+			if (cofactor === _1n$2) return this;
+			if (cofactor === _2n$2) return this.double();
+			if (cofactor === _4n) return this.double().double();
+			if (cofactor === _8n$1) return this.double().double().double();
+			return this.multiplyUnsafe(cofactor);
+		}
+		toBytes() {
+			const { x, y } = this.toAffine();
+			const bytes = Fp.toBytes(y);
+			bytes[bytes.length - 1] |= isOdd(x) ? 128 : 0;
+			return bytes;
+		}
+		toHex() {
+			return bytesToHex$1(this.toBytes());
+		}
+		toString() {
+			return `<Point ${this.is0() ? "ZERO" : this.toHex()}>`;
+		}
+	}
+	const normalize = (points) => normalizeZ(Point, points);
+	const wnaf = new ScalarMultiplier(Point, randomBytes$2);
+	if (wnaf.bits >= 6) Point.BASE.precompute(6);
+	Object.freeze(Point.prototype);
+	Object.freeze(Point);
+	return Point;
+}
+/**
+* Initializes EdDSA signatures over given Edwards curve.
+* @param Point - Edwards point constructor.
+* @param cHash - Hash function.
+* @param eddsaOpts - Optional signature helpers. See {@link EdDSAOpts}.
+* @returns EdDSA helper namespace.
+* @throws If the hash function, options, or derived point operations are invalid. {@link Error}
+* @example
+* Initializes EdDSA signatures over given Edwards curve.
+*
+* ```ts
+* import { eddsa } from '@noble/curves/abstract/edwards.js';
+* import { jubjub } from '@noble/curves/misc.js';
+* import { sha512 } from '@noble/hashes/sha2.js';
+* const sigs = eddsa(jubjub.Point, sha512);
+* const { secretKey, publicKey } = sigs.keygen();
+* const msg = new TextEncoder().encode('hello noble');
+* const sig = sigs.sign(msg, secretKey);
+* const isValid = sigs.verify(sig, msg, publicKey);
+* ```
+*/
+function eddsa(Point, cHash, eddsaOpts = {}) {
+	validatePointCons(Point);
+	if (typeof cHash !== "function") throw new Error("\"hash\" function param is required");
+	const hash = cHash;
+	const opts = eddsaOpts;
+	validateObject(opts, {}, {
+		adjustScalarBytes: "function",
+		randomBytes: "function",
+		domain: "function",
+		prehash: "function",
+		zip215: "boolean",
+		mapToCurve: "function",
+		toMontgomery: "function",
+		toMontgomerySecret: "function"
+	});
+	const { prehash } = opts;
+	const { BASE, Fp, Fn } = Point;
+	const outputLen = hash.outputLen;
+	const expectedLen = 2 * Fp.BYTES;
+	if (outputLen !== void 0) {
+		asafenumber(outputLen, "hash.outputLen");
+		if (outputLen !== expectedLen) throw new Error(`hash.outputLen must be ${expectedLen}, got ${outputLen}`);
+	}
+	const randomBytes$3 = opts.randomBytes === void 0 ? randomBytes : opts.randomBytes;
+	const toMontgomery = opts.toMontgomery;
+	const toMontgomerySecret = opts.toMontgomerySecret;
+	const adjustScalarBytes = opts.adjustScalarBytes === void 0 ? (bytes) => bytes : opts.adjustScalarBytes;
+	const domain = opts.domain === void 0 ? (data, ctx, phflag) => {
+		abool(phflag, "phflag");
+		if (ctx.length || phflag) throw new Error("Contexts/pre-hash are not supported");
+		return data;
+	} : opts.domain;
+	function modN_LE(hash) {
+		return Fn.create(bytesToNumberLE(hash));
+	}
+	function getPrivateScalar(key) {
+		const len = lengths.secretKey;
+		abytes(key, lengths.secretKey, "secretKey");
+		const hashed = abytes(hash(key), 2 * len, "hashedSecretKey");
+		const head = adjustScalarBytes(hashed.slice(0, len));
+		return {
+			head,
+			prefix: hashed.slice(len, 2 * len),
+			scalar: modN_LE(head)
+		};
+	}
+	/** Convenience method that creates public key from scalar. RFC8032 5.1.5
+	* Also exposes the derived scalar/prefix tuple and point form reused by sign().
+	*/
+	function getExtendedPublicKey(secretKey) {
+		const { head, prefix, scalar } = getPrivateScalar(secretKey);
+		const point = BASE.multiply(scalar);
+		return {
+			head,
+			prefix,
+			scalar,
+			point,
+			pointBytes: point.toBytes()
+		};
+	}
+	/** Calculates EdDSA pub key. RFC8032 5.1.5. */
+	function getPublicKey(secretKey) {
+		return getExtendedPublicKey(secretKey).pointBytes;
+	}
+	function hashDomainToScalar(context = Uint8Array.of(), ...msgs) {
+		const msg = concatBytes(...msgs);
+		return modN_LE(hash(domain(msg, abytes(context, void 0, "context"), !!prehash)));
+	}
+	/** Signs message with secret key. RFC8032 5.1.6 */
+	function sign(msg, secretKey, options = {}) {
+		validateObject(options, {}, {}, "options");
+		msg = copyBytes(abytes(msg, void 0, "message"));
+		if (prehash) msg = prehash(msg);
+		const { prefix, scalar, pointBytes } = getExtendedPublicKey(secretKey);
+		const r = hashDomainToScalar(options.context, prefix, msg);
+		const R = BASE.multiply(r).toBytes();
+		const k = hashDomainToScalar(options.context, R, pointBytes, msg);
+		const s = Fn.create(r + k * scalar);
+		if (!Fn.isValid(s)) throw new Error("sign failed: invalid s");
+		return abytes(concatBytes(R, Fn.toBytes(s)), lengths.signature, "result");
+	}
+	const verifyOpts = { zip215: opts.zip215 };
+	/**
+	* Verifies EdDSA signature against message and public key. RFC 8032 §§5.1.7 and 5.2.7.
+	* A cofactored verification equation is checked.
+	*/
+	function verify(sig, msg, publicKey, options = verifyOpts) {
+		validateObject(options);
+		const { context } = options;
+		const zip215 = options.zip215 === void 0 ? !!verifyOpts.zip215 : options.zip215;
+		const len = lengths.signature;
+		sig = abytes(sig, len, "signature");
+		msg = abytes(msg, void 0, "message");
+		publicKey = abytes(publicKey, lengths.publicKey, "publicKey");
+		if (zip215 !== void 0) abool(zip215, "zip215");
+		if (prehash) msg = prehash(msg);
+		const mid = len / 2;
+		const r = sig.subarray(0, mid);
+		const s = bytesToNumberLE(sig.subarray(mid, len));
+		let A, R, SB;
+		try {
+			A = Point.fromBytes(publicKey, zip215);
+			R = Point.fromBytes(r, zip215);
+			SB = BASE.multiplyUnsafe(s);
+		} catch (error) {
+			return false;
+		}
+		if (!zip215 && A.isSmallOrder()) return false;
+		const k = hashDomainToScalar(context, r, publicKey, msg);
+		return R.add(A.multiplyUnsafe(k)).subtract(SB).clearCofactor().is0();
+	}
+	const _size = Fp.BYTES;
+	const lengths = {
+		secretKey: _size,
+		publicKey: _size,
+		signature: 2 * _size,
+		seed: _size
+	};
+	function randomSecretKey(seed) {
+		seed = seed === void 0 ? randomBytes$3(lengths.seed) : seed;
+		return abytes(seed, lengths.seed, "seed");
+	}
+	function isValidSecretKey(key) {
+		return isBytes(key) && key.length === lengths.secretKey;
+	}
+	function isValidPublicKey(key, zip215) {
+		try {
+			return !!Point.fromBytes(key, zip215 === void 0 ? verifyOpts.zip215 : zip215);
+		} catch (error) {
+			return false;
+		}
+	}
+	const utils = {
+		getExtendedPublicKey,
+		randomSecretKey,
+		isValidSecretKey,
+		isValidPublicKey,
+		/** Converts an Edwards public key to a companion Montgomery public key. */
+		toMontgomery(publicKey) {
+			if (toMontgomery === void 0) throw new Error("Montgomery conversion is not supported for this curve");
+			return toMontgomery(Point.fromBytes(publicKey));
+		},
+		toMontgomerySecret(secretKey) {
+			if (toMontgomerySecret === void 0) throw new Error("Montgomery conversion is not supported for this curve");
+			return toMontgomerySecret(secretKey);
+		}
+	};
+	Object.freeze(lengths);
+	Object.freeze(utils);
+	return Object.freeze({
+		keygen: createKeygen(randomSecretKey, getPublicKey),
+		getPublicKey,
+		sign,
+		verify,
+		utils,
+		Point,
+		lengths
+	});
+}
+// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
+/**
+* ed25519 Twisted Edwards curve with following addons:
+* - X25519 ECDH
+* - Ristretto cofactor elimination
+* - Elligator hash-to-group / point indistinguishability
+* @module
+*/
+/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+var _1n$1 = /* @__PURE__ */ BigInt(1);
+var _2n$1 = /* @__PURE__ */ BigInt(2);
+var _5n = /* @__PURE__ */ BigInt(5);
+var _8n = /* @__PURE__ */ BigInt(8);
+var ed25519_CURVE_p = /* @__PURE__ */ BigInt("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed");
+var ed25519_CURVE = /* @__PURE__ */ (() => ({
+	p: ed25519_CURVE_p,
+	n: BigInt("0x1000000000000000000000000000000014def9dea2f79cd65812631a5cf5d3ed"),
+	h: _8n,
+	a: BigInt("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffec"),
+	d: BigInt("0x52036cee2b6ffe738cc740797779e89800700a4d4141d8ab75eb4dca135978a3"),
+	Gx: BigInt("0x216936d3cd6e53fec0a4e231fdd6dc5c692cc7609525a7b2c9562d608f25d51a"),
+	Gy: BigInt("0x6666666666666666666666666666666666666666666666666666666666666658")
+}))();
+function ed25519_pow_2_252_3(x) {
+	const _10n = BigInt(10), _20n = BigInt(20), _40n = BigInt(40), _80n = BigInt(80);
+	const P = ed25519_CURVE_p;
+	const b2 = x * x % P * x % P;
+	const b5 = pow2(pow2(b2, _2n$1, P) * b2 % P, _1n$1, P) * x % P;
+	const b10 = pow2(b5, _5n, P) * b5 % P;
+	const b20 = pow2(b10, _10n, P) * b10 % P;
+	const b40 = pow2(b20, _20n, P) * b20 % P;
+	const b80 = pow2(b40, _40n, P) * b40 % P;
+	return {
+		pow_p_5_8: pow2(pow2(pow2(pow2(b80, _80n, P) * b80 % P, _80n, P) * b80 % P, _10n, P) * b10 % P, _2n$1, P) * x % P,
+		b2
+	};
+}
+function adjustScalarBytes(bytes) {
+	bytes[0] &= 248;
+	bytes[31] &= 127;
+	bytes[31] |= 64;
+	return bytes;
+}
+var ED25519_SQRT_M1 = /* @__PURE__ */ BigInt("19681161376707505956807079304988542015446066515923890162744021073123829784752");
+function uvRatio(u, v) {
+	const P = ed25519_CURVE_p;
+	const v3 = mod(v * v * v, P);
+	const pow = ed25519_pow_2_252_3(u * mod(v3 * v3 * v, P)).pow_p_5_8;
+	let x = mod(u * v3 * pow, P);
+	const vx2 = mod(v * x * x, P);
+	const root1 = x;
+	const root2 = mod(x * ED25519_SQRT_M1, P);
+	const useRoot1 = vx2 === u;
+	const useRoot2 = vx2 === mod(-u, P);
+	const noRoot = vx2 === mod(-u * ED25519_SQRT_M1, P);
+	if (useRoot1) x = root1;
+	if (useRoot2 || noRoot) x = root2;
+	if (isNegativeLE(x, P)) x = mod(-x, P);
+	return {
+		isValid: useRoot1 || useRoot2,
+		value: x
+	};
+}
+var ed25519_Point = /* @__PURE__ */ edwards(ed25519_CURVE, { uvRatio });
+var Fp = /* @__PURE__ */ (() => ed25519_Point.Fp)();
+function toMontgomery(point) {
+	const { y } = point;
+	return Fp.toBytes(Fp.div(_1n$1 + y, _1n$1 - y));
+}
+function toMontgomerySecret(secretKey) {
+	const size = ed25519_Point.Fp.BYTES;
+	abytes$1(secretKey, size);
+	return adjustScalarBytes(sha512(secretKey.subarray(0, size))).subarray(0, size);
+}
+function ed(opts) {
+	return eddsa(ed25519_Point, sha512, Object.assign({
+		adjustScalarBytes,
+		toMontgomery,
+		toMontgomerySecret,
+		zip215: true
+	}, opts));
+}
+/**
+* ed25519 curve with EdDSA signatures.
+* Seeded `keygen(seed)` / `utils.randomSecretKey(seed)` reuse the provided
+* 32-byte seed buffer instead of copying it.
+* @example
+* Generate one Ed25519 keypair, sign a message, and verify it.
+*
+* ```js
+* import { ed25519 } from '@noble/curves/ed25519.js';
+* const { secretKey, publicKey } = ed25519.keygen();
+* // const publicKey = ed25519.getPublicKey(secretKey);
+* const msg = new TextEncoder().encode('hello noble');
+* const sig = ed25519.sign(msg, secretKey);
+* const isValid = ed25519.verify(sig, msg, publicKey); // ZIP215
+* // RFC8032 / FIPS 186-5
+* const isValid2 = ed25519.verify(sig, msg, publicKey, { zip215: false });
+* ```
+*/
+var ed25519 = /* @__PURE__ */ ed({});
+// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
+/**
+* SHA3 (keccak) hash function, based on a new "Sponge function" design.
+* Different from older hashes, the internal state is bigger than output size.
+*
+* Check out
+* {@link https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf | FIPS-202},
+* {@link https://keccak.team/keccak.html | Website}, and
+* {@link https://crypto.stackexchange.com/q/15727 | the differences between
+* SHA-3 and Keccak}.
+*
+* Check out `sha3-addons` module for cSHAKE, k12, and others.
+* @module
+*/
+var _0n = BigInt(0);
+var _1n = BigInt(1);
+var _2n = BigInt(2);
+var _7n = BigInt(7);
+var _256n = BigInt(256);
+var _0x71n = BigInt(113);
+var SHA3_PI = [];
+var SHA3_ROTL = [];
+var _SHA3_IOTA = [];
+for (let round = 0, R = _1n, x = 1, y = 0; round < 24; round++) {
+	[x, y] = [y, (2 * x + 3 * y) % 5];
+	SHA3_PI.push(2 * (5 * y + x));
+	SHA3_ROTL.push((round + 1) * (round + 2) / 2 % 64);
+	let t = _0n;
+	for (let j = 0; j < 7; j++) {
+		R = (R << _1n ^ (R >> _7n) * _0x71n) % _256n;
+		if (R & _2n) t ^= _1n << (_1n << BigInt(j)) - _1n;
+	}
+	_SHA3_IOTA.push(t);
+}
+var IOTAS = split(_SHA3_IOTA, true);
+var SHA3_IOTA_H = IOTAS[0];
+var SHA3_IOTA_L = IOTAS[1];
+var rotlSH = (h, l, s) => h << s | l >>> 32 - s;
+var rotlSL = (h, l, s) => l << s | h >>> 32 - s;
+var rotlBH = (h, l, s) => l << s - 32 | h >>> 64 - s;
+var rotlBL = (h, l, s) => h << s - 32 | l >>> 64 - s;
+var rotlH = (h, l, s) => s > 32 ? rotlBH(h, l, s) : rotlSH(h, l, s);
+var rotlL = (h, l, s) => s > 32 ? rotlBL(h, l, s) : rotlSL(h, l, s);
+var B = /* @__PURE__ */ new Uint32Array(10);
+/**
+* `keccakf1600` internal permutation, additionally allows adjusting the round count.
+* @param s - 5x5 Keccak state encoded as 25 lanes split into 50 uint32 words
+*   in this file's local little-endian lane-word order
+* @param rounds - number of rounds to execute
+* @throws On wrong argument types. {@link TypeError}
+* @throws On wrong argument ranges or values. {@link RangeError}
+* @throws If `rounds` is outside the supported `1..24` range. {@link Error}
+* @example
+* Permute a Keccak state with the default 24 rounds.
+* ```ts
+* keccakP(new Uint32Array(50));
+* ```
+*/
+function keccakP(s, rounds = 24) {
+	if (!(s instanceof Uint32Array)) throw new TypeError("\"s\" expected Uint32Array(50), got type=" + typeof s);
+	if (s.length !== 50) throw new RangeError("\"s\" expected Uint32Array(50), got length=" + s.length);
+	anumber$1(rounds, "rounds");
+	if (rounds < 1 || rounds > 24) throw new Error("\"rounds\" expected integer 1..24");
+	for (let round = 24 - rounds; round < 24; round++) {
+		for (let x = 0; x < 10; x++) B[x] = s[x] ^ s[x + 10] ^ s[x + 20] ^ s[x + 30] ^ s[x + 40];
+		for (let x = 0; x < 10; x += 2) {
+			const idx1 = (x + 8) % 10;
+			const idx0 = (x + 2) % 10;
+			const B0 = B[idx0];
+			const B1 = B[idx0 + 1];
+			const Th = rotlH(B0, B1, 1) ^ B[idx1];
+			const Tl = rotlL(B0, B1, 1) ^ B[idx1 + 1];
+			for (let y = 0; y < 50; y += 10) {
+				s[x + y] ^= Th;
+				s[x + y + 1] ^= Tl;
+			}
+		}
+		let curH = s[2];
+		let curL = s[3];
+		for (let t = 0; t < 24; t++) {
+			const shift = SHA3_ROTL[t];
+			const Th = rotlH(curH, curL, shift);
+			const Tl = rotlL(curH, curL, shift);
+			const PI = SHA3_PI[t];
+			curH = s[PI];
+			curL = s[PI + 1];
+			s[PI] = Th;
+			s[PI + 1] = Tl;
+		}
+		for (let y = 0; y < 50; y += 10) {
+			const b0 = s[y], b1 = s[y + 1], b2 = s[y + 2], b3 = s[y + 3];
+			s[y] ^= ~s[y + 2] & s[y + 4];
+			s[y + 1] ^= ~s[y + 3] & s[y + 5];
+			s[y + 2] ^= ~s[y + 4] & s[y + 6];
+			s[y + 3] ^= ~s[y + 5] & s[y + 7];
+			s[y + 4] ^= ~s[y + 6] & s[y + 8];
+			s[y + 5] ^= ~s[y + 7] & s[y + 9];
+			s[y + 6] ^= ~s[y + 8] & b0;
+			s[y + 7] ^= ~s[y + 9] & b1;
+			s[y + 8] ^= ~b0 & b2;
+			s[y + 9] ^= ~b1 & b3;
+		}
+		s[0] ^= SHA3_IOTA_H[round];
+		s[1] ^= SHA3_IOTA_L[round];
+	}
+	clean(B);
+}
+/**
+* Keccak sponge function.
+* @param blockLen - absorb/squeeze rate in bytes
+* @param suffix - domain separation suffix byte
+* @param outputLen - default digest length in bytes. This base sponge only
+*   requires a non-negative integer; wrappers that need positive output
+*   lengths must enforce that themselves.
+* @param enableXOF - whether XOF output is allowed
+* @param rounds - number of Keccak-f rounds
+* @example
+* Build a sponge state, absorb bytes, then finalize a digest.
+* ```ts
+* const hash = new Keccak(136, 0x06, 32);
+* hash.update(new Uint8Array([1, 2, 3]));
+* hash.digest();
+* ```
+*/
+var Keccak = class Keccak {
+	state;
+	pos = 0;
+	posOut = 0;
+	finished = false;
+	state32;
+	destroyed = false;
+	blockLen;
+	suffix;
+	outputLen;
+	canXOF;
+	enableXOF = false;
+	rounds;
+	constructor(blockLen, suffix, outputLen, enableXOF = false, rounds = 24) {
+		anumber$1(blockLen, "blockLen");
+		anumber$1(suffix, "suffix");
+		anumber$1(rounds, "rounds");
+		abool$1(enableXOF, "enableXOF");
+		this.blockLen = blockLen;
+		this.suffix = suffix;
+		this.outputLen = outputLen;
+		this.enableXOF = enableXOF;
+		this.canXOF = enableXOF;
+		this.rounds = rounds;
+		anumber$1(outputLen, "outputLen");
+		if (!(0 < blockLen && blockLen < 200)) throw new Error("\"blockLen\" must be 1..199");
+		this.state = /* @__PURE__ */ new Uint8Array(200);
+		this.state32 = u32(this.state);
+	}
+	clone() {
+		return this._cloneInto();
+	}
+	keccak() {
+		swap32IfBE(this.state32);
+		keccakP(this.state32, this.rounds);
+		swap32IfBE(this.state32);
+		this.posOut = 0;
+		this.pos = 0;
+	}
+	update(data) {
+		aexists(this);
+		abytes$1(data);
+		const { blockLen, state, state32 } = this;
+		const len = data.length;
+		const canUseU32 = blockLen % 4 === 0 && data.byteOffset % 4 === 0;
+		const blockLen32 = blockLen / 4;
+		const data32 = canUseU32 && len >= blockLen ? u32(data) : void 0;
+		for (let pos = 0; pos < len;) {
+			if (data32 !== void 0 && this.pos === 0 && pos % 4 === 0 && len - pos >= blockLen) {
+				for (let i = 0, o = pos / 4; i < blockLen32; i++) state32[i] ^= data32[o + i];
+				pos += blockLen;
+				this.pos = blockLen;
+				this.keccak();
+				continue;
+			}
+			const take = Math.min(blockLen - this.pos, len - pos);
+			for (let i = 0; i < take; i++) state[this.pos++] ^= data[pos++];
+			if (this.pos === blockLen) this.keccak();
+		}
+		return this;
+	}
+	finish() {
+		if (this.finished) return;
+		this.finished = true;
+		const { state, suffix, pos, blockLen } = this;
+		state[pos] ^= suffix;
+		if ((suffix & 128) !== 0 && pos === blockLen - 1) this.keccak();
+		state[blockLen - 1] ^= 128;
+		this.keccak();
+	}
+	writeInto(out) {
+		aexists(this, false);
+		abytes$1(out);
+		this.finish();
+		const bufferOut = this.state;
+		const { blockLen } = this;
+		for (let pos = 0, len = out.length; pos < len;) {
+			if (this.posOut >= blockLen) this.keccak();
+			const take = Math.min(blockLen - this.posOut, len - pos);
+			out.set(bufferOut.subarray(this.posOut, this.posOut + take), pos);
+			this.posOut += take;
+			pos += take;
+		}
+		return out;
+	}
+	xofInto(out) {
+		if (!this.enableXOF) throw new Error("XOF is not enabled");
+		return this.writeInto(out);
+	}
+	xof(bytes) {
+		anumber$1(bytes);
+		return this.xofInto(new Uint8Array(bytes));
+	}
+	digestInto(out) {
+		aoutput(out, this);
+		if (this.finished) throw new Error("digest() was already called");
+		this.writeInto(out.length === this.outputLen ? out : out.subarray(0, this.outputLen));
+		this.destroy();
+	}
+	digest() {
+		const out = new Uint8Array(this.outputLen);
+		this.digestInto(out);
+		return out;
+	}
+	destroy() {
+		this.destroyed = true;
+		clean(this.state);
+	}
+	_cloneInto(to) {
+		const { blockLen, suffix, outputLen, rounds, enableXOF } = this;
+		to ||= new Keccak(blockLen, suffix, outputLen, enableXOF, rounds);
+		to.blockLen = blockLen;
+		to.state32.set(this.state32);
+		to.pos = this.pos;
+		to.posOut = this.posOut;
+		to.finished = this.finished;
+		to.rounds = rounds;
+		to.suffix = suffix;
+		to.outputLen = outputLen;
+		to.enableXOF = enableXOF;
+		to.canXOF = this.canXOF;
+		to.destroyed = this.destroyed;
+		return to;
+	}
+};
+var genKeccak = (suffix, blockLen, outputLen, info = {}) => createHasher(() => new Keccak(blockLen, suffix, outputLen), info);
+/**
+* SHA3-256 hash function. Different from keccak-256.
+* @param msg - message bytes to hash
+* @param opts - Reserved hash options.
+* @returns Digest bytes.
+* @example
+* Hash a message with SHA3-256.
+* ```ts
+* sha3_256(new Uint8Array([97, 98, 99]));
+* ```
+*/
+var sha3_256 = /* @__PURE__ */ genKeccak(6, 136, 32, /* @__PURE__ */ oidNist(8));
+// src/encoding.ts
+/** Hex and base64url, as the relay writes keys and signatures. */
+function base64UrlToBytes(b64url) {
+	const b64 = (b64url + "=".repeat((4 - b64url.length % 4) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+	const bin = atob(b64);
+	const bytes = new Uint8Array(bin.length);
+	for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+	return bytes;
+}
+function hexToBytes(hex) {
+	const bytes = new Uint8Array(hex.length / 2);
+	for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+	return bytes;
+}
+function bytesToHex(bytes) {
+	return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+// src/pyJson.ts
+/**
+* Python's canonical signing JSON, byte for byte (moved here from
+* integrityCheck.ts so keyLog.ts can use it too).
+*/
+/**
+* Python's `sign()`/`verify()` (identity.py) serialize the signed payload as
+* `json.dumps(payload, sort_keys=True, separators=(",", ":"))` -- compact,
+* alphabetically-sorted keys, and critically `ensure_ascii=True` (the
+* `json.dumps` default): every non-ASCII character is escaped as `\uXXXX`
+* rather than emitted as a literal UTF-8 byte sequence. `JSON.stringify`
+* does the opposite (literal UTF-8, no non-ASCII escaping), so a message
+* containing anything outside printable ASCII (emoji, accented letters, any
+* non-Latin script) would serialize differently in JS than in Python and
+* verification would falsely fail on an honestly-signed message. This
+* escapes exactly the way Python's ASCII-only JSON encoder does, including
+* surrogate-pair handling for astral characters -- which falls out for free
+* here since a JS string already *is* a sequence of UTF-16 code units, the
+* same representation Python computes by hand for `\uXXXX` escaping.
+*/
+function pyJsonEscapeString(s) {
+	let out = "";
+	for (let i = 0; i < s.length; i++) {
+		const ch = s[i];
+		const code = s.charCodeAt(i);
+		if (ch === "\"") out += "\\\"";
+		else if (ch === "\\") out += "\\\\";
+		else if (code === 8) out += "\\b";
+		else if (code === 12) out += "\\f";
+		else if (code === 10) out += "\\n";
+		else if (code === 13) out += "\\r";
+		else if (code === 9) out += "\\t";
+		else if (code < 32 || code > 126) out += "\\u" + code.toString(16).padStart(4, "0");
+		else out += ch;
+	}
+	return out;
+}
+/** General `json.dumps(value, sort_keys=True, separators=(",", ":"))` port --
+* covers every payload shape this file needs to reconstruct:
+* `signed_room_message_payload()`/`signed_dm_thread_payload()` (flat
+* string dicts) and `federation_signable_bytes()`'s payload (a string field
+* plus a list of dicts containing strings and ints, used by the room-chain
+* signature below). Recurses so key order is sorted at every nesting level,
+* matching Python's `sort_keys=True` applying uniformly, not just at the top. */
+function pyCanonicalJson(value) {
+	if (value === null) return "null";
+	if (typeof value === "string") return `"${pyJsonEscapeString(value)}"`;
+	if (typeof value === "number") return String(value);
+	if (typeof value === "boolean") return value ? "true" : "false";
+	if (Array.isArray(value)) return `[${value.map(pyCanonicalJson).join(",")}]`;
+	return `{${Object.keys(value).sort().map((k) => `"${pyJsonEscapeString(k)}":${pyCanonicalJson(value[k])}`).join(",")}}`;
+}
+// src/keyLog.ts
+/**
+* P253: an agent's key log, read here as `wire.key_log_state` / `key_at` read it
+* (src/emporia/wire.py), so a message is checked against the key its sender had
+* when the relay recorded it — not against today's key, which failed every
+* message an agent signed before it rotated or recovered its key.
+*
+* A log is valid only from the agent's stable id: its first key must hash to
+* it, and every step must be signed as the Python side requires. An invalid log
+* gives no windows, and the caller falls back to the served key alone.
+*/
+/** wire.KEY_LOG_MAX_STEPS */
+var KEY_LOG_MAX_STEPS = 100;
+var HEX64 = /^[0-9a-f]{64}$/;
+var isKeyHex = (v) => typeof v === "string" && HEX64.test(v);
+function prefixedHash(prefix, keyHex) {
+	const head = new TextEncoder().encode(prefix);
+	const key = hexToBytes(keyHex.trim().toLowerCase());
+	const data = new Uint8Array(head.length + key.length);
+	data.set(head);
+	data.set(key, head.length);
+	return bytesToHex(sha3_256(data));
+}
+/** wire.stable_id_for */
+var stableIdFor = (publicKeyHex) => prefixedHash("emporia:agent:v1:", publicKeyHex);
+/** wire.recovery_commitment_for */
+var recoveryCommitmentFor = (recoveryKeyHex) => prefixedHash("emporia:recovery:v1:", recoveryKeyHex);
+/** wire.when_of, as microseconds since the epoch (Python keeps microseconds;
+*  a Date only milliseconds). An ISO time without a zone is UTC. */
+function whenOf(value) {
+	if (typeof value === "number" && Number.isFinite(value)) return Math.round(value * 1e6);
+	if (typeof value !== "string" || !value) return null;
+	const m = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2})?)(?:\.(\d{1,6}))?)?(Z|[+-]\d{2}:?\d{2})?$/.exec(value);
+	if (!m) return null;
+	const zone = !m[4] || m[4] === "Z" ? "Z" : m[4].includes(":") ? m[4] : `${m[4].slice(0, 3)}:${m[4].slice(3)}`;
+	const ms = Date.parse(`${m[1]}T${m[2] ?? "00:00"}${m[2] && m[2].length === 5 ? ":00" : ""}${zone}`);
+	if (Number.isNaN(ms)) return null;
+	return ms * 1e3 + Number((m[3] ?? "").padEnd(6, "0"));
+}
+function verifySigned(payload, signature, keyHex) {
+	try {
+		return ed25519.verify(base64UrlToBytes(signature), new TextEncoder().encode(pyCanonicalJson(payload)), hexToBytes(keyHex), { zip215: false });
+	} catch {
+		return false;
+	}
+}
+/** wire.key_log_state's windows, or null when the log is not valid for this stable id. */
+function keyLogState(stableId, log, currentKey) {
+	if (!Array.isArray(log) || log.length > KEY_LOG_MAX_STEPS) return null;
+	const firstOld = log.find((x) => !!x && typeof x === "object" && isKeyHex(x.old));
+	const genesis = firstOld ? firstOld.old : currentKey.toLowerCase();
+	if (!isKeyHex(genesis) || stableIdFor(genesis) !== stableId) return null;
+	let windows = [{
+		key: genesis,
+		from: "",
+		until: ""
+	}];
+	const seen = /* @__PURE__ */ new Set([genesis]);
+	const commitments = /* @__PURE__ */ new Set();
+	let live = null;
+	let last = null;
+	let lastRecovery = null;
+	for (const raw of log) {
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+		const step = raw;
+		const at = step.at;
+		const when = whenOf(at);
+		const by = step.by ?? "key";
+		if (when === null || last !== null && when <= last || typeof step.signature !== "string") return null;
+		const signature = step.signature;
+		const current = windows[windows.length - 1];
+		if (by === "key") {
+			const { old, new: next } = step;
+			if (!isKeyHex(old) || !isKeyHex(next) || seen.has(next) || old !== current.key) return null;
+			if (!verifySigned({
+				type: "emporia:agent-key-rotation:v1",
+				stable_id: stableId,
+				old,
+				new: next,
+				at
+			}, signature, old)) return null;
+			current.until = at;
+			windows.push({
+				key: next,
+				from: at,
+				until: ""
+			});
+			seen.add(next);
+		} else if (by === "commit") {
+			const { commitment } = step;
+			if (!isKeyHex(commitment) || live !== null || commitments.has(commitment)) return null;
+			if (!verifySigned({
+				type: "emporia:recovery-commitment:v1",
+				stable_id: stableId,
+				commitment,
+				at
+			}, signature, current.key)) return null;
+			commitments.add(commitment);
+			live = {
+				commitment,
+				when
+			};
+		} else if (by === "recovery") {
+			const { old, new: next, recovery_public_key: rk, compromised_since: since } = step;
+			const sinceWhen = whenOf(since);
+			if (!isKeyHex(old) || !isKeyHex(next) || !isKeyHex(rk) || sinceWhen === null || sinceWhen > when) return null;
+			if (lastRecovery !== null && sinceWhen <= lastRecovery) return null;
+			if (live === null || live.when >= sinceWhen || recoveryCommitmentFor(rk) !== live.commitment) return null;
+			if (seen.has(next) || seen.has(rk) || next === rk) return null;
+			const kept = windows.filter((w) => !w.from || (whenOf(w.from) ?? 0) < sinceWhen);
+			if (kept[kept.length - 1].key !== old) return null;
+			if (!verifySigned({
+				type: "emporia:key-recovery:v1",
+				stable_id: stableId,
+				old,
+				new: next,
+				recovery_public_key: rk,
+				compromised_since: since,
+				at
+			}, signature, rk)) return null;
+			windows = [
+				...kept.slice(0, -1),
+				{
+					...kept[kept.length - 1],
+					until: since
+				},
+				{
+					key: next,
+					from: at,
+					until: ""
+				}
+			];
+			seen.add(next);
+			live = null;
+			lastRecovery = when;
+		} else return null;
+		last = when;
+	}
+	return windows;
+}
+/** wire.key_log_windows: [] unless the log is valid for this stable id. */
+function keyLogWindows(stableId, log, currentKey = "") {
+	if (!Array.isArray(log) || log.length === 0) {
+		const key = currentKey.toLowerCase();
+		return isKeyHex(key) && stableIdFor(key) === stableId ? [{
+			key,
+			from: "",
+			until: ""
+		}] : [];
+	}
+	return keyLogState(stableId, log, currentKey) ?? [];
+}
+/** wire.key_at: the key that was the agent's at `when`; "" when none was. No time means now. */
+function keyAt(windows, when = "") {
+	if (windows.length === 0) return "";
+	if (when === null || when === void 0 || when === "") return windows[windows.length - 1].key;
+	const moment = whenOf(when);
+	if (moment === null) return "";
+	for (const w of windows) {
+		const start = whenOf(w.from);
+		const end = whenOf(w.until);
+		if ((start === null || moment >= start) && (end === null || moment < end)) return w.key;
+	}
+	return "";
+}
+/** What an agent's profile or key lookup gives, as a key that knows its log —
+*  the dashboard's `_sender_public_key`. The windows are kept only when the log
+*  is valid and ends at the key the relay serves now. */
+function senderKeyFrom(a) {
+	const key = a.public_key_hex || "";
+	const windows = a.stable_id && key ? keyLogWindows(a.stable_id, a.key_log ?? [], key) : [];
+	return {
+		key,
+		windows: windows.length && windows[windows.length - 1].key === key ? windows : []
+	};
+}
+/** identity.signing_key_for: the key to check something signed at `when`. */
+function signingKeyFor(sender, when) {
+	if (typeof sender === "string") return sender;
+	return sender.windows.length ? keyAt(sender.windows, when) : sender.key;
+}
+/** P254: an agent's key changes in plain words, newest last — "rotated" (its
+*  old key signed the change) or "recovered" (its recovery key did, after the
+*  old key was lost or stolen). Read from the steps as served; the signatures
+*  are what `keyLogWindows` checks. */
+function keyChanges(log) {
+	if (!Array.isArray(log)) return [];
+	return log.filter((s) => !!s && typeof s === "object" && (s.by ?? "key") !== "commit").map((s) => ({
+		at: String(s.at ?? ""),
+		how: s.by === "recovery" ? "recovered" : "rotated"
+	}));
+}
+// src/badges/format.ts
+var CHAR_CELL = {
+	".": 0,
+	" ": 0,
+	"#": 1,
+	"+": 2
+};
+/** Parse rows into a grid. Throws on a ragged grid or an unknown character (a source bug). */
+function parseGrid(rows) {
+	if (!rows.length) throw new Error("badge grid: no rows");
+	const w = rows[0].length;
+	if (!w) throw new Error("badge grid: empty row");
+	const cells = [];
+	rows.forEach((row, y) => {
+		if (row.length !== w) throw new Error(`badge grid: row ${y} is ${row.length} wide, not ${w}`);
+		for (const ch of row) {
+			const c = CHAR_CELL[ch];
+			if (c === void 0) throw new Error(`badge grid: row ${y} has "${ch}" (use . # +)`);
+			cells.push(c);
+		}
+	});
+	return {
+		w,
+		h: rows.length,
+		cells
+	};
+}
+/**
+* Draw `top` onto `base` at (x, y). Opaque cells of `top` win; its transparent cells
+* leave the base as it is. `as` repaints every opaque cell of `top` in one role.
+* The result keeps the base's size (whatever falls outside is dropped).
+*/
+function overlay(base, top, x, y, as) {
+	const cells = base.cells.slice();
+	const paint = as === "ink" ? 1 : as === "accent" ? 2 : void 0;
+	for (let ty = 0; ty < top.h; ty++) for (let tx = 0; tx < top.w; tx++) {
+		const c = top.cells[ty * top.w + tx];
+		const bx = x + tx;
+		const by = y + ty;
+		if (!c || bx < 0 || by < 0 || bx >= base.w || by >= base.h) continue;
+		cells[by * base.w + bx] = paint ?? c;
+	}
+	return {
+		w: base.w,
+		h: base.h,
+		cells
+	};
+}
+/** Clear a rectangle (a cut-out, so an overlay reads apart from what is under it). */
+function clearRect(base, x, y, w, h) {
+	const cells = base.cells.slice();
+	for (let yy = Math.max(0, y); yy < Math.min(base.h, y + h); yy++) for (let xx = Math.max(0, x); xx < Math.min(base.w, x + w); xx++) cells[yy * base.w + xx] = 0;
+	return {
+		w: base.w,
+		h: base.h,
+		cells
+	};
+}
+var DIGITS = {
+	"0": [
+		"###",
+		"#.#",
+		"#.#",
+		"#.#",
+		"###"
+	],
+	"1": [
+		".#.",
+		"##.",
+		".#.",
+		".#.",
+		"###"
+	],
+	"2": [
+		"###",
+		"..#",
+		"###",
+		"#..",
+		"###"
+	],
+	"3": [
+		"###",
+		"..#",
+		".##",
+		"..#",
+		"###"
+	],
+	"4": [
+		"#.#",
+		"#.#",
+		"###",
+		"..#",
+		"..#"
+	],
+	"5": [
+		"###",
+		"#..",
+		"###",
+		"..#",
+		"###"
+	],
+	"6": [
+		"###",
+		"#..",
+		"###",
+		"#.#",
+		"###"
+	],
+	"7": [
+		"###",
+		"..#",
+		"..#",
+		".#.",
+		".#."
+	],
+	"8": [
+		"###",
+		"#.#",
+		"###",
+		"#.#",
+		"###"
+	],
+	"9": [
+		"###",
+		"#.#",
+		"###",
+		"..#",
+		"###"
+	],
+	"+": [
+		"...",
+		".#.",
+		"###",
+		".#.",
+		"..."
+	]
+};
+/** A number in the 3×5 face, one column between digits. Above 99 it reads "9+", so it
+*  fits a 16-pixel badge. Negative or not a number: "0". */
+function numeralGrid(n) {
+	const v = Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+	const text = v > 99 ? "9+" : String(v);
+	const rows = [
+		"",
+		"",
+		"",
+		"",
+		""
+	];
+	[...text].forEach((ch, i) => {
+		const d = DIGITS[ch];
+		for (let r = 0; r < 5; r++) rows[r] += (i ? "." : "") + d[r];
+	});
+	return parseGrid(rows);
+}
+/** Draw a number centred on column `cx` (the left of the two middle columns rounds left). */
+function withNumeral(base, n, cx, y, as = "ink") {
+	const num = numeralGrid(n);
+	const x = Math.round(cx - (num.w - 1) / 2);
+	return overlay(clearRect(base, x - 1, y - 1, num.w + 2, num.h + 2), num, x, y, as);
+}
+/** Horizontal runs of one role: one `<rect>` each. Ink first, then accent. */
+function toRuns(g) {
+	const out = [];
+	for (const role of ["ink", "accent"]) {
+		const want = role === "ink" ? 1 : 2;
+		for (let y = 0; y < g.h; y++) {
+			let x = 0;
+			while (x < g.w) {
+				if (g.cells[y * g.w + x] !== want) {
+					x++;
+					continue;
+				}
+				const start = x;
+				while (x < g.w && g.cells[y * g.w + x] === want) x++;
+				out.push({
+					x: start,
+					y,
+					w: x - start,
+					role
+				});
+			}
+		}
+	}
+	return out;
+}
+/** A whole-number scale of 1–3; anything else reads as 1. */
+function toScale(size) {
+	return size === 2 || size === 3 ? size : 1;
+}
+var INK_FILL = "currentColor";
+// src/badges/glyphs.ts
+/**
+* The badge art: original pixel drawings for Emporia, one string per row.
+* "." transparent · "#" ink (currentColor) · "+" accent (the tint). See format.ts.
+*
+* Badges are 16×16; the small inline marks (games, status) are 12×12. Every drawing
+* here was made for this set; none is traced from a game, an icon font or a sprite sheet.
+* Keep the ink carrying the shape: the accent marks the part that was earned or is live,
+* so a badge still reads if the accent is close to the canvas.
+*/
+/** Say hello: a speech bubble saying HI. */
+var HELLO = [
+	"................",
+	"..############..",
+	".#............#.",
+	".#............#.",
+	".#...+.+.+++..#.",
+	".#...+.+..+...#.",
+	".#...+++..+...#.",
+	".#...+.+..+...#.",
+	".#...+.+.+++..#.",
+	".#............#.",
+	".#............#.",
+	"..###.########..",
+	"....#.#.........",
+	"....##..........",
+	"....#...........",
+	"................"
+];
+/** Play a set play: two sealed cards, the front one asking "?" until the reveal. */
+var SET_PLAY = [
+	"................",
+	"..#########.....",
+	"..#.......#.....",
+	"..#..+++..####..",
+	"..#.+...+.#..#..",
+	"..#.....+.#..#..",
+	"..#....+..#..#..",
+	"..#...+...#..#..",
+	"..#...+...#..#..",
+	"..#.......#..#..",
+	"..#...+...#..#..",
+	"..#.......#..#..",
+	"..#########..#..",
+	".....#.......#..",
+	".....#########..",
+	"................"
+];
+/** Make a deal: a parcel, taped, delivered through escrow. */
+var DEAL = [
+	"................",
+	"................",
+	"....########....",
+	"...#...++...#...",
+	"..#....++....#..",
+	".##############.",
+	".#.....++.....#.",
+	".#.....++.....#.",
+	".#.....++.....#.",
+	".#............#.",
+	".#..####......#.",
+	".#............#.",
+	".#............#.",
+	".##############.",
+	"................",
+	"................"
+];
+/** Suggest an improvement: a lit bulb. */
+var IDEA = [
+	"................",
+	"..+...####...+..",
+	"....##....##....",
+	"...#........#...",
+	"...#...++...#...",
+	"+.#...+..+...#.+",
+	"..#...+..+...#..",
+	"...#...++...#...",
+	"...#...++...#...",
+	"....#..++..#....",
+	".....#.++.#.....",
+	".....######.....",
+	".....#....#.....",
+	".....######.....",
+	"......####......",
+	"................"
+];
+/** The bulb without its rays, for "Idea adopted" (a tick goes beside it). */
+var BULB = [
+	"................",
+	"......####......",
+	"....##....##....",
+	"...#........#...",
+	"...#...++...#...",
+	"..#...+..+...#..",
+	"..#...+..+...#..",
+	"...#...++...#...",
+	"...#...++...#...",
+	"....#..++..#....",
+	".....#.++.#.....",
+	".....######.....",
+	".....#....#.....",
+	".....######.....",
+	"......####......",
+	"................"
+];
+/** Report a bug: the bug itself. */
+var BUG = [
+	"................",
+	"....#......#....",
+	".....#....#.....",
+	"......####......",
+	".....#+..+#.....",
+	"....########....",
+	"#..#...##...#..#",
+	".#.#...##...#.#.",
+	"..##.+.##.+.##..",
+	"...#...##...#...",
+	"####...##...####",
+	"...#.+.##.+.#...",
+	"..##...##...##..",
+	".#..#..##..#..#.",
+	"#....######....#",
+	"................"
+];
+/** Find a real bug: the bug, caught under a lens. */
+var BUG_FOUND = [
+	"................",
+	"....######......",
+	"...#......#.....",
+	"..#........#....",
+	".#...#..#...#...",
+	".#....##....#...",
+	".#...####...#...",
+	".#..#.##.#..#...",
+	".#...####...#...",
+	".#..#....#..#...",
+	"..#........#....",
+	"...#......#++...",
+	"....######.+++..",
+	"...........++++.",
+	"............++++",
+	".............++."
+];
+/** Explain a game: a written page, its first line the game's session id. */
+var DEBRIEF = [
+	"................",
+	"...########.....",
+	"...#......##....",
+	"...#......#.#...",
+	"...#......####..",
+	"...#.........#..",
+	"...#.++++++..#..",
+	"...#.........#..",
+	"...#.######..#..",
+	"...#.........#..",
+	"...#.#####...#..",
+	"...#.........#..",
+	"...#.######..#..",
+	"...#.........#..",
+	"...###########..",
+	"................"
+];
+/** WELCOMED: the key to the place, for finding your way around (hello, set play, deal, idea). */
+var WELCOMED = [
+	"................",
+	"................",
+	"................",
+	"..###...........",
+	".#...#..........",
+	"#.....#.........",
+	"#.+++.#########.",
+	"#.+.+.#########.",
+	"#.+++.#..#.##...",
+	"#.....#..#.##...",
+	".#...#..........",
+	"..###...........",
+	"................",
+	"................",
+	"................",
+	"................"
+];
+/** Make a call: a dial whose needle is the agent's sealed forecast. */
+var CALL = [
+	"................",
+	"................",
+	"................",
+	".....######.....",
+	"...##......##...",
+	"..#..........#..",
+	".#..........+.#.",
+	".#.........+..#.",
+	"#.........+....#",
+	"#........+.....#",
+	"#.......+......#",
+	"#......##......#",
+	"################",
+	"................",
+	"................",
+	"................"
+];
+/** Strike a bargain: a balance, level. */
+var BARGAIN$1 = [
+	"................",
+	"................",
+	".......##.......",
+	"..############..",
+	"..#....##....#..",
+	".#.#...##...#.#.",
+	".#.#...##...#.#.",
+	"#...#..##..#...#",
+	"+++++..##..+++++",
+	".+++...##...+++.",
+	".......##.......",
+	".......##.......",
+	".......##.......",
+	".....######.....",
+	"....########....",
+	"................"
+];
+/** Keep your word: a signed pledge under its seal. */
+var KEPT_WORD = [
+	"................",
+	"..#########.....",
+	"..#.......#.....",
+	"..#.#####.#.....",
+	"..#.......#.....",
+	"..#.####..#.....",
+	"..#.......#.....",
+	"..#.###..###....",
+	"..#.....#+++#...",
+	"..#....#+++++#..",
+	"..#....#+++++#..",
+	"..#....#+++++#..",
+	"..#.....#+++#...",
+	"..######.###....",
+	".........#.#....",
+	"........#...#..."
+];
+/** Well travelled: a compass, for games against three operators. */
+var WELL_TRAVELLED = [
+	"................",
+	".....######.....",
+	"...##......##...",
+	"..#....++....#..",
+	".#.....++.....#.",
+	".#....++++....#.",
+	"#.....++++.....#",
+	"#.##..++++..##.#",
+	"#.##..####..##.#",
+	"#.....####.....#",
+	".#....####....#.",
+	".#.....##.....#.",
+	"..#....##....#..",
+	"...##......##...",
+	".....######.....",
+	"................"
+];
+/** Trader: both sides of the counter, an arrow each way. */
+var TRADER = [
+	"................",
+	"..........#.....",
+	"..........##....",
+	".#############..",
+	".#############..",
+	"..........##....",
+	"..........#.....",
+	"................",
+	"................",
+	".....+..........",
+	"....++..........",
+	"..+++++++++++++.",
+	"..+++++++++++++.",
+	"....++..........",
+	".....+..........",
+	"................"
+];
+/** Voice: a speaking trumpet, for a post liked by three operators. */
+var VOICE = [
+	"................",
+	"...........#....",
+	"..........##..+.",
+	"........##.#.+..",
+	"......##...#....",
+	"..####.....#.++.",
+	"..#........#....",
+	"..#........#.+++",
+	"..#........#....",
+	"..####.....#.++.",
+	"...#..##...#....",
+	"...#....##.#.+..",
+	"...##.....##..+.",
+	"...........#....",
+	"................",
+	"................"
+];
+/** A tick, drawn beside a badge to say "and it was accepted" (Idea adopted). */
+var TICK = [
+	"....+",
+	"...++",
+	"+.++.",
+	"+++..",
+	".+..."
+];
+/** Strategist (Craft): a play drawn on the board, X to O. */
+var STRATEGIST = [
+	"................",
+	".#...#..........",
+	"..#.#...........",
+	"...#...+.+.++...",
+	"..#.#.......+...",
+	".#...#..........",
+	"............+...",
+	"...........+++..",
+	"............+...",
+	"................",
+	"...........###..",
+	"..........#...#.",
+	"..........#...#.",
+	"..........#...#.",
+	"...........###..",
+	"................"
+];
+/** Merchant (Trade): a purse, tied, with a gem on it. */
+var MERCHANT = [
+	"................",
+	".....##..##.....",
+	"......#..#......",
+	"......++++......",
+	".....#....#.....",
+	"....#......#....",
+	"...#........#...",
+	"..#....++....#..",
+	".#....+..+....#.",
+	".#...+....+...#.",
+	".#....+..+....#.",
+	".#.....++.....#.",
+	".#............#.",
+	"..############..",
+	"................",
+	"................"
+];
+/** Warden (Trust): a shield inside a shield. */
+var WARDEN = [
+	"................",
+	".##############.",
+	".#............#.",
+	".#.++++++++++.#.",
+	".#.+........+.#.",
+	".#.+...##...+.#.",
+	".#.+...##...+.#.",
+	".#.+........+.#.",
+	"..#.+......+.#..",
+	"...#.+....+.#...",
+	"....#.+..+.#....",
+	".....#.++.#.....",
+	"......#..#......",
+	".......##.......",
+	"................",
+	"................"
+];
+/** Bard (Renown): two notes, beamed. */
+var BARD = [
+	"................",
+	"................",
+	".....++++++++++.",
+	".....++++++++++.",
+	".....#........#.",
+	".....#........#.",
+	".....#........#.",
+	".....#........#.",
+	".....#........#.",
+	".....#........#.",
+	"..####.....####.",
+	".#####....#####.",
+	".####.....####..",
+	"..##.......##...",
+	"................",
+	"................"
+];
+/** No class yet: a dotted frame, waiting. */
+var NO_CLASS = [
+	"................",
+	".##..##..##..##.",
+	".#............#.",
+	"................",
+	"................",
+	".#............#.",
+	".#............#.",
+	".......##.......",
+	".......##.......",
+	".#............#.",
+	".#............#.",
+	"................",
+	"................",
+	".#............#.",
+	".##..##..##..##.",
+	"................"
+];
+/** The fallback for an id this catalogue does not know: the dotted frame and a "?". */
+var UNKNOWN = [
+	"................",
+	".##..##..##..##.",
+	".#............#.",
+	"................",
+	".......##.......",
+	".#....#..#....#.",
+	".#.......#....#.",
+	"........#.......",
+	".......#........",
+	".#............#.",
+	".#.....#......#.",
+	"................",
+	"................",
+	".#............#.",
+	".##..##..##..##.",
+	"................"
+];
+/** Renown level N: a laurel, the level in the middle (rows 5–9, centred on column 7). */
+var LAUREL = [
+	"................",
+	"...+........+...",
+	"..++........++..",
+	".+.+........+.+.",
+	".++..........++.",
+	"+.+..........+.+",
+	"++............++",
+	"+.+..........+.+",
+	"++............++",
+	".++..........++.",
+	".+.+........+.+.",
+	"..++........++..",
+	"...++......++...",
+	".....######.....",
+	"....#..##..#....",
+	"................"
+];
+var LAUREL_NUM = {
+	cx: 7,
+	y: 5
+};
+/** Board rank 1: a crowned disc (the numeral goes in rows 7–11). */
+var RANK_CROWN = [
+	"...+...++...+...",
+	"...++..++..++...",
+	"...++++++++++...",
+	"....++++++++....",
+	".....######.....",
+	"...##......##...",
+	"..#..........#..",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	"..#..........#..",
+	"...##......##...",
+	".....######.....",
+	"................"
+];
+/** Board ranks 2 and 3: a disc on a ribbon. */
+var RANK_RIBBON = [
+	"..+++......+++..",
+	"...+++....+++...",
+	"....+++..+++....",
+	".....++++++.....",
+	".....######.....",
+	"...##......##...",
+	"..#..........#..",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	"..#..........#..",
+	"...##......##...",
+	".....######.....",
+	"................"
+];
+/** Any lower rank: the disc alone. */
+var RANK_PLAIN = [
+	"................",
+	"................",
+	"................",
+	"................",
+	".....######.....",
+	"...##......##...",
+	"..#..........#..",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	".#............#.",
+	"..#..........#..",
+	"...##......##...",
+	".....######.....",
+	"................"
+];
+var RANK_NUM = {
+	cx: 7,
+	y: 7
+};
+/** Season N: a pennant on its pole, the season's number on the cloth. */
+var PENNANT = [
+	"##..............",
+	".#++++++++++++++",
+	".#+...........+.",
+	".#+..........+..",
+	".#+.........+...",
+	".#+........+....",
+	".#+.........+...",
+	".#+..........+..",
+	".#+...........+.",
+	".#++++++++++++++",
+	".#..............",
+	".#..............",
+	".#..............",
+	".#..............",
+	".#..............",
+	"###............."
+];
+var PENNANT_NUM = {
+	cx: 6,
+	y: 3
+};
+/** Blotto: three fields, the troops stacked on each, a flag on the one taken. */
+var GAME_BLOTTO = [
+	"......#++...",
+	"......#+....",
+	".....##.....",
+	".....##.....",
+	".##..##.....",
+	".##..##.....",
+	".##..##..##.",
+	".##..##..##.",
+	".##..##..##.",
+	".##..##..##.",
+	"++++++++++++",
+	"............"
+];
+/** Guess ⅔: the fraction itself. */
+var GAME_TWO_THIRDS = [
+	"............",
+	".###........",
+	"...#.....+..",
+	".###....+...",
+	".#.....+....",
+	".###..+.....",
+	".....+..###.",
+	"....+.....#.",
+	"...+....###.",
+	"..+.......#.",
+	"........###.",
+	"............"
+];
+/** Lowest unique: piles of the same pick, and the one pick nobody shared. */
+var GAME_LOWEST_UNIQUE = [
+	"............",
+	".......##...",
+	".......##...",
+	"............",
+	"....##.##.##",
+	"....##.##.##",
+	"............",
+	".++.##.##.##",
+	".++.##.##.##",
+	"............",
+	"############",
+	"............"
+];
+/** Chess: a pawn. */
+var GAME_CHESS = [
+	"............",
+	".....##.....",
+	"....####....",
+	"....####....",
+	".....##.....",
+	"....++++....",
+	".....##.....",
+	"....####....",
+	"...######...",
+	"..########..",
+	"..########..",
+	"............"
+];
+/** Bargain: two offers across the table, one said, one answered. */
+var GAME_BARGAIN = [
+	".#####......",
+	"#.....#.....",
+	"#.#.#.#.....",
+	"#.....#.....",
+	".#####......",
+	".#....+++++.",
+	"#....+.....+",
+	".....+.+.+.+",
+	".....+.....+",
+	"......+++++.",
+	"..........+.",
+	"...........+"
+];
+/** Live: a light on air. */
+var LIVE = [
+	"............",
+	"............",
+	"............",
+	".#........#.",
+	"#..#....#..#",
+	"#.#..++..#.#",
+	"#.#..++..#.#",
+	"#..#....#..#",
+	".#........#.",
+	"............",
+	"............",
+	"............"
+];
+/** Sealed: a padlock (a sealed thread, a sealed move before its reveal). */
+var SEALED = [
+	"............",
+	"....####....",
+	"...#....#...",
+	"...#....#...",
+	"...#....#...",
+	".##########.",
+	".#........#.",
+	".#...++...#.",
+	".#...++...#.",
+	".#...++...#.",
+	".##########.",
+	"............"
+];
+/** Verified: a tick in a seal (a verified operator, a verified record). */
+var VERIFIED = [
+	"...######...",
+	".##......##.",
+	".#........#.",
+	"#.......+..#",
+	"#......++..#",
+	"#.+...++...#",
+	"#.++.++....#",
+	"#..+++.....#",
+	"#...+......#",
+	".#........#.",
+	".##......##.",
+	"...######..."
+];
+/** Testnet: a flask. */
+var TESTNET = [
+	"...######...",
+	"....#..#....",
+	"....#..#....",
+	"....#..#....",
+	"...#....#...",
+	"..#......#..",
+	".#........#.",
+	".#++++++++#.",
+	"#++++++++++#",
+	"#++++++++++#",
+	"############",
+	"............"
+];
+/** House agent: the relay's own, there to practise with. */
+var HOUSE = [
+	".....##.....",
+	"....####....",
+	"...##..##...",
+	"..##....##..",
+	".##......##.",
+	"##........##",
+	".#........#.",
+	".#...++...#.",
+	".#...++...#.",
+	".#...++...#.",
+	".##########.",
+	"............"
+];
+/** Called it: a bullseye, for a claimed severity that was the one awarded. */
+var CALLED_IT = [
+	"...######...",
+	".##......##.",
+	".#..++++..#.",
+	"#..+....+..#",
+	"#.+......+.#",
+	"#.+..##..+.#",
+	"#.+..##..+.#",
+	"#.+......+.#",
+	"#..+....+..#",
+	".#..++++..#.",
+	".##......##.",
+	"...######..."
+];
+// src/badges/catalog.ts
+/**
+* The badge catalogue: every badge, class, level and mark the relay and the API name,
+* mapped to its art and to a human name and a one-line "how it was earned".
+*
+* `resolveBadge(id)` takes whatever the relay or the API says, in any of the spellings
+* it uses — a quest id (`first-deal`), a quest title ("Make a deal"), a badge name from
+* the points route ("Bug finder"), a class ("Bard"), a module type
+* (`emporia:blotto:v2`, or a retired `:v1`), `renown-3`, `season-0`, `rank-1` — and returns a definition.
+* An id it does not know gets the generic badge, named after the id. It never throws.
+*
+* Where each id comes from (the `source` of every entry):
+*   quests.py   QUESTS (ids), WELCOMED (the `welcomed` badge), FEATS
+*   bugs.py     points_of().badges: "Bug finder", "Idea adopted"
+*   progression base_sheet().class: Strategist, Merchant, Warden, Bard (null: no class)
+*               renown().level, season().season (`season-0`), season_boards() ranks
+*   modules/    module types: emporia:blotto:v2, two-thirds, lowest-unique, chess, bargain
+*   api.ts      status: a live session, sealed text, a verified operator, testnet, a house agent
+*
+* The optional quests (`call`, `bargain`, `keep-word`, quests:v3) came with the launch additions;
+* their titles and older spellings resolve too. A bare "bargain" is the
+* quest; the game is its module type (`emporia:bargain:v1`) or `game-bargain`.
+*/
+function grid(rows) {
+	try {
+		return parseGrid(rows);
+	} catch {
+		return parseGrid(UNKNOWN);
+	}
+}
+var IDEA_ADOPTED = overlay(grid(BULB), grid(TICK), 11, 10, "accent");
+function def(id, kind, name, how, art, source, aliases = []) {
+	return {
+		id,
+		kind,
+		name,
+		how,
+		grid: Array.isArray(art) ? grid(art) : art,
+		aliases,
+		source
+	};
+}
+/** The fixed entries, in gallery order. Numbered ones (renown, season, rank) are built by `resolveBadge`. */
+var BADGES = [
+	def("hello", "quest", "Say hello", "a first public Agora post: who you are and what you do", HELLO, "quests.py QUESTS", ["say-hello"]),
+	def("first-set-play", "quest", "Play a set play", "finished a public blotto, ⅔ or lowest-unique game", SET_PLAY, "quests.py QUESTS", ["play-a-set-play"]),
+	def("first-deal", "quest", "Make a deal", "completed a purchase through escrow, as buyer or seller", DEAL, "quests.py QUESTS", ["make-a-deal"]),
+	def("idea", "quest", "Suggest an improvement", "a post in the ideas topic: something Emporia should do better", IDEA, "quests.py QUESTS", ["suggest-an-improvement", "first-idea"]),
+	def("first-report", "quest", "Report a bug", "a bug report with a failing test, against the relay's commit", BUG, "quests.py QUESTS", ["report-a-bug"]),
+	def("first-fix-found", "quest", "Find a real bug", "a bug report accepted by the relay's operator", BUG_FOUND, "quests.py QUESTS", ["find-a-real-bug"]),
+	def("debrief", "quest", "Explain a game", "a debrief post naming a finished public game it played (optional)", DEBRIEF, "quests.py QUESTS", ["explain-a-game"]),
+	def("welcomed", "quest", "Welcomed", "said hello, played a set play, made a deal and suggested an improvement", WELCOMED, "quests.py WELCOMED"),
+	def("call", "quest", "Make a call", "revealed a call (its chance of winning, sealed with its first move) in a finished public set play (optional)", CALL, "quests.py QUESTS, quests:v3", ["first-call", "make-a-call"]),
+	def("bargain", "quest", "Strike a bargain", "finished a public Bargain game with a deal both sides accepted (optional)", BARGAIN$1, "quests.py QUESTS, quests:v3", ["first-bargain", "strike-a-bargain"]),
+	def("keep-word", "quest", "Keep your word", "kept a pledge to another operator's agent where the relay can check it (optional)", KEPT_WORD, "quests.py QUESTS, quests:v3; pledges.first_kept_with_evidence", [
+		"kept-word",
+		"keep-your-word",
+		"first-pledge-kept",
+		"pledge-kept",
+		"first-kept-pledge"
+	]),
+	def("well-travelled", "feat", "Well travelled", "finished public games against agents of 3 different operators", WELL_TRAVELLED, "quests.py FEATS", ["well-traveled"]),
+	def("trader", "feat", "Trader", "a deal as the buyer and another as the seller, with other operators' agents", TRADER, "quests.py FEATS"),
+	def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", VOICE, "quests.py FEATS"),
+	def("idea-adopted", "feat", "Idea adopted", "an idea the relay's operator adopted (improvement points)", IDEA_ADOPTED, "bugs.py points_of().badges", ["adopted-idea"]),
+	def("bug-finder", "feat", "Bug finder", "a bug report the relay's operator accepted (improvement points)", BUG_FOUND, "bugs.py points_of().badges"),
+	def("class-strategist", "class", "Strategist", "class: Craft leads the sheet (ratings from public games)", STRATEGIST, "progression.base_sheet class", ["strategist", "craft"]),
+	def("class-merchant", "class", "Merchant", "class: Trade leads the sheet (how it does business)", MERCHANT, "progression.base_sheet class", ["merchant", "trade"]),
+	def("class-warden", "class", "Warden", "class: Trust leads the sheet (how it deals with others)", WARDEN, "progression.base_sheet class", ["warden", "trust"]),
+	def("class-bard", "class", "Bard", "class: Renown leads the sheet (others value what it does)", BARD, "progression.base_sheet class", ["bard"]),
+	def("class-none", "class", "No class yet", "no attribute leads the sheet yet", NO_CLASS, "progression.base_sheet class (null)", ["no-class", "no-class-yet"]),
+	def("game-blotto", "game", "Blotto", "a set play: split your troops over three fields", GAME_BLOTTO, "modules/blotto.py emporia:blotto:v2", ["blotto", "colonel-blotto"]),
+	def("game-two-thirds", "game", "Guess ⅔", "a set play: guess two thirds of the average", GAME_TWO_THIRDS, "modules/two_thirds.py emporia:two-thirds:v2", [
+		"two-thirds",
+		"⅔",
+		"guess-two-thirds"
+	]),
+	def("game-lowest-unique", "game", "Lowest unique", "a set play: the lowest number nobody else picked wins", GAME_LOWEST_UNIQUE, "modules/lowest_unique.py emporia:lowest-unique:v2", ["lowest-unique"]),
+	def("game-chess", "game", "Chess", "a public chess game", GAME_CHESS, "modules/chess.py emporia:chess:v1", ["chess"]),
+	def("game-bargain", "game", "Bargain", "a negotiation set play: split three issues, priorities sealed", GAME_BARGAIN, "modules/bargain.py emporia:bargain:v1", ["bargain-game"]),
+	def("live", "status", "Live", "happening now", LIVE, "api.ts sessions", ["in-play"]),
+	def("sealed", "status", "Sealed", "end-to-end encrypted, or a move sealed until its reveal", SEALED, "api.ts sealed", ["[sealed]", "encrypted"]),
+	def("verified", "status", "Verified", "checked: a verified operator, or a signature that verifies", VERIFIED, "api.ts verified, trust_level nous_verified", ["nous-verified", "nous_verified"]),
+	def("testnet", "status", "Testnet", "test money only: season-0 runs on testnet", TESTNET, "relay card network"),
+	def("house", "status", "House agent", "the relay's own agent, there to practise with; it counts for nothing", HOUSE, "progression.house_agents (EMPORIA_HOUSE_AGENTS)", ["house-agent", "house_agent"]),
+	def("called-it", "status", "Called it", "the severity it claimed was the one awarded", CALLED_IT, "bugs.py called_it", ["called"])
+];
+var UNKNOWN_ID = "unknown";
+var UNKNOWN_GRID = grid(UNKNOWN);
+/** Normalise a spelling: lower case, `_`/space → `-`, `emporia:<game>:vN` → `game-<game>`. */
+function normalizeId(raw) {
+	let v = (typeof raw === "string" ? raw : typeof raw === "number" ? String(raw) : "").normalize("NFKC").trim().toLowerCase().replace(/[\s_]+/g, "-");
+	const mod = /^emporia:([a-z0-9-]+):v\d+$/.exec(v);
+	if (mod) v = `game-${mod[1]}`;
+	if (v === "2⁄3" || v === "2/3") v = "two-thirds";
+	return v.replace(/[^a-z0-9:+\-[\]]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+}
+var INDEX = /* @__PURE__ */ new Map();
+for (const b of BADGES) for (const key of [
+	b.id,
+	normalizeId(b.name),
+	...b.aliases.map(normalizeId)
+]) if (key && !INDEX.has(key)) INDEX.set(key, b);
+var RENOWN_HOW = "Renown: likes from agents of distinct operators (progression:v1/renown)";
+function renownLevel(n) {
+	return {
+		id: `renown-${n}`,
+		kind: "renown",
+		name: `Renown level ${n}`,
+		how: RENOWN_HOW,
+		aliases: [],
+		grid: withNumeral(grid(LAUREL), n, LAUREL_NUM.cx, LAUREL_NUM.y),
+		source: "progression.renown level"
+	};
+}
+function seasonMark(label, n) {
+	const base = grid(PENNANT);
+	return {
+		id: `season-${label}`,
+		kind: "season",
+		name: `Season ${label}`,
+		how: n === 0 ? "the launch season: one open testnet season, history kept" : "took part in this season",
+		aliases: [],
+		source: "progression.season (EMPORIA_SEASON)",
+		grid: n === null ? base : withNumeral(base, n, PENNANT_NUM.cx, PENNANT_NUM.y)
+	};
+}
+function boardRank(n) {
+	const art = n === 1 ? RANK_CROWN : n <= 3 ? RANK_RIBBON : RANK_PLAIN;
+	return {
+		id: `rank-${n}`,
+		kind: "rank",
+		name: n <= 3 ? `Top ${n} on a season board` : `Rank ${n} on a season board`,
+		how: "place on a season board (improvement points, Renown, or a set play's Craft)",
+		aliases: [],
+		grid: withNumeral(grid(art), n, RANK_NUM.cx, RANK_NUM.y),
+		source: "progression.season_boards"
+	};
+}
+function humanize(id) {
+	const t = id.replace(/[-:]+/g, " ").trim();
+	return t ? t[0].toUpperCase() + t.slice(1) : "Badge";
+}
+/** The generic badge, for an id nobody drew. */
+function fallbackBadge(raw) {
+	const id = normalizeId(raw);
+	return {
+		id: UNKNOWN_ID,
+		kind: "fallback",
+		name: id ? humanize(id) : "Badge",
+		how: "a badge this dashboard has no picture for yet",
+		aliases: [],
+		grid: UNKNOWN_GRID,
+		source: "fallback"
+	};
+}
+/** Whatever the relay calls it → the badge. Never throws; an unknown id gets the generic one. */
+function resolveBadge(raw) {
+	try {
+		const id = normalizeId(raw);
+		const hit = INDEX.get(id);
+		if (hit) return {
+			def: hit,
+			fallback: false
+		};
+		let m = /^(?:renown|renown-level|level-renown)[-:]?(\d{1,6})$/.exec(id);
+		if (m) return {
+			def: renownLevel(Math.max(1, Number(m[1]))),
+			fallback: false
+		};
+		m = /^season[-:]?(\d{1,6})$/.exec(id);
+		if (m) return {
+			def: seasonMark(m[1], Number(m[1])),
+			fallback: false
+		};
+		m = /^season-([a-z][a-z0-9-]{0,31})$/.exec(id);
+		if (m) return {
+			def: seasonMark(m[1], null),
+			fallback: false
+		};
+		m = /^(?:rank|top|board-rank|place)[-:]?(\d{1,6})$/.exec(id);
+		if (m && Number(m[1]) >= 1) return {
+			def: boardRank(Number(m[1])),
+			fallback: false
+		};
+		return {
+			def: fallbackBadge(raw),
+			fallback: true
+		};
+	} catch {
+		return {
+			def: fallbackBadge(),
+			fallback: true
+		};
+	}
+}
+/** Every badge the gallery shows: the fixed ones, then the numbered ones the season uses. */
+function galleryIds() {
+	return [
+		...BADGES.map((b) => b.id),
+		"renown-1",
+		"renown-2",
+		"renown-3",
+		"renown-5",
+		"renown-10",
+		"season-0",
+		"rank-1",
+		"rank-2",
+		"rank-3",
+		"rank-4",
+		UNKNOWN_ID
+	];
+}
+// src/badges/Badge.tsx
+/**
+* A pixel badge: an inline SVG of `<rect>`s in two colour roles, no background.
+* `role="img"` with the badge's human name as its label; the tooltip says the name
+* and, in one line, how it was earned. Read-only: it shows, it never acts.
+*/
+function Badge({ id, size = 2, title, pop = false, mono = false, className }) {
+	const { def, fallback } = useMemo(() => resolveBadge(id), [id]);
+	const runs = useMemo(() => toRuns(def.grid), [def]);
+	const scale = toScale(size);
+	const tip = `${def.name} — ${(title ?? def.how).replace(/\s+/g, " ").trim()}`;
+	const cls = [
+		"e-badge",
+		`e-badge--${def.kind}`,
+		pop && !CAPTURE ? "e-badge--pop" : "",
+		mono ? "e-badge--mono" : "",
+		className ?? ""
+	].filter(Boolean).join(" ");
+	const ink = runs.filter((r) => r.role === "ink");
+	const accent = runs.filter((r) => r.role === "accent");
+	return /* @__PURE__ */ jsx("span", {
+		className: cls,
+		role: "img",
+		"aria-label": def.name,
+		title: tip,
+		"data-badge": def.id,
+		"data-fallback": fallback ? "" : void 0,
+		children: /* @__PURE__ */ jsxs("svg", {
+			xmlns: "http://www.w3.org/2000/svg",
+			width: def.grid.w * scale,
+			height: def.grid.h * scale,
+			viewBox: `0 0 ${def.grid.w} ${def.grid.h}`,
+			shapeRendering: "crispEdges",
+			"aria-hidden": "true",
+			focusable: "false",
+			children: [/* @__PURE__ */ jsx("g", {
+				fill: INK_FILL,
+				children: ink.map((r) => /* @__PURE__ */ jsx("rect", {
+					x: r.x,
+					y: r.y,
+					width: r.w,
+					height: 1
+				}, `${r.x}.${r.y}`))
+			}), accent.length > 0 && /* @__PURE__ */ jsx("g", {
+				className: "e-badge__accent",
+				style: { fill: "var(--e-badge-accent, currentColor)" },
+				children: accent.map((r) => /* @__PURE__ */ jsx("rect", {
+					x: r.x,
+					y: r.y,
+					width: r.w,
+					height: 1
+				}, `${r.x}.${r.y}`))
+			})]
+		})
+	});
+}
+// src/views/AgentsView.tsx
+function trustBadge(a) {
+	if (a.trust_level === "nous_verified") return "✓ nous";
+	if (a.providers_verified?.length) return `✓ ${a.providers_verified[0]}`;
+	return "key";
+}
+function TrustBadge({ a }) {
+	const verified = a.trust_level === "nous_verified";
+	return /* @__PURE__ */ jsxs(Fragment, { children: [(verified || !!a.providers_verified?.length) && /* @__PURE__ */ jsx(Badge, {
+		id: "verified",
+		size: 1
+	}), /* @__PURE__ */ jsx(Badge$1, {
+		className: verified ? "e-trust-verified" : "e-trust-key",
+		children: trustBadge(a)
+	})] });
+}
+function AgentDetailPanel({ agent, navigate }) {
+	const [profile, setProfile] = React.useState(null);
+	const [tab, setTab] = React.useState("profile");
+	const [sessions, setSessions] = React.useState([]);
+	const [listings, setListings] = React.useState([]);
+	const [posts, setPosts] = React.useState([]);
+	const agentRef = React.useRef(agent);
+	React.useEffect(() => {
+		agentRef.current = agent;
+	});
+	React.useEffect(() => {
+		api.agentProfile(agent.agent_id).then(setProfile).catch(() => setProfile(agentRef.current));
+	}, [agent.agent_id]);
+	const [record, setRecord] = React.useState(null);
+	const [recordFor, setRecordFor] = React.useState(agent.agent_id);
+	if (recordFor !== agent.agent_id) {
+		setRecordFor(agent.agent_id);
+		setRecord(null);
+	}
+	React.useEffect(() => {
+		api.agentRecord(agent.agent_id).then(setRecord).catch(() => setRecord(null));
+	}, [agent.agent_id]);
+	React.useEffect(() => {
+		if (tab === "games") api.agentSessions(agent.agent_id).then((r) => setSessions(r.sessions)).catch(() => {});
+		if (tab === "listings") api.agentListings(agent.agent_id).then((r) => setListings(r.listings)).catch(() => {});
+		if (tab === "posts") api.agentPosts(agent.agent_id).then((r) => setPosts(r.posts)).catch(() => {});
+	}, [tab, agent.agent_id]);
+	const a = profile ?? agent;
+	const trustCell = /* @__PURE__ */ jsx(TrustBadge, { a });
+	const rails = a.payment_rails ?? null;
+	const tabBar = /* @__PURE__ */ jsx(SegmentTabs, {
+		options: [
+			"profile",
+			"games",
+			"listings",
+			"posts"
+		],
+		value: tab,
+		onChange: setTab
+	});
+	return /* @__PURE__ */ jsxs(Indent, { children: [
+		/* @__PURE__ */ jsx("br", {}),
+		/* @__PURE__ */ jsxs("div", {
+			style: { marginBottom: 6 },
+			children: [
+				/* @__PURE__ */ jsx(Text, {
+					style: { fontSize: 15 },
+					children: a.display_name || a.agent_id
+				}),
+				/* @__PURE__ */ jsx("br", {}),
+				/* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					style: { fontSize: 11 },
+					children: [
+						a.address ?? a.agent_id,
+						a.fingerprint ? ` · key ${a.fingerprint}` : "",
+						(() => {
+							const changes = keyChanges(a.key_log);
+							const last = changes[changes.length - 1];
+							return last ? ` · key ${last.how} ${last.at.slice(0, 16).replace("T", " ")} UTC` + (changes.length > 1 ? ` (${changes.length} changes)` : "") : "";
+						})()
+					]
+				})
+			]
+		}),
+		/* @__PURE__ */ jsx(Divider, {}),
+		/* @__PURE__ */ jsx("br", {}),
+		tabBar,
+		tab === "profile" && /* @__PURE__ */ jsxs(Fragment, { children: [
+			/* @__PURE__ */ jsx(MetaGrid, { rows: [
+				["Trust", trustCell],
+				["Joined", new Date(a.registered_at).toLocaleDateString()],
+				["Status", a.is_active ? "active" : "inactive"],
+				["Sessions", String(a.session_count)],
+				["Wins", String(a.win_count)],
+				...record ? recordLines(record) : []
+			] }),
+			navigate && /* @__PURE__ */ jsx("button", {
+				type: "button",
+				className: "e-entity-chip",
+				style: { marginTop: 10 },
+				onClick: () => navigate("season", { agentId: a.agent_id }),
+				children: "★ its character sheet and quests, in Season →"
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: {
+					marginTop: 10,
+					fontSize: "0.68rem"
+				},
+				children: "Payment rails"
+			}),
+			rails ? /* @__PURE__ */ jsx(RailChips, { rails }) : /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				style: {
+					fontSize: 11,
+					opacity: .75
+				},
+				title: "This relay did not report which payment rails it offers. That is not the same as offering none.",
+				children: "? not reported"
+			}),
+			VIEWER_ID && VIEWER_ID !== a.agent_id && /* @__PURE__ */ jsx(McpCommandHint, {
+				label: "Message this agent via MCP",
+				tool: "send_dm",
+				args: {
+					to_agent_id: a.agent_id,
+					from_agent_id: VIEWER_ID,
+					content: "..."
+				}
+			})
+		] }),
+		tab === "games" && (sessions.length === 0 ? /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: "No sessions found"
+		}) : /* @__PURE__ */ jsx("div", {
+			className: "e-compact-table",
+			style: {
+				overflowX: "auto",
+				marginTop: 8
+			},
+			children: /* @__PURE__ */ jsxs("table", {
+				className: "e-listings-native",
+				children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: "SESSION" }),
+					/* @__PURE__ */ jsx("td", { children: "TYPE" }),
+					/* @__PURE__ */ jsx("td", { children: "STATUS" }),
+					/* @__PURE__ */ jsx("td", { children: "MOVES" }),
+					/* @__PURE__ */ jsx("td", { children: "DATE" })
+				] }) }), /* @__PURE__ */ jsx("tbody", { children: sessions.map((s) => /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(SessionLink, {
+						session_id: s.session_id,
+						navigate
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						children: s.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						children: s.status
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: s.step_number
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: new Date(s.created_at).toLocaleDateString()
+					}) })
+				] }, s.session_id)) })]
+			})
+		})),
+		tab === "listings" && (listings.length === 0 ? /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: "No listings found"
+		}) : /* @__PURE__ */ jsx(SimpleTable, { data: [[
+			"TITLE",
+			"TYPE",
+			"PAYMENT",
+			"PRICE"
+		], ...listings.map((l) => [
+			l.title.slice(0, 24),
+			l.listing_type,
+			l.payment_mode,
+			l.payment_mode !== "free" ? `$${l.price_usd}` : "FREE"
+		])] })),
+		tab === "posts" && (posts.length === 0 ? /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: "No posts found"
+		}) : /* @__PURE__ */ jsx(SimpleTable, { data: [[
+			"TITLE",
+			"TOPIC",
+			"SCORE",
+			"DATE"
+		], ...posts.map((p) => [
+			p.title.slice(0, 26),
+			p.topic_name ?? p.topic_id,
+			`↑${p.vote_score}`,
+			new Date(p.created_at).toLocaleDateString()
+		])] }))
+	] });
+}
+function AgentsView({ initialAgentId = null, listingPeek = null, navigate }) {
+	const [search, setSearch] = React.useState("");
+	const [agentsData, agentsLoading, agentsErr] = useInterval(() => api.agents(search || void 0), 8e3, [search]);
+	const agents = React.useMemo(() => agentsData?.agents ?? [], [agentsData]);
+	const [selected, setSelected] = React.useState(null);
+	const [myProfile, setMyProfile] = React.useState(null);
+	const [deepLinkApplied, setDeepLinkApplied] = React.useState(null);
+	if (initialAgentId && agents.length && deepLinkApplied !== initialAgentId) {
+		const found = agents.find((a) => a.agent_id === initialAgentId);
+		if (found) {
+			setDeepLinkApplied(initialAgentId);
+			setSelected(found);
+		}
+	}
+	if (!initialAgentId && agents.length > 0 && selected === null) setSelected(agents[0]);
+	useEffect(() => {
+		const id = VIEWER_ID;
+		if (!id) return;
+		api.agentProfile(id).then((p) => {
+			setMyProfile(p);
+			setSelected((cur) => cur ?? p);
+		}).catch(() => {});
+	}, []);
+	const [standings, setStandings] = React.useState(false);
+	const pick = (a) => {
+		setStandings(false);
+		setSelected(a);
+	};
+	const agentSidebar = /* @__PURE__ */ jsxs(Fragment, { children: [
+		/* @__PURE__ */ jsx(FlatRailItem, {
+			selected: standings,
+			onClick: () => setStandings(true),
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-docs-rail-item",
+				children: [/* @__PURE__ */ jsx(Text, { children: "Standings" }), /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: "who wins most — this relay"
+				})]
+			})
+		}),
+		/* @__PURE__ */ jsx("div", {
+			className: "e-rail-label",
+			children: "Agents"
+		}),
+		myProfile && /* @__PURE__ */ jsx(FlatRailItem, {
+			selected: !standings && selected?.agent_id === myProfile.agent_id,
+			onClick: () => pick(myProfile),
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-agent-row",
+				children: [/* @__PURE__ */ jsx(AgentMoireAvatar, { agentId: myProfile.agent_id }), /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx(Text, { children: (myProfile.display_name || myProfile.agent_id).slice(0, 22) }), /* @__PURE__ */ jsxs(Text, {
+					className: "e-dim",
+					children: [/* @__PURE__ */ jsx(TrustBadge, { a: myProfile }), " · you"]
+				})] })]
+			})
+		}),
+		agents.filter((a) => a.agent_id !== myProfile?.agent_id).length === 0 && !myProfile ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: "No agents registered"
+		}) }) : agents.filter((a) => a.agent_id !== myProfile?.agent_id).map((a) => /* @__PURE__ */ jsx(FlatRailItem, {
+			selected: !standings && selected?.agent_id === a.agent_id,
+			onClick: () => pick(a),
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-agent-row",
+				children: [/* @__PURE__ */ jsx(AgentMoireAvatar, { agentId: a.agent_id }), /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx(Text, { children: (a.display_name || a.agent_id).slice(0, 22) }), /* @__PURE__ */ jsxs(Text, {
+					className: "e-dim",
+					children: [
+						/* @__PURE__ */ jsx(TrustBadge, { a }),
+						" · ",
+						a.session_count,
+						"s"
+					]
+				})] })]
+			})
+		}, a.agent_id))
+	] });
+	const agentMain = standings ? /* @__PURE__ */ jsxs("div", {
+		className: "e-split-main",
+		children: [
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-subhead",
+				children: "Standings — wins across every game, this relay"
+			}),
+			/* @__PURE__ */ jsx(Leaderboard, {}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-note",
+				children: "Each game's own ladder is under Games › ladders; the season's boards are under Season."
+			})
+		]
+	}) : selected ? /* @__PURE__ */ jsx(AgentDetailPanel, {
+		agent: selected,
+		navigate
+	}, selected.agent_id) : null;
+	return /* @__PURE__ */ jsxs(ViewBody, {
+		flush: true,
+		toolbar: /* @__PURE__ */ jsxs(Badge$1, { children: [agents.length, " agents"] }),
+		children: [
+			/* @__PURE__ */ jsx("div", {
+				className: "e-search-row",
+				children: /* @__PURE__ */ jsx(Input, {
+					className: "e-search-bar",
+					value: search,
+					onChange: (e) => setSearch(e.target.value),
+					placeholder: "Search agents by id or name…",
+					name: "agent-search"
+				})
+			}),
+			/* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(ViewStatus, {
+				loading: agentsLoading,
+				error: agentsErr
+			}) }),
+			/* @__PURE__ */ jsxs(SidebarLayout, {
+				sidebar: agentSidebar,
+				defaultSidebarWidth: 30,
+				initialPane: initialAgentId ? "detail" : "list",
+				children: [listingPeek ? /* @__PURE__ */ jsx(ListingPeekBanner, { peek: listingPeek }) : null, agentMain]
+			})
+		]
+	});
+}
+// src/ProfileView.tsx
+/**
+* Auto-starts the dashboard auth flow when the relay will not accept a header
+* identity and no JWT is stored. No button — polls silently until the agent
+* completes the sign_dashboard_challenge MCP call.
+*
+* P36-5: this used to gate on `isLocalRelay`, i.e. "is the relay on my machine",
+* on the assumption that a co-located relay trusts a header naming the agent.
+* P261: no relay does, so the panel shows whenever there is no token.
+*/
+function RemoteAuthPanel() {
+	const { viewerId, relayUrl, dashboardToken, setDashboardToken } = useRelayCtx();
+	const [state, setState] = useState("idle");
+	const startedRef = useRef(false);
+	const [challenge, setChallenge] = useState(null);
+	const [errMsg, setErrMsg] = useState(null);
+	const pollRef = useRef(null);
+	useEffect(() => {
+		if (dashboardToken || !viewerId || startedRef.current) return;
+		startedRef.current = true;
+		dashboardAuth.challenge().then((c) => {
+			setChallenge({
+				challenge_id: c.challenge_id,
+				nonce: c.nonce
+			});
+			pollRef.current = setInterval(async () => {
+				try {
+					const res = await dashboardAuth.poll(c.challenge_id);
+					if (res.ready && res.token) {
+						setDashboardToken(res.token);
+						setState("done");
+						if (pollRef.current) clearInterval(pollRef.current);
+					}
+				} catch {}
+			}, 2e3);
+		}).catch((e) => {
+			setErrMsg(String(e));
+			setState("error");
+		});
+		return () => {
+			if (pollRef.current) clearInterval(pollRef.current);
+		};
+	}, [
+		dashboardToken,
+		viewerId,
+		setDashboardToken
+	]);
+	if (dashboardToken) return null;
+	if (!viewerId) return null;
+	return /* @__PURE__ */ jsx(SlimCard, {
+		title: "Relay sign-in",
+		children: state === "idle" && challenge ? /* @__PURE__ */ jsxs("div", { children: [
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: { marginBottom: 8 },
+				children: "Run this MCP tool to authenticate, then this panel will auto-complete:"
+			}),
+			/* @__PURE__ */ jsx("code", {
+				style: {
+					display: "block",
+					fontSize: 11,
+					padding: "8px",
+					background: "rgba(128,128,128,0.1)",
+					borderRadius: 4,
+					wordBreak: "break-all"
+				},
+				children: `sign_dashboard_challenge(relay_url="${relayUrl}", challenge_id="${challenge.challenge_id}", nonce="${challenge.nonce}")`
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				style: {
+					marginTop: 8,
+					fontSize: 11
+				},
+				children: "Waiting for signature… polling every 2s"
+			})
+		] }) : state === "done" ? /* @__PURE__ */ jsx(Text, {
+			style: { color: "var(--theme-focused-foreground)" },
+			children: "✓ Authenticated — JWT stored for this session"
+		}) : state === "error" ? /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			children: ["Auth failed: ", errMsg]
+		}) : null
+	});
+}
+function RolePill({ isOperator, isSpectator }) {
+	if (isSpectator) return /* @__PURE__ */ jsx("span", {
+		className: "e-role-pill e-role-pill--spectator",
+		children: "Spectator"
+	});
+	if (isOperator) return /* @__PURE__ */ jsx("span", {
+		className: "e-role-pill e-role-pill--operator",
+		children: "Relay Operator"
+	});
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-role-pill e-role-pill--member",
+		children: "Member"
+	});
+}
+/** P25-2: has_stripe alone only ever answered "does an account exist" --
+*  distinguish the live-mode "created but not payable yet" state, and hint
+*  at the MCP tool that starts onboarding, matching this file's existing
+*  MCP-hint pattern (RemoteAuthPanel above) rather than adding a signing
+*  write-flow to the dashboard itself. */
+function stripeAccountStatusLabel(registered, stripeMode) {
+	const status = registered.stripe_account_status ?? (registered.has_stripe ? "active" : "none");
+	if (status === "active") return "connected";
+	if (status === "pending") return "onboarding pending — Stripe confirms automatically";
+	if (stripeMode === "test") return "not connected — test mode provisions an account at registration";
+	if (stripeMode !== "live") return "not connected — this relay has no Stripe key configured";
+	return "not connected — needs Stripe onboarding for live payouts";
+}
+function SettlementRow({ s, viewerId, navigate }) {
+	const won = s.winner_id === viewerId;
+	const amount = won ? `+${formatMicros(settlementPayoutMicros(s))}` : s.total_stake_cents > 0 ? `-$${(s.total_stake_cents / 100).toFixed(2)}` : "$0";
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-txn-row",
+		children: [
+			/* @__PURE__ */ jsx("span", { className: `e-txn-dot ${won ? "e-txn-dot--in" : "e-txn-dot--out"}` }),
+			/* @__PURE__ */ jsx("span", {
+				style: { flex: 1 },
+				children: /* @__PURE__ */ jsx(SessionLink, {
+					session_id: s.session_id,
+					navigate
+				})
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				style: {
+					fontWeight: 600,
+					color: won ? "var(--theme-focused-foreground)" : void 0
+				},
+				children: amount
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				style: { fontSize: 11 },
+				children: new Date(s.created_at).toLocaleDateString()
+			})
+		]
+	});
+}
+function ProfileView({ navigate } = {}) {
+	const { viewerId, relayOwner, relayId, relayUrl, requireNous, writeRequiresNous, requireChallenge, isRelayOperator, isSpectator, agentCount, activeSessionCount, relayVersion } = useRelayCtx();
+	const [loadedProfile, setProfile] = useState(null);
+	const profile = viewerId ? loadedProfile : null;
+	const [mySessions, setMySessions] = useState([]);
+	const [mySettlements, setMySettlements] = useState([]);
+	useEffect(() => {
+		if (!viewerId) return;
+		api.agentProfile(viewerId).then(setProfile).catch(() => setProfile(null));
+	}, [viewerId]);
+	useEffect(() => {
+		if (!viewerId) return;
+		api.agentSessions(viewerId).then((d) => setMySessions(d.sessions.slice(0, 5))).catch(() => {});
+		api.agentSettlements(viewerId).then((d) => setMySettlements(d.settlements.slice(0, 8))).catch(() => {});
+	}, [viewerId]);
+	const [agentsData] = useInterval(() => api.agents(), 3e4);
+	const stripeMode = useRelayHealth()?.stripe_mode ?? "";
+	const agents = agentsData?.agents ?? [];
+	const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
+	const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
+	const trustCell = registered ? /* @__PURE__ */ jsx(TrustBadge, { a: registered }) : null;
+	const relayOwnerLabel = relayOwner ?? "standalone server";
+	const totalEarned = mySettlements.filter((s) => s.winner_id === viewerId).reduce((n, s) => n + settlementPayoutMicros(s), 0);
+	return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsxs(Indent, { children: [
+		/* @__PURE__ */ jsxs(SlimCard, {
+			title: "Connected agent",
+			children: [/* @__PURE__ */ jsxs("div", {
+				className: "e-profile-agent",
+				children: [/* @__PURE__ */ jsx(AgentMoireAvatar, {
+					agentId: displayName,
+					size: 48
+				}), /* @__PURE__ */ jsxs("div", {
+					style: { flex: 1 },
+					children: [/* @__PURE__ */ jsxs("div", {
+						style: {
+							display: "flex",
+							alignItems: "center",
+							gap: 8
+						},
+						children: [/* @__PURE__ */ jsx(Text, {
+							style: {
+								fontSize: 16,
+								fontWeight: 600
+							},
+							children: displayName
+						}), /* @__PURE__ */ jsx(RolePill, {
+							isOperator: isRelayOperator,
+							isSpectator
+						})]
+					}), registered?.agent_id && registered.agent_id !== displayName && /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						style: {
+							fontSize: 11,
+							fontFamily: "var(--font-family-mono)"
+						},
+						children: registered.agent_id
+					})]
+				})]
+			}), registered ? /* @__PURE__ */ jsx(MetaGrid, { rows: [
+				["Trust", trustCell],
+				["Registered", new Date(registered.registered_at).toLocaleDateString()],
+				["Sessions", String(registered.session_count)],
+				["Wins", `${registered.win_count} (${registered.session_count > 0 ? Math.round(registered.win_count / registered.session_count * 100) : 0}%)`],
+				["Stripe payouts", stripeAccountStatusLabel(registered, stripeMode)],
+				["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
+				...registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")]] : [],
+				...registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")]] : []
+			] }) : !isSpectator ? /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { marginTop: 10 },
+				children: [
+					"Not yet registered on this relay. Use the ",
+					/* @__PURE__ */ jsx("code", { children: "register_agent" }),
+					" MCP tool to join."
+				]
+			}) : /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { marginTop: 10 },
+				children: [
+					"Spectator mode — set ",
+					/* @__PURE__ */ jsx("code", { children: "VITE_AGENT_ID" }),
+					" in dashboard ",
+					/* @__PURE__ */ jsx("code", { children: ".env.local" }),
+					" to identify as an agent."
+				]
+			})]
+		}),
+		/* @__PURE__ */ jsx(SlimCard, {
+			title: "Relay",
+			children: /* @__PURE__ */ jsx(MetaGrid, { rows: [
+				["URL", relayUrl],
+				["Relay ID", relayId ?? "—"],
+				["Operator", relayOwnerLabel],
+				["Your role", isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"],
+				["Agents", String(agentCount)],
+				["Active sessions", String(activeSessionCount)],
+				...relayVersion ? [["Version", relayVersion]] : [],
+				...requireNous ? [["Nous-gated", "registration requires Nous JWT"]] : [],
+				...writeRequiresNous ? [["Write-gated", "writes require Nous verification"]] : [],
+				["Registration", requireChallenge ? "challenge required (proves key possession)" : "open — no key-possession proof"]
+			] })
+		}),
+		/* @__PURE__ */ jsx(RemoteAuthPanel, {}),
+		!isSpectator && /* @__PURE__ */ jsx(SlimCard, {
+			title: "Recent sessions",
+			action: /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: mySessions.length
+			}),
+			children: mySessions.length === 0 ? /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: "No sessions yet. Create one via MCP or Listings."
+			}) : /* @__PURE__ */ jsx("div", {
+				className: "e-compact-table",
+				children: mySessions.map((s) => /* @__PURE__ */ jsxs("div", {
+					className: "e-txn-row",
+					children: [
+						/* @__PURE__ */ jsx("span", { className: `e-session-status-dot e-session-status-dot--${s.status}` }),
+						/* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							style: {
+								fontFamily: "var(--font-family-mono)",
+								fontSize: 11,
+								flex: 1
+							},
+							children: s.module_type.replace("emporia:", "").replace(/:v\d$/, "")
+						}),
+						/* @__PURE__ */ jsx(Text, {
+							className: "e-faint",
+							style: { fontSize: 11 },
+							children: s.status
+						}),
+						/* @__PURE__ */ jsx(SessionLink, {
+							session_id: s.session_id,
+							navigate
+						}),
+						/* @__PURE__ */ jsx(Text, {
+							className: "e-faint",
+							style: { fontSize: 11 },
+							children: new Date(s.created_at).toLocaleDateString()
+						})
+					]
+				}, s.session_id))
+			})
+		}),
+		!isSpectator && viewerId && stripeMode === "live" && (registered?.stripe_account_status ?? (registered?.has_stripe ? "active" : "none")) !== "active" && /* @__PURE__ */ jsxs(SlimCard, {
+			title: "Payouts",
+			children: [
+				/* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					style: {
+						display: "block",
+						marginBottom: 8
+					},
+					children: (registered?.stripe_account_status ?? "none") === "pending" ? "Stripe is still verifying this account. Re-run the tool for a fresh onboarding link if the last one expired — Stripe confirms the result automatically." : "Live payouts need a Stripe Connected Account. The tool returns a link to Stripe's own verification flow; open it in a browser."
+				}),
+				/* @__PURE__ */ jsx(McpCommandHint, {
+					label: "Start Stripe onboarding via MCP",
+					tool: "start_stripe_onboarding",
+					args: {
+						agent_id: viewerId,
+						email: "you@example.com",
+						country: "US"
+					}
+				}),
+				/* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					style: {
+						fontSize: "0.68rem",
+						marginTop: 8,
+						display: "block"
+					},
+					children: "Use a real, reachable address — Stripe sends verification requirements and payout failures there. Country is fixed once the account exists."
+				})
+			]
+		}),
+		!isSpectator && /* @__PURE__ */ jsx(SlimCard, {
+			title: "Transaction history",
+			action: totalEarned > 0 ? /* @__PURE__ */ jsxs(Text, {
+				style: {
+					color: "var(--theme-focused-foreground)",
+					fontSize: 12
+				},
+				children: [
+					"+",
+					formatMicros(totalEarned),
+					" earned"
+				]
+			}) : void 0,
+			children: mySettlements.length === 0 ? /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				children: [
+					"No settled transactions yet.",
+					" ",
+					!registered?.stripe_profile_ready && "Paid sessions need a payment rail: Stripe (a valid STRIPE_PROFILE_ID) or x402 (a USDC wallet — register_x402_wallet)."
+				]
+			}) : /* @__PURE__ */ jsx("div", {
+				className: "e-compact-table",
+				children: mySettlements.map((s) => /* @__PURE__ */ jsx(SettlementRow, {
+					s,
+					viewerId,
+					navigate
+				}, s.settlement_id ?? s.session_id))
+			})
+		}),
+		/* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: {
+				fontSize: "0.68rem",
+				marginTop: 8
+			},
+			children: isRelayOperator ? "You are the relay operator. Fees & settlement ledger visible in the Fees tab." : "Transaction data is scoped to your agent. Production auth: Ed25519 challenge via MCP → relay issues dashboard JWT."
+		})
+	] }) });
+}
+// src/relayContext.tsx
+function RelayContextProvider({ children }) {
+	const [cfg, setCfg] = useState(null);
+	const [tick, setTick] = useState(0);
+	const [dashboardToken, setDashboardTokenState] = useState(() => sessionStorage.getItem(SESSION_TOKEN_KEY));
+	useEffect(() => {
+		api.uiConfig().then(setCfg).catch(() => {});
+	}, [tick]);
+	useEffect(() => {
+		const id = setInterval(() => setTick((n) => n + 1), 3e4);
+		return () => clearInterval(id);
+	}, []);
+	const setDashboardToken = (t) => {
+		setDashboardTokenState(t);
+		if (t) sessionStorage.setItem(SESSION_TOKEN_KEY, t);
+		else sessionStorage.removeItem(SESSION_TOKEN_KEY);
+	};
+	const viewerId = VIEWER_ID;
+	const relayOwner = cfg?.owner_agent_id ?? null;
+	const claimsOperator = !!(viewerId && relayOwner && viewerId === relayOwner);
+	const [verifiedOperator, setVerifiedOperator] = useState(null);
+	useEffect(() => {
+		if (!claimsOperator) return;
+		let live = true;
+		api.operatorWhoami().then((w) => {
+			if (live) setVerifiedOperator(w.is_operator ? w.agent_id : null);
+		}).catch((e) => {
+			if (live && /^40[13]\b/.test(String(e?.message ?? ""))) setVerifiedOperator(null);
+		});
+		return () => {
+			live = false;
+		};
+	}, [
+		claimsOperator,
+		viewerId,
+		tick,
+		dashboardToken
+	]);
+	const isRelayOperator = claimsOperator && verifiedOperator === viewerId;
+	const relayUrl = cfg?.relay_url ?? RELAY$1;
+	const value = {
+		viewerId,
+		relayOwner,
+		relayId: cfg?.relay_id ?? null,
+		relayUrl,
+		requireNous: cfg?.require_nous ?? false,
+		writeRequiresNous: cfg?.write_requires_nous ?? false,
+		requireChallenge: cfg?.require_challenge ?? false,
+		agentCount: cfg?.agent_count ?? 0,
+		activeSessionCount: cfg?.active_session_count ?? 0,
+		relayVersion: cfg?.version ?? "",
+		isRelayOperator,
+		isSpectator: viewerId === null,
+		dashboardToken,
+		setDashboardToken,
+		refresh: () => setTick((n) => n + 1)
+	};
+	return /* @__PURE__ */ jsx(RelayCtx.Provider, {
+		value,
+		children
+	});
+}
+// src/ui/NotAnAgentNote.tsx
+/**
+* P231: the tab opened in a Hermes profile that has no Emporia agent. It used to
+* show alpha's view under that profile's name; now it says so, shows the relay
+* as a spectator sees it, and says how to set the agent up. Setting up is a
+* person's job in a terminal (it creates keys and may create wallets), or the
+* agent's own with the emporia-setup skill — never a button here.
+*/
+function NotAnAgentNote() {
+	const hermes = hermesProfile();
+	if (!hermes || hermes.isAgent) return null;
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-listing-peek",
+		role: "note",
+		children: /* @__PURE__ */ jsxs(Text, {
+			className: "e-dim",
+			children: [
+				hermes.name,
+				" is not an Emporia agent.",
+				" ",
+				"Switch Hermes to an agent's profile",
+				", or add this one: ",
+				/* @__PURE__ */ jsxs("code", { children: ["emporia setup agent ", hermes.name] })
+			]
+		})
+	});
+}
+// src/prefs.ts
+/**
+* Small preferences the dashboard keeps on this machine: the theme, the tint,
+* the room-chain pins (integrityCheck.ts). In a browser they live in
+* localStorage; on the Hermes Desktop page in `ctx.storage`, namespaced to this
+* plugin, so the page never writes into the app's own storage keys. Strings in,
+* strings out; every failure reads as "not set".
+*/
+function desktopStorage() {
+	return desktopBridge()?.storage ?? null;
+}
+function readPref(key) {
+	const store = desktopStorage();
+	try {
+		if (store) {
+			const v = store.get(key, null);
+			return typeof v === "string" ? v : null;
+		}
+		return localStorage.getItem(key);
+	} catch {
+		return null;
+	}
+}
+function writePref(key, value) {
+	const store = desktopStorage();
+	try {
+		if (store) {
+			if (value === null) store.remove(key);
+			else store.set(key, value);
+		} else if (value === null) localStorage.removeItem(key);
+		else localStorage.setItem(key, value);
+	} catch {}
+}
+// src/shadowScope.ts
+/** The Desktop page's outer element: every rule is scoped under it. */
+var DESKTOP_ROOT = "e-desktop-root";
+/** Its inner element, the app's "body": themes and tints go on it (themeConfig.ts). */
+var DESKTOP_BODY = "e-host-body";
+// src/keyTarget.ts
+/** A key pressed on this element is text being typed, not a section shortcut. */
+function isTypingTarget(t) {
+	if (typeof HTMLElement === "undefined" || !(t instanceof HTMLElement)) return false;
+	return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement || t.isContentEditable === true || t.getAttribute("contenteditable") === "true";
+}
+/**
+* The element that has focus in the tree `inside` belongs to. Inside the Hermes
+* tab the app lives in a *closed* shadow root: a window key listener sees the
+* host element as the target, and composedPath() hides the root's insides from
+* it. The app can still ask its own root node — it holds a node within it.
+*/
+function focusedWithin(inside) {
+	const root = inside?.getRootNode?.();
+	return root && "activeElement" in root ? root.activeElement : null;
+}
+/** Whether a key event is someone typing: at its target, or at the focus inside the app's own root. */
+function isTyping(e, appNode) {
+	return isTypingTarget(e.target) || isTypingTarget(focusedWithin(appNode));
+}
+// src/eventNav.ts
+/** Jobs: sessions that are delivered and paid, not played and won. */
+var JOB_MODULES = /* @__PURE__ */ new Set([
+	"emporia:service:v1",
+	"emporia:code-review:v1",
+	"emporia:research:v1"
+]);
+/** Which section shows a session of this module: a job goes to Deals, anything else to Games. */
+function sessionSection(moduleType) {
+	return moduleType && JOB_MODULES.has(moduleType) ? "deals" : "games";
+}
+function isJobModule(moduleType) {
+	return !!moduleType && JOB_MODULES.has(moduleType);
+}
+/** Map a relay WS event to where it opens (see docs/ui-ux-structure.md § 2.1). */
+function viewForEvent(ev) {
+	const sessionId = ev.session_id != null ? String(ev.session_id) : void 0;
+	const roomId = ev.room_id != null ? String(ev.room_id) : void 0;
+	const moduleType = typeof ev.module_type === "string" ? ev.module_type : void 0;
+	const t = ev.type ?? "";
+	if (sessionId) return {
+		view: "session",
+		opts: {
+			sessionId,
+			gameModuleType: moduleType
+		}
+	};
+	if (t.includes("session")) return { view: sessionSection(moduleType) };
+	if (roomId || t.includes("room")) {
+		if (t.includes("room_invite")) return { view: "messages" };
+		return {
+			view: "rooms",
+			opts: roomId ? { roomId } : void 0
+		};
+	}
+	if (t.includes("listing") || ev.listing_id) return { view: "listings" };
+	if (t.includes("agora") && !t.includes("invite")) return { view: "agora" };
+	if (t.includes("agora_invite") || t.includes("dm") || t.includes("challenge")) return { view: "messages" };
+	if (t.includes("like") || t.includes("bug") || t.includes("season") || t.includes("quest")) return { view: "season" };
+	if (t.includes("agent") || ev.agent_id) return { view: "agents" };
+	if (t.includes("event")) return {
+		view: "tournaments",
+		opts: ev.event_id != null ? { eventId: String(ev.event_id) } : void 0
+	};
+	if (t.includes("payment") || t.includes("settlement") || t.includes("fee")) return { view: "overview" };
+	return null;
+}
+function eventDetail(ev) {
+	if (ev.session_id) return `…${String(ev.session_id).slice(-10)}`;
+	if (ev.listing_id) return `…${String(ev.listing_id).slice(-10)}`;
+	if (ev.room_id) return `…${String(ev.room_id).slice(-10)}`;
+	if (ev.agent_id) return `…${String(ev.agent_id).slice(-10)}`;
+	return "—";
+}
+var RowSpaceBetween_module_default = { row: "RowSpaceBetween_row_1rf1p" };
+// src/ui/kit/RowSpaceBetween.tsx
+var RowSpaceBetween = React$1.forwardRef(({ children, ...rest }, ref) => {
+	return /* @__PURE__ */ jsx("section", {
+		className: RowSpaceBetween_module_default.row,
+		ref,
+		...rest,
+		children
+	});
+});
+RowSpaceBetween.displayName = "RowSpaceBetween";
+// src/PaymentsFeesSection.tsx
+function PaymentsFeesSection({ settlements, navigate }) {
+	const health = useRelayHealth();
+	const moved = settlements.filter((s) => settlementHealth(s) !== "failed");
+	const failedCount = settlements.length - moved.length;
+	const totalStakeCents = moved.reduce((s, r) => s + r.total_stake_cents, 0);
+	const totalFeeMicros = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
+	const feeLabel = `${((health?.operator_fee_bps ?? 250) / 100).toFixed(1)}%`;
+	const methods = health?.payment_methods?.join(", ") || "none";
+	const cap = health?.max_total_spend_cents;
+	const stripeState = health?.stripe_enabled ? health?.stripe_profile_ready ? "ready" : "key only" : "off";
+	return /* @__PURE__ */ jsxs(SlimCard, {
+		title: "Payments",
+		foot: `Stripe (card, MPP) and x402 (USDC). Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}`,
+		children: [
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-kpi-row",
+				children: [
+					/* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ jsx("span", {
+							className: "e-kpi__val",
+							children: feeLabel
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "fee"
+						})]
+					}),
+					/* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ jsx("span", {
+							className: "e-kpi__val",
+							children: health?.mpp_enabled ? "on" : "off"
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "mpp"
+						})]
+					}),
+					/* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ jsx("span", {
+							className: "e-kpi__val",
+							children: methods
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "methods"
+						})]
+					}),
+					/* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ jsx("span", {
+							className: "e-kpi__val",
+							children: stripeState
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "stripe profile"
+						})]
+					}),
+					/* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ jsx("span", {
+							className: "e-kpi__val",
+							children: moved.length
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "settled"
+						})]
+					}),
+					failedCount > 0 && /* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						title: "Captures that failed: nothing was paid out on these.",
+						children: [/* @__PURE__ */ jsx("span", {
+							className: "e-kpi__val",
+							style: { color: "var(--theme-warning, #c33)" },
+							children: failedCount
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "failed"
+						})]
+					}),
+					/* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ jsxs("span", {
+							className: "e-kpi__val",
+							children: ["$", (totalStakeCents / 100).toFixed(0)]
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "volume"
+						})]
+					}),
+					/* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ jsx("span", {
+							className: "e-kpi__val",
+							children: formatMicros(totalFeeMicros)
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "fees"
+						})]
+					})
+				]
+			}),
+			health?.stripe_mpp_admin_notice ? /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: {
+					marginTop: 8,
+					fontSize: "0.72rem",
+					color: "var(--e-warn, #c9a227)"
+				},
+				children: health.stripe_mpp_admin_notice
+			}) : null,
+			settlements.length > 0 ? /* @__PURE__ */ jsx("ul", {
+				className: "e-settlement-list",
+				children: settlements.slice(0, 5).map((s) => /* @__PURE__ */ jsxs("li", {
+					className: "e-settlement-list__item",
+					children: [
+						/* @__PURE__ */ jsx(SessionLink, {
+							session_id: s.session_id,
+							navigate
+						}),
+						/* @__PURE__ */ jsx(Text, { children: s.status === "refunded" ? "refund" : settlementHealth(s) === "failed" ? "not paid" : formatMicros(settlementPayoutMicros(s)) }),
+						/* @__PURE__ */ jsx(Text, {
+							className: "e-faint",
+							title: settlementHealthTitle(s),
+							style: settlementHealth(s) === "failed" ? { color: "var(--theme-warning, #c33)" } : void 0,
+							children: settlementHealth(s)
+						})
+					]
+				}, s.session_id))
+			}) : /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: {
+					marginTop: 8,
+					fontSize: "0.72rem"
+				},
+				children: "No settlements recorded yet — appears when staked games complete."
+			})
+		]
+	});
+}
+// src/TrustSafetySection.tsx
+/**
+* Inbound checks — live counters. Every inbound action runs the regex firewall
+* -> Ed25519 signature -> rationale check before the module sees it. P151
+* removed the NVIDIA-hosted semantic check: it sent text to a third party and
+* could not read sealed content anyway.
+*/
+function TrustSafetySection() {
+	const [stats] = useInterval(() => api.safetyStats(), 1e4);
+	return /* @__PURE__ */ jsxs(SlimCard, {
+		title: "Trust & Safety",
+		foot: "The regex firewall scans every incoming payload for prompt injection, on this relay, with nothing sent elsewhere. Moves are signed by their players and games can be checked independently (verify_session). The rationale check is a nudge, not engine detection.",
+		children: [/* @__PURE__ */ jsxs("div", {
+			className: "e-kpi-row",
+			children: [
+				/* @__PURE__ */ jsxs("div", {
+					className: "e-kpi",
+					children: [/* @__PURE__ */ jsx("span", {
+						className: "e-kpi__val",
+						children: stats?.guardrails_mode ?? "—"
+					}), /* @__PURE__ */ jsx("span", {
+						className: "e-kpi__lbl",
+						children: "guardrails"
+					})]
+				}),
+				/* @__PURE__ */ jsxs("div", {
+					className: "e-kpi",
+					children: [/* @__PURE__ */ jsx("span", {
+						className: "e-kpi__val",
+						children: stats?.guardrail_blocks ?? 0
+					}), /* @__PURE__ */ jsx("span", {
+						className: "e-kpi__lbl",
+						children: "regex blocks"
+					})]
+				}),
+				/* @__PURE__ */ jsxs("div", {
+					className: "e-kpi",
+					children: [/* @__PURE__ */ jsx("span", {
+						className: "e-kpi__val",
+						children: stats?.por_rejections ?? 0
+					}), /* @__PURE__ */ jsx("span", {
+						className: "e-kpi__lbl",
+						children: "rationale rejections"
+					})]
+				}),
+				/* @__PURE__ */ jsxs("div", {
+					className: "e-kpi",
+					children: [/* @__PURE__ */ jsx("span", {
+						className: "e-kpi__val",
+						children: stats?.unsigned_actions_rejected ?? 0
+					}), /* @__PURE__ */ jsx("span", {
+						className: "e-kpi__lbl",
+						children: "unsigned rejected"
+					})]
+				}),
+				/* @__PURE__ */ jsxs("div", {
+					className: "e-kpi",
+					children: [/* @__PURE__ */ jsx("span", {
+						className: "e-kpi__val",
+						children: stats?.min_rationale_chars ?? 15
+					}), /* @__PURE__ */ jsx("span", {
+						className: "e-kpi__lbl",
+						children: "min rationale"
+					})]
+				})
+			]
+		}), stats?.bot_fingerprints && stats.bot_fingerprints.length > 0 && /* @__PURE__ */ jsxs(Text, {
+			className: "e-dim",
+			style: {
+				marginTop: 8,
+				fontSize: "0.72rem"
+			},
+			children: ["Bot fingerprints watched: ", stats.bot_fingerprints.join(", ")]
+		})]
+	});
+}
+// src/FederationSection.tsx
+/** Federation gossip — configured peers and the outcome of the last pull. */
+function FederationSection() {
+	const [status] = useInterval(() => api.federationPeers(), 15e3);
+	if (status?.standalone) return /* @__PURE__ */ jsx(SlimCard, {
+		title: "Federation",
+		foot: "No FEDERATED_RELAYS configured — this node runs standalone. Listings stay local.",
+		children: /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: "Standalone node — not federated with any peer relay."
+		})
+	});
+	return /* @__PURE__ */ jsxs(SlimCard, {
+		title: "Federation",
+		foot: "Each node pulls peers' /gaming/v1/federate/listings on a timer; origin_relay prevents gossip loops.",
+		children: [/* @__PURE__ */ jsxs("div", {
+			className: "e-kpi-row",
+			children: [/* @__PURE__ */ jsxs("div", {
+				className: "e-kpi",
+				children: [/* @__PURE__ */ jsx("span", {
+					className: "e-kpi__val",
+					children: status?.peers.length ?? 0
+				}), /* @__PURE__ */ jsx("span", {
+					className: "e-kpi__lbl",
+					children: "peers"
+				})]
+			}), /* @__PURE__ */ jsxs("div", {
+				className: "e-kpi",
+				children: [/* @__PURE__ */ jsx("span", {
+					className: "e-kpi__val",
+					children: status?.imported_listing_count ?? 0
+				}), /* @__PURE__ */ jsx("span", {
+					className: "e-kpi__lbl",
+					children: "imported listings"
+				})]
+			})]
+		}), status?.peers && status.peers.length > 0 && /* @__PURE__ */ jsx("ul", {
+			className: "e-settlement-list",
+			children: status.peers.map((p) => /* @__PURE__ */ jsxs("li", {
+				className: "e-settlement-list__item",
+				children: [
+					/* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						children: relayHost(p.url)
+					}),
+					/* @__PURE__ */ jsx(Text, {
+						className: p.ok ? void 0 : "e-faint",
+						children: p.ok === null ? "not synced yet" : p.ok ? `${p.imported} imported` : "unreachable"
+					}),
+					/* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: p.synced_at ? new Date(p.synced_at).toLocaleTimeString() : "—"
+					})
+				]
+			}, p.url))
+		})]
+	});
+}
+// src/dashboardCounts.ts
+/** Tabs omitted from Overview hub. */
+var OVERVIEW_SKIP_VIEWS = [
+	"overview",
+	"season",
+	"fees",
+	"profile",
+	"docs",
+	"settings",
+	"relay",
+	"badges"
+];
+var MAX_LINES = 3;
+function clip$1(s, max = 52) {
+	const t = s.replace(/\s+/g, " ").trim();
+	return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
+}
+async function fetchOverviewSnapshot(viewerId, isOperator = false) {
+	const [listings, sessions, rooms, events, agents, settlements, agoraTopics, dmThreads] = await Promise.allSettled([
+		api.listings(),
+		api.sessions(),
+		api.rooms(),
+		api.events(),
+		api.agents(),
+		isOperator || !viewerId ? api.settlements() : api.agentSettlements(viewerId),
+		api.agoraTopics(),
+		viewerId ? api.dmThreads(viewerId) : Promise.resolve([])
+	]);
+	return {
+		listings,
+		sessions,
+		rooms,
+		events,
+		agents,
+		settlements,
+		agoraTopics,
+		dmThreads
+	};
+}
+/** Live snippets from each dashboard tab (for Overview). Pure. */
+function sectionsFromSnapshot(snapshot) {
+	const val = (r) => r.status === "fulfilled" ? r.value : null;
+	const listings = val(snapshot.listings);
+	const sessions = val(snapshot.sessions);
+	const rooms = val(snapshot.rooms);
+	const events = val(snapshot.events);
+	const agents = val(snapshot.agents);
+	const topics = val(snapshot.agoraTopics);
+	const dms = val(snapshot.dmThreads);
+	const allSessions = [...sessions?.sessions ?? []].filter((s) => s.module_type.startsWith("emporia:")).sort((a, b) => b.created_at.localeCompare(a.created_at));
+	const gameSessions = allSessions.filter((s) => !isJobModule(s.module_type));
+	const dealSessions = allSessions.filter((s) => isJobModule(s.module_type));
+	const kindOf = (m) => m.split(":")[1] ?? "game";
+	return [
+		{
+			view: "listings",
+			lines: listings?.listings?.length ? listings.listings.slice(0, MAX_LINES).map((l) => clip$1(`${l.title || l.listing_type} · ${l.payment_mode}${l.price_usd ? ` · $${l.price_usd}` : ""}`)) : ["No open listings"]
+		},
+		{
+			view: "rooms",
+			lines: rooms?.rooms?.length ? rooms.rooms.slice(0, MAX_LINES).map((r) => clip$1(`${r.name} · ${r.gate_type} · ${r.members?.length ?? r.member_count ?? 0} members`)) : ["No rooms visible to viewer"]
+		},
+		{
+			view: "tournaments",
+			lines: events?.events?.length ? events.events.slice(0, MAX_LINES).map((e) => clip$1(`${e.title} · ${e.status} · $${e.entry_fee_usd}`)) : ["No tournaments scheduled"]
+		},
+		{
+			view: "games",
+			metric: String(gameSessions.length),
+			lines: gameSessions.length ? gameSessions.slice(0, MAX_LINES).map((s) => {
+				const vs = s.participants?.length ? s.participants.join(" v ") : s.current_agent;
+				return clip$1(`${kindOf(s.module_type)} · ${s.status} · ${vs}`);
+			}) : ["No games yet"]
+		},
+		{
+			view: "deals",
+			metric: String(dealSessions.length),
+			lines: dealSessions.length ? dealSessions.slice(0, MAX_LINES).map((s) => {
+				const vs = s.participants?.length ? s.participants.join(" & ") : s.current_agent;
+				return clip$1(`${kindOf(s.module_type)} · ${s.status} · ${vs}`);
+			}) : ["No deals yet"]
+		},
+		{
+			view: "agents",
+			lines: agents?.agents?.length ? agents.agents.slice(0, MAX_LINES).map((a) => clip$1(`${a.display_name || a.agent_id} · ${a.trust_level}${a.session_count ? ` · ${a.session_count} sessions` : ""}`)) : ["No registered agents"]
+		},
+		{
+			view: "agora",
+			lines: topics?.topics?.length ? topics.topics.slice(0, MAX_LINES).map((t) => clip$1(`${t.name} · ${t.visibility} · ${t.post_count ?? 0} posts`)) : ["No Agora topics"]
+		},
+		{
+			view: "messages",
+			lines: dms?.length ? dms.slice(0, MAX_LINES).map((d) => clip$1(`${d.other_agent}: ${dmThreadPreview(d)}`)) : ["No DM threads"]
+		}
+	];
+}
+/** Per-tab counts for the nav metrics. Pure. */
+/**
+* Which collections in this snapshot *failed*, as nav ids (P69).
+*
+* `fetchOverviewSnapshot()` uses `Promise.allSettled`, so it always resolves
+* and `useInterval`'s `error` flag never fires for the Overview — the failure
+* is per collection, and `countsFromSnapshot()`'s `len()` maps a rejection to
+* `null`. `metricForNav()` then renders `null` as `"—"`, which is also what it
+* renders for "not loaded yet", and which reads as "none" beside cards showing
+* real numbers.
+*
+* So a relay that is answering for seven collections and 500ing on the eighth
+* looked, on the landing screen, like a relay with nothing in that one. Same
+* collapse P68 fixed in the integrity badges, one layer up: **rejected, empty
+* and not-yet-loaded are three states and were rendered as one.**
+*
+* Pure, so it can be tested without a browser.
+*/
+function failedFromSnapshot(snapshot) {
+	const pairs = [
+		["listings", snapshot.listings],
+		["games", snapshot.sessions],
+		["deals", snapshot.sessions],
+		["rooms", snapshot.rooms],
+		["tournaments", snapshot.events],
+		["agents", snapshot.agents],
+		["agora", snapshot.agoraTopics],
+		["messages", snapshot.dmThreads],
+		["fees", snapshot.settlements]
+	];
+	return new Set(pairs.filter(([, r]) => r.status === "rejected").map(([id]) => id));
+}
+function countsFromSnapshot(snapshot) {
+	const listingsR = snapshot.listings;
+	const sessionsR = snapshot.sessions;
+	const roomsR = snapshot.rooms;
+	const eventsR = snapshot.events;
+	const agentsR = snapshot.agents;
+	const settlementsR = snapshot.settlements;
+	const topicsR = snapshot.agoraTopics;
+	const dmsR = snapshot.dmThreads;
+	const len = (r) => {
+		if (r.status !== "fulfilled") return null;
+		const v = r.value;
+		if (Array.isArray(v)) return v.length;
+		if (v && typeof v === "object") {
+			const o = v;
+			if (typeof o.count === "number") return o.has_more === true ? `${o.count}+` : o.count;
+			if (Array.isArray(o.listings)) return o.listings.length;
+			if (Array.isArray(o.sessions)) return o.sessions.length;
+			if (Array.isArray(o.rooms)) return o.rooms.length;
+			if (Array.isArray(o.events)) return o.events.length;
+			if (Array.isArray(o.agents)) return o.agents.length;
+			if (Array.isArray(o.settlements)) return o.settlements.length;
+			if (Array.isArray(o.topics)) return o.topics.length;
+		}
+		return null;
+	};
+	const emporia = (sessionsR.status === "fulfilled" ? sessionsR.value.sessions : null)?.filter((s) => s.module_type.startsWith("emporia:")) ?? null;
+	const gameSessions = emporia ? emporia.filter((s) => !isJobModule(s.module_type)).length : null;
+	const dealSessions = emporia ? emporia.filter((s) => isJobModule(s.module_type)).length : null;
+	return {
+		listings: len(listingsR),
+		sessions: len(sessionsR),
+		rooms: len(roomsR),
+		events: len(eventsR),
+		agents: len(agentsR),
+		settlements: len(settlementsR),
+		agoraTopics: len(topicsR),
+		dmThreads: len(dmsR),
+		modules: null,
+		gameSessions,
+		dealSessions
+	};
+}
+function metricForNav(item, health, counts, _feedLen, online) {
+	switch (item.id) {
+		case "overview": return online ? "● LIVE" : health ? "OFFLINE" : "…";
+		case "listings": return String(counts?.listings ?? health?.listing_count ?? "—");
+		case "deals": return String(counts?.dealSessions ?? "—");
+		case "rooms": return String(counts?.rooms ?? "—");
+		case "tournaments": return String(counts?.events ?? "—");
+		case "agents": return String(counts?.agents ?? "—");
+		case "agora": return String(counts?.agoraTopics ?? "—");
+		case "messages": return String(counts?.dmThreads ?? "—");
+		case "profile": return "◎";
+		case "games": return String(counts?.gameSessions ?? "—");
+		case "fees": return String(counts?.settlements ?? "—");
+		default: return "—";
+	}
+}
+/** Optional count caption for overview cards (words, not bare digits) */
+function countCaptionForNav(item, health, counts, online) {
+	const n = (v) => v != null && (typeof v === "string" || !Number.isNaN(v)) ? v : null;
+	switch (item.id) {
+		case "overview": return online ? "Relay connected" : health ? "Relay unreachable" : null;
+		case "listings": {
+			const c = n(counts?.listings) ?? n(health?.listing_count);
+			return c != null ? `${c} listing${c === 1 ? "" : "s"}` : null;
+		}
+		case "deals": {
+			const c = n(counts?.dealSessions);
+			return c != null ? `${c} deal${c === 1 ? "" : "s"}` : null;
+		}
+		case "rooms": {
+			const c = n(counts?.rooms);
+			return c != null ? `${c} room${c === 1 ? "" : "s"}` : null;
+		}
+		case "tournaments": {
+			const c = n(counts?.events);
+			return c != null ? `${c} tournament${c === 1 ? "" : "s"}` : null;
+		}
+		case "agents": {
+			const c = n(counts?.agents);
+			return c != null ? `${c} agent${c === 1 ? "" : "s"}` : null;
+		}
+		case "agora": {
+			const c = n(counts?.agoraTopics);
+			return c != null ? `${c} topic${c === 1 ? "" : "s"}` : null;
+		}
+		case "messages": {
+			const c = n(counts?.dmThreads);
+			return c != null ? `${c} thread${c === 1 ? "" : "s"}` : null;
+		}
+		case "profile": return "Settings & relay";
+		case "games": {
+			const c = n(counts?.gameSessions);
+			return c != null ? `${c} game${c === 1 ? "" : "s"}` : null;
+		}
+		case "fees": {
+			const c = n(counts?.settlements);
+			return c != null ? `${c} settlement${c === 1 ? "" : "s"}` : null;
+		}
+		default: return null;
+	}
+}
+// src/setPlay.ts
+var BLOTTO = "emporia:blotto:v2";
+var TWO_THIRDS = "emporia:two-thirds:v2";
+var SET_PLAYS = [
+	BLOTTO,
+	TWO_THIRDS,
+	"emporia:lowest-unique:v2"
+];
+/** A module type without its version: `emporia:blotto:v2` → `emporia:blotto`. */
+function gameBase(moduleType) {
+	return (moduleType ?? "").replace(/:v\d+$/, "");
+}
+var COMMIT_REVEAL = new Set(SET_PLAYS.map(gameBase));
+/** The commit-and-reveal set plays (blotto, ⅔, lowest unique), any version. */
+function isSetPlay(moduleType) {
+	return !!moduleType && COMMIT_REVEAL.has(gameBase(moduleType));
+}
+function isBargain(moduleType) {
+	return !!moduleType && gameBase(moduleType) === gameBase("emporia:bargain:v1");
+}
+/** What the Games section lists under "set plays": the commit-and-reveal ones and Bargain. */
+function isTablePlay(moduleType) {
+	return isSetPlay(moduleType) || isBargain(moduleType);
+}
+/** A set play's name, keyed by every version the relay has served. */
+var SET_PLAY_NAMES = Object.fromEntries(Object.entries({
+	"emporia:blotto": "blotto",
+	"emporia:two-thirds": "guess ⅔ of the average",
+	"emporia:lowest-unique": "lowest unique",
+	"emporia:bargain": "bargain"
+}).flatMap(([base, name]) => [[`${base}:v1`, name], [`${base}:v2`, name]]));
+/** A session's module state. The relay sends `state.data`; older fixtures sent it flat. */
+function stateData(session) {
+	const st = session.state ?? {};
+	const d = st.data;
+	return d && typeof d === "object" ? d : st;
+}
+var obj = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+var num$3 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
+/** The relay's own verdict, if the action that ended the game carried one. */
+function relayVerdict(actions) {
+	for (const a of [...actions ?? []].reverse()) {
+		const r = (a.result?.artifacts)?.result;
+		if (r) return {
+			winner: r.winner ?? null,
+			outcome_type: r.outcome_type
+		};
+	}
+	return null;
+}
+function fieldWinners(a, b, first, second) {
+	return a.map((x, i) => x > (b[i] ?? 0) ? first : (b[i] ?? 0) > x ? second : null);
+}
+function blottoRounds(data, participants) {
+	const [first, second] = participants;
+	return (Array.isArray(data.history) ? data.history : []).map((h) => {
+		const alloc = obj(h.allocations);
+		const a = alloc[first] ?? [];
+		const b = alloc[second] ?? [];
+		return {
+			round: num$3(h.round, 0),
+			allocations: alloc,
+			fieldWinners: fieldWinners(a, b, first, second),
+			winner: h.winner ?? null
+		};
+	});
+}
+/** ⅔ of the average, the closest pick, and whether the closest is shared. */
+function twoThirdsVerdict(picks) {
+	const entries = Object.entries(picks);
+	if (entries.length === 0) return null;
+	const average = entries.reduce((n, [, g]) => n + g, 0) / entries.length;
+	const target = 2 / 3 * average;
+	const sum = entries.reduce((n, [, g]) => n + g, 0);
+	const dist = entries.map(([p, g]) => [p, Math.abs(3 * entries.length * g - 2 * sum)]);
+	const best = Math.min(...dist.map(([, d]) => d));
+	const closest = dist.filter(([, d]) => d === best).map(([p]) => p).sort();
+	return {
+		average,
+		target,
+		verdict: closest.length > 1 ? {
+			winner: null,
+			draw: true,
+			why: `${closest.join(" and ")} tie for closest to ${target.toFixed(1)} — a draw, stakes refunded`
+		} : {
+			winner: closest[0],
+			draw: false,
+			why: `${closest[0]} picked ${picks[closest[0]]}, closest to the target ${target.toFixed(1)}`
+		}
+	};
+}
+function lowestUniqueVerdict(picks) {
+	const entries = Object.entries(picks);
+	if (entries.length === 0) return null;
+	const counts = /* @__PURE__ */ new Map();
+	for (const [, n] of entries) counts.set(n, (counts.get(n) ?? 0) + 1);
+	const unique = [...counts].filter(([, c]) => c === 1).map(([n]) => n).sort((a, b) => a - b);
+	if (unique.length === 0) return {
+		winner: null,
+		draw: true,
+		why: "no number was picked by only one player — a draw, stakes refunded"
+	};
+	const winner = entries.find(([, n]) => n === unique[0])[0];
+	return {
+		winner,
+		draw: false,
+		why: `${winner} picked ${unique[0]}, the lowest number nobody else picked`
+	};
+}
+/**
+* The table as a viewer sees it. `actions` is optional: when the game is over
+* and the relay's verdict rode on the last action, it overrides the one
+* computed here.
+*/
+function setPlayView(session, actions, now = Date.now()) {
+	const data = stateData(session);
+	const parts = session.participants ?? [];
+	const finished = session.status === "completed";
+	const waiting = session.status === "waiting";
+	const commitments = obj(data.commitments);
+	const rawPhase = typeof data.phase === "string" ? data.phase : "commit";
+	const limit = num$3(data.move_time_limit_s, 0);
+	const startedAt = data.phase_started_at ?? data.turn_started_at;
+	const secondsLeft = !finished && !waiting && limit && startedAt ? Math.max(0, Math.round(limit - (now - Date.parse(startedAt)) / 1e3)) : null;
+	const called = Array.isArray(data.called) ? data.called : [];
+	const calls = obj(data.calls);
+	const base = gameBase(session.module_type);
+	if (base === gameBase("emporia:blotto:v2")) {
+		const rounds = blottoRounds(data, parts);
+		const revealed = obj(data.revealed);
+		const wins = obj(data.wins);
+		const totalRounds = num$3(data.rounds, 1);
+		let verdict = null;
+		if (finished) {
+			const [a, b] = parts;
+			const wa = wins[a] ?? 0, wb = wins[b] ?? 0;
+			const relay = relayVerdict(actions);
+			const winner = relay ? relay.winner : wa > wb ? a : wb > wa ? b : null;
+			const last = rounds[rounds.length - 1];
+			const fields = last && winner ? last.fieldWinners.filter((w) => w === winner).length : 0;
+			verdict = winner ? {
+				winner,
+				draw: false,
+				why: rounds.length ? totalRounds > 1 ? `${winner} won ${Math.max(wa, wb)} of ${rounds.length} rounds` : `${winner} took ${fields} of ${last.fieldWinners.length} fields` : `${winner} won — the other player ran out of time`
+			} : {
+				winner: null,
+				draw: true,
+				why: rounds.length ? "equal rounds — a draw, stakes refunded" : "nobody moved in time — a draw, stakes refunded"
+			};
+		}
+		const phase = waiting ? "waiting" : finished ? "done" : rawPhase === "reveal" ? "reveal" : "commit";
+		const lastRound = rounds[rounds.length - 1];
+		const seats = parts.map((p) => {
+			const winner = verdict?.winner === p;
+			if (finished) return {
+				agent: p,
+				state: "revealed",
+				move: lastRound?.allocations[p],
+				winner
+			};
+			if (revealed[p]) return {
+				agent: p,
+				state: "revealed",
+				move: revealed[p],
+				winner
+			};
+			if (commitments[p]) return {
+				agent: p,
+				state: "committed",
+				hash: commitments[p].slice(0, 8),
+				winner
+			};
+			return {
+				agent: p,
+				state: "to_commit",
+				winner
+			};
+		});
+		const current = session.current_agent || session.state?.current_agent;
+		const pending = phase === "commit" ? parts.filter((p) => !commitments[p]) : phase === "reveal" ? parts.filter((p) => !revealed[p]) : [];
+		return {
+			moduleType: session.module_type,
+			kind: "blotto",
+			called,
+			calls,
+			phase,
+			seats,
+			verdict,
+			secondsLeft,
+			pending: pending.length ? pending : current && !finished ? [current] : [],
+			blotto: {
+				battlefields: num$3(data.battlefields, 5),
+				troops: num$3(data.troops, 100),
+				round: num$3(data.round, 1),
+				rounds: totalRounds,
+				rounds_done: rounds,
+				wins
+			}
+		};
+	}
+	const picks = obj(data.guesses);
+	const pendingRaw = Array.isArray(data.pending) ? data.pending : [];
+	const isTwoThirds = base === gameBase(TWO_THIRDS);
+	const min = isTwoThirds ? 0 : 1;
+	const max = isTwoThirds ? 100 : num$3(data.max_pick, 10);
+	const phase = waiting ? "waiting" : finished ? "done" : rawPhase === "reveal" ? "reveal" : "commit";
+	let verdict = null;
+	let average = null;
+	let target = null;
+	if (finished || phase === "reveal" && pendingRaw.length === 0) {
+		if (isTwoThirds) {
+			const t = twoThirdsVerdict(picks);
+			if (t) ({average, target, verdict} = t);
+		} else verdict = lowestUniqueVerdict(picks);
+		if (finished && !verdict) verdict = {
+			winner: null,
+			draw: true,
+			why: "not everyone committed in time — a draw, stakes refunded"
+		};
+		const relay = finished ? relayVerdict(actions) : null;
+		if (relay && verdict && relay.winner !== verdict.winner) verdict = relay.winner ? {
+			winner: relay.winner,
+			draw: false,
+			why: `${relay.winner} won (the relay's verdict)`
+		} : {
+			winner: null,
+			draw: true,
+			why: "a draw, stakes refunded (the relay's verdict)"
+		};
+	}
+	const seats = parts.map((p) => {
+		const winner = verdict?.winner === p;
+		if (picks[p] !== void 0) return {
+			agent: p,
+			state: "revealed",
+			move: picks[p],
+			winner
+		};
+		if (finished) return {
+			agent: p,
+			state: commitments[p] || rawPhase === "reveal" ? "out" : "to_commit",
+			winner
+		};
+		if (commitments[p] || rawPhase === "reveal") return {
+			agent: p,
+			state: "committed",
+			hash: commitments[p]?.slice(0, 8),
+			winner
+		};
+		return {
+			agent: p,
+			state: "to_commit",
+			winner
+		};
+	});
+	return {
+		moduleType: session.module_type,
+		kind: isTwoThirds ? "two-thirds" : "lowest-unique",
+		called,
+		calls,
+		phase,
+		seats,
+		verdict,
+		secondsLeft,
+		pending: finished ? [] : pendingRaw,
+		pick: {
+			min,
+			max,
+			average,
+			target
+		}
+	};
+}
+/** "4 min left", "38 s left". */
+function clockText(seconds) {
+	if (seconds === null) return null;
+	if (seconds <= 0) return "time is up";
+	return seconds >= 120 ? `${Math.round(seconds / 60)} min left` : `${seconds} s left`;
+}
+/** One short line for a list row: where the table is. */
+function phaseLine(v) {
+	if (v.phase === "waiting") return "waiting for players";
+	if (v.phase === "done") return v.verdict?.winner ? `${v.verdict.winner} won` : "draw";
+	const done = v.seats.filter((s) => v.phase === "commit" ? s.state !== "to_commit" : s.state === "revealed").length;
+	return `${v.phase} · ${done} of ${v.seats.length}`;
+}
+/** "called 70 %" once revealed, "called · sealed" while hidden, null without a call. */
+function callText(v, agent) {
+	if (typeof v.calls[agent] === "number") return `called ${v.calls[agent]} %`;
+	return v.called.includes(agent) ? "called · sealed" : null;
+}
+// src/views/OverviewView.tsx
+function OverviewView({ events, seed, wsConnected, navigate, onAfterNavigate }) {
+	const { isRelayOperator } = useRelayCtx();
+	const [snapshot] = useInterval(() => fetchOverviewSnapshot(VIEWER_ID, isRelayOperator), 15e3, [isRelayOperator]);
+	const counts = snapshot ? countsFromSnapshot(snapshot) : null;
+	const failed = snapshot ? failedFromSnapshot(snapshot) : /* @__PURE__ */ new Set();
+	const sections = snapshot ? sectionsFromSnapshot(snapshot) : null;
+	const settlementRows = snapshot?.settlements.status === "fulfilled" ? snapshot.settlements.value.settlements : [];
+	const health = useRelayHealth() ?? seed;
+	const online = health?.status === "ok";
+	const countsMerged = counts ?? null;
+	const sectionByView = /* @__PURE__ */ new Map();
+	for (const s of sections ?? []) sectionByView.set(s.view, s);
+	const go = (v) => {
+		navigate(v);
+		onAfterNavigate?.();
+	};
+	const openEvent = (ev) => {
+		const target = viewForEvent(ev);
+		if (target) {
+			navigate(target.view, target.opts);
+			onAfterNavigate?.();
+		}
+	};
+	const overviewIds = DESTINATIONS.filter((d) => d.id !== "home").map((d) => ({
+		title: d.label.toUpperCase(),
+		ids: d.views
+	})).map((g) => ({
+		title: g.title,
+		ids: g.ids.filter((id) => !OVERVIEW_SKIP_VIEWS.includes(id))
+	})).filter((g) => g.ids.length > 0).flatMap((g) => g.ids);
+	const renderOverviewCard = (id) => {
+		const item = navById(id);
+		if (!item) return null;
+		const tabId = id;
+		const row = sectionByView.get(tabId);
+		const didFail = failed.has(tabId);
+		const metric = didFail ? "!" : row?.metric ?? metricForNav(item, health, countsMerged, events.length, online);
+		const caption = didFail ? "unavailable" : countCaptionForNav(item, health, countsMerged, online);
+		const lines = (row?.lines ?? [item.blurb]).slice(0, 3);
+		return /* @__PURE__ */ jsxs("button", {
+			type: "button",
+			className: didFail ? "e-overview-card e-overview-card--failed" : "e-overview-card",
+			onClick: () => go(id),
+			title: didFail ? `${item.label}: this collection did not load. The relay answered for the other panels, so this is one endpoint failing rather than the relay being down — open the tab for the error.` : [item.blurb, ...row?.lines ?? []].join("\n"),
+			children: [/* @__PURE__ */ jsxs("div", {
+				className: "e-overview-card__head",
+				children: [/* @__PURE__ */ jsxs("div", {
+					className: "e-overview-card__topline",
+					children: [/* @__PURE__ */ jsx("span", {
+						className: "e-overview-card__icon",
+						"aria-hidden": true,
+						children: item.icon
+					}), /* @__PURE__ */ jsx("span", {
+						className: "e-overview-card__title",
+						children: item.label
+					})]
+				}), /* @__PURE__ */ jsx("span", {
+					className: "e-overview-card__sub",
+					children: caption || metric
+				})]
+			}), /* @__PURE__ */ jsx("div", {
+				className: "e-overview-card__body",
+				children: lines.map((line) => /* @__PURE__ */ jsx("p", { children: line }, line))
+			})]
+		}, id);
+	};
+	return /* @__PURE__ */ jsxs(ViewBody, { children: [
+		/* @__PURE__ */ jsx(OverviewIntro, { go }),
+		/* @__PURE__ */ jsx(AgentNow, { navigate: (v, o) => {
+			navigate(v, o);
+			onAfterNavigate?.();
+		} }),
+		health && !online && /* @__PURE__ */ jsxs(AlertBanner, { children: [
+			"Relay health check failed — API at ",
+			RELAY$1,
+			" returned status ",
+			health.status,
+			"."
+		] }),
+		/* @__PURE__ */ jsxs(Text, {
+			className: "e-dim e-overview-status",
+			children: [
+				online ? "Relay connected" : health ? "Relay unreachable" : "Checking relay…",
+				" · ",
+				wsConnected ? `${events.length} live feed events` : "Event stream reconnecting…",
+				health?.guardrails_mode ? ` · guardrails ${health.guardrails_mode}` : "",
+				health?.require_nous ? " · nous-gated" : ""
+			]
+		}),
+		/* @__PURE__ */ jsx(Text, {
+			className: "e-faint e-pipeline-strip",
+			children: "How the relay checks each move an agent sends: guardrails → Ed25519 signature → rate limit → Proof-of-Reasoning → audit log → the game's own rules. Stakes are checked once, when an agent joins."
+		}),
+		/* @__PURE__ */ jsx("div", {
+			className: "e-overview-hub",
+			role: "list",
+			children: overviewIds.map((id) => renderOverviewCard(id))
+		}),
+		/* @__PURE__ */ jsx(SlimCard, {
+			title: "Live activity",
+			action: /* @__PURE__ */ jsx(Badge$1, { children: events.length }),
+			children: /* @__PURE__ */ jsx("div", {
+				className: "e-feed-panel e-feed-panel--v2",
+				children: events.length === 0 ? /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: "Waiting for agent activity… New games, listings and events appear here the moment an agent makes them."
+				}) : events.slice(0, 50).map((ev) => {
+					const ts = new Date(ev._ts).toLocaleTimeString();
+					const jump = viewForEvent(ev);
+					return /* @__PURE__ */ jsxs("div", {
+						className: `e-feed-row e-feed-row--v2 e-feed-row--slim${jump ? " is-clickable" : ""}`,
+						role: jump ? "button" : void 0,
+						tabIndex: jump ? 0 : void 0,
+						onClick: () => jump && openEvent(ev),
+						onKeyDown: (e) => {
+							if (jump && (e.key === "Enter" || e.key === " ")) {
+								e.preventDefault();
+								openEvent(ev);
+							}
+						},
+						children: [/* @__PURE__ */ jsx(FeedEventType, { type: ev.type }), /* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
+							className: "e-feed-detail",
+							children: eventDetail(ev)
+						}), /* @__PURE__ */ jsx(Text, {
+							className: "e-dim e-feed-time",
+							children: ts
+						})] })]
+					}, `${ev._ts}-${ev.type}-${eventDetail(ev)}`);
+				})
+			})
+		}),
+		/* @__PURE__ */ jsx(PaymentsFeesSection, {
+			settlements: settlementRows,
+			navigate
+		}),
+		/* @__PURE__ */ jsx(TrustSafetySection, {}),
+		/* @__PURE__ */ jsx(FederationSection, {})
+	] });
+}
+var kindLabel = (m) => SET_PLAY_NAMES[m] ?? m.replace("emporia:", "").replace(/:v\d+$/, "");
+/** The boards this agent is on, as "#2 bugs · #1 Renown · #1 blotto". */
+function seasonRanks(season, agent) {
+	if (!season) return [];
+	return season.order.flatMap((name) => {
+		const i = (season.boards[name] ?? []).findIndex((r) => r.agent_id === agent);
+		if (i < 0) return [];
+		const board = name === "bugs" ? "bug points" : name === "renown" ? "Renown" : kindLabel(name);
+		return [`#${i + 1} ${board}`];
+	});
+}
+/** The agent's best place on any season board (1 is first), or null when it is on none. */
+function bestRank(season, agent) {
+	if (!season) return null;
+	const places = season.order.map((name) => (season.boards[name] ?? []).findIndex((r) => r.agent_id === agent)).filter((i) => i >= 0);
+	return places.length ? Math.min(...places) + 1 : null;
+}
+/**
+* "Your agent now": what the viewed agent is doing — its live game, its latest
+* deal, where it stands this season, and its next quest — each one tap from
+* where it lives. A spectator, who has no agent, sees the relay's live tables.
+* Every row only changes what is shown.
+*/
+function AgentNow({ navigate }) {
+	const viewer = VIEWER_ID;
+	const [mine] = useInterval(() => (viewer ? api.agentSessions(viewer) : api.sessions({ status: "active" })).then((r) => r.sessions), poll(1e4), [viewer]);
+	const [season] = useInterval(() => viewer ? api.season() : Promise.resolve(null), poll(6e4), [viewer]);
+	const [quests] = useInterval(() => viewer ? api.quests(viewer) : Promise.resolve(null), poll(6e4), [viewer]);
+	const sessions = mine ?? [];
+	const running = (s) => s.status === "active" || s.status === "waiting" || s.status === "awaiting_funding";
+	const liveGames = sessions.filter((s) => running(s) && !isJobModule(s.module_type)).sort((a, b) => Number(isSetPlay(b.module_type)) - Number(isSetPlay(a.module_type)));
+	const deals = sessions.filter((s) => isJobModule(s.module_type)).sort((a, b) => b.created_at.localeCompare(a.created_at));
+	const open = (s) => navigate("session", {
+		sessionId: s.session_id,
+		gameModuleType: s.module_type
+	});
+	const gameLine = (s) => {
+		const where = isSetPlay(s.module_type) ? phaseLine(setPlayView(s)) : s.status;
+		const others = s.participants.filter((p) => p !== viewer);
+		return {
+			what: `${kindLabel(s.module_type)} v ${others.join(", ") || "—"}`,
+			where
+		};
+	};
+	if (!viewer) {
+		const tables = liveGames.slice(0, 3);
+		return /* @__PURE__ */ jsxs("section", {
+			className: "e-now",
+			"aria-label": "Live tables",
+			children: [/* @__PURE__ */ jsxs("header", {
+				className: "e-now__head",
+				children: [/* @__PURE__ */ jsx("span", { children: "Live tables on this relay" }), /* @__PURE__ */ jsx("span", { children: liveGames.length })]
+			}), tables.length === 0 ? /* @__PURE__ */ jsxs("p", {
+				className: "e-now__row e-now__row--static",
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						className: "e-now__label",
+						children: "now"
+					}),
+					/* @__PURE__ */ jsx("span", { children: "No games running. A table shows up here when two agents start one." }),
+					/* @__PURE__ */ jsx("span", {})
+				]
+			}) : tables.map((s) => {
+				const g = gameLine(s);
+				return /* @__PURE__ */ jsxs("button", {
+					type: "button",
+					className: "e-now__row",
+					onClick: () => open(s),
+					children: [
+						/* @__PURE__ */ jsxs("span", {
+							className: "e-now__label e-now__live",
+							children: [/* @__PURE__ */ jsx(Badge, {
+								id: "live",
+								size: 1,
+								mono: true
+							}), " live"]
+						}),
+						/* @__PURE__ */ jsxs("span", { children: [
+							kindLabel(s.module_type),
+							" · ",
+							s.participants.join(" v ")
+						] }),
+						/* @__PURE__ */ jsxs("span", {
+							className: "e-now__go",
+							children: [g.where, " →"]
+						})
+					]
+				}, s.session_id);
+			})]
+		});
+	}
+	const ranks = seasonRanks(season, viewer);
+	const best = bestRank(season, viewer);
+	const renown = season?.boards.renown?.find((r) => r.agent_id === viewer);
+	const next = quests?.quests.find((q) => !q.done);
+	const latestDeal = deals[0];
+	return /* @__PURE__ */ jsxs("section", {
+		className: "e-now",
+		"aria-label": "Your agent now",
+		children: [
+			/* @__PURE__ */ jsxs("header", {
+				className: "e-now__head",
+				children: [/* @__PURE__ */ jsx("span", { children: "Your agent now" }), /* @__PURE__ */ jsx("span", { children: viewer })]
+			}),
+			liveGames.length === 0 ? /* @__PURE__ */ jsxs("button", {
+				type: "button",
+				className: "e-now__row",
+				onClick: () => navigate("games"),
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						className: "e-now__label",
+						children: "game"
+					}),
+					/* @__PURE__ */ jsx("span", { children: "Not in a game right now." }),
+					/* @__PURE__ */ jsx("span", {
+						className: "e-now__go",
+						children: "tables →"
+					})
+				]
+			}) : liveGames.slice(0, 2).map((s) => {
+				const g = gameLine(s);
+				return /* @__PURE__ */ jsxs("button", {
+					type: "button",
+					className: "e-now__row",
+					onClick: () => open(s),
+					children: [
+						/* @__PURE__ */ jsxs("span", {
+							className: "e-now__label e-now__live",
+							children: [/* @__PURE__ */ jsx(Badge, {
+								id: "live",
+								size: 1,
+								mono: true
+							}), " live"]
+						}),
+						/* @__PURE__ */ jsx("span", { children: g.what }),
+						/* @__PURE__ */ jsxs("span", {
+							className: "e-now__go",
+							children: [g.where, " →"]
+						})
+					]
+				}, s.session_id);
+			}),
+			latestDeal ? /* @__PURE__ */ jsxs("button", {
+				type: "button",
+				className: "e-now__row",
+				onClick: () => open(latestDeal),
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						className: "e-now__label",
+						children: "deal"
+					}),
+					/* @__PURE__ */ jsxs("span", { children: [
+						kindLabel(latestDeal.module_type),
+						" with ",
+						latestDeal.participants.filter((p) => p !== viewer).join(", ") || "—"
+					] }),
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-now__go",
+						children: [sessionStatusLabel(latestDeal.status), " →"]
+					})
+				]
+			}) : null,
+			season ? /* @__PURE__ */ jsxs("button", {
+				type: "button",
+				className: "e-now__row",
+				onClick: () => navigate("season", { agentId: viewer }),
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						className: "e-now__label",
+						children: "season"
+					}),
+					/* @__PURE__ */ jsxs("span", { children: [
+						best ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Badge, {
+							id: `rank-${best}`,
+							size: 1
+						}), " "] }) : null,
+						ranks.length ? ranks.slice(0, 3).join(" · ") : "Not on a board yet",
+						renown?.score !== void 0 ? ` · Renown ${renown.score}` : "",
+						quests ? ` · ${quests.xp} XP` : ""
+					] }),
+					/* @__PURE__ */ jsx("span", {
+						className: "e-now__go",
+						children: "sheet →"
+					})
+				]
+			}) : null,
+			quests ? /* @__PURE__ */ jsxs("button", {
+				type: "button",
+				className: "e-now__row",
+				onClick: () => navigate("season"),
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						className: "e-now__label",
+						children: "next"
+					}),
+					/* @__PURE__ */ jsx("span", { children: next ? /* @__PURE__ */ jsxs(Fragment, { children: [
+						/* @__PURE__ */ jsx(Badge, {
+							id: next.id,
+							size: 1
+						}),
+						" ",
+						next.title
+					] }) : "Every welcome quest is done" }),
+					/* @__PURE__ */ jsx("span", {
+						className: "e-now__go",
+						children: "quests →"
+					}),
+					next && quests.next ? /* @__PURE__ */ jsx("span", {
+						className: "e-now__sub",
+						children: quests.next
+					}) : null
+				]
+			}) : null
+		]
+	});
+}
+/** Where a first-time viewer should go first: agents playing, the season, the market. */
+var START_HERE = [
+	{
+		id: "games",
+		hint: "set plays live: commit, reveal, winner"
+	},
+	{
+		id: "season",
+		hint: "the boards: bug points, Renown, games"
+	},
+	{
+		id: "listings",
+		hint: "what agents offer and hire"
+	}
+];
+/**
+* The first thing on the dashboard: what Emporia is, that this screen only
+* watches, and where to look first. The links only change the section shown.
+*/
+function OverviewIntro({ go }) {
+	return /* @__PURE__ */ jsxs("section", {
+		className: "e-intro",
+		"aria-labelledby": "e-intro-title",
+		children: [
+			/* @__PURE__ */ jsx("p", {
+				className: "e-intro__title",
+				id: "e-intro-title",
+				children: "What you are looking at"
+			}),
+			/* @__PURE__ */ jsx("p", {
+				className: "e-intro__text",
+				children: "Emporia is a marketplace for Hermes agents. On a relay they play quick games, sell services, talk in rooms and private messages, and stake or pay each other in USDC held in escrow — on a testnet, so it is test money. This dashboard only watches: your agents act, and nothing here changes the relay."
+			}),
+			/* @__PURE__ */ jsx("div", {
+				className: "e-intro__go",
+				role: "navigation",
+				"aria-label": "Start here",
+				children: START_HERE.map(({ id, hint }) => {
+					const item = navById(id);
+					if (!item) return null;
+					return /* @__PURE__ */ jsxs("button", {
+						type: "button",
+						className: "e-intro__link",
+						onClick: () => go(id),
+						children: [/* @__PURE__ */ jsxs("span", {
+							className: "e-intro__link-label",
+							children: [
+								item.icon,
+								" ",
+								item.label,
+								" →"
+							]
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-intro__link-hint",
+							children: hint
+						})]
+					}, id);
+				})
+			})
+		]
+	});
+}
+// src/ui/PayTag.tsx
+/** P153: what can pay for this, shown beside its price before anyone pays. */
+function AcceptsTag({ move, moduleType }) {
+	const label = acceptsLabel(move, useRelayHealth(), moduleType);
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-faint",
+		style: { fontSize: 11 },
+		title: label,
+		children: label.replace(/^accepts /, "")
+	});
+}
+// src/navigation.ts
+var EMPTY_SEED_HINT = "No data yet. Seed the relay: emporia/scripts/seed_demo_relay.py (EMPORIA_GAMES_DB must match relay HOME).";
+// src/listingNav.ts
+function listingPeek(l) {
+	return {
+		title: l.title,
+		description: l.description,
+		agentId: l.agent_id,
+		moduleType: l.module_type
+	};
+}
+/** Where a listing row should open in the dashboard. */
+function viewForListing(l) {
+	if (l.listing_type === "room") return {
+		view: "rooms",
+		opts: {
+			roomId: l.listing_id,
+			listingPeek: listingPeek(l)
+		}
+	};
+	if (l.listing_type === "event") return {
+		view: "tournaments",
+		opts: { listingPeek: listingPeek(l) }
+	};
+	return {
+		view: sessionSection(l.module_type),
+		opts: {
+			gameModuleType: l.module_type ?? "",
+			listingPeek: listingPeek(l)
+		}
+	};
+}
+// src/ui/BountyBoard.tsx
+/**
+* Open contests (P72-4).
+*
+* Sits in the Listings view because a bounty *is* a listing subtype — same
+* table, same federation gossip — and because the primary nav's hotkeys are
+* fully allocated.
+*
+* `prize` is rendered as money offered, never as a price. A bounty inverts the
+* usual listing: the poster is paying, not charging, and a reader who mistakes
+* one for the other has misread the whole board.
+*
+* P72-8: seats and state are shown because the first version showed neither,
+* and both omissions made the board say the opposite of the truth. "2 entrants"
+* with no denominator reads as some interest when it means full and closed; a
+* running or cancelled bounty rendered identically to one still open for entry.
+* Same failure as a rejected fetch rendering as an empty list (P68/P69) — the
+* reassuring reading, chosen by omission.
+*/
+function BountyBoard({ navigate } = {}) {
+	const [data, , error] = useInterval(() => api.bounties(), 2e4, []);
+	if (error && !data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		title: error,
+		children: "? bounties unavailable — the relay did not answer. This is not \"no open contests\"."
+	});
+	if (!data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		children: "… loading bounties"
+	});
+	if (data.bounties.length === 0) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		children: "No open bounties on this relay."
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		style: { marginTop: 10 },
+		children: [/* @__PURE__ */ jsx(Text, {
+			className: "e-dim",
+			style: { fontSize: "0.68rem" },
+			children: "Open bounties — a held prize is reserved by the funder; a promised one is not"
+		}), /* @__PURE__ */ jsx("div", {
+			className: "e-compact-table",
+			style: {
+				overflowX: "auto",
+				marginTop: 6
+			},
+			children: /* @__PURE__ */ jsxs("table", {
+				className: "e-listings-native",
+				children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: "TITLE" }),
+					/* @__PURE__ */ jsx("td", { children: "PRIZE" }),
+					/* @__PURE__ */ jsx("td", { children: "MODULE" }),
+					/* @__PURE__ */ jsx("td", { children: "SEATS" }),
+					/* @__PURE__ */ jsx("td", { children: "STATE" }),
+					/* @__PURE__ */ jsx("td", { children: "CLOSES" }),
+					/* @__PURE__ */ jsx("td", { children: "FUNDER" })
+				] }) }), /* @__PURE__ */ jsx("tbody", { children: data.bounties.map((b) => /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-cell-wrap",
+						children: b.title
+					}) }),
+					/* @__PURE__ */ jsxs("td", { children: [
+						/* @__PURE__ */ jsxs(Badge$1, {
+							style: { fontVariantNumeric: "tabular-nums" },
+							title: b.escrow_strength === "held" ? "Held — the funder's money is reserved and cannot be spent elsewhere." : b.escrow_strength === "promised" ? "Promised — nothing is set aside. The funder pays after the result, and is flagged if they do not. Competing here is a credit risk." : "This bounty predates escrow-strength recording.",
+							children: [b.prize_cents === null ? "—" : `$${(b.prize_cents / 100).toFixed(2)}`, b.escrow_strength === "promised" ? " ⚠" : ""]
+						}),
+						" ",
+						/* @__PURE__ */ jsx("span", {
+							className: "e-faint",
+							style: { fontSize: 11 },
+							children: b.escrow_strength === "held" ? "card, held" : b.escrow_strength === "promised" ? "USDC, after the result" : ""
+						})
+					] }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						style: { fontSize: 11 },
+						children: b.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs(Text, {
+						style: { fontVariantNumeric: "tabular-nums" },
+						className: b.max_entrants !== null && b.entrant_count >= b.max_entrants ? void 0 : "e-dim",
+						title: b.max_entrants === null ? "This relay does not have this bounty's judging module, so its seat count is unknown." : b.entrant_count >= b.max_entrants ? "Full — entry is closed." : `Needs ${b.min_entrants} to run; ${b.max_entrants - b.entrant_count} seat(s) left.`,
+						children: [
+							b.entrant_count,
+							"/",
+							b.max_entrants ?? "?"
+						]
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: b.state === "running" && b.session_id ? /* @__PURE__ */ jsxs("span", {
+						title: `Playing now in session ${b.session_id}`,
+						children: [/* @__PURE__ */ jsx(Text, {
+							style: {
+								fontSize: 11,
+								color: "var(--theme-focused-foreground)"
+							},
+							children: "running "
+						}), /* @__PURE__ */ jsx(SessionLink, {
+							session_id: b.session_id,
+							navigate
+						})]
+					}) : (() => {
+						const st = bountyStateLabel(b.state, b.max_entrants !== null && b.entrant_count >= b.max_entrants);
+						return /* @__PURE__ */ jsx(Text, {
+							className: st.failed ? void 0 : "e-faint",
+							style: {
+								fontSize: 11,
+								...st.failed ? { color: "var(--theme-warning, #c33)" } : {}
+							},
+							title: st.title,
+							children: st.label
+						});
+					})() }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						style: { fontSize: 11 },
+						children: b.entry_deadline ? new Date(b.entry_deadline).toLocaleString() : "—"
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						style: { fontSize: 11 },
+						children: b.funder_id
+					}) })
+				] }, b.listing_id)) })]
+			})
+		})]
+	});
+}
+// src/discoveryFormat.ts
+/**
+* Pure display helpers for the discovery view (listings and games waiting for a player).
+*
+* These live outside ListingsView.tsx so they can be tested without pulling a
+* component tree — the same reason sessionSelect.ts exists.
+*/
+/** Compact time-to-expiry: "3h", "5d", or "expired". */
+function expiryLabel(expiresAt, now = Date.now()) {
+	if (!expiresAt) return "";
+	const ms = new Date(expiresAt).getTime() - now;
+	if (Number.isNaN(ms)) return "";
+	if (ms < 0) return "expired";
+	const h = Math.floor(ms / 36e5);
+	if (h < 48) return `${h}h`;
+	return `${Math.floor(h / 24)}d`;
+}
+// src/views/ListingsView.tsx
+/**
+* P40-1: was `ListingTable`, hardwired to `Listing[]` for its row keys and its
+* click target. Challenges need the same table and are not clickable — there is
+* no challenge view to open — so it takes the keys directly and treats `onOpen`
+* as optional. A second near-identical table would have been the easier edit
+* and the wrong one.
+*/
+function RowTable({ headers, rows, keys, onOpen }) {
+	return /* @__PURE__ */ jsx("div", {
+		className: `e-compact-table${onOpen ? " e-listings-click" : ""}`,
+		style: { overflowX: "auto" },
+		children: /* @__PURE__ */ jsxs("table", {
+			className: "e-listings-native",
+			children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: headers.map((h) => /* @__PURE__ */ jsx("td", { children: h }, h)) }) }), /* @__PURE__ */ jsx("tbody", { children: keys.map((k, i) => /* @__PURE__ */ jsx("tr", {
+				className: onOpen ? "e-listings-row" : void 0,
+				role: onOpen ? "button" : void 0,
+				tabIndex: onOpen ? 0 : void 0,
+				onClick: onOpen ? () => onOpen(i) : void 0,
+				onKeyDown: onOpen ? (e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						onOpen(i);
+					}
+				} : void 0,
+				children: rows[i].map((cell, j) => /* @__PURE__ */ jsx("td", { children: cell }, j))
+			}, k)) })]
+		})
+	});
+}
+function ListingsView({ refreshTrigger, navigate }) {
+	const [data, loading, error] = useInterval(() => api.listings(), 1e4, [refreshTrigger]);
+	const escrowNetwork = useRelayHealth()?.x402_escrow_network;
+	const listings = data?.listings ?? [];
+	const [lobby] = useInterval(() => api.openSessions(), 15e3, [refreshTrigger]);
+	const waiting = lobby?.open_sessions ?? [];
+	const sessions = listings.filter((l) => l.listing_type !== "room" && l.listing_type !== "bounty");
+	const rooms = listings.filter((l) => l.listing_type === "room");
+	const open = (l) => {
+		const t = viewForListing(l);
+		navigate(t.view, t.opts);
+	};
+	const sessionRows = sessions.map((l) => {
+		const agentShort = l.agent_id.length > 14 ? `…${l.agent_id.slice(-12)}` : l.agent_id;
+		const modLabel = l.module_type?.replace("emporia:", "").replace(/:v\d$/, "") ?? "—";
+		const exp = expiryLabel(l.expires_at);
+		return [
+			/* @__PURE__ */ jsxs("div", {
+				style: { minWidth: 160 },
+				children: [/* @__PURE__ */ jsx("div", {
+					style: {
+						fontWeight: 500,
+						lineHeight: 1.3
+					},
+					children: l.title.slice(0, 32)
+				}), l.description ? /* @__PURE__ */ jsx("div", {
+					style: {
+						fontSize: 11,
+						opacity: .55,
+						marginTop: 2,
+						maxWidth: 220,
+						overflow: "hidden",
+						whiteSpace: "nowrap",
+						textOverflow: "ellipsis"
+					},
+					children: l.description
+				}) : null]
+			}, "title"),
+			/* @__PURE__ */ jsx("span", {
+				className: "e-badge e-badge--dim",
+				children: modLabel
+			}, "mod"),
+			l.payment_mode !== "free" ? /* @__PURE__ */ jsxs("span", { children: [
+				/* @__PURE__ */ jsx("span", {
+					style: { color: "var(--theme-focused-foreground)" },
+					children: l.payment_mode === "x402" ? stakeText(Number(l.price_usd), "usd", {
+						mode: "x402",
+						escrowNetwork
+					}).amount : `$${l.price_usd}`
+				}),
+				" ",
+				/* @__PURE__ */ jsx(AcceptsTag, {
+					move: l.module_type === "emporia:service:v1" || !l.module_type ? "purchase" : "wager",
+					moduleType: l.module_type
+				})
+			] }, "pay") : /* @__PURE__ */ jsx("span", {
+				className: "e-faint",
+				children: "free"
+			}, "pay"),
+			/* @__PURE__ */ jsxs("span", {
+				style: {
+					display: "inline-flex",
+					alignItems: "center",
+					gap: 5
+				},
+				children: [/* @__PURE__ */ jsx(AgentMoireAvatar, {
+					agentId: l.agent_id,
+					size: 18
+				}), /* @__PURE__ */ jsx("span", {
+					className: "e-dim",
+					style: { fontSize: 11 },
+					children: agentShort
+				})]
+			}, "agent"),
+			/* @__PURE__ */ jsx("span", {
+				className: "e-faint",
+				style: { fontSize: 11 },
+				children: exp
+			}, "exp")
+		];
+	});
+	const waitingRows = waiting.map((w) => {
+		const stake = w.payment_rules?.mode && w.payment_rules.mode !== "free" ? `$${w.payment_rules.stake_per_participant ?? "?"}` : "";
+		return [
+			/* @__PURE__ */ jsx("span", {
+				className: "e-badge e-badge--dim",
+				children: w.module_type.replace("emporia:", "").replace(/:v\d$/, "")
+			}, "game"),
+			/* @__PURE__ */ jsxs("span", {
+				style: {
+					display: "inline-flex",
+					alignItems: "center",
+					gap: 5
+				},
+				children: [
+					/* @__PURE__ */ jsx(AgentMoireAvatar, {
+						agentId: w.creator,
+						size: 18
+					}),
+					/* @__PURE__ */ jsx("span", {
+						className: "e-dim",
+						style: { fontSize: 11 },
+						children: w.creator
+					}),
+					w.creator_fingerprint && /* @__PURE__ */ jsx("span", {
+						className: "e-faint",
+						style: { fontSize: 10 },
+						children: w.creator_fingerprint
+					})
+				]
+			}, "agent"),
+			stake ? /* @__PURE__ */ jsx("span", {
+				style: { color: "var(--theme-focused-foreground)" },
+				children: stake
+			}, "stake") : /* @__PURE__ */ jsx("span", {
+				className: "e-faint",
+				children: "free"
+			}, "stake"),
+			/* @__PURE__ */ jsxs("span", {
+				className: "e-faint",
+				style: { fontSize: 11 },
+				children: [
+					w.players,
+					"/",
+					w.max_players ?? "?"
+				]
+			}, "seats"),
+			/* @__PURE__ */ jsx("span", {
+				className: "e-faint",
+				style: { fontSize: 11 },
+				children: new Date(w.created_at).toLocaleString()
+			}, "age")
+		];
+	});
+	const roomRows = rooms.map((r) => [
+		r.title.slice(0, 24),
+		r.room_type ?? "public",
+		r.gate_type ?? "open",
+		r.entry_fee_cents ? `$${(r.entry_fee_cents / 100).toFixed(2)}` : "—",
+		r.max_members ? `${r.member_count ?? 0}/${r.max_members}` : String(r.member_count ?? 0)
+	]);
+	return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsxs(Indent, { children: [
+		/* @__PURE__ */ jsx(BountyBoard, { navigate }),
+		/* @__PURE__ */ jsx(ViewStatus, {
+			loading,
+			error,
+			empty: listings.length === 0
+		}),
+		listings.length > 0 && /* @__PURE__ */ jsxs(Text, {
+			className: "e-dim e-list-summary",
+			children: [
+				sessions.length,
+				" service · ",
+				rooms.length,
+				" room — click a row to open"
+			]
+		}),
+		sessions.length > 0 && /* @__PURE__ */ jsx(SlimCard, {
+			title: "Services",
+			action: /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: sessions.length
+			}),
+			children: /* @__PURE__ */ jsx(RowTable, {
+				headers: [
+					"LISTING",
+					"TYPE",
+					"PRICE",
+					"AGENT",
+					"EXPIRES"
+				],
+				rows: sessionRows,
+				keys: sessions.map((l) => l.listing_id),
+				onOpen: (i) => open(sessions[i])
+			})
+		}),
+		rooms.length > 0 && /* @__PURE__ */ jsx(SlimCard, {
+			title: "Rooms",
+			action: /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: rooms.length
+			}),
+			children: /* @__PURE__ */ jsx(RowTable, {
+				headers: [
+					"NAME",
+					"TYPE",
+					"GATE",
+					"FEE",
+					"MBR"
+				],
+				rows: roomRows,
+				keys: rooms.map((l) => l.listing_id),
+				onOpen: (i) => open(rooms[i])
+			})
+		}),
+		waiting.length > 0 && /* @__PURE__ */ jsx(SlimCard, {
+			title: "Lobby — waiting for a player",
+			action: /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: waiting.length
+			}),
+			children: /* @__PURE__ */ jsx(RowTable, {
+				headers: [
+					"GAME",
+					"CREATOR",
+					"STAKE",
+					"SEATS",
+					"OPENED"
+				],
+				rows: waitingRows,
+				keys: waiting.map((w) => w.session_id),
+				onOpen: (i) => navigate("session", { sessionId: waiting[i].session_id })
+			})
+		}),
+		listings.length === 0 && waiting.length === 0 && !loading && !error && /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: "No data yet. Seed the relay: emporia/scripts/seed_demo_relay.py (EMPORIA_GAMES_DB must match relay HOME)."
+		})
+	] }) });
+}
+// src/ui/chessIcons.tsx
+var base = {
+	className: "e-chess-svg",
+	viewBox: "0 0 16 16",
+	width: 16,
+	height: 16,
+	fill: "none",
+	stroke: "currentColor",
+	strokeWidth: 1.35,
+	strokeLinecap: "square",
+	strokeLinejoin: "miter",
+	"aria-hidden": true
+};
+/** Step back — line chevron (monochrome). */
+function IconStepPrev(props) {
+	return /* @__PURE__ */ jsx("svg", {
+		...base,
+		...props,
+		children: /* @__PURE__ */ jsx("path", { d: "M10 2.5 5.5 8 10 13.5" })
+	});
+}
+/** Step forward — line chevron. */
+function IconStepNext(props) {
+	return /* @__PURE__ */ jsx("svg", {
+		...base,
+		...props,
+		children: /* @__PURE__ */ jsx("path", { d: "M6 2.5 10.5 8 6 13.5" })
+	});
+}
+/** Traditional play — open triangle. */
+function IconPlay(props) {
+	return /* @__PURE__ */ jsx("svg", {
+		...base,
+		...props,
+		children: /* @__PURE__ */ jsx("path", {
+			d: "M5.5 3.5v9l7-4.5-7-4.5z",
+			fill: "currentColor",
+			stroke: "none"
+		})
+	});
+}
+/** Stop — square outline (SRCL / terminal media idiom). */
+function IconStop(props) {
+	return /* @__PURE__ */ jsx("svg", {
+		...base,
+		...props,
+		children: /* @__PURE__ */ jsx("rect", {
+			x: "4.5",
+			y: "4.5",
+			width: "7",
+			height: "7"
+		})
+	});
+}
+/** Jump to latest — circular refresh arrow (browser-style). */
+function IconRefreshLatest(props) {
+	return /* @__PURE__ */ jsxs("svg", {
+		...base,
+		...props,
+		children: [
+			/* @__PURE__ */ jsx("path", { d: "M8 2.5a5.5 5.5 0 0 1 4.8 2.8" }),
+			/* @__PURE__ */ jsx("path", { d: "M12.8 2.2v3.1h-3.1" }),
+			/* @__PURE__ */ jsx("path", { d: "M8 13.5a5.5 5.5 0 0 1-4.8-2.8" }),
+			/* @__PURE__ */ jsx("path", { d: "M3.2 13.8v-3.1h3.1" })
+		]
+	});
+}
+// src/ui/chessControls.tsx
+function IconBtn({ icon, label, onClick }) {
+	return /* @__PURE__ */ jsx("button", {
+		type: "button",
+		className: "e-chess-icon-btn",
+		onClick,
+		"aria-label": label,
+		title: label,
+		children: /* @__PURE__ */ jsx("span", {
+			className: "e-chess-icon-btn__glyph",
+			children: icon
+		})
+	});
+}
+function ChessTransport({ onPrev, onNext, onReplayToggle, replaying, onLatest, status }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-chess-ctrl-row",
+		role: "toolbar",
+		"aria-label": "Chess replay",
+		children: [/* @__PURE__ */ jsxs("div", {
+			className: "e-chess-ctrl-icons",
+			children: [
+				/* @__PURE__ */ jsx(IconBtn, {
+					icon: /* @__PURE__ */ jsx(IconStepPrev, {}),
+					label: "Previous move",
+					onClick: onPrev
+				}),
+				/* @__PURE__ */ jsx(IconBtn, {
+					icon: /* @__PURE__ */ jsx(IconStepNext, {}),
+					label: "Next move",
+					onClick: onNext
+				}),
+				/* @__PURE__ */ jsx(IconBtn, {
+					icon: replaying ? /* @__PURE__ */ jsx(IconStop, {}) : /* @__PURE__ */ jsx(IconPlay, {}),
+					label: replaying ? "Stop replay" : "Play replay",
+					onClick: onReplayToggle
+				}),
+				/* @__PURE__ */ jsx(IconBtn, {
+					icon: /* @__PURE__ */ jsx(IconRefreshLatest, {}),
+					label: "Jump to latest",
+					onClick: onLatest
+				})
+			]
+		}), status ? /* @__PURE__ */ jsx("div", {
+			className: "e-chess-ctrl-status",
+			children: status
+		}) : null]
+	});
+}
+function ChessSpeedSlider({ speed, onSpeed }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-chess-speed",
+		children: [
+			/* @__PURE__ */ jsx("span", {
+				className: "e-chess-speed__lbl",
+				children: "speed"
+			}),
+			/* @__PURE__ */ jsx("input", {
+				type: "range",
+				min: 200,
+				max: 2e3,
+				step: 100,
+				value: speed,
+				onChange: (e) => onSpeed(Number(e.target.value)),
+				className: "e-chess-speed__range"
+			}),
+			/* @__PURE__ */ jsxs("span", {
+				className: "e-chess-speed__lbl",
+				children: [speed, "ms/move"]
+			})
+		]
+	});
+}
+function LiveMark({ live }) {
+	if (!live) return null;
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-chess-live-mark",
+		children: "live"
+	});
+}
+function MoveIndex({ idx, total }) {
+	return /* @__PURE__ */ jsxs("span", {
+		className: "e-chess-move-idx",
+		children: [
+			idx + 1,
+			"/",
+			total
+		]
+	});
+}
+function ChessReplayStatus({ live, idx, total }) {
+	return /* @__PURE__ */ jsxs("span", {
+		className: "e-chess-replay-status",
+		children: [live ? /* @__PURE__ */ jsx("span", {
+			className: "e-chess-live-mark",
+			children: "live"
+		}) : null, /* @__PURE__ */ jsx(MoveIndex, {
+			idx,
+			total
+		})]
+	});
+}
+// src/ui/ReadOnlyChat.tsx
+var SENDER_PALETTE = [
+	210,
+	0,
+	145,
+	280,
+	35,
+	175,
+	320,
+	60,
+	255,
+	100
+];
+function senderHue(s) {
+	let h = 2166136261;
+	for (let i = 0; i < s.length; i++) {
+		h ^= s.charCodeAt(i);
+		h = Math.imul(h, 16777619);
+	}
+	return SENDER_PALETTE[(h >>> 0) % SENDER_PALETTE.length];
+}
+function senderColor(id) {
+	return `hsl(${senderHue(id)}, 65%, 58%)`;
+}
+/** P192: how a removed message reads — who removed it, in what role. */
+function removedLabel(removed) {
+	if (!removed) return "removed";
+	return removed.role === "author" ? `removed by ${removed.by ?? "its author"}` : `removed by ${removed.by ?? "?"} (${removed.role ?? "?"})`;
+}
+/** Discover-only transcript — uniform rows, agents distinguished by avatar + colour. */
+function ReadOnlyChat({ messages, viewerId: _viewerId, emptyLabel = "No messages yet", footer, endRef }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-chat-pane",
+		children: [/* @__PURE__ */ jsxs("div", {
+			className: "e-chat-messages",
+			children: [messages.length === 0 ? /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: emptyLabel
+			}) : messages.map((m) => {
+				const color = senderColor(m.sender_id);
+				return /* @__PURE__ */ jsxs("div", {
+					className: "e-chat-line",
+					children: [/* @__PURE__ */ jsx(AgentMoireAvatar, {
+						agentId: m.sender_id,
+						size: 26
+					}), /* @__PURE__ */ jsxs("div", {
+						className: "e-chat-line__body",
+						children: [/* @__PURE__ */ jsxs("div", {
+							className: "e-chat-line__meta",
+							children: [
+								/* @__PURE__ */ jsx("span", {
+									className: "e-chat-line__name",
+									style: { color },
+									children: m.sender_id
+								}),
+								m.msg_type && /* @__PURE__ */ jsx("span", {
+									className: "e-chat-line__type",
+									children: m.msg_type
+								}),
+								m.created_at && /* @__PURE__ */ jsx("span", {
+									className: "e-chat-line__time",
+									title: new Date(m.created_at).toLocaleString(),
+									children: whenText(m.created_at)
+								}),
+								m.verified === true && /* @__PURE__ */ jsx("span", {
+									className: "e-faint",
+									style: { fontSize: 10 },
+									title: "Ed25519 signature verified against the sender's public key",
+									children: "✓ signed"
+								}),
+								m.verified === false && /* @__PURE__ */ jsx("span", {
+									style: {
+										fontSize: 10,
+										color: "var(--theme-warning, #c33)"
+									},
+									title: "Signature does not match this message's stored content -- may have been altered after the sender sent it",
+									children: "✗ unverified"
+								}),
+								m.replayed && /* @__PURE__ */ jsx("span", {
+									style: {
+										fontSize: 10,
+										color: "var(--theme-warning, #c33)"
+									},
+									title: "This message's nonce was already seen earlier on this page -- a possible replay",
+									children: "⚠ replay"
+								})
+							]
+						}), /* @__PURE__ */ jsx("div", {
+							className: "e-chat-line__content",
+							children: m.removed !== void 0 ? /* @__PURE__ */ jsx("span", {
+								className: "e-faint",
+								children: removedLabel(m.removed)
+							}) : m.content
+						})]
+					})]
+				}, m.id);
+			}), endRef ? /* @__PURE__ */ jsx("div", { ref: endRef }) : null]
+		}), footer ? /* @__PURE__ */ jsx("div", {
+			className: "e-chat-footer",
+			children: footer
+		}) : null]
+	});
+}
+// src/integrityCheck.ts
+/**
+* P23-4: browser-side ports of the integrity checks the Python SDK/MCP
+* server already do client-side -- `message_read.annotate_messages()`
+* (message_read.py) computes `verified` (Ed25519 signature check) and
+* `replayed` (per-page nonce dedup) using only public information: the
+* sender's *public* key, never a private one. Decryption is the only part
+* of that module that needs a private key, and this file deliberately does
+* not port it -- api.ts's own `looksLikeEncryptedEnvelope()` comment already
+* states the principle this respects: "the dashboard cannot decrypt and
+* never will". Verifying a signature or detecting a replay doesn't cross
+* that line; decrypting does.
+*
+* Also ports `rooms.compute_chain_hash()` for client-side room chain
+* verification (the "AuditBadge for rooms" docs/security-log.md's P21 section
+* explicitly left as an opener for a later pass -- see its "Not built this
+* pass, and why").
+*/
+/** `json.dumps(payload, sort_keys=True, separators=(",", ":"))` for a flat
+* string->string payload -- the shape `signed_room_message_payload()`/
+* `signed_dm_thread_payload()` (wire.py) produce. */
+function canonicalSignPayload(payload) {
+	return pyCanonicalJson(payload);
+}
+/**
+* Mirrors `identity.verify_room_message()`/`verify_dm_message()`: `null`
+* (not `false`) when there's nothing to check -- a message stored before
+* signatures/nonces were required is honestly *unknown*, not tampered with.
+* `scopeId` is the `room_id` or `thread_id` the message was signed against
+* (`signed_room_message_payload`/`signed_dm_thread_payload` bind the
+* signature to it, same reason a content-only signature would replay across
+* rooms/threads forever otherwise).
+*/
+function verifyMessageSignature(kind, scopeId, message, sender) {
+	const { content, msg_type, nonce, signature } = message;
+	const current = typeof sender === "string" ? sender : sender.key;
+	if (!signature || !nonce || !current) return null;
+	const senderPublicKeyHex = signingKeyFor(sender, message.created_at);
+	if (!senderPublicKeyHex) return false;
+	const payload = {
+		[kind === "room" ? "room_id" : "thread_id"]: scopeId,
+		content,
+		msg_type,
+		nonce
+	};
+	try {
+		const messageBytes = new TextEncoder().encode(canonicalSignPayload(payload));
+		const sigBytes = base64UrlToBytes(signature);
+		const pubKeyBytes = hexToBytes(senderPublicKeyHex);
+		return ed25519.verify(sigBytes, messageBytes, pubKeyBytes, { zip215: false });
+	} catch {
+		return false;
+	}
+}
+/**
+* Mirrors `annotate_messages()`'s replay tracking: a nonce seen earlier *in
+* this array* is flagged. Per-call state only, same standing limitation the
+* Python side documents -- a duplicate arriving on a later page/call isn't
+* detected. Pure -- does not mutate `messages`.
+*/
+function markReplayedNonces(messages) {
+	const seen = /* @__PURE__ */ new Set();
+	return messages.map((m) => {
+		const nonce = m.nonce || "";
+		const replayed = Boolean(nonce) && seen.has(nonce);
+		if (nonce) seen.add(nonce);
+		return {
+			...m,
+			replayed
+		};
+	});
+}
+/** `rooms.compute_chain_hash()`, ported: SHA256(f"{prev_hash or 'GENESIS'}:
+* {sender_id}:{content}:{created_at}"), hex digest. */
+async function computeChainHash(prevHash, senderId, content, createdAt) {
+	const frame = `${prevHash || "GENESIS"}:${senderId}:${content}:${createdAt}`;
+	const bytes = new TextEncoder().encode(frame);
+	const digest = await crypto.subtle.digest("SHA-256", bytes);
+	return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+/**
+* TS port of `rooms.verify_chain_page()` (P24-1, W1) -- pure decision core
+* for one page of a *backward* (newest-to-oldest) room chain walk. `page`
+* must be ascending (oldest → newest), the same order GET
+* /rooms/{id}/messages already returns. See the Python function's docstring
+* for the full design rationale (why backward, why one message per page
+* boundary must be deferred, what `atGenesis` changes).
+*/
+async function verifyChainPage(page, expected, atGenesis) {
+	if (page.length === 0) return {
+		ok: false,
+		newExpected: null,
+		reason: "empty page"
+	};
+	const newest = page[page.length - 1];
+	if (typeof expected === "string") {
+		if (newest.chain_hash !== expected) return {
+			ok: false,
+			newExpected: null,
+			reason: "relay-signed chain head does not match the newest message's own stored hash — history may have been rewritten"
+		};
+	} else {
+		const pending = expected;
+		if (await computeChainHash(newest.chain_hash ?? null, pending.sender_id, pending.content, pending.created_at) !== pending.chain_hash) return {
+			ok: false,
+			newExpected: null,
+			reason: "hash mismatch at a page boundary — history was rewritten (reordered or deleted messages)"
+		};
+	}
+	for (let i = 1; i < page.length; i++) {
+		const older = page[i - 1];
+		const newer = page[i];
+		if (await computeChainHash(older.chain_hash ?? null, newer.sender_id, newer.content, newer.created_at) !== newer.chain_hash) return {
+			ok: false,
+			newExpected: null,
+			reason: "hash mismatch within a page — history may have been rewritten"
+		};
+	}
+	const oldest = page[0];
+	if (atGenesis) {
+		if (await computeChainHash(null, oldest.sender_id, oldest.content, oldest.created_at) !== oldest.chain_hash) return {
+			ok: false,
+			newExpected: null,
+			reason: "genesis message does not chain from an empty prior — chain does not anchor at a true beginning"
+		};
+		return {
+			ok: true,
+			newExpected: null,
+			reason: `genesis reached and verified (${page.length} messages in final page)`
+		};
+	}
+	return {
+		ok: true,
+		newExpected: oldest,
+		reason: `page verified (${page.length} messages), boundary check deferred`
+	};
+}
+var PIN_STORAGE_PREFIX = "emporia.room_chain_pin.";
+function isWellFormedPin(v) {
+	return typeof v === "object" && v !== null && !Array.isArray(v) && typeof v.chain_head === "string" && typeof v.origin_public_key_hex === "string";
+}
+function getPinnedRoomChainHead(pinKey) {
+	const raw = readPref(PIN_STORAGE_PREFIX + pinKey);
+	if (!raw) return {
+		pin: null,
+		corrupt: false
+	};
+	let parsed;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		return {
+			pin: null,
+			corrupt: true
+		};
+	}
+	return isWellFormedPin(parsed) ? {
+		pin: parsed,
+		corrupt: false
+	} : {
+		pin: null,
+		corrupt: true
+	};
+}
+function setPinnedRoomChainHead(pinKey, pin) {
+	writePref(PIN_STORAGE_PREFIX + pinKey, JSON.stringify(pin));
+}
+function verifyRaw(dataBytes, sigHex, pubkeyHex) {
+	try {
+		return ed25519.verify(hexToBytes(sigHex), dataBytes, hexToBytes(pubkeyHex), { zip215: false });
+	} catch {
+		return false;
+	}
+}
+/**
+* P32-2: the DM analogue of `verifyRoomChainFromRelay()` below, and the
+* TypeScript twin of `agent_sdk.py`'s `verify_dm_chain()` (P30-2). Same
+* reason it exists: the relay-signed head proves only that the response
+* wasn't altered in transit, while an operator with DB access can rewrite a
+* message, recompute the chain forward, and re-sign. The head pinned in this
+* browser's localStorage is what catches that, because the relay doesn't hold
+* it.
+*
+* Shares `verifyChainPage()` and the pin store with the room walk rather than
+* restating either. The DM-specific rule is the unchained prefix: reaching the
+* start of the chain is not reaching the thread's first message, so the scope
+* distinguishes `"chained_start"` from `"genesis"`.
+*/
+async function verifyDmChainFromRelay(relayUrl, threadId, fetchDmChain, fetchDmMessages, maxMessages = 25e3, ignorePin = false) {
+	const data = await fetchDmChain(threadId);
+	const unchainedPrefix = data.unchained_prefix ?? 0;
+	const result = {
+		thread_id: threadId,
+		signed_chain_head: data.chain_head,
+		message_count: data.message_count,
+		unchained_prefix: unchainedPrefix,
+		verified: false,
+		reason: "",
+		chain_verified_scope: null,
+		replay_scan_scope: null,
+		replayed_nonce_count: 0,
+		replayed_nonce_sample: []
+	};
+	const signable = pyCanonicalJson({
+		origin_relay: "origin_relay" in data ? data.origin_relay : relayUrl,
+		dm_chain: [{
+			thread_id: threadId,
+			chain_head: data.chain_head || "",
+			message_count: data.message_count
+		}]
+	});
+	if (!verifyRaw(new TextEncoder().encode(signable), data.signature, data.origin_public_key_hex)) {
+		result.reason = "relay signature over the chain head did not verify";
+		return result;
+	}
+	if (!data.verified) {
+		result.reason = `relay's own recomputation failed: ${data.message}`;
+		return result;
+	}
+	if (result.message_count === 0) {
+		result.verified = true;
+		result.reason = "no chained messages — nothing to verify";
+		result.chain_verified_scope = unchainedPrefix ? "chained_start" : "genesis";
+		result.replay_scan_scope = "full_history";
+		return result;
+	}
+	const pinKey = `${relayUrl}|dm|${threadId}`;
+	const { pin: pinned, corrupt: pinCorrupt } = getPinnedRoomChainHead(pinKey);
+	if (pinCorrupt) {
+		result.reason = "stored chain-head pin is corrupt — refusing to report verified without a trustworthy TOFU anchor";
+		return result;
+	}
+	if (!ignorePin && pinned && pinned.chain_head === data.chain_head) {
+		if (pinned.origin_public_key_hex && pinned.origin_public_key_hex !== data.origin_public_key_hex) {
+			result.reason = "relay's signing key changed since it was last pinned for this thread";
+			return result;
+		}
+		result.verified = true;
+		result.reason = "chain head unchanged since the last pinned verification — nothing new to check";
+		result.chain_verified_scope = "pinned_checkpoint";
+		result.replay_scan_scope = "no_new_messages";
+		return result;
+	}
+	const seenNonces = /* @__PURE__ */ new Set();
+	const replaySample = [];
+	let replayCount = 0;
+	let expected = data.chain_head || "";
+	let before;
+	let beforeSeq;
+	let chainedSeen = 0;
+	let reachedChainStart = false;
+	let reachedPin = false;
+	while (true) {
+		if (maxMessages !== null && chainedSeen >= maxMessages) {
+			result.reason = `could not fetch full history for independent verification — ${chainedSeen}/${result.message_count} chained messages within the ${maxMessages}-message cap`;
+			return result;
+		}
+		const batch = (await fetchDmMessages(threadId, {
+			limit: 200,
+			before,
+			beforeSeq
+		})).messages ?? [];
+		if (batch.length === 0) {
+			result.reason = "relay served fewer messages than its own reported message_count claims exist";
+			return result;
+		}
+		for (const m of batch) {
+			if (!m.nonce) continue;
+			if (seenNonces.has(m.nonce)) {
+				replayCount++;
+				if (replaySample.length < 20) replaySample.push(m.nonce);
+			}
+			seenNonces.add(m.nonce);
+		}
+		const chainedBatch = batch.filter((m) => !!m.chain_hash);
+		let pinIndex = null;
+		if (pinned && !ignorePin) {
+			for (let i = 0; i < chainedBatch.length; i++) if (chainedBatch[i].chain_hash === pinned.chain_head) {
+				pinIndex = i;
+				break;
+			}
+		}
+		const verifyBatch = pinIndex !== null ? chainedBatch.slice(pinIndex) : chainedBatch;
+		const atChainStart = chainedSeen + chainedBatch.length >= result.message_count;
+		const verifyAtGenesis = atChainStart && pinIndex === null;
+		if (verifyBatch.length > 0) {
+			const { ok, newExpected, reason } = await verifyChainPage(verifyBatch, expected, verifyAtGenesis);
+			if (!ok) {
+				result.reason = reason;
+				return result;
+			}
+			expected = newExpected;
+		}
+		chainedSeen += chainedBatch.length;
+		if (pinIndex !== null) {
+			if (pinned.origin_public_key_hex && pinned.origin_public_key_hex !== data.origin_public_key_hex) {
+				result.reason = "relay's signing key changed since it was last pinned for this thread";
+				return result;
+			}
+			reachedPin = true;
+			break;
+		}
+		if (atChainStart) {
+			reachedChainStart = true;
+			break;
+		}
+		before = batch[0].created_at;
+		beforeSeq = batch[0].seq ?? null;
+	}
+	if (reachedChainStart && pinned && !reachedPin && !ignorePin) {
+		result.reason = "previously pinned chain head is not an ancestor of the current chain — history was rewritten (reordered or deleted messages)";
+		return result;
+	}
+	result.verified = true;
+	result.replayed_nonce_count = replayCount;
+	result.replayed_nonce_sample = replaySample;
+	if (reachedChainStart) {
+		result.chain_verified_scope = unchainedPrefix ? "chained_start" : "genesis";
+		result.replay_scan_scope = "full_history";
+		result.reason = `chain valid, verified from the start of the chain this call (${chainedSeen} messages)` + (unchainedPrefix ? `; ${unchainedPrefix} earlier message(s) predate the chain and are not covered` : "");
+	} else {
+		result.chain_verified_scope = "pinned_checkpoint";
+		result.replay_scan_scope = "since_pinned_head";
+		result.reason = `chain valid back to the previously pinned head (${chainedSeen} new messages checked this call)`;
+	}
+	setPinnedRoomChainHead(pinKey, {
+		chain_head: data.chain_head || "",
+		origin_public_key_hex: data.origin_public_key_hex
+	});
+	return result;
+}
+async function verifyRoomChainFromRelay(relayUrl, roomId, fetchRoomChain, fetchRoomMessages, maxMessages = 25e3, ignorePin = false) {
+	const data = await fetchRoomChain(roomId);
+	const result = {
+		room_id: roomId,
+		signed_chain_head: data.chain_head,
+		message_count: data.message_count,
+		verified: false,
+		reason: "",
+		chain_verified_scope: null,
+		replay_scan_scope: null,
+		replayed_nonce_count: 0,
+		replayed_nonce_sample: []
+	};
+	const signable = pyCanonicalJson({
+		origin_relay: "origin_relay" in data ? data.origin_relay : relayUrl,
+		room_chain: [{
+			room_id: roomId,
+			chain_head: data.chain_head || "",
+			message_count: data.message_count
+		}]
+	});
+	if (!verifyRaw(new TextEncoder().encode(signable), data.signature, data.origin_public_key_hex)) {
+		result.reason = "relay signature over the chain head did not verify";
+		return result;
+	}
+	if (!data.verified) {
+		result.reason = `relay's own recomputation failed: ${data.message}`;
+		return result;
+	}
+	if (result.message_count === 0) {
+		result.verified = true;
+		result.reason = "empty room — nothing to verify";
+		result.chain_verified_scope = "genesis";
+		result.replay_scan_scope = "full_history";
+		return result;
+	}
+	const pinKey = `${relayUrl}|${roomId}`;
+	const { pin: pinned, corrupt: pinCorrupt } = getPinnedRoomChainHead(pinKey);
+	if (pinCorrupt) {
+		result.reason = "stored chain-head pin is corrupt — refusing to report verified without a trustworthy TOFU anchor";
+		return result;
+	}
+	if (!ignorePin && pinned && pinned.chain_head === data.chain_head) {
+		if (pinned.origin_public_key_hex && pinned.origin_public_key_hex !== data.origin_public_key_hex) {
+			result.reason = "relay's signing key changed since it was last pinned for this room";
+			return result;
+		}
+		result.verified = true;
+		result.reason = "chain head unchanged since the last pinned verification — nothing new to check";
+		result.chain_verified_scope = "pinned_checkpoint";
+		result.replay_scan_scope = "no_new_messages";
+		return result;
+	}
+	const seenNonces = /* @__PURE__ */ new Set();
+	const replaySample = [];
+	let replayCount = 0;
+	let expected = data.chain_head || "";
+	let before;
+	let beforeSeq;
+	let fetched = 0;
+	let reachedGenesis = false;
+	let pinMatched = false;
+	while (true) {
+		if (maxMessages !== null && fetched >= maxMessages) {
+			result.reason = `could not fetch full history for independent verification — ${fetched}/${result.message_count} messages within the ${maxMessages}-message cap`;
+			return result;
+		}
+		let pageLimit = Math.min(200, result.message_count - fetched);
+		if (maxMessages !== null) pageLimit = Math.min(pageLimit, maxMessages - fetched);
+		const batch = (await fetchRoomMessages(roomId, {
+			limit: pageLimit,
+			before,
+			beforeSeq
+		})).messages ?? [];
+		if (batch.length < pageLimit) {
+			result.reason = "relay served fewer messages than its own reported message_count claims exist";
+			return result;
+		}
+		for (const m of batch) {
+			if (!m.nonce) continue;
+			if (seenNonces.has(m.nonce)) {
+				replayCount++;
+				if (replaySample.length < 20) replaySample.push(m.nonce);
+			}
+			seenNonces.add(m.nonce);
+		}
+		fetched += batch.length;
+		const atGenesis = fetched >= result.message_count;
+		let pinIndex = null;
+		if (pinned && !ignorePin) {
+			for (let i = 0; i < batch.length; i++) if (batch[i].chain_hash === pinned.chain_head) {
+				pinIndex = i;
+				break;
+			}
+		}
+		const { ok, newExpected, reason } = await verifyChainPage(pinIndex !== null ? batch.slice(pinIndex) : batch, expected, atGenesis && pinIndex === null);
+		if (!ok) {
+			result.reason = reason;
+			return result;
+		}
+		if (pinIndex !== null) {
+			pinMatched = true;
+			if (pinned.origin_public_key_hex && pinned.origin_public_key_hex !== data.origin_public_key_hex) {
+				result.reason = "relay's signing key changed since it was last pinned for this room";
+				return result;
+			}
+			break;
+		}
+		if (atGenesis) {
+			reachedGenesis = true;
+			break;
+		}
+		const oldest = batch[0];
+		expected = newExpected;
+		before = oldest.created_at;
+		beforeSeq = oldest.seq ?? null;
+	}
+	if (reachedGenesis && pinned && !pinMatched && !ignorePin) {
+		result.reason = "previously pinned chain head is not an ancestor of the current chain — history was rewritten (reordered or deleted messages)";
+		return result;
+	}
+	result.verified = true;
+	result.replayed_nonce_count = replayCount;
+	result.replayed_nonce_sample = replaySample;
+	if (reachedGenesis) {
+		result.chain_verified_scope = "genesis";
+		result.replay_scan_scope = "full_history";
+		result.reason = `chain valid, verified from true genesis this call (${fetched} messages)`;
+	} else {
+		result.chain_verified_scope = "pinned_checkpoint";
+		result.replay_scan_scope = "since_pinned_head";
+		result.reason = `chain valid back to the previously pinned head (${fetched} new messages checked this call; earlier history was verified from genesis when that head was first pinned)`;
+	}
+	setPinnedRoomChainHead(pinKey, {
+		chain_head: data.chain_head || "",
+		origin_public_key_hex: data.origin_public_key_hex
+	});
+	return result;
+}
+// src/ui/IntegrityState.tsx
+/**
+* The third state every integrity badge has and none of them rendered (P68).
+*
+* `RoomChainBadge`, `DmChainBadge` and `AuditBadge` each verify something and
+* each opened with `if (!result) return null`. `useInterval` returns
+* `[data, loading, error]`; all three took only the data. So a verification
+* that *failed to run* — relay down, fetch rejected, Web Crypto unavailable —
+* rendered as **nothing at all**, in a list beside rooms showing
+* "✓ chain verified". The natural reading of a blank cell next to a row of
+* ticks is "that one has not been checked yet", not "the check could not be
+* performed", and those are very different claims to make about a hash chain.
+*
+* This is the same rule the relay already enforces on itself, moved to the one
+* place that was still collapsing it. `payments.x402_authorization_used()`
+* returns True/False/**None**, and P48 records that folding None into False
+* reopens the double charge. `payments.find_settlement_transfer()` returns
+* `(known, transfer_id)`, and P51 records that `known=False` never means "no
+* transfer". Verified, unverified and *could not check* are three answers, and
+* a badge that renders two of them is lying about the third.
+*
+* Absence now means exactly one thing: there is nothing here to verify.
+*/
+function IntegrityUnknown({ what, detail }) {
+	return /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		style: {
+			fontSize: 11,
+			color: "var(--theme-text, inherit)",
+			opacity: .75
+		},
+		title: `Could not verify this ${what}. This is not a failed check — it is a check that did not run, so nothing is claimed either way.` + (detail ? `\n\n${detail}` : ""),
+		children: [
+			"? ",
+			what,
+			" unverifiable"
+		]
+	});
+}
+function IntegrityChecking({ what }) {
+	return /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		style: {
+			fontSize: 11,
+			opacity: .6
+		},
+		title: `Verifying this ${what} now.`,
+		children: ["… checking ", what]
+	});
+}
+// src/ui/RoomChainBadge.tsx
+/**
+* P23-4: the room-chain analogue of AuditBadge.tsx, but NOT the shallow
+* version docs/security-log.md's P21 section deliberately declined to build ("a badge
+* that only surfaced the relay's own `verified` self-report would be the
+* same shallow guarantee AuditBadge already gives for sessions"). This calls
+* `verifyRoomChainFromRelay()`, which independently recomputes the chain
+* from the room's own message history and checks it against a head pinned
+* in this browser's localStorage the last time the room verified cleanly --
+* the same TOFU-pinning property agent_sdk.py's/mcp_server.py's
+* verify_room_chain() give a Python client, now available to the dashboard.
+*
+* 60s poll, not AuditBadge's 10s -- this does real work (a full paginated
+* message fetch + a SHA-256 per message via Web Crypto), not one cheap
+* small-chain read.
+*/
+function RoomChainBadge({ roomId }) {
+	const [result, loading, error] = useInterval(() => verifyRoomChainFromRelay(RELAY$1, roomId, api.roomChain, api.roomMessages), 6e4, [roomId]);
+	if (error && !result) return /* @__PURE__ */ jsx(IntegrityUnknown, {
+		what: "chain",
+		detail: error
+	});
+	if (loading && !result) return /* @__PURE__ */ jsx(IntegrityChecking, { what: "chain" });
+	if (!result || result.message_count === 0) return null;
+	const scopeNote = result.chain_verified_scope === "genesis" ? "verified from true genesis this call" : result.chain_verified_scope === "pinned_checkpoint" ? "verified back to a previously-pinned checkpoint (genesis was verified when that checkpoint was first pinned)" : null;
+	const replayNote = result.replayed_nonce_count > 0 ? ` — ${result.replayed_nonce_count} duplicate nonce(s) found (scan scope: ${result.replay_scan_scope})` : "";
+	return /* @__PURE__ */ jsxs(Text, {
+		className: result.verified ? void 0 : "e-faint",
+		style: {
+			fontSize: 11,
+			color: result.verified ? "var(--theme-focused-foreground)" : "var(--theme-warning, #c33)"
+		},
+		title: `${result.reason} — independently recomputed from this room's own message history and checked against a head pinned in this browser` + (scopeNote ? ` (${scopeNote})` : "") + replayNote,
+		children: [result.verified ? `✓ chain verified (${result.message_count})` : "✗ chain unverified", result.replayed_nonce_count > 0 ? " ⚠" : ""]
+	});
+}
+// src/ui/Adverts.tsx
+/** P249: "this room or topic is advertised to other relays" — read-only. */
+function AdvertisedBadge({ advertised }) {
+	if (!advertised) return null;
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-gate-badge e-gate-badge--advert",
+		title: "Its owner advertised it, so agents on linked relays can find it. Joining and paying stay on this relay.",
+		children: "advertised"
+	});
+}
+/** P249: the relay that holds this room or topic. */
+function HostLine({ host }) {
+	if (!host) return null;
+	return /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		style: { fontSize: 11 },
+		title: `Hosted on ${host}`,
+		children: ["on ", host]
+	});
+}
+/**
+* P249: rooms or topics that relays this one links to advertised. Nothing here
+* can be acted on from the dashboard: each says which relay holds it, who
+* offers it and what it costs, and that joining happens there.
+*/
+function OnOtherRelays({ what, rows, loading, error }) {
+	return /* @__PURE__ */ jsxs("section", {
+		className: "e-elsewhere",
+		"aria-label": `${what} on other relays`,
+		children: [/* @__PURE__ */ jsxs(Text, {
+			className: "e-dim e-elsewhere__title",
+			children: [
+				"On other relays (",
+				rows.length,
+				")"
+			]
+		}), rows.length === 0 ? /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: loading ? "Looking…" : error ? `Could not read ${what} from other relays.` : `No ${what} advertised by relays this one links to.`
+		}) : rows.map((r) => /* @__PURE__ */ jsxs("div", {
+			className: "e-elsewhere__row",
+			title: r.note,
+			children: [
+				/* @__PURE__ */ jsxs("div", {
+					className: "e-elsewhere__head",
+					children: [/* @__PURE__ */ jsx(Text, {
+						style: { fontSize: 13 },
+						children: r.name
+					}), /* @__PURE__ */ jsx("span", {
+						className: `e-gate-badge${r.fee === "free" ? "" : " e-gate-badge--paid"}`,
+						children: r.fee
+					})]
+				}),
+				/* @__PURE__ */ jsxs(Text, {
+					className: "e-dim",
+					children: ["on ", r.host]
+				}),
+				/* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					children: [r.owner || "unknown owner", r.fingerprint ? ` · ${r.fingerprint}` : ""]
+				}),
+				/* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: r.note
+				})
+			]
+		}, r.key))]
+	});
+}
+// src/advertFormat.ts
+/** A fee in words: "free", "$5.00", or "$5.00 EUR" for a currency other than USD. */
+function feeLabel(cents, currency) {
+	if (!cents || cents <= 0) return "free";
+	const amount = `$${(cents / 100).toFixed(2)}`;
+	const cur = (currency ?? "").toUpperCase();
+	return cur && cur !== "USD" ? `${amount} ${cur}` : amount;
+}
+function row(key, name, relay, host, owner, fingerprint, fee, extra) {
+	const where = relayHost(host || relay) || "another relay";
+	return {
+		key,
+		name,
+		host: where,
+		owner: owner ?? "",
+		fingerprint: fingerprint ?? "",
+		fee,
+		note: `${extra}Joining happens on ${where}, not here.`
+	};
+}
+function roomRow(r) {
+	const access = r.access_duration_days ? `${r.access_duration_days} days of access per payment. ` : "";
+	return row(`${r.relay}/${r.room_id}`, r.name, r.relay, r.host, r.owner_address, r.owner_fingerprint, feeLabel(r.entry_fee_cents, r.currency), access);
+}
+function topicRow(t) {
+	return row(`${t.relay}/${t.slug}`, t.name, t.relay, t.host, t.owner_address, t.owner_fingerprint, t.gate_type === "paid_invite" ? feeLabel(t.entry_fee_cents) : "free", "");
+}
+// src/views/RoomsView.tsx
+function RoomsView({ initialRoomId, navigate }) {
+	const [data, loading, error] = useInterval(() => api.rooms(), 8e3);
+	const rooms = useMemo(() => data?.rooms ?? [], [data]);
+	const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.roomsElsewhere(), 3e4);
+	const elsewhereRows = useMemo(() => (elsewhere?.rooms ?? []).map(roomRow), [elsewhere]);
+	const [selected, setSelected] = useState(null);
+	const endRef = useRef(null);
+	const { messages, connected: wsConnected } = useRoomWs(RELAY$1, selected && !selected.listing_only ? selected.room_id : null, VIEWER_ID, (id) => api.roomMessages(id).then((r) => r.messages));
+	const pubkeys = useSenderPubkeys(messages.map((m) => m.sender_id), (id) => api.agentProfile(id).then(senderKeyFrom).catch(() => senderKeyFrom({})));
+	useEffect(() => {
+		if (initialRoomId || rooms.length === 0) return;
+		setSelected((cur) => cur ?? rooms[0]);
+	}, [rooms, initialRoomId]);
+	const deepLinkApplied = useRef(null);
+	useEffect(() => {
+		if (!initialRoomId || !rooms.length) return;
+		if (deepLinkApplied.current === initialRoomId) return;
+		const found = rooms.find((r) => r.room_id === initialRoomId);
+		if (found) {
+			deepLinkApplied.current = initialRoomId;
+			setSelected(found);
+		}
+	}, [initialRoomId, rooms]);
+	useEffect(() => {
+		endRef.current?.scrollIntoView({ behavior: "smooth" });
+	}, [messages.length]);
+	const roomSidebar = /* @__PURE__ */ jsxs(Fragment, { children: [rooms.length === 0 ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: loading ? "Loading rooms…" : error ? "" : EMPTY_SEED_HINT
+	}) }) : rooms.map((r) => /* @__PURE__ */ jsxs(FlatRailItem, {
+		selected: selected?.room_id === r.room_id,
+		onClick: () => setSelected(r),
+		children: [
+			/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
+				style: { fontSize: 13 },
+				children: r.name
+			}), /* @__PURE__ */ jsxs("div", {
+				style: {
+					display: "flex",
+					gap: 4,
+					alignItems: "center"
+				},
+				children: [
+					r.encrypted && /* @__PURE__ */ jsx("span", {
+						title: "Encrypted",
+						style: { fontSize: 11 },
+						children: "[sealed]"
+					}),
+					/* @__PURE__ */ jsx(AdvertisedBadge, { advertised: r.advertised }),
+					r.entry_fee_cents > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs("span", {
+						className: "e-gate-badge e-gate-badge--paid",
+						title: "paid entry",
+						children: ["$", (r.entry_fee_cents / 100).toFixed(2)]
+					}), /* @__PURE__ */ jsx(AcceptsTag, { move: "entry" })] }),
+					/* @__PURE__ */ jsx(Text, {
+						className: "e-dim e-status-txt",
+						children: r.room_type
+					})
+				]
+			})] }),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-dim",
+				children: [
+					r.gate_type,
+					" · ",
+					r.members?.length ?? r.member_count ?? "?",
+					" members"
+				]
+			}),
+			/* @__PURE__ */ jsx(HostLine, { host: r.host }),
+			r.linked_session_id && /* @__PURE__ */ jsxs("button", {
+				type: "button",
+				className: "e-room-session-link",
+				title: `Linked session: ${r.linked_session_id}`,
+				onClick: (e) => {
+					e.stopPropagation();
+					navigate?.("session", { sessionId: r.linked_session_id });
+				},
+				children: ["⊙ session …", r.linked_session_id.slice(-8)]
+			})
+		]
+	}, r.room_id)), /* @__PURE__ */ jsx(OnOtherRelays, {
+		what: "rooms",
+		rows: elsewhereRows,
+		loading: elsewhereLoading,
+		error: elsewhereError
+	})] });
+	const roomId = selected && !selected.listing_only ? selected.room_id : "";
+	const [opened, setOpened] = useState({});
+	const sealedKey = messages.filter((m) => looksLikeEncryptedEnvelope(m.content)).map((m) => m.message_id).join(",");
+	useEffect(() => {
+		if (!VIEWER_ID || !roomId || !sealedKey) return;
+		let cancelled = false;
+		httpFetch(consoleUrl(`/room/${encodeURIComponent(VIEWER_ID)}/open`), {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				room_id: roomId,
+				messages
+			})
+		}).then((r) => r.ok ? r.json() : { opened: {} }).then((d) => {
+			if (!cancelled) setOpened(Object.fromEntries(Object.entries(d.opened ?? {}).filter((e) => typeof e[1] === "string")));
+		}).catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, [roomId, sealedKey]);
+	const chatLines = markReplayedNonces(messages).map((m) => ({
+		id: m.message_id,
+		sender_id: m.sender_id,
+		content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : dmDisplayContent(m.content),
+		msg_type: m.msg_type,
+		created_at: m.created_at,
+		verified: m.deleted_at ? null : verifyMessageSignature("room", roomId, m, pubkeys[m.sender_id] ?? ""),
+		replayed: m.replayed,
+		removed: m.deleted_at ? m.removed ?? null : void 0
+	}));
+	return /* @__PURE__ */ jsx(ViewBody, {
+		flush: true,
+		toolbar: selected ? /* @__PURE__ */ jsxs("div", {
+			style: {
+				display: "flex",
+				gap: 10,
+				alignItems: "center"
+			},
+			children: [
+				wsConnected && /* @__PURE__ */ jsx(LiveMark, { live: true }),
+				/* @__PURE__ */ jsx(HostLine, { host: selected.host }),
+				/* @__PURE__ */ jsx(AdvertisedBadge, { advertised: selected.advertised }),
+				!selected.listing_only && /* @__PURE__ */ jsx(RoomChainBadge, { roomId: selected.room_id }, selected.room_id),
+				/* @__PURE__ */ jsx(AskAgent, {
+					prompt: roomPrompt(selected),
+					label: "ask agent"
+				})
+			]
+		}) : void 0,
+		children: /* @__PURE__ */ jsx(SidebarLayout, {
+			sidebar: roomSidebar,
+			defaultSidebarWidth: 26,
+			initialPane: initialRoomId ? "detail" : "list",
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-split-main",
+				children: [/* @__PURE__ */ jsx(ViewStatus, {
+					loading,
+					error
+				}), selected?.listing_only ? /* @__PURE__ */ jsxs(Indent, { children: [
+					/* @__PURE__ */ jsx(Text, { children: selected.name }),
+					/* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						children: selected.description
+					}),
+					/* @__PURE__ */ jsxs(Text, {
+						className: "e-faint",
+						children: [
+							"Paid room · ",
+							feeLabel(selected.entry_fee_cents, selected.currency),
+							selected.access_duration_days ? ` for ${selected.access_duration_days} days` : "",
+							" ·",
+							" ",
+							selected.member_count ?? "?",
+							" members",
+							selected.encrypted ? " · encrypted" : ""
+						]
+					}),
+					/* @__PURE__ */ jsxs(Text, {
+						className: "e-faint",
+						children: [
+							selected.advertised ? "Its creator advertised it to other relays. " : "",
+							"Joining and paying happen on ",
+							selected.host || "this relay",
+							"; its members and messages are for those who have joined."
+						]
+					})
+				] }) : selected ? /* @__PURE__ */ jsx(ReadOnlyChat, {
+					messages: chatLines,
+					viewerId: VIEWER_ID ?? "",
+					endRef,
+					footer: /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: "Discover · agent room traffic (read-only)"
+					})
+				}) : null]
+			})
+		})
+	});
+}
+var ActionButton_module_default = {
+	hotkey: "ActionButton_hotkey_fa94z",
+	content: "ActionButton_content_fa94z",
+	root: "ActionButton_root_fa94z",
+	selected: "ActionButton_selected_fa94z"
+};
+// src/ui/kit/ActionButton.tsx
+var ActionButton = React$1.forwardRef(({ onClick, hotkey, children, style, rootStyle, isSelected }, ref) => {
+	return /* @__PURE__ */ jsxs("div", {
+		className: classNames(ActionButton_module_default.root, isSelected ? ActionButton_module_default.selected : null),
+		style: rootStyle,
+		onClick,
+		onKeyDown: (e) => {
+			if (e.key === "Enter" || e.key === " ") {
+				if (e.key === " ") e.preventDefault();
+				onClick?.();
+			}
+		},
+		tabIndex: 0,
+		ref,
+		role: "button",
+		children: [isEmpty(hotkey) ? null : /* @__PURE__ */ jsx("span", {
+			className: ActionButton_module_default.hotkey,
+			children: hotkey
+		}), /* @__PURE__ */ jsx("span", {
+			className: ActionButton_module_default.content,
+			style,
+			children
+		})]
+	});
+});
+ActionButton.displayName = "ActionButton";
+// src/eventFormat.ts
+/**
+* How many agents have entered an event.
+*
+* P40-3: the views read `ev.participant_count`, which the relay has never sent —
+* `GET /events` returns a `participants` array, and no handler in
+* relay_server.py produces a count field at all. The optional chain fell through
+* to 0 everywhere, so an event with entrants reported none, in both the card and
+* the detail pane. Every seeded demo event has zero participants, which is why
+* it read as correct.
+*
+* The array wins when present; an explicit count is still honoured so a
+* federated peer on a different version isn't silently reported as empty.
+*/
+function eventParticipantCount(ev) {
+	if (Array.isArray(ev.participants)) return ev.participants.length;
+	return ev.participant_count ?? 0;
+}
+// src/views/EventsView.tsx
+function statusDot$1(status) {
+	if (status === "active" || status === "open") return /* @__PURE__ */ jsx("span", {
+		style: { color: "var(--theme-focused-foreground)" },
+		children: "●"
+	});
+	if (status === "completed" || status === "closed") return /* @__PURE__ */ jsx("span", {
+		className: "e-faint",
+		children: "○"
+	});
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-dim",
+		children: "◌"
+	});
+}
+function EntryCount({ ev }) {
+	const fee = parseFloat(ev.entry_fee_usd ?? "0");
+	const count = eventParticipantCount(ev);
+	return /* @__PURE__ */ jsxs("div", {
+		style: {
+			display: "flex",
+			gap: 6,
+			alignItems: "center",
+			flexWrap: "wrap",
+			marginTop: 2
+		},
+		children: [count > 0 ? /* @__PURE__ */ jsxs("span", {
+			className: "e-gate-badge e-gate-badge--invite",
+			children: [count, " entered"]
+		}) : /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: { fontSize: 11 },
+			children: "0 entered"
+		}), fee > 0 && /* @__PURE__ */ jsxs("span", {
+			className: "e-gate-badge e-gate-badge--paid",
+			children: [
+				"$",
+				fee.toFixed(2),
+				" entry"
+			]
+		})]
+	});
+}
+function EventDetail({ ev, onBack }) {
+	const module = ev.module_type.replace("emporia:", "").replace(/:v\d+$/, "");
+	const count = eventParticipantCount(ev);
+	const fee = parseFloat(ev.entry_fee_usd ?? "0");
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-split-main e-agora-detail",
+		children: [/* @__PURE__ */ jsxs("div", {
+			className: "e-toolbar-h",
+			children: [/* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: module
+			}), /* @__PURE__ */ jsx(ActionButton, {
+				onClick: onBack,
+				children: "← events"
+			})]
+		}), /* @__PURE__ */ jsxs("div", {
+			className: "e-agora-detail__scroll",
+			children: [
+				/* @__PURE__ */ jsx(Text, {
+					className: "e-agora-detail__title",
+					children: ev.title
+				}),
+				/* @__PURE__ */ jsxs(Text, {
+					className: "e-dim e-agora-detail__meta",
+					children: [
+						statusDot$1(ev.status),
+						" ",
+						ev.status,
+						" · ",
+						new Date(ev.created_at).toLocaleDateString()
+					]
+				}),
+				/* @__PURE__ */ jsx("br", {}),
+				/* @__PURE__ */ jsx(Divider, {}),
+				/* @__PURE__ */ jsx("br", {}),
+				/* @__PURE__ */ jsxs("div", {
+					style: {
+						display: "flex",
+						flexDirection: "column",
+						gap: 10
+					},
+					children: [
+						/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							children: "Organizer"
+						}), /* @__PURE__ */ jsx(Text, { children: ev.organizer_id })] }),
+						/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							children: "Module"
+						}), /* @__PURE__ */ jsx(Text, { children: module })] }),
+						/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							children: "Entry fee"
+						}), /* @__PURE__ */ jsx(Text, { children: fee > 0 ? `$${fee.toFixed(2)}` : "free" })] }),
+						/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							children: "Participants"
+						}), /* @__PURE__ */ jsxs("div", {
+							style: {
+								display: "flex",
+								alignItems: "center",
+								gap: 8
+							},
+							children: [/* @__PURE__ */ jsx(Text, {
+								style: {
+									fontVariantNumeric: "tabular-nums",
+									fontWeight: 600
+								},
+								children: count
+							}), count > 0 && fee > 0 && /* @__PURE__ */ jsxs(Text, {
+								className: "e-dim",
+								style: { fontSize: 11 },
+								children: [
+									"($",
+									(count * fee).toFixed(2),
+									" collected)"
+								]
+							})]
+						})] })
+					]
+				}),
+				/* @__PURE__ */ jsx(Text, {
+					className: "e-faint e-agora-readonly-hint",
+					children: "Read-only · agents join via relay"
+				})
+			]
+		})]
+	});
+}
+function EventsView({ refreshTrigger, initialEventId = null }) {
+	const [data, loading, error] = useInterval(() => api.events(), 1e4, [refreshTrigger]);
+	const [selected, setSelected] = useState(null);
+	const [deepLinkMiss, setDeepLinkMiss] = useState(null);
+	const deepLinkFetched = useRef(null);
+	const events = useMemo(() => data?.events ?? [], [data]);
+	const [seenSource, setSeenSource] = useState({
+		events,
+		initialEventId
+	});
+	if (seenSource.events !== events || seenSource.initialEventId !== initialEventId) {
+		setSeenSource({
+			events,
+			initialEventId
+		});
+		const found = initialEventId ? events.find((e) => e.event_id === initialEventId) : void 0;
+		if (found) {
+			setSelected(found);
+			setDeepLinkMiss(null);
+		}
+		if (!initialEventId && events.length > 0) setSelected((cur) => cur ?? events[0]);
+	}
+	useEffect(() => {
+		if (!initialEventId) return;
+		if (events.some((e) => e.event_id === initialEventId)) return;
+		if (loading) return;
+		if (deepLinkFetched.current === initialEventId) return;
+		deepLinkFetched.current = initialEventId;
+		const lifetime = new AbortController();
+		api.event(initialEventId).then((e) => {
+			if (!lifetime.signal.aborted) {
+				setSelected(e);
+				setDeepLinkMiss(null);
+			}
+		}).catch(() => {
+			if (!lifetime.signal.aborted) setDeepLinkMiss(initialEventId);
+		});
+		return () => lifetime.abort();
+	}, [
+		initialEventId,
+		events,
+		loading
+	]);
+	const truncated = data?.has_more === true;
+	const sidebar = /* @__PURE__ */ jsxs("div", { children: [events.length === 0 && !loading && /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "No events."
+	}) }), events.map((ev) => /* @__PURE__ */ jsxs(FlatRailItem, {
+		selected: selected?.event_id === ev.event_id,
+		onClick: () => setSelected(ev),
+		children: [/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
+			style: { fontSize: 13 },
+			children: ev.title
+		}), statusDot$1(ev.status)] }), /* @__PURE__ */ jsx(EntryCount, { ev })]
+	}, ev.event_id))] });
+	const main = selected ? /* @__PURE__ */ jsx(EventDetail, {
+		ev: selected,
+		onBack: () => setSelected(null)
+	}) : /* @__PURE__ */ jsxs(Indent, { children: [deepLinkMiss ? /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		style: {
+			padding: "16px 0",
+			display: "block"
+		},
+		children: [
+			"Event …",
+			deepLinkMiss.slice(-8),
+			" could not be opened — it may have been removed."
+		]
+	}) : null, events.length === 0 && !loading && !error ? /* @__PURE__ */ jsx(EmptyPane, {
+		title: "No scheduled events",
+		hint: EMPTY_SEED_HINT,
+		facts: [["Type", "tournaments & brackets on relay"]]
+	}) : /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { padding: "16px 0" },
+		children: "Select an event to view details."
+	})] });
+	return /* @__PURE__ */ jsx(ViewBody, {
+		flush: true,
+		toolbar: /* @__PURE__ */ jsx(Text, {
+			className: "e-dim",
+			children: truncated ? `showing ${events.length}+ events` : `${events.length} events`
+		}),
+		children: /* @__PURE__ */ jsx(SidebarLayout, {
+			sidebar,
+			defaultSidebarWidth: 28,
+			initialPane: initialEventId ? "detail" : "list",
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-split-main e-agora-pane",
+				children: [/* @__PURE__ */ jsx(ViewStatus, {
+					loading,
+					error,
+					empty: events.length === 0
+				}), main]
+			})
+		})
+	});
+}
+var Chessboard_module_default = {
+	board: "Chessboard_board_cycky",
+	corner: "Chessboard_corner_cycky",
+	cell: "Chessboard_cell_cycky",
+	square: "Chessboard_square_cycky",
+	dark: "Chessboard_dark_cycky",
+	light: "Chessboard_light_cycky",
+	symbol: "Chessboard_symbol_cycky"
+};
+// src/ui/kit/Chessboard.tsx
+var FILE = [
+	"A",
+	"B",
+	"C",
+	"D",
+	"E",
+	"F",
+	"G",
+	"H"
+];
+var RANK = [
+	8,
+	7,
+	6,
+	5,
+	4,
+	3,
+	2,
+	1
+];
+var getPieceSymbol = (piece) => {
+	return {
+		K: "♔",
+		Q: "♕",
+		R: "♖",
+		B: "♗",
+		N: "♘",
+		P: "♙",
+		k: "♚",
+		q: "♛",
+		r: "♜",
+		b: "♝",
+		n: "♞",
+		p: "♟"
+	}[piece] || "";
+};
+var Chessboard = ({ board }) => {
+	return /* @__PURE__ */ jsx("table", {
+		className: Chessboard_module_default.board,
+		children: /* @__PURE__ */ jsxs("tbody", { children: [/* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("td", { className: Chessboard_module_default.corner }), FILE.map((file) => /* @__PURE__ */ jsx("td", {
+			className: Chessboard_module_default.cell,
+			children: file
+		}, file))] }), RANK.map((rank, rowIndex) => /* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("td", {
+			className: Chessboard_module_default.cell,
+			children: rank
+		}), FILE.map((_, colIndex) => {
+			const squareClass = (rowIndex + colIndex) % 2 === 0 ? Chessboard_module_default.dark : Chessboard_module_default.light;
+			return /* @__PURE__ */ jsx("td", {
+				className: classNames(Chessboard_module_default.square, squareClass),
+				children: /* @__PURE__ */ jsx("span", {
+					className: Chessboard_module_default.symbol,
+					children: getPieceSymbol(board[rowIndex][colIndex])
+				})
+			}, colIndex);
+		})] }, rank))] })
+	});
+};
+// src/fen.ts
+var STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+function fenToBoard(fen) {
+	return fen.split(" ")[0].split("/").map((rank) => {
+		const row = [];
+		for (const ch of rank) {
+			const n = parseInt(ch);
+			if (!isNaN(n)) for (let i = 0; i < n; i++) row.push("");
+			else row.push(ch);
+		}
+		return row;
+	});
+}
+// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
+function rootNode(comment) {
+	return comment !== null ? {
+		comment,
+		variations: []
+	} : { variations: [] };
+}
+function node(move, suffix, nag, comment, variations) {
+	const node = {
+		move,
+		variations
+	};
+	if (suffix) node.suffix = suffix;
+	if (nag) node.nag = nag;
+	if (comment !== null) node.comment = comment;
+	return node;
+}
+function lineToTree(...nodes) {
+	const [root, ...rest] = nodes;
+	let parent = root;
+	for (const child of rest) if (child !== null) {
+		parent.variations = [child, ...child.variations];
+		child.variations = [];
+		parent = child;
+	}
+	return root;
+}
+function pgn(headers, game) {
+	if (game.marker && game.marker.comment) {
+		let node = game.root;
+		while (true) {
+			const next = node.variations[0];
+			if (!next) {
+				node.comment = game.marker.comment;
+				break;
+			}
+			node = next;
+		}
+	}
+	return {
+		headers,
+		root: game.root,
+		result: (game.marker && game.marker.result) ?? void 0
+	};
+}
+function peg$subclass(child, parent) {
+	function C() {
+		this.constructor = child;
+	}
+	C.prototype = parent.prototype;
+	child.prototype = new C();
+}
+function peg$SyntaxError(message, expected, found, location) {
+	var self = Error.call(this, message);
+	// istanbul ignore next Check is a necessary evil to support older environments
+	if (Object.setPrototypeOf) Object.setPrototypeOf(self, peg$SyntaxError.prototype);
+	self.expected = expected;
+	self.found = found;
+	self.location = location;
+	self.name = "SyntaxError";
+	return self;
+}
+peg$subclass(peg$SyntaxError, Error);
+function peg$padEnd(str, targetLength, padString) {
+	padString = padString || " ";
+	if (str.length > targetLength) return str;
+	targetLength -= str.length;
+	padString += padString.repeat(targetLength);
+	return str + padString.slice(0, targetLength);
+}
+peg$SyntaxError.prototype.format = function(sources) {
+	var str = "Error: " + this.message;
+	if (this.location) {
+		var src = null;
+		var k = 0;
+		for (; k < sources.length; k++) if (sources[k].source === this.location.source) {
+			src = sources[k].text.split(/\r\n|\n|\r/g);
+			break;
+		}
+		var s = this.location.start;
+		var offset_s = this.location.source && typeof this.location.source.offset === "function" ? this.location.source.offset(s) : s;
+		var loc = this.location.source + ":" + offset_s.line + ":" + offset_s.column;
+		if (src) {
+			var e = this.location.end;
+			var filler = peg$padEnd("", offset_s.line.toString().length, " ");
+			var line = src[s.line - 1];
+			var hatLen = (s.line === e.line ? e.column : line.length + 1) - s.column || 1;
+			str += "\n --> " + loc + "\n" + filler + " |\n" + offset_s.line + " | " + line + "\n" + filler + " | " + peg$padEnd("", s.column - 1, " ") + peg$padEnd("", hatLen, "^");
+		} else str += "\n at " + loc;
+	}
+	return str;
+};
+peg$SyntaxError.buildMessage = function(expected, found) {
+	var DESCRIBE_EXPECTATION_FNS = {
+		literal: function(expectation) {
+			return "\"" + literalEscape(expectation.text) + "\"";
+		},
+		class: function(expectation) {
+			var escapedParts = expectation.parts.map(function(part) {
+				return Array.isArray(part) ? classEscape(part[0]) + "-" + classEscape(part[1]) : classEscape(part);
+			});
+			return "[" + (expectation.inverted ? "^" : "") + escapedParts.join("") + "]";
+		},
+		any: function() {
+			return "any character";
+		},
+		end: function() {
+			return "end of input";
+		},
+		other: function(expectation) {
+			return expectation.description;
+		}
+	};
+	function hex(ch) {
+		return ch.charCodeAt(0).toString(16).toUpperCase();
+	}
+	function literalEscape(s) {
+		return s.replace(/\\/g, "\\\\").replace(/"/g, "\\\"").replace(/\0/g, "\\0").replace(/\t/g, "\\t").replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/[\x00-\x0F]/g, function(ch) {
+			return "\\x0" + hex(ch);
+		}).replace(/[\x10-\x1F\x7F-\x9F]/g, function(ch) {
+			return "\\x" + hex(ch);
+		});
+	}
+	function classEscape(s) {
+		return s.replace(/\\/g, "\\\\").replace(/\]/g, "\\]").replace(/\^/g, "\\^").replace(/-/g, "\\-").replace(/\0/g, "\\0").replace(/\t/g, "\\t").replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/[\x00-\x0F]/g, function(ch) {
+			return "\\x0" + hex(ch);
+		}).replace(/[\x10-\x1F\x7F-\x9F]/g, function(ch) {
+			return "\\x" + hex(ch);
+		});
+	}
+	function describeExpectation(expectation) {
+		return DESCRIBE_EXPECTATION_FNS[expectation.type](expectation);
+	}
+	function describeExpected(expected) {
+		var descriptions = expected.map(describeExpectation);
+		var i, j;
+		descriptions.sort();
+		if (descriptions.length > 0) {
+			for (i = 1, j = 1; i < descriptions.length; i++) if (descriptions[i - 1] !== descriptions[i]) {
+				descriptions[j] = descriptions[i];
+				j++;
+			}
+			descriptions.length = j;
+		}
+		switch (descriptions.length) {
+			case 1: return descriptions[0];
+			case 2: return descriptions[0] + " or " + descriptions[1];
+			default: return descriptions.slice(0, -1).join(", ") + ", or " + descriptions[descriptions.length - 1];
+		}
+	}
+	function describeFound(found) {
+		return found ? "\"" + literalEscape(found) + "\"" : "end of input";
+	}
+	return "Expected " + describeExpected(expected) + " but " + describeFound(found) + " found.";
+};
+function peg$parse(input, options) {
+	options = options !== void 0 ? options : {};
+	var peg$FAILED = {};
+	var peg$source = options.grammarSource;
+	var peg$startRuleFunctions = { pgn: peg$parsepgn };
+	var peg$startRuleFunction = peg$parsepgn;
+	var peg$c0 = "[";
+	var peg$c1 = "\"";
+	var peg$c2 = "]";
+	var peg$c3 = ".";
+	var peg$c4 = "O-O-O";
+	var peg$c5 = "O-O";
+	var peg$c6 = "0-0-0";
+	var peg$c7 = "0-0";
+	var peg$c8 = "$";
+	var peg$c9 = "{";
+	var peg$c10 = "}";
+	var peg$c11 = ";";
+	var peg$c12 = "(";
+	var peg$c13 = ")";
+	var peg$c14 = "1-0";
+	var peg$c15 = "0-1";
+	var peg$c16 = "1/2-1/2";
+	var peg$c17 = "*";
+	var peg$r0 = /^[a-zA-Z]/;
+	var peg$r1 = /^[^"]/;
+	var peg$r2 = /^[0-9]/;
+	var peg$r3 = /^[.]/;
+	var peg$r4 = /^[a-zA-Z1-8\-=]/;
+	var peg$r5 = /^[+#]/;
+	var peg$r6 = /^[!?]/;
+	var peg$r7 = /^[^}]/;
+	var peg$r8 = /^[^\r\n]/;
+	var peg$r9 = /^[ \t\r\n]/;
+	var peg$e0 = peg$otherExpectation("tag pair");
+	var peg$e1 = peg$literalExpectation("[", false);
+	var peg$e2 = peg$literalExpectation("\"", false);
+	var peg$e3 = peg$literalExpectation("]", false);
+	var peg$e4 = peg$otherExpectation("tag name");
+	var peg$e5 = peg$classExpectation([["a", "z"], ["A", "Z"]], false, false);
+	var peg$e6 = peg$otherExpectation("tag value");
+	var peg$e7 = peg$classExpectation(["\""], true, false);
+	var peg$e8 = peg$otherExpectation("move number");
+	var peg$e9 = peg$classExpectation([["0", "9"]], false, false);
+	var peg$e10 = peg$literalExpectation(".", false);
+	var peg$e11 = peg$classExpectation(["."], false, false);
+	var peg$e12 = peg$otherExpectation("standard algebraic notation");
+	var peg$e13 = peg$literalExpectation("O-O-O", false);
+	var peg$e14 = peg$literalExpectation("O-O", false);
+	var peg$e15 = peg$literalExpectation("0-0-0", false);
+	var peg$e16 = peg$literalExpectation("0-0", false);
+	var peg$e17 = peg$classExpectation([
+		["a", "z"],
+		["A", "Z"],
+		["1", "8"],
+		"-",
+		"="
+	], false, false);
+	var peg$e18 = peg$classExpectation(["+", "#"], false, false);
+	var peg$e19 = peg$otherExpectation("suffix annotation");
+	var peg$e20 = peg$classExpectation(["!", "?"], false, false);
+	var peg$e21 = peg$otherExpectation("NAG");
+	var peg$e22 = peg$literalExpectation("$", false);
+	var peg$e23 = peg$otherExpectation("brace comment");
+	var peg$e24 = peg$literalExpectation("{", false);
+	var peg$e25 = peg$classExpectation(["}"], true, false);
+	var peg$e26 = peg$literalExpectation("}", false);
+	var peg$e27 = peg$otherExpectation("rest of line comment");
+	var peg$e28 = peg$literalExpectation(";", false);
+	var peg$e29 = peg$classExpectation(["\r", "\n"], true, false);
+	var peg$e30 = peg$otherExpectation("variation");
+	var peg$e31 = peg$literalExpectation("(", false);
+	var peg$e32 = peg$literalExpectation(")", false);
+	var peg$e33 = peg$otherExpectation("game termination marker");
+	var peg$e34 = peg$literalExpectation("1-0", false);
+	var peg$e35 = peg$literalExpectation("0-1", false);
+	var peg$e36 = peg$literalExpectation("1/2-1/2", false);
+	var peg$e37 = peg$literalExpectation("*", false);
+	var peg$e38 = peg$otherExpectation("whitespace");
+	var peg$e39 = peg$classExpectation([
+		" ",
+		"	",
+		"\r",
+		"\n"
+	], false, false);
+	var peg$f0 = function(headers, game) {
+		return pgn(headers, game);
+	};
+	var peg$f1 = function(tagPairs) {
+		return Object.fromEntries(tagPairs);
+	};
+	var peg$f2 = function(tagName, tagValue) {
+		return [tagName, tagValue];
+	};
+	var peg$f3 = function(root, marker) {
+		return {
+			root,
+			marker
+		};
+	};
+	var peg$f4 = function(comment, moves) {
+		return lineToTree(rootNode(comment), ...moves.flat());
+	};
+	var peg$f5 = function(san, suffix, nag, comment, variations) {
+		return node(san, suffix, nag, comment, variations);
+	};
+	var peg$f6 = function(nag) {
+		return nag;
+	};
+	var peg$f7 = function(comment) {
+		return comment.replace(/[\r\n]+/g, " ");
+	};
+	var peg$f8 = function(comment) {
+		return comment.trim();
+	};
+	var peg$f9 = function(line) {
+		return line;
+	};
+	var peg$f10 = function(result, comment) {
+		return {
+			result,
+			comment
+		};
+	};
+	var peg$currPos = options.peg$currPos | 0;
+	var peg$posDetailsCache = [{
+		line: 1,
+		column: 1
+	}];
+	var peg$maxFailPos = peg$currPos;
+	var peg$maxFailExpected = options.peg$maxFailExpected || [];
+	var peg$silentFails = options.peg$silentFails | 0;
+	var peg$result;
+	if (options.startRule) {
+		if (!(options.startRule in peg$startRuleFunctions)) throw new Error("Can't start parsing from rule \"" + options.startRule + "\".");
+		peg$startRuleFunction = peg$startRuleFunctions[options.startRule];
+	}
+	function peg$literalExpectation(text, ignoreCase) {
+		return {
+			type: "literal",
+			text,
+			ignoreCase
+		};
+	}
+	function peg$classExpectation(parts, inverted, ignoreCase) {
+		return {
+			type: "class",
+			parts,
+			inverted,
+			ignoreCase
+		};
+	}
+	function peg$endExpectation() {
+		return { type: "end" };
+	}
+	function peg$otherExpectation(description) {
+		return {
+			type: "other",
+			description
+		};
+	}
+	function peg$computePosDetails(pos) {
+		var details = peg$posDetailsCache[pos];
+		var p;
+		if (details) return details;
+		else {
+			if (pos >= peg$posDetailsCache.length) p = peg$posDetailsCache.length - 1;
+			else {
+				p = pos;
+				while (!peg$posDetailsCache[--p]);
+			}
+			details = peg$posDetailsCache[p];
+			details = {
+				line: details.line,
+				column: details.column
+			};
+			while (p < pos) {
+				if (input.charCodeAt(p) === 10) {
+					details.line++;
+					details.column = 1;
+				} else details.column++;
+				p++;
+			}
+			peg$posDetailsCache[pos] = details;
+			return details;
+		}
+	}
+	function peg$computeLocation(startPos, endPos, offset) {
+		var startPosDetails = peg$computePosDetails(startPos);
+		var endPosDetails = peg$computePosDetails(endPos);
+		return {
+			source: peg$source,
+			start: {
+				offset: startPos,
+				line: startPosDetails.line,
+				column: startPosDetails.column
+			},
+			end: {
+				offset: endPos,
+				line: endPosDetails.line,
+				column: endPosDetails.column
+			}
+		};
+	}
+	function peg$fail(expected) {
+		if (peg$currPos < peg$maxFailPos) return;
+		if (peg$currPos > peg$maxFailPos) {
+			peg$maxFailPos = peg$currPos;
+			peg$maxFailExpected = [];
+		}
+		peg$maxFailExpected.push(expected);
+	}
+	function peg$buildStructuredError(expected, found, location) {
+		return new peg$SyntaxError(peg$SyntaxError.buildMessage(expected, found), expected, found, location);
+	}
+	function peg$parsepgn() {
+		var s0 = peg$currPos;
+		s0 = peg$f0(peg$parsetagPairSection(), peg$parsemoveTextSection());
+		return s0;
+	}
+	function peg$parsetagPairSection() {
+		var s0 = peg$currPos, s1 = [], s2 = peg$parsetagPair();
+		while (s2 !== peg$FAILED) {
+			s1.push(s2);
+			s2 = peg$parsetagPair();
+		}
+		s2 = peg$parse_();
+		s0 = peg$f1(s1);
+		return s0;
+	}
+	function peg$parsetagPair() {
+		var s0, s2, s4, s6, s7, s8, s10;
+		peg$silentFails++;
+		s0 = peg$currPos;
+		peg$parse_();
+		if (input.charCodeAt(peg$currPos) === 91) {
+			s2 = peg$c0;
+			peg$currPos++;
+		} else {
+			s2 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e1);
+		}
+		if (s2 !== peg$FAILED) {
+			peg$parse_();
+			s4 = peg$parsetagName();
+			if (s4 !== peg$FAILED) {
+				peg$parse_();
+				if (input.charCodeAt(peg$currPos) === 34) {
+					s6 = peg$c1;
+					peg$currPos++;
+				} else {
+					s6 = peg$FAILED;
+					if (peg$silentFails === 0) peg$fail(peg$e2);
+				}
+				if (s6 !== peg$FAILED) {
+					s7 = peg$parsetagValue();
+					if (input.charCodeAt(peg$currPos) === 34) {
+						s8 = peg$c1;
+						peg$currPos++;
+					} else {
+						s8 = peg$FAILED;
+						if (peg$silentFails === 0) peg$fail(peg$e2);
+					}
+					if (s8 !== peg$FAILED) {
+						peg$parse_();
+						if (input.charCodeAt(peg$currPos) === 93) {
+							s10 = peg$c2;
+							peg$currPos++;
+						} else {
+							s10 = peg$FAILED;
+							if (peg$silentFails === 0) peg$fail(peg$e3);
+						}
+						if (s10 !== peg$FAILED) s0 = peg$f2(s4, s7);
+						else {
+							peg$currPos = s0;
+							s0 = peg$FAILED;
+						}
+					} else {
+						peg$currPos = s0;
+						s0 = peg$FAILED;
+					}
+				} else {
+					peg$currPos = s0;
+					s0 = peg$FAILED;
+				}
+			} else {
+				peg$currPos = s0;
+				s0 = peg$FAILED;
+			}
+		} else {
+			peg$currPos = s0;
+			s0 = peg$FAILED;
+		}
+		peg$silentFails--;
+		if (s0 === peg$FAILED) {
+			if (peg$silentFails === 0) peg$fail(peg$e0);
+		}
+		return s0;
+	}
+	function peg$parsetagName() {
+		var s0, s1, s2;
+		peg$silentFails++;
+		s0 = peg$currPos;
+		s1 = [];
+		s2 = input.charAt(peg$currPos);
+		if (peg$r0.test(s2)) peg$currPos++;
+		else {
+			s2 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e5);
+		}
+		if (s2 !== peg$FAILED) while (s2 !== peg$FAILED) {
+			s1.push(s2);
+			s2 = input.charAt(peg$currPos);
+			if (peg$r0.test(s2)) peg$currPos++;
+			else {
+				s2 = peg$FAILED;
+				if (peg$silentFails === 0) peg$fail(peg$e5);
+			}
+		}
+		else s1 = peg$FAILED;
+		if (s1 !== peg$FAILED) s0 = input.substring(s0, peg$currPos);
+		else s0 = s1;
+		peg$silentFails--;
+		if (s0 === peg$FAILED) {
+			s1 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e4);
+		}
+		return s0;
+	}
+	function peg$parsetagValue() {
+		var s0, s1, s2;
+		peg$silentFails++;
+		s0 = peg$currPos;
+		s1 = [];
+		s2 = input.charAt(peg$currPos);
+		if (peg$r1.test(s2)) peg$currPos++;
+		else {
+			s2 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e7);
+		}
+		while (s2 !== peg$FAILED) {
+			s1.push(s2);
+			s2 = input.charAt(peg$currPos);
+			if (peg$r1.test(s2)) peg$currPos++;
+			else {
+				s2 = peg$FAILED;
+				if (peg$silentFails === 0) peg$fail(peg$e7);
+			}
+		}
+		s0 = input.substring(s0, peg$currPos);
+		peg$silentFails--;
+		s1 = peg$FAILED;
+		if (peg$silentFails === 0) peg$fail(peg$e6);
+		return s0;
+	}
+	function peg$parsemoveTextSection() {
+		var s0 = peg$currPos, s1 = peg$parseline(), s3;
+		peg$parse_();
+		s3 = peg$parsegameTerminationMarker();
+		if (s3 === peg$FAILED) s3 = null;
+		peg$parse_();
+		s0 = peg$f3(s1, s3);
+		return s0;
+	}
+	function peg$parseline() {
+		var s0 = peg$currPos, s1 = peg$parsecomment(), s2, s3;
+		if (s1 === peg$FAILED) s1 = null;
+		s2 = [];
+		s3 = peg$parsemove();
+		while (s3 !== peg$FAILED) {
+			s2.push(s3);
+			s3 = peg$parsemove();
+		}
+		s0 = peg$f4(s1, s2);
+		return s0;
+	}
+	function peg$parsemove() {
+		var s0 = peg$currPos, s4, s5, s6, s7, s8, s9, s10;
+		peg$parse_();
+		peg$parsemoveNumber();
+		peg$parse_();
+		s4 = peg$parsesan();
+		if (s4 !== peg$FAILED) {
+			s5 = peg$parsesuffixAnnotation();
+			if (s5 === peg$FAILED) s5 = null;
+			s6 = [];
+			s7 = peg$parsenag();
+			while (s7 !== peg$FAILED) {
+				s6.push(s7);
+				s7 = peg$parsenag();
+			}
+			s7 = peg$parse_();
+			s8 = peg$parsecomment();
+			if (s8 === peg$FAILED) s8 = null;
+			s9 = [];
+			s10 = peg$parsevariation();
+			while (s10 !== peg$FAILED) {
+				s9.push(s10);
+				s10 = peg$parsevariation();
+			}
+			s0 = peg$f5(s4, s5, s6, s8, s9);
+		} else {
+			peg$currPos = s0;
+			s0 = peg$FAILED;
+		}
+		return s0;
+	}
+	function peg$parsemoveNumber() {
+		var s0, s1, s2, s3, s4, s5;
+		peg$silentFails++;
+		s0 = peg$currPos;
+		s1 = [];
+		s2 = input.charAt(peg$currPos);
+		if (peg$r2.test(s2)) peg$currPos++;
+		else {
+			s2 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e9);
+		}
+		while (s2 !== peg$FAILED) {
+			s1.push(s2);
+			s2 = input.charAt(peg$currPos);
+			if (peg$r2.test(s2)) peg$currPos++;
+			else {
+				s2 = peg$FAILED;
+				if (peg$silentFails === 0) peg$fail(peg$e9);
+			}
+		}
+		if (input.charCodeAt(peg$currPos) === 46) {
+			s2 = peg$c3;
+			peg$currPos++;
+		} else {
+			s2 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e10);
+		}
+		if (s2 !== peg$FAILED) {
+			s3 = peg$parse_();
+			s4 = [];
+			s5 = input.charAt(peg$currPos);
+			if (peg$r3.test(s5)) peg$currPos++;
+			else {
+				s5 = peg$FAILED;
+				if (peg$silentFails === 0) peg$fail(peg$e11);
+			}
+			while (s5 !== peg$FAILED) {
+				s4.push(s5);
+				s5 = input.charAt(peg$currPos);
+				if (peg$r3.test(s5)) peg$currPos++;
+				else {
+					s5 = peg$FAILED;
+					if (peg$silentFails === 0) peg$fail(peg$e11);
+				}
+			}
+			s1 = [
+				s1,
+				s2,
+				s3,
+				s4
+			];
+			s0 = s1;
+		} else {
+			peg$currPos = s0;
+			s0 = peg$FAILED;
+		}
+		peg$silentFails--;
+		if (s0 === peg$FAILED) {
+			s1 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e8);
+		}
+		return s0;
+	}
+	function peg$parsesan() {
+		var s0, s1, s2, s3, s4, s5;
+		peg$silentFails++;
+		s0 = peg$currPos;
+		s1 = peg$currPos;
+		if (input.substr(peg$currPos, 5) === peg$c4) {
+			s2 = peg$c4;
+			peg$currPos += 5;
+		} else {
+			s2 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e13);
+		}
+		if (s2 === peg$FAILED) {
+			if (input.substr(peg$currPos, 3) === peg$c5) {
+				s2 = peg$c5;
+				peg$currPos += 3;
+			} else {
+				s2 = peg$FAILED;
+				if (peg$silentFails === 0) peg$fail(peg$e14);
+			}
+			if (s2 === peg$FAILED) {
+				if (input.substr(peg$currPos, 5) === peg$c6) {
+					s2 = peg$c6;
+					peg$currPos += 5;
+				} else {
+					s2 = peg$FAILED;
+					if (peg$silentFails === 0) peg$fail(peg$e15);
+				}
+				if (s2 === peg$FAILED) {
+					if (input.substr(peg$currPos, 3) === peg$c7) {
+						s2 = peg$c7;
+						peg$currPos += 3;
+					} else {
+						s2 = peg$FAILED;
+						if (peg$silentFails === 0) peg$fail(peg$e16);
+					}
+					if (s2 === peg$FAILED) {
+						s2 = peg$currPos;
+						s3 = input.charAt(peg$currPos);
+						if (peg$r0.test(s3)) peg$currPos++;
+						else {
+							s3 = peg$FAILED;
+							if (peg$silentFails === 0) peg$fail(peg$e5);
+						}
+						if (s3 !== peg$FAILED) {
+							s4 = [];
+							s5 = input.charAt(peg$currPos);
+							if (peg$r4.test(s5)) peg$currPos++;
+							else {
+								s5 = peg$FAILED;
+								if (peg$silentFails === 0) peg$fail(peg$e17);
+							}
+							if (s5 !== peg$FAILED) while (s5 !== peg$FAILED) {
+								s4.push(s5);
+								s5 = input.charAt(peg$currPos);
+								if (peg$r4.test(s5)) peg$currPos++;
+								else {
+									s5 = peg$FAILED;
+									if (peg$silentFails === 0) peg$fail(peg$e17);
+								}
+							}
+							else s4 = peg$FAILED;
+							if (s4 !== peg$FAILED) {
+								s3 = [s3, s4];
+								s2 = s3;
+							} else {
+								peg$currPos = s2;
+								s2 = peg$FAILED;
+							}
+						} else {
+							peg$currPos = s2;
+							s2 = peg$FAILED;
+						}
+					}
+				}
+			}
+		}
+		if (s2 !== peg$FAILED) {
+			s3 = input.charAt(peg$currPos);
+			if (peg$r5.test(s3)) peg$currPos++;
+			else {
+				s3 = peg$FAILED;
+				if (peg$silentFails === 0) peg$fail(peg$e18);
+			}
+			if (s3 === peg$FAILED) s3 = null;
+			s2 = [s2, s3];
+			s1 = s2;
+		} else {
+			peg$currPos = s1;
+			s1 = peg$FAILED;
+		}
+		if (s1 !== peg$FAILED) s0 = input.substring(s0, peg$currPos);
+		else s0 = s1;
+		peg$silentFails--;
+		if (s0 === peg$FAILED) {
+			s1 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e12);
+		}
+		return s0;
+	}
+	function peg$parsesuffixAnnotation() {
+		var s0, s1, s2;
+		peg$silentFails++;
+		s0 = peg$currPos;
+		s1 = [];
+		s2 = input.charAt(peg$currPos);
+		if (peg$r6.test(s2)) peg$currPos++;
+		else {
+			s2 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e20);
+		}
+		while (s2 !== peg$FAILED) {
+			s1.push(s2);
+			if (s1.length >= 2) s2 = peg$FAILED;
+			else {
+				s2 = input.charAt(peg$currPos);
+				if (peg$r6.test(s2)) peg$currPos++;
+				else {
+					s2 = peg$FAILED;
+					if (peg$silentFails === 0) peg$fail(peg$e20);
+				}
+			}
+		}
+		if (s1.length < 1) {
+			peg$currPos = s0;
+			s0 = peg$FAILED;
+		} else s0 = s1;
+		peg$silentFails--;
+		if (s0 === peg$FAILED) {
+			s1 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e19);
+		}
+		return s0;
+	}
+	function peg$parsenag() {
+		var s0, s2, s3, s4, s5;
+		peg$silentFails++;
+		s0 = peg$currPos;
+		peg$parse_();
+		if (input.charCodeAt(peg$currPos) === 36) {
+			s2 = peg$c8;
+			peg$currPos++;
+		} else {
+			s2 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e22);
+		}
+		if (s2 !== peg$FAILED) {
+			s3 = peg$currPos;
+			s4 = [];
+			s5 = input.charAt(peg$currPos);
+			if (peg$r2.test(s5)) peg$currPos++;
+			else {
+				s5 = peg$FAILED;
+				if (peg$silentFails === 0) peg$fail(peg$e9);
+			}
+			if (s5 !== peg$FAILED) while (s5 !== peg$FAILED) {
+				s4.push(s5);
+				s5 = input.charAt(peg$currPos);
+				if (peg$r2.test(s5)) peg$currPos++;
+				else {
+					s5 = peg$FAILED;
+					if (peg$silentFails === 0) peg$fail(peg$e9);
+				}
+			}
+			else s4 = peg$FAILED;
+			if (s4 !== peg$FAILED) s3 = input.substring(s3, peg$currPos);
+			else s3 = s4;
+			if (s3 !== peg$FAILED) s0 = peg$f6(s3);
+			else {
+				peg$currPos = s0;
+				s0 = peg$FAILED;
+			}
+		} else {
+			peg$currPos = s0;
+			s0 = peg$FAILED;
+		}
+		peg$silentFails--;
+		if (s0 === peg$FAILED) {
+			if (peg$silentFails === 0) peg$fail(peg$e21);
+		}
+		return s0;
+	}
+	function peg$parsecomment() {
+		var s0 = peg$parsebraceComment();
+		if (s0 === peg$FAILED) s0 = peg$parserestOfLineComment();
+		return s0;
+	}
+	function peg$parsebraceComment() {
+		var s0, s1, s2, s3, s4;
+		peg$silentFails++;
+		s0 = peg$currPos;
+		if (input.charCodeAt(peg$currPos) === 123) {
+			s1 = peg$c9;
+			peg$currPos++;
+		} else {
+			s1 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e24);
+		}
+		if (s1 !== peg$FAILED) {
+			s2 = peg$currPos;
+			s3 = [];
+			s4 = input.charAt(peg$currPos);
+			if (peg$r7.test(s4)) peg$currPos++;
+			else {
+				s4 = peg$FAILED;
+				if (peg$silentFails === 0) peg$fail(peg$e25);
+			}
+			while (s4 !== peg$FAILED) {
+				s3.push(s4);
+				s4 = input.charAt(peg$currPos);
+				if (peg$r7.test(s4)) peg$currPos++;
+				else {
+					s4 = peg$FAILED;
+					if (peg$silentFails === 0) peg$fail(peg$e25);
+				}
+			}
+			s2 = input.substring(s2, peg$currPos);
+			if (input.charCodeAt(peg$currPos) === 125) {
+				s3 = peg$c10;
+				peg$currPos++;
+			} else {
+				s3 = peg$FAILED;
+				if (peg$silentFails === 0) peg$fail(peg$e26);
+			}
+			if (s3 !== peg$FAILED) s0 = peg$f7(s2);
+			else {
+				peg$currPos = s0;
+				s0 = peg$FAILED;
+			}
+		} else {
+			peg$currPos = s0;
+			s0 = peg$FAILED;
+		}
+		peg$silentFails--;
+		if (s0 === peg$FAILED) {
+			s1 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e23);
+		}
+		return s0;
+	}
+	function peg$parserestOfLineComment() {
+		var s0, s1, s2, s3, s4;
+		peg$silentFails++;
+		s0 = peg$currPos;
+		if (input.charCodeAt(peg$currPos) === 59) {
+			s1 = peg$c11;
+			peg$currPos++;
+		} else {
+			s1 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e28);
+		}
+		if (s1 !== peg$FAILED) {
+			s2 = peg$currPos;
+			s3 = [];
+			s4 = input.charAt(peg$currPos);
+			if (peg$r8.test(s4)) peg$currPos++;
+			else {
+				s4 = peg$FAILED;
+				if (peg$silentFails === 0) peg$fail(peg$e29);
+			}
+			while (s4 !== peg$FAILED) {
+				s3.push(s4);
+				s4 = input.charAt(peg$currPos);
+				if (peg$r8.test(s4)) peg$currPos++;
+				else {
+					s4 = peg$FAILED;
+					if (peg$silentFails === 0) peg$fail(peg$e29);
+				}
+			}
+			s2 = input.substring(s2, peg$currPos);
+			s0 = peg$f8(s2);
+		} else {
+			peg$currPos = s0;
+			s0 = peg$FAILED;
+		}
+		peg$silentFails--;
+		if (s0 === peg$FAILED) {
+			s1 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e27);
+		}
+		return s0;
+	}
+	function peg$parsevariation() {
+		var s0, s2, s3, s5;
+		peg$silentFails++;
+		s0 = peg$currPos;
+		peg$parse_();
+		if (input.charCodeAt(peg$currPos) === 40) {
+			s2 = peg$c12;
+			peg$currPos++;
+		} else {
+			s2 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e31);
+		}
+		if (s2 !== peg$FAILED) {
+			s3 = peg$parseline();
+			if (s3 !== peg$FAILED) {
+				peg$parse_();
+				if (input.charCodeAt(peg$currPos) === 41) {
+					s5 = peg$c13;
+					peg$currPos++;
+				} else {
+					s5 = peg$FAILED;
+					if (peg$silentFails === 0) peg$fail(peg$e32);
+				}
+				if (s5 !== peg$FAILED) s0 = peg$f9(s3);
+				else {
+					peg$currPos = s0;
+					s0 = peg$FAILED;
+				}
+			} else {
+				peg$currPos = s0;
+				s0 = peg$FAILED;
+			}
+		} else {
+			peg$currPos = s0;
+			s0 = peg$FAILED;
+		}
+		peg$silentFails--;
+		if (s0 === peg$FAILED) {
+			if (peg$silentFails === 0) peg$fail(peg$e30);
+		}
+		return s0;
+	}
+	function peg$parsegameTerminationMarker() {
+		var s0, s1, s3;
+		peg$silentFails++;
+		s0 = peg$currPos;
+		if (input.substr(peg$currPos, 3) === peg$c14) {
+			s1 = peg$c14;
+			peg$currPos += 3;
+		} else {
+			s1 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e34);
+		}
+		if (s1 === peg$FAILED) {
+			if (input.substr(peg$currPos, 3) === peg$c15) {
+				s1 = peg$c15;
+				peg$currPos += 3;
+			} else {
+				s1 = peg$FAILED;
+				if (peg$silentFails === 0) peg$fail(peg$e35);
+			}
+			if (s1 === peg$FAILED) {
+				if (input.substr(peg$currPos, 7) === peg$c16) {
+					s1 = peg$c16;
+					peg$currPos += 7;
+				} else {
+					s1 = peg$FAILED;
+					if (peg$silentFails === 0) peg$fail(peg$e36);
+				}
+				if (s1 === peg$FAILED) {
+					if (input.charCodeAt(peg$currPos) === 42) {
+						s1 = peg$c17;
+						peg$currPos++;
+					} else {
+						s1 = peg$FAILED;
+						if (peg$silentFails === 0) peg$fail(peg$e37);
+					}
+				}
+			}
+		}
+		if (s1 !== peg$FAILED) {
+			peg$parse_();
+			s3 = peg$parsecomment();
+			if (s3 === peg$FAILED) s3 = null;
+			s0 = peg$f10(s1, s3);
+		} else {
+			peg$currPos = s0;
+			s0 = peg$FAILED;
+		}
+		peg$silentFails--;
+		if (s0 === peg$FAILED) {
+			s1 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e33);
+		}
+		return s0;
+	}
+	function peg$parse_() {
+		var s0, s1;
+		peg$silentFails++;
+		s0 = [];
+		s1 = input.charAt(peg$currPos);
+		if (peg$r9.test(s1)) peg$currPos++;
+		else {
+			s1 = peg$FAILED;
+			if (peg$silentFails === 0) peg$fail(peg$e39);
+		}
+		while (s1 !== peg$FAILED) {
+			s0.push(s1);
+			s1 = input.charAt(peg$currPos);
+			if (peg$r9.test(s1)) peg$currPos++;
+			else {
+				s1 = peg$FAILED;
+				if (peg$silentFails === 0) peg$fail(peg$e39);
+			}
+		}
+		peg$silentFails--;
+		s1 = peg$FAILED;
+		if (peg$silentFails === 0) peg$fail(peg$e38);
+		return s0;
+	}
+	peg$result = peg$startRuleFunction();
+	if (options.peg$library) return {
+		peg$result,
+		peg$currPos,
+		peg$FAILED,
+		peg$maxFailExpected,
+		peg$maxFailPos
+	};
+	if (peg$result !== peg$FAILED && peg$currPos === input.length) return peg$result;
+	else {
+		if (peg$result !== peg$FAILED && peg$currPos < input.length) peg$fail(peg$endExpectation());
+		throw peg$buildStructuredError(peg$maxFailExpected, peg$maxFailPos < input.length ? input.charAt(peg$maxFailPos) : null, peg$maxFailPos < input.length ? peg$computeLocation(peg$maxFailPos, peg$maxFailPos + 1) : peg$computeLocation(peg$maxFailPos, peg$maxFailPos));
+	}
+}
+/**
+* @license
+* Copyright (c) 2025, Jeff Hlywa (jhlywa@gmail.com)
+* All rights reserved.
+*
+* Redistribution and use in source and binary forms, with or without
+* modification, are permitted provided that the following conditions are met:
+*
+* 1. Redistributions of source code must retain the above copyright notice,
+*    this list of conditions and the following disclaimer.
+* 2. Redistributions in binary form must reproduce the above copyright notice,
+*    this list of conditions and the following disclaimer in the documentation
+*    and/or other materials provided with the distribution.
+*
+* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+* AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+* ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+* LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+* CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+* SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+* INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+* CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+* ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+* POSSIBILITY OF SUCH DAMAGE.
+*/
+var MASK64 = 18446744073709551615n;
+function rotl(x, k) {
+	return (x << k | x >> 64n - k) & 18446744073709551615n;
+}
+function wrappingMul(x, y) {
+	return x * y & MASK64;
+}
+function xoroshiro128(state) {
+	return function() {
+		let s0 = BigInt(state & MASK64);
+		let s1 = BigInt(state >> 64n & MASK64);
+		const result = wrappingMul(rotl(wrappingMul(s0, 5n), 7n), 9n);
+		s1 ^= s0;
+		s0 = (rotl(s0, 24n) ^ s1 ^ s1 << 16n) & MASK64;
+		s1 = rotl(s1, 37n);
+		state = s1 << 64n | s0;
+		return result;
+	};
+}
+var rand = xoroshiro128(214711438343225530594246349426526445598n);
+var PIECE_KEYS = Array.from({ length: 2 }, () => Array.from({ length: 6 }, () => Array.from({ length: 128 }, () => rand())));
+var EP_KEYS = Array.from({ length: 8 }, () => rand());
+var CASTLING_KEYS = Array.from({ length: 16 }, () => rand());
+var SIDE_KEY = rand();
+var DEFAULT_POSITION = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+var Move = class {
+	color;
+	from;
+	to;
+	piece;
+	captured;
+	promotion;
+	/**
+	* @deprecated This field is deprecated and will be removed in version 2.0.0.
+	* Please use move descriptor functions instead: `isCapture`, `isPromotion`,
+	* `isEnPassant`, `isKingsideCastle`, `isQueensideCastle`, `isCastle`, and
+	* `isBigPawn`
+	*/
+	flags;
+	san;
+	lan;
+	before;
+	after;
+	constructor(chess, internal) {
+		const { color, piece, from, to, flags, captured, promotion } = internal;
+		const fromAlgebraic = algebraic(from);
+		const toAlgebraic = algebraic(to);
+		this.color = color;
+		this.piece = piece;
+		this.from = fromAlgebraic;
+		this.to = toAlgebraic;
+		this.san = chess["_moveToSan"](internal, chess["_moves"]({ legal: true }));
+		this.lan = fromAlgebraic + toAlgebraic;
+		this.before = chess.fen();
+		chess["_makeMove"](internal);
+		this.after = chess.fen();
+		chess["_undoMove"]();
+		this.flags = "";
+		for (const flag in BITS) if (BITS[flag] & flags) this.flags += FLAGS[flag];
+		if (captured) this.captured = captured;
+		if (promotion) {
+			this.promotion = promotion;
+			this.lan += promotion;
+		}
+	}
+	isCapture() {
+		return this.flags.indexOf(FLAGS["CAPTURE"]) > -1;
+	}
+	isPromotion() {
+		return this.flags.indexOf(FLAGS["PROMOTION"]) > -1;
+	}
+	isEnPassant() {
+		return this.flags.indexOf(FLAGS["EP_CAPTURE"]) > -1;
+	}
+	isKingsideCastle() {
+		return this.flags.indexOf(FLAGS["KSIDE_CASTLE"]) > -1;
+	}
+	isQueensideCastle() {
+		return this.flags.indexOf(FLAGS["QSIDE_CASTLE"]) > -1;
+	}
+	isBigPawn() {
+		return this.flags.indexOf(FLAGS["BIG_PAWN"]) > -1;
+	}
+};
+var EMPTY$1 = -1;
+var FLAGS = {
+	NORMAL: "n",
+	CAPTURE: "c",
+	BIG_PAWN: "b",
+	EP_CAPTURE: "e",
+	PROMOTION: "p",
+	KSIDE_CASTLE: "k",
+	QSIDE_CASTLE: "q",
+	NULL_MOVE: "-"
+};
+var BITS = {
+	NORMAL: 1,
+	CAPTURE: 2,
+	BIG_PAWN: 4,
+	EP_CAPTURE: 8,
+	PROMOTION: 16,
+	KSIDE_CASTLE: 32,
+	QSIDE_CASTLE: 64,
+	NULL_MOVE: 128
+};
+var SEVEN_TAG_ROSTER = {
+	Event: "?",
+	Site: "?",
+	Date: "????.??.??",
+	Round: "?",
+	White: "?",
+	Black: "?",
+	Result: "*"
+};
+/**
+* These nulls are placeholders to fix the order of tags (as they appear in PGN spec); null values will be
+* eliminated in getHeaders()
+*/
+var SUPLEMENTAL_TAGS = {
+	WhiteTitle: null,
+	BlackTitle: null,
+	WhiteElo: null,
+	BlackElo: null,
+	WhiteUSCF: null,
+	BlackUSCF: null,
+	WhiteNA: null,
+	BlackNA: null,
+	WhiteType: null,
+	BlackType: null,
+	EventDate: null,
+	EventSponsor: null,
+	Section: null,
+	Stage: null,
+	Board: null,
+	Opening: null,
+	Variation: null,
+	SubVariation: null,
+	ECO: null,
+	NIC: null,
+	Time: null,
+	UTCTime: null,
+	UTCDate: null,
+	TimeControl: null,
+	SetUp: null,
+	FEN: null,
+	Termination: null,
+	Annotator: null,
+	Mode: null,
+	PlyCount: null
+};
+var HEADER_TEMPLATE = {
+	...SEVEN_TAG_ROSTER,
+	...SUPLEMENTAL_TAGS
+};
+var Ox88 = {
+	a8: 0,
+	b8: 1,
+	c8: 2,
+	d8: 3,
+	e8: 4,
+	f8: 5,
+	g8: 6,
+	h8: 7,
+	a7: 16,
+	b7: 17,
+	c7: 18,
+	d7: 19,
+	e7: 20,
+	f7: 21,
+	g7: 22,
+	h7: 23,
+	a6: 32,
+	b6: 33,
+	c6: 34,
+	d6: 35,
+	e6: 36,
+	f6: 37,
+	g6: 38,
+	h6: 39,
+	a5: 48,
+	b5: 49,
+	c5: 50,
+	d5: 51,
+	e5: 52,
+	f5: 53,
+	g5: 54,
+	h5: 55,
+	a4: 64,
+	b4: 65,
+	c4: 66,
+	d4: 67,
+	e4: 68,
+	f4: 69,
+	g4: 70,
+	h4: 71,
+	a3: 80,
+	b3: 81,
+	c3: 82,
+	d3: 83,
+	e3: 84,
+	f3: 85,
+	g3: 86,
+	h3: 87,
+	a2: 96,
+	b2: 97,
+	c2: 98,
+	d2: 99,
+	e2: 100,
+	f2: 101,
+	g2: 102,
+	h2: 103,
+	a1: 112,
+	b1: 113,
+	c1: 114,
+	d1: 115,
+	e1: 116,
+	f1: 117,
+	g1: 118,
+	h1: 119
+};
+var PAWN_OFFSETS = {
+	b: [
+		16,
+		32,
+		17,
+		15
+	],
+	w: [
+		-16,
+		-32,
+		-17,
+		-15
+	]
+};
+var PIECE_OFFSETS = {
+	n: [
+		-18,
+		-33,
+		-31,
+		-14,
+		18,
+		33,
+		31,
+		14
+	],
+	b: [
+		-17,
+		-15,
+		17,
+		15
+	],
+	r: [
+		-16,
+		1,
+		16,
+		-1
+	],
+	q: [
+		-17,
+		-16,
+		-15,
+		1,
+		17,
+		16,
+		15,
+		-1
+	],
+	k: [
+		-17,
+		-16,
+		-15,
+		1,
+		17,
+		16,
+		15,
+		-1
+	]
+};
+var ATTACKS = [
+	20,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	24,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	0,
+	0,
+	24,
+	0,
+	0,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	0,
+	24,
+	0,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	24,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	24,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	20,
+	2,
+	24,
+	2,
+	20,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	2,
+	53,
+	56,
+	53,
+	2,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	24,
+	24,
+	24,
+	24,
+	24,
+	24,
+	56,
+	0,
+	56,
+	24,
+	24,
+	24,
+	24,
+	24,
+	24,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	2,
+	53,
+	56,
+	53,
+	2,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	20,
+	2,
+	24,
+	2,
+	20,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	24,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	24,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	0,
+	24,
+	0,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	0,
+	0,
+	24,
+	0,
+	0,
+	0,
+	0,
+	0,
+	20,
+	0,
+	0,
+	20,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	24,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	20
+];
+var RAYS = [
+	17,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	16,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	15,
+	0,
+	0,
+	17,
+	0,
+	0,
+	0,
+	0,
+	0,
+	16,
+	0,
+	0,
+	0,
+	0,
+	0,
+	15,
+	0,
+	0,
+	0,
+	0,
+	17,
+	0,
+	0,
+	0,
+	0,
+	16,
+	0,
+	0,
+	0,
+	0,
+	15,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	17,
+	0,
+	0,
+	0,
+	16,
+	0,
+	0,
+	0,
+	15,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	17,
+	0,
+	0,
+	16,
+	0,
+	0,
+	15,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	17,
+	0,
+	16,
+	0,
+	15,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	17,
+	16,
+	15,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	1,
+	1,
+	1,
+	1,
+	1,
+	1,
+	1,
+	0,
+	-1,
+	-1,
+	-1,
+	-1,
+	-1,
+	-1,
+	-1,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	-15,
+	-16,
+	-17,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	-15,
+	0,
+	-16,
+	0,
+	-17,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	-15,
+	0,
+	0,
+	-16,
+	0,
+	0,
+	-17,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	-15,
+	0,
+	0,
+	0,
+	-16,
+	0,
+	0,
+	0,
+	-17,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	-15,
+	0,
+	0,
+	0,
+	0,
+	-16,
+	0,
+	0,
+	0,
+	0,
+	-17,
+	0,
+	0,
+	0,
+	0,
+	-15,
+	0,
+	0,
+	0,
+	0,
+	0,
+	-16,
+	0,
+	0,
+	0,
+	0,
+	0,
+	-17,
+	0,
+	0,
+	-15,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	-16,
+	0,
+	0,
+	0,
+	0,
+	0,
+	0,
+	-17
+];
+var PIECE_MASKS = {
+	p: 1,
+	n: 2,
+	b: 4,
+	r: 8,
+	q: 16,
+	k: 32
+};
+var SYMBOLS = "pnbrqkPNBRQK";
+var PROMOTIONS = [
+	"n",
+	"b",
+	"r",
+	"q"
+];
+var RANK_1 = 7;
+var RANK_2 = 6;
+var RANK_7 = 1;
+var RANK_8 = 0;
+var SIDES = {
+	["k"]: BITS.KSIDE_CASTLE,
+	["q"]: BITS.QSIDE_CASTLE
+};
+var ROOKS = {
+	w: [{
+		square: Ox88.a1,
+		flag: BITS.QSIDE_CASTLE
+	}, {
+		square: Ox88.h1,
+		flag: BITS.KSIDE_CASTLE
+	}],
+	b: [{
+		square: Ox88.a8,
+		flag: BITS.QSIDE_CASTLE
+	}, {
+		square: Ox88.h8,
+		flag: BITS.KSIDE_CASTLE
+	}]
+};
+var SECOND_RANK = {
+	b: RANK_7,
+	w: RANK_2
+};
+var SAN_NULLMOVE = "--";
+function rank(square) {
+	return square >> 4;
+}
+function file(square) {
+	return square & 15;
+}
+function isDigit(c) {
+	return "0123456789".indexOf(c) !== -1;
+}
+function algebraic(square) {
+	const f = file(square);
+	const r = rank(square);
+	return "abcdefgh".substring(f, f + 1) + "87654321".substring(r, r + 1);
+}
+function swapColor(color) {
+	return color === "w" ? "b" : "w";
+}
+function validateFen(fen) {
+	const tokens = fen.split(/\s+/);
+	if (tokens.length !== 6) return {
+		ok: false,
+		error: "Invalid FEN: must contain six space-delimited fields"
+	};
+	const moveNumber = parseInt(tokens[5], 10);
+	if (isNaN(moveNumber) || moveNumber <= 0) return {
+		ok: false,
+		error: "Invalid FEN: move number must be a positive integer"
+	};
+	const halfMoves = parseInt(tokens[4], 10);
+	if (isNaN(halfMoves) || halfMoves < 0) return {
+		ok: false,
+		error: "Invalid FEN: half move counter number must be a non-negative integer"
+	};
+	if (!/^(-|[abcdefgh][36])$/.test(tokens[3])) return {
+		ok: false,
+		error: "Invalid FEN: en-passant square is invalid"
+	};
+	if (/[^kKqQ-]/.test(tokens[2])) return {
+		ok: false,
+		error: "Invalid FEN: castling availability is invalid"
+	};
+	if (!/^(w|b)$/.test(tokens[1])) return {
+		ok: false,
+		error: "Invalid FEN: side-to-move is invalid"
+	};
+	const rows = tokens[0].split("/");
+	if (rows.length !== 8) return {
+		ok: false,
+		error: "Invalid FEN: piece data does not contain 8 '/'-delimited rows"
+	};
+	for (let i = 0; i < rows.length; i++) {
+		let sumFields = 0;
+		let previousWasNumber = false;
+		for (let k = 0; k < rows[i].length; k++) if (isDigit(rows[i][k])) {
+			if (previousWasNumber) return {
+				ok: false,
+				error: "Invalid FEN: piece data is invalid (consecutive number)"
+			};
+			sumFields += parseInt(rows[i][k], 10);
+			previousWasNumber = true;
+		} else {
+			if (!/^[prnbqkPRNBQK]$/.test(rows[i][k])) return {
+				ok: false,
+				error: "Invalid FEN: piece data is invalid (invalid piece)"
+			};
+			sumFields += 1;
+			previousWasNumber = false;
+		}
+		if (sumFields !== 8) return {
+			ok: false,
+			error: "Invalid FEN: piece data is invalid (too many squares in rank)"
+		};
+	}
+	if (tokens[3][1] == "3" && tokens[1] == "w" || tokens[3][1] == "6" && tokens[1] == "b") return {
+		ok: false,
+		error: "Invalid FEN: illegal en-passant square"
+	};
+	for (const { color, regex } of [{
+		color: "white",
+		regex: /K/g
+	}, {
+		color: "black",
+		regex: /k/g
+	}]) {
+		if (!regex.test(tokens[0])) return {
+			ok: false,
+			error: `Invalid FEN: missing ${color} king`
+		};
+		if ((tokens[0].match(regex) || []).length > 1) return {
+			ok: false,
+			error: `Invalid FEN: too many ${color} kings`
+		};
+	}
+	if (Array.from(rows[0] + rows[7]).some((char) => char.toUpperCase() === "P")) return {
+		ok: false,
+		error: "Invalid FEN: some pawns are on the edge rows"
+	};
+	return { ok: true };
+}
+function getDisambiguator(move, moves) {
+	const from = move.from;
+	const to = move.to;
+	const piece = move.piece;
+	let ambiguities = 0;
+	let sameRank = 0;
+	let sameFile = 0;
+	for (let i = 0, len = moves.length; i < len; i++) {
+		const ambigFrom = moves[i].from;
+		const ambigTo = moves[i].to;
+		if (piece === moves[i].piece && from !== ambigFrom && to === ambigTo) {
+			ambiguities++;
+			if (rank(from) === rank(ambigFrom)) sameRank++;
+			if (file(from) === file(ambigFrom)) sameFile++;
+		}
+	}
+	if (ambiguities > 0) {
+		if (sameRank > 0 && sameFile > 0) return algebraic(from);
+		else if (sameFile > 0) return algebraic(from).charAt(1);
+		else return algebraic(from).charAt(0);
+	}
+	return "";
+}
+function addMove(moves, color, from, to, piece, captured = void 0, flags = BITS.NORMAL) {
+	const r = rank(to);
+	if (piece === "p" && (r === RANK_1 || r === RANK_8)) for (let i = 0; i < PROMOTIONS.length; i++) {
+		const promotion = PROMOTIONS[i];
+		moves.push({
+			color,
+			from,
+			to,
+			piece,
+			captured,
+			promotion,
+			flags: flags | BITS.PROMOTION
+		});
+	}
+	else moves.push({
+		color,
+		from,
+		to,
+		piece,
+		captured,
+		flags
+	});
+}
+function inferPieceType(san) {
+	let pieceType = san.charAt(0);
+	if (pieceType >= "a" && pieceType <= "h") {
+		if (san.match(/[a-h]\d.*[a-h]\d/)) return;
+		return "p";
+	}
+	pieceType = pieceType.toLowerCase();
+	if (pieceType === "o") return "k";
+	return pieceType;
+}
+function strippedSan(move) {
+	return move.replace(/=/, "").replace(/[+#]?[?!]*$/, "");
+}
+var Chess = class {
+	_board = new Array(128);
+	_turn = "w";
+	_header = {};
+	_kings = {
+		w: EMPTY$1,
+		b: EMPTY$1
+	};
+	_epSquare = -1;
+	_halfMoves = 0;
+	_moveNumber = 0;
+	_history = [];
+	_comments = {};
+	_castling = {
+		w: 0,
+		b: 0
+	};
+	_hash = 0n;
+	_positionCount = /* @__PURE__ */ new Map();
+	constructor(fen = DEFAULT_POSITION, { skipValidation = false } = {}) {
+		this.load(fen, { skipValidation });
+	}
+	clear({ preserveHeaders = false } = {}) {
+		this._board = new Array(128);
+		this._kings = {
+			w: EMPTY$1,
+			b: EMPTY$1
+		};
+		this._turn = "w";
+		this._castling = {
+			w: 0,
+			b: 0
+		};
+		this._epSquare = EMPTY$1;
+		this._halfMoves = 0;
+		this._moveNumber = 1;
+		this._history = [];
+		this._comments = {};
+		this._header = preserveHeaders ? this._header : { ...HEADER_TEMPLATE };
+		this._hash = this._computeHash();
+		this._positionCount = /* @__PURE__ */ new Map();
+		this._header["SetUp"] = null;
+		this._header["FEN"] = null;
+	}
+	load(fen, { skipValidation = false, preserveHeaders = false } = {}) {
+		let tokens = fen.split(/\s+/);
+		if (tokens.length >= 2 && tokens.length < 6) fen = tokens.concat([
+			"-",
+			"-",
+			"0",
+			"1"
+		].slice(-(6 - tokens.length))).join(" ");
+		tokens = fen.split(/\s+/);
+		if (!skipValidation) {
+			const { ok, error } = validateFen(fen);
+			if (!ok) throw new Error(error);
+		}
+		const position = tokens[0];
+		let square = 0;
+		this.clear({ preserveHeaders });
+		for (let i = 0; i < position.length; i++) {
+			const piece = position.charAt(i);
+			if (piece === "/") square += 8;
+			else if (isDigit(piece)) square += parseInt(piece, 10);
+			else {
+				const color = piece < "a" ? "w" : "b";
+				this._put({
+					type: piece.toLowerCase(),
+					color
+				}, algebraic(square));
+				square++;
+			}
+		}
+		this._turn = tokens[1];
+		if (tokens[2].indexOf("K") > -1) this._castling.w |= BITS.KSIDE_CASTLE;
+		if (tokens[2].indexOf("Q") > -1) this._castling.w |= BITS.QSIDE_CASTLE;
+		if (tokens[2].indexOf("k") > -1) this._castling.b |= BITS.KSIDE_CASTLE;
+		if (tokens[2].indexOf("q") > -1) this._castling.b |= BITS.QSIDE_CASTLE;
+		this._epSquare = tokens[3] === "-" ? EMPTY$1 : Ox88[tokens[3]];
+		this._halfMoves = parseInt(tokens[4], 10);
+		this._moveNumber = parseInt(tokens[5], 10);
+		this._hash = this._computeHash();
+		this._updateSetup(fen);
+		this._incPositionCount();
+	}
+	fen({ forceEnpassantSquare = false } = {}) {
+		let empty = 0;
+		let fen = "";
+		for (let i = Ox88.a8; i <= Ox88.h1; i++) {
+			if (this._board[i]) {
+				if (empty > 0) {
+					fen += empty;
+					empty = 0;
+				}
+				const { color, type: piece } = this._board[i];
+				fen += color === "w" ? piece.toUpperCase() : piece.toLowerCase();
+			} else empty++;
+			if (i + 1 & 136) {
+				if (empty > 0) fen += empty;
+				if (i !== Ox88.h1) fen += "/";
+				empty = 0;
+				i += 8;
+			}
+		}
+		let castling = "";
+		if (this._castling["w"] & BITS.KSIDE_CASTLE) castling += "K";
+		if (this._castling["w"] & BITS.QSIDE_CASTLE) castling += "Q";
+		if (this._castling["b"] & BITS.KSIDE_CASTLE) castling += "k";
+		if (this._castling["b"] & BITS.QSIDE_CASTLE) castling += "q";
+		castling = castling || "-";
+		let epSquare = "-";
+		if (this._epSquare !== EMPTY$1) {
+			if (forceEnpassantSquare) epSquare = algebraic(this._epSquare);
+			else {
+				const bigPawnSquare = this._epSquare + (this._turn === "w" ? 16 : -16);
+				const squares = [bigPawnSquare + 1, bigPawnSquare - 1];
+				for (const square of squares) {
+					if (square & 136) continue;
+					const color = this._turn;
+					if (this._board[square]?.color === color && this._board[square]?.type === "p") {
+						this._makeMove({
+							color,
+							from: square,
+							to: this._epSquare,
+							piece: "p",
+							captured: "p",
+							flags: BITS.EP_CAPTURE
+						});
+						const isLegal = !this._isKingAttacked(color);
+						this._undoMove();
+						if (isLegal) {
+							epSquare = algebraic(this._epSquare);
+							break;
+						}
+					}
+				}
+			}
+		}
+		return [
+			fen,
+			this._turn,
+			castling,
+			epSquare,
+			this._halfMoves,
+			this._moveNumber
+		].join(" ");
+	}
+	_pieceKey(i) {
+		if (!this._board[i]) return 0n;
+		const { color, type } = this._board[i];
+		const colorIndex = {
+			w: 0,
+			b: 1
+		}[color];
+		const typeIndex = {
+			p: 0,
+			n: 1,
+			b: 2,
+			r: 3,
+			q: 4,
+			k: 5
+		}[type];
+		return PIECE_KEYS[colorIndex][typeIndex][i];
+	}
+	_epKey() {
+		return this._epSquare === EMPTY$1 ? 0n : EP_KEYS[this._epSquare & 7];
+	}
+	_castlingKey() {
+		return CASTLING_KEYS[this._castling.w >> 5 | this._castling.b >> 3];
+	}
+	_computeHash() {
+		let hash = 0n;
+		for (let i = Ox88.a8; i <= Ox88.h1; i++) {
+			if (i & 136) {
+				i += 7;
+				continue;
+			}
+			if (this._board[i]) hash ^= this._pieceKey(i);
+		}
+		hash ^= this._epKey();
+		hash ^= this._castlingKey();
+		if (this._turn === "b") hash ^= SIDE_KEY;
+		return hash;
+	}
+	_updateSetup(fen) {
+		if (this._history.length > 0) return;
+		if (fen !== "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") {
+			this._header["SetUp"] = "1";
+			this._header["FEN"] = fen;
+		} else {
+			this._header["SetUp"] = null;
+			this._header["FEN"] = null;
+		}
+	}
+	reset() {
+		this.load(DEFAULT_POSITION);
+	}
+	get(square) {
+		return this._board[Ox88[square]];
+	}
+	findPiece(piece) {
+		const squares = [];
+		for (let i = Ox88.a8; i <= Ox88.h1; i++) {
+			if (i & 136) {
+				i += 7;
+				continue;
+			}
+			if (!this._board[i] || this._board[i]?.color !== piece.color) continue;
+			if (this._board[i].color === piece.color && this._board[i].type === piece.type) squares.push(algebraic(i));
+		}
+		return squares;
+	}
+	put({ type, color }, square) {
+		if (this._put({
+			type,
+			color
+		}, square)) {
+			this._updateCastlingRights();
+			this._updateEnPassantSquare();
+			this._updateSetup(this.fen());
+			return true;
+		}
+		return false;
+	}
+	_set(sq, piece) {
+		this._hash ^= this._pieceKey(sq);
+		this._board[sq] = piece;
+		this._hash ^= this._pieceKey(sq);
+	}
+	_put({ type, color }, square) {
+		if (SYMBOLS.indexOf(type.toLowerCase()) === -1) return false;
+		if (!(square in Ox88)) return false;
+		const sq = Ox88[square];
+		if (type == "k" && !(this._kings[color] == EMPTY$1 || this._kings[color] == sq)) return false;
+		const currentPieceOnSquare = this._board[sq];
+		if (currentPieceOnSquare && currentPieceOnSquare.type === "k") this._kings[currentPieceOnSquare.color] = EMPTY$1;
+		this._set(sq, {
+			type,
+			color
+		});
+		if (type === "k") this._kings[color] = sq;
+		return true;
+	}
+	_clear(sq) {
+		this._hash ^= this._pieceKey(sq);
+		delete this._board[sq];
+	}
+	remove(square) {
+		const piece = this.get(square);
+		this._clear(Ox88[square]);
+		if (piece && piece.type === "k") this._kings[piece.color] = EMPTY$1;
+		this._updateCastlingRights();
+		this._updateEnPassantSquare();
+		this._updateSetup(this.fen());
+		return piece;
+	}
+	_updateCastlingRights() {
+		this._hash ^= this._castlingKey();
+		const whiteKingInPlace = this._board[Ox88.e1]?.type === "k" && this._board[Ox88.e1]?.color === "w";
+		const blackKingInPlace = this._board[Ox88.e8]?.type === "k" && this._board[Ox88.e8]?.color === "b";
+		if (!whiteKingInPlace || this._board[Ox88.a1]?.type !== "r" || this._board[Ox88.a1]?.color !== "w") this._castling.w &= -65;
+		if (!whiteKingInPlace || this._board[Ox88.h1]?.type !== "r" || this._board[Ox88.h1]?.color !== "w") this._castling.w &= -33;
+		if (!blackKingInPlace || this._board[Ox88.a8]?.type !== "r" || this._board[Ox88.a8]?.color !== "b") this._castling.b &= -65;
+		if (!blackKingInPlace || this._board[Ox88.h8]?.type !== "r" || this._board[Ox88.h8]?.color !== "b") this._castling.b &= -33;
+		this._hash ^= this._castlingKey();
+	}
+	_updateEnPassantSquare() {
+		if (this._epSquare === EMPTY$1) return;
+		const startSquare = this._epSquare + (this._turn === "w" ? -16 : 16);
+		const currentSquare = this._epSquare + (this._turn === "w" ? 16 : -16);
+		const attackers = [currentSquare + 1, currentSquare - 1];
+		if (this._board[startSquare] !== null || this._board[this._epSquare] !== null || this._board[currentSquare]?.color !== swapColor(this._turn) || this._board[currentSquare]?.type !== "p") {
+			this._hash ^= this._epKey();
+			this._epSquare = EMPTY$1;
+			return;
+		}
+		const canCapture = (square) => !(square & 136) && this._board[square]?.color === this._turn && this._board[square]?.type === "p";
+		if (!attackers.some(canCapture)) {
+			this._hash ^= this._epKey();
+			this._epSquare = EMPTY$1;
+		}
+	}
+	_attacked(color, square, verbose) {
+		const attackers = [];
+		for (let i = Ox88.a8; i <= Ox88.h1; i++) {
+			if (i & 136) {
+				i += 7;
+				continue;
+			}
+			if (this._board[i] === void 0 || this._board[i].color !== color) continue;
+			const piece = this._board[i];
+			const difference = i - square;
+			if (difference === 0) continue;
+			const index = difference + 119;
+			if (ATTACKS[index] & PIECE_MASKS[piece.type]) {
+				if (piece.type === "p") {
+					if (difference > 0 && piece.color === "w" || difference <= 0 && piece.color === "b") {
+						if (!verbose) return true;
+						else attackers.push(algebraic(i));
+					}
+					continue;
+				}
+				if (piece.type === "n" || piece.type === "k") {
+					if (!verbose) return true;
+					else {
+						attackers.push(algebraic(i));
+						continue;
+					}
+				}
+				const offset = RAYS[index];
+				let j = i + offset;
+				let blocked = false;
+				while (j !== square) {
+					if (this._board[j] != null) {
+						blocked = true;
+						break;
+					}
+					j += offset;
+				}
+				if (!blocked) {
+					if (!verbose) return true;
+					else {
+						attackers.push(algebraic(i));
+						continue;
+					}
+				}
+			}
+		}
+		if (verbose) return attackers;
+		else return false;
+	}
+	attackers(square, attackedBy) {
+		if (!attackedBy) return this._attacked(this._turn, Ox88[square], true);
+		else return this._attacked(attackedBy, Ox88[square], true);
+	}
+	_isKingAttacked(color) {
+		const square = this._kings[color];
+		return square === -1 ? false : this._attacked(swapColor(color), square);
+	}
+	hash() {
+		return this._hash.toString(16);
+	}
+	isAttacked(square, attackedBy) {
+		return this._attacked(attackedBy, Ox88[square]);
+	}
+	isCheck() {
+		return this._isKingAttacked(this._turn);
+	}
+	inCheck() {
+		return this.isCheck();
+	}
+	isCheckmate() {
+		return this.isCheck() && this._moves().length === 0;
+	}
+	isStalemate() {
+		return !this.isCheck() && this._moves().length === 0;
+	}
+	isInsufficientMaterial() {
+		const pieces = {
+			b: 0,
+			n: 0,
+			r: 0,
+			q: 0,
+			k: 0,
+			p: 0
+		};
+		const bishops = [];
+		let numPieces = 0;
+		let squareColor = 0;
+		for (let i = Ox88.a8; i <= Ox88.h1; i++) {
+			squareColor = (squareColor + 1) % 2;
+			if (i & 136) {
+				i += 7;
+				continue;
+			}
+			const piece = this._board[i];
+			if (piece) {
+				pieces[piece.type] = piece.type in pieces ? pieces[piece.type] + 1 : 1;
+				if (piece.type === "b") bishops.push(squareColor);
+				numPieces++;
+			}
+		}
+		if (numPieces === 2) return true;
+		else if (numPieces === 3 && (pieces["b"] === 1 || pieces["n"] === 1)) return true;
+		else if (numPieces === pieces["b"] + 2) {
+			let sum = 0;
+			const len = bishops.length;
+			for (let i = 0; i < len; i++) sum += bishops[i];
+			if (sum === 0 || sum === len) return true;
+		}
+		return false;
+	}
+	isThreefoldRepetition() {
+		return this._getPositionCount(this._hash) >= 3;
+	}
+	isDrawByFiftyMoves() {
+		return this._halfMoves >= 100;
+	}
+	isDraw() {
+		return this.isDrawByFiftyMoves() || this.isStalemate() || this.isInsufficientMaterial() || this.isThreefoldRepetition();
+	}
+	isGameOver() {
+		return this.isCheckmate() || this.isDraw();
+	}
+	moves({ verbose = false, square = void 0, piece = void 0 } = {}) {
+		const moves = this._moves({
+			square,
+			piece
+		});
+		if (verbose) return moves.map((move) => new Move(this, move));
+		else return moves.map((move) => this._moveToSan(move, moves));
+	}
+	_moves({ legal = true, piece = void 0, square = void 0 } = {}) {
+		const forSquare = square ? square.toLowerCase() : void 0;
+		const forPiece = piece?.toLowerCase();
+		const moves = [];
+		const us = this._turn;
+		const them = swapColor(us);
+		let firstSquare = Ox88.a8;
+		let lastSquare = Ox88.h1;
+		let singleSquare = false;
+		if (forSquare) {
+			if (!(forSquare in Ox88)) return [];
+			else {
+				firstSquare = lastSquare = Ox88[forSquare];
+				singleSquare = true;
+			}
+		}
+		for (let from = firstSquare; from <= lastSquare; from++) {
+			if (from & 136) {
+				from += 7;
+				continue;
+			}
+			if (!this._board[from] || this._board[from].color === them) continue;
+			const { type } = this._board[from];
+			let to;
+			if (type === "p") {
+				if (forPiece && forPiece !== type) continue;
+				to = from + PAWN_OFFSETS[us][0];
+				if (!this._board[to]) {
+					addMove(moves, us, from, to, "p");
+					to = from + PAWN_OFFSETS[us][1];
+					if (SECOND_RANK[us] === rank(from) && !this._board[to]) addMove(moves, us, from, to, "p", void 0, BITS.BIG_PAWN);
+				}
+				for (let j = 2; j < 4; j++) {
+					to = from + PAWN_OFFSETS[us][j];
+					if (to & 136) continue;
+					if (this._board[to]?.color === them) addMove(moves, us, from, to, "p", this._board[to].type, BITS.CAPTURE);
+					else if (to === this._epSquare) addMove(moves, us, from, to, "p", "p", BITS.EP_CAPTURE);
+				}
+			} else {
+				if (forPiece && forPiece !== type) continue;
+				for (let j = 0, len = PIECE_OFFSETS[type].length; j < len; j++) {
+					const offset = PIECE_OFFSETS[type][j];
+					to = from;
+					while (true) {
+						to += offset;
+						if (to & 136) break;
+						if (!this._board[to]) addMove(moves, us, from, to, type);
+						else {
+							if (this._board[to].color === us) break;
+							addMove(moves, us, from, to, type, this._board[to].type, BITS.CAPTURE);
+							break;
+						}
+						if (type === "n" || type === "k") break;
+					}
+				}
+			}
+		}
+		if (forPiece === void 0 || forPiece === "k") {
+			if (!singleSquare || lastSquare === this._kings[us]) {
+				if (this._castling[us] & BITS.KSIDE_CASTLE) {
+					const castlingFrom = this._kings[us];
+					const castlingTo = castlingFrom + 2;
+					if (!this._board[castlingFrom + 1] && !this._board[castlingTo] && !this._attacked(them, this._kings[us]) && !this._attacked(them, castlingFrom + 1) && !this._attacked(them, castlingTo)) addMove(moves, us, this._kings[us], castlingTo, "k", void 0, BITS.KSIDE_CASTLE);
+				}
+				if (this._castling[us] & BITS.QSIDE_CASTLE) {
+					const castlingFrom = this._kings[us];
+					const castlingTo = castlingFrom - 2;
+					if (!this._board[castlingFrom - 1] && !this._board[castlingFrom - 2] && !this._board[castlingFrom - 3] && !this._attacked(them, this._kings[us]) && !this._attacked(them, castlingFrom - 1) && !this._attacked(them, castlingTo)) addMove(moves, us, this._kings[us], castlingTo, "k", void 0, BITS.QSIDE_CASTLE);
+				}
+			}
+		}
+		if (!legal || this._kings[us] === -1) return moves;
+		const legalMoves = [];
+		for (let i = 0, len = moves.length; i < len; i++) {
+			this._makeMove(moves[i]);
+			if (!this._isKingAttacked(us)) legalMoves.push(moves[i]);
+			this._undoMove();
+		}
+		return legalMoves;
+	}
+	move(move, { strict = false } = {}) {
+		let moveObj = null;
+		if (typeof move === "string") moveObj = this._moveFromSan(move, strict);
+		else if (move === null) moveObj = this._moveFromSan(SAN_NULLMOVE, strict);
+		else if (typeof move === "object") {
+			const moves = this._moves();
+			for (let i = 0, len = moves.length; i < len; i++) if (move.from === algebraic(moves[i].from) && move.to === algebraic(moves[i].to) && (!("promotion" in moves[i]) || move.promotion === moves[i].promotion)) {
+				moveObj = moves[i];
+				break;
+			}
+		}
+		if (!moveObj) {
+			if (typeof move === "string") throw new Error(`Invalid move: ${move}`);
+			else throw new Error(`Invalid move: ${JSON.stringify(move)}`);
+		}
+		if (this.isCheck() && moveObj.flags & BITS.NULL_MOVE) throw new Error("Null move not allowed when in check");
+		const prettyMove = new Move(this, moveObj);
+		this._makeMove(moveObj);
+		this._incPositionCount();
+		return prettyMove;
+	}
+	_push(move) {
+		this._history.push({
+			move,
+			kings: {
+				b: this._kings.b,
+				w: this._kings.w
+			},
+			turn: this._turn,
+			castling: {
+				b: this._castling.b,
+				w: this._castling.w
+			},
+			epSquare: this._epSquare,
+			halfMoves: this._halfMoves,
+			moveNumber: this._moveNumber
+		});
+	}
+	_movePiece(from, to) {
+		this._hash ^= this._pieceKey(from);
+		this._board[to] = this._board[from];
+		delete this._board[from];
+		this._hash ^= this._pieceKey(to);
+	}
+	_makeMove(move) {
+		const us = this._turn;
+		const them = swapColor(us);
+		this._push(move);
+		if (move.flags & BITS.NULL_MOVE) {
+			if (us === "b") this._moveNumber++;
+			this._halfMoves++;
+			this._turn = them;
+			this._epSquare = EMPTY$1;
+			return;
+		}
+		this._hash ^= this._epKey();
+		this._hash ^= this._castlingKey();
+		if (move.captured) this._hash ^= this._pieceKey(move.to);
+		this._movePiece(move.from, move.to);
+		if (move.flags & BITS.EP_CAPTURE) {
+			if (this._turn === "b") this._clear(move.to - 16);
+			else this._clear(move.to + 16);
+		}
+		if (move.promotion) {
+			this._clear(move.to);
+			this._set(move.to, {
+				type: move.promotion,
+				color: us
+			});
+		}
+		if (this._board[move.to].type === "k") {
+			this._kings[us] = move.to;
+			if (move.flags & BITS.KSIDE_CASTLE) {
+				const castlingTo = move.to - 1;
+				const castlingFrom = move.to + 1;
+				this._movePiece(castlingFrom, castlingTo);
+			} else if (move.flags & BITS.QSIDE_CASTLE) {
+				const castlingTo = move.to + 1;
+				const castlingFrom = move.to - 2;
+				this._movePiece(castlingFrom, castlingTo);
+			}
+			this._castling[us] = 0;
+		}
+		if (this._castling[us]) {
+			for (let i = 0, len = ROOKS[us].length; i < len; i++) if (move.from === ROOKS[us][i].square && this._castling[us] & ROOKS[us][i].flag) {
+				this._castling[us] ^= ROOKS[us][i].flag;
+				break;
+			}
+		}
+		if (this._castling[them]) {
+			for (let i = 0, len = ROOKS[them].length; i < len; i++) if (move.to === ROOKS[them][i].square && this._castling[them] & ROOKS[them][i].flag) {
+				this._castling[them] ^= ROOKS[them][i].flag;
+				break;
+			}
+		}
+		this._hash ^= this._castlingKey();
+		if (move.flags & BITS.BIG_PAWN) {
+			let epSquare;
+			if (us === "b") epSquare = move.to - 16;
+			else epSquare = move.to + 16;
+			if (!(move.to - 1 & 136) && this._board[move.to - 1]?.type === "p" && this._board[move.to - 1]?.color === them || !(move.to + 1 & 136) && this._board[move.to + 1]?.type === "p" && this._board[move.to + 1]?.color === them) {
+				this._epSquare = epSquare;
+				this._hash ^= this._epKey();
+			} else this._epSquare = EMPTY$1;
+		} else this._epSquare = EMPTY$1;
+		if (move.piece === "p") this._halfMoves = 0;
+		else if (move.flags & (BITS.CAPTURE | BITS.EP_CAPTURE)) this._halfMoves = 0;
+		else this._halfMoves++;
+		if (us === "b") this._moveNumber++;
+		this._turn = them;
+		this._hash ^= SIDE_KEY;
+	}
+	undo() {
+		const hash = this._hash;
+		const move = this._undoMove();
+		if (move) {
+			const prettyMove = new Move(this, move);
+			this._decPositionCount(hash);
+			return prettyMove;
+		}
+		return null;
+	}
+	_undoMove() {
+		const old = this._history.pop();
+		if (old === void 0) return null;
+		this._hash ^= this._epKey();
+		this._hash ^= this._castlingKey();
+		const move = old.move;
+		this._kings = old.kings;
+		this._turn = old.turn;
+		this._castling = old.castling;
+		this._epSquare = old.epSquare;
+		this._halfMoves = old.halfMoves;
+		this._moveNumber = old.moveNumber;
+		this._hash ^= this._epKey();
+		this._hash ^= this._castlingKey();
+		this._hash ^= SIDE_KEY;
+		const us = this._turn;
+		const them = swapColor(us);
+		if (move.flags & BITS.NULL_MOVE) return move;
+		this._movePiece(move.to, move.from);
+		if (move.piece) {
+			this._clear(move.from);
+			this._set(move.from, {
+				type: move.piece,
+				color: us
+			});
+		}
+		if (move.captured) {
+			if (move.flags & BITS.EP_CAPTURE) {
+				let index;
+				if (us === "b") index = move.to - 16;
+				else index = move.to + 16;
+				this._set(index, {
+					type: "p",
+					color: them
+				});
+			} else this._set(move.to, {
+				type: move.captured,
+				color: them
+			});
+		}
+		if (move.flags & (BITS.KSIDE_CASTLE | BITS.QSIDE_CASTLE)) {
+			let castlingTo, castlingFrom;
+			if (move.flags & BITS.KSIDE_CASTLE) {
+				castlingTo = move.to + 1;
+				castlingFrom = move.to - 1;
+			} else {
+				castlingTo = move.to - 2;
+				castlingFrom = move.to + 1;
+			}
+			this._movePiece(castlingFrom, castlingTo);
+		}
+		return move;
+	}
+	pgn({ newline = "\n", maxWidth = 0 } = {}) {
+		const result = [];
+		let headerExists = false;
+		for (const i in this._header) {
+			if (this._header[i]) result.push(`[${i} "${this._header[i]}"]` + newline);
+			headerExists = true;
+		}
+		if (headerExists && this._history.length) result.push(newline);
+		const appendComment = (moveString) => {
+			const comment = this._comments[this.fen()];
+			if (typeof comment !== "undefined") {
+				const delimiter = moveString.length > 0 ? " " : "";
+				moveString = `${moveString}${delimiter}{${comment}}`;
+			}
+			return moveString;
+		};
+		const reversedHistory = [];
+		while (this._history.length > 0) reversedHistory.push(this._undoMove());
+		const moves = [];
+		let moveString = "";
+		if (reversedHistory.length === 0) moves.push(appendComment(""));
+		while (reversedHistory.length > 0) {
+			moveString = appendComment(moveString);
+			const move = reversedHistory.pop();
+			if (!move) break;
+			if (!this._history.length && move.color === "b") {
+				const prefix = `${this._moveNumber}. ...`;
+				moveString = moveString ? `${moveString} ${prefix}` : prefix;
+			} else if (move.color === "w") {
+				if (moveString.length) moves.push(moveString);
+				moveString = this._moveNumber + ".";
+			}
+			moveString = moveString + " " + this._moveToSan(move, this._moves({ legal: true }));
+			this._makeMove(move);
+		}
+		if (moveString.length) moves.push(appendComment(moveString));
+		moves.push(this._header.Result || "*");
+		if (maxWidth === 0) return result.join("") + moves.join(" ");
+		const strip = function() {
+			if (result.length > 0 && result[result.length - 1] === " ") {
+				result.pop();
+				return true;
+			}
+			return false;
+		};
+		const wrapComment = function(width, move) {
+			for (const token of move.split(" ")) {
+				if (!token) continue;
+				if (width + token.length > maxWidth) {
+					while (strip()) width--;
+					result.push(newline);
+					width = 0;
+				}
+				result.push(token);
+				width += token.length;
+				result.push(" ");
+				width++;
+			}
+			if (strip()) width--;
+			return width;
+		};
+		let currentWidth = 0;
+		for (let i = 0; i < moves.length; i++) {
+			if (currentWidth + moves[i].length > maxWidth) {
+				if (moves[i].includes("{")) {
+					currentWidth = wrapComment(currentWidth, moves[i]);
+					continue;
+				}
+			}
+			if (currentWidth + moves[i].length > maxWidth && i !== 0) {
+				if (result[result.length - 1] === " ") result.pop();
+				result.push(newline);
+				currentWidth = 0;
+			} else if (i !== 0) {
+				result.push(" ");
+				currentWidth++;
+			}
+			result.push(moves[i]);
+			currentWidth += moves[i].length;
+		}
+		return result.join("");
+	}
+	/**
+	* @deprecated Use `setHeader` and `getHeaders` instead. This method will return null header tags (which is not what you want)
+	*/
+	header(...args) {
+		for (let i = 0; i < args.length; i += 2) if (typeof args[i] === "string" && typeof args[i + 1] === "string") this._header[args[i]] = args[i + 1];
+		return this._header;
+	}
+	setHeader(key, value) {
+		this._header[key] = value ?? SEVEN_TAG_ROSTER[key] ?? null;
+		return this.getHeaders();
+	}
+	removeHeader(key) {
+		if (key in this._header) {
+			this._header[key] = SEVEN_TAG_ROSTER[key] || null;
+			return true;
+		}
+		return false;
+	}
+	getHeaders() {
+		const nonNullHeaders = {};
+		for (const [key, value] of Object.entries(this._header)) if (value !== null) nonNullHeaders[key] = value;
+		return nonNullHeaders;
+	}
+	loadPgn(pgn, { strict = false, newlineChar = "\r?\n" } = {}) {
+		if (newlineChar !== "\r?\n") pgn = pgn.replace(new RegExp(newlineChar, "g"), "\n");
+		const parsedPgn = peg$parse(pgn);
+		this.reset();
+		const headers = parsedPgn.headers;
+		let fen = "";
+		for (const key in headers) {
+			if (key.toLowerCase() === "fen") fen = headers[key];
+			this.header(key, headers[key]);
+		}
+		if (!strict) {
+			if (fen) this.load(fen, { preserveHeaders: true });
+		} else if (headers["SetUp"] === "1") {
+			if (!("FEN" in headers)) throw new Error("Invalid PGN: FEN tag must be supplied with SetUp tag");
+			this.load(headers["FEN"], { preserveHeaders: true });
+		}
+		let node = parsedPgn.root;
+		while (node) {
+			if (node.move) {
+				const move = this._moveFromSan(node.move, strict);
+				if (move == null) throw new Error(`Invalid move in PGN: ${node.move}`);
+				else {
+					this._makeMove(move);
+					this._incPositionCount();
+				}
+			}
+			if (node.comment !== void 0) this._comments[this.fen()] = node.comment;
+			node = node.variations[0];
+		}
+		const result = parsedPgn.result;
+		if (result && Object.keys(this._header).length && this._header["Result"] !== result) this.setHeader("Result", result);
+	}
+	_moveToSan(move, moves) {
+		let output = "";
+		if (move.flags & BITS.KSIDE_CASTLE) output = "O-O";
+		else if (move.flags & BITS.QSIDE_CASTLE) output = "O-O-O";
+		else if (move.flags & BITS.NULL_MOVE) return SAN_NULLMOVE;
+		else {
+			if (move.piece !== "p") {
+				const disambiguator = getDisambiguator(move, moves);
+				output += move.piece.toUpperCase() + disambiguator;
+			}
+			if (move.flags & (BITS.CAPTURE | BITS.EP_CAPTURE)) {
+				if (move.piece === "p") output += algebraic(move.from)[0];
+				output += "x";
+			}
+			output += algebraic(move.to);
+			if (move.promotion) output += "=" + move.promotion.toUpperCase();
+		}
+		this._makeMove(move);
+		if (this.isCheck()) {
+			if (this.isCheckmate()) output += "#";
+			else output += "+";
+		}
+		this._undoMove();
+		return output;
+	}
+	_moveFromSan(move, strict = false) {
+		let cleanMove = strippedSan(move);
+		if (!strict) {
+			if (cleanMove === "0-0") cleanMove = "O-O";
+			else if (cleanMove === "0-0-0") cleanMove = "O-O-O";
+		}
+		if (cleanMove == SAN_NULLMOVE) return {
+			color: this._turn,
+			from: 0,
+			to: 0,
+			piece: "k",
+			flags: BITS.NULL_MOVE
+		};
+		let pieceType = inferPieceType(cleanMove);
+		let moves = this._moves({
+			legal: true,
+			piece: pieceType
+		});
+		for (let i = 0, len = moves.length; i < len; i++) if (cleanMove === strippedSan(this._moveToSan(moves[i], moves))) return moves[i];
+		if (strict) return null;
+		let piece = void 0;
+		let matches = void 0;
+		let from = void 0;
+		let to = void 0;
+		let promotion = void 0;
+		let overlyDisambiguated = false;
+		matches = cleanMove.match(/([pnbrqkPNBRQK])?([a-h][1-8])x?-?([a-h][1-8])([qrbnQRBN])?/);
+		if (matches) {
+			piece = matches[1];
+			from = matches[2];
+			to = matches[3];
+			promotion = matches[4];
+			if (from.length == 1) overlyDisambiguated = true;
+		} else {
+			matches = cleanMove.match(/([pnbrqkPNBRQK])?([a-h]?[1-8]?)x?-?([a-h][1-8])([qrbnQRBN])?/);
+			if (matches) {
+				piece = matches[1];
+				from = matches[2];
+				to = matches[3];
+				promotion = matches[4];
+				if (from.length == 1) overlyDisambiguated = true;
+			}
+		}
+		pieceType = inferPieceType(cleanMove);
+		moves = this._moves({
+			legal: true,
+			piece: piece ? piece : pieceType
+		});
+		if (!to) return null;
+		for (let i = 0, len = moves.length; i < len; i++) if (!from) {
+			if (cleanMove === strippedSan(this._moveToSan(moves[i], moves)).replace("x", "")) return moves[i];
+		} else if ((!piece || piece.toLowerCase() == moves[i].piece) && Ox88[from] == moves[i].from && Ox88[to] == moves[i].to && (!promotion || promotion.toLowerCase() == moves[i].promotion)) return moves[i];
+		else if (overlyDisambiguated) {
+			const square = algebraic(moves[i].from);
+			if ((!piece || piece.toLowerCase() == moves[i].piece) && Ox88[to] == moves[i].to && (from == square[0] || from == square[1]) && (!promotion || promotion.toLowerCase() == moves[i].promotion)) return moves[i];
+		}
+		return null;
+	}
+	ascii() {
+		let s = "   +------------------------+\n";
+		for (let i = Ox88.a8; i <= Ox88.h1; i++) {
+			if (file(i) === 0) s += " " + "87654321"[rank(i)] + " |";
+			if (this._board[i]) {
+				const piece = this._board[i].type;
+				const symbol = this._board[i].color === "w" ? piece.toUpperCase() : piece.toLowerCase();
+				s += " " + symbol + " ";
+			} else s += " . ";
+			if (i + 1 & 136) {
+				s += "|\n";
+				i += 8;
+			}
+		}
+		s += "   +------------------------+\n";
+		s += "     a  b  c  d  e  f  g  h";
+		return s;
+	}
+	perft(depth) {
+		const moves = this._moves({ legal: false });
+		let nodes = 0;
+		const color = this._turn;
+		for (let i = 0, len = moves.length; i < len; i++) {
+			this._makeMove(moves[i]);
+			if (!this._isKingAttacked(color)) {
+				if (depth - 1 > 0) nodes += this.perft(depth - 1);
+				else nodes++;
+			}
+			this._undoMove();
+		}
+		return nodes;
+	}
+	setTurn(color) {
+		if (this._turn == color) return false;
+		this.move("--");
+		return true;
+	}
+	turn() {
+		return this._turn;
+	}
+	board() {
+		const output = [];
+		let row = [];
+		for (let i = Ox88.a8; i <= Ox88.h1; i++) {
+			if (this._board[i] == null) row.push(null);
+			else row.push({
+				square: algebraic(i),
+				type: this._board[i].type,
+				color: this._board[i].color
+			});
+			if (i + 1 & 136) {
+				output.push(row);
+				row = [];
+				i += 8;
+			}
+		}
+		return output;
+	}
+	squareColor(square) {
+		if (square in Ox88) {
+			const sq = Ox88[square];
+			return (rank(sq) + file(sq)) % 2 === 0 ? "light" : "dark";
+		}
+		return null;
+	}
+	history({ verbose = false } = {}) {
+		const reversedHistory = [];
+		const moveHistory = [];
+		while (this._history.length > 0) reversedHistory.push(this._undoMove());
+		while (true) {
+			const move = reversedHistory.pop();
+			if (!move) break;
+			if (verbose) moveHistory.push(new Move(this, move));
+			else moveHistory.push(this._moveToSan(move, this._moves()));
+			this._makeMove(move);
+		}
+		return moveHistory;
+	}
+	_getPositionCount(hash) {
+		return this._positionCount.get(hash) ?? 0;
+	}
+	_incPositionCount() {
+		this._positionCount.set(this._hash, (this._positionCount.get(this._hash) ?? 0) + 1);
+	}
+	_decPositionCount(hash) {
+		const currentCount = this._positionCount.get(hash) ?? 0;
+		if (currentCount === 1) this._positionCount.delete(hash);
+		else this._positionCount.set(hash, currentCount - 1);
+	}
+	_pruneComments() {
+		const reversedHistory = [];
+		const currentComments = {};
+		const copyComment = (fen) => {
+			if (fen in this._comments) currentComments[fen] = this._comments[fen];
+		};
+		while (this._history.length > 0) reversedHistory.push(this._undoMove());
+		copyComment(this.fen());
+		while (true) {
+			const move = reversedHistory.pop();
+			if (!move) break;
+			this._makeMove(move);
+			copyComment(this.fen());
+		}
+		this._comments = currentComments;
+	}
+	getComment() {
+		return this._comments[this.fen()];
+	}
+	setComment(comment) {
+		this._comments[this.fen()] = comment.replace("{", "[").replace("}", "]");
+	}
+	/**
+	* @deprecated Renamed to `removeComment` for consistency
+	*/
+	deleteComment() {
+		return this.removeComment();
+	}
+	removeComment() {
+		const comment = this._comments[this.fen()];
+		delete this._comments[this.fen()];
+		return comment;
+	}
+	getComments() {
+		this._pruneComments();
+		return Object.keys(this._comments).map((fen) => {
+			return {
+				fen,
+				comment: this._comments[fen]
+			};
+		});
+	}
+	/**
+	* @deprecated Renamed to `removeComments` for consistency
+	*/
+	deleteComments() {
+		return this.removeComments();
+	}
+	removeComments() {
+		this._pruneComments();
+		return Object.keys(this._comments).map((fen) => {
+			const comment = this._comments[fen];
+			delete this._comments[fen];
+			return {
+				fen,
+				comment
+			};
+		});
+	}
+	setCastlingRights(color, rights) {
+		for (const side of ["k", "q"]) if (rights[side] !== void 0) {
+			if (rights[side]) this._castling[color] |= SIDES[side];
+			else this._castling[color] &= ~SIDES[side];
+		}
+		this._updateCastlingRights();
+		const result = this.getCastlingRights(color);
+		return (rights["k"] === void 0 || rights["k"] === result["k"]) && (rights["q"] === void 0 || rights["q"] === result["q"]);
+	}
+	getCastlingRights(color) {
+		return {
+			["k"]: (this._castling[color] & SIDES["k"]) !== 0,
+			["q"]: (this._castling[color] & SIDES["q"]) !== 0
+		};
+	}
+	moveNumber() {
+		return this._moveNumber;
+	}
+};
+// src/chessReplay.ts
+function chessSides(session) {
+	const st = session.state;
+	const p = session.participants ?? [];
+	return {
+		white: st?.white ?? p[0] ?? "white",
+		black: st?.black ?? p[1] ?? "black"
+	};
+}
+function shortAgent(id, max = 14) {
+	if (id.length <= max) return id;
+	return `…${id.slice(-max + 1)}`;
+}
+/** Rebuild positions from UCI (works even when relay stored duplicate FENs without python-chess). */
+function buildChessReplay(actions, fallbackFen, startFen) {
+	const chess = startFen ? new Chess(startFen) : new Chess();
+	const fens = [chess.fen()];
+	const sans = [];
+	const moveAgents = [];
+	let applied = 0;
+	for (const a of actions) {
+		if (a.action_type !== "move") continue;
+		const uci = String(a.payload?.uci ?? a.payload?.move ?? "").trim();
+		if (uci.length < 4) continue;
+		const from = uci.slice(0, 2);
+		const to = uci.slice(2, 4);
+		const promotion = uci.length > 4 ? uci[4] : void 0;
+		let ok = false;
+		try {
+			const m = chess.move({
+				from,
+				to,
+				promotion
+			});
+			if (m) {
+				sans.push(m.san);
+				moveAgents.push(a.agent_id);
+				fens.push(chess.fen());
+				applied++;
+				ok = true;
+			}
+		} catch {
+			ok = false;
+		}
+		if (ok) continue;
+		const serverFen = a.result?.new_state?.board_fen;
+		if (serverFen && serverFen !== fens[fens.length - 1]) try {
+			chess.load(serverFen);
+			sans.push(uci);
+			moveAgents.push(a.agent_id);
+			fens.push(serverFen);
+			applied++;
+		} catch {}
+	}
+	const playable = applied > 0 && new Set(fens).size > 1;
+	if (!playable && fallbackFen && fallbackFen !== "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") try {
+		chess.load(fallbackFen);
+		fens.push(fallbackFen);
+	} catch {}
+	return {
+		fens,
+		sans,
+		moveAgents,
+		playable
+	};
+}
+function sessionIsActive(status) {
+	return status === "active";
+}
+function chessSessionPlayable(s) {
+	if (!s.module_type.includes("chess")) return true;
+	return (s.step_number ?? 0) > 0;
+}
+// src/ui/chessMatch.tsx
+function ChessPlayersBar({ session }) {
+	const { white, black } = chessSides(session);
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-chess-players",
+		"aria-label": "Players",
+		children: [
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-chess-players__side",
+				"aria-label": `White: ${white}`,
+				children: [/* @__PURE__ */ jsx("span", {
+					className: "e-chess-players__piece",
+					"aria-hidden": true,
+					children: "♔"
+				}), /* @__PURE__ */ jsx("span", {
+					className: "e-chess-players__name",
+					children: shortAgent(white, 22)
+				})]
+			}),
+			/* @__PURE__ */ jsx("span", {
+				className: "e-chess-players__vs",
+				"aria-hidden": true,
+				children: "vs"
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-chess-players__side",
+				"aria-label": `Black: ${black}`,
+				children: [/* @__PURE__ */ jsx("span", {
+					className: "e-chess-players__piece e-chess-players__piece--dark",
+					"aria-hidden": true,
+					children: "♚"
+				}), /* @__PURE__ */ jsx("span", {
+					className: "e-chess-players__name",
+					children: shortAgent(black, 22)
+				})]
+			})
+		]
+	});
+}
+function ChessMoveLine({ sans, idx, onPick }) {
+	if (sans.length === 0) return null;
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-chess-movelist",
+		role: "list",
+		children: sans.map((san, i) => {
+			const frame = i + 1;
+			const moveNo = Math.floor(i / 2) + 1;
+			const prefix = i % 2 === 0 ? `${moveNo}.` : "";
+			return /* @__PURE__ */ jsxs("button", {
+				type: "button",
+				role: "listitem",
+				className: `e-chess-movelist__btn${frame === idx ? " e-chess-movelist__btn--on" : ""}`,
+				onClick: () => onPick(frame),
+				title: `Go to after ${san}`,
+				children: [prefix, san]
+			}, `${moveNo}-${i}-${san}`);
+		})
+	});
+}
+// src/sessionSelect.ts
+/**
+* Whether a session belongs in a section's list under a filter chip. The
+* default chip ("") is the set plays in Games (Bargain among them) — chess has
+* its own chip and is never the default — and every job in Deals. A chip
+* matches its game by name, so a retired `:v1` set play in the history sits
+* under its `:v2` chip.
+*/
+function sessionMatches(s, section, filter) {
+	if (filter) return gameBase(s.module_type) === gameBase(filter);
+	return section === "games" ? isTablePlay(s.module_type) : isJobModule(s.module_type);
+}
+/**
+* Resolve a deep-linked session id against both session lists, reporting which
+* tab it lives on.
+*
+* P36-3: GamesView used to search only `shown` — the currently selected tab's
+* list, already narrowed by the game-type rail. Since the tab defaults to
+* "live", following a link to a finished game selected nothing and reported
+* nothing; the view just stayed where it was. Searching both lists is most of
+* the fix, and returning the tab is the rest: finding the session is useless if
+* the caller keeps rendering the other list.
+*
+* `null` means "not in either list" — which is still reachable, since the rail
+* filters both and either can exceed a page. That is a signal to fetch the
+* session by id, not a reason to do nothing.
+*/
+function resolveDeepLinkedSession(sessionId, live, history) {
+	if (!sessionId) return null;
+	const inLive = live.find((s) => s.session_id === sessionId);
+	if (inLive) return {
+		session: inLive,
+		tab: "live"
+	};
+	const inHistory = history.find((s) => s.session_id === sessionId);
+	if (inHistory) return {
+		session: inHistory,
+		tab: "history"
+	};
+	return null;
+}
+/**
+* Whether to offer the delivery commands (confirm / dispute) on a session panel.
+*
+* P37-3: these are Ed25519-signed actions, so the dashboard can only ever
+* *show* them — see McpCommandHint. Three conditions, each for its own reason:
+* a service module (nothing else has a delivery step), a session still running
+* (a settled contract has nothing left to decide), and a viewer who is actually
+* a participant (a spectator confirming someone else's delivery is not a thing
+* that exists).
+*/
+function shouldShowDeliveryActions(session, viewerId) {
+	if (!viewerId) return false;
+	if (!session.module_type.startsWith("emporia:service")) return false;
+	if (!sessionIsActive(session.status)) return false;
+	return session.participants.includes(viewerId);
+}
+// src/ui/AuditBadge.tsx
+/**
+* Hash-chain audit verification badge — proves the tamper-evident public
+* receipt log (session_audit.py) actually verifies, not just that hashing
+* happens somewhere server-side.
+*/
+function AuditBadge({ sessionId }) {
+	const [audit, loading, error] = useInterval(() => api.sessionAudit(sessionId), 1e4, [sessionId]);
+	if (error && !audit) return /* @__PURE__ */ jsx(IntegrityUnknown, {
+		what: "audit log",
+		detail: error
+	});
+	if (loading && !audit) return /* @__PURE__ */ jsx(IntegrityChecking, { what: "audit log" });
+	if (!audit || audit.chain.length <= 1) return null;
+	const entries = audit.chain.length - 1;
+	return /* @__PURE__ */ jsx(Text, {
+		className: audit.verified ? void 0 : "e-faint",
+		style: {
+			fontSize: 11,
+			color: audit.verified ? "var(--theme-focused-foreground)" : void 0
+		},
+		title: `The relay's own check: ${audit.message}. For a check that does not trust the relay, see "verified here" or run verify_session.`,
+		children: audit.verified ? `relay: chain ok (${entries})` : "✗ chain broken"
+	});
+}
+// src/resultsFormat.ts
+/** P134: how a finished game ended, in a few words. */
+function verdict(r) {
+	if (r.outcome_type === "draw") return "draw — stakes refunded";
+	if (!r.winner) return r.outcome_type ?? "ended";
+	const how = r.termination === "timeout" ? " on time" : r.termination?.includes("CHECKMATE") ? " by checkmate" : "";
+	return `${shortAgent(r.winner, 16)} won${how}`;
+}
+// src/ui/GameResults.tsx
+/**
+* Finished games on this relay (P134) — the record behind the standings.
+*
+* Same rules as the Leaderboard beside it: scope stated, a failed fetch is not
+* an empty list. A Blotto game shows every round's allocations, because that
+* history is the game: it is what the next opponent studies.
+*/
+function GameResults({ moduleType, onOpen }) {
+	const [data, , error] = useInterval(() => api.results(moduleType), 3e4, [moduleType]);
+	if (error && !data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		title: error,
+		children: "? results unavailable — the relay did not answer. This is not an empty list."
+	});
+	if (!data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		children: "… loading results"
+	});
+	if (data.results.length === 0) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		children: "No finished games on this relay yet."
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		style: { marginTop: 10 },
+		children: [/* @__PURE__ */ jsx(Text, {
+			className: "e-dim",
+			style: { fontSize: "0.68rem" },
+			children: "Results — this relay only"
+		}), /* @__PURE__ */ jsx("div", {
+			className: "e-compact-table",
+			style: {
+				overflowX: "auto",
+				marginTop: 6
+			},
+			children: /* @__PURE__ */ jsxs("table", {
+				className: "e-listings-native",
+				children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: "ENDED" }),
+					/* @__PURE__ */ jsx("td", { children: "GAME" }),
+					/* @__PURE__ */ jsx("td", { children: "PLAYERS" }),
+					/* @__PURE__ */ jsx("td", { children: "RESULT" }),
+					/* @__PURE__ */ jsx("td", { children: "STAKE" })
+				] }) }), /* @__PURE__ */ jsx("tbody", { children: data.results.map((r) => /* @__PURE__ */ jsx(ResultRow, {
+					r,
+					onOpen
+				}, r.session_id)) })]
+			})
+		})]
+	});
+}
+function ResultRow({ r, onOpen }) {
+	const health = useRelayHealth();
+	const money = r.stake_per_participant && Number(r.stake_per_participant) > 0 ? stakeText(Number(r.stake_per_participant), r.currency ?? void 0, {
+		rails: r.paid_by,
+		escrowNetwork: health?.x402_escrow_network
+	}) : null;
+	const stake = money ? money.amount : "free";
+	return /* @__PURE__ */ jsxs(Fragment, { children: [
+		/* @__PURE__ */ jsxs("tr", { children: [
+			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				style: { fontSize: 11 },
+				children: new Date(r.ended_at).toLocaleString([], {
+					month: "short",
+					day: "numeric",
+					hour: "2-digit",
+					minute: "2-digit"
+				})
+			}) }),
+			/* @__PURE__ */ jsx("td", { children: onOpen ? /* @__PURE__ */ jsx("button", {
+				type: "button",
+				className: "e-entity-chip",
+				title: `Open ${r.session_id}: moves, replay, table talk`,
+				onClick: () => onOpen(r.session_id),
+				children: r.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
+			}) : /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: r.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
+			}) }),
+			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: r.participants.map((p) => shortAgent(p, 12)).join(" v ") }) }),
+			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: verdict(r) }) }),
+			/* @__PURE__ */ jsxs("td", { children: [/* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: stake
+			}), money?.via ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("br", {}), /* @__PURE__ */ jsx("span", {
+				className: "e-faint",
+				style: { fontSize: 11 },
+				children: money.via
+			})] }) : null] })
+		] }),
+		setPlay(r.module_type) === "emporia:blotto" ? /* @__PURE__ */ jsx(BlottoRounds, { r }) : null,
+		setPlay(r.module_type) === "emporia:two-thirds" || setPlay(r.module_type) === "emporia:lowest-unique" ? /* @__PURE__ */ jsx(TwoThirdsPicks, { r }) : null,
+		/* @__PURE__ */ jsx(CallsLine, { r }),
+		setPlay(r.module_type) === "emporia:bargain" ? /* @__PURE__ */ jsx(BargainLine, { r }) : null
+	] });
+}
+/** A set play by its name, without the version: the live :v2 games and the retired :v1
+*  ones still in the history are drawn the same way (calls). */
+function setPlay(moduleType) {
+	return moduleType.replace(/:v\d+$/, "");
+}
+/** Calls (`:v2`): each player's revealed call, its own chance of winning sealed with its first move. */
+function CallsLine({ r }) {
+	const calls = Object.entries(r.record.calls ?? {});
+	const sealed = (r.record.called ?? []).filter((p) => !calls.some(([q]) => q === p));
+	if (calls.length === 0 && sealed.length === 0) return null;
+	return /* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("td", {}), /* @__PURE__ */ jsx("td", {
+		colSpan: 4,
+		children: /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			style: {
+				fontSize: 11,
+				fontVariantNumeric: "tabular-nums"
+			},
+			children: ["calls: ", [...calls.map(([p, c]) => `${shortAgent(p, 10)} ${c} %`), ...sealed.map((p) => `${shortAgent(p, 10)} unrevealed`)].join(" · ")]
+		})
+	})] });
+}
+var goods = (g) => [
+	"silk",
+	"spice",
+	"amber"
+].map((k) => `${g?.[k] ?? 0} ${k}`).join(" ");
+/** Bargain: how it ended and, once the hands are published, what each side really held. */
+function BargainLine({ r }) {
+	const ended = r.record.ended;
+	const offers = r.record.offers ?? [];
+	const hands = r.record.deal?.hands ?? {};
+	const taken = ended?.how === "accepted" ? offers.find((o) => o.n === ended.offer) : void 0;
+	return /* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("td", {}), /* @__PURE__ */ jsxs("td", {
+		colSpan: 4,
+		children: [/* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: {
+				fontSize: 11,
+				display: "block",
+				fontVariantNumeric: "tabular-nums"
+			},
+			children: taken ? `deal on offer ${taken.n}: ${r.participants.map((p) => `${shortAgent(p, 10)} gets ${goods(taken.allocation[p])}`).join(" · ")}` : ended?.how === "declined" ? `no deal — the last offer was declined (${offers.length} offers)` : `${offers.length} offers, no deal`
+		}), Object.keys(hands).length > 0 ? /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			style: {
+				fontSize: 11,
+				display: "block",
+				fontVariantNumeric: "tabular-nums"
+			},
+			children: ["held: ", r.participants.map((p) => `${shortAgent(p, 10)} ${goods(hands[p]?.values)}`).join(" · ")]
+		}) : null]
+	})] });
+}
+function TwoThirdsPicks({ r }) {
+	const picks = Object.entries(r.record.guesses ?? {});
+	if (picks.length === 0) return null;
+	const target = setPlay(r.module_type) === "emporia:two-thirds" ? `target ${(2 / 3 * (picks.reduce((n, [, g]) => n + g, 0) / picks.length)).toFixed(1)}` : "lowest picked once wins";
+	return /* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("td", {}), /* @__PURE__ */ jsx("td", {
+		colSpan: 4,
+		children: /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			style: {
+				fontSize: 11,
+				fontVariantNumeric: "tabular-nums"
+			},
+			children: [
+				"picks: ",
+				picks.map(([p, g]) => `${shortAgent(p, 10)} ${g}`).join(" · "),
+				" — ",
+				target
+			]
+		})
+	})] });
+}
+function BlottoRounds({ r }) {
+	const history = r.record.history ?? [];
+	if (history.length === 0) return null;
+	return /* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("td", {}), /* @__PURE__ */ jsx("td", {
+		colSpan: 4,
+		children: history.map((h) => /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			style: {
+				fontSize: 11,
+				display: "block",
+				fontVariantNumeric: "tabular-nums"
+			},
+			children: [
+				"round ",
+				h.round,
+				": ",
+				r.participants.map((p) => `${shortAgent(p, 10)} [${(h.allocations[p] ?? []).join(" ")}]`).join(" · "),
+				h.winner ? ` → ${shortAgent(h.winner, 10)}` : " → tied"
+			]
+		}, h.round))
+	})] });
+}
+// src/sealedSession.ts
+/** P149: the sealed fields of a private session's payloads, one item each. */
+function sealedItems(rows) {
+	const out = [];
+	for (const r of rows) for (const [field, v] of Object.entries(r.payload ?? {})) if (typeof v === "string" && looksLikeEncryptedEnvelope(v)) out.push({
+		id: `${r.id}:${field}`,
+		field,
+		content: v
+	});
+	return out;
+}
+/**
+* P149: a private session's sealed text, opened by the local console with the
+* viewer's own key, on this machine. Without the console (the dashboard served
+* by the relay) there is no key, and it stays 🔒.
+*/
+async function openSealed(sessionId, items) {
+	if (items.length === 0 || !VIEWER_ID) return {};
+	const r = await httpFetch(consoleUrl(`/session/${encodeURIComponent(VIEWER_ID)}/${encodeURIComponent(sessionId)}/open`), {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ items })
+	});
+	if (!r.ok) return {};
+	const d = await r.json();
+	return Object.fromEntries(Object.entries(d.opened ?? {}).filter((e) => typeof e[1] === "string"));
+}
+// src/ui/GameChat.tsx
+/**
+* A game's table talk (P143), beside its moves. Stored with the game, so it is
+* shown to exactly who may see the game, and stays in its record afterwards.
+* Says nothing for a game created without chat.
+*/
+function GameChat({ sessionId, live }) {
+	const [data, , error] = useInterval(() => api.gameChat(sessionId), live ? 1e4 : 6e5, [sessionId]);
+	const [opened, setOpened] = useState({});
+	useEffect(() => {
+		const items = (data?.messages ?? []).filter((m) => looksLikeEncryptedEnvelope(m.content)).map((m) => ({
+			id: m.message_id,
+			field: "chat",
+			content: m.content
+		}));
+		if (items.length) openSealed(sessionId, items).then(setOpened).catch(() => setOpened({}));
+	}, [data, sessionId]);
+	if (error && !data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 12 },
+		title: error,
+		children: "? table talk unavailable"
+	});
+	if (!data || !data.chat_enabled) return null;
+	return /* @__PURE__ */ jsxs("div", {
+		style: { marginTop: 12 },
+		children: [/* @__PURE__ */ jsx(Text, {
+			className: "e-dim",
+			style: { fontSize: "0.68rem" },
+			children: "Table talk"
+		}), data.messages.length === 0 ? /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: {
+				fontSize: 12,
+				display: "block"
+			},
+			children: "Nobody has spoken."
+		}) : data.messages.map((m) => /* @__PURE__ */ jsxs(Text, {
+			style: {
+				fontSize: 12,
+				display: "block"
+			},
+			children: [
+				/* @__PURE__ */ jsx("span", {
+					className: "e-faint",
+					children: new Date(m.created_at).toLocaleTimeString([], {
+						hour: "2-digit",
+						minute: "2-digit"
+					})
+				}),
+				" ",
+				/* @__PURE__ */ jsx("span", {
+					className: "e-dim",
+					children: shortAgent(m.agent_id, 12)
+				}),
+				" ",
+				looksLikeEncryptedEnvelope(m.content) ? opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : `${SEALED_TAG} sealed to the players` : m.content
+			]
+		}, m.message_id))]
+	});
+}
+// src/ui/VerifyBadge.tsx
+async function fetchReport(sessionId) {
+	const r = await httpFetch(consoleUrl(`/verify/${encodeURIComponent(VIEWER_ID ?? "")}/${encodeURIComponent(sessionId)}`));
+	if (!r.ok) throw new Error(`verify ${r.status}`);
+	return r.json();
+}
+/**
+* P146: the game checked on this machine — signatures, the viewer's own
+* receipts, the result replayed — not the relay's word for it (AuditBadge
+* shows the relay's own claim). Only where the local console is in front:
+* served by the relay itself, there is nothing local to check with.
+*/
+function VerifyBadge({ sessionId, live }) {
+	const [report, , error] = useInterval(() => fetchReport(sessionId), live ? 3e4 : 6e5, [sessionId]);
+	if (error && !report) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		style: { fontSize: 11 },
+		title: error,
+		children: "? not checked here"
+	});
+	if (!report) return null;
+	const problems = report.findings.filter((f) => f.status === "fail").map((f) => f.detail);
+	const title = report.verdict === "ok" ? `Checked on this machine: ${report.findings.length - report.unchecked} checks passed` + (report.unchecked ? `, ${report.unchecked} could not be checked` : "") : `Problems found:\n${problems.join("\n")}\n\nRun verify_session for an evidence file.`;
+	return /* @__PURE__ */ jsx(Text, {
+		style: {
+			fontSize: 11,
+			color: report.verdict === "ok" ? "var(--theme-focused-foreground)" : void 0
+		},
+		className: report.verdict === "ok" ? void 0 : "e-status-txt",
+		title,
+		children: report.verdict === "ok" ? "✓ verified here" : `✗ ${report.failures} problem${report.failures === 1 ? "" : "s"}`
+	});
+}
+// src/ui/SessionMoney.tsx
+/**
+* P153: a session's money in one line — its stake, then what can pay it
+* (before anyone has) or how it is held (after): "stake 1.00 USDC (testnet) ·
+* escrow". Nothing for a free session.
+*/
+function SessionMoney({ session }) {
+	const [full] = useInterval(() => api.session(session.session_id), 3e4, [session.session_id]);
+	const health = useRelayHealth();
+	const rules = full?.payment_rules ?? session.payment_rules;
+	const stake = Number(rules?.stake_per_participant ?? 0);
+	if (!stake) return null;
+	const purchase = session.module_type === "emporia:service:v1";
+	const money = stakeText(stake, rules?.currency, {
+		rails: full?.paid_by ?? [],
+		mode: rules?.mode,
+		escrowNetwork: health?.x402_escrow_network
+	});
+	return /* @__PURE__ */ jsxs(Text, {
+		className: "e-dim",
+		style: { fontSize: 11 },
+		children: [
+			purchase ? "price" : "stake",
+			" ",
+			money.amount,
+			" ·",
+			" ",
+			money.via ?? /* @__PURE__ */ jsx(AcceptsTag, {
+				move: purchase ? "purchase" : "wager",
+				moduleType: session.module_type
+			})
+		]
+	});
+}
+// src/ui/DmChainBadge.tsx
+/**
+* P32-2: the DM counterpart of RoomChainBadge, and the last leg of P28-4 —
+* which shipped the DM hash chain, and P30-2, which gave Python clients an
+* independent verifier. Same substance as the room badge, deliberately not the
+* shallow version: it does not render the relay's own `verified` self-report,
+* it recomputes the chain from the thread's own message history and checks it
+* against a head pinned in this browser the last time the thread verified
+* cleanly. The relay does not hold that pin, which is the whole point.
+*
+* 60s poll, matching RoomChainBadge — this does real work (a paginated fetch
+* plus a SHA-256 per message via Web Crypto), not one cheap read.
+*/
+function DmChainBadge({ threadId, viewerId }) {
+	const [result, loading, error] = useInterval(() => verifyDmChainFromRelay(RELAY$1, threadId, api.dmChain, (tid, opts) => api.dmMessagesPage(tid, viewerId, opts)), 6e4, [threadId, viewerId]);
+	if (error && !result) return /* @__PURE__ */ jsx(IntegrityUnknown, {
+		what: "chain",
+		detail: error
+	});
+	if (loading && !result) return /* @__PURE__ */ jsx(IntegrityChecking, { what: "chain" });
+	if (!result) return null;
+	if (result.message_count === 0 && result.unchained_prefix === 0) return null;
+	const scopeNote = result.chain_verified_scope === "genesis" ? "verified from the thread's first message this call" : result.chain_verified_scope === "chained_start" ? `verified back to the start of the chain; ${result.unchained_prefix} earlier message(s) predate it and are not covered` : result.chain_verified_scope === "pinned_checkpoint" ? "verified back to a previously-pinned checkpoint (earlier history was verified when that checkpoint was first pinned)" : null;
+	const replayNote = result.replayed_nonce_count > 0 ? ` — ${result.replayed_nonce_count} duplicate nonce(s) found (scan scope: ${result.replay_scan_scope})` : "";
+	return /* @__PURE__ */ jsxs(Text, {
+		className: result.verified ? void 0 : "e-faint",
+		style: {
+			fontSize: 11,
+			color: result.verified ? "var(--theme-focused-foreground)" : "var(--theme-warning, #c33)"
+		},
+		title: `${result.reason} — independently recomputed from this thread's own message history and checked against a head pinned in this browser` + (scopeNote ? ` (${scopeNote})` : "") + replayNote,
+		children: [
+			result.verified ? `\u2713 chain verified (${result.message_count})` : "✗ chain unverified",
+			result.verified && result.unchained_prefix > 0 ? ` +${result.unchained_prefix} unchained` : "",
+			result.replayed_nonce_count > 0 ? " ⚠" : ""
+		]
+	});
+}
+function splitInbox(events) {
+	const activity = [];
+	const unreadByThread = {};
+	for (const ev of events) {
+		const thread = ev.event_type === "dm_received" ? ev.payload.thread_id : void 0;
+		if (typeof thread === "string" && thread) {
+			if (!ev.is_read) (unreadByThread[thread] ??= []).push(ev.inbox_id);
+		} else activity.push(ev);
+	}
+	return {
+		activity,
+		unreadByThread
+	};
+}
+/** P124: which list a conversation belongs in. Inbox: the other agent spoke
+*  last, or something is unread. Sent: the viewer spoke last. A conversation
+*  always opens whole — the split only decides where it is listed. */
+function inBox(box, t, viewer, unread) {
+	if (box === "all") return true;
+	const mineLast = t.last_sender === viewer;
+	return box === "sent" ? mineLast : !mineLast || unread > 0;
+}
+function unreadActivity(activity) {
+	return activity.filter((e) => !e.is_read).length;
+}
+// src/views/MessagesView.tsx
+/**
+* Messages — one view (P121): conversations on the left, each with its unread
+* count, and "Activity" (every non-DM event: challenges, invites, sessions) at
+* the top of the same list. It replaced two sub-tabs that shared nothing: the
+* inbox listed a DM it could not open, with a read state of its own.
+*
+* Visibility-only: the one write is marking events read.
+*/
+/** P126: sealed DMs opened by the local console, with the viewer's own key, on
+*  this machine. Directly against a relay there is no key, and they stay 🔒. */
+async function openSealedDms(viewer, threadId, messages) {
+	const r = await httpFetch(consoleUrl(`/dm/${encodeURIComponent(viewer)}/open`), {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({
+			thread_id: threadId,
+			messages
+		})
+	});
+	if (!r.ok) throw new Error(`console ${r.status}`);
+	const d = await r.json();
+	return Object.fromEntries(Object.entries(d.opened ?? {}).filter((e) => typeof e[1] === "string"));
+}
+var EVENT_ICONS = {
+	challenge: "⚔",
+	agora_invite: "✦",
+	room_invite: "□",
+	session_update: "⊙",
+	session_completed: "⊙",
+	notification: "◆"
+};
+function ActivityPane({ navigate, events, loading, error }) {
+	const [showAll, setShowAll] = useState(false);
+	const shown = showAll ? events : events.filter((e) => !e.is_read);
+	const unread = events.filter((e) => !e.is_read).map((e) => e.inbox_id);
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-messages-pane",
+		children: [
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-messages-pane__toolbar",
+				children: [/* @__PURE__ */ jsx(Text, {
+					className: "e-dim",
+					children: unread.length > 0 ? `${unread.length} unread` : "no unread"
+				}), /* @__PURE__ */ jsx("div", {
+					style: {
+						display: "flex",
+						gap: 6
+					},
+					children: /* @__PURE__ */ jsx(ActionButton, {
+						onClick: () => setShowAll((v) => !v),
+						children: showAll ? "unread only" : "show all"
+					})
+				})]
+			}),
+			/* @__PURE__ */ jsx(ViewStatus, {
+				loading,
+				error
+			}),
+			/* @__PURE__ */ jsx("div", {
+				className: "e-inbox-list",
+				children: shown.length === 0 ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: showAll ? "No activity yet." : "Nothing new."
+				}) }) : shown.map((ev) => {
+					const p = ev.payload;
+					let title = ev.event_type.replace(/_/g, " ");
+					let detail = null;
+					let action = null;
+					let actionLabel = "view";
+					if (ev.event_type === "challenge") {
+						const from = p.from_agent ?? "unknown";
+						const sid = p.session_id ?? null;
+						title = "challenge";
+						detail = /* @__PURE__ */ jsxs(Fragment, { children: [
+							/* @__PURE__ */ jsx(AgentLink, {
+								agent_id: from,
+								navigate
+							}),
+							" ",
+							sid ? `· session …${sid.slice(-8)}` : ""
+						] });
+						if (sid) action = () => {
+							navigate("session", { sessionId: sid });
+						};
+					} else if (ev.event_type === "agora_invite") {
+						const name = p.name ?? p.slug ?? "topic";
+						const by = p.invited_by ?? "creator";
+						const gate = p.gate_type ?? "invite";
+						const fee = p.entry_fee_cents ?? 0;
+						title = `invited to ${name}`;
+						detail = /* @__PURE__ */ jsxs(Fragment, { children: [
+							"by ",
+							/* @__PURE__ */ jsx(AgentLink, {
+								agent_id: by,
+								navigate
+							}),
+							gate === "paid_invite" && fee > 0 ? ` · $${(fee / 100).toFixed(2)} entry` : ""
+						] });
+						action = () => {
+							navigate("agora");
+						};
+						actionLabel = "open agoras";
+					} else if (ev.event_type === "room_invite") {
+						const name = p.room_name ?? "room";
+						const by = p.invited_by ?? "creator";
+						const rid = p.room_id ?? null;
+						title = `invited to ${name}`;
+						detail = /* @__PURE__ */ jsxs(Fragment, { children: ["by ", /* @__PURE__ */ jsx(AgentLink, {
+							agent_id: by,
+							navigate
+						})] });
+						if (rid) action = () => {
+							navigate("rooms", { roomId: rid });
+						};
+						actionLabel = "open room";
+					} else if (ev.event_type === "session_update" || ev.event_type === "session_completed") {
+						const sid = p.session_id ?? null;
+						title = ev.event_type === "session_completed" ? "session completed" : "session update";
+						detail = sid ? `…${sid.slice(-10)}` : null;
+						if (sid) action = () => {
+							navigate("session", { sessionId: sid });
+						};
+					} else detail = Object.keys(p).slice(0, 2).map((k) => `${k}: ${String(p[k]).slice(0, 24)}`).join(" · ") || null;
+					return /* @__PURE__ */ jsxs("div", {
+						className: `e-inbox-event${ev.is_read ? " e-inbox-event--read" : ""}`,
+						children: [/* @__PURE__ */ jsx("div", {
+							className: "e-inbox-event__icon",
+							children: EVENT_ICONS[ev.event_type] ?? "◌"
+						}), /* @__PURE__ */ jsxs("div", {
+							className: "e-inbox-event__body",
+							children: [
+								/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
+									style: {
+										fontWeight: ev.is_read ? 400 : 600,
+										fontSize: 13
+									},
+									children: title
+								}), /* @__PURE__ */ jsx(Text, {
+									className: "e-faint",
+									style: { fontSize: 10 },
+									children: new Date(ev.created_at).toLocaleString()
+								})] }),
+								detail && /* @__PURE__ */ jsx(Text, {
+									className: "e-dim",
+									style: {
+										fontSize: 12,
+										marginTop: 2
+									},
+									children: detail
+								}),
+								/* @__PURE__ */ jsx("div", {
+									style: {
+										display: "flex",
+										gap: 6,
+										marginTop: 4
+									},
+									children: action && /* @__PURE__ */ jsx(ActionButton, {
+										onClick: action,
+										children: actionLabel
+									})
+								})
+							]
+						})]
+					}, ev.inbox_id);
+				})
+			})
+		]
+	});
+}
+function ThreadPane({ thread, viewer, liveEvent, liveConnected }) {
+	const [messages, setMessages] = useState([]);
+	const [opened, setOpened] = useState({});
+	const [readerError, setReaderError] = useState(null);
+	const [pubkeys, setPubkeys] = useState({});
+	const bottomRef = useRef(null);
+	const loadMsgs = useCallback(() => {
+		api.dmMessages(thread.thread_id, viewer).then((r) => {
+			const msgs = r.messages;
+			setMessages(msgs);
+			if (msgs.some((m) => looksLikeEncryptedEnvelope(m.content))) openSealedDms(viewer, thread.thread_id, msgs).then((o) => {
+				setOpened(o);
+				setReaderError(null);
+			}).catch((e) => setReaderError(String(e)));
+		}).catch(() => {});
+	}, [thread.thread_id, viewer]);
+	useEffect(() => {
+		loadMsgs();
+		const iv = setInterval(loadMsgs, 3e4);
+		return () => clearInterval(iv);
+	}, [loadMsgs]);
+	useEffect(() => {
+		if (liveEvent?.type === "dm_received" && liveEvent.thread_id === thread.thread_id) loadMsgs();
+	}, [
+		liveEvent,
+		thread.thread_id,
+		loadMsgs
+	]);
+	const senders = [...new Set(messages.map((m) => m.sender_id))].sort().join("|");
+	useEffect(() => {
+		const lifetime = new AbortController();
+		const ids = [.../* @__PURE__ */ new Set([
+			viewer,
+			thread.other_agent,
+			...senders.split("|").filter(Boolean)
+		])];
+		Promise.all(ids.map((id) => (id.includes("@") ? api.agentKeys(id) : api.agentProfile(id)).then((a) => [id, senderKeyFrom(a)]).catch(() => [id, senderKeyFrom({})]))).then((pairs) => {
+			if (!lifetime.signal.aborted) setPubkeys(Object.fromEntries(pairs));
+		});
+		return () => lifetime.abort();
+	}, [
+		thread.other_agent,
+		viewer,
+		senders
+	]);
+	const chatLines = markReplayedNonces(messages).map((m) => ({
+		id: m.message_id,
+		sender_id: m.sender_id,
+		content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : dmDisplayContent(m.content),
+		created_at: m.created_at,
+		verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] ?? ""),
+		replayed: m.replayed,
+		removed: m.deleted_at ? m.removed ?? null : void 0
+	}));
+	return /* @__PURE__ */ jsx(ReadOnlyChat, {
+		messages: chatLines,
+		viewerId: viewer,
+		endRef: bottomRef,
+		footer: /* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			title: readerError ?? void 0,
+			children: [
+				thread.encrypted ? `${SEALED_TAG} end-to-end encrypted · ` : "not encrypted · ",
+				thread.encrypted ? readerError ? "could not open here · " : `${OPENED_TAG} on this machine · ` : "",
+				liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"
+			]
+		}), /* @__PURE__ */ jsx(DmChainBadge, {
+			threadId: thread.thread_id,
+			viewerId: viewer
+		}, thread.thread_id)] })
+	});
+}
+var ACTIVITY = "__activity__";
+function MessagesView({ navigate, initialTab, liveEvent = null, liveConnected = false }) {
+	const viewer = VIEWER_ID;
+	const [events, setEvents] = useState([]);
+	const [threads, setThreads] = useState([]);
+	const [selected, setSelected] = useState(initialTab === "inbox" ? ACTIVITY : null);
+	const [loading, setLoading] = useState(true);
+	const [error, setError] = useState(null);
+	const [box, setBox] = useState("inbox");
+	const loadInbox = useCallback(() => {
+		if (!viewer) return;
+		api.agentInbox(viewer, false, 200).then((d) => {
+			setEvents(d.events);
+			setError(null);
+		}).catch((e) => setError(String(e))).finally(() => setLoading(false));
+	}, [viewer]);
+	const loadThreads = useCallback(() => {
+		if (!viewer) return;
+		api.dmThreads(viewer).then((d) => setThreads(Array.isArray(d) ? d : [])).catch((e) => setError(String(e)));
+	}, [viewer]);
+	useEffect(() => {
+		loadInbox();
+		loadThreads();
+		const a = setInterval(loadInbox, 5e3);
+		const b = setInterval(loadThreads, 3e4);
+		return () => {
+			clearInterval(a);
+			clearInterval(b);
+		};
+	}, [loadInbox, loadThreads]);
+	useEffect(() => {
+		if (liveEvent?.type === "dm_received") {
+			loadThreads();
+			loadInbox();
+		}
+	}, [
+		liveEvent,
+		loadThreads,
+		loadInbox
+	]);
+	const { activity, unreadByThread } = splitInbox(events);
+	if (selected === null && (threads.length > 0 || !loading)) setSelected(threads[0]?.thread_id ?? ACTIVITY);
+	const [boxChosen, setBoxChosen] = useState(false);
+	if (!boxChosen && box === "inbox" && threads.length > 0 && !threads.some((t) => inBox("inbox", t, viewer ?? "", unreadByThread[t.thread_id]?.length ?? 0))) setBox("all");
+	if (!viewer) return /* @__PURE__ */ jsx(ViewBody, {
+		flush: true,
+		children: /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: { padding: "16px" },
+			children: "Spectator mode — set VITE_AGENT_ID in the dashboard env to view your messages."
+		})
+	});
+	const activityUnread = unreadActivity(activity);
+	const active = threads.find((t) => t.thread_id === selected) ?? null;
+	const listed = threads.filter((t) => inBox(box, t, viewer, unreadByThread[t.thread_id]?.length ?? 0));
+	const inboxUnread = threads.reduce((n, t) => n + (unreadByThread[t.thread_id]?.length ?? 0), 0);
+	const sidebar = /* @__PURE__ */ jsxs(Fragment, { children: [
+		/* @__PURE__ */ jsx("div", {
+			className: "e-messages-boxes",
+			children: /* @__PURE__ */ jsx(SegmentTabs, {
+				options: [
+					"inbox",
+					"sent",
+					"all"
+				],
+				value: box,
+				onChange: (b) => {
+					setBoxChosen(true);
+					setBox(b);
+				},
+				labels: {
+					inbox: inboxUnread ? `inbox (${inboxUnread})` : "inbox",
+					sent: "sent",
+					all: "all"
+				}
+			})
+		}),
+		/* @__PURE__ */ jsxs(FlatRailItem, {
+			selected: selected === ACTIVITY,
+			onClick: () => setSelected(ACTIVITY),
+			children: [/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
+				style: {
+					fontSize: 13,
+					fontWeight: activityUnread ? 600 : 400
+				},
+				children: "◆ Activity"
+			}), activityUnread > 0 && /* @__PURE__ */ jsx(Text, {
+				className: "e-unread-count",
+				children: activityUnread
+			})] }), /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: { fontSize: 11 },
+				children: "challenges · invites · sessions"
+			})]
+		}),
+		listed.length === 0 && /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: threads.length === 0 ? "No conversations yet. Direct messages your agent sends or receives appear here." : box === "sent" ? "Nothing sent last by you." : "Nothing waiting on you."
+		}) }),
+		listed.map((t) => {
+			const unread = unreadByThread[t.thread_id]?.length ?? 0;
+			return /* @__PURE__ */ jsx(FlatRailItem, {
+				selected: selected === t.thread_id,
+				onClick: () => setSelected(t.thread_id),
+				children: /* @__PURE__ */ jsxs("div", {
+					className: "e-agent-row",
+					children: [/* @__PURE__ */ jsx(AgentMoireAvatar, { agentId: t.other_agent }), /* @__PURE__ */ jsxs("div", {
+						style: {
+							flex: 1,
+							minWidth: 0
+						},
+						children: [/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsxs(Text, {
+							style: {
+								fontSize: 13,
+								fontWeight: unread ? 600 : 400
+							},
+							children: [t.encrypted ? `${SEALED_TAG} ` : "", t.other_agent]
+						}), unread > 0 ? /* @__PURE__ */ jsx(Text, {
+							className: "e-unread-count",
+							children: unread
+						}) : /* @__PURE__ */ jsx(AgentLink, {
+							agent_id: t.other_agent,
+							navigate
+						})] }), /* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							style: { fontSize: 11 },
+							children: dmThreadPreview(t)
+						})]
+					})]
+				})
+			}, t.thread_id);
+		})
+	] });
+	return /* @__PURE__ */ jsx(ViewBody, {
+		flush: true,
+		children: /* @__PURE__ */ jsx(SidebarLayout, {
+			sidebar,
+			defaultSidebarWidth: 30,
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-split-main",
+				children: [error ? /* @__PURE__ */ jsx(AlertBanner, { children: error }) : null, selected === ACTIVITY ? /* @__PURE__ */ jsx(ActivityPane, {
+					navigate,
+					events: activity,
+					loading,
+					error: null
+				}) : active ? /* @__PURE__ */ jsx(ThreadPane, {
+					thread: active,
+					viewer,
+					liveEvent,
+					liveConnected
+				}, active.thread_id) : /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: "Pick a conversation from the list, or Activity for challenges, invites and sessions. Messages are decrypted on this machine only."
+				}) })]
+			})
+		})
+	});
+}
+// src/ui/PurchaseConversation.tsx
+/**
+* P147: the buyer and seller's own conversation, inside their purchase. It is
+* their DM thread — end-to-end encrypted, opened on this machine by the local
+* console — rather than table chat, which the relay can read: a paid job's
+* details are between the two of them. Only for a participant viewing.
+*/
+function PurchaseConversation({ session, viewer }) {
+	const other = viewer && session.participants.includes(viewer) ? session.participants.find((p) => p !== viewer) ?? null : null;
+	const [threads] = useInterval(() => other ? api.dmThreads(viewer) : Promise.resolve([]), 3e4, [viewer, other]);
+	if (!viewer || !other) return null;
+	const thread = (threads ?? []).find((t) => t.other_agent === other);
+	return /* @__PURE__ */ jsxs("div", {
+		style: { marginTop: 12 },
+		children: [/* @__PURE__ */ jsxs(Text, {
+			className: "e-dim",
+			style: { fontSize: "0.68rem" },
+			children: [
+				"Conversation with ",
+				shortAgent(other, 16),
+				" — direct messages"
+			]
+		}), thread ? /* @__PURE__ */ jsx(ThreadPane, {
+			thread,
+			viewer,
+			liveEvent: null,
+			liveConnected: false
+		}) : /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			style: {
+				fontSize: 12,
+				display: "block"
+			},
+			children: [
+				"No messages with ",
+				shortAgent(other, 16),
+				" yet. Agents talk with send_dm — end-to-end encrypted, so the relay cannot read the job's details."
+			]
+		})]
+	});
+}
+// src/ui/SetPlayPanel.tsx
+/**
+* A set play (blotto, guess ⅔, lowest unique) as it happens: the phase strip
+* (commit → reveal → winner), each seat's state, and the game's own board —
+* blotto's fields, the ⅔ target line, lowest unique's numbers. The same view
+* live and finished: a finished game is the strip at its last step.
+*
+* Visibility only. A player's next move is shown as the MCP call to copy.
+*/
+var num$2 = { fontVariantNumeric: "tabular-nums" };
+function SetPlayPanel({ session: initial }) {
+	const id = initial.session_id;
+	const running = initial.status === "active" || initial.status === "waiting";
+	const [fresh] = useInterval(() => api.session(id), running ? 4e3 : 36e5, [id, running]);
+	const [acts] = useInterval(() => api.sessionActions(id), running ? 4e3 : 36e5, [id, running]);
+	const session = fresh ?? initial;
+	const v = setPlayView(session, acts?.actions);
+	const live = session.status === "active" || session.status === "waiting";
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-setplay",
+		children: [
+			/* @__PURE__ */ jsxs("header", {
+				className: "e-setplay__head",
+				children: [/* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("p", {
+					className: "e-setplay__game",
+					children: SET_PLAY_NAMES[v.moduleType] ?? v.moduleType
+				}), /* @__PURE__ */ jsx("p", {
+					className: "e-setplay__players",
+					children: session.participants.join(" v ")
+				})] }), /* @__PURE__ */ jsx("span", {
+					className: `e-setplay__status${live ? " is-live" : ""}`,
+					children: live ? v.phase === "waiting" ? "waiting" : "live" : "finished"
+				})]
+			}),
+			/* @__PURE__ */ jsx(PhaseStrip, { v }),
+			v.verdict ? /* @__PURE__ */ jsxs("p", {
+				className: `e-setplay__verdict${v.verdict.winner ? " is-win" : ""}`,
+				role: "status",
+				children: [v.verdict.winner ? /* @__PURE__ */ jsxs(Fragment, { children: [
+					/* @__PURE__ */ jsx("span", {
+						"aria-hidden": true,
+						children: "★ "
+					}),
+					v.verdict.winner,
+					" wins"
+				] }) : "draw", /* @__PURE__ */ jsxs("span", {
+					className: "e-setplay__why",
+					children: [" — ", v.verdict.why]
+				})]
+			}) : /* @__PURE__ */ jsx("p", {
+				className: "e-setplay__wait",
+				role: "status",
+				children: waitLine(v)
+			}),
+			v.kind === "blotto" ? /* @__PURE__ */ jsx(BlottoBoard, { v }) : /* @__PURE__ */ jsx(PickBoard, { v }),
+			/* @__PURE__ */ jsx(Seats, { v }),
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-setplay__meta",
+				children: [
+					/* @__PURE__ */ jsx(SessionMoney, { session }),
+					/* @__PURE__ */ jsxs(Text, {
+						className: "e-faint",
+						style: { fontSize: 11 },
+						children: [
+							"…",
+							id.slice(-10),
+							session.created_at ? ` · started ${whenText(session.created_at)}` : ""
+						]
+					}),
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-setplay__badges",
+						children: [/* @__PURE__ */ jsx(AuditBadge, { sessionId: id }), /* @__PURE__ */ jsx(VerifyBadge, {
+							sessionId: id,
+							live: session.status === "active"
+						})]
+					})
+				]
+			}),
+			/* @__PURE__ */ jsx(NextMoveHint$1, {
+				session,
+				v
+			}),
+			/* @__PURE__ */ jsx(GameChat, {
+				sessionId: id,
+				live
+			})
+		]
+	});
+}
+function waitLine(v) {
+	const clock = clockText(v.secondsLeft);
+	const on = v.pending.length ? `waiting on ${v.pending.join(", ")}` : "";
+	if (v.phase === "waiting") return "Waiting for players to join. The game starts when the table is full.";
+	const tail = `${on ? ` — ${on}` : ""}${clock ? ` · ${clock}` : ""}.`;
+	if (v.phase === "commit") return `Moves are hidden: each player sends only a hash of its move${tail}`;
+	return `Every move is fixed, and now each is shown${tail} Not revealing in time loses.`;
+}
+var STEPS = [
+	{
+		id: "commit",
+		label: "commit"
+	},
+	{
+		id: "reveal",
+		label: "reveal"
+	},
+	{
+		id: "done",
+		label: "winner"
+	}
+];
+function PhaseStrip({ v }) {
+	const at = v.phase === "waiting" ? -1 : STEPS.findIndex((s) => s.id === v.phase);
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-phase-strip",
+		role: "list",
+		"aria-label": "Phase",
+		children: STEPS.map((s, i) => {
+			const state = i < at ? "done" : i === at ? "now" : "next";
+			return /* @__PURE__ */ jsxs("span", {
+				role: "listitem",
+				className: `e-phase-strip__step is-${state}`,
+				"aria-current": state === "now" ? "step" : void 0,
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						className: "e-phase-strip__n",
+						"aria-hidden": true,
+						children: state === "done" || s.id === "done" && state === "now" ? "✓" : i + 1
+					}),
+					/* @__PURE__ */ jsx("span", { children: s.label }),
+					s.id === "done" && v.verdict?.winner ? /* @__PURE__ */ jsx("span", {
+						className: "e-phase-strip__who",
+						children: v.verdict.winner
+					}) : null
+				]
+			}, s.id);
+		})
+	});
+}
+/**
+* Calls (`:v2` set plays): a forecast sealed with the first move. While hidden the
+* table shows only that one was sealed; once revealed, the percent beside the move.
+*/
+function CallTag({ v, agent }) {
+	const t = callText(v, agent);
+	if (!t) return null;
+	return /* @__PURE__ */ jsx("span", {
+		className: `e-call-tag${typeof v.calls[agent] === "number" ? " is-revealed" : ""}`,
+		title: "a call: its own chance of winning, sealed with its first move and scored as Insight",
+		children: t
+	});
+}
+var SEAT_TEXT = {
+	to_commit: "· to commit",
+	committed: "■ committed",
+	revealed: "◆ revealed",
+	out: "× out — did not reveal"
+};
+function Seats({ v }) {
+	if (v.kind === "blotto") return null;
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-seats",
+		role: "list",
+		children: v.seats.map((s) => /* @__PURE__ */ jsxs("div", {
+			role: "listitem",
+			className: `e-seat is-${s.state}${s.winner ? " is-winner" : ""}`,
+			children: [
+				/* @__PURE__ */ jsxs("span", {
+					className: "e-seat__name",
+					children: [
+						s.winner ? "★ " : "",
+						s.agent,
+						s.agent === VIEWER_ID ? " (you)" : ""
+					]
+				}),
+				/* @__PURE__ */ jsxs("span", {
+					className: "e-seat__state",
+					children: [
+						SEAT_TEXT[s.state],
+						s.hash ? /* @__PURE__ */ jsxs("span", {
+							className: "e-faint",
+							children: [
+								" ",
+								s.hash,
+								"…"
+							]
+						}) : null,
+						/* @__PURE__ */ jsx(CallTag, {
+							v,
+							agent: s.agent
+						})
+					]
+				}),
+				/* @__PURE__ */ jsx("span", {
+					className: "e-seat__move",
+					style: num$2,
+					children: s.move !== void 0 ? String(s.move) : s.state === "committed" ? "▒▒" : ""
+				})
+			]
+		}, s.agent))
+	});
+}
+function BlottoBoard({ v }) {
+	const b = v.blotto;
+	const fields = Array.from({ length: b.battlefields }, (_, i) => i);
+	const last = v.phase === "done" ? b.rounds_done[b.rounds_done.length - 1] : void 0;
+	const showWon = v.phase === "done" || b.rounds > 1;
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-blotto",
+		children: [
+			/* @__PURE__ */ jsxs("p", {
+				className: "e-faint e-blotto__rules",
+				style: num$2,
+				children: [
+					b.battlefields,
+					" fields · ",
+					b.troops,
+					" troops each · round ",
+					Math.min(b.round, b.rounds),
+					" of ",
+					b.rounds,
+					" ",
+					"· more troops takes a field, more fields takes the round"
+				]
+			}),
+			/* @__PURE__ */ jsx("div", {
+				className: "e-blotto__scroll",
+				children: /* @__PURE__ */ jsxs("table", {
+					className: "e-blotto__grid",
+					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "col",
+							children: /* @__PURE__ */ jsx("span", {
+								className: "e-sr",
+								children: "player"
+							})
+						}),
+						fields.map((f) => /* @__PURE__ */ jsxs("th", {
+							scope: "col",
+							children: ["F", f + 1]
+						}, f)),
+						showWon && /* @__PURE__ */ jsx("th", {
+							scope: "col",
+							children: b.rounds > 1 ? "rounds" : "fields"
+						})
+					] }) }), /* @__PURE__ */ jsx("tbody", { children: v.seats.map((s) => {
+						const alloc = Array.isArray(s.move) ? s.move : null;
+						const took = last ? last.fieldWinners.filter((w) => w === s.agent).length : null;
+						return /* @__PURE__ */ jsxs("tr", {
+							className: s.winner ? "is-winner" : void 0,
+							children: [
+								/* @__PURE__ */ jsxs("th", {
+									scope: "row",
+									children: [/* @__PURE__ */ jsxs("span", {
+										className: "e-blotto__name",
+										children: [s.winner ? "★ " : "", s.agent]
+									}), /* @__PURE__ */ jsxs("span", {
+										className: "e-blotto__state",
+										children: [SEAT_TEXT[s.state], /* @__PURE__ */ jsx(CallTag, {
+											v,
+											agent: s.agent
+										})]
+									})]
+								}),
+								fields.map((f) => {
+									const won = last?.fieldWinners[f] === s.agent;
+									return /* @__PURE__ */ jsx("td", {
+										className: `${won ? "is-won" : ""}${alloc ? "" : " is-hidden"}`,
+										style: num$2,
+										title: alloc ? void 0 : s.state === "committed" ? `committed: ${s.hash}…` : "no move yet",
+										children: alloc ? alloc[f] : s.state === "committed" ? "▒▒" : "·"
+									}, f);
+								}),
+								showWon && /* @__PURE__ */ jsx("td", {
+									style: num$2,
+									className: "e-blotto__took",
+									children: b.rounds > 1 ? b.wins[s.agent] ?? 0 : took
+								})
+							]
+						}, s.agent);
+					}) })]
+				})
+			}),
+			b.rounds_done.length > (v.phase === "done" ? 1 : 0) ? /* @__PURE__ */ jsxs("details", {
+				className: "e-blotto__history",
+				children: [/* @__PURE__ */ jsxs("summary", { children: [
+					"earlier rounds (",
+					v.phase === "done" ? b.rounds_done.length - 1 : b.rounds_done.length,
+					")"
+				] }), (v.phase === "done" ? b.rounds_done.slice(0, -1) : b.rounds_done).map((r) => /* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					style: {
+						...num$2,
+						fontSize: 12,
+						display: "block"
+					},
+					children: [
+						"round ",
+						r.round,
+						": ",
+						Object.entries(r.allocations).map(([p, a]) => `${p} [${a.join(" ")}]`).join(" · "),
+						r.winner ? ` → ${r.winner}` : " → tied"
+					]
+				}, r.round))]
+			}) : null
+		]
+	});
+}
+function PickBoard({ v }) {
+	const p = v.pick;
+	const revealed = v.seats.filter((s) => typeof s.move === "number");
+	const hidden = v.seats.filter((s) => s.state === "committed").length;
+	if (v.kind === "two-thirds") return /* @__PURE__ */ jsx(TwoThirdsLine, {
+		v,
+		revealed,
+		hidden
+	});
+	const numbers = Array.from({ length: p.max - p.min + 1 }, (_, i) => p.min + i);
+	const by = /* @__PURE__ */ new Map();
+	for (const s of revealed) by.set(s.move, [...by.get(s.move) ?? [], s.agent]);
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-lowest",
+		children: [/* @__PURE__ */ jsxs("p", {
+			className: "e-faint e-lowest__rules",
+			children: [
+				"pick ",
+				p.min,
+				"–",
+				p.max,
+				" · the lowest number only one player picked wins",
+				hidden ? ` · ${hidden} pick${hidden === 1 ? "" : "s"} still hidden` : ""
+			]
+		}), /* @__PURE__ */ jsx("div", {
+			className: "e-lowest__row",
+			role: "list",
+			children: numbers.map((n) => {
+				const who = by.get(n) ?? [];
+				const winning = v.verdict?.winner != null && who.length === 1 && who[0] === v.verdict.winner;
+				const cls = who.length === 0 ? "is-empty" : who.length === 1 ? "is-unique" : "is-taken";
+				return /* @__PURE__ */ jsxs("div", {
+					role: "listitem",
+					className: `e-lowest__cell ${cls}${winning ? " is-winner" : ""}`,
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-lowest__n",
+							style: num$2,
+							children: n
+						}),
+						who.map((a) => /* @__PURE__ */ jsxs("span", {
+							className: "e-lowest__who",
+							children: [winning ? "★ " : "", a]
+						}, a)),
+						who.length > 1 ? /* @__PURE__ */ jsxs("span", {
+							className: "e-lowest__tag",
+							children: ["×", who.length]
+						}) : who.length === 1 ? /* @__PURE__ */ jsx("span", {
+							className: "e-lowest__tag",
+							children: "once"
+						}) : null
+					]
+				}, n);
+			})
+		})]
+	});
+}
+function TwoThirdsLine({ v, revealed, hidden }) {
+	const { min, max, average, target } = v.pick;
+	const at = (x) => `${(x - min) / (max - min) * 100}%`;
+	const rows = [];
+	const placed = [...revealed].sort((a, b) => a.move - b.move).map((s) => {
+		let row = 0;
+		while (rows[row] !== void 0 && s.move - rows[row] < 26) row++;
+		rows[row] = s.move;
+		return {
+			s,
+			row
+		};
+	});
+	const height = Math.max(1, rows.length);
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-twothirds",
+		children: [/* @__PURE__ */ jsxs("p", {
+			className: "e-faint e-twothirds__rules",
+			children: ["pick 0–100 · the pick closest to ⅔ of the average wins", hidden ? ` · ${hidden} pick${hidden === 1 ? "" : "s"} still hidden — the target appears when all are revealed` : ""]
+		}), /* @__PURE__ */ jsxs("div", {
+			className: "e-numline",
+			style: { "--rows": height },
+			role: "img",
+			"aria-label": `picks: ${revealed.map((s) => `${s.agent} ${s.move}`).join(", ") || "none revealed"}${target !== null ? `; target ${target.toFixed(1)}` : ""}`,
+			children: [
+				/* @__PURE__ */ jsx("div", { className: "e-numline__axis" }),
+				[
+					0,
+					25,
+					50,
+					75,
+					100
+				].map((t) => /* @__PURE__ */ jsx("span", {
+					className: "e-numline__tick",
+					style: { left: at(t) },
+					children: /* @__PURE__ */ jsx("span", { children: t })
+				}, t)),
+				average !== null ? /* @__PURE__ */ jsx("span", {
+					className: "e-numline__mark e-numline__mark--avg",
+					style: { left: at(average) },
+					children: /* @__PURE__ */ jsxs("span", { children: ["avg ", average.toFixed(1)] })
+				}) : null,
+				target !== null ? /* @__PURE__ */ jsx("span", {
+					className: `e-numline__mark e-numline__mark--target${target < 15 ? " is-low" : ""}`,
+					style: { left: at(target) },
+					children: /* @__PURE__ */ jsxs("span", { children: ["target ", target.toFixed(1)] })
+				}) : null,
+				placed.map(({ s, row }) => /* @__PURE__ */ jsxs("span", {
+					className: `e-numline__pick${s.winner ? " is-winner" : ""}`,
+					style: {
+						left: at(s.move),
+						"--row": row
+					},
+					children: [/* @__PURE__ */ jsx("span", {
+						className: "e-numline__pin",
+						"aria-hidden": true
+					}), /* @__PURE__ */ jsxs("span", {
+						className: "e-numline__label",
+						children: [
+							s.winner ? "★ " : "",
+							s.agent,
+							" ",
+							s.move
+						]
+					})]
+				}, s.agent))
+			]
+		})]
+	});
+}
+/** For a player whose move the table waits on: the call that makes it. Never a button. */
+function NextMoveHint$1({ session, v }) {
+	if (!VIEWER_ID || !v.pending.includes(VIEWER_ID)) return null;
+	const me = v.seats.find((s) => s.agent === VIEWER_ID);
+	if (v.phase === "commit" && me?.state === "to_commit") {
+		const example = v.kind === "blotto" ? `[${Array.from({ length: v.blotto.battlefields }, () => Math.floor(v.blotto.troops / v.blotto.battlefields)).join(", ")}]` : v.kind === "two-thirds" ? "22" : "3";
+		return /* @__PURE__ */ jsx(McpCommandHint, {
+			label: "Your agent's move — it commits a hidden move with",
+			tool: "commit_move",
+			args: {
+				session_id: session.session_id,
+				move: example,
+				rationale: "<why this move — 15 chars min>",
+				...v.moduleType.endsWith(":v2") && (v.blotto?.round ?? 1) === 1 ? { call: "<optional: its chance of winning, 0.01–0.99>" } : {}
+			}
+		});
+	}
+	if (v.phase === "reveal" && me?.state === "committed") return /* @__PURE__ */ jsx(McpCommandHint, {
+		label: "Your agent's move — it reveals what it committed with",
+		tool: "reveal_move",
+		args: {
+			session_id: session.session_id,
+			rationale: "<why — 15 chars min>"
+		}
+	});
+	return null;
+}
+// src/bargain.ts
+var GOODS = [
+	"silk",
+	"spice",
+	"amber"
+];
+/** Pure: a bargain's session (and its actions) in, what to draw out. */
+function bargainView(session, actions, now = Date.now()) {
+	const d = stateData(session);
+	const deal = d.deal ?? {};
+	const hands = Object.fromEntries(Object.entries(deal.hands ?? {}).map(([p, h]) => [p, h?.values ?? {}]));
+	let result = null;
+	for (const a of [...actions ?? []].reverse()) {
+		const r = (a.result?.artifacts)?.result;
+		if (r) {
+			result = r;
+			break;
+		}
+	}
+	const limit = typeof d.move_time_limit_s === "number" ? d.move_time_limit_s : 0;
+	const started = typeof d.turn_started_at === "string" ? Date.parse(d.turn_started_at) : NaN;
+	const running = session.status === "active";
+	const priv = session.private;
+	return {
+		pool: d.pool ?? {},
+		total: typeof d.total === "number" ? d.total : 10,
+		maxOffers: typeof d.max_offers === "number" ? d.max_offers : 6,
+		walkAway: typeof d.walk_away === "number" ? d.walk_away : 0,
+		offers: Array.isArray(d.offers) ? d.offers : [],
+		ended: d.ended ?? null,
+		hands,
+		result,
+		secondsLeft: running && limit && Number.isFinite(started) ? Math.max(0, Math.round(limit - (now - started) / 1e3)) : null,
+		mine: priv?.values ?? null
+	};
+}
+// src/ui/BargainPanel.tsx
+/**
+* Bargain (`emporia:bargain:v1`, docs/proposals/gamify-bargain.md §9) as a viewer
+* sees it: the public pool, the offers in order with any stated values marked
+* unchecked, whose turn and the clock; after the end, both real hands beside what
+* each side said, the split and both scores.
+*
+* Visibility only: the dashboard never offers or accepts. A player's next move is
+* shown as the MCP call to copy. While it runs the hands are sealed — a viewer who
+* is a player sees its own values (`private`, served to it alone), nobody else's.
+*/
+var num$1 = { fontVariantNumeric: "tabular-nums" };
+var goodsText = (g) => GOODS.map((k) => `${g?.[k] ?? 0} ${k}`).join(" · ");
+function BargainPanel({ session: initial }) {
+	const id = initial.session_id;
+	const running = initial.status === "active" || initial.status === "waiting";
+	const [fresh] = useInterval(() => api.session(id), running ? 4e3 : 36e5, [id, running]);
+	const [acts] = useInterval(() => api.sessionActions(id), running ? 4e3 : 36e5, [id, running]);
+	const session = fresh ?? initial;
+	const v = bargainView(session, acts?.actions);
+	const live = session.status === "active" || session.status === "waiting";
+	const [a, b] = session.participants;
+	const over = !live;
+	const left = Math.max(0, v.maxOffers - v.offers.length);
+	const clock = clockText(v.secondsLeft);
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-setplay e-bargain",
+		children: [
+			/* @__PURE__ */ jsxs("header", {
+				className: "e-setplay__head",
+				children: [/* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("p", {
+					className: "e-setplay__game",
+					children: "bargain"
+				}), /* @__PURE__ */ jsx("p", {
+					className: "e-setplay__players",
+					children: session.participants.join(" v ")
+				})] }), /* @__PURE__ */ jsx("span", {
+					className: `e-setplay__status${live ? " is-live" : ""}`,
+					children: live ? session.status === "waiting" ? "waiting" : "live" : "finished"
+				})]
+			}),
+			/* @__PURE__ */ jsxs("p", {
+				className: "e-faint e-blotto__rules",
+				style: num$1,
+				children: [
+					"pool ",
+					goodsText(v.pool),
+					" · worth ",
+					v.total,
+					" to each player, by priorities only it knows · ",
+					v.maxOffers,
+					" offers at most",
+					" ",
+					"· no deal scores ",
+					v.walkAway,
+					" each"
+				]
+			}),
+			over ? /* @__PURE__ */ jsxs("p", {
+				className: `e-setplay__verdict${v.result?.winner ? " is-win" : ""}`,
+				role: "status",
+				children: [
+					v.ended?.how === "accepted" ? "deal" : v.ended?.how === "declined" ? "no deal" : v.result?.termination === "timeout" ? "on time" : "over",
+					v.result?.winner ? /* @__PURE__ */ jsxs(Fragment, { children: [
+						" — ",
+						/* @__PURE__ */ jsx("span", {
+							"aria-hidden": true,
+							children: "★ "
+						}),
+						v.result.winner,
+						" scores more"
+					] }) : v.result ? " — a draw" : null,
+					v.result?.points ? /* @__PURE__ */ jsxs("span", {
+						className: "e-setplay__why",
+						style: num$1,
+						children: [
+							" ",
+							"— ",
+							Object.entries(v.result.points).map(([p, n]) => `${p} ${n}`).join(" · ")
+						]
+					}) : v.result?.reason ? /* @__PURE__ */ jsxs("span", {
+						className: "e-setplay__why",
+						children: [" — ", v.result.reason]
+					}) : null
+				]
+			}) : /* @__PURE__ */ jsx("p", {
+				className: "e-setplay__wait",
+				role: "status",
+				children: session.status === "waiting" ? "Waiting for the second player." : `${session.current_agent}'s turn${clock ? ` · ${clock}` : ""} · ${left} offer${left === 1 ? "" : "s"} left${left === 0 ? " — accept or decline the last" : ""}.`
+			}),
+			v.offers.length === 0 ? /* @__PURE__ */ jsx(Text, {
+				className: "e-note",
+				children: "No offer yet. The creator opens."
+			}) : /* @__PURE__ */ jsx("div", {
+				className: "e-blotto__scroll",
+				children: /* @__PURE__ */ jsxs("table", {
+					className: "e-blotto__grid e-bargain__offers",
+					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", {
+							scope: "col",
+							children: "#"
+						}),
+						/* @__PURE__ */ jsx("th", {
+							scope: "col",
+							children: "by"
+						}),
+						/* @__PURE__ */ jsxs("th", {
+							scope: "col",
+							children: [a ?? "—", " gets"]
+						}),
+						/* @__PURE__ */ jsxs("th", {
+							scope: "col",
+							children: [b ?? "—", " gets"]
+						}),
+						/* @__PURE__ */ jsx("th", {
+							scope: "col",
+							children: "stated values"
+						})
+					] }) }), /* @__PURE__ */ jsx("tbody", { children: v.offers.map((o) => {
+						const taken = v.ended?.how === "accepted" && v.ended.offer === o.n;
+						return /* @__PURE__ */ jsxs("tr", {
+							className: taken ? "is-winner" : void 0,
+							children: [
+								/* @__PURE__ */ jsx("td", {
+									style: num$1,
+									children: o.n
+								}),
+								/* @__PURE__ */ jsx("th", {
+									scope: "row",
+									children: o.by
+								}),
+								/* @__PURE__ */ jsx("td", {
+									style: num$1,
+									children: goodsText(o.allocation[a])
+								}),
+								/* @__PURE__ */ jsx("td", {
+									style: num$1,
+									children: goodsText(o.allocation[b])
+								}),
+								/* @__PURE__ */ jsx("td", {
+									style: num$1,
+									children: o.claim ? /* @__PURE__ */ jsxs(Fragment, { children: [
+										goodsText(o.claim),
+										" ",
+										/* @__PURE__ */ jsx("span", {
+											className: "e-faint",
+											children: "· stated, unchecked"
+										})
+									] }) : /* @__PURE__ */ jsx("span", {
+										className: "e-faint",
+										children: "—"
+									})
+								})
+							]
+						}, o.n);
+					}) })]
+				})
+			}),
+			/* @__PURE__ */ jsx(Hands, {
+				v,
+				participants: session.participants,
+				over
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-setplay__meta",
+				children: [/* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					style: { fontSize: 11 },
+					children: [
+						"…",
+						id.slice(-10),
+						session.created_at ? ` · started ${whenText(session.created_at)}` : "",
+						" · no stakes"
+					]
+				}), /* @__PURE__ */ jsxs("span", {
+					className: "e-setplay__badges",
+					children: [/* @__PURE__ */ jsx(AuditBadge, { sessionId: id }), /* @__PURE__ */ jsx(VerifyBadge, {
+						sessionId: id,
+						live: session.status === "active"
+					})]
+				})]
+			}),
+			/* @__PURE__ */ jsx(NextMoveHint, {
+				session,
+				v
+			}),
+			/* @__PURE__ */ jsx(GameChat, {
+				sessionId: id,
+				live
+			})
+		]
+	});
+}
+/** Sealed while it runs; after the end each real hand beside the last thing its player said. */
+function Hands({ v, participants, over }) {
+	const revealed = over && Object.keys(v.hands).length > 0;
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-seats",
+		role: "list",
+		"aria-label": "Priorities",
+		children: participants.map((p) => {
+			const claim = v.result?.claims?.[p];
+			return /* @__PURE__ */ jsxs("div", {
+				role: "listitem",
+				className: "e-seat e-bargain__hand",
+				children: [
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-seat__name",
+						children: [p, p === VIEWER_ID ? " (you)" : ""]
+					}),
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-seat__state",
+						style: num$1,
+						children: [revealed ? /* @__PURE__ */ jsxs(Fragment, { children: ["held ", goodsText(v.hands[p])] }) : p === VIEWER_ID && v.mine ? /* @__PURE__ */ jsxs(Fragment, { children: [
+							"your values ",
+							goodsText(v.mine),
+							" ",
+							/* @__PURE__ */ jsx("span", {
+								className: "e-faint",
+								children: "· only you see these"
+							})
+						] }) : "▒▒ sealed until the end", revealed && claim ? /* @__PURE__ */ jsxs("span", {
+							className: "e-faint",
+							children: [
+								" · said ",
+								goodsText(claim.claimed),
+								" — ",
+								claim.matches ? "matched" : "differed"
+							]
+						}) : null]
+					}),
+					/* @__PURE__ */ jsx("span", {
+						className: "e-seat__move",
+						style: num$1,
+						children: v.result?.points?.[p] ?? ""
+					})
+				]
+			}, p);
+		})
+	});
+}
+function NextMoveHint({ session, v }) {
+	if (!VIEWER_ID || session.status !== "active" || session.current_agent !== VIEWER_ID) return null;
+	const last = v.offers.length >= v.maxOffers;
+	return /* @__PURE__ */ jsx(McpCommandHint, {
+		label: last ? "Your agent's move — the last offer stands; it answers with" : "Your agent's move — it offers (or accepts the offer on the table) with",
+		tool: "submit_action",
+		args: {
+			session_id: session.session_id,
+			action_type: last ? "accept | decline" : "offer",
+			payload: last ? "{}" : "{\"keep\": {\"silk\": 2, \"spice\": 0, \"amber\": 1}}"
+		}
+	});
+}
+// src/gamifyFormat.ts
+/** A reporter's claim beside the operator's award; the claim alone until a verdict. */
+var claimedAwarded = (claimed, awarded) => awarded ? `claimed ${claimed} · awarded ${awarded}` : `${claimed} (claimed)`;
+var count = (k, one) => `${k} ${k === 1 ? one : `${one}s`}`;
+/** One row of the improvement board: its points, then what earned them, then "called it". */
+var improvementRow = (r) => {
+	const parts = [`${r.points} pts`, count(r.accepted ?? 0, "bug")];
+	if (r.adopted) parts.push(count(r.adopted, "idea"));
+	if (r.accepted) parts.push(`called ${r.called ?? 0}/${r.accepted}`);
+	return parts.join(" · ");
+};
+// src/views/GamifyView.tsx
+/**
+* The Season section (route `#/season`; the module is still "gamify" on the relay).
+*
+* P288: the gamify module, under one tab — character sheets (Craft per game,
+* Trade, Trust, Renown, levels and class), P289's bug quests and security
+* incidents, and P297's season (its boards, the main game first: improvement
+* points, Renown, then the set plays) and each agent's welcome quests.
+*
+* Launch additions: adopted ideas (the operator's signed verdicts), "called it" (a
+* report's claimed severity beside the awarded one, and a calibration line on
+* the sheet — never a ladder), feats, and the operator's current expedition.
+*
+* Visibility only, like every view: it shows what the relay computed and signed,
+* and changes nothing. A relay that does not run the module says so, rather
+* than showing empty sheets as if they were real.
+*/
+var SEASON = "__season__";
+var BUGS = "__bugs__";
+var IDEAS = "__ideas__";
+var INCIDENTS = "__incidents__";
+var QUESTS = "__quests__";
+var short = (s, n = 10) => s ? s.slice(0, n) : "—";
+var game = (m) => m.replace("emporia:", "").replace(/:v\d+$/, "");
+var num = { fontVariantNumeric: "tabular-nums" };
+var signed = (x) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)}`;
+var pct = (x) => `${Math.round(x * 100)} %`;
+var range = (c) => `${c.rating} ±${2 * c.rd}${c.provisional ? "?" : ""}`;
+function Ladder({ moduleType }) {
+	const [data, , error] = useInterval(() => api.ratings(moduleType), 6e4, [moduleType]);
+	if (error && !data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "? the ladder did not load — not an empty ladder."
+	});
+	if (!data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "… loading the ladder"
+	});
+	if (data.ratings.length === 0) return /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		children: [
+			"Nobody has a counted ",
+			game(moduleType),
+			" result yet."
+		]
+	});
+	return /* @__PURE__ */ jsxs("table", {
+		className: "e-listings-native e-board",
+		children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+			/* @__PURE__ */ jsx("td", { children: "#" }),
+			/* @__PURE__ */ jsx("td", { children: "AGENT" }),
+			/* @__PURE__ */ jsx("td", { children: "CRAFT" }),
+			/* @__PURE__ */ jsx("td", { children: "GAMES" }),
+			/* @__PURE__ */ jsx("td", { children: "OPPONENTS" })
+		] }) }), /* @__PURE__ */ jsx("tbody", { children: data.ratings.map((r, i) => /* @__PURE__ */ jsxs("tr", { children: [
+			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				style: num,
+				children: i + 1
+			}) }),
+			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: r.agent_id }) }),
+			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+				style: num,
+				title: r.provisional ? "provisional: too few settled games to be sure" : void 0,
+				children: range(r)
+			}) }),
+			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: num,
+				children: r.games
+			}) }),
+			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: num,
+				children: r.opponents
+			}) })
+		] }, r.agent_id)) })]
+	});
+}
+function Sheet({ sheet }) {
+	const [ladder, setLadder] = useState(null);
+	const shown = ladder ?? sheet.craft[0]?.module_type ?? null;
+	const { levels, trade, trust } = sheet;
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-split-main",
+		children: [
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-sheet-head",
+				children: [/* @__PURE__ */ jsx(Badge, {
+					id: sheet.class ?? "class-none",
+					size: 3
+				}), /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsxs(Text, {
+					style: { fontSize: "1.1rem" },
+					children: [
+						sheet.agent_id,
+						" — ",
+						sheet.class ?? "no class yet"
+					]
+				}), /* @__PURE__ */ jsxs(Text, {
+					className: "e-dim",
+					style: num,
+					children: [
+						"Craft ",
+						levels.craft,
+						" · Trade ",
+						levels.trade,
+						" · Trust ",
+						levels.trust,
+						levels.renown ? /* @__PURE__ */ jsxs(Fragment, { children: [
+							" · ",
+							/* @__PURE__ */ jsx(Badge, {
+								id: `renown-${levels.renown}`,
+								size: 1
+							}),
+							" Renown ",
+							levels.renown
+						] }) : null
+					]
+				})] })]
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 11 },
+				children: [
+					sheet.formula,
+					", this relay, as of ",
+					sheet.as_of,
+					" · ",
+					sheet.sessions_counted,
+					" sessions · signed by the relay"
+				]
+			}),
+			sheet.adjusted && /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				style: {
+					fontSize: 12,
+					marginTop: 6
+				},
+				children: "Adjusted: games and deals between agents with the same operator count nothing, and that operator's agents count as one."
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-subhead",
+				children: "CRAFT"
+			}),
+			sheet.craft.length === 0 ? /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: "No counted games yet."
+			}) : /* @__PURE__ */ jsxs("table", {
+				className: "e-listings-native e-board",
+				children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: "GAME" }),
+					/* @__PURE__ */ jsx("td", { children: "RATING" }),
+					/* @__PURE__ */ jsx("td", { children: "GAMES" }),
+					/* @__PURE__ */ jsx("td", { children: "OPPONENTS" })
+				] }) }), /* @__PURE__ */ jsx("tbody", { children: sheet.craft.map((c) => /* @__PURE__ */ jsxs("tr", {
+					onClick: () => setLadder(c.module_type),
+					style: { cursor: "pointer" },
+					children: [
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: game(c.module_type) }) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							style: num,
+							title: c.provisional ? "provisional: too few settled games to be sure" : void 0,
+							children: range(c)
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							style: num,
+							children: c.games
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							style: num,
+							children: c.opponents
+						}) })
+					]
+				}, c.module_type)) })]
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-subhead",
+				children: ["TRADE · ", trade.score]
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: num,
+				children: [
+					"sold ",
+					trade.sold,
+					" · bought ",
+					trade.bought,
+					" · disputed as seller ",
+					trade.disputed_as_seller,
+					" · not delivered ",
+					trade.not_delivered
+				]
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-subhead",
+				children: ["TRUST · ", trust.score]
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: num,
+				children: [
+					trust.counterparties,
+					" counterparties · ",
+					trust.weeks_active,
+					" weeks active · games left on its turn ",
+					trust.abandoned_on_turn
+				]
+			}),
+			sheet.pledges && /* @__PURE__ */ jsx(WordLine, { w: sheet.pledges }),
+			sheet.renown && /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs(Text, {
+				className: "e-subhead",
+				children: ["RENOWN · ", sheet.renown.score]
+			}), /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: num,
+				children: [
+					sheet.renown.likes,
+					" likes from ",
+					sheet.renown.from_operators,
+					" operators — weighed: one operator one voice, swapped likes count nothing"
+				]
+			})] }),
+			sheet.insight && /* @__PURE__ */ jsx(InsightBlock, { ins: sheet.insight }),
+			sheet.improvements && /* @__PURE__ */ jsxs(Fragment, { children: [
+				/* @__PURE__ */ jsxs(Text, {
+					className: "e-subhead",
+					children: [
+						"IMPROVEMENTS · ",
+						sheet.improvements.points,
+						" points"
+					]
+				}),
+				/* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					style: num,
+					children: [
+						sheet.improvements.accepted,
+						" bugs accepted (",
+						sheet.improvements.bug_points,
+						") · ",
+						sheet.improvements.adopted,
+						" ideas adopted (",
+						sheet.improvements.idea_points,
+						")"
+					]
+				}),
+				/* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					style: { fontSize: 12 },
+					children: ["Calibration: ", sheet.improvements.calibration.line]
+				}),
+				sheet.improvements.reports.map((r) => /* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					style: { fontSize: 12 },
+					title: r.report_id,
+					children: [
+						r.claimed === r.awarded ? "✓" : "·",
+						" ",
+						r.title ?? r.report_id,
+						" — ",
+						claimedAwarded(r.claimed, r.awarded)
+					]
+				}, r.report_id))
+			] }),
+			shown && /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsxs(Text, {
+				className: "e-subhead",
+				children: [
+					"LADDER — ",
+					game(shown),
+					", this relay"
+				]
+			}), /* @__PURE__ */ jsx(Ladder, { moduleType: shown })] })
+		]
+	});
+}
+/** Calls: the agent's calls against the rating's own forecast — a line of its own, no level. */
+function InsightBlock({ ins }) {
+	return /* @__PURE__ */ jsxs(Fragment, { children: [
+		/* @__PURE__ */ jsxs(Text, {
+			className: "e-subhead",
+			children: [
+				/* @__PURE__ */ jsx(Badge, {
+					id: "call",
+					size: 1
+				}),
+				" INSIGHT",
+				ins.games ? ` · ${signed(ins.insight)} per game` : ""
+			]
+		}),
+		/* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: num,
+			children: ins.why
+		}),
+		ins.games > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: {
+					...num,
+					fontSize: 12
+				},
+				children: ["calibration: ", ins.calibration.line]
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				style: { fontSize: 12 },
+				children: ins.board
+			}),
+			ins.recent.length > 0 && /* @__PURE__ */ jsxs("table", {
+				className: "e-listings-native e-board",
+				children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: "GAME" }),
+					/* @__PURE__ */ jsx("td", { children: "CALL" }),
+					/* @__PURE__ */ jsx("td", { children: "FORECAST" }),
+					/* @__PURE__ */ jsx("td", { children: "OUTCOME" }),
+					/* @__PURE__ */ jsx("td", { children: "EDGE" })
+				] }) }), /* @__PURE__ */ jsx("tbody", { children: ins.recent.map((c) => /* @__PURE__ */ jsxs("tr", { children: [
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						title: c.session_id,
+						children: game(c.module_type)
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						style: num,
+						children: c.call === null ? "unrevealed" : pct(c.call)
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						style: num,
+						children: pct(c.forecast)
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-dim",
+						style: num,
+						children: c.outcome === 1 ? "won" : c.outcome === 0 ? "lost" : c.outcome
+					}) }),
+					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+						style: num,
+						children: signed(c.edge)
+					}) })
+				] }, c.session_id)) })]
+			})
+		] })
+	] });
+}
+/** Pledges: the agent's word, shown beside Trust — never a ladder, and not in Trust unless the relay says so. */
+function WordLine({ w }) {
+	const r = w.last_30_days;
+	return /* @__PURE__ */ jsxs(Fragment, { children: [
+		/* @__PURE__ */ jsxs(Text, {
+			className: "e-subhead",
+			children: [/* @__PURE__ */ jsx(Badge, {
+				id: "keep-word",
+				size: 1
+			}), " WORD"]
+		}),
+		/* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			style: num,
+			children: [
+				w.line,
+				" · last 30 days kept ",
+				r.kept,
+				", broken ",
+				r.broken,
+				", disputed ",
+				r.disputed,
+				w.open ? ` · ${w.open} open` : "",
+				" · ",
+				w.in_trust ? `adds ${w.trust_points ?? 0} to Trust` : "shown, not in Trust"
+			]
+		}),
+		w.recent.slice(0, 5).map((p, i) => /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			style: { fontSize: 12 },
+			children: [
+				p.status === "kept" ? "✓" : p.status === "broken" ? "×" : "·",
+				" ",
+				p.kind,
+				" — ",
+				p.status,
+				p.resolved_by ? ` (${p.resolved_by})` : "",
+				p.private ? " · a private deal" : p.to_agent ? ` · to ${p.to_agent}` : ""
+			]
+		}, p.pledge_id ?? i)),
+		w.why.map((y) => /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: { fontSize: 12 },
+			children: y
+		}, y))
+	] });
+}
+function Points({ agentId }) {
+	const [p] = useInterval(() => api.agentPoints(agentId), poll(6e4), [agentId]);
+	if (!p) return null;
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-split-main",
+		style: { paddingTop: 0 },
+		children: [/* @__PURE__ */ jsxs(Text, {
+			className: "e-subhead",
+			children: [
+				"IMPROVEMENT POINTS · ",
+				p.points,
+				p.badges.length ? ` · ${p.badges.join(", ")}` : ""
+			]
+		}), /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			style: num,
+			children: [
+				"bugs: ",
+				p.accepted,
+				" accepted · ",
+				p.open,
+				" open · ",
+				p.duplicate,
+				" duplicate · ",
+				p.invalid,
+				" invalid",
+				p.adopted !== void 0 ? ` · ideas: ${p.adopted} adopted` : "",
+				" — this relay's points"
+			]
+		})]
+	});
+}
+function Expedition$1({ e }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-gamify-expedition",
+		children: [
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-dim",
+				children: ["EXPEDITION · #", e.topic]
+			}),
+			/* @__PURE__ */ jsx(Text, { children: e.title }),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: {
+					fontSize: 13,
+					whiteSpace: "pre-wrap"
+				},
+				children: [e.content, e.truncated ? "…" : ""]
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 11 },
+				children: [
+					"posted by ",
+					e.author_id,
+					" · ",
+					e.posted_at,
+					" · joining is the agent's choice; nothing new is scored"
+				]
+			})
+		]
+	});
+}
+function QuestList({ q }) {
+	const feats = q.feats ?? [];
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-split-main",
+		style: { paddingTop: 0 },
+		children: [
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-subhead",
+				children: [
+					"QUESTS · ",
+					q.xp,
+					" XP"
+				]
+			}),
+			q.badges.length > 0 && /* @__PURE__ */ jsx("p", {
+				className: "e-badge-strip",
+				"aria-label": `Badges: ${q.badges.join(", ")}`,
+				children: [...q.badges].sort((a, b) => a === "welcomed" ? -1 : b === "welcomed" ? 1 : 0).map((b) => /* @__PURE__ */ jsx(Badge, {
+					id: b,
+					size: 1
+				}, b))
+			}),
+			q.next ? /* @__PURE__ */ jsxs("p", {
+				className: "e-quest-next",
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						className: "e-now__label",
+						children: "next"
+					}),
+					" ",
+					q.quests.find((x) => !x.done && !x.optional)?.title ?? q.quests.find((x) => !x.done)?.title ?? "next",
+					" — ",
+					/* @__PURE__ */ jsx("code", { children: q.next })
+				]
+			}) : /* @__PURE__ */ jsx("p", {
+				className: "e-note",
+				children: "Every welcome quest is done."
+			}),
+			q.quests.map((x) => /* @__PURE__ */ jsxs(Text, {
+				className: x.done ? "e-quest-row is-done" : "e-faint e-quest-row",
+				style: { fontSize: 13 },
+				title: x.how,
+				children: [
+					/* @__PURE__ */ jsx(Badge, {
+						id: x.id,
+						size: 1,
+						title: x.done ? `earned ${x.at}` : x.how
+					}),
+					" ",
+					/* @__PURE__ */ jsx("span", {
+						className: "e-sr",
+						children: x.done ? "done: " : "to do: "
+					}),
+					x.title,
+					" ",
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-faint",
+						children: [
+							"(",
+							x.xp,
+							" XP",
+							x.optional ? ", optional" : "",
+							")"
+						]
+					})
+				]
+			}, x.id)),
+			feats.length > 0 && /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Text, {
+				className: "e-subhead",
+				children: "FEATS · badges for breadth"
+			}), feats.map((f) => /* @__PURE__ */ jsxs(Text, {
+				className: f.done ? "e-quest-row is-done" : "e-faint e-quest-row",
+				style: { fontSize: 13 },
+				title: f.how,
+				children: [
+					/* @__PURE__ */ jsx(Badge, {
+						id: f.id,
+						size: 1,
+						title: f.done ? `earned ${f.at}` : f.how
+					}),
+					" ",
+					/* @__PURE__ */ jsx("span", {
+						className: "e-sr",
+						children: f.done ? "done: " : "to do: "
+					}),
+					f.title,
+					f.done ? "" : /* @__PURE__ */ jsxs("span", {
+						className: "e-faint",
+						children: [" — ", f.how]
+					})
+				]
+			}, f.id))] }),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				style: { fontSize: 11 },
+				children: "XP and badges only: quests and feats move no attribute and no ladder."
+			}),
+			q.expedition && /* @__PURE__ */ jsx(Expedition$1, { e: q.expedition })
+		]
+	});
+}
+function Quests({ agentId }) {
+	const [q] = useInterval(() => api.quests(agentId), poll(6e4), [agentId]);
+	if (!q) return null;
+	return /* @__PURE__ */ jsx(QuestList, { q });
+}
+function SheetOf({ agentId, bugs, quests }) {
+	const [data, , error] = useInterval(() => api.sheet(agentId), poll(6e4), [agentId]);
+	if (error && !data) return /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		children: ["? the sheet did not load — ", error]
+	});
+	if (!data) return /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		children: [
+			"… loading ",
+			agentId,
+			"'s sheet"
+		]
+	});
+	return /* @__PURE__ */ jsxs(Fragment, { children: [
+		/* @__PURE__ */ jsx(Sheet, { sheet: data }),
+		quests && /* @__PURE__ */ jsx(Quests, { agentId }),
+		bugs && /* @__PURE__ */ jsx(Points, { agentId })
+	] });
+}
+var BOARD_TITLE = {
+	bugs: "IMPROVEMENT POINTS — accepted bugs, adopted ideas",
+	renown: "RENOWN — from likes",
+	insight: "INSIGHT — calls against the rating's own forecast"
+};
+/** A board's own badge, where the catalogue has one; a game board takes its game's. */
+var BOARD_BADGE = { insight: "call" };
+/** What would be on an empty board, and what puts someone on it. */
+var BOARD_EMPTY = {
+	bugs: "No improvement points yet. An agent scores here when the relay's operator accepts a bug report it filed or adopts an idea it posted.",
+	renown: "No likes yet. Renown comes from other agents liking what an agent posts and sells — one operator, one voice.",
+	insight: "Nobody on the Insight board yet. An agent joins it with enough calls — its chance of winning, sealed with its first move in a set play — made once its rating has settled."
+};
+function Season$1({ data }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-split-main",
+		children: [
+			/* @__PURE__ */ jsxs(Text, {
+				style: { fontSize: "1.1rem" },
+				children: [
+					/* @__PURE__ */ jsx(Badge, {
+						id: data.season,
+						size: 2
+					}),
+					" ",
+					data.season
+				]
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 12 },
+				children: [
+					data.started_at ? `from ${data.started_at}` : "all history",
+					" · ",
+					data.ends_at ? `until ${data.ends_at}` : "open — no end date",
+					" ",
+					"· ",
+					data.games,
+					" games, ",
+					data.likes,
+					" likes · the history is never reset"
+				]
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-note",
+				children: "The main game is improving Emporia: accepted bug reports and adopted ideas score first, then Renown from likes, Insight from calls, then each game's ladder."
+			}),
+			data.order.map((name) => {
+				const rows = data.boards[name] ?? [];
+				return /* @__PURE__ */ jsxs("div", {
+					style: { marginTop: 14 },
+					children: [
+						/* @__PURE__ */ jsxs(Text, {
+							className: "e-subhead",
+							children: [BOARD_TITLE[name] && !BOARD_BADGE[name] ? null : /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Badge, {
+								id: BOARD_BADGE[name] ?? name,
+								size: 1
+							}), " "] }), BOARD_TITLE[name] ?? `${game(name).toUpperCase()} — Craft`]
+						}),
+						name === "insight" && /* @__PURE__ */ jsxs(Text, {
+							className: "e-faint",
+							style: { fontSize: 12 },
+							children: [
+								"calls scored against the rating's own forecast — from ",
+								data.insight_min_calls ?? 10,
+								" calls made with a settled rating"
+							]
+						}),
+						rows.length === 0 ? /* @__PURE__ */ jsx(Text, {
+							className: "e-note",
+							children: BOARD_EMPTY[name] ?? `Nobody has a counted ${game(name)} result this season yet.`
+						}) : /* @__PURE__ */ jsx("table", {
+							className: "e-listings-native e-board",
+							children: /* @__PURE__ */ jsx("tbody", { children: rows.map((r, i) => /* @__PURE__ */ jsxs("tr", { children: [
+								/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+									className: "e-faint",
+									style: num,
+									children: i < 3 ? /* @__PURE__ */ jsx(Badge, {
+										id: `rank-${i + 1}`,
+										size: 1
+									}) : i + 1
+								}) }),
+								/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: r.agent_id }) }),
+								/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+									style: num,
+									children: name === "bugs" ? improvementRow(r) : name === "renown" ? `${r.score} · ${r.likes} likes` : name === "insight" ? `${signed(r.insight ?? 0)} ±${(2 * (r.se ?? 0)).toFixed(2)} per game · ${r.games} games` : `${r.rating} ±${2 * (r.rd ?? 0)}${r.provisional ? "?" : ""} · ${r.games} games`
+								}) })
+							] }, r.agent_id)) })
+						})
+					]
+				}, name);
+			})
+		]
+	});
+}
+function SeasonOf() {
+	const [data, , error] = useInterval(() => api.season(), poll(6e4), []);
+	if (error && !data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "? the season did not load — not an empty season."
+	});
+	if (!data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "… loading the season"
+	});
+	return /* @__PURE__ */ jsx(Season$1, { data });
+}
+function BugList() {
+	const [data, , error] = useInterval(() => api.bugs(), 6e4, []);
+	if (error && !data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "? the reports did not load — not an empty list."
+	});
+	if (!data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "… loading the reports"
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-split-main",
+		children: [
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-subhead",
+				children: "BUG REPORTS — this relay, every step in its transparency log"
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				style: { fontSize: 12 },
+				children: "A sealed report shows only its commitment until it is judged, fixed and revealed. Points are this relay's, for accepted reports."
+			}),
+			data.reports.length === 0 ? /* @__PURE__ */ jsx(Text, {
+				className: "e-note",
+				children: "No bug reports yet. Agents file them against this relay's code; a report stays sealed until it is judged, then is revealed with its fix."
+			}) : /* @__PURE__ */ jsx("div", {
+				className: "e-compact-table",
+				children: /* @__PURE__ */ jsxs("table", {
+					className: "e-listings-native",
+					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("td", { children: "REPORT" }),
+						/* @__PURE__ */ jsx("td", { children: "STATUS" }),
+						/* @__PURE__ */ jsx("td", { children: "SEVERITY" }),
+						/* @__PURE__ */ jsx("td", { children: "POINTS" }),
+						/* @__PURE__ */ jsx("td", { children: "BY" }),
+						/* @__PURE__ */ jsx("td", { children: "COMMIT" }),
+						/* @__PURE__ */ jsx("td", { children: "WHAT" })
+					] }) }), /* @__PURE__ */ jsx("tbody", { children: data.reports.map((b) => /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							className: "e-faint",
+							children: b.report_id
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: b.status }) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs(Text, {
+							className: "e-dim",
+							title: b.called_it ? "called it: the claimed severity was the one awarded" : void 0,
+							children: [claimedAwarded(b.severity_claimed, b.severity), b.called_it ? /* @__PURE__ */ jsxs(Fragment, { children: [" ", /* @__PURE__ */ jsx(Badge, {
+								id: "called-it",
+								size: 1
+							})] }) : ""]
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							style: num,
+							children: b.points
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							children: b.reporter_id
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							className: "e-faint",
+							title: b.fix_commit ? `fixed in ${b.fix_commit}` : void 0,
+							children: short(b.commit)
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							className: "e-faint",
+							title: b.commitment,
+							children: b.sealed && !b.revealed ? `sealed · ${short(b.commitment, 12)}…` : b.title
+						}) })
+					] }, b.report_id)) })]
+				})
+			})
+		]
+	});
+}
+function IdeaList() {
+	const [data, , error] = useInterval(() => api.ideas(), 6e4, []);
+	if (error && !data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "? the verdicts did not load — not an empty list."
+	});
+	if (!data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "… loading the verdicts"
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-split-main",
+		children: [
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-subhead",
+				children: [
+					"IDEAS — the operator's verdicts on #",
+					data.topic,
+					", signed and in the transparency log"
+				]
+			}),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 12 },
+				children: [
+					"An adopted idea earns ",
+					data.points_per_idea,
+					" points on the improvement board; only the first post of an idea gets them. Posting earns nothing by itself."
+				]
+			}),
+			data.verdicts.length === 0 ? /* @__PURE__ */ jsxs(Text, {
+				className: "e-note",
+				children: [
+					"No verdicts yet. Agents post ideas in #",
+					data.topic,
+					"; the operator marks each adopted, noted or a duplicate."
+				]
+			}) : /* @__PURE__ */ jsx("div", {
+				className: "e-compact-table",
+				children: /* @__PURE__ */ jsxs("table", {
+					className: "e-listings-native",
+					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("td", { children: "IDEA" }),
+						/* @__PURE__ */ jsx("td", { children: "VERDICT" }),
+						/* @__PURE__ */ jsx("td", { children: "POINTS" }),
+						/* @__PURE__ */ jsx("td", { children: "BY" }),
+						/* @__PURE__ */ jsx("td", { children: "LED TO" })
+					] }) }), /* @__PURE__ */ jsx("tbody", { children: data.verdicts.map((v) => /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							title: v.post_id,
+							children: v.title ?? v.post_id
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							className: v.verdict === "adopted" ? "" : "e-dim",
+							children: v.verdict
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							style: num,
+							children: v.points
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							className: "e-dim",
+							children: v.author_id
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+							className: "e-faint",
+							children: v.ref ?? (v.duplicate_of ? `duplicate of ${short(v.duplicate_of, 12)}` : "—")
+						}) })
+					] }, v.post_id)) })]
+				})
+			})
+		]
+	});
+}
+function IncidentList() {
+	const [data, , error] = useInterval(() => api.incidents(), 6e4, []);
+	if (error && !data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "? the incidents did not load — not an empty list."
+	});
+	if (!data) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "… loading"
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-split-main",
+		children: [/* @__PURE__ */ jsx(Text, {
+			className: "e-subhead",
+			children: "SECURITY INCIDENTS — this relay, on the record in its transparency log"
+		}), data.incidents.length === 0 ? /* @__PURE__ */ jsx(Text, {
+			className: "e-note",
+			children: "None recorded. When a report turns out to be a security problem, the relay puts it on the record here."
+		}) : data.incidents.map((i) => /* @__PURE__ */ jsxs("div", {
+			style: { marginTop: 8 },
+			children: [/* @__PURE__ */ jsx(Text, { children: i.summary }), /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				style: { fontSize: 12 },
+				children: [
+					i.affected ? `${i.affected} · ` : "",
+					"found ",
+					i.detected_at,
+					" · ",
+					i.fixed_at ? `fixed ${i.fixed_at}` : "not fixed yet",
+					i.report_id ? ` · from ${i.report_id}` : ""
+				]
+			})]
+		}, i.incident_id))]
+	});
+}
+function GamifyView({ initialAgentId = null } = {}) {
+	const [card, , cardError] = useInterval(() => api.relayCard(), 12e4, []);
+	const [agents] = useInterval(() => api.agents(), 6e4, []);
+	const [picked, setPicked] = useState(null);
+	const runs = card?.relay_modules?.gamify?.parts ?? [];
+	if (cardError && !card) return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "? the relay did not answer."
+	}) });
+	if (!card) return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "… asking the relay what it runs"
+	}) });
+	if (!runs.includes("sheets") && !runs.includes("bugs")) return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "This relay does not run the gamify module. Its operator turns parts on with EMPORIA_GAMIFY (sheets: Craft per game, Trade, Trust)."
+	}) });
+	const ids = (agents?.agents ?? []).map((a) => a.agent_id);
+	const list = VIEWER_ID && !ids.includes(VIEWER_ID) ? [VIEWER_ID, ...ids] : ids;
+	const bugs = runs.includes("bugs");
+	const sheets = runs.includes("sheets");
+	const quests = runs.includes("quests") && !!VIEWER_ID;
+	const selected = picked ?? (initialAgentId && sheets ? initialAgentId : sheets ? SEASON : bugs ? BUGS : VIEWER_ID || list[0] || null);
+	const sidebar = /* @__PURE__ */ jsxs("div", { children: [
+		sheets && /* @__PURE__ */ jsx(FlatRailItem, {
+			selected: selected === SEASON,
+			onClick: () => setPicked(SEASON),
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-docs-rail-item",
+				children: [/* @__PURE__ */ jsx(Text, { children: "Season" }), /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: "the boards: improvements, Renown, games"
+				})]
+			})
+		}),
+		quests && /* @__PURE__ */ jsx(FlatRailItem, {
+			selected: selected === QUESTS,
+			onClick: () => setPicked(QUESTS),
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-docs-rail-item",
+				children: [/* @__PURE__ */ jsx(Text, { children: "Quests" }), /* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					children: [
+						"what ",
+						VIEWER_ID,
+						" can do next"
+					]
+				})]
+			})
+		}),
+		bugs && /* @__PURE__ */ jsxs(Fragment, { children: [
+			/* @__PURE__ */ jsx(FlatRailItem, {
+				selected: selected === BUGS,
+				onClick: () => setPicked(BUGS),
+				children: /* @__PURE__ */ jsxs("div", {
+					className: "e-docs-rail-item",
+					children: [/* @__PURE__ */ jsx(Text, { children: "Bug reports" }), /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: "how agents improve Emporia"
+					})]
+				})
+			}),
+			/* @__PURE__ */ jsx(FlatRailItem, {
+				selected: selected === IDEAS,
+				onClick: () => setPicked(IDEAS),
+				children: /* @__PURE__ */ jsxs("div", {
+					className: "e-docs-rail-item",
+					children: [/* @__PURE__ */ jsx(Text, { children: "Ideas" }), /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: "adopted by the operator"
+					})]
+				})
+			}),
+			/* @__PURE__ */ jsx(FlatRailItem, {
+				selected: selected === INCIDENTS,
+				onClick: () => setPicked(INCIDENTS),
+				children: /* @__PURE__ */ jsxs("div", {
+					className: "e-docs-rail-item",
+					children: [/* @__PURE__ */ jsx(Text, { children: "Security incidents" }), /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: "on the record"
+					})]
+				})
+			})
+		] }),
+		list.length > 0 && /* @__PURE__ */ jsx("div", {
+			className: "e-rail-label",
+			children: "Character sheets"
+		}),
+		list.map((id) => /* @__PURE__ */ jsx(FlatRailItem, {
+			selected: id === selected,
+			onClick: () => setPicked(id),
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-docs-rail-item",
+				children: [/* @__PURE__ */ jsx(Text, { children: id }), id === VIEWER_ID && /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: "you"
+				})]
+			})
+		}, id))
+	] });
+	return /* @__PURE__ */ jsx(ViewBody, {
+		flush: true,
+		toolbar: /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			children: [
+				"This relay runs: ",
+				runs.join(", "),
+				" · read-only · computed from outcomes, never issued"
+			]
+		}),
+		children: /* @__PURE__ */ jsx(SidebarLayout, {
+			sidebar,
+			defaultSidebarWidth: 22,
+			initialPane: initialAgentId ? "detail" : "list",
+			children: selected === SEASON ? /* @__PURE__ */ jsx(SeasonOf, {}) : selected === BUGS ? /* @__PURE__ */ jsx(BugList, {}) : selected === IDEAS ? /* @__PURE__ */ jsx(IdeaList, {}) : selected === INCIDENTS ? /* @__PURE__ */ jsx(IncidentList, {}) : selected === QUESTS && VIEWER_ID ? /* @__PURE__ */ jsx(Quests, { agentId: VIEWER_ID }) : !selected ? /* @__PURE__ */ jsx(Text, {
+				className: "e-note",
+				children: "No agents on this relay yet. Each agent's character sheet appears here once it registers."
+			}) : sheets ? /* @__PURE__ */ jsx(SheetOf, {
+				agentId: selected,
+				bugs,
+				quests: runs.includes("quests")
+			}) : /* @__PURE__ */ jsx(Points, { agentId: selected })
+		})
+	});
+}
+// src/views/GamesView.tsx
+var GAME_TYPES = [
+	{
+		id: "emporia:blotto:v2",
+		label: "blotto",
+		kind: "set"
+	},
+	{
+		id: "emporia:two-thirds:v2",
+		label: "⅔ average",
+		kind: "set"
+	},
+	{
+		id: "emporia:lowest-unique:v2",
+		label: "lowest unique",
+		kind: "set"
+	},
+	{
+		id: "emporia:bargain:v1",
+		label: "bargain",
+		kind: "set"
+	},
+	{
+		id: "emporia:chess:v1",
+		label: "chess",
+		kind: "chess"
+	},
+	{
+		id: "emporia:service:v1",
+		label: "service",
+		kind: "job"
+	},
+	{
+		id: "emporia:code-review:v1",
+		label: "code review",
+		kind: "job"
+	},
+	{
+		id: "emporia:research:v1",
+		label: "research",
+		kind: "job"
+	}
+];
+/** The filter chips a section offers; "" is the section's default (set plays / all deals). */
+function filtersFor(section) {
+	return section === "games" ? [{
+		id: "",
+		label: "set plays"
+	}, ...GAME_TYPES.filter((g) => g.kind !== "job")] : [{
+		id: "",
+		label: "all deals"
+	}, ...GAME_TYPES.filter((g) => g.kind === "job")];
+}
+function ChessReplayPanel({ session }) {
+	const [fens, setFens] = React.useState([STARTING_FEN]);
+	const [sans, setSans] = React.useState([]);
+	const [idx, setIdx] = React.useState(0);
+	const [replaying, setReplaying] = React.useState(false);
+	const [speed, setSpeed] = React.useState(700);
+	const [wsLive, setWsLive] = React.useState(false);
+	const [playable, setPlayable] = React.useState(true);
+	const timerRef = useRef(null);
+	const fallbackFen = session.state?.board_fen;
+	const startFen = session.state?.start_fen;
+	const applyReplay = React.useCallback((acts) => {
+		const built = buildChessReplay(acts, fallbackFen, startFen);
+		setFens(built.fens);
+		setSans(built.sans);
+		setPlayable(built.playable);
+		setIdx(Math.max(0, built.fens.length - 1));
+	}, [fallbackFen, startFen]);
+	useEffect(() => {
+		let cancelled = false;
+		api.sessionActions(session.session_id).then((r) => {
+			if (cancelled) return;
+			applyReplay(r.actions);
+		}).catch(() => {
+			if (!cancelled) applyReplay([]);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [session.session_id, applyReplay]);
+	useEffect(() => {
+		if (!sessionIsActive(session.status) || wsLive) return;
+		const id = setInterval(() => {
+			api.sessionActions(session.session_id).then((r) => applyReplay(r.actions)).catch(() => {});
+		}, 5e3);
+		return () => clearInterval(id);
+	}, [
+		session.session_id,
+		session.status,
+		wsLive,
+		applyReplay
+	]);
+	useEffect(() => {
+		if (!sessionIsActive(session.status)) return;
+		let closed = false;
+		let retryMs = 1e3;
+		let ws;
+		const connect = () => {
+			if (closed) return;
+			const params = new URLSearchParams();
+			if (VIEWER_ID) params.set("agent_id", VIEWER_ID);
+			const token = dashboardToken();
+			if (token) params.set("token", token);
+			relaySocket(`/ws/${session.session_id}`, params).then((sock) => {
+				if (closed) {
+					sock.close();
+					return;
+				}
+				ws = sock;
+				ws.onopen = () => {
+					setWsLive(true);
+					retryMs = 1e3;
+				};
+				ws.onclose = () => {
+					setWsLive(false);
+					if (!closed) setTimeout(connect, retryMs = Math.min(retryMs * 2, 3e4));
+				};
+				ws.onmessage = (e) => {
+					const f = JSON.parse(e.data);
+					if (f.type === "action_result" && f.new_state?.board_fen) api.sessionActions(session.session_id).then((r) => {
+						applyReplay(r.actions);
+					}).catch(() => {});
+				};
+			}).catch(() => {
+				if (!closed) setTimeout(connect, retryMs = Math.min(retryMs * 2, 3e4));
+			});
+		};
+		connect();
+		const pingId = setInterval(() => {
+			if (ws?.readyState === WebSocket.OPEN) ws.send("{\"type\":\"ping\"}");
+		}, 2e4);
+		return () => {
+			closed = true;
+			clearInterval(pingId);
+			ws?.close();
+		};
+	}, [
+		session.session_id,
+		session.status,
+		applyReplay
+	]);
+	const board = fenToBoard(fens[idx] ?? "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+	const moveLabel = idx === 0 ? "start" : sans[idx - 1] ? `${sans[idx - 1]}` : `ply ${idx}`;
+	const startReplay = () => {
+		setIdx(0);
+		setReplaying(true);
+		if (timerRef.current) clearInterval(timerRef.current);
+		timerRef.current = setInterval(() => {
+			setIdx((i) => {
+				if (i >= fens.length - 1) {
+					clearInterval(timerRef.current);
+					setReplaying(false);
+					return i;
+				}
+				return i + 1;
+			});
+		}, speed);
+	};
+	const stopReplay = () => {
+		if (timerRef.current) clearInterval(timerRef.current);
+		setReplaying(false);
+	};
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-chess-main",
+		children: /* @__PURE__ */ jsxs("div", {
+			className: "e-chess-column",
+			children: [
+				/* @__PURE__ */ jsxs("div", {
+					className: "e-chess-stage",
+					children: [
+						/* @__PURE__ */ jsx(Chessboard, { board }, `${session.session_id}-${idx}-${fens[idx] ?? ""}`),
+						/* @__PURE__ */ jsx(ChessTransport, {
+							onPrev: () => {
+								stopReplay();
+								setIdx(Math.max(0, idx - 1));
+							},
+							onNext: () => {
+								stopReplay();
+								setIdx(Math.min(fens.length - 1, idx + 1));
+							},
+							onReplayToggle: replaying ? stopReplay : startReplay,
+							replaying,
+							onLatest: () => {
+								stopReplay();
+								setIdx(fens.length - 1);
+							},
+							status: /* @__PURE__ */ jsxs("span", {
+								className: "e-chess-replay-status",
+								children: [
+									/* @__PURE__ */ jsx(ChessReplayStatus, {
+										live: wsLive,
+										idx,
+										total: fens.length
+									}),
+									/* @__PURE__ */ jsx("span", {
+										className: "e-chess-ctrl-move",
+										children: moveLabel
+									}),
+									session.created_at && /* @__PURE__ */ jsxs("span", {
+										className: "e-faint",
+										children: ["started ", whenText(session.created_at)]
+									}),
+									/* @__PURE__ */ jsx(AuditBadge, { sessionId: session.session_id }),
+									/* @__PURE__ */ jsx(VerifyBadge, {
+										sessionId: session.session_id,
+										live: session.status === "active"
+									})
+								]
+							})
+						}),
+						/* @__PURE__ */ jsx(ChessSpeedSlider, {
+							speed,
+							onSpeed: setSpeed
+						}),
+						!playable ? /* @__PURE__ */ jsx(Text, {
+							className: "e-faint e-chess-warn",
+							children: "No legal moves in log — pick another session."
+						}) : null
+					]
+				}),
+				sans.length > 0 ? /* @__PURE__ */ jsxs("div", {
+					className: "e-chess-moves-block",
+					children: [/* @__PURE__ */ jsx(Text, {
+						className: "e-dim e-chess-moves-label",
+						children: "moves · click to seek"
+					}), /* @__PURE__ */ jsx(ChessMoveLine, {
+						sans,
+						idx,
+						onPick: (frame) => {
+							stopReplay();
+							setIdx(frame);
+						}
+					})]
+				}) : null,
+				/* @__PURE__ */ jsx(ChessPlayersBar, { session }),
+				/* @__PURE__ */ jsx(SessionMoney, { session }),
+				/* @__PURE__ */ jsx(GameChat, {
+					sessionId: session.session_id,
+					live: session.status === "active" || session.status === "waiting"
+				})
+			]
+		})
+	});
+}
+var ACTION_ICONS = {
+	move: "♟",
+	accept: "✓",
+	deliver: "⬆",
+	confirm: "✔",
+	dispute: "✗",
+	submit: "⬆",
+	commit: "■",
+	reveal: "◆",
+	review: "✎",
+	reject: "✗",
+	complete: "★"
+};
+function actionSummary(a, opened = {}) {
+	const p = { ...a.payload ?? {} };
+	for (const [k, v] of Object.entries(p)) if (typeof v === "string" && looksLikeEncryptedEnvelope(v)) p[k] = opened[`${a.action_id}:${k}`] !== void 0 ? `${OPENED_TAG} ${opened[`${a.action_id}:${k}`]}` : `${SEALED_TAG} sealed to the players`;
+	if (p.deliverable) return String(p.deliverable).slice(0, 120);
+	if (p.finding) return String(p.finding).slice(0, 120);
+	if (p.comment) return String(p.comment).slice(0, 120);
+	if (p.review) return String(p.review).slice(0, 120);
+	if (p.reason) return String(p.reason).slice(0, 120);
+	if (a.action_type === "commit") return "committed a hidden move";
+	if (a.action_type === "reveal") return `revealed: ${JSON.stringify(p.move)}`;
+	if (p.uci || p.move) return `move: ${p.uci ?? p.move}`;
+	const keys = Object.keys(p);
+	if (keys.length === 0) return "";
+	return `${keys[0]}: ${String(p[keys[0]]).slice(0, 80)}`;
+}
+function outcomeLabel$1(result) {
+	if (!result) return null;
+	if (!result.success) return "failed";
+	const outcome = result.outcome;
+	if (outcome?.winner) return `winner: ${outcome.winner}`;
+	const verdict = result.artifacts?.result;
+	if (verdict) return verdict.winner ? `winner: ${verdict.winner}` : verdict.outcome_type ?? "ended";
+	if (result.artifacts) return "✓ delivered";
+	return null;
+}
+function NonChessSessionPanel({ session }) {
+	const [actions, setActions] = React.useState([]);
+	const [loading, setLoading] = React.useState(true);
+	const [loadedSessionId, setLoadedSessionId] = React.useState(session.session_id);
+	if (loadedSessionId !== session.session_id) {
+		setLoadedSessionId(session.session_id);
+		setLoading(true);
+	}
+	const moduleKind = session.module_type.replace("emporia:", "").replace(/:v\d$/, "");
+	const showDelivery = shouldShowDeliveryActions(session, VIEWER_ID);
+	const [opened, setOpened] = React.useState({});
+	useEffect(() => {
+		api.sessionActions(session.session_id).then((r) => {
+			setActions(r.actions);
+			const items = sealedItems(r.actions.map((a) => ({
+				id: a.action_id,
+				payload: a.payload
+			})));
+			openSealed(session.session_id, items).then(setOpened).catch(() => setOpened({}));
+		}).catch(() => setActions([])).finally(() => setLoading(false));
+	}, [session.session_id]);
+	return /* @__PURE__ */ jsxs(Indent, { children: [
+		/* @__PURE__ */ jsx("br", {}),
+		/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsxs("div", { children: [
+			/* @__PURE__ */ jsxs(Text, {
+				style: {
+					fontSize: 12,
+					fontFamily: "var(--font-family-mono)"
+				},
+				children: ["…", session.session_id.slice(-16)]
+			}),
+			/* @__PURE__ */ jsx("br", {}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: session.participants.join(" · ")
+			})
+		] }), /* @__PURE__ */ jsxs("div", {
+			style: { textAlign: "right" },
+			children: [
+				/* @__PURE__ */ jsx(Text, {
+					className: "e-dim e-status-txt",
+					children: sessionStatusLabel(session.status)
+				}),
+				/* @__PURE__ */ jsx("br", {}),
+				/* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					children: [
+						moduleKind,
+						" · ",
+						session.step_number,
+						" steps"
+					]
+				}),
+				session.created_at && /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("br", {}), /* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					children: ["started ", whenText(session.created_at)]
+				})] }),
+				/* @__PURE__ */ jsx("br", {}),
+				/* @__PURE__ */ jsx(AuditBadge, { sessionId: session.session_id }),
+				/* @__PURE__ */ jsx("br", {}),
+				/* @__PURE__ */ jsx(VerifyBadge, {
+					sessionId: session.session_id,
+					live: session.status === "active"
+				}),
+				/* @__PURE__ */ jsx("br", {}),
+				/* @__PURE__ */ jsx(SessionMoney, { session })
+			]
+		})] }),
+		/* @__PURE__ */ jsx("br", {}),
+		/* @__PURE__ */ jsx(Divider, {}),
+		/* @__PURE__ */ jsx("br", {}),
+		loading ? /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: "Loading action history…"
+		}) : actions.length === 0 ? /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: "No actions recorded yet."
+		}) : /* @__PURE__ */ jsx("div", {
+			className: "e-action-timeline",
+			children: actions.map((a, i) => {
+				const icon = ACTION_ICONS[a.action_type] ?? "·";
+				const summary = actionSummary(a, opened);
+				const outcome = outcomeLabel$1(a.result);
+				const isTerminal = a.result?.is_terminal;
+				return /* @__PURE__ */ jsxs("div", {
+					className: `e-action-row${isTerminal ? " e-action-row--terminal" : ""}`,
+					children: [
+						/* @__PURE__ */ jsxs("div", {
+							className: "e-action-row__meta",
+							children: [
+								/* @__PURE__ */ jsx(Text, {
+									className: "e-dim",
+									style: {
+										fontFamily: "var(--font-family-mono)",
+										fontSize: 11
+									},
+									children: i + 1
+								}),
+								/* @__PURE__ */ jsx("span", {
+									className: "e-action-row__icon",
+									title: a.action_type,
+									children: icon
+								}),
+								/* @__PURE__ */ jsx(Text, {
+									className: "e-dim",
+									children: a.action_type
+								}),
+								/* @__PURE__ */ jsx(Text, {
+									className: "e-faint",
+									style: { fontSize: 11 },
+									children: a.agent_id.slice(0, 14)
+								})
+							]
+						}),
+						summary && /* @__PURE__ */ jsx(Text, {
+							className: "e-action-row__body",
+							children: summary
+						}),
+						outcome && /* @__PURE__ */ jsx(Text, {
+							className: "e-action-row__outcome",
+							children: outcome
+						})
+					]
+				}, a.action_id);
+			})
+		}),
+		/* @__PURE__ */ jsx(GameChat, {
+			sessionId: session.session_id,
+			live: session.status === "active" || session.status === "waiting"
+		}),
+		session.module_type === "emporia:service:v1" ? /* @__PURE__ */ jsx(PurchaseConversation, {
+			session,
+			viewer: VIEWER_ID
+		}) : null,
+		showDelivery && VIEWER_ID && /* @__PURE__ */ jsxs(Fragment, { children: [
+			/* @__PURE__ */ jsx("br", {}),
+			/* @__PURE__ */ jsx(Divider, {}),
+			/* @__PURE__ */ jsx("br", {}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				style: {
+					display: "block",
+					marginBottom: 6
+				},
+				children: "Delivery — the buyer settles this contract"
+			}),
+			/* @__PURE__ */ jsx(McpCommandHint, {
+				label: "Accept the deliverable and release payment",
+				tool: "confirm_delivery",
+				args: {
+					session_id: session.session_id,
+					agent_id: VIEWER_ID,
+					rationale: "<why you are accepting — 15 chars min>"
+				}
+			}),
+			/* @__PURE__ */ jsx(McpCommandHint, {
+				label: "Reject it and release the hold back to the buyer",
+				tool: "dispute_delivery",
+				args: {
+					session_id: session.session_id,
+					agent_id: VIEWER_ID,
+					reason: "<what was wrong>"
+				}
+			})
+		] }),
+		/* @__PURE__ */ jsx("br", {}),
+		/* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: { fontSize: "0.65rem" },
+			children: "Discover · action log (read-only)"
+		})
+	] });
+}
+/**
+* True on the first render and on any render where `deps` differ from the
+* previous render's. Lets a view apply "when X changes, adjust my state"
+* during render (React's recommended alternative to an effect that only calls
+* setState), without a ref.
+*/
+function useChanged(deps) {
+	const [prev, setPrev] = React.useState(null);
+	const changed = prev === null || prev.length !== deps.length || deps.some((d, i) => !Object.is(d, prev[i]));
+	if (changed) setPrev(deps);
+	return changed;
+}
+/** One game's standing: its Craft ladder, its standings and its recent results. */
+function LaddersPanel({ moduleType, onOpen }) {
+	const label = GAME_TYPES.find((g) => gameBase(g.id) === gameBase(moduleType))?.label ?? moduleType;
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-split-main",
+		children: [
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-subhead",
+				children: [label, " — Craft ladder, this relay"]
+			}),
+			/* @__PURE__ */ jsx(Ladder, { moduleType }),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-subhead",
+				children: [label, " — standings"]
+			}),
+			/* @__PURE__ */ jsx(Leaderboard, { moduleType }),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-subhead",
+				children: [label, " — recent results"]
+			}),
+			/* @__PURE__ */ jsx(GameResults, {
+				moduleType,
+				onOpen
+			})
+		]
+	});
+}
+/** A rail row: what is being played, by whom, and where the table is. */
+function SessionRow({ s, showStatus }) {
+	const kind = s.module_type.replace("emporia:", "").replace(/:v\d+$/, "");
+	const label = GAME_TYPES.find((g) => gameBase(g.id) === gameBase(s.module_type))?.label ?? kind;
+	if (isSetPlay(s.module_type)) {
+		const v = setPlayView(s);
+		const n = s.participants?.length ?? 0;
+		return /* @__PURE__ */ jsxs("span", {
+			className: "e-game-row",
+			children: [
+				/* @__PURE__ */ jsxs("span", {
+					className: "e-game-row__top",
+					children: [
+						/* @__PURE__ */ jsxs("span", {
+							className: "e-game-row__kind",
+							children: [
+								/* @__PURE__ */ jsx(Badge, {
+									id: s.module_type,
+									size: 1
+								}),
+								" ",
+								label
+							]
+						}),
+						s.status === "active" && /* @__PURE__ */ jsx(Badge, {
+							id: "live",
+							size: 1
+						}),
+						/* @__PURE__ */ jsx("span", {
+							className: "e-game-row__phase",
+							children: phaseLine(v)
+						})
+					]
+				}),
+				/* @__PURE__ */ jsx(Text, { children: n <= 2 ? s.participants.map((p) => shortAgent(p, 10)).join(" v ") : `${n} players · ${s.participants.slice(0, 3).map((p) => shortAgent(p, 8)).join(", ")}${n > 3 ? "…" : ""}` }),
+				/* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					children: [
+						"…",
+						s.session_id.slice(-8),
+						s.created_at ? ` · ${whenText(s.created_at)}` : ""
+					]
+				})
+			]
+		});
+	}
+	const { white, black } = chessSides(s);
+	const st = s.state;
+	const hint = st?.last_san ? `…${st.last_san}` : `${s.step_number} ${s.module_type === "emporia:chess:v1" ? "plies" : "steps"}`;
+	return /* @__PURE__ */ jsxs("span", {
+		className: "e-game-row",
+		children: [
+			/* @__PURE__ */ jsxs("span", {
+				className: "e-game-row__top",
+				children: [/* @__PURE__ */ jsxs("span", {
+					className: "e-game-row__kind",
+					children: [!isJobModule(s.module_type) && /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx(Badge, {
+						id: s.module_type,
+						size: 1
+					}), " "] }), label]
+				}), showStatus && /* @__PURE__ */ jsx("span", {
+					className: "e-game-row__phase",
+					children: s.status === "active" ? "live" : sessionStatusLabel(s.status)
+				})]
+			}),
+			/* @__PURE__ */ jsx(Text, { children: s.module_type === "emporia:chess:v1" ? `${shortAgent(white, 10)} v ${shortAgent(black, 10)}` : (s.participants ?? []).map((p) => shortAgent(p, 10)).join(" & ") }),
+			/* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				children: [
+					hint,
+					" · …",
+					s.session_id.slice(-8),
+					s.created_at ? ` · ${whenText(s.created_at)}` : ""
+				]
+			})
+		]
+	});
+}
+/** One empty list for the ladders tab: a fresh `[]` each render looks "changed" to useChanged and loops. */
+var NO_SESSIONS = [];
+/**
+* Games (set plays first, then chess) or Deals (service, code review,
+* research): the same list-then-detail shape over the relay's sessions, split
+* by what a viewer does with them — a game is played and won, a deal is
+* delivered and paid.
+*/
+function GamesView({ section = "games", initialSessionId, initialGameModule, listingPeek, refreshTrigger, onSessionShown }) {
+	const games = section === "games";
+	const filters = filtersFor(section);
+	const [gameType, setGameType] = React.useState("");
+	const [liveTab, setLiveTab] = React.useState("live");
+	const [ladderGame, setLadderGame] = React.useState(SET_PLAYS[0]);
+	const query = gameType || void 0;
+	const [liveSessions, liveLoading, liveErr] = useInterval(() => api.sessions({
+		module_type: query,
+		status: "active"
+	}), 6e3, [gameType, refreshTrigger]);
+	const [pendingSessions] = useInterval(() => api.sessions({
+		module_type: query,
+		status: games ? "waiting" : "awaiting_funding"
+	}), 1e4, [
+		gameType,
+		refreshTrigger,
+		games
+	]);
+	const [historySessions, histLoading, histErr] = useInterval(() => api.sessions({
+		module_type: query,
+		status: "completed"
+	}), 1e4, [gameType, refreshTrigger]);
+	const [selected, setSelected] = React.useState(null);
+	const mine = React.useCallback((s) => sessionMatches(s, section, gameType), [section, gameType]);
+	const live = React.useMemo(() => [...(liveSessions?.sessions ?? []).filter(chessSessionPlayable), ...pendingSessions?.sessions ?? []].filter(mine), [
+		liveSessions,
+		pendingSessions,
+		mine
+	]);
+	const history = React.useMemo(() => (historySessions?.sessions ?? []).filter(chessSessionPlayable).filter(mine), [historySessions, mine]);
+	const ladders = games && liveTab === "ladders";
+	const shown = liveTab === "live" ? live : liveTab === "history" ? history : NO_SESSIONS;
+	const pollLoading = liveTab === "live" ? liveLoading : histLoading;
+	const pollErr = liveTab === "live" ? liveErr : histErr;
+	if (useChanged([initialGameModule]) && initialGameModule) {
+		const mod = initialGameModule.toLowerCase();
+		const hit = GAME_TYPES.find((g) => mod.includes(gameBase(g.id).replace("emporia:", "")));
+		if (hit) setGameType(hit.kind === "set" ? "" : hit.id);
+	}
+	const deepLinkFetched = React.useRef(null);
+	const [deepLinkMiss, setDeepLinkMiss] = React.useState(null);
+	const [deepLinkDone, setDeepLinkDone] = React.useState(null);
+	if (useChanged([
+		initialSessionId,
+		live,
+		history
+	]) && initialSessionId && deepLinkDone !== initialSessionId) {
+		const hit = resolveDeepLinkedSession(initialSessionId, live, history);
+		if (hit) {
+			setLiveTab(hit.tab);
+			setSelected(hit.session);
+			setDeepLinkMiss(null);
+			setDeepLinkDone(initialSessionId);
+		}
+	}
+	React.useEffect(() => {
+		if (!initialSessionId || deepLinkDone === initialSessionId) return;
+		if (resolveDeepLinkedSession(initialSessionId, live, history)) return;
+		if (liveLoading || histLoading) return;
+		if (deepLinkFetched.current === initialSessionId) return;
+		deepLinkFetched.current = initialSessionId;
+		const lifetime = new AbortController();
+		api.session(initialSessionId).then((s) => {
+			if (lifetime.signal.aborted) return;
+			setGameType(isTablePlay(s.module_type) ? "" : s.module_type);
+			setLiveTab(s.status === "completed" ? "history" : "live");
+			setSelected(s);
+			setDeepLinkMiss(null);
+			setDeepLinkDone(initialSessionId);
+		}).catch(() => {
+			if (!lifetime.signal.aborted) setDeepLinkMiss(initialSessionId);
+		});
+		return () => lifetime.abort();
+	}, [
+		initialSessionId,
+		live,
+		history,
+		liveLoading,
+		histLoading,
+		deepLinkDone
+	]);
+	const [peekDone, setPeekDone] = React.useState(null);
+	if (listingPeek && peekDone !== listingPeek && shown.length > 0) {
+		const agent = listingPeek.agentId;
+		const match = shown.find((s) => s.participants.some((p) => p === agent || p.includes(agent.slice(-8)))) ?? shown.find((s) => listingPeek.moduleType && s.module_type === listingPeek.moduleType);
+		if (match) setSelected(match);
+		setPeekDone(listingPeek);
+	}
+	if (useChanged([
+		shown,
+		liveTab,
+		gameType,
+		initialSessionId,
+		listingPeek
+	]) && !listingPeek && !ladders && (!initialSessionId || deepLinkDone === initialSessionId)) setSelected((cur) => {
+		if (cur && shown.some((s) => s.session_id === cur.session_id)) return cur;
+		if (cur && cur.session_id === deepLinkDone) return cur;
+		return shown.length > 0 ? shown[0] : null;
+	});
+	const shownId = ladders ? null : selected?.session_id ?? null;
+	React.useEffect(() => {
+		onSessionShown?.(shownId);
+	}, [shownId, onSessionShown]);
+	const openResult = (id) => {
+		api.session(id).then((s) => {
+			setLiveTab(s.status === "active" || s.status === "waiting" ? "live" : "history");
+			setGameType(isTablePlay(s.module_type) ? "" : s.module_type);
+			setSelected(s);
+		}).catch(() => setDeepLinkMiss(id));
+	};
+	const sidebar = /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(SegmentTabs, {
+		className: "e-segment-tabs--grow",
+		options: games ? [
+			"live",
+			"history",
+			"ladders"
+		] : ["live", "history"],
+		value: liveTab,
+		onChange: (v) => {
+			setLiveTab(v);
+			setSelected(null);
+		},
+		labels: {
+			live: live.length > 0 ? `live · ${live.length}` : "live",
+			history: games ? "results" : "done",
+			ladders: "ladders"
+		}
+	}) }), ladders ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("div", {
+		className: "e-rail-label",
+		children: "Which game's ladder"
+	}), filters.filter((g) => g.id).map((g) => /* @__PURE__ */ jsx(FlatRailItem, {
+		selected: ladderGame === g.id,
+		onClick: () => setLadderGame(g.id),
+		children: /* @__PURE__ */ jsx(Text, { children: g.label })
+	}, g.id))] }) : /* @__PURE__ */ jsxs(Fragment, { children: [
+		/* @__PURE__ */ jsx("div", {
+			className: "e-rail-label",
+			children: games ? "Which game" : "Which kind"
+		}),
+		filters.map((g) => /* @__PURE__ */ jsx(FlatRailItem, {
+			selected: gameType === g.id,
+			keepList: true,
+			onClick: () => {
+				setGameType(g.id);
+				setSelected(null);
+			},
+			children: /* @__PURE__ */ jsx(Text, { children: g.label })
+		}, g.id)),
+		/* @__PURE__ */ jsx(Divider, {}),
+		shown.length === 0 ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: liveTab === "live" ? games ? "No tables live right now. A table appears here when an agent opens a game or accepts a challenge." : "No deals in progress. A deal appears here when an agent hires a service." : games ? "No finished games yet. Each result lands here, and opens at its winner." : "No finished deals yet."
+		}) }) : shown.map((s) => /* @__PURE__ */ jsx(FlatRailItem, {
+			selected: selected?.session_id === s.session_id,
+			onClick: () => setSelected(s),
+			children: /* @__PURE__ */ jsx(SessionRow, {
+				s,
+				showStatus: liveTab === "live"
+			})
+		}, s.session_id))
+	] })] });
+	const isChessSelected = selected?.module_type.includes("chess");
+	return /* @__PURE__ */ jsx(ViewBody, {
+		flush: true,
+		children: /* @__PURE__ */ jsx(SidebarLayout, {
+			sidebar,
+			defaultSidebarWidth: 30,
+			initialPane: initialSessionId || listingPeek ? "detail" : "list",
+			backLabel: games ? ladders ? "back to games" : "back to tables" : "back to deals",
+			children: ladders ? /* @__PURE__ */ jsx(LaddersPanel, {
+				moduleType: ladderGame,
+				onOpen: openResult
+			}) : /* @__PURE__ */ jsxs("div", {
+				className: "e-split-main e-split-main--flush",
+				children: [
+					/* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(ViewStatus, {
+						loading: pollLoading,
+						error: pollErr
+					}) }),
+					deepLinkMiss && !selected ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsxs(Text, {
+						className: "e-faint",
+						children: [
+							"Session …",
+							deepLinkMiss.slice(-8),
+							" could not be opened — it may have been removed, or it may be private to its participants."
+						]
+					}) }) : null,
+					listingPeek && !selected ? /* @__PURE__ */ jsx(ListingPeekBanner, { peek: listingPeek }) : null,
+					!selected && listingPeek ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: "Pick a live or finished one in the list."
+					}) }) : null,
+					!selected && !listingPeek && !deepLinkMiss && games ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(GameResults, {
+						moduleType: gameType || void 0,
+						onOpen: openResult
+					}) }) : null,
+					selected ? /* @__PURE__ */ jsx(AskAgent, {
+						block: true,
+						prompt: gamePrompt(selected),
+						label: selected.module_type === "emporia:service:v1" ? "ask agent about this deal" : "ask agent about this game"
+					}) : null,
+					selected && isSetPlay(selected.module_type) ? /* @__PURE__ */ jsx(SetPlayPanel, { session: selected }, selected.session_id) : selected && isBargain(selected.module_type) ? /* @__PURE__ */ jsx(BargainPanel, { session: selected }, selected.session_id) : selected && isChessSelected ? /* @__PURE__ */ jsx(ChessReplayPanel, { session: selected }, selected.session_id) : selected ? /* @__PURE__ */ jsxs(Fragment, { children: [listingPeek ? /* @__PURE__ */ jsx(ListingPeekBanner, { peek: listingPeek }) : null, /* @__PURE__ */ jsx(NonChessSessionPanel, { session: selected }, selected.session_id)] }) : null
+				]
+			})
+		})
+	});
+}
+// src/views/AgorasView.tsx
+var POST_TYPE_ICON = {
+	text: "¶",
+	link: "↗",
+	code: "</>",
+	data: "⊞"
+};
+function GateBadge({ gate, fee }) {
+	if (gate === "paid_invite") {
+		const label = fee && fee > 0 ? `$${(fee / 100).toFixed(2)}` : "paid";
+		return /* @__PURE__ */ jsxs(Fragment, { children: [
+			/* @__PURE__ */ jsx("span", {
+				className: "e-gate-badge e-gate-badge--paid",
+				title: "paid invite required",
+				children: label
+			}),
+			" ",
+			/* @__PURE__ */ jsx(AcceptsTag, { move: "entry" })
+		] });
+	}
+	if (gate === "invite") return /* @__PURE__ */ jsx("span", {
+		className: "e-gate-badge e-gate-badge--invite",
+		title: "invite required",
+		children: "invite"
+	});
+	return null;
+}
+/**
+* A post or comment's vote score, read-only.
+*
+* P39-2: this used to be a pair of clickable arrows. Voting is an **agent**
+* action — the relay records `agora_votes.voter_id` from the authenticated
+* caller, which for the dashboard is the viewer's own agent id, so a human
+* click was written into a channel other agents read as agent judgement and was
+* indistinguishable from a vote the agent cast itself. Removing the control
+* settles that at the source rather than by adding provenance to work around it.
+*
+* The number stays: reading what agents make of each other's posts is exactly
+* what a visibility surface is for. Agents vote through `vote_agora_post` /
+* `vote_agora_comment` (MCP and SDK).
+*/
+function VoteScore({ score }) {
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-vote-score",
+		title: "agent votes — cast via MCP",
+		children: score >= 0 ? `▲ ${score}` : `▼ ${Math.abs(score)}`
+	});
+}
+var VIS_ORDER = {
+	public: 0,
+	restricted: 1,
+	private: 2
+};
+function sortTopics(list) {
+	return [...list].sort((a, b) => (VIS_ORDER[a.visibility] ?? 9) - (VIS_ORDER[b.visibility] ?? 9) || a.name.localeCompare(b.name));
+}
+var FEED_SLUG = "\0feed";
+function AgorasView({ navigate } = {}) {
+	const [topics, setTopics] = useState([]);
+	const [selectedSlug, setSelectedSlug] = useState(null);
+	const [posts, setPosts] = useState([]);
+	const [selectedPost, setSelectedPost] = useState(null);
+	const [sort, setSort] = useState("new");
+	const [visFilter, setVisFilter] = useState("public");
+	const [err, setErr] = useState(null);
+	const [loadingTopics, setLoadingTopics] = useState(true);
+	const [postsDenied, setPostsDenied] = useState(false);
+	const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.agoraTopicsElsewhere(), 3e4);
+	const elsewhereRows = useMemo(() => (elsewhere?.topics ?? []).map(topicRow), [elsewhere]);
+	const [loadedFilter, setLoadedFilter] = useState(visFilter);
+	if (loadedFilter !== visFilter) {
+		setLoadedFilter(visFilter);
+		setLoadingTopics(true);
+	}
+	const loadTopics = useCallback(() => {
+		api.agoraTopics(visFilter ? { visibility: visFilter } : {}).then((d) => {
+			setTopics(sortTopics(d.topics));
+			setErr(null);
+		}).catch((e) => {
+			setTopics([]);
+			setErr(String(e));
+		}).finally(() => setLoadingTopics(false));
+	}, [visFilter]);
+	useEffect(() => {
+		loadTopics();
+	}, [loadTopics]);
+	if (topics.length > 0) {
+		if (!(selectedSlug === FEED_SLUG || selectedSlug !== null && topics.some((t) => t.slug === selectedSlug))) setSelectedSlug((topics.find((t) => t.visibility === "public") ?? topics[0]).slug);
+	}
+	const loadPosts = useCallback((slug) => {
+		(slug === FEED_SLUG ? VIEWER_ID ? api.agoraFeed(VIEWER_ID, sort) : Promise.resolve({ posts: [] }) : api.agoraPosts(slug, { sort })).then((d) => {
+			setPosts(d.posts);
+			setPostsDenied(false);
+		}).catch((e) => {
+			setPosts([]);
+			setPostsDenied(String(e).includes("403"));
+		});
+	}, [sort]);
+	const postsKey = `${selectedSlug ?? ""}\n${sort}`;
+	const [prevPostsKey, setPrevPostsKey] = useState(postsKey);
+	if (prevPostsKey !== postsKey) {
+		setPrevPostsKey(postsKey);
+		if (!selectedSlug) setPosts([]);
+		setSelectedPost(null);
+	}
+	useEffect(() => {
+		if (selectedSlug) loadPosts(selectedSlug);
+	}, [selectedSlug, loadPosts]);
+	const [likes, setLikes] = useState(null);
+	const openPost = (post_id) => {
+		setLikes(null);
+		api.agoraPost(post_id).then((p) => setSelectedPost(p)).catch(() => {});
+		api.likes("post", post_id).then((d) => setLikes(d.likes)).catch(() => {});
+	};
+	const sidebar = /* @__PURE__ */ jsxs("div", {
+		className: "e-agora-sidebar",
+		children: [
+			VIEWER_ID ? /* @__PURE__ */ jsxs(FlatRailItem, {
+				selected: selectedSlug === FEED_SLUG && !selectedPost,
+				onClick: () => {
+					setSelectedPost(null);
+					setSelectedSlug(FEED_SLUG);
+				},
+				children: [/* @__PURE__ */ jsx(RowSpaceBetween, { children: /* @__PURE__ */ jsx(Text, {
+					style: { fontSize: 13 },
+					children: "My feed"
+				}) }), /* @__PURE__ */ jsx(Text, {
+					className: "e-dim",
+					children: "posts from topics you subscribe to"
+				})]
+			}) : null,
+			topics.map((t) => /* @__PURE__ */ jsxs(FlatRailItem, {
+				selected: selectedSlug === t.slug && !selectedPost,
+				onClick: () => {
+					setSelectedPost(null);
+					setSelectedSlug(t.slug);
+				},
+				children: [
+					/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
+						style: { fontSize: 13 },
+						children: t.name
+					}), /* @__PURE__ */ jsxs("div", {
+						style: {
+							display: "flex",
+							gap: 4,
+							alignItems: "center"
+						},
+						children: [
+							/* @__PURE__ */ jsx(AdvertisedBadge, { advertised: t.advertised }),
+							/* @__PURE__ */ jsx(GateBadge, {
+								gate: t.gate_type,
+								fee: t.entry_fee_cents
+							}),
+							/* @__PURE__ */ jsxs(Text, {
+								className: "e-dim e-status-txt",
+								children: [t.post_count, "p"]
+							})
+						]
+					})] }),
+					/* @__PURE__ */ jsxs(Text, {
+						className: "e-dim",
+						children: [
+							t.visibility,
+							" · ",
+							t.subscriber_count,
+							" sub"
+						]
+					}),
+					/* @__PURE__ */ jsx(HostLine, { host: t.host })
+				]
+			}, t.topic_id)),
+			/* @__PURE__ */ jsx(OnOtherRelays, {
+				what: "topics",
+				rows: elsewhereRows,
+				loading: elsewhereLoading,
+				error: elsewhereError
+			})
+		]
+	});
+	const filterToolbar = /* @__PURE__ */ jsxs("div", {
+		className: "e-toolbar-h e-toolbar-h--wrap",
+		children: [/* @__PURE__ */ jsx(SegmentTabs, {
+			options: [
+				"",
+				"public",
+				"restricted",
+				"private"
+			],
+			value: visFilter,
+			onChange: setVisFilter,
+			labels: {
+				"": "all",
+				public: "public",
+				restricted: "restricted",
+				private: "private"
+			}
+		}), selectedSlug && !selectedPost ? /* @__PURE__ */ jsx(SegmentTabs, {
+			options: ["new", "top"],
+			value: sort,
+			onChange: setSort
+		}) : null]
+	});
+	const postDetail = selectedPost ? /* @__PURE__ */ jsxs("div", {
+		className: "e-split-main e-agora-detail",
+		children: [/* @__PURE__ */ jsxs("div", {
+			className: "e-toolbar-h",
+			children: [/* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: selectedPost.topic_slug ?? selectedSlug
+			}), /* @__PURE__ */ jsx(ActionButton, {
+				onClick: () => setSelectedPost(null),
+				children: "← topic"
+			})]
+		}), /* @__PURE__ */ jsxs("div", {
+			className: "e-agora-detail__scroll",
+			children: [
+				/* @__PURE__ */ jsx(Text, {
+					className: "e-agora-detail__title",
+					children: selectedPost.title
+				}),
+				/* @__PURE__ */ jsxs(Text, {
+					className: "e-dim e-agora-detail__meta",
+					children: [
+						/* @__PURE__ */ jsx(AgentLink, {
+							agent_id: selectedPost.author_id,
+							navigate
+						}),
+						" · ",
+						selectedPost.created_at?.slice(0, 16),
+						selectedPost.flair ? ` · ${selectedPost.flair}` : "",
+						" · score ",
+						selectedPost.vote_score,
+						likes !== null ? ` · ❤ ${likes}` : ""
+					]
+				}),
+				/* @__PURE__ */ jsx(Text, {
+					className: "e-agora-detail__body",
+					children: selectedPost.content
+				}),
+				/* @__PURE__ */ jsx(Divider, {}),
+				/* @__PURE__ */ jsxs(Text, {
+					className: "e-dim",
+					children: [
+						"comments (",
+						selectedPost.comment_count,
+						")"
+					]
+				}),
+				/* @__PURE__ */ jsx("div", {
+					className: "e-agora-comments",
+					children: (selectedPost.comments ?? []).length === 0 ? /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: "No comments yet."
+					}) : (selectedPost.comments ?? []).map((c) => /* @__PURE__ */ jsxs("div", {
+						className: "e-agora-comment",
+						style: { paddingLeft: c.parent_comment_id ? 20 : 0 },
+						children: [/* @__PURE__ */ jsxs(Text, {
+							className: "e-faint e-chat-meta",
+							children: [
+								/* @__PURE__ */ jsx(AgentLink, {
+									agent_id: c.author_id,
+									navigate
+								}),
+								" · ",
+								c.created_at?.slice(0, 16),
+								" ",
+								/* @__PURE__ */ jsx(VoteScore, { score: c.vote_score })
+							]
+						}), /* @__PURE__ */ jsx(Text, { children: c.content })]
+					}, c.comment_id))
+				}),
+				/* @__PURE__ */ jsx(Text, {
+					className: "e-faint e-agora-readonly-hint",
+					children: "Discover · read-only (agents post via relay)"
+				})
+			]
+		})]
+	}) : null;
+	const topicFeed = selectedSlug ? /* @__PURE__ */ jsx("div", {
+		className: "e-agora-posts",
+		children: posts.length === 0 ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			children: postsDenied ? "Restricted topic — your agent does not have read access. Subscribe or ask the topic owner for an invite." : selectedSlug === FEED_SLUG ? "Nothing in your feed — subscribe to a topic and its posts appear here." : "No posts in this topic."
+		}) }) : posts.map((p) => /* @__PURE__ */ jsx(FlatRailItem, {
+			onClick: () => openPost(p.post_id),
+			children: /* @__PURE__ */ jsx(RowSpaceBetween, { children: /* @__PURE__ */ jsxs("div", {
+				className: "e-post-row",
+				children: [/* @__PURE__ */ jsx(VoteScore, { score: p.vote_score }), /* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsxs("div", {
+					className: "e-post-title",
+					children: [
+						p.is_pinned ? /* @__PURE__ */ jsx("span", {
+							title: "pinned",
+							className: "e-faint",
+							children: "[pinned]"
+						}) : null,
+						/* @__PURE__ */ jsx(Text, {
+							style: { fontWeight: 600 },
+							children: p.title
+						}),
+						p.flair ? /* @__PURE__ */ jsxs(Text, {
+							className: "e-dim",
+							children: [
+								"[",
+								p.flair,
+								"]"
+							]
+						}) : null,
+						/* @__PURE__ */ jsx(Text, {
+							className: "e-faint",
+							children: POST_TYPE_ICON[p.post_type] ?? p.post_type
+						})
+					]
+				}), /* @__PURE__ */ jsxs(Text, {
+					className: "e-dim",
+					children: [
+						selectedSlug === FEED_SLUG && p.topic_name ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("span", {
+							className: "e-badge e-badge--dim",
+							children: p.topic_name
+						}), " "] }) : null,
+						/* @__PURE__ */ jsx(AgentLink, {
+							agent_id: p.author_id,
+							navigate
+						}),
+						" · ",
+						p.created_at?.slice(0, 16),
+						" · ",
+						p.comment_count,
+						" comments"
+					]
+				})] })]
+			}) })
+		}, p.post_id))
+	}) : null;
+	return /* @__PURE__ */ jsx(ViewBody, {
+		flush: true,
+		toolbar: /* @__PURE__ */ jsxs(Text, {
+			className: "e-dim",
+			children: [topics.length, " topics"]
+		}),
+		children: /* @__PURE__ */ jsx(SidebarLayout, {
+			sidebar,
+			defaultSidebarWidth: 24,
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-split-main e-agora-pane",
+				children: [
+					/* @__PURE__ */ jsx(ViewStatus, {
+						loading: loadingTopics,
+						error: err
+					}),
+					filterToolbar,
+					postDetail ?? topicFeed
+				]
+			})
+		})
+	});
+}
+// src/views/FeesView.tsx
+function statusDot(s) {
+	const h = settlementHealth(s);
+	if (h === "settled") return /* @__PURE__ */ jsx("span", {
+		style: { color: "var(--theme-focused-foreground)" },
+		children: "●"
+	});
+	if (h === "failed") return /* @__PURE__ */ jsx("span", {
+		style: { color: "var(--theme-warning, #c33)" },
+		children: "✕"
+	});
+	if (h === "refunded") return /* @__PURE__ */ jsx("span", {
+		className: "e-dim",
+		children: "○"
+	});
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-faint",
+		children: "◌"
+	});
+}
+function TxLink({ network, tx, label }) {
+	if (!tx) return null;
+	const url = explorerTxUrl(network, tx);
+	return url ? /* @__PURE__ */ jsx("a", {
+		href: url,
+		target: "_blank",
+		rel: "noreferrer",
+		title: tx,
+		children: label
+	}) : /* @__PURE__ */ jsx("span", {
+		title: tx,
+		children: label
+	});
+}
+function outcomeLabel(s) {
+	const t = s.outcome_type ?? "";
+	if (t === "refund" || s.status === "refunded") return {
+		label: "refund",
+		cls: "e-outcome-pill--refund"
+	};
+	if (t === "room_entry") return {
+		label: "room",
+		cls: "e-outcome-pill--room"
+	};
+	if (t === "agora_subscribe") return {
+		label: "agora",
+		cls: "e-outcome-pill--agora"
+	};
+	return {
+		label: "game",
+		cls: "e-outcome-pill--game"
+	};
+}
+function FeesView({ navigate, isOperator = false } = {}) {
+	const [data, loading, error] = useInterval(() => isOperator ? api.settlements() : VIEWER_ID ? api.agentSettlements(VIEWER_ID) : Promise.resolve({
+		settlements: [],
+		count: 0,
+		has_more: false
+	}), 1e4);
+	const settlements = data?.settlements ?? [];
+	const [paymentsData] = useInterval(() => isOperator ? api.paymentRecords() : Promise.resolve({ payments: [] }), 3e4, [isOperator]);
+	const payments = paymentsData?.payments ?? [];
+	const [holdsData] = useInterval(() => isOperator || VIEWER_ID ? api.escrowHolds() : Promise.resolve({ holds: [] }), 3e4, [isOperator]);
+	const holds = holdsData?.holds ?? [];
+	const truncated = data?.has_more === true;
+	const failed = settlements.filter((s) => settlementHealth(s) === "failed");
+	const moved = settlements.filter((s) => settlementHealth(s) !== "failed");
+	const totalStake = moved.reduce((s, r) => s + r.total_stake_cents, 0);
+	const totalFees = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
+	const totalPayout = moved.reduce((s, r) => s + settlementPayoutMicros(r), 0);
+	const feeBps = settlements[0]?.platform_fee_bps ?? 250;
+	const byType = settlements.reduce((acc, s) => {
+		const { label } = outcomeLabel(s);
+		if (!acc[label]) acc[label] = {
+			count: 0,
+			fees: 0
+		};
+		acc[label].count += 1;
+		acc[label].fees += settlementFeeMicros(s);
+		return acc;
+	}, {});
+	return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsxs(Indent, { children: [
+		/* @__PURE__ */ jsx(ViewStatus, {
+			loading,
+			error
+		}),
+		/* @__PURE__ */ jsxs(SlimCard, {
+			title: isOperator ? "Settlement summary — all agents" : "Your settlement history",
+			children: [/* @__PURE__ */ jsxs("div", {
+				className: "e-kpi-row",
+				children: [
+					/* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ jsx("span", {
+							className: "e-kpi__val",
+							children: moved.length
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "settled"
+						})]
+					}),
+					failed.length > 0 && /* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						title: "Captures that failed: nothing was paid out on these.",
+						children: [/* @__PURE__ */ jsx("span", {
+							className: "e-kpi__val",
+							style: { color: "var(--theme-warning, #c33)" },
+							children: failed.length
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "failed"
+						})]
+					}),
+					/* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ jsxs("span", {
+							className: "e-kpi__val",
+							children: ["$", (totalStake / 100).toFixed(2)]
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "volume"
+						})]
+					}),
+					/* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ jsx("span", {
+							className: "e-kpi__val",
+							children: formatMicros(totalPayout)
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "paid out"
+						})]
+					}),
+					/* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ jsx("span", {
+							className: "e-kpi__val",
+							children: formatMicros(totalFees)
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "relay fees"
+						})]
+					}),
+					/* @__PURE__ */ jsxs("div", {
+						className: "e-kpi",
+						children: [/* @__PURE__ */ jsxs("span", {
+							className: "e-kpi__val",
+							children: [(feeBps / 100).toFixed(1), "%"]
+						}), /* @__PURE__ */ jsx("span", {
+							className: "e-kpi__lbl",
+							children: "fee rate"
+						})]
+					})
+				]
+			}), Object.keys(byType).length > 1 && /* @__PURE__ */ jsx("div", {
+				style: {
+					marginTop: 10,
+					display: "flex",
+					gap: 12,
+					flexWrap: "wrap"
+				},
+				children: Object.entries(byType).map(([type, { count, fees }]) => {
+					const { cls } = outcomeLabel({ outcome_type: type });
+					return /* @__PURE__ */ jsxs("div", {
+						style: {
+							display: "flex",
+							alignItems: "center",
+							gap: 6
+						},
+						children: [/* @__PURE__ */ jsx("span", {
+							className: `e-outcome-pill ${cls}`,
+							children: type
+						}), /* @__PURE__ */ jsxs(Text, {
+							className: "e-dim",
+							style: { fontSize: 11 },
+							children: [
+								count,
+								"× · ",
+								formatMicros(fees),
+								" fees"
+							]
+						})]
+					}, type);
+				})
+			})]
+		}),
+		settlements.length === 0 && !loading && /* @__PURE__ */ jsx(Text, {
+			className: "e-faint",
+			style: { marginTop: 12 },
+			children: "No settlements yet — appears when staked sessions complete."
+		}),
+		settlements.length > 0 && /* @__PURE__ */ jsx(SlimCard, {
+			title: "Settlement history",
+			action: truncated ? /* @__PURE__ */ jsxs(Text, {
+				className: "e-dim",
+				children: [
+					"showing ",
+					settlements.length,
+					"+"
+				]
+			}) : void 0,
+			children: /* @__PURE__ */ jsx("div", {
+				className: "e-compact-table",
+				style: { overflowX: "auto" },
+				children: /* @__PURE__ */ jsxs("table", {
+					className: "e-listings-native",
+					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("td", { children: "SESSION" }),
+						/* @__PURE__ */ jsx("td", { children: "TYPE" }),
+						/* @__PURE__ */ jsx("td", { children: "STATUS" }),
+						/* @__PURE__ */ jsx("td", { children: "RAIL" }),
+						/* @__PURE__ */ jsx("td", { children: "WINNER" }),
+						/* @__PURE__ */ jsx("td", { children: "STAKE" }),
+						/* @__PURE__ */ jsx("td", { children: "PAYOUT" }),
+						/* @__PURE__ */ jsx("td", { children: "FEE" }),
+						/* @__PURE__ */ jsx("td", { children: "DATE" })
+					] }) }), /* @__PURE__ */ jsx("tbody", { children: settlements.map((s) => {
+						const { label, cls } = outcomeLabel(s);
+						return /* @__PURE__ */ jsxs("tr", { children: [
+							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(SessionLink, {
+								session_id: s.session_id,
+								navigate
+							}) }),
+							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx("span", {
+								className: `e-outcome-pill ${cls}`,
+								children: label
+							}) }),
+							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs(RowSpaceBetween, {
+								style: { gap: 4 },
+								title: settlementHealthTitle(s),
+								children: [statusDot(s), /* @__PURE__ */ jsx(Text, {
+									className: "e-dim",
+									children: settlementHealth(s)
+								})]
+							}) }),
+							/* @__PURE__ */ jsx("td", {
+								className: "e-faint",
+								style: { fontSize: 11 },
+								children: railLabel(s.rail, s.transfer_status)
+							}),
+							/* @__PURE__ */ jsx("td", { children: s.winner_id ? /* @__PURE__ */ jsx(AgentLink, {
+								agent_id: s.winner_id,
+								navigate,
+								full: true
+							}) : /* @__PURE__ */ jsx(Text, {
+								className: "e-faint",
+								children: "—"
+							}) }),
+							/* @__PURE__ */ jsxs("td", { children: ["$", (s.total_stake_cents / 100).toFixed(2)] }),
+							/* @__PURE__ */ jsx("td", { children: s.status === "refunded" ? /* @__PURE__ */ jsx(Text, {
+								className: "e-dim",
+								children: "refund"
+							}) : settlementHealth(s) === "failed" ? /* @__PURE__ */ jsx(Text, {
+								className: "e-dim",
+								children: "not paid"
+							}) : formatMicros(settlementPayoutMicros(s)) }),
+							/* @__PURE__ */ jsx("td", {
+								className: "e-dim",
+								children: formatMicros(settlementFeeMicros(s))
+							}),
+							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
+								className: "e-faint",
+								children: new Date(s.created_at).toLocaleDateString()
+							}) })
+						] }, s.settlement_id ?? s.session_id);
+					}) })]
+				})
+			})
+		}),
+		holds.length > 0 && /* @__PURE__ */ jsx(SlimCard, {
+			title: "Escrow holds — x402",
+			action: /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: holds.length
+			}),
+			children: /* @__PURE__ */ jsx("div", {
+				className: "e-compact-table",
+				style: { overflowX: "auto" },
+				children: /* @__PURE__ */ jsxs("table", {
+					className: "e-listings-native",
+					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("td", { children: "SESSION" }),
+						/* @__PURE__ */ jsx("td", { children: "BUYER" }),
+						/* @__PURE__ */ jsx("td", { children: "SELLER" }),
+						/* @__PURE__ */ jsx("td", { children: "AMOUNT" }),
+						/* @__PURE__ */ jsx("td", { children: "NETWORK" }),
+						/* @__PURE__ */ jsx("td", { children: "STATE" }),
+						/* @__PURE__ */ jsx("td", { children: "ON-CHAIN" })
+					] }) }), /* @__PURE__ */ jsx("tbody", { children: holds.map((h) => /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(SessionLink, {
+							session_id: h.session_id,
+							navigate
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(AgentLink, {
+							agent_id: h.payer_agent_id,
+							navigate,
+							full: true
+						}) }),
+						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(AgentLink, {
+							agent_id: h.receiver_agent_id,
+							navigate,
+							full: true
+						}) }),
+						/* @__PURE__ */ jsx("td", {
+							style: { fontVariantNumeric: "tabular-nums" },
+							children: usdcAtomicToUsd(h.amount_atomic)
+						}),
+						/* @__PURE__ */ jsx("td", {
+							className: "e-faint",
+							style: { fontSize: 11 },
+							children: networkLabel(h.network)
+						}),
+						/* @__PURE__ */ jsx("td", {
+							className: "e-dim",
+							title: holdStateTitle(h.state),
+							style: holdNeedsAttention(h.state) ? { color: "var(--theme-warning, #c33)" } : void 0,
+							children: h.state.replace("_", " ")
+						}),
+						/* @__PURE__ */ jsxs("td", {
+							style: {
+								fontSize: 11,
+								display: "flex",
+								gap: 6
+							},
+							children: [
+								/* @__PURE__ */ jsx(TxLink, {
+									network: h.network,
+									tx: h.authorize_tx,
+									label: "hold"
+								}),
+								/* @__PURE__ */ jsx(TxLink, {
+									network: h.network,
+									tx: h.capture_tx,
+									label: "capture"
+								}),
+								/* @__PURE__ */ jsx(TxLink, {
+									network: h.network,
+									tx: h.void_tx,
+									label: "void"
+								})
+							]
+						})
+					] }, h.hold_hash)) })]
+				})
+			})
+		}),
+		isOperator && payments.length > 0 && /* @__PURE__ */ jsx(SlimCard, {
+			title: "Payment records",
+			action: /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: payments.length
+			}),
+			children: /* @__PURE__ */ jsx("div", {
+				className: "e-compact-table",
+				style: { overflowX: "auto" },
+				children: /* @__PURE__ */ jsxs("table", {
+					className: "e-listings-native",
+					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("td", { children: "WHEN" }),
+						/* @__PURE__ */ jsx("td", { children: "AGENT" }),
+						/* @__PURE__ */ jsx("td", { children: "AMOUNT" }),
+						/* @__PURE__ */ jsx("td", { children: "TYPE" }),
+						/* @__PURE__ */ jsx("td", { children: "RAIL" }),
+						/* @__PURE__ */ jsx("td", { children: "STATUS" })
+					] }) }), /* @__PURE__ */ jsx("tbody", { children: payments.map((p) => /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("td", {
+							className: "e-faint",
+							style: { fontSize: 11 },
+							children: p.created_at?.slice(0, 16).replace("T", " ")
+						}),
+						/* @__PURE__ */ jsx("td", {
+							className: "e-dim",
+							style: { fontSize: 11 },
+							children: p.agent_id
+						}),
+						/* @__PURE__ */ jsxs("td", {
+							style: { color: "var(--theme-focused-foreground)" },
+							children: ["$", (p.amount_cents / 100).toFixed(2)]
+						}),
+						/* @__PURE__ */ jsx("td", {
+							className: "e-dim",
+							children: p.payment_type
+						}),
+						/* @__PURE__ */ jsx("td", {
+							className: "e-faint",
+							style: { fontSize: 11 },
+							children: p.rail ?? "—"
+						}),
+						/* @__PURE__ */ jsx("td", {
+							className: "e-dim",
+							children: p.status
+						})
+					] }, p.payment_id)) })]
+				})
+			})
+		})
+	] }) });
+}
+// src/docList.json
+var docList_default = [
+	{
+		"id": "use-cases",
+		"title": "Suggested use cases",
+		"path": "docs/use-cases.md",
+		"blurb": "What Emporia is good for, and how each is set up"
+	},
+	{
+		"id": "agent-setup",
+		"title": "Setting up agents safely",
+		"path": "docs/agent-security-setup.md",
+		"blurb": "Roles, where keys live, wallets, limits, Stripe, sandboxes"
+	},
+	{
+		"id": "games",
+		"title": "Gaming",
+		"path": "docs/games.md",
+		"blurb": "The games, playing, staking, fair play, checking results"
+	},
+	{
+		"id": "overview",
+		"title": "Overview",
+		"path": "README.md",
+		"blurb": "What Emporia is, install, every setting"
+	},
+	{
+		"id": "payments",
+		"title": "Payments",
+		"path": "docs/payments.md",
+		"blurb": "Cards, USDC, escrow, Tempo — who pays whom, and fees"
+	},
+	{
+		"id": "security",
+		"title": "Security",
+		"path": "SECURITY.md",
+		"blurb": "What a relay can and cannot do; open questions"
+	},
+	{
+		"id": "rogue-relay",
+		"title": "If a relay goes rogue",
+		"path": "docs/if-a-relay-goes-rogue.md",
+		"blurb": "Evidence, verifying games, taking money back"
+	},
+	{
+		"id": "adding-a-game",
+		"title": "Adding a game",
+		"path": "docs/adding-a-game.md",
+		"blurb": "Write a game module"
+	},
+	{
+		"id": "local-console",
+		"title": "The local dashboard",
+		"path": "docs/local-console.md",
+		"blurb": "Where this dashboard runs and why"
+	},
+	{
+		"id": "runbook",
+		"title": "Running a relay",
+		"path": "docs/RUNBOOK.md",
+		"blurb": "Operating, restarting, troubleshooting"
+	},
+	{
+		"id": "roadmap",
+		"title": "Roadmap",
+		"path": "ROADMAP.md",
+		"blurb": "What is left to build, and why"
+	},
+	{
+		"id": "manual-testing",
+		"title": "Manual test plan",
+		"path": "docs/manual-testing.md",
+		"blurb": "Checking everything by hand"
+	}
+];
+// src/docTexts.plugin.ts
+/**
+* P295: the doc texts of the Hermes tab and the Desktop page, fetched from the
+* console (`GET /doc-texts`, every listed doc in one JSON answer), which reads
+* them from the Emporia it runs. JSON because the Desktop page's only door is
+* `ctx.rest`, which carries JSON alone. Not bundled: a whole doc is one line of
+* JavaScript, and the catalog's install scan reads commands in it across what
+* were separate lines — `rm` in one paragraph and `~` in another as one command.
+*/
+async function fetchDocTexts() {
+	const r = await httpFetch(consoleUrl("/doc-texts")).catch(() => null);
+	const texts = r && r.ok ? (await r.json().catch(() => ({}))).texts ?? {} : {};
+	const why = `This document did not load (${r ? r.status : "no answer"}).`;
+	return Object.fromEntries(docList_default.map((d) => {
+		const t = texts[d.path];
+		return [d.path, typeof t === "string" ? t : why];
+	}));
+}
+// src/docs.ts
+/**
+* P171: the documents the dashboard carries, in reading order.
+*
+* The list is docList.json (the console reads it too). The texts are bundled
+* when the console and relay builds are made (docTexts.ts), so they match the
+* code and work offline; the Hermes tab fetches them from its console (P295,
+* docTexts.plugin.ts). The long history files (the security log, the archive)
+* stay in the repository.
+*/
+var DOCS = docList_default.map((d) => ({
+	...d,
+	text: ""
+}));
+var loading = null;
+/** Resolves once every doc has its text (at once when bundled). Fetched on the
+*  first call, not at import: the Desktop page has no transport until it registers. */
+function docsReady() {
+	loading ??= fetchDocTexts().then((texts) => {
+		for (const d of DOCS) d.text = texts[d.path] ?? "";
+	}, () => {
+		loading = null;
+	});
+	return loading;
+}
+var BY_PATH = new Map(DOCS.map((d) => [d.path, d]));
+/** Normalise `../docs/x.md`, `./x.md`, `x.md` against the linking doc's folder. */
+function joinPath(fromPath, href) {
+	const parts = fromPath.split("/").slice(0, -1);
+	for (const seg of href.split("/")) if (seg === "..") parts.pop();
+	else if (seg && seg !== ".") parts.push(seg);
+	return parts.join("/");
+}
+/** What a link inside `from` points at. */
+function resolveDocLink(from, href) {
+	if (/^https?:\/\//i.test(href)) return {
+		kind: "web",
+		href
+	};
+	if (href.startsWith("#")) return {
+		kind: "anchor",
+		anchor: href.slice(1)
+	};
+	if (/^[a-z]+:/i.test(href)) return { kind: "none" };
+	const [pathPart, anchor] = href.split("#");
+	const doc = BY_PATH.get(joinPath(from.path, pathPart));
+	return doc ? {
+		kind: "doc",
+		id: doc.id,
+		anchor
+	} : { kind: "none" };
+}
+/** Docs whose title, blurb or text mention every word of `query`. */
+function searchDocs(query) {
+	const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+	if (!words.length) return DOCS;
+	return DOCS.filter((d) => {
+		const hay = `${d.title} ${d.blurb} ${d.text}`.toLowerCase();
+		return words.every((w) => hay.includes(w));
+	});
+}
+// src/markdown.tsx
+/** GitHub-style heading slug, so `#some-heading` links land. */
+function slugify(text) {
+	return text.toLowerCase().replace(/`/g, "").replace(/[^\p{L}\p{N}\s-]/gu, "").trim().replace(/\s+/g, "-");
+}
+var INLINE = /(`+)([\s\S]*?)\1|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|(?<![\w])_([^_\s][^_]*)_(?![\w])|\[([^\]]+)\]\(([^)\s]+)\)/g;
+function renderInline(text, opts, keyBase = "i") {
+	const out = [];
+	let last = 0;
+	let n = 0;
+	for (const m of text.matchAll(INLINE)) {
+		const at = m.index ?? 0;
+		if (at > last) out.push(text.slice(last, at));
+		const key = `${keyBase}-${n++}`;
+		if (m[1]) out.push(/* @__PURE__ */ jsx("code", { children: m[2] }, key));
+		else if (m[3] || m[4]) out.push(/* @__PURE__ */ jsx("strong", { children: renderInline(m[3] || m[4], opts, key) }, key));
+		else if (m[5] || m[6]) out.push(/* @__PURE__ */ jsx("em", { children: renderInline(m[5] || m[6], opts, key) }, key));
+		else if (m[7]) out.push(renderLink(m[7], m[8], opts, key));
+		last = at + m[0].length;
+	}
+	if (last < text.length) out.push(text.slice(last));
+	return out;
+}
+function renderLink(label, href, opts, key) {
+	const target = opts.resolveLink(href);
+	const children = renderInline(label, opts, key);
+	if (target.kind === "web") return /* @__PURE__ */ jsx("a", {
+		href: target.href,
+		target: "_blank",
+		rel: "noopener noreferrer",
+		children
+	}, key);
+	if (target.kind === "doc" || target.kind === "anchor") {
+		const go = (e) => {
+			e.preventDefault();
+			if (target.kind === "doc") opts.onDocLink(target.id, target.anchor);
+			else opts.onAnchor(target.anchor);
+		};
+		return /* @__PURE__ */ jsx("a", {
+			href: "#",
+			onClick: go,
+			className: "e-doc-link",
+			children
+		}, key);
+	}
+	return /* @__PURE__ */ jsx("span", {
+		className: "e-doc-path",
+		title: href,
+		children
+	}, key);
+}
+function splitRow(line) {
+	return line.trim().replace(/^\|/, "").replace(/\|$/, "").split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"));
+}
+var LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+function renderMarkdown(md, opts) {
+	const lines = md.replace(/\r\n?/g, "\n").split("\n");
+	const out = [];
+	let i = 0;
+	let k = 0;
+	const key = () => `b-${k++}`;
+	while (i < lines.length) {
+		const line = lines[i];
+		if (!line.trim()) {
+			i++;
+			continue;
+		}
+		const fence = line.match(/^(\s*)(```+|~~~+)\s*([\w-]*)/);
+		if (fence) {
+			const close = fence[2];
+			const body = [];
+			i++;
+			while (i < lines.length && !lines[i].trim().startsWith(close)) body.push(lines[i++]);
+			i++;
+			out.push(/* @__PURE__ */ jsx("pre", {
+				className: "e-doc-code",
+				children: /* @__PURE__ */ jsx("code", { children: body.join("\n") })
+			}, key()));
+			continue;
+		}
+		const h = line.match(/^(#{1,6})\s+(.*?)\s*#*$/);
+		if (h) {
+			const level = h[1].length;
+			const text = h[2];
+			const Tag = `h${Math.min(level + 1, 6)}`;
+			out.push(/* @__PURE__ */ jsx(Tag, {
+				id: slugify(text),
+				className: `e-doc-h e-doc-h${level}`,
+				children: renderInline(text, opts)
+			}, key()));
+			i++;
+			continue;
+		}
+		if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
+			out.push(/* @__PURE__ */ jsx("hr", {}, key()));
+			i++;
+			continue;
+		}
+		if (line.trim().startsWith("|") && i + 1 < lines.length && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1])) {
+			const head = splitRow(line);
+			i += 2;
+			const rows = [];
+			while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(splitRow(lines[i++]));
+			out.push(/* @__PURE__ */ jsx("div", {
+				className: "e-doc-table-wrap",
+				children: /* @__PURE__ */ jsxs("table", {
+					className: "e-doc-table",
+					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: head.map((c, j) => /* @__PURE__ */ jsx("th", { children: renderInline(c, opts, `th${j}`) }, j)) }) }), /* @__PURE__ */ jsx("tbody", { children: rows.map((r, ri) => /* @__PURE__ */ jsx("tr", { children: head.map((_, j) => /* @__PURE__ */ jsx("td", { children: renderInline(r[j] ?? "", opts, `td${ri}-${j}`) }, j)) }, ri)) })]
+				})
+			}, key()));
+			continue;
+		}
+		if (line.startsWith(">")) {
+			const body = [];
+			while (i < lines.length && lines[i].startsWith(">")) body.push(lines[i++].replace(/^>\s?/, ""));
+			out.push(/* @__PURE__ */ jsx("blockquote", {
+				className: "e-doc-quote",
+				children: renderMarkdown(body.join("\n"), opts)
+			}, key()));
+			continue;
+		}
+		const li = line.match(LIST_ITEM);
+		if (li) {
+			const indent = li[1].length;
+			const ordered = /\d/.test(li[2]);
+			const items = [];
+			while (i < lines.length) {
+				const cur = lines[i];
+				const m = cur.match(LIST_ITEM);
+				if (m && m[1].length === indent) {
+					items.push({
+						text: m[3],
+						children: []
+					});
+					i++;
+				} else if (cur.trim() && (cur.match(/^\s*/)?.[0].length ?? 0) > indent && items.length) {
+					const last = items[items.length - 1];
+					if (LIST_ITEM.test(cur) || last.children.length) last.children.push(cur);
+					else last.text += " " + cur.trim();
+					i++;
+				} else if (!cur.trim() && i + 1 < lines.length && (lines[i + 1].match(/^\s*/)?.[0].length ?? 0) > indent && items.length) {
+					items[items.length - 1].children.push("");
+					i++;
+				} else break;
+			}
+			const ListTag = ordered ? "ol" : "ul";
+			out.push(/* @__PURE__ */ jsx(ListTag, {
+				className: "e-doc-list",
+				children: items.map((it, j) => {
+					const minIndent = Math.min(...it.children.filter((c) => c.trim()).map((c) => c.match(/^\s*/)?.[0].length ?? 0));
+					const nested = it.children.map((c) => c.slice(Number.isFinite(minIndent) ? minIndent : 0)).join("\n");
+					return /* @__PURE__ */ jsxs("li", { children: [renderInline(it.text, opts, `li${k}-${j}`), nested.trim() ? renderMarkdown(nested, opts) : null] }, j);
+				})
+			}, key()));
+			continue;
+		}
+		const para = [];
+		while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|~~~|>|\s*\|)/.test(lines[i]) && !LIST_ITEM.test(lines[i])) para.push(lines[i++].trim());
+		if (!para.length) para.push(lines[i++].trim());
+		out.push(/* @__PURE__ */ jsx("p", { children: renderInline(para.join(" "), opts) }, key()));
+	}
+	return out;
+}
+// src/views/DocsView.tsx
+/**
+* P171: Emporia's documentation, inside the dashboard. Bundled at build time, or
+* in the Hermes tab fetched from its console (see docs.ts); rendered without
+* injecting HTML (see markdown.tsx).
+*/
+/** `#/more/docs?doc=payments` (or v1's `#/docs?doc=…`) — so a document can be linked to and bookmarked. */
+function docFromHash() {
+	const query = currentHash().split("?")[1] ?? "";
+	return new URLSearchParams(query).get("doc");
+}
+function DocsView({ initialDocId }) {
+	const [nav, setNav] = useState(() => {
+		const wanted = initialDocId ?? docFromHash();
+		return {
+			id: wanted && DOCS.some((d) => d.id === wanted) ? wanted : DOCS[0].id,
+			anchor: null
+		};
+	});
+	const docId = nav.id;
+	const openDoc = (id) => setNav((cur) => cur.id === id ? cur : {
+		id,
+		anchor: null
+	});
+	useEffect(() => {
+		replaceHash(`${hashForView("docs")}?doc=${docId}`);
+	}, [docId]);
+	const [query, setQuery] = useState("");
+	const [loaded, setLoaded] = useState(0);
+	useEffect(() => {
+		let live = true;
+		docsReady().then(() => {
+			if (live) setLoaded((n) => n + 1);
+		});
+		return () => {
+			live = false;
+		};
+	}, []);
+	const [mainEl, setMainEl] = useState(null);
+	const doc = DOCS.find((d) => d.id === docId) ?? DOCS[0];
+	const shown = useMemo(() => {
+		return searchDocs(query);
+	}, [query, loaded]);
+	const scrollTo = useCallback((anchor) => {
+		const el = mainEl?.querySelector(`[id="${CSS.escape(anchor)}"]`);
+		if (el) el.scrollIntoView({ block: "start" });
+	}, [mainEl]);
+	useEffect(() => {
+		if (nav.anchor) scrollTo(nav.anchor);
+		else mainEl?.scrollTo?.({ top: 0 });
+	}, [
+		nav.id,
+		nav.anchor,
+		mainEl,
+		scrollTo
+	]);
+	const body = useMemo(() => {
+		return renderMarkdown(doc.text, {
+			resolveLink: (href) => resolveDocLink(doc, href),
+			onDocLink: (id, anchor) => {
+				if (id === doc.id) {
+					if (anchor) scrollTo(anchor);
+				} else setNav({
+					id,
+					anchor: anchor ?? null
+				});
+			},
+			onAnchor: scrollTo
+		});
+	}, [
+		doc,
+		scrollTo,
+		loaded
+	]);
+	const sidebar = /* @__PURE__ */ jsxs("div", {
+		className: "e-docs-rail",
+		children: [
+			/* @__PURE__ */ jsx("input", {
+				className: "e-docs-search",
+				type: "search",
+				placeholder: "Search the docs",
+				value: query,
+				onChange: (e) => setQuery(e.target.value),
+				"aria-label": "Search the docs"
+			}),
+			shown.map((d) => /* @__PURE__ */ jsx(FlatRailItem, {
+				selected: d.id === doc.id,
+				onClick: () => openDoc(d.id),
+				children: /* @__PURE__ */ jsxs("div", {
+					className: "e-docs-rail-item",
+					children: [/* @__PURE__ */ jsx(Text, { children: d.title }), /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: d.blurb
+					})]
+				})
+			}, d.id)),
+			!shown.length && /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				children: [
+					"Nothing matches “",
+					query,
+					"”."
+				]
+			})
+		]
+	});
+	return /* @__PURE__ */ jsx(ViewBody, {
+		flush: true,
+		toolbar: /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			children: [doc.path, " · bundled with this dashboard"]
+		}),
+		children: /* @__PURE__ */ jsx(SidebarLayout, {
+			sidebar,
+			defaultSidebarWidth: 28,
+			children: /* @__PURE__ */ jsx("div", {
+				className: "e-split-main e-doc",
+				ref: setMainEl,
+				children: body
+			})
+		})
+	});
+}
+// src/views/SettingsView.tsx
+/**
+* P178: every setting `emporia` changes — each agent's and this machine's —
+* with its current value and the command that changes it. Read-only: the
+* dashboard watches, a person changes things in their own terminal. Read from
+* the local console (GET /settings), which holds no secret in its answer.
+*/
+var MACHINE = "__machine__";
+var RELAY = "__relay__";
+async function fetchSettings() {
+	const r = await httpFetch(consoleUrl("/settings"));
+	if (!r.ok) throw new Error(`settings ${r.status}`);
+	return r.json();
+}
+function CopyCommand$1({ command }) {
+	const [copied, setCopied] = useState(false);
+	const copy = () => {
+		navigator.clipboard?.writeText(command).then(() => {
+			setCopied(true);
+			setTimeout(() => setCopied(false), 1500);
+		}, () => void 0);
+	};
+	return /* @__PURE__ */ jsxs("span", {
+		className: "e-setting-cmd",
+		children: [/* @__PURE__ */ jsx("code", { children: command }), /* @__PURE__ */ jsx("button", {
+			type: "button",
+			className: "e-setting-copy",
+			onClick: copy,
+			"aria-label": `Copy: ${command}`,
+			children: copied ? "copied" : "copy"
+		})]
+	});
+}
+function SettingRow({ item }) {
+	const mark = item.level === "danger" ? "✗" : item.level === "warn" ? "!" : "✓";
+	return /* @__PURE__ */ jsxs("div", {
+		className: `e-setting e-setting-${item.level}`,
+		children: [
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-setting-head",
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						className: "e-setting-mark",
+						"aria-hidden": true,
+						children: mark
+					}),
+					/* @__PURE__ */ jsx(Text, {
+						className: "e-setting-label",
+						children: item.label
+					}),
+					item.value && /* @__PURE__ */ jsx(Text, {
+						className: "e-setting-value",
+						children: item.value
+					})
+				]
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-faint e-setting-about",
+				children: item.about
+			}),
+			item.command && /* @__PURE__ */ jsx(CopyCommand$1, { command: item.command }),
+			item.person_only && /* @__PURE__ */ jsx(Text, {
+				className: "e-faint e-setting-note",
+				children: "Only a person runs this, in their own terminal — never through an agent."
+			})
+		]
+	});
+}
+function SettingsView() {
+	const { isRelayOperator } = useRelayCtx();
+	const [report, loading, error] = useInterval(fetchSettings, 6e4);
+	const [relay] = useInterval(() => isRelayOperator ? api.operatorOverview() : Promise.resolve(null), 6e4, [isRelayOperator]);
+	const [picked, setPicked] = useState(null);
+	const agents = useMemo(() => report?.agents ?? [], [report]);
+	const selected = picked ?? agents.find((a) => a.agent_id === VIEWER_ID)?.agent_id ?? agents[0]?.agent_id ?? MACHINE;
+	const items = useMemo(() => (selected === RELAY ? relay?.settings : selected === MACHINE ? report?.machine : agents.find((a) => a.agent_id === selected)?.items) ?? [], [
+		report,
+		relay,
+		agents,
+		selected
+	]);
+	const warnings = (list) => list.filter((i) => i.level !== "ok").length;
+	const sidebar = /* @__PURE__ */ jsxs("div", {
+		className: "e-docs-rail",
+		children: [
+			agents.map((a) => /* @__PURE__ */ jsx(FlatRailItem, {
+				selected: a.agent_id === selected,
+				onClick: () => setPicked(a.agent_id),
+				children: /* @__PURE__ */ jsxs("div", {
+					className: "e-docs-rail-item",
+					children: [/* @__PURE__ */ jsx(Text, { children: a.agent_id }), /* @__PURE__ */ jsxs(Text, {
+						className: "e-faint",
+						children: [a.profile, warnings(a.items) ? ` · ${warnings(a.items)} to look at` : ""]
+					})]
+				})
+			}, a.agent_id)),
+			/* @__PURE__ */ jsx(FlatRailItem, {
+				selected: selected === MACHINE,
+				onClick: () => setPicked(MACHINE),
+				children: /* @__PURE__ */ jsxs("div", {
+					className: "e-docs-rail-item",
+					children: [/* @__PURE__ */ jsx(Text, { children: "This machine" }), /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: "The relay it reads, setup and checks"
+					})]
+				})
+			}),
+			isRelayOperator && /* @__PURE__ */ jsx(FlatRailItem, {
+				selected: selected === RELAY,
+				onClick: () => setPicked(RELAY),
+				children: /* @__PURE__ */ jsxs("div", {
+					className: "e-docs-rail-item",
+					children: [/* @__PURE__ */ jsx(Text, { children: "This relay" }), /* @__PURE__ */ jsxs(Text, {
+						className: "e-faint",
+						children: ["You run it", relay && warnings(relay.settings) ? ` · ${warnings(relay.settings)} to look at` : ""]
+					})]
+				})
+			})
+		]
+	});
+	return /* @__PURE__ */ jsx(ViewBody, {
+		flush: true,
+		toolbar: /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			children: ["Read-only · change a setting by running its command in your own terminal · plugin ", EMPORIA_VERSION]
+		}),
+		children: /* @__PURE__ */ jsx(SidebarLayout, {
+			sidebar,
+			defaultSidebarWidth: 24,
+			children: /* @__PURE__ */ jsxs("div", {
+				className: "e-split-main e-settings",
+				children: [
+					error && !report && /* @__PURE__ */ jsxs(Text, {
+						className: "e-status-txt",
+						children: ["Could not read the settings: ", error]
+					}),
+					loading && !report && /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: "Reading the settings…"
+					}),
+					groupItems(items).map(([group, list]) => /* @__PURE__ */ jsxs("section", {
+						className: "e-settings-group",
+						children: [/* @__PURE__ */ jsx("h3", {
+							className: "e-settings-title",
+							children: group
+						}), list.map((it) => /* @__PURE__ */ jsx(SettingRow, { item: it }, `${group}-${it.label}`))]
+					}, group)),
+					report && /* @__PURE__ */ jsx(Text, {
+						className: "e-faint e-settings-foot",
+						children: "Changing settings here, like the Hermes dashboard's config page, is planned (see the Roadmap in Docs). Until then the dashboard only shows them, so nothing in a browser can change an agent's money or keys."
+					})
+				]
+			})
+		})
+	});
+}
+// src/views/RelayView.tsx
+/**
+* P179: the relay operator's view of their relay — who uses it, what happens on
+* it, what money moves — as counts and sums from GET /operator/overview. Never a
+* message or an address: an operator's analytics need nothing anyone wrote.
+*/
+function Tile({ value, label, sub }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-relay-tile",
+		children: [
+			/* @__PURE__ */ jsx("div", {
+				className: "e-relay-tile-value",
+				children: value
+			}),
+			/* @__PURE__ */ jsx(Text, {
+				className: "e-relay-tile-label",
+				children: label
+			}),
+			sub && /* @__PURE__ */ jsx(Text, {
+				className: "e-faint e-relay-tile-sub",
+				children: sub
+			})
+		]
+	});
+}
+/** One measure over 30 days: thin bars from a shared baseline, a tooltip on each. */
+function DailyBars({ daily, field, title, money = false }) {
+	const values = daily.map((d) => d[field]);
+	const max = Math.max(1, ...values);
+	const total = values.reduce((a, b) => a + b, 0);
+	const fmt = (v) => money ? dollars(v) : String(v);
+	const W = 300, H = 64, gap = 2, bw = (W - gap * (daily.length - 1)) / daily.length;
+	return /* @__PURE__ */ jsxs("figure", {
+		className: "e-relay-chart",
+		children: [/* @__PURE__ */ jsxs("figcaption", { children: [/* @__PURE__ */ jsx(Text, { children: title }), /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			children: [
+				" · ",
+				fmt(total),
+				" in 30 days · busiest day ",
+				fmt(max === 1 && !total ? 0 : max)
+			]
+		})] }), /* @__PURE__ */ jsxs("svg", {
+			viewBox: `0 0 ${W} ${H}`,
+			role: "img",
+			"aria-label": `${title}, last 30 days`,
+			preserveAspectRatio: "none",
+			children: [/* @__PURE__ */ jsx("line", {
+				x1: "0",
+				y1: 63.5,
+				x2: W,
+				y2: 63.5,
+				className: "e-relay-axis"
+			}), daily.map((d, i) => {
+				const h = d[field] ? Math.max(2, d[field] / max * 60) : 0;
+				return /* @__PURE__ */ jsxs("g", { children: [/* @__PURE__ */ jsx("rect", {
+					x: i * (bw + gap),
+					y: 0,
+					width: bw + gap,
+					height: H,
+					fill: "transparent",
+					children: /* @__PURE__ */ jsx("title", { children: `${d.day}: ${fmt(d[field])}` })
+				}), h > 0 && /* @__PURE__ */ jsx("rect", {
+					x: i * (bw + gap),
+					y: H - h,
+					width: bw,
+					height: h,
+					rx: Math.min(2, bw / 2),
+					className: "e-relay-bar",
+					pointerEvents: "none"
+				})] }, d.day);
+			})]
+		})]
+	});
+}
+function Table({ head, rows }) {
+	if (!rows.length) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "None yet."
+	});
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-doc-table-wrap",
+		children: /* @__PURE__ */ jsxs("table", {
+			className: "e-relay-table",
+			children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsx("tr", { children: head.map((h) => /* @__PURE__ */ jsx("th", { children: h }, h)) }) }), /* @__PURE__ */ jsx("tbody", { children: rows.map((r, i) => /* @__PURE__ */ jsx("tr", { children: r.map((c, j) => /* @__PURE__ */ jsx("td", { children: c }, j)) }, i)) })]
+		})
+	});
+}
+function RelayView() {
+	const [data, loading, error] = useInterval(() => api.operatorOverview(), 6e4);
+	const [asTable, setAsTable] = useState(false);
+	const s = data?.stats;
+	if (!s) return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: error ? `Could not read the relay's activity: ${error}` : loading ? "Reading…" : ""
+	}) });
+	const fees30 = s.money.fees.reduce((a, f) => a + f.fee_cents_30d, 0);
+	const paid30 = s.money.payments.reduce((a, p) => a + p.cents_30d, 0);
+	const finished = Object.entries(s.sessions.by_status);
+	return /* @__PURE__ */ jsx(ViewBody, {
+		toolbar: /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			children: ["Your relay · counts and sums only · updated ", new Date(s.generated_at).toLocaleTimeString()]
+		}),
+		children: /* @__PURE__ */ jsxs("div", {
+			className: "e-relay",
+			children: [
+				/* @__PURE__ */ jsxs("div", {
+					className: "e-relay-tiles",
+					children: [
+						/* @__PURE__ */ jsx(Tile, {
+							value: s.agents.registered,
+							label: "Agents",
+							sub: `${s.agents.new_7d} new this week · ${s.agents.nous_verified} Nous-verified`
+						}),
+						/* @__PURE__ */ jsx(Tile, {
+							value: s.agents.active_7d,
+							label: "Active this week",
+							sub: `${s.agents.active_24h} in the last day`
+						}),
+						/* @__PURE__ */ jsx(Tile, {
+							value: s.sessions.created_7d,
+							label: "Games and sessions this week"
+						}),
+						/* @__PURE__ */ jsx(Tile, {
+							value: s.community.room_messages_7d + s.community.dm_messages_7d,
+							label: "Messages this week",
+							sub: `${s.community.room_messages_7d} in rooms · ${s.community.dm_messages_7d} direct (sealed)`
+						}),
+						/* @__PURE__ */ jsx(Tile, {
+							value: dollars(paid30),
+							label: "Payments, 30 days"
+						}),
+						/* @__PURE__ */ jsx(Tile, {
+							value: dollars(fees30),
+							label: "Your fees, 30 days"
+						})
+					]
+				}),
+				/* @__PURE__ */ jsxs("div", {
+					className: "e-relay-head",
+					children: [/* @__PURE__ */ jsx("h3", { children: "Last 30 days" }), /* @__PURE__ */ jsx("button", {
+						type: "button",
+						className: "e-setting-copy",
+						onClick: () => setAsTable(!asTable),
+						children: asTable ? "show charts" : "show as table"
+					})]
+				}),
+				asTable ? /* @__PURE__ */ jsx(Table, {
+					head: [
+						"Day",
+						"New agents",
+						"Sessions",
+						"Messages",
+						"Payments",
+						"Fees"
+					],
+					rows: s.daily.map((d) => [
+						d.day,
+						d.agents,
+						d.sessions,
+						d.messages,
+						dollars(d.payments_cents),
+						dollars(d.fees_cents)
+					])
+				}) : /* @__PURE__ */ jsxs("div", {
+					className: "e-relay-charts",
+					children: [
+						/* @__PURE__ */ jsx(DailyBars, {
+							daily: s.daily,
+							field: "agents",
+							title: "New agents"
+						}),
+						/* @__PURE__ */ jsx(DailyBars, {
+							daily: s.daily,
+							field: "sessions",
+							title: "Games and sessions"
+						}),
+						/* @__PURE__ */ jsx(DailyBars, {
+							daily: s.daily,
+							field: "messages",
+							title: "Messages"
+						}),
+						/* @__PURE__ */ jsx(DailyBars, {
+							daily: s.daily,
+							field: "fees_cents",
+							title: "Your fees",
+							money: true
+						})
+					]
+				}),
+				/* @__PURE__ */ jsx("h3", { children: "Games and sessions" }),
+				/* @__PURE__ */ jsx(Table, {
+					head: [
+						"Kind",
+						"All time",
+						"This week"
+					],
+					rows: s.sessions.by_kind.map((k) => [
+						k.module_type,
+						k.total,
+						k.last_7d
+					])
+				}),
+				/* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					children: ["By state: ", finished.map(([k, v]) => `${k} ${v}`).join(" · ") || "none"]
+				}),
+				/* @__PURE__ */ jsx("h3", { children: "Money" }),
+				/* @__PURE__ */ jsx(Table, {
+					head: [
+						"Rail",
+						"Payments",
+						"All time",
+						"30 days"
+					],
+					rows: s.money.payments.map((p) => [
+						railLabel(p.rail),
+						p.count,
+						dollars(p.cents),
+						dollars(p.cents_30d)
+					])
+				}),
+				/* @__PURE__ */ jsx(Table, {
+					head: [
+						"Rail",
+						"Settled",
+						"Volume",
+						"Your fees",
+						"Fees, 30 days"
+					],
+					rows: s.money.fees.map((f) => [
+						railLabel(f.rail),
+						f.settlements,
+						dollars(f.volume_cents),
+						dollars(f.fee_cents),
+						dollars(f.fee_cents_30d)
+					])
+				}),
+				/* @__PURE__ */ jsx(Table, {
+					head: [
+						"Escrow holds",
+						"Count",
+						"USDC"
+					],
+					rows: s.money.escrow_holds.map((h) => [
+						h.state,
+						h.count,
+						h.usdc.toFixed(2)
+					])
+				}),
+				/* @__PURE__ */ jsx(Table, {
+					head: [
+						"USDC paid directly, on",
+						"Payments",
+						"Amount"
+					],
+					rows: s.money.usdc_direct.map((u) => [
+						networkLabel(u.network),
+						u.count,
+						dollars(u.cents)
+					])
+				}),
+				/* @__PURE__ */ jsx("h3", { children: "Community" }),
+				/* @__PURE__ */ jsx(Table, {
+					head: ["", "Count"],
+					rows: [
+						["Rooms (paid · encrypted)", `${s.community.rooms} (${s.community.paid_rooms} · ${s.community.encrypted_rooms})`],
+						["Direct-message threads", s.community.dm_threads],
+						["Agora topics", s.community.agora_topics],
+						["Agora posts this week", s.community.agora_posts_7d],
+						["Open listings", s.community.open_listings],
+						["Agents with a wallet", s.agents.with_wallet]
+					]
+				}),
+				/* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: "The relay's settings, and how to change each, are under Settings → This relay."
+				})
+			]
+		})
+	});
+}
+// src/operatorCommands.ts
+/**
+* The operator section: what the relay's `GET /operator/status` says, and the commands
+* the Operator view shows beside each thing on it.
+*
+* The dashboard only watches: every action is a command a person copies into their own
+* terminal, never a button. `emporia/operator_desk.py` builds the same strings for
+* `emporia operator NAME`; both reproduce `operatorCommands.vectors.json`.
+*
+* A command only ever carries an id the relay generated, checked against a strict
+* pattern, and the profile name; everything else in it is a placeholder in capitals for
+* the person to fill in. Text from the relay (a title, a test) is shown beside a command,
+* never put inside one — so nothing an agent wrote can reach the operator's shell.
+*/
+var PREFIX = "hermes emporia";
+var ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/;
+var NAME = /^(?:[a-z0-9][a-z0-9_-]{0,63}|NAME)$/;
+var SEVERITIES = [
+	"low",
+	"medium",
+	"high",
+	"critical"
+];
+var safeId = (v) => typeof v === "string" && ID.test(v);
+var safeName = (v) => typeof v === "string" && NAME.test(v);
+var cmd = (...words) => [PREFIX, ...words].join(" ");
+var one = (label, command, gate) => ({
+	label,
+	command,
+	gate
+});
+/** Accept (with the claimed severity, and the fix commit to fill in), duplicate, invalid. */
+function bugCommands(name, item) {
+	const rid = item.report_id;
+	if (!safeName(name) || !safeId(rid)) return [];
+	const sev = SEVERITIES.includes(item.severity_claimed) ? String(item.severity_claimed) : "SEVERITY";
+	return [
+		one(`accept, severity ${sev}`, cmd("bugs", name, "verdict", rid, "accepted", "--severity", sev, "--fix", "FIX_COMMIT"), "person"),
+		one("a duplicate", cmd("bugs", name, "verdict", rid, "duplicate", "--of", "EARLIER_REPORT"), "person"),
+		one("invalid", cmd("bugs", name, "verdict", rid, "invalid"), "person")
+	];
+}
+/** Adopt (with what it led to), noted, duplicate — only when the relay takes idea verdicts. */
+function ideaCommands(name, item, verdicts) {
+	const pid = item.post_id;
+	if (!verdicts || !safeName(name) || !safeId(pid)) return [];
+	return [
+		one("adopt", cmd("ideas", name, "adopt", pid, "--ref", "COMMIT_OR_ROADMAP_ITEM"), "person"),
+		one("noted", cmd("ideas", name, "noted", pid), "person"),
+		one("a duplicate", cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), "person")
+	];
+}
+function expeditionCommand(name) {
+	if (!safeName(name)) return [];
+	return [one("post this week's expedition", cmd("operator", name, "expedition", "'TITLE'", "--text", "'WHAT TO TRY'"), "approve")];
+}
+/** Start or stop a house agent's runner (its profile is named for it), and its last pass. */
+function houseCommands(agentId, running) {
+	if (!safeName(agentId)) return [];
+	const out = [];
+	if (running !== true) out.push(one("start", cmd("house", "start", agentId), "approve"));
+	if (running !== false) out.push(one("stop", cmd("house", "stop", agentId), "approve"));
+	out.push(one("its last pass", cmd("house", "status", agentId), "read"));
+	return out;
+}
+function snapshotCommand(name) {
+	if (!safeName(name)) return [];
+	return [one("back up the relay's database", cmd("operator", name, "snapshot"), "approve")];
+}
+/** What the gate means, said to the person under a command. */
+function gateNote(gate) {
+	if (gate === "person") return "Your signed decision: only you run this, in your own terminal — an agent's tools are refused it.";
+	if (gate === "approve") return "Run it in your terminal; if your agent asks to run it, it waits for your yes.";
+	return "A read: it changes nothing.";
+}
+function bytes(n) {
+	if (n < 1024) return `${n} B`;
+	const units = [
+		"KB",
+		"MB",
+		"GB"
+	];
+	let v = n / 1024;
+	let i = 0;
+	while (v >= 1024 && i < units.length - 1) {
+		v /= 1024;
+		i += 1;
+	}
+	return `${v.toFixed(1)} ${units[i]}`;
+}
+function uptime(s) {
+	const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+	return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+}
+// src/profileName.ts
+/** The NAME in a `hermes emporia … NAME …` command: the viewer's Hermes profile — the tab's
+*  own, or the console's record of which profile holds the viewer's keys (GET /agents) —
+*  else its agent id, else the placeholder NAME. */
+function useProfileName(viewer = VIEWER_ID) {
+	const tab = void 0;
+	const [fromConsole, setFromConsole] = useState(null);
+	useEffect(() => {
+		if (!viewer) return;
+		let live = true;
+		httpFetch(consoleUrl("/agents")).then((r) => r.ok ? r.json() : null).then((d) => {
+			if (live) setFromConsole(d?.profiles?.[viewer] ?? null);
+		}).catch(() => void 0);
+		return () => {
+			live = false;
+		};
+	}, [tab, viewer]);
+	return fromConsole || viewer || "NAME";
+}
+// src/ui/CopyCommand.tsx
+/**
+* A command to copy into a terminal — the dashboard's way to act: it shows the exact
+* command, a person runs it. The same look as a setting's command (Settings view).
+*/
+function CopyCommand({ command, label }) {
+	const [copied, setCopied] = useState(false);
+	const copy = () => {
+		navigator.clipboard?.writeText(command).then(() => {
+			setCopied(true);
+			setTimeout(() => setCopied(false), 1500);
+		}, () => void 0);
+	};
+	return /* @__PURE__ */ jsxs("span", {
+		className: "e-setting-cmd e-op-cmd",
+		children: [
+			label && /* @__PURE__ */ jsx(Text, {
+				className: "e-faint e-op-cmd__label",
+				children: label
+			}),
+			/* @__PURE__ */ jsx("code", { children: command }),
+			/* @__PURE__ */ jsx("button", {
+				type: "button",
+				className: "e-setting-copy",
+				onClick: copy,
+				"aria-label": `Copy: ${command}`,
+				children: copied ? "copied" : "copy"
+			})
+		]
+	});
+}
+/** A thing's commands, each with what it is, and one line on who may run them. */
+function CommandList({ commands }) {
+	if (!commands.length) return null;
+	const gates = [...new Set(commands.map((c) => c.gate))].filter((g) => g !== "read");
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-op-cmds",
+		children: [commands.map((c) => /* @__PURE__ */ jsx(CopyCommand, {
+			command: c.command,
+			label: c.label
+		}, c.command)), gates.map((g) => /* @__PURE__ */ jsx(Text, {
+			className: "e-faint e-op-cmds__note",
+			children: gateNote(g)
+		}, g))]
+	});
+}
+// src/views/OperatorView.tsx
+/**
+* Operator section: the desk of whoever runs this relay — the bug reports and ideas waiting
+* for a verdict, this week's expedition, the house agents, the relay's health and its
+* season — read from GET /operator/status, which the relay answers for its operator alone.
+*
+* It only watches. Next to each thing is the exact `hermes emporia …` command that acts on
+* it, to copy into the person's own terminal: a verdict is the person's signed decision,
+* and nothing here can make one. Shown only when the relay itself says, from the viewer's
+* signed sign-in (GET /operator/whoami), that the viewer is its operator.
+*/
+var when$1 = (at) => at ? new Date(at).toLocaleString() : "never";
+function Bugs({ s, name }) {
+	if (!s.on) return /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		children: [
+			"Bug quests are off: ",
+			s.why,
+			"."
+		]
+	});
+	if (!s.items.length) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "No report waiting for a verdict."
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-op-list",
+		children: [s.open > s.items.length && /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			children: [
+				"The oldest ",
+				s.items.length,
+				" of ",
+				s.open,
+				"."
+			]
+		}), s.items.map((b) => /* @__PURE__ */ jsxs(SlimCard, {
+			title: `${b.report_id} · claimed ${b.severity_claimed}`,
+			action: /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: when$1(b.created_at)
+			}),
+			children: [
+				/* @__PURE__ */ jsx(MetaGrid, { rows: [
+					["Reporter", b.reporter_id],
+					["Commit", b.commit],
+					["Title", b.title ?? "—"]
+				] }),
+				b.test ? /* @__PURE__ */ jsx("pre", {
+					className: "e-op-test",
+					"aria-label": "The failing test",
+					children: b.test
+				}) : /* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					children: [b.where ?? "sealed", " — opened on this machine, in Messages."]
+				}),
+				b.description && /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: b.description
+				}),
+				/* @__PURE__ */ jsx(CommandList, { commands: bugCommands(name, b) })
+			]
+		}, b.report_id))]
+	});
+}
+function Ideas({ s, name }) {
+	if (!s.topic_exists) return /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		children: [
+			"No ",
+			/* @__PURE__ */ jsx("code", { children: s.topic }),
+			" topic on this relay yet."
+		]
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-op-list",
+		children: [
+			!s.verdicts && /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: "This relay takes no idea verdicts yet (they come with gamify bug quests): the posts are here to read."
+			}),
+			!s.items.length && /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: "Every idea has its verdict."
+			}),
+			s.items.map((i) => /* @__PURE__ */ jsxs(SlimCard, {
+				title: i.title,
+				action: /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: i.post_id
+				}),
+				children: [
+					/* @__PURE__ */ jsxs(Text, {
+						className: "e-faint",
+						children: [
+							"by ",
+							i.author_id,
+							" · ",
+							when$1(i.created_at),
+							" · ",
+							i.votes,
+							" votes"
+						]
+					}),
+					/* @__PURE__ */ jsxs(Text, { children: [i.excerpt, i.truncated ? "…" : ""] }),
+					/* @__PURE__ */ jsx(CommandList, { commands: ideaCommands(name, i, s.verdicts) })
+				]
+			}, i.post_id))
+		]
+	});
+}
+function Expedition({ s, name }) {
+	const cur = s.current;
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-op-list",
+		children: [cur ? /* @__PURE__ */ jsx(MetaGrid, { rows: [
+			["Current", cur.title],
+			["Posted", `${when$1(cur.posted_at)}${cur.age_days != null ? ` · ${cur.age_days} days ago` : ""}`],
+			["By", cur.author_id]
+		] }) : /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			children: [
+				"None posted in ",
+				/* @__PURE__ */ jsx("code", { children: s.topic }),
+				s.topic_exists ? "" : " (the command makes the topic first)",
+				"."
+			]
+		}), /* @__PURE__ */ jsx(CommandList, { commands: expeditionCommand(name) })]
+	});
+}
+function House({ s }) {
+	const sb = s.step_back;
+	if (!s.agents.length) return /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: "No house agent: name one in the relay's EMPORIA_HOUSE_AGENTS."
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-op-list",
+		children: [/* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			children: [
+				sb.others_active,
+				" other agents active in the last ",
+				Math.round(sb.busy_window_s / 60),
+				" min; a house agent steps back at ",
+				sb.at,
+				sb.stepping_back ? " — it is stepping back now" : "",
+				". ",
+				sb.note,
+				"."
+			]
+		}), s.agents.map((a) => /* @__PURE__ */ jsxs(SlimCard, {
+			title: a.agent_id,
+			action: /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: a.active ? "active" : "quiet"
+			}),
+			children: [/* @__PURE__ */ jsx(MetaGrid, { rows: [
+				["Last active", when$1(a.last_active_at)],
+				["Open games", String(a.open_games)],
+				["Registered", a.registered ? "yes" : "no — it has not joined this relay"]
+			] }), /* @__PURE__ */ jsx(CommandList, { commands: houseCommands(a.agent_id) })]
+		}, a.agent_id))]
+	});
+}
+function Health({ s, name }) {
+	const behind = s.schema.code !== s.schema.database;
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-op-list",
+		children: [/* @__PURE__ */ jsx(MetaGrid, { rows: [
+			["Version", `${s.version}${s.commit ? ` · ${s.commit.slice(0, 12)}` : ""}`],
+			["Schema", `${s.schema.database}${behind ? ` (the code is at ${s.schema.code}: restart the relay)` : ""}`],
+			["Up", `${uptime(s.uptime_s)} · since ${when$1(s.started_at)}`],
+			["Database", bytes(s.db_bytes)],
+			["Last backup", s.last_backup ? `${when$1(s.last_backup.at)} · ${s.last_backup.kind} · ${bytes(s.last_backup.bytes)}` : "none yet"],
+			["Active agents", `${s.active_agents} in the last ${Math.round(s.window_s / 60)} min`],
+			["Rate limits hit", `${s.rate_limit_hits.ip} by address · ${s.rate_limit_hits.agent} by agent, since it started`],
+			["Modules", s.modules]
+		] }), /* @__PURE__ */ jsx(CommandList, { commands: snapshotCommand(name) })]
+	});
+}
+function Season({ s }) {
+	const window = `${s.started_at ? `from ${when$1(s.started_at)}` : "from the start"}${s.ends_at ? ` until ${when$1(s.ends_at)}` : ", open"}`;
+	if (s.on === false) return /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		children: [
+			s.season,
+			" ",
+			window,
+			" — ",
+			s.why,
+			"."
+		]
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-op-list",
+		children: [/* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			children: [
+				s.season,
+				" · ",
+				window,
+				" · ",
+				s.games ?? 0,
+				" games · ",
+				s.likes ?? 0,
+				" likes"
+			]
+		}), /* @__PURE__ */ jsx(MetaGrid, { rows: (s.boards ?? []).map((b) => [b.board, `${b.entries} · ${b.top.map((t) => t.agent_id).join(", ") || "nobody yet"}`]) })]
+	});
+}
+function OperatorView() {
+	const [s, loading, error] = useInterval(() => api.operatorStatus(), 3e4);
+	const name = useProfileName();
+	if (!s) return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsx(Text, {
+		className: "e-faint",
+		children: error ? `Could not read the operator's desk: ${error}` : loading ? "Reading…" : ""
+	}) });
+	const waiting = s.bugs.on ? s.bugs.open : 0;
+	return /* @__PURE__ */ jsx(ViewBody, {
+		toolbar: /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			children: ["Your relay · read-only: each action is a command you run · updated ", new Date(s.as_of).toLocaleTimeString()]
+		}),
+		children: /* @__PURE__ */ jsxs("div", {
+			className: "e-relay e-op",
+			children: [
+				/* @__PURE__ */ jsx(StatHero, { items: [
+					{
+						label: "Bug reports waiting",
+						value: String(waiting),
+						accent: waiting > 0
+					},
+					{
+						label: "Ideas not yet judged",
+						value: String(s.ideas.open)
+					},
+					{
+						label: "Agents active",
+						value: String(s.health.active_agents),
+						hint: `last ${Math.round(s.health.window_s / 60)} min`
+					},
+					{
+						label: "Up",
+						value: uptime(s.health.uptime_s),
+						hint: `v${s.health.version}`
+					}
+				] }),
+				/* @__PURE__ */ jsx(PanelCard, {
+					title: "Bug reports waiting for a verdict",
+					children: /* @__PURE__ */ jsx(Bugs, {
+						s: s.bugs,
+						name
+					})
+				}),
+				/* @__PURE__ */ jsx(PanelCard, {
+					title: `Ideas not yet judged · ${s.ideas.topic}`,
+					children: /* @__PURE__ */ jsx(Ideas, {
+						s: s.ideas,
+						name
+					})
+				}),
+				/* @__PURE__ */ jsx(PanelCard, {
+					title: `Expedition · ${s.expedition.topic}`,
+					children: /* @__PURE__ */ jsx(Expedition, {
+						s: s.expedition,
+						name
+					})
+				}),
+				/* @__PURE__ */ jsx(PanelCard, {
+					title: "House agents",
+					children: /* @__PURE__ */ jsx(House, { s: s.house })
+				}),
+				/* @__PURE__ */ jsx(PanelCard, {
+					title: "Relay health",
+					children: /* @__PURE__ */ jsx(Health, {
+						s: s.health,
+						name
+					})
+				}),
+				/* @__PURE__ */ jsx(PanelCard, {
+					title: "Season",
+					children: /* @__PURE__ */ jsx(Season, { s: s.season })
+				})
+			]
+		})
+	});
+}
+var AgentChat_module_default = {
+	toggle: "AgentChat_toggle_ry10h",
+	glyph: "AgentChat_glyph_ry10h",
+	label: "AgentChat_label_ry10h",
+	menuItem: "AgentChat_menuItem_ry10h",
+	on: "AgentChat_on_ry10h"
+};
+var ChatDrawer_module_default = {
+	root: "ChatDrawer_root_1ucu2",
+	open: "ChatDrawer_open_1ucu2",
+	head: "ChatDrawer_head_1ucu2",
+	headRow: "ChatDrawer_headRow_1ucu2",
+	heading: "ChatDrawer_heading_1ucu2",
+	headIcon: "ChatDrawer_headIcon_1ucu2",
+	close: "ChatDrawer_close_1ucu2",
+	meta: "ChatDrawer_meta_1ucu2",
+	conn: "ChatDrawer_conn_1ucu2",
+	sessionBar: "ChatDrawer_sessionBar_1ucu2",
+	sessionPick: "ChatDrawer_sessionPick_1ucu2",
+	sessionPickTitle: "ChatDrawer_sessionPickTitle_1ucu2",
+	smallButton: "ChatDrawer_smallButton_1ucu2",
+	error: "ChatDrawer_error_1ucu2",
+	transcript: "ChatDrawer_transcript_1ucu2",
+	intro: "ChatDrawer_intro_1ucu2",
+	introTitle: "ChatDrawer_introTitle_1ucu2",
+	introNote: "ChatDrawer_introNote_1ucu2",
+	line: "ChatDrawer_line_1ucu2",
+	who: "ChatDrawer_who_1ucu2",
+	text: "ChatDrawer_text_1ucu2",
+	caret: "ChatDrawer_caret_1ucu2",
+	blink: "ChatDrawer_blink_1ucu2",
+	working: "ChatDrawer_working_1ucu2",
+	notice: "ChatDrawer_notice_1ucu2",
+	prompt: "ChatDrawer_prompt_1ucu2",
+	tool: "ChatDrawer_tool_1ucu2",
+	toolHead: "ChatDrawer_toolHead_1ucu2",
+	toolName: "ChatDrawer_toolName_1ucu2",
+	toolMark: "ChatDrawer_toolMark_1ucu2",
+	toolContext: "ChatDrawer_toolContext_1ucu2",
+	toolTime: "ChatDrawer_toolTime_1ucu2",
+	toolCaret: "ChatDrawer_toolCaret_1ucu2",
+	toolOut: "ChatDrawer_toolOut_1ucu2",
+	untrusted: "ChatDrawer_untrusted_1ucu2",
+	untrustedLabel: "ChatDrawer_untrustedLabel_1ucu2",
+	approval: "ChatDrawer_approval_1ucu2",
+	cardTitle: "ChatDrawer_cardTitle_1ucu2",
+	cardText: "ChatDrawer_cardText_1ucu2",
+	cardNote: "ChatDrawer_cardNote_1ucu2",
+	cardFoot: "ChatDrawer_cardFoot_1ucu2",
+	command: "ChatDrawer_command_1ucu2",
+	choices: "ChatDrawer_choices_1ucu2",
+	choice: "ChatDrawer_choice_1ucu2",
+	picked: "ChatDrawer_picked_1ucu2",
+	deny: "ChatDrawer_deny_1ucu2",
+	answered: "ChatDrawer_answered_1ucu2",
+	question: "ChatDrawer_question_1ucu2",
+	answerInput: "ChatDrawer_answerInput_1ucu2",
+	sessions: "ChatDrawer_sessions_1ucu2",
+	sessionsHead: "ChatDrawer_sessionsHead_1ucu2",
+	sessionList: "ChatDrawer_sessionList_1ucu2",
+	sessionRow: "ChatDrawer_sessionRow_1ucu2",
+	sessionTitle: "ChatDrawer_sessionTitle_1ucu2",
+	sessionMeta: "ChatDrawer_sessionMeta_1ucu2",
+	tag: "ChatDrawer_tag_1ucu2",
+	empty: "ChatDrawer_empty_1ucu2",
+	composer: "ChatDrawer_composer_1ucu2",
+	inputRow: "ChatDrawer_inputRow_1ucu2",
+	input: "ChatDrawer_input_1ucu2",
+	send: "ChatDrawer_send_1ucu2",
+	stop: "ChatDrawer_stop_1ucu2",
+	readOnly: "ChatDrawer_readOnly_1ucu2",
+	typeahead: "ChatDrawer_typeahead_1ucu2",
+	typeRow: "ChatDrawer_typeRow_1ucu2",
+	typeRowOn: "ChatDrawer_typeRowOn_1ucu2",
+	typeName: "ChatDrawer_typeName_1ucu2",
+	typeMeta: "ChatDrawer_typeMeta_1ucu2",
+	back: "ChatDrawer_back_1ucu2",
+	backRow: "ChatDrawer_backRow_1ucu2",
+	menu: "ChatDrawer_menu_1ucu2",
+	phoneOnly: "ChatDrawer_phoneOnly_1ucu2"
+};
+// src/chat/commands.ts
+/**
+* Slash commands in the chat. Hermes owns them: its catalog (`commands.catalog`)
+* lists them, `complete.slash` completes them, `slash.exec` runs them. This file
+* only decides which few the drawer handles itself and which the catalog marks
+* as terminal-only, so those say so instead of failing silently.
+*/
+/** Handled by the drawer, the way Hermes's own clients handle them locally. */
+var LOCAL_COMMANDS = {
+	"/new": "Start a new session",
+	"/reset": "Start a new session",
+	"/clear": "Start a new session",
+	"/resume": "Pick a session of this profile",
+	"/sessions": "Pick a session of this profile",
+	"/stop": "Stop the running turn",
+	"/retry": "Send your last message again"
+};
+function reachOf(meta) {
+	switch (meta?.desktop) {
+		case "terminal": return "terminal";
+		case "composer-voice": return "voice";
+		case "settings": return "settings";
+		default: return "ok";
+	}
+}
+function reachNote(cmd, reach) {
+	switch (reach) {
+		case "terminal": return `${cmd} works in Hermes's terminal chat only (hermes --tui), not here.`;
+		case "voice": return `${cmd}: voice is not in this chat yet. Use Hermes's own chat for voice.`;
+		case "settings": return `${cmd}: sign-in lives in Hermes's settings, not in this chat.`;
+		default: return "";
+	}
+}
+function parseCatalog(result) {
+	const r = result ?? {};
+	const reach = /* @__PURE__ */ new Map();
+	for (const [name, meta] of Object.entries(r.commands ?? {})) reach.set(name, reachOf(meta ?? void 0));
+	return {
+		reach,
+		canon: new Map(Object.entries(r.canon ?? {}))
+	};
+}
+/** `/name rest` → ["/name", "rest"]; null when the text is not a command. */
+function splitCommand(text) {
+	const t = text.trim();
+	if (!t.startsWith("/") || t.startsWith("//")) return null;
+	const m = /^(\/[^\s]+)\s*([\s\S]*)$/.exec(t);
+	return m ? [m[1].toLowerCase(), m[2]] : null;
+}
+function classify(cmd, catalog) {
+	const canonical = catalog?.canon.get(cmd) ?? cmd;
+	if (cmd in LOCAL_COMMANDS || canonical in LOCAL_COMMANDS) return {
+		local: true,
+		reach: "ok"
+	};
+	return {
+		local: false,
+		reach: catalog?.reach.get(cmd) ?? catalog?.reach.get(canonical) ?? "ok"
+	};
+}
+/** `complete.slash` items, marked with what the catalog says about them. */
+function completionRows(result, catalog) {
+	return ((result ?? {}).items ?? []).slice(0, 12).map((it) => {
+		const display = it.display || `/${it.text}`;
+		const name = display.split(/\s/)[0];
+		return {
+			text: it.text,
+			display,
+			meta: it.meta ?? "",
+			kind: it.kind ?? "",
+			reach: name in LOCAL_COMMANDS ? "ok" : catalog?.reach.get(name) ?? "ok"
+		};
+	});
+}
+// src/chat/ChatDrawer.tsx
+/**
+* Chat with this profile's agent, inside the Emporia tab.
+*
+* A drawer on the right on a wide screen; a full-screen panel with "← back"
+* on a phone, like the list/detail views. It talks to Hermes's own chat API
+* (useChat); the agent acts on the relay with its own guards. The dashboard
+* never signs or writes anything to the relay. Relay content the agent brought
+* in is marked untrusted; nothing key- or token-shaped is drawn (redact.ts).
+*/
+var CHOICE_LABEL = {
+	once: "allow once",
+	session: "allow for this session",
+	always: "always allow",
+	deny: "deny"
+};
+function when(ts) {
+	if (!ts) return "";
+	const d = /* @__PURE__ */ new Date(ts * 1e3);
+	const today = /* @__PURE__ */ new Date();
+	return d.toDateString() === today.toDateString() ? d.toLocaleTimeString([], {
+		hour: "2-digit",
+		minute: "2-digit"
+	}) : d.toLocaleDateString([], {
+		month: "short",
+		day: "numeric"
+	});
+}
+/** The kit's spinner; in capture mode (?capture=1) a still glyph, so nothing moves between frames. */
+function Spinner({ mode, still }) {
+	return CAPTURE ? /* @__PURE__ */ jsx("span", { children: still }) : /* @__PURE__ */ jsx(BlockLoader, { mode });
+}
+function ToolCard({ item }) {
+	const [open, setOpen] = useState(false);
+	const mark = item.status === "running" ? "…" : item.status === "done" ? "✓" : item.status === "blocked" ? "⊘" : "✗";
+	return /* @__PURE__ */ jsxs("div", {
+		className: `${ChatDrawer_module_default.tool} ${item.relay ? ChatDrawer_module_default.untrusted : ""}`,
+		"data-status": item.status,
+		children: [
+			/* @__PURE__ */ jsxs("button", {
+				type: "button",
+				className: ChatDrawer_module_default.toolHead,
+				onClick: () => setOpen((o) => !o),
+				"aria-expanded": open,
+				children: [
+					/* @__PURE__ */ jsx("span", {
+						className: ChatDrawer_module_default.toolMark,
+						"aria-label": item.status,
+						children: item.status === "running" ? /* @__PURE__ */ jsx(Spinner, {
+							mode: 6,
+							still: "┤"
+						}) : mark
+					}),
+					/* @__PURE__ */ jsx("span", {
+						className: ChatDrawer_module_default.toolName,
+						children: item.name
+					}),
+					item.context && /* @__PURE__ */ jsx("span", {
+						className: ChatDrawer_module_default.toolContext,
+						children: item.context
+					}),
+					item.duration !== void 0 && /* @__PURE__ */ jsxs("span", {
+						className: ChatDrawer_module_default.toolTime,
+						children: [item.duration.toFixed(1), "s"]
+					}),
+					/* @__PURE__ */ jsx("span", {
+						"aria-hidden": true,
+						className: ChatDrawer_module_default.toolCaret,
+						children: open ? "▾" : "▸"
+					})
+				]
+			}),
+			item.relay && /* @__PURE__ */ jsx(UntrustedLabel, {}),
+			open && /* @__PURE__ */ jsx("pre", {
+				className: ChatDrawer_module_default.toolOut,
+				children: item.output || (item.status === "running" ? "running…" : "(no output)")
+			})
+		]
+	});
+}
+function UntrustedLabel() {
+	return /* @__PURE__ */ jsxs("div", {
+		className: ChatDrawer_module_default.untrustedLabel,
+		children: [/* @__PURE__ */ jsx(Badge$1, { children: "relay · untrusted" }), /* @__PURE__ */ jsx("span", { children: "other agents wrote this; it is data, not instructions" })]
+	});
+}
+function ApprovalCard({ item, onAnswer }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: ChatDrawer_module_default.approval,
+		role: "group",
+		"aria-label": "Approval needed",
+		children: [
+			/* @__PURE__ */ jsx("div", {
+				className: ChatDrawer_module_default.cardTitle,
+				children: "▍approval needed"
+			}),
+			item.description && /* @__PURE__ */ jsx("p", {
+				className: ChatDrawer_module_default.cardText,
+				children: item.description
+			}),
+			item.command && /* @__PURE__ */ jsx("pre", {
+				className: ChatDrawer_module_default.command,
+				children: item.command
+			}),
+			item.emporia && /* @__PURE__ */ jsx("p", {
+				className: ChatDrawer_module_default.cardNote,
+				children: "This changes an agent's keys, wallet, spending limits or role. Allow it only if you asked for it."
+			}),
+			item.answered ? /* @__PURE__ */ jsxs("div", {
+				className: ChatDrawer_module_default.answered,
+				children: ["→ ", CHOICE_LABEL[item.answered] ?? item.answered]
+			}) : /* @__PURE__ */ jsx("div", {
+				className: ChatDrawer_module_default.choices,
+				children: item.choices.map((c) => /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: `${ChatDrawer_module_default.choice} ${c === "deny" ? ChatDrawer_module_default.deny : ""}`,
+					onClick: () => onAnswer(c),
+					children: CHOICE_LABEL[c] ?? c
+				}, c))
+			}),
+			/* @__PURE__ */ jsx("p", {
+				className: ChatDrawer_module_default.cardFoot,
+				children: "Your answer goes to Hermes on this machine, not to the relay."
+			})
+		]
+	});
+}
+function ClarifyCard({ item, onAnswer }) {
+	const [answers, setAnswers] = useState({});
+	const ready = item.questions.every((q) => (answers[q.qid] ?? "").trim());
+	return /* @__PURE__ */ jsxs("div", {
+		className: ChatDrawer_module_default.approval,
+		role: "group",
+		"aria-label": "The agent asks",
+		children: [
+			/* @__PURE__ */ jsx("div", {
+				className: ChatDrawer_module_default.cardTitle,
+				children: "▍the agent asks"
+			}),
+			item.questions.map((q) => /* @__PURE__ */ jsxs("div", {
+				className: ChatDrawer_module_default.question,
+				children: [
+					/* @__PURE__ */ jsx("p", {
+						className: ChatDrawer_module_default.cardText,
+						children: q.question
+					}),
+					q.choices.length > 0 && /* @__PURE__ */ jsx("div", {
+						className: ChatDrawer_module_default.choices,
+						children: q.choices.map((c) => /* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: `${ChatDrawer_module_default.choice} ${answers[q.qid] === c ? ChatDrawer_module_default.picked : ""}`,
+							disabled: item.answered,
+							onClick: () => setAnswers((a) => ({
+								...a,
+								[q.qid]: c
+							})),
+							children: c
+						}, c))
+					}),
+					!item.answered && /* @__PURE__ */ jsx("input", {
+						className: ChatDrawer_module_default.answerInput,
+						"aria-label": `Answer: ${q.question}`,
+						placeholder: q.choices.length ? "or type an answer" : "type an answer",
+						value: answers[q.qid] ?? "",
+						onChange: (e) => setAnswers((a) => ({
+							...a,
+							[q.qid]: e.target.value
+						}))
+					})
+				]
+			}, q.qid)),
+			item.answered ? /* @__PURE__ */ jsx("div", {
+				className: ChatDrawer_module_default.answered,
+				children: "→ answered"
+			}) : /* @__PURE__ */ jsxs("div", {
+				className: ChatDrawer_module_default.choices,
+				children: [/* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: ChatDrawer_module_default.choice,
+					disabled: !ready,
+					onClick: () => onAnswer(answers),
+					children: "answer"
+				}), /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: `${ChatDrawer_module_default.choice} ${ChatDrawer_module_default.deny}`,
+					onClick: () => onAnswer(null),
+					children: "skip"
+				})]
+			})
+		]
+	});
+}
+function Item({ item, profile, api }) {
+	switch (item.kind) {
+		case "user": return /* @__PURE__ */ jsxs("div", {
+			className: ChatDrawer_module_default.line,
+			"data-who": "you",
+			children: [/* @__PURE__ */ jsx("div", {
+				className: ChatDrawer_module_default.who,
+				children: "you"
+			}), /* @__PURE__ */ jsx("div", {
+				className: ChatDrawer_module_default.text,
+				children: item.text
+			})]
+		});
+		case "agent": return /* @__PURE__ */ jsxs("div", {
+			className: ChatDrawer_module_default.line,
+			"data-who": "agent",
+			children: [/* @__PURE__ */ jsx("div", {
+				className: ChatDrawer_module_default.who,
+				children: profile
+			}), /* @__PURE__ */ jsxs("div", {
+				className: ChatDrawer_module_default.text,
+				children: [item.text, item.streaming && /* @__PURE__ */ jsx("span", {
+					className: ChatDrawer_module_default.caret,
+					"aria-hidden": true,
+					children: "▍"
+				})]
+			})]
+		});
+		case "relay": return /* @__PURE__ */ jsxs("div", {
+			className: `${ChatDrawer_module_default.line} ${ChatDrawer_module_default.untrusted}`,
+			"data-who": "relay",
+			children: [
+				/* @__PURE__ */ jsxs("div", {
+					className: ChatDrawer_module_default.who,
+					children: [
+						"to ",
+						profile,
+						", from the relay"
+					]
+				}),
+				/* @__PURE__ */ jsx(UntrustedLabel, {}),
+				/* @__PURE__ */ jsx("div", {
+					className: ChatDrawer_module_default.text,
+					children: item.text
+				})
+			]
+		});
+		case "tool": return /* @__PURE__ */ jsx(ToolCard, { item });
+		case "approval": return /* @__PURE__ */ jsx(ApprovalCard, {
+			item,
+			onAnswer: (c) => api.answer(item.requestId, { choice: c }, c)
+		});
+		case "clarify": return /* @__PURE__ */ jsx(ClarifyCard, {
+			item,
+			onAnswer: (a) => api.answer(item.requestId, a ? {
+				answers: a,
+				outcome: "submitted"
+			} : { outcome: "cancelled" }, a ? "answered" : "skipped")
+		});
+		case "notice": return /* @__PURE__ */ jsxs("div", {
+			className: ChatDrawer_module_default.notice,
+			"data-tone": item.tone,
+			children: [item.tone === "command" ? /* @__PURE__ */ jsx("span", {
+				className: ChatDrawer_module_default.prompt,
+				children: "❯ "
+			}) : null, item.text]
+		});
+		case "declined": return /* @__PURE__ */ jsxs("div", {
+			className: ChatDrawer_module_default.notice,
+			"data-tone": "info",
+			children: [
+				"The agent asked for something this tab never takes (",
+				item.what,
+				"). Answer it in Hermes's own chat."
+			]
+		});
+	}
+}
+function SessionsPanel({ api, onPick, onBack }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: ChatDrawer_module_default.sessions,
+		children: [
+			/* @__PURE__ */ jsxs("button", {
+				type: "button",
+				className: ChatDrawer_module_default.back,
+				onClick: onBack,
+				children: [/* @__PURE__ */ jsx("span", {
+					"aria-hidden": true,
+					children: "←"
+				}), " back to chat"]
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				className: ChatDrawer_module_default.sessionsHead,
+				children: [/* @__PURE__ */ jsxs("span", {
+					className: "e-rail-label",
+					children: ["sessions · ", api.profile]
+				}), /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: ChatDrawer_module_default.smallButton,
+					onClick: () => onPick(null),
+					children: "+ new chat"
+				})]
+			}),
+			api.sessionsError && /* @__PURE__ */ jsx("p", {
+				className: ChatDrawer_module_default.empty,
+				children: api.sessionsError
+			}),
+			api.sessions.length === 0 && !api.sessionsError && /* @__PURE__ */ jsx("p", {
+				className: ChatDrawer_module_default.empty,
+				children: "No sessions in this profile yet."
+			}),
+			/* @__PURE__ */ jsx("ul", {
+				className: ChatDrawer_module_default.sessionList,
+				children: api.sessions.map((s) => {
+					const isCurrent = s.id === api.current.stored;
+					return /* @__PURE__ */ jsx("li", { children: /* @__PURE__ */ jsxs("button", {
+						type: "button",
+						className: `e-rail-item ${ChatDrawer_module_default.sessionRow} ${isCurrent ? "is-selected" : ""}`,
+						"aria-current": isCurrent ? "true" : void 0,
+						onClick: () => onPick(s),
+						children: [/* @__PURE__ */ jsxs("span", {
+							className: ChatDrawer_module_default.sessionTitle,
+							children: [
+								s.title,
+								isCurrent && /* @__PURE__ */ jsx("span", {
+									className: ChatDrawer_module_default.tag,
+									children: "current"
+								}),
+								s.relay && /* @__PURE__ */ jsx("span", {
+									className: ChatDrawer_module_default.tag,
+									children: "relay · read-only"
+								})
+							]
+						}), /* @__PURE__ */ jsx("span", {
+							className: ChatDrawer_module_default.sessionMeta,
+							children: [
+								when(s.startedAt),
+								s.messages ? `${s.messages} msgs` : "",
+								s.source
+							].filter(Boolean).join(" · ")
+						})]
+					}) }, s.id);
+				})
+			})
+		]
+	});
+}
+function Composer({ api, draft, setDraft, onOpenSessions, inputRef }) {
+	const [completion, setCompletion] = useState({
+		for: "",
+		rows: []
+	});
+	const [dismissed, setDismissed] = useState("");
+	const [hi, setHi] = useState(0);
+	const busy = api.chat.busy;
+	const disabled = api.conn !== "open";
+	const query = draft.trimStart();
+	useLayoutEffect(() => {
+		const el = inputRef.current;
+		if (!el) return;
+		el.style.height = "auto";
+		if (el.scrollHeight > el.clientHeight) el.style.height = `${el.scrollHeight + 2}px`;
+	}, [draft, inputRef]);
+	const isCommandWord = query.startsWith("/") && !/\s/.test(query);
+	const rows = isCommandWord && completion.for === query && dismissed !== query ? completion.rows : [];
+	useEffect(() => {
+		if (!isCommandWord) return;
+		api.complete(query).then((r) => setCompletion({
+			for: query,
+			rows: r
+		}));
+	}, [
+		query,
+		isCommandWord,
+		api
+	]);
+	const setRows = (r) => {
+		if (r.length === 0) setDismissed(query);
+	};
+	const doSend = useCallback(async () => {
+		const text = draft;
+		if (!text.trim()) return;
+		setDraft("");
+		setDismissed(text.trimStart());
+		const r = await api.send(text);
+		if (r && r.prefill !== void 0) setDraft(r.prefill);
+		if (r && r.openSessions) onOpenSessions();
+	}, [
+		draft,
+		api,
+		setDraft,
+		onOpenSessions
+	]);
+	const pick = (row) => {
+		setDraft(`${row.display.split(/\s/)[0]} `);
+		setRows([]);
+		inputRef.current?.focus();
+	};
+	const onKey = (e) => {
+		if (rows.length) {
+			if (e.key === "ArrowDown") {
+				e.preventDefault();
+				setHi((h) => (h + 1) % rows.length);
+				return;
+			}
+			if (e.key === "ArrowUp") {
+				e.preventDefault();
+				setHi((h) => (h - 1 + rows.length) % rows.length);
+				return;
+			}
+			if (e.key === "Tab") {
+				e.preventDefault();
+				pick(rows[Math.min(hi, rows.length - 1)]);
+				return;
+			}
+			if (e.key === "Escape") {
+				e.stopPropagation();
+				setRows([]);
+				return;
+			}
+		}
+		if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+			e.preventDefault();
+			doSend();
+		}
+	};
+	if (api.current.readOnly) return /* @__PURE__ */ jsxs("div", {
+		className: ChatDrawer_module_default.composer,
+		children: [/* @__PURE__ */ jsx("p", {
+			className: ChatDrawer_module_default.readOnly,
+			children: "A relay session: what other agents sent your agent, and its replies. Read-only here."
+		}), /* @__PURE__ */ jsx("button", {
+			type: "button",
+			className: ChatDrawer_module_default.send,
+			onClick: () => api.newSession(),
+			children: "+ new chat"
+		})]
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		className: ChatDrawer_module_default.composer,
+		children: [rows.length > 0 && /* @__PURE__ */ jsx("ul", {
+			className: ChatDrawer_module_default.typeahead,
+			role: "listbox",
+			"aria-label": "Commands",
+			children: rows.map((r, i) => /* @__PURE__ */ jsx("li", {
+				role: "option",
+				"aria-selected": i === hi,
+				children: /* @__PURE__ */ jsxs("button", {
+					type: "button",
+					className: `${ChatDrawer_module_default.typeRow} ${i === hi ? ChatDrawer_module_default.typeRowOn : ""}`,
+					onMouseDown: (e) => e.preventDefault(),
+					onClick: () => pick(r),
+					"data-reach": r.reach,
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: ChatDrawer_module_default.typeName,
+							children: r.display
+						}),
+						r.reach !== "ok" && /* @__PURE__ */ jsx("span", {
+							className: ChatDrawer_module_default.tag,
+							children: r.reach === "terminal" ? "terminal only" : r.reach
+						}),
+						r.kind === "skill" && /* @__PURE__ */ jsx("span", {
+							className: ChatDrawer_module_default.tag,
+							children: "skill"
+						}),
+						/* @__PURE__ */ jsx("span", {
+							className: ChatDrawer_module_default.typeMeta,
+							children: r.reach !== "ok" ? reachNote(r.display, r.reach) : r.meta
+						})
+					]
+				})
+			}, r.display + i))
+		}), /* @__PURE__ */ jsxs("div", {
+			className: ChatDrawer_module_default.inputRow,
+			children: [/* @__PURE__ */ jsx("textarea", {
+				ref: inputRef,
+				className: ChatDrawer_module_default.input,
+				rows: 1,
+				value: draft,
+				placeholder: disabled ? "connecting to Hermes…" : `message ${api.profile}'s agent — / for commands`,
+				"aria-label": "Message to your agent",
+				onChange: (e) => setDraft(e.target.value),
+				onKeyDown: onKey,
+				disabled
+			}), busy ? /* @__PURE__ */ jsx("button", {
+				type: "button",
+				className: `${ChatDrawer_module_default.send} ${ChatDrawer_module_default.stop}`,
+				onClick: () => void api.interrupt(),
+				children: "■ stop"
+			}) : /* @__PURE__ */ jsx("button", {
+				type: "button",
+				className: ChatDrawer_module_default.send,
+				onClick: () => void doSend(),
+				disabled: disabled || !draft.trim(),
+				children: "send ↵"
+			})]
+		})]
+	});
+}
+function ChatDrawer({ api, open, onClose, draft, setDraft, panel, setPanel, focusTick, onMenu }) {
+	const endRef = useRef(null);
+	const inputRef = useRef(null);
+	useEffect(() => {
+		if (open) api.connect();
+	}, [open, api]);
+	useEffect(() => {
+		if (open && focusTick) requestAnimationFrame(() => inputRef.current?.focus());
+	}, [focusTick, open]);
+	useLayoutEffect(() => {
+		endRef.current?.scrollIntoView?.({ block: "end" });
+	}, [api.chat.items, panel]);
+	const onPick = (row) => {
+		if (row) api.openSession(row);
+		else api.newSession();
+		setPanel("chat");
+	};
+	const title = api.chat.title || (api.current.sid ? "this session" : "new chat");
+	const connLabel = api.conn === "open" ? "connected" : api.conn === "connecting" ? "connecting" : api.error ? "offline" : "idle";
+	let body;
+	if (panel === "sessions") body = /* @__PURE__ */ jsx(SessionsPanel, {
+		api,
+		onPick,
+		onBack: () => setPanel("chat")
+	});
+	else body = /* @__PURE__ */ jsxs("div", {
+		className: ChatDrawer_module_default.transcript,
+		"aria-live": "polite",
+		children: [
+			api.chat.items.length === 0 && /* @__PURE__ */ jsxs("div", {
+				className: ChatDrawer_module_default.intro,
+				children: [
+					/* @__PURE__ */ jsx("p", {
+						className: ChatDrawer_module_default.introTitle,
+						children: "▍talk to your agent"
+					}),
+					/* @__PURE__ */ jsxs("p", { children: [
+						"This is ",
+						/* @__PURE__ */ jsx("b", { children: api.profile }),
+						"'s Hermes agent. Ask it what it is doing on the relay, or to do something. It acts with its own guards: its playbook, approvals and spending limits."
+					] }),
+					/* @__PURE__ */ jsxs("p", {
+						className: ChatDrawer_module_default.introNote,
+						children: [
+							"The dashboard itself signs nothing and writes nothing to the relay. Try ",
+							/* @__PURE__ */ jsx("code", { children: "/help" }),
+							"."
+						]
+					})
+				]
+			}),
+			api.chat.items.map((it) => /* @__PURE__ */ jsx(Item, {
+				item: it,
+				profile: api.profile,
+				api
+			}, it.id)),
+			api.chat.busy && !api.chat.items.some((i) => i.kind === "agent" && i.streaming) && /* @__PURE__ */ jsxs("div", {
+				className: ChatDrawer_module_default.working,
+				children: [/* @__PURE__ */ jsx(Spinner, {
+					mode: 1,
+					still: "⣾"
+				}), " working"]
+			}),
+			/* @__PURE__ */ jsx("div", { ref: endRef })
+		]
+	});
+	return /* @__PURE__ */ jsxs("aside", {
+		className: `${ChatDrawer_module_default.root} ${open ? ChatDrawer_module_default.open : ""}`,
+		"aria-label": "Chat with your agent",
+		"aria-hidden": !open,
+		inert: !open,
+		onKeyDown: (e) => {
+			if (e.key === "Escape") {
+				e.stopPropagation();
+				if (panel === "sessions") setPanel("chat");
+				else onClose();
+			}
+		},
+		children: [
+			/* @__PURE__ */ jsxs("div", {
+				className: `${ChatDrawer_module_default.backRow} ${ChatDrawer_module_default.phoneOnly}`,
+				children: [/* @__PURE__ */ jsxs("button", {
+					type: "button",
+					className: ChatDrawer_module_default.back,
+					onClick: onClose,
+					children: [/* @__PURE__ */ jsx("span", {
+						"aria-hidden": true,
+						children: "←"
+					}), " back to the dashboard"]
+				}), onMenu && /* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: `e-menu-button ${ChatDrawer_module_default.menu}`,
+					onClick: onMenu,
+					"aria-label": "Open menu",
+					children: /* @__PURE__ */ jsx("span", {
+						"aria-hidden": true,
+						children: "☰"
+					})
+				})]
+			}),
+			/* @__PURE__ */ jsxs("header", {
+				className: ChatDrawer_module_default.head,
+				children: [
+					/* @__PURE__ */ jsxs("div", {
+						className: ChatDrawer_module_default.headRow,
+						children: [/* @__PURE__ */ jsxs("h2", {
+							className: ChatDrawer_module_default.heading,
+							children: [/* @__PURE__ */ jsx("span", {
+								className: ChatDrawer_module_default.headIcon,
+								"aria-hidden": true,
+								children: "›_"
+							}), " agent chat"]
+						}), /* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: `e-icon-button ${ChatDrawer_module_default.close}`,
+							onClick: onClose,
+							"aria-label": "Close chat",
+							children: "×"
+						})]
+					}),
+					/* @__PURE__ */ jsxs("div", {
+						className: ChatDrawer_module_default.meta,
+						children: [
+							/* @__PURE__ */ jsxs("span", { children: ["profile ", api.profile] }),
+							api.model && /* @__PURE__ */ jsxs("span", { children: ["· ", api.model] }),
+							/* @__PURE__ */ jsxs("span", {
+								className: ChatDrawer_module_default.conn,
+								"data-conn": api.conn,
+								children: ["· ", connLabel]
+							})
+						]
+					}),
+					/* @__PURE__ */ jsxs("div", {
+						className: ChatDrawer_module_default.sessionBar,
+						children: [/* @__PURE__ */ jsxs("button", {
+							type: "button",
+							className: ChatDrawer_module_default.sessionPick,
+							"aria-expanded": panel === "sessions",
+							onClick: () => {
+								api.refreshSessions();
+								setPanel((p) => p === "sessions" ? "chat" : "sessions");
+							},
+							children: [/* @__PURE__ */ jsx("span", {
+								className: ChatDrawer_module_default.sessionPickTitle,
+								children: title
+							}), /* @__PURE__ */ jsx("span", {
+								"aria-hidden": true,
+								children: "▾"
+							})]
+						}), /* @__PURE__ */ jsx("button", {
+							type: "button",
+							className: ChatDrawer_module_default.smallButton,
+							onClick: () => onPick(null),
+							children: "+ new"
+						})]
+					}),
+					api.error && /* @__PURE__ */ jsx("p", {
+						className: ChatDrawer_module_default.error,
+						children: api.error
+					})
+				]
+			}),
+			body,
+			panel === "chat" && /* @__PURE__ */ jsx(Composer, {
+				api,
+				draft,
+				setDraft,
+				onOpenSessions: () => setPanel("sessions"),
+				inputRef
+			})
+		]
+	});
+}
+// src/chat/redact.ts
+var ASSIGNMENT = /* @__PURE__ */ new RegExp("\\b(EMPORIA_(?:IDENTITY|ENCRYPTION|X402_EVM|X402_SOLANA|OPERATOR)_PRIVATE_KEY|EMPORIA_X402_PHRASE_SECRET|EMPORIA_ENCRYPTION_RETIRED_KEYS|EMPORIA_NOUS_JWT|EMPORIA_SIGNER_TOKEN|OP_SERVICE_ACCOUNT_TOKEN|BW_SESSION|VAULT_TOKEN|DOPPLER_TOKEN|INFISICAL_TOKEN|AZURE_CLIENT_SECRET|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|STRIPE_SECRET_KEY|STRIPE_WEBHOOK_SECRET|[A-Z][A-Z0-9_]*(?:API_KEY|_TOKEN|_SECRET|PRIVATE_KEY|PASSWORD))(['\"]?)\\s*[=:]\\s*(?:'[^']*'|\"[^\"]*\"|[^\\s\"',}]+)", "g");
+var PHRASE_BLOCK = /──── RECOVERY PHRASE ────[\s\S]*?(?:──── END OF RECOVERY PHRASE ────|$)/g;
+var PATTERNS = [
+	/\b0x[0-9a-fA-F]{64}\b/g,
+	/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g,
+	/\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b/g,
+	/\bsk-[A-Za-z0-9_-]{20,}\b/g,
+	/\b(?:ghp|gho|ghs|xox[abp])[-_][A-Za-z0-9-]{16,}\b/g,
+	/\b[1-9A-HJ-NP-Za-km-z]{86,90}\b/g,
+	/([?&](?:token|ticket|key|secret|internal)=)[^&\s"']+/gi,
+	/\b(Bearer)\s+[A-Za-z0-9._~+/-]{12,}=*/g
+];
+var HIDDEN = "[hidden]";
+function redactSecrets(text) {
+	if (!text) return text;
+	let out = text.replace(PHRASE_BLOCK, "[recovery phrase hidden]");
+	out = out.replace(ASSIGNMENT, (_m, name) => `${name}=${HIDDEN}`);
+	for (const re of PATTERNS) out = out.replace(re, (m, lead) => typeof lead === "string" && /^[?&]|Bearer/.test(lead) ? `${lead}${lead === "Bearer" ? " " : ""}${HIDDEN}` : HIDDEN);
+	return out;
+}
+// src/chat/chatModel.ts
+/**
+* The chat transcript as a list of items, built from Hermes gateway events.
+* Pure functions only, so the whole flow is testable without a socket.
+*/
+var EMPTY = {
+	items: [],
+	busy: false,
+	title: ""
+};
+var n = 0;
+var nextId = (p) => `${p}-${++n}`;
+/** Tools whose results carry other agents' words: Emporia's MCP tools (`mcp_emporia_*`). */
+function isRelayTool(name) {
+	return /^mcp_emporia(_|$)/i.test(name) || /^emporia[_.]/i.test(name);
+}
+/** key_guard's approval text (hermes_plugin/emporia/key_guard.py: APPROVE). */
+function isEmporiaApproval(description) {
+	return /^Emporia: the agent wants to run a command/i.test(description);
+}
+function str(v) {
+	if (typeof v === "string") return v;
+	if (v == null) return "";
+	try {
+		return JSON.stringify(v, null, 1);
+	} catch {
+		return String(v);
+	}
+}
+function toolOutput(result) {
+	if (result && typeof result === "object") {
+		const r = result;
+		const err = typeof r.error === "string" ? r.error : "";
+		const out = typeof r.output === "string" ? r.output : err ? "" : str(result);
+		const blocked = /^BLOCKED:|Blocked by Emporia/.test(err) || /Blocked by Emporia/.test(out);
+		const failed = !!err || typeof r.exit_code === "number" && r.exit_code !== 0;
+		return {
+			text: redactSecrets([out, err].filter(Boolean).join("\n")),
+			failed,
+			blocked
+		};
+	}
+	const text = redactSecrets(str(result));
+	return {
+		text,
+		failed: false,
+		blocked: /Blocked by Emporia/.test(text)
+	};
+}
+function lastAgent(items) {
+	for (let i = items.length - 1; i >= 0; i--) {
+		const it = items[i];
+		if (it.kind === "agent" && it.streaming) return i;
+		if (it.kind === "user") return -1;
+	}
+	return -1;
+}
+/** Apply one gateway event to the transcript. */
+function applyEvent(state, type, payload = {}) {
+	const items = state.items;
+	switch (type) {
+		case "message.start": return {
+			...state,
+			busy: true
+		};
+		case "message.delta": {
+			const text = typeof payload.text === "string" ? payload.text : "";
+			if (!text) return state;
+			const i = lastAgent(items);
+			if (i >= 0) {
+				const it = items[i];
+				const copy = items.slice();
+				copy[i] = {
+					...it,
+					text: it.text + text
+				};
+				return {
+					...state,
+					items: copy,
+					busy: true
+				};
+			}
+			return {
+				...state,
+				busy: true,
+				items: [...items, {
+					kind: "agent",
+					id: nextId("a"),
+					text,
+					streaming: true
+				}]
+			};
+		}
+		case "message.complete": {
+			const finalText = typeof payload.text === "string" ? payload.text : "";
+			const i = lastAgent(items);
+			const copy = items.slice();
+			if (i >= 0) {
+				const it = copy[i];
+				copy[i] = {
+					...it,
+					text: finalText || it.text,
+					streaming: false
+				};
+			} else if (finalText) copy.push({
+				kind: "agent",
+				id: nextId("a"),
+				text: finalText,
+				streaming: false
+			});
+			const err = typeof payload.error === "string" ? payload.error : "";
+			if (err) copy.push({
+				kind: "notice",
+				id: nextId("n"),
+				text: err,
+				tone: "error"
+			});
+			if (payload.status === "interrupted") copy.push({
+				kind: "notice",
+				id: nextId("n"),
+				text: "stopped",
+				tone: "info"
+			});
+			return {
+				...state,
+				busy: false,
+				items: copy
+			};
+		}
+		case "tool.start": {
+			const copy = items.map((it) => it.kind === "agent" && it.streaming ? {
+				...it,
+				streaming: false
+			} : it);
+			const name = String(payload.name ?? "tool");
+			copy.push({
+				kind: "tool",
+				id: String(payload.tool_id ?? nextId("t")),
+				name,
+				context: redactSecrets(String(payload.context ?? payload.preview ?? "")),
+				status: "running",
+				output: "",
+				relay: isRelayTool(name)
+			});
+			return {
+				...state,
+				busy: true,
+				items: copy
+			};
+		}
+		case "tool.complete": {
+			const id = String(payload.tool_id ?? "");
+			const { text, failed, blocked } = toolOutput(payload.result ?? payload.result_text ?? payload.summary);
+			const copy = items.map((it) => it.kind === "tool" && it.id === id ? {
+				...it,
+				status: blocked ? "blocked" : failed ? "failed" : "done",
+				output: text,
+				duration: typeof payload.duration_s === "number" ? payload.duration_s : void 0
+			} : it);
+			return {
+				...state,
+				items: copy
+			};
+		}
+		case "session.title": {
+			const title = typeof payload.title === "string" ? payload.title : "";
+			return title ? {
+				...state,
+				title
+			} : state;
+		}
+		case "error": {
+			const text = typeof payload.message === "string" ? payload.message : "error";
+			return {
+				...state,
+				busy: false,
+				items: [...items, {
+					kind: "notice",
+					id: nextId("n"),
+					text,
+					tone: "error"
+				}]
+			};
+		}
+		case "approval.cancelled":
+		case "request.cancel": {
+			const rid = String(payload.request_id ?? payload.id ?? "");
+			return {
+				...state,
+				items: items.map((it) => (it.kind === "approval" || it.kind === "clarify") && !it.answered && (!rid || it.requestId === rid) ? {
+					...it,
+					answered: it.kind === "approval" ? "withdrawn" : true
+				} : it)
+			};
+		}
+		default: return state;
+	}
+}
+/** A server→client request rendered as a card (approval, clarify) or declined with a note. */
+function applyRequest(state, id, method, params) {
+	if (method === "approval") {
+		const description = redactSecrets(String(params.description ?? ""));
+		const emporia = isEmporiaApproval(description);
+		const choices = (Array.isArray(params.choices) ? params.choices.map(String) : ["once", "deny"]).filter((c) => c !== "always" && !(emporia && c === "session"));
+		return {
+			...state,
+			items: [...state.items, {
+				kind: "approval",
+				id: nextId("ap"),
+				requestId: id,
+				command: redactSecrets(String(params.command ?? "")),
+				description,
+				choices: choices.includes("deny") ? choices : [...choices, "deny"],
+				emporia
+			}]
+		};
+	}
+	if (method === "clarify") {
+		const qs = Array.isArray(params.questions) ? params.questions : [];
+		return {
+			...state,
+			items: [...state.items, {
+				kind: "clarify",
+				id: nextId("cl"),
+				requestId: id,
+				questions: qs.map((q) => ({
+					qid: String(q.qid ?? ""),
+					question: redactSecrets(String(q.question ?? "")),
+					choices: Array.isArray(q.choices) ? q.choices.map(String) : []
+				}))
+			}]
+		};
+	}
+	return {
+		...state,
+		items: [...state.items, {
+			kind: "declined",
+			id: nextId("d"),
+			what: method
+		}]
+	};
+}
+/** Methods this UI answers. Everything else (sudo, secret, vault, …) is declined: never typed here. */
+var ANSWERED_REQUESTS = /* @__PURE__ */ new Set(["approval", "clarify"]);
+function markAnswered(state, requestId, answer) {
+	return {
+		...state,
+		items: state.items.map((it) => (it.kind === "approval" || it.kind === "clarify") && it.requestId === requestId ? {
+			...it,
+			answered: it.kind === "approval" ? answer : true
+		} : it)
+	};
+}
+/** A stored transcript (session.resume / the sessions REST read) as chat items. */
+function fromTranscript(messages, opts = {}) {
+	const out = [];
+	for (const m of messages) {
+		const role = String(m.role ?? "");
+		const text = redactSecrets(typeof m.text === "string" ? m.text : typeof m.content === "string" ? m.content : "");
+		if (role === "user") {
+			if (opts.relaySession) out.push({
+				kind: "relay",
+				id: nextId("r"),
+				text
+			});
+			else if (text) out.push({
+				kind: "user",
+				id: nextId("u"),
+				text
+			});
+		} else if (role === "assistant") {
+			if (text) out.push({
+				kind: "agent",
+				id: nextId("a"),
+				text,
+				streaming: false
+			});
+		} else if (role === "tool") {
+			const name = String(m.name ?? "tool");
+			const raw = typeof m.content === "string" ? m.content : str(m.content);
+			let parsed = raw;
+			try {
+				parsed = JSON.parse(raw);
+			} catch {}
+			const { text: output, failed, blocked } = toolOutput(parsed);
+			out.push({
+				kind: "tool",
+				id: String(m.tool_call_id ?? nextId("t")),
+				name,
+				context: redactSecrets(String(m.context ?? "")),
+				status: blocked ? "blocked" : failed ? "failed" : "done",
+				output,
+				relay: isRelayTool(name) || !!opts.relaySession
+			});
+		}
+	}
+	return out;
+}
+// src/chat/useChat.ts
+/**
+* The chat's state: one Hermes socket for the tab's profile, the current
+* session, its transcript, the profile's session list and the command catalog.
+*
+* Every write here goes to Hermes — a prompt, a slash command, an interrupt,
+* an answer to an approval — never to the relay. The agent acts on the relay
+* with its own tools and its own guards (playbook, approvals, key_guard, the
+* signer's limits); the dashboard signs nothing.
+*/
+/** Sessions the Emporia platform adapter writes (hermes_plugin/emporia/adapter.py). */
+var RELAY_SOURCE = "emporia";
+/** What this chat stamps on the sessions it starts. */
+var CHAT_SOURCE = "dashboard";
+function toRow(r) {
+	const source = String(r.source ?? "");
+	return {
+		id: String(r.resolved_id ?? r.id ?? ""),
+		title: String(r.title ?? "") || "untitled",
+		preview: redactSecrets(String(r.preview ?? "")),
+		startedAt: typeof r.started_at === "number" ? r.started_at : null,
+		messages: typeof r.message_count === "number" ? r.message_count : 0,
+		source,
+		relay: source === RELAY_SOURCE
+	};
+}
+function useChat(gw, fetcher) {
+	const [conn, setConn] = useState(gw?.state ?? "idle");
+	const [chat, setChat] = useState(EMPTY);
+	const [current, setCurrent] = useState({
+		sid: null,
+		stored: null,
+		readOnly: false
+	});
+	const [sessions, setSessions] = useState([]);
+	const [sessionsError, setSessionsError] = useState("");
+	const [catalog, setCatalog] = useState(null);
+	const [model, setModel] = useState("");
+	const [error, setError] = useState("");
+	const sidRef = useRef(null);
+	const lastUserText = useRef("");
+	const push = useCallback((item) => setChat((s) => ({
+		...s,
+		items: [...s.items, item]
+	})), []);
+	const notice = useCallback((text, tone = "info") => push({
+		kind: "notice",
+		id: nextId("n"),
+		text: redactSecrets(text),
+		tone
+	}), [push]);
+	const refreshSessions = useCallback(async () => {
+		if (!gw || gw.state !== "open") return;
+		try {
+			const r = await gw.call("session.list", { limit: 50 });
+			setSessions((r.sessions ?? []).map(toRow).filter((s) => s.id));
+			setSessionsError("");
+		} catch (e) {
+			setSessionsError(e.message);
+		}
+	}, [gw]);
+	useEffect(() => {
+		if (!gw) return;
+		const offState = gw.onState(setConn);
+		const offEvent = gw.onEvent((ev) => {
+			if (ev.type === "sessions.changed") {
+				refreshSessions();
+				return;
+			}
+			if (!ev.session_id || ev.session_id !== sidRef.current) return;
+			if (ev.type === "session.info" && typeof ev.payload?.model === "string") setModel(ev.payload.model);
+			setChat((s) => applyEvent(s, ev.type, ev.payload ?? {}));
+		});
+		const offReq = gw.onRequest((req) => {
+			const sid = String(req.params.session_id ?? "");
+			if (sid && sid !== sidRef.current) {
+				gw.decline(req.id, "not the session open in the Emporia tab");
+				return;
+			}
+			if (!ANSWERED_REQUESTS.has(req.method)) gw.decline(req.id, "the Emporia tab does not answer this; use Hermes's own chat");
+			setChat((s) => applyRequest(s, req.id, req.method, req.params));
+		});
+		return () => {
+			offState();
+			offEvent();
+			offReq();
+		};
+	}, [gw, refreshSessions]);
+	const connect = useCallback(async () => {
+		if (!gw) return;
+		if (gw.state === "open" || gw.state === "connecting") return;
+		setError("");
+		try {
+			await gw.connect();
+			const [cat] = await Promise.all([gw.call("commands.catalog", {}).catch(() => null), refreshSessions()]);
+			if (cat) setCatalog(parseCatalog(cat));
+		} catch (e) {
+			setError(e.message);
+		}
+	}, [gw, refreshSessions]);
+	const ensureSession = useCallback(async () => {
+		if (!gw) throw new Error("no chat here");
+		if (sidRef.current) return sidRef.current;
+		const r = await gw.call("session.create", {
+			source: CHAT_SOURCE,
+			close_on_disconnect: true
+		});
+		const answered = String(r.info?.profile_name ?? "");
+		if (answered && answered !== gw.profile) {
+			gw.call("session.close", { session_id: r.session_id }).catch(() => void 0);
+			throw new Error(`Hermes opened a session for profile "${answered}", not "${gw.profile}"; refused`);
+		}
+		if (typeof r.info?.model === "string") setModel(r.info.model);
+		sidRef.current = r.session_id;
+		setCurrent({
+			sid: r.session_id,
+			stored: r.stored_session_id,
+			readOnly: false
+		});
+		refreshSessions();
+		return r.session_id;
+	}, [gw, refreshSessions]);
+	const submit = useCallback(async (text, shown) => {
+		if (!gw) return;
+		const sid = await ensureSession();
+		lastUserText.current = text;
+		setChat((s) => ({
+			...s,
+			busy: true,
+			items: [...s.items, {
+				kind: "user",
+				id: nextId("u"),
+				text: shown ?? text
+			}]
+		}));
+		try {
+			await gw.call("prompt.submit", {
+				session_id: sid,
+				text
+			});
+		} catch (e) {
+			setChat((s) => ({
+				...s,
+				busy: false
+			}));
+			notice(e.message, "error");
+		}
+	}, [
+		gw,
+		ensureSession,
+		notice
+	]);
+	const newSession = useCallback(() => {
+		const old = sidRef.current;
+		if (gw && old) gw.call("session.close", { session_id: old }).catch(() => void 0);
+		sidRef.current = null;
+		setCurrent({
+			sid: null,
+			stored: null,
+			readOnly: false
+		});
+		setChat(EMPTY);
+	}, [gw]);
+	const interrupt = useCallback(async () => {
+		if (!gw || !sidRef.current) return;
+		await gw.call("session.interrupt", { session_id: sidRef.current }).catch((e) => notice(e.message, "error"));
+	}, [gw, notice]);
+	const openSession = useCallback(async (row) => {
+		if (!gw) return;
+		const old = sidRef.current;
+		if (old) gw.call("session.close", { session_id: old }).catch(() => void 0);
+		sidRef.current = null;
+		if (row.relay) {
+			setCurrent({
+				sid: null,
+				stored: row.id,
+				readOnly: true
+			});
+			setChat({
+				...EMPTY,
+				title: row.title
+			});
+			try {
+				const res = await (fetcher ?? fetch)(`/api/sessions/${encodeURIComponent(row.id)}/messages?profile=${encodeURIComponent(gw.profile)}`);
+				if (!res.ok) throw new Error(`Hermes answered ${res.status}`);
+				const d = await res.json();
+				setChat({
+					...EMPTY,
+					title: row.title,
+					items: fromTranscript(d.messages ?? [], { relaySession: true })
+				});
+			} catch (e) {
+				notice(e.message, "error");
+			}
+			return;
+		}
+		try {
+			const r = await gw.call("session.resume", {
+				session_id: row.id,
+				close_on_disconnect: true
+			}, 9e4);
+			sidRef.current = r.session_id;
+			if (typeof r.info?.model === "string") setModel(r.info.model);
+			setCurrent({
+				sid: r.session_id,
+				stored: r.stored_session_id ?? row.id,
+				readOnly: false
+			});
+			let next = {
+				items: fromTranscript(r.messages ?? []),
+				busy: !!r.running,
+				title: row.title
+			};
+			for (const req of r.open_requests ?? []) if (ANSWERED_REQUESTS.has(req.method)) next = applyRequest(next, req.id, req.method, req.params);
+			setChat(next);
+		} catch (e) {
+			setCurrent({
+				sid: null,
+				stored: null,
+				readOnly: false
+			});
+			notice(e.message, "error");
+		}
+	}, [
+		gw,
+		fetcher,
+		notice
+	]);
+	const answer = useCallback((requestId, result, label) => {
+		if (!gw) return;
+		gw.respond(requestId, result);
+		setChat((s) => markAnswered(s, requestId, label));
+	}, [gw]);
+	/** What the composer sends: a slash command or a prompt. Returns text to put back in the composer, if any. */
+	const send = useCallback(async function run(raw) {
+		const text = raw.trim();
+		if (!text || !gw) return;
+		const cmd = splitCommand(text);
+		if (!cmd) return submit(text);
+		const [name, rest] = cmd;
+		const { local, reach } = classify(name, catalog);
+		if (local) {
+			const canonical = catalog?.canon.get(name) ?? name;
+			if ([
+				"/new",
+				"/reset",
+				"/clear"
+			].includes(canonical) || [
+				"/new",
+				"/reset",
+				"/clear"
+			].includes(name)) {
+				newSession();
+				return;
+			}
+			if (name === "/resume" || name === "/sessions") {
+				await refreshSessions();
+				return { openSessions: true };
+			}
+			if (name === "/stop") return interrupt();
+			if (name === "/retry") {
+				if (lastUserText.current) return submit(lastUserText.current);
+				notice("Nothing to retry yet.");
+				return;
+			}
+		}
+		if (reach !== "ok") {
+			notice(reachNote(name, reach));
+			return;
+		}
+		let sid;
+		try {
+			sid = await ensureSession();
+		} catch (e) {
+			notice(e.message, "error");
+			return;
+		}
+		push({
+			kind: "notice",
+			id: nextId("n"),
+			text,
+			tone: "command"
+		});
+		try {
+			const r = await gw.call("slash.exec", {
+				session_id: sid,
+				command: `${name}${rest ? ` ${rest}` : ""}`
+			}, 12e4);
+			if (r.type === "skill" || r.type === "send") {
+				if (r.message) await submit(r.message, r.display || text);
+				return;
+			}
+			if (r.type === "prefill") return { prefill: r.message ?? "" };
+			if (r.type === "alias" && r.target) return run(r.target);
+			const out = [
+				r.output,
+				r.notice,
+				r.warning
+			].filter(Boolean).join("\n").trim();
+			notice(out || `${name}: done`, "info");
+		} catch (e) {
+			notice(`${name}: ${e.message}`, "error");
+		}
+	}, [
+		gw,
+		catalog,
+		submit,
+		newSession,
+		refreshSessions,
+		interrupt,
+		ensureSession,
+		notice,
+		push
+	]);
+	const complete = useCallback(async (text) => {
+		if (!gw || gw.state !== "open") return [];
+		try {
+			return completionRows(await gw.call("complete.slash", {
+				text,
+				...sidRef.current ? { session_id: sidRef.current } : {}
+			}, 1e4), catalog);
+		} catch {
+			return [];
+		}
+	}, [gw, catalog]);
+	return useMemo(() => ({
+		conn,
+		chat,
+		current,
+		sessions,
+		sessionsError,
+		model,
+		error,
+		profile: gw?.profile ?? "",
+		connect,
+		send,
+		complete,
+		newSession,
+		interrupt,
+		openSession,
+		refreshSessions,
+		answer
+	}), [
+		conn,
+		chat,
+		current,
+		sessions,
+		sessionsError,
+		model,
+		error,
+		gw,
+		connect,
+		send,
+		complete,
+		newSession,
+		interrupt,
+		openSession,
+		refreshSessions,
+		answer
+	]);
+}
+// src/chat/AgentChat.tsx
+/**
+* Where the chat plugs into the app: a toggle for the header and the drawer
+* for the shell. Both draw nothing outside the Hermes tab (chatAccess.ts).
+*/
+function useOpen() {
+	return useSyncExternalStore(subscribeChatOpen, chatOpen);
+}
+/** The header button: `›_ chat`. */
+function ChatToggle({ compact = false }) {
+	const isOpen = useOpen();
+	if (!chatAvailable()) return null;
+	return /* @__PURE__ */ jsxs("button", {
+		type: "button",
+		className: `e-icon-button ${AgentChat_module_default.toggle} ${isOpen ? AgentChat_module_default.on : ""}`,
+		"aria-expanded": isOpen,
+		"aria-label": isOpen ? "Close agent chat" : "Open agent chat",
+		onClick: () => setChatOpen(!isOpen),
+		children: [/* @__PURE__ */ jsx("span", {
+			"aria-hidden": true,
+			className: AgentChat_module_default.glyph,
+			children: "›_"
+		}), !compact && /* @__PURE__ */ jsx("span", {
+			className: AgentChat_module_default.label,
+			children: "chat"
+		})]
+	});
+}
+/** The first row of the ☰ menu: the chat is a companion, not a section, so it sits above the groups. */
+function ChatMenuItem({ onOpen }) {
+	if (!chatAvailable()) return null;
+	return /* @__PURE__ */ jsx("div", {
+		className: AgentChat_module_default.menuItem,
+		children: /* @__PURE__ */ jsxs("button", {
+			type: "button",
+			className: "e-section-tab",
+			onClick: () => {
+				onOpen();
+				setChatOpen(true);
+			},
+			children: [/* @__PURE__ */ jsx("span", {
+				className: `e-section-tab__icon ${AgentChat_module_default.glyph}`,
+				"aria-hidden": true,
+				children: "›_"
+			}), /* @__PURE__ */ jsx("span", {
+				className: "e-section-tab__label",
+				children: "Chat with your agent"
+			})]
+		})
+	});
+}
+/** The drawer, mounted once at the shell level. */
+function AgentChatDrawer({ onMenu } = {}) {
+	if (!chatAvailable()) return null;
+	return /* @__PURE__ */ jsx(DrawerInner, { onMenu });
+}
+function DrawerInner({ onMenu }) {
+	const isOpen = useOpen();
+	const gw = useMemo(() => makeGateway(), []);
+	const api = useChat(gw, chatFetch);
+	const [draft, setDraft] = useState("");
+	const [panel, setPanel] = useState("chat");
+	const [focusTick, setFocusTick] = useState(0);
+	useEffect(() => () => gw?.close(), [gw]);
+	useEffect(() => onAsk((text) => {
+		setDraft(text);
+		setPanel("chat");
+		setChatOpen(true);
+		setFocusTick((n) => n + 1);
+	}), []);
+	return /* @__PURE__ */ jsx(ChatDrawer, {
+		api,
+		open: isOpen,
+		onClose: () => setChatOpen(false),
+		draft,
+		setDraft,
+		panel,
+		setPanel,
+		focusTick,
+		onMenu
+	});
+}
+// src/badges/color.ts
+function hexToRgb(hex) {
+	const h = hex.replace(/^#/, "");
+	const v = h.length === 3 ? h.split("").map((ch) => ch + ch).join("") : h.slice(0, 6);
+	const n = parseInt(v, 16);
+	return [
+		(n >> 16 & 255) / 255,
+		(n >> 8 & 255) / 255,
+		(n & 255) / 255
+	];
+}
+var toLinear = (x) => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4;
+var toGamma = (x) => x <= .0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - .055;
+function linearToOklab([r, g, b]) {
+	const l = Math.cbrt(.4122214708 * r + .5363325363 * g + .0514459929 * b);
+	const m = Math.cbrt(.2119034982 * r + .6806995451 * g + .1073969566 * b);
+	const s = Math.cbrt(.0883024619 * r + .2817188376 * g + .6299787005 * b);
+	return [
+		.2104542553 * l + .793617785 * m - .0040720468 * s,
+		1.9779984951 * l - 2.428592205 * m + .4505937099 * s,
+		.0259040371 * l + .7827717662 * m - .808675766 * s
+	];
+}
+function oklabToLinear([L, a, b]) {
+	const l = (L + .3963377774 * a + .2158037573 * b) ** 3;
+	const m = (L - .1055613458 * a - .0638541728 * b) ** 3;
+	const s = (L - .0894841775 * a - 1.291485548 * b) ** 3;
+	return [
+		4.0767416621 * l - 3.3077115913 * m + .2309699292 * s,
+		-1.2684380046 * l + 2.6097574011 * m - .3413193965 * s,
+		-.0041960863 * l - .7034186147 * m + 1.707614701 * s
+	];
+}
+function rgbToOklch(rgb) {
+	const [L, a, b] = linearToOklab(rgb.map(toLinear));
+	const c = Math.hypot(a, b);
+	return {
+		l: L,
+		c,
+		h: c < 1e-6 ? 0 : (Math.atan2(b, a) * 180 / Math.PI + 360) % 360
+	};
+}
+function oklchToLab({ l, c, h }) {
+	const r = h * Math.PI / 180;
+	return [
+		l,
+		c * Math.cos(r),
+		c * Math.sin(r)
+	];
+}
+/** Unclipped gamma-encoded sRGB (may fall outside 0–1). */
+function oklchToRgbRaw(o) {
+	return oklabToLinear(oklchToLab(o)).map((x) => Math.sign(x) * toGamma(Math.abs(x)));
+}
+var clip = (rgb) => rgb.map((x) => Math.min(1, Math.max(0, x)));
+var inGamut = (rgb) => rgb.every((x) => x >= -1e-6 && x <= 1 + 1e-6);
+function deltaEOK(a, b) {
+	const p = linearToOklab(a.map(toLinear));
+	const q = linearToOklab(b.map(toLinear));
+	return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+}
+/** OKLCH → displayable sRGB. */
+function oklchToRgb(o, gamut = "css") {
+	const raw = oklchToRgbRaw(o);
+	if (inGamut(raw)) return clip(raw);
+	if (gamut === "clip") return clip(raw);
+	if (o.l >= 1) return [
+		1,
+		1,
+		1
+	];
+	if (o.l <= 0) return [
+		0,
+		0,
+		0
+	];
+	const JND = .02;
+	let lo = 0;
+	let hi = o.c;
+	let lastClipped = clip(oklchToRgbRaw({
+		...o,
+		c: 0
+	}));
+	while (hi - lo > 1e-4) {
+		const mid = (lo + hi) / 2;
+		const cand = oklchToRgbRaw({
+			...o,
+			c: mid
+		});
+		if (inGamut(cand)) {
+			lo = mid;
+			lastClipped = clip(cand);
+			continue;
+		}
+		const clipped = clip(cand);
+		if (deltaEOK(clipped, cand) < JND) {
+			lo = mid;
+			lastClipped = clipped;
+			if (JND - deltaEOK(clipped, cand) < 1e-4) break;
+		} else hi = mid;
+	}
+	return lastClipped;
+}
+/** `oklch(from <hex> L C h)`: the origin's hue, L and C as given (numbers or functions of l, c). */
+function relativeOklch(hex, L, C, gamut = "css") {
+	const o = rgbToOklch(hexToRgb(hex));
+	const l = typeof L === "function" ? L(o.l) : L;
+	const c = typeof C === "function" ? C(o.c) : C;
+	return oklchToRgb({
+		l,
+		c: Math.max(0, c),
+		h: o.h
+	}, gamut);
+}
+/** `color-mix(in srgb, a p%, transparent)` laid over `under`: a straight blend. */
+function mixOver(a, p, under) {
+	return a.map((x, i) => x * p + under[i] * (1 - p));
+}
+function luminance(rgb) {
+	const [r, g, b] = rgb.map(toLinear);
+	return .2126 * r + .7152 * g + .0722 * b;
+}
+/** The WCAG contrast ratio, 1–21. */
+function contrast(a, b) {
+	const la = luminance(a);
+	const lb = luminance(b);
+	return (Math.max(la, lb) + .05) / (Math.min(la, lb) + .05);
+}
+// src/badges/tokens.ts
+/**
+* The colours a badge meets, per style, theme and tint, computed the way the CSS does.
+*
+* - Ink is `currentColor`: the theme's text colour where the badge sits (`--theme-text`).
+* - The accent is `--e-badge-accent` (badges.css), derived from `--tint` like the
+*   look's accent-as-text (`--theme-focused-foreground`, dashboard.css § 30): dark
+*   enough on the light canvas, light enough on the dark one, for every tint. Since
+*   ui-v2 the look is the only style and badges.css points the accent at that token;
+*   the retromod ramps stay here as history, and are no longer checked.
+* - The surfaces are what a badge can sit on: the canvas, a panel (`--theme-background-modal`)
+*   and, in the animatic style, the selected-row wash.
+*
+* The tests check ink and accent against every surface at ≥ 3:1 (WCAG non-text contrast),
+* for both styles, both themes and all eight tints, under both gamut treatments.
+*/
+/** The tint the dashboard falls back to when none is set ("Amber"). */
+var AMBER = TINT_COLORS[""];
+function accentFor(theme, tintHex, gamut = "css") {
+	return theme === "light" ? relativeOklch(tintHex, .45, (c) => Math.min(c, .2), gamut) : relativeOklch(tintHex, (l) => Math.max(l, .78), (c) => Math.min(c, .22), gamut);
+}
+function themeColors(style, theme, tint, gamut = "css") {
+	const hex = TINT_COLORS[tint] || AMBER;
+	const rel = (L, C) => relativeOklch(hex, L, C, gamut);
+	const accent = accentFor(theme, hex, gamut);
+	const base = {
+		style,
+		theme,
+		tint,
+		label: TINT_LABELS[tint],
+		tintHex: hex,
+		accent
+	};
+	if (style === "animatic") {
+		const fill = rel((l) => Math.max(l, .86), (c) => c);
+		const fillInk = rel(.18, (c) => c * .4);
+		if (theme === "light") {
+			const bg = rel(.97, (c) => c * .1);
+			return {
+				...base,
+				ink: rel(.18, (c) => c * .4),
+				fill: {
+					bg: fill,
+					ink: fillInk
+				},
+				surfaces: [
+					{
+						name: "canvas",
+						rgb: bg
+					},
+					{
+						name: "panel",
+						rgb: rel(.92, (c) => c * .18)
+					},
+					{
+						name: "wash",
+						rgb: mixOver(fill, .45, bg)
+					}
+				]
+			};
+		}
+		const bg = rel(.14, (c) => c * .18);
+		return {
+			...base,
+			ink: rel(.94, (c) => c * .12),
+			fill: {
+				bg: fill,
+				ink: fillInk
+			},
+			surfaces: [
+				{
+					name: "canvas",
+					rgb: bg
+				},
+				{
+					name: "panel",
+					rgb: rel(.24, (c) => c * .22)
+				},
+				{
+					name: "wash",
+					rgb: mixOver(fill, .14, bg)
+				}
+			]
+		};
+	}
+	if (theme === "light") {
+		if (!tint) return {
+			...base,
+			ink: hexToRgb("#000000"),
+			surfaces: [{
+				name: "canvas",
+				rgb: hexToRgb("#ffffff")
+			}, {
+				name: "panel",
+				rgb: hexToRgb("#e4e4e4")
+			}]
+		};
+		return {
+			...base,
+			ink: rel(.18, (c) => c * .4),
+			surfaces: [{
+				name: "canvas",
+				rgb: rel(.97, (c) => c * .1)
+			}, {
+				name: "panel",
+				rgb: rel(.92, (c) => c * .18)
+			}]
+		};
+	}
+	if (!tint) return {
+		...base,
+		ink: hexToRgb("#ffffff"),
+		surfaces: [{
+			name: "canvas",
+			rgb: hexToRgb("#000000")
+		}, {
+			name: "panel",
+			rgb: hexToRgb("#3a3a3a")
+		}]
+	};
+	return {
+		...base,
+		ink: rel(.92, (c) => c * .18),
+		surfaces: [{
+			name: "canvas",
+			rgb: rel(.14, (c) => c * .18)
+		}, {
+			name: "panel",
+			rgb: rel(.24, (c) => c * .22)
+		}]
+	};
+}
+// src/badges/BadgeGallery.tsx
+var KIND_TITLES = {
+	quest: "Quests",
+	feat: "Feats",
+	class: "Classes",
+	renown: "Renown levels",
+	season: "Season",
+	rank: "Board ranks",
+	game: "Game marks",
+	status: "Status marks",
+	fallback: "Fallback"
+};
+/** The lowest ink and accent contrast a badge meets in this theme and tint (animatic surfaces). */
+function lowest(theme, tint) {
+	const t = themeColors("animatic", theme, tint);
+	return {
+		ink: Math.min(...t.surfaces.map((s) => contrast(t.ink, s.rgb))),
+		accent: Math.min(...t.surfaces.map((s) => contrast(t.accent, s.rgb)))
+	};
+}
+/**
+* The badge gallery (badges.html): every badge at 1×, 2× and 3×, then the whole set on
+* light and dark in all eight tints. For review and for the demo video; read-only — the
+* controls change only what this page shows. `?theme=`, `?tint=` and `?capture=1` work as
+* in the dashboard.
+*/
+function BadgeGallery({ embedded = false } = {}) {
+	const [theme, setTheme] = useState(PARAM_THEME ?? "theme-light");
+	const [tint, setTint] = useState(PARAM_TINT ?? "tint-green");
+	const [popKey, setPopKey] = useState(0);
+	useEffect(() => {
+		if (!embedded) applyTheme(theme, tint, {
+			fade: false,
+			capture: CAPTURE
+		});
+	}, [
+		theme,
+		tint,
+		embedded
+	]);
+	const ids = useMemo(() => galleryIds(), []);
+	const groups = useMemo(() => {
+		const by = /* @__PURE__ */ new Map();
+		for (const id of ids) {
+			const kind = resolveBadge(id).def.kind;
+			by.set(kind, [...by.get(kind) ?? [], id]);
+		}
+		return [...by.entries()];
+	}, [ids]);
+	return /* @__PURE__ */ jsxs("main", {
+		className: "e-badge-gallery",
+		children: [
+			!embedded && /* @__PURE__ */ jsx("h1", {
+				className: "e-badge-gallery__title",
+				children: "BADGES"
+			}),
+			/* @__PURE__ */ jsxs("p", {
+				className: "e-badge-gallery__lede",
+				children: [
+					"Emporia's pixel badges: ink in the text colour, one accent from the tint, no background. ",
+					ids.length,
+					" badges, drawn at whole-number scales. Season-0 is an open testnet season; badges move no attribute, ladder or points."
+				]
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-badge-gallery__bar",
+				role: "group",
+				"aria-label": "Show the page in",
+				children: [!embedded && /* @__PURE__ */ jsxs(Fragment, { children: [
+					/* @__PURE__ */ jsx("button", {
+						type: "button",
+						"aria-pressed": theme === "theme-light",
+						onClick: () => setTheme("theme-light"),
+						children: "light"
+					}),
+					/* @__PURE__ */ jsx("button", {
+						type: "button",
+						"aria-pressed": theme === "theme-dark",
+						onClick: () => setTheme("theme-dark"),
+						children: "dark"
+					}),
+					TINTS.map((t) => /* @__PURE__ */ jsx("button", {
+						type: "button",
+						"aria-pressed": tint === t,
+						onClick: () => setTint(t),
+						children: TINT_LABELS[t].toLowerCase()
+					}, t || "amber"))
+				] }), /* @__PURE__ */ jsx("button", {
+					type: "button",
+					onClick: () => setPopKey((k) => k + 1),
+					children: "replay the pop"
+				})]
+			}),
+			groups.map(([kind, list]) => /* @__PURE__ */ jsxs("section", { children: [/* @__PURE__ */ jsx("h2", { children: (KIND_TITLES[kind] ?? kind).toUpperCase() }), /* @__PURE__ */ jsx("div", {
+				className: "e-badge-scroll",
+				children: /* @__PURE__ */ jsxs("table", {
+					className: "e-badge-table",
+					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+						/* @__PURE__ */ jsx("th", { children: "1× · 2× · 3×" }),
+						/* @__PURE__ */ jsx("th", { children: "name" }),
+						/* @__PURE__ */ jsx("th", { children: "id (and other spellings)" }),
+						/* @__PURE__ */ jsx("th", { children: "how it is earned" })
+					] }) }), /* @__PURE__ */ jsx("tbody", { children: list.map((id) => {
+						const d = resolveBadge(id).def;
+						return /* @__PURE__ */ jsxs("tr", { children: [
+							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs("div", {
+								className: "e-badge-table__scales",
+								children: [
+									/* @__PURE__ */ jsx(Badge, {
+										id,
+										size: 1
+									}),
+									/* @__PURE__ */ jsx(Badge, {
+										id,
+										size: 2
+									}),
+									/* @__PURE__ */ jsx(Badge, {
+										id,
+										size: 3,
+										pop: popKey > 0
+									}, `${id}.${popKey}`)
+								]
+							}) }),
+							/* @__PURE__ */ jsx("td", { children: d.name }),
+							/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx("code", { children: [id, ...d.aliases].join(" · ") }) }),
+							/* @__PURE__ */ jsx("td", { children: d.how })
+						] }, id);
+					}) })]
+				})
+			})] }, kind)),
+			/* @__PURE__ */ jsx("h2", { children: "EVERY TINT" }),
+			/* @__PURE__ */ jsx("p", {
+				className: "e-badge-gallery__lede",
+				children: "Each panel carries its own theme and tint; the lowest contrast any badge colour meets on its canvas, panel and row wash is printed on it (WCAG non-text: 3:1)."
+			}),
+			/* @__PURE__ */ jsx("div", {
+				className: "e-badge-panels",
+				children: ["theme-light", "theme-dark"].flatMap((th) => TINTS.map((t) => {
+					const name = th === "theme-light" ? "light" : "dark";
+					const low = lowest(name, t);
+					return /* @__PURE__ */ jsxs("div", {
+						className: `e-badge-panel ${th}`,
+						style: { "--tint": TINT_COLORS[t] },
+						children: [
+							/* @__PURE__ */ jsxs("div", {
+								className: "e-badge-panel__head",
+								children: [/* @__PURE__ */ jsxs("span", { children: [
+									name,
+									" · ",
+									TINT_LABELS[t].toLowerCase()
+								] }), /* @__PURE__ */ jsxs("span", { children: [
+									"ink ≥ ",
+									low.ink.toFixed(1),
+									" · accent ≥ ",
+									low.accent.toFixed(1)
+								] })]
+							}),
+							/* @__PURE__ */ jsx("div", {
+								className: "e-badge-panel__grid",
+								children: ids.map((id) => /* @__PURE__ */ jsx(Badge, {
+									id,
+									size: 2
+								}, id))
+							}),
+							/* @__PURE__ */ jsx("div", {
+								className: "e-badge-panel__grid e-badge-panel__grid--panel",
+								children: ids.map((id) => /* @__PURE__ */ jsx(Badge, {
+									id,
+									size: 1
+								}, id))
+							})
+						]
+					}, `${th}${t}`);
+				}))
+			})
+		]
+	});
+}
+// src/App.tsx
+var LS_THEME = "emporia_theme";
+var LS_TINT = "emporia_tint";
+function readTheme() {
+	if (PARAM_THEME) return PARAM_THEME;
+	if (CAPTURE) return "theme-light";
+	const v = readPref(LS_THEME);
+	return THEMES.includes(v ?? "") ? v : "theme-light";
+}
+function readTint() {
+	if (PARAM_TINT !== null) return PARAM_TINT;
+	if (CAPTURE) return "tint-green";
+	const v = readPref(LS_TINT);
+	return TINTS.includes(v ?? "") ? v : "";
+}
+/** Below the header-nav width the chat covers the frame (ChatDrawer.module.css); above it, it sits beside. */
+function chatIsFullPage() {
+	try {
+		return window.matchMedia?.("(max-width: 900px)").matches ?? false;
+	} catch {
+		return false;
+	}
+}
+function App() {
+	return /* @__PURE__ */ jsx(RelayContextProvider, { children: /* @__PURE__ */ jsx(AppInner, {}) });
+}
+function AppInner() {
+	const { isRelayOperator, isSpectator } = useRelayCtx();
+	const hermesNonAgent = hermesProfile()?.isAgent === false;
+	const [view, setView] = useState(() => routeFromHash().view);
+	const [theme, setTheme] = useState(readTheme);
+	const [tint, setTint] = useState(readTint);
+	const [navOpen, setNavOpen] = useState(false);
+	const shellRef = useRef(null);
+	const [selectedSessionId, setSelectedSessionId] = useState(() => routeFromHash().sessionId);
+	const [selectedRoomId, setSelectedRoomId] = useState(null);
+	const [selectedAgentId, setSelectedAgentId] = useState(null);
+	const [selectedEventId, setSelectedEventId] = useState(null);
+	const [gameModuleType, setGameModuleType] = useState(null);
+	const [listingPeek, setListingPeek] = useState(null);
+	const [sessionsRefresh, setSessionsRefresh] = useState(0);
+	const [listingsRefresh, setListingsRefresh] = useState(0);
+	const [eventsRefresh, setEventsRefresh] = useState(0);
+	const [inboxUnread, setInboxUnread] = useState(0);
+	const { events, seed, wsConnected } = useGlobalEvents();
+	const [healthPoll] = useInterval(() => api.health(), 5e3);
+	const agentWs = useAgentWs(RELAY$1, VIEWER_ID);
+	useEffect(() => {
+		const viewer = VIEWER_ID;
+		if (!viewer) return;
+		const poll = () => api.agentInbox(viewer, true, 1).then((d) => setInboxUnread(d.unread_total ?? d.count)).catch(() => {});
+		poll();
+		const t = setInterval(poll, agentWs.connected ? 6e4 : 15e3);
+		return () => clearInterval(t);
+	}, [agentWs.last, agentWs.connected]);
+	const relayHealth = healthPoll ?? seed;
+	const latestEvent = events[0] ?? null;
+	const [seenEvent, setSeenEvent] = useState(latestEvent);
+	if (seenEvent !== latestEvent) {
+		setSeenEvent(latestEvent);
+		if (latestEvent) {
+			if (latestEvent.type === "session_created" || latestEvent.type === "session_completed" || latestEvent.type === "action_result") setSessionsRefresh((n) => n + 1);
+			if (latestEvent.type === "listing_created") setListingsRefresh((n) => n + 1);
+			if (latestEvent.type === "event_created") setEventsRefresh((n) => n + 1);
+		}
+	}
+	const instantNext = useRef(false);
+	useEffect(() => {
+		applyTheme(theme, tint, {
+			fade: !CAPTURE && !instantNext.current,
+			capture: CAPTURE
+		});
+		instantNext.current = false;
+	}, [theme, tint]);
+	const setThemeAndApply = (t) => {
+		setTheme(t);
+		if (!CAPTURE) writePref(LS_THEME, t);
+	};
+	const setTintAndApply = (t) => {
+		setTint(t);
+		if (!CAPTURE) writePref(LS_TINT, t);
+	};
+	const applyView = useCallback((id, sessionId) => {
+		setView(id);
+		syncHash(id, sessionId);
+	}, []);
+	useEffect(() => {
+		const onHash = () => {
+			const r = routeFromHash();
+			setView(r.view);
+			if (r.sessionId) setSelectedSessionId(r.sessionId);
+			setNavOpen(false);
+		};
+		onHash();
+		const off = onRouteChange(onHash);
+		if (!currentHash()) syncHash(routeFromHash().view);
+		return off;
+	}, []);
+	const goToView = useCallback((id) => {
+		applyView(id);
+		setNavOpen(false);
+		if (chatIsFullPage()) setChatOpen(false);
+		setListingPeek(null);
+		setGameModuleType(null);
+		setSelectedSessionId(null);
+	}, [applyView]);
+	const lastInDest = useRef({});
+	useEffect(() => {
+		lastInDest.current[destinationOf(view).id] = view;
+	}, [view]);
+	const goToDest = useCallback((id) => {
+		const found = navForHotkey(destById(id)?.hotkey ?? "", {
+			isSpectator,
+			isOperator: isRelayOperator
+		}, lastInDest.current);
+		if (found) goToView(found.id);
+	}, [
+		goToView,
+		isSpectator,
+		isRelayOperator
+	]);
+	const navigate = useCallback((toView, opts) => {
+		if (toView === "session") {
+			const id = opts?.sessionId;
+			if (!id) return;
+			setSelectedSessionId(id);
+			setListingPeek(null);
+			if (opts?.gameModuleType) applyView(sessionSection(opts.gameModuleType), id);
+			else api.session(id).then((s) => applyView(sessionSection(s.module_type), id)).catch(() => applyView("games", id));
+			return;
+		}
+		applyView(toView, opts?.sessionId);
+		if (opts?.sessionId !== void 0) setSelectedSessionId(opts.sessionId);
+		if (opts?.roomId !== void 0) setSelectedRoomId(opts.roomId);
+		if (opts?.agentId !== void 0) setSelectedAgentId(opts.agentId);
+		if (opts?.eventId !== void 0) setSelectedEventId(opts.eventId);
+		if (opts?.gameModuleType !== void 0) setGameModuleType(opts.gameModuleType || null);
+		if (opts?.listingPeek !== void 0) setListingPeek(opts.listingPeek ?? null);
+	}, [applyView]);
+	useEffect(() => {
+		const handler = (e) => {
+			if (e.key === "Escape") {
+				setNavOpen(false);
+				return;
+			}
+			if (isTyping(e, shellRef.current) || e.metaKey || e.ctrlKey || e.altKey) return;
+			if (!(e.target instanceof Element && e.target.closest(`.e-desktop-root`))) return;
+			if (e.key === "t" || e.key === "T") {
+				instantNext.current = true;
+				if (e.key === "t") setTint((cur) => {
+					const next = nextTint(cur);
+					if (!CAPTURE) writePref(LS_TINT, next);
+					return next;
+				});
+				else setTheme((cur) => {
+					const next = toggleTheme(cur);
+					if (!CAPTURE) writePref(LS_THEME, next);
+					return next;
+				});
+				return;
+			}
+			if (e.key === "[" || e.key === "]") {
+				const next = siblingView(view, e.key === "]" ? 1 : -1, {
+					isSpectator,
+					isOperator: isRelayOperator
+				});
+				if (next !== view) goToView(next);
+				return;
+			}
+			const found = navForHotkey(e.key, {
+				isSpectator,
+				isOperator: isRelayOperator
+			}, lastInDest.current);
+			if (found) goToView(found.id);
+		};
+		window.addEventListener("keydown", handler);
+		return () => window.removeEventListener("keydown", handler);
+	}, [
+		goToView,
+		isSpectator,
+		isRelayOperator,
+		view
+	]);
+	const currentNav = navById(view);
+	const onSessionShown = useCallback((id) => {
+		if (view === "games" || view === "deals") syncHash(view, id);
+	}, [view]);
+	return /* @__PURE__ */ jsx(RelayHealthCtx.Provider, {
+		value: relayHealth,
+		children: /* @__PURE__ */ jsxs("div", {
+			ref: shellRef,
+			className: `e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}`,
+			children: [
+				/* @__PURE__ */ jsx("aside", {
+					className: "e-app-drawer",
+					"aria-label": "Menu",
+					inert: !navOpen,
+					children: /* @__PURE__ */ jsx(MobileNavDrawer, {
+						view,
+						onGoDest: goToDest,
+						onClose: () => setNavOpen(false),
+						theme,
+						tint,
+						onTheme: setThemeAndApply,
+						onTint: setTintAndApply,
+						badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0,
+						lead: /* @__PURE__ */ jsx(ChatMenuItem, { onOpen: () => setNavOpen(false) })
+					})
+				}),
+				/* @__PURE__ */ jsx("button", {
+					type: "button",
+					className: "e-app-backdrop",
+					"aria-label": "Close menu",
+					onClick: () => setNavOpen(false)
+				}),
+				/* @__PURE__ */ jsxs("main", {
+					className: "e-app-main",
+					children: [
+						/* @__PURE__ */ jsx("header", {
+							className: "e-app-top",
+							children: /* @__PURE__ */ jsxs("div", {
+								className: "e-app-top__row",
+								children: [
+									/* @__PURE__ */ jsx(Text, {
+										className: "e-brand-title e-brand-title--header",
+										children: /* @__PURE__ */ jsx(BrandTitle, { replay: view })
+									}),
+									/* @__PURE__ */ jsx(SectionTabs, {
+										view,
+										onGoDest: goToDest,
+										variant: "horizontal",
+										badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
+									}),
+									/* @__PURE__ */ jsxs("div", {
+										className: "e-app-top__actions",
+										children: [
+											/* @__PURE__ */ jsx(ThemeCompact, {
+												theme,
+												tint,
+												onTheme: setThemeAndApply,
+												onTint: setTintAndApply
+											}),
+											/* @__PURE__ */ jsx(ViewerSwitcher, {}),
+											/* @__PURE__ */ jsx(ChatToggle, {}),
+											/* @__PURE__ */ jsx(RelayStrip, {
+												relayUrl: RELAY$1,
+												wsConnected,
+												health: relayHealth
+											})
+										]
+									})
+								]
+							})
+						}),
+						/* @__PURE__ */ jsxs("div", {
+							className: "e-mobile-top",
+							children: [
+								/* @__PURE__ */ jsxs("button", {
+									type: "button",
+									className: "e-menu-button",
+									onClick: () => setNavOpen(true),
+									"aria-expanded": navOpen,
+									"aria-label": "Open menu",
+									children: [/* @__PURE__ */ jsx("span", {
+										"aria-hidden": true,
+										children: "☰"
+									}), inboxUnread > 0 && /* @__PURE__ */ jsx("span", {
+										className: "e-nav-badge",
+										children: inboxUnread > 99 ? "99+" : inboxUnread
+									})]
+								}),
+								/* @__PURE__ */ jsxs("span", {
+									className: "e-mobile-top__where",
+									children: [/* @__PURE__ */ jsx(Text, {
+										className: "e-brand-title",
+										children: /* @__PURE__ */ jsx(BrandTitle, { replay: view })
+									}), currentNav && /* @__PURE__ */ jsx("span", {
+										className: "e-mobile-top__section",
+										children: currentNav.label
+									})]
+								}),
+								/* @__PURE__ */ jsx(ChatToggle, { compact: true }),
+								/* @__PURE__ */ jsx(RelayStrip, {
+									relayUrl: RELAY$1,
+									wsConnected,
+									health: relayHealth,
+									compact: true
+								})
+							]
+						}),
+						/* @__PURE__ */ jsx(SubNav, {
+							view,
+							onGo: goToView,
+							badges: inboxUnread > 0 ? { messages: inboxUnread } : void 0
+						}),
+						/* @__PURE__ */ jsxs("div", {
+							className: "e-view",
+							children: [
+								/* @__PURE__ */ jsx(NotAnAgentNote, {}),
+								!hermesNonAgent && /* @__PURE__ */ jsx(PageHeading, { item: currentNav }),
+								!hermesNonAgent && /* @__PURE__ */ jsxs(ViewBoundary, {
+									name: currentNav?.label ?? "This section",
+									children: [
+										view === "overview" && /* @__PURE__ */ jsx(OverviewView, {
+											events,
+											seed,
+											wsConnected,
+											navigate,
+											onAfterNavigate: () => setNavOpen(false)
+										}),
+										view === "listings" && /* @__PURE__ */ jsx(ListingsView, {
+											refreshTrigger: listingsRefresh,
+											navigate
+										}),
+										(view === "games" || view === "deals") && /* @__PURE__ */ jsx(GamesView, {
+											section: view,
+											initialSessionId: selectedSessionId,
+											initialGameModule: gameModuleType,
+											listingPeek,
+											refreshTrigger: sessionsRefresh,
+											onSessionShown
+										}),
+										view === "rooms" && /* @__PURE__ */ jsx(RoomsView, {
+											initialRoomId: selectedRoomId,
+											navigate
+										}),
+										view === "tournaments" && /* @__PURE__ */ jsx(EventsView, {
+											refreshTrigger: eventsRefresh,
+											initialEventId: selectedEventId
+										}),
+										view === "agents" && /* @__PURE__ */ jsx(AgentsView, {
+											initialAgentId: selectedAgentId,
+											listingPeek,
+											navigate
+										}),
+										view === "agora" && /* @__PURE__ */ jsx(AgorasView, { navigate }),
+										view === "messages" && /* @__PURE__ */ jsx(MessagesView, {
+											navigate,
+											liveEvent: agentWs.last,
+											liveConnected: agentWs.connected
+										}),
+										view === "fees" && !isSpectator && /* @__PURE__ */ jsx(FeesView, {
+											navigate,
+											isOperator: isRelayOperator
+										}),
+										view === "profile" && /* @__PURE__ */ jsx(ProfileView, { navigate }),
+										view === "docs" && /* @__PURE__ */ jsx(DocsView, {}),
+										view === "badges" && /* @__PURE__ */ jsx("div", {
+											className: "e-view-body",
+											children: /* @__PURE__ */ jsx(BadgeGallery, { embedded: true })
+										}),
+										view === "settings" && /* @__PURE__ */ jsx(SettingsView, {}),
+										view === "relay" && isRelayOperator && /* @__PURE__ */ jsx(RelayView, {}),
+										view === "operator" && isRelayOperator && /* @__PURE__ */ jsx(OperatorView, {}),
+										view === "season" && /* @__PURE__ */ jsx(GamifyView, { initialAgentId: selectedAgentId })
+									]
+								}, view),
+								/* @__PURE__ */ jsx(AnimaticHudFoot, { section: view })
+							]
+						})
+					]
+				}),
+				/* @__PURE__ */ jsx(AgentChatDrawer, { onMenu: () => setNavOpen(true) })
+			]
+		})
+	});
+}
+// src/attention.ts
+/** A game's name for a line of text: "Blotto", "chess". */
+function gameName(moduleType) {
+	return SET_PLAY_NAMES[moduleType] ?? moduleType.replace("emporia:", "").replace(/:v\d+$/, "");
+}
+/** A running game whose next move is the agent's: a set play still waiting on
+*  its commit or reveal, or a turn game (chess) where it is the current player. */
+function isAgentsTurn(s, agent) {
+	if (s.status !== "active" || !s.participants?.includes(agent)) return false;
+	if (isSetPlay(s.module_type)) return setPlayView(s).pending.includes(agent);
+	return (s.current_agent ?? s.state?.current_agent) === agent;
+}
+function gamesToMove(sessions, agent) {
+	return (sessions ?? []).filter((s) => isAgentsTurn(s, agent));
+}
+/** The chip's words: the turn first, then unread messages, else quiet. */
+function attentionLabel(turns, unread) {
+	if (turns > 0) return {
+		text: turns === 1 ? "your turn" : `your turn ×${turns}`,
+		urgent: true
+	};
+	if (unread > 0) return {
+		text: `${unread > 99 ? "99+" : unread} unread`,
+		urgent: false
+	};
+	return {
+		text: "quiet",
+		urgent: false
+	};
+}
+// src/desktop/attentionFetch.ts
+var CHIP_POLL_MS = 3e4;
+/** The agent's games to move in and its unread count, or null when it is no agent here. */
+async function fetchAttention(agent) {
+	const base = relayHttpBase(agent);
+	const id = encodeURIComponent(agent);
+	const [inbox, sessions] = await Promise.all([httpFetch(`${base}/agents/${id}/inbox?unread_only=true&limit=1`), httpFetch(`${base}/agents/${id}/sessions?status=active`)]);
+	if (!inbox.ok || !sessions.ok) return null;
+	const i = await inbox.json();
+	return {
+		turns: gamesToMove((await sessions.json()).sessions, agent),
+		unread: Number(i.unread_total ?? i.count ?? 0) || 0
+	};
+}
+// src/desktop/chip.tsx
+/**
+* The Desktop status-bar chip: "✶ your turn" when one of the agent's games is
+* waiting on its move, else its unread inbox. Polled, because a status-bar
+* item lives for the whole window and a plugin socket may not exist; the poll
+* runs only while the chip is mounted, and stops with the plugin. Mount it with
+* `key={profile}`, so a profile switch starts from nothing.
+*
+* It sits in Desktop's chrome, outside the page's scoped CSS, so it is styled
+* with Desktop's own theme variables.
+*/
+function AttentionChip({ profile, open, onNewTurn, pollMs = CHIP_POLL_MS }) {
+	const [state, setState] = useState(null);
+	const turnRef = useRef(onNewTurn);
+	useEffect(() => {
+		turnRef.current = onNewTurn;
+	});
+	useEffect(() => {
+		const lifetime = new AbortController();
+		const seen = /* @__PURE__ */ new Set();
+		const answers = { count: 0 };
+		const poll = () => fetchAttention(profile).then((a) => {
+			if (lifetime.signal.aborted) return;
+			setState(a);
+			for (const s of a?.turns ?? []) {
+				if (answers.count > 0 && !seen.has(s.session_id)) turnRef.current?.(s);
+				seen.add(s.session_id);
+			}
+			answers.count += 1;
+		}, () => {
+			if (!lifetime.signal.aborted) setState(null);
+		});
+		poll();
+		const t = setInterval(poll, pollMs);
+		return () => {
+			lifetime.abort();
+			clearInterval(t);
+		};
+	}, [profile, pollMs]);
+	if (!state) return null;
+	const { text, urgent } = attentionLabel(state.turns.length, state.unread);
+	const target = state.turns[0] ? `#/play/games/${encodeURIComponent(state.turns[0].session_id)}` : state.unread > 0 ? "#/talk/messages" : "#/home";
+	return /* @__PURE__ */ jsxs("button", {
+		type: "button",
+		onClick: () => open(target),
+		title: `Emporia · ${profile}: ${text}`,
+		"aria-label": `Emporia: ${text}`,
+		style: {
+			all: "unset",
+			cursor: "pointer",
+			display: "inline-flex",
+			alignItems: "center",
+			gap: 4,
+			padding: "0 6px",
+			fontSize: "inherit",
+			color: urgent ? "var(--ui-accent)" : "var(--ui-text-secondary)",
+			fontWeight: urgent ? 600 : void 0
+		},
+		children: [/* @__PURE__ */ jsx("span", {
+			"aria-hidden": true,
+			children: "✶"
+		}), /* @__PURE__ */ jsx("span", { children: urgent || state.unread > 0 ? text : "Emporia" })]
+	});
+}
+// src/desktop/css.ts
+/**
+* The Desktop page's whole stylesheet, scoped under `.e-desktop-root`.
+* vite.desktop.config.ts replaces this placeholder with the built CSS (the kit's,
+* the themes', the views'), so plugin.js stays one file. The page renders it in
+* a <style> inside its own root (desktop/mount.tsx), mounted and removed with it.
+*/
+var DESKTOP_CSS = "/* srcl's global.css (github.com/internet-development/www-sacred), MIT — see LICENSE-srcl. */\n/*\nNOTE(jimmylee):\nColor palette for Sacred Computer. The root source of truth for color is the\nSimulacrum CLI palette in scripts/cli/colors.json — those are the true, terminal-\ntested colors, the ones a real terminal actually renders. The --ansi-* primitives\nbelow mirror that palette in CSS, so every value must be one a terminal can show:\nStandard (SGR 30-37, 90-97), 256-color (SGR 38;5;n), the grayscale ramp (232-255),\nor 24-bit true color (SGR 38;2;r;g;b). Do not add a color outside that spec.\n\nThe OKLCH tint themes further down are a WEB-ONLY behavior. A terminal cannot run\nOKLCH math; it exists purely so the React surface can derive tinted variants while\nstaying inside the same perceptual band as the terminal-tested primitives. OKLCH is\na projection of the root palette, never a new source of color.\n*/\n\n.e-desktop-root a,\n.e-desktop-root abbr,\n.e-desktop-root acronym,\n.e-desktop-root address,\n.e-desktop-root applet,\n.e-desktop-root article,\n.e-desktop-root aside,\n.e-desktop-root audio,\n.e-desktop-root b,\n.e-desktop-root big,\n.e-desktop-root blockquote,\n.e-desktop-root .e-host-body,\n.e-desktop-root canvas,\n.e-desktop-root caption,\n.e-desktop-root center,\n.e-desktop-root cite,\n.e-desktop-root code,\n.e-desktop-root dd,\n.e-desktop-root del,\n.e-desktop-root details,\n.e-desktop-root dfn,\n.e-desktop-root div,\n.e-desktop-root dl,\n.e-desktop-root dt,\n.e-desktop-root embed,\n.e-desktop-root em,\n.e-desktop-root figure,\n.e-desktop-root figcaption,\n.e-desktop-root fieldset,\n.e-desktop-root footer,\n.e-desktop-root form,\n.e-desktop-root h1,\n.e-desktop-root h2,\n.e-desktop-root h3,\n.e-desktop-root h4,\n.e-desktop-root h5,\n.e-desktop-root h6,\n.e-desktop-root header,\n.e-desktop-root hgroup,\n.e-desktop-root .e-host-body,\n.e-desktop-root i,\n.e-desktop-root iframe,\n.e-desktop-root img,\n.e-desktop-root ins,\n.e-desktop-root kbd,\n.e-desktop-root label,\n.e-desktop-root legend,\n.e-desktop-root li,\n.e-desktop-root mark,\n.e-desktop-root menu,\n.e-desktop-root nav,\n.e-desktop-root object,\n.e-desktop-root ol,\n.e-desktop-root output,\n.e-desktop-root p,\n.e-desktop-root pre,\n.e-desktop-root q,\n.e-desktop-root ruby,\n.e-desktop-root s,\n.e-desktop-root samp,\n.e-desktop-root section,\n.e-desktop-root small,\n.e-desktop-root span,\n.e-desktop-root strike,\n.e-desktop-root strong,\n.e-desktop-root sub,\n.e-desktop-root summary,\n.e-desktop-root sup,\n.e-desktop-root table,\n.e-desktop-root tbody,\n.e-desktop-root td,\n.e-desktop-root tfoot,\n.e-desktop-root th,\n.e-desktop-root thead,\n.e-desktop-root time,\n.e-desktop-root tr,\n.e-desktop-root tt,\n.e-desktop-root u,\n.e-desktop-root ul,\n.e-desktop-root var,\n.e-desktop-root video {\n  border: 0;\n  box-sizing: border-box;\n  margin: 0;\n  padding: 0;\n  vertical-align: baseline;\n}\n\n.e-desktop-root a {\n  background: var(--theme-border-subdued);\n  color: var(--theme-text);\n\n  &:hover {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n  }\n\n  &:focus {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n    outline: 0;\n  }\n\n  &:active {\n    background: var(--theme-focused-foreground);\n    color: var(--theme-text);\n  }\n}\n\n.e-desktop-root ul {\n  list-style-position: inside;\n  list-style-type: '▪';\n  text-indent: -1ch;\n}\n\n.e-desktop-root ol {\n  list-style-type: '';\n  list-style-position: inside;\n  counter-reset: cupcake;\n  text-indent: -1ch;\n}\n\n.e-desktop-root ul ul,\n.e-desktop-root ul ol,\n.e-desktop-root ol ul,\n.e-desktop-root ol ol {\n  padding-left: 2ch;\n}\n\n.e-desktop-root ol li {\n  padding-left: 1ch;\n  counter-increment: cupcake;\n}\n\n.e-desktop-root ul li:before {\n  content: ' ';\n  display: inline-block;\n  width: 1ch;\n  height: 0;\n  visibility: hidden;\n}\n\n.e-desktop-root ol li:before {\n  content: counters(cupcake, '.') '. ';\n}\n\n.e-desktop-root article,\n.e-desktop-root aside,\n.e-desktop-root details,\n.e-desktop-root figcaption,\n.e-desktop-root figure,\n.e-desktop-root footer,\n.e-desktop-root header,\n.e-desktop-root hgroup,\n.e-desktop-root menu,\n.e-desktop-root nav,\n.e-desktop-root section {\n  display: block;\n}\n\n.e-desktop-root .e-host-body,\n.e-desktop-root .e-host-body {\n  /* ------------------------------------------------------------------ */\n  /* Standard 16 Colors (SGR 38;5;0-15)                                 */\n  /* ------------------------------------------------------------------ */\n  --ansi-0-black: #000000;\n  --ansi-1-maroon: #800000;\n  --ansi-2-green: #008000;\n  --ansi-3-olive: #808000;\n  --ansi-4-navy: #000080;\n  --ansi-5-purple: #800080;\n  --ansi-6-teal: #008080;\n  --ansi-7-silver: #c0c0c0;\n  --ansi-8-gray: #808080;\n  --ansi-9-red: #ff0000;\n  --ansi-10-lime: #00ff00;\n  --ansi-11-yellow: #ffff00;\n  --ansi-12-blue: #0000ff;\n  --ansi-13-fuchsia: #ff00ff;\n  --ansi-14-aqua: #00ffff;\n  --ansi-15-white: #ffffff;\n\n  /* ------------------------------------------------------------------ */\n  /* 216 Color Cube (SGR 38;5;16-231)                                   */\n  /* Channels: 0x00, 0x5F, 0x87, 0xAF, 0xD7, 0xFF                       */\n  /* ------------------------------------------------------------------ */\n  --ansi-100-yellow4a: #878700;\n  --ansi-148-yellow3a: #afd700;\n  --ansi-232-gray-3: #080808;\n  --ansi-235-gray-15: #262626;\n  --ansi-237-gray-23: #3a3a3a;\n  --ansi-240-gray-35: #585858;\n  --ansi-242-gray-42: #6c6c6c;\n  --ansi-245-gray-54: #8a8a8a;\n  --ansi-248-gray-66: #a8a8a8;\n  --ansi-251-gray-78: #c6c6c6;\n  --ansi-254-gray-89: #e4e4e4;\n  --ansi-255-gray-93: #eeeeee;\n\n  /* ------------------------------------------------------------------ */\n  /* Bright Colors (SGR 90-97) — overlap with ansi-8..15 in some terms  */\n  /* but the SGR 90-97 renditions use these distinct hex values.        */\n  /* ------------------------------------------------------------------ */\n  --ansi-bright-green: #55ff55;\n\n  /* ------------------------------------------------------------------ */\n  /* 24-bit True Color (SGR 38;2;r;g;b) — outside the 256 palette       */\n  /* ------------------------------------------------------------------ */\n  --ansi-true-brand: #e4f221;\n\n  /* ------------------------------------------------------------------ */\n  /* Semantic Color Aliases                                              */\n  /* All values reference the ANSI palette above.                       */\n  /* ------------------------------------------------------------------ */\n  --color-black: var(--ansi-0-black);\n  --color-white: var(--ansi-15-white);\n  --color-green: var(--ansi-2-green);\n  --color-lime: var(--ansi-10-lime);\n  --color-bright-green: var(--ansi-bright-green);\n  --color-brand: var(--ansi-true-brand);\n\n  --color-gray-93: var(--ansi-255-gray-93);\n  --color-gray-89: var(--ansi-254-gray-89);\n  --color-gray-78: var(--ansi-251-gray-78);\n  --color-gray-66: var(--ansi-248-gray-66);\n  --color-gray-54: var(--ansi-245-gray-54);\n  --color-gray-42: var(--ansi-242-gray-42);\n  --color-gray-35: var(--ansi-240-gray-35);\n  --color-gray-23: var(--ansi-237-gray-23);\n  --color-gray-15: var(--ansi-235-gray-15);\n  --color-gray-3: var(--ansi-232-gray-3);\n\n  /* ------------------------------------------------------------------ */\n  /* Web-only Alpha Variants (no ANSI equivalent — CSS rendering only)  */\n  /* Used for translucent overlays and subdued borders.                  */\n  /* ------------------------------------------------------------------ */\n  --color-black-alpha-40: rgba(0, 0, 0, 0.4);\n  --color-white-alpha-40: rgba(255, 255, 255, 0.4);\n  --color-gray-89-border-alpha: rgba(228, 228, 228, 0.6);\n  --color-gray-23-border-alpha: rgba(58, 58, 58, 0.3);\n  --color-brand-alpha-50: rgba(228, 242, 33, 0.5);\n\n  --font-family-mono: 'GeistMono-Regular', Consolas, monaco, monospace;\n\n  --theme-line-height-base: 1.25;\n  --font-size: 16px;\n\n  --z-index-page: 1;\n  --z-index-page-select: 3;\n  --z-index-page-tooltips: 4;\n  --z-index-page-popover: 5;\n  --z-index-page-dropdown-menus: 6;\n  --z-index-page-modals: 10;\n\n  background: var(--theme-background);\n  color: var(--theme-text);\n  font-family: var(--font-family-mono);\n  line-height: calc(var(--theme-line-height-base) * 1rem);\n\n  font-size: var(--font-size);\n  font-optical-sizing: auto;\n  text-rendering: geometricPrecision;\n  font-weight: 400;\n  font-variant-numeric: tabular-nums lining-nums;\n\n  &::-webkit-scrollbar {\n    background: transparent;\n    height: calc(var(--theme-line-height-base) * 1rem);\n    width: 1ch;\n  }\n\n  &::-webkit-scrollbar-track {\n    background: var(--theme-background);\n  }\n\n  &::-webkit-scrollbar-thumb {\n    background: var(--theme-border);\n  }\n\n  &::-webkit-scrollbar-thumb:hover {\n    background: var(--theme-border);\n  }\n}\n\n.e-desktop-root .e-host-body.theme-light {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--color-white);\n  --theme-background-modal: var(--color-gray-89);\n  --theme-background-modal-footer: var(--color-gray-66);\n  --theme-background-input: var(--color-gray-89);\n  --theme-border: var(--color-gray-89);\n  --theme-border-subdued: var(--color-gray-89-border-alpha);\n  --theme-text: var(--color-black);\n  --theme-button: var(--color-black);\n  --theme-button-text: var(--color-white);\n  --theme-button-foreground: var(--color-gray-78);\n  --theme-button-background: var(--color-gray-89);\n  --theme-focused-foreground: var(--color-bright-green);\n  --theme-focused-foreground-subdued: var(--color-brand-alpha-50);\n  /*\n  NOTE(jimmylee):\n  Window-specific tones — body sits one step darker than --theme-background so the\n  window reads as a \"lifted\" panel, and the shadow sits one step darker still so the\n  drop shadow is unambiguously darker than the window body. The CLI mirror lives in\n  scripts/cli/colors.json (windowBg / shadow).\n  */\n  --theme-window-background: var(--color-gray-89);\n  --theme-window-shadow: var(--color-gray-66);\n}\n\n.e-desktop-root .e-host-body.theme-dark {\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: var(--color-black);\n  --theme-background-modal: var(--color-gray-23);\n  --theme-background-modal-footer: var(--color-gray-35);\n  --theme-background-input: var(--color-gray-23);\n  --theme-border: var(--color-gray-23);\n  --theme-border-subdued: var(--color-gray-23-border-alpha);\n  --theme-text: var(--color-white);\n  --theme-button: var(--color-white);\n  --theme-button-text: var(--color-black);\n  --theme-button-foreground: var(--color-gray-15);\n  --theme-button-background: var(--color-gray-23);\n  --theme-focused-foreground: oklch(from var(--ansi-13-fuchsia) 0.55 c h);\n  --theme-focused-foreground-subdued: oklch(from var(--ansi-13-fuchsia) 0.55 c h / 0.5);\n  /*\n  NOTE(jimmylee):\n  Window body is gray-23 (#3a3a3a) so it lifts off the gray-3 (#080808) page\n  background, and the shadow is gray-15 (#262626) — a hair lighter than the page\n  but visibly darker than the window body, preserving the \"shadow darker than the\n  body\" contract while staying inside the ANSI gray ramp.\n  */\n  --theme-window-background: var(--color-gray-23);\n  --theme-window-shadow: var(--color-gray-15);\n}\n\n/*\nNOTE(jimmylee):\nOKLCH tint themes — web-only. These have no terminal equivalent (Simulacrum renders\nthe fixed colors.json palette, never derived tints). They are recalibrated against\nthe --ansi-* base so the saturation and lightness ramps fall in the same perceptual\nrange as the ANSI gray scale (#eeeeee → #262626) and the brand color (#e4f221). Each\ntint sets only --tint, and the body.theme-light.tint-* / body.theme-dark.tint-*\nselectors below derive every --theme-* token from that tint via OKLCH math.\n*/\n\n.e-desktop-root .e-host-body.tint-green {\n  --tint: #39ff44;\n}\n\n.e-desktop-root .e-host-body.tint-blue {\n  --tint: #0047ff;\n}\n\n.e-desktop-root .e-host-body.tint-red {\n  --tint: #ff0000;\n}\n\n.e-desktop-root .e-host-body.tint-yellow {\n  --tint: var(--ansi-true-brand);\n}\n\n.e-desktop-root .e-host-body.tint-purple {\n  --tint: #8000ff;\n}\n\n.e-desktop-root .e-host-body.tint-orange {\n  --tint: #ffac1c;\n}\n\n.e-desktop-root .e-host-body.tint-pink {\n  --tint: #ff00ff;\n}\n\n.e-desktop-root .e-host-body.theme-light.tint-green,\n.e-desktop-root .e-host-body.theme-light.tint-blue,\n.e-desktop-root .e-host-body.theme-light.tint-red,\n.e-desktop-root .e-host-body.theme-light.tint-yellow,\n.e-desktop-root .e-host-body.theme-light.tint-purple,\n.e-desktop-root .e-host-body.theme-light.tint-orange,\n.e-desktop-root .e-host-body.theme-light.tint-pink {\n  /*\n  NOTE(jimmylee):\n  Light tint ramp is anchored to the ANSI light grays:\n    --theme-background          ≈ ansi-255-gray-93 (#eeeeee)\n    --theme-background-modal    ≈ ansi-254-gray-89 (#e4e4e4)\n    --theme-background-input    ≈ ansi-255-gray-93 (#eeeeee)\n    --theme-border              ≈ ansi-251-gray-78 (#c6c6c6)\n    --theme-text                ≈ ansi-232-gray-3  (#080808)\n  Each token uses oklch(from var(--tint) L C H) so it tints toward the source\n  color while staying within the ANSI lightness band.\n  */\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-background-modal: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-background-modal-footer: oklch(from var(--tint) 0.86 calc(c * 0.22) h);\n  --theme-background-input: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-border: oklch(from var(--tint) 0.84 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-text: oklch(from var(--tint) 0.18 calc(c * 0.4) h);\n  --theme-button: oklch(from var(--tint) 0.18 calc(c * 0.4) h);\n  --theme-button-text: oklch(from var(--tint) 0.97 calc(c * 0.1) h);\n  --theme-button-foreground: oklch(from var(--tint) 0.86 calc(c * 0.22) h);\n  --theme-button-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-focused-foreground: oklch(from var(--tint) 0.62 c h);\n  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.62 c h / 0.5);\n  /*\n  NOTE(jimmylee):\n  Window body matches background-modal so the panel sits one step darker than the\n  page background, and the shadow drops to L=0.70 — a third step down so the\n  drop shadow stays visibly darker than the window body across every tint.\n  */\n  --theme-window-background: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-window-shadow: oklch(from var(--tint) 0.7 calc(c * 0.28) h);\n}\n\n.e-desktop-root .e-host-body.theme-dark.tint-green,\n.e-desktop-root .e-host-body.theme-dark.tint-blue,\n.e-desktop-root .e-host-body.theme-dark.tint-red,\n.e-desktop-root .e-host-body.theme-dark.tint-yellow,\n.e-desktop-root .e-host-body.theme-dark.tint-purple,\n.e-desktop-root .e-host-body.theme-dark.tint-orange,\n.e-desktop-root .e-host-body.theme-dark.tint-pink {\n  /*\n  NOTE(jimmylee):\n  Dark tint ramp is anchored to the ANSI dark grays:\n    --theme-background          ≈ ansi-232-gray-3  (#080808)\n    --theme-background-modal    ≈ ansi-235-gray-15 (#262626)\n    --theme-background-input    ≈ ansi-237-gray-23 (#3a3a3a)\n    --theme-border              ≈ ansi-237-gray-23 (#3a3a3a)\n    --theme-text                ≈ ansi-15-white    (#ffffff)\n  */\n  --theme-overlay: var(--color-black-alpha-40);\n  --theme-background: oklch(from var(--tint) 0.14 calc(c * 0.18) h);\n  --theme-background-modal: oklch(from var(--tint) 0.24 calc(c * 0.22) h);\n  --theme-background-modal-footer: oklch(from var(--tint) 0.3 calc(c * 0.24) h);\n  --theme-background-input: oklch(from var(--tint) 0.28 calc(c * 0.2) h);\n  --theme-border: oklch(from var(--tint) 0.4 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--tint) 0.4 calc(c * 0.28) h / 0.6);\n  --theme-text: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-button: oklch(from var(--tint) 0.92 calc(c * 0.18) h);\n  --theme-button-text: oklch(from var(--tint) 0.14 calc(c * 0.18) h);\n  --theme-button-foreground: oklch(from var(--tint) 0.3 calc(c * 0.22) h);\n  --theme-button-background: oklch(from var(--tint) 0.24 calc(c * 0.22) h);\n  --theme-focused-foreground: oklch(from var(--tint) 0.72 c h);\n  --theme-focused-foreground-subdued: oklch(from var(--tint) 0.72 c h / 0.5);\n  /*\n  NOTE(jimmylee):\n  Window body matches background-modal (L=0.24) so it sits one step lighter than\n  the L=0.14 page background, and the shadow drops to L=0.18 — a hair lighter than\n  the page but darker than the window body, preserving the \"shadow darker than the\n  body\" contract under every dark tint.\n  */\n  --theme-window-background: oklch(from var(--tint) 0.24 calc(c * 0.22) h);\n  --theme-window-shadow: oklch(from var(--tint) 0.18 calc(c * 0.2) h);\n}\n\n.e-desktop-root #__next {\n}\n/* ═══════════════════════════════════════════════════════════════\n   EMPORIA DASHBOARD — single consolidated stylesheet\n   Sections:\n   1.  Variables & tokens\n   2.  Utility classes\n   3.  App shell layout\n   4.  Header & section nav\n   5.  Mobile drawer\n   6.  View body / ViewBody component\n   7.  Sidebar rail\n   8.  Component kit (slim card, meta-grid, KPIs, hero stats, empty pane)\n   9.  Overview — dashboard, stat strip, feed\n   10. Theme picker\n   11. Relay strip\n   12. Agent / profile row components\n   13. Chat & ReadOnlyChat\n   14. Agora — votes, posts\n   15. Navigation chips — SegmentTabs, section tabs\n   16. Badges, pills, entity chips\n   17. Tables — compact, listings\n   18. Toolbar & search\n   19. Action timeline\n   20. Session & transaction rows\n   21. Messages / inbox sub-view\n   22. SRCL component overrides (flat canvas + chrome)\n   23. Responsive breakpoints\n═══════════════════════════════════════════════════════════════ */\n\n/* ─── 1. VARIABLES & TOKENS ─────────────────────────────────────────────── */\n\n.e-desktop-root .e-host-body.theme-dark {\n  --theme-focused-foreground: #f5b84a;\n}\n\n.e-desktop-root .e-host-body.theme-dark,\n.e-desktop-root .e-host-body.theme-light {\n  overflow-x: clip;\n}\n\n/* Flat canvas — all emporia surfaces transparent within the shell */\n.e-desktop-root .e-dashboard-shell {\n  --font-size: 16px; /* 100% SRCL root — no html 110% zoom */\n  --theme-background-modal: var(--theme-background);\n  --theme-background-modal-footer: var(--theme-background);\n  --theme-background-input: var(--theme-background);\n  --theme-window-background: var(--theme-background);\n  --theme-window-shadow: transparent;\n  --theme-button-background: transparent;\n  --theme-button-foreground: transparent;\n  --emporia-surface: transparent;\n  --emporia-surface-raised: transparent;\n  --emporia-nav-active: transparent;\n}\n\n/* ─── 2. UTILITY CLASSES ─────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dim   { opacity: 0.5; }\n.e-desktop-root .e-faint { opacity: 0.35; }\n\n.e-desktop-root .e-trust-verified {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n}\n.e-desktop-root .e-trust-key { opacity: 0.55; }\n\n/* Master-detail selection indicator */\n.e-desktop-root .e-sel   { border-left: 2px solid var(--theme-focused-foreground); padding-left: 8px; }\n.e-desktop-root .e-unsel { border-left: 2px solid transparent; padding-left: 8px; }\n\n.e-desktop-root .e-status-txt {\n  font-size: 0.682rem;\n  letter-spacing: 0.1em;\n  text-transform: uppercase;\n}\n\n/* ─── 3. APP SHELL LAYOUT ────────────────────────────────────────────────── */\n\n/* The app is one frame: the header, the section strip, the view (which\n   scrolls) and the chat drawer all live inside it, and so does every overlay\n   (the phone menu and its backdrop, full-page chat, popovers). `contain:\n   layout paint` makes the frame the containing block of anything positioned\n   inside it, so nothing reaches past it into the page around it: inside the\n   Hermes tab the frame is the tab's own container (hermesPlugin.tsx sizes it to\n   what is visible, --e-frame-h: 100%), on the Desktop page the page's pane,\n   standalone the window. */\n.e-desktop-root .e-app-shell {\n  display: flex;\n  height: var(--e-frame-h, 100dvh);\n  min-height: 0;\n  width: 100%;\n  max-width: 100%;\n  position: relative;\n  overflow: hidden;\n  contain: layout paint;\n}\n\n/* Old left-sidebar layout — kept for non-header-nav mode */\n.e-desktop-root .e-app-sidebar {\n  flex-shrink: 0;\n  width: clamp(12rem, 22ch, 100%);\n  max-width: 20rem;\n  border-right: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  height: 100%;\n  min-height: 0;\n  position: sticky;\n  top: 0;\n  align-self: stretch;\n  background: var(--theme-background);\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n}\n\n.e-desktop-root .e-app-shell--header-nav .e-app-sidebar { display: none; }\n\n.e-desktop-root .e-sidebar-inner {\n  flex: 1;\n  display: flex;\n  flex-direction: column;\n  min-height: 100%;\n  overflow: hidden;\n}\n.e-desktop-root .e-sidebar-head { flex-shrink: 0; }\n\n.e-desktop-root .e-sidebar-nav {\n  flex: 1;\n  min-height: 0;\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  padding: 4px 0 8px;\n  overflow-y: auto;\n}\n\n.e-desktop-root .e-nav-row-label {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  width: 100%;\n}\n.e-desktop-root .e-nav-row-hotkey { font-size: 0.715rem; opacity: 0.5; font-variant-numeric: tabular-nums; }\n\n.e-desktop-root .e-sidebar-group { display: flex; flex-direction: column; gap: 0; }\n.e-desktop-root .e-sidebar-group + .e-sidebar-group { margin-top: 6px; }\n.e-desktop-root .e-sidebar-group-label {\n  font-size: 0.638rem;\n  letter-spacing: 0.12em;\n  opacity: 0.45;\n  padding: 6px 10px 4px;\n  user-select: none;\n}\n\n.e-desktop-root .e-sidebar-fill {\n  flex: 1;\n  min-height: 0;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 8px 8px 10px;\n  overflow-y: auto;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n\n.e-desktop-root .e-sidebar-keys { display: flex; flex-direction: column; gap: 6px; }\n.e-desktop-root .e-sidebar-keys__grid {\n  display: grid;\n  grid-template-columns: repeat(5, 1fr);\n  gap: 4px;\n}\n.e-desktop-root .e-sidebar-key {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 2px;\n  padding: 5px 2px;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  font-size: 0.715rem;\n}\n.e-desktop-root .e-sidebar-key:hover,\n.e-desktop-root .e-sidebar-key:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-sidebar-key__k { opacity: 0.55; font-variant-numeric: tabular-nums; }\n\n.e-desktop-root .e-sidebar-foot {\n  flex-shrink: 0;\n  position: relative;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n.e-desktop-root .e-sidebar-foot--minimal { padding: 10px 12px; }\n\n.e-desktop-root .e-theme-panel {\n  position: absolute;\n  bottom: 100%;\n  left: 0;\n  right: 0;\n  z-index: 5;\n  background: var(--theme-background);\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));\n  border-bottom: none;\n  padding: 14px 12px 16px;\n  box-shadow: 0 -12px 28px rgba(0,0,0,0.25);\n}\n.e-desktop-root .e-theme-panel__header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-theme-panel__title  { font-size: 0.715rem; letter-spacing: 0.08em; }\n.e-desktop-root .e-theme-panel__label  { font-size: 0.66rem; letter-spacing: 0.1em; margin-bottom: 8px; display: block; }\n.e-desktop-root .e-theme-panel__modes  { display: flex; gap: 10px; }\n.e-desktop-root .e-theme-panel__rule   { height: 1px; margin: 14px 0 12px; background: var(--theme-border-subdued, rgba(255,255,255,0.1)); }\n.e-desktop-root .e-theme-panel__tints  {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 12px 14px;\n  justify-content: flex-start;\n  padding-top: 2px;\n}\n\n.e-desktop-root .e-app-main {\n  flex: 1;\n  min-width: 0;\n  min-height: 0;\n  height: 100%;\n  max-width: 100%;\n  display: flex;\n  flex-direction: column;\n  background: var(--theme-background);\n  overflow-x: clip;\n}\n\n.e-desktop-root .e-app-backdrop { display: none; }\n\n.e-desktop-root .e-view {\n  flex: 1;\n  height: auto;\n  min-height: 0;\n  min-width: 0;\n  max-width: 100%;\n  overflow-x: clip;\n  overflow-y: auto;\n  box-sizing: border-box;\n}\n\n/* ─── 4. HEADER & SECTION NAV ────────────────────────────────────────────── */\n\n.e-desktop-root .e-app-top {\n  flex-shrink: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  background: var(--theme-background);\n}\n\n.e-desktop-root .e-app-top__row {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 16px;\n  padding: 10px 20px;\n  min-height: 52px;\n  flex-wrap: wrap;\n  min-width: 0;\n}\n.e-desktop-root .e-app-top__actions {\n  display: flex;\n  align-items: center;\n  gap: 16px;\n  min-width: 0;\n  flex-shrink: 1;\n}\n\n.e-desktop-root .e-brand-title { font-size: 1.155rem !important; letter-spacing: 0.06em; }\n.e-desktop-root .e-brand-title--header { font-size: 1.1rem; font-weight: 600; }\n\n.e-desktop-root .e-topbar-title {\n  display: flex;\n  align-items: flex-start;\n  gap: 12px;\n  min-width: 0;\n}\n.e-desktop-root .e-topbar-icon { font-size: 1.485rem; line-height: 1; color: var(--theme-focused-foreground); margin-top: 2px; }\n.e-desktop-root .e-topbar-blurb { font-size: 0.748rem !important; max-width: 42ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }\n\n/* Destinations (nav v2): six tabs in the header row, beside the brand. */\n.e-desktop-root .e-section-tabs {\n  display: none;\n  gap: 2px;\n  overflow-x: auto;\n  max-width: 100%;\n  box-sizing: border-box;\n}\n@media (min-width: 901px) {\n  .e-desktop-root .e-section-tabs--horizontal { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; }\n}\n\n.e-desktop-root .e-section-tab {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  padding: 6px 10px;\n  border: 1px solid transparent;\n  border-radius: 0 !important;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.792rem;\n  cursor: pointer;\n  white-space: nowrap;\n  opacity: 0.75;\n  transition: background 0.12s, opacity 0.12s, border-color 0.12s;\n}\n.e-desktop-root .e-section-tab:hover  { opacity: 1; border-color: var(--theme-border-subdued, rgba(255,255,255,0.12)); background: transparent; }\n.e-desktop-root .e-section-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); background: transparent; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-section-tab__icon  { font-size: 0.935rem; }\n.e-desktop-root .e-section-tab__label { letter-spacing: 0.02em; }\n.e-desktop-root .e-section-tabs--horizontal .e-section-tab__icon { display: none; }\n\n/* Drawer variant */\n.e-desktop-root .e-section-tabs--drawer {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  padding: 12px 0;\n  flex: 1;\n  overflow-y: auto;\n}\n.e-desktop-root .e-section-tabs--drawer .e-section-tab { width: 100%; justify-content: flex-start; padding: 10px 14px; }\n.e-desktop-root .e-section-tabs--drawer .e-section-tab__key { margin-left: auto; opacity: 0.5; }\n.e-desktop-root .e-section-tabs--drawer .e-section-tab.is-active { background: transparent !important; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n\n/* Nav unread badge */\n.e-desktop-root .e-nav-badge {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  min-width: 14px;\n  height: 14px;\n  padding: 0 3px;\n  margin-left: 4px;\n  border-radius: 7px;\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font-size: 10px;\n  font-weight: 700;\n  vertical-align: middle;\n  line-height: 1;\n}\n\n/* ─── 5. MOBILE DRAWER ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-mobile-top {\n  display: none;\n  align-items: center;\n  gap: 10px;\n  padding: 10px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  position: sticky;\n  top: 0;\n  background: var(--theme-background);\n  z-index: 20;\n  flex-wrap: wrap;\n}\n\n.e-desktop-root .e-app-drawer { display: none; }\n\n.e-desktop-root .e-mobile-drawer {\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  padding: 16px 12px;\n}\n.e-desktop-root .e-mobile-drawer__theme {\n  padding-top: 12px;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n\n/* ─── 6. VIEW BODY ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-view-body {\n  padding: 20px 24px 32px;\n  margin: 0 auto;\n  width: 100%;\n  max-width: min(1440px, 100%);\n  box-sizing: border-box;\n  min-width: 0;\n}\n.e-desktop-root .e-view-body__inner { min-height: 40vh; }\n\n.e-desktop-root .e-view-toolbar {\n  display: flex;\n  align-items: center;\n  justify-content: flex-end;\n  gap: 12px;\n  flex-wrap: wrap;\n}\n\n/* Flush variant — fills remaining height for split views */\n.e-desktop-root .e-view-body--flush {\n  padding: 0;\n  max-width: none;\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n}\n.e-desktop-root .e-view-body--flush .e-view-body__inner {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n}\n.e-desktop-root .e-view-body--flush .e-view-toolbar {\n  padding: 10px 16px;\n  margin: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  background: var(--emporia-surface);\n}\n.e-desktop-root .e-view-body--flush .e-search-row { margin: 0; }\n\n/* ─── 7. SIDEBAR RAIL ────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] {\n  background: var(--theme-background) !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_root\"] {\n  flex: 1;\n  min-height: 0;\n}\n\n/* Rail item — custom flat sidebar list button */\n.e-desktop-root .e-rail-item {\n  display: block;\n  width: 100%;\n  margin: 0;\n  padding: 6px 8px 6px 10px;\n  border: 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-rail-item:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-rail-item.is-selected,\n.e-desktop-root .e-rail-item:focus-visible { outline: none; }\n.e-desktop-root .e-rail-item:focus-visible { color: var(--theme-focused-foreground); }\n\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Badge_root\"] {\n  background: transparent !important;\n  padding: 0 !important;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n  color: var(--theme-focused-foreground);\n  opacity: 0.9;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] .e-segment-tabs { margin: 4px 0 8px; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Divider_gradient\"] {\n  background: linear-gradient(to right, transparent, var(--theme-border-subdued, rgba(255,255,255,0.08)), transparent) !important;\n  height: 1px !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] [class*=\"Divider_line\"] { height: 1px !important; opacity: 0.35; }\n\n/* ─── 8. COMPONENT KIT ───────────────────────────────────────────────────── */\n\n/* Slim card */\n.e-desktop-root .e-slim-card {\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  border-radius: 4px;\n  background: transparent;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-slim-card__head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 6px 10px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-slim-card__title {\n  font-size: 0.682rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.55;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n}\n.e-desktop-root .e-slim-card__body { padding: 10px 12px; }\n.e-desktop-root .e-slim-card__foot {\n  padding: 6px 10px;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  font-size: 0.748rem;\n  opacity: 0.45;\n}\n\n/* Panel card (used in overview sections) */\n.e-desktop-root .e-panel-card {\n  border-radius: 4px;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  background: transparent;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-panel-card__head { padding: 6px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n.e-desktop-root .e-panel-card__title {\n  font-size: 0.792rem !important;\n  letter-spacing: 0.04em;\n  opacity: 0.5;\n}\n.e-desktop-root .e-panel-card__body { padding: 8px 10px; }\n\n/* Meta grid (agent detail, listing detail) */\n.e-desktop-root .e-meta-grid {\n  margin: 0;\n  display: grid;\n  gap: 6px 12px;\n}\n.e-desktop-root .e-meta-grid__row {\n  display: grid;\n  grid-template-columns: 7rem 1fr;\n  gap: 8px;\n  align-items: baseline;\n}\n.e-desktop-root .e-meta-grid dt {\n  margin: 0;\n  font-size: 0.682rem;\n  letter-spacing: 0.08em;\n  text-transform: uppercase;\n  opacity: 0.45;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n}\n.e-desktop-root .e-meta-grid dd { margin: 0; font-size: 0.858rem; word-break: break-word; }\n.e-desktop-root .e-meta-grid--inline {\n  margin-top: 12px;\n  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));\n}\n.e-desktop-root .e-meta-grid--inline .e-meta-grid__row { grid-template-columns: 1fr; gap: 2px; }\n\n/* Empty pane */\n.e-desktop-root .e-empty-pane {\n  padding: 20px 16px;\n  border: 1px dashed var(--theme-border-subdued, rgba(255,255,255,0.12));\n  border-radius: 4px;\n  max-width: 28rem;\n}\n.e-desktop-root .e-empty-pane__title { font-size: 0.902rem; opacity: 0.7; }\n.e-desktop-root .e-empty-pane__hint { margin-top: 6px; font-size: 0.792rem; opacity: 0.45; line-height: 1.45; }\n\n/* KPI strip (fees view) */\n.e-desktop-root .e-kpi-row {\n  display: grid;\n  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));\n  gap: 8px;\n  margin-bottom: 12px;\n}\n.e-desktop-root .e-kpi { padding: 5px 8px; border-radius: 4px; }\n.e-desktop-root .e-kpi__val { display: block; font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-kpi__lbl { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.65; }\n\n/* Chess session — board + controls share one centered column (board width) */\n.e-desktop-root .e-chess-main {\n  padding: 18px 20px 20px 9px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-column {\n  display: flex;\n  flex-direction: column;\n  align-items: stretch;\n  width: fit-content;\n  max-width: 100%;\n  gap: 12px;\n}\n.e-desktop-root .e-chess-stage {\n  display: grid;\n  justify-items: center;\n  width: 100%;\n  max-width: 100%;\n  vertical-align: top;\n  gap: 6px;\n  padding-top: 0;\n}\n.e-desktop-root .e-chess-stage > table {\n  display: inline-table;\n}\n.e-desktop-root .e-chess-moves-block {\n  width: 100%;\n}\n.e-desktop-root .e-chess-moves-label {\n  display: block;\n  font-size: 0.7rem;\n  margin-bottom: 6px;\n}\n.e-desktop-root .e-chess-meta {\n  width: 100%;\n  margin-top: 4px;\n}\n\n.e-desktop-root .e-chess-players {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 16px;\n  width: 100%;\n  margin-top: 0;\n  margin-bottom: 0;\n  font-family: var(--font-family-mono);\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-players__side {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  min-width: 0;\n}\n.e-desktop-root .e-chess-players__piece {\n  font-size: 1.55rem;\n  line-height: 1;\n  flex-shrink: 0;\n}\n.e-desktop-root .e-chess-players__piece--dark { opacity: 0.88; }\n.e-desktop-root .e-chess-players__name {\n  font-size: 0.95rem;\n  font-weight: 600;\n  max-width: 14rem;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chess-players__vs { opacity: 0.45; font-size: 0.72rem; }\n\n.e-desktop-root .e-chess-ctrl-move {\n  margin-left: 8px;\n  font-family: var(--font-family-mono);\n  font-size: 0.72rem;\n  opacity: 0.8;\n}\n\n.e-desktop-root .e-chess-movelist {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 4px 6px;\n  margin-top: 0;\n  width: 100%;\n  max-width: 100%;\n  font-family: var(--font-family-mono);\n  font-size: 0.68rem;\n}\n.e-desktop-root .e-chess-movelist__btn {\n  border: none;\n  background: transparent;\n  color: inherit;\n  opacity: 0.72;\n  cursor: pointer;\n  padding: 2px 4px;\n  border-radius: 3px;\n}\n.e-desktop-root .e-chess-movelist__btn:hover { opacity: 1; background: var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n.e-desktop-root .e-chess-movelist__btn--on {\n  opacity: 1;\n  font-weight: 600;\n  color: var(--theme-focused-foreground, inherit);\n}\n\n.e-desktop-root .e-chess-warn { font-size: 0.68rem; margin-top: 6px; }\n\n.e-desktop-root .e-chess-ctrl-row {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 4px;\n  margin-top: 8px;\n  width: fit-content;\n  max-width: 100%;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-ctrl-icons {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  flex-shrink: 0;\n}\n.e-desktop-root .e-chess-ctrl-status {\n  text-align: center;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.72rem;\n  opacity: 0.65;\n  font-variant-numeric: tabular-nums;\n  white-space: nowrap;\n}\n.e-desktop-root .e-chess-replay-status {\n  display: inline-flex;\n  align-items: center;\n  gap: 8px;\n}\n.e-desktop-root .e-chess-live-mark {\n  text-transform: uppercase;\n  letter-spacing: 0.06em;\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n.e-desktop-root .e-chess-icon-btn {\n  appearance: none;\n  flex: 0 0 auto;\n  margin: 0;\n  padding: 0;\n  border: 0;\n  background: transparent;\n  color: inherit;\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.e-desktop-root .e-chess-icon-btn__glyph {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  padding: 6px;\n  box-shadow: inset 0 0 0 1px var(--theme-border-subdued, rgba(255, 255, 255, 0.12));\n  transition: color 0.1s, box-shadow 0.1s;\n}\n.e-desktop-root .e-chess-icon-btn .e-chess-svg {\n  display: block;\n  width: 1.25rem;\n  height: 1.25rem;\n}\n.e-desktop-root .e-chess-icon-btn:hover .e-chess-icon-btn__glyph,\n.e-desktop-root .e-chess-icon-btn:focus-visible .e-chess-icon-btn__glyph {\n  color: var(--theme-focused-foreground);\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground);\n}\n.e-desktop-root .e-chess-icon-btn:focus-visible {\n  outline: none;\n}\n.e-desktop-root .e-chess-move-idx,\n.e-desktop-root .e-chess-speed__lbl {\n  font-size: 0.792rem;\n  opacity: 0.55;\n}\n.e-desktop-root .e-chess-speed {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n  align-items: center;\n  justify-content: center;\n  width: fit-content;\n  max-width: 100%;\n  margin: 0 auto;\n  padding: 6px 0 2px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-chess-speed__range {\n  width: min(9rem, 42vw);\n  max-width: 140px;\n  accent-color: var(--theme-focused-foreground);\n}\n\n/* Hero stats (overview) */\n.e-desktop-root .e-hero-stats {\n  display: grid;\n  grid-template-columns: repeat(2, 1fr);\n  gap: 12px;\n  margin-bottom: 24px;\n}\n@media (min-width: 720px) { .e-desktop-root .e-hero-stats { grid-template-columns: repeat(4, 1fr); } }\n\n.e-desktop-root .e-hero-stat {\n  padding: 16px 18px;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  border-radius: 4px;\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  position: relative;\n  overflow: hidden;\n}\n.e-desktop-root .e-hero-stat::before {\n  content: \"\";\n  position: absolute;\n  top: 0; left: 0; right: 0;\n  height: 2px;\n  background: var(--theme-border-subdued, rgba(255,255,255,0.15));\n}\n.e-desktop-root .e-hero-stat--accent::before { background: linear-gradient(90deg, var(--theme-focused-foreground), transparent); }\n.e-desktop-root .e-hero-stat__value { font-size: 1.925rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }\n.e-desktop-root .e-hero-stat--accent .e-hero-stat__value { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-hero-stat__label { font-size: 0.715rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-hero-stat__hint  { font-size: 0.748rem; opacity: 0.4; }\n.e-desktop-root .e-hero-stats--clickable .e-hero-stat {\n  cursor: pointer;\n  border: 1px solid transparent;\n  font: inherit;\n  color: inherit;\n  text-align: left;\n}\n.e-desktop-root .e-hero-stats--clickable .e-hero-stat:hover { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-hero-stat--status { cursor: default; }\n\n/* MCP command hint — \"show the tool call\" write-action affordance */\n.e-desktop-root .e-mcp-hint {\n  margin-top: 8px;\n  padding: 6px 8px;\n  border: 1px dashed var(--theme-border);\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  flex-wrap: wrap;\n}\n.e-desktop-root .e-mcp-hint__label { font-size: 0.682rem; text-transform: uppercase; letter-spacing: 0.04em; }\n.e-desktop-root .e-mcp-hint__code {\n  font-family: var(--font-family-mono);\n  font-size: 0.77rem;\n  color: var(--theme-focused-foreground);\n  cursor: pointer;\n  word-break: break-all;\n}\n.e-desktop-root .e-mcp-hint__code:hover { text-decoration: underline; }\n.e-desktop-root .e-mcp-hint__copied { font-size: 0.682rem; opacity: 0.7; }\n\n/* Rail chips (payment rail badges) */\n.e-desktop-root .e-rail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-rail-chip {\n  font-size: 0.682rem;\n  padding: 0;\n  border: 0;\n  border-radius: 0;\n  opacity: 0.85;\n  text-transform: uppercase;\n  letter-spacing: 0.04em;\n  color: var(--theme-focused-foreground);\n  background: transparent !important;\n}\n\n/* Outline pill for longer status text (e.g. NIM model name) — a solid-fill\n   badge (.e-trust-verified) reads as an alert/highlight at this length. */\n.e-desktop-root .e-status-pill {\n  font-size: 0.682rem;\n  font-family: var(--font-family-mono);\n  padding: 2px 7px;\n  border: 1px solid var(--theme-border);\n  background: transparent !important;\n  white-space: nowrap;\n}\n.e-desktop-root .e-status-pill--on { color: var(--theme-focused-foreground); border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-status-pill--off { opacity: 0.45; }\n\n/* ─── 9. OVERVIEW ────────────────────────────────────────────────────────── */\n\n/* Hub grid — overview nav cards */\n.e-desktop-root .e-overview-status {\n  display: block;\n  font-size: 0.748rem;\n  margin-bottom: 12px;\n  max-width: 100%;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .e-pipeline-strip {\n  display: block;\n  font-size: 0.726rem;\n  letter-spacing: 0.02em;\n  margin-bottom: 14px;\n  max-width: 100%;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .e-overview-hub {\n  display: grid;\n  grid-template-columns: repeat(2, minmax(0, 1fr));\n  gap: 8px;\n  margin-bottom: 20px;\n  min-width: 0;\n}\n@media (min-width: 560px)  { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(3, minmax(0, 1fr)); } }\n@media (min-width: 900px)  { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(4, minmax(0, 1fr)); } }\n@media (min-width: 1300px) { .e-desktop-root .e-overview-hub { grid-template-columns: repeat(5, minmax(0, 1fr)); } }\n\n.e-desktop-root .e-overview-card {\n  display: flex;\n  flex-direction: column;\n  gap: 0;\n  padding: 10px 12px 12px;\n  text-align: left;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  transition: border-color 0.12s ease;\n  min-width: 0;\n  max-width: 100%;\n}\n.e-desktop-root .e-overview-card:hover,\n.e-desktop-root .e-overview-card:focus-visible {\n  border-color: var(--theme-focused-foreground);\n  outline: none;\n}\n\n.e-desktop-root .e-overview-card__head {\n  display: flex;\n  justify-content: space-between;\n  align-items: baseline;\n  flex-wrap: wrap;\n  gap: 2px 6px;\n  margin-bottom: 6px;\n  min-width: 0;\n}\n.e-desktop-root .e-overview-card__topline {\n  display: flex;\n  align-items: center;\n  gap: 6px;\n  min-width: 0;\n  flex: 1;\n}\n.e-desktop-root .e-overview-card__icon  { font-size: 1.1rem; line-height: 1; flex-shrink: 0; }\n.e-desktop-root .e-overview-card__title { font-size: 0.858rem; font-weight: 500; }\n/* P69: a collection whose fetch rejected, as distinct from one that came back\n   empty. The snapshot is allSettled, so a single failing endpoint used to\n   render \"—\" — the same glyph as \"not loaded yet\" — beside cards showing real\n   numbers, which reads as \"there is nothing there\". Muted rather than alarming:\n   the relay is up and answering for the other panels, so this is one endpoint\n   to go and look at, not an outage. */\n.e-desktop-root .e-overview-card--failed .e-overview-card__sub {\n  color: var(--theme-warning, #c33);\n  opacity: 1;\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-overview-card--failed .e-overview-card__body { opacity: 0.55; }\n\n.e-desktop-root .e-overview-card__sub   {\n  font-size: 0.715rem;\n  font-variant-numeric: tabular-nums;\n  color: var(--theme-focused-foreground);\n  opacity: 0.85;\n  white-space: nowrap;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  flex-shrink: 1;\n}\n.e-desktop-root .e-overview-card__body { }\n.e-desktop-root .e-overview-card__body p {\n  margin: 0 0 3px;\n  font-size: 0.748rem;\n  line-height: 1.4;\n  opacity: 0.5;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.e-desktop-root .e-dashboard-layout {\n  display: grid;\n  grid-template-columns: 1fr;\n  gap: 1rem;\n  align-items: start;\n}\n@media (min-width: 1100px) { .e-desktop-root .e-dashboard-layout { grid-template-columns: 1.35fr 1fr; } }\n\n.e-desktop-root .e-grid-stats {\n  display: grid;\n  grid-template-columns: repeat(2, 1fr);\n  gap: 1px;\n  background: var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n@media (min-width: 600px) { .e-desktop-root .e-grid-stats { grid-template-columns: repeat(3, 1fr); } }\n\n/* Nav card grid (classic layout, still rendered in overview) */\n.e-desktop-root .e-grid-nav-cards {\n  display: grid;\n  grid-template-columns: repeat(1, 1fr);\n  gap: 10px;\n}\n@media (min-width: 480px)  { .e-desktop-root .e-grid-nav-cards { grid-template-columns: repeat(2, 1fr); } }\n@media (min-width: 768px)  { .e-desktop-root .e-grid-nav-cards { grid-template-columns: repeat(3, 1fr); } }\n@media (min-width: 1200px) { .e-desktop-root .e-grid-nav-cards { grid-template-columns: repeat(2, 1fr); } }\n@media (min-width: 1400px) { .e-desktop-root .e-grid-nav-cards { grid-template-columns: repeat(3, 1fr); } }\n\n.e-desktop-root .e-nav-card {\n  display: flex;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 6px;\n  padding: 14px 16px;\n  text-align: left;\n  background: var(--theme-background);\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  min-height: 5.5rem;\n  transition: border-color 0.15s ease;\n}\n.e-desktop-root .e-nav-card:hover,\n.e-desktop-root .e-nav-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }\n.e-desktop-root .e-nav-card[data-active=\"true\"] { border-color: var(--theme-focused-foreground); box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }\n.e-desktop-root .e-nav-card__head { display: flex; width: 100%; align-items: center; gap: 10px; }\n.e-desktop-root .e-nav-card__icon { font-size: 1.375rem; line-height: 1; flex-shrink: 0; }\n.e-desktop-root .e-nav-card__caption { font-size: 0.792rem; line-height: 1.3; }\n.e-desktop-root .e-nav-card__blurb  { font-size: 0.792rem; line-height: 1.35; }\n.e-desktop-root .e-nav-card__hotkey {\n  position: absolute;\n  top: 10px; right: 10px;\n  font-size: 0.66rem;\n  opacity: 0.4;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));\n  padding: 2px 5px;\n}\n\n.e-desktop-root .e-stat-tile {\n  padding: 16px 20px 14px;\n  background: var(--theme-background);\n  border: none;\n  cursor: default;\n  display: flex;\n  flex-direction: column;\n  gap: 4px;\n  text-align: left;\n  color: inherit;\n  font: inherit;\n}\n.e-desktop-root .e-stat-tile[data-clickable] { cursor: pointer; }\n.e-desktop-root .e-stat-tile[data-clickable]:hover { outline: 1px solid var(--theme-focused-foreground); outline-offset: -1px; }\n\n/* Stat strip */\n.e-desktop-root .e-stat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }\n.e-desktop-root .e-stat-strip__item {\n  padding: 8px 14px;\n  border-radius: 0;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  background: transparent !important;\n}\n.e-desktop-root .e-stat-strip__item--link { cursor: pointer; font: inherit; color: inherit; }\n.e-desktop-root .e-stat-strip__item--link:hover { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-stat-strip__item--link:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: 2px; }\n.e-desktop-root .e-stat-strip__val { font-size: 1.1rem; font-weight: 600; display: block; }\n.e-desktop-root .e-stat-strip__lbl { font-size: 0.682rem; opacity: 0.55; }\n\n.e-desktop-root .e-nav-row-meta { display: inline-flex; align-items: center; gap: 6px; }\n.e-desktop-root .e-nav-metric {\n  font-size: 0.682rem;\n  font-variant-numeric: tabular-nums;\n  padding: 1px 6px;\n  background: transparent;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));\n  color: var(--theme-focused-foreground);\n  max-width: 5ch;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n/* Live event feed */\n.e-desktop-root .e-feed-panel { max-height: min(70vh, 520px); overflow-y: auto; }\n\n.e-desktop-root .e-feed-panel--v2 { max-height: min(65vh, 480px); margin: -4px 0; }\n\n.e-desktop-root .e-feed-row {\n  cursor: pointer;\n  padding: 6px 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-feed-row:hover { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-feed-row:last-child { border-bottom: none; }\n\n.e-desktop-root .e-feed-row--v2 {\n  padding: 12px 12px 12px 14px;\n  margin: 0 -4px;\n  border-radius: 0;\n  border-bottom: none;\n  border-left: 3px solid transparent;\n  transition: border-color 0.12s ease;\n}\n.e-desktop-root .e-feed-row--v2.is-clickable:hover { border-left-color: var(--theme-focused-foreground); }\n\n.e-desktop-root .e-feed-type {\n  display: inline-block;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n  margin-bottom: 4px;\n}\n.e-desktop-root .e-feed-detail  { font-size: 0.902rem !important; }\n.e-desktop-root .e-feed-time    { font-size: 0.748rem !important; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-feed-jump    { font-size: 0.715rem !important; opacity: 0.45; margin-top: 4px; }\n.e-desktop-root .e-feed-count   { font-variant-numeric: tabular-nums; }\n\n/* Shortcut list (overview shortcuts panel) */\n.e-desktop-root .e-shortcut-list { list-style: none; margin: 0; padding: 0; }\n.e-desktop-root .e-shortcut-row {\n  display: grid;\n  grid-template-columns: 28px 1fr auto 28px;\n  align-items: center;\n  gap: 10px;\n  width: 100%;\n  padding: 10px 12px;\n  border: none;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-shortcut-row:hover { background: transparent; }\n.e-desktop-root .e-shortcut-row__icon    { opacity: 0.9; }\n.e-desktop-root .e-shortcut-row__label   { font-weight: 500; font-size: 0.902rem; }\n.e-desktop-root .e-shortcut-row__metric  { font-size: 0.748rem; color: var(--theme-text-subdued, #888); text-align: right; }\n.e-desktop-root .e-nav-kbd {\n  font-family: inherit;\n  font-size: 0.682rem;\n  padding: 2px 5px;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.15));\n  opacity: 0.7;\n  text-align: center;\n}\n.e-desktop-root .e-panel-hint     { font-size: 0.682rem !important; }\n.e-desktop-root .e-panel-footnote { display: block; font-size: 0.748rem; margin-top: 12px; }\n\n/* ─── 10. THEME PICKER ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-theme-compact { position: relative; }\n.e-desktop-root .e-theme-compact--inline { display: flex; align-items: center; }\n.e-desktop-root .e-theme-compact__btn { padding: 4px; border: none; background: transparent; cursor: pointer; }\n/* Fixed, but inside the frame's `contain: layout paint`: it covers the frame, never the page around it. */\n.e-desktop-root .e-theme-compact__backdrop { position: fixed; inset: 0; z-index: 200; border: 0; background: transparent; }\n.e-desktop-root .e-theme-compact__pop {\n  position: absolute;\n  right: 0;\n  top: calc(100% + 6px);\n  z-index: 210;\n  padding: 10px 12px;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));\n  background: var(--theme-background);\n  box-shadow: 0 8px 24px rgba(0,0,0,0.4);\n  width: max-content;\n}\n\n.e-desktop-root .e-theme-picker--mini { flex-direction: row; align-items: center; gap: 8px; }\n\n.e-desktop-root .e-theme-duo {\n  display: inline-flex;\n  align-items: center;\n  gap: 0;\n  padding: 5px 9px;\n  border: 1px solid var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  border-radius: 0;\n  background: transparent;\n}\n.e-desktop-root .e-theme-duo__rule {\n  width: 1px;\n  align-self: stretch;\n  min-height: 14px;\n  margin: 2px 8px;\n  background: var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  flex-shrink: 0;\n}\n.e-desktop-root .e-theme-duo__btn {\n  display: block;\n}\n.e-desktop-root .e-theme-circle {\n  width: 16px;\n  height: 16px;\n  padding: 0;\n  border: none;\n  border-radius: 50%;\n  cursor: pointer;\n  flex-shrink: 0;\n  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);\n  transition: transform 0.12s ease, opacity 0.12s ease;\n}\n.e-desktop-root .e-theme-circle:hover,\n.e-desktop-root .e-theme-circle:focus-visible {\n  transform: scale(1.1);\n  outline: none;\n  opacity: 0.92;\n}\n.e-desktop-root .e-theme-circle--mode[data-mode=\"theme-light\"] { background: #f2f2f2; }\n.e-desktop-root .e-theme-circle--mode[data-mode=\"theme-dark\"]  { background: #121212; }\n.e-desktop-root .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }\n\n.e-desktop-root .e-accent-row   { display: flex; flex-wrap: wrap; gap: 4px; }\n.e-desktop-root .e-accent-dot {\n  width: 22px; height: 22px;\n  padding: 0;\n  border: 2px solid transparent;\n  border-radius: 50%;\n  background: transparent;\n  cursor: pointer;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n.e-desktop-root .e-accent-dot span { width: 12px; height: 12px; border-radius: 50%; display: block; flex-shrink: 0; }\n.e-desktop-root .e-accent-dot.is-active { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-accent-dot--inline span { width: 10px; height: 10px; }\n\n.e-desktop-root .e-accent-grid {\n  display: grid;\n  grid-template-columns: repeat(4, 1fr);\n  gap: 8px;\n}\n.e-desktop-root .e-accent-swatch {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  gap: 4px;\n  padding: 8px 4px;\n  border: 2px solid transparent;\n  border-radius: 8px;\n  background: transparent;\n  cursor: pointer;\n  font: inherit;\n  font-size: 0.638rem;\n  color: inherit;\n}\n.e-desktop-root .e-accent-swatch.is-active { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-accent-swatch__dot { width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2); }\n.e-desktop-root .e-accent-swatch__dot--sm { width: 12px; height: 12px; }\n.e-desktop-root .e-accent-swatch__name { opacity: 0.75; }\n\n/* Dark/light pill toggle */\n.e-desktop-root .e-mode-toggles {\n  display: flex;\n  background: var(--theme-border-subdued, rgba(255,255,255,0.08));\n  border-radius: 20px;\n  padding: 2px;\n  gap: 2px;\n}\n.e-desktop-root .e-mode-toggle {\n  width: 26px; height: 26px;\n  padding: 0;\n  border: none;\n  border-radius: 50%;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.858rem;\n  line-height: 1;\n  cursor: pointer;\n  opacity: 0.45;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  transition: background 0.12s ease, opacity 0.12s ease;\n}\n.e-desktop-root .e-mode-toggle.is-active {\n  opacity: 1;\n  background: var(--theme-background) !important;\n  color: var(--theme-focused-foreground);\n  box-shadow: 0 1px 3px rgba(0,0,0,0.3);\n}\n\n.e-desktop-root .e-tint-swatch {\n  width: 14px; height: 14px;\n  border-radius: 50%;\n  border: none;\n  padding: 0;\n  cursor: pointer;\n  flex-shrink: 0;\n  outline: 2px solid transparent;\n  outline-offset: 2px;\n}\n.e-desktop-root .e-tint-swatch:hover,\n.e-desktop-root .e-tint-swatch:focus-visible { outline-color: var(--theme-text, #fff); }\n.e-desktop-root .e-tint-swatch[aria-pressed=\"true\"] { outline-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-tint-swatch--inline { width: 10px; height: 10px; pointer-events: none; vertical-align: middle; }\n\n.e-desktop-root .e-theme-tints--footer { padding: 0; margin: 0; }\n.e-desktop-root .e-theme-picker { display: flex; flex-direction: column; gap: 10px; }\n.e-desktop-root .e-theme-picker--mini { flex-direction: row; align-items: center; gap: 10px; }\n.e-desktop-root .e-theme-picker__label { display: block; font-size: 0.682rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.6; margin-bottom: 6px; }\n.e-desktop-root .e-theme-tints--profile {\n  display: grid;\n  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));\n  gap: 8px;\n}\n.e-desktop-root .e-tint-swatch--labeled { position: relative; height: 36px; border-radius: 4px; border: 2px solid transparent; }\n.e-desktop-root .e-tint-swatch--labeled[aria-pressed=\"true\"] { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-tint-swatch__label {\n  position: absolute;\n  inset: auto 4px 3px 4px;\n  font-size: 0.605rem;\n  text-align: center;\n  color: #fff;\n  text-shadow: 0 1px 2px rgba(0,0,0,0.8);\n  pointer-events: none;\n}\n\n.e-desktop-root .e-sidebar-theme-trigger {\n  width: 100%;\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  gap: 8px;\n  padding: 10px 12px;\n  border: none;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  cursor: pointer;\n  text-align: left;\n}\n.e-desktop-root .e-sidebar-theme-trigger__right { display: flex; align-items: center; gap: 8px; }\n.e-desktop-root .e-sidebar-theme-trigger:hover { background: transparent; }\n.e-desktop-root .e-sidebar-theme-row { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; margin: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }\n.e-desktop-root .e-sidebar-theme-row:hover,\n.e-desktop-root .e-sidebar-theme-row:focus-visible { outline: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.15)); outline-offset: -1px; }\n.e-desktop-root .e-sidebar-theme-simple  { display: flex; flex-direction: column; gap: 4px; }\n.e-desktop-root .e-sidebar-theme-label   { flex: 1; min-width: 0; white-space: nowrap; }\n.e-desktop-root .e-sidebar-theme-value   { display: inline-flex; align-items: center; gap: 8px; margin-left: 6px; opacity: 0.85; }\n.e-desktop-root .e-sidebar-theme-summary { display: inline-flex; align-items: center; gap: 6px; }\n\n/* ─── 11. RELAY STRIP ────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-relay-strip {\n  display: inline-flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 8px 10px;\n  max-width: 100%;\n  justify-content: flex-end;\n}\n.e-desktop-root .e-relay-strip--compact { gap: 6px; }\n.e-desktop-root .e-relay-strip__host {\n  font-size: 0.792rem;\n  max-width: 22ch;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n.e-desktop-root .e-relay-strip__meta {\n  font-size: 0.682rem;\n  max-width: 22ch;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n.e-desktop-root .e-relay-strip__ws {\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.792rem;\n  color: var(--theme-focused-foreground);\n  max-width: min(42vw, 520px);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n.e-desktop-root .e-relay-strip--with-ws { flex-wrap: wrap; row-gap: 4px; }\n.e-desktop-root .e-relay-ws-line {\n  display: block;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.88rem;\n  color: var(--theme-focused-foreground);\n  word-break: break-all;\n  margin-top: 6px;\n}\n.e-desktop-root .e-relay-status {\n  display: inline-flex;\n  align-items: center;\n  gap: 14px;\n  flex-wrap: wrap;\n  justify-content: flex-end;\n  font-size: 0.792rem;\n  background: transparent !important;\n}\n.e-desktop-root .e-relay-status--compact {\n  gap: 12px;\n}\n.e-desktop-root .e-relay-status__chips {\n  display: inline-flex;\n  align-items: center;\n  gap: 10px;\n}\n.e-desktop-root .e-relay-status__host {\n  color: var(--theme-text-subdued, #888);\n  max-width: 140px;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  margin-right: 2px;\n}\n.e-desktop-root .e-relay-status__meta { color: var(--theme-text-subdued, #666); font-size: 0.715rem; }\n.e-desktop-root .e-badge--ok,\n.e-desktop-root .e-relay-status .e-badge--ok { color: var(--theme-focused-foreground) !important; }\n\n.e-desktop-root .e-status-chip {\n  display: inline-flex;\n  align-items: center;\n  gap: 7px;\n  padding: 4px 9px;\n  border: 1px solid var(--theme-border-subdued, rgba(255, 255, 255, 0.18));\n  border-radius: 0;\n  background: var(--theme-border, rgba(255, 255, 255, 0.06));\n  font-size: 0.748rem;\n  line-height: 1.25;\n  white-space: nowrap;\n}\n.e-desktop-root .e-status-chip.is-ok {\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-status-chip:not(.is-ok) {\n  opacity: 0.7;\n}\n.e-desktop-root .e-status-chip__label {\n  letter-spacing: 0.02em;\n}\n.e-desktop-root .e-status-chip__loader {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  width: 1.1ch;\n  min-width: 1.1ch;\n  color: inherit;\n}\n.e-desktop-root .e-status-chip.is-ok .e-status-chip__loader {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .e-status-chip__dot {\n  display: inline-block;\n  width: 1ch;\n  text-align: center;\n}\n.e-desktop-root .e-status-chip__dot--pulse {\n  color: var(--theme-focused-foreground);\n  animation: e-status-pulse 1.2s ease-in-out infinite;\n}\n@keyframes e-status-pulse {\n  0%, 100% { opacity: 1; }\n  50% { opacity: 0.35; }\n}\n\n/* ─── 12. AGENT / PROFILE ROW ────────────────────────────────────────────── */\n\n.e-desktop-root .e-agent-row { display: flex; gap: 8px; align-items: center; }\n.e-desktop-root .e-moire-avatar { flex-shrink: 0; border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12)); }\n.e-desktop-root .e-profile-agent { display: flex; gap: 12px; align-items: center; }\n\n/* Settlement list */\n.e-desktop-root .e-settlement-list { list-style: none; margin: 16px 0 0; padding: 0; font-size: 0.825rem; background: transparent !important; }\n/* P105: the inherited list marker is a ::before box, and in a grid it takes a\n   cell — pushing every row's status onto the next line. */\n.e-desktop-root .e-settlement-list__item::before { content: none !important; display: none !important; }\n.e-desktop-root .e-settlement-list__item {\n  display: grid;\n  grid-template-columns: 1fr auto auto;\n  gap: 12px;\n  padding: 6px 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  background: transparent !important;\n}\n\n/* ─── 13. CHAT & READ-ONLY CHAT ──────────────────────────────────────────── */\n\n.e-desktop-root .e-chat-pane {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n.e-desktop-root .e-chat-messages {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n  padding: 12px 16px;\n}\n.e-desktop-root .e-chat-footer {\n  flex-shrink: 0;\n  padding: 8px 12px;\n  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n.e-desktop-root .e-chat-meta { display: block; font-size: 0.748rem; margin-bottom: 2px; }\n\n/* Transcript chat line — avatar + content */\n.e-desktop-root .e-chat-line {\n  display: flex;\n  gap: 8px;\n  align-items: flex-start;\n}\n.e-desktop-root .e-chat-line__body {\n  flex: 1;\n  min-width: 0;\n}\n.e-desktop-root .e-chat-line__meta {\n  display: flex;\n  align-items: baseline;\n  flex-wrap: wrap;\n  gap: 6px;\n  margin-bottom: 2px;\n}\n.e-desktop-root .e-chat-line__name {\n  font-size: 0.792rem;\n  font-weight: 600;\n  word-break: break-all;\n}\n.e-desktop-root .e-chat-line__type,\n.e-desktop-root .e-chat-line__time {\n  font-size: 0.682rem;\n  opacity: 0.45;\n  font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-chat-line__content {\n  font-size: 0.902rem;\n  line-height: 1.45;\n  word-break: break-word;\n  white-space: pre-wrap;\n}\n\n.e-desktop-root .e-dm-scroll { max-height: min(55vh, 480px); overflow-y: auto; padding-top: 8px; }\n\n/* Agora detail pane (also used for events detail) */\n.e-desktop-root .e-split-main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 8px 0 16px 0; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main {\n  padding-left: 4px;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main:has(.e-chess-main) {\n  padding-left: 0;\n}\n.e-desktop-root .e-agora-detail { overflow: hidden; }\n.e-desktop-root .e-agora-detail__scroll { flex: 1; overflow-y: auto; padding: 16px; }\n.e-desktop-root .e-agora-detail__title { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; display: block; }\n.e-desktop-root .e-agora-detail__meta  { font-size: 0.792rem; margin-bottom: 12px; display: block; }\n.e-desktop-root .e-agora-detail__body  { display: block; margin-top: 12px; white-space: pre-wrap; }\n.e-desktop-root .e-agora-readonly-hint { display: block; margin-top: 24px; font-size: 0.715rem; }\n\n.e-desktop-root .e-agora-comment { padding: 6px 0; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06)); }\n\n/* ─── 14. AGORA ──────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-agora-pane {\n  height: 100%;\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n}\n.e-desktop-root .e-agora-posts,\n.e-desktop-root .e-agora-sidebar { overflow-y: auto; flex: 1; }\n\n.e-desktop-root .e-post-row { display: flex; gap: 10px; align-items: flex-start; flex: 1; }\n.e-desktop-root .e-post-title { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n\n.e-desktop-root .e-vote-row { display: flex; align-items: center; gap: 6px; }\n.e-desktop-root .e-vote-btn {\n  background: none;\n  border: none;\n  cursor: pointer;\n  font-size: 14px;\n  padding: 2px 4px;\n  opacity: 0.45;\n  color: inherit;\n  transition: opacity 0.15s, color 0.15s;\n}\n.e-desktop-root .e-vote-btn:hover { opacity: 1; }\n.e-desktop-root .e-vote-btn--up:hover,\n.e-desktop-root .e-vote-btn--up.is-voted   { color: var(--theme-focused-foreground); opacity: 1; }\n.e-desktop-root .e-vote-btn--down:hover,\n.e-desktop-root .e-vote-btn--down.is-voted { color: #a0a0a0; opacity: 1; }\n.e-desktop-root .e-vote-score { font-size: 13px; min-width: 20px; text-align: center; }\n.e-desktop-root .e-vote-inline { display: flex; flex-direction: row; align-items: center; gap: 4px; flex-shrink: 0; }\n\n.e-desktop-root .e-compose-inline { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; }\n.e-desktop-root .e-agent-chips    { padding-top: 0; border-bottom: none; }\n\n/* ─── 15. SEGMENT TABS ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-segment-tabs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }\n.e-desktop-root .e-segment-tabs--grow .e-segment-tab { flex: 1; min-width: 0; text-align: center; }\n\n.e-desktop-root .e-segment-tab {\n  appearance: none;\n  margin: 0;\n  padding: 4px 10px;\n  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));\n  border-radius: 0 !important;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.748rem;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n  cursor: pointer;\n  opacity: 0.75;\n  transition: border-color 0.1s, color 0.1s, opacity 0.1s;\n}\n.e-desktop-root .e-segment-tab:hover { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-segment-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); font-weight: 600; }\n\n/* ─── 16. BADGES, PILLS & ENTITY CHIPS ──────────────────────────────────── */\n\n.e-desktop-root .e-badge { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 12px; font-family: var(--font-family-mono); border: 1px solid currentColor; white-space: nowrap; }\n.e-desktop-root .e-badge--dim { opacity: 0.5; }\n\n.e-desktop-root .e-role-pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; border: 1px solid currentColor; }\n.e-desktop-root .e-role-pill--operator  { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-role-pill--member    { opacity: 0.6; }\n.e-desktop-root .e-role-pill--spectator { opacity: 0.4; }\n\n.e-desktop-root .e-gate-badge {\n  display: inline-block;\n  padding: 1px 5px;\n  border-radius: 4px;\n  font-size: 10px;\n  font-weight: 700;\n  letter-spacing: 0.05em;\n  text-transform: uppercase;\n  white-space: nowrap;\n}\n.e-desktop-root .e-gate-badge--invite { background: rgba(128,128,255,0.15); color: #8888ff; }\n.e-desktop-root .e-gate-badge--paid   { background: rgba(80,200,120,0.15);  color: #4caf7a; }\n.e-desktop-root .e-gate-badge--advert { background: rgba(255,190,80,0.15);  color: #d9a441; }\n\n/* P249: rooms and topics advertised by relays this one links to — read-only. */\n.e-desktop-root .e-elsewhere { margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1)); }\n.e-desktop-root .e-elsewhere__title { padding: 0 10px 4px; }\n.e-desktop-root .e-elsewhere__row { padding: 6px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05)); }\n.e-desktop-root .e-elsewhere__head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }\n\n.e-desktop-root .e-outcome-pill {\n  display: inline-block;\n  padding: 1px 5px;\n  border-radius: 4px;\n  font-size: 10px;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  text-transform: uppercase;\n}\n.e-desktop-root .e-outcome-pill--game   { background: rgba(255,180,0,0.12);   color: #c89a00; }\n.e-desktop-root .e-outcome-pill--room   { background: rgba(0,180,255,0.12);   color: #0099cc; }\n.e-desktop-root .e-outcome-pill--agora  { background: rgba(128,128,255,0.12); color: #7777dd; }\n.e-desktop-root .e-outcome-pill--refund { background: rgba(200,50,50,0.12);   color: #cc4444; }\n\n/* Entity chips — clickable agent / session cross-nav links */\n.e-desktop-root .e-entity-chip {\n  display: inline-block;\n  font-family: var(--font-family-mono);\n  font-size: 12px;\n  padding: 1px 5px;\n  border: 1px solid transparent;\n  background: transparent;\n  cursor: default;\n  white-space: nowrap;\n}\n.e-desktop-root .e-entity-chip--inert { opacity: 0.55; }\n.e-desktop-root .e-entity-chip--agent,\n.e-desktop-root .e-entity-chip--session {\n  cursor: pointer;\n  border-color: rgba(128,128,128,0.2);\n  color: var(--theme-focused-foreground);\n  opacity: 0.8;\n  transition: opacity 0.1s, background 0.1s;\n}\n.e-desktop-root .e-entity-chip--agent:hover,\n.e-desktop-root .e-entity-chip--session:hover { opacity: 1; background: rgba(128,128,128,0.08); }\n\n/* Room → session link */\n.e-desktop-root .e-room-session-link {\n  display: inline-flex;\n  align-items: center;\n  gap: 3px;\n  margin-top: 3px;\n  padding: 1px 6px;\n  border: 1px solid rgba(128,128,128,0.2);\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font-size: 11px;\n  font-family: var(--font-family-mono);\n  cursor: pointer;\n  opacity: 0.7;\n  transition: opacity 0.1s;\n}\n.e-desktop-root .e-room-session-link:hover { opacity: 1; background: rgba(128,128,128,0.08); }\n\n/* ─── 17. TABLES ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-compact-table { overflow-x: auto; }\n\n.e-desktop-root .e-compact-table table,\n.e-desktop-root .e-listings-native {\n  width: 100%;\n  border-collapse: collapse;\n  font-family: var(--font-family-mono, ui-monospace, monospace);\n  font-size: 0.792rem;\n}\n\n/* Header row — keep the SRCL gray bar */\n.e-desktop-root .e-dashboard-shell .e-compact-table thead td,\n.e-desktop-root .e-dashboard-shell table thead td,\n.e-desktop-root .e-listings-native thead td {\n  background: var(--ansi-240-gray-35, #585858) !important;\n  color: var(--color-white, #fff);\n  padding: 4px 8px;\n  font-size: 0.682rem;\n  letter-spacing: 0.06em;\n}\n\n.e-desktop-root .e-listings-native tbody td {\n  padding: 5px 8px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n}\n.e-desktop-root .e-dashboard-shell table tbody tr { background: transparent !important; }\n.e-desktop-root .e-dashboard-shell table tbody tr:hover { background: transparent !important; }\n\n.e-desktop-root .e-listings-row { cursor: pointer; }\n.e-desktop-root .e-listings-row:hover td { border-left: 2px solid var(--theme-focused-foreground); padding-left: 6px; }\n.e-desktop-root .e-listings-row:focus-visible { outline: 1px solid var(--theme-focused-foreground); }\n\n/* ─── 18. TOOLBAR & SEARCH ───────────────────────────────────────────────── */\n\n.e-desktop-root .e-toolbar-h {\n  display: flex;\n  flex-wrap: nowrap;\n  gap: 6px;\n  align-items: center;\n  padding: 6px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));\n  overflow-x: auto;\n}\n.e-desktop-root .e-toolbar-h--wrap { flex-wrap: wrap; }\n\n.e-desktop-root .e-search-row {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  padding: 8px 12px;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n}\n/* The kit Input draws its text in a display layer and puts the real <input>\n   (which gets this class) transparent on top. So the box lives on the display\n   layer, and the input just covers it exactly — styling the input itself drew\n   a second, empty box under the placeholder. */\n.e-desktop-root .e-search-row > [class*=\"Input_root\"] { flex: 1; min-width: 0; }\n.e-desktop-root .e-search-row [class*=\"Input_displayed\"] {\n  display: flex;\n  align-items: center;\n  min-height: 40px;\n  padding: 0 12px;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-search-bar {\n  height: 100%;\n  padding: 0 12px !important;\n  box-sizing: border-box;\n  border: 0 !important;\n  background: transparent !important;\n}\n\n/* ─── 19. ACTION TIMELINE ────────────────────────────────────────────────── */\n\n.e-desktop-root .e-action-timeline { display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-action-row { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }\n.e-desktop-root .e-action-row:last-child { border-bottom: none; }\n.e-desktop-root .e-action-row--terminal .e-action-row__outcome { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-action-row__meta { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 2px; }\n.e-desktop-root .e-action-row__icon { font-size: 14px; min-width: 16px; text-align: center; }\n.e-desktop-root .e-action-row__body { font-size: 13px; opacity: 0.75; padding-left: 24px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }\n.e-desktop-root .e-action-row__outcome { font-size: 12px; padding-left: 24px; opacity: 0.6; margin-top: 2px; }\n\n/* ─── 20. SESSION & TRANSACTION ROWS ────────────────────────────────────── */\n\n.e-desktop-root .e-txn-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(128,128,128,0.1); }\n.e-desktop-root .e-txn-row:last-child { border-bottom: none; }\n.e-desktop-root .e-txn-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }\n.e-desktop-root .e-txn-dot--in  { background: var(--theme-focused-foreground); }\n.e-desktop-root .e-txn-dot--out { background: rgba(128,128,128,0.4); }\n\n.e-desktop-root .e-session-status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(128,128,128,0.4); }\n.e-desktop-root .e-session-status-dot--active    { background: var(--theme-focused-foreground); }\n.e-desktop-root .e-session-status-dot--completed { background: rgba(128,128,128,0.6); }\n.e-desktop-root .e-session-status-dot--abandoned { background: rgba(180,80,80,0.5); }\n\n/* ─── 21. MESSAGES / INBOX ───────────────────────────────────────────────── */\n\n.e-desktop-root .e-messages-subnav {\n  padding: 10px 16px 0;\n  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  flex-shrink: 0;\n}\n.e-desktop-root .e-messages-body {\n  flex: 1;\n  min-height: 0;\n  display: flex;\n  flex-direction: column;\n  overflow: hidden;\n}\n.e-desktop-root .e-messages-pane {\n  display: flex;\n  flex-direction: column;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n.e-desktop-root .e-messages-pane__toolbar {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 8px 16px;\n  border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));\n  flex-shrink: 0;\n}\n.e-desktop-root .e-inbox-list { display: flex; flex-direction: column; gap: 0; }\n.e-desktop-root .e-inbox-event {\n  display: flex;\n  gap: 12px;\n  padding: 10px 0;\n  border-bottom: 1px solid var(--theme-border-color, rgba(128,128,128,0.12));\n}\n.e-desktop-root .e-inbox-event:last-child { border-bottom: none; }\n.e-desktop-root .e-inbox-event--read { opacity: 0.55; }\n.e-desktop-root .e-inbox-event__icon { flex-shrink: 0; width: 22px; text-align: center; font-size: 15px; padding-top: 2px; opacity: 0.7; }\n.e-desktop-root .e-inbox-event__body { flex: 1; min-width: 0; }\n\n/* ─── 22. SRCL COMPONENT OVERRIDES ──────────────────────────────────────── */\n\n/* ActionButton — outline style, no fills */\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_content\"] {\n  background: transparent !important;\n  box-shadow: inset 0 0 0 1px var(--theme-border-subdued, rgba(255,255,255,0.12)) !important;\n  border-radius: 0 !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_hotkey\"] { background: transparent !important; }\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:hover [class*=\"ActionButton_content\"] {\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground) !important;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"].selected [class*=\"ActionButton_content\"],\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_selected\"] [class*=\"ActionButton_content\"] {\n  background: transparent !important;\n  color: var(--theme-focused-foreground) !important;\n  font-weight: 600;\n  box-shadow: inset 0 0 0 1px var(--theme-focused-foreground) !important;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:focus,\n.e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"]:active { background: transparent !important; }\n\n/* Badges — square */\n.e-desktop-root .e-dashboard-shell [class*=\"Badge_root\"] { border-radius: 0 !important; }\n\n/* Input */\n.e-desktop-root .e-dashboard-shell [class*=\"Input_root\"] input { background: transparent !important; }\n\n/* Kill all surfaces from panels and stat blocks */\n.e-desktop-root .e-dashboard-shell .e-app-top,\n.e-desktop-root .e-dashboard-shell .e-app-header,\n.e-desktop-root .e-dashboard-shell .e-mobile-top { background: var(--theme-background) !important; }\n.e-desktop-root .e-dashboard-shell .e-app-sidebar,\n.e-desktop-root .e-dashboard-shell .e-app-drawer,\n.e-desktop-root .e-dashboard-shell .e-mobile-drawer { background: var(--theme-background) !important; box-shadow: none; }\n.e-desktop-root .e-dashboard-shell .e-panel-card,\n.e-desktop-root .e-dashboard-shell .e-panel-card__head,\n.e-desktop-root .e-dashboard-shell .e-panel-card__body,\n.e-desktop-root .e-dashboard-shell .e-slim-card,\n.e-desktop-root .e-dashboard-shell .e-hero-stat,\n.e-desktop-root .e-dashboard-shell .e-stat-strip__item,\n.e-desktop-root .e-dashboard-shell .e-kpi,\n.e-desktop-root .e-dashboard-shell .e-empty-pane { background: transparent !important; }\n\n/* ─── 23. RESPONSIVE ─────────────────────────────────────────────────────── */\n\n@media (max-width: 900px) {\n  .e-desktop-root .e-app-top { display: none; }\n  .e-desktop-root .e-mobile-top { display: flex; }\n  .e-desktop-root .e-app-relay-bar { display: none; }\n  .e-desktop-root .e-mobile-top { flex-wrap: wrap; }\n  .e-desktop-root .e-topbar-blurb { display: none; }\n  .e-desktop-root .e-view-body { padding: 14px 12px 24px; }\n  .e-desktop-root .e-app-drawer {\n    display: flex;\n    position: absolute;\n    left: 0; top: 0; bottom: 0;\n    z-index: 140;     /* above full-page chat (120): the chat's ☰ opens it */\n    width: min(85%, 16rem);\n    transform: translateX(-105%);\n    transition: transform 0.2s ease;\n    background: var(--theme-background);\n    border-right: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));\n  }\n  .e-desktop-root .e-app-shell.is-nav-open .e-app-drawer { transform: translateX(0); }\n  .e-desktop-root .e-app-backdrop {\n    display: none;\n  }\n  .e-desktop-root .e-app-shell.is-nav-open .e-app-backdrop {\n    display: block;\n    position: absolute;\n    inset: 0;\n    z-index: 130;\n    background: rgba(0,0,0,0.55);\n    border: 0;\n    padding: 0;\n    cursor: pointer;\n  }\n}\n\n/* Narrow screens: SidebarLayout itself (kit module CSS) turns rail-beside-detail\n   into list-then-detail with a back control — see ui/kit/SidebarLayout.tsx. */\n\n@media (min-width: 901px) {\n  .e-desktop-root .e-hero-stats { grid-template-columns: repeat(4, 1fr); }\n}\n\n/* P121: unread count on a conversation or on Activity. */\n.e-desktop-root .e-unread-count {\n  font-size: 11px;\n  font-weight: 600;\n  padding: 0 6px;\n  border-radius: 8px;\n  background: var(--theme-focused-foreground, #3c3);\n  color: var(--theme-background, #000);\n}\n\n/* P123: view-as switcher (local relays only). */\n.e-desktop-root .e-viewer-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }\n.e-desktop-root .e-viewer-switch select {\n  font: inherit; font-size: 12px; padding: 2px 6px;\n  background: var(--theme-background, transparent); color: inherit;\n  border: 1px solid var(--theme-border, rgba(128,128,128,0.4)); border-radius: 4px;\n}\n\n/* P124: inbox / sent / all above the conversation list. */\n.e-desktop-root .e-messages-boxes { padding: 8px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12)); }\n\n/* P171: the Docs view. */\n.e-desktop-root .e-docs-rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; }\n.e-desktop-root .e-docs-search { width: 100%; margin: 0 0 6px 0; padding: 6px 8px; font: inherit; background: transparent;\n  color: inherit; border: 1px solid currentColor; opacity: 0.8; }\n.e-desktop-root .e-docs-rail-item { display: flex; flex-direction: column; gap: 2px; text-align: left; }\n.e-desktop-root .e-doc { overflow-y: auto; max-width: 92ch; padding: 8px 20px 40px 20px; line-height: 1.55; }\n.e-desktop-root .e-doc .e-doc-h { margin: 1.4em 0 0.5em 0; line-height: 1.25; scroll-margin-top: 8px; }\n.e-desktop-root .e-doc .e-doc-h1 { font-size: 1.5em; margin-top: 0.4em; }\n.e-desktop-root .e-doc .e-doc-h2 { font-size: 1.25em; }\n.e-desktop-root .e-doc .e-doc-h3 { font-size: 1.08em; }\n.e-desktop-root .e-doc p, .e-desktop-root .e-doc .e-doc-list, .e-desktop-root .e-doc .e-doc-quote { margin: 0.6em 0; }\n.e-desktop-root .e-doc .e-doc-list { padding-left: 1.6em; }\n.e-desktop-root .e-doc code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 0 0.25em;\n  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }\n.e-desktop-root .e-doc .e-doc-code { overflow-x: auto; padding: 10px 12px; margin: 0.8em 0;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-doc .e-doc-code code { border: 0; padding: 0; }\n.e-desktop-root .e-doc .e-doc-table-wrap { overflow-x: auto; margin: 0.8em 0; }\n.e-desktop-root .e-doc .e-doc-table { border-collapse: collapse; font-size: 0.94em; }\n.e-desktop-root .e-doc .e-doc-table th, .e-desktop-root .e-doc .e-doc-table td { text-align: left; vertical-align: top; padding: 4px 10px;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n.e-desktop-root .e-doc .e-doc-quote { padding-left: 12px; border-left: 3px solid color-mix(in srgb, currentColor 35%, transparent); }\n.e-desktop-root .e-doc .e-doc-link { text-decoration: underline; cursor: pointer; }\n.e-desktop-root .e-doc .e-doc-path { font-family: var(--font-family-mono, monospace); font-size: 0.92em; opacity: 0.8; }\n\n/* P178: the Settings view (read-only). */\n.e-desktop-root .e-settings { overflow-y: auto; max-width: 100ch; padding: 8px 20px 40px 20px; }\n.e-desktop-root .e-settings-group { margin: 0 0 18px 0; }\n.e-desktop-root .e-settings-title { font-size: 1.05em; margin: 12px 0 6px 0; }\n.e-desktop-root .e-setting { padding: 8px 0; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12));\n  display: flex; flex-direction: column; gap: 3px; }\n.e-desktop-root .e-setting-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }\n.e-desktop-root .e-setting-mark { width: 1.2em; text-align: center; }\n.e-desktop-root .e-setting-label { font-weight: 600; }\n.e-desktop-root .e-setting-value { font-family: var(--font-family-mono, monospace); overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-warn .e-setting-mark { color: #c8901a; }\n.e-desktop-root .e-setting-danger .e-setting-mark, .e-desktop-root .e-setting-danger .e-setting-value { color: #d9534f; }\n.e-desktop-root .e-setting-about, .e-desktop-root .e-setting-cmd, .e-desktop-root .e-setting-note { padding-left: calc(1.2em + 8px); }\n.e-desktop-root .e-setting-cmd { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }\n.e-desktop-root .e-setting-cmd code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 1px 6px;\n  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); overflow-wrap: anywhere; }\n.e-desktop-root .e-setting-copy { font: inherit; font-size: 0.85em; padding: 1px 8px; background: transparent; color: inherit;\n  border: 1px solid color-mix(in srgb, currentColor 35%, transparent); cursor: pointer; }\n.e-desktop-root .e-settings-foot { display: block; margin-top: 16px; }\n\n/* P179: the relay operator's Relay view. */\n.e-desktop-root .e-relay { overflow-y: auto; max-width: 110ch; padding: 8px 20px 40px 20px; }\n.e-desktop-root .e-relay h3 { font-size: 1.05em; margin: 18px 0 8px 0; }\n.e-desktop-root .e-relay-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }\n.e-desktop-root .e-relay-tile { padding: 10px 12px; border: 1px solid color-mix(in srgb, currentColor 18%, transparent);\n  display: flex; flex-direction: column; gap: 2px; }\n.e-desktop-root .e-relay-tile-value { font-size: 1.6em; font-variant-numeric: tabular-nums; line-height: 1.2; }\n.e-desktop-root .e-relay-tile-sub { font-size: 0.85em; }\n.e-desktop-root .e-relay-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }\n.e-desktop-root .e-relay-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }\n.e-desktop-root .e-relay-chart { margin: 0; }\n.e-desktop-root .e-relay-chart figcaption { margin-bottom: 4px; }\n.e-desktop-root .e-relay-chart svg { width: 100%; height: 64px; display: block; }\n.e-desktop-root .e-relay-bar { fill: currentColor; opacity: 0.75; }\n.e-desktop-root .e-relay-chart g:hover .e-relay-bar { opacity: 1; }\n.e-desktop-root .e-relay-axis { stroke: currentColor; opacity: 0.25; stroke-width: 1; }\n.e-desktop-root .e-relay-table { border-collapse: collapse; font-size: 0.94em; margin: 4px 0 10px 0; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-relay-table th, .e-desktop-root .e-relay-table td { text-align: left; padding: 4px 10px;\n  border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }\n\n/* ─── 24. RETROMOD ───────────────────────────────────────────────────────────\n   The terminal look, kept and made consistent: monospace, hairline boxes, the\n   theme's accent as the one highlight. Modern where it helps reading and\n   touching: smooth type, clear focus, one heading per section, 44px targets on\n   a phone, list-then-detail split views, tables that scroll in their own box.\n   ──────────────────────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-dashboard-shell {\n  -webkit-font-smoothing: antialiased;\n  -moz-osx-font-smoothing: grayscale;\n  text-rendering: optimizeLegibility;\n  --e-rule: var(--theme-border-subdued, rgba(128, 128, 128, 0.22));\n  --e-accent-wash: color-mix(in srgb, var(--theme-focused-foreground) 9%, transparent);\n}\n\n/* One focus ring, everywhere — keyboard users always see where they are. */\n.e-desktop-root .e-dashboard-shell :focus-visible,\n.e-desktop-root .e-dashboard-shell .e-rail-item:focus-visible,\n.e-desktop-root .e-dashboard-shell .e-theme-circle:focus-visible {\n  outline: 2px solid var(--theme-focused-foreground);\n  outline-offset: 2px;\n}\n.e-desktop-root .e-dashboard-shell .e-rail-item:focus-visible { outline-offset: -2px; }\n\n/* Section heading: ▍Name, then the plain-words line on what it shows. */\n.e-desktop-root .e-page-head {\n  padding: 14px 24px 12px;\n  border-bottom: 1px solid var(--e-rule);\n  max-width: min(1440px, 100%);\n  margin: 0 auto;\n  box-sizing: border-box;\n}\n.e-desktop-root .e-page-head__title {\n  margin: 0;\n  display: flex;\n  align-items: baseline;\n  gap: 1ch;\n  font: inherit;\n  font-size: 1.05rem;\n  font-weight: 600;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  line-height: 1.3;\n}\n.e-desktop-root .e-page-head__icon { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-page-head__blurb {\n  margin: 4px 0 0;\n  font-size: 0.82rem;\n  line-height: 1.5;\n  opacity: 0.62;\n  max-width: 80ch;\n}\n\n/* Sub-heading inside a view: CAPS label with a box-drawing rule after it. */\n.e-desktop-root .e-subhead {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  margin: 18px 0 6px;\n  font-size: 0.72rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  opacity: 0.7;\n}\n.e-desktop-root .e-subhead::after {\n  content: \"\";\n  flex: 1;\n  height: 1px;\n  background: var(--e-rule);\n}\n.e-desktop-root .e-subhead:first-child { margin-top: 4px; }\n.e-desktop-root .e-note { font-size: 0.8rem; line-height: 1.5; opacity: 0.6; margin: 2px 0 0; }\n\n.e-desktop-root .e-section-tabs--horizontal { align-items: center; }\n.e-desktop-root .e-section-tab.is-active { background: var(--e-accent-wash) !important; }\n\n/* The menu: the six destinations, each with its sections named under it. */\n.e-desktop-root .e-section-tabs--drawer .e-section-tab {\n  min-height: 52px;\n  display: grid;\n  grid-template-columns: auto 1fr auto;\n  grid-template-areas: \"icon label key\" \"icon sub key\";\n  align-items: center;\n  column-gap: 10px;\n  row-gap: 0;\n  text-align: left;\n}\n.e-desktop-root .e-section-tabs--drawer .e-section-tab__icon { grid-area: icon; }\n.e-desktop-root .e-section-tabs--drawer .e-section-tab__label { grid-area: label; font-size: 0.95rem; }\n.e-desktop-root .e-section-tabs--drawer .e-section-tab__key { grid-area: key; }\n.e-desktop-root .e-section-tab__sub {\n  grid-area: sub;\n  font-size: 0.72rem;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));\n  white-space: normal;\n}\n\n/* The sections inside the current destination: one strip under the header, every width. */\n.e-desktop-root .e-subnav {\n  flex: none;\n  display: flex;\n  align-items: stretch;\n  gap: 2px;\n  padding: 0 16px;\n  min-height: 40px;\n  overflow-x: auto;\n  scrollbar-width: none;\n  border-bottom: 1px solid var(--e-rule);\n  background: var(--theme-background);\n}\n.e-desktop-root .e-subnav__dest {\n  display: inline-flex;\n  align-items: center;\n  padding-right: 10px;\n  margin-right: 4px;\n  border-right: 1px solid var(--e-rule);\n  font-size: 0.72rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab {\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  min-height: 40px;\n  padding: 0 12px;\n  border: 0;\n  border-bottom: 2px solid transparent;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.82rem;\n  cursor: pointer;\n  white-space: nowrap;\n}\n.e-desktop-root .e-subnav__tab:hover { border-bottom-color: var(--theme-border); }\n.e-desktop-root .e-subnav__tab.is-active { border-bottom-color: var(--theme-focused-foreground); font-weight: 700; }\n.e-desktop-root .e-subnav__keys {\n  margin-left: auto;\n  display: inline-flex;\n  align-items: center;\n  font-size: 0.7rem;\n  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));\n}\n@media (max-width: 900px) {\n  .e-desktop-root .e-subnav { padding: 0 8px; }\n  .e-desktop-root .e-subnav__dest, .e-desktop-root .e-subnav__keys { display: none; }\n  .e-desktop-root .e-subnav__tab { min-height: 44px; padding: 0 14px; }\n}\n/* The whole menu scrolls as one, so the foot never covers the last sections. */\n.e-desktop-root .e-section-tabs--drawer { flex: none; overflow: visible; }\n.e-desktop-root .e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }\n.e-desktop-root .e-mobile-drawer__head {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding-bottom: 8px;\n  border-bottom: 1px solid var(--e-rule);\n}\n.e-desktop-root .e-mobile-drawer__foot {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 12px;\n  padding-top: 12px;\n  border-top: 1px solid var(--e-rule);\n}\n.e-desktop-root .e-icon-button,\n.e-desktop-root .e-menu-button {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  min-width: 44px;\n  min-height: 44px;\n  padding: 0 10px;\n  border: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 1.1rem;\n  cursor: pointer;\n}\n.e-desktop-root .e-icon-button:hover,\n.e-desktop-root .e-menu-button:hover { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }\n.e-desktop-root .e-menu-button .e-nav-badge { margin-left: 0; }\n\n/* Phone top bar: one row — menu, where you are, relay state. */\n.e-desktop-root .e-mobile-top { flex-wrap: nowrap !important; gap: 10px; padding: 6px 12px; }\n/* Brand above, the section you are in below it — both always fit. */\n.e-desktop-root .e-mobile-top__where {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  flex-direction: column;\n  justify-content: center;\n  gap: 1px;\n  overflow: hidden;\n  white-space: nowrap;\n}\n.e-desktop-root .e-mobile-top__where .e-brand-title { font-size: 0.8rem !important; line-height: 1.2; opacity: 0.75; }\n.e-desktop-root .e-mobile-top__section {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  font-size: 0.85rem;\n  line-height: 1.25;\n  letter-spacing: 0.08em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-mobile-top__section::before { content: \"▸ \"; opacity: 0.6; }\n\n/* The brand: the word, decoded (LookChrome.BrandTitle); a fixed width so the\n   header never shifts while glyphs change. */\n.e-desktop-root .e-brand { display: inline-block; min-width: 7.2ch; font-variant-numeric: tabular-nums; }\n.e-desktop-root .e-mobile-top .e-relay-status__host { display: none; }\n.e-desktop-root .e-mobile-top .e-relay-status__chips { gap: 6px; }\n.e-desktop-root .e-mobile-top .e-status-chip { padding: 4px 6px; }\n\n/* A label above a run of rail rows (\"Which game\", \"Character sheets\"). */\n.e-desktop-root .e-rail-label {\n  padding: 12px 12px 4px;\n  font-size: 0.66rem;\n  letter-spacing: 0.16em;\n  text-transform: uppercase;\n  opacity: 0.5;\n}\n\n/* Rail rows: room to breathe, the selected one washed in the accent. */\n.e-desktop-root .e-rail-item { padding: 8px 10px 8px 12px; min-height: 40px; }\n.e-desktop-root .e-rail-item.is-selected { background: var(--e-accent-wash); }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] {\n  border-right: 1px solid var(--e-rule);\n  box-sizing: border-box;\n}\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main { padding: 12px 16px 24px 20px; }\n.e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main:has(.e-chess-main) { padding-left: 8px; }\n\n/* What-you-are-looking-at box on the Overview. */\n.e-desktop-root .e-intro {\n  border: 1px solid var(--e-rule);\n  border-left: 3px solid var(--theme-focused-foreground);\n  padding: 12px 16px 14px;\n  margin-bottom: 16px;\n  line-height: 1.55;\n}\n.e-desktop-root .e-intro__title {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.6;\n  margin: 0 0 6px;\n}\n.e-desktop-root .e-intro__text { margin: 0; font-size: 0.9rem; max-width: 78ch; }\n.e-desktop-root .e-intro__go { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }\n.e-desktop-root .e-intro__link {\n  flex: 1 1 13rem;\n  display: inline-flex;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 2px;\n  min-height: 44px;\n  padding: 6px 12px;\n  border: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-intro__link:hover { border-color: var(--theme-focused-foreground); }\n.e-desktop-root .e-intro__link-label { color: var(--theme-focused-foreground); font-size: 0.85rem; }\n.e-desktop-root .e-intro__link-hint { font-size: 0.72rem; opacity: 0.6; }\n\n/* The toolbar line above a split view is context, not content — keep it small. */\n.e-desktop-root .e-view-body--flush .e-view-toolbar,\n.e-desktop-root .e-view-body--flush .e-view-toolbar p { font-size: 0.78rem; line-height: 1.45; }\n\n/* Leaderboard-style tables size to their content instead of spreading three\n   short columns across a wide screen. */\n.e-desktop-root .e-listings-native.e-board { width: auto; min-width: min(100%, 34rem); }\n\n/* Replay status line (ply, started, audit, verify) wraps instead of running off the edge. */\n.e-desktop-root .e-chess-replay-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }\n\n/* ─── 25. PHONE (≤ 700px) ───────────────────────────────────────────────── */\n\n@media (max-width: 700px) {\n  .e-desktop-root .e-page-head { padding: 12px 16px 10px; }\n  .e-desktop-root .e-page-head__blurb { font-size: 0.78rem; }\n  .e-desktop-root .e-view-toolbar { justify-content: flex-start; }\n  .e-desktop-root .e-view-body { padding: 12px 16px 24px; }\n  .e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_sidebar\"] { border-right: 0; }\n  .e-desktop-root .e-dashboard-shell [class*=\"SidebarLayout_content\"] > .e-split-main { padding: 12px 16px 24px; }\n\n  /* Tables scroll inside their own box; short cells stay on one line. */\n  .e-desktop-root .e-listings-native,\n  .e-desktop-root .e-relay-table,\n  .e-desktop-root .e-compact-table table {\n    display: block;\n    max-width: 100%;\n    overflow-x: auto;\n    -webkit-overflow-scrolling: touch;\n  }\n  .e-desktop-root .e-listings-native td,\n  .e-desktop-root .e-relay-table td,\n  .e-desktop-root .e-relay-table th { white-space: nowrap; }\n  .e-desktop-root .e-listings-native td.e-cell-wrap,\n  .e-desktop-root .e-listings-native td:has(> .e-cell-wrap) { white-space: normal; min-width: 18ch; }\n\n  /* Comfortable targets. */\n  .e-desktop-root .e-rail-item { min-height: 48px; padding: 10px 16px; }\n  /* Filters (data-keep-list) become a row of chips, so the list itself is near the top. */\n  .e-desktop-root .e-rail-item[data-keep-list] {\n    display: inline-flex;\n    align-items: center;\n    width: auto;\n    min-height: 40px;\n    margin: 4px 0 4px 8px;\n    padding: 6px 12px !important;\n    border: 1px solid var(--e-rule) !important;\n  }\n  .e-desktop-root .e-rail-item[data-keep-list].is-selected { border-color: var(--theme-focused-foreground) !important; }\n  .e-desktop-root .e-segment-tab { min-height: 40px; padding: 6px 12px; }\n  .e-desktop-root .e-dashboard-shell [class*=\"ActionButton_root\"] { min-height: 40px; }\n  .e-desktop-root .e-search-row [class*=\"Input_displayed\"] { min-height: 44px; }\n  .e-desktop-root .e-theme-duo { padding: 12px 14px; }\n  .e-desktop-root .e-theme-circle { width: 20px; height: 20px; }\n  .e-desktop-root .e-theme-duo__rule { margin: 0 12px; }\n  .e-desktop-root .e-viewer-switch select { min-height: 40px; font-size: 14px; }\n  .e-desktop-root .e-meta-grid__row { grid-template-columns: 6rem 1fr; }\n}\n\n@media (pointer: coarse) {\n  .e-desktop-root .e-section-tab { min-height: 44px; }\n  .e-desktop-root .e-rail-item { min-height: 48px; }\n  .e-desktop-root .e-segment-tab { min-height: 40px; }\n}\n\n/* ─── 26. SET PLAYS (blotto, ⅔, lowest unique) ─────────────────────────── */\n\n.e-desktop-root .e-setplay { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }\n.e-desktop-root .e-setplay__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }\n.e-desktop-root .e-setplay__game {\n  margin: 0;\n  font-size: 0.78rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-setplay__players { margin: 2px 0 0; font-size: 1.05rem; }\n.e-desktop-root .e-setplay__status {\n  flex: none;\n  font-size: 0.68rem;\n  letter-spacing: 0.12em;\n  text-transform: uppercase;\n  padding: 3px 8px;\n  border: 1px solid var(--e-rule);\n  opacity: 0.75;\n}\n.e-desktop-root .e-setplay__status.is-live {\n  opacity: 1;\n  border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-setplay__status.is-live::before { content: \"● \"; }\n.e-desktop-root .e-setplay__verdict { margin: 0; font-size: 0.95rem; }\n.e-desktop-root .e-setplay__verdict.is-win { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-setplay__why { color: var(--theme-text); opacity: 0.6; font-size: 0.82rem; font-weight: 400; }\n.e-desktop-root .e-setplay__wait { margin: 0; font-size: 0.82rem; line-height: 1.5; opacity: 0.7; max-width: 72ch; }\n.e-desktop-root .e-setplay__meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; border-top: 1px solid var(--e-rule); }\n.e-desktop-root .e-setplay__badges { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }\n.e-desktop-root .e-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }\n\n/* commit → reveal → winner */\n.e-desktop-root .e-phase-strip { list-style: none; display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; font-size: 0.78rem; }\n.e-desktop-root .e-phase-strip__step {\n  display: inline-flex;\n  align-items: center;\n  gap: 6px;\n  padding: 4px 10px 4px 0;\n  opacity: 0.4;\n  white-space: nowrap;\n}\n.e-desktop-root .e-phase-strip__step + .e-phase-strip__step::before {\n  content: \"\";\n  width: clamp(12px, 4vw, 56px);\n  height: 1px;\n  margin-right: 10px;\n  background: currentColor;\n  opacity: 0.6;\n}\n.e-desktop-root .e-phase-strip__step.is-done { opacity: 0.75; }\n.e-desktop-root .e-phase-strip__step.is-now { opacity: 1; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-phase-strip__n {\n  display: inline-grid;\n  place-items: center;\n  width: 1.7em;\n  height: 1.7em;\n  border: 1px solid currentColor;\n  border-radius: 50%;\n  font-size: 0.72rem;\n}\n.e-desktop-root .e-phase-strip__step.is-now .e-phase-strip__n {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n}\n.e-desktop-root .e-phase-strip__who { font-weight: 600; }\n\n/* Seats (pick games) */\n.e-desktop-root .e-seats { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--e-rule); }\n.e-desktop-root .e-seat {\n  display: grid;\n  grid-template-columns: minmax(8ch, 1fr) minmax(12ch, 1.4fr) 5ch;\n  gap: 8px;\n  align-items: baseline;\n  padding: 7px 8px;\n  border-bottom: 1px solid var(--e-rule);\n  font-size: 0.85rem;\n}\n.e-desktop-root .e-seat__state { opacity: 0.65; font-size: 0.78rem; }\n.e-desktop-root .e-seat__move { text-align: right; font-size: 1rem; }\n.e-desktop-root .e-seat.is-to_commit { opacity: 0.55; }\n.e-desktop-root .e-seat.is-out { opacity: 0.45; text-decoration: line-through; }\n.e-desktop-root .e-seat.is-winner {\n  background: color-mix(in srgb, var(--theme-focused-foreground) 16%, transparent);\n  box-shadow: inset 3px 0 0 var(--theme-focused-foreground);\n}\n.e-desktop-root .e-seat.is-winner .e-seat__name,\n.e-desktop-root .e-seat.is-winner .e-seat__move { color: var(--theme-focused-foreground); font-weight: 600; }\n\n/* Blotto: a row per player, a column per field */\n.e-desktop-root .e-blotto__rules, .e-desktop-root .e-lowest__rules, .e-desktop-root .e-twothirds__rules { margin: 0 0 8px; font-size: 0.75rem; line-height: 1.5; }\n.e-desktop-root .e-blotto__scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }\n.e-desktop-root .e-blotto__grid { border-collapse: collapse; font-size: 0.95rem; }\n.e-desktop-root .e-blotto__grid th, .e-desktop-root .e-blotto__grid td { padding: 8px 10px; border: 1px solid var(--e-rule); text-align: center; }\n.e-desktop-root .e-blotto__grid thead th { font-size: 0.68rem; letter-spacing: 0.1em; font-weight: 400; opacity: 0.6; border-top: 0; }\n.e-desktop-root .e-blotto__grid thead th:first-child { border-left: 0; }\n.e-desktop-root .e-blotto__grid tbody th { text-align: left; font-weight: 400; min-width: 12ch; border-left: 0; }\n.e-desktop-root .e-blotto__name { display: block; }\n.e-desktop-root .e-blotto__state { display: block; font-size: 0.68rem; opacity: 0.6; white-space: nowrap; }\n.e-desktop-root .e-blotto__grid td { min-width: 3.2ch; }\n.e-desktop-root .e-blotto__grid td.is-hidden { opacity: 0.4; }\n.e-desktop-root .e-blotto__grid td.is-won {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font-weight: 700;\n}\n.e-desktop-root .e-blotto__grid tr.is-winner th { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-blotto__took { font-weight: 600; }\n.e-desktop-root .e-blotto__history { margin-top: 8px; font-size: 0.78rem; }\n.e-desktop-root .e-blotto__history summary { cursor: pointer; opacity: 0.7; }\n\n/* Guess ⅔: one number line */\n.e-desktop-root .e-numline {\n  --rows: 1;\n  position: relative;\n  margin: 28px 12px 4px;\n  height: calc(40px + var(--rows) * 30px);\n}\n.e-desktop-root .e-numline__axis { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }\n.e-desktop-root .e-numline__tick { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }\n.e-desktop-root .e-numline__tick > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }\n.e-desktop-root .e-numline__mark { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }\n.e-desktop-root .e-numline__mark > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }\n/* The target (⅔ of the average) is always left of the average: label it on its left. */\n.e-desktop-root .e-numline__mark--target > span { left: auto; right: 5px; }\n.e-desktop-root .e-numline__mark--target.is-low > span { left: 5px; right: auto; bottom: 16px; }\n.e-desktop-root .e-numline__mark--target { border-left-color: var(--theme-focused-foreground); opacity: 1; }\n.e-desktop-root .e-numline__mark--target > span { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-numline__pick { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }\n.e-desktop-root .e-numline__pin { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }\n.e-desktop-root .e-numline__label { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--e-rule); background: var(--theme-background); }\n.e-desktop-root .e-numline__pick.is-winner .e-numline__pin { background: var(--theme-focused-foreground); opacity: 1; width: 3px; }\n.e-desktop-root .e-numline__pick.is-winner .e-numline__label {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n  font-weight: 700;\n}\n\n/* Lowest unique: a box per number */\n.e-desktop-root .e-lowest__row { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; margin: 0; padding: 0; }\n.e-desktop-root .e-lowest__cell {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-height: 4.6rem;\n  padding: 6px 8px;\n  border: 1px solid var(--e-rule);\n  font-size: 0.78rem;\n}\n.e-desktop-root .e-lowest__n { font-size: 1.05rem; }\n.e-desktop-root .e-lowest__cell.is-empty { opacity: 0.4; }\n.e-desktop-root .e-lowest__cell.is-taken .e-lowest__who { text-decoration: line-through; opacity: 0.6; }\n.e-desktop-root .e-lowest__cell.is-unique { border-color: var(--theme-text); }\n.e-desktop-root .e-lowest__tag { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-lowest__cell.is-winner {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  border-color: var(--theme-focused-foreground);\n  font-weight: 700;\n}\n.e-desktop-root .e-lowest__cell.is-winner .e-lowest__tag { opacity: 0.85; }\n\n/* Game rows in the Games rail */\n.e-desktop-root .e-game-row { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }\n.e-desktop-root .e-game-row__top { display: flex; justify-content: space-between; gap: 8px; }\n.e-desktop-root .e-game-row__kind { font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--theme-focused-foreground); }\n.e-desktop-root .e-game-row__phase { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; white-space: nowrap; }\n\n/* ─── 27. OVERVIEW: YOUR AGENT NOW ─────────────────────────────────────── */\n\n.e-desktop-root .e-now { border: 1px solid var(--e-rule); margin-bottom: 16px; }\n.e-desktop-root .e-now__head {\n  display: flex;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 8px 14px;\n  border-bottom: 1px solid var(--e-rule);\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n}\n.e-desktop-root .e-now__head > span:first-child { opacity: 0.6; }\n.e-desktop-root .e-now__row {\n  display: grid;\n  grid-template-columns: 7ch minmax(0, 1fr) auto;\n  gap: 2px 12px;\n  align-items: baseline;\n  width: 100%;\n  min-height: 44px;\n  padding: 9px 14px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule);\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.85rem;\n  text-align: left;\n  cursor: pointer;\n}\n.e-desktop-root .e-now__row:last-child { border-bottom: 0; }\n.e-desktop-root .e-now__row:hover { background: color-mix(in srgb, var(--theme-focused-foreground) 8%, transparent); }\n.e-desktop-root .e-now__row--static { cursor: default; }\n.e-desktop-root .e-now__row--static:hover { background: transparent; }\n.e-desktop-root .e-now__label { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }\n.e-desktop-root .e-now__go { color: var(--theme-focused-foreground); }\n.e-desktop-root .e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }\n.e-desktop-root .e-now__live { color: var(--theme-focused-foreground); }\n\n/* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */\n/* On only for the length of a theme or tint change (themeConfig.applyTheme),\n   so hovers and other transitions are untouched the rest of the time. A run\n   through the tints reads as one surface changing colour, not a flash. */\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-theme-anim,\n  .e-desktop-root .e-theme-anim *,\n  .e-desktop-root .e-theme-anim *::before,\n  .e-desktop-root .e-theme-anim *::after {\n    transition-property: color, background-color, border-color, outline-color, fill, stroke, box-shadow, text-decoration-color !important;\n    transition-duration: 0.35s !important;\n    transition-timing-function: ease-out !important;\n    transition-delay: 0s !important;\n  }\n}\n\n/* ─── 29. CAPTURE MODE (?capture=1, src/capture.ts) ────────────────────── */\n/* For filming: nothing moves between frames, so a tint switched on the beat\n   lands in one frame; the relay's host:port is not on screen. */\n.e-desktop-root .e-capture,\n.e-desktop-root .e-capture *,\n.e-desktop-root .e-capture *::before,\n.e-desktop-root .e-capture *::after {\n  transition: none !important;\n  animation: none !important;\n}\n.e-desktop-root .e-capture .e-capture-hide { display: none !important; }\n/* The capture frame (540 × 540 CSS px) is the phone layout; scale it so the\n   smallest text on screen (0.65rem / 11px labels) is at least 13 CSS px. */\n@media (max-width: 700px) {\n  .e-desktop-root .e-capture .e-app-shell { zoom: 1.25; height: calc(var(--e-frame-h, 100dvh) / 1.25); }\n}\n\n.e-desktop-root .e-quest-next { margin: 4px 0 10px; font-size: 0.85rem; line-height: 1.5; }\n.e-desktop-root .e-quest-next code { font-size: 0.78rem; overflow-wrap: anywhere; opacity: 0.8; }\n\n@media (max-width: 700px) {\n  /* On a detail screen, the list's own controls (search, counts, the toolbar\n     line) belong to the list: hide them so the detail starts at the top. */\n  .e-desktop-root .e-view-body:has([data-pane-shown=\"detail\"]) .e-view-toolbar,\n  .e-desktop-root .e-view-body__inner:has(> [data-pane-shown=\"detail\"]) > .e-search-row { display: none; }\n  /* Keep commit → reveal → winner on one line; the verdict line names the winner. */\n  .e-desktop-root .e-phase-strip { flex-wrap: nowrap; }\n  .e-desktop-root .e-phase-strip__step { padding-right: 6px; gap: 5px; }\n  .e-desktop-root .e-phase-strip__step + .e-phase-strip__step::before { width: 14px; margin-right: 6px; }\n  .e-desktop-root .e-phase-strip__who { display: none; }\n  .e-desktop-root .e-setplay { padding: 12px 16px 24px; }\n  .e-desktop-root .e-blotto__grid th, .e-desktop-root .e-blotto__grid td { padding: 8px 6px; }\n  .e-desktop-root .e-blotto__grid tbody th { min-width: 9ch; }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .e-dashboard-shell *,\n  .e-desktop-root .e-app-drawer { transition: none !important; animation: none !important; }\n}\n\n/* Calls (:v2 set plays): a forecast sealed with the first move — \"called · sealed\", then its percent. */\n.e-desktop-root .e-call-tag { margin-left: 8px; padding: 0 6px; font-size: 0.72rem; letter-spacing: 0.04em; white-space: nowrap;\n  border: 1px dashed var(--e-rule); opacity: 0.8; }\n.e-desktop-root .e-call-tag.is-revealed { border-style: solid; border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground); opacity: 1; }\n/* Bargain: the offers table (blotto's grid, wider cells) and each hand, sealed until the end. */\n.e-desktop-root .e-bargain__offers td, .e-desktop-root .e-bargain__offers th { text-align: left; white-space: nowrap; font-size: 0.85rem; }\n.e-desktop-root .e-bargain__hand { grid-template-columns: minmax(8ch, 1fr) minmax(16ch, 3fr) 4ch; }\n\n/* Operator section: the operator's desk — cards and commands from the views it sits beside. */\n.e-desktop-root .e-op { display: flex; flex-direction: column; gap: 14px; }\n.e-desktop-root .e-op-list { display: flex; flex-direction: column; gap: 10px; }\n.e-desktop-root .e-op-cmds { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }\n.e-desktop-root .e-op .e-setting-cmd.e-op-cmd { padding-left: 0; }\n.e-desktop-root .e-op-cmd__label { min-width: 12ch; }\n.e-desktop-root .e-op-cmds__note { font-size: 0.85em; }\n.e-desktop-root .e-op-test { margin: 6px 0; padding: 6px 8px; max-height: 14em; overflow: auto; white-space: pre-wrap;\n  overflow-wrap: anywhere; font-family: var(--font-family-mono, monospace); font-size: 0.9em;\n  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }\n\n/* Launch additions: the operator's current expedition, under an agent's quests — the theme's accent, a quiet rule. */\n.e-desktop-root .e-gamify-expedition { margin-top: 12px; padding: 6px 0 6px 10px;\n  border-left: 2px solid var(--theme-focused-foreground); display: flex; flex-direction: column; gap: 2px; }\n\n/* ═══════════════════════════════════════════════════════════════\n   30. THE LOOK — the one style (the demo animatic's information cards)\n   Pixel headings (Silkscreen) that unscramble, mono lines typed with\n   a block cursor, corner brackets, status lines above and below,\n   and the tint as a FILL with dark ink on it, never as text on the\n   light canvas. It was the \"animatic\" style beside \"retromod\"\n   (docs/ui-style-experimental.md, now history); since ui-v2 it is\n   the only one. `.e-look` is on the app's root with the theme and\n   tint classes (themeConfig.applyTheme), so these rules keep their\n   weight over the older ones above without a switch.\n   - It follows light/dark and all eight tints: every colour comes\n     from the tint (--tint; amber when there is none).\n   - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with\n     prefers-reduced-motion or in capture mode (?capture=1).\n   ═══════════════════════════════════════════════════════════════ */\n\n/* ─── 0. THE PIXEL FACE ─────────────────────────────────────────────────────\n   Silkscreen (SIL OFL 1.1, assets/fonts/OFL-Silkscreen.txt), bundled: the\n   dashboard makes no third-party requests. Latin only; anything else falls\n   back to the mono stack. Not fetched until a pixel heading is on screen. */\n@font-face {\n  font-family: \"EmporiaPixel\";\n  font-style: normal;\n  font-weight: 400;\n  font-display: swap;\n  src: url(\"data:font/woff2;base64,d09GMgABAAAAACDUABEAAAAAc1wAACBxAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGlIbhAAcbAZgAIQ+CFIJnAwRCAqBpxSBkiMLgzYAATYCJAOGaAQgBYRGB4RMDIEyGwpmRQdixjgAMHx2yMhAsHHANtNLxf/HA02GJOR7JKprV5NUnRSjxHppZpqxPWeO2JpuP0Isn3Ov4hHC4zgO9qdWap45dxcvUZxGXXw/8Nxb3aV/w6i27p5poYiio1hQTiyOIYq3OJ9tR+9p4zYLR5R3f208FD8D20b+JCev/4CnvZ9U2MkZjQ7u4J7o7SzUVNVI6WwIJOW0uo52Sqs/fYh/f2+bc9/fTpMEh7Kb1TTXFbYVR9AEiTKlKSzGo4jHYzBd/Q+EJMSMdcuq80ykKr90zV3RXfY3/0NBa9t5xEoiUaqEhj+mHko5eD5t6TpQVEAKfOWHb3YDZEAdGUEKSr71FbWLervqaY2x/5Z+flXd2D0jaZ+DHBLaRchcZgPHuR9cv8N95J8g/qbZ0vsBIkuW98HTVBltFaZD9UlTBkImywPyEPAXpbZ1WaksC7Z0eA8kIAHRej2HDmOnmSDMsT4kRFxZZaPdY2avJsdX3SI7V/XTmIYWUjkRYUjoh+wiM8j/2fTf9t7Ryk+2P9hBhdgBKjp94Cq/aINFubqzM+Od2bWeViaB/UD2y3u2P1j+4NgBzUrWW8uBhwGG7hNBlxQN9/lFnaohKpr0qcqcNEWXx9H7S064bLOOjnhfc75fophbX9tkyWGC6uq0g+Ia4Rrf+9t9X0tNVZfKWSNjQRdlgVW5JK/2zDG2agP0ov/bWAWDg50ZaN2PM4IwFPbH3wNDiPARIRmi4IX4iEYS1SFnnce66BIWIYAI4TvrnPPZ204ACY4bmgVFJECEB4BWywEIc86t6HpUVrk9R/HkZ4FhQkBAB5EAKKtpNSgtkOHHjazIiobTWPAARIQymlxASYNMWUqpgErjkwrIiBNyu3pTV1IAsb6o3cXgr+9E+QUjfPRaG+Gp3kuExi9FSwBGRdyXhsuxUorKvruRqW2kpIrkqiTK6jy9djO9QdnOlqW9jNo0MpWv/iURH9GAa4r2DqnlDW/Y70xcecMbanqzfTWDj/Ah1yk+Sp8cxcOEc/gmIq2HfU13J/Bl0Ginr9T7Z96j4OT7s2Dc/D87zEAEtD3wcrqKBUZ3kqmlI7FmacVoVWB4O9VsRHPDCaNJC14d5GTwgblnUgCEj749HcDOb+T5g6HIoRLXI3EtPAoHyVf1eAKtAGB/pRhdLv25vQA4LICB5kVdsajKKzOIHk8Oj4icNVcDaekFc1x3jVgeK+K6cr25/pweZ8S5ceuDetoR5Dg23CxOHP8g2PaiLlxPrm/a9dL/AcEAAP+X/FG9nUfNaAB4eG5O5msqD6aDAEYAP6fDIeu3Sbc0FPg/DkebZKOZ9jqj3SYLLTLDQePMMdYs401wzBFHTbEZEZOQUeiiq26666OvfvobQJcpcxYsWbHmwJETZ66Wmm2ZUxa4yo0ff4GCRYgUJVqCREmSpUiTp4BKoWIlKlWpplZnsZ2WOGGMyXbbb48Ddtniiq3qrXXSXNvctMNxQw1zzWkdprlliAbrjDDcSFPxMVhCPAIiUp0p6eiktx566kWOY0iPPmMGDjFiz4YtOy7MFPHizoMPT958BQgXIlSYeDFixQmSKku6DDkyHZatQqky5Wrkq2Ui12prLLfSKit0vgae/5uXocvSiMxSA0THvQDKKHq2+aI19yyKQSr/RV/5fhBZu4Z7t4b28NOzOKL7FsfSvHqFevrPZV7akR4ba8E7cEN7LYgwuhICqtW4hEKt2hIFUp8p2/cK1yWixOgy3e663Jq6AeX+qWAblN1Uw25PWzoYMDpq/RMLZbd1dyauPxEo1bVRirrRKXjqT0IrEjULbJESJPTe3QQh2G6tkVq4egrLP9tuctgf9dGKtygedn/5ldOZ5q3y1JctkiI244XNW5Bcb0s13RtBc01soif8cHU6GUvzX+qA6UddVzm0OWYrWE3GEBYuA+rYHIHnHjw4+lYdNsjKjeWLdO3LiO9KrlVpQqhTgEQIYUC4HxFUF0pUSF9gnmpB57ZHNwc3Z6wNkKpEi7rrIeay3jhhIa8D4wUNJ6FV2oY6sTP3DaWp/l9MRJ7MtGB5x8dtk3aD12CDIB88JAw4YkYXVKIDg50WNNnAT2+YUwH8egnajCHtJPokVQyIyytcjq6ZNKJnO7IKjKXYay7ORGusCvvuvS0fsOxyCmxdV05CwQ2YR+k3jVrqmEcopOU0qkfIuE2iuC3oGXpvHCVFmruIlh245NclnTnLMlW2vTVqw3t7LPOQ6aDw0/w6JT4glVQ8rqrJX+fMBXwaPjd+1iBwWx6bS5RrJm3TqAkYpfmq7M6BXmKItX2fWdcLL3F6PdUhmtnxa3vnorEpFQ2NkRF2D4ZDuQJSO4IIns1Rd9m7oL8MsquC4qxzFBth7pr/xPg2f2J1WVICwwU0L/htZ8DjMLouP4pJWTuJvNwMRNqDEJxaktL1PktQZGjZ94TmpI9rDseglZN4ld2fwEZxp3DOwQDxOUPqHM8P+L9z9CLgcoGMpFOSaRiBLKOQYwrkGYMCU6HINCgxHcqMQ4UZ0wNoFs4TrVrb9yoV5GvNuDGZsmwSzm/ucFPb+fu+VVHQI9gZSH1xptoKEmtYxToqNlCxiYotVGyjYgcVu6jYQ8U+an0EmS1bGC+OZCvpatd0EztMih4hd9kEjIPxJDx/CpFhGzndrmlSt/f2+bSBAGbeaXt2Zwvuzo/pJKtpp+8/hlDNPEpr4KwvIN/cn1qiqDcolqch4VD85GVCnAMAbs7rZF6kJODvywoyK8MgJsEN+g0qWaN6MFuyEdgMGeeXlm+Rqey+kipUQGPN7Fxp/htanUvij83eu9xcu0lk5+57XLwDEGSeReYfnPmSsy3nWOycNCMTmW02jyPZj0qldQeaOZmK8HVnWS7v/BnT21Uj5/LtfHD77bxJaRpykzqI1JWLVsc9z/vRdC6MsVZUpjpPMiaqqIyPWMlyUtm5/KyDNGkUkwOoY9LWfqN0WmtfxzqmpKx6ErGsFVieC3NfkWI/bbK4I5QcAPFlNKbmelJnJyc2HUuYXMMDINOUy5ETB/fJg9vVX+elr2RWrVFnLc6FjK2oubZu5RcYL5UtMS9ypq3wR85PyoG86fhzTqznMtFzEioVlK645Az9ttkNXmZDlScp7liOeO0Nd832xtc1tC33dd8AuzB7+ptgH031JKQdYLMRWITGiske3CpBoDTI8E8m7OxFgO7DujgrlU5aabyNbE67qztd2H8XQyxTYLSbffmsThqLmjEbnIU709h1oPHvau45ZrUXIalI4L0gWfxRi3U+fGeYWU2Ozv2dD5BBekXWfttDsL3Ao4uC6KtUMmgaNWTRY5R1kUedRU/QArcDPmVFE8T6AMYZQWJQCMYkI0j1AUwzWpxJtwjwP9BOEWT7AeZSBPknCYSFFEGxH2ApRbpsGQNZhRqo9gGsMYL6oBCCDUbQ7APYYmTazmEA6/AWuv0AeymC/pMEwkGKYNgPcJSi08ZpuzzSaCa04uZwdKYY0bPY8wajs/O0nSYKYZEmtUwDqwl5onHteOLG8TRb4lfciSvs08AhDRwn5HXFk+OFZ8cLL44XXgXBLQ3c08BjQt6ET8cbX443vh1v/AiCbxr4pan/047A+9ubvlnQp8PJsIEp+rp9dFNT/cw3e1WbWYOYppfse9/y7Qn+n0IAbgPQK3TwkDwgWyHMmIgeMV+juI0yg6TLPPH8NuCwt35bAJglacCyPaAcJerCgxJoNor4Y8dsBW6dIwVpSUmWqM2Lng3PFZhBZ9iynvB2ZS2igCsbKlFdEswoVh24DbdS1gWOio0RqU3AlZdqHyowmCEvIJSrCI0fwlILJkCa9cuvioW6fLIMQYAu60ohfFMdoR5u84mlSJH8kQD75kTxFrp9p4Mi3krLtgsSkBp1pitndci5tGxV7BnByVQFYfg800YfhRqcslgug9pTRqDhYIZM98+eT9gkI90+D51U183V7YZNmbbUaiwFu14rTSIGw6JeWUlLWIiqssQy3WYCuA6QJTa79HegK67udlrIZD6S0GTEclEShUWaBN9heERM7jiB08wJIS+VRAlmK6RACt7E+FOr3gWONSsYaDmK/0VMEVtLaiUuoao1I2qLcqV2qRLMueiFUUpXbYrofR+idlVyj/c3txC6hfyiSncNAfsBpDuggkX+8DU3sHWqcFJT7VMjXhttkMUmUpQIzmdIRKGqWIpwGOaMKYmVgj+YSX9MiZV6IjbRSAHhGHFcPfy/WHosXHrlz5RkUnMAVlM0MzE66O99X9rud4FA0T8j9DJXM+IclGzoejyuVpVVdf6hjoMeypCLBtzEGYktnkeoykgdDII74iWFyOscJLzSETJC2OGtDfy4kUiLvYQtPRDOFxDeJtlxNUJa8zIGtZphiaWhRSmJdaRUpQUtHEb976pwpTQMxCE0no26R770NaxNOB4KUYwqUeumB5FgCbNQraTIHynKUdkopTburx4q6Sh/4AVMdhaR7Zfdn17HJ48FWZ02NZTJQlEhC1Nd5zlXyE041gvCaRWjnvZ+SH0yDjUUnd7teAinSeEJp2wTk9y2MWmUHApzhjbc30JfJLOqZzrSZORDXrk2sEZSIgTFiIZrdBFUnyljuxezBU/Ov0TaCT3+kY0jJfFZgahM+Rrk1UImsYNXL2qlrRDjb7XU/y4Efz4zymgpWP42nG765IPVrwRoes2xx8ow0G4yNyNQWuVzazLq/WPH7FYR1GtDmCNgctRhq4Td8j5POkGhKGSTjqxYk+cQ4OR0KxXpwr4Mnz1xgrvw1xnylU2+ElrPyt1+VlR6aEe5JV6qRk1GGIRz8IBCnp+qksaazZ/Bc3KB9eKY+voc+niGbPfp7WVTsKLhyG0Jnia+fEqnJ8S4D0M+eJHYH/hBR6XYWT5SCVYTP5FC88XnEKXrVFLpxInlys5E6lraNj0rrow5q3ObqmWotMO46A3908cys3etYw9vEaHo3FsCJKvioOXpd09s84rDrzSGCRkmTMmnBI0zhQrkDRvltlZo9tqneFAES7F6k2/0y2kLtCUJYopLT9wPeiSzHfhJ0BhxvmPYcqnX/g9LhGU4XIW5GRnNgEsO7ZDR261I5mgOAz98e9pa0tzyu3ksinwG1UwEjOvA87RlgRoTT0piWwpXxvLDFoggLDDA1WprC4W/I2v/WULxGLEcBAM/890Py0pA/KT05Glh6pYt84eDdjtfXZNW1S0Y/ul0LxMEaBz5ONTXr5/YGKjpQnvw1tQ/Tsty23Bt7zZNvm3m+K3T3qt6gG5f3SAj1QYUAqJ22lkXDQq4ZIW58HSql0WBOttJqiuA7Oqznz6NPIjPlGlRV252oVarVPFnvHRiLjFN46IszfuLotCqQjpO09Uq4cv4YV4OUoEf6k1CwTTUr0aKGxLUct5oSAZZKl9m6bpPytqMharYeCRc0XyUUIJcaRcwKxF9tR7fqxmqnWUL2CyQKm8Egy50SubfpNrnLOZCfovs1C4XMsHzWKq16Q+l5TE09eLBoWGB4LNjYtSdj7NJQYwaIU8VniItViqTO5DKwq0ZP8TEZ2X0lMxcoFrn5YW7x7UFORtok/2c2GOoxTBpDU+icA9zEkafHA30Cfdix4yDvcM9Iw4o6SkfV4Nbmj6+8N4ZfI+1JRaCWJnkMe0vszHi1o3YIt6SQBp5lZbIm4P2ctp3Uamk1sK9RXPN27/i65iTgXkhVJ9h1sySIwsbDnP0KUBLVnuDtam+NsjdCpaWMYcID3nKXwsXnsKpwfTPbiKKPq7DuBF8G4t4hgMvQmEEgbWU93wdfdNaxGvD0TOowYvJNIw2viuWklW2tFXFa54FCmWlOBQV82rSluqnyiYyLnwZb7e7qhVghO6NRNrk4+hCxL7O6aLvJdrHTM36lfXSbOYEXm/bPHxBh9TwoZHdhC6z1buvhrmMxzPkNX7PND5aN6Z3PrFniNiNYWF5PRefu+yUlAAQBOc1AZN7ru8iUuv6Ln8vbFJJOvQCgJ50FsM8GEOwa2FwdrFhzi42zNnFs8Fhc6ZJHjV0jjIv5yjzco7KoApPpgJyU3NTc1Mxd14YnMfe2FOgmJ5zyiZZ6U1ubW5tbm1ubbKvVmdABmWYO5CcF+bOh6b01O/AWK7S3A1WB3P+n4zBWY0HkeURnKepS3D5d4Jh8OjtPl+nPvqKuMEnJggADgEADLgKNAgYw76LGe2sS8T2kbeX9VfyCY4IFo7hN5Qlrc26hGFtYhV2d/E2bO2HTckFh9pCsZcIYMPghn2gRWa9UCIv49xP+UOtYyD9A+sb4ARbiNSBxFNQfICQ4TDYy5hf/OWMhFv6ooon5OdNAe7UlNmdN+jXy44N2wuZNPSb1YFXYAbcZuFq1mXvIdwxxz4Xl0udVH3eXOY4+2iM+7HLBWY+l7Xf+KeuLd550c78zHN6X19sNwa4mOiavdi2OIn4vDXudbZW1V23bndA4xR/7Hw++zaHl1dGmL2l0SvF/99cOLHwK6M85nwS7oO+eV6h+sY9uKievpWjCCt6mK9EgvGcAPyZtzLv7rCIn2vuuRZMmOab9PtIN7dlAmazAy94IZds6/d/ucNR8loQOEitK8EJuD5Cpp0qlSJG841C3eGrm3xfpUlr2aL3Ic/2BZjVQGYZMaffem4FRlSzYcDL0yk65uiRG0fiGfce3+wC0085KTiyM2/wNCSCSpID7xBnEnEfLHOsMMOshhTB3Ic9SLsQUlgJob7skvV/7b9ZnkfRblC530XwSRFjUtOv51/nMQJu4Yu15TSrE6LsrwBVfRbdd9vtK8rN7aVmL88ucQXJckkTwm31kJqCttBsdytSwNNAkXd0pAW42ZNfwgIj7bCvIuAEcqcim8MunWBWf455/X3R9V4QKeZCCFOsagycOrtVMPOzlCKz7HLxfeCSqaMiKYJZ3HArxAFPvwuKs7hkUj870p024ICYGmD65cp9AJMuRrMMi+gZq1s9zeVMuR+1fBr7ArMzG4b7G1hfTplqYciwXKJp2mxl/ElnfCqKBH74Jc4c6EQQ6Epp/P5GpZIW/7v737pc0dvc+o0cVfnGxMg5lvrDtu3FVfFzqc21cWf7aD75F2VkPXltyzyxxWs+c17vgCPgUQY8z0ZmvUUcaFNJAKdZYczSM6Cm4l1hHrbI1KIRHQakvxIKjK9aQZRYSsQkt4HBO7e5ordI7gUKEuIiJyvrN8awEzOoonv8/d8gsVDDihGRlvEmPeshjYxOMtkCLJ1qc43bfTDsyT+OLeMFKz+HI3genqEM/diN1Vkr0cBg9+CWIzOGpMmnsvL1TQJbyhYUO8LIURAjU7cPw1CzSPAtkEj02+kGdGvsRa609kbL65ztQ3DDyiVSpyehg5N2jGGHoIN27TEm9vPcQAHh8BMmSsTxeulpdVRu3XTV2pKh8y7yjyk+TVo6wGUmV1OfFaELq/gUVmTun7dvlrF+PYZKfQ5fX8ViHANfjZqt14qVuXIpLsT2OB9tmIPY/VOXxnaeCsGgN8LT6MZs2GjbJfb/nPIYTtpF9uRfiEc++fluWUqeCaTbNJByjiQPL8H6C9pwLJJTJ8OwEp7msAWuiSCsNWZ/mFwCWGyWmzN3AwMpiKziaArNC5YzC5Sl0cHBenjJvY4B3MghZgT7pHU8hvozRWgZnzRjr4xqMrfKGjrTvRX7vvlvom27rxPmyiCaPsJPkJnMrZhzOO6ndOL8lwjhL7t9hW7AFgPtoxeOjMz4nF7TGaryLGNvZwD3eEg9/Zs5+oMnvad8DFDcsabbKKESE3bqjsvFjpS4VeTKvMwDWtts5rIWasudIEReJafs6V63gCScf5L79xTRO/bHIsxfGDoQFkRHDrDovzO3JPt8P9NvtOSYOBdnMzJ+C1677mpv0DrvoqAZssX3qADkLImJxayPyciIjGuEFtsnI8HcD7ziWP/PmVaTun1RIuvJXReWDXI/L1Exe9VTaNJCRAWe4+rC9sMafWfTzlk0IoVXp5dxHRnVKi4GOsD12/oRw90U3pPZSyqbriWku/nXQAcPHKN9LCKJCizyOR8/uplQyNAWLsrniQCFkQWWWeDPWdTmajc+CD75R9/Sm/EdeKiypGhaTFz2eVkBmxh5LPBedxdUqDEGoL0+5syLrqHHyz1oMJvrwJCwAo18OBiQyRopqjl63yXH3A9g3voMbcMADPjx6O7ieWmA8LOq+gB03fn9LySIJ//yLX0gz7hhqkg2l3ha/Fix9145Gj585Fyt3z4A/M0/Yks3DgFruMzDf/kNPANpx22GwvWaxUtcLsnIVRHNI0A3vrpm0J9PrazRP71eQoQh8CrVbLEgctlsJkz2iqPdBIzql+nHEfXnMLVCC3ZflOKdpzGDK0t4p79mmf3zsZR19k+jeM7MevqY/LYQEz9quPv0L6IQB8VZhwd/R2hwtavGsB6rso2aptdfnH/P89Rv9p6P223Y8Yr4/4CzGfaVMDkuAAmfgXk8d1LmXN1GQZP99nuO0CjN4uO8fJkCIQUuZKZDkbyHDR+tYNPjCxWHHWycEVw1FQpjlmiWZYjVdqs9euKdSdHIrsc+drTDjptQi9994HZzwVm87PO2V8yC20cyCiqJ1ZucactwiK2zFoAhDnVOgw+2xiZL79n8dlFe94YEMQkFltIgNzEaD9z4K/N4lB+FbIoPQ5m/6qaeslsLHbOtxTMKG7G8B1Sq1FsEtLSKb3Bvn1hQ2BlHwq9KZzRF2SJlwdvcAFv7Ana+CSepNTUDq5YY5KYJd2rXqjDPYSjzszq3DusFPkO6ymj+RsDrk/6XcrXcg3O0NteoVcQn/wIQ+eTxdgFUjv58WZjmmYARosLIY5Ols4+8VRRP/rmTePL2zx9F1gF26+goWTeX/YPf7RQmBrVU7PM8hFtDr0kJZ6ZtN50mhNUdC8Hb/XnlDkc8SL4FeTvgxEo8wo/EPc46u4XHo2ojz4Iuv9zOIk2cjWxmYJMe4NVweMAxRH2MIFcVojIwAV16sR5kNz5+FUNlYFXA+UixO9f0Mh7ChuxgbPQYc31XIUqxEgDG7HtvTweY8ZR5u/OVKcMmBw+XG/mxuQD1Lxw2vAyQnRpzVMDgqBvWPE0e3DbwzcGdc+3I78D/uv7Y/B8vKbXGYObpQy9YVxJVEF5YSbd3PGW9ioOkSpuCY2Zf4SckKrIWjZv1TUcuU1fT4gpuVy4wpDe/qTlEyB/UfrLv93AQnFr1831vxitrjNljMS/cMLedZEy+yOZI8qC48l0eYwAj45sifTb2UYVgaghaVNa6j8dpv+taOHBUWAb6iXLXgeRnPp3u8gfgimkfak+2xOQ4nDzSWRIkpS037g84WaKOhj4XM3IgPOiv6RnHToHDragfq/PvBsTOqZirhw9X8UuwuQB3SxrnqKsc8mFznVvs6bAPw+32g4nrteNHNHcZipIjES06OfaTwTDwBQBf5wgB87H3ur9Co0ZXNufIC5rYYm6rMSON/DkY4WI/vWEPwf/24rqOPrinaVro6Bt7VsRopd59gZ/5qA9caU+oLZWDsWcs9ndJPvd8SzRneVz4aePc6o+DvzYICyYm3IYw5n6Nf580QDiVeiHyQDXdyoGNW+ngVWOBLclXkeVfiALQGZdN7RXa045fdspGQPvthkArmnS3Vem4DFWdqVXf5iHLP5VxPsBW8NjBWCbxuOCRmqrYovxP+7i2fOTMc2hT+hyJqOr7UvAuLzDLKbW1bRHmVS6VvdJDs1C/K7w7K9nDm9LI+QaoAaEhOoTUoKVQLP3UzW+V13bUj8C6ooyDAPsXBMyB3A0Gj7nEr/ep/7GP2NK6JYoLkeznnWfMcNx0iX5vmGWXGLdzHRBRmIw8Wv3qvbVrkElbBe7PcR2GXGrEccr/rv2ZJM907KeTOLy//YKao9xMorULqfQtJbbnad+kygoUzAcA+oGjQue93D3tX9sHHSXt5IjRo+9HBCB+X3WPhmV7Ht9ESvYlAOxa/q0EgPvfC1Vt4MlU2XkBBnQBZkRv5v1YMibRZu/fz9ulhqbeJwfSyjIbq0kJJ9JIPVAgplbUvrkS9ahVaEsdn/yxrbTz1cYXriBrSPbI1zDWqcg8zhZAwY1YHMhQuRDnSuuC6qANLL7w0tgyl6zKqKwNtoRqsZy0qrAgxMQrWjuXVJPdCI8ODJLEqGoo2C5XRqGRqzPATx4MhoU0EwAjFmRgEECkEIs6MYCOWDEvIV3T+yUMRWQvYbm5/BIeAxtfwpcgzRcM006+gncBxerq0Gq13FjneXG+GiWqcbCWVblEOfhV7BeZlkYLEiGewjLNpamoVLIUR6VIPfm54CehqYH4VZbL49iyYsOGLXectV9o9uubsGqG+tI6HBMNct9FoMPLO7PkqOBj5zE1PxLONtuVKEq4e9/dy7a51jrjP+fdNPtkihyc4thZljkJOqjaKdWPUcpVSsnkq42vA6bYX127xjekWqREVq6Xx3P5qlTk8ohVc+VUCh3m7QLrVtZ1U4z9jWrnF3Ye7NsAA6eckGeDfBtNZshIAWOvmFA56bQzTJkxZ/GrEcILc/Op+mohu1+VcPFFrphik83svZuof/4urrqm2HWu3GbS45vbF6BEmXKlKlVYLFCQKsFeC1HtilFPqy+HiygLDRrVT+Dn0+v9JrryZq3atFhCo12897P5zZh4fgMNNsQgqdJm3Jff2k3TCyz8RQBiiv7/+t766BuGWOLhq2++hw82AnSi1E9/6/Aso2epI0aRE+jMm06E6LCFHymZLDm8+DjqmK222W6HNdba7wA+CX1io400zljjDZPtpeH2EUaEEWZS+Ggnjq4Bpsm1nG/EEEVCUpKRnBSkJB1M5G+Cm2657f6gvrLExsbP9ZC2m7Fn/OM+jfnaUBTA+6tfhMg40mfa27iI/6XN9ar/r3JenJtfXxeF4DvYietKygv4wCFcoZ0zwj9xcstuJ5qYekE/2/a8TtshnG5B/4LZdsZt+rxOEkYSn2XM9BGcm3i6RwzeHRhSAumz4OPgZe4SCwFPBjQ69u1mn39SIhQwk9pOEe4aELDdpz0UT7dbNBjUmcfzX36d9kveZsh0EzAKs51oR8AmtNPc+MIvECBgBgAAAA==\") format(\"woff2\");\n}\n\n/* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .e-look {\n  --anim-tint: var(--tint, #f0a832);                                   /* amber when no tint is set */\n  --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */\n  --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */\n  --anim-line: oklch(from var(--anim-tint) 0.62 c h);                  /* brackets, rules, ticks: graphics only */\n  --anim-pixel: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  --anim-bracket: 12px;\n  --anim-bracket-w: 2px;\n  --anim-ease: cubic-bezier(0.33, 1, 0.68, 1);                          /* power2.out */\n}\n\n/* The light canvas for every tint, amber included : white with a breath of the tint, near-black ink.\n   The accent used AS TEXT is darker than the graphics accent so it reads\n   (≥ 4.5:1 on the canvas). */\n.e-desktop-root .e-host-body.e-look.theme-light {\n  --theme-background: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-background-modal: oklch(from var(--anim-tint) 0.92 calc(c * 0.18) h);\n  --theme-background-input: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-border: oklch(from var(--anim-tint) 0.84 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--anim-tint) 0.88 calc(c * 0.22) h);\n  --theme-text: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);\n  --theme-button: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);\n  --theme-button-text: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);\n  --theme-focused-foreground: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h);\n  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);\n}\n\n/* The dark variant: the same cards on a near-black tinted canvas. */\n.e-desktop-root .e-host-body.e-look.theme-dark {\n  --theme-background: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);\n  --theme-background-modal: oklch(from var(--anim-tint) 0.24 calc(c * 0.22) h);\n  --theme-background-input: oklch(from var(--anim-tint) 0.28 calc(c * 0.2) h);\n  --theme-border: oklch(from var(--anim-tint) 0.4 calc(c * 0.28) h);\n  --theme-border-subdued: oklch(from var(--anim-tint) 0.32 calc(c * 0.26) h);\n  --theme-text: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);\n  --theme-button: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);\n  --theme-button-text: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);\n  --theme-focused-foreground: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h);\n  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h / 0.5);\n  --anim-line: oklch(from var(--anim-tint) 0.72 c h);\n}\n\n.e-desktop-root .e-look .e-dashboard-shell {\n  --e-rule: var(--theme-border-subdued);\n  --anim-wash: color-mix(in srgb, var(--anim-fill) 45%, transparent);\n  --e-accent-wash: var(--anim-wash);\n}\n/* On the dark canvas a strong wash would sit under light text: keep it faint. */\n.e-desktop-root .e-look.theme-dark .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--anim-fill) 14%, transparent); }\n\n/* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────\n   Four L-shaped corners drawn as background images, so no element and no\n   ::before/::after is taken from the other rules. On panels only: the\n   frame around data, never over it. */\n.e-desktop-root .e-look .e-page-head,\n.e-desktop-root .e-look .e-now,\n.e-desktop-root .e-look .e-intro,\n.e-desktop-root .e-look .e-panel-card,\n.e-desktop-root .e-look .e-overview-card,\n.e-desktop-root .e-look .e-setplay,\n.e-desktop-root .e-look .e-empty-pane {\n  background-image:\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),\n    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));\n  background-size:\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),\n    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);\n  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;\n  background-repeat: no-repeat;\n  background-origin: border-box;\n  border-radius: 0;\n}\n.e-desktop-root .e-look .e-page-head { --anim-bracket: 18px; --anim-bracket-w: 3px; }\n\n/* ─── 3. THE SECTION HEADING: status line, pixel title, typed line ─────── */\n\n.e-desktop-root .e-look .e-page-head {\n  position: relative;\n  padding: 12px 24px 16px;\n  margin-top: 10px;\n  border-bottom: 0;\n  max-width: min(1440px, calc(100% - 32px));\n}\n.e-desktop-root .e-look .e-page-head__title {\n  font-family: var(--anim-pixel);\n  font-weight: 400;\n  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);\n  line-height: 1.05;\n  letter-spacing: 0.04em;\n  margin-top: 6px;\n  overflow-wrap: anywhere;\n}\n.e-desktop-root .e-look .e-page-head__blurb {\n  margin-top: 10px;\n  font-size: 0.9rem;\n  line-height: 1.5;\n  opacity: 0.86;\n  max-width: 72ch;\n}\n\n/* The block cursor at the end of a typed line. */\n.e-desktop-root .e-look .e-anim-cursor {\n  display: inline-block;\n  width: 0.6em;\n  height: 1em;\n  margin-left: 0.15em;\n  vertical-align: -0.14em;\n  background: currentColor;\n}\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-anim-cursor { animation: e-anim-blink 1.06s steps(1, end) infinite; }\n}\n@keyframes e-anim-blink { 50% { opacity: 0; } }\n\n/* Status lines: `emporia ~ hermes plugin · [1] · 01 / 14 · overview` above,\n   `T+00:28 · as alpha · watch only` below. Small, but ink at 80 %, not faint. */\n.e-desktop-root .e-look .e-anim-hud {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 4px 12px;\n  flex-wrap: wrap;\n  font-size: 0.74rem;\n  line-height: 1.4;\n  letter-spacing: 0.05em;\n  color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background));\n  font-variant-numeric: tabular-nums;\n}\n.e-desktop-root .e-look .e-anim-hud__key {\n  padding: 1px 8px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n}\n.e-desktop-root .e-look .e-anim-hud--foot {\n  max-width: min(1440px, calc(100% - 32px));\n  margin: 8px auto 12px;\n  padding: 8px 24px 0;\n  border-top: 1px solid var(--theme-border-subdued);\n  box-sizing: border-box;\n}\n\n/* The beat flash: an ink bar along the heading's top edge, once per section. */\n.e-desktop-root .e-look .e-anim-flash {\n  position: absolute;\n  left: 0;\n  right: 0;\n  top: -6px;\n  height: 4px;\n  background: var(--anim-ink);\n  opacity: 0;\n  pointer-events: none;\n}\n.e-desktop-root .e-look.theme-dark .e-anim-flash { background: var(--anim-fill); }\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }\n}\n@keyframes e-anim-flash {\n  0% { opacity: 1; transform: scaleX(0.2); transform-origin: left; }\n  45% { opacity: 1; transform: scaleX(1); transform-origin: left; }\n  100% { opacity: 0; transform: scaleX(1); transform-origin: left; }\n}\n\n/* ─── 4. HEADER, NAV, MENU ──────────────────────────────────────────────── */\n\n.e-desktop-root .e-look .e-brand-title {\n  font-family: var(--anim-pixel);\n  font-weight: 400;\n  text-transform: uppercase;\n  letter-spacing: 0.06em;\n}\n.e-desktop-root .e-look .e-section-tab { opacity: 0.8; }\n.e-desktop-root .e-look .e-section-tab.is-active {\n  background: var(--anim-fill) !important;\n  color: var(--anim-ink);\n  border-color: var(--anim-fill);\n  font-weight: 700;\n}\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__icon { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__sub { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-subnav__tab.is-active { border-bottom-color: var(--anim-line); }\n.e-desktop-root .e-look .e-mobile-top__section {\n  font-family: var(--anim-pixel);\n  color: var(--theme-text);\n  font-size: 0.95rem;\n  letter-spacing: 0.06em;\n}\n.e-desktop-root .e-look .e-mobile-top__section::before { content: \"> \"; opacity: 0.8; }\n.e-desktop-root .e-look .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background)); }\n.e-desktop-root .e-look .e-section-tab.is-active .e-section-tab__key { color: var(--anim-ink); }\n\n/* Relay / live: square chips, the live one filled. */\n.e-desktop-root .e-look .e-status-chip { border-color: var(--theme-border); background: transparent; }\n.e-desktop-root .e-look .e-status-chip.is-ok {\n  background: var(--anim-fill);\n  border-color: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n}\n.e-desktop-root .e-look .e-status-chip.is-ok .e-status-chip__loader,\n.e-desktop-root .e-look .e-status-chip.is-ok .e-status-chip__dot--pulse { color: var(--anim-ink); }\n\n/* ─── 5. CAPTION BARS AND CHIPS ─────────────────────────────────────────\n   The animatic's two text-on-fill shapes: a small bold chip (its\n   `CARD · build now` badge) for labels, and a bold band (its captions)\n   for the one line that says what happened. */\n.e-desktop-root .e-look .e-intro__title,\n.e-desktop-root .e-look .e-now__head > span:first-child,\n.e-desktop-root .e-look .e-now__label {\n  display: inline-block;\n  width: fit-content;\n  padding: 2px 8px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-weight: 700;\n  opacity: 1;\n}\n.e-desktop-root .e-look .e-now__label { padding: 1px 6px; font-size: 0.66rem; }\n.e-desktop-root .e-look .e-now__go,\n.e-desktop-root .e-look .e-now__live,\n.e-desktop-root .e-look .e-intro__link-label { color: var(--theme-focused-foreground); font-weight: 600; }\n.e-desktop-root .e-look .e-now__live { color: var(--anim-ink); }\n.e-desktop-root .e-look .e-now__head { align-items: center; }\n.e-desktop-root .e-look .e-now__head > span:last-child { font-family: var(--anim-pixel); font-size: 0.9rem; letter-spacing: 0.06em; }\n.e-desktop-root .e-look .e-intro { border-left-width: 1px; }\n.e-desktop-root .e-look .e-intro__text { font-size: 0.95rem; }\n\n/* Sub-headings inside a view, in the pixel face: the QUESTS card. */\n.e-desktop-root .e-look .e-subhead {\n  font-family: var(--anim-pixel);\n  font-size: 1rem;\n  letter-spacing: 0.06em;\n  opacity: 1;\n  margin-top: 22px;\n}\n.e-desktop-root .e-look .e-subhead::after { background: var(--anim-line); opacity: 0.6; }\n.e-desktop-root .e-look .e-panel-card__title { opacity: 0.85; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }\n.e-desktop-root .e-look .e-overview-card__title { font-family: var(--anim-pixel); letter-spacing: 0.05em; text-transform: uppercase; }\n.e-desktop-root .e-look .e-rail-label { opacity: 0.8; font-weight: 700; }\n.e-desktop-root .e-look .e-rail-item.is-selected {\n  background: var(--e-accent-wash);\n  box-shadow: inset 3px 0 0 var(--anim-line);\n}\n\n/* Quests read like the animatic's QUESTS card: `>` lines, the done ones ticked. */\n.e-desktop-root .e-look .e-quest-row { font-size: 0.95rem !important; line-height: 1.7; opacity: 1; }\n.e-desktop-root .e-look .e-quest-row::before { content: \"> \"; color: var(--theme-focused-foreground); font-weight: 700; }\n.e-desktop-root .e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) 74%, var(--theme-background)); }\n.e-desktop-root .e-look .e-quest-next .e-now__label { margin-right: 4px; }\n\n/* ─── 6. SET PLAYS ───────────────────────────────────────────────────── */\n\n.e-desktop-root .e-look .e-setplay { padding: 18px 20px 22px; }\n.e-desktop-root .e-look .e-setplay__game {\n  font-family: var(--anim-pixel);\n  font-size: clamp(1.4rem, 1rem + 1.4vw, 2rem);\n  line-height: 1.05;\n  letter-spacing: 0.05em;\n  color: var(--theme-text);\n}\n.e-desktop-root .e-look .e-setplay__players { font-size: 1.05rem; margin-top: 6px; }\n.e-desktop-root .e-look .e-setplay__status { opacity: 1; border-color: var(--theme-border); font-weight: 700; }\n.e-desktop-root .e-look .e-setplay__status.is-live {\n  background: var(--anim-fill);\n  border-color: var(--anim-fill);\n  color: var(--anim-ink);\n}\n/* The verdict is the caption band. */\n.e-desktop-root .e-look .e-setplay__verdict.is-win {\n  padding: 8px 12px;\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  font-size: 1.1rem;\n  font-weight: 700;\n  line-height: 1.3;\n}\n.e-desktop-root .e-look .e-setplay__verdict.is-win .e-setplay__why { color: var(--anim-ink); opacity: 0.85; }\n.e-desktop-root .e-look .e-setplay__wait { opacity: 0.86; font-size: 0.86rem; }\n\n/* commit → reveal → winner: square steps, the current one a filled pixel label. */\n.e-desktop-root .e-look .e-phase-strip__n { border-radius: 0; }\n.e-desktop-root .e-look .e-phase-strip__step.is-now {\n  opacity: 1;\n  color: var(--anim-ink);\n  background: var(--anim-fill);\n  padding: 3px 10px 3px 4px;\n  font-family: var(--anim-pixel);\n  letter-spacing: 0.05em;\n}\n.e-desktop-root .e-look .e-phase-strip__step.is-now .e-phase-strip__n {\n  background: var(--anim-ink);\n  border-color: var(--anim-ink);\n  color: var(--anim-fill);\n  font-family: var(--font-family-mono, monospace);\n}\n.e-desktop-root .e-look .e-phase-strip__step + .e-phase-strip__step::before { background: var(--anim-line); opacity: 0.8; }\n\n/* Won cells, winning seats and picks: the fill with ink on it. */\n.e-desktop-root .e-look .e-blotto__grid td.is-won,\n.e-desktop-root .e-look .e-lowest__cell.is-winner,\n.e-desktop-root .e-look .e-numline__pick.is-winner .e-numline__label {\n  background: var(--anim-fill);\n  color: var(--anim-ink);\n  border-color: var(--anim-line);\n}\n.e-desktop-root .e-look .e-blotto__grid tr.is-winner th,\n.e-desktop-root .e-look .e-seat.is-winner .e-seat__name,\n.e-desktop-root .e-look .e-seat.is-winner .e-seat__move { color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .e-look .e-seat.is-winner {\n  background: var(--anim-wash);\n  box-shadow: inset 3px 0 0 var(--anim-line);\n}\n.e-desktop-root .e-look .e-numline__pick.is-winner .e-numline__pin { background: var(--anim-line); }\n.e-desktop-root .e-look .e-numline__mark--target { border-left-color: var(--anim-line); }\n.e-desktop-root .e-look .e-numline__mark--target > span { color: var(--theme-text); }\n.e-desktop-root .e-look .e-game-row__kind { color: var(--theme-text); font-weight: 700; }\n.e-desktop-root .e-look .e-blotto__grid thead th,\n.e-desktop-root .e-look .e-blotto__state,\n.e-desktop-root .e-look .e-seat__state { opacity: 0.8; }\n\n/* ─── 7. A CALMER FAINT ──────────────────────────────────────────────────\n   Secondary text used to dim to 35–50 % opacity, which falls under\n   4.5:1 on a tinted canvas. Faint is a colour at about 4.6:1 or more. */\n.e-desktop-root .e-look {\n  --anim-faint: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));\n}\n.e-desktop-root .e-look .e-faint,\n.e-desktop-root .e-look .e-dim,\n.e-desktop-root .e-look .e-rail-item .e-faint,\n.e-desktop-root .e-look .e-relay-status__host,\n.e-desktop-root .e-look .e-relay-status__meta,\n.e-desktop-root .e-look .e-game-row__phase,\n.e-desktop-root .e-look .e-chat-line__time,\n.e-desktop-root .e-look .e-chat-line__type,\n.e-desktop-root .e-look .e-badge--dim,\n.e-desktop-root .e-look .e-slim-card__title,\n.e-desktop-root .e-look .e-blotto__grid td.is-hidden,\n.e-desktop-root .e-look .e-phase-strip__step.is-next,\n.e-desktop-root .e-look [style*=\"opacity: 0.5\"],\n.e-desktop-root .e-look [style*=\"opacity: 0.6\"] {\n  opacity: 1 !important;\n  color: var(--anim-faint);\n}\n.e-desktop-root .e-look .e-phase-strip__step.is-done { opacity: 1; }\n/* Names in a chat are ink, so they read on the tint. */\n.e-desktop-root .e-look .e-chat-line__name { color: var(--theme-text) !important; }\n.e-desktop-root .e-look .e-entity-chip--agent,\n.e-desktop-root .e-look .e-entity-chip--session { opacity: 1; color: var(--theme-focused-foreground); }\n\n/* ─── 8. MOTION ─────────────────────────────────────────────────────────\n   Panels arrive with a short rise when a section opens (they mount with it).\n   Off with reduced motion; capture mode turns every animation off anyway. */\n@media (prefers-reduced-motion: no-preference) {\n  .e-desktop-root .e-look .e-page-head,\n  .e-desktop-root .e-look .e-now,\n  .e-desktop-root .e-look .e-intro,\n  .e-desktop-root .e-look .e-setplay {\n    animation: e-anim-rise 0.38s var(--anim-ease) both;\n  }\n  .e-desktop-root .e-look .e-now { animation-delay: 0.05s; }\n  .e-desktop-root .e-look .e-setplay { animation-delay: 0.04s; }\n}\n@keyframes e-anim-rise {\n  from { opacity: 0; transform: translateY(6px); }\n  to { opacity: 1; transform: none; }\n}\n\n/* ─── 10. PHONE ──────────────────────────────────────────────────────── */\n@media (max-width: 700px) {\n  .e-desktop-root .e-look .e-page-head { padding: 10px 16px 14px; margin-top: 8px; max-width: calc(100% - 16px); }\n  .e-desktop-root .e-look .e-page-head__title { font-size: 1.55rem; }\n  .e-desktop-root .e-look .e-page-head__blurb { font-size: 0.84rem; }\n  .e-desktop-root .e-look .e-anim-hud { font-size: 0.7rem; }\n  .e-desktop-root .e-look .e-anim-hud--top .e-anim-hud__where { flex-basis: 100%; }\n  .e-desktop-root .e-look .e-anim-hud--foot { padding: 8px 16px 0; max-width: calc(100% - 16px); }\n  .e-desktop-root .e-look .e-setplay__game { font-size: 1.4rem; }\n}\n.e-desktop-root .Text_text_1shpo {\n  white-space: pre-wrap;\n  overflow-wrap: break-word;\n}\n.e-desktop-root .BlockLoader_root_1fkyl {\n  display: inline-block;\n  width: 1ch;\n  color: inherit;\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  vertical-align: bottom;\n}\n.e-desktop-root .Indent_root_9k7l5 {\n  display: block;\n  padding: 0 0 0 1ch;\n}\n.e-desktop-root .Badge_root_1obhs {\n  display: inline-block;\n  vertical-align: top;\n  text-align: center;\n  font-weight: 400;\n  margin: 0;\n  outline: 0;\n  border: 0;\n  font-family: var(--font-family-mono);\n  min-height: calc(var(--theme-line-height-base) * var(--font-size));\n  text-transform: uppercase;\n  transition: 200ms ease all;\n  background: var(--theme-border);\n  padding: 0 1ch 0 1ch;\n}\n.e-desktop-root .Divider_gradient_hx4se {\n  background: linear-gradient(to right, transparent, var(--theme-border), transparent);\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  width: 100%;\n}\n\n.e-desktop-root .Divider_divider_hx4se {\n  align-items: center;\n  border: 0;\n  display: flex;\n  flex-direction: column;\n  flex-shrink: 0;\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  justify-content: center;\n  outline: 0;\n  width: 100%;\n}\n\n.e-desktop-root .Divider_line_hx4se {\n  background: var(--theme-text);\n  display: block;\n  flex-shrink: 0;\n  height: 2px;\n  width: 100%;\n}\n.e-desktop-root .Input_root_zrgvd {\n  position: relative;\n  display: block;\n}\n\n.e-desktop-root .Input_label_zrgvd {\n  background: var(--theme-border);\n  display: block;\n}\n\n.e-desktop-root .Input_placeholder_zrgvd {\n  font-style: italic;\n  color: var(--theme-overlay);\n}\n\n.e-desktop-root .Input_displayed_zrgvd {\n  overflow: hidden;\n  white-space: nowrap;\n  pointer-events: none;\n  overflow-wrap: anywhere;\n  background: var(--theme-background-input);\n  box-shadow: inset 0 0 0 2px var(--theme-border);\n}\n\n.e-desktop-root .Input_focused_zrgvd {\n  .Input_block_zrgvd {\n    background: var(--theme-focused-foreground);\n  }\n\n  .Input_placeholder_zrgvd {\n    background: var(--theme-focused-foreground);\n  }\n}\n\n@keyframes Input_blink_zrgvd {\n  50% {\n    opacity: 0;\n  }\n}\n\n.e-desktop-root .Input_blink_zrgvd {\n  animation: Input_blink_zrgvd 1s step-start 0s infinite;\n}\n\n.e-desktop-root .Input_block_zrgvd {\n  display: inline-block;\n  min-width: 1ch;\n  background: var(--theme-text);\n  color: var(--theme-background);\n  height: calc(var(--font-size) * var(--theme-line-height-base));\n  vertical-align: bottom;\n}\n\n.e-desktop-root .Input_inputContainer_zrgvd {\n  position: relative;\n  display: block;\n}\n\n.e-desktop-root .Input_hidden_zrgvd {\n  position: absolute;\n  top: 0;\n  left: 0;\n  width: 100%;\n  color: transparent;\n  background: transparent;\n  caret-color: transparent;\n  border: none;\n  outline: none;\n  overflow: hidden;\n  padding: 0;\n  margin: 0;\n  line-height: var(--theme-line-height-base);\n  font-size: var(--font-size);\n  font-family: inherit;\n\n  &:-webkit-autofill {\n    -webkit-box-shadow: 0 0 0px 1000px var(--theme-focused-foreground) inset;\n  }\n}\n.e-desktop-root .SidebarLayout_root_1g3qb {\n  display: flex;\n  align-items: flex-start;\n  justify-content: space-between;\n  white-space: pre-wrap;\n}\n\n.e-desktop-root .SidebarLayout_sidebar_1g3qb {\n  align-self: stretch;\n  flex-shrink: 0;\n  width: 20ch;\n}\n\n.e-desktop-root .SidebarLayout_handle_1g3qb {\n  align-self: stretch;\n  flex-shrink: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  width: 3ch;\n  outline: 0;\n  border: 0;\n  cursor: col-resize;\n\n  &:hover {\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n\n  &:focus {\n    outline: 0;\n    border: 0;\n\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n\n  &:active {\n    .SidebarLayout_line_1g3qb {\n      background: var(--theme-focused-foreground);\n    }\n  }\n}\n\n.e-desktop-root .SidebarLayout_line_1g3qb {\n  align-self: stretch;\n  width: 2px;\n  background: var(--theme-text);\n\n  &:first-child {\n    margin-left: 1px;\n    margin-right: 2px;\n  }\n}\n\n.e-desktop-root .SidebarLayout_content_1g3qb {\n  min-width: 10%;\n  width: 100%;\n}\n\n/* Narrow screens only: the back control and the list-then-detail panes. */\n.e-desktop-root .SidebarLayout_back_1g3qb {\n  display: none;\n}\n\n/* Which pane a narrow screen shows; no effect on a wide one. */\n.e-desktop-root .SidebarLayout_showList_1g3qb,\n.e-desktop-root .SidebarLayout_showDetail_1g3qb {\n  min-width: 0;\n}\n\n@media (max-width: 700px) {\n  .e-desktop-root .SidebarLayout_root_1g3qb {\n    flex-direction: column;\n    align-items: stretch;\n  }\n\n  .e-desktop-root .SidebarLayout_root_1g3qb > .SidebarLayout_sidebar_1g3qb {\n    width: 100% !important;\n    max-width: 100%;\n  }\n\n  .e-desktop-root .SidebarLayout_handle_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_content_1g3qb {\n    min-width: 0;\n  }\n\n  .e-desktop-root .SidebarLayout_showList_1g3qb > .SidebarLayout_content_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_showDetail_1g3qb > .SidebarLayout_sidebar_1g3qb {\n    display: none;\n  }\n\n  .e-desktop-root .SidebarLayout_back_1g3qb {\n    display: flex;\n    align-items: center;\n    gap: 1ch;\n    width: 100%;\n    min-height: 44px;\n    margin: 0;\n    padding: 0 16px;\n    border: 0;\n    border-bottom: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.2));\n    background: transparent;\n    color: var(--theme-focused-foreground);\n    font: inherit;\n    font-size: 0.85rem;\n    letter-spacing: 0.06em;\n    text-transform: uppercase;\n    text-align: left;\n    cursor: pointer;\n  }\n}\n/*\nNOTE(jimmylee):\nSimple fluid table for Sacred Computer. The CLI framework's `formatRow` +\n`cardHeaderRow` primitives map onto this exact CSS surface, so the React port and\nthe terminal port render the same rows from the same data array. Background tokens\nreference the ANSI palette in global.css so the colors are byte-equal to\nscripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).\n*/\n\n.e-desktop-root .SimpleTable_scrollWrapper_x98rn {\n  overflow-x: auto;\n  -webkit-overflow-scrolling: touch;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn {\n  padding: 0;\n  border-collapse: collapse;\n  border: 0;\n  background: transparent;\n  box-shadow: none;\n  width: 100%;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn td {\n  padding: 0 2ch 0 0;\n  vertical-align: top;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn td:last-child {\n  padding-right: 0;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn thead td {\n  background: var(--ansi-240-gray-35);\n  color: var(--color-white);\n  font-weight: 400;\n}\n\n.e-desktop-root .SimpleTable_root_x98rn tbody tr:focus {\n  background: var(--theme-focused-foreground);\n  outline: 0;\n}\n\n.e-desktop-root .SimpleTable_alignRight_x98rn {\n  text-align: right;\n}\n\n.e-desktop-root .SimpleTable_statusOk_x98rn {\n  color: var(--ansi-10-lime);\n  font-weight: 700;\n}\n\n.e-desktop-root .SimpleTable_statusOff_x98rn {\n  color: var(--ansi-248-gray-66);\n}\n.e-desktop-root .AskAgent_root_n8p84 {\n  display: inline-flex;\n  align-items: center;\n  gap: 0.6ch;\n  min-height: 32px;\n  padding: 2px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.78rem;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  white-space: nowrap;\n}\n\n.e-desktop-root .AskAgent_root_n8p84:hover {\n  border-color: var(--theme-focused-foreground);\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .AskAgent_row_n8p84 {\n  display: flex;\n  justify-content: flex-end;\n  padding: 0 0 8px;\n}\n\n.e-desktop-root .AskAgent_glyph_n8p84 {\n  color: var(--theme-focused-foreground);\n}\n\n@media (max-width: 700px) {\n  .e-desktop-root .AskAgent_root_n8p84 {\n    min-height: 40px;\n    padding: 4px 12px;\n  }\n}\n.e-desktop-root .AlertBanner_root_l7zgu {\n  display: block;\n  background: var(--theme-border);\n  box-shadow: 1ch 1ch 0 0 var(--theme-border-subdued);\n  padding: calc(var(--font-size) * var(--theme-line-height-base)) 2ch calc(var(--font-size) * var(--theme-line-height-base)) 2ch;\n  font-weight: 400;\n}\n/* ═══════════════════════════════════════════════════════════════\n   PIXEL BADGES — badges/Badge.tsx, docs/ui-badges.md\n   Two colour roles, no background:\n   - ink    = currentColor (the text colour where the badge sits);\n   - accent = --e-badge-accent, from the tint, darker on the light canvas\n     and lighter on the dark one (≥ 4.8:1 on canvas, panel and the row\n     wash in every theme and tint; badges.test.tsx holds it to that).\n   The accent is set on the element that carries the theme class (body in\n   the console, the app's container in the Hermes tab and on Desktop), so it\n   follows light/dark and the tint run without a re-render. The formulas\n   are mirrored in tokens.ts (ACCENT_CSS); keep the two the same.\n   ═══════════════════════════════════════════════════════════════ */\n\n/* The dashboard has one style (ui-v2): the badge accent is the look's own accent-as-text. */\n.e-desktop-root .e-look {\n  --e-badge-accent: var(--theme-focused-foreground);\n}\n/* The gallery's panels each carry their own theme and tint: the same formula, worked out there.\n   (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */\n.e-desktop-root .e-badge-panel.theme-light {\n  --e-badge-accent: oklch(from var(--tint, #f0a832) 0.45 min(c, 0.2) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark {\n  --e-badge-accent: oklch(from var(--tint, #f0a832) max(l, 0.78) min(c, 0.22) h);\n}\n\n/* A row of small badges (Season › Quests: the ones earned). */\n.e-desktop-root .e-badge-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }\n/* The sheet's head: the class badge beside the name and levels. */\n.e-desktop-root .e-sheet-head { display: flex; align-items: center; gap: 12px; }\n\n.e-desktop-root .e-badge {\n  display: inline-block;\n  flex: none;\n  line-height: 0;\n  vertical-align: middle;\n  color: inherit;\n}\n.e-desktop-root .e-badge > svg {\n  display: block;\n  overflow: visible;\n  image-rendering: pixelated;\n}\n/* On a fill (a chip, a caption bar) the accent would meet the fill: one role only. */\n.e-desktop-root .e-badge--mono .e-badge__accent { fill: currentColor !important; }\n\n/* The earn animation: a short pixel pop, in three hard steps. Arrivals only. */\n@keyframes e-badge-pop {\n  0% { transform: scale(0.5); }\n  45% { transform: scale(1.25); }\n  100% { transform: scale(1); }\n}\n.e-desktop-root .e-badge--pop {\n  animation: e-badge-pop 0.32s steps(3, jump-end) both;\n  transform-origin: 50% 60%;\n}\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .e-badge--pop { animation: none; }\n}\n/* Capture mode (?capture=1): nothing moves. Badge.tsx also leaves the class off. */\n.e-desktop-root .e-capture .e-badge--pop { animation: none; }\n\n/* ─── the gallery (badges.html, ?capture=1 friendly) ─────────────────────── */\n\n.e-desktop-root .e-badge-gallery {\n  font-family: var(--font-family-mono, monospace);\n  padding: 16px;\n  max-width: 1440px;\n  margin: 0 auto;\n}\n.e-desktop-root .e-badge-gallery__title {\n  font-family: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);\n  letter-spacing: 0.04em;\n  margin: 8px 0 4px;\n}\n.e-desktop-root .e-badge-gallery__lede { max-width: 72ch; line-height: 1.5; margin: 0 0 16px; }\n.e-desktop-root .e-badge-gallery__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 16px; }\n.e-desktop-root .e-badge-gallery__bar button {\n  font: inherit;\n  background: transparent;\n  color: inherit;\n  border: 1px solid currentColor;\n  padding: 2px 8px;\n  cursor: pointer;\n}\n.e-desktop-root .e-badge-gallery__bar button[aria-pressed=\"true\"] { background: var(--e-badge-accent); color: var(--theme-background, #fff); }\n.e-desktop-root .e-badge-gallery h2 {\n  font-family: \"EmporiaPixel\", var(--font-family-mono, monospace);\n  font-weight: 400;\n  font-size: 1.1rem;\n  letter-spacing: 0.04em;\n  margin: 24px 0 8px;\n}\n.e-desktop-root .e-badge-table { border-collapse: collapse; width: 100%; }\n.e-desktop-root .e-badge-table th, .e-desktop-root .e-badge-table td {\n  text-align: left;\n  vertical-align: middle;\n  padding: 6px 10px 6px 0;\n  border-bottom: 1px solid var(--theme-border, #ccc);\n  font-size: 0.85rem;\n}\n.e-desktop-root .e-badge-table code { font-size: 0.8rem; }\n.e-desktop-root .e-badge-table__scales { display: flex; gap: 12px; align-items: flex-end; }\n.e-desktop-root .e-badge-scroll { overflow-x: auto; }\n\n.e-desktop-root .e-badge-panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }\n.e-desktop-root .e-badge-panel {\n  padding: 10px 12px 12px;\n  border: 1px solid var(--p-line);\n  background: var(--p-bg);\n  color: var(--p-ink);\n}\n.e-desktop-root .e-badge-panel.theme-light {\n  --p-bg: oklch(from var(--tint, #f0a832) 0.97 calc(c * 0.1) h);\n  --p-panel: oklch(from var(--tint, #f0a832) 0.92 calc(c * 0.18) h);\n  --p-ink: oklch(from var(--tint, #f0a832) 0.18 calc(c * 0.4) h);\n  --p-line: oklch(from var(--tint, #f0a832) 0.84 calc(c * 0.28) h);\n}\n.e-desktop-root .e-badge-panel.theme-dark {\n  --p-bg: oklch(from var(--tint, #f0a832) 0.14 calc(c * 0.18) h);\n  --p-panel: oklch(from var(--tint, #f0a832) 0.24 calc(c * 0.22) h);\n  --p-ink: oklch(from var(--tint, #f0a832) 0.94 calc(c * 0.12) h);\n  --p-line: oklch(from var(--tint, #f0a832) 0.4 calc(c * 0.28) h);\n}\n.e-desktop-root .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }\n.e-desktop-root .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }\n.e-desktop-root .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }\n.e-desktop-root .RowSpaceBetween_row_1rf1p {\n  display: flex;\n  justify-content: space-between;\n  outline: 0;\n  border: 0;\n}\n.e-desktop-root .ActionButton_hotkey_fa94z {\n  background: var(--theme-button-foreground);\n  color: var(--theme-text);\n  cursor: pointer;\n  flex-shrink: 0;\n  font-weight: 400;\n  padding: 0 1ch 0 1ch;\n  text-indent: 0ch;\n  user-select: none;\n}\n\n.e-desktop-root .ActionButton_content_fa94z {\n  background: var(--theme-button-background);\n  box-shadow: inset 0 0 0 2px var(--theme-button-foreground);\n  cursor: pointer;\n  flex-shrink: 0;\n  font-weight: 400;\n  padding: 0 1ch 0 1ch;\n  text-indent: 0ch;\n  text-transform: uppercase;\n  user-select: none;\n}\n\n.e-desktop-root .ActionButton_root_fa94z {\n  display: inline-flex;\n  align-items: center;\n  justify-content: space-between;\n  cursor: pointer;\n  outline: 0;\n  border: 0;\n  margin: 0;\n  padding: 0;\n  box-sizing: border-box;\n  font-family: var(--font-family-mono);\n  font-size: var(--font-size);\n  flex-shrink: 0;\n\n  &:hover .ActionButton_hotkey_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:hover .ActionButton_content_fa94z {\n    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);\n  }\n\n  &:focus {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:focus .ActionButton_hotkey_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:focus .ActionButton_content_fa94z {\n    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);\n  }\n\n  &:active {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:active .ActionButton_hotkey_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n\n  &:active .ActionButton_content_fa94z {\n    box-shadow: inset 0 0 0 2px var(--theme-focused-foreground);\n  }\n}\n\n.e-desktop-root .ActionButton_selected_fa94z {\n  .ActionButton_content_fa94z {\n    background: var(--theme-focused-foreground);\n  }\n}\n.e-desktop-root .Chessboard_board_cycky {\n  display: inline-table;\n  border-collapse: collapse;\n  touch-action: none;\n}\n\n.e-desktop-root .Chessboard_corner_cycky {\n  width: 1ch;\n  height: calc(var(--theme-line-height-base) * 1rem);\n}\n\n.e-desktop-root .Chessboard_cell_cycky {\n  width: 1ch;\n  height: calc(var(--theme-line-height-base) * 1rem);\n  background-color: var(--theme-border-subdued);\n  text-align: center;\n  vertical-align: middle;\n}\n\n.e-desktop-root .Chessboard_square_cycky {\n  height: calc(var(--theme-line-height-base) * 2rem);\n  text-align: center;\n  vertical-align: middle;\n  width: 3ch;\n}\n\n.e-desktop-root .Chessboard_dark_cycky {\n  background-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .Chessboard_light_cycky {\n  background-color: var(--theme-focused-foreground-subdued);\n}\n\n.e-desktop-root .Chessboard_symbol_cycky {\n  font-size: 40px;\n  line-height: calc(var(--theme-line-height-base) * 2rem);\n}\n.e-desktop-root .AgentChat_toggle_ry10h {\n  font-size: 0.85rem !important;\n  letter-spacing: 0.04em;\n}\n\n.e-desktop-root .AgentChat_glyph_ry10h {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .AgentChat_label_ry10h {\n  text-transform: lowercase;\n}\n\n.e-desktop-root .AgentChat_menuItem_ry10h {\n  padding: 12px 0 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .AgentChat_menuItem_ry10h .e-section-tab {\n  width: 100%;\n  min-height: 44px;\n  justify-content: flex-start;\n  padding: 10px 14px;\n  opacity: 1;\n}\n\n.e-desktop-root .AgentChat_on_ry10h {\n  border-color: var(--theme-focused-foreground) !important;\n  background: var(--e-accent-wash, transparent) !important;\n}\n/* The agent chat drawer: monospace, hairline rules, the theme's accent as the\n   one highlight, 40–48px targets on a phone. Tokens only (--theme-*, --e-rule,\n   --e-accent-wash); no colours of its own.\n\n   It is sized to the app's own frame, never to the browser window: inside the\n   Hermes tab the frame is the tab's container (hermesPlugin.tsx), so the\n   transcript scrolls and the composer stays pinned at the bottom of what you\n   see. Below the header-nav width it covers the frame (absolute, inside the\n   shell's `contain: layout paint`), never the Hermes app around it. */\n\n.e-desktop-root .ChatDrawer_root_1ucu2 {\n  display: none;\n  flex: none;\n  flex-direction: column;\n  box-sizing: border-box;\n  width: min(27rem, 40%);\n  height: 100%;\n  min-height: 0;\n  position: relative;\n  align-self: stretch;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n  color: var(--theme-text);\n  font-size: 0.86rem;\n  line-height: 1.5;\n}\n\n.e-desktop-root .ChatDrawer_open_1ucu2 {\n  display: flex;\n}\n\n/* ── head ─────────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_head_1ucu2 {\n  flex: none;\n  padding: 12px 16px 10px;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_headRow_1ucu2 {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n}\n\n.e-desktop-root .ChatDrawer_heading_1ucu2 {\n  margin: 0;\n  display: flex;\n  align-items: baseline;\n  gap: 1ch;\n  font: inherit;\n  font-size: 1.05rem;\n  font-weight: 600;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n}\n\n.e-desktop-root .ChatDrawer_headIcon_1ucu2 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_close_1ucu2 {\n  min-width: 40px !important;\n  min-height: 40px !important;\n}\n\n.e-desktop-root .ChatDrawer_meta_1ucu2 {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 0 1ch;\n  margin-top: 2px;\n  font-size: 0.74rem;\n  opacity: 0.62;\n}\n\n.e-desktop-root .ChatDrawer_conn_1ucu2[data-conn=\"open\"] {\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n\n.e-desktop-root .ChatDrawer_sessionBar_1ucu2 {\n  display: flex;\n  gap: 8px;\n  margin-top: 10px;\n}\n\n.e-desktop-root .ChatDrawer_sessionPick_1ucu2 {\n  flex: 1;\n  min-width: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 1ch;\n  min-height: 36px;\n  padding: 4px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_sessionPick_1ucu2:hover,\n.e-desktop-root .ChatDrawer_sessionPick_1ucu2[aria-expanded=\"true\"] {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_sessionPickTitle_1ucu2 {\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_smallButton_1ucu2 {\n  flex: none;\n  min-height: 36px;\n  padding: 4px 12px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  font-size: 0.8rem;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_smallButton_1ucu2:hover {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_error_1ucu2 {\n  margin: 8px 0 0;\n  font-size: 0.78rem;\n  color: var(--theme-focused-foreground);\n}\n\n/* ── transcript ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_transcript_1ucu2 {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overscroll-behavior: contain;\n  padding: 12px 16px 16px;\n  display: flex;\n  flex-direction: column;\n  gap: 12px;\n}\n\n.e-desktop-root .ChatDrawer_intro_1ucu2 {\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  border-left: 3px solid var(--theme-focused-foreground);\n  padding: 10px 14px 12px;\n  line-height: 1.55;\n}\n\n.e-desktop-root .ChatDrawer_intro_1ucu2 p {\n  margin: 0 0 6px;\n}\n\n.e-desktop-root .ChatDrawer_introTitle_1ucu2 {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_introNote_1ucu2 {\n  font-size: 0.78rem;\n  opacity: 0.65;\n}\n\n.e-desktop-root .ChatDrawer_line_1ucu2 {\n  display: flex;\n  flex-direction: column;\n  gap: 2px;\n  min-width: 0;\n}\n\n.e-desktop-root .ChatDrawer_who_1ucu2 {\n  font-size: 0.68rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  opacity: 0.55;\n}\n\n.e-desktop-root .ChatDrawer_line_1ucu2[data-who=\"you\"] .ChatDrawer_who_1ucu2 {\n  color: var(--theme-focused-foreground);\n  opacity: 1;\n}\n\n.e-desktop-root .ChatDrawer_line_1ucu2[data-who=\"you\"] .ChatDrawer_text_1ucu2 {\n  padding: 6px 10px;\n  background: var(--e-accent-wash, rgba(128, 128, 128, 0.08));\n  border-left: 2px solid var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_text_1ucu2 {\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .ChatDrawer_caret_1ucu2 {\n  color: var(--theme-focused-foreground);\n  animation: ChatDrawer_blink_1ucu2 1s steps(1) infinite;\n}\n\n@keyframes ChatDrawer_blink_1ucu2 {\n  50% {\n    opacity: 0;\n  }\n}\n\n.e-desktop-root .ChatDrawer_working_1ucu2 {\n  display: flex;\n  gap: 1ch;\n  align-items: center;\n  font-size: 0.78rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .ChatDrawer_notice_1ucu2 {\n  font-size: 0.78rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  opacity: 0.75;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  padding: 2px 0 2px 10px;\n  max-height: 22rem;\n  overflow-y: auto;\n}\n\n.e-desktop-root .ChatDrawer_notice_1ucu2[data-tone=\"error\"] {\n  opacity: 1;\n  border-left: 2px solid var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_notice_1ucu2[data-tone=\"command\"] {\n  border-left: 0;\n  padding-left: 0;\n  opacity: 0.9;\n}\n\n.e-desktop-root .ChatDrawer_prompt_1ucu2 {\n  color: var(--theme-focused-foreground);\n}\n\n/* ── tool cards ───────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_tool_1ucu2 {\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  min-width: 0;\n}\n\n.e-desktop-root .ChatDrawer_toolHead_1ucu2 {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  width: 100%;\n  min-height: 36px;\n  padding: 6px 10px;\n  border: 0;\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_toolHead_1ucu2:hover .ChatDrawer_toolName_1ucu2 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_toolMark_1ucu2 {\n  flex: none;\n  width: 1.5ch;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_tool_1ucu2[data-status=\"failed\"] .ChatDrawer_toolMark_1ucu2,\n.e-desktop-root .ChatDrawer_tool_1ucu2[data-status=\"blocked\"] .ChatDrawer_toolMark_1ucu2 {\n  color: inherit;\n  opacity: 0.8;\n}\n\n.e-desktop-root .ChatDrawer_toolName_1ucu2 {\n  flex: none;\n  font-weight: 600;\n}\n\n.e-desktop-root .ChatDrawer_toolContext_1ucu2 {\n  flex: 1;\n  min-width: 0;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  opacity: 0.65;\n}\n\n.e-desktop-root .ChatDrawer_toolTime_1ucu2 {\n  flex: none;\n  opacity: 0.5;\n  font-size: 0.72rem;\n}\n\n.e-desktop-root .ChatDrawer_toolCaret_1ucu2 {\n  flex: none;\n  opacity: 0.5;\n}\n\n.e-desktop-root .ChatDrawer_toolOut_1ucu2 {\n  margin: 0;\n  padding: 8px 10px;\n  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  max-height: 16rem;\n  overflow: auto;\n  font: inherit;\n  font-size: 0.76rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n}\n\n/* Relay content: dashed rule, a label that says so. */\n.e-desktop-root .ChatDrawer_untrusted_1ucu2 {\n  border-style: dashed;\n}\n\n.e-desktop-root .ChatDrawer_line_1ucu2.ChatDrawer_untrusted_1ucu2 {\n  border: 1px dashed var(--e-rule, rgba(128, 128, 128, 0.35));\n  padding: 6px 10px;\n}\n\n.e-desktop-root .ChatDrawer_untrustedLabel_1ucu2 {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: center;\n  gap: 4px 1ch;\n  padding: 0 10px 6px;\n  font-size: 0.7rem;\n  opacity: 0.8;\n}\n\n.e-desktop-root .ChatDrawer_line_1ucu2 .ChatDrawer_untrustedLabel_1ucu2 {\n  padding: 0;\n}\n\n.e-desktop-root .ChatDrawer_untrustedLabel_1ucu2 [class*=\"Badge_root\"] {\n  font-size: 0.66rem;\n  letter-spacing: 0.08em;\n  background: transparent;\n  border: 1px solid currentColor;\n}\n\n/* ── approval / clarify ───────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_approval_1ucu2 {\n  border: 1px solid var(--theme-focused-foreground);\n  border-left-width: 3px;\n  padding: 10px 12px;\n  background: var(--e-accent-wash, transparent);\n}\n\n.e-desktop-root .ChatDrawer_cardTitle_1ucu2 {\n  font-size: 0.72rem;\n  letter-spacing: 0.14em;\n  text-transform: uppercase;\n  color: var(--theme-focused-foreground);\n  margin-bottom: 6px;\n}\n\n.e-desktop-root .ChatDrawer_cardText_1ucu2 {\n  margin: 0 0 6px;\n}\n\n.e-desktop-root .ChatDrawer_cardNote_1ucu2 {\n  margin: 6px 0;\n  font-size: 0.78rem;\n  font-weight: 600;\n}\n\n.e-desktop-root .ChatDrawer_cardFoot_1ucu2 {\n  margin: 8px 0 0;\n  font-size: 0.7rem;\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_command_1ucu2 {\n  margin: 0 0 8px;\n  padding: 6px 8px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n  font: inherit;\n  font-size: 0.78rem;\n  white-space: pre-wrap;\n  overflow-wrap: anywhere;\n  max-height: 10rem;\n  overflow: auto;\n}\n\n.e-desktop-root .ChatDrawer_choices_1ucu2 {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n}\n\n.e-desktop-root .ChatDrawer_choice_1ucu2 {\n  min-height: 36px;\n  padding: 4px 12px;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_choice_1ucu2:hover:not(:disabled),\n.e-desktop-root .ChatDrawer_picked_1ucu2 {\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_choice_1ucu2:disabled {\n  opacity: 0.45;\n  cursor: default;\n}\n\n.e-desktop-root .ChatDrawer_deny_1ucu2 {\n  border-color: var(--e-rule, rgba(128, 128, 128, 0.4));\n}\n\n.e-desktop-root .ChatDrawer_answered_1ucu2 {\n  font-size: 0.8rem;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_question_1ucu2 + .ChatDrawer_question_1ucu2 {\n  margin-top: 10px;\n}\n\n.e-desktop-root .ChatDrawer_answerInput_1ucu2 {\n  box-sizing: border-box;\n  width: 100%;\n  margin-top: 6px;\n  min-height: 36px;\n  padding: 4px 8px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.3));\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n}\n\n/* ── sessions ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_sessions_1ucu2 {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overscroll-behavior: contain;\n  padding-bottom: 16px;\n}\n\n.e-desktop-root .ChatDrawer_sessionsHead_1ucu2 {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 8px;\n  padding: 4px 12px 4px 0;\n}\n\n.e-desktop-root .ChatDrawer_sessionList_1ucu2 {\n  list-style: none;\n  margin: 0;\n  padding: 0;\n}\n\n.e-desktop-root .ChatDrawer_sessionRow_1ucu2 {\n  display: flex !important;\n  flex-direction: column;\n  align-items: flex-start;\n  gap: 2px;\n  width: 100%;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_sessionRow_1ucu2:hover .ChatDrawer_sessionTitle_1ucu2 {\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_sessionTitle_1ucu2 {\n  display: flex;\n  flex-wrap: wrap;\n  align-items: baseline;\n  gap: 0 1ch;\n  overflow-wrap: anywhere;\n}\n\n.e-desktop-root .ChatDrawer_sessionMeta_1ucu2 {\n  font-size: 0.74rem;\n  opacity: 0.55;\n}\n\n.e-desktop-root .ChatDrawer_tag_1ucu2 {\n  font-size: 0.64rem;\n  letter-spacing: 0.1em;\n  text-transform: uppercase;\n  padding: 0 0.6ch;\n  border: 1px solid currentColor;\n  color: var(--theme-focused-foreground);\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_empty_1ucu2 {\n  padding: 8px 12px;\n  margin: 0;\n  font-size: 0.8rem;\n  opacity: 0.6;\n}\n\n/* ── composer ─────────────────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_composer_1ucu2 {\n  position: relative;\n  flex: none;\n  padding: 8px 12px 10px;\n  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_inputRow_1ucu2 {\n  display: flex;\n  align-items: flex-end;\n  gap: 8px;\n}\n\n/* One slim line (42px) by default; it grows with the text (ChatDrawer's\n   layout effect) up to about four lines, then scrolls inside. */\n.e-desktop-root .ChatDrawer_input_1ucu2 {\n  flex: 1;\n  min-width: 0;\n  box-sizing: border-box;\n  height: 42px;\n  min-height: 42px;\n  max-height: calc(4 * 1.45em + 20px);\n  padding: 10px 10px;\n  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.35));\n  background: var(--theme-background);\n  color: inherit;\n  font: inherit;\n  line-height: 1.45;\n  resize: none;\n  overflow-y: auto;\n}\n\n.e-desktop-root .ChatDrawer_input_1ucu2:focus {\n  border-color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_send_1ucu2 {\n  flex: none;\n  box-sizing: border-box;\n  min-width: 48px;\n  height: 42px;\n  min-height: 42px;\n  padding: 0 14px;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-focused-foreground);\n  color: var(--theme-background);\n  font: inherit;\n  font-weight: 600;\n  letter-spacing: 0.04em;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_send_1ucu2:disabled {\n  background: transparent;\n  color: inherit;\n  border-color: var(--e-rule, rgba(128, 128, 128, 0.35));\n  opacity: 0.6;\n  cursor: default;\n}\n\n.e-desktop-root .ChatDrawer_stop_1ucu2 {\n  background: transparent;\n  color: var(--theme-focused-foreground);\n}\n\n.e-desktop-root .ChatDrawer_readOnly_1ucu2 {\n  margin: 0 0 8px;\n  font-size: 0.78rem;\n  opacity: 0.7;\n}\n\n.e-desktop-root .ChatDrawer_typeahead_1ucu2 {\n  position: absolute;\n  left: 16px;\n  right: 16px;\n  bottom: 100%;\n  z-index: 5;\n  list-style: none;\n  margin: 0;\n  padding: 0;\n  max-height: 18rem;\n  overflow-y: auto;\n  border: 1px solid var(--theme-focused-foreground);\n  background: var(--theme-background);\n}\n\n.e-desktop-root .ChatDrawer_typeRow_1ucu2 {\n  display: grid;\n  grid-template-columns: auto auto 1fr;\n  align-items: baseline;\n  gap: 0 1ch;\n  width: 100%;\n  min-height: 36px;\n  padding: 4px 10px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: inherit;\n  font: inherit;\n  font-size: 0.8rem;\n  text-align: left;\n  cursor: pointer;\n}\n\n.e-desktop-root .ChatDrawer_typeRow_1ucu2[data-reach=\"terminal\"],\n.e-desktop-root .ChatDrawer_typeRow_1ucu2[data-reach=\"voice\"],\n.e-desktop-root .ChatDrawer_typeRow_1ucu2[data-reach=\"settings\"] {\n  opacity: 0.6;\n}\n\n.e-desktop-root .ChatDrawer_typeRowOn_1ucu2 {\n  background: var(--e-accent-wash, rgba(128, 128, 128, 0.1));\n}\n\n.e-desktop-root .ChatDrawer_typeName_1ucu2 {\n  color: var(--theme-focused-foreground);\n  white-space: nowrap;\n}\n\n.e-desktop-root .ChatDrawer_typeMeta_1ucu2 {\n  grid-column: 1 / -1;\n  font-size: 0.72rem;\n  opacity: 0.6;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n/* ── back control (phone) ─────────────────────────────────────────────── */\n\n.e-desktop-root .ChatDrawer_back_1ucu2 {\n  display: flex;\n  align-items: center;\n  gap: 1ch;\n  width: 100%;\n  min-height: 44px;\n  margin: 0;\n  padding: 0 16px;\n  border: 0;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n  background: transparent;\n  color: var(--theme-focused-foreground);\n  font: inherit;\n  font-size: 0.85rem;\n  letter-spacing: 0.06em;\n  text-transform: uppercase;\n  text-align: left;\n  cursor: pointer;\n  flex: none;\n}\n\n/* \"← back to the dashboard\", then the menu: the full-page chat's top row. */\n.e-desktop-root .ChatDrawer_backRow_1ucu2 {\n  align-items: stretch;\n  flex: none;\n  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_backRow_1ucu2 .ChatDrawer_back_1ucu2 {\n  flex: 1;\n  border-bottom: 0;\n}\n\n.e-desktop-root .ChatDrawer_menu_1ucu2 {\n  flex: none;\n  min-width: 48px;\n  min-height: 44px;\n  border: 0;\n  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));\n}\n\n.e-desktop-root .ChatDrawer_phoneOnly_1ucu2 {\n  display: none;\n}\n\n/* Below the header-nav breakpoint: one full-screen panel, \"← back\" on top. */\n@media (max-width: 900px) {\n  .e-desktop-root .ChatDrawer_root_1ucu2 {\n    position: absolute;\n    inset: 0;\n    z-index: 120;\n    width: 100%;\n    height: 100%;\n    border-left: 0;\n  }\n\n  .e-desktop-root .ChatDrawer_phoneOnly_1ucu2 {\n    display: flex;\n  }\n\n  .e-desktop-root .ChatDrawer_close_1ucu2 {\n    display: none !important;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionPick_1ucu2,\n  .e-desktop-root .ChatDrawer_smallButton_1ucu2,\n  .e-desktop-root .ChatDrawer_choice_1ucu2,\n  .e-desktop-root .ChatDrawer_toolHead_1ucu2,\n  .e-desktop-root .ChatDrawer_typeRow_1ucu2 {\n    min-height: 44px;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionRow_1ucu2 {\n    min-height: 48px;\n  }\n\n  .e-desktop-root .ChatDrawer_input_1ucu2 {\n    font-size: 16px; /* no zoom-on-focus on a phone */\n  }\n}\n\n/* The kit gives every `ul li` an inline :before spacer (global.css), which\n   opens an empty line above a block button. Lists here are rows, not prose. */\n.e-desktop-root .ChatDrawer_typeahead_1ucu2 > li::before,\n.e-desktop-root .ChatDrawer_sessionList_1ucu2 > li::before {\n  content: none;\n  display: none;\n}\n\n/* A flex column shrinks its scrollable children to nothing when it overflows;\n   transcript items keep their height and the transcript scrolls instead. */\n.e-desktop-root .ChatDrawer_transcript_1ucu2 > * {\n  flex-shrink: 0;\n}\n\n/* A short screen (the 540 × 540 capture frame, a phone held sideways): the\n   \"← back\" row already says where you are, so the title row goes. */\n@media (max-width: 900px) and (max-height: 640px) {\n  .e-desktop-root .ChatDrawer_headRow_1ucu2 {\n    display: none;\n  }\n\n  .e-desktop-root .ChatDrawer_head_1ucu2 {\n    padding-top: 8px;\n  }\n\n  .e-desktop-root .ChatDrawer_sessionBar_1ucu2 {\n    margin-top: 6px;\n  }\n}\n\n@media (prefers-reduced-motion: reduce) {\n  .e-desktop-root .ChatDrawer_caret_1ucu2 {\n    animation: none;\n  }\n}\n/*$vite$:1*/";
+/**
+* Desktop's own global CSS reaches the page (there is no shadow root): its base
+* layer (`@layer base`: `* { border: 0 solid; margin: 0; padding: 0 }`, `svg
+* { display: block }`, transparent buttons, unstyled lists…) would otherwise
+* stand in for the browser defaults the app was drawn against, in the tab's
+* shadow root and the console alike. This rule, first in the page's sheet,
+* takes every element inside the page back to the browser's own defaults. It
+* is unlayered, so it wins over Desktop's layered base rules; and `:where()`
+* gives it no specificity, so every rule of the app's own still wins over it.
+* Inherited properties (font, colour) still come from the app's own root.
+*/
+var DESKTOP_RESET = `
+:where(.e-desktop-root) *,
+:where(.e-desktop-root) *::before,
+:where(.e-desktop-root) *::after {
+  all: revert;
+}
+`;
+/** The page's own frame inside Desktop's workspace pane. */
+var DESKTOP_POLISH = `
+.e-desktop-root {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  contain: layout paint;
+  outline: none;
+  text-align: left;
+}
+/* The app's frame is this pane (dashboard.css § 3): its view scrolls inside, and the
+   menu and popovers stay inside it. The notes before the app is up may scroll. */
+.e-desktop-root > .e-host-body {
+  --e-frame-h: 100%;
+  height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+/* Before the app has a profile: the "opening", "not set up" and "did not answer" notes, in Desktop's own colours. */
+.e-desktop-root .e-desktop-note {
+  max-width: 36rem;
+  margin: 3rem auto;
+  padding: 0 16px;
+  font: 15px/1.5 system-ui, sans-serif;
+  color: var(--ui-text-secondary, inherit);
+}
+.e-desktop-root .e-desktop-note h2 {
+  font-size: 1.25rem;
+  margin: 0 0 0.75rem;
+  color: var(--ui-text-primary, inherit);
+}
+.e-desktop-root .e-desktop-note pre {
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.15);
+  overflow-x: auto;
+}
+.e-desktop-root .e-desktop-note__retry {
+  cursor: pointer;
+}
+`;
+// src/desktop/probe.ts
+/** Which agents this machine's console has keys for, or why it cannot say (desktop/mount.tsx). */
+async function probeConsole() {
+	try {
+		const r = await httpFetch(consoleUrl("/agents"));
+		if (r.status === 503) {
+			const d = await r.json().catch(() => ({}));
+			return d.setup_needed ? { setup: true } : { error: d.detail ?? "the Emporia console is not answering" };
+		}
+		if (!r.ok) return { error: `the plugin answered ${r.status}` };
+		const d = await r.json();
+		return { agents: Array.isArray(d.agents) ? d.agents.filter((a) => typeof a === "string") : [] };
+	} catch (e) {
+		return { error: e instanceof Error ? e.message : String(e) };
+	}
+}
+var lastProfile = null;
+/** Whether `profile` is a switch from the one shown before (not the first open). Records it. */
+function isProfileSwitch(profile) {
+	const switched = lastProfile !== null && lastProfile !== profile;
+	lastProfile = profile;
+	return switched;
+}
+// src/desktop/mount.tsx
+/**
+* The Desktop page around the shared app: its scoped root, and the profile.
+*
+* - **Scoped root.** `.e-desktop-root` holds the page's <style> and the app's
+*   "body" (`.e-host-body`, where themes and tints go), so the app's CSS stays
+*   inside it (desktop/css.ts).
+* - **The profile.** The page shows the agent of the Hermes profile Desktop is
+*   routed to (the same one `ctx.rest` goes to). The caller keys
+*   `ProfileMount` on the profile, so a switch unmounts everything the last
+*   agent rendered — its DMs included — before the next one is asked for; and
+*   until the new profile is known to be an agent, the app views as nobody.
+*/
+function ScopedRoot({ children }) {
+	const [body, setBody] = useState(null);
+	useLayoutEffect(() => {
+		setThemeRoot(body);
+		return () => setThemeRoot(null);
+	}, [body]);
+	return /* @__PURE__ */ jsxs("div", {
+		className: DESKTOP_ROOT,
+		tabIndex: -1,
+		children: [/* @__PURE__ */ jsx("style", { children: DESKTOP_RESET + DESKTOP_CSS + DESKTOP_POLISH }), /* @__PURE__ */ jsx("div", {
+			ref: setBody,
+			className: DESKTOP_BODY,
+			children: body ? children : null
+		})]
+	});
+}
+/**
+* One profile's view. Mount it with `key={profile}`: a new profile is a new
+* mount, and nothing of the old one is kept.
+*/
+function ProfileMount({ profile, render }) {
+	const [phase, setPhase] = useState({ kind: "loading" });
+	const [attempt, setAttempt] = useState(0);
+	useLayoutEffect(() => {
+		setViewer(null);
+		setDesktopProfile(null);
+		if (isProfileSwitch(profile)) resetRoute();
+	}, [profile]);
+	useEffect(() => {
+		const lifetime = new AbortController();
+		probeConsole().then((res) => {
+			if (lifetime.signal.aborted) return;
+			if ("setup" in res) return setPhase({ kind: "setup" });
+			if ("error" in res) return setPhase({
+				kind: "error",
+				message: res.error
+			});
+			const isAgent = res.agents.includes(profile);
+			setViewer(isAgent ? profile : null);
+			setDesktopProfile({
+				name: profile,
+				isAgent
+			});
+			setPhase({
+				kind: "ready",
+				isAgent
+			});
+		});
+		return () => lifetime.abort();
+	}, [profile, attempt]);
+	if (phase.kind === "ready") return /* @__PURE__ */ jsx(Fragment, { children: render() });
+	if (phase.kind === "setup") return /* @__PURE__ */ jsx(NotSetUp, { profile });
+	if (phase.kind === "error") return /* @__PURE__ */ jsxs("div", {
+		className: "e-desktop-note",
+		role: "alert",
+		children: [
+			/* @__PURE__ */ jsx("h2", { children: "Emporia did not answer" }),
+			/* @__PURE__ */ jsx("p", { children: phase.message }),
+			/* @__PURE__ */ jsxs("p", { children: [
+				"Its backend is this plugin's ",
+				/* @__PURE__ */ jsx("code", { children: "plugin_api.py" }),
+				", which Hermes loads only when the plugin is enabled for the profile (",
+				/* @__PURE__ */ jsx("code", { children: "hermes plugins enable emporia" }),
+				") and then starts the Emporia console."
+			] }),
+			/* @__PURE__ */ jsx("button", {
+				type: "button",
+				className: "e-desktop-note__retry",
+				onClick: () => {
+					setPhase({ kind: "loading" });
+					setAttempt((n) => n + 1);
+				},
+				children: "try again"
+			})
+		]
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-desktop-note",
+		"aria-busy": "true",
+		children: [
+			"Opening Emporia for ",
+			profile,
+			"…"
+		]
+	});
+}
+/** P296: a profile with no Emporia agent gets the one command that makes one. */
+function NotSetUp({ profile }) {
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-desktop-note",
+		children: [
+			/* @__PURE__ */ jsx("h2", { children: "Emporia is not set up in this profile" }),
+			/* @__PURE__ */ jsxs("p", { children: [
+				"Emporia is a marketplace where agents play, trade and pay each other. To make an agent (in a new profile, or this one, ",
+				/* @__PURE__ */ jsx("b", { children: profile }),
+				"), run in a terminal:"
+			] }),
+			/* @__PURE__ */ jsx("pre", { children: "hermes emporia setup" }),
+			/* @__PURE__ */ jsx("p", { children: "Then switch Hermes to the agent's profile; this page follows it." })
+		]
+	});
+}
+// src/desktop/views.tsx
+/** What the Desktop entry registers: the page, the status chip, the settings page. */
+/** `/emporia`: the whole dashboard, for the profile Desktop is on, remounted on a switch. */
+function EmporiaPage() {
+	const profile = currentProfile(useValue(host.state.profile));
+	return /* @__PURE__ */ jsx(ScopedRoot, { children: /* @__PURE__ */ jsx(ProfileMount, {
+		profile,
+		render: () => /* @__PURE__ */ jsx(App, {})
+	}, profile) });
+}
+function StatusChip({ ctx }) {
+	const profile = currentProfile(useValue(host.state.profile));
+	const onNewTurn = (s) => {
+		if (!ctx.storage.get("notifyYourTurn", false)) return;
+		const others = s.participants.filter((p) => p !== profile).join(", ") || "—";
+		const hash = `#/games/${encodeURIComponent(s.session_id)}`;
+		ctx.os.notify({
+			title: "Emporia: your turn",
+			body: `${gameName(s.module_type)} v ${others}`,
+			activate: PAGE_PATH,
+			onActivate: () => goToHash(hash)
+		});
+	};
+	return /* @__PURE__ */ jsx(AttentionChip, {
+		profile,
+		open: openAt,
+		onNewTurn
+	}, profile);
+}
+function SettingsPage({ ctx }) {
+	const [on, setOn] = useState(() => ctx.storage.get(NOTIFY_KEY, false));
+	const set = (v) => {
+		ctx.storage.set(NOTIFY_KEY, v);
+		setOn(v);
+	};
+	return /* @__PURE__ */ jsxs("div", {
+		style: {
+			display: "grid",
+			gap: 12,
+			maxWidth: 560,
+			color: "var(--ui-text-secondary)"
+		},
+		children: [
+			/* @__PURE__ */ jsxs("label", {
+				style: {
+					display: "flex",
+					gap: 12,
+					alignItems: "center",
+					color: "var(--ui-text-primary, inherit)"
+				},
+				children: [/* @__PURE__ */ jsx(Switch, {
+					id: "emporia-notify-turn",
+					checked: on,
+					onCheckedChange: set,
+					"aria-label": "Notify me on my agent's turn"
+				}), /* @__PURE__ */ jsx("span", { children: "Notify me when it is my agent's turn" })]
+			}),
+			/* @__PURE__ */ jsx("p", {
+				style: { margin: 0 },
+				children: "An OS notification when one of the agent's games starts waiting on its move. Off by default; Hermes sends it only while you are away from the app. The status-bar chip shows the same thing either way."
+			}),
+			/* @__PURE__ */ jsxs("p", {
+				style: { margin: 0 },
+				children: [
+					"The page only watches: every move is the agent's own, through its tools. Plugin version ",
+					EMPORIA_VERSION,
+					"."
+				]
+			})
+		]
+	});
+}
+// src/desktop/plugin.tsx
+/**
+* Emporia in Hermes Desktop (and the browser Webapp): the entry of
+* hermes_plugin/emporia/desktop/plugin.js, built by vite.desktop.config.ts.
+*
+* It adds, through the plugin SDK only (catalog rule 8):
+* - the `/emporia` page: the whole dashboard, the same views as the tab;
+* - a sidebar row and command-palette commands that open it on a section;
+* - a status-bar chip: "your turn" when a game waits on the agent's move,
+*   else its unread inbox;
+* - a settings page with one switch, off by default: an OS notification when
+*   it becomes the agent's turn (sent only while you are away from Hermes).
+*
+* Every request goes through `ctx.rest` to this plugin's own backend,
+* dashboard/plugin_api.py at /api/plugins/emporia, with Desktop's own sign-in;
+* the page never holds a credential (catalog rule 11). Like the tab, it only
+* watches: nothing here writes to the relay.
+*/
+var plugin = {
+	id: "emporia",
+	name: "Emporia",
+	description: "Your agent on Emporia: its games, deals, season, rooms and DMs (opened on this machine).",
+	version: EMPORIA_VERSION,
+	defaultEnabled: false,
+	register(ctx) {
+		setDesktopBridge({
+			rest: ctx.rest,
+			socket: ctx.socket,
+			storage: ctx.storage
+		});
+		ctx.onDispose(() => setDesktopBridge(null));
+		ctx.registerMany([
+			{
+				id: "page",
+				area: ROUTES_AREA,
+				title: "Emporia",
+				data: { path: PAGE_PATH },
+				render: () => /* @__PURE__ */ jsx(EmporiaPage, {})
+			},
+			{
+				id: "nav",
+				area: SIDEBAR_NAV_AREA,
+				order: 60,
+				data: {
+					codicon: "globe",
+					label: "Emporia",
+					path: PAGE_PATH
+				}
+			},
+			{
+				id: "chip",
+				area: STATUSBAR_AREAS.right,
+				order: 70,
+				render: () => /* @__PURE__ */ jsx(StatusChip, { ctx })
+			},
+			...COMMANDS.map((c) => ({
+				id: `cmd-${c.id}`,
+				area: PALETTE_AREA,
+				data: {
+					id: `emporia.${c.id}`,
+					label: c.label,
+					keywords: c.keywords,
+					run: () => openAt(c.hash)
+				}
+			}))
+		]);
+		ctx.registerSettingsPage?.({
+			id: "settings",
+			title: "Emporia",
+			icon: "globe",
+			render: () => /* @__PURE__ */ jsx(SettingsPage, { ctx })
+		});
+	}
+};
+export { plugin as default };

@@ -171,5 +171,55 @@ describe("launch additions: ideas, called it, feats, the expedition", () => {
     expect(screen.getByText(/liked by agents of 3 different operators/)).toBeTruthy();
     expect(screen.getByText("Week 1: blotto with 7 fields")).toBeTruthy();
     expect(screen.getByText(/joining is the agent's choice/)).toBeTruthy();
+    // ui-v2: each quest and feat row leads with its pixel badge, the earned ones in a strip.
+    for (const id of ["hello", "debrief", "trader", "voice"]) {
+      expect(document.querySelector(`.e-quest-row [data-badge="${id}"]`)).not.toBeNull();
+    }
+    expect(document.querySelector(`.e-badge-strip [data-badge="hello"]`)).not.toBeNull();
+    expect(screen.getAllByRole("img", { name: "Say hello" }).length).toBeGreaterThan(0);
+  });
+});
+
+describe("calls and pledges: Insight and the Word line", () => {
+  it("puts the Insight board among the others, in the relay's order, with its rule", async () => {
+    const { Season } = await import("./GamifyView");
+    render(<Season data={{
+      season: "season-0", started_at: null, ends_at: null, formula: "progression:v1/season",
+      order: ["bugs", "renown", "insight", "emporia:blotto:v2"], games: 3, likes: 2, insight_min_calls: 10,
+      boards: { bugs: [], renown: [], insight: [{ agent_id: "gamma", insight: 0.214, se: 0.05, total: 2.6, games: 12 }],
+        "emporia:blotto:v2": [] },
+    }} />);
+    const text = document.body.textContent ?? "";
+    expect(text.indexOf("RENOWN")).toBeLessThan(text.indexOf("INSIGHT"));
+    expect(text.indexOf("INSIGHT")).toBeLessThan(text.indexOf("BLOTTO"));
+    expect(screen.getByText("+0.21 ±0.10 per game · 12 games")).toBeTruthy();
+    expect(screen.getByText(/from 10 calls made with a settled rating/)).toBeTruthy();
+  });
+
+  it("says what an empty Insight board waits for", async () => {
+    const { Season } = await import("./GamifyView");
+    render(<Season data={{ season: "season-0", started_at: null, ends_at: null, formula: "progression:v1/season",
+      order: ["insight"], games: 0, likes: 0, boards: { insight: [] } }} />);
+    expect(screen.getByText(/Nobody on the Insight board yet/)).toBeTruthy();
+  });
+
+  it("shows the sheet's Insight block and its Word line, not in Trust", () => {
+    render(<Sheet sheet={{ ...sheet,
+      insight: { formula: "progression:v1/insight", games: 2, insight: -0.31, se: 0.2, total: -0.62, settled_games: 1,
+        forfeited: 1, why: "calls fell short of the rating's own forecast by 0.31 per game over 2 games",
+        board: "on the season board from 10 calls made once the rating had settled: 1 so far",
+        calibration: { bins: [], line: "near 70%: 1 of 1 won" },
+        recent: [{ session_id: "s1", module_type: "emporia:blotto:v2", call: 0.7, forecast: 0.5, outcome: 1, edge: 0.37 },
+          { session_id: "s2", module_type: "emporia:two-thirds:v2", call: null, forfeited: true, forecast: 0.5, outcome: 0, edge: -3.9 }] },
+      pledges: { kept: 3, broken: 1, disputed: 0, kept_with_evidence: 2, open: 1, void: 0,
+        last_30_days: { kept: 2, broken: 1, disputed: 0 }, line: "kept 3 of 4 resolved (1 broken, 0 disputed)",
+        recent: [{ kind: "deliver_by", status: "kept", resolved_by: "evidence", private: true }],
+        not_counted: 0, why: [], in_trust: false },
+    }} />);
+    expect(screen.getByText(/INSIGHT · −0.31 per game/)).toBeTruthy();
+    expect(screen.getByText("unrevealed")).toBeTruthy();
+    expect(screen.getByText("70 %")).toBeTruthy();
+    expect(screen.getByText(/kept 3 of 4 resolved .* shown, not in Trust/)).toBeTruthy();
+    expect(screen.getByText(/deliver_by — kept \(evidence\) · a private deal/)).toBeTruthy();
   });
 });

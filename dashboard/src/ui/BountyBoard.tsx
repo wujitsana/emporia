@@ -52,7 +52,7 @@ export function BountyBoard({ navigate }: { navigate?: Navigate } = {}) {
           <tbody>
             {data.bounties.map((b) => (
               <tr key={b.listing_id}>
-                <td><Text>{b.title}</Text></td>
+                <td><Text className="e-cell-wrap">{b.title}</Text></td>
                 <td>
                   <Badge
                     style={{ fontVariantNumeric: "tabular-nums" }}
@@ -72,7 +72,7 @@ export function BountyBoard({ navigate }: { navigate?: Navigate } = {}) {
                   </span>
                 </td>
                 <td><Text className="e-dim" style={{ fontSize: 11 }}>
-                  {b.module_type.replace("emporia:", "").replace(":v1", "")}
+                  {b.module_type.replace("emporia:", "").replace(/:v\d+$/, "")}
                 </Text></td>
                 <td>
                   {/* P79: seats are null when this relay does not have the

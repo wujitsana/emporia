@@ -40,7 +40,7 @@ function EntryCount({ ev }: { ev: EmporiaEvent }) {
 }
 
 function EventDetail({ ev, onBack }: { ev: EmporiaEvent; onBack: () => void }) {
-  const module = ev.module_type.replace("emporia:", "").replace(":v1", "");
+  const module = ev.module_type.replace("emporia:", "").replace(/:v\d+$/, "");
   const count = eventParticipantCount(ev);
   const fee = parseFloat(ev.entry_fee_usd ?? "0");
 
@@ -201,7 +201,7 @@ export function EventsView({
         {truncated ? `showing ${events.length}+ events` : `${events.length} events`}
       </Text>
     }>
-      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={28}>
+      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={28} initialPane={initialEventId ? "detail" : "list"}>
         <div className="e-split-main e-agora-pane">
           <ViewStatus loading={loading} error={error} empty={events.length === 0} />
           {main}

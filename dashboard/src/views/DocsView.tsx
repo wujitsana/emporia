@@ -9,11 +9,12 @@ import SidebarLayout from "@kit/SidebarLayout";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { ViewBody } from "../ui/layout";
 import { DOCS, docsReady, resolveDocLink, searchDocs } from "../docs";
+import { currentHash, hashForView, replaceHash } from "../dashboardRoute";
 import { renderMarkdown } from "../markdown";
 
-/** `#/docs?doc=payments` — so a document can be linked to and bookmarked. */
+/** `#/more/docs?doc=payments` (or v1's `#/docs?doc=…`) — so a document can be linked to and bookmarked. */
 function docFromHash(): string | null {
-  const query = window.location.hash.split("?")[1] ?? "";
+  const query = currentHash().split("?")[1] ?? "";
   return new URLSearchParams(query).get("doc");
 }
 
@@ -28,27 +29,22 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
   });
   const docId = nav.id;
   const openDoc = (id: string) => setNav((cur) => (cur.id === id ? cur : { id, anchor: null }));
-  useEffect(() => {
-    const next = `#/docs?doc=${docId}`;
-    if (window.location.hash !== next) {
-      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${next}`);
-    }
-  }, [docId]);
+  useEffect(() => { replaceHash(`${hashForView("docs")}?doc=${docId}`); }, [docId]);
   const [query, setQuery] = useState("");
   // P295: in the Hermes tab the texts come from the console; render again once they have.
   const [loaded, setLoaded] = useState(0);
   useEffect(() => {
     let live = true;
-    void docsReady.then(() => { if (live) setLoaded((n) => n + 1); });
+    void docsReady().then(() => { if (live) setLoaded((n) => n + 1); });
     return () => { live = false; };
   }, []);
   // State, not a ref object: the scroll helpers are handed to the markdown
   // renderer inside a memo, and need the element as a value.
   const [mainEl, setMainEl] = useState<HTMLDivElement | null>(null);
   const doc = DOCS.find((d) => d.id === docId) ?? DOCS[0];
-  // `loaded` is not read: it changes when the texts arrive (P295), which is when these redo.
-  // oxlint-disable-next-line react-hooks/exhaustive-deps
-  const shown = useMemo(() => searchDocs(query), [query, loaded]);
+  // `loaded` is read so the memo re-runs when the texts arrive: they fill the
+  // DOCS entries in place, so nothing else in the dependencies changes.
+  const shown = useMemo(() => { void loaded; return searchDocs(query); }, [query, loaded]);
 
   const scrollTo = useCallback((anchor: string) => {
     const el = mainEl?.querySelector(`[id="${CSS.escape(anchor)}"]`);
@@ -61,14 +57,13 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
     else mainEl?.scrollTo?.({ top: 0 });
   }, [nav.id, nav.anchor, mainEl, scrollTo]);
 
-  const body = useMemo(() => renderMarkdown(doc.text, {
+  const body = useMemo(() => { void loaded; return renderMarkdown(doc.text, {
     resolveLink: (href) => resolveDocLink(doc, href),
     onDocLink: (id, anchor) => {
       if (id === doc.id) { if (anchor) scrollTo(anchor); } else setNav({ id, anchor: anchor ?? null });
     },
     onAnchor: scrollTo,
-  // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }), [doc, scrollTo, loaded]);
+  }); }, [doc, scrollTo, loaded]);
 
   const sidebar = (
     <div className="e-docs-rail">

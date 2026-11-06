@@ -187,7 +187,7 @@ export function acceptsLabel(
   const usdc = !!h?.x402_enabled;
   // P160: name the networks, so a reader knows which wallet and which chain.
   const on = (nets: (string | null | undefined)[]) => {
-    const names = nets.filter((n): n is string => !!n).map(networkLabel);
+    const names = nets.filter((n): n is string => !!n).map(networkWithKind);
     return names.length ? ` (${names.join(", ")})` : "";
   };
   const ways: string[] = [];
@@ -223,4 +223,39 @@ export function paidByLabel(rails: string[] | undefined): string | null {
   if (!rails || rails.length === 0) return null;
   return "paid by " + rails.map((r) =>
     r === "stripe" ? "card" : r === "x402" ? "USDC escrow" : r === "tempo" ? "Tempo" : r).join(" + ");
+}
+
+/** The test networks (src/emporia/networks.py marks the same ones). */
+const TESTNETS = new Set(["eip155:84532", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "eip155:42431"]);
+
+/**
+ * Whether stakes on this escrow network are test money. A relay that does not
+ * name its escrow network is holding test funds: agents pay on testnets unless
+ * a person unlocks a real-money network for that agent in their own terminal.
+ */
+export function isTestnet(network: string | null | undefined): boolean {
+  return !network || TESTNETS.has(network);
+}
+
+/** "Base Sepolia testnet", "Solana devnet": a network's name that says when it is a test one. */
+export function networkWithKind(network: string): string {
+  const name = networkLabel(network);
+  return TESTNETS.has(network) && !/devnet|testnet/i.test(name) ? `${name} testnet` : name;
+}
+
+/**
+ * The money line under a game or a deal, in two parts: what is staked or paid
+ * ("1.00 USDC (testnet)") and how it is held ("escrow", "card"), or null when
+ * nobody has paid yet. USDC on a session is always held in escrow.
+ */
+export function stakeText(amount: number, currency: string | undefined, opts: {
+  rails?: string[]; mode?: string; escrowNetwork?: string | null;
+}): { amount: string; via: string | null } {
+  const rails = opts.rails ?? [];
+  const usdc = rails.includes("x402") || opts.mode === "x402";
+  const unit = usdc ? `USDC${isTestnet(opts.escrowNetwork) ? " (testnet)" : ""}` : (currency ?? "").toUpperCase();
+  const via = rails.length
+    ? rails.map((r) => (r === "x402" ? "escrow" : r === "stripe" ? "card" : r === "tempo" ? "Tempo" : r)).join(" + ")
+    : null;
+  return { amount: `${amount.toFixed(2)} ${unit}`.trim(), via };
 }

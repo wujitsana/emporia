@@ -1,0 +1,128 @@
+/* ═══════════════════════════════════════════════════════════════
+   PIXEL BADGES — badges/Badge.tsx, docs/ui-badges.md
+   Two colour roles, no background:
+   - ink    = currentColor (the text colour where the badge sits);
+   - accent = --e-badge-accent, from the tint, darker on the light canvas
+     and lighter on the dark one (≥ 4.8:1 on canvas, panel and the row
+     wash in every theme and tint; badges.test.tsx holds it to that).
+   The accent is set on the element that carries the theme class (body in
+   the console, the app's container in the Hermes tab and on Desktop), so it
+   follows light/dark and the tint run without a re-render. The formulas
+   are mirrored in tokens.ts (ACCENT_CSS); keep the two the same.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* The dashboard has one style (ui-v2): the badge accent is the look's own accent-as-text. */
+.e-look {
+  --e-badge-accent: var(--theme-focused-foreground);
+}
+/* The gallery's panels each carry their own theme and tint: the same formula, worked out there.
+   (dashboard.css § 30 sets --theme-focused-foreground to exactly these on the app's root.) */
+.e-badge-panel.theme-light {
+  --e-badge-accent: oklch(from var(--tint, #f0a832) 0.45 min(c, 0.2) h);
+}
+.e-badge-panel.theme-dark {
+  --e-badge-accent: oklch(from var(--tint, #f0a832) max(l, 0.78) min(c, 0.22) h);
+}
+
+/* A row of small badges (Season › Quests: the ones earned). */
+.e-badge-strip { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+/* The sheet's head: the class badge beside the name and levels. */
+.e-sheet-head { display: flex; align-items: center; gap: 12px; }
+
+.e-badge {
+  display: inline-block;
+  flex: none;
+  line-height: 0;
+  vertical-align: middle;
+  color: inherit;
+}
+.e-badge > svg {
+  display: block;
+  overflow: visible;
+  image-rendering: pixelated;
+}
+/* On a fill (a chip, a caption bar) the accent would meet the fill: one role only. */
+.e-badge--mono .e-badge__accent { fill: currentColor !important; }
+
+/* The earn animation: a short pixel pop, in three hard steps. Arrivals only. */
+@keyframes e-badge-pop {
+  0% { transform: scale(0.5); }
+  45% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+.e-badge--pop {
+  animation: e-badge-pop 0.32s steps(3, jump-end) both;
+  transform-origin: 50% 60%;
+}
+@media (prefers-reduced-motion: reduce) {
+  .e-badge--pop { animation: none; }
+}
+/* Capture mode (?capture=1): nothing moves. Badge.tsx also leaves the class off. */
+.e-capture .e-badge--pop { animation: none; }
+
+/* ─── the gallery (badges.html, ?capture=1 friendly) ─────────────────────── */
+
+.e-badge-gallery {
+  font-family: var(--font-family-mono, monospace);
+  padding: 16px;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+.e-badge-gallery__title {
+  font-family: "EmporiaPixel", var(--font-family-mono, monospace);
+  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);
+  letter-spacing: 0.04em;
+  margin: 8px 0 4px;
+}
+.e-badge-gallery__lede { max-width: 72ch; line-height: 1.5; margin: 0 0 16px; }
+.e-badge-gallery__bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 16px; }
+.e-badge-gallery__bar button {
+  font: inherit;
+  background: transparent;
+  color: inherit;
+  border: 1px solid currentColor;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.e-badge-gallery__bar button[aria-pressed="true"] { background: var(--e-badge-accent); color: var(--theme-background, #fff); }
+.e-badge-gallery h2 {
+  font-family: "EmporiaPixel", var(--font-family-mono, monospace);
+  font-weight: 400;
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
+  margin: 24px 0 8px;
+}
+.e-badge-table { border-collapse: collapse; width: 100%; }
+.e-badge-table th, .e-badge-table td {
+  text-align: left;
+  vertical-align: middle;
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--theme-border, #ccc);
+  font-size: 0.85rem;
+}
+.e-badge-table code { font-size: 0.8rem; }
+.e-badge-table__scales { display: flex; gap: 12px; align-items: flex-end; }
+.e-badge-scroll { overflow-x: auto; }
+
+.e-badge-panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }
+.e-badge-panel {
+  padding: 10px 12px 12px;
+  border: 1px solid var(--p-line);
+  background: var(--p-bg);
+  color: var(--p-ink);
+}
+.e-badge-panel.theme-light {
+  --p-bg: oklch(from var(--tint, #f0a832) 0.97 calc(c * 0.1) h);
+  --p-panel: oklch(from var(--tint, #f0a832) 0.92 calc(c * 0.18) h);
+  --p-ink: oklch(from var(--tint, #f0a832) 0.18 calc(c * 0.4) h);
+  --p-line: oklch(from var(--tint, #f0a832) 0.84 calc(c * 0.28) h);
+}
+.e-badge-panel.theme-dark {
+  --p-bg: oklch(from var(--tint, #f0a832) 0.14 calc(c * 0.18) h);
+  --p-panel: oklch(from var(--tint, #f0a832) 0.24 calc(c * 0.22) h);
+  --p-ink: oklch(from var(--tint, #f0a832) 0.94 calc(c * 0.12) h);
+  --p-line: oklch(from var(--tint, #f0a832) 0.4 calc(c * 0.28) h);
+}
+.e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
+.e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }

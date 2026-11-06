@@ -264,3 +264,70 @@ def test_the_standalone_console_sends_a_strict_content_security_policy(tmp_path)
     (ui / "index.html").write_text('<!doctype html><script type="module" src="/assets/a.js"></script>')
     plain = TestClient(build_app(_console(), ui_dir=ui)).get("/").headers["content-security-policy"]
     assert "script-src 'self';" in plain and "style-src 'self';" in plain
+
+
+def test_the_console_serves_every_listed_doc_as_json_for_the_desktop_page():
+    """The Desktop page reaches the console through ctx.rest, which carries JSON only."""
+    from pathlib import Path
+    doc_list = Path(__file__).resolve().parents[1] / "dashboard" / "src" / "docList.json"
+    listed = {d["path"] for d in json.loads(doc_list.read_text())}
+    texts = TestClient(build_app(_console())).get("/doc-texts").json()["texts"]
+    assert set(texts) == listed
+    assert texts["docs/payments.md"].startswith("#")
+    assert "docs/security-log.md" not in texts
+
+
+def test_the_dashboards_console_answers_only_with_its_secret():
+    """Console scope (the 11-05 audit's proposal): on its socket the console took any request —
+    the 0700 folder was the only gate, and an agent's terminal on the `local` backend runs as
+    that folder's user. Now each start has a secret the plugin gives it on stdin and presents
+    on every request and websocket; without it, 401 (or a closed socket)."""
+    from starlette.websockets import WebSocketDisconnect
+    secret = "k" * 43
+    transport = httpx.ASGITransport(app=relay_app, client=("203.0.113.9", 4000))
+    c = TestClient(build_app(Console([identity.KEY_DIR], "http://relay.test", session_token=None,
+                                     socket_secret=secret, transport=transport)))
+    assert c.get("/agents").status_code == 401
+    assert c.get("/agents", headers={"x-emporia-console-secret": "k" * 42}).status_code == 401
+    assert c.get("/agents", headers={"x-emporia-console-secret": secret}).status_code == 200
+    with pytest.raises(WebSocketDisconnect):
+        with c.websocket_connect("/ws/alpha/ws/agent/alpha") as ws:
+            ws.receive_text()
+
+
+def test_the_dashboards_console_serves_its_own_profile_only(tmp_path, monkeypatch):
+    """Console scope: the plugin started one console for every profile under the Hermes root
+    (`--hermes-root`), so one profile's tab — or anything that reached its socket — read every
+    other profile's inbox and had their sealed DMs opened. On a socket the console now serves
+    one profile (`--profile`), refuses `--hermes-root` and `--keys-dir`, and will not start
+    without a secret on stdin."""
+    import io
+
+    import uvicorn
+
+    from emporia.console import __main__ as console_main
+    profile = tmp_path / "profiles" / "alpha"
+    keys = profile / "home" / ".hermes" / "keys"
+    keys.mkdir(parents=True)
+    (keys / "alpha.priv").write_bytes(b"\0" * 32)
+    other = tmp_path / "profiles" / "beta" / "home" / ".hermes" / "keys"
+    other.mkdir(parents=True)
+    (other / "beta.priv").write_bytes(b"\0" * 32)
+    served = {}
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: served.update(app=app, **kw))
+    sock = str(tmp_path / "c" / "console.sock")
+
+    def run(*argv, stdin="s3cret-from-the-plugin-at-this-start-0123\n"):
+        monkeypatch.setattr("sys.stdin", io.StringIO(stdin))
+        served.clear()
+        return console_main.main(["--uds", sock, *argv])
+
+    assert run("--profile", str(profile)) == 0 and served["uds"] == sock
+    c = TestClient(served["app"])
+    assert c.get("/agents", headers={"x-emporia-console-secret": "s3cret-from-the-plugin-at-this-start-0123"}).json() == \
+        {"agents": ["alpha"]}, "this profile's agent, not beta's"
+    assert c.get("/agents").status_code == 401
+    assert run("--profile", str(profile), stdin="") == 1 and not served, "no secret, no console"
+    assert run() == 1 and not served, "a socket console names its profile"
+    assert run("--profile", str(profile), "--hermes-root", str(tmp_path)) == 1 and not served
+    assert run("--profile", str(profile), "--keys-dir", str(other)) == 1 and not served

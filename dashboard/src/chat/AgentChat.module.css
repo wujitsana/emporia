@@ -1,0 +1,30 @@
+.toggle {
+  font-size: 0.85rem !important;
+  letter-spacing: 0.04em;
+}
+
+.glyph {
+  color: var(--theme-focused-foreground);
+}
+
+.label {
+  text-transform: lowercase;
+}
+
+.menuItem {
+  padding: 12px 0 0;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+}
+
+.menuItem :global(.e-section-tab) {
+  width: 100%;
+  min-height: 44px;
+  justify-content: flex-start;
+  padding: 10px 14px;
+  opacity: 1;
+}
+
+.on {
+  border-color: var(--theme-focused-foreground) !important;
+  background: var(--e-accent-wash, transparent) !important;
+}

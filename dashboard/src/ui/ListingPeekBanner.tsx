@@ -2,6 +2,8 @@ import Text from "@kit/Text";
 import type { NavOpts } from "../eventNav";
 import { McpCommandHint } from "./McpCommandHint";
 import { VIEWER_ID } from "../relayEnv";
+import { AskAgent } from "../chat/AskAgent";
+import { listingPrompt } from "../chat/askPrompts";
 
 export function ListingPeekBanner({ peek }: { peek: NonNullable<NavOpts["listingPeek"]> }) {
   const mod = peek.moduleType?.replace("emporia:", "").replace(/:v\d$/, "") ?? "listing";
@@ -14,6 +16,7 @@ export function ListingPeekBanner({ peek }: { peek: NonNullable<NavOpts["listing
       <Text className="e-faint e-listing-peek__meta">
         {mod} · agent …{peek.agentId.slice(-10)}
       </Text>
+      <AskAgent prompt={listingPrompt(peek)} label="ask agent about this offer" />
       {peek.moduleType && (
         <McpCommandHint
           label="Start this kind of session via MCP"

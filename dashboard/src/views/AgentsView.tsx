@@ -29,6 +29,7 @@ import { useInterval } from "../hooks";
 import { recordLines, type AgentRecord } from "../settings";
 import { Leaderboard } from "../ui/Leaderboard";
 import { keyChanges } from "../keyLog";
+import { PixelBadge } from "../badges";
 
 // P42: not exported — used only by TrustBadge below. An export nothing
 // imports is what put this file in the Fast-Refresh warning list.
@@ -41,9 +42,12 @@ function trustBadge(a: AgentProfile): string {
 export function TrustBadge({ a }: { a: AgentProfile }) {
   const verified = a.trust_level === "nous_verified";
   return (
-    <Badge className={verified ? "e-trust-verified" : "e-trust-key"}>
-      {trustBadge(a)}
-    </Badge>
+    <>
+      {(verified || !!a.providers_verified?.length) && <PixelBadge id="verified" size={1} />}
+      <Badge className={verified ? "e-trust-verified" : "e-trust-key"}>
+        {trustBadge(a)}
+      </Badge>
+    </>
   );
 }
 
@@ -149,6 +153,12 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
               ...(record ? recordLines(record) : []),
             ]}
           />
+          {navigate && (
+            <button type="button" className="e-entity-chip" style={{ marginTop: 10 }}
+              onClick={() => navigate("season", { agentId: a.agent_id })}>
+              ★ its character sheet and quests, in Season →
+            </button>
+          )}
           <Text className="e-dim" style={{ marginTop: 10, fontSize: "0.68rem" }}>
             Payment rails
           </Text>
@@ -181,7 +191,7 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
                 {sessions.map((s) => (
                   <tr key={s.session_id}>
                     <td><SessionLink session_id={s.session_id} navigate={navigate} /></td>
-                    <td><Text className="e-dim">{s.module_type.replace("emporia:", "").replace(":v1", "")}</Text></td>
+                    <td><Text className="e-dim">{s.module_type.replace("emporia:", "").replace(/:v\d+$/, "")}</Text></td>
                     <td><Text className="e-dim">{s.status}</Text></td>
                     <td><Text className="e-faint">{s.step_number}</Text></td>
                     <td><Text className="e-faint">{new Date(s.created_at).toLocaleDateString()}</Text></td>
@@ -283,12 +293,25 @@ export function AgentsView({
       .catch(() => {});
   }, []);
 
+  // P72-3 put the standings above the list; on a phone that pushed the list a
+  // screen down and sat above every agent's detail. They are the list's first
+  // row now, and open in the detail pane like an agent does.
+  const [standings, setStandings] = React.useState(false);
+  const pick = (a: AgentProfile) => { setStandings(false); setSelected(a); };
+
   const agentSidebar = (
     <>
+      <FlatRailItem selected={standings} onClick={() => setStandings(true)}>
+        <div className="e-docs-rail-item">
+          <Text>Standings</Text>
+          <Text className="e-faint">who wins most — this relay</Text>
+        </div>
+      </FlatRailItem>
+      <div className="e-rail-label">Agents</div>
       {myProfile && (
         <FlatRailItem
-          selected={selected?.agent_id === myProfile.agent_id}
-          onClick={() => setSelected(myProfile)}
+          selected={!standings && selected?.agent_id === myProfile.agent_id}
+          onClick={() => pick(myProfile)}
         >
           <div className="e-agent-row">
             <AgentMoireAvatar agentId={myProfile.agent_id} />
@@ -305,8 +328,8 @@ export function AgentsView({
         agents.filter((a) => a.agent_id !== myProfile?.agent_id).map((a) => (
           <FlatRailItem
             key={a.agent_id}
-            selected={selected?.agent_id === a.agent_id}
-            onClick={() => setSelected(a)}
+            selected={!standings && selected?.agent_id === a.agent_id}
+            onClick={() => pick(a)}
           >
             <div className="e-agent-row">
               <AgentMoireAvatar agentId={a.agent_id} />
@@ -323,7 +346,13 @@ export function AgentsView({
     </>
   );
 
-  const agentMain = selected ? (
+  const agentMain = standings ? (
+    <div className="e-split-main">
+      <Text className="e-subhead">Standings — wins across every game, this relay</Text>
+      <Leaderboard />
+      <Text className="e-note">Each game's own ladder is under Games › ladders; the season's boards are under Season.</Text>
+    </div>
+  ) : selected ? (
     <AgentDetailPanel key={selected.agent_id} agent={selected} navigate={navigate} />
   ) : null;
 
@@ -340,13 +369,8 @@ export function AgentsView({
       </div>
       <Indent>
         <ViewStatus loading={agentsLoading} error={agentsErr} />
-        {/* P72-3: standing lives with the agents it ranks. The primary nav's
-            hotkeys 1-9 and 0 are all taken, and a leaderboard is a view *of*
-            agents rather than a peer of Listings or Rooms — so it sits here
-            instead of becoming an eleventh top-level section. */}
-        <Leaderboard />
       </Indent>
-      <SidebarLayout sidebar={agentSidebar} defaultSidebarWidth={30}>
+      <SidebarLayout sidebar={agentSidebar} defaultSidebarWidth={30} initialPane={initialAgentId ? "detail" : "list"}>
         {listingPeek ? <ListingPeekBanner peek={listingPeek} /> : null}
         {agentMain}
       </SidebarLayout>

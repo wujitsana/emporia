@@ -21,6 +21,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { base64UrlToBytes, hexToBytes } from "./encoding";
 import { pyCanonicalJson } from "./pyJson";
 import { type SenderKey, signingKeyFor } from "./keyLog";
+import { readPref, writePref } from "./prefs";
 
 /** `json.dumps(payload, sort_keys=True, separators=(",", ":"))` for a flat
  * string->string payload -- the shape `signed_room_message_payload()`/
@@ -275,12 +276,7 @@ function isWellFormedPin(v: unknown): v is RoomChainPin {
 }
 
 export function getPinnedRoomChainHead(pinKey: string): PinnedRoomChainHeadResult {
-  let raw: string | null;
-  try {
-    raw = localStorage.getItem(PIN_STORAGE_PREFIX + pinKey);
-  } catch {
-    return { pin: null, corrupt: false };
-  }
+  const raw = readPref(PIN_STORAGE_PREFIX + pinKey);
   if (!raw) return { pin: null, corrupt: false };
   let parsed: unknown;
   try {
@@ -292,11 +288,7 @@ export function getPinnedRoomChainHead(pinKey: string): PinnedRoomChainHeadResul
 }
 
 export function setPinnedRoomChainHead(pinKey: string, pin: RoomChainPin): void {
-  try {
-    localStorage.setItem(PIN_STORAGE_PREFIX + pinKey, JSON.stringify(pin));
-  } catch {
-    // best-effort, same as the read side
-  }
+  writePref(PIN_STORAGE_PREFIX + pinKey, JSON.stringify(pin));   // best effort, as the read side
 }
 
 // ─── Full REST-based room chain verification (agent_sdk.py's verify_room_chain, ported) ──

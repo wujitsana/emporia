@@ -62,6 +62,36 @@ async function installFonts(css: string): Promise<void> {
   document.head.appendChild(style);
 }
 
+/**
+ * Size the tab to what is visible of Hermes's page from its top down, so the app is
+ * one frame that fits the screen: its view scrolls inside, the chat's composer
+ * stays in sight, and its overlays cover the tab and never Hermes around it
+ * (dashboard.css § 3). Measured again on resize, and every second, for a Hermes
+ * banner that appears above the tab and moves it down.
+ */
+export function fitToView(host: HTMLElement, win: Window = window): () => void {
+  let last = -1;
+  const fit = () => {
+    const parent = host.parentElement;
+    const pad = parent ? parseFloat(win.getComputedStyle(parent).paddingBottom) || 0 : 0;
+    let scrolled = 0;
+    for (let el = host.parentElement; el; el = el.parentElement) scrolled += el.scrollTop || 0;
+    const top = host.getBoundingClientRect().top + scrolled;
+    const h = Math.max(320, Math.floor(win.innerHeight - top - pad));
+    if (h !== last) {
+      last = h;
+      host.style.height = `${h}px`;
+    }
+  };
+  fit();
+  win.addEventListener("resize", fit);
+  const t = win.setInterval(fit, 1000);
+  return () => {
+    win.removeEventListener("resize", fit);
+    win.clearInterval(t);
+  };
+}
+
 async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => void> {
   const shadow = host.attachShadow({ mode: "closed" });
   const css = await fetch(new URL("style.css", BASE)).then((r) => r.text()).catch(() => "");
@@ -70,8 +100,11 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
   style.textContent = css;
   const container = document.createElement("div");
   container.className = "e-host-body";
-  container.style.minHeight = "100%";
+  // The app's frame is the tab's container (fitToView sizes it), not the browser window.
+  container.style.height = "100%";
+  container.style.setProperty("--e-frame-h", "100%");
   shadow.append(style, container);
+  const unfit = fitToView(host);
 
   // P296: a profile with no Emporia agent gets the one command that makes one,
   // not a console error.
@@ -81,10 +114,15 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
     if (d.setup_needed) {
       container.innerHTML = "";
       container.append(notSetUp());
-      return () => container.replaceChildren();
+      return () => { unfit(); container.replaceChildren(); };
     }
   }
-  window.__EMPORIA_HERMES_SDK__ = { authedFetch: sdk.authedFetch, buildWsUrl: sdk.buildWsUrl };
+  // Whether Hermes carries this plugin's websockets here: not when the profile's plugin runs in
+  // its plugin host (plugin_api.py `sockets`). Then the tab dials none and polls (transport.ts).
+  const sockets = probe?.ok
+    ? await probe.clone().json().then((d) => d?.sockets !== false).catch(() => true)
+    : true;
+  window.__EMPORIA_HERMES_SDK__ = { authedFetch: sdk.authedFetch, buildWsUrl: sdk.buildWsUrl, sockets };
   window.__EMPORIA_HERMES_PROFILE__ = await ensureViewer(
     () => sdk.authedFetch("/api/plugins/emporia/agents")
       .then((r) => r.json()).then((d) => d.agents as string[]),
@@ -100,7 +138,7 @@ async function mount(host: HTMLElement, sdk: HermesPluginSdk): Promise<() => voi
   const { default: App } = await import("./App.tsx");
   const root: Root = createRoot(container);
   root.render(<App />);
-  return () => root.unmount();
+  return () => { unfit(); root.unmount(); };
 }
 
 /** The tab in a profile Emporia is not set up in: what it is, and the command. */
@@ -139,7 +177,7 @@ function notSetUp(): HTMLElement {
       }
       return () => { gone = true; unmount?.(); };
     }, []);
-    return React.createElement("div", { ref, style: { height: "100%", minHeight: "80vh" } });
+    return React.createElement("div", { ref, style: { height: "80vh", minHeight: 320 } });
   }
 
   window.__HERMES_PLUGINS__.register("emporia", EmporiaTab);

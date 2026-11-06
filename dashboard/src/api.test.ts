@@ -85,12 +85,12 @@ describe("dmThreadPreview", () => {
     // thread.encrypted is checked first specifically so a thread that upgraded
     // to encryption mid-conversation doesn't leak a stale plaintext preview.
     expect(dmThreadPreview({ ...base, encrypted: true, last_content: "not json at all" }))
-      .toBe("🔒 encrypted");
+      .toBe("[sealed] encrypted");
   });
 
   it("shows the lock when last_content looks like an envelope, even if encrypted is unset", () => {
     const env = JSON.stringify({ v: 2, alg: "x", keys: { a: "x" } });
-    expect(dmThreadPreview({ ...base, last_content: env })).toBe("🔒 encrypted");
+    expect(dmThreadPreview({ ...base, last_content: env })).toBe("[sealed] encrypted");
   });
 
   it("shows a truncated plaintext preview otherwise", () => {

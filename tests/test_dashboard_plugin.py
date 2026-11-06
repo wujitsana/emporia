@@ -17,40 +17,61 @@ def test_the_plugin_forwards_to_the_console_and_never_its_hermes_credentials(tmp
     runtime = tmp_path / "rt"
     plugin = tmp_path / "plugin"
     subprocess.run(["cp", "-r", str(PLUGIN), str(plugin)], check=True)
-    data = tmp_path / "home" / "plugin-data" / "emporia"     # P295: settings in plugin-data, not the plugin
-    data.mkdir(parents=True)
-    (data / "emporia.json").write_text(json.dumps(
-        {"python": "/nonexistent", "relay_url": "http://relay.test", "runtime_dir": str(runtime)}))
-    harness = tmp_path / "harness.py"
-    harness.write_text(f'''
-import importlib.util, json, os, threading, time
-from pathlib import Path
+    # The "console" the plugin starts: a stand-in that, like the real one, reads its per-start
+    # secret on stdin and answers only requests carrying it (console scope).
+    stub = tmp_path / "stub_console.py"
+    stub.write_text('''
+import sys
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.testclient import TestClient
-
-# A stand-in console on the socket the plugin expects.
-runtime = Path({str(runtime)!r}); runtime.mkdir(mode=0o700)
-stub = FastAPI()
-@stub.get("/agents")
-async def agents(): return {{"agents": ["alpha"]}}
-@stub.api_route("/echo/{{rest:path}}", methods=["GET", "POST"])
+from fastapi.responses import JSONResponse
+uds = sys.argv[sys.argv.index("--uds") + 1]
+secret = sys.stdin.readline().strip()
+app = FastAPI()
+@app.middleware("http")
+async def gate(request: Request, call_next):
+    if request.headers.get("x-emporia-console-secret") != secret:
+        return JSONResponse({"detail": "no secret"}, status_code=401)
+    return await call_next(request)
+@app.get("/agents")
+async def agents(): return {"agents": ["alpha"]}
+@app.api_route("/echo/{rest:path}", methods=["GET", "POST"])
 async def echo(rest: str, request: Request):
-    return {{"path": rest, "query": request.url.query, "headers": dict(request.headers),
-            "body": (await request.body()).decode()}}
-server = uvicorn.Server(uvicorn.Config(stub, uds=str(runtime / "console.sock"), log_level="error"))
-threading.Thread(target=server.run, daemon=True).start()
-for _ in range(100):
-    if (runtime / "console.sock").exists(): break
-    time.sleep(0.05)
-
+    return {"path": rest, "query": request.url.query, "headers": dict(request.headers),
+            "body": (await request.body()).decode(), "argv": sys.argv}
+from fastapi import WebSocket
+@app.websocket("/ws/{rest:path}")
+async def ws(socket: WebSocket, rest: str):
+    if socket.headers.get("x-emporia-console-secret") != secret:
+        await socket.close(code=1008)
+        return
+    await socket.accept()
+    await socket.send_text("as the console: " + rest)
+uvicorn.run(app, uds=uds, log_level="error")
+''')
+    python = tmp_path / "python"
+    python.write_text(f'#!/bin/sh\nexec {HERMES_PYTHON} {stub} "$@"\n')
+    python.chmod(0o755)
+    data = tmp_path / "home" / "plugin-data" / "emporia"     # P295: settings in plugin-data, not the plugin
+    data.mkdir(parents=True)
+    # A relative runtime folder (the harness runs from tmp_path): a Unix socket's path has a
+    # length limit that a long temporary directory exceeds.
+    (data / "emporia.json").write_text(json.dumps(
+        {"python": str(python), "relay_url": "http://relay.test", "runtime_dir": "rt"}))
+    harness = tmp_path / "harness.py"
+    harness.write_text(f'''
+import importlib.util, json, os
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+os.chdir({str(tmp_path)!r})
 spec = importlib.util.spec_from_file_location("p", {str(plugin / "plugin_api.py")!r})
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 app = FastAPI(); app.include_router(m.router, prefix="/api/plugins/emporia")
 c = TestClient(app)
 r = c.post("/api/plugins/emporia/echo/relay/alpha/sessions?status=active&profile=beta",
            headers={{"cookie": "hermes_session=SECRET", "X-Hermes-Session-Token": "SECRET",
-                    "Authorization": "Bearer SECRET", "content-type": "application/json"}},
+                    "Authorization": "Bearer SECRET", "content-type": "application/json",
+                    "x-emporia-console-secret": "forged"}},
            content=b'{{"x": 1}}')
 refused = False
 try:
@@ -58,9 +79,14 @@ try:
         pass
 except Exception:
     refused = True
+from hermes_cli import web_server_chat               # past Hermes's own websocket check:
+web_server_chat._ws_auth_ok = lambda socket: True    # the console still needs its secret
+with c.websocket_connect("/api/plugins/emporia/ws/alpha/ws/agent/alpha") as s:
+    relayed = s.receive_text()
 here = c.get("/api/plugins/emporia/_hermes_profile?profile=beta").json()
-print(json.dumps({{"status": r.status_code, "echo": r.json(), "here": here,
+print(json.dumps({{"status": r.status_code, "echo": r.json(), "here": here, "relayed": relayed,
                   "cache": r.headers.get("cache-control"), "ws_refused": refused}}))
+m._stop_console()
 ''')
     out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
                          env={**os.environ, "HERMES_HOME": str(tmp_path / "home"),
@@ -75,9 +101,13 @@ print(json.dumps({{"status": r.status_code, "echo": r.json(), "here": here,
     sent = {k.lower() for k in echo["headers"]}
     assert not sent & {"cookie", "authorization", "x-hermes-session-token"}, sent
     assert "SECRET" not in json.dumps(echo)
+    assert echo["headers"]["x-emporia-console-secret"] != "forged", "the plugin's secret, not the browser's"
+    argv = echo["argv"]
+    assert argv[argv.index("--profile") + 1] == str(tmp_path / "home") and "--hermes-root" not in argv
     assert result["ws_refused"], "a websocket without Hermes's credential is refused"
+    assert result["relayed"] == "as the console: alpha/ws/agent/alpha", "the websocket carries the secret"
     assert oct(runtime.stat().st_mode)[-3:] == "700"
-    assert result["here"] == {"profile": "beta"}, "P227: the tab learns which profile it is open in"
+    assert result["here"] == {"profile": "beta", "sockets": True}, "P227: the tab learns which profile it is open in"
 
 
 
@@ -103,29 +133,343 @@ print(json.dumps({{"status": r.status_code, "body": r.json()}}))
     assert "hermes emporia setup" in result["body"]["detail"]
 
 
-def _source_digest() -> str:
-    """dashboard/vite.plugin.config.ts sourceDigest(), in Python."""
+@pytest.mark.skipif(not HERMES_PYTHON.exists(), reason="Hermes is not installed here")
+def test_each_profile_gets_its_own_console_with_its_own_secret(tmp_path):
+    """Console scope (the 11-05 audit's proposal): the plugin ran one console for every profile
+    under the Hermes root, reached with no credential. It now starts one per Hermes profile —
+    the one Hermes scoped the request to (`?profile=`, as the dashboard's profile switcher
+    sends it) — told to serve that profile alone (`--profile`), and gives each start a secret
+    on stdin (never in its arguments or environment) that it presents on every request.
+    Switching profile reaches that profile's console; switching back reuses the first."""
+    root = tmp_path / "root"
+    for p in ("alpha", "beta"):
+        home = root / "profiles" / p
+        (home / "plugin-data" / "emporia").mkdir(parents=True)
+        (home / "config.yaml").write_text("{}\n")
+        (home / "plugin-data" / "emporia" / "emporia.json").write_text(json.dumps(
+            {"python": "/fake/python", "relay_url": "http://relay.test", "runtime_dir": str(home / "rt"),
+             "hermes_root": str(root)}))
+    (root / "profiles" / "gamma").mkdir()
+    (root / "profiles" / "gamma" / "config.yaml").write_text("{}\n")      # a profile, not an agent
+    harness = tmp_path / "harness.py"
+    harness.write_text(f'''
+import importlib.util, json
+from pathlib import Path
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.testclient import TestClient
+from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+
+root = Path({str(root)!r})
+spec = importlib.util.spec_from_file_location("p", {str(PLUGIN / "plugin_api.py")!r})
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+
+started, consoles = [], {{}}
+class Stdin:
+    def __init__(self, c): self.c = c
+    def write(self, data): self.c["secret"] += data.decode() if isinstance(data, bytes) else data
+    def flush(self): pass
+    def close(self): self.c["closed"] = True
+class FakePopen:
+    def __init__(self, argv, env=None, stdin=None, **kw):
+        sock = argv[argv.index("--uds") + 1]
+        self.c = consoles[sock] = {{"argv": argv, "env": env, "secret": "", "closed": False}}
+        Path(sock).parent.mkdir(parents=True, exist_ok=True); Path(sock).touch()
+        self.stdin, self.pid = Stdin(self.c), 1000 + len(started)
+        started.append(self.c)
+    def poll(self): return None
+    def terminate(self): pass
+m.subprocess.Popen = FakePopen
+
+def console_app(sock):
+    app = FastAPI()
+    @app.api_route("/{{path:path}}", methods=["GET", "POST"])
+    async def any_(path: str, request: Request):
+        c = consoles[sock]
+        if request.headers.get("x-emporia-console-secret") != c["secret"].strip():
+            return JSONResponse({{"detail": "no secret"}}, status_code=401)
+        prof = c["argv"][c["argv"].index("--profile") + 1]
+        return {{"agents": [Path(prof).name]}}
+    return app
+m._transport = lambda sock: httpx.ASGITransport(app=console_app(str(sock)))
+
+app = FastAPI()
+@app.middleware("http")
+async def hermes_scope(request: Request, call_next):     # what Hermes does for ?profile=
+    name = request.query_params.get("profile") or "alpha"
+    token = set_hermes_home_override(str(root / "profiles" / name))
+    try:
+        return await call_next(request)
+    finally:
+        reset_hermes_home_override(token)
+app.include_router(m.router, prefix="/api/plugins/emporia")
+c = TestClient(app)
+seen = [c.get("/api/plugins/emporia/relay/x/health?profile=" + p,
+              headers={{"x-emporia-console-secret": "forged"}}).json() for p in ("alpha", "beta", "alpha")]
+picker = [c.get("/api/plugins/emporia/agents?profile=" + p).json() for p in ("alpha", "beta")]
+print(json.dumps({{"seen": seen, "started": started, "picker": picker}}))
+''')
+    out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
+                         env={**os.environ, "HERMES_HOME": str(root / "profiles" / "alpha"),
+                              "PYTHONPATH": "/opt/hermes"},
+                         capture_output=True, text=True, timeout=90)
+    assert out.returncode == 0, out.stderr[-2000:]
+    r = json.loads(out.stdout.strip().splitlines()[-1])
+    assert r["seen"] == [{"agents": ["alpha"]}, {"agents": ["beta"]}, {"agents": ["alpha"]}], r["seen"]
+    assert len(r["started"]) == 2, "one console per profile, reused when switching back"
+    # The tab's profile picker (P234) still offers every agent profile, this one first: names
+    # only, from the profiles set up for Emporia (gamma is not) — no other console is asked.
+    assert r["picker"] == [{"agents": ["alpha", "beta"], "sockets": True},
+                           {"agents": ["beta", "alpha"], "sockets": True}], r["picker"]
+    secrets = []
+    for name, started in zip(("alpha", "beta"), r["started"]):
+        argv, secret = started["argv"], started["secret"].strip()
+        assert argv[argv.index("--profile") + 1] == str(root / "profiles" / name)
+        assert "--hermes-root" not in argv and "--keys-dir" not in argv
+        assert len(secret) >= 32 and started["closed"]
+        assert secret not in json.dumps(argv) and secret not in json.dumps(started["env"])
+        secrets.append(secret)
+    assert secrets[0] != secrets[1]
+
+
+DASH = REPO / "dashboard"
+DESKTOP = REPO / "hermes_plugin" / "emporia" / "desktop"
+
+
+def _inputs(config: str) -> list[str]:
+    """The inputs a bundle is built from: buildMeta.ts SHARED_INPUTS plus the bundle's own config."""
+    import re
+    shared = re.search(r"SHARED_INPUTS = \[([^\]]*)\]", (DASH / "buildMeta.ts").read_text())
+    assert shared, "buildMeta.ts names the shared inputs"
+    return re.findall(r'"([^"]+)"', shared.group(1)) + [config]
+
+
+def _source_digest(config: str = "vite.plugin.config.ts") -> str:
+    """dashboard/buildMeta.ts sourceDigest(), in Python."""
     import hashlib
-    dash = REPO / "dashboard"
-    inputs = ["src", "vite.plugin.config.ts", "package-lock.json", "postcss.noRemoteFonts.ts"]
     files = []
-    for rel in inputs:
-        p = dash / rel
+    for rel in _inputs(config):
+        p = DASH / rel
         found = sorted(p.rglob("*")) if p.is_dir() else [p]
-        files += [f.relative_to(dash).as_posix() for f in found
+        files += [f.relative_to(DASH).as_posix() for f in found
                   if f.is_file() and not f.name.endswith((".test.ts", ".test.tsx"))]
     h = hashlib.sha256()
     for f in sorted(files):
         h.update(f.encode() + b"\n")
-        h.update((dash / f).read_bytes())
+        h.update((DASH / f).read_bytes())
     return h.hexdigest()
+
+
+REBUILD = "run `npm run build:plugin` in dashboard/ (it builds the tab and the Desktop page together)"
 
 
 def test_the_committed_tab_bundle_is_built_from_the_dashboard_as_it_is():
     """P295: a catalog install is the plugin folder alone, so the tab's bundle is
-    committed there. Changing dashboard/ without `npm run build:hermes-plugin`
-    would ship the old tab."""
+    committed there. Changing dashboard/ without rebuilding would ship the old tab."""
     dist = PLUGIN / "dist"
     assert (dist / "index.js").is_file() and (dist / "style.css").is_file()
-    assert (dist / "SOURCE").read_text().strip() == _source_digest(), (
-        "the tab's bundle is older than dashboard/: run `npm run build:hermes-plugin` in dashboard/")
+    assert (dist / "SOURCE").read_text().strip() == _source_digest(), f"the tab's bundle is older than dashboard/: {REBUILD}"
+
+
+def test_the_committed_desktop_page_is_built_from_the_dashboard_as_it_is():
+    """The Desktop half is built from the same dashboard/src: forgetting to rebuild
+    it (or the tab) fails here, so the two never drift apart."""
+    assert (DESKTOP / "plugin.js").is_file()
+    assert (DESKTOP / "SOURCE").read_text().strip() == _source_digest("vite.desktop.config.ts"), (
+        f"the Desktop page is older than dashboard/: {REBUILD}")
+
+
+def _plugin_version() -> str:
+    import re
+    m = re.search(r"^version:\s*(\S+)\s*$", (PLUGIN.parent / "plugin.yaml").read_text(), re.M)
+    assert m
+    return m.group(1).strip("\"'")
+
+
+def test_one_version_for_the_tab_the_desktop_page_and_the_plugin():
+    """plugin.yaml is the one place the version is written; both bundles carry it."""
+    version = _plugin_version()
+    assert json.loads((PLUGIN / "manifest.json").read_text())["version"] == version
+    for bundle in (PLUGIN / "dist" / "index.js", DESKTOP / "plugin.js"):
+        text = bundle.read_text()
+        assert f'EMPORIA_VERSION = "{version}";' in text, bundle
+
+
+def test_the_desktop_page_imports_only_the_host_modules_and_no_react_dom():
+    """The Desktop loader refuses any import but the SDK and the host's React; react-dom's
+    internals read as script injection to the catalog lint (rule 8)."""
+    import re
+    js = (DESKTOP / "plugin.js").read_text()
+    specs = set(re.findall(r'^import [^;]*?from "([^"]+)";$', js, re.M))
+    assert specs == {"@hermes/plugin-sdk", "react", "react/jsx-runtime"}, specs
+    assert "react-dom" not in js and "createRoot" not in js
+    assert "__EMPORIA_DESKTOP_CSS__" not in js, "the stylesheet is inlined"
+    assert re.search(r"^export \{.*plugin as default.*\};$", js, re.M)
+
+
+@pytest.mark.skipif(not HERMES_PYTHON.exists(), reason="Hermes is not installed here")
+def test_hermes_own_desktop_surface_lint_finds_nothing_in_the_page():
+    """Catalog rule 8, checked with the lint `hermes plugins validate` runs
+    (hermes_cli/plugin_validate_desktop.py): no refusals, and no review cues."""
+    code = (
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        "from hermes_cli.plugin_validate_desktop import desktop_surface_hits, desktop_review_findings\n"
+        "d = Path(sys.argv[1])\n"
+        "print(json.dumps({'hits': desktop_surface_hits(d),"
+        " 'cues': desktop_surface_hits(d, desktop_review_findings)}))\n"
+    )
+    out = subprocess.run([str(HERMES_PYTHON), "-c", code, str(PLUGIN.parent)], cwd="/opt/hermes",
+                         env={**os.environ, "PYTHONPATH": "/opt/hermes"}, capture_output=True, text=True, timeout=120)
+    assert out.returncode == 0, out.stderr[-2000:]
+    result = json.loads(out.stdout.strip().splitlines()[-1])
+    assert result == {"hits": [], "cues": []}, result
+
+
+def _plugin_module():
+    """plugin_api.py imported as Hermes imports it (it imports nothing from Emporia)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("emporia_plugin_api_under_test", PLUGIN / "plugin_api.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_a_deep_hermes_home_gets_a_short_private_console_socket(tmp_path, monkeypatch):
+    """A socket path past AF_UNIX's limit (about 107 bytes) killed the console at start and the
+    tab answered 503; a deep HERMES_HOME reached it. Past the limit, the socket moves to a short
+    0700 folder of this user's, one per profile home; a short configured path is kept."""
+    import shutil
+    import stat as st
+    import tempfile
+    m = _plugin_module()
+    deep = tmp_path / ("d" * 60) / "profiles" / "player"
+    monkeypatch.setattr(m, "_home", lambda: deep)
+    monkeypatch.setattr(m, "_config", lambda: {"runtime_dir": str(deep / "plugin-data" / "emporia" / "console")})
+    short_root = Path(tempfile.mkdtemp(prefix="x"))          # the XDG runtime folder stand-in
+    try:
+        monkeypatch.setenv("XDG_RUNTIME_DIR", str(short_root))
+        sock = m._socket()
+        assert len(os.fsencode(str(sock))) <= m.SUN_PATH_MAX
+        assert sock.name == "console.sock" and sock.parent.parent == short_root / "emporia-console"
+        root = sock.parent.parent
+        assert st.S_IMODE(root.stat().st_mode) == 0o700 and root.stat().st_uid == os.getuid()
+        # Another profile: another folder. The same profile: the same one.
+        monkeypatch.setattr(m, "_home", lambda: deep.parent / "merchant")
+        assert m._socket().parent != sock.parent
+        monkeypatch.setattr(m, "_home", lambda: deep)
+        assert m._socket() == sock
+        # A folder that is a link (or someone else's) is never used.
+        root.rmdir()
+        root.symlink_to(tmp_path)
+        monkeypatch.setattr(m.tempfile, "gettempdir", lambda: str(short_root / ("t" * 90)))
+        with pytest.raises(RuntimeError, match="short enough"):
+            m._socket()
+        root.unlink()
+        # A configured path that fits is kept as it is.
+        monkeypatch.setattr(m, "_config", lambda: {"runtime_dir": "rt"})
+        assert m._socket() == Path("rt") / "console.sock"
+    finally:
+        shutil.rmtree(short_root, ignore_errors=True)
+
+
+def test_the_tab_learns_whether_hermes_carries_its_sockets(monkeypatch):
+    """Hermes runs a profile's plugin in that profile's plugin host when it is not the profile the
+    dashboard was launched as; the host carries no websockets and Hermes answers each with a 501,
+    which uvicorn logs as an incomplete handshake. The tab is told, and does not dial."""
+    m = _plugin_module()
+    monkeypatch.delenv("HERMES_PLUGIN_HOST_PROCESS", raising=False)
+    assert m._sockets_carried() is True
+    monkeypatch.setenv("HERMES_PLUGIN_HOST_PROCESS", "1")
+    assert m._sockets_carried() is False
+
+
+def test_a_refused_socket_closes_cleanly_never_with_an_incomplete_handshake(monkeypatch):
+    """The user's terminal showed `ASGI callable returned without completing handshake`. Run the
+    plugin's socket route in uvicorn with the protocol Hermes's uvicorn picks (websockets-sansio):
+    a socket without Hermes's credential gets a 403 before accept; one with it, whose console
+    cannot start, is accepted and closed with 1011 and a reason. Neither logs that error, while
+    an HTTP denial answer (what Hermes sends for a plugin host's socket) does, so the check bites."""
+    import asyncio
+    import logging
+    import sys
+    import types
+
+    import uvicorn
+    import websockets
+    from fastapi import FastAPI, WebSocket
+    from fastapi.responses import JSONResponse
+
+    m = _plugin_module()
+    monkeypatch.setattr(m, "_config", lambda: {})                 # no settings: not set up here
+    allow = {"ok": False}
+    pkg = types.ModuleType("hermes_cli")
+    fake = types.ModuleType("hermes_cli.web_server_chat")
+    fake._ws_auth_ok = lambda socket: allow["ok"]
+    pkg.web_server_chat = fake
+    monkeypatch.setitem(sys.modules, "hermes_cli", pkg)
+    monkeypatch.setitem(sys.modules, "hermes_cli.web_server_chat", fake)
+
+    app = FastAPI()
+    app.include_router(m.router, prefix="/api/plugins/emporia")
+
+    @app.websocket("/denied")
+    async def denied(socket: WebSocket):
+        await socket.send_denial_response(JSONResponse({"detail": "no"}, status_code=501))
+
+    records: list[str] = []
+
+    class Grab(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    grab = Grab()
+
+    async def run():
+        srv = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=0, ws="websockets-sansio",
+                                            log_level="info", lifespan="off"))
+        logging.getLogger("uvicorn.error").addHandler(grab)     # after Config: it resets logging
+        task = asyncio.create_task(srv.serve())
+        while not srv.started:
+            await asyncio.sleep(0.02)
+        port = srv.servers[0].sockets[0].getsockname()[1]
+        base = f"ws://127.0.0.1:{port}"
+        out = {}
+        try:
+            async with websockets.connect(f"{base}/api/plugins/emporia/ws/alpha/ws/events"):
+                out["unauth"] = "accepted"
+        except websockets.InvalidStatus as e:
+            out["unauth"] = e.response.status_code
+        await asyncio.sleep(0.1)
+        out["unauth_logs"] = list(records)
+        allow["ok"] = True
+        async with websockets.connect(f"{base}/api/plugins/emporia/ws/alpha/ws/events") as s:
+            try:
+                await s.recv()
+            except websockets.ConnectionClosed as e:
+                out["auth"] = (e.rcvd.code, e.rcvd.reason)
+        await asyncio.sleep(0.1)
+        out["auth_logs"] = list(records)
+        try:
+            async with websockets.connect(f"{base}/denied"):
+                pass
+        except websockets.InvalidStatus as e:
+            out["denied"] = e.response.status_code
+        except websockets.InvalidMessage:       # some uvicorn versions garble the denial answer
+            out["denied"] = "refused"
+        await asyncio.sleep(0.1)
+        out["denied_logs"] = list(records)
+        srv.should_exit = True
+        await task
+        return out
+
+    try:
+        out = asyncio.run(run())
+    finally:
+        logging.getLogger("uvicorn.error").removeHandler(grab)
+    bad = "ASGI callable returned without completing handshake."
+    assert out["unauth"] == 403
+    assert out["auth"][0] == 1011 and "not running" in out["auth"][1], out["auth"]
+    assert bad not in out["unauth_logs"] and bad not in out["auth_logs"], out["auth_logs"]
+    assert out["denied"] in (501, "refused") and bad in out["denied_logs"], "the check sees the error when it happens"

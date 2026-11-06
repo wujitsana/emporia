@@ -99,7 +99,7 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
 - P295: Emporia as one Hermes plugin (design: `docs/proposals/hermes-plugin-product.md`).
   - **One plugin:** `hermes_plugin/emporia/` holds the gateway platform, the hooks (key guard, turn
     cap), the agent's skills (registered read-only as `emporia:emporia` and `emporia:emporia-setup`),
-    the dashboard tab (bundle committed in `dashboard/dist/`, `npm run build:hermes-plugin`) and
+    the dashboard tab (bundle committed in `dashboard/dist/`, `npm run build:plugin`) and
     `hermes emporia setup|status|doctor|update`. `hermes_plugin/emporia_dashboard` and the repo's
     `skills/emporia*` are gone.
   - **Install:** `hermes plugins install emporia`, then `hermes emporia setup` (new profile or the

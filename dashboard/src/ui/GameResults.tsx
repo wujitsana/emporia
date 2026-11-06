@@ -1,5 +1,6 @@
 import Text from "@kit/Text";
-import { PaidByTag } from "./PayTag";
+import { useRelayHealth } from "../healthCtx";
+import { stakeText } from "../paymentFormat";
 import { useInterval } from "../hooks";
 import { api } from "../api";
 import type { GameResult } from "../api";
@@ -44,8 +45,12 @@ export function GameResults({ moduleType, onOpen }: { moduleType?: string; onOpe
 }
 
 function ResultRow({ r, onOpen }: { r: GameResult; onOpen?: (sessionId: string) => void }) {
-  const stake = r.stake_per_participant && Number(r.stake_per_participant) > 0
-    ? `${r.stake_per_participant} ${(r.currency ?? "").toUpperCase()}` : "free";
+  const health = useRelayHealth();
+  const money = r.stake_per_participant && Number(r.stake_per_participant) > 0
+    ? stakeText(Number(r.stake_per_participant), r.currency ?? undefined,
+      { rails: r.paid_by, escrowNetwork: health?.x402_escrow_network })
+    : null;
+  const stake = money ? money.amount : "free";
   return (
     <>
       <tr>
@@ -64,12 +69,14 @@ function ResultRow({ r, onOpen }: { r: GameResult; onOpen?: (sessionId: string) 
         <td><Text>{verdict(r)}</Text></td>
         <td>
           <Text className="e-dim">{stake}</Text>
-          {r.paid_by && r.paid_by.length > 0 ? <><br /><PaidByTag rails={r.paid_by} /></> : null}
+          {money?.via ? <><br /><span className="e-faint" style={{ fontSize: 11 }}>{money.via}</span></> : null}
         </td>
       </tr>
       {setPlay(r.module_type) === "emporia:blotto" ? <BlottoRounds r={r} /> : null}
       {setPlay(r.module_type) === "emporia:two-thirds" || setPlay(r.module_type) === "emporia:lowest-unique"
         ? <TwoThirdsPicks r={r} /> : null}
+      <CallsLine r={r} />
+      {setPlay(r.module_type) === "emporia:bargain" ? <BargainLine r={r} /> : null}
     </>
   );
 }
@@ -78,6 +85,50 @@ function ResultRow({ r, onOpen }: { r: GameResult; onOpen?: (sessionId: string) 
  *  ones still in the history are drawn the same way (calls). */
 function setPlay(moduleType: string): string {
   return moduleType.replace(/:v\d+$/, "");
+}
+
+/** Calls (`:v2`): each player's revealed call, its own chance of winning sealed with its first move. */
+function CallsLine({ r }: { r: GameResult }) {
+  const calls = Object.entries((r.record.calls as Record<string, number> | undefined) ?? {});
+  const sealed = ((r.record.called as string[] | undefined) ?? []).filter((p) => !calls.some(([q]) => q === p));
+  if (calls.length === 0 && sealed.length === 0) return null;
+  return (
+    <tr>
+      <td />
+      <td colSpan={4}>
+        <Text className="e-faint" style={{ fontSize: 11, fontVariantNumeric: "tabular-nums" }}>
+          calls: {[...calls.map(([p, c]) => `${shortAgent(p, 10)} ${c} %`), ...sealed.map((p) => `${shortAgent(p, 10)} unrevealed`)].join(" · ")}
+        </Text>
+      </td>
+    </tr>
+  );
+}
+
+type Goods = Record<string, number>;
+const goods = (g: Goods | undefined) => ["silk", "spice", "amber"].map((k) => `${g?.[k] ?? 0} ${k}`).join(" ");
+
+/** Bargain: how it ended and, once the hands are published, what each side really held. */
+function BargainLine({ r }: { r: GameResult }) {
+  const ended = r.record.ended as { how?: string; offer?: number } | null | undefined;
+  const offers = (r.record.offers as { n: number; allocation: Record<string, Goods> }[] | undefined) ?? [];
+  const hands = ((r.record.deal as { hands?: Record<string, { values?: Goods }> | null } | undefined)?.hands) ?? {};
+  const taken = ended?.how === "accepted" ? offers.find((o) => o.n === ended.offer) : undefined;
+  return (
+    <tr>
+      <td />
+      <td colSpan={4}>
+        <Text className="e-faint" style={{ fontSize: 11, display: "block", fontVariantNumeric: "tabular-nums" }}>
+          {taken ? `deal on offer ${taken.n}: ${r.participants.map((p) => `${shortAgent(p, 10)} gets ${goods(taken.allocation[p])}`).join(" · ")}`
+            : ended?.how === "declined" ? `no deal — the last offer was declined (${offers.length} offers)` : `${offers.length} offers, no deal`}
+        </Text>
+        {Object.keys(hands).length > 0 ? (
+          <Text className="e-faint" style={{ fontSize: 11, display: "block", fontVariantNumeric: "tabular-nums" }}>
+            held: {r.participants.map((p) => `${shortAgent(p, 10)} ${goods(hands[p]?.values)}`).join(" · ")}
+          </Text>
+        ) : null}
+      </td>
+    </tr>
+  );
 }
 
 function TwoThirdsPicks({ r }: { r: GameResult }) {

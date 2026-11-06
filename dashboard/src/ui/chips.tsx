@@ -46,7 +46,7 @@ export function SessionLink({ session_id, navigate, className }: SessionLinkProp
       type="button"
       className={`e-entity-chip e-entity-chip--session ${className ?? ""}`}
       title={session_id}
-      onClick={(e) => { e.stopPropagation(); navigate("sessions", { sessionId: session_id }); }}
+      onClick={(e) => { e.stopPropagation(); navigate("session", { sessionId: session_id }); }}
     >
       {label}
     </button>

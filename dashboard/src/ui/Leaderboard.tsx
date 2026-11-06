@@ -63,7 +63,7 @@ export function Leaderboard({ moduleType }: { moduleType?: string }) {
                   {s.rating ? `${s.rating.rating} ±${2 * s.rating.rd}${s.rating.provisional ? "?" : ""}` : "—"}
                 </Text></td>}
                 <td><Text className="e-faint" style={{ fontSize: 11 }}>
-                  {s.modules.map((m) => m.replace("emporia:", "").replace(":v1", "")).join(", ") || "—"}
+                  {s.modules.map((m) => m.replace("emporia:", "").replace(/:v\d+$/, "")).join(", ") || "—"}
                 </Text></td>
               </tr>
             ))}
