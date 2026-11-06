@@ -121,7 +121,7 @@ sitting 4, where the rotation is done.
       Webapp's backend with the page rendered outside a browser (no Desktop build here):
       - Capabilities ▸ Plugins lists **Emporia** off; switching it on adds the sidebar row, the status
         chip and the palette commands without an error toast, and switching it off removes them.
-      - The page fills the workspace pane, scrolls inside it, and looks like the tab: retromod, light
+      - The page fills the workspace pane, scrolls inside it, and looks like the tab (its one style), light
         and dark (`T` in the page), every tint (`t`); Desktop's own UI keeps its look while the page
         is open, and the page's keys work only after a click in it.
       - The menu drawer and its backdrop at a narrow window stay inside the page, not over Desktop.

@@ -675,7 +675,10 @@ def test_no_fixed_hermes_data_path():
     assert 'Path("/opt/data' not in text
 
 
-def test_a_dry_run_on_a_new_profile_says_it_would_make_its_config(tmp_path, capsys):
+def test_a_dry_run_on_a_new_profile_says_it_would_make_its_config(tmp_path, capsys, monkeypatch):
+    import os
+    # install_into_profile sets EMPORIA_* in this process's environment for what it runs next.
+    monkeypatch.setattr(os, "environ", os.environ.copy())
     profile = tmp_path / "profiles" / "shop"
     profile.mkdir(parents=True)
     (profile / ".env").write_text("")
