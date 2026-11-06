@@ -79,6 +79,21 @@ def test_an_idle_or_old_abandon_still_blames_whose_turn_it_was():
     assert quitter_of({**old, "current_agent": ""}) is None
 
 
+def test_a_tell_is_due_only_when_a_commit_is_the_makers_to_make():
+    """Found: an open tell always said do=commit, so whats_next told a maker who had already
+    committed (or whose turn it was not) to commit_move, which the relay then refused."""
+    p = pledge("tell", {"tell": "even_split"})
+    blotto = {"status": "active", "participants": ["c", "m"], "updated_at": at(0), "turn_order": True,
+              "current_agent": "m", "state": {"data": {"phase": "commit"}}}
+    assert PL.resolve(p, blotto, [], {}, ts(10)).get("do") == "commit"
+    assert "do" not in PL.resolve(p, {**blotto, "current_agent": "c"}, [], {}, ts(10))
+    assert "do" not in PL.resolve(p, {**blotto, "state": {"data": {"phase": "reveal"}}}, [], {}, ts(10))
+    two = pick(status="active", phase="commit", pending=["c", "x"])
+    assert "do" not in PL.resolve(p, two, [], {}, ts(10)), "m has committed; the others have not"
+    assert PL.resolve(p, pick(status="active", phase="commit", pending=["m"]), [], {}, ts(10)).get("do") == "commit"
+    assert PL.due("m", [{**p, **PL.resolve(p, two, [], {}, ts(10))}], ts(10)) == []
+
+
 # ── what an agent reads ─────────────────────────────────────────────────────
 
 def test_an_agent_in_a_bargain_is_told_its_moves():

@@ -400,7 +400,13 @@ def resolve(p: Mapping[str, Any], subject: Mapping[str, Any] | None, actions: It
                 return {"status": "void", "resolved_at": _iso(end), "evidence": {"why": "no move committed after the pledge"}}
             return {"status": "kept", "resolved_by": "evidence", "resolved_at": _iso(end),
                     "evidence": {"revealed": [m for _, m in moves], "tell": dict(terms)}}
-        return {"status": "open", "waiting_on": "maker", "do": "commit"}
+        # Review pass 2: "do: commit" only when a commit is the maker's to make now; otherwise
+        # whats_next told it to commit_move into a game waiting on someone else.
+        data = (session.get("state") or {}).get("data") or {}
+        if data.get("phase") == "commit" and (maker in (data.get("pending") or []) if not session.get(
+                "turn_order", True) else session.get("current_agent") == maker):
+            return {"status": "open", "waiting_on": "maker", "do": "commit"}
+        return {"status": "open", "waiting_on": "maker's next commit"}
 
     return {"status": "open"}
 
