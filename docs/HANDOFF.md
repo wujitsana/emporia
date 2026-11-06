@@ -1,5 +1,10 @@
 # Handoff — `post-hackathon`, 2026-11-03
 
+> **11-06:** the hackathon entry is built on `preview-2` (`hackathon-v2` with the waiting branches:
+> gamify-all, the ui-v2 dashboard, the Desktop page). Its release checklist and the decisions still
+> open are in [review-pass-2026-11-06-release.md](review-pass-2026-11-06-release.md). What follows is
+> the plan as of 11-03/11-04.
+
 For whoever picks this branch up next (a cloud coding agent, or a person). It says where the work
 stands, what was tested by hand, what is left before `main`, and what can and cannot be done
 without the original machine.
