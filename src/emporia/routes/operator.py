@@ -147,11 +147,21 @@ def idea_queue(conn) -> dict[str, Any]:
     return {"topic": topic, "topic_exists": True, "verdicts": takes, "open": total, "items": items}
 
 
+def _loads(raw: Any, default: Any) -> Any:
+    """A stored JSON column, or `default` when it is not JSON of that shape: one bad row never
+    takes the whole desk down."""
+    import json
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if isinstance(value, type(default)) else default
+
+
 def patch_queue(conn) -> dict[str, Any]:
     """Labs (W0): patches waiting — not yet checked, or checked and not yet landed — oldest first,
     each with its latest check. A summary is the agent's own words: shown beside the commands,
     never inside one."""
-    import json
     if why := relay_modules.off_because("labs", "patches"):
         return {"on": False, "why": why}
     if not _has_table(conn, "labs"):
@@ -163,11 +173,11 @@ def patch_queue(conn) -> dict[str, Any]:
     for r in rows:
         c = conn.execute("SELECT check_id, checker_id, result_json, created_at FROM lab_checks WHERE patch_id = ? "
                          "ORDER BY created_at DESC LIMIT 1", (r["patch_id"],)).fetchone()
-        res = json.loads(c["result_json"]) if c else None
+        res = _loads(c["result_json"], {}) if c else None
         tests = (res or {}).get("tests") or {}
         items.append({
             "patch_id": r["patch_id"], "lab": r["lab_slug"], "author_id": r["author_id"], "thread": r["thread"],
-            "base_commit": r["base_commit"], "files": json.loads(r["files_json"]), "added": r["lines_added"],
+            "base_commit": r["base_commit"], "files": _loads(r["files_json"], []), "added": r["lines_added"],
             "removed": r["lines_removed"], "summary": (r["summary"] or "")[:_TEXT_CHARS], "status": r["status"],
             "created_at": r["created_at"],
             "check": None if not c else {

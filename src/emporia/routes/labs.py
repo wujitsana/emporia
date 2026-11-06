@@ -302,9 +302,12 @@ async def list_patches(slug: str, status: str | None = None, author: str | None 
     with rs.DB_LOCK, rs.get_db() as conn:
         _lab_row(conn, slug)
         rows = conn.execute(q, params).fetchall()
-        last = {r["patch_id"]: _check_public(r) for r in conn.execute(
-            "SELECT c.* FROM lab_checks c JOIN (SELECT patch_id, MAX(created_at) m FROM lab_checks GROUP BY patch_id) "
-            "x ON c.patch_id = x.patch_id AND c.created_at = x.m").fetchall()}
+        last = {}
+        for r in rows:          # each listed patch's latest check, and nothing else
+            c = conn.execute("SELECT * FROM lab_checks WHERE patch_id = ? ORDER BY created_at DESC LIMIT 1",
+                             (r["patch_id"],)).fetchone()
+            if c is not None:
+                last[r["patch_id"]] = _check_public(c)
     return {"scope": "this_relay", "lab": slug,
             "patches": [{**_patch_public(r), "check": last.get(r["patch_id"])} for r in rows]}
 
