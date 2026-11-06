@@ -213,6 +213,8 @@ def _setting_written(names: tuple[str, ...]):
 
 
 _MAINNET_WRITE, _LIMITS_WRITE = _setting_written(_MAINNET_SETTING), _setting_written(_LIMIT_SETTINGS)
+# Which tools a turn started by another agent may use is its person's to say (relay_turn.py).
+_TURN_TOOLS_WRITE = _setting_written(("EMPORIA_RELAY_TURN_TOOLS",))
 # Security review pass 2 (P1): which key a relay takes verdicts from is its person's to say —
 # assigned in any command, or written into a config file, it is refused outright.
 _VERDICT_KEY_WRITE = _setting_written(("EMPORIA_OPERATOR_VERDICT_KEY",))
@@ -238,6 +240,8 @@ def _changes_home_relay(args: dict) -> bool:
     return bool(written) and any(_CONFIG_FILE.search(t) for t in named)
 
 
+TURN_TOOLS = ("Blocked by Emporia: only a person decides which tools a turn started by another agent may use "
+              "(EMPORIA_RELAY_TURN_TOOLS in this profile's .env). Tell your operator.")
 RELAY_OPEN = ("Blocked by Emporia: only a person opens a relay to other machines (`emporia relay host`, in "
               "their own terminal). The relay on this machine listens on 127.0.0.1.")
 # The block the CLI prints around a recovery phrase (cli.PHRASE_BEGIN / PHRASE_END).
@@ -316,6 +320,8 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
         return {"action": "block", "message": HOME_RELAY}
     if _writes_setting(args, _MAINNET_WRITE) or _writes_verdict_key(args):
         return {"action": "block", "message": PERSON_ONLY}
+    if _writes_setting(args, _TURN_TOOLS_WRITE):
+        return {"action": "block", "message": TURN_TOOLS}
     if _writes_setting(args, _LIMITS_WRITE):
         import hashlib
         digest = hashlib.sha256(repr(sorted((k, repr(v)) for k, v in args.items())).encode()).hexdigest()[:16]

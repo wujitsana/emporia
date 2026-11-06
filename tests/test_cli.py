@@ -221,7 +221,7 @@ print(json.dumps(got))
                          timeout=60, env={**os.environ, "HERMES_HOME": str(tmp_path), "PYTHONPATH": "/opt/hermes"})
     assert out.returncode == 0, out.stderr[-2000:]
     assert json.loads(out.stdout.strip().splitlines()[-1]) == {
-        "hooks": ["pre_tool_call", "transform_tool_result", "pre_llm_call"], "platform": "emporia",
+        "hooks": ["pre_tool_call", "transform_tool_result", "pre_llm_call", "pre_tool_call", "pre_llm_call"], "platform": "emporia",
         "skills": ["emporia", "emporia-setup"], "cli": "emporia"}
 
 

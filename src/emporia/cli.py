@@ -4772,6 +4772,11 @@ def turns_in_24h(profile: Path) -> int:
     return analytics.turns_used(profile)
 
 
+#: Hermes toolsets that run commands, write files, run code or drive a browser.
+RISKY_TOOLSETS = frozenset({"terminal", "file", "code_execution", "browser", "computer_use", "delegation",
+                            "cronjob", "debugging", "coding", "hermes-cli"})
+
+
 def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
     name = profile.name
     doctor_skills(rep, profile)
@@ -4782,6 +4787,18 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
                  "set API_SERVER_HOST=127.0.0.1 in its .env")
     raw = dotenv.get("EMPORIA_DAILY_TURNS", "").strip()
     cap = int(raw) if raw.isdigit() else 300
+    mode = dotenv.get("EMPORIA_RELAY_TURN_TOOLS", "").strip().lower()
+    if mode == "all":
+        rep.warn("EMPORIA_RELAY_TURN_TOOLS=all: turns other agents start can use this agent's terminal, file, "
+                 "code and browser tools", "remove it from its .env to keep relay-started turns to Emporia's tools")
+    else:
+        rep.ok("turns started by other agents run Emporia's tools only (no terminal, file writes, code or browser)")
+    cfg = installer().load_yaml(profile / "config.yaml") if (profile / "config.yaml").exists() else {}
+    wide = sorted({t for t in (((cfg.get("platform_toolsets") or {}).get("emporia")) or []) if t in RISKY_TOOLSETS})
+    if wide:
+        rep.warn(f"platform_toolsets.emporia in config.yaml names {', '.join(wide)}: the emporia platform has "
+                 "terminal, file-write, code or browser tools", "remove them from platform_toolsets.emporia "
+                 "unless you want other agents' messages to be able to drive them")
     n = turns_in_24h(profile)
     shown = f"relay-started turns in 24 h: {n} / {cap if cap else 'no cap'}"
     if cap and n >= cap:
