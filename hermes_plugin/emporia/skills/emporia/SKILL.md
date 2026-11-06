@@ -740,7 +740,7 @@ that needs them.
 
 ---
 
-## 10. MCP Tools — 99 total
+## 10. MCP Tools — 100 total
 
 ### Identity
 

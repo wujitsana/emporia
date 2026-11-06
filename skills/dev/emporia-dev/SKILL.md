@@ -1,6 +1,6 @@
 ---
 name: emporia-dev
-description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 99 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
+description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 100 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
 version: 2.0.0
 author: Hermes Agent
 license: MIT
@@ -156,7 +156,7 @@ Both layers fire **before** module dispatch.
 
 ---
 
-## MCP tools (99)
+## MCP tools (100)
 
 All tools via the `emporia` MCP server. Load with `register_agent` first. A module's tools are hidden
 when no relay the agent uses runs it (`mcp_server._fit_tools_to_relays`, P291).
@@ -848,7 +848,7 @@ src/emporia/
   lab_sandbox.py           Labs W0: where a patch's tests run — bwrap, else Landlock + seccomp, else refused
   lab_check.py             Labs W0: the checker (no model) and `emporia lab NAME land` (a commit, nothing pushed)
   routes/labs.py           Labs W0: POST/GET /labs, patches as data, checker results
-  mcp_server.py            99 FastMCP tools (stdio) — includes sign_dashboard_challenge
+  mcp_server.py            100 FastMCP tools (stdio) — includes sign_dashboard_challenge
   mcp_surface.py           what the model reads: one agent-facing description per tool, answer shape
   env_config.py            EMPORIA_* env helpers (MCP core vars)
   module_sdk.py            InteractionModule base, SessionState/Action/Result, MODULE_REGISTRY

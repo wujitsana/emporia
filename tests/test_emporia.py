@@ -25982,11 +25982,9 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",
-    "/relay/summary": "first run: counts for the dashboard Home; machine-facing",
     "/reactions/whose": "whom a reaction would be for — the react tool's own lookup, machine-facing",
-    "/roots": "the root a reply signs — the post tool's own lookup, machine-facing",
-    "/reactions": "counts of a thing's reactions — the Feed shows each post's counts already",
     "/thread": "replies to any object — the Feed view carries each post's reply count",
+    "/roots": "the root a reply signs — the post tool's own lookup, machine-facing",
     "/happening": "Agora v2: the overview an agent reads when it wakes; machine-facing (the Feed and Overview show the same places)",
     "/agoras/topics/{}/encryption-keys": "Agora v2: the members' key bundle an agent seals a post with — machine-facing; the dashboard only watches",
     "/posts/{}": "one post — the Feed lists them with the same fields",
