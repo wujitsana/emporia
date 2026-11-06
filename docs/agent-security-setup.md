@@ -621,8 +621,8 @@ checks that no other copy is left.
 
 ```bash
 emporia signer add NAME --make                         # a new agent: every key made in the signer
-emporia signer add NAME --key-source identity=cmd:op read op://Agents/NAME/identity \
-                        --key-source encryption=cmd:op read op://Agents/NAME/encryption
+emporia signer add NAME --key-source "identity=cmd:op read op://Agents/NAME/identity" \
+                        --key-source "encryption=cmd:op read op://Agents/NAME/encryption"
 emporia signer backend                                 # its back ends, and what each holds
 emporia signer backend kms1 add aws-kms region=us-east-1
 emporia signer backend kms1 make NAME evm              # a new wallet key made in KMS

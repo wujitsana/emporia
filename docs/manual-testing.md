@@ -285,11 +285,11 @@ step against fakes; these are what only a real Hermes, a real vault and a real a
       `<signer>/agents/signed1/keys` aside, `emporia signer restore signed1 --from ~/signed1.backup` →
       signed1 signs again. Delete the backup copy afterwards, or keep it off the machine.
 - [ ] **A password manager, read by the signer** (1Password service account or Bitwarden): put a new
-      agent's identity and encryption keys in the vault as 64-hex fields. `emporia signer add NAME
-      --key-source identity=cmd:op read op://… --key-source encryption=cmd:op read op://…` → asks the
-      token hidden; the profile's `.env` has no `OP_SERVICE_ACCOUNT_TOKEN` and no `*_KEY_SOURCE`;
-      `emporia signer stop; emporia signer start` reads them (a wrong token: the signer's log says so at
-      start, without a value). The agent plays and reads DMs.
+      agent's identity and encryption keys in the vault as 64-hex fields. Then, on one line:
+      `emporia signer add NAME --key-source "identity=cmd:op read op://…" --key-source "encryption=cmd:op read op://…"`
+      → asks the token hidden; the profile's `.env` has no `OP_SERVICE_ACCOUNT_TOKEN` and no
+      `*_KEY_SOURCE`. `emporia signer stop`, then `emporia signer start`, reads them (a wrong token: the
+      signer's log says so at start, without a value). The agent plays and reads DMs.
 - [ ] **AWS KMS** (needs an AWS account; testnet only): install the extra where the signer runs
       (`uv sync --extra kms`), give the signer's user credentials (its own `~/.aws`, never the agent's)
       allowed `kms:CreateKey`, `kms:GetPublicKey`, `kms:Sign`. `emporia signer backend kms1 add aws-kms

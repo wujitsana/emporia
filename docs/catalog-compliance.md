@@ -183,7 +183,7 @@ tools, no middleware, and the `emporia` command. The entry lists exactly those h
 - **Key protection.** Keys in a child's environment are behind `key_guard`, which blocks
   `/proc/<pid>/environ` and `ps e` for the agent's own tools.
 - **Keys in a password manager** (P293): the recommended path is the signer's. `emporia signer
-  add NAME --key-source ROLE=cmd:op read op://…` (or `cmd:bw get password ITEM`) has the signer
+  add NAME --key-source "ROLE=cmd:op read op://…"` (or `cmd:bw get password ITEM`, quoted the same way) has the signer
   read each key itself, at its start, with the vault token kept in the signer's folder
   (`backends/vault.secret`, 0600) or the signer user's own environment. The agent's profile
   names no vault and holds no token, so nothing of the vault passes through the agent's

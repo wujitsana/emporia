@@ -2386,8 +2386,8 @@ def _signer_add_sources(args: argparse.Namespace, url: str) -> int:
     for item in args.key_source:
         role, _, ref = item.partition("=")
         if role not in sb.ROLES or not ref.strip().startswith("cmd:"):
-            print(f"signer add --key-source: ROLE=cmd:… (ROLE one of {', '.join(sb.ROLES)}), e.g. "
-                  "identity=cmd:op read op://Agents/alpha/identity")
+            print(f"signer add --key-source: \"ROLE=cmd:…\", quoted (ROLE one of {', '.join(sb.ROLES)}), e.g. "
+                  "--key-source \"identity=cmd:op read op://Agents/alpha/identity\"")
             return 1
         refs[role] = ref.strip()
     key_dir = Path(env.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
@@ -7085,8 +7085,9 @@ def build_parser() -> argparse.ArgumentParser:
     sg.add_argument("--backend", action="append", default=[], metavar="ROLE=NAME",
                     help="add --make: make ROLE's key in the back end NAME (emporia signer backend)")
     sg.add_argument("--key-source", action="append", default=[], metavar="ROLE=cmd:…",
-                    help="add: the signer reads ROLE's key from a password manager (cmd:op read op://…, "
-                         "cmd:bw get password ITEM); the vault token becomes the signer's")
+                    help="add: the signer reads ROLE's key from a password manager — quoted, as one argument: "
+                         "\"identity=cmd:op read op://…\" or \"evm=cmd:bw get password ITEM\"; the vault "
+                         "token becomes the signer's")
     sg.add_argument("--out", default="", help="backup: the file to write (it must not exist yet)")
     sg.add_argument("--from", dest="from_", default="", help="restore: a backup from emporia signer backup")
     sg.set_defaults(func=cmd_signer)

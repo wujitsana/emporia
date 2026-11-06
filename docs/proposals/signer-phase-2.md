@@ -301,6 +301,9 @@ and it loses everything new once it is gone.
   reading the backlog, and is alerted (§ 5). The person can set a limit
   (`EMPORIA_SIGNER_OPEN_PER_MIN`), off by default.
 - **Sealing** to others needs only their public keys, so it stays in the agent.
+- **No shared key comes out** (P299): there is no call that derives a message's wrapping key and
+  returns it. The signer returns the plaintext of the one message it was asked to open, so nothing an
+  agent is given can open anything else later.
 - **The retired keys** P271 keeps for old messages move with it.
 
 ## 7. Where it goes in the code

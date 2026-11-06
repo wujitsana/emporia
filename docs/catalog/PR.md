@@ -142,7 +142,7 @@ merges, and the URLs are pinned to the entry's sha.*
 - **Telemetry:** none.
 - **Known issues:**
   - Keys in a password manager are best read by the signer (`emporia signer add NAME
-    --key-source ROLE=cmd:…`), the vault token in the signer's folder. An agent-side `cmd:` key
+    --key-source "ROLE=cmd:…"`), the vault token in the signer's folder. An agent-side `cmd:` key
     source, not recommended, is read with that vendor's CLI and an access token in the profile's
     settings, not through Hermes's secret sources. It is off unless the person links one.
   - Linux and macOS only (the console uses a Unix socket).
