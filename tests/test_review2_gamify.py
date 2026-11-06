@@ -3,7 +3,6 @@
 `docs/review-pass-2026-11-06-gamify.md` lists every finding; each fix here has its test."""
 import json
 import uuid
-from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
