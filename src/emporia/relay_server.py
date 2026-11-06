@@ -1350,6 +1350,7 @@ def init_db() -> None:
         _migrate_rooms(conn)
         _migrate_deletions(conn)     # P192: after every table it marks exists
         _migrate_agora_signatures(conn)
+        _migrate_verdict_keys(conn)  # security review pass 2 (P1)
 
         # P36-1: indexes come AFTER the column migrations, always. They used to
         # sit in the same executescript as the CREATE TABLE statements, which is
@@ -1424,7 +1425,9 @@ def init_db() -> None:
                 decided_by TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 decided_at TEXT NOT NULL DEFAULT '',
-                revealed_at TEXT NOT NULL DEFAULT ''
+                revealed_at TEXT NOT NULL DEFAULT '',
+                verdict_key TEXT NOT NULL DEFAULT '',
+                verdict_signature TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_bug_reports_operator ON bug_reports(operator_key, status, created_at);
             CREATE TABLE IF NOT EXISTS idea_verdicts (
@@ -1437,7 +1440,8 @@ def init_db() -> None:
                 points INTEGER NOT NULL DEFAULT 0,
                 decided_by TEXT NOT NULL,
                 decided_at TEXT NOT NULL,
-                signature TEXT NOT NULL
+                signature TEXT NOT NULL,
+                verdict_key TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_idea_verdicts_ref ON idea_verdicts(ref);
             -- Bargain: the relay's secret seed for a game that deals hidden hands, kept out
@@ -1964,6 +1968,16 @@ def _migrate_deletions(conn: Any) -> None:
         cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if cols and col not in cols:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+
+
+def _migrate_verdict_keys(conn: Any) -> None:
+    """V33 -> V34 (security review pass 2, P1): a verdict is signed by the operator's verdict
+    key, kept beside it. Verdicts given before keep '' (the operator agent's word, as they were)."""
+    for table, col in (("bug_reports", "verdict_key"), ("bug_reports", "verdict_signature"),
+                       ("idea_verdicts", "verdict_key")):
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if cols and col not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT NOT NULL DEFAULT ''")
 
 
 def _migrate_carried_records(conn: Any) -> None:
@@ -3538,7 +3552,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("likes", c) for c in ("kind", "target_id", "liked", "at", "signature")),
     # Launch additions: an idea's verdict — the post, the author's operator key (as bug_reports'), what it led to.
     *(("idea_verdicts", c) for c in ("post_id", "operator_key", "verdict", "ref", "duplicate_of", "points",
-                                     "decided_at", "signature")),
+                                     "decided_at", "signature", "verdict_key")),
     # Bargain: a dealt game's secret seed and the players' shares. The shares are keyed by the
     # ids they were signed under, like the game's own state, so a rename leaves them as signed.
     *(("session_deals", c) for c in ("session_id", "relay_seed", "commitment", "contributions_json",
@@ -3551,7 +3565,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # (the cap's key), never a handle — so a rename does not reset an operator's cap.
     *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",
                                    "severity_claimed", "content_json", "status", "severity", "points", "fix_commit",
-                                   "duplicate_of", "created_at", "decided_at", "revealed_at")),
+                                   "duplicate_of", "created_at", "decided_at", "revealed_at", "verdict_key",
+                                   "verdict_signature")),
     *(("security_incidents", c) for c in ("incident_id", "summary", "affected", "report_id", "detected_at",
                                           "fixed_at", "recorded_at")),
     # bounty_entries (P72-4) — `agent_id` is a handle and lives in

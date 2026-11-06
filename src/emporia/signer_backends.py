@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import base64
 import json
+import threading
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -796,11 +797,18 @@ class MetaMaskBackend(Backend):
     capabilities = frozenset({"evm-typed-data", "make-keys"})
     # One `mm` at a time per signer: select, then sign, with nothing between.
     _LOCK: ClassVar[Any] = None
+    # P7 (security review pass 2): when Guard Mode was last seen, across requests — the signer
+    # builds a back end per request (`signer.get_backend`), so a per-instance cache was always
+    # empty and every signature also ran `mm wallet trading-mode get`. Keyed by the back end's
+    # name, a digest of its settings and secrets (a back end set up again starts afresh) and the
+    # wallet; only a Guard Mode answer is kept, for GUARD_TTL_S; any other answer drops the entry.
+    GUARD_TTL_S: ClassVar[float] = 300.0
+    _GUARD_SEEN: ClassVar[dict[tuple[str, str, str], float]] = {}
+    _GUARD_LOCK: ClassVar[Any] = threading.Lock()     # its own: _guarded runs under _LOCK
 
     def __init__(self, name: str, settings: dict | None = None, secrets: dict | None = None, runner: Any = None):
         super().__init__(name, dict(settings or {}), dict(secrets or {}))
         self._runner = runner                       # tests: a fake in place of subprocess.run
-        self._modes: dict[str, float] = {}          # address → when Guard Mode was last seen
         if MetaMaskBackend._LOCK is None:
             import threading
             MetaMaskBackend._LOCK = threading.Lock()
@@ -937,11 +945,21 @@ class MetaMaskBackend(Backend):
                                    "(its max_value)")
         return chain
 
+    def _guard_key(self, address: str) -> tuple[str, str, str]:
+        import hashlib
+        digest = hashlib.sha256(json.dumps([self.settings, self.secrets], sort_keys=True, default=str).encode())
+        return self.name, digest.hexdigest(), address.lower()
+
     def _guarded(self, address: str) -> None:
         """MetaMask's own layer is there only in Guard Mode: refuse a wallet in Beast Mode."""
         import time
-        if time.monotonic() - self._modes.get(address, -1e9) < 300:
+        key = self._guard_key(address)
+        with MetaMaskBackend._GUARD_LOCK:
+            seen = MetaMaskBackend._GUARD_SEEN.get(key)
+        if seen is not None and 0 <= time.monotonic() - seen < self.GUARD_TTL_S:
             return
+        with MetaMaskBackend._GUARD_LOCK:
+            MetaMaskBackend._GUARD_SEEN.pop(key, None)       # stale, or about to be asked again
         res, _ = self._call("wallet", "trading-mode", "get", "--address", address)
         found: list[str] = []
 
@@ -959,7 +977,8 @@ class MetaMaskBackend(Backend):
             raise BackendError(f"the MetaMask wallet {address} is " + ("in Beast Mode" if found else
                                "in no trading mode mm would say") + ": its allowlists are not there, so it "
                                "signs nothing for Emporia — its person runs mm wallet trading-mode set guard")
-        self._modes[address] = time.monotonic()
+        with MetaMaskBackend._GUARD_LOCK:
+            MetaMaskBackend._GUARD_SEEN[key] = time.monotonic()
 
     def sign_typed_data(self, agent_id: str, full_message: dict, ref: str = "") -> bytes:
         self.require("evm-typed-data", "sign EIP-712 typed data")

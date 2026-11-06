@@ -71,6 +71,10 @@ before matching, cheap and without false positives.
 back end per request, so `_modes` (5 minutes) is always empty and every signature runs
 `mm wallet trading-mode get` too. Safe (it checks more often), slower.
 
+**Status (11-06):** P1, P2, P6 (Emporia's guard) and P7 built on `security-followups-2`; P3, P4,
+P5 and P6 (purse's guard) on `purse-followups-2`. See `docs/security-log.md`. P1 took the user's
+choice: a separate operator verdict key, not the agent's identity through `signer.person_sign`.
+
 ## Checked and found sound
 
 - **Signer back ends:** every result is verified before use (KMS Ed25519 against the key, KMS

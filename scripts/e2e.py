@@ -20,7 +20,10 @@ hand in a throwaway Hermes home:
   hands published);
 * the operator section: the relay names the merchant its operator; its desk shows a player's
   open bug report with the verdict command and a post in the ideas topic with the adopt command,
-  and the player is refused the desk;
+  and the player is refused the desk; the operator's verdict key (security review pass 2, P1), made
+  by the run as a person would, in a person's folder, is the relay's: a verdict sent without a
+  terminal is refused, one given in a terminal (a pseudo-terminal here) is signed with that key
+  and awards the player its points;
 * `hermes emporia update`, twice: the runtime is already at the pinned commit, so each verifies it
   and changes nothing.
 
@@ -143,6 +146,8 @@ class Run:
         self.player, self.merchant, self.house_agent = (f"e2e-player-{tag}", f"e2e-merchant-{tag}",
                                                         f"e2e-house-{tag}")
         self.signed = f"e2e-signed-{tag}"        # an agent whose keys its signer made and holds
+        self.person_dir = self.root / "person-signer"   # the person's side: the operator's verdict key
+        self.verdict_key = ""
         self.services_before = self._services()
         self.pids: list[int] = []                # every process this run started and still owns
         self.procs: dict[int, subprocess.Popen] = {}
@@ -234,7 +239,9 @@ class Run:
             # The operator section: the merchant is this relay's operator; bug quests (with
             # the transparency log they need) give its desk a queue.
             EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1",
-            EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent)
+            EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent,
+            # Security review pass 2 (P1): the only key a verdict is taken from — the person's
+            EMPORIA_OPERATOR_VERDICT_KEY=self.make_verdict_key())
         py = self.repo / ".venv" / "bin" / "python"
         # The relay runs --repo's code even under another checkout's interpreter (a git worktree
         # has no .venv; the fallback's editable install is the main checkout): found by the review
@@ -264,6 +271,52 @@ class Run:
             check(pid == proc.pid, f"the relay serves from pid {pid}, not the {proc.pid} started")
         self.note(f"relay {self.relay_url} pid {proc.pid}")
         return f"pid {proc.pid}"
+
+    def make_verdict_key(self) -> str:
+        """The operator's verdict key, made as its person makes it (`operator_verdicts.new`, what
+        `emporia operator NAME verdict-key new` runs), in a person's folder of this run's own —
+        never an agent profile. Only the public half comes back here."""
+        if not self.verdict_key:
+            out = self.run([self.repo_python(), "-c", "from emporia import operator_verdicts as v\n"
+                            "print(v.new()[0])"], env=self.repo_env(EMPORIA_SIGNER_DIR=str(self.person_dir))).stdout
+            self.verdict_key = out.strip().splitlines()[-1]
+            check(len(self.verdict_key) == 64, f"no verdict key made: {out[-200:]}")
+        return self.verdict_key
+
+    def as_person(self, profile: str, *args: str, timeout: float = 120) -> tuple[int, str]:
+        """`hermes -p PROFILE emporia …` in a terminal of its own (a pseudo-terminal, no Hermes
+        session): how a person runs the commands an agent's tools may not."""
+        import pty
+        import select
+        check(self.hermes, "hermes is not on PATH")
+        argv = [self.hermes, "-p", profile, "emporia", *args]
+        self.note("$ (terminal) " + " ".join(argv))
+        master, slave = pty.openpty()
+        env = self.env(EMPORIA_SIGNER_DIR=str(self.person_dir), TERM="dumb")
+        p = subprocess.Popen(argv, env=env, cwd=self.root, stdin=slave, stdout=slave, stderr=slave)
+        self.pids.append(p.pid)
+        self.procs[p.pid] = p
+        os.close(slave)
+        out, deadline = b"", time.time() + timeout
+        try:
+            while time.time() < deadline:
+                ready, _, _ = select.select([master], [], [], 0.5)
+                if ready:
+                    try:
+                        chunk = os.read(master, 65536)
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    out += chunk
+                elif p.poll() is not None:
+                    break
+            code = p.wait(timeout=max(1.0, deadline - time.time()))
+        finally:
+            os.close(master)
+        text = out.decode(errors="replace").replace("\r\n", "\n")
+        self.note(text + f"[exit {code}]")
+        return code, text
 
     def release(self) -> str:
         """A release of the commit this run started at, made here and pushed nowhere: the plugin at
@@ -569,6 +622,18 @@ class Run:
         refused = self.emporia(self.player, "operator", self.player, ok_codes=(1,))
         check("relay operator access required" in refused and rid not in refused,
               f"a player reached the operator's desk: {refused.strip()[-200:]}")
+        # Security review pass 2 (P1): a verdict is the person's, signed by the verdict key
+        verdict = ("bugs", self.merchant, "verdict", rid, "accepted", "--severity", "high", "--fix", self.sha[:12])
+        piped = self.emporia(self.merchant, *verdict, ok_codes=(1,))
+        check("only a person" in piped, f"a verdict without a terminal was not refused: {piped.strip()[-200:]}")
+        code, shown = self.as_person(self.merchant, "operator", self.merchant, "verdict-key")
+        check(code == 0 and self.verdict_key in shown and "registered" in shown,
+              f"verdict-key does not show the relay's key as registered: {shown.strip()[-300:]}")
+        code, given = self.as_person(self.merchant, *verdict)
+        check(code == 0 and '"status": "accepted"' in given and self.verdict_key in given,
+              f"the person's verdict: {given.strip()[-400:]}")
+        pts = (self.tool(self.player, "bug_reports").get("points") or {})
+        check(pts.get("points") == 40 and pts.get("accepted") == 1, f"the player's points: {pts}")
 
     def update(self) -> None:
         """At the pinned commit, update is a verified no-op: twice, nothing moves or installs."""

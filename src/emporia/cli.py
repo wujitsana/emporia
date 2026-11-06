@@ -1507,8 +1507,17 @@ def cmd_bugs(args: argparse.Namespace) -> int:
             # the person's signed decision, in their own terminal (the key guard refuses it too).
             print(f"bugs: only a person gives a {act}, in their own terminal — never through an agent.")
             return 1
-        # Signed with the operator's own key, the way the console signs: a person's command.
         _, agent_id, _env = _agent(args.name)
+        if act == "verdict":
+            # Security review pass 2 (P1): signed by the operator's verdict key, a person's key
+            # no agent holds; sent with the operator's sign-in, as before.
+            from emporia import wire
+            rid = args.rest[0]
+            return _send_verdict(agents[args.name], agent_id, path.lstrip("/"), body, "bugs",
+                                 lambda relay, key, at: wire.signed_bug_verdict_payload(
+                                     rid, body["verdict"], body["severity"], body["fix_commit"],
+                                     body["duplicate_of"], relay, key, at))
+        # An incident: the operator's sign-in, the way the console signs — a person's command.
         status, d = _signed_get(agent_id, _key_file(agents[args.name], agent_id, "identity").parent,
                                 path.lstrip("/"), "POST", body)
         if status != 200:
@@ -1591,34 +1600,106 @@ def cmd_ideas(args: argparse.Namespace) -> int:
 
 
 def _idea_verdict(profile: Path, post_id: str, verdict: str, ref: str, duplicate_of: str) -> int:
-    """Sign an idea verdict with the operator agent's key (`emporia:idea-verdict:v1`, run the
-    way its MCP server runs, so its own key source signs) and send it with the operator's
-    sign-in, the way a bug verdict goes. No MCP tool reaches `/ideas/{id}/verdict`."""
-    import json as _json
-
+    """An idea verdict (`emporia:idea-verdict:v2`), signed by the operator's verdict key — a
+    person's key, in the signer's folder, never the operator agent's — and sent with the
+    operator's sign-in, as a bug verdict goes. No MCP tool reaches `/ideas/{id}/verdict`."""
+    from emporia import wire
     from emporia.wire import path_id
     _, agent_id, _env = _agent(profile.name)
     ref = ref.strip() if verdict == "adopted" else ""
     duplicate_of = duplicate_of.strip() if verdict == "duplicate" else ""
-    code = ("import json\nfrom datetime import UTC, datetime\nfrom emporia import signing\n"
-            "at = datetime.now(UTC).isoformat()\n"
-            f"sig = signing.sign({agent_id!r}, 'idea-verdict', {post_id!r}, {verdict!r}, {ref!r}, "
-            f"{duplicate_of!r}, {agent_id!r}, at)\n"
-            f"print(json.dumps({{'verdict': {verdict!r}, 'ref': {ref!r}, 'duplicate_of': {duplicate_of!r}, "
-            "'at': at, 'signature': sig}))")
-    r = _as_agent(profile, code, EMPORIA_NO_ARCHIVE="1")
-    try:
-        body = _json.loads(r.stdout.strip().splitlines()[-1])
-    except (ValueError, IndexError):
-        print(f"ideas: {(r.stderr or r.stdout).strip()[-300:]}")
+    return _send_verdict(profile, agent_id, f"ideas/{path_id(post_id)}/verdict",
+                         {"verdict": verdict, "ref": ref, "duplicate_of": duplicate_of}, "ideas",
+                         lambda relay, key, at: wire.signed_idea_verdict_payload(
+                             post_id, verdict, ref, duplicate_of, relay, key, at))
+
+
+def _send_verdict(profile: Path, agent_id: str, path: str, body: dict, label: str, build) -> int:
+    """Security review pass 2 (P1): sign a verdict with this person's verdict key and send it as
+    the operator. `build(relay_id, verdict_key, at)` is the payload; the relay checks it against
+    the verdict key it has registered (`EMPORIA_OPERATOR_VERDICT_KEY`), and refuses anything else."""
+    import json as _json
+    from datetime import UTC, datetime
+
+    from emporia import operator_verdicts as ov
+    key_dir = _key_file(profile, agent_id, "identity").parent
+    status, who = _signed_get(agent_id, key_dir, "operator/whoami")
+    if status != 200 or not isinstance(who, dict):
+        print(f"{label}: {_relay_refusal(status, who)}")
         return 1
-    status, d = _signed_get(agent_id, _key_file(profile, agent_id, "identity").parent,
-                            f"ideas/{path_id(post_id)}/verdict", "POST", body)
+    if not who.get("is_operator"):
+        print(f"{label}: {agent_id} is not this relay's operator — a verdict is its operator's")
+        return 1
+    try:
+        mine = ov.public_hex()
+    except ov.VerdictKeyError as e:
+        print(f"{label}: {e}")
+        return 1
+    if not mine:
+        print(f"{label}: no verdict key here ({ov.key_path()}). A verdict is signed by the operator's verdict key, "
+              f"a person's key no agent holds: make one with `emporia operator {profile.name} verdict-key new`, then "
+              "register it with the relay")
+        return 1
+    theirs = who.get("verdict_key") or ""
+    if theirs != mine:
+        print(f"{label}: the relay takes verdicts from " + (f"the verdict key {theirs[:16]}…" if theirs else "no key yet")
+              + f", and yours is {mine[:16]}… — in the relay's .env set {ov.ENV}={mine} and restart the relay "
+              f"(`emporia operator {profile.name} verdict-key` shows both)")
+        return 1
+    at = datetime.now(UTC).isoformat()
+    try:
+        signature = ov.sign(build(str(who.get("relay_id") or ""), mine, at))
+    except ov.VerdictKeyError as e:
+        print(f"{label}: {e}")
+        return 1
+    status, d = _signed_get(agent_id, key_dir, path, "POST",
+                            {**body, "at": at, "signature": signature, "verdict_key": mine})
     if status != 200:
-        print(f"ideas: {(d or {}).get('detail', d) if isinstance(d, dict) else d}")
+        print(f"{label}: {(d or {}).get('detail', d) if isinstance(d, dict) else d}")
         return 1
     print(_json.dumps(d, indent=2))
     return 0
+
+
+def _verdict_key_cmd(profile: Path, agent_id: str, what: str) -> int:
+    """`emporia operator NAME verdict-key [new|rotate]`: the operator's verdict key — shown, made,
+    or replaced — and whether NAME's relay has it registered. A person's command: the key signs
+    the verdicts that award points, so no agent makes, reads or uses it."""
+    from emporia import operator_verdicts as ov
+    if what not in ("", "show", "new", "rotate"):
+        print(f"operator verdict-key: emporia operator {profile.name} verdict-key [new|rotate]")
+        return 2
+    if not _persons_terminal():
+        print("operator verdict-key: only a person makes or uses the operator's verdict key, in their own terminal "
+              "— never through an agent.")
+        return 1
+    try:
+        if what in ("new", "rotate"):
+            pub, retired = ov.new(rotate=what == "rotate")
+            print(f"  A new verdict key, kept at {ov.key_path()} (0600; the signer's folder, no agent profile).")
+            if retired:
+                print(f"  The old one is kept beside it, as {retired.name}; the relay stops taking it once the new "
+                      "public key is in its .env and it restarts.")
+        pub = ov.public_hex()
+    except ov.VerdictKeyError as e:
+        print(f"operator verdict-key: {e}")
+        return 1
+    print(f"  Your verdict key: {pub or 'none here — make one: emporia operator ' + profile.name + ' verdict-key new'}")
+    status, who = _signed_get(agent_id, _key_file(profile, agent_id, "identity").parent, "operator/whoami")
+    if status != 200 or not isinstance(who, dict) or not who.get("is_operator"):
+        print("  The relay: " + (_relay_refusal(status, who) if status != 200 or not isinstance(who, dict)
+                                 else f"{agent_id} is not its operator"))
+        return 0 if what else 1
+    theirs = who.get("verdict_key") or ""
+    if pub and theirs == pub:
+        print("  The relay takes verdicts from it: registered.")
+        return 0
+    print("  The relay takes verdicts from " + (f"another key ({theirs[:16]}…)" if theirs else "no key yet")
+          + (f" ({who['verdict_key_problem']})" if who.get("verdict_key_problem") and not theirs else ""))
+    if pub:
+        print(f"  Register yours, on the relay's machine: {ov.ENV}={pub} in its .env (or `emporia relay config set "
+              f"{ov.ENV} {pub}`), then restart the relay.")
+    return 0 if what else 1
 
 
 def cmd_archive(args: argparse.Namespace) -> int:
@@ -3768,6 +3849,9 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
     if verb in ("set", "unset"):
         names = args.names or []
         st = rc.BY_NAME.get(names[0]) if names else None
+        if st is not None and st.extra.get("person") and not _persons_terminal():
+            print(f"relay config: only a person sets {st.name}, in their own terminal — never through an agent.")
+            return 1
         if st is not None and st.secret:
             if len(names) > 1:
                 print(f"relay config: {st.name} is a secret — never on the command line, where shell history "
@@ -3799,6 +3883,9 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
             return 0
         st = rc.BY_NAME[picked]
         print(f"\n{st.name} — {st.about}\n  now: {shown(st)}")
+        if st.extra.get("person") and not _persons_terminal():
+            print(f"  Only a person sets {st.name}, in their own terminal.")
+            continue
         if st.secret:
             if write_secret(st, clear=False) == 0:
                 current = installer().harvest_env(env_path.parent)
@@ -4837,12 +4924,31 @@ def _house_files(profile: Path) -> tuple[Path, Path, Path]:
 def _house_pid(profile: Path) -> int | None:
     """The runner `emporia house start` started for this profile, if it still runs — checked
     by its command line, never a number reused after a reboot."""
-    pid_file = _house_files(profile)[0]
+    pid = _house_pid_file(profile)
+    return pid if pid is not None and _is_house_of(pid, profile) else None
+
+
+def _house_pid_file(profile: Path) -> int | None:
     try:
-        pid = int(pid_file.read_text().strip())
+        return int(_house_files(profile)[0].read_text().strip())
     except (OSError, ValueError):
         return None
-    return pid if _is_our_pid(pid, b"emporia.house") else None
+
+
+def _is_house_of(pid: int, profile: Path) -> bool:
+    """P2 (security review pass 2): `pid` is *this* profile's house runner — a process of this
+    user's, running `-m emporia.house --home <this profile>` — read from the process itself. The
+    PID file sits in the profile, which its agent can write, and every runner's command line says
+    `emporia.house`: matching that alone let one profile's agent point `house stop` at another's."""
+    try:
+        argv = [a.decode(errors="replace") for a in Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")]
+        owner = os.stat(f"/proc/{pid}").st_uid
+    except OSError:
+        return False
+    if owner != os.getuid() or not any(argv[i:i + 2] == ["-m", "emporia.house"] for i in range(len(argv))):
+        return False
+    homes = [argv[i + 1] for i in range(len(argv) - 1) if argv[i] == "--home"]
+    return homes == [str(profile.resolve())]
 
 
 def cmd_house(args: argparse.Namespace) -> int:
@@ -4878,6 +4984,13 @@ def cmd_house(args: argparse.Namespace) -> int:
         return 0
     if args.action == "stop":
         if not running:
+            recorded = _house_pid_file(profile)
+            if recorded is not None and Path(f"/proc/{recorded}").exists():
+                # P2: a live process that is not this profile's runner — never stopped on the file's word
+                pid_file.unlink(missing_ok=True)
+                print(f"house stop: pid {recorded} in {pid_file} is not {args.name}'s house runner (not this user's "
+                      f"`emporia.house --home {profile.resolve()}`) — nothing stopped")
+                return 1
             pid_file.unlink(missing_ok=True)
             print(f"house stop: no runner started by `emporia house start {args.name}` is running")
             return 1
@@ -4892,7 +5005,8 @@ def cmd_house(args: argparse.Namespace) -> int:
     print(f"  The house agent {agent_id}: plays, takes free set-play games left waiting "
           f"{int(args.adopt_after)}s while the relay is quiet (it steps back once {args.step_back_at} others "
           f"played in {int(args.busy_window)}s), greets newcomers. On the relay, list it in EMPORIA_HOUSE_AGENTS.")
-    argv = [sys.executable, "-m", "emporia.house", "--interval", str(args.interval),
+    # P2: --home names this profile in the runner's own command line, which `house stop` checks
+    argv = [sys.executable, "-m", "emporia.house", "--home", str(profile.resolve()), "--interval", str(args.interval),
             "--adopt-after", str(args.adopt_after), "--step-back-at", str(args.step_back_at),
             "--busy-window", str(args.busy_window)] + (["--once"] if args.once else []) + \
         (["--stakes"] if args.stakes else [])
@@ -4949,13 +5063,19 @@ def cmd_operator(args: argparse.Namespace) -> int:
     `emporia operator NAME whoami` asks only that question. As a person, in your terminal (an
     agent asking waits for your yes): `emporia operator NAME snapshot` copies the relay's
     database aside; `emporia operator NAME expedition TITLE --text TEXT` posts this week's
-    expedition in the expeditions topic, making the topic first if it is not there."""
+    expedition in the expeditions topic, making the topic first if it is not there.
+
+    Security review pass 2 (P1), a person's only: `emporia operator NAME verdict-key [new|rotate]`
+    shows, makes or replaces the operator's verdict key, which signs every bug and idea verdict
+    (`emporia.operator_verdicts`), and says whether the relay has it registered."""
     from emporia import operator_desk
     profile, agent_id, env = _agent(args.name)
     if not env:
         print(f"operator: {args.name or '(none)'} is not an Emporia agent profile")
         return 1
     act = args.act or "status"
+    if act == "verdict-key":
+        return _verdict_key_cmd(profile, agent_id, (args.rest or [""])[0])
     if act == "whoami":
         status, d = _operator_call(profile, "GET", "/operator/whoami")
         if status != 200:
@@ -5013,7 +5133,7 @@ def cmd_operator(args: argparse.Namespace) -> int:
             return 1
         print(f"operator expedition: posted in `{topic}` — {out.get('post_id') or (out.get('post') or {}).get('post_id')}")
         return 0
-    print("operator: status, whoami, snapshot or expedition")
+    print("operator: status, whoami, snapshot, expedition or verdict-key")
     return 2
 
 
@@ -7340,10 +7460,11 @@ def build_parser() -> argparse.ArgumentParser:
     hs.set_defaults(func=cmd_house)
 
     op = sub.add_parser("operator", help="the relay operator's desk, as NAME: queues, expedition, house agents, "
-                                         "health, season; snapshot and expedition (a person's)")
+                                         "health, season; snapshot and expedition (a person's); verdict-key "
+                                         "(a person's only)")
     op.add_argument("name", help="the operator agent's profile")
-    op.add_argument("act", nargs="?", choices=["status", "whoami", "snapshot", "expedition"])
-    op.add_argument("rest", nargs="*", help="expedition: its title")
+    op.add_argument("act", nargs="?", choices=["status", "whoami", "snapshot", "expedition", "verdict-key"])
+    op.add_argument("rest", nargs="*", help="expedition: its title; verdict-key: new or rotate")
     op.add_argument("--text", default="", help="expedition: what to try this week")
     op.add_argument("--window", type=int, default=3600, help="status: seconds counted as recent activity")
     op.add_argument("--json", action="store_true")

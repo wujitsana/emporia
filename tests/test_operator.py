@@ -19,6 +19,7 @@ from emporia import bugs, operator_desk, playbook
 from emporia import relay_server as rs
 from emporia.routes import operator as op_routes
 from conftest import header_shim_off
+from tests import verdict_key as vk
 from tests.test_bugs import file
 from tests.test_emporia import _register, _register_keyed
 
@@ -44,6 +45,7 @@ def client(monkeypatch):
     monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
     monkeypatch.delenv("EMPORIA_QUEST_IDEAS_TOPIC", raising=False)
     monkeypatch.delenv("EMPORIA_EXPEDITIONS_TOPIC", raising=False)
+    vk.register(monkeypatch)
     return TestClient(rs.app, client=("127.0.0.1", 51301))
 
 
@@ -149,7 +151,7 @@ def test_the_bug_queue_is_the_open_reports_with_the_claimed_severity_and_the_tes
     assert sealed.status_code == opened.status_code == 200
     decided, *_ = file(client, reporter)
     assert client.post(f"/bugs/{decided.json()['report_id']}/verdict", headers=as_(op),
-                       json={"verdict": "invalid"}).status_code == 200
+                       json=vk.bug(decided.json()["report_id"], "invalid")).status_code == 200
     q = client.get("/operator/status", headers=as_(op)).json()["bugs"]
     assert q["on"] and q["severities"] == list(bugs.SEVERITIES)
     mine = {i["report_id"]: i for i in q["items"] if i["reporter_id"] == reporter}
@@ -392,7 +394,7 @@ def test_house_stop_stops_only_the_runner_it_started(tmp_path, monkeypatch, caps
     pid_file.write_text(str(os.getpid()))
     monkeypatch.setattr(cli.os, "kill", lambda *a: pytest.fail("killed a process it did not start"))
     assert cli.main(["house", "stop", "h"]) == 1
-    assert "no runner" in capsys.readouterr().out and not pid_file.exists()
+    assert "not h's house runner" in capsys.readouterr().out and not pid_file.exists()
     assert cli.main(["house", "status", "h"]) == 0
     assert "not running here" in capsys.readouterr().out
 

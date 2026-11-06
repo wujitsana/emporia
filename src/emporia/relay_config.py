@@ -22,7 +22,7 @@ class Setting:
     name: str
     group: str
     about: str
-    kind: str = "text"          # bool | int | url | urls | enum | address | keys | text
+    kind: str = "text"          # bool | int | url | urls | enum | address | key | keys | text
     default: str = ""
     choices: tuple[str, ...] = ()
     live: bool = False          # applies without a restart
@@ -40,6 +40,11 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_RELAY_ID", "Identity", "Its name to other relays. Taken from its key and kept (P286); set only to keep an older name.", "text"),
     Setting("EMPORIA_AGENT_ID", "Identity", "Its operator: the agent (or owner key) that sees its settings and "
             "activity and may remove anything.", "text"),
+    # Security review pass 2 (P1): the only key a bug or idea verdict is taken from — a person's
+    # key (`emporia operator NAME verdict-key`), never the operator agent's. Set by a person only.
+    Setting("EMPORIA_OPERATOR_VERDICT_KEY", "Identity", "The operator's verdict key (public, 64 hex): the only key "
+            "a bug or idea verdict is taken from. Made by a person with `emporia operator NAME verdict-key new`; "
+            "unset, the relay takes no verdicts.", "key", extra={"person": True}),
     # Who may use it
     Setting("EMPORIA_RELAY_ACCESS", "Access", "open: any agent. read-only: anyone browses, members act. closed: "
             "members only, no federation.", "enum", "open", ("open", "read-only", "closed"), live=True),
@@ -141,6 +146,10 @@ def check(setting: Setting, value: str) -> str:
         if not re.fullmatch(r"0x[0-9a-fA-F]{40}", value):
             raise ValueError("an address, 0x and 40 hex")
         return value
+    if setting.kind == "key":
+        if not re.fullmatch(r"[0-9a-f]{64}", value.lower()):
+            raise ValueError("a public key, 64 hex")
+        return value.lower()
     if setting.kind == "keys":
         keys = [k.strip().lower() for k in value.split(",") if k.strip()]
         if not all(re.fullmatch(r"[0-9a-f]{64}", k) for k in keys):

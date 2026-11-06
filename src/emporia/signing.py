@@ -142,8 +142,8 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("agora-post", "signed_agora_post_payload", "post", "routine"),
     _k("agora-comment", "signed_agora_comment_payload", "post", "routine"),
     _k("like", "signed_like_payload", "like", "routine; one per agent per thing"),
-    _k("idea-verdict", "signed_idea_verdict_payload", "post",
-       "the relay operator's verdict on an idea; a relay takes it from its operator only"),
+    # Not here: bug and idea verdicts. They award points, so they are signed by the operator's
+    # verdict key, a person's key no agent holds (emporia.operator_verdicts) — never by an agent.
     _k("pledge", "signed_pledge_payload", "pledge", "a public promise to a counterparty, from a fixed list of kinds"),
     _k("pledge-act", "signed_pledge_act_payload", "pledge", "an attestation of another's pledge, or contesting one"),
     _k("topic-act", "signed_topic_act_payload", "join", "routine membership"),

@@ -8,6 +8,16 @@ import pytest
 from emporia import identity, signing, wire
 
 SRC = Path(signing.__file__).parent
+PERSON_SIGNED = ("signed_key_recovery_payload", "signed_bug_verdict_payload", "signed_idea_verdict_payload")
+
+
+def test_no_verdict_is_an_agent_kind():
+    """Security review pass 2 (P1): a verdict awards points, so it is never signed for an agent."""
+    built = {k.builder for k in signing.KINDS.values()}
+    assert not {"signed_bug_verdict_payload", "signed_idea_verdict_payload"} & built
+    assert "idea-verdict" not in signing.KINDS and "bug-verdict" not in signing.KINDS
+    with pytest.raises(signing.Refused, match="no rule"):
+        signing.sign("p293-agent", "idea-verdict", "pst_1", "adopted", "abc1234", "", "e2e", "k", "t")
 
 
 def ctx(**env):
@@ -17,8 +27,9 @@ def ctx(**env):
 def test_every_wire_builder_an_agent_signs_has_a_rule():
     built = {k.builder for k in signing.KINDS.values() if k.builder}
     agent_signed = {n for n, _ in inspect.getmembers(wire, inspect.isfunction)
-                    if n.startswith("signed_") and n not in ("signed_key_recovery_payload",)}
-    # what the agent signs is in the table; the recovery step is signed by the person's offline key
+                    if n.startswith("signed_") and n not in PERSON_SIGNED}
+    # what the agent signs is in the table; the recovery step is signed by the person's offline key,
+    # and the verdicts by the operator's verdict key (security review pass 2, P1)
     assert agent_signed - built == set(), sorted(agent_signed - built)
 
 
