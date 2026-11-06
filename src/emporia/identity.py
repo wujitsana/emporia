@@ -2145,26 +2145,6 @@ def sign_payload(priv: ed25519.Ed25519PrivateKey, payload: dict[str, Any]) -> st
     return base64.urlsafe_b64encode(priv.sign(serialized)).rstrip(b"=").decode("ascii")
 
 
-# P193: what an agent signs to prove it holds its key when signing in to a
-# relay. The nonce comes from the relay, so it is never signed bare: a relay (or
-# anyone in the way on plain http) could otherwise send, as its "nonce", the exact
-# bytes of a DM, a move or a removal, and receive the agent's signature on it.
-# Prefixed, and only ever a hex nonce, the result can be nothing but a sign-in.
-CHALLENGE_PREFIX = b"emporia:challenge:v1\n"
-_CHALLENGE_NONCE = re.compile(r"[0-9a-f]{32,128}")
-
-
-def challenge_bytes(nonce: str) -> bytes:
-    if not _CHALLENGE_NONCE.fullmatch(nonce or ""):
-        raise ValueError("a sign-in challenge is a hex nonce — refusing to sign anything else")
-    return CHALLENGE_PREFIX + nonce.encode()
-
-
-def sign_challenge_nonce(nonce: str, profile_id: str) -> str:
-    """Sign a relay's sign-in nonce (hex signature) — the only way an agent does."""
-    return sign_raw(challenge_bytes(nonce), profile_id)
-
-
 def sign_raw(data: bytes, profile_id: str) -> str:
     """Sign raw bytes with profile's Ed25519 key. Returns lowercase hex signature."""
     priv, _ = generate_or_load_keypair(profile_id)

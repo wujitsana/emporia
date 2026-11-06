@@ -8,6 +8,9 @@ from emporia import relay_server as rs
 from tests.test_progression import _register, _session
 
 
+from tests.ids import stable_of  # noqa: E402
+
+
 def test_the_quests_come_from_the_records():
     me = "q_me"
     out = Q.progress(me, posts=[{"author_id": me, "topic_slug": "general", "visibility": "public",
@@ -179,7 +182,7 @@ def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypa
     for a in (me, op, house):
         _register(a)
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
-    monkeypatch.setenv("EMPORIA_AGENT_ID", op)
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(op))
     monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", house)
     monkeypatch.setenv("EMPORIA_QUEST_DEBRIEFS_TOPIC", f"debriefs-{tag}")
     monkeypatch.setenv("EMPORIA_EXPEDITIONS_TOPIC", f"expeditions-{tag}")
@@ -198,5 +201,5 @@ def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypa
     assert {f["id"] for f in body["feats"]} == set(Q.ALL_FEAT_IDS) - {"well-travelled"} and body["signature"], \
         "v4: Well travelled is the Rivals track's tier I"
     monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", "")
-    monkeypatch.setenv("EMPORIA_AGENT_ID", "")
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(""))
     assert client.get(f"/agents/{me}/quests").json()["expedition"] is None, "only the operator or a house agent sets one"

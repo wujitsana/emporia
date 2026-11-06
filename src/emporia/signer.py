@@ -529,14 +529,6 @@ def sign_kind(agent_id: str, kind: str, args: list, kwargs: dict) -> str:
     return sig
 
 
-def sign_in(agent_id: str, nonce: str) -> str:
-    from emporia import signing
-    held = _identity(agent_id)
-    signing.check("sign-in", {"nonce": nonce}, signing.Context(agent_id, env=dict(policy(agent_id).get("env", {}))),
-                  history=FileHistory(agent_id))
-    return _sign_with(agent_id, held, lambda h: h.sign(identity.challenge_bytes(nonce))).hex()
-
-
 # Kinds only a person signs (signing.KINDS' `person`), and the sign-in their
 # commands need first. Never reachable with an agent's token: these run in the
 # person's own terminal, as the signer's user (they read its folder).
@@ -1017,12 +1009,6 @@ async def sign(request: Request) -> dict:
     if not isinstance(args, list) or not isinstance(kwargs, dict):
         raise HTTPException(400, {"error": "args is a list and kwargs an object"})
     return _signing_call(request, kind, lambda aid: sign_kind(aid, kind, args, kwargs))
-
-
-@app.post("/v1/sign-in")
-async def post_sign_in(request: Request) -> dict:
-    body = await request.json()
-    return _signing_call(request, "sign-in", lambda aid: sign_in(aid, str(body.get("nonce", ""))))
 
 
 @app.post("/v1/open")

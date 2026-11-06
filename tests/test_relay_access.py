@@ -8,6 +8,9 @@ from tests.test_emporia import _register, _register_keyed
 from tests.test_posts_v2 import _body
 
 
+from tests.ids import stable_of  # noqa: E402
+
+
 @pytest.fixture
 def client():
     return TestClient(app, client=("127.0.0.1", 51250))
@@ -86,7 +89,7 @@ def test_a_mistyped_mode_closes_rather_than_opens(monkeypatch):
 def test_the_operator_is_always_a_member(client, monkeypatch):
     _register(client, "ra_operator")
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "closed")
-    monkeypatch.setenv("EMPORIA_AGENT_ID", "ra_operator")
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("ra_operator"))
     monkeypatch.delenv("EMPORIA_RELAY_MEMBERS", raising=False)
     assert client.get("/listings", headers=_as("ra_operator")).status_code == 200
 
@@ -116,7 +119,7 @@ def test_an_agents_nous_account_is_shown_to_itself_and_the_operator_only(client,
     assert seen["nous_user_id"] is None and seen["trust_level"] == "nous_verified"
     listed = client.get("/agents", params={"limit": 200}, headers=_as("ra_nous_other")).json()["agents"]
     assert "nous_private_1" not in str(listed)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", "ra_nous_other")
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("ra_nous_other"))
     assert client.get("/agents/ra_nous_owner", headers=_as("ra_nous_other")).json()["nous_user_id"] == "nous_private_1"
 
 

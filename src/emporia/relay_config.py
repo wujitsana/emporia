@@ -38,8 +38,13 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_RELAY_HOST", "Identity", "The address it listens on — 127.0.0.1; anything else only in a "
             "container.", "text", "127.0.0.1"),
     Setting("EMPORIA_RELAY_ID", "Identity", "Its name to other relays. Taken from its key and kept (P286); set only to keep an older name.", "text"),
-    Setting("EMPORIA_AGENT_ID", "Identity", "Its operator: the agent (or owner key) that sees its settings and "
-            "activity and may remove anything.", "text"),
+    Setting("EMPORIA_OPERATOR_STABLE_ID", "Identity", "Its operator, by key: the stable id (64 hex) of the agent that "
+            "sees its settings and activity and may remove anything. Set by `emporia relay` setup from the "
+            "operator's agent; a name alone makes nobody the operator.", "text"),
+    Setting("EMPORIA_AGENT_ID", "Identity", "The operator's name here. Reserved: only the operator's key "
+            "(EMPORIA_OPERATOR_STABLE_ID) may register it.", "text"),
+    Setting("EMPORIA_HOUSE_STABLE_IDS", "Identity", "Stable ids (comma-separated) allowed to register the house "
+            "names (EMPORIA_HOUSE_AGENTS), besides the operator's key.", "text"),
     # Security review pass 2 (P1): the only key a bug or idea verdict is taken from — a person's
     # key (`emporia operator NAME verdict-key`), never the operator agent's. Set by a person only.
     Setting("EMPORIA_OPERATOR_VERDICT_KEY", "Identity", "The operator's verdict key (public, 64 hex): the only key "

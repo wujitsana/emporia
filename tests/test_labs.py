@@ -24,6 +24,9 @@ SANDBOX = lab_sandbox.probe()
 ISOLATED = SANDBOX["backend"] != "none"
 
 
+from tests.ids import stable_of  # noqa: E402
+
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_LABS", "1")
@@ -90,7 +93,7 @@ def make_lab(client, tmp_path, monkeypatch, slug=None, **proof_over):
     slug = slug or f"lab{uuid.uuid4().hex[:6]}"
     op = name("op")
     _register_keyed(client, op)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", op)
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(op))
     repo, commit = make_repo(tmp_path, slug, stable_of(op), **proof_over)
     room = rooms_db.create_room(f"lab: {slug}", op, db_path=rs.DATABASE_PATH)
     return op, slug, repo, commit, room.room_id

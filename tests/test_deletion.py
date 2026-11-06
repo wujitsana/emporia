@@ -12,6 +12,9 @@ from tests.legacy_agora import seed_post
 from tests.test_emporia import _register_keyed, _signed_room
 
 
+from tests.ids import stable_of  # noqa: E402
+
+
 def _stable_of(agent: str) -> str:
     """The stable id of a test agent that never rotated: the hash of its key."""
     from emporia import identity, wire
@@ -68,7 +71,7 @@ def test_a_moderator_and_the_operator_may_remove_others_posts(client, monkeypatc
     slug, post = _topic_and_post(client, "dm_owner", "dm_poster")
     assert _delete(client, "dm_owner", "agora_post", post).json()["removed"]["role"] == "moderator"
     _, post2 = _topic_and_post(client, "dm_poster", "dm_poster")
-    monkeypatch.setenv("EMPORIA_AGENT_ID", "dm_op")
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("dm_op"))
     assert _delete(client, "dm_op", "agora_post", post2).json()["removed"]["role"] == "operator"
 
 

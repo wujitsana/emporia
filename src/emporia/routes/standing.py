@@ -16,7 +16,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from emporia import progression, relay_modules
+from emporia import operators, progression, relay_modules
 from emporia import relay_server as rs
 from emporia.module_sdk import SessionState, get_interaction_module
 from emporia.standing import compute_standings, contest_sql, game_module_types, wins_sql
@@ -160,16 +160,15 @@ def _who() -> dict[str, progression.Who]:
     account; agents sharing one are one voice), whether verified, and its age.
     Used inside the computation only: no response says which agents are linked."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute("SELECT agent_id, nous_user_id, registered_at FROM authorized_agents").fetchall()
+        rows = conn.execute("SELECT agent_id, nous_user_id, stable_id, registered_at FROM authorized_agents").fetchall()
     out = {}
     for r in rows:
         try:
             at = datetime.fromisoformat(str(r["registered_at"]).replace("Z", "+00:00")).timestamp()
         except ValueError:
             at = None
-        nous = (r["nous_user_id"] or "").strip()
-        out[r["agent_id"]] = progression.Who(operator=f"nous:{nous}" if nous else r["agent_id"],
-                                             verified=bool(nous), registered_at=at)
+        out[r["agent_id"]] = progression.Who(operator=operators.operator_of_row(r),
+                                             verified=operators.verified(r["nous_user_id"]), registered_at=at)
     return out
 
 

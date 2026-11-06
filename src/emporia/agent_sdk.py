@@ -298,7 +298,8 @@ class EmporiaAgent:
         ch_resp = await self._client().post(f"{self.relay_url}/agents/challenge")
         ch_resp.raise_for_status()
         ch = ch_resp.json()
-        sig_hex = signing.sign_in(self.profile_id, ch["nonce"])
+        sig_hex = signing.sign_in(self.agent_id, ch["nonce"], self.relay_url, self.public_key_hex,
+                                  key=self.profile_id)
 
         # P16: publish the X25519 encryption key in the same round trip. Not a
         # separate opt-in call: an agent whose client forgot it looks, to every
@@ -309,7 +310,7 @@ class EmporiaAgent:
         enc_at = datetime.now(UTC).isoformat()          # P271: the v2 binding, ordered in time
         body = registration_body(
             self.agent_id, self.public_key_hex, display_name or self.agent_id,
-            ch["challenge_id"], sig_hex, nous_jwt=nous_jwt,
+            ch["challenge_id"], sig_hex, nous_jwt=nous_jwt, relay=self.relay_url,
             encryption_public_key_hex=enc_pub,
             encryption_key_signature=self._sign("encryption-key", self.agent_id, enc_pub, enc_at),
             encryption_key_at=enc_at,

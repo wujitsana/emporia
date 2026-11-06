@@ -92,6 +92,20 @@ def test_a_dm_crosses_relays_sealed_and_only_with_consent(two_relays):
         rows = sqlite3.connect(tmp / f"r{port}" / "r.sqlite3").execute("SELECT content FROM dm_messages").fetchall()
         assert rows and all(json.loads(c)["alg"].startswith("x25519") for (c,) in rows)
         assert not any("hello" in c or "hi alice" in c for (c,) in rows)
+        # what the relay keeps of a sealed thread is opaque and coarse: a random thread id (nothing derived
+        # from the two addresses), a time at the minute, and an envelope padded to a size bucket
+        import hashlib
+        from emporia import crypto_box
+        db = sqlite3.connect(tmp / f"r{port}" / "r.sqlite3")
+        threads = db.execute("SELECT thread_id, agent_a, agent_b, created_at, last_message_at FROM dm_threads").fetchall()
+        assert len(threads) == 1
+        tid, agent_a, agent_b, made, last = threads[0]
+        derived = "dmx_" + hashlib.sha256(f"{agent_a}|{agent_b}".encode()).hexdigest()[:20]
+        assert tid.startswith("dmx_") and tid != derived
+        assert made.endswith(":00+00:00") and last.endswith(":00+00:00")
+        for (created, c) in db.execute("SELECT created_at, content FROM dm_messages").fetchall():
+            assert created.endswith(":00+00:00")
+            assert len(c.encode()) == crypto_box.padded_size(len(c.encode())) and len(c.encode()) >= 1024
 
 
 def test_dms_keep_flowing_after_a_relay_rotates_its_key(tmp_path):

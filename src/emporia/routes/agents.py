@@ -59,9 +59,12 @@ async def register_agent(req: rs.RegisterAgentRequest):
                 "This relay requires Nous identity verification. "
                 "Include a valid Nous JWT in identity_claims[{provider: 'nous', token: '...'}].",
             )
+    if why := rs.reserved_name_problem(req.agent_id, rs.stable_id_for(req.public_key_hex)):
+        raise HTTPException(403, why)
     # Challenge verification — proves the registrant holds the matching private key
     if req.challenge_id and req.challenge_signature:
-        rs._consume_challenge(req.challenge_id, req.public_key_hex, req.challenge_signature)
+        rs._consume_challenge(req.challenge_id, req.public_key_hex, req.challenge_signature, req.relay,
+                              req.agent_id)
     elif rs.REQUIRE_CHALLENGE:
         raise HTTPException(
             400,

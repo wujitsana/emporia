@@ -113,7 +113,7 @@ def test_register_agent_carries_the_token_only_when_verification_is_on(monkeypat
         return R({"agent_id": "zed", "trust_level": "nous_verified" if sent else "key_only"})
 
     monkeypatch.setattr(mcp_server.httpx, "post", post)
-    monkeypatch.setattr(mcp_server.signing, "sign_in", lambda a, n: "00")
+    monkeypatch.setattr(mcp_server.signing, "sign_in", lambda *a, **k: "00")
     monkeypatch.setattr(mcp_server.signing, "sign", lambda *a: "00")
     monkeypatch.setattr("emporia.identity.get_public_key_hex", lambda a: "11" * 32)
     monkeypatch.setattr("emporia.identity.get_encryption_public_key_hex", lambda a: "22" * 32)

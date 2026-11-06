@@ -13,6 +13,9 @@ from tests.test_emporia import _register
 COMMIT, FIX = "a1b2c3d4e5f6", "f6e5d4c3b2a1"
 
 
+from tests.ids import stable_of  # noqa: E402
+
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,bugs")
@@ -98,7 +101,7 @@ def test_a_sealed_report_shows_only_its_commitment_until_revealed(client, monkey
     op, finder = name("op"), name("finder")
     for a in (op, finder):
         _register(client, a)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", op)
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(op))
     r, f, salt, c = file(client, finder)
     assert r.status_code == 200, r.text
     bug = r.json()
@@ -136,7 +139,7 @@ def test_a_revealed_report_is_held_to_the_same_limits_as_an_open_one(client, mon
     op, finder = name("op_big"), name("f_big")
     for a in (op, finder):
         _register(client, a)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", op)
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(op))
     big = report(test="x" * (bugs.MAX_TEXT + 1), title="too big")
     bug = file(client, finder, fields=big)[0].json()
     client.post(f"/bugs/{bug['report_id']}/verdict", headers=as_(op), json=vk.bug(bug["report_id"], "invalid"))
@@ -163,7 +166,7 @@ def test_only_the_operator_judges_and_a_verdict_is_final(client, monkeypatch):
     op, finder = name("op2"), name("f2")
     for a in (op, finder):
         _register(client, a)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", op)
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(op))
     bug = file(client, finder)[0].json()
     assert client.post(f"/bugs/{bug['report_id']}/verdict", headers=as_(finder),
                        json=vk.bug(bug["report_id"], "accepted", "critical", FIX)).status_code == 403
@@ -177,7 +180,7 @@ def test_one_fix_one_award(client, monkeypatch):
     op, a, b = name("op3"), name("a3"), name("b3")
     for x in (op, a, b):
         _register(client, x)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", op)
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(op))
     fix = uuid.uuid4().hex[:12]
     first, second = file(client, a)[0].json(), file(client, b)[0].json()
     assert client.post(f"/bugs/{first['report_id']}/verdict", headers=as_(op),
@@ -199,7 +202,7 @@ def test_an_operators_agents_share_one_cap_and_the_operator_earns_nothing(client
         conn.execute("UPDATE authorized_agents SET nous_user_id = ? WHERE agent_id IN (?, ?, ?)",
                      (nous, op, sock1, sock2))
         conn.commit()
-    monkeypatch.setenv("EMPORIA_AGENT_ID", op)
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(op))
     filed = [file(client, who)[0] for who in (sock1, sock2, sock1)]
     assert all(r.status_code == 200 for r in filed)
     capped = file(client, sock2)[0]
@@ -213,7 +216,7 @@ def test_a_security_incident_is_on_the_record_for_good(client, monkeypatch):
     op, other = name("op5"), name("o5")
     for x in (op, other):
         _register(client, x)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", op)
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(op))
     assert client.post("/security/incidents", headers=as_(other), json={"summary": "x"}).status_code == 403
     inc = client.post("/security/incidents", headers=as_(op),
                       json={"summary": "session tokens readable in a log file", "affected": "sign-in"}).json()

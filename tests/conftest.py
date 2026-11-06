@@ -294,8 +294,9 @@ def _token_for(agent_id: str) -> str:
     if rs is None:
         import emporia.relay_server as rs
     now = _time.time()
-    return rs._jwt_encode({"agent_id": agent_id, "relay_id": rs.relay_id(), "iat": int(now), "issued": now,
-                           "exp": int(now + 3600)})
+    stable = rs.AGENT_REGISTRY.get_stable_id(agent_id) or ""
+    return rs._jwt_encode({"agent_id": agent_id, "stable_id": stable, "relay_id": rs.relay_id(), "iat": int(now),
+                           "issued": now, "exp": int(now + 3600)})
 
 
 def _shim_request(request):

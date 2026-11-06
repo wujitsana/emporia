@@ -54,8 +54,8 @@ def test_the_agent_signs_through_the_signer_with_no_key_of_its_own(held):
     with pytest.raises(identity.IdentityInSigner):
         identity.generate_or_load_keypair(AGENT)                         # and never a new key in its place
     nonce = "cd" * 16
-    assert ed25519.Ed25519PublicKey.from_public_bytes(bytes.fromhex(pub)).verify(
-        bytes.fromhex(signing.sign_in(AGENT, nonce)), identity.challenge_bytes(nonce)) is None
+    assert identity.verify(wire.signed_registration_payload(nonce, "https://relay.example", AGENT, pub),
+                           signing.sign_in(AGENT, nonce, "https://relay.example", pub), pub)
     # M4: a dashboard sign-in, naming its relay, is signed by the signer as any other kind
     body = signing.dashboard_session_body(AGENT, {"nonce": "ab" * 32, "challenge_id": "c1"}, "https://relay.example")
     assert identity.verify(wire.signed_dashboard_sign_in_payload("ab" * 32, "https://relay.example"),

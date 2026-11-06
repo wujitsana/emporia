@@ -567,6 +567,22 @@ def _jwt_decode(token: str) -> dict | None:
     return payload
 
 
+def _token_agent(payload: dict | None) -> str | None:
+    """The agent a verified token speaks for, or None. A token is for this relay and carries the agent's
+    **stable id**: it is refused when the name now belongs to another key (the agent was renamed or left
+    and someone else registered the name), or when it names no stable id at all."""
+    if not payload or payload.get("relay_id") != relay_id():
+        return None
+    agent_id = payload.get("agent_id") or None
+    if not agent_id:
+        return None
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+    if row and (not payload.get("stable_id") or payload["stable_id"] != row["stable_id"]):
+        return None
+    return agent_id
+
+
 def _dashboard_agent_id(request: Request) -> str | None:
     """
     Resolve the requesting agent for dashboard REST calls.
@@ -589,9 +605,8 @@ def _dashboard_agent_id(request: Request) -> str | None:
     for name in ("authorization", "x-emporia-authorization"):
         auth = request.headers.get(name, "")
         if auth.startswith("Bearer "):
-            payload = _jwt_decode(auth[7:])
-            if payload and payload.get("relay_id") == relay_id():
-                return payload.get("agent_id") or None
+            if agent := _token_agent(_jwt_decode(auth[7:])):
+                return agent
     return None
 
 
@@ -606,19 +621,50 @@ def _ws_agent_id(ws: WebSocket) -> str | None:
     """
     token = ws.query_params.get("token")
     if token:
-        payload = _jwt_decode(token)
-        if payload and payload.get("relay_id") == relay_id():
-            return payload.get("agent_id") or None
+        return _token_agent(_jwt_decode(token))
     return None
 
 
+def operator_stable_id() -> str:
+    """The relay operator's **stable id** (`EMPORIA_OPERATOR_STABLE_ID`, set by `emporia relay` setup for the
+    operator's agent): who the operator is, whatever name the agent has. "" when none is configured."""
+    return os.getenv("EMPORIA_OPERATOR_STABLE_ID", "").strip().lower()
+
+
 def _relay_operator_id() -> str:
-    """The configured relay operator's agent_id, or "" if none is configured (N6
-    review O2: every "is this caller the operator?" check in this file re-read
-    os.getenv("EMPORIA_AGENT_ID", "") independently — a dozen call sites as of this
-    pass, up from the two the finding originally named, since N6-2's new redaction
-    helpers each added their own. One canonical definition instead."""
-    return os.getenv("EMPORIA_AGENT_ID", "")
+    """The relay operator's name here: the registered agent whose stable id is the configured one, or ""
+    when none is configured or the operator has not registered. The operator is a key, not a name:
+    whoever registers the name `EMPORIA_AGENT_ID` first does not become it (that name is reserved, see
+    `reserved_name_problem`), and every operator check goes through this one function."""
+    stable = operator_stable_id()
+    if not stable:
+        return ""
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute("SELECT agent_id FROM authorized_agents WHERE stable_id = ?", (stable,)).fetchone()
+    return row["agent_id"] if row else ""
+
+
+def house_stable_ids() -> frozenset[str]:
+    """Stable ids allowed to take a house name (`EMPORIA_HOUSE_STABLE_IDS`, comma-separated)."""
+    return frozenset(x.strip().lower() for x in os.getenv("EMPORIA_HOUSE_STABLE_IDS", "").split(",") if x.strip())
+
+
+def reserved_name_problem(agent_id: str, stable_id: str) -> str:
+    """Why `agent_id` may not be registered by the key whose stable id is `stable_id`, or "": the operator's
+    configured name (`EMPORIA_AGENT_ID`) belongs to the operator's key, and a house name
+    (`EMPORIA_HOUSE_AGENTS`) to the operator's key or one in `EMPORIA_HOUSE_STABLE_IDS`. Nobody else may
+    take them, so a name on a fresh relay is never a way into its admin."""
+    operator = operator_stable_id()
+    if stable_id == operator and operator:
+        return ""
+    named = os.getenv("EMPORIA_AGENT_ID", "").strip()
+    if named and agent_id == named and not (operator and stable_id == operator):
+        return (f"{agent_id!r} is this relay's reserved operator name: only the operator's key "
+                "(EMPORIA_OPERATOR_STABLE_ID) may register it")
+    from emporia import progression
+    if agent_id in progression.house_agents() and stable_id not in house_stable_ids():
+        return f"{agent_id!r} is a house name: only the operator's key or a house key may register it"
+    return ""
 
 
 def _require_caller_is(agent_id: str, request: Request) -> None:
@@ -5924,7 +5970,8 @@ class RegisterAgentRequest(BaseModel):
     display_name: str = ""
     identity_claims: list[IdentityClaimRequest] = Field(default_factory=list)
     challenge_id: str = ""
-    challenge_signature: str = ""  # hex Ed25519 sig of the nonce bytes
+    challenge_signature: str = ""  # base64url Ed25519 sig of emporia:sign-in:v2 {nonce, relay, agent_id, public_key}
+    relay: str = ""                # the origin the agent signed for (it must be one of this relay's)
     # P16: publish the X25519 encryption key in the same round trip. Optional —
     # an agent that doesn't do encrypted DMs sends neither field.
     encryption_public_key_hex: str = ""
@@ -6547,7 +6594,7 @@ async def dashboard_session(req: DashboardSessionRequest):
     # Look up the agent's registered public key
     with DB_LOCK, get_db() as conn:
         row = conn.execute(
-            "SELECT public_key_hex FROM authorized_agents WHERE agent_id = ?",
+            "SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
             (req.agent_id,),
         ).fetchone()
     if not row:
@@ -6561,6 +6608,7 @@ async def dashboard_session(req: DashboardSessionRequest):
     now = time.time()
     jwt = _jwt_encode({
         "agent_id": req.agent_id,
+        "stable_id": row["stable_id"],
         "relay_id": relay_id(),
         "iat": int(now),
         "issued": now,
@@ -6605,7 +6653,8 @@ _CHALLENGE_TTL_SECONDS = 300  # nonces expire after 5 minutes
 
 
 
-def _consume_challenge(challenge_id: str, public_key_hex: str, signature_hex: str) -> None:
+def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, relay: str = "",
+                       agent_id: str = "") -> None:
     """Verify and consume a registration challenge. Raises HTTPException on any failure.
 
     Consumption is a single conditional UPDATE (used=0 → used=1), not a separate
@@ -6629,15 +6678,15 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature_hex: st
         if cur.rowcount == 0:
             raise HTTPException(400, "Challenge already used — request a new one")
 
-    # Verify Ed25519 signature of the nonce
-    try:
-        pub_bytes = bytes.fromhex(public_key_hex)
-        sig_bytes = bytes.fromhex(signature_hex)
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        from emporia.identity import challenge_bytes
-        Ed25519PublicKey.from_public_bytes(pub_bytes).verify(sig_bytes, challenge_bytes(nonce))  # P193
-    except Exception:
-        raise HTTPException(403, "Challenge signature invalid — key mismatch or bad signature")
+    # The signature is over {type, nonce, relay, agent_id, public_key}: for this relay, this name, this key.
+    if not relay or not _names_this_relay(relay):
+        raise HTTPException(403, f"this registration is for {str(relay)[:100] or 'no relay'}, not this relay — "
+                                 "sign emporia:sign-in:v2 for the relay you are talking to")
+    from emporia.wire import signed_registration_payload
+    if not verify(signed_registration_payload(nonce, relay, agent_id, public_key_hex), signature,
+                  str(public_key_hex).lower()):
+        raise HTTPException(403, "Challenge signature invalid — sign emporia:sign-in:v2 {nonce, relay, "
+                                 "agent_id, public_key} with the agent's key")
 
 
 # ============================================================================

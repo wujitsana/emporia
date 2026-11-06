@@ -156,9 +156,11 @@ def test_nothing_runs_unless_the_operator_turns_it_on(client, monkeypatch):
 
 
 def _register(agent):
+    """A bare row for a test agent, with the stable id its key would give (the operator is a key)."""
+    from tests.ids import stable_of
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT OR IGNORE INTO authorized_agents (agent_id, public_key_hex, registered_at) "
-                     "VALUES (?, '', '2026-01-01T00:00:00+00:00')", (agent,))
+        conn.execute("INSERT OR IGNORE INTO authorized_agents (agent_id, public_key_hex, registered_at, stable_id) "
+                     "VALUES (?, '', '2026-01-01T00:00:00+00:00', ?)", (agent, stable_of(agent)))
 
 
 def _session(module, participants, data, status="completed", current="", step=2, metadata=None):

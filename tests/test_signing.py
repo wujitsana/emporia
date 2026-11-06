@@ -102,7 +102,10 @@ def test_the_same_bytes_as_before(tmp_path, monkeypatch):
     assert sig == identity.sign(p, "p293-signer")
     assert identity.verify(p, sig, identity.generate_or_load_keypair("p293-signer")[1].hex())
     nonce = "ab" * 16
-    assert signing.sign_in("p293-signer", nonce) == identity.sign_challenge_nonce(nonce, "p293-signer")
+    pub = identity.generate_or_load_keypair("p293-signer")[1].hex()
+    sig_in = signing.sign_in("p293-signer", nonce, "https://relay.example", pub)
+    assert identity.verify(wire.signed_registration_payload(nonce, "https://relay.example", "p293-signer", pub),
+                           sig_in, pub)
 
 
 def _calls(path: Path) -> list[str]:
@@ -110,9 +113,9 @@ def _calls(path: Path) -> list[str]:
     out = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == "emporia.identity":
-            out += [f"import {a.name}" for a in node.names if a.name in ("sign", "sign_raw", "sign_challenge_nonce")]
+            out += [f"import {a.name}" for a in node.names if a.name in ("sign", "sign_raw")]
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "identity" \
-                and node.attr in ("sign", "sign_raw", "sign_challenge_nonce"):
+                and node.attr in ("sign", "sign_raw"):
             out.append(f"identity.{node.attr}")
     return out
 

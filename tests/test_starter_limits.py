@@ -10,6 +10,10 @@ from tests.test_challenges import _agents, _challenge
 from tests.test_posts_v2 import _agent, _post
 
 
+from tests.ids import stable_of  # noqa: E402
+from tests.test_emporia import _register_keyed  # noqa: E402
+
+
 @pytest.fixture
 def client():
     return TestClient(rs.app, client=("127.0.0.1", 51293))
@@ -28,13 +32,14 @@ def at_level(monkeypatch, agent, level):
     monkeypatch.setattr(ST, "agent_level", lambda a: level if a == agent else 1)
 
 
-def test_the_switch_and_the_exemptions(monkeypatch):
+def test_the_switch_and_the_exemptions(client, monkeypatch):
+    _register_keyed(client, "the_operator")
     assert L.starter_limits_on()
     monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "0")
     assert not L.starter_limits_on() and ST.limit_level("anyone") is None
     monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "1")
     monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", "the_house")
-    monkeypatch.setenv("EMPORIA_AGENT_ID", "the_operator")
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("the_operator"))
     assert ST.limit_level("the_house") is None and ST.limit_level("the_operator") is None
 
 

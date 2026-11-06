@@ -818,14 +818,18 @@ def _legacy_self_computed_id(
 def _signed_challenge(client, profile_id: str) -> dict:
     """POST /agents/challenge, sign the nonce with a real Ed25519 key, and return the
     challenge_id/signature/public_key_hex a real register_agent MCP call would send."""
-    from emporia.identity import generate_or_load_keypair, sign_challenge_nonce
+    from emporia import relay_server as _rs
+    from emporia.identity import generate_or_load_keypair, sign
+    from emporia.wire import relay_origin, signed_registration_payload
     _, pub_bytes = generate_or_load_keypair(profile_id)
     ch = client.post("/agents/challenge").json()
-    sig_hex = sign_challenge_nonce(ch["nonce"], profile_id)
+    relay = relay_origin(_rs.RELAY_BASE_URL)
+    sig = sign(signed_registration_payload(ch["nonce"], relay, profile_id, pub_bytes.hex()), profile_id)
     return {
         "challenge_id": ch["challenge_id"],
-        "challenge_signature": sig_hex,
+        "challenge_signature": sig,
         "public_key_hex": pub_bytes.hex(),
+        "relay": relay,
     }
 
 
@@ -10725,7 +10729,7 @@ def test_mcp_register_agent_uses_shared_wire_contract(prod_client):
     assert args[1] == pub_hex
     assert args[2] == "P6-3 MCP Agent"
     assert isinstance(args[3], str) and args[3], "challenge_id must be a real, non-empty value"
-    assert len(args[4]) == 128, "challenge_signature must be a real 64-byte hex Ed25519 signature"
+    assert len(args[4]) == 86, "challenge_signature must be a real 64-byte base64url Ed25519 signature"
     # P16: registration now also publishes the X25519 encryption key in this same
     # body. The nous_jwt assertion stays exact; the two encryption kwargs are
     # asserted for presence and shape rather than value, since the key is generated

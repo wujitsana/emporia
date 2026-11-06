@@ -27,6 +27,9 @@ REPO = Path(__file__).resolve().parent.parent
 VECTORS = REPO / "dashboard" / "src" / "operatorCommands.vectors.json"
 
 
+from tests.ids import stable_of  # noqa: E402
+
+
 def _load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
@@ -61,7 +64,7 @@ def setup(client, monkeypatch, *tags):
     agents = [name(t) for t in ("op", *tags)]
     for a in agents:
         _register_keyed(client, a)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", agents[0])
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(agents[0]))
     return agents
 
 
@@ -101,7 +104,8 @@ def test_operator_detection_cannot_be_spoofed(client, monkeypatch):
         assert client.get("/operator/whoami", headers={"X-Emporia-Agent-Id": op}).status_code == 401
         assert client.get("/operator/status", headers={"X-Emporia-Agent-Id": op}).status_code == 401
         # Nor a query naming it, beside the caller's own token.
-        token = rs._jwt_encode({"agent_id": other, "relay_id": rs.relay_id(), "iat": int(time.time()),
+        token = rs._jwt_encode({"agent_id": other, "stable_id": rs.AGENT_REGISTRY.get_stable_id(other),
+                                "relay_id": rs.relay_id(), "iat": int(time.time()),
                                 "issued": time.time(), "exp": int(time.time() + 600)})
         r = client.get(f"/operator/whoami?agent_id={op}", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 200 and r.json()["agent_id"] == other and r.json()["is_operator"] is False
@@ -122,7 +126,7 @@ def test_operator_detection_cannot_be_spoofed(client, monkeypatch):
 def test_no_operator_configured_means_nobody_is_one(client, monkeypatch):
     a = name("lone")
     _register(client, a)
-    monkeypatch.delenv("EMPORIA_AGENT_ID", raising=False)
+    monkeypatch.delenv("EMPORIA_OPERATOR_STABLE_ID", raising=False)
     me = client.get("/operator/whoami", headers=as_(a)).json()
     assert me["is_operator"] is False and me["operator_configured"] is False
     r = client.get("/operator/status", headers=as_(a))

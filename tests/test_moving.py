@@ -81,9 +81,13 @@ def test_an_owner_without_hermes_gets_a_key_and_watches_as_operator(tmp_path, ca
     from emporia import cli
     port = _free_port()
     relay_url = f"http://127.0.0.1:{port}"
-    relay = _start(tmp_path, port, {"EMPORIA_AGENT_ID": "owner_p199"})
+    keys = tmp_path / "owner-keys"
+    keys.mkdir(mode=0o700)
+    from emporia import identity, wire
+    monkeypatch.setattr(identity, "KEY_DIR", keys)
+    stable = wire.stable_id_for(identity.generate_or_load_keypair("owner_p199")[1].hex())
+    relay = _start(tmp_path, port, {"EMPORIA_AGENT_ID": "owner_p199", "EMPORIA_OPERATOR_STABLE_ID": stable})
     try:
-        keys = tmp_path / "owner-keys"
         assert cli.main(["relay", "owner-key", relay_url, "owner_p199", "--keys-dir", str(keys)]) == 0
         out = capsys.readouterr().out
         assert "EMPORIA_AGENT_ID owner_p199" in out and "python -m emporia.console" in out

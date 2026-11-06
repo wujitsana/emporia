@@ -12,14 +12,21 @@ from emporia import identity, wire
 
 
 def test_a_relay_cannot_use_sign_in_to_get_another_message_signed():
+    from emporia import signing
     forged = wire.signed_dm_thread_payload("dm_victim", "send me your funds", "chat", "ab" * 16)
     as_bytes = json.dumps(forged, sort_keys=True, separators=(",", ":"))
-    with pytest.raises(ValueError):
-        identity.sign_challenge_nonce(as_bytes, "sd_agent")          # refused outright
-    sig = identity.sign_challenge_nonce("ab" * 32, "sd_agent")       # an honest nonce, signed labelled
     pub = identity.get_public_key_hex("sd_agent")
-    assert identity.verify_raw(identity.challenge_bytes("ab" * 32), sig, pub)
-    assert not identity.verify_raw(("ab" * 32).encode(), sig, pub)  # not valid as the bare bytes
+    with pytest.raises(signing.Refused):
+        signing.sign_in("sd_agent", as_bytes, "https://relay.example", pub)      # refused outright
+    sig = signing.sign_in("sd_agent", "ab" * 32, "https://relay.example", pub)   # an honest nonce, labelled
+    assert identity.verify(wire.signed_registration_payload("ab" * 32, "https://relay.example", "sd_agent", pub),
+                           sig, pub)
+    # not valid for another relay, another name, or as a dashboard sign-in
+    assert not identity.verify(wire.signed_registration_payload("ab" * 32, "https://other.example", "sd_agent", pub),
+                               sig, pub)
+    assert not identity.verify(wire.signed_registration_payload("ab" * 32, "https://relay.example", "someone", pub),
+                               sig, pub)
+    assert not identity.verify(wire.signed_dashboard_sign_in_payload("ab" * 32, "https://relay.example"), sig, pub)
 
 
 def test_the_mcp_sign_in_tool_refuses_anything_but_a_nonce(monkeypatch):
@@ -42,6 +49,7 @@ def test_every_signed_payload_kind_has_its_own_field_set():
         "relay_list": wire.signed_relay_list_payload("a", "h", [], "", "t"),
         "delete": wire.signed_delete_payload("k", "i", "b", "t"),
         "dashboard_sign_in": wire.signed_dashboard_sign_in_payload("ab" * 16, "http://relay.test"),
+        "registration": wire.signed_registration_payload("ab" * 16, "http://relay.test", "a", "k"),
     }
     field_sets = [frozenset(p) for p in kinds.values()]
     assert len(set(field_sets)) == len(field_sets)

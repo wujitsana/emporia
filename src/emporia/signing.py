@@ -122,7 +122,10 @@ def _k(name: str, builder: str, group: str, why: str, **kw: Any) -> Kind:
 
 
 KINDS: dict[str, Kind] = {k.name: k for k in (
-    _k("sign-in", "", "sign-in", "needed to act at all; a token is no more than the agent already has"),
+    _k("sign-in", "signed_registration_payload", "sign-in",
+       "registering on one relay, as one agent, with one key; no more than the agent already has there",
+       check=lambda p, ctx: wire.registration_problem(p.get("nonce"), p.get("relay"), p.get("agent_id"),
+                                                      p.get("public_key"))),
     _k("dashboard-sign-in", "signed_dashboard_sign_in_payload", "sign-in",
        "a session token for the one relay it names; no more than the agent already has there",
        check=lambda p, ctx: wire.dashboard_sign_in_problem(p.get("nonce"), p.get("relay"))),
@@ -295,11 +298,9 @@ def dashboard_session_body(agent_id: str, challenge: dict[str, Any], relay_url: 
     return wire.dashboard_session_body(agent_id, challenge["challenge_id"], relay_url, sig)
 
 
-def sign_in(agent_id: str, nonce: str) -> str:
-    """A relay's registration challenge (hex), the only raw signature an agent makes.
-    Dashboard sessions sign `dashboard-sign-in` instead (M4)."""
-    check("sign-in", {"nonce": nonce}, Context(agent_id))
-    if client := _signer_for(agent_id):
-        return client.sign_in(nonce)
-    from emporia import identity
-    return identity.sign_challenge_nonce(nonce, agent_id)
+def sign_in(agent_id: str, nonce: str, relay_url: str, public_key: str, *, key: str = "") -> str:
+    """A relay's registration challenge, signed over the nonce, that relay's origin, this agent's name and
+    key (`emporia:sign-in:v2`): good on that relay alone, for this agent alone. `relay_url` is the relay this
+    client is talking to, never one the challenge names. `key`: the profile whose key signs, when it is not
+    named `agent_id`."""
+    return sign(key or agent_id, "sign-in", nonce, wire.relay_origin(relay_url), agent_id, public_key)

@@ -857,7 +857,10 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     updates.update(module_updates)
     payments = "money" in modules
     if admin:
-        updates["EMPORIA_AGENT_ID"] = installer().harvest_env(admin).get("EMPORIA_AGENT_ID") or admin_name
+        admin_env = installer().harvest_env(admin)
+        updates["EMPORIA_AGENT_ID"] = admin_env.get("EMPORIA_AGENT_ID") or admin_name
+        if stable := _stable_id_in(admin_env, updates["EMPORIA_AGENT_ID"]):
+            updates["EMPORIA_OPERATOR_STABLE_ID"] = stable      # the operator is a key, not a name
     env_path = folder / ".env"
     wizard_commit()        # P213: from here it writes the relay's settings
     heading("Saving")
@@ -4333,8 +4336,10 @@ def cmd_relay_owner_key(args: argparse.Namespace) -> int:
                   "    emporia relay members add <the key below>")
         return 1
     print(f"  {name}'s key: {keys} (0700) — fingerprint {out.get('fingerprint')}")
-    print(f"  On the relay's machine, make it the operator:\n"
-          f"    emporia relay config set EMPORIA_AGENT_ID {name}      (then restart the relay)")
+    stable = _stable_id_in({"EMPORIA_KEYS_DIR": str(keys)}, name) or "<its stable id>"
+    print(f"  On the relay's machine, make it the operator (a key, not a name):\n"
+          f"    emporia relay config set EMPORIA_OPERATOR_STABLE_ID {stable}\n"
+          f"    emporia relay config set EMPORIA_AGENT_ID {name}      (reserves the name; then restart the relay)")
     print(f"  Then watch it from here:\n"
           f"    python -m emporia.console --keys-dir {keys} --relay-url {url}")
     return 0
@@ -5409,6 +5414,23 @@ def _operator_call(profile: Path, method: str, path: str, body: dict | None = No
 def _relay_refusal(status: int, body: Any) -> str:
     detail = body.get("detail", body) if isinstance(body, dict) else body
     return f"{detail}" if status else f"could not reach the relay ({detail})"
+
+
+def _stable_id_in(env: dict[str, str], name: str) -> str:
+    """The stable id of agent `name` whose keys are in the profile `env` names (EMPORIA_KEYS_DIR), or ""."""
+    from emporia import identity, wire
+    keys = env.get("EMPORIA_KEYS_DIR")
+    if not keys:
+        return ""
+    held = identity.KEY_DIR
+    try:
+        identity.KEY_DIR = Path(keys).expanduser()
+        pub = identity.read_public_key_hex(name)
+    except Exception:  # noqa: BLE001 - no key to read: the operator sets it by hand
+        pub = None
+    finally:
+        identity.KEY_DIR = held
+    return wire.stable_id_for(pub) if pub else ""
 
 
 def cmd_operator(args: argparse.Namespace) -> int:

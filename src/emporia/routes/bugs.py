@@ -22,7 +22,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from emporia import bugs, identity, operator_verdicts, translog, wire
+from emporia import bugs, identity, operator_verdicts, operators, translog, wire
 from emporia import relay_server as rs
 
 router = APIRouter()
@@ -85,13 +85,9 @@ def _caller(request: Request) -> str:
 def _operator_key(conn, agent_id: str) -> str:
     """Who runs an agent, as the caps count it: its Nous account, else its stable id —
     never its name, which a rename would change and so reset the cap."""
-    row = conn.execute("SELECT nous_user_id, stable_id FROM authorized_agents WHERE agent_id = ?",
+    row = conn.execute("SELECT agent_id, nous_user_id, stable_id FROM authorized_agents WHERE agent_id = ?",
                        (agent_id,)).fetchone()
-    nous = ((row["nous_user_id"] if row else "") or "").strip()
-    if nous:
-        return f"nous:{nous}"
-    stable = ((row["stable_id"] if row else "") or "").strip()
-    return f"key:{stable}" if stable else f"agent:{agent_id}"
+    return operators.operator_of_row(row) if row else operators.operator_of(None, None, agent_id)
 
 
 def _verdict_key_signed(build, at: str, signature: str, sent_key: str) -> str:

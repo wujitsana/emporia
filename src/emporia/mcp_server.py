@@ -405,7 +405,7 @@ def register_agent(
         ch_r.raise_for_status()
         ch = ch_r.json()
         # Step 2: sign nonce with Ed25519 private key
-        sig_hex = signing.sign_in(agent_id, ch["nonce"])
+        sig_hex = signing.sign_in(agent_id, ch["nonce"], _base(), pub_hex)
         # P16: publish the X25519 encryption key in the same round trip. Inside this
         # try because generate-or-load can raise on a corrupt key file, and N4-7's
         # rule for this module is that a raising call belongs behind the boundary
@@ -436,7 +436,7 @@ def register_agent(
     )
     payload = registration_body(
         agent_id, pub_hex, effective_display_name,
-        ch["challenge_id"], sig_hex, nous_jwt=jwt,
+        ch["challenge_id"], sig_hex, nous_jwt=jwt, relay=_base(),
         encryption_public_key_hex=enc_pub,
         encryption_key_signature=enc_sig,
         encryption_key_at=enc_at,

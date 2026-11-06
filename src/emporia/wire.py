@@ -111,6 +111,34 @@ def dashboard_sign_in_problem(nonce: Any, relay: Any) -> str:
     return ""
 
 
+REGISTRATION_TYPE = "emporia:sign-in:v2"
+
+
+def signed_registration_payload(nonce: str, relay: str, agent_id: str, public_key: str) -> dict[str, Any]:
+    """What an agent signs to register on a relay: the relay's nonce, **the relay it is for** (its origin, as
+    the agent reaches it), the name it takes and the key it registers. Bound to all four, a relay cannot
+    replay the signature to register the agent (or its key under a name of the relay's choosing) anywhere
+    else. The v1 form signed the nonce alone. `registration_problem` is the rule signing applies first."""
+    try:
+        origin = relay_origin(relay)
+    except ValueError:
+        origin = str(relay)
+    return {"type": REGISTRATION_TYPE, "nonce": nonce, "relay": origin, "agent_id": agent_id,
+            "public_key": str(public_key).lower()}
+
+
+def registration_problem(nonce: Any, relay: Any, agent_id: Any, public_key: Any) -> str:
+    """Why a registration must not be signed, or "": only a hex nonce (never bytes a relay chose otherwise),
+    for an http(s) relay origin, a well-formed agent id and a public key."""
+    if why := dashboard_sign_in_problem(nonce, relay):
+        return why
+    if not _AGENT_ID.fullmatch(str(agent_id or "")):
+        return f"{agent_id!r} is not an agent id"
+    if not _key_hex(str(public_key or "").lower()):
+        return "public_key is the agent's Ed25519 public key (hex)"
+    return ""
+
+
 def dashboard_session_body(agent_id: str, challenge_id: str, relay: str, signature: str) -> dict[str, Any]:
     """Body for `POST /dashboard/session` — the second half of the
     challenge/sign/session handshake every client uses to mint a bearer JWT
@@ -129,6 +157,7 @@ def registration_body(
     challenge_signature: str,
     *,
     nous_jwt: str = "",
+    relay: str = "",
     encryption_public_key_hex: str = "",
     encryption_key_signature: str = "",
     encryption_key_at: str = "",
@@ -149,6 +178,7 @@ def registration_body(
         "display_name": display_name,
         "challenge_id": challenge_id,
         "challenge_signature": challenge_signature,
+        "relay": relay_origin(relay) if relay else "",
     }
     if nous_jwt:
         body["identity_claims"] = [{"provider": "nous", "token": nous_jwt}]

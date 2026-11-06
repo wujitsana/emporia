@@ -18,6 +18,9 @@ from tests.test_bugs import file
 from tests.test_emporia import _register_keyed
 
 
+from tests.ids import stable_of  # noqa: E402
+
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,bugs")
@@ -58,7 +61,7 @@ def setup(client, monkeypatch, *tags):
     agents = [name(t) for t in ("op", *tags)]
     for a in agents:
         _register_keyed(client, a)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", agents[0])
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(agents[0]))
     return agents
 
 
