@@ -366,8 +366,12 @@ def test_operator_command_prints_the_desk_or_the_refusal(monkeypatch, capsys, tm
               "house": {"agents": []}, "season": {"season": "season-0", "boards": []}}
     calls = []
 
-    def call(profile, method, path, body=None):
-        calls.append((method, path))
+    from emporia import mcp_server
+
+    def call(profile, method, path, body=None, params=None):
+        # The MCP client's own path check: found by the end-to-end run, a query in the path is refused.
+        assert not mcp_server._unsafe_path("http://relay.test" + path), path
+        calls.append((method, path, params))
         return (200, status) if path.startswith("/operator/status") else (403, {"detail": "relay operator access required"})
     monkeypatch.setattr(cli, "_operator_call", call)
     assert cli.main(["operator", "opdesk"]) == 0
@@ -375,7 +379,7 @@ def test_operator_command_prints_the_desk_or_the_refusal(monkeypatch, capsys, tm
     assert "hermes emporia bugs opdesk verdict bug_ab accepted --severity low --fix FIX_COMMIT" in out
     assert cli.main(["operator", "opdesk", "whoami"]) == 1
     assert "relay operator access required" in capsys.readouterr().out
-    assert calls[0] == ("GET", "/operator/status?window_s=3600")
+    assert calls[0] == ("GET", "/operator/status", {"window_s": 3600})
 
 
 def test_house_stop_stops_only_the_runner_it_started(tmp_path, monkeypatch, capsys):

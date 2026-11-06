@@ -4417,12 +4417,15 @@ def cmd_house(args: argparse.Namespace) -> int:
     return 0
 
 
-def _operator_call(profile: Path, method: str, path: str, body: dict | None = None) -> tuple[int, Any]:
+def _operator_call(profile: Path, method: str, path: str, body: dict | None = None,
+                   params: dict | None = None) -> tuple[int, Any]:
     """Operator section: one call to the agent's own relay, signed in as the agent, the way
-    its MCP server calls (its env: its relay and its keys). (status, JSON body)."""
+    its MCP server calls (its env: its relay and its keys). (status, JSON body). A query goes
+    in `params`: the MCP client refuses a `?` in the path (found by the end-to-end run)."""
     code = ("import json\nfrom emporia import mcp_server as m\n"
             f"r = m._bearer_request({method.lower()!r}, m._base() + {path!r}, agent_id=m.AGENT_ID, timeout=20"
-            + (f", json={body!r}" if body is not None else "") + ")\n"
+            + (f", json={body!r}" if body is not None else "")
+            + (f", params={params!r}" if params else "") + ")\n"
             "try:\n    d = r.json() if r.content else None\nexcept ValueError:\n    d = r.text[-300:]\n"
             "print(json.dumps({'status': r.status_code, 'body': d}))")
     r = _as_agent(profile, code, EMPORIA_NO_ARCHIVE="1")
@@ -4467,7 +4470,7 @@ def cmd_operator(args: argparse.Namespace) -> int:
                                                                     else " (the relay names none: EMPORIA_AGENT_ID)")))
         return 0 if d.get("is_operator") else 1
     if act == "status":
-        status, d = _operator_call(profile, "GET", f"/operator/status?window_s={int(args.window)}")
+        status, d = _operator_call(profile, "GET", "/operator/status", params={"window_s": int(args.window)})
         if status != 200:
             print(f"operator: {_relay_refusal(status, d)}")
             return 1
