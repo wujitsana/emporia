@@ -35,6 +35,7 @@ import { PixelBadge } from "../badges";
 import { earnedBadges } from "../gamifyFormat";
 import { moneyChip } from "../moneyChip";
 import { NextUp } from "../ui/NextUp";
+import { StartHere } from "../ui/StartHere";
 
 /** P2: how the relay checks each move, folded into one chip; it opens to the whole sentence. */
 function PipelineChip() {
@@ -167,6 +168,7 @@ export function OverviewView({
         <AgentNow navigate={nav} />
         <NextUp agentId={VIEWER_ID} navigate={nav} />
       </div>
+      <StartHere agentId={VIEWER_ID} navigate={nav} />
       <OverviewIntro go={go} realMoney={moneyChip(health)?.kind === "real"} />
       {health && !online && (
         <AlertBanner>
