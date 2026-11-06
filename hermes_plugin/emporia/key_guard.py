@@ -37,6 +37,9 @@ _KEY_PATHS = re.compile(
     r"|\.env-backups\b"
     r"|\.emporia-signer\b|\bEMPORIA_SIGNER_DIR\b"       # P203: the signer's keys and limits
     r"|\bprofiles/\.signer\b"                              # P206: and its default folder beside Hermes's
+    # Review pass 2: the signer's files by their own names, wherever EMPORIA_SIGNER_DIR put
+    # the folder (a signer run as the agents' user, outside the default folders above)
+    r"|\badmin\.token\b|\bbackends/[\w-]+\.secret\b|\bagents/[\w-]+/keys\b"
     # P206: its code, called directly — run as the agents' user, it would
     # approve, change limits or mint tokens without an `emporia signer` command.
     # Its source is no secret: reading or linting signer.py is fine; running it is not.
@@ -46,8 +49,9 @@ _KEY_PATHS = re.compile(
     r"|\bemporia\.signer_backends\b|\bfrom\s+emporia\s+import\s+[\w\s,]*\bsigner_backends\b"
     # and a MetaMask Agent Wallet back end's: the signer user's `mm` session (~/.metamask)
     # and the `mm` commands that sign, move money or change its wallets and policy
-    r"|\.metamask/|\.metamask\b\s*$"
-    r"|\bmm\s+(?:wallet\s+(?:sign-typed-data|sign-message|send-transaction|select|create|policy|trading-mode"
+    # (review pass 2: also mid-command, `tar … ~/.metamask && …`, and `mm` run through npx)
+    r"|\.metamask/|\.metamask\b(?![\w.-])"
+    r"|(?:\bmm|@metamask/agent-wallet\S*)\s+(?:wallet\s+(?:sign-typed-data|sign-message|send-transaction|select|create|policy|trading-mode"
     r"|password)|login|logout|init|reset|transfer|swap|perps|predict|earn)\b"
     # P298: the dashboard's console holds every local profile's keys behind a Unix
     # socket the folder alone guards; through it one agent reads another's inbox and
@@ -174,6 +178,31 @@ _HOME_SETTING = re.compile(r"\bEMPORIA_RELAY_URL\b")
 _CONFIG_FILE = re.compile(r"(?:^|[/\s'\"])(?:config\.ya?ml|\.env)\b|\bhermes\b[^\n]*\bconfig\b")
 
 
+# Review pass 2: the settings behind `emporia wallet mainnet` (person-only) and `wallet
+# limits` / `agent playbook` (the person's yes), written straight into the agent's own
+# config — `hermes config set NAME VALUE`, a line added to its .env, a key in config.yaml —
+# which passed with no word from the person.
+_MAINNET_SETTING = ("EMPORIA_X402_MAINNET",)
+_LIMIT_SETTINGS = ("EMPORIA_X402_PAY_NETWORKS", "EMPORIA_X402_MAX_PAYMENT_CENTS", "EMPORIA_X402_MAX_DAILY_CENTS",
+                   "EMPORIA_PAYMENT_APPROVAL_CENTS", "EMPORIA_SIGN_LIMITS", "EMPORIA_PAYOUT_ADDRESSES",
+                   "EMPORIA_PLAYBOOK")
+
+
+def _setting_written(names: tuple[str, ...]):
+    alt = "|".join(names)
+    return re.compile(rf"\b(?:{alt})['\"]?\s*[=:]|\bconfig\s+set\b[^\n]*\b(?:{alt})\b")
+
+
+_MAINNET_WRITE, _LIMITS_WRITE = _setting_written(_MAINNET_SETTING), _setting_written(_LIMIT_SETTINGS)
+
+
+def _writes_setting(args: dict, pattern: re.Pattern) -> bool:
+    """A setting assigned (or `config set`) in a call that names the agent's config: its
+    .env, a config.yaml, or a `hermes … config` command."""
+    named = [t for key in ("path", "file_path", "command", "cmd", "code", "script") for t in _strings(args.get(key))]
+    return any(pattern.search(t) for t in _strings(args)) and any(_CONFIG_FILE.search(t) for t in named)
+
+
 def _changes_home_relay(args: dict) -> bool:
     """P188: a write to its own config.yaml or .env naming its relay, or a
     command doing the same — the agent re-pointing its home."""
@@ -220,6 +249,12 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
         return {"action": "block", "message": RELAY_OPEN}
     if _changes_home_relay(args):
         return {"action": "block", "message": HOME_RELAY}
+    if _writes_setting(args, _MAINNET_WRITE):
+        return {"action": "block", "message": PERSON_ONLY}
+    if _writes_setting(args, _LIMITS_WRITE):
+        import hashlib
+        digest = hashlib.sha256(repr(sorted((k, repr(v)) for k, v in args.items())).encode()).hexdigest()[:16]
+        return {"action": "approve", "message": APPROVE, "rule_key": f"emporia-setting-{digest}"}
     for key in ("command", "cmd", "code", "script"):
         for text in _strings(args.get(key)):
             if _OPENS_RELAY.search(text):

@@ -63,3 +63,43 @@ def test_a_bargain_joiner_signs_one_deal_share_per_game(monkeypatch):
                                    identity.get_public_key_hex(me)) for b in posted)
     served["c"] = {"not": "hex"}
     assert not m.join_session("sess_g2", agent_id=me)["success"]
+
+
+def test_the_key_guard_keeps_mainnet_and_limits_out_of_the_agents_own_config():
+    """`emporia wallet mainnet` is person-only and `wallet limits` waits for the person's yes,
+    but the settings themselves went straight into the agent's config with no word from the
+    person: `hermes config set EMPORIA_X402_MAINNET 1`, a line added to its .env, a key in
+    config.yaml."""
+    from hermes_plugin.emporia import key_guard as g
+
+    def action(tool, **args):
+        return (g.pre_tool_call(tool, args) or {}).get("action")
+
+    for cmd in ("hermes config set EMPORIA_X402_MAINNET 1",
+                "echo EMPORIA_X402_MAINNET=1 >> ~/.hermes/profiles/a/.env"):
+        assert action("terminal", command=cmd) == "block", cmd
+    assert action("write_file", path="/h/profiles/a/.env", content="EMPORIA_X402_MAINNET=true\n") == "block"
+    assert action("write_file", path="/h/profiles/a/config.yaml",
+                  content="mcp_servers:\n  emporia:\n    env:\n      EMPORIA_X402_MAINNET: '1'\n") == "block"
+    for cmd in ("hermes config set EMPORIA_X402_MAX_DAILY_CENTS 100000",
+                "hermes config set EMPORIA_X402_PAY_NETWORKS eip155:8453",
+                "echo EMPORIA_PAYMENT_APPROVAL_CENTS= >> ~/.hermes/.env"):
+        assert action("terminal", command=cmd) == "approve", cmd
+    # Emporia's own source and tests still name these freely; so does reading them.
+    assert action("write_file", path="/repo/src/emporia/x.py", content='env = {"EMPORIA_X402_MAINNET": "0"}') is None
+    assert action("terminal", command="grep -rn EMPORIA_X402_MAINNET src/") is None
+
+
+def test_the_key_guard_keeps_the_mm_session_and_the_signers_files_by_name():
+    """`~/.metamask` was matched only at the end of a command or before a `/`, so `tar ... ~/.metamask
+    && ...` or `cp -r ~/.metamask /x` copied the signer user's session; `mm` through npx signed;
+    and a signer folder set by EMPORIA_SIGNER_DIR (as the agents' user) had its admin token,
+    back-end secrets and keys readable by path."""
+    from hermes_plugin.emporia import key_guard as g
+    for cmd in ("tar czf /x/m.tgz ~/.metamask && echo ok", "cp -r ~/.metamask /x", "zip -r m ~/.metamask;",
+                "npx @metamask/agent-wallet wallet sign-typed-data --payload {}",
+                "cat /srv/signer/admin.token", "cat /srv/signer/backends/kms.secret",
+                "xxd /srv/signer/agents/a/keys/identity.ed25519"):
+        assert (g.pre_tool_call("terminal", {"command": cmd}) or {}).get("action") == "block", cmd
+    for fine in ("open https://docs.metamask.io/agent-wallet", "npm view @metamask/agent-wallet version"):
+        assert g.pre_tool_call("terminal", {"command": fine}) is None, fine
