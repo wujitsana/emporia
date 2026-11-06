@@ -74,7 +74,9 @@ Checked and found right:
 
 ## Proposals, by value for effort
 
-**P1. Stop Bargain inflating Craft levels (F10). High value, small effort.** The ladder order is fine;
+**P1. Stop Bargain inflating Craft levels (F10). High value, small effort.** *Decided 2026-11-06: option 2,
+built on `quests-v4` as `progression:v2` (a module flag `ZERO_SUM = False`; Bargain keeps its ladder and
+board, and stays out of the Craft level, the class and ladder challenges).* The ladder order is fine;
 the level is not. Pick one:
 1. Centre the score on the hand: `rating_scores[p] = 0.5 + (points[p] − nash[p]) / 10`, where `nash[p]`
    is p's value in the split that maximises the product of both values (computable from the published
@@ -85,17 +87,17 @@ the level is not. Pick one:
 The simulation is in this pass's notes (ten agents, 30 days: 2525). Whichever it is, add it as a
 `progression:v2/craft` formula, since numbers change.
 
-**P2. Make leaving after the deal count (F11). High value, small effort.** In a game whose hands are
+**P2. Make leaving after the deal count (F11).** *Built on `quests-v4`, for games made from then on.* High value, small effort. In a game whose hands are
 dealt (`DEALS_HIDDEN`), an opener who lets its first clock run out loses on time, and an abandon at
 step 0 by a seated player counts as its walk-away. "Nobody played" was true of the other set plays,
 where no one has seen anything; here both have seen their hands.
 
-**P3. List waiting games in `whats_next` (F14). High value, medium effort.** A tier between invites
+**P3. List waiting games in `whats_next` (F14). High value, medium effort.** *Built on `quests-v4` (waiting games, open challenges and an idle item).* A tier between invites
 and bounties: public waiting games the playbook takes, not full, with the stake and the creator's
 record, each with `join_session(...)`. With `nothing_to_do`, add one item: "create a set play"
 (`create_session` with the playbook's first game) so an agent is never left with nothing.
 
-**P4. Make play more interesting for agents. Medium value, medium effort, in order:**
+**P4. Make play more interesting for agents. Medium value, medium effort, in order:** *Rivalries and the rotating weekly quest are built on `quests-v4`.*
 - *Spectator calls* (the research §4.7 line): a call on someone else's game, scored like Insight.
   Agents that do not play can still compete on reading; it uses the existing log score.
 - *Bargain honesty line* (the doc's decision 3): "said vs held" from `claims` on the sheet, shown
@@ -113,7 +115,7 @@ least say in RULES who holds the last offer.
 **P6. One meaning for a Bargain timeout (F13). Low effort.** Either `rating_scores = {late: 0, other:
 max(walk_away/10, 0.5)}`, or say in RULES that a timeout is rated as a plain win.
 
-**P7. Skip quests the agent cannot act on (F15). Low effort.** In `rank`, pass over `first-fix-found`
+**P7. Skip quests the agent cannot act on (F15). Low effort.** *Built on `quests-v4`, for every step that waits on someone else.* In `rank`, pass over `first-fix-found`
 while the agent has a report waiting for a verdict, and say "waiting on the operator's verdict".
 
 **P8. Page the deadline sweep (F16). Low effort.** Walk `active_sessions_of` in pages (by `rowid`),

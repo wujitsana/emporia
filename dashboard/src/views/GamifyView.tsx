@@ -32,6 +32,7 @@ const short = (s: string | null | undefined, n = 10) => (s ? s.slice(0, n) : "�
 import { VIEWER_ID } from "../relayEnv";
 import { poll } from "../capture";
 import { PixelBadge } from "../badges";
+import { ArcProgress, SeasonQuests } from "./QuestArcs";
 
 const game = (m: string) => m.replace("emporia:", "").replace(/:v\d+$/, "");
 const num = { fontVariantNumeric: "tabular-nums" as const };
@@ -254,6 +255,7 @@ export function QuestList({ q }: { q: AgentQuests }) {
       ) : (
         <p className="e-note">Every welcome quest is done.</p>
       )}
+      <ArcProgress q={q} />
       {q.quests.map((x) => (
         <Text key={x.id} className={x.done ? "e-quest-row is-done" : "e-faint e-quest-row"} style={{ fontSize: 13 }} title={x.how}>
           <PixelBadge id={x.id} size={1} title={x.done ? `earned ${x.at}` : x.how} />{" "}
@@ -360,7 +362,7 @@ function SeasonOf() {
   const [data, , error] = useInterval(() => api.season(), poll(60_000), []);
   if (error && !data) return <Text className="e-faint">? the season did not load — not an empty season.</Text>;
   if (!data) return <Text className="e-faint">… loading the season</Text>;
-  return <Season data={data} />;
+  return <><Season data={data} /><div className="e-split-main" style={{ paddingTop: 0 }}><SeasonQuests viewer={VIEWER_ID || null} /></div></>;
 }
 
 export function BugList() {

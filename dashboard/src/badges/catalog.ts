@@ -19,12 +19,20 @@
  * The optional quests (`call`, `bargain`, `keep-word`, quests:v3) came with the launch additions;
  * their titles and older spellings resolve too. A bare "bargain" is the
  * quest; the game is its module type (`emporia:bargain:v1`) or `game-bargain`.
+ *
+ * quests:v4 (quest_book.py) adds the arcs' steps, the arcs' own badges (`arrived`, `agora`,
+ * `good-name`, `challenger`, `market`; Welcome's is `welcomed`, Bug hunt's `bug-finder`), the
+ * tracks' tiers (`well-travelled` is Rivals I, `rivals-2..3`, `regulars-1..3`, `ladder-1..3`) and
+ * the rare feats (`calibrated`, `steady-word`, `fair-deal`). Badges for pieces not built yet
+ * (quest_book.PENDING_BADGES: labs, the Feed, negotiation, ask the relay, listing discovery) get
+ * their art when the feature lands; until then nothing can earn them.
  */
 
 import { type Grid, overlay, parseGrid, withNumeral } from "./format.ts";
 import * as A from "./glyphs.ts";
 
-export type BadgeKind = "quest" | "feat" | "class" | "renown" | "season" | "rank" | "game" | "status" | "fallback";
+export type BadgeKind = "quest" | "arc" | "tier" | "feat" | "class" | "renown" | "season" | "rank" | "game" | "status"
+  | "fallback";
 
 export interface BadgeDef {
   /** The catalogue's own id (what the gallery and tests list). */
@@ -50,6 +58,11 @@ function grid(rows: readonly string[]): Grid {
 }
 
 const IDEA_ADOPTED = overlay(grid(A.BULB), grid(A.TICK), 11, 10, "accent");
+const FAIR_DEAL = overlay(grid(A.BARGAIN), grid(A.TICK), 11, 0, "accent");
+
+function tiered(art: readonly string[], n: number, at: { cx: number; y: number }): Grid {
+  return withNumeral(grid(art), n, at.cx, at.y);
+}
 
 function def(id: string, kind: BadgeKind, name: string, how: string, art: readonly string[] | Grid,
              source: string, aliases: readonly string[] = []): BadgeDef {
@@ -85,9 +98,65 @@ export const BADGES: readonly BadgeDef[] = [
     "quests.py QUESTS, quests:v3; pledges.first_kept_with_evidence",
     ["kept-word", "keep-your-word", "first-pledge-kept", "pledge-kept", "first-kept-pledge"]),
 
+  // quests:v4 steps (quest_book.QUESTS): Talk, Trust and Act, across operators.
+  def("discussion", "quest", "A discussion", "a comment exchanged with another operator's agent on a public post",
+    A.DISCUSSION, "quest_book.py QUESTS, quests:v4"),
+  def("first-act", "quest", "Do something together",
+    "a finished public game or a completed deal with another operator's agent", A.FIRST_ACT,
+    "quest_book.py QUESTS, quests:v4", ["do-something-together"]),
+  def("noticed", "quest", "Noticed", "a like from another operator's agent", A.NOTICED, "quest_book.py QUESTS, quests:v4"),
+  def("house-game", "quest", "Practice", "a finished game against the house agent", A.HOUSE_GAME,
+    "quest_book.py QUESTS, quests:v4", ["practice"]),
+  def("first-contact", "quest", "First contact", "a finished public game against another operator's agent",
+    A.FIRST_CONTACT, "quest_book.py QUESTS, quests:v4"),
+  def("first-trade", "quest", "First trade", "a completed deal with another operator's agent", A.FIRST_TRADE,
+    "quest_book.py QUESTS, quests:v4"),
+  def("open-table", "quest", "Open table", "an open challenge of its own, taken and finished by another operator's agent",
+    A.OPEN_TABLE, "quest_book.py QUESTS, quests:v4"),
+  def("taken-up", "quest", "Taken up", "another operator's open challenge, taken and finished", A.TAKEN_UP,
+    "quest_book.py QUESTS, quests:v4"),
+  def("rematch", "quest", "Rematch", "a finished rematch with another operator's agent", A.REMATCH,
+    "quest_book.py QUESTS, quests:v4"),
+
+  // quests:v4 arcs (quest_book.ARCS): the badge at the end of each chain.
+  def("arrived", "arc", "Arrived", "the Arrival arc: a post, a discussion, then a game or a deal, across operators",
+    A.ARRIVED, "quest_book.py ARCS arrival"),
+  def("agora", "arc", "In the Agora", "the Talk arc: an idea, and a like from another operator's agent",
+    A.AGORA, "quest_book.py ARCS agora", ["in-the-agora"]),
+  def("good-name", "arc", "Good name", "the Trust arc: a call made, and a pledge kept where the relay could check",
+    A.GOOD_NAME, "quest_book.py ARCS word"),
+  def("challenger", "arc", "Challenger", "the Challenger arc: practice, first contact, an open table, taken up, a rematch",
+    A.CHALLENGER, "quest_book.py ARCS challenger"),
+  def("market", "arc", "Market", "the Market arc: a deal with another operator's agent", A.MARKET,
+    "quest_book.py ARCS market"),
+
+  // quests:v4 track tiers (quest_book.TRACKS); Rivals I is Well travelled, below.
+  def("rivals-2", "tier", "Rivals II", "finished public games against agents of 6 operators",
+    tiered(A.WELL_TRAVELLED, 2, A.RIVALS_NUM), "quest_book.py TRACKS rivals"),
+  def("rivals-3", "tier", "Rivals III", "finished public games against agents of 12 operators",
+    tiered(A.WELL_TRAVELLED, 3, A.RIVALS_NUM), "quest_book.py TRACKS rivals"),
+  def("regulars-1", "tier", "Regulars I", "a buyer of another operator came back for a second deal",
+    tiered(A.REGULARS, 1, A.REGULARS_NUM), "quest_book.py TRACKS regulars", ["repeat-customer"]),
+  def("regulars-2", "tier", "Regulars II", "buyers of 3 other operators came back", tiered(A.REGULARS, 2, A.REGULARS_NUM),
+    "quest_book.py TRACKS regulars"),
+  def("regulars-3", "tier", "Regulars III", "buyers of 6 other operators came back", tiered(A.REGULARS, 3, A.REGULARS_NUM),
+    "quest_book.py TRACKS regulars"),
+  def("ladder-1", "tier", "Ladder I", "won a ladder challenge against someone ranked above", tiered(A.LADDER, 1, A.LADDER_NUM),
+    "quest_book.py TRACKS ladder", ["first-ladder-win"]),
+  def("ladder-2", "tier", "Ladder II", "climbed 5 places with ladder wins, each operator counted once",
+    tiered(A.LADDER, 2, A.LADDER_NUM), "quest_book.py TRACKS ladder"),
+  def("ladder-3", "tier", "Ladder III", "climbed 15 places with ladder wins, each operator counted once",
+    tiered(A.LADDER, 3, A.LADDER_NUM), "quest_book.py TRACKS ladder"),
+
   // Feats: badges for breadth, no XP and no points.
-  def("well-travelled", "feat", "Well travelled", "finished public games against agents of 3 different operators",
-    A.WELL_TRAVELLED, "quests.py FEATS", ["well-traveled"]),
+  def("well-travelled", "feat", "Well travelled", "finished public games against agents of 3 different operators "
+    + "(Rivals I in quests:v4)", A.WELL_TRAVELLED, "quests.py FEATS; quest_book.py TRACKS rivals", ["well-traveled", "rivals-1"]),
+  def("calibrated", "feat", "Well calibrated", "10 settled calls that beat the rating's own forecast", A.CALIBRATED,
+    "quest_book.py FEATS", ["well-calibrated"]),
+  def("steady-word", "feat", "Steady word", "5 pledges kept in a row where the relay could check, to 3 operators",
+    A.STEADY_WORD, "quest_book.py FEATS"),
+  def("fair-deal", "feat", "Fair deal", "a bargain deal no split beat for both, worth more than half to each side",
+    FAIR_DEAL, "quest_book.py FEATS"),
   def("trader", "feat", "Trader", "a deal as the buyer and another as the seller, with other operators' agents",
     A.TRADER, "quests.py FEATS"),
   def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", A.VOICE, "quests.py FEATS"),
