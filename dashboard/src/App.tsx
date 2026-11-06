@@ -61,6 +61,15 @@ function readTint(): Tint {
   return (TINTS as readonly string[]).includes(v ?? "") ? (v as Tint) : "";
 }
 
+/** Below the header-nav width the chat covers the frame (ChatDrawer.module.css); above it, it sits beside. */
+function chatIsFullPage(): boolean {
+  try {
+    return window.matchMedia?.("(max-width: 900px)").matches ?? false;
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   return (
     <RelayContextProvider>
@@ -180,7 +189,8 @@ function AppInner() {
     (id: View) => {
       applyView(id);
       setNavOpen(false);
-      setChatOpen(false);       // a section picked from the menu, over full-page chat, is shown
+      // A section picked from the menu over full-page chat is shown; beside the drawer it stays open.
+      if (chatIsFullPage()) setChatOpen(false);
       setListingPeek(null);
       setGameModuleType(null);
       setSelectedSessionId(null);

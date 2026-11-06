@@ -193,6 +193,18 @@ replays a shorter, gentler decode (0.32 s, the first two letters staying). It is
 `prefers-reduced-motion` and in capture mode, and a screen reader reads "Emporia". It reuses the
 heading's scramble (`look.scrambleFrame`, `LookChrome.BrandTitle`).
 
-## 7. Checked at 390, 768 and 1280 px
+## 7. What was checked, and what was not
 
-See the shots in `docs/ui-v2-shots/` (when present) and the checks in the branch's final report.
+- **Tests** hold the structure: `navConfig.test.ts` (six destinations, each section in one, the
+  keys, `[`/`]`, no `s`/`t`/`T`), `eventNav.test.ts` (v2 routes, every v1 route), `frame.test.tsx`
+  (the frame's containment, the overlays, the chat's height and composer, the brand),
+  `look.test.ts` (one style, no remote font), `transport.test.ts` (no dial where sockets are not
+  carried, and the stop after refusals), `tests/test_dashboard_plugin.py` (the socket route under
+  uvicorn, the short socket path, the flag).
+- **The sandbox** (`try-1105`) serves the ui-v2 tab bundle for both profiles (checked byte for byte
+  through its dashboard). Its `plugin_api.py` is loaded once per plugin host, so the `sockets` flag
+  and the new socket route take effect when that dashboard is restarted; until then the tab stops
+  dialling after three refused sockets per load.
+- **Not checked: screenshots at 390, 768 and 1280 px.** Headless Chromium here stops with "No usable
+  sandbox", and it is not run without its sandbox. The layout was checked by the tests above, not
+  by eye; look at it in the sandbox tab at those widths (DevTools' device bar) before filming.

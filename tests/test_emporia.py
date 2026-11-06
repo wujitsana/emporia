@@ -18209,7 +18209,8 @@ def test_dashboard_hotkeys_and_nav_share_one_visibility_rule():
     )
 
     app_nav = (root / "AppNav.tsx").read_text()
-    assert "visibleNav(" in app_nav
+    # Nav v2: AppNav draws destinations through visibleDestinations(), which is built on visibleNav().
+    assert "visibleDestinations(" in app_nav and "visibleNav(opts)" in nav_config
     assert "NAV.filter(" not in app_nav, (
         "AppNav re-implements the visibility filter instead of calling visibleNav()"
     )

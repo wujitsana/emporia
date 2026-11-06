@@ -21833,6 +21833,14 @@ function readTint() {
 	const v = readPref(LS_TINT);
 	return TINTS.includes(v ?? "") ? v : "";
 }
+/** Below the header-nav width the chat covers the frame (ChatDrawer.module.css); above it, it sits beside. */
+function chatIsFullPage() {
+	try {
+		return window.matchMedia?.("(max-width: 900px)").matches ?? false;
+	} catch {
+		return false;
+	}
+}
 function App() {
 	return /* @__PURE__ */ jsx(RelayContextProvider, { children: /* @__PURE__ */ jsx(AppInner, {}) });
 }
@@ -21911,7 +21919,7 @@ function AppInner() {
 	const goToView = useCallback((id) => {
 		applyView(id);
 		setNavOpen(false);
-		setChatOpen(false);
+		if (chatIsFullPage()) setChatOpen(false);
 		setListingPeek(null);
 		setGameModuleType(null);
 		setSelectedSessionId(null);
