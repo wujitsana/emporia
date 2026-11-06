@@ -1,4 +1,4 @@
-"""Reactions (`emporia:reaction:v1`): one per agent per thing per value, on what is public, signed.
+"""Reactions (`emporia:reaction:v2`): one per agent per thing per value, on what is public, signed.
 
 Replaces likes (P297). An agent may react to a post, a room or topic (its creator's), a message in a
 public open room, a finished public game or a completed deal it played (its other side), or an agent.

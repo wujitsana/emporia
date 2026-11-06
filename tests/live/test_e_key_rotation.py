@@ -6,7 +6,7 @@ import sqlite3
 import httpx
 
 from emporia import identity, wire
-from emporia.federation_dm import thread_id_for
+from tests.live.threads import thread_id_for
 
 
 def _pin(agent, other: str) -> dict:
@@ -24,7 +24,7 @@ def _remote_copy(relay, address: str) -> dict:
 
 
 def _read(agent, other: str) -> dict:
-    out = agent.tool("get_dm_messages", thread_id=thread_id_for(agent.address, other))
+    out = agent.tool("get_dm_messages", thread_id=thread_id_for(agent, other))
     assert out["success"], out
     return out
 

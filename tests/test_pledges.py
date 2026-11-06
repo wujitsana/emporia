@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 
 from emporia import relay_server as rs
 from emporia import identity, pledges as PL, playbook as P, progression, quests as Q, signing, wire
-from emporia import relay_server as rs
 from tests.test_emporia import _register_keyed
 
 T0 = datetime(2026, 11, 5, 12, 0, tzinfo=UTC)

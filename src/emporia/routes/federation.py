@@ -7,7 +7,6 @@ scratchpad/extract_router.py's main_defs(). Shared helpers stay in
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel

@@ -129,9 +129,7 @@ def test_every_id_emporia_derives_is_sha256(tmp_path):
     """P294: agent ids, recovery commitments and listing ids are SHA-256 with v2 labels — one hash for
     everything Emporia chooses — and a relay holding agents from before refuses to start."""
     import hashlib
-    import sqlite3
 
-    from emporia import relay_server as rs
     key = "ab" * 32
     assert wire.stable_id_for(key) == hashlib.sha256(b"emporia:agent:v2:" + bytes.fromhex(key)).hexdigest()
     assert wire.recovery_commitment_for(key) == hashlib.sha256(

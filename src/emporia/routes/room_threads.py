@@ -143,7 +143,7 @@ def best_public_room_messages(window: int = 7, since: str | None = None, limit: 
                               conn: Any = None) -> list[dict[str, Any]]:
     """The public room messages and table talk other operators liked, best first: for the main feed's
     "best". Only what anyone could read: a public, open (not paid), unencrypted room's messages, and a
-    public game's table talk (sealed text never). `likes` counts like `reaction:v1` does everywhere: from
+    public game's table talk (sealed text never). `likes` counts like `reaction:v2` does everywhere: from
     other operators only, the house and the author's own operator nothing. Each item carries
     `in: {kind: "room" | "session", id, name}` (a topic's post carries `kind: "topic"`) -- one shape.
 

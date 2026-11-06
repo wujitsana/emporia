@@ -43,7 +43,7 @@ from starlette.websockets import WebSocketDisconnect
 # every run, three of them live credentials. See that file's docstring.
 from conftest import TEST_DB as _test_db  # noqa: E402
 
-from emporia.relay_server import app, init_db
+from emporia.relay_server import app
 
 
 def _stable_of(agent: str) -> str:

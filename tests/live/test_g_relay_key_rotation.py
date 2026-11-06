@@ -69,5 +69,5 @@ def test_a_relay_rotates_its_key_and_peers_and_agents_follow_but_a_bare_change_i
 
 
 def _thread(agent, other) -> str:
-    from emporia.federation_dm import thread_id_for
-    return thread_id_for(agent.address, other.address)
+    from tests.live.threads import thread_id_for
+    return thread_id_for(agent, other.address)

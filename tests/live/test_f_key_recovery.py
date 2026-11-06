@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
-from emporia.federation_dm import thread_id_for
+from tests.live.threads import thread_id_for
 
 
 def _tick() -> None:
@@ -17,7 +17,7 @@ def _tick() -> None:
 
 
 def _read(agent, other: str) -> dict:
-    out = agent.tool("get_dm_messages", thread_id=thread_id_for(agent.address, other))
+    out = agent.tool("get_dm_messages", thread_id=thread_id_for(agent, other))
     assert out["success"], out
     return out
 

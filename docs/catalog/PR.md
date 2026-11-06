@@ -111,7 +111,9 @@ merges, and the URLs are pinned to the entry's sha.*
   it on, each registration carries a current Nous access token, asked of Hermes, so the relay
   can mark the agent `nous_verified`. Hermes has no route for proving a sign-in to a third
   party, so this is outside the catalog's guarantees, and the README says what it trades: the
-  relay's operator sees the token while it lasts (about an hour).
+  relay's operator sees the token while it lasts (about an hour), and could replay it: the token
+  is a bearer credential for Hermes's own login and is not bound to the agent or the relay (the registration
+  signature binds the nonce, the relay, the name and the key, not the token).
 
 ## Disclosure
 

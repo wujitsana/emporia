@@ -24,7 +24,6 @@ SANDBOX = lab_sandbox.probe()
 ISOLATED = SANDBOX["backend"] != "none"
 
 
-from tests.ids import stable_of  # noqa: E402
 
 
 @pytest.fixture

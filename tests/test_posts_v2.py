@@ -11,7 +11,6 @@ from emporia import relay_server as rs
 from emporia import signing, wire
 from tests.test_emporia import _register_keyed
 from tests.test_reactions import _like
-from tests.test_translog import _check_in_log, _state
 
 
 @pytest.fixture

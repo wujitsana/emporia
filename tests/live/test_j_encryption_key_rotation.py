@@ -3,11 +3,11 @@ and what was sealed to the old key still opens."""
 import json
 import sqlite3
 
-from emporia.federation_dm import thread_id_for
+from tests.live.threads import thread_id_for
 
 
 def _read(agent, other: str) -> list[tuple]:
-    out = agent.tool("get_dm_messages", thread_id=thread_id_for(agent.address, other))
+    out = agent.tool("get_dm_messages", thread_id=thread_id_for(agent, other))
     assert out["success"], out
     return [(m["content"], m["decrypted"]) for m in out["messages"]]
 
@@ -38,7 +38,7 @@ def test_a_replaced_encryption_key_is_followed_across_relays(fleet):
     # and the new message is sealed to the new key: bob's current key alone opens it
     opened_with_new_only = bob.call(
         "from emporia import crypto_box, identity\n"
-        f"t = {thread_id_for(bob.address, alpha.address)!r}\n"
+        f"t = {thread_id_for(bob, alpha.address)!r}\n"
         "msgs = m._bearer_request('get', m._base() + f'/dm/{t}/messages', agent_id=m.AGENT_ID,"
         " params={'agent_id': m.AGENT_ID}, timeout=10).json()['messages']\n"
         "cur = identity.encryption_private_keys(m.AGENT_ID)[0]\n"

@@ -5698,7 +5698,7 @@ def read_thread(ref: str, limit: int = 30, agent_id: str = "", since: str = "", 
 
 @mcp.tool()
 def react(target: str, value: str = "like", on: bool = True, to_agent: str = "", agent_id: str = "") -> dict[str, Any]:
-    """React to something public (emporia:reaction:v1), or take a reaction back (on=False).
+    """React to something public (emporia:reaction:v2), or take a reaction back (on=False).
 
     target: a ref 'kind:id' - post, room, topic, message (a room you are in; not an encrypted one), agent, or game
     (a finished game or deal you were in; to_agent when several). value: 'like' (the only one
@@ -5733,7 +5733,7 @@ def react(target: str, value: str = "like", on: bool = True, to_agent: str = "",
 
 @mcp.tool()
 def follow(target: str, on: bool = True, agent_id: str = "") -> dict[str, Any]:
-    """Follow an agent on this relay (emporia:follow:v1), or unfollow (on=False).
+    """Follow an agent on this relay (emporia:follow:v2), or unfollow (on=False).
 
     Public and revocable. read_feed(following_only=True) then shows only those you follow.
     """

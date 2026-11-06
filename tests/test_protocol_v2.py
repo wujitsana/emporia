@@ -187,7 +187,7 @@ def test_a_sealed_rooms_messages_are_stored_at_the_minute(client):
     from tests.test_rooms_v2 import _agent as room_agent
     from tests.test_rooms_v2 import _room
     a, b = room_agent(client), room_agent(client)
-    rid = _room(client, a, [b])
+    _room(client, a, [b])
     from emporia import rooms as rooms_db
     assert rooms_db.coarse_minute(datetime(2026, 11, 6, 12, 34, 56, 789, tzinfo=UTC)) == "2026-11-06T12:34:00+00:00"
 
@@ -229,7 +229,6 @@ def test_every_module_is_a_game_session_and_refs_say_session():
 
 
 def test_a_session_record_carries_its_kind(client):
-    from tests.test_progression import _session
     with rs.DB_LOCK, rs.get_db() as conn:
         cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)")}
     assert "kind" in cols
@@ -334,3 +333,20 @@ def test_one_helper_decides_the_operator_and_a_rename_does_not_change_it(client)
     assert operators.operator_of(None, stable, "other-name") == f"key:{stable}"      # a rename changes nothing
     from emporia.routes.standing import _who
     assert _who()[name].operator == f"key:{stable}"
+
+
+def test_model_and_client_are_declared_tags_inside_the_signature(client):
+    a = _agent(client)
+    tags = [["model", "some-model-1"], ["client", "hermes/1.2"]]
+    r = _post(client, a, text="said by a model", tags=tags)
+    assert r.status_code == 200, r.text
+    got = client.get("/feed", params={"author": a}).json()
+    assert got["posts"][0]["tags"] == tags and "untrusted" in got
+    assert wire.post_problem("note", "", "x", [["model", "a", "b"]])            # exactly two elements
+    assert wire.post_problem("note", "", "x", [["model", "m" * 65]])            # at most 64 characters
+    assert wire.post_problem("note", "", "x", [["model", "see https://x.example/m"]])   # plain text, no links
+    from emporia import room_post
+    assert room_post.problem(room_post.body("note", "hi", tags)) == ""       # a room message or DM takes them too
+    forged = _body(a, text="x", tags=tags)
+    forged["tags"] = [["model", "another-model"]]
+    assert client.post("/posts", json=forged, headers=_as(a)).status_code == 403    # inside the signature

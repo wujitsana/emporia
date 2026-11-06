@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from emporia import identity, signing, wire
+from emporia import signing, wire
 from tests import test_emporia
 from tests.test_emporia import _ASGIHttpxAdapter, _register_keyed
 

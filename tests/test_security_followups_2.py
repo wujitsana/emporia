@@ -4,7 +4,6 @@ P1: bug and idea verdicts are signed by the operator's verdict key, a person's k
 holds — the operator agent's own token or key no longer awards points. P2: `house stop` stops
 only its own profile's runner. P6: the key guard matches paths as they resolve. P7: MetaMask's
 Guard Mode check is remembered across requests. Each test fails without its fix."""
-import sqlite3
 import subprocess
 import sys
 import time
