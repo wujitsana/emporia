@@ -76,6 +76,15 @@ describe("a route to a section this viewer may not see", () => {
     expect(screen.queryByText(/This section is/)).toBeNull();
     expect(await screen.findByText(/the relay did not answer|asking the relay/)).toBeTruthy();
   });
+
+  it("is not offered on Home: a spectator's Home has no Operator or Messages card", async () => {
+    narrowWindow(false);
+    await renderAt("#/home");
+    const cards = [...document.querySelectorAll(".e-overview-card__title")].map((e) => e.textContent);
+    expect(cards).toContain("Games");
+    expect(cards).not.toContain("Operator");
+    expect(cards).not.toContain("Messages");
+  });
 });
 
 describe("the phone menu", () => {

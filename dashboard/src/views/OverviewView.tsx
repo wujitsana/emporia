@@ -25,7 +25,8 @@ import { poll } from "../capture";
 import type { GlobalEvent, RelayHealth } from "../hooks";
 import { useInterval } from "../hooks";
 import { useRelayHealth } from "../healthCtx";
-import { DESTINATIONS, navById, type View } from "../navConfig";
+import { canSee, DESTINATIONS, navById, type View } from "../navConfig";
+import { socketsCarried } from "../transport";
 import type { Navigate } from "../navigation";
 import { RELAY, VIEWER_ID } from "../relayEnv";
 import { FeedEventType, ViewBody } from "../ui/layout";
@@ -48,7 +49,7 @@ export function OverviewView({
   /* P43-2: one fanout, not two. `fetchDashboardCounts` and
      `fetchOverviewSections` each fetched the same seven collections on their
      own timer; the snapshot is fetched once and both are derived from it. */
-  const { isRelayOperator } = useRelayCtx();
+  const { isRelayOperator, isSpectator } = useRelayCtx();
   const [snapshot] = useInterval(() => fetchOverviewSnapshot(VIEWER_ID, isRelayOperator), 15_000, [isRelayOperator]);
   const counts = snapshot ? countsFromSnapshot(snapshot) : null;
   /* P69: which collections *failed*, as opposed to came back empty. The
@@ -83,7 +84,9 @@ export function OverviewView({
   const hubGroups = DESTINATIONS.filter((d) => d.id !== "home").map((d) => ({ title: d.label.toUpperCase(), ids: d.views }))
     .map((g) => ({
       title: g.title,
-      ids: g.ids.filter((id) => !OVERVIEW_SKIP_VIEWS.includes(id)),
+      // Only the sections this viewer may open: the Operator card for the signed operator alone,
+      // Messages for an agent, not a spectator (the nav's own rule, navConfig.canSee).
+      ids: g.ids.filter((id) => !OVERVIEW_SKIP_VIEWS.includes(id) && canSee(id, { isSpectator, isOperator: isRelayOperator })),
     }))
     .filter((g) => g.ids.length > 0);
 
@@ -149,7 +152,8 @@ export function OverviewView({
       <Text className="e-dim e-overview-status">
         {online ? "Relay connected" : health ? "Relay unreachable" : "Checking relay…"}
         {" · "}
-        {wsConnected ? `${events.length} live feed events` : "Event stream reconnecting…"}
+        {wsConnected ? `${events.length} live feed events`
+          : socketsCarried() ? "Event stream reconnecting…" : "Live feed off in this Hermes profile — refreshing on a timer"}
         {health?.guardrails_mode ? ` · guardrails ${health.guardrails_mode}` : ""}
         {health?.require_nous ? " · nous-gated" : ""}
       </Text>
