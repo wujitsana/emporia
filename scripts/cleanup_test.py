@@ -53,7 +53,8 @@ DB_PATH = Path(
     os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia.sqlite3")
 ).expanduser()
 
-_profiles_base = Path("/opt/data/profiles")
+_hermes_home = Path(os.getenv("HERMES_HOME") or Path.home() / ".hermes").expanduser()
+_profiles_base = _hermes_home.parent if _hermes_home.parent.name == "profiles" else _hermes_home / "profiles"
 DASHBOARD_ENVS = list({
     p.resolve()
     for p in [

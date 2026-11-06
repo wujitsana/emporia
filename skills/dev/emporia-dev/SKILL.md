@@ -24,7 +24,7 @@ metadata:
 ## Launch
 
 ```bash
-cd /opt/data/profiles/hackathon_hermes/emporia
+cd path/to/emporia                 # your checkout
 
 # Relay
 .venv/bin/uvicorn src.emporia.relay_server:app --host 0.0.0.0 --port 8088
@@ -46,7 +46,7 @@ cd dashboard && VITE_RELAY_URL="http://relay-host:8088" npm run dev
 ## Bootstrap / install (preferred — single command)
 
 ```bash
-cd /opt/data/profiles/hackathon_hermes/emporia
+cd path/to/emporia                 # your checkout
 
 # Full demo environment: 4 agent profiles + relay auto-start + seed
 .venv/bin/python installer/install.py --bootstrap-test
@@ -958,7 +958,7 @@ dashboard/                 Vite + React + SRCL — 110 modules, role-based nav, 
 ## Demo relay seed
 
 ```bash
-cd /opt/data/profiles/hackathon_hermes/emporia
+cd path/to/emporia                 # your checkout
 .venv/bin/python scripts/seed_demo_relay.py
 ```
 

@@ -4674,8 +4674,12 @@ def cmd_update(args: argparse.Namespace) -> int:
 
     uv = shutil.which("uv")
     in_repo_venv = Path(sys.prefix).resolve() == (REPO / ".venv").resolve()
-    ok = (_run([uv, "sync", "--frozen"], REPO) if uv and in_repo_venv and (REPO / "uv.lock").exists()
-          else _run([sys.executable, "-m", "pip", "install", "-q", "-e", str(REPO)], REPO))
+    # With the x402 extra, and --inexact (11-06 release review): a bare `uv sync` removes what it
+    # was not asked for, and the relay imports eth-abi at start (its money module), so an update
+    # left a relay that would not start again ("No module named 'eth_abi'").
+    ok = (_run([uv, "sync", "--frozen", "--inexact", "--extra", "x402"], REPO)
+          if uv and in_repo_venv and (REPO / "uv.lock").exists()
+          else _run([sys.executable, "-m", "pip", "install", "-q", "-e", f"{REPO}[x402]"], REPO))
     if not ok:
         print("update: the Python packages did not install (see above); stopping here")
         return 1

@@ -626,3 +626,50 @@ def test_setting_up_the_relays_own_profile_keeps_the_relays_settings(tmp_path, m
     env_text = (relay / ".env").read_text()
     assert "STRIPE_SECRET_KEY=sk_test_relay_keeps" in env_text and "STRIPE_PROFILE_ID=profile_test_x" in env_text
     assert "sk_test" not in (relay / "config.yaml").read_text()          # still never in config.yaml
+
+
+def test_every_dependency_install_takes_the_x402_extra():
+    """Release review (11-06): the relay imports eth-abi at start (its money module) and an agent's
+    wallet signs with eth-account, both in the `x402` extra. The checkout install (README) and
+    `emporia update` installed without it: the relay stopped at start with "No module named
+    'eth_abi'", and a bare `uv sync` in update removed the extra from a venv that had it."""
+    root = Path(__file__).parent.parent
+    offenders = []
+    for rel in ("installer/install.py", "src/emporia/cli.py"):
+        for i, line in enumerate((root / rel).read_text().splitlines(), 1):
+            installs = ('"sync"' in line and "uv" in line) or ('"install"' in line and '"-e"' in line)
+            if installs and "x402" not in line:
+                offenders.append(f"{rel}:{i}: {line.strip()}")
+    assert not offenders, offenders
+    readme = (root / "README.md").read_text()
+    assert "uv sync --extra x402" in readme and "pip install -e '.[x402]'" in readme
+
+
+def test_a_new_named_profile_is_found_from_a_checkout_inside_it(tmp_path, monkeypatch):
+    """Release review (11-06): `hermes profile create` makes a profile with no config.yaml, so the
+    README's `cd ~/.hermes/profiles/NAME && git clone … && install.py --install-profile` walked up
+    past it to the Hermes root, and wired the root as agent '.hermes'."""
+    root = tmp_path / ".hermes"
+    (root / "profiles" / "shop" / "emporia").mkdir(parents=True)
+    (root / "config.yaml").write_text("{}\n")
+    (root / "profiles" / "shop" / ".env").write_text("")
+    monkeypatch.chdir(root / "profiles" / "shop" / "emporia")
+    assert installer.find_profile_dir_from_cwd() == (root / "profiles" / "shop").resolve()
+    (root / "elsewhere").mkdir()
+    monkeypatch.chdir(root / "elsewhere")
+    assert installer.find_profile_dir_from_cwd() == root.resolve()       # the root is still found
+
+
+def test_an_agent_id_a_relay_refuses_is_never_written():
+    for good in ("shop", "alpha-2", "data"):
+        assert installer.AGENT_ID_RE.match(good)
+    for bad in (".hermes", "ab", "Shop", "-x-", "a" * 65):
+        assert not installer.AGENT_ID_RE.match(bad)
+    src = (Path(__file__).parent.parent / "src" / "emporia" / "relay_server.py").read_text()
+    assert installer.AGENT_ID_RE.pattern in src            # the relay's own rule, mirrored
+
+
+def test_no_fixed_hermes_data_path():
+    """Hermes's data is wherever HERMES_HOME says; `/opt/data` is only the official image's."""
+    text = (Path(__file__).parent.parent / "installer" / "install.py").read_text()
+    assert 'Path("/opt/data' not in text
