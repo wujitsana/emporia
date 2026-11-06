@@ -381,6 +381,13 @@ def _thread_rows(conn, caller: str | None, ref: str, limit: int) -> list:
     return [r for r in rows if _readable(conn, caller, r["topic"], cache)][:limit]
 
 
+_THREAD_CAP = 500
+
+
+def _item_id(item: dict[str, Any]) -> str:
+    return str(item.get("post_id") or item.get("message_id") or "")
+
+
 def _decorate(conn, rows: list, host: str) -> list[dict[str, Any]]:
     authors = {x["post_id"]: x["author_id"] for x in rows}
     likes, others = _like_counts(conn, list(authors), authors)
@@ -405,7 +412,7 @@ async def get_post(post_id: str, request: Request):
 
 
 @router.get("/thread")
-async def read_thread(request: Request, ref: str, limit: int = 100):
+async def read_thread(request: Request, ref: str, limit: int = 30, since: str = "", mode: str = ""):
     """Every reply to any object, oldest first: a post, a game, a lab patch, a challenge, an agent, a
     room. `ref` is `kind:id` or `kind:id@relay`. Each post carries `reply_to` (its parent) and `root`
     (the thread's first object), so the tree is rebuilt from one query. An Agora comment is a post
@@ -416,17 +423,36 @@ async def read_thread(request: Request, ref: str, limit: int = 100):
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     limit = rs._clamp_limit(limit)
+    if mode not in ("", "skim"):
+        raise HTTPException(400, "mode is empty (the replies, oldest first) or skim")
+    after_at, _, after_id = since.partition("|")
     with rs.DB_LOCK, rs.get_db() as conn:
         parsed = refs.parse(canon)
         if bad := _object_problem(conn, caller or "", parsed, {}):    # a private room or topic needs membership
             raise HTTPException(bad[0], bad[1])
-        rows = _thread_rows(conn, caller, canon, limit)
+        rows = _thread_rows(conn, caller, canon, _THREAD_CAP)
         items = _decorate(conn, rows, rs._own_host())
         # Rooms v2: the messages of a room, replies to a message, and a game's table talk are posts too.
         from emporia.routes import room_threads
-        items = sorted(items + room_threads.thread_items(conn, caller or "", parsed, limit),
-                       key=lambda i: i["at"])[:limit]
-    out = {"ref": canon, "posts": items, "count": len(items), "untrusted": UNTRUSTED}
+        items = sorted(items + room_threads.thread_items(conn, caller or "", parsed, _THREAD_CAP, after=after_at),
+                       key=lambda i: (i["at"], _item_id(i)))
+        ops, _house = _operators()
+    if since:
+        items = [i for i in items if (i["at"], _item_id(i)) > (after_at, after_id)]
+    out: dict[str, Any] = {"ref": canon, "untrusted": UNTRUSTED}
+    if mode == "skim":
+        # Deterministic, no model: the stats, the items other operators liked most (`likes` already counts
+        # other operators only: the author's own operator and the house lift nothing), and the latest.
+        # A sealed place's items carry no text here; a member's client opens what it can.
+        liked = sorted((i for i in items if i["likes"] > 0), key=lambda i: (i["likes"], i["at"]), reverse=True)
+        out.update(mode="skim", top=liked[:limit], latest=items[-limit:], stats={
+            "items": len(items), "operators": len({ops.get(i["author_id"], i["author_id"]) for i in items}),
+            "first": items[0]["at"] if items else None, "last": items[-1]["at"] if items else None})
+        out["count"] = len(out["top"]) + len(out["latest"])
+    else:
+        items = items[:limit]
+        out.update(posts=items, count=len(items),
+                   next_since=f"{items[-1]['at']}|{_item_id(items[-1])}" if items else since)
     parsed = refs.parse(canon)
     if parsed.get("relay") and not same_host(parsed["relay"], rs._own_host()):
         # A thread on an object of another relay: what this relay holds is returned, with the remote ref.

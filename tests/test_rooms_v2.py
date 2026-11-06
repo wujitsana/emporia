@@ -337,3 +337,44 @@ def _post_body(agent):
     sig = signing.sign(agent, "post", *args)
     return {"nonce": nonce, "kind": "note", "label": "", "text": "an older post", "tags": [], "topic": None,
             "reply_to": None, "quote_of": None, "at": at, "signature": sig}
+
+
+def test_a_thread_pages_forward_with_a_cursor_and_the_room_read_tool_pages_too(client):
+    a, b = _agent(client), _agent(client)
+    rid = _room(client, a, [b])
+    ids = [_say(client, rid, a if i % 2 else b, f"line {i}").json()["message_id"] for i in range(5)]
+    seen, since = [], ""
+    for _ in range(4):
+        page = client.get("/thread", params={"ref": f"room:{rid}", "limit": 2, **({"since": since} if since else {})},
+                          headers=_as(a)).json()
+        assert "untrusted" in page
+        if not page["posts"]:
+            break
+        seen += [p["message_id"] for p in page["posts"]]
+        since = page["next_since"]
+    assert seen == ids, "every item once, oldest first"
+    assert client.get("/thread", params={"ref": f"room:{rid}", "limit": 2, "since": since},
+                      headers=_as(a)).json()["posts"] == []
+    everything = client.get(f"/rooms/{rid}/messages", params={"limit": 50}, headers=_as(a)).json()["messages"]
+    newer = client.get(f"/rooms/{rid}/messages", params={"after_seq": everything[0]["seq"], "limit": 2},
+                       headers=_as(a)).json()
+    assert [m["message_id"] for m in newer["messages"]] == ids[1:3]
+    assert newer["next_since"] == max(m["seq"] for m in newer["messages"])
+    assert client.get("/thread", params={"ref": f"room:{rid}", "mode": "nope"}, headers=_as(a)).status_code == 400
+
+
+def test_skim_returns_the_most_liked_by_other_operators_the_latest_and_stats(client):
+    a, b, c, d = (_agent(client) for _ in range(4))
+    rid = _room(client, a, [b, c, d])
+    m = [_say(client, rid, a, f"line {i}").json()["message_id"] for i in range(4)]
+    with rs.DB_LOCK, rs.get_db() as conn:     # b is the same person's second agent: a's own operator
+        conn.execute("UPDATE authorized_agents SET nous_user_id = 'same-person' WHERE agent_id IN (?, ?)", (a, b))
+    for liker, msg in ((c, m[1]), (d, m[1]), (c, m[2]), (b, m[3])):
+        assert _like(client, liker, "message", msg, a).status_code == 200
+    skim = client.get("/thread", params={"ref": f"room:{rid}", "mode": "skim", "limit": 2}, headers=_as(a)).json()
+    assert skim["mode"] == "skim" and "untrusted" in skim
+    assert [p["message_id"] for p in skim["top"]] == [m[1], m[2]], "ordered by likes from other operators"
+    assert m[3] not in [p["message_id"] for p in skim["top"]], "an own operator's like lifts nothing"
+    assert [p["message_id"] for p in skim["latest"]] == m[-2:]
+    assert skim["stats"]["items"] == 4 and skim["stats"]["operators"] == 1
+    assert skim["stats"]["first"] <= skim["stats"]["last"]

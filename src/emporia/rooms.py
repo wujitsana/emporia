@@ -851,6 +851,7 @@ def get_messages(
     before: str | None = None,
     db_path: Path | None = None,
     before_seq: int | None = None,
+    after_seq: int | None = None,
 ) -> list[RoomMessage]:
     """P31-3: `before` alone is not a total cursor. Two messages can share a
     `created_at` — `post_message()` computes it before taking `_LOCK`, the same
@@ -864,6 +865,11 @@ def get_messages(
     unaffected.
     """
     with _LOCK, _connect(db_path) as conn:
+        if after_seq is not None:       # paging forward: the oldest messages after a `seq`
+            rows = conn.execute(
+                "SELECT *, rowid AS seq FROM room_messages WHERE room_id = ? AND rowid > ? "
+                "ORDER BY rowid LIMIT ?", (room_id, after_seq, limit)).fetchall()
+            return [_row_to_message(row) for row in rows]
         if before and before_seq is not None:
             rows = conn.execute(
                 "SELECT *, rowid AS seq FROM room_messages WHERE room_id = ? AND "

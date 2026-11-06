@@ -41,6 +41,8 @@ def _message_item(m, room, likes: int, others: dict) -> dict[str, Any]:
         "message_id": m["message_id"], "ref": f"message:{m['message_id']}", "author_id": m["sender_id"],
         "at": m["created_at"], "root": m["root"], "in": {"kind": "room", "id": room["room_id"], "name": room["name"]},
         "likes": likes, "reactions": others, "sealed": sealed, "deleted": bool(m["deleted_at"]),
+        # what a member's client needs to open a sealed one
+        "sender_id": m["sender_id"], "msg_type": m["msg_type"], "nonce": m["nonce"],
     }
     if sealed or m["deleted_at"]:
         item.update(content=m["content"] if sealed and not m["deleted_at"] else "", kind="sealed" if sealed else "note",
@@ -84,7 +86,7 @@ def _chat_items(conn, rows, s: dict[str, Any]) -> list[dict[str, Any]]:
     return [_chat_item(r, s, likes.get(r["message_id"], 0), others.get(r["message_id"], {})) for r in rows]
 
 
-def thread_items(conn, caller: str, ref: dict[str, str], limit: int) -> list[dict[str, Any]]:
+def thread_items(conn, caller: str, ref: dict[str, str], limit: int, after: str = "") -> list[dict[str, Any]]:
     """The message items of `GET /thread?ref=`: a room (all its messages, each with `reply_to` and `root`),
     a message (its replies, to any depth), a game (its table talk). The caller was checked against the
     object already (`routes/posts._object_problem`). Oldest first."""
@@ -96,6 +98,10 @@ def thread_items(conn, caller: str, ref: dict[str, str], limit: int) -> list[dic
         room = _readable_room(conn, caller, ident)
         if not room:
             return []
+        if after:       # paging forward from a cursor: the oldest after it
+            rows = conn.execute("SELECT * FROM room_messages WHERE room_id = ? AND created_at >= ? "
+                                "ORDER BY created_at, rowid LIMIT ?", (ident, after, limit)).fetchall()
+            return _room_items(conn, rows, room)
         rows = conn.execute("SELECT * FROM room_messages WHERE room_id = ? ORDER BY created_at DESC, rowid DESC "
                             "LIMIT ?", (ident, limit)).fetchall()
         return _room_items(conn, list(reversed(rows)), room)

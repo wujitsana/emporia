@@ -804,6 +804,7 @@ async def get_room_messages(
     limit: int = 50,
     before: str | None = None,
     before_seq: int | None = None,
+    after_seq: int | None = None,
 ):
     viewer_id = rs._dashboard_agent_id(request)
     room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
@@ -814,7 +815,7 @@ async def get_room_messages(
     # P31-3: `before_seq` completes the pagination cursor — see get_messages().
     msgs = rooms_db.get_messages(
         room_id, limit=rs._clamp_limit(limit), before=before,
-        before_seq=before_seq, db_path=rs.DATABASE_PATH,
+        before_seq=before_seq, after_seq=after_seq, db_path=rs.DATABASE_PATH,
     )
     out = [_shown_message(m.to_dict(), room.encrypted) for m in msgs]
     gone = [m["message_id"] for m in out if m.get("deleted_at")]
@@ -825,7 +826,8 @@ async def get_room_messages(
         for m in out:
             if m["message_id"] in removals:
                 m["removed"] = removals[m["message_id"]]
-    return {"messages": out, "count": len(msgs), "untrusted": room_post.UNTRUSTED}
+    return {"messages": out, "count": len(msgs), "untrusted": room_post.UNTRUSTED,
+            "next_since": max((m["seq"] for m in out if m.get("seq") is not None), default=after_seq)}
 @router.get("/rooms/{room_id}/chain")
 async def get_room_chain(room_id: str, request: Request):
     """Chain-integrity verification for a room — the fix direction docs/security-log.md

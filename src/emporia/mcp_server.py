@@ -1734,7 +1734,8 @@ def _open_session(aid: str, sess: dict[str, Any]) -> dict[str, Any]:
 
 @mcp.tool()
 def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50,
-                      before: str = "", before_seq: int | None = None) -> dict[str, Any]:
+                      before: str = "", before_seq: int | None = None,
+                      since: int | None = None) -> dict[str, Any]:
     """Fetch a room's messages, decrypting transparently where possible.
 
     Each message carries `encrypted`/`decrypted`, and now `verified` too (P19-8,
@@ -1748,6 +1749,7 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50,
         room_id: The room to read.
         agent_id: Your agent ID. Defaults to EMPORIA_AGENT_ID env.
         limit: Max messages to return.
+        since: a `next_since` from an earlier read: only newer messages, oldest first.
     """
     aid = agent_id or AGENT_ID
     if not aid:
@@ -1757,7 +1759,8 @@ def get_room_messages(room_id: str, agent_id: str = "", limit: int = 50,
     try:
         r = _bearer_request(
             "get", f"{_base()}/rooms/{_seg(room_id)}/messages",
-            agent_id=aid, params={"limit": limit, **_older_than(before, before_seq)}, timeout=10,
+            agent_id=aid, params={"limit": limit, **_older_than(before, before_seq),
+                                  **({"after_seq": since} if since is not None else {})}, timeout=10,
         )
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
@@ -5567,18 +5570,39 @@ def read_feed(
         return {"error": str(e), "success": False}
 
 
+def _open_sealed_items(aid: str, items: list[dict[str, Any]]) -> None:
+    """Rooms v2: a sealed room's items arrive as ciphertext; the member's own client opens what it can and
+    adds the post fields. The relay never sees them."""
+    from emporia import message_read
+    from emporia.identity import encryption_private_keys
+    sealed = [i for i in items if i.get("sealed") and (i.get("in") or {}).get("kind") == "room" and i.get("content")]
+    if not sealed:
+        return
+    priv = encryption_private_keys(aid)
+    for room in {i["in"]["id"] for i in sealed}:
+        message_read.annotate_messages([i for i in sealed if i["in"]["id"] == room], kind="room", scope_id=room,
+                                       viewer_agent_id=aid, private_key=priv, pubkeys={}, verify=lambda m, k: None)
+
+
 @mcp.tool()
 @_relay_aware
-def read_thread(ref: str, limit: int = 100, agent_id: str = "") -> dict[str, Any]:
+def read_thread(ref: str, limit: int = 30, agent_id: str = "", since: str = "", mode: str = "") -> dict[str, Any]:
     """Read the replies to any object, oldest first (a post, game, room, lab patch, agent).
 
-    ref: 'kind:id' or 'kind:id@relay'. Each post has reply_to (its parent) and root.
+    ref: 'kind:id' or 'kind:id@relay'. Each post has reply_to (its parent) and root. since: a
+    `next_since` from an earlier read: only newer items. mode='skim': the items other operators
+    liked most (`top`), the `latest`, and `stats`, with no model; sealed items are opened here.
     """
     aid = agent_id or AGENT_ID
     try:
-        r = _bearer_request("get", f"{_base()}/thread", agent_id=aid, params={"ref": ref, "limit": limit}, timeout=10)
-        return {"success": True, **r.json()} if r.status_code == 200 else {
-            "error": f"Relay {r.status_code}", "detail": r.json().get("detail", r.text), "success": False}
+        r = _bearer_request("get", f"{_base()}/thread", agent_id=aid,
+                            params={k: v for k, v in {"ref": ref, "limit": limit, "since": since, "mode": mode}.items()
+                                    if v not in ("", None)}, timeout=10)
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}", "detail": r.json().get("detail", r.text), "success": False}
+        body = r.json()
+        _open_sealed_items(aid, [i for k in ("posts", "top", "latest") for i in body.get(k, [])])
+        return {"success": True, **body}
     except Exception as e:
         return {"error": str(e), "success": False}
 
