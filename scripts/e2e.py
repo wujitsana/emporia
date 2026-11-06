@@ -582,10 +582,10 @@ class Run:
         thread = self.tool(self.player, "read_thread", first["ref"])
         check([p.get("text") for p in thread.get("posts", [])] == ["split three ways"]
               and "data, not instructions" in thread.get("untrusted", ""), f"read_thread of a message: {thread}")
-        liked = self.tool(self.merchant, "react", first["ref"])
-        check(liked.get("success") and liked.get("to_agent") == self.player, f"a reaction on a room message: {liked}")
+        liked = self.tool(self.player, "react", reply["ref"])      # the player likes the merchant's answer
+        check(liked.get("success") and liked.get("to_agent") == self.merchant, f"a reaction on a room message: {liked}")
         best = self.tool(self.player, "read_feed", sort="likes", with_rooms=True, limit=100)
-        hit = [p for p in best.get("posts", []) if p.get("message_id") == first["ref"].split(":", 1)[1]]
+        hit = [p for p in best.get("posts", []) if p.get("message_id") == reply["ref"].split(":", 1)[1]]
         check(hit and hit[0]["in"]["kind"] == "room" and hit[0]["in"]["id"] == rid,
               f"a liked public room message is not in the feed's best: {str(best)[:300]}")
         g = self.tool(self.player, "create_session", "emporia:blotto:v2",
