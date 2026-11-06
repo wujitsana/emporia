@@ -175,6 +175,12 @@ class InteractionModule(ABC):
     #: successor); one already running finishes under its own rules.
     RETIRED_FOR: str | None = None
 
+    #: Review pass 2, P1 (decided 11-06): False when one player's gain is not the other's
+    #: loss (Bargain: a good deal raises both). Such a game keeps its own Craft ladder and
+    #: board, but its rating feeds neither the Craft level, the class, nor a ladder
+    #: challenge: a non-zero-sum rating drifts upward with play (`progression:v2`).
+    ZERO_SUM: bool = True
+
     #: Bargain: True when the relay deals each player hidden information (its
     #: own priorities) from a seed nobody can choose — the relay's secret,
     #: committed to in the game's config before anyone joins, mixed with each

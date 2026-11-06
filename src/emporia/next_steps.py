@@ -61,7 +61,7 @@ def call(tool: str, **args: Any) -> str:
     return f"{tool}({', '.join(f'{k}={json.dumps(v)}' for k, v in args.items())})"
 
 
-def _item(kind: str, why: str, tool: str, clock: int | None = None, **args: Any) -> dict:
+def _item(kind: str, why: str, tool: str, clock: int | None = None, /, **args: Any) -> dict:
     return {"kind": kind, "why": why, "tool": tool, "args": args, "call": call(tool, **args),
             **({"clock_left_s": clock} if clock is not None else {})}
 

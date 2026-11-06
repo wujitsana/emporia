@@ -130,10 +130,10 @@ def challenges_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
 
 def waiting_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
     """Review pass 2, P3: public games waiting for a player that are not challenges — not its own, not its
-    operator's or the house's, with a seat — oldest first (they have waited longest)."""
+    operator's or the house's, with a seat — newest first (its creator is likeliest still there)."""
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute("SELECT * FROM sessions WHERE status = 'waiting' AND config_json NOT LIKE '%\"challenge\"%' "
-                            "AND config_json NOT LIKE '%\"opponent\"%' ORDER BY created_at LIMIT 100").fetchall()
+                            "AND config_json NOT LIKE '%\"opponent\"%' ORDER BY created_at DESC LIMIT 100").fetchall()
     out = []
     for r in rows:
         try:
@@ -209,7 +209,7 @@ def inbox_of(agent_id: str) -> dict[str, Any]:
                                 "stake_cents": _stake_cents({**inner, **payload}),
                                 "payload": {k: v for k, v in {**inner, **payload}.items()
                                             if k in ("type", "module_type", "stake_cents", "stake_per_participant",
-                                                     "session_id")},
+                                                     "session_id", "challenge", "expires_at")},
                                 "created_at": r["created_at"]})
             elif t == "dm_received":
                 tid = payload.get("thread_id")

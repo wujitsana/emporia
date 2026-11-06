@@ -111,6 +111,7 @@ class BargainModule(InteractionModule):
     MAX_PARTICIPANTS = 2
     TIMED = True
     DEALS_HIDDEN = True
+    ZERO_SUM = False           # P1: a deal good for both raises both, so its rating stays out of the Craft level
     CHAT_BY_DEFAULT = True
     CHECKED_ACTIONS = ("offer",)
     RULES = """

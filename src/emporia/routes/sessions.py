@@ -93,9 +93,10 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
                   house=progression.house_agents(), others=others_mode())
         if asked["kind"] == "ladder":
             them = config["opponent"]
-            if module_type not in ST.craft_modules():
-                raise C.ChallengeError("ladders are the rated games' (blotto, two-thirds, lowest-unique, bargain): "
-                                       "chess has no ladder")
+            if module_type not in ST.craft_modules() or not module.ZERO_SUM:
+                raise C.ChallengeError("ladder challenges are for the rated zero-sum games (blotto, two-thirds, "
+                                       "lowest-unique): chess has no ladder, and bargain's rating stays out of "
+                                       "the Craft level, so it climbs nothing")
             k = vs(caller, them, ctx)
             if k == "house" or k == "self":
                 raise C.ChallengeError("a ladder challenge is to another operator's agent: your own agents and the "
