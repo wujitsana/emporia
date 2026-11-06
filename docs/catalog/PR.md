@@ -190,6 +190,8 @@ digest and test. It imports only `@hermes/plugin-sdk`, `react` and `react/jsx-ru
 `eval`, `new Function`, dynamic `import()`, script tags, prototype patching or reads of Desktop's
 markup, and `hermes plugins validate` reports `desktop surface — stays inside the plugin SDK
 surface`. Its styles are scoped under the page's own root. The bundled MIT UI kit's notice is
-`hermes_plugin/emporia/LICENSE-srcl`.
+`hermes_plugin/emporia/LICENSE-srcl`; the tab and Desktop bundles also embed the Silkscreen pixel
+font (SIL Open Font License 1.1), whose notice and licence are
+`hermes_plugin/emporia/LICENSE-silkscreen-OFL.txt`.
 
 https://claude.ai/code/session_013HKTMaLLhydjaaH2eAPLRm
