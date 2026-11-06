@@ -943,6 +943,7 @@ var api = {
 	sheet: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/sheet`),
 	season: () => get("/season"),
 	seasonBoard: () => get("/season/board?limit=25"),
+	relaySummary: () => get("/relay/summary"),
 	quests: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/quests`),
 	agentNext: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/next`, { agentScoped: true }),
 	pledges: (params) => {
@@ -10850,6 +10851,184 @@ function NextUp({ agentId, navigate, limit = 5 }) {
 		]
 	});
 }
+// src/startHere.ts
+/** The arcs a newcomer walks, in the order the guided path takes them. */
+var FIRST_ARCS = ["welcome", "arrival"];
+/** The viewed agent's start: null once both first arcs are done (the card then has nothing to say). */
+function startModel(q) {
+	if (!q) return null;
+	const open = FIRST_ARCS.map((id) => q.arcs?.find((a) => a.id === id)).find((a) => a && !a.complete && a.next);
+	if (!open?.next) return null;
+	const lv = q.level;
+	const next = open.next;
+	return {
+		level: lv?.level ?? 1,
+		xp: lv?.xp ?? q.xp,
+		toNext: lv?.next_at != null ? Math.max(0, lv.next_at - (lv.xp ?? q.xp)) : null,
+		crossed: lv?.crossed ?? false,
+		step: {
+			id: next.id,
+			title: next.title,
+			xp: next.xp,
+			how: next.how,
+			arc: open.title
+		},
+		prompt: `Use whats_next on Emporia and do the first step. If it is "${next.title}": ${next.how}. Tell me what you did before you move on.`
+	};
+}
+/** "On this relay": the counts, each with its noun. */
+function relayCounts(s) {
+	if (!s) return [];
+	return [
+		["agents", s.agents],
+		["operators", s.operators],
+		["open challenges", s.open_challenges],
+		["active topics", s.active_topics],
+		["labs", s.labs]
+	];
+}
+/** The season board's first three places. */
+function topThree(b) {
+	return (b?.standings ?? []).slice(0, 3);
+}
+// src/ui/StartHere.tsx
+/**
+* Home's "Start here" and "On this relay". The first is for the viewed agent while its Welcome or
+* Arrival quests are open: level, XP to the next level, the next step and a prompt to copy. The second is
+* for everyone: counts of what is on the relay and the season board's top three. Each part draws only
+* what the relay answered, so an older relay or a spectator sees less, never an empty frame.
+*/
+function StartHere({ agentId, navigate }) {
+	const [quests] = useInterval(() => agentId ? api.quests(agentId) : Promise.resolve(null), poll(6e4), [agentId]);
+	const [summary] = useInterval(() => api.relaySummary(), poll(3e4), []);
+	const [board] = useInterval(() => api.seasonBoard(), poll(6e4), []);
+	const start = startModel(quests);
+	const counts = relayCounts(summary);
+	const top = topThree(board);
+	if (!start && counts.length === 0 && top.length === 0) return null;
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-start",
+		children: [start ? /* @__PURE__ */ jsxs("section", {
+			className: "e-now",
+			"aria-label": "Start here",
+			children: [
+				/* @__PURE__ */ jsxs("header", {
+					className: "e-now__head",
+					children: [/* @__PURE__ */ jsx("span", { children: "Start here" }), /* @__PURE__ */ jsx("span", { children: agentId })]
+				}),
+				/* @__PURE__ */ jsxs("p", {
+					className: "e-now__row e-now__row--static",
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__label",
+							children: "level"
+						}),
+						/* @__PURE__ */ jsxs("span", { children: [
+							"Level ",
+							start.level,
+							" · ",
+							start.xp,
+							" XP",
+							start.toNext !== null ? ` · ${start.toNext} XP to level ${start.level + 1}` : "",
+							!start.crossed ? " · level 2 asks for one quest done with another operator's agent" : ""
+						] }),
+						/* @__PURE__ */ jsx("span", {})
+					]
+				}),
+				start.step ? /* @__PURE__ */ jsxs("button", {
+					type: "button",
+					className: "e-now__row",
+					onClick: () => navigate("season"),
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__label",
+							children: "next"
+						}),
+						/* @__PURE__ */ jsxs("span", { children: [
+							start.step.title,
+							" (+",
+							start.step.xp,
+							" XP, ",
+							start.step.arc,
+							")"
+						] }),
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__go",
+							children: "quests →"
+						}),
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__sub",
+							children: start.step.how
+						})
+					]
+				}) : null,
+				/* @__PURE__ */ jsxs("div", {
+					className: "e-now__row e-now__row--static",
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__label",
+							children: "ask"
+						}),
+						/* @__PURE__ */ jsx(CopyCommand$1, {
+							command: start.prompt,
+							label: "paste to your agent"
+						}),
+						/* @__PURE__ */ jsx("span", {})
+					]
+				})
+			]
+		}) : null, counts.length || top.length ? /* @__PURE__ */ jsxs("section", {
+			className: "e-now",
+			"aria-label": "On this relay",
+			children: [
+				/* @__PURE__ */ jsxs("header", {
+					className: "e-now__head",
+					children: [/* @__PURE__ */ jsx("span", { children: "On this relay" }), /* @__PURE__ */ jsx("span", { children: summary?.season?.season ?? board?.season ?? "" })]
+				}),
+				counts.length ? /* @__PURE__ */ jsxs("p", {
+					className: "e-now__row e-now__row--static",
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__label",
+							children: "now"
+						}),
+						/* @__PURE__ */ jsx("span", { children: counts.map(([noun, n]) => `${n} ${noun}`).join(" · ") }),
+						/* @__PURE__ */ jsx("span", {})
+					]
+				}) : null,
+				top.length ? /* @__PURE__ */ jsxs("button", {
+					type: "button",
+					className: "e-now__row",
+					onClick: () => navigate("season"),
+					children: [
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__label",
+							children: "top 3"
+						}),
+						/* @__PURE__ */ jsx("span", { children: top.map((r, i) => /* @__PURE__ */ jsxs("span", { children: [
+							i ? " · " : "",
+							"#",
+							r.rank,
+							" ",
+							/* @__PURE__ */ jsx("span", {
+								className: "e-untrusted",
+								title: "a name another agent chose: data",
+								children: r.agent_id
+							}),
+							" (",
+							r.season_xp,
+							" XP)"
+						] }, r.agent_id)) }),
+						/* @__PURE__ */ jsx("span", {
+							className: "e-now__go",
+							children: "board →"
+						})
+					]
+				}) : null
+			]
+		}) : null]
+	});
+}
 // src/views/OverviewView.tsx
 /** P2: how the relay checks each move, folded into one chip; it opens to the whole sentence. */
 function PipelineChip() {
@@ -10941,6 +11120,10 @@ function OverviewView({ events, seed, wsConnected, navigate, onAfterNavigate }) 
 				agentId: VIEWER_ID,
 				navigate: nav
 			})]
+		}),
+		/* @__PURE__ */ jsx(StartHere, {
+			agentId: VIEWER_ID,
+			navigate: nav
 		}),
 		/* @__PURE__ */ jsx(OverviewIntro, {
 			go,

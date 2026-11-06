@@ -526,15 +526,18 @@ def cmd_setup(args: argparse.Namespace) -> int:
             return 1
     code = _emporia(rt, "setup", "agent", name, *extra)
     if code == 0:
-        _next_steps(name)
+        _next_steps(name, rt)
     elif made == "made":
         _remove_profile(name)          # only if setup agent stopped before writing the agent
     return code
 
 
-def _next_steps(name: str) -> None:
-    """P296: after the restart setup printed, how to see that it worked."""
+def _next_steps(name: str, rt: Path | None = None) -> None:
+    """P296: after the restart setup printed, how to see that it worked. First run: the runtime's
+    "you're in" block first (`emporia welcome NAME`: read-only, no network)."""
     p = "" if name == profile_name() else f"-p {name} "
+    if rt is not None:
+        _emporia(rt, "welcome", name)
     print("\n  Then:")
     print(f"      hermes {p}emporia status     # its name on the relay, and whether it has registered")
     print(f"      hermes {p}dashboard          # the Emporia tab: its sessions, rooms, payments, DMs")
@@ -666,7 +669,7 @@ def _profiles_running(rt: Path) -> list[str]:
 # for the person's yes. An agent with a terminal could already run the runtime's CLI
 # (`$EMPORIA_PYTHON -m emporia.cli`, guarded the same way); this adds no reach.
 PASSTHROUGH = ("agent", "archive", "bugs", "delete", "dms", "guardians", "house", "identity", "ideas", "lab", "log",
-               "login", "operator", "relay", "role", "sheet", "signer", "stats", "visits", "wallet")
+               "login", "operator", "relay", "role", "sheet", "signer", "stats", "visits", "wallet", "welcome")
 # `emporia setup <these>` passes through too: the plugin's setup is the agent's.
 SETUP_PASSTHROUGH = ("relay", "stripe", "dashboard", "log")
 

@@ -39,7 +39,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		value: mod,
 		enumerable: true
 	}) : target, mod));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/scheduler/cjs/scheduler.production.js
+	// ../../../../dashboard/node_modules/scheduler/cjs/scheduler.production.js
 	/**
 	* @license React
 	* scheduler.production.js
@@ -293,11 +293,11 @@ var EmporiaHermesPlugin = (function(exports) {
 			};
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/scheduler/index.js
+	// ../../../../dashboard/node_modules/scheduler/index.js
 	var require_scheduler = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_scheduler_production();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/cjs/react.production.js
+	// ../../../../dashboard/node_modules/react/cjs/react.production.js
 	/**
 	* @license React
 	* react.production.js
@@ -683,11 +683,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		exports.version = "19.3.1";
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/index.js
+	// ../../../../dashboard/node_modules/react/index.js
 	var require_react = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_production();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react-dom/cjs/react-dom.production.js
+	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom.production.js
 	/**
 	* @license React
 	* react-dom.production.js
@@ -839,7 +839,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		exports.version = "19.3.1";
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react-dom/index.js
+	// ../../../../dashboard/node_modules/react-dom/index.js
 	var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		function checkDCE() {
 			if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === "undefined" || typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE !== "function") return;
@@ -852,7 +852,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		checkDCE();
 		module.exports = require_react_dom_production();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react-dom/cjs/react-dom-client.production.js
+	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom-client.production.js
 	/**
 	* @license React
 	* react-dom-client.production.js
@@ -11473,7 +11473,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		} catch {}
 		return null;
 	}
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/cjs/react-jsx-runtime.production.js
+	// ../../../../dashboard/node_modules/react/cjs/react-jsx-runtime.production.js
 	/**
 	* @license React
 	* react-jsx-runtime.production.js
@@ -11507,7 +11507,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		exports.jsx = jsxProd;
 		exports.jsxs = jsxProd;
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/jsx-runtime.js
+	// ../../../../dashboard/node_modules/react/jsx-runtime.js
 	var require_jsx_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_jsx_runtime_production();
 	}));
@@ -11611,13 +11611,13 @@ var EmporiaHermesPlugin = (function(exports) {
 	var init_Text_module = __esmMin((() => {
 		text$1 = "Text_text_1shpo";
 		Text_module_default = { text: text$1 };
-	})), import_jsx_runtime$79, Text;
+	})), import_jsx_runtime$80, Text;
 	var init_Text = __esmMin((() => {
 		init_Text_module();
 		require_react();
-		import_jsx_runtime$79 = require_jsx_runtime();
+		import_jsx_runtime$80 = require_jsx_runtime();
 		Text = ({ children, ...rest }) => {
-			return /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("p", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$80.jsx)("p", {
 				className: Text_module_default.text,
 				...rest,
 				children
@@ -11631,11 +11631,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		BlockLoader_module_default = { root: root$9 };
 	}));
 	// src/ui/kit/BlockLoader.tsx
-	var import_react$42, import_jsx_runtime$78, SEQUENCES, BlockLoader;
+	var import_react$42, import_jsx_runtime$79, SEQUENCES, BlockLoader;
 	var init_BlockLoader = __esmMin((() => {
 		init_BlockLoader_module();
 		import_react$42 = /* @__PURE__ */ __toESM(require_react(), 1);
-		import_jsx_runtime$78 = require_jsx_runtime();
+		import_jsx_runtime$79 = require_jsx_runtime();
 		SEQUENCES = [
 			[
 				"⠁",
@@ -11748,11 +11748,11 @@ var EmporiaHermesPlugin = (function(exports) {
 				const timer = window.setInterval(() => setIndex((i) => (i + 1) % length), 100);
 				return () => clearInterval(timer);
 			}, [length]);
-			if (!frames) return /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
+			if (!frames) return /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("span", {
 				className: BlockLoader_module_default.block,
 				children: "�"
 			});
-			return /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$79.jsx)("span", {
 				className: BlockLoader_module_default.root,
 				children: frames[index % length]
 			});
@@ -12144,6 +12144,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			sheet: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/sheet`),
 			season: () => get("/season"),
 			seasonBoard: () => get("/season/board?limit=25"),
+			relaySummary: () => get("/relay/summary"),
 			quests: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/quests`),
 			agentNext: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/next`, { agentScoped: true }),
 			pledges: (params) => {
@@ -12852,25 +12853,25 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function StatusChip({ ok, label, title, loading, liveLoader }) {
 		let indicator;
-		if (loading) indicator = /* @__PURE__ */ (0, import_jsx_runtime$77.jsx)("span", {
+		if (loading) indicator = /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
 			className: "e-status-chip__loader",
 			"aria-hidden": true,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$77.jsx)(BlockLoader, { mode: 0 })
+			children: /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(BlockLoader, { mode: 0 })
 		});
-		else if (ok && liveLoader) indicator = /* @__PURE__ */ (0, import_jsx_runtime$77.jsx)("span", {
+		else if (ok && liveLoader) indicator = /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
 			className: "e-status-chip__loader",
 			"aria-hidden": true,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$77.jsx)(BlockLoader, { mode: 0 })
+			children: /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(BlockLoader, { mode: 0 })
 		});
-		else indicator = /* @__PURE__ */ (0, import_jsx_runtime$77.jsx)("span", {
+		else indicator = /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
 			className: "e-status-chip__dot",
 			"aria-hidden": true,
 			children: ok ? "●" : "○"
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$77.jsxs)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("span", {
 			className: `e-status-chip${ok ? " is-ok" : ""}`,
 			title,
-			children: [indicator, /* @__PURE__ */ (0, import_jsx_runtime$77.jsx)("span", {
+			children: [indicator, /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
 				className: "e-status-chip__label",
 				children: label
 			})]
@@ -12890,24 +12891,24 @@ var EmporiaHermesPlugin = (function(exports) {
 		const restTitle = online ? `Relay is up — its API answers (${resolved}/health)` : health ? `Relay HTTP unreachable (${resolved})` : `Checking relay health…`;
 		const wsTitle = wsConnected ? `Live updates on: new games, listings and events appear as they happen (${wsEvents})` : !socketsCarried() ? "Live updates off: this Hermes profile runs the plugin in its plugin host, which carries no websockets yet. The dashboard refreshes on a timer." : `Live updates off — the dashboard still refreshes on a timer (${wsEvents})`;
 		const money = moneyChip(health);
-		const chips = /* @__PURE__ */ (0, import_jsx_runtime$77.jsxs)("span", {
+		const chips = /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("span", {
 			className: "e-relay-status__chips",
 			children: [
-				money ? /* @__PURE__ */ (0, import_jsx_runtime$77.jsxs)("span", {
+				money ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("span", {
 					className: `e-money-chip e-money-chip--${money.kind}`,
 					title: money.title,
-					children: [money.label, /* @__PURE__ */ (0, import_jsx_runtime$77.jsxs)("span", {
+					children: [money.label, /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("span", {
 						className: "e-sr",
 						children: [" — ", money.title]
 					})]
 				}) : null,
-				/* @__PURE__ */ (0, import_jsx_runtime$77.jsx)(StatusChip, {
+				/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(StatusChip, {
 					ok: online,
 					label: "relay",
 					title: restTitle,
 					loading: health === null
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$77.jsx)(StatusChip, {
+				/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(StatusChip, {
 					ok: wsConnected,
 					label: "live",
 					title: wsTitle,
@@ -12915,35 +12916,35 @@ var EmporiaHermesPlugin = (function(exports) {
 				})
 			]
 		});
-		if (compact) return /* @__PURE__ */ (0, import_jsx_runtime$77.jsxs)("span", {
+		if (compact) return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("span", {
 			className: "e-relay-status e-relay-status--compact",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$77.jsx)("span", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
 				className: "e-relay-status__host e-capture-hide",
 				title: resolved,
 				children: host
 			}), chips]
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$77.jsxs)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$78.jsxs)("span", {
 			className: "e-relay-status",
 			title: resolved,
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$77.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
 					className: "e-relay-status__host e-capture-hide",
 					children: host
 				}),
-				meta ? /* @__PURE__ */ (0, import_jsx_runtime$77.jsx)("span", {
+				meta ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)("span", {
 					className: "e-relay-status__meta",
 					children: meta
 				}) : null,
 				chips,
-				showWs ? /* @__PURE__ */ (0, import_jsx_runtime$77.jsx)(Text, {
+				showWs ? /* @__PURE__ */ (0, import_jsx_runtime$78.jsx)(Text, {
 					className: "e-faint",
 					children: wsEvents
 				}) : null
 			]
 		});
 	}
-	var import_jsx_runtime$77;
+	var import_jsx_runtime$78;
 	var init_RelayStrip = __esmMin((() => {
 		init_BlockLoader();
 		init_Text();
@@ -12952,7 +12953,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_relayFormat();
 		init_transport();
 		init_moneyChip();
-		import_jsx_runtime$77 = require_jsx_runtime();
+		import_jsx_runtime$78 = require_jsx_runtime();
 	}));
 	// src/navConfig.ts
 	/**
@@ -13232,12 +13233,12 @@ var EmporiaHermesPlugin = (function(exports) {
 	}));
 	// src/ThemeControls.tsx
 	function ThemePanelBody({ theme, tint, onTheme, onTint }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$76.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$77.jsxs)("div", {
 			className: "e-theme-duo",
 			role: "group",
 			"aria-label": "Theme",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$76.jsx)("button", {
+				/* @__PURE__ */ (0, import_jsx_runtime$77.jsx)("button", {
 					type: "button",
 					className: "e-theme-circle e-theme-circle--mode e-theme-duo__btn",
 					"data-mode": theme,
@@ -13245,11 +13246,11 @@ var EmporiaHermesPlugin = (function(exports) {
 					title: theme === "theme-dark" ? "Dark — click for light" : "Light — click for dark",
 					"aria-label": theme === "theme-dark" ? "Dark mode, switch to light" : "Light mode, switch to dark"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$76.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$77.jsx)("span", {
 					className: "e-theme-duo__rule",
 					"aria-hidden": true
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$76.jsx)("button", {
+				/* @__PURE__ */ (0, import_jsx_runtime$77.jsx)("button", {
 					type: "button",
 					className: "e-theme-circle e-theme-circle--accent e-theme-duo__btn",
 					style: { background: TINT_COLORS[tint] },
@@ -13262,15 +13263,15 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/** Header / mobile: same two-circle control, no popover. */
 	function ThemeCompact(props) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$76.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$77.jsx)("div", {
 			className: "e-theme-compact e-theme-compact--inline",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$76.jsx)(ThemePanelBody, { ...props })
+			children: /* @__PURE__ */ (0, import_jsx_runtime$77.jsx)(ThemePanelBody, { ...props })
 		});
 	}
-	var import_jsx_runtime$76;
+	var import_jsx_runtime$77;
 	var init_ThemeControls = __esmMin((() => {
 		init_themeConfig();
-		import_jsx_runtime$76 = require_jsx_runtime();
+		import_jsx_runtime$77 = require_jsx_runtime();
 	}));
 	// src/ui/ViewerSwitcher.tsx
 	/**
@@ -13285,19 +13286,19 @@ var EmporiaHermesPlugin = (function(exports) {
 	*/
 	function ViewerSwitcher() {
 		const hermes = hermesProfile();
-		if (hermes && MODE === "desktop") return /* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)("span", {
+		if (hermes && MODE === "desktop") return /* @__PURE__ */ (0, import_jsx_runtime$76.jsxs)("span", {
 			className: "e-viewer-switch",
 			title: "The Hermes profile this page shows; switch it in Hermes",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$76.jsx)("span", {
 					className: "e-faint",
 					children: "as"
 				}),
 				" ",
-				/* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", { children: hermes.isAgent ? hermes.name : `${hermes.name} (no agent)` })
+				/* @__PURE__ */ (0, import_jsx_runtime$76.jsx)("span", { children: hermes.isAgent ? hermes.name : `${hermes.name} (no agent)` })
 			]
 		});
-		return hermes ? /* @__PURE__ */ (0, import_jsx_runtime$75.jsx)(HermesProfileSelect, { current: hermes }) : /* @__PURE__ */ (0, import_jsx_runtime$75.jsx)(ViewerSelect, {});
+		return hermes ? /* @__PURE__ */ (0, import_jsx_runtime$76.jsx)(HermesProfileSelect, { current: hermes }) : /* @__PURE__ */ (0, import_jsx_runtime$76.jsx)(ViewerSelect, {});
 	}
 	/**
 	* P234: inside the Hermes dashboard the tab belongs to a Hermes profile, so
@@ -13327,20 +13328,20 @@ var EmporiaHermesPlugin = (function(exports) {
 			window.history.pushState(null, "", url.toString());
 			window.dispatchEvent(new PopStateEvent("popstate"));
 		};
-		return /* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)("label", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$76.jsxs)("label", {
 			className: "e-viewer-switch",
 			title: "Switch the Hermes profile to this agent's",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$76.jsx)("span", {
 				className: "e-faint",
 				children: "as"
-			}), /* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)("select", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$76.jsxs)("select", {
 				value: current.isAgent ? current.name : "",
 				onChange: choose,
 				"aria-label": "Agent",
-				children: [!current.isAgent && /* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("option", {
+				children: [!current.isAgent && /* @__PURE__ */ (0, import_jsx_runtime$76.jsx)("option", {
 					value: "",
 					children: "choose an agent"
-				}), ids.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("option", {
+				}), ids.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$76.jsx)("option", {
 					value: id,
 					children: id
 				}, id))]
@@ -13362,34 +13363,34 @@ var EmporiaHermesPlugin = (function(exports) {
 			else url.searchParams.set("as", e.target.value);
 			window.location.assign(url.toString());
 		};
-		return /* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)("label", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$76.jsxs)("label", {
 			className: "e-viewer-switch",
 			title: "View this dashboard as another agent on this relay (local only)",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$76.jsx)("span", {
 				className: "e-faint",
 				children: "as"
-			}), /* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)("select", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$76.jsxs)("select", {
 				value: VIEWER_ID ?? "",
 				onChange: choose,
 				"aria-label": "View as agent",
-				children: [!VIEWER_ID && /* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("option", {
+				children: [!VIEWER_ID && /* @__PURE__ */ (0, import_jsx_runtime$76.jsx)("option", {
 					value: "",
 					children: "spectator"
-				}), ids.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("option", {
+				}), ids.map((id) => /* @__PURE__ */ (0, import_jsx_runtime$76.jsx)("option", {
 					value: id,
 					children: id
 				}, id))]
 			})]
 		});
 	}
-	var import_react$39, import_jsx_runtime$75;
+	var import_react$39, import_jsx_runtime$76;
 	var init_ViewerSwitcher = __esmMin((() => {
 		import_react$39 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_hooks();
 		init_relayEnv();
 		init_transport();
-		import_jsx_runtime$75 = require_jsx_runtime();
+		import_jsx_runtime$76 = require_jsx_runtime();
 	}));
 	// src/capture.ts
 	function params() {
@@ -13497,11 +13498,11 @@ var EmporiaHermesPlugin = (function(exports) {
 	function ScrambleText({ text }) {
 		const moving = motionAllowed();
 		const at = useArrival(text, SCRAMBLE_MS, moving, 45);
-		if (!moving || at >= SCRAMBLE_MS) return /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)(import_jsx_runtime$74.Fragment, { children: text });
-		return /* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)(import_jsx_runtime$74.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
+		if (!moving || at >= SCRAMBLE_MS) return /* @__PURE__ */ (0, import_jsx_runtime$75.jsx)(import_jsx_runtime$75.Fragment, { children: text });
+		return /* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)(import_jsx_runtime$75.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", {
 			"aria-hidden": true,
 			children: scrambleFrame(text, Math.floor(ease(at / SCRAMBLE_MS) * text.length))
-		}), /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
+		}), /* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", {
 			className: "e-sr",
 			children: text
 		})] });
@@ -13537,13 +13538,13 @@ var EmporiaHermesPlugin = (function(exports) {
 			const resolved = from + Math.floor(ease(at / run.ms) * (7 - from));
 			shown = opening && at < 160 ? BRAND_SCRAMBLED : scrambleFrame(BRAND, resolved);
 		}
-		return /* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)("span", {
 			className: "e-brand",
 			"data-decoding": shown !== "EMPORIA" ? "true" : void 0,
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", {
 				"aria-hidden": true,
 				children: shown
-			}), /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", {
 				className: "e-sr",
 				children: "Emporia"
 			})]
@@ -13556,13 +13557,13 @@ var EmporiaHermesPlugin = (function(exports) {
 		const total = per * text.length;
 		const at = useArrival(text, total, moving);
 		const n = at >= total ? text.length : Math.floor(at / per);
-		return /* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)(import_jsx_runtime$74.Fragment, { children: [n < text.length ? /* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)(import_jsx_runtime$74.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)(import_jsx_runtime$75.Fragment, { children: [n < text.length ? /* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)(import_jsx_runtime$75.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", {
 			"aria-hidden": true,
 			children: text.slice(0, n)
-		}), /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
+		}), /* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", {
 			className: "e-sr",
 			children: text
-		})] }) : text, /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
+		})] }) : text, /* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", {
 			className: "e-anim-cursor",
 			"aria-hidden": true
 		})] });
@@ -13577,19 +13578,19 @@ var EmporiaHermesPlugin = (function(exports) {
 		const n = Math.max(0, shown.findIndex((d) => d.id === dest.id)) + 1;
 		const pad = (x) => String(x).padStart(2, "0");
 		const where = dest.views.length > 1 ? `${dest.id} › ${item.id}` : dest.id;
-		return /* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)("div", {
 			className: "e-anim-hud e-anim-hud--top",
 			"aria-hidden": true,
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", {
 					className: "e-anim-hud__where",
 					children: WHERE
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", {
 					className: "e-anim-hud__key",
 					children: item.hotkey ?? dest.hotkey
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)("span", {
 					className: "e-anim-hud__at",
 					children: [
 						pad(n),
@@ -13599,7 +13600,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						where
 					]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", { className: "e-anim-flash" }, item.id)
+				/* @__PURE__ */ (0, import_jsx_runtime$75.jsx)("span", { className: "e-anim-flash" }, item.id)
 			]
 		});
 	}
@@ -13617,24 +13618,24 @@ var EmporiaHermesPlugin = (function(exports) {
 			const t = setInterval(() => setNow(Date.now()), 1e3);
 			return () => clearInterval(t);
 		}, []);
-		return /* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)("div", {
 			className: "e-anim-hud e-anim-hud--foot",
 			"aria-hidden": true,
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("span", { children: [
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)("span", { children: [
 				clock(now - OPENED),
 				" · ",
 				VIEWER_ID ? `as ${VIEWER_ID}` : "spectator"
-			] }), /* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("span", { children: [section, " · watch only · 1–6 · [ ] · t T"] })]
+			] }), /* @__PURE__ */ (0, import_jsx_runtime$75.jsxs)("span", { children: [section, " · watch only · 1–6 · [ ] · t T"] })]
 		});
 	}
-	var import_react$38, import_jsx_runtime$74, SCRAMBLE_MS, TYPE_MS_PER_CHAR, TYPE_MAX_MS, ease, BRAND, BRAND_SCRAMBLED, WHERE, OPENED;
+	var import_react$38, import_jsx_runtime$75, SCRAMBLE_MS, TYPE_MS_PER_CHAR, TYPE_MAX_MS, ease, BRAND, BRAND_SCRAMBLED, WHERE, OPENED;
 	var init_LookChrome = __esmMin((() => {
 		import_react$38 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_transport();
 		init_relayEnv();
 		init_navConfig();
 		init_look();
-		import_jsx_runtime$74 = require_jsx_runtime();
+		import_jsx_runtime$75 = require_jsx_runtime();
 		SCRAMBLE_MS = 420;
 		TYPE_MS_PER_CHAR = 9;
 		TYPE_MAX_MS = 650;
@@ -13653,7 +13654,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	function Count({ n }) {
-		return n > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$73.jsx)("span", {
+		return n > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
 			className: "e-nav-badge",
 			children: n > 99 ? "99+" : n
 		}) : null;
@@ -13670,31 +13671,31 @@ var EmporiaHermesPlugin = (function(exports) {
 	function SectionTabs({ view, onGoDest, variant = "horizontal", badges = {} }) {
 		const dests = useDestinations();
 		const here = destinationOf(view).id;
-		return /* @__PURE__ */ (0, import_jsx_runtime$73.jsx)("nav", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("nav", {
 			className: `e-section-tabs e-section-tabs--${variant}`,
 			"aria-label": "Sections",
 			children: dests.map((d) => {
 				const active = d.id === here;
-				return /* @__PURE__ */ (0, import_jsx_runtime$73.jsxs)("button", {
+				return /* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("button", {
 					type: "button",
 					className: `e-section-tab${active ? " is-active" : ""}`,
 					onClick: () => onGoDest(d.id),
 					title: d.blurb,
 					"aria-current": active ? "page" : void 0,
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$73.jsx)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
 							className: "e-section-tab__icon",
 							"aria-hidden": true,
 							children: d.icon
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$73.jsxs)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("span", {
 							className: "e-section-tab__label",
-							children: [d.label, /* @__PURE__ */ (0, import_jsx_runtime$73.jsx)(Count, { n: destBadge(d.views, badges) })]
+							children: [d.label, /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)(Count, { n: destBadge(d.views, badges) })]
 						}),
-						variant === "drawer" ? /* @__PURE__ */ (0, import_jsx_runtime$73.jsxs)(import_jsx_runtime$73.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$73.jsx)("span", {
+						variant === "drawer" ? /* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)(import_jsx_runtime$74.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
 							className: "e-section-tab__sub",
 							children: d.items.map((n) => n.label).join(" · ")
-						}), /* @__PURE__ */ (0, import_jsx_runtime$73.jsx)("kbd", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("kbd", {
 							className: "e-section-tab__key",
 							children: d.hotkey
 						})] }) : null
@@ -13713,27 +13714,27 @@ var EmporiaHermesPlugin = (function(exports) {
 		const here = destinationOf(view).id;
 		const dest = dests.find((d) => d.id === here);
 		if (!dest || dest.items.length < 2) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$73.jsxs)("nav", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("nav", {
 			className: "e-subnav",
 			"aria-label": `${dest.label}: sections`,
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$73.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
 					className: "e-subnav__dest",
 					"aria-hidden": true,
 					children: dest.label
 				}),
 				dest.items.map((n) => {
 					const active = n.id === view;
-					return /* @__PURE__ */ (0, import_jsx_runtime$73.jsxs)("button", {
+					return /* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("button", {
 						type: "button",
 						className: `e-subnav__tab${active ? " is-active" : ""}`,
 						onClick: () => onGo(n.id),
 						title: n.blurb,
 						"aria-current": active ? "page" : void 0,
-						children: [n.label, /* @__PURE__ */ (0, import_jsx_runtime$73.jsx)(Count, { n: badges[n.id] ?? 0 })]
+						children: [n.label, /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)(Count, { n: badges[n.id] ?? 0 })]
 					}, n.id);
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$73.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
 					className: "e-subnav__keys",
 					"aria-hidden": true,
 					children: "[ ]"
@@ -13743,15 +13744,15 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/** The phone's menu: the agent chat, the six destinations, then who you view as and the theme. */
 	function MobileNavDrawer({ view, onGoDest, onClose, theme, tint, onTheme, onTint, badges, lead }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$73.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("div", {
 			className: "e-mobile-drawer",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$73.jsxs)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("div", {
 					className: "e-mobile-drawer__head",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$73.jsx)("span", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("span", {
 						className: "e-brand-title",
-						children: /* @__PURE__ */ (0, import_jsx_runtime$73.jsx)(BrandTitle, {})
-					}), onClose ? /* @__PURE__ */ (0, import_jsx_runtime$73.jsx)("button", {
+						children: /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)(BrandTitle, {})
+					}), onClose ? /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)("button", {
 						type: "button",
 						className: "e-icon-button",
 						onClick: onClose,
@@ -13760,15 +13761,15 @@ var EmporiaHermesPlugin = (function(exports) {
 					}) : null]
 				}),
 				lead,
-				/* @__PURE__ */ (0, import_jsx_runtime$73.jsx)(SectionTabs, {
+				/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)(SectionTabs, {
 					view,
 					onGoDest,
 					variant: "drawer",
 					badges
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$73.jsxs)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$74.jsxs)("div", {
 					className: "e-mobile-drawer__foot",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$73.jsx)(ViewerSwitcher, {}), /* @__PURE__ */ (0, import_jsx_runtime$73.jsx)(ThemePanelBody, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$74.jsx)(ViewerSwitcher, {}), /* @__PURE__ */ (0, import_jsx_runtime$74.jsx)(ThemePanelBody, {
 						theme,
 						tint,
 						onTheme,
@@ -13778,27 +13779,27 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_jsx_runtime$73;
+	var import_jsx_runtime$74;
 	var init_AppNav = __esmMin((() => {
 		init_navConfig();
 		init_relayCtx();
 		init_ThemeControls();
 		init_ViewerSwitcher();
 		init_LookChrome();
-		import_jsx_runtime$73 = require_jsx_runtime();
+		import_jsx_runtime$74 = require_jsx_runtime();
 	}));
 	// src/ui/kit/Indent.module.css
 	var root$8, Indent_module_default;
 	var init_Indent_module = __esmMin((() => {
 		root$8 = "Indent_root_9k7l5";
 		Indent_module_default = { root: root$8 };
-	})), import_jsx_runtime$72, Indent;
+	})), import_jsx_runtime$73, Indent;
 	var init_Indent = __esmMin((() => {
 		init_Indent_module();
 		require_react();
-		import_jsx_runtime$72 = require_jsx_runtime();
+		import_jsx_runtime$73 = require_jsx_runtime();
 		Indent = ({ children, ...rest }) => {
-			return /* @__PURE__ */ (0, import_jsx_runtime$72.jsx)("div", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$73.jsx)("div", {
 				className: Indent_module_default.root,
 				...rest,
 				children
@@ -13823,20 +13824,20 @@ var EmporiaHermesPlugin = (function(exports) {
 		const safe = agentId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 12) || "x";
 		const idA = `moire-a-${safe}-${size}`;
 		const idB = `moire-b-${safe}-${size}`;
-		return /* @__PURE__ */ (0, import_jsx_runtime$71.jsxs)("svg", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$72.jsxs)("svg", {
 			width: size,
 			height: size,
 			className: "e-moire-avatar",
 			viewBox: "0 0 32 32",
 			"aria-hidden": true,
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$71.jsxs)("defs", { children: [/* @__PURE__ */ (0, import_jsx_runtime$71.jsx)("pattern", {
+				/* @__PURE__ */ (0, import_jsx_runtime$72.jsxs)("defs", { children: [/* @__PURE__ */ (0, import_jsx_runtime$72.jsx)("pattern", {
 					id: idA,
 					width: "4",
 					height: "4",
 					patternUnits: "userSpaceOnUse",
 					patternTransform: `rotate(${rotA}, 16, 16)`,
-					children: /* @__PURE__ */ (0, import_jsx_runtime$71.jsx)("line", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$72.jsx)("line", {
 						x1: "0",
 						y1: "0",
 						x2: "0",
@@ -13844,13 +13845,13 @@ var EmporiaHermesPlugin = (function(exports) {
 						stroke: `hsl(${hue}, 70%, 60%)`,
 						strokeWidth: "1"
 					})
-				}), /* @__PURE__ */ (0, import_jsx_runtime$71.jsx)("pattern", {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$72.jsx)("pattern", {
 					id: idB,
 					width: "4",
 					height: "4",
 					patternUnits: "userSpaceOnUse",
 					patternTransform: `rotate(${rotB}, 16, 16)`,
-					children: /* @__PURE__ */ (0, import_jsx_runtime$71.jsx)("line", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$72.jsx)("line", {
 						x1: "0",
 						y1: "0",
 						x2: "4",
@@ -13859,18 +13860,18 @@ var EmporiaHermesPlugin = (function(exports) {
 						strokeWidth: "0.8"
 					})
 				})] }),
-				/* @__PURE__ */ (0, import_jsx_runtime$71.jsx)("rect", {
+				/* @__PURE__ */ (0, import_jsx_runtime$72.jsx)("rect", {
 					width: "32",
 					height: "32",
 					fill: `hsl(${hue}, 28%, 18%)`
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$71.jsx)("rect", {
+				/* @__PURE__ */ (0, import_jsx_runtime$72.jsx)("rect", {
 					width: "32",
 					height: "32",
 					fill: `url(#${idA})`,
 					opacity: "0.85"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$71.jsx)("rect", {
+				/* @__PURE__ */ (0, import_jsx_runtime$72.jsx)("rect", {
 					width: "32",
 					height: "32",
 					fill: `url(#${idB})`,
@@ -13879,9 +13880,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_jsx_runtime$71, MOIRE_HUES;
+	var import_jsx_runtime$72, MOIRE_HUES;
 	var init_AgentMoireAvatar = __esmMin((() => {
-		import_jsx_runtime$71 = require_jsx_runtime();
+		import_jsx_runtime$72 = require_jsx_runtime();
 		MOIRE_HUES = [
 			210,
 			0,
@@ -13900,13 +13901,13 @@ var EmporiaHermesPlugin = (function(exports) {
 	var init_Badge_module = __esmMin((() => {
 		root$7 = "Badge_root_1obhs";
 		Badge_module_default = { root: root$7 };
-	})), import_jsx_runtime$70, Badge$1;
+	})), import_jsx_runtime$71, Badge$1;
 	var init_Badge$1 = __esmMin((() => {
 		init_Badge_module();
 		require_react();
-		import_jsx_runtime$70 = require_jsx_runtime();
+		import_jsx_runtime$71 = require_jsx_runtime();
 		Badge$1 = ({ children, ...rest }) => {
-			return /* @__PURE__ */ (0, import_jsx_runtime$70.jsx)("span", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$71.jsx)("span", {
 				className: Badge_module_default.root,
 				...rest,
 				children
@@ -13921,51 +13922,51 @@ var EmporiaHermesPlugin = (function(exports) {
 	*/
 	function PageHeading({ item }) {
 		if (!item) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("header", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$70.jsxs)("header", {
 			className: "e-page-head",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)(AnimaticHudTop, { item }),
-				/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("h1", {
+				/* @__PURE__ */ (0, import_jsx_runtime$70.jsx)(AnimaticHudTop, { item }),
+				/* @__PURE__ */ (0, import_jsx_runtime$70.jsx)("h1", {
 					className: "e-page-head__title",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)(ScrambleText, { text: item.label })
+					children: /* @__PURE__ */ (0, import_jsx_runtime$70.jsx)(ScrambleText, { text: item.label })
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("p", {
+				/* @__PURE__ */ (0, import_jsx_runtime$70.jsx)("p", {
 					className: "e-page-head__blurb",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)(TypedText, { text: item.blurb })
+					children: /* @__PURE__ */ (0, import_jsx_runtime$70.jsx)(TypedText, { text: item.blurb })
 				})
 			]
 		});
 	}
 	/** Page content shell — the section's name and blurb come from PageHeading above it. */
 	function ViewBody({ children, toolbar, flush }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$70.jsxs)("div", {
 			className: `e-view-body${flush ? " e-view-body--flush" : ""}`,
-			children: [toolbar ? /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("div", {
+			children: [toolbar ? /* @__PURE__ */ (0, import_jsx_runtime$70.jsx)("div", {
 				className: "e-view-toolbar",
 				children: toolbar
-			}) : null, /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("div", {
+			}) : null, /* @__PURE__ */ (0, import_jsx_runtime$70.jsx)("div", {
 				className: "e-view-body__inner",
 				children
 			})]
 		});
 	}
 	function StatHero({ items }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$70.jsx)("div", {
 			className: "e-hero-stats",
 			role: "list",
-			children: items.map((it) => /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("div", {
+			children: items.map((it) => /* @__PURE__ */ (0, import_jsx_runtime$70.jsxs)("div", {
 				className: `e-hero-stat${it.accent ? " e-hero-stat--accent" : ""}`,
 				role: "listitem",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("span", {
+					/* @__PURE__ */ (0, import_jsx_runtime$70.jsx)("span", {
 						className: "e-hero-stat__value",
 						children: it.value
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("span", {
+					/* @__PURE__ */ (0, import_jsx_runtime$70.jsx)("span", {
 						className: "e-hero-stat__label",
 						children: it.label
 					}),
-					it.hint ? /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("span", {
+					it.hint ? /* @__PURE__ */ (0, import_jsx_runtime$70.jsx)("span", {
 						className: "e-hero-stat__hint",
 						children: it.hint
 					}) : null
@@ -13974,15 +13975,15 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	function PanelCard({ title, children, action }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("section", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$70.jsxs)("section", {
 			className: "e-panel-card",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("header", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$70.jsxs)("header", {
 				className: "e-panel-card__head",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)(Text, {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$70.jsx)(Text, {
 					className: "e-panel-card__title",
 					children: title
 				}), action]
-			}), /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("div", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$70.jsx)("div", {
 				className: "e-panel-card__body",
 				children
 			})]
@@ -13990,18 +13991,18 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function FeedEventType({ type }) {
 		const label = type.replace(/_/g, " ");
-		return /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$70.jsx)("span", {
 			className: "e-feed-type",
 			children: label
 		});
 	}
-	var import_react$35, import_jsx_runtime$69, ViewBoundary;
+	var import_react$35, import_jsx_runtime$70, ViewBoundary;
 	var init_layout = __esmMin((() => {
 		init_Badge$1();
 		init_Text();
 		import_react$35 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_LookChrome();
-		import_jsx_runtime$69 = require_jsx_runtime();
+		import_jsx_runtime$70 = require_jsx_runtime();
 		ViewBoundary = class extends import_react$35.Component {
 			state = { error: null };
 			static getDerivedStateFromError(error) {
@@ -14009,15 +14010,15 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 			render() {
 				if (!this.state.error) return this.props.children;
-				return /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("div", {
+				return /* @__PURE__ */ (0, import_jsx_runtime$70.jsx)("div", {
 					className: "e-view-body",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("div", {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$70.jsxs)("div", {
 						className: "e-empty-pane",
 						role: "alert",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("div", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$70.jsxs)("div", {
 							className: "e-empty-pane__title",
 							children: [this.props.name, " could not be shown."]
-						}), /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("div", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$70.jsxs)("div", {
 							className: "e-empty-pane__hint",
 							children: [
 								"Something in what the relay sent did not fit this view (",
@@ -14033,21 +14034,21 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/ui/cards.tsx
 	/** Minimal retro panel — thin border, small label, no SRCL Card chrome. */
 	function SlimCard({ title, children, action, foot }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$68.jsxs)("section", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("section", {
 			className: "e-slim-card",
 			children: [
-				(title || action) && /* @__PURE__ */ (0, import_jsx_runtime$68.jsxs)("header", {
+				(title || action) && /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("header", {
 					className: "e-slim-card__head",
-					children: [title ? /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("span", {
+					children: [title ? /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("span", {
 						className: "e-slim-card__title",
 						children: title
-					}) : /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("span", {}), action]
+					}) : /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("span", {}), action]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("div", {
 					className: "e-slim-card__body",
 					children
 				}),
-				foot ? /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("footer", {
+				foot ? /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("footer", {
 					className: "e-slim-card__foot",
 					children: foot
 				}) : null
@@ -14055,50 +14056,50 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	function MetaGrid({ rows }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("dl", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("dl", {
 			className: "e-meta-grid",
-			children: rows.map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime$68.jsxs)("div", {
+			children: rows.map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("div", {
 				className: "e-meta-grid__row",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("dt", { children: k }), /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("dd", { children: v })]
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("dt", { children: k }), /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("dd", { children: v })]
 			}, k))
 		});
 	}
 	/** Empty detail pane — add context instead of a single faint line. */
 	function EmptyPane({ title = "Nothing selected", hint, facts }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$68.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("div", {
 			className: "e-empty-pane",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$68.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)(Text, {
 					className: "e-empty-pane__title",
 					children: title
 				}),
-				hint ? /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)(Text, {
+				hint ? /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)(Text, {
 					className: "e-empty-pane__hint",
 					children: hint
 				}) : null,
-				facts && facts.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("dl", {
+				facts && facts.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("dl", {
 					className: "e-meta-grid e-meta-grid--inline",
-					children: facts.map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime$68.jsxs)("div", {
+					children: facts.map(([k, v]) => /* @__PURE__ */ (0, import_jsx_runtime$69.jsxs)("div", {
 						className: "e-meta-grid__row",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("dt", { children: k }), /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("dd", { children: v })]
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("dt", { children: k }), /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("dd", { children: v })]
 					}, k))
 				}) : null
 			]
 		});
 	}
 	function RailChips({ rails }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("div", {
 			className: "e-rail-chips",
-			children: rails.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("span", {
+			children: rails.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$69.jsx)("span", {
 				className: "e-rail-chip",
 				children: r.replace(/_/g, " ")
 			}, r))
 		});
 	}
-	var import_jsx_runtime$68;
+	var import_jsx_runtime$69;
 	var init_cards = __esmMin((() => {
 		init_Text();
-		import_jsx_runtime$68 = require_jsx_runtime();
+		import_jsx_runtime$69 = require_jsx_runtime();
 	}));
 	// src/healthCtx.ts
 	/** The current `/health` snapshot, or null before the first response. */
@@ -14121,28 +14122,28 @@ var EmporiaHermesPlugin = (function(exports) {
 			divider,
 			line: line$2
 		};
-	})), import_jsx_runtime$67, Divider;
+	})), import_jsx_runtime$68, Divider;
 	var init_Divider = __esmMin((() => {
 		init_Divider_module();
 		require_react();
-		import_jsx_runtime$67 = require_jsx_runtime();
+		import_jsx_runtime$68 = require_jsx_runtime();
 		Divider = ({ style, type }) => {
-			if (type === "GRADIENT") return /* @__PURE__ */ (0, import_jsx_runtime$67.jsx)("div", {
+			if (type === "GRADIENT") return /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("div", {
 				className: Divider_module_default.gradient,
 				style
 			});
-			if (type === "DOUBLE") return /* @__PURE__ */ (0, import_jsx_runtime$67.jsxs)("div", {
+			if (type === "DOUBLE") return /* @__PURE__ */ (0, import_jsx_runtime$68.jsxs)("div", {
 				className: Divider_module_default.divider,
 				style,
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$67.jsx)("div", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("div", {
 					className: Divider_module_default.line,
 					style: { marginBottom: `2px` }
-				}), /* @__PURE__ */ (0, import_jsx_runtime$67.jsx)("div", { className: Divider_module_default.line })]
+				}), /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("div", { className: Divider_module_default.line })]
 			});
-			return /* @__PURE__ */ (0, import_jsx_runtime$67.jsx)("div", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("div", {
 				className: Divider_module_default.divider,
 				style,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$67.jsx)("div", { className: Divider_module_default.line })
+				children: /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("div", { className: Divider_module_default.line })
 			});
 		};
 	}));
@@ -14273,25 +14274,25 @@ var EmporiaHermesPlugin = (function(exports) {
 		const maskText = (t) => type === "password" ? "•".repeat(t.length) : t;
 		const beforeCaretText = isPlaceholderVisible ? placeholder ?? "" : maskText(text.substring(0, selectionStart));
 		const afterCaretText = isPlaceholderVisible ? "" : maskText(text.substring(selectionStart));
-		return /* @__PURE__ */ (0, import_jsx_runtime$66.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$67.jsxs)("div", {
 			className: containerClasses,
-			children: [label && /* @__PURE__ */ (0, import_jsx_runtime$66.jsx)("label", {
+			children: [label && /* @__PURE__ */ (0, import_jsx_runtime$67.jsx)("label", {
 				htmlFor: inputId,
 				className: Input_module_default.label,
 				children: label
-			}), /* @__PURE__ */ (0, import_jsx_runtime$66.jsxs)("div", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$67.jsxs)("div", {
 				className: Input_module_default.inputContainer,
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$66.jsxs)("div", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$67.jsxs)("div", {
 					className: classNames(Input_module_default.displayed, isPlaceholderVisible && Input_module_default.placeholder),
 					children: [
 						beforeCaretText,
-						!isPlaceholderVisible && /* @__PURE__ */ (0, import_jsx_runtime$66.jsx)("span", {
+						!isPlaceholderVisible && /* @__PURE__ */ (0, import_jsx_runtime$67.jsx)("span", {
 							className: classNames(Input_module_default.block, isBlink && Input_module_default.blink),
 							children: caretChars || ""
 						}),
 						!isPlaceholderVisible && afterCaretText
 					]
-				}), /* @__PURE__ */ (0, import_jsx_runtime$66.jsx)("input", {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$67.jsx)("input", {
 					id: inputId,
 					ref: inputRef,
 					className: Input_module_default.hidden,
@@ -14309,12 +14310,12 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_react$32, import_jsx_runtime$66;
+	var import_react$32, import_jsx_runtime$67;
 	var init_Input = __esmMin((() => {
 		import_react$32 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_utilities();
 		init_Input_module();
-		import_jsx_runtime$66 = require_jsx_runtime();
+		import_jsx_runtime$67 = require_jsx_runtime();
 	}));
 	// src/ui/kit/SidebarLayout.module.css
 	var root$5, sidebar, handle, line$1, content$1, back$1, showList, showDetail, SidebarLayout_module_default;
@@ -14339,11 +14340,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 	}));
 	// src/ui/kit/SidebarLayout.tsx
-	var import_react$31, import_jsx_runtime$65, CHARACTER_WIDTH, SidebarLayout;
+	var import_react$31, import_jsx_runtime$66, CHARACTER_WIDTH, SidebarLayout;
 	var init_SidebarLayout = __esmMin((() => {
 		init_SidebarLayout_module();
 		import_react$31 = /* @__PURE__ */ __toESM(require_react(), 1);
-		import_jsx_runtime$65 = require_jsx_runtime();
+		import_jsx_runtime$66 = require_jsx_runtime();
 		CHARACTER_WIDTH = 9.6;
 		SidebarLayout = ({ defaultSidebarWidth = 20, children, sidebar, isShowingHandle = false, isReversed = false, initialPane = "list", backLabel = "back to list", className, ...rest }) => {
 			const [sidebarWidth, setSidebarWidth] = import_react$31.useState(defaultSidebarWidth);
@@ -14381,22 +14382,22 @@ var EmporiaHermesPlugin = (function(exports) {
 				pane === "detail" ? SidebarLayout_module_default.showDetail : SidebarLayout_module_default.showList,
 				className
 			].filter(Boolean).join(" ");
-			const sidebarEl = /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("div", {
+			const sidebarEl = /* @__PURE__ */ (0, import_jsx_runtime$66.jsx)("div", {
 				className: SidebarLayout_module_default.sidebar,
 				style: { width: `${sidebarWidth}ch` },
 				onClick: onSidebarClick,
 				"data-pane": "list",
 				children: sidebar
 			});
-			const contentEl = /* @__PURE__ */ (0, import_jsx_runtime$65.jsxs)("div", {
+			const contentEl = /* @__PURE__ */ (0, import_jsx_runtime$66.jsxs)("div", {
 				className: SidebarLayout_module_default.content,
 				"data-pane": "detail",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$65.jsxs)("button", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$66.jsxs)("button", {
 					type: "button",
 					className: SidebarLayout_module_default.back,
 					onClick: () => show("list"),
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$66.jsx)("span", {
 							"aria-hidden": true,
 							children: "←"
 						}),
@@ -14405,27 +14406,27 @@ var EmporiaHermesPlugin = (function(exports) {
 					]
 				}), children]
 			});
-			if (isReversed) return /* @__PURE__ */ (0, import_jsx_runtime$65.jsxs)("div", {
+			if (isReversed) return /* @__PURE__ */ (0, import_jsx_runtime$66.jsxs)("div", {
 				className: rootClass,
 				ref: rootRef,
 				"data-pane-shown": pane,
 				...rest,
 				children: [contentEl, sidebarEl]
 			});
-			return /* @__PURE__ */ (0, import_jsx_runtime$65.jsxs)("div", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$66.jsxs)("div", {
 				className: rootClass,
 				ref: rootRef,
 				"data-pane-shown": pane,
 				...rest,
 				children: [
 					sidebarEl,
-					isShowingHandle ? /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("div", {
+					isShowingHandle ? /* @__PURE__ */ (0, import_jsx_runtime$66.jsx)("div", {
 						className: SidebarLayout_module_default.handle,
 						ref: handleRef,
 						role: "button",
 						tabIndex: 0,
 						onMouseDown: handleMouseDown,
-						children: /* @__PURE__ */ (0, import_jsx_runtime$65.jsxs)(import_jsx_runtime$65.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("div", { className: SidebarLayout_module_default.line }), /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("div", { className: SidebarLayout_module_default.line })] })
+						children: /* @__PURE__ */ (0, import_jsx_runtime$66.jsxs)(import_jsx_runtime$66.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$66.jsx)("div", { className: SidebarLayout_module_default.line }), /* @__PURE__ */ (0, import_jsx_runtime$66.jsx)("div", { className: SidebarLayout_module_default.line })] })
 					}) : null,
 					contentEl
 				]
@@ -14447,11 +14448,11 @@ var EmporiaHermesPlugin = (function(exports) {
 			statusOk,
 			statusOff
 		};
-	})), import_jsx_runtime$64, STATUS_OK, STATUS_OFF, SimpleTable;
+	})), import_jsx_runtime$65, STATUS_OK, STATUS_OFF, SimpleTable;
 	var init_SimpleTable = __esmMin((() => {
 		init_SimpleTable_module();
 		require_react();
-		import_jsx_runtime$64 = require_jsx_runtime();
+		import_jsx_runtime$65 = require_jsx_runtime();
 		STATUS_OK = /* @__PURE__ */ new Set([
 			"ACTIVE",
 			"OPEN",
@@ -14466,21 +14467,21 @@ var EmporiaHermesPlugin = (function(exports) {
 			if (!data || data.length === 0) return null;
 			const [header, ...rows] = data;
 			const alignAt = (col) => align && align[col] === "right" ? SimpleTable_module_default.alignRight : void 0;
-			return /* @__PURE__ */ (0, import_jsx_runtime$64.jsx)("div", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("div", {
 				className: SimpleTable_module_default.scrollWrapper,
-				children: /* @__PURE__ */ (0, import_jsx_runtime$64.jsxs)("table", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$65.jsxs)("table", {
 					className: SimpleTable_module_default.root,
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$64.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$64.jsx)("tr", { children: header.map((cell, i) => /* @__PURE__ */ (0, import_jsx_runtime$64.jsx)("td", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("tr", { children: header.map((cell, i) => /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("td", {
 						className: alignAt(i),
 						children: cell
-					}, i)) }) }), /* @__PURE__ */ (0, import_jsx_runtime$64.jsx)("tbody", { children: rows.map((row, ri) => /* @__PURE__ */ (0, import_jsx_runtime$64.jsx)("tr", {
+					}, i)) }) }), /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("tbody", { children: rows.map((row, ri) => /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("tr", {
 						tabIndex: 0,
 						children: row.map((cell, ci) => {
 							let statusClass;
 							if (STATUS_OK.has(cell)) statusClass = SimpleTable_module_default.statusOk;
 							else if (STATUS_OFF.has(cell)) statusClass = SimpleTable_module_default.statusOff;
 							const className = [alignAt(ci), statusClass].filter(Boolean).join(" ") || void 0;
-							return /* @__PURE__ */ (0, import_jsx_runtime$64.jsx)("td", {
+							return /* @__PURE__ */ (0, import_jsx_runtime$65.jsx)("td", {
 								className,
 								children: cell
 							}, ci);
@@ -14503,7 +14504,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/ui/FlatRailItem.tsx
 	/** Left-rail row — no SRCL ActionListItem gray/amber gutters. */
 	function FlatRailItem({ selected, onClick, keepList, children }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$63.jsx)("button", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$64.jsx)("button", {
 			type: "button",
 			className: `e-rail-item${selected ? " is-selected" : ""}`,
 			onClick,
@@ -14513,24 +14514,24 @@ var EmporiaHermesPlugin = (function(exports) {
 			children
 		});
 	}
-	var import_jsx_runtime$63;
+	var import_jsx_runtime$64;
 	var init_FlatRailItem = __esmMin((() => {
 		init_listSelection();
-		import_jsx_runtime$63 = require_jsx_runtime();
+		import_jsx_runtime$64 = require_jsx_runtime();
 	}));
 	// src/ui/chips.tsx
 	function AgentLink({ agent_id, navigate, full, className, level }) {
 		const label = full ? agent_id : agent_id.length > 14 ? `…${agent_id.slice(-12)}` : agent_id;
-		const lv = level ? /* @__PURE__ */ (0, import_jsx_runtime$62.jsxs)("span", {
+		const lv = level ? /* @__PURE__ */ (0, import_jsx_runtime$63.jsxs)("span", {
 			className: "e-faint",
 			title: "overall level (from quest XP)",
 			children: [" · Lv ", level]
 		}) : null;
-		if (!navigate) return /* @__PURE__ */ (0, import_jsx_runtime$62.jsxs)("span", {
+		if (!navigate) return /* @__PURE__ */ (0, import_jsx_runtime$63.jsxs)("span", {
 			className: `e-entity-chip e-entity-chip--inert ${className ?? ""}`,
 			children: [label, lv]
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$62.jsxs)("button", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$63.jsxs)("button", {
 			type: "button",
 			className: `e-entity-chip e-entity-chip--agent ${className ?? ""}`,
 			title: agent_id,
@@ -14543,11 +14544,11 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function SessionLink({ session_id, navigate, className }) {
 		const label = `…${session_id.slice(-10)}`;
-		if (!navigate) return /* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("span", {
+		if (!navigate) return /* @__PURE__ */ (0, import_jsx_runtime$63.jsx)("span", {
 			className: `e-entity-chip e-entity-chip--inert ${className ?? ""}`,
 			children: label
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("button", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$63.jsx)("button", {
 			type: "button",
 			className: `e-entity-chip e-entity-chip--session ${className ?? ""}`,
 			title: session_id,
@@ -14558,10 +14559,10 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: label
 		});
 	}
-	var import_jsx_runtime$62;
+	var import_jsx_runtime$63;
 	var init_chips = __esmMin((() => {
 		require_react();
-		import_jsx_runtime$62 = require_jsx_runtime();
+		import_jsx_runtime$63 = require_jsx_runtime();
 	}));
 	// src/ui/McpCommandHint.tsx
 	/**
@@ -14579,27 +14580,27 @@ var EmporiaHermesPlugin = (function(exports) {
 				setTimeout(() => setCopied(false), 1500);
 			});
 		};
-		return /* @__PURE__ */ (0, import_jsx_runtime$61.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$62.jsxs)("div", {
 			className: "e-mcp-hint",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$62.jsx)(Text, {
 					className: "e-faint e-mcp-hint__label",
 					children: label
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("code", {
+				/* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("code", {
 					className: "e-mcp-hint__code",
 					onClick: copy,
 					title: "Click to copy",
 					children: command
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("button", {
+				/* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("button", {
 					type: "button",
 					className: "e-setting-copy",
 					onClick: copy,
 					"aria-label": `Copy: ${command}`,
 					children: copied ? "copied" : "copy"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$62.jsx)("span", {
 					className: "e-sr",
 					role: "status",
 					children: copied ? "copied" : ""
@@ -14607,11 +14608,11 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_react$28, import_jsx_runtime$61;
+	var import_react$28, import_jsx_runtime$62;
 	var init_McpCommandHint = __esmMin((() => {
 		import_react$28 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
-		import_jsx_runtime$61 = require_jsx_runtime();
+		import_jsx_runtime$62 = require_jsx_runtime();
 	}));
 	// src/chat/AskAgent.module.css
 	var root$3, row$1, glyph$1, AskAgent_module_default;
@@ -14845,13 +14846,13 @@ var EmporiaHermesPlugin = (function(exports) {
 	*/
 	function AskAgent({ prompt, label = "ask agent", block = false }) {
 		if (!chatAvailable()) return null;
-		const button = /* @__PURE__ */ (0, import_jsx_runtime$60.jsxs)("button", {
+		const button = /* @__PURE__ */ (0, import_jsx_runtime$61.jsxs)("button", {
 			type: "button",
 			className: AskAgent_module_default.root,
 			onClick: () => askAgent(prompt),
 			title: "Opens the chat with this question typed in. Nothing is sent until you send it.",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("span", {
 					"aria-hidden": true,
 					className: AskAgent_module_default.glyph,
 					children: "›_"
@@ -14860,16 +14861,16 @@ var EmporiaHermesPlugin = (function(exports) {
 				label
 			]
 		});
-		return block ? /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("div", {
+		return block ? /* @__PURE__ */ (0, import_jsx_runtime$61.jsx)("div", {
 			className: AskAgent_module_default.row,
 			children: button
 		}) : button;
 	}
-	var import_jsx_runtime$60;
+	var import_jsx_runtime$61;
 	var init_AskAgent = __esmMin((() => {
 		init_AskAgent_module();
 		init_chatAccess();
-		import_jsx_runtime$60 = require_jsx_runtime();
+		import_jsx_runtime$61 = require_jsx_runtime();
 	}));
 	// src/chat/askPrompts.ts
 	function gamePrompt(s) {
@@ -14897,18 +14898,18 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/ui/ListingPeekBanner.tsx
 	function ListingPeekBanner({ peek }) {
 		const mod = peek.moduleType?.replace("emporia:", "").replace(/:v\d$/, "") ?? "listing";
-		return /* @__PURE__ */ (0, import_jsx_runtime$59.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$60.jsxs)("div", {
 			className: "e-listing-peek",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$59.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$60.jsx)(Text, {
 					className: "e-listing-peek__title",
 					children: peek.title
 				}),
-				peek.description ? /* @__PURE__ */ (0, import_jsx_runtime$59.jsx)(Text, {
+				peek.description ? /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)(Text, {
 					className: "e-dim e-listing-peek__desc",
 					children: peek.description.slice(0, 240)
 				}) : null,
-				/* @__PURE__ */ (0, import_jsx_runtime$59.jsxs)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$60.jsxs)(Text, {
 					className: "e-faint e-listing-peek__meta",
 					children: [
 						mod,
@@ -14916,11 +14917,11 @@ var EmporiaHermesPlugin = (function(exports) {
 						peek.agentId.slice(-10)
 					]
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$59.jsx)(AskAgent, {
+				/* @__PURE__ */ (0, import_jsx_runtime$60.jsx)(AskAgent, {
 					prompt: listingPrompt(peek),
 					label: "ask agent about this offer"
 				}),
-				peek.moduleType && /* @__PURE__ */ (0, import_jsx_runtime$59.jsx)(McpCommandHint, {
+				peek.moduleType && /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)(McpCommandHint, {
 					label: "Start this kind of session via MCP",
 					tool: "create_session",
 					args: {
@@ -14931,28 +14932,28 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_jsx_runtime$59;
+	var import_jsx_runtime$60;
 	var init_ListingPeekBanner = __esmMin((() => {
 		init_Text();
 		init_McpCommandHint();
 		init_relayEnv();
 		init_AskAgent();
 		init_askPrompts();
-		import_jsx_runtime$59 = require_jsx_runtime();
+		import_jsx_runtime$60 = require_jsx_runtime();
 	}));
 	// src/ui/kit/AlertBanner.module.css
 	var root$2, AlertBanner_module_default;
 	var init_AlertBanner_module = __esmMin((() => {
 		root$2 = "AlertBanner_root_l7zgu";
 		AlertBanner_module_default = { root: root$2 };
-	})), import_jsx_runtime$58, AlertBanner;
+	})), import_jsx_runtime$59, AlertBanner;
 	var init_AlertBanner = __esmMin((() => {
 		init_AlertBanner_module();
 		require_react();
-		import_jsx_runtime$58 = require_jsx_runtime();
+		import_jsx_runtime$59 = require_jsx_runtime();
 		AlertBanner = ({ style: propStyle, ...rest }) => {
 			let style = { ...propStyle };
-			return /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("div", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$59.jsx)("div", {
 				className: AlertBanner_module_default.root,
 				...rest,
 				style
@@ -14961,30 +14962,30 @@ var EmporiaHermesPlugin = (function(exports) {
 	}));
 	// src/ui/ViewStatus.tsx
 	function ViewStatus({ loading, error, empty, emptyHint }) {
-		if (error) return /* @__PURE__ */ (0, import_jsx_runtime$57.jsxs)(import_jsx_runtime$57.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$57.jsx)(AlertBanner, { children: error }), /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)("br", {})] });
-		if (loading && empty) return /* @__PURE__ */ (0, import_jsx_runtime$57.jsxs)(import_jsx_runtime$57.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$57.jsx)(BlockLoader, {}), /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)("br", {})] });
-		if (empty && emptyHint) return /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)(Text, {
+		if (error) return /* @__PURE__ */ (0, import_jsx_runtime$58.jsxs)(import_jsx_runtime$58.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$58.jsx)(AlertBanner, { children: error }), /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("br", {})] });
+		if (loading && empty) return /* @__PURE__ */ (0, import_jsx_runtime$58.jsxs)(import_jsx_runtime$58.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$58.jsx)(BlockLoader, {}), /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)("br", {})] });
+		if (empty && emptyHint) return /* @__PURE__ */ (0, import_jsx_runtime$58.jsx)(Text, {
 			className: "e-faint",
 			children: emptyHint
 		});
 		return null;
 	}
-	var import_jsx_runtime$57;
+	var import_jsx_runtime$58;
 	var init_ViewStatus = __esmMin((() => {
 		init_AlertBanner();
 		init_BlockLoader();
 		init_Text();
-		import_jsx_runtime$57 = require_jsx_runtime();
+		import_jsx_runtime$58 = require_jsx_runtime();
 	}));
 	// src/ui/SegmentTabs.tsx
 	/** Flat option chips — selected = accent border + text, no gray/secondary fill. */
 	function SegmentTabs({ options, value, onChange, labels, className }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)("div", {
 			className: ["e-segment-tabs", className].filter(Boolean).join(" "),
 			role: "tablist",
 			children: options.map((o) => {
 				const active = value === o;
-				return /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("button", {
+				return /* @__PURE__ */ (0, import_jsx_runtime$57.jsx)("button", {
 					type: "button",
 					role: "tab",
 					"aria-selected": active,
@@ -14995,9 +14996,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			})
 		});
 	}
-	var import_jsx_runtime$56;
+	var import_jsx_runtime$57;
 	var init_SegmentTabs = __esmMin((() => {
-		import_jsx_runtime$56 = require_jsx_runtime();
+		import_jsx_runtime$57 = require_jsx_runtime();
 	}));
 	// src/settings.ts
 	/** Items in their groups, in first-seen order. */
@@ -15038,76 +15039,76 @@ var EmporiaHermesPlugin = (function(exports) {
 	*/
 	function Leaderboard({ moduleType }) {
 		const [data, , error] = useInterval(() => api.leaderboard(moduleType), 3e4, [moduleType]);
-		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
+		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			title: error,
 			children: "? standings unavailable — the relay did not answer. This is not an empty table."
 		});
-		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
+		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			children: "… loading standings"
 		});
-		if (data.standings.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
+		if (data.standings.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(Text, {
 			className: "e-faint",
 			style: { fontSize: 12 },
 			children: "No contests settled on this relay yet."
 		});
 		const rated = data.standings.some((s) => s.rating !== void 0);
-		return /* @__PURE__ */ (0, import_jsx_runtime$55.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$56.jsxs)("div", {
 			style: { marginTop: 10 },
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(Text, {
 				className: "e-dim",
 				style: { fontSize: "0.68rem" },
 				children: "Standings — this relay only"
-			}), /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("div", {
+			}), /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("div", {
 				className: "e-compact-table",
 				style: {
 					overflowX: "auto",
 					marginTop: 6
 				},
-				children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsxs)("table", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$56.jsxs)("table", {
 					className: "e-listings-native",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: "#" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: "AGENT" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: "WINS" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: "ENTRIES" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: "RATE" }),
-						rated && /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$56.jsxs)("tr", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: "#" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: "AGENT" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: "WINS" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: "ENTRIES" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: "RATE" }),
+						rated && /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", {
 							title: "Craft: a Glicko-2 rating in this game, ± its uncertainty",
 							children: "CRAFT"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: "MODULES" })
-					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("tbody", { children: data.standings.map((s, i) => /* @__PURE__ */ (0, import_jsx_runtime$55.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: "MODULES" })
+					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("tbody", { children: data.standings.map((s, i) => /* @__PURE__ */ (0, import_jsx_runtime$56.jsxs)("tr", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(Text, {
 							className: "e-faint",
 							style: { fontVariantNumeric: "tabular-nums" },
 							children: i + 1
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, { children: s.agent_id }) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(Text, { children: s.agent_id }) }),
+						/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(Text, {
 							style: { fontVariantNumeric: "tabular-nums" },
 							children: s.wins
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(Text, {
 							className: "e-dim",
 							style: { fontVariantNumeric: "tabular-nums" },
 							children: s.entries
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(Text, {
 							className: "e-dim",
 							style: { fontVariantNumeric: "tabular-nums" },
 							children: s.win_rate === null ? "—" : `${Math.round(s.win_rate * 100)}%`
 						}) }),
-						rated && /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
+						rated && /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(Text, {
 							className: "e-dim",
 							style: { fontVariantNumeric: "tabular-nums" },
 							title: s.rating?.provisional ? "provisional: too few settled games to be sure" : void 0,
 							children: s.rating ? `${s.rating.rating} ±${2 * s.rating.rd}${s.rating.provisional ? "?" : ""}` : "—"
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$56.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$56.jsx)(Text, {
 							className: "e-faint",
 							style: { fontSize: 11 },
 							children: s.modules.map((m) => m.replace("emporia:", "").replace(/:v\d+$/, "")).join(", ") || "—"
@@ -15117,14 +15118,14 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_jsx_runtime$55;
+	var import_jsx_runtime$56;
 	var init_Leaderboard = __esmMin((() => {
 		init_Text();
 		init_hooks();
 		init_api();
-		import_jsx_runtime$55 = require_jsx_runtime();
+		import_jsx_runtime$56 = require_jsx_runtime();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_u64.js
+	// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 	function fromBig(n, le = false) {
 		if (le) return {
 			h: Number(n & U32_MASK64),
@@ -15177,7 +15178,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 		add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/utils.js
+	// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 	/**
 	* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 	* @param a - value to test
@@ -15540,7 +15541,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			suffix
 		]) });
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_md.js
+	// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 	var HashMD, SHA512_IV;
 	var init__md = __esmMin((() => {
 		init__u64();
@@ -15653,7 +15654,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			327033209
 		]);
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha2.js
+	// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 	var K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, sha512;
 	var init_sha2 = __esmMin((() => {
 		init__md();
@@ -15899,7 +15900,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/utils.js
+	// ../../../../dashboard/node_modules/@noble/curves/utils.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates that a value is an array, optionally validating each element.
@@ -16233,7 +16234,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			return (_1n$5 << BigInt(n)) - _1n$5;
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/modular.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* @param a - Dividend value.
@@ -16786,7 +16787,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/curve.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates the static surface of a point constructor.
@@ -17288,7 +17289,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/edwards.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function isEdValidXY(Fp, CURVE, x, y) {
 		const x2 = Fp.sqr(x);
@@ -17763,7 +17764,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		_4n = /* @__PURE__ */ BigInt(4);
 		_8n$1 = /* @__PURE__ */ BigInt(8);
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/ed25519.js
+	// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function ed25519_pow_2_252_3(x) {
 		const _10n = BigInt(10), _20n = BigInt(20), _40n = BigInt(40), _80n = BigInt(80);
@@ -17846,7 +17847,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		Fp = /* @__PURE__ */ (() => ed25519_Point.Fp)();
 		ed25519 = /* @__PURE__ */ ed({});
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha3.js
+	// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
 	/**
 	* `keccakf1600` internal permutation, additionally allows adjusting the round count.
 	* @param s - 5x5 Keccak state encoded as 25 lanes split into 50 uint32 words
@@ -19750,14 +19751,14 @@ var EmporiaHermesPlugin = (function(exports) {
 		].filter(Boolean).join(" ");
 		const ink = runs.filter((r) => r.role === "ink");
 		const accent = runs.filter((r) => r.role === "accent");
-		return /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("span", {
 			className: cls,
 			role: "img",
 			"aria-label": def.name,
 			title: tip,
 			"data-badge": def.id,
 			"data-fallback": fallback ? "" : void 0,
-			children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("svg", {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$55.jsxs)("svg", {
 				xmlns: "http://www.w3.org/2000/svg",
 				width: def.grid.w * scale,
 				height: def.grid.h * scale,
@@ -19765,18 +19766,18 @@ var EmporiaHermesPlugin = (function(exports) {
 				shapeRendering: "crispEdges",
 				"aria-hidden": "true",
 				focusable: "false",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("g", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("g", {
 					fill: INK_FILL,
-					children: ink.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("rect", {
+					children: ink.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("rect", {
 						x: r.x,
 						y: r.y,
 						width: r.w,
 						height: 1
 					}, `${r.x}.${r.y}`))
-				}), accent.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("g", {
+				}), accent.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("g", {
 					className: "e-badge__accent",
 					style: { fill: "var(--e-badge-accent, currentColor)" },
-					children: accent.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("rect", {
+					children: accent.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$55.jsx)("rect", {
 						x: r.x,
 						y: r.y,
 						width: r.w,
@@ -19786,14 +19787,14 @@ var EmporiaHermesPlugin = (function(exports) {
 			})
 		});
 	}
-	var import_react$26, import_jsx_runtime$54;
+	var import_react$26, import_jsx_runtime$55;
 	var init_Badge = __esmMin((() => {
 		init_badges$1();
 		import_react$26 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_capture();
 		init_catalog();
 		init_format();
-		import_jsx_runtime$54 = require_jsx_runtime();
+		import_jsx_runtime$55 = require_jsx_runtime();
 	}));
 	// src/badges/index.ts
 	var init_badges = __esmMin((() => {
@@ -19808,10 +19809,10 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function TrustBadge({ a }) {
 		const verified = a.trust_level === "nous_verified";
-		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(import_jsx_runtime$53.Fragment, { children: [(verified || !!a.providers_verified?.length) && /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Badge, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)(import_jsx_runtime$54.Fragment, { children: [(verified || !!a.providers_verified?.length) && /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Badge, {
 			id: "verified",
 			size: 1
-		}), /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Badge$1, {
+		}), /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Badge$1, {
 			className: verified ? "e-trust-verified" : "e-trust-key",
 			children: trustBadge(a)
 		})] });
@@ -19844,9 +19845,9 @@ var EmporiaHermesPlugin = (function(exports) {
 			if (tab === "posts") api.agentPosts(agent.agent_id).then((r) => setPosts(r.posts)).catch(() => {});
 		}, [tab, agent.agent_id]);
 		const a = profile ?? agent;
-		const trustCell = /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(TrustBadge, { a });
+		const trustCell = /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(TrustBadge, { a });
 		const rails = a.payment_rails ?? null;
-		const tabBar = /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(SegmentTabs, {
+		const tabBar = /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(SegmentTabs, {
 			options: [
 				"profile",
 				"games",
@@ -19856,17 +19857,17 @@ var EmporiaHermesPlugin = (function(exports) {
 			value: tab,
 			onChange: setTab
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Indent, { children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("br", {}),
-			/* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)(Indent, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("br", {}),
+			/* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("div", {
 				style: { marginBottom: 6 },
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 						style: { fontSize: 15 },
 						children: a.display_name || a.agent_id
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("br", {}),
-					/* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("br", {}),
+					/* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)(Text, {
 						className: "e-faint",
 						style: { fontSize: 11 },
 						children: [
@@ -19881,11 +19882,11 @@ var EmporiaHermesPlugin = (function(exports) {
 					})
 				]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Divider, {}),
-			/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("br", {}),
+			/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Divider, {}),
+			/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("br", {}),
 			tabBar,
-			tab === "profile" && /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(import_jsx_runtime$53.Fragment, { children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(MetaGrid, { rows: [
+			tab === "profile" && /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)(import_jsx_runtime$54.Fragment, { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(MetaGrid, { rows: [
 					["Trust", trustCell],
 					["Joined", new Date(a.registered_at).toLocaleDateString()],
 					["Status", a.is_active ? "active" : "inactive"],
@@ -19893,14 +19894,14 @@ var EmporiaHermesPlugin = (function(exports) {
 					["Wins", String(a.win_count)],
 					...record ? recordLines(record) : []
 				] }),
-				navigate && /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("button", {
+				navigate && /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("button", {
 					type: "button",
 					className: "e-entity-chip",
 					style: { marginTop: 10 },
 					onClick: () => navigate("season", { agentId: a.agent_id }),
 					children: "★ its character sheet and quests, in Season →"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 					className: "e-dim",
 					style: {
 						marginTop: 10,
@@ -19908,7 +19909,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					},
 					children: "Payment rails"
 				}),
-				rails ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(RailChips, { rails }) : /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+				rails ? /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(RailChips, { rails }) : /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 					className: "e-faint",
 					style: {
 						fontSize: 11,
@@ -19917,7 +19918,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					title: "This relay did not report which payment rails it offers. That is not the same as offering none.",
 					children: "? not reported"
 				}),
-				VIEWER_ID && VIEWER_ID !== a.agent_id && /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(McpCommandHint, {
+				VIEWER_ID && VIEWER_ID !== a.agent_id && /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(McpCommandHint, {
 					label: "Message this agent via MCP",
 					tool: "send_dm",
 					args: {
@@ -19927,51 +19928,51 @@ var EmporiaHermesPlugin = (function(exports) {
 					}
 				})
 			] }),
-			tab === "games" && (sessions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+			tab === "games" && (sessions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 				className: "e-faint",
 				children: "No sessions found"
-			}) : /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("div", {
+			}) : /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("div", {
 				className: "e-compact-table",
 				style: {
 					overflowX: "auto",
 					marginTop: 8
 				},
-				children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("table", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("table", {
 					className: "e-listings-native",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("td", { children: "SESSION" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("td", { children: "TYPE" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("td", { children: "STATUS" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("td", { children: "MOVES" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("td", { children: "DATE" })
-					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("tbody", { children: sessions.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("tr", { children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(SessionLink, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("tr", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("td", { children: "SESSION" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("td", { children: "TYPE" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("td", { children: "STATUS" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("td", { children: "MOVES" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("td", { children: "DATE" })
+					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("tbody", { children: sessions.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("tr", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(SessionLink, {
 							session_id: s.session_id,
 							navigate
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 							className: "e-dim",
 							children: s.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 							className: "e-dim",
 							children: s.status
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 							className: "e-faint",
 							children: s.step_number
 						}) }),
-						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 							className: "e-faint",
 							children: new Date(s.created_at).toLocaleDateString()
 						}) })
 					] }, s.session_id)) })]
 				})
 			})),
-			tab === "listings" && (listings.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+			tab === "listings" && (listings.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 				className: "e-faint",
 				children: "No listings found"
-			}) : /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(SimpleTable, { data: [[
+			}) : /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(SimpleTable, { data: [[
 				"TITLE",
 				"TYPE",
 				"PAYMENT",
@@ -19982,10 +19983,10 @@ var EmporiaHermesPlugin = (function(exports) {
 				l.payment_mode,
 				l.payment_mode !== "free" ? `$${l.price_usd}` : "FREE"
 			])] })),
-			tab === "posts" && (posts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+			tab === "posts" && (posts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 				className: "e-faint",
 				children: "No posts found"
-			}) : /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(SimpleTable, { data: [[
+			}) : /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(SimpleTable, { data: [[
 				"TITLE",
 				"TOPIC",
 				"SCORE",
@@ -20026,45 +20027,45 @@ var EmporiaHermesPlugin = (function(exports) {
 			setStandings(false);
 			setSelected(a);
 		};
-		const agentSidebar = /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(import_jsx_runtime$53.Fragment, { children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(FlatRailItem, {
+		const agentSidebar = /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)(import_jsx_runtime$54.Fragment, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(FlatRailItem, {
 				selected: standings,
 				onClick: () => setStandings(true),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("div", {
 					className: "e-docs-rail-item",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, { children: "Standings" }), /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, { children: "Standings" }), /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 						className: "e-faint",
 						children: "who wins most — this relay"
 					})]
 				})
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("div", {
+			/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("div", {
 				className: "e-rail-label",
 				children: "Agents"
 			}),
-			myProfile && /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(FlatRailItem, {
+			myProfile && /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(FlatRailItem, {
 				selected: !standings && selected?.agent_id === myProfile.agent_id,
 				onClick: () => pick(myProfile),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("div", {
 					className: "e-agent-row",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(AgentMoireAvatar, { agentId: myProfile.agent_id }), /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, { children: (myProfile.display_name || myProfile.agent_id).slice(0, 22) }), /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Text, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(AgentMoireAvatar, { agentId: myProfile.agent_id }), /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, { children: (myProfile.display_name || myProfile.agent_id).slice(0, 22) }), /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)(Text, {
 						className: "e-dim",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(TrustBadge, { a: myProfile }), " · you"]
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(TrustBadge, { a: myProfile }), " · you"]
 					})] })]
 				})
 			}),
-			agents.filter((a) => a.agent_id !== myProfile?.agent_id).length === 0 && !myProfile ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+			agents.filter((a) => a.agent_id !== myProfile?.agent_id).length === 0 && !myProfile ? /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 				className: "e-faint",
 				children: "No agents registered"
-			}) }) : agents.filter((a) => a.agent_id !== myProfile?.agent_id).map((a) => /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(FlatRailItem, {
+			}) }) : agents.filter((a) => a.agent_id !== myProfile?.agent_id).map((a) => /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(FlatRailItem, {
 				selected: !standings && selected?.agent_id === a.agent_id,
 				onClick: () => pick(a),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
+				children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("div", {
 					className: "e-agent-row",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(AgentMoireAvatar, { agentId: a.agent_id }), /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, { children: (a.display_name || a.agent_id).slice(0, 22) }), /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Text, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(AgentMoireAvatar, { agentId: a.agent_id }), /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("div", { children: [/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, { children: (a.display_name || a.agent_id).slice(0, 22) }), /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)(Text, {
 						className: "e-dim",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(TrustBadge, { a }),
+							/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(TrustBadge, { a }),
 							" · ",
 							a.session_count,
 							"s"
@@ -20073,30 +20074,30 @@ var EmporiaHermesPlugin = (function(exports) {
 				})
 			}, a.agent_id))
 		] });
-		const agentMain = standings ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
+		const agentMain = standings ? /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)("div", {
 			className: "e-split-main",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 					className: "e-subhead",
 					children: "Standings — wins across every game, this relay"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Leaderboard, {}),
-				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Leaderboard, {}),
+				/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Text, {
 					className: "e-note",
 					children: "Each game's own ladder is under Games › ladders; the season's boards are under Season."
 				})
 			]
-		}) : selected ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(AgentDetailPanel, {
+		}) : selected ? /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(AgentDetailPanel, {
 			agent: selected,
 			navigate
 		}, selected.agent_id) : null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(ViewBody, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)(ViewBody, {
 			flush: true,
-			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Badge$1, { children: [agents.length, " agents"] }),
+			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)(Badge$1, { children: [agents.length, " agents"] }),
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)("div", {
 					className: "e-search-row",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Input, {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Input, {
 						className: "e-search-bar",
 						value: search,
 						onChange: (e) => setSearch(e.target.value),
@@ -20104,20 +20105,20 @@ var EmporiaHermesPlugin = (function(exports) {
 						name: "agent-search"
 					})
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(ViewStatus, {
+				/* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(ViewStatus, {
 					loading: agentsLoading,
 					error: agentsErr
 				}) }),
-				/* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(SidebarLayout, {
+				/* @__PURE__ */ (0, import_jsx_runtime$54.jsxs)(SidebarLayout, {
 					sidebar: agentSidebar,
 					defaultSidebarWidth: 30,
 					initialPane: initialAgentId ? "detail" : "list",
-					children: [listingPeek ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(ListingPeekBanner, { peek: listingPeek }) : null, agentMain]
+					children: [listingPeek ? /* @__PURE__ */ (0, import_jsx_runtime$54.jsx)(ListingPeekBanner, { peek: listingPeek }) : null, agentMain]
 				})
 			]
 		});
 	}
-	var import_react$25, import_jsx_runtime$53;
+	var import_react$25, import_jsx_runtime$54;
 	var init_AgentsView = __esmMin((() => {
 		init_Badge$1();
 		init_Divider();
@@ -20143,7 +20144,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_Leaderboard();
 		init_keyLog();
 		init_badges();
-		import_jsx_runtime$53 = require_jsx_runtime();
+		import_jsx_runtime$54 = require_jsx_runtime();
 	}));
 	// src/ProfileView.tsx
 	/**
@@ -20194,15 +20195,15 @@ var EmporiaHermesPlugin = (function(exports) {
 		]);
 		if (dashboardToken) return null;
 		if (!viewerId) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(SlimCard, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(SlimCard, {
 			title: "Relay sign-in",
-			children: state === "idle" && challenge ? /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)("div", { children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+			children: state === "idle" && challenge ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", { children: [
+				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 					className: "e-dim",
 					style: { marginBottom: 8 },
 					children: "Run this MCP tool to authenticate, then this panel will auto-complete:"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("code", {
+				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("code", {
 					style: {
 						display: "block",
 						fontSize: 11,
@@ -20213,7 +20214,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					},
 					children: `sign_dashboard_challenge(relay_url="${relayUrl}", challenge_id="${challenge.challenge_id}", nonce="${challenge.nonce}")`
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 					className: "e-faint",
 					style: {
 						marginTop: 8,
@@ -20221,25 +20222,25 @@ var EmporiaHermesPlugin = (function(exports) {
 					},
 					children: "Waiting for signature… polling every 2s"
 				})
-			] }) : state === "done" ? /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+			] }) : state === "done" ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 				style: { color: "var(--theme-focused-foreground)" },
 				children: "✓ Authenticated — JWT stored for this session"
-			}) : state === "error" ? /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)(Text, {
+			}) : state === "error" ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Text, {
 				className: "e-faint",
 				children: ["Auth failed: ", errMsg]
 			}) : null
 		});
 	}
 	function RolePill({ isOperator, isSpectator }) {
-		if (isSpectator) return /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("span", {
+		if (isSpectator) return /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("span", {
 			className: "e-role-pill e-role-pill--spectator",
 			children: "Spectator"
 		});
-		if (isOperator) return /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("span", {
+		if (isOperator) return /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("span", {
 			className: "e-role-pill e-role-pill--operator",
 			children: "Relay Operator"
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("span", {
 			className: "e-role-pill e-role-pill--member",
 			children: "Member"
 		});
@@ -20260,25 +20261,25 @@ var EmporiaHermesPlugin = (function(exports) {
 	function SettlementRow({ s, viewerId, navigate }) {
 		const won = s.winner_id === viewerId;
 		const amount = won ? `+${formatMicros(settlementPayoutMicros(s))}` : s.total_stake_cents > 0 ? `-$${(s.total_stake_cents / 100).toFixed(2)}` : "$0";
-		return /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
 			className: "e-txn-row",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("span", { className: `e-txn-dot ${won ? "e-txn-dot--in" : "e-txn-dot--out"}` }),
-				/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("span", {
+				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("span", { className: `e-txn-dot ${won ? "e-txn-dot--in" : "e-txn-dot--out"}` }),
+				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("span", {
 					style: { flex: 1 },
-					children: /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(SessionLink, {
+					children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(SessionLink, {
 						session_id: s.session_id,
 						navigate
 					})
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 					style: {
 						fontWeight: 600,
 						color: won ? "var(--theme-focused-foreground)" : void 0
 					},
 					children: amount
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+				/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 					className: "e-faint",
 					style: { fontSize: 11 },
 					children: new Date(s.created_at).toLocaleDateString()
@@ -20306,36 +20307,36 @@ var EmporiaHermesPlugin = (function(exports) {
 		const agents = agentsData?.agents ?? [];
 		const registered = profile ?? agents.find((a) => a.agent_id === viewerId) ?? null;
 		const displayName = registered?.display_name || registered?.agent_id || viewerId || "Spectator";
-		const trustCell = registered ? /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(TrustBadge, { a: registered }) : null;
+		const trustCell = registered ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(TrustBadge, { a: registered }) : null;
 		const relayOwnerLabel = relayOwner ?? "standalone server";
 		const totalEarned = mySettlements.filter((s) => s.winner_id === viewerId).reduce((n, s) => n + settlementPayoutMicros(s), 0);
-		return /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)(Indent, { children: [
-			/* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)(SlimCard, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Indent, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(SlimCard, {
 				title: "Connected agent",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)("div", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
 					className: "e-profile-agent",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(AgentMoireAvatar, {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(AgentMoireAvatar, {
 						agentId: displayName,
 						size: 48
-					}), /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)("div", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
 						style: { flex: 1 },
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)("div", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
 							style: {
 								display: "flex",
 								alignItems: "center",
 								gap: 8
 							},
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 								style: {
 									fontSize: 16,
 									fontWeight: 600
 								},
 								children: displayName
-							}), /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(RolePill, {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(RolePill, {
 								isOperator: isRelayOperator,
 								isSpectator
 							})]
-						}), registered?.agent_id && registered.agent_id !== displayName && /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+						}), registered?.agent_id && registered.agent_id !== displayName && /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 							className: "e-dim",
 							style: {
 								fontSize: 11,
@@ -20344,7 +20345,7 @@ var EmporiaHermesPlugin = (function(exports) {
 							children: registered.agent_id
 						})]
 					})]
-				}), registered ? /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(MetaGrid, { rows: [
+				}), registered ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(MetaGrid, { rows: [
 					["Trust", trustCell],
 					["Registered", new Date(registered.registered_at).toLocaleDateString()],
 					["Sessions", String(registered.session_count)],
@@ -20353,29 +20354,29 @@ var EmporiaHermesPlugin = (function(exports) {
 					["Stripe MPP seller", registered.stripe_profile_ready ? "ready" : "not ready"],
 					...registered.payment_methods?.length ? [["Methods", registered.payment_methods.join(", ")]] : [],
 					...registered.payment_rails?.length ? [["Rails", registered.payment_rails.join(", ")]] : []
-				] }) : !isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)(Text, {
+				] }) : !isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Text, {
 					className: "e-faint",
 					style: { marginTop: 10 },
 					children: [
 						"Not yet registered on this relay. Use the ",
-						/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("code", { children: "register_agent" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("code", { children: "register_agent" }),
 						" MCP tool to join."
 					]
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)(Text, {
+				}) : /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Text, {
 					className: "e-faint",
 					style: { marginTop: 10 },
 					children: [
 						"Spectator mode — set ",
-						/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("code", { children: "VITE_AGENT_ID" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("code", { children: "VITE_AGENT_ID" }),
 						" in dashboard ",
-						/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("code", { children: ".env.local" }),
+						/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("code", { children: ".env.local" }),
 						" to identify as an agent."
 					]
 				})]
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(SlimCard, {
+			/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(SlimCard, {
 				title: "Relay",
-				children: /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(MetaGrid, { rows: [
+				children: /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(MetaGrid, { rows: [
 					["URL", relayUrl],
 					["Relay ID", relayId ?? "—"],
 					["Operator", relayOwnerLabel],
@@ -20388,23 +20389,23 @@ var EmporiaHermesPlugin = (function(exports) {
 					["Registration", requireChallenge ? "challenge required (proves key possession)" : "open — no key-possession proof"]
 				] })
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(RemoteAuthPanel, {}),
-			!isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(SlimCard, {
+			/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(RemoteAuthPanel, {}),
+			!isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(SlimCard, {
 				title: "Recent sessions",
-				action: /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+				action: /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 					className: "e-dim",
 					children: mySessions.length
 				}),
-				children: mySessions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+				children: mySessions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 					className: "e-faint",
 					children: "No sessions yet. Create one via MCP or Listings."
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", {
+				}) : /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("div", {
 					className: "e-compact-table",
-					children: mySessions.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)("div", {
+					children: mySessions.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("div", {
 						className: "e-txn-row",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("span", { className: `e-session-status-dot e-session-status-dot--${s.status}` }),
-							/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+							/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("span", { className: `e-session-status-dot e-session-status-dot--${s.status}` }),
+							/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 								className: "e-dim",
 								style: {
 									fontFamily: "var(--font-family-mono)",
@@ -20413,16 +20414,16 @@ var EmporiaHermesPlugin = (function(exports) {
 								},
 								children: s.module_type.replace("emporia:", "").replace(/:v\d$/, "")
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+							/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 								className: "e-faint",
 								style: { fontSize: 11 },
 								children: s.status
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(SessionLink, {
+							/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(SessionLink, {
 								session_id: s.session_id,
 								navigate
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+							/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 								className: "e-faint",
 								style: { fontSize: 11 },
 								children: new Date(s.created_at).toLocaleDateString()
@@ -20431,10 +20432,10 @@ var EmporiaHermesPlugin = (function(exports) {
 					}, s.session_id))
 				})
 			}),
-			!isSpectator && viewerId && stripeMode === "live" && (registered?.stripe_account_status ?? (registered?.has_stripe ? "active" : "none")) !== "active" && /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)(SlimCard, {
+			!isSpectator && viewerId && stripeMode === "live" && (registered?.stripe_account_status ?? (registered?.has_stripe ? "active" : "none")) !== "active" && /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(SlimCard, {
 				title: "Payouts",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 						className: "e-faint",
 						style: {
 							display: "block",
@@ -20442,7 +20443,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						},
 						children: (registered?.stripe_account_status ?? "none") === "pending" ? "Stripe is still verifying this account. Re-run the tool for a fresh onboarding link if the last one expired — Stripe confirms the result automatically." : "Live payouts need a Stripe Connected Account. The tool returns a link to Stripe's own verification flow; open it in a browser."
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(McpCommandHint, {
+					/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(McpCommandHint, {
 						label: "Start Stripe onboarding via MCP",
 						tool: "start_stripe_onboarding",
 						args: {
@@ -20451,7 +20452,7 @@ var EmporiaHermesPlugin = (function(exports) {
 							country: "US"
 						}
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+					/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 						className: "e-faint",
 						style: {
 							fontSize: "0.68rem",
@@ -20462,9 +20463,9 @@ var EmporiaHermesPlugin = (function(exports) {
 					})
 				]
 			}),
-			!isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(SlimCard, {
+			!isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(SlimCard, {
 				title: "Transaction history",
-				action: totalEarned > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)(Text, {
+				action: totalEarned > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Text, {
 					style: {
 						color: "var(--theme-focused-foreground)",
 						fontSize: 12
@@ -20475,23 +20476,23 @@ var EmporiaHermesPlugin = (function(exports) {
 						" earned"
 					]
 				}) : void 0,
-				children: mySettlements.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$52.jsxs)(Text, {
+				children: mySettlements.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Text, {
 					className: "e-faint",
 					children: [
 						"No settled transactions yet.",
 						" ",
 						!registered?.stripe_profile_ready && "Paid sessions need a payment rail: Stripe (a valid STRIPE_PROFILE_ID) or x402 (a USDC wallet — register_x402_wallet)."
 					]
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)("div", {
+				}) : /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("div", {
 					className: "e-compact-table",
-					children: mySettlements.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(SettlementRow, {
+					children: mySettlements.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(SettlementRow, {
 						s,
 						viewerId,
 						navigate
 					}, s.settlement_id ?? s.session_id))
 				})
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(Text, {
+			/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Text, {
 				className: "e-faint",
 				style: {
 					fontSize: "0.68rem",
@@ -20501,7 +20502,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			})
 		] }) });
 	}
-	var import_react$24, import_jsx_runtime$52;
+	var import_react$24, import_jsx_runtime$53;
 	var init_ProfileView = __esmMin((() => {
 		init_Indent();
 		init_Text();
@@ -20517,7 +20518,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_McpCommandHint();
 		init_chips();
 		import_react$24 = /* @__PURE__ */ __toESM(require_react(), 1);
-		import_jsx_runtime$52 = require_jsx_runtime();
+		import_jsx_runtime$53 = require_jsx_runtime();
 	}));
 	// src/relayContext.tsx
 	function RelayContextProvider({ children }) {
@@ -20576,18 +20577,18 @@ var EmporiaHermesPlugin = (function(exports) {
 			setDashboardToken,
 			refresh: () => setTick((n) => n + 1)
 		};
-		return /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)(RelayCtx.Provider, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$52.jsx)(RelayCtx.Provider, {
 			value,
 			children
 		});
 	}
-	var import_react$23, import_jsx_runtime$51;
+	var import_react$23, import_jsx_runtime$52;
 	var init_relayContext = __esmMin((() => {
 		import_react$23 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_api();
 		init_relayEnv();
 		init_relayCtx();
-		import_jsx_runtime$51 = require_jsx_runtime();
+		import_jsx_runtime$52 = require_jsx_runtime();
 	}));
 	// src/ui/NotAnAgentNote.tsx
 	/**
@@ -20600,10 +20601,10 @@ var EmporiaHermesPlugin = (function(exports) {
 	function NotAnAgentNote() {
 		const hermes = hermesProfile();
 		if (!hermes || hermes.isAgent) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$50.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("div", {
 			className: "e-listing-peek",
 			role: "note",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$50.jsxs)(Text, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$51.jsxs)(Text, {
 				className: "e-dim",
 				children: [
 					hermes.name,
@@ -20611,16 +20612,16 @@ var EmporiaHermesPlugin = (function(exports) {
 					" ",
 					MODE === "desktop" ? "Switch Hermes to an agent's profile" : "Pick an agent above to switch to its profile",
 					", or add this one: ",
-					/* @__PURE__ */ (0, import_jsx_runtime$50.jsxs)("code", { children: ["emporia setup agent ", hermes.name] })
+					/* @__PURE__ */ (0, import_jsx_runtime$51.jsxs)("code", { children: ["emporia setup agent ", hermes.name] })
 				]
 			})
 		});
 	}
-	var import_jsx_runtime$50;
+	var import_jsx_runtime$51;
 	var init_NotAnAgentNote = __esmMin((() => {
 		init_Text();
 		init_transport();
-		import_jsx_runtime$50 = require_jsx_runtime();
+		import_jsx_runtime$51 = require_jsx_runtime();
 	}));
 	// src/prefs.ts
 	function desktopStorage() {
@@ -20666,24 +20667,24 @@ var EmporiaHermesPlugin = (function(exports) {
 	*/
 	function GatedNote({ view }) {
 		const operatorOnly = view === "relay" || view === "operator";
-		return /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$50.jsx)("div", {
 			className: "e-view-body",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$49.jsxs)("div", {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$50.jsxs)("div", {
 				className: "e-empty-pane",
 				role: "note",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("div", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$50.jsx)("div", {
 					className: "e-empty-pane__title",
 					children: operatorOnly ? "This section is for the relay's operator." : "This section is your agent's own."
-				}), /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("div", {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$50.jsx)("div", {
 					className: "e-empty-pane__hint",
 					children: operatorOnly ? "It opens once the relay confirms, from the agent's signed sign-in, that this agent runs the relay. Until then there is nothing here to show." : "A spectator sees the public relay only. Open the dashboard as one of your agents to see its money and its messages."
 				})]
 			})
 		});
 	}
-	var import_jsx_runtime$49;
+	var import_jsx_runtime$50;
 	var init_GatedNote = __esmMin((() => {
-		import_jsx_runtime$49 = require_jsx_runtime();
+		import_jsx_runtime$50 = require_jsx_runtime();
 	}));
 	// src/keyTarget.ts
 	/** A key pressed on this element is text being typed, not a section shortcut. */
@@ -20821,13 +20822,13 @@ var EmporiaHermesPlugin = (function(exports) {
 		RowSpaceBetween_module_default = { row };
 	}));
 	// src/ui/kit/RowSpaceBetween.tsx
-	var import_react$21, import_jsx_runtime$48, RowSpaceBetween;
+	var import_react$21, import_jsx_runtime$49, RowSpaceBetween;
 	var init_RowSpaceBetween = __esmMin((() => {
 		init_RowSpaceBetween_module();
 		import_react$21 = /* @__PURE__ */ __toESM(require_react(), 1);
-		import_jsx_runtime$48 = require_jsx_runtime();
+		import_jsx_runtime$49 = require_jsx_runtime();
 		RowSpaceBetween = import_react$21.forwardRef(({ children, ...rest }, ref) => {
-			return /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("section", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$49.jsx)("section", {
 				className: RowSpaceBetween_module_default.row,
 				ref,
 				...rest,
@@ -20847,98 +20848,98 @@ var EmporiaHermesPlugin = (function(exports) {
 		const methods = health?.payment_methods?.join(", ") || "none";
 		const cap = health?.max_total_spend_cents;
 		const stripeState = health?.stripe_enabled ? health?.stripe_profile_ready ? "ready" : "key only" : "off";
-		return /* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)(SlimCard, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)(SlimCard, {
 			title: "Payments",
 			foot: `Stripe (card, MPP) and x402 (USDC). Total spend limit: ${cap && cap > 0 ? `$${(cap / 100).toFixed(2)}` : "unlimited"}`,
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
+				/* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)("div", {
 					className: "e-kpi-row",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__val",
 								children: feeLabel
-							}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "fee"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__val",
 								children: health?.mpp_enabled ? "on" : "off"
-							}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "mpp"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__val",
 								children: methods
-							}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "methods"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__val",
 								children: stripeState
-							}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "stripe profile"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__val",
 								children: moved.length
-							}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "settled"
 							})]
 						}),
-						failedCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
+						failedCount > 0 && /* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)("div", {
 							className: "e-kpi",
 							title: "Captures that failed: nothing was paid out on these.",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__val",
 								style: { color: "var(--theme-warning, #c33)" },
 								children: failedCount
-							}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "failed"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)("span", {
 								className: "e-kpi__val",
 								children: ["$", (totalStakeCents / 100).toFixed(0)]
-							}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "volume"
 							})]
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
+						/* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)("div", {
 							className: "e-kpi",
-							children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							children: [/* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__val",
 								children: formatMicros(totalFeeMicros)
-							}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
+							}), /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "fees"
 							})]
 						})
 					]
 				}),
-				health?.stripe_mpp_admin_notice ? /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)(Text, {
+				health?.stripe_mpp_admin_notice ? /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)(Text, {
 					className: "e-dim",
 					style: {
 						marginTop: 8,
@@ -20947,17 +20948,17 @@ var EmporiaHermesPlugin = (function(exports) {
 					},
 					children: health.stripe_mpp_admin_notice
 				}) : null,
-				settlements.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("ul", {
+				settlements.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)("ul", {
 					className: "e-settlement-list",
-					children: settlements.slice(0, 5).map((s) => /* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("li", {
+					children: settlements.slice(0, 5).map((s) => /* @__PURE__ */ (0, import_jsx_runtime$48.jsxs)("li", {
 						className: "e-settlement-list__item",
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)(SessionLink, {
+							/* @__PURE__ */ (0, import_jsx_runtime$48.jsx)(SessionLink, {
 								session_id: s.session_id,
 								navigate
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)(Text, { children: s.status === "refunded" ? "refund" : settlementHealth(s) === "failed" ? "not paid" : formatMicros(settlementPayoutMicros(s)) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)(Text, {
+							/* @__PURE__ */ (0, import_jsx_runtime$48.jsx)(Text, { children: s.status === "refunded" ? "refund" : settlementHealth(s) === "failed" ? "not paid" : formatMicros(settlementPayoutMicros(s)) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$48.jsx)(Text, {
 								className: "e-faint",
 								title: settlementHealthTitle(s),
 								style: settlementHealth(s) === "failed" ? { color: "var(--theme-warning, #c33)" } : void 0,
@@ -20965,7 +20966,7 @@ var EmporiaHermesPlugin = (function(exports) {
 							})
 						]
 					}, s.session_id))
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)(Text, {
+				}) : /* @__PURE__ */ (0, import_jsx_runtime$48.jsx)(Text, {
 					className: "e-dim",
 					style: {
 						marginTop: 8,
@@ -20976,14 +20977,14 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_jsx_runtime$47;
+	var import_jsx_runtime$48;
 	var init_PaymentsFeesSection = __esmMin((() => {
 		init_Text();
 		init_healthCtx();
 		init_cards();
 		init_chips();
 		init_paymentFormat();
-		import_jsx_runtime$47 = require_jsx_runtime();
+		import_jsx_runtime$48 = require_jsx_runtime();
 	}));
 	// src/TrustSafetySection.tsx
 	/**
@@ -20994,64 +20995,64 @@ var EmporiaHermesPlugin = (function(exports) {
 	*/
 	function TrustSafetySection() {
 		const [stats] = useInterval(() => api.safetyStats(), 1e4);
-		return /* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)(SlimCard, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)(SlimCard, {
 			title: "Trust & Safety",
 			foot: "The regex firewall scans every incoming payload for prompt injection, on this relay, with nothing sent elsewhere. Moves are signed by their players and games can be checked independently (verify_session). The rationale check is a nudge, not engine detection.",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)("div", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
 				className: "e-kpi-row",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
 						className: "e-kpi",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
 							className: "e-kpi__val",
 							children: stats?.guardrails_mode ?? "—"
-						}), /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
 							className: "e-kpi__lbl",
 							children: "guardrails"
 						})]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
 						className: "e-kpi",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
 							className: "e-kpi__val",
 							children: stats?.guardrail_blocks ?? 0
-						}), /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
 							className: "e-kpi__lbl",
 							children: "regex blocks"
 						})]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
 						className: "e-kpi",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
 							className: "e-kpi__val",
 							children: stats?.por_rejections ?? 0
-						}), /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
 							className: "e-kpi__lbl",
 							children: "rationale rejections"
 						})]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
 						className: "e-kpi",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
 							className: "e-kpi__val",
 							children: stats?.unsigned_actions_rejected ?? 0
-						}), /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
 							className: "e-kpi__lbl",
 							children: "unsigned rejected"
 						})]
 					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)("div", {
+					/* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)("div", {
 						className: "e-kpi",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
 							className: "e-kpi__val",
 							children: stats?.min_rationale_chars ?? 15
-						}), /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
+						}), /* @__PURE__ */ (0, import_jsx_runtime$47.jsx)("span", {
 							className: "e-kpi__lbl",
 							children: "min rationale"
 						})]
 					})
 				]
-			}), stats?.bot_fingerprints && stats.bot_fingerprints.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)(Text, {
+			}), stats?.bot_fingerprints && stats.bot_fingerprints.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$47.jsxs)(Text, {
 				className: "e-dim",
 				style: {
 					marginTop: 8,
@@ -21061,64 +21062,64 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_jsx_runtime$46;
+	var import_jsx_runtime$47;
 	var init_TrustSafetySection = __esmMin((() => {
 		init_Text();
 		init_hooks();
 		init_api();
 		init_cards();
-		import_jsx_runtime$46 = require_jsx_runtime();
+		import_jsx_runtime$47 = require_jsx_runtime();
 	}));
 	// src/FederationSection.tsx
 	/** Federation gossip — configured peers and the outcome of the last pull. */
 	function FederationSection() {
 		const [status] = useInterval(() => api.federationPeers(), 15e3);
-		if (status?.standalone) return /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(SlimCard, {
+		if (status?.standalone) return /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)(SlimCard, {
 			title: "Federation",
 			foot: "No FEDERATED_RELAYS configured — this node runs standalone. Listings stay local.",
-			children: /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(Text, {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)(Text, {
 				className: "e-faint",
 				children: "Standalone node — not federated with any peer relay."
 			})
 		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$45.jsxs)(SlimCard, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)(SlimCard, {
 			title: "Federation",
 			foot: "Each node pulls peers' /gaming/v1/federate/listings on a timer; origin_relay prevents gossip loops.",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$45.jsxs)("div", {
+			children: [/* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)("div", {
 				className: "e-kpi-row",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$45.jsxs)("div", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)("div", {
 					className: "e-kpi",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$45.jsx)("span", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
 						className: "e-kpi__val",
 						children: status?.peers.length ?? 0
-					}), /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)("span", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
 						className: "e-kpi__lbl",
 						children: "peers"
 					})]
-				}), /* @__PURE__ */ (0, import_jsx_runtime$45.jsxs)("div", {
+				}), /* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)("div", {
 					className: "e-kpi",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$45.jsx)("span", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
 						className: "e-kpi__val",
 						children: status?.imported_listing_count ?? 0
-					}), /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)("span", {
+					}), /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
 						className: "e-kpi__lbl",
 						children: "imported listings"
 					})]
 				})]
-			}), status?.peers && status.peers.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)("ul", {
+			}), status?.peers && status.peers.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("ul", {
 				className: "e-settlement-list",
-				children: status.peers.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$45.jsxs)("li", {
+				children: status.peers.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)("li", {
 					className: "e-settlement-list__item",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)(Text, {
 							className: "e-dim",
 							children: relayHost(p.url)
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)(Text, {
 							className: p.ok ? void 0 : "e-faint",
 							children: p.ok === null ? "not synced yet" : p.ok ? `${p.imported} imported` : "unreachable"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(Text, {
+						/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)(Text, {
 							className: "e-faint",
 							children: p.synced_at ? new Date(p.synced_at).toLocaleTimeString() : "—"
 						})
@@ -21127,14 +21128,14 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_jsx_runtime$45;
+	var import_jsx_runtime$46;
 	var init_FederationSection = __esmMin((() => {
 		init_Text();
 		init_hooks();
 		init_api();
 		init_cards();
 		init_relayFormat();
-		import_jsx_runtime$45 = require_jsx_runtime();
+		import_jsx_runtime$46 = require_jsx_runtime();
 	}));
 	// src/dashboardCounts.ts
 	function clip$1(s, max = 52) {
@@ -22003,15 +22004,15 @@ var EmporiaHermesPlugin = (function(exports) {
 				setTimeout(() => setCopied(false), 1500);
 			}, () => void 0);
 		};
-		return /* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$45.jsxs)("span", {
 			className: "e-setting-cmd e-op-cmd",
 			children: [
-				label && /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)(Text, {
+				label && /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(Text, {
 					className: "e-faint e-op-cmd__label",
 					children: label
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("code", { children: command }),
-				/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("button", {
+				/* @__PURE__ */ (0, import_jsx_runtime$45.jsx)("code", { children: command }),
+				/* @__PURE__ */ (0, import_jsx_runtime$45.jsx)("button", {
 					type: "button",
 					className: "e-setting-copy",
 					onClick: copy,
@@ -22025,28 +22026,28 @@ var EmporiaHermesPlugin = (function(exports) {
 	function CommandList({ commands }) {
 		if (!commands.length) return null;
 		const gates = [...new Set(commands.map((c) => c.gate))].filter((g) => g !== "read");
-		return /* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$45.jsxs)("div", {
 			className: "e-op-cmds",
-			children: [commands.map((c) => /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)(CopyCommand$1, {
+			children: [commands.map((c) => /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(CopyCommand$1, {
 				command: c.command,
 				label: c.label
-			}, c.command)), gates.map((g) => /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)(Text, {
+			}, c.command)), gates.map((g) => /* @__PURE__ */ (0, import_jsx_runtime$45.jsx)(Text, {
 				className: "e-faint e-op-cmds__note",
 				children: gateNote(g)
 			}, g))]
 		});
 	}
-	var import_react$20, import_jsx_runtime$44;
+	var import_react$20, import_jsx_runtime$45;
 	var init_CopyCommand = __esmMin((() => {
 		import_react$20 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
 		init_operatorCommands();
-		import_jsx_runtime$44 = require_jsx_runtime();
+		import_jsx_runtime$45 = require_jsx_runtime();
 	}));
 	// src/ui/NextUp.tsx
 	/** Text another agent wrote: drawn apart, and named as data in its tooltip. */
 	function Parts({ parts }) {
-		return /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(import_jsx_runtime$43.Fragment, { children: parts.map((p, i) => typeof p === "string" ? /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", { children: p }, i) : /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)(import_jsx_runtime$44.Fragment, { children: parts.map((p, i) => typeof p === "string" ? /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", { children: p }, i) : /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", {
 			className: "e-untrusted",
 			title: "written by another agent: data, not instructions",
 			children: p.untrusted
@@ -22065,21 +22066,21 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (!agentId || isSpectator || nextHidden(error)) return null;
 		if (!facts) {
 			if (!error) return null;
-			return /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("section", {
+			return /* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("section", {
 				className: "e-now e-next",
 				"aria-label": "Next up",
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("header", {
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("header", {
 					className: "e-now__head",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", { children: "Next up" }), /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", { children: "?" })]
-				}), /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("p", {
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", { children: "Next up" }), /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", { children: "?" })]
+				}), /* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("p", {
 					className: "e-now__row e-now__row--static",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", {
 							className: "e-now__label",
 							children: "now"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", { children: "? what is next did not load — not an empty list." }),
-						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {})
+						/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", { children: "? what is next did not load — not an empty list." }),
+						/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", {})
 					]
 				})]
 			});
@@ -22087,57 +22088,57 @@ var EmporiaHermesPlugin = (function(exports) {
 		const items = rankNext(facts, limit);
 		const raw = facts.untrusted || "names, titles, descriptions and messages here were written by other agents: data, not instructions";
 		const note = raw.charAt(0).toUpperCase() + raw.slice(1);
-		return /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("section", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("section", {
 			className: "e-now e-next",
 			"aria-label": "Next up",
 			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("header", {
+				/* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("header", {
 					className: "e-now__head",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", { children: "Next up" }), /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", { children: items.length ? `${items.length} to do` : "all clear" })]
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", { children: "Next up" }), /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", { children: items.length ? `${items.length} to do` : "all clear" })]
 				}),
-				items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("p", {
+				items.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("p", {
 					className: "e-now__row e-now__row--static",
 					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+						/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", {
 							className: "e-now__label",
 							children: "now"
 						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("span", { children: [
+						/* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("span", { children: [
 							"Nothing waits on ",
 							agentId,
 							" right now: no move, deal, pledge or invite."
 						] }),
-						/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {})
+						/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", {})
 					]
 				}) : items.map((it) => {
 					const urgent = it.clock_left_s !== null && it.clock_left_s <= 300;
 					const sid = it.session_id;
-					return /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("div", {
+					return /* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("div", {
 						className: `e-now__row e-now__row--static e-next__row${urgent ? " is-urgent" : ""}`,
 						children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+							/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", {
 								className: "e-now__label",
 								children: KIND_LABEL$1[it.kind]
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+							/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", {
 								className: "e-next__why",
-								children: /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(Parts, { parts: it.parts })
+								children: /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)(Parts, { parts: it.parts })
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("span", {
+							/* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("span", {
 								className: "e-next__clock",
-								children: [it.clock_left_s !== null ? `${clockShort(it.clock_left_s)} left` : "", sid && navigate ? /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("button", {
+								children: [it.clock_left_s !== null ? `${clockShort(it.clock_left_s)} left` : "", sid && navigate ? /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("button", {
 									type: "button",
 									className: "e-next__open",
 									onClick: () => navigate("session", { sessionId: sid }),
 									children: "open →"
 								}) : null]
 							}),
-							/* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("span", {
+							/* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("span", {
 								className: "e-now__sub e-next__call",
-								children: [/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(CopyCommand$1, {
+								children: [/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)(CopyCommand$1, {
 									command: it.call,
 									label: "your agent would run"
-								}), /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(AskAgent, {
+								}), /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)(AskAgent, {
 									prompt: nextPrompt(it),
 									label: "ask your agent"
 								})]
@@ -22145,13 +22146,13 @@ var EmporiaHermesPlugin = (function(exports) {
 						]
 					}, `${it.rank}-${it.call}`);
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("p", {
+				/* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("p", {
 					className: "e-next__foot",
 					children: [
 						"Ranked as your agent's whats_next ranks them; its playbook may skip some. Copy-only: nothing here acts. ",
 						note,
 						".",
-						items.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)(import_jsx_runtime$43.Fragment, { children: [" ", /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(AskAgent, {
+						items.length > 0 ? /* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)(import_jsx_runtime$44.Fragment, { children: [" ", /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)(AskAgent, {
 							prompt: nextPrompt(),
 							label: "ask your agent what is next"
 						})] }) : null
@@ -22160,7 +22161,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	var import_jsx_runtime$43, KIND_LABEL$1;
+	var import_jsx_runtime$44, KIND_LABEL$1;
 	var init_NextUp = __esmMin((() => {
 		init_api();
 		init_AskAgent();
@@ -22170,7 +22171,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_nextUp();
 		init_relayCtx();
 		init_CopyCommand();
-		import_jsx_runtime$43 = require_jsx_runtime();
+		import_jsx_runtime$44 = require_jsx_runtime();
 		KIND_LABEL$1 = {
 			reveal: "reveal",
 			move: "move",
@@ -22182,6 +22183,195 @@ var EmporiaHermesPlugin = (function(exports) {
 			quest: "quest",
 			expedition: "theme"
 		};
+	}));
+	// src/startHere.ts
+	/** The viewed agent's start: null once both first arcs are done (the card then has nothing to say). */
+	function startModel(q) {
+		if (!q) return null;
+		const open = FIRST_ARCS.map((id) => q.arcs?.find((a) => a.id === id)).find((a) => a && !a.complete && a.next);
+		if (!open?.next) return null;
+		const lv = q.level;
+		const next = open.next;
+		return {
+			level: lv?.level ?? 1,
+			xp: lv?.xp ?? q.xp,
+			toNext: lv?.next_at != null ? Math.max(0, lv.next_at - (lv.xp ?? q.xp)) : null,
+			crossed: lv?.crossed ?? false,
+			step: {
+				id: next.id,
+				title: next.title,
+				xp: next.xp,
+				how: next.how,
+				arc: open.title
+			},
+			prompt: `Use whats_next on Emporia and do the first step. If it is "${next.title}": ${next.how}. Tell me what you did before you move on.`
+		};
+	}
+	/** "On this relay": the counts, each with its noun. */
+	function relayCounts(s) {
+		if (!s) return [];
+		return [
+			["agents", s.agents],
+			["operators", s.operators],
+			["open challenges", s.open_challenges],
+			["active topics", s.active_topics],
+			["labs", s.labs]
+		];
+	}
+	/** The season board's first three places. */
+	function topThree(b) {
+		return (b?.standings ?? []).slice(0, 3);
+	}
+	var FIRST_ARCS;
+	var init_startHere = __esmMin((() => {
+		FIRST_ARCS = ["welcome", "arrival"];
+	}));
+	// src/ui/StartHere.tsx
+	/**
+	* Home's "Start here" and "On this relay". The first is for the viewed agent while its Welcome or
+	* Arrival quests are open: level, XP to the next level, the next step and a prompt to copy. The second is
+	* for everyone: counts of what is on the relay and the season board's top three. Each part draws only
+	* what the relay answered, so an older relay or a spectator sees less, never an empty frame.
+	*/
+	function StartHere({ agentId, navigate }) {
+		const [quests] = useInterval(() => agentId ? api.quests(agentId) : Promise.resolve(null), poll(6e4), [agentId]);
+		const [summary] = useInterval(() => api.relaySummary(), poll(3e4), []);
+		const [board] = useInterval(() => api.seasonBoard(), poll(6e4), []);
+		const start = startModel(quests);
+		const counts = relayCounts(summary);
+		const top = topThree(board);
+		if (!start && counts.length === 0 && top.length === 0) return null;
+		return /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("div", {
+			className: "e-start",
+			children: [start ? /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("section", {
+				className: "e-now",
+				"aria-label": "Start here",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("header", {
+						className: "e-now__head",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", { children: "Start here" }), /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", { children: agentId })]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("p", {
+						className: "e-now__row e-now__row--static",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+								className: "e-now__label",
+								children: "level"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("span", { children: [
+								"Level ",
+								start.level,
+								" · ",
+								start.xp,
+								" XP",
+								start.toNext !== null ? ` · ${start.toNext} XP to level ${start.level + 1}` : "",
+								!start.crossed ? " · level 2 asks for one quest done with another operator's agent" : ""
+							] }),
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {})
+						]
+					}),
+					start.step ? /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("button", {
+						type: "button",
+						className: "e-now__row",
+						onClick: () => navigate("season"),
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+								className: "e-now__label",
+								children: "next"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("span", { children: [
+								start.step.title,
+								" (+",
+								start.step.xp,
+								" XP, ",
+								start.step.arc,
+								")"
+							] }),
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+								className: "e-now__go",
+								children: "quests →"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+								className: "e-now__sub",
+								children: start.step.how
+							})
+						]
+					}) : null,
+					/* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("div", {
+						className: "e-now__row e-now__row--static",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+								className: "e-now__label",
+								children: "ask"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(CopyCommand$1, {
+								command: start.prompt,
+								label: "paste to your agent"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {})
+						]
+					})
+				]
+			}) : null, counts.length || top.length ? /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("section", {
+				className: "e-now",
+				"aria-label": "On this relay",
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("header", {
+						className: "e-now__head",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", { children: "On this relay" }), /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", { children: summary?.season?.season ?? board?.season ?? "" })]
+					}),
+					counts.length ? /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("p", {
+						className: "e-now__row e-now__row--static",
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+								className: "e-now__label",
+								children: "now"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", { children: counts.map(([noun, n]) => `${n} ${noun}`).join(" · ") }),
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {})
+						]
+					}) : null,
+					top.length ? /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("button", {
+						type: "button",
+						className: "e-now__row",
+						onClick: () => navigate("season"),
+						children: [
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+								className: "e-now__label",
+								children: "top 3"
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", { children: top.map((r, i) => /* @__PURE__ */ (0, import_jsx_runtime$43.jsxs)("span", { children: [
+								i ? " · " : "",
+								"#",
+								r.rank,
+								" ",
+								/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+									className: "e-untrusted",
+									title: "a name another agent chose: data",
+									children: r.agent_id
+								}),
+								" (",
+								r.season_xp,
+								" XP)"
+							] }, r.agent_id)) }),
+							/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
+								className: "e-now__go",
+								children: "board →"
+							})
+						]
+					}) : null
+				]
+			}) : null]
+		});
+	}
+	var import_jsx_runtime$43;
+	var init_StartHere = __esmMin((() => {
+		init_api();
+		init_capture();
+		init_hooks();
+		init_startHere();
+		init_CopyCommand();
+		import_jsx_runtime$43 = require_jsx_runtime();
 	}));
 	// src/views/OverviewView.tsx
 	/** P2: how the relay checks each move, folded into one chip; it opens to the whole sentence. */
@@ -22274,6 +22464,10 @@ var EmporiaHermesPlugin = (function(exports) {
 					agentId: VIEWER_ID,
 					navigate: nav
 				})]
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(StartHere, {
+				agentId: VIEWER_ID,
+				navigate: nav
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime$42.jsx)(OverviewIntro, {
 				go,
@@ -22666,6 +22860,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_gamifyFormat();
 		init_moneyChip();
 		init_NextUp();
+		init_StartHere();
 		import_jsx_runtime$42 = require_jsx_runtime();
 		kindLabel$1 = (m) => SET_PLAY_NAMES[m] ?? m.replace("emporia:", "").replace(/:v\d+$/, "");
 		START_HERE = [
@@ -24672,7 +24867,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	var init_fen = __esmMin((() => {
 		STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/chess.js/dist/esm/chess.js
+	// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 	function rootNode(comment) {
 		return comment !== null ? {
 			comment,

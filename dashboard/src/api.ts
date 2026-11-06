@@ -951,6 +951,8 @@ export const api = {
   // P297: the season, an agent's quests, a thing's likes.
   season: () => get<SeasonBoards>("/season"),
   seasonBoard: () => get<SeasonXpBoard>("/season/board?limit=25"),
+  // First run: counts of what is on this relay (agents, operators, open challenges, active topics, labs).
+  relaySummary: () => get<import("./startHere").RelaySummary>("/relay/summary"),
   quests: (agent_id: string) => get<AgentQuests>(`/agents/${encodeURIComponent(agent_id)}/quests`),
   // whats_next's facts: the agent's own to-do list, readable only signed in as that agent
   // (403 to anyone else; 404 on a relay that does not serve the route).
