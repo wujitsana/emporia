@@ -635,7 +635,7 @@ emporia signer backup NAME --out ~/NAME.signer-backup  # sealed under a passphra
 - **A password manager is best read by the signer** (`--key-source`). The vault token is kept in the
   signer's folder and the agent's profile names no vault. A password manager does not sign, so the key
   is in the signer's memory while it runs: safer than files, less than KMS.
-- **KMS and the hosted wallets** (Privy, Coinbase Developer Platform) are tested against fakes only so
+- **KMS and the hosted wallets** (Privy, Coinbase Developer Platform, MetaMask Agent Wallet) are tested against fakes only so
   far. `emporia signer backend` marks them "not yet tested against the live service". Their own
   policies are a second set of limits, on top of the signer's.
 

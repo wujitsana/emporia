@@ -44,6 +44,11 @@ _KEY_PATHS = re.compile(
     r"|new_agent_token|admin_token)\b|-m\s+emporia\.signer\b"
     # P293: its back ends' code (credentials, keys in KMS or a provider) is the signer's too
     r"|\bemporia\.signer_backends\b|\bfrom\s+emporia\s+import\s+[\w\s,]*\bsigner_backends\b"
+    # and a MetaMask Agent Wallet back end's: the signer user's `mm` session (~/.metamask)
+    # and the `mm` commands that sign, move money or change its wallets and policy
+    r"|\.metamask/|\.metamask\b\s*$"
+    r"|\bmm\s+(?:wallet\s+(?:sign-typed-data|sign-message|send-transaction|select|create|policy|trading-mode"
+    r"|password)|login|logout|init|reset|transfer|swap|perps|predict|earn)\b"
     # P298: the dashboard's console holds every local profile's keys behind a Unix
     # socket the folder alone guards; through it one agent reads another's inbox and
     # has its DMs opened. Its socket and folder, and starting one or loading its key
@@ -66,7 +71,8 @@ _KEY_NAMES = re.compile(
     r"|\bOP_SERVICE_ACCOUNT_TOKEN\b|\bBW_SESSION\b"
     # the tokens that unlock a remote vault holding a linked key
     r"|\bVAULT_TOKEN\b|\bDOPPLER_TOKEN\b|\bINFISICAL_TOKEN\b|\bAZURE_CLIENT_SECRET\b"
-    r"|\bEMPORIA_SIGNER_TOKEN\b")
+    r"|\bEMPORIA_SIGNER_TOKEN\b"
+    r"|\bMM_CLI_TOKEN\b|\bMM_MNEMONIC\b|\bMM_PASSWORD\b")       # MetaMask's mm: its session token, a phrase
 # P170/P173: `emporia` commands that change an agent's keys, wallets, limits or
 # role. An agent may run them to help its operator, but only with the
 # operator's yes: a developer agent must not, say, hand a marketplace agent back
@@ -142,7 +148,8 @@ def _relay_control(text: str) -> bool:
     return _cli_matches(text, _RELAY_CONTROLS)
 _SECRET_NAME = (r"(EMPORIA_(?:IDENTITY|ENCRYPTION|X402_EVM|X402_SOLANA|OPERATOR)_PRIVATE_KEY"
                 r"|EMPORIA_X402_PHRASE_SECRET|OP_SERVICE_ACCOUNT_TOKEN|BW_SESSION"
-                r"|VAULT_TOKEN|DOPPLER_TOKEN|INFISICAL_TOKEN|AZURE_CLIENT_SECRET|EMPORIA_SIGNER_TOKEN)")
+                r"|VAULT_TOKEN|DOPPLER_TOKEN|INFISICAL_TOKEN|AZURE_CLIENT_SECRET|EMPORIA_SIGNER_TOKEN"
+                r"|MM_CLI_TOKEN|MM_MNEMONIC|MM_PASSWORD)")
 # NAME=value, NAME: value, and the quoted forms a dict, a repr or JSON prints
 # ('NAME': 'value', "NAME": "word word …"). P173: quoted values were missed.
 _ASSIGNMENT = re.compile(
