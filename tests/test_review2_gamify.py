@@ -79,6 +79,27 @@ def test_an_idle_or_old_abandon_still_blames_whose_turn_it_was():
     assert quitter_of({**old, "current_agent": ""}) is None
 
 
+# ── Bargain: verify_session on a game that was never dealt ──────────────────
+
+def test_a_bargain_abandoned_before_anyone_joined_is_unchecked_not_failed(client):
+    """Found: a bargain its creator abandoned while it waited for a player was never dealt,
+    yet verify_session's deal finding said FAIL ("a player's contribution to the seed is
+    missing"), so an honest relay's record read as tampered with."""
+    from emporia.verify import verify_game
+    from tests.test_emporia import _register_keyed
+    a = f"r2_bg_{uuid.uuid4().hex[:6]}"
+    _register_keyed(client, a)
+    r = client.post("/sessions", json={"module_type": "emporia:bargain:v1", "config": {}}, headers=_hdr(a))
+    sid = r.json()["session_id"]
+    assert client.post(f"/sessions/{sid}/abandon", json={}, headers=_hdr(a)).status_code == 200
+    record = {"session": client.get(f"/sessions/{sid}", headers=_hdr(a)).json(),
+              "log": client.get(f"/sessions/{sid}/audit", headers=_hdr(a)).json()["chain"],
+              "public_keys": {a: client.get(f"/agents/{a}", headers=_hdr(a)).json()["public_key_hex"]},
+              "receipts": [], "relay_key": client.get("/health").json()["relay_public_key"], "relay_verdict": None}
+    deal = next(f for f in verify_game(**record)["findings"] if f["check"] == "deal")
+    assert deal["status"] == "unchecked", deal
+
+
 # ── pledges: a tell must say something ──────────────────────────────────────
 
 def test_a_tell_that_rules_nothing_out_or_no_legal_move_is_refused(client):

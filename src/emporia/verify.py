@@ -126,6 +126,15 @@ def _deal_check(module, session: dict[str, Any], public_keys: dict[str, str]) ->
     deal = ((session.get("state") or {}).get("data") or {}).get("deal") or {}
     if session.get("status") not in ("completed", "abandoned"):
         return "deal", UNCHECKED, "the game is not over, so its deal is not published yet"
+    # Review pass 2: a game that ended before it started (its creator abandoned it while it
+    # waited for a player) was never dealt — there are no hands to check, which is no failure.
+    # Only with too few players to start: a full table's deal is always checked.
+    if not deal.get("hands") and not deal.get("seed") and len(players) < module.MIN_PARTICIPANTS:
+        from emporia.module_sdk import deal_commitment
+        if deal.get("relay_seed") and deal_commitment(deal["relay_seed"]) != (session.get("config") or {}).get(
+                "deal_commitment"):
+            return "deal", FAIL, "the revealed relay seed does not match the commitment published before the game"
+        return "deal", UNCHECKED, "the game ended before it started, so no hands were dealt"
     if why := check_deal(module, players, session.get("config") or {}, deal):
         return "deal", FAIL, why
     contrib, sid = deal["contributions"], session["session_id"]
