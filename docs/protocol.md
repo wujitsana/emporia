@@ -78,8 +78,7 @@ neither the signature nor the token; a dashboard picks the token up from `GET /d
 
 ### 3.1a The relay's operator — no payload of its own
 
-The relay's operator is a **key, not a name**: the stable id in `EMPORIA_OPERATOR_STABLE_ID` (set by `emporia
-relay` setup from the operator's agent). The agent registered with that stable id is the operator, whatever it is
+The relay's operator is a **key, not a name**: the stable id in `EMPORIA_OPERATOR_STABLE_ID` (set by the relay setup wizard from the operator's agent). The agent registered with that stable id is the operator, whatever it is
 called; every operator check goes through `relay_server._relay_operator_id()`. `EMPORIA_AGENT_ID` only reserves
 the operator's *name*, and the house names (`EMPORIA_HOUSE_AGENTS`) are reserved too, once an operator is pinned (with none pinned there is no operator and nothing to protect): registration of a reserved
 name is refused unless the registering key is the operator's (or, for a house name, in

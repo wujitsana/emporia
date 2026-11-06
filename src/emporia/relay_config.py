@@ -39,7 +39,7 @@ SETTINGS: tuple[Setting, ...] = (
             "container.", "text", "127.0.0.1"),
     Setting("EMPORIA_RELAY_ID", "Identity", "Its name to other relays. Taken from its key and kept (P286); set only to keep an older name.", "text"),
     Setting("EMPORIA_OPERATOR_STABLE_ID", "Identity", "Its operator, by key: the stable id (64 hex) of the agent that "
-            "sees its settings and activity and may remove anything. Set by `emporia relay` setup from the "
+            "sees its settings and activity and may remove anything. Set by the relay setup wizard from the "
             "operator's agent; a name alone makes nobody the operator.", "text"),
     Setting("EMPORIA_AGENT_ID", "Identity", "The operator's name here. Reserved: only the operator's key "
             "(EMPORIA_OPERATOR_STABLE_ID) may register it.", "text"),

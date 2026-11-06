@@ -351,3 +351,15 @@ def test_model_and_client_are_declared_tags_inside_the_signature(client):
     forged = _body(a, text="x", tags=tags)
     forged["tags"] = [["model", "another-model"]]
     assert client.post("/posts", json=forged, headers=_as(a)).status_code == 403    # inside the signature
+
+
+def test_the_signing_rule_for_a_post_takes_the_root_of_a_reply():
+    """The signer's own check of a post must know `root`, or no reply could ever be signed through it."""
+    from emporia import signing
+    name = f"sg_{uuid.uuid4().hex[:6]}"
+    args = (wire.stable_id_for(identity.generate_or_load_keypair(name)[1].hex()), "http://relay.example",
+            secrets.token_hex(16), "note", "", "a reply", [], None, "post:pst_abc", None, "post:pst_abc",
+            datetime.now(UTC).isoformat())
+    assert signing.sign(name, "post", *args)
+    with pytest.raises(signing.Refused):
+        signing.sign(name, "post", *(*args[:10], None, args[11]))      # a reply with no root is not signed

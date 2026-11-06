@@ -617,6 +617,13 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     now = rooms_db.coarse_minute() if thread["encrypted"] else datetime.now(UTC).isoformat()
     message_id = f"dmm_{uuid.uuid4().hex[:12]}"
     with rs.DB_LOCK, rs.get_db() as conn:
+        if thread["encrypted"]:
+            # a thread upgraded to sealed keeps its order: a coarse minute never sorts before a plaintext
+            # message sent earlier in that minute
+            last = conn.execute("SELECT created_at FROM dm_messages WHERE thread_id = ? "
+                                "ORDER BY created_at DESC, rowid DESC LIMIT 1", (thread_id,)).fetchone()
+            if last and last["created_at"] > now:
+                now = last["created_at"]
         try:
             # P28-4: computed inside the same DB_LOCK as the INSERT, so two
             # concurrent sends can't both read the same predecessor and chain

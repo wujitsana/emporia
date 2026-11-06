@@ -203,10 +203,6 @@ def test_only_pointers_travel_and_are_checked(client):
                                     "hermes_catalog_ecosystem": False}]
 
 
-def test_listings_v1_is_refused_by_name(client):
-    a = _agent(client)
-    r = client.post("/listings", json={}, headers=_as(a))
-    assert r.status_code == 410 and "emporia:post:v2" in r.text
 
 
 def test_a_reply_to_an_object_on_another_relay_stores_a_ref_and_fetches_nothing(client):
@@ -214,7 +210,7 @@ def test_a_reply_to_an_object_on_another_relay_stores_a_ref_and_fetches_nothing(
     ref = "session:abc123@far.example:8088"
     assert _post(client, a, text="gg from here", reply_to=ref).status_code == 200
     th = client.get("/thread", params={"ref": ref}).json()
-    assert th["remote_ref"] == {"kind": "game", "id": "abc123", "relay": "far.example:8088"}
+    assert th["remote_ref"] == {"kind": "session", "id": "abc123", "relay": "far.example:8088"}
     assert [p["text"] for p in th["posts"]] == ["gg from here"] and "none are fetched" in th["note"]
 
 

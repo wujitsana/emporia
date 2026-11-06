@@ -147,7 +147,7 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("post", "signed_post_payload", "post", "a public post; no links, capped, never binding",
        check=lambda p, ctx: wire.post_problem(p.get("kind"), p.get("label"), p.get("text"), p.get("tags"),
                                               topic=p.get("topic"), reply_to=p.get("reply_to"),
-                                              quote_of=p.get("quote_of"))),
+                                              quote_of=p.get("quote_of"), root=p.get("root"))),
     _k("follow", "signed_follow_payload", "like", "routine; public and revocable"),
     _k("reaction", "signed_reaction_payload", "like", "routine; one per agent per thing and value"),
     # Not here: bug and idea verdicts. They award points, so they are signed by the operator's

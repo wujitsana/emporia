@@ -275,7 +275,7 @@ def test_health_and_agent_profile_route_through_the_shared_payment_rails_helper(
 def test_relay_card_well_formed(client):
     # Register the test owner agent and expose it via env so the descriptor endpoint serves it.
     _register(client, "test_relay_owner")
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "test_relay_owner"}):
+    with patch.dict(os.environ, {**_op_env("test_relay_owner")}):
         r = client.get("/relay-card")
     assert r.status_code == 200
     card = r.json()
@@ -295,7 +295,7 @@ def test_relay_card_uses_shared_builder(client):
 
     pub_hex = "c" * 64
     _register(client, "test_relay_owner_2", pubkey=pub_hex)
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "test_relay_owner_2"}):
+    with patch.dict(os.environ, {**_op_env("test_relay_owner_2")}):
         r = client.get("/relay-card")
     assert r.status_code == 200
     expected = build_relay_descriptor(
@@ -320,7 +320,7 @@ def test_relay_card_advertises_payment_rails(client):
     from emporia.relay_server import _payment_rails
 
     _register(client, "p1b7_relay_card_owner")
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p1b7_relay_card_owner"}):
+    with patch.dict(os.environ, {**_op_env("p1b7_relay_card_owner")}):
         r = client.get("/relay-card")
     assert r.status_code == 200
     card = r.json()
@@ -337,7 +337,7 @@ def test_a2a_well_known_paths_404_in_owner_mode(client, path):
     at face value instead of correctly concluding 'not an A2A peer'. Both paths must 404
     even when an owner agent is configured (i.e. even when /relay-card serves 200)."""
     _register(client, "test_relay_owner_404")
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "test_relay_owner_404"}):
+    with patch.dict(os.environ, {**_op_env("test_relay_owner_404")}):
         r = client.get(path)
     assert r.status_code == 404
     assert "/relay-card" in r.json()["detail"]
@@ -913,6 +913,15 @@ def _test_pubkey(agent_id: str) -> str:
     """
     from emporia.identity import get_public_key_hex
     return get_public_key_hex(agent_id)
+
+
+def _op_env(name: str) -> dict:
+    """The relay setting that makes `name` the operator: its stable id (the operator is a key, not a name),
+    from its registered row, or from the key the test helpers register it with."""
+    from emporia import relay_server as _rs
+    from emporia.wire import stable_id_for
+    stable = _rs.AGENT_REGISTRY.get_stable_id(name) or stable_id_for(_test_pubkey(name))
+    return {"EMPORIA_OPERATOR_STABLE_ID": stable}
 
 
 def _register(client, agent_id: str, pubkey: str = None) -> None:
@@ -1561,7 +1570,7 @@ def test_federation_sync_requires_operator(prod_client):
     )
     assert r.status_code == 403
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "n45_sync_owner"}):
+    with patch.dict(os.environ, {**_op_env("n45_sync_owner")}):
         r = prod_client.post(
             "/gaming/v1/federate/sync", headers=bearer_for(prod_client, "n45_sync_owner")
         )
@@ -1577,7 +1586,7 @@ def test_operator_only_actions_distinguish_unconfigured_from_wrong_caller(monkey
     the real problem is the action is unreachable by anyone. _require_operator now
     distinguishes the two cases; this applies to all three operator-only endpoints
     that share it (settlements, payment records, federation sync)."""
-    monkeypatch.delenv("EMPORIA_AGENT_ID", raising=False)
+    monkeypatch.delenv("EMPORIA_OPERATOR_STABLE_ID", raising=False)
     _register_keyed(prod_client, "n56_someone")
 
     r = prod_client.post(
@@ -1586,14 +1595,14 @@ def test_operator_only_actions_distinguish_unconfigured_from_wrong_caller(monkey
     assert r.status_code == 403
     assert "no relay operator is configured" in r.text
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "n56_the_operator"}):
+    with patch.dict(os.environ, {**_op_env("n56_the_operator")}):
         r2 = prod_client.post(
             "/gaming/v1/federate/sync", headers=bearer_for(prod_client, "n56_someone")
         )
     assert r2.status_code == 403
     assert "no relay operator is configured" not in r2.text
     assert "relay operator access required" in r2.text
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "n56_the_operator"}), __import__("conftest").header_shim_off():
+    with patch.dict(os.environ, {**_op_env("n56_the_operator")}), __import__("conftest").header_shim_off():
         r3 = prod_client.post("/gaming/v1/federate/sync")          # no credential at all
         r4 = prod_client.get("/operator/overview", headers={"X-Emporia-Agent-Id": "n56_the_operator"})
     assert r3.status_code == 401 and "authentication required" in r3.text
@@ -2258,6 +2267,8 @@ def test_every_route_has_a_reviewed_auth_posture():
     _AUTHENTICATED: set[tuple[str, str]] = {
         ("POST", "/reactions"),  # the reactor, signed in, and its signature
         ("GET", "/reactions/whose"),  # signed in; a game's or deal's other side only to who was in it
+        ("GET", "/roots"),  # signed in; the root a reply would sign, for an object the caller may read
+        ("POST", "/posts/copy"),  # signed in, and off unless the operator keeps copies; the record's own signature
         ("POST", "/posts"),  # the author, signed in, and its signature
         ("POST", "/follows"),  # the follower, signed in, and its signature
         ("POST", "/pledges"),  # pledges: the maker, signed in, and its signature
@@ -2670,7 +2681,7 @@ def test_payment_records_gated_by_session_visibility(client):
 def test_payment_records_unfiltered_requires_operator(client):
     assert client.get("/payments/records").status_code == 403
     _register(client, "pr_op")
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "pr_op"}):
+    with patch.dict(os.environ, {**_op_env("pr_op")}):
         r = client.get("/payments/records", headers={"x-emporia-agent-id": "pr_op"})
     assert r.status_code == 200
 
@@ -2822,7 +2833,7 @@ def test_delete_session_requires_operator(client):
 
 def test_delete_session_unknown_returns_404(client):
     _register(client, "p4_5_404_op")
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p4_5_404_op"}):
+    with patch.dict(os.environ, {**_op_env("p4_5_404_op")}):
         r = client.delete(
             "/admin/sessions/sess_doesnotexist", headers={"x-emporia-agent-id": "p4_5_404_op"},
         )
@@ -2850,7 +2861,7 @@ def test_delete_session_non_terminal_conflicts_and_deletes_nothing(client):
     assert before["sessions"] == 1
     assert before["participants"] == 1, "creator is auto-joined"
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p4_5_nonterm_op"}):
+    with patch.dict(os.environ, {**_op_env("p4_5_nonterm_op")}):
         r = client.delete(
             f"/admin/sessions/{session_id}", headers={"x-emporia-agent-id": "p4_5_nonterm_op"},
         )
@@ -2873,7 +2884,7 @@ def test_delete_session_force_deletes_non_terminal(client):
         headers={"x-emporia-agent-id": "p4_5_force_creator"})
     session_id = r.json()["session_id"]
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p4_5_force_op"}):
+    with patch.dict(os.environ, {**_op_env("p4_5_force_op")}):
         r = client.delete(
             f"/admin/sessions/{session_id}?force=true",
             headers={"x-emporia-agent-id": "p4_5_force_op"},
@@ -2951,7 +2962,7 @@ def test_delete_session_operator_deletes_terminal_session_retains_money_rows(cli
         1 for f in audit_files_before for _ in open(f, encoding="utf-8")
     )
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p4_5_full_op"}):
+    with patch.dict(os.environ, {**_op_env("p4_5_full_op")}):
         r = client.delete(
             f"/admin/sessions/{session_id}", headers={"x-emporia-agent-id": "p4_5_full_op"},
         )
@@ -3015,7 +3026,7 @@ def test_delete_session_clears_linked_room_without_deleting_it(client):
     assert r.status_code == 200, r.text
     room_id = r.json()["room_id"]
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p5_2_room_op"}):
+    with patch.dict(os.environ, {**_op_env("p5_2_room_op")}):
         r = client.delete(
             f"/admin/sessions/{session_id}?force=true",
             headers={"x-emporia-agent-id": "p5_2_room_op"},
@@ -3055,7 +3066,7 @@ def test_delete_session_deletes_nothing_if_audit_write_fails(client):
         headers={"x-emporia-agent-id": "p5_3_auditfail_creator"})
     session_id = r.json()["session_id"]
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p5_3_auditfail_op"}), \
+    with patch.dict(os.environ, {**_op_env("p5_3_auditfail_op")}), \
          patch.object(relay_server, "_write_audit_line", side_effect=OSError("disk full")):
         with pytest.raises(OSError, match="disk full"):
             client.delete(
@@ -3098,7 +3109,7 @@ def test_delete_session_audit_write_does_not_hold_db_lock(client):
         observed["lock_owned"] = DB_LOCK._is_owned()
         return original_write(entry)
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p6_1_lockscope_op"}), \
+    with patch.dict(os.environ, {**_op_env("p6_1_lockscope_op")}), \
          patch.object(relay_server, "_write_audit_line", side_effect=spying_write):
         r = client.delete(
             f"/admin/sessions/{session_id}?force=true",
@@ -3149,7 +3160,7 @@ def test_delete_session_force_delete_aborts_on_concurrent_write(client):
         relay_server.record_action(session_id, "p7_1_race_creator", "concurrent_action", {})
         return original_write(entry)
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p7_1_race_op"}), \
+    with patch.dict(os.environ, {**_op_env("p7_1_race_op")}), \
          patch.object(relay_server, "_write_audit_line", side_effect=racing_write):
         r = client.delete(
             f"/admin/sessions/{session_id}?force=true",
@@ -3204,7 +3215,7 @@ def test_delete_session_409_compensates_the_false_audit_line(client):
         observed_lock_owned.append(DB_LOCK._is_owned())
         return original_write(entry)
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p8_1_race_op"}), \
+    with patch.dict(os.environ, {**_op_env("p8_1_race_op")}), \
          patch.object(relay_server, "_write_audit_line", side_effect=racing_write):
         r = client.delete(
             f"/admin/sessions/{session_id}?force=true",
@@ -3280,7 +3291,7 @@ def test_delete_session_diagnostic_500_when_compensating_write_itself_fails(clie
         # The compensating "admin_session_delete_aborted" write fails.
         raise OSError("disk full")
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p9_1_race_op"}), \
+    with patch.dict(os.environ, {**_op_env("p9_1_race_op")}), \
          patch.object(relay_server, "_write_audit_line", side_effect=racing_then_failing_write):
         r = client.delete(
             f"/admin/sessions/{session_id}?force=true",
@@ -6759,7 +6770,7 @@ def test_settlements_agent_id_and_unfiltered_branches_never_return_internal_colu
     assert not leaked, \
         f"?agent_id= branch returned internal column(s) {leaked} — {own_row.keys()}"
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": owner}):
+    with patch.dict(os.environ, {**_op_env(owner)}):
         operator_view = client.get("/payments/settlements", headers={"x-emporia-agent-id": owner})
     assert operator_view.status_code == 200, operator_view.text
     op_row = next(s for s in operator_view.json()["settlements"] if s["session_id"] == room_id)
@@ -6827,7 +6838,7 @@ def test_settlements_agent_id_and_unfiltered_branches_return_refund_ids_in_plain
     assert own_row["reversal_id"] == "trr_s2_pub", \
         f"?agent_id= branch must return the owning payer's own reversal_id in plaintext, got {own_row!r}"
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": owner}):
+    with patch.dict(os.environ, {**_op_env(owner)}):
         operator_view = client.get("/payments/settlements", headers={"x-emporia-agent-id": owner})
     assert operator_view.status_code == 200, operator_view.text
     op_row = next(s for s in operator_view.json()["settlements"] if s["session_id"] == room_id)
@@ -7244,7 +7255,7 @@ def test_settlement_reads_report_has_more(client):
             "transfer_status": "no_stripe_account", "payer_id": f"n7page_payer_{i}",
         })
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": owner}):
+    with patch.dict(os.environ, {**_op_env(owner)}):
         truncated = client.get(f"/payments/settlements/{room_id}", params={"limit": 2},
             headers={"x-emporia-agent-id": owner})
         assert truncated.status_code == 200, truncated.text
@@ -7305,7 +7316,7 @@ def test_settlement_agent_id_and_global_reads_report_has_more(client):
     assert len(exact.json()["settlements"]) == 3
     assert exact.json()["has_more"] is False, exact.text
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": payer}):
+    with patch.dict(os.environ, {**_op_env(payer)}):
         global_truncated = client.get("/payments/settlements", params={"limit": 1},
             headers={"x-emporia-agent-id": payer})
         assert global_truncated.status_code == 200, global_truncated.text
@@ -7439,7 +7450,7 @@ def test_settlement_redaction_does_not_blind_the_operator(client):
             "transfer_status": "no_stripe_account", "payer_id": payer,
         })
 
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": owner}):
+    with patch.dict(os.environ, {**_op_env(owner)}):
         as_operator = client.get("/payments/settlements", params={"session_id": room_id},
             headers={"x-emporia-agent-id": owner})
         assert as_operator.status_code == 200, as_operator.text
@@ -8176,7 +8187,7 @@ def test_room_send_message(client):
         json={
             "content": "Hello room!", "nonce": nonce,
             "signature": sign(
-                {"room_id": room_id, "content": "Hello room!", "msg_type": "chat", "nonce": nonce},
+                __import__("emporia.wire", fromlist=["x"]).signed_room_message_payload(room_id, "Hello room!", "chat", nonce, _stable_of("msg_alice")),
                 "msg_alice",
             ),
         },
@@ -8431,7 +8442,7 @@ def test_room_message_caller_must_be_sender(prod_client):
         json={
             "content": content, "nonce": nonce,
             "signature": sign(
-                {"room_id": room_id, "content": content, "msg_type": "chat", "nonce": nonce},
+                __import__("emporia.wire", fromlist=["x"]).signed_room_message_payload(room_id, content, "chat", nonce, _stable_of("rmsg_member")),
                 "rmsg_member",
             ),
         },
@@ -9086,7 +9097,7 @@ def test_room_message_signature_mandatory(prod_client):
         json={
             "content": content, "nonce": nonce,
             "signature": sign(
-                {"room_id": room_id, "content": "different content", "msg_type": "chat", "nonce": nonce},
+                __import__("emporia.wire", fromlist=["x"]).signed_room_message_payload(room_id, "different content", "chat", nonce, _stable_of("sig_room_owner")),
                 "sig_room_owner",
             ),
         },
@@ -9100,7 +9111,7 @@ def test_room_message_signature_mandatory(prod_client):
         json={
             "content": content, "nonce": nonce,
             "signature": sign(
-                {"room_id": room_id, "content": content, "msg_type": "chat", "nonce": nonce},
+                __import__("emporia.wire", fromlist=["x"]).signed_room_message_payload(room_id, content, "chat", nonce, _stable_of("sig_room_owner")),
                 "sig_room_owner",
             ),
         },
@@ -9138,8 +9149,9 @@ def test_room_message_signature_not_replayable_across_rooms(prod_client):
     # so replaying it in a different room isn't caught by the nonce check — the
     # room_id binding inside the signature is what must catch it here.
     nonce = new_message_nonce()
+    from emporia.wire import signed_room_message_payload
     sig_for_room_a = sign(
-        {"room_id": room_a, "content": content, "msg_type": "chat", "nonce": nonce}, "replay_owner",
+        signed_room_message_payload(room_a, content, "chat", nonce, _stable_of("replay_owner")), "replay_owner",
     )
 
     r = prod_client.post(
@@ -10125,7 +10137,7 @@ def test_agent_sdk_register_uses_shared_wire_contract():
     register_resp.json.return_value = {"status": "registered", "agent_id": "sdk_register_agent"}
     agent._http.post = AsyncMock(side_effect=[ch_resp, register_resp])
 
-    with patch("emporia.identity.sign_raw", return_value="feedface"), \
+    with patch("emporia.signing.sign_in", return_value="feedface"), \
          patch.object(wire, "registration_body", wraps=wire.registration_body) as spy:
         result = asyncio.run(agent.register(display_name="SDK Register Agent"))
 
@@ -10476,7 +10488,7 @@ def test_mcp_send_room_message_uses_shared_wire_contract_and_relay_accepts_it(pr
         )
 
     assert result.get("success") is True, result
-    assert result.get("message_id", "").startswith("rmsg_"), result
+    assert result.get("message_id", "").startswith("msg_"), result
     # Called twice since P10-3: once by mcp_server.py's signer, once by
     # relay_server.py's verifier — both now resolve from wire.py.
     assert payload_spy.call_count == 2
@@ -10529,7 +10541,7 @@ def test_agent_sdk_send_room_message_uses_shared_wire_contract_and_relay_accepts
             ) as envelope_spy:
                 result = await sender.send_room_message(room_id, "hello from P6-5 SDK")
 
-            assert result.get("message_id", "").startswith("rmsg_"), result
+            assert result.get("message_id", "").startswith("msg_"), result
             # Called twice since P10-3: once by the SDK's signer, once by
             # relay_server.py's verifier — both now resolve from wire.py.
             assert payload_spy.call_count == 2
@@ -10612,7 +10624,7 @@ def test_relay_server_verifies_signed_action_and_room_message_via_wire_contract(
             room_id = room["room_id"]
             with _wire_spy("signed_room_message_payload", "room-message") as msg_spy:
                 msg_result = await buyer.send_room_message(room_id, "hello P10-3")
-            assert msg_result.get("message_id", "").startswith("rmsg_")
+            assert msg_result.get("message_id", "").startswith("msg_")
             assert msg_spy.call_count >= 2
             msg_signer_call = msg_spy.call_args_list[0]
             msg_verifier_call = msg_spy.call_args_list[-1]
@@ -10841,9 +10853,10 @@ def test_mcp_room_tools_route_through_relay(prod_client):
         )
         assert sent.get("success") is True, sent
         assert sent["text"] == "hello from mcp"
+        from emporia.wire import signed_room_message_payload
         assert sent["signature"] == sign(
-            {"room_id": room_id, "content": sent["content"], "msg_type": "note",
-             "nonce": sent["nonce"]},
+            signed_room_message_payload(room_id, sent["content"], "note", sent["nonce"],
+                                        _stable_of("mcproom_owner")),
             "mcproom_owner",
         )
         assert sent["chain_hash"] is not None
@@ -12493,9 +12506,10 @@ def test_x402_offer_skips_wallet_lookup_when_disabled(client):
     # from _x402_pay_to_by_network() inside _x402_offer(). P273 adds two that
     # are not wallet lookups: the joiner's key, to check its signed join, and
     # its last own act in the room, so an old join cannot be replayed.
-    assert call_count["n"] == 3, (
-        "expected exactly three get_db() calls (registration, the join's signature, "
-        f"the replay check — no wallet resolution) on a disabled relay, got {call_count['n']}"
+    # (a bearer token is now checked against the agent's stable id: reads at the door; still no wallet resolution)
+    assert call_count["n"] == 5, (
+        "expected exactly five get_db() calls (the token's stable id, registration, the join's signature, "
+        f"the replay check, one more door read — no wallet resolution) on a disabled relay, got {call_count['n']}"
     )
 
 
@@ -16484,7 +16498,8 @@ def test_room_encryption_keys_is_one_query_not_two_per_member(client):
         r = client.get(f"/rooms/{room}/encryption-keys", headers={"X-Emporia-Agent-Id": "p19_rkq_b"})
     assert r.status_code == 200
     assert set(r.json()["keys"]) == {"p19_rkq_a", "p19_rkq_b", "p19_rkq_c"}
-    assert spy.call_count == 1, spy.call_args_list
+    # a few reads at the door (the token's stable id, the caller, the room), none per member
+    assert spy.call_count <= 3, spy.call_args_list
 
 
 def test_room_encryption_keys_is_members_only(client):
@@ -19507,7 +19522,7 @@ async def test_trigger_federation_sync_200s_even_when_one_peer_is_malformed(prod
             return await real_fetch(url, client=c)
 
     _register_keyed(prod_client, "p24_fed_op")
-    with patch.dict(os.environ, {"EMPORIA_AGENT_ID": "p24_fed_op"}), \
+    with patch.dict(os.environ, {**_op_env("p24_fed_op")}), \
          patch.object(rs, "FEDERATED_RELAYS", ["http://only-bad-peer.example"]), \
          patch.object(rs, "_fetch_federation_batch", side_effect=fake_get):
         r = prod_client.post(
@@ -25966,6 +25981,7 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",
     "/reactions/whose": "whom a reaction would be for — the react tool's own lookup, machine-facing",
+    "/roots": "the root a reply signs — the post tool's own lookup, machine-facing",
     "/reactions": "counts of a thing's reactions — the Feed shows each post's counts already",
     "/thread": "replies to any object — the Feed view carries each post's reply count",
     "/happening": "Agora v2: the overview an agent reads when it wakes; machine-facing (the Feed and Overview show the same places)",

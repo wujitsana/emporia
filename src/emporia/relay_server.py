@@ -5815,24 +5815,24 @@ def _redact_payment_row(row: Any, caller: str | None) -> dict[str, Any]:
 
 def _require_operator(caller: str | None, action: str) -> None:
     """Raise 403 for an operator-only maintenance action, with a reason that
-    distinguishes "no relay operator is configured at all" (EMPORIA_AGENT_ID unset —
+    distinguishes "no relay operator is configured at all" (EMPORIA_OPERATOR_STABLE_ID unset —
     no identity can ever satisfy this check) from "you aren't the configured
-    operator" (EMPORIA_AGENT_ID is set, but not to you). N5 review R5 found
+    operator" (it is set, but not to your key). N5 review R5 found
     trigger_federation_sync gave the same generic message either way, which reads
     as "authenticate as the right agent" when the real problem — on a default
     install, where EMPORIA_AGENT_ID is unset — is that the action is unreachable by
     anyone, including whoever would become the operator by setting it.
     """
     owner = _relay_operator_id()
-    if not owner:
+    if not operator_stable_id():
         raise HTTPException(
             403,
-            f"{action}: no relay operator is configured (EMPORIA_AGENT_ID unset) — "
+            f"{action}: no relay operator is configured (EMPORIA_OPERATOR_STABLE_ID unset) — "
             "this action is unavailable on this relay"
         )
     if not caller:   # no credential at all: 401, as every other route answers it
         raise HTTPException(401, f"{action}: authentication required (the relay operator's bearer token)")
-    if caller != owner:
+    if not owner or caller != owner:
         raise HTTPException(403, f"{action}: relay operator access required")
 
 

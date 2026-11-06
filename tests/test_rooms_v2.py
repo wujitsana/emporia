@@ -244,7 +244,7 @@ def test_table_talk_is_a_thread_rooted_at_the_game_and_can_be_liked(client):
     assert _like(client, c, "message", first["message_id"], a).status_code == 200
     best = room_threads.best_public_room_messages(window=1)
     item = next(m for m in best if m["message_id"] == first["message_id"])
-    assert item["in"]["kind"] == "game" and item["in"]["id"] == sid and item["likes"] == 1
+    assert item["in"]["kind"] == "session" and item["in"]["session_kind"] == "game" and item["in"]["id"] == sid and item["likes"] == 1
 
 
 def test_a_line_sent_with_a_move_is_a_post_replying_to_the_game_and_is_visible_at_once(client):

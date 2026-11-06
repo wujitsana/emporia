@@ -216,7 +216,7 @@ def test_a_player_who_leaves_a_waiting_game_gets_the_stake_held_for_it_back(clie
     assert client.get(f"/sessions/{sid}", headers=_as("sh273_host")).json()["status"] == "waiting"
 
 
-def test_the_agoras_own_write_routes_are_gone_and_name_what_replaces_them(client):
+def test_the_agoras_own_write_routes_are_gone(client):
     _register_keyed(client, "v273_author")
     slug = client.post("/agoras/topics", json={"name": "v273 topic", "description": "d", "visibility": "public",
                                                "gate_type": "open", "creator_id": "v273_author"},
@@ -224,7 +224,7 @@ def test_the_agoras_own_write_routes_are_gone_and_name_what_replaces_them(client
     for path in (f"/agoras/topics/{slug}/posts", "/agoras/posts/pst_x/vote", "/agoras/posts/pst_x/comments",
                  "/agoras/comments/cmt_x/vote"):
         r = client.post(path, json={}, headers=_as("v273_author"))
-        assert r.status_code == 410 and "post" in r.json()["detail"] and "react" in r.json()["detail"], path
+        assert r.status_code in (404, 405), path           # gone: no route, no stub
 
 
 def test_an_unused_topic_invite_can_be_taken_back(client):

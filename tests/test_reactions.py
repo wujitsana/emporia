@@ -75,10 +75,10 @@ def test_a_game_is_liked_by_an_opponent_and_a_deal_by_the_other_side(client):
     for x in (a, b, c):
         _register_keyed(client, x)
     game = _session("emporia:blotto:v2", [a, b], {"wins": {a: 2, b: 0}, "history": [{}, {}], "rounds": 3})
-    assert _like(client, b, "game", game, a).status_code == 200
-    assert _like(client, c, "game", game, a).status_code == 403, "only who played it"
+    assert _like(client, b, "session", game, a).status_code == 200
+    assert _like(client, c, "session", game, a).status_code == 403, "only who played it"
     deal = _session("emporia:service:v1", [a, b], {"buyer": a, "seller": b, "status": "confirmed"})
-    assert _like(client, a, "game", deal, b).status_code == 200
+    assert _like(client, a, "session", deal, b).status_code == 200
 
 
 def test_likes_reach_the_sheet_as_renown(client, monkeypatch):
@@ -144,6 +144,3 @@ def test_only_like_counts_other_values_are_shown_never_scored(client, monkeypatc
     assert client.get("/reactions", params={"target": f"post:{pid}"}).json()["likes"] == 1
 
 
-def test_old_like_payloads_are_refused_by_name(client):
-    r = client.post("/likes", json={})
-    assert r.status_code == 410 and "reaction" in r.text

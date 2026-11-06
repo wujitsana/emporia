@@ -4,6 +4,7 @@ P1: bug and idea verdicts are signed by the operator's verdict key, a person's k
 holds — the operator agent's own token or key no longer awards points. P2: `house stop` stops
 only its own profile's runner. P6: the key guard matches paths as they resolve. P7: MetaMask's
 Guard Mode check is remembered across requests. Each test fails without its fix."""
+from tests.ids import stable_of  # noqa: E402
 import subprocess
 import sys
 import time
@@ -43,7 +44,7 @@ def _setup(client, monkeypatch, *tags):
     agents = [f"sf2_{t}_{uuid.uuid4().hex[:6]}" for t in ("op", *tags)]
     for a in agents:
         _register_keyed(client, a)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", agents[0])
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(agents[0]))
     return agents
 
 

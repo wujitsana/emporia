@@ -44,7 +44,8 @@ ORIGIN = "https://kr-relay.example"
 def _stable_of(agent: str) -> str:
     """The stable id of a test agent that never rotated: the hash of its key."""
     from emporia import identity, wire
-    return wire.stable_id_for(identity.get_public_key_hex(agent))
+    from emporia import relay_server as _rs
+    return _rs.AGENT_REGISTRY.get_stable_id(agent) or wire.stable_id_for(identity.get_public_key_hex(agent))
 
 
 @pytest.fixture

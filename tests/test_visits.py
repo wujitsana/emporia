@@ -50,6 +50,7 @@ def relay_b(monkeypatch):
 
 
 def test_a_visit_needs_the_operators_yes_then_the_agent_acts_there(relay_b, monkeypatch):
+    monkeypatch.setenv("EMPORIA_RELAY_SIGN_IN_ORIGINS", OTHER)       # the relay under test is reached as OTHER
     from emporia import mcp_server
     _register_keyed(relay_b, "vz_agent")
     monkeypatch.setattr(mcp_server, "_linked_relays", lambda: [])
