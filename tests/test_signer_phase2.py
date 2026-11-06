@@ -377,6 +377,14 @@ def test_the_backend_command_is_a_persons_and_marks_adapters_not_tried_live(tmp_
     assert cli.main(["signer", "backend"]) == 0
     listing = capsys.readouterr().out
     assert "p1" in listing and "not yet tested against the live service" in listing and "hidden-secret" not in listing
+    # MetaMask: its session token is a secret too, asked hidden or not at all (mm login as the signer's user)
+    assert cli.main(["signer", "backend", "mm1", "add", "metamask", "cli_token=a:b"]) == 1
+    assert "never a value on the command line" in capsys.readouterr().out
+    assert cli.main(["signer", "backend", "mm1", "add", "metamask", "chain_ids=84532"]) == 0
+    assert "not yet tested against the live service" in capsys.readouterr().out
+    assert cli.main(["signer", "backend"]) == 0
+    listing = capsys.readouterr().out
+    assert "mm1" in listing and "metamask" in listing and "evm-typed-data" in listing
 
 
 def test_the_key_guard_keeps_an_agent_from_the_signers_back_ends_and_backups():
@@ -394,6 +402,16 @@ def test_the_key_guard_keeps_an_agent_from_the_signers_back_ends_and_backups():
                 "emporia signer add alpha --make",
                 "emporia signer add alpha --key-source identity=cmd:op read op://A/alpha/identity",
                 "python -c 'from emporia import signer_backends'",
-                "python -m emporia.signer_backends"):
+                "python -m emporia.signer_backends",
+                # a MetaMask Agent Wallet back end: its person's to add, its mm session the signer's
+                "emporia signer backend mm1 add metamask chain_ids=84532",
+                "python -c 'from emporia.signer_backends import MetaMaskBackend'",
+                "mm wallet sign-typed-data --chain-id 84532 --payload '{}' --wait",
+                "mm wallet select 0xabc", "mm wallet policy set --policy x", "mm wallet trading-mode set beast",
+                "mm transfer --to 0xabc --amount 1 --token native --chain-id 84532",
+                "MM_CLI_TOKEN=a:b mm login", "cat ~/.metamask/session.json", "ls -la /home/signer/.metamask"):
         assert guard.pre_tool_call("terminal", {"command": cmd}) is not None, cmd
     assert guard.pre_tool_call("terminal", {"command": "emporia signer status"}) is None
+    assert guard.pre_tool_call("terminal", {"command": "mm chains list --json"}) is None
+    hidden = guard.transform_tool_result(result="export MM_CLI_TOKEN=cliTok123:refresh456")
+    assert hidden is not None and "cliTok123" not in hidden

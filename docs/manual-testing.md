@@ -308,9 +308,23 @@ step against fakes; these are what only a real Hermes, a real vault and a real a
       only): a policy with a `signEvmTypedData` rule (`evmTypedDataVerifyingContract` the USDC contract).
       `emporia signer backend cdp1 add cdp api_key_id=… policy_id=…` → both secrets asked hidden.
       `emporia signer backend cdp1 make alpha3 evm` → a CDP account; fund it; a game pays on Base Sepolia.
+- [ ] **MetaMask Agent Wallet** (needs your own MetaMask Agent Wallet sign-in, Google, email or MetaMask
+      Mobile; testnet only; Node.js 22.18+ where the signer runs). As the signer's user:
+      `npm install -g @metamask/agent-wallet`, `mm login` (your choice of method), `mm init --wallet
+      server-wallet --mode guard`, `mm doctor` → `authenticated: true`, `initialized: true`.
+      `emporia signer backend mm1 add metamask max_value=2000000` (the CLI token asked hidden: Enter to
+      skip, the `mm` session is already there) → listed "not yet tested against the live service".
+      `emporia signer backend mm1 make alpha4 evm` for a fresh agent made with `--make` → a wallet in
+      `mm wallet list`, in Guard Mode. Fund it with Base Sepolia USDC; a 1 USDC game pays (the
+      facilitator accepted MetaMask's signature); a 3 USDC one is refused "at most 2000000 base units"
+      before `mm` is asked. Note what `mm` printed for `wallet create`, `trading-mode get` and an error,
+      so the fields marked unconfirmed in signer-phase-2.md § 3.1 can be settled. Then, optionally:
+      `mm wallet trading-mode set beast` (approve the 2FA) → the next payment is refused "Beast Mode";
+      set it back to guard. And an escrow hold (a paid room or game with escrow on): does it go, or does
+      MetaMask hold it for 2FA?
 - [ ] **The agent cannot do any of it:** from an agent with a terminal, `emporia signer backend`,
       `emporia signer backup alpha --out x`, `emporia signer add alpha --make` → refused by the key guard
-      as its person's.
+      as its person's; so are `mm wallet sign-typed-data …`, `mm transfer …` and `cat ~/.metamask/session.json`.
 
 ### 8. Relay as a service on a spare VM (about 45 minutes; only if the service mode ships)
 

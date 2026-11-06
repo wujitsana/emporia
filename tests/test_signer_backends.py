@@ -220,6 +220,7 @@ def test_every_back_end_declares_what_it_does_and_whether_it_was_tried_live():
     assert "open" not in sb.make_backend("x", "aws-kms").capabilities         # providers sign, they don't decrypt
     assert sb.make_backend("x", "privy").capabilities == {"evm-typed-data", "solana", "make-keys"}
     assert sb.make_backend("x", "cdp").capabilities == {"evm-typed-data", "make-keys"}
+    assert sb.make_backend("x", "metamask").capabilities == {"evm-typed-data", "make-keys"}
     assert "make-keys" not in sb.make_backend("x", "vault").capabilities
 
 
@@ -396,6 +397,219 @@ def test_cdp_signs_x402_typed_data_with_both_tokens(setup, monkeypatch):
     assert _x402_signer_of(header, _challenge(BASE)["x402"]["accepts"][0]) == made["evm"]
     with pytest.raises(sb.Unsupported):
         sb.OVERRIDES["cdp1"].sign_ed25519(AGENT, "svm", b"x", made["evm"])
+
+
+# ─── MetaMask Agent Wallet, through a fake `mm` ───────────────────────────────
+
+MM_TOKEN = "cliTok-0123456789abcdef:cliRefresh-fedcba9876543210"
+USDC_TEST = "0x" + "22" * 20                      # the test challenges' asset
+
+_FAKE_MM = '''#!{python}
+"""A fake of MetaMask's `mm` (CLI 7.2.0's documented commands and JSON shapes):
+server wallets in a state file, its session, Guard Mode's 2FA hold."""
+import json, os, sys
+from eth_account import Account
+state_path = os.environ["FAKE_MM_STATE"]
+st = json.load(open(state_path))
+args = sys.argv[1:]
+st["calls"].append(args)
+st["envs"].append(sorted(k for k in os.environ if k.startswith("MM_")))
+def out(*objs):
+    json.dump(st, open(state_path, "w"))
+    for o in objs:
+        print(json.dumps(o))
+    sys.exit(0 if objs[-1].get("ok") else 1)
+def flag(name):
+    return args[args.index(name) + 1]
+print("(node) a startup notice that is not JSON")
+if args[0] == "login":
+    if os.environ.get("MM_CLI_TOKEN") == st["token"]:
+        st["signed_in"] = True
+        out({{"ok": True, "data": {{"authenticated": True}}}})
+    out({{"ok": False, "error": {{"code": "TOKEN_INVALID", "message": "Invalid CLI token"}}}})
+if not st["signed_in"]:
+    out({{"ok": False, "error": {{"code": "AUTH_FAILED", "message": "missing refresh token"}}}})
+if args[:2] == ["wallet", "create"]:
+    acct = Account.create()
+    st["wallets"][acct.address] = {{"key": acct.key.hex(), "mode": flag("--trading-mode"), "name": flag("--name")}}
+    out({{"ok": True, "data": {{"address": acct.address, "policyYaml": None}}}})
+if args[:3] == ["wallet", "trading-mode", "get"]:
+    a = flag("--address")
+    out({{"ok": True, "data": {{"address": a, "tradingMode": st["wallets"][a]["mode"]}}}})
+if args[:2] == ["wallet", "select"]:
+    st["active"] = args[2]
+    out({{"ok": True, "data": {{"address": args[2]}}}})
+if args[:2] == ["wallet", "sign-typed-data"]:
+    payload = json.loads(flag("--payload"))
+    if int(payload["domain"]["chainId"]) != int(flag("--chain-id")):
+        out({{"ok": False, "error": {{"code": "CHAIN_ID_MISMATCH", "message": "chain id differs"}}}})
+    if st["mfa_over"] is not None and int(payload["message"]["value"]) > st["mfa_over"]:
+        out({{"_notice": {{"kind": "AWAITING_MFA", "pollingId": "req-7", "authMethod": "email",
+                          "message": "Approval required"}}}},
+            {{"ok": False, "error": {{"code": "TX_DENIED", "message": "Transaction was rejected"}}}})
+    key = st["evil"] or st["wallets"][st["active"]]["key"]
+    sig = Account.from_key(key).sign_typed_data(full_message=payload).signature
+    out({{"ok": True, "data": {{"signature": "0x" + bytes(sig).hex()}}}})
+out({{"ok": False, "error": {{"code": "UNKNOWN_FLAG", "message": "not in the fake"}}}})
+'''
+
+
+@pytest.fixture
+def mm(setup, monkeypatch):
+    """A fake `mm`, signed in, and a back end `mm1` using it."""
+    import sys
+    bin_ = setup["tmp"] / "mmbin"
+    bin_.mkdir()
+    (bin_ / "mm").write_text(_FAKE_MM.format(python=sys.executable))
+    (bin_ / "mm").chmod(0o755)
+    state = setup["tmp"] / "mm-state.json"
+
+    def write(**kw):
+        st = json.loads(state.read_text()) if state.exists() else {
+            "token": MM_TOKEN, "signed_in": True, "wallets": {}, "active": None, "mfa_over": None, "evil": None,
+            "calls": [], "envs": []}
+        st.update(kw)
+        state.write_text(json.dumps(st))
+        return st
+    write()
+    monkeypatch.setenv("FAKE_MM_STATE", str(state))
+    signer.save_backend("mm1", "metamask", {"mm": str(bin_ / "mm"), "verifying_contracts": USDC_TEST},
+                        {"cli_token": MM_TOKEN})
+    return {"state": lambda: json.loads(state.read_text()), "set": write}
+
+
+def _signs(m):
+    return [c for c in m["state"]()["calls"] if c[:2] == ["wallet", "sign-typed-data"]]
+
+
+def test_metamask_signs_x402_typed_data_and_the_signers_cap_comes_first(setup, mm):
+    made = signer.make_agent_keys(AGENT, {"evm": "mm1"})
+    st = mm["state"]()
+    assert st["wallets"][made["evm"]]["mode"] == "guard"                    # always made in Guard Mode
+    assert signer.routes(AGENT)["evm"] == {"backend": "mm1", "ref": made["evm"]}
+    header = agent_wallet.sign_exact(AGENT, _challenge_for(250))
+    assert _x402_signer_of(header, _challenge(BASE)["x402"]["accepts"][0]) == made["evm"]
+    call = _signs(mm)[-1]
+    assert call[call.index("--chain-id") + 1] == "84532" and "--wait" in call
+    assert json.loads(call[call.index("--payload") + 1])["primaryType"] == "TransferWithAuthorization"
+    assert mm["state"]()["calls"][-2] == ["wallet", "select", made["evm"], "--json"]   # its wallet, just before
+    n = len(_signs(mm))
+    with pytest.raises(agent_wallet.AgentWalletError, match="per-payment cap"):
+        agent_wallet.sign_exact(AGENT, _challenge_for(600))
+    assert len(_signs(mm)) == n                                             # MetaMask was never asked
+
+
+def test_metamask_2fa_hold_and_refusal_are_surfaced(setup, mm):
+    signer.make_agent_keys(AGENT, {"evm": "mm1"})
+    mm["set"](mfa_over=300 * 10_000)
+    with pytest.raises(agent_wallet.AgentWalletError, match=r"MetaMask refused \(TX_DENIED\).*rejected.*req-7"):
+        agent_wallet.sign_exact(AGENT, _challenge_for(400))                # under our cap, outside its policy
+    assert agent_wallet.sign_exact(AGENT, _challenge_for(250))
+
+
+def test_metamask_back_end_limits_of_its_own(setup, mm):
+    from emporia import escrow
+    b = signer.get_backend("mm1")
+    ref = b.make(AGENT, "evm")
+    info = {"operator": "0x" + "33" * 20, "payer": ref, "receiver": "0x" + "44" * 20, "token": USDC_TEST,
+            "max_amount": 5, "pre_approval_expiry": 2_000_000_000, "authorization_expiry": 2_000_000_100,
+            "refund_expiry": 2_000_000_200, "min_fee_bps": 0, "max_fee_bps": 100, "fee_receiver": "0x" + "55" * 20,
+            "salt": 7}
+    hold = escrow.receive_with_authorization_message(
+        escrow.PaymentInfo.from_json(info), chain_id=84532, escrow="0x" + "66" * 20, collector="0x" + "77" * 20,
+        token_name="USDC", token_version="2")
+    assert sb.recover_typed_data(hold, b.sign_typed_data(AGENT, hold, ref)) == ref   # an escrow hold
+    n = len(_signs(mm))
+    with pytest.raises(sb.BackendError, match="not 8453"):
+        b.sign_typed_data(AGENT, {**hold, "domain": {**hold["domain"], "chainId": 8453}}, ref)
+    with pytest.raises(sb.BackendError, match="verifying_contracts"):
+        b.sign_typed_data(AGENT, {**hold, "domain": {**hold["domain"], "verifyingContract": "0x" + "99" * 20}}, ref)
+    with pytest.raises(sb.Unsupported, match="not Permit"):
+        b.sign_typed_data(AGENT, {**hold, "primaryType": "Permit"}, ref)
+    capped = sb.make_backend("mm1", "metamask", {**b.settings, "max_value": "4"}, b.secrets)
+    with pytest.raises(sb.BackendError, match="at most 4 base units"):
+        capped.sign_typed_data(AGENT, hold, ref)
+    assert len(_signs(mm)) == n                                             # none of these reached mm
+    with pytest.raises(sb.Unsupported, match="EVM transaction"):
+        b.sign_transaction(AGENT, {"type": 2}, ref)
+    with pytest.raises(sb.Unsupported):
+        signer.set_route(AGENT, "identity", "mm1", ref)
+    with pytest.raises(sb.Unsupported):
+        b.make(AGENT, "svm")
+
+
+def test_metamask_refuses_beast_mode_and_a_signature_from_another_key(setup, mm):
+    b = signer.get_backend("mm1")
+    ref = b.make(AGENT, "evm")
+    msg = _hold_like(ref)
+    st = mm["state"]()
+    st["wallets"][ref]["mode"] = "beast"
+    mm["set"](wallets=st["wallets"])
+    with pytest.raises(sb.BackendError, match="Beast Mode"):
+        signer.get_backend("mm1").sign_typed_data(AGENT, msg, ref)
+    st["wallets"][ref]["mode"] = "guard"
+    mm["set"](wallets=st["wallets"], evil=bytes(Account.create().key).hex())
+    with pytest.raises(sb.BackendError, match="not from the wallet"):
+        signer.get_backend("mm1").sign_typed_data(AGENT, msg, ref)
+
+
+def _hold_like(payer):
+    return {"types": {"EIP712Domain": [{"name": "name", "type": "string"}, {"name": "version", "type": "string"},
+                                       {"name": "chainId", "type": "uint256"},
+                                       {"name": "verifyingContract", "type": "address"}],
+                      "TransferWithAuthorization": [{"name": n, "type": t} for n, t in (
+                          ("from", "address"), ("to", "address"), ("value", "uint256"), ("validAfter", "uint256"),
+                          ("validBefore", "uint256"), ("nonce", "bytes32"))]},
+            "primaryType": "TransferWithAuthorization",
+            "domain": {"name": "USDC", "version": "2", "chainId": 84532, "verifyingContract": USDC_TEST},
+            "message": {"from": payer, "to": "0x" + "11" * 20, "value": 1000, "validAfter": 0,
+                        "validBefore": 2_000_000_000, "nonce": b"\x01" * 32}}
+
+
+def test_metamask_session_token_goes_in_the_environment_and_nowhere_else(setup, mm, capsys):
+    made = signer.make_agent_keys(AGENT, {"evm": "mm1"})
+    mm["set"](signed_in=False)
+    assert agent_wallet.sign_exact(AGENT, _challenge_for(250))             # signed in again, with cli_token
+    st = mm["state"]()
+    logins = [i for i, c in enumerate(st["calls"]) if c[0] == "login"]
+    assert logins and "MM_CLI_TOKEN" in st["envs"][logins[0]]
+    assert all("MM_CLI_TOKEN" not in e for i, e in enumerate(st["envs"]) if i not in logins)
+    assert not any(MM_TOKEN in a or part in a for c in st["calls"] for a in c for part in MM_TOKEN.split(":"))
+    # Signed out with a token that no longer works: said so, without the token.
+    mm["set"](signed_in=False, token="another")
+    with pytest.raises(agent_wallet.AgentWalletError, match="not signed in") as e:
+        agent_wallet.sign_exact(AGENT, _challenge_for(250))
+    for part in (MM_TOKEN, *MM_TOKEN.split(":")):
+        assert part not in str(e.value) and part not in capsys.readouterr().out
+        for f in signer.signer_dir().rglob("*"):
+            if f.is_file() and f.name != "mm1.secret":
+                assert part not in f.read_text(errors="replace"), f
+    assert oct((signer.signer_dir() / "backends" / "mm1.secret").stat().st_mode & 0o777) == "0o600"
+    assert made["evm"]
+
+
+def test_metamask_redacts_its_token_from_whatever_mm_says():
+    import subprocess
+
+    def leaky(argv, **kw):
+        return subprocess.CompletedProcess(argv, 1, stdout=json.dumps(
+            {"ok": False, "error": {"code": "WALLET_ERROR", "message": f"bad session {MM_TOKEN.split(':')[1]}"}}),
+            stderr="")
+    b = sb.MetaMaskBackend("m", {}, {"cli_token": MM_TOKEN}, runner=leaky)
+    with pytest.raises(sb.BackendError, match=r"WALLET_ERROR.*\[redacted\]") as e:
+        b.make(AGENT, "evm")
+    assert all(p not in str(e.value) for p in MM_TOKEN.split(":"))
+    quiet = sb.MetaMaskBackend("m", {}, {"cli_token": MM_TOKEN}, runner=lambda argv, **kw: subprocess.CompletedProcess(
+        argv, 1, stdout="", stderr=f"crash near {MM_TOKEN}"))
+    with pytest.raises(sb.BackendError, match="no answer") as e:
+        quiet.make(AGENT, "evm")
+    assert MM_TOKEN.split(":")[0] not in str(e.value)
+
+
+def test_metamask_without_mm_says_how_to_get_it(tmp_path):
+    b = sb.make_backend("m", "metamask", {"mm": str(tmp_path / "no-mm-here")})
+    with pytest.raises(sb.BackendError, match="@metamask/agent-wallet"):
+        b.make(AGENT, "evm")
 
 
 # ─── a password manager, read by the signer ───────────────────────────────────

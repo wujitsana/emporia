@@ -79,7 +79,9 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
       ROLE=cmd:…`, the vault token the signer's;
     - `aws-kms`: secp256k1 wallets; Ed25519 identity and Solana keys, payloads ≤ 4096 bytes;
     - `privy`: EVM typed data and Solana transactions;
-    - `cdp`: EVM typed data.
+    - `cdp`: EVM typed data;
+    - `metamask` (11-06): EVM typed data through MetaMask's `mm` command, Guard Mode only, with limits
+      of its own (chains, token contracts, value).
 
     The KMS, hosted-wallet and vault back ends are tested against fakes only; none is tried live yet.
   - **Agent-side `cmd:` key sources** are now the not-recommended path (catalog known issue

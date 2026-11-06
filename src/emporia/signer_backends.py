@@ -18,7 +18,7 @@ A back end decides nothing; it does what it says it can, by **kind**:
 A back end asked for something outside its capabilities is refused with a
 reason (`Unsupported`), never quietly done another way.
 
-Three back ends:
+The back ends:
 * `local` — the signer's own 0600 files. The default for every role, and the
   only one that opens sealed messages: wallet providers sign, they don't decrypt.
 * `vault` — a password manager (1Password, Bitwarden): the signer reads each key
@@ -31,12 +31,15 @@ Three back ends:
   Solana transactions (`signTransaction`), each under the provider's policy.
 * `cdp` — a Coinbase Developer Platform server wallet: EVM typed data
   (`/v2/evm/accounts/{address}/sign/typed-data`) under CDP's policy engine.
+* `metamask` — a MetaMask Agent Wallet server wallet, through its `mm`
+  command (`mm wallet sign-typed-data`): EVM typed data, in Guard Mode, under
+  this back end's own limits (chains, token contracts, value) as well.
 
 A hosted wallet's own policy is a second set of limits the agent cannot change.
 Neither holds the identity key (no raw Ed25519 signing of Emporia's payloads)
 or opens messages.
 
-`aws-kms`, `privy` and `cdp` are tested against fakes, never against the live
+`aws-kms`, `privy`, `cdp` and `metamask` are tested against fakes, never against the live
 services: `LIVE_TESTED` says so, and `emporia signer backend` prints it.
 
 **Credentials** live in the signer's folder only (`backends/<name>.secret`,
@@ -55,10 +58,10 @@ ROLES = ("identity", "encryption", "evm", "svm")
 CAPABILITIES = ("identity", "open", "evm-typed-data", "evm-transaction", "solana", "make-keys")
 # What a role needs from the back end that holds it.
 ROLE_NEEDS = {"identity": "identity", "encryption": "open", "evm": "evm-typed-data", "svm": "solana"}
-TYPES = ("local", "vault", "aws-kms", "privy", "cdp")
-# In the signer, vault is tested with fake `op` and `bw` commands on PATH; the others against fakes of
-# their APIs. None of the four has been tried against the real service from the signer yet.
-LIVE_TESTED = {"local": True, "vault": False, "aws-kms": False, "privy": False, "cdp": False}
+TYPES = ("local", "vault", "aws-kms", "privy", "cdp", "metamask")
+# In the signer, vault is tested with fake `op` and `bw` commands on PATH, metamask with a fake `mm`;
+# the others against fakes of their APIs. None has been tried against the real service from the signer yet.
+LIVE_TESTED = {"local": True, "vault": False, "aws-kms": False, "privy": False, "cdp": False, "metamask": False}
 NOT_LIVE_NOTE = "not yet tested against the live service"
 
 
@@ -744,6 +747,262 @@ class CdpBackend(_Hosted):
         return to_checksum_address(self._request("POST", "/v2/evm/accounts", body)["address"])
 
 
+# ─── MetaMask Agent Wallet, through its `mm` command ─────────────────────────
+
+# What Emporia signs as typed data: x402's EIP-3009 and an escrow hold's.
+MM_PRIMARY_TYPES = ("TransferWithAuthorization", "ReceiveWithAuthorization")
+# The `mm` error codes that mean its session is gone (docs: Error codes, AuthError / WalletError).
+MM_SIGNED_OUT = frozenset({"AUTH_FAILED", "AUTH_ERROR", "TOKEN_INVALID", "TOKEN_REFRESH_FAILED", "NO_AUTH_TOKEN"})
+# The codes that are MetaMask's own policy saying no, or its person not saying yes in time.
+MM_REFUSALS = {"TX_DENIED": "its person rejected it in the 2FA approval",
+               "TX_EXPIRED": "its 2FA approval expired",
+               "JOB_TIMEOUT": "it waited for its person's 2FA approval and none came"}
+
+
+class MetaMaskBackend(Backend):
+    """A MetaMask Agent Wallet server wallet (https://docs.metamask.io/agent-wallet,
+    CLI 7.2.0, checked 2026-11-06), through its `mm` command — MetaMask documents
+    no HTTP API, so the signer runs `mm` as its own user, never the agent's.
+
+    * **Signs:** `mm wallet sign-typed-data --chain-id N --payload JSON --wait
+      --json` → `data.signature`. The command signs with the account's *active*
+      wallet, so the signer selects the agent's (`mm wallet select ADDRESS`)
+      first, one request at a time; the signature is then checked against that
+      address, whatever `mm` was doing.
+    * **Makes:** `mm wallet create --name … --trading-mode guard --json` (keys in
+      MetaMask's TEE, never here). A wallet is named by its address.
+    * **Credentials:** the `mm` session of the signer's user (`mm login` and
+      `mm init --wallet server-wallet`, run by its person; `~/.metamask`). The
+      optional `cli_token` secret (`cliToken:cliRefreshToken`, from the
+      dashboard) signs `mm` in again when its session is gone, given in the
+      environment (`MM_CLI_TOKEN`), never on the command line.
+
+    Two layers of limits under the signer's own:
+    * **This back end's:** only typed data Emporia signs (`MM_PRIMARY_TYPES`), on
+      the chains in `chain_ids` (Base Sepolia by default), for the token contracts
+      in `verifying_contracts` (USDC on those chains by default; `any` for none),
+      for at most `max_value` base units. MetaMask's own outflow limit does not
+      count signatures (its docs, "Outflow policy: Limitations"), so this is
+      what bounds an authorization on the provider side.
+    * **MetaMask's:** the wallet must be in Guard Mode (allowlists, threat
+      scanning; checked before each first signature); a request outside its
+      policy waits for its person's 2FA approval, at most `wait_seconds` (60),
+      and comes back refused if none came.
+
+    Not used: its bring-your-own-wallet mode (the phrase would be handed to a
+    second program, and its policy 2FA is "coming soon"), raw transactions,
+    message signing, transfers, swaps, everything else `mm` does."""
+    type = "metamask"
+    capabilities = frozenset({"evm-typed-data", "make-keys"})
+    # One `mm` at a time per signer: select, then sign, with nothing between.
+    _LOCK: ClassVar[Any] = None
+
+    def __init__(self, name: str, settings: dict | None = None, secrets: dict | None = None, runner: Any = None):
+        super().__init__(name, dict(settings or {}), dict(secrets or {}))
+        self._runner = runner                       # tests: a fake in place of subprocess.run
+        self._modes: dict[str, float] = {}          # address → when Guard Mode was last seen
+        if MetaMaskBackend._LOCK is None:
+            import threading
+            MetaMaskBackend._LOCK = threading.Lock()
+
+    # ── its settings, read strictly ──────────────────────────────────────────
+    def _chain_ids(self) -> set[int]:
+        raw = self.settings.get("chain_ids") or "84532"
+        try:
+            return {int(x) for x in str(raw).replace(" ", "").split(",") if x}
+        except ValueError:
+            raise BackendError(f"the {self.name} back end's chain_ids are chain numbers, not {raw!r}") from None
+
+    def _contracts(self, chains: set[int]) -> set[str] | None:
+        raw = str(self.settings.get("verifying_contracts") or "").strip()
+        if raw.lower() == "any":
+            return None
+        if raw:
+            return {x.strip().lower() for x in raw.split(",") if x.strip()}
+        from emporia import networks
+        return {n.usdc.lower() for c, n in networks.NETWORKS.items()
+                if n.usdc and c.startswith("eip155:") and int(c.split(":")[1]) in chains}
+
+    def _wait(self) -> int:
+        try:
+            return max(1, min(600, int(self.settings.get("wait_seconds") or 60)))
+        except ValueError:
+            raise BackendError(f"the {self.name} back end's wait_seconds is a number of seconds") from None
+
+    # ── `mm` ──────────────────────────────────────────────────────────────────
+    def _redact(self, text: str) -> str:
+        for value in self.secrets.values():
+            for part in {str(value), *str(value).split(":")}:
+                if len(part) >= 8:
+                    text = text.replace(part, "[redacted]")
+        return text
+
+    def _mm(self, *args: str, env: dict | None = None, timeout: int = 60) -> tuple[dict, list[dict]]:
+        """Run `mm ARGS --json`; (its result, its notices). Machine output is a JSON
+        object per line, the result last; anything else on stdout is ignored."""
+        import os
+        import subprocess
+        run = self._runner or subprocess.run
+        # Its own environment, never a phrase or token it did not ask for.
+        base = {k: v for k, v in os.environ.items() if k not in ("MM_MNEMONIC", "MM_PASSWORD", "MM_CLI_TOKEN")}
+        try:
+            out = run([self.settings.get("mm") or "mm", *args, "--json"], capture_output=True, text=True,
+                      timeout=timeout, env={**base, **(env or {})})
+        except FileNotFoundError:
+            raise BackendError(f"the {self.name} back end needs MetaMask's mm command where the signer runs "
+                               "(npm install -g @metamask/agent-wallet; Node.js 22.18 or later)") from None
+        except subprocess.TimeoutExpired:
+            raise BackendError(f"MetaMask's mm did not answer in {timeout} s") from None
+        objects = []
+        for line in (out.stdout or "").splitlines():
+            line = line.strip()
+            if line.startswith("{"):
+                try:
+                    objects.append(json.loads(line))
+                except ValueError:
+                    continue
+        if not objects and (text := out.stdout or "").find("{") != -1:
+            try:
+                objects.append(json.loads(text[text.find("{"): text.rfind("}") + 1]))
+            except ValueError:
+                pass
+        notices = [o["_notice"] for o in objects if isinstance(o.get("_notice"), dict)]
+        results = [o for o in objects if "_notice" not in o]
+        if not results:
+            raise BackendError(f"MetaMask's mm gave no answer (exit {out.returncode}): "
+                               + self._redact((out.stderr or "").strip()[:200]))
+        return results[-1], notices
+
+    @staticmethod
+    def _error(res: dict) -> tuple[str, str]:
+        err = res.get("error")
+        if isinstance(err, dict):
+            return str(err.get("code") or ""), str(err.get("message") or "")
+        return str(res.get("code") or ""), str(err or res.get("message") or "")
+
+    def _call(self, *args: str, timeout: int = 60) -> tuple[dict, list[dict]]:
+        """`mm`, signed in again once with `cli_token` if its session is gone; a
+        refusal raised with MetaMask's own code and words."""
+        res, notices = self._mm(*args, timeout=timeout)
+        code, _ = self._error(res)
+        if not res.get("ok", "error" not in res) and code in MM_SIGNED_OUT and self.secrets.get("cli_token"):
+            login, _ = self._mm("login", env={"MM_CLI_TOKEN": self.secrets["cli_token"]})
+            if login.get("ok", "error" not in login):
+                res, notices = self._mm(*args, timeout=timeout)
+        if not res.get("ok", "error" not in res):
+            code, message = self._error(res)
+            if code in MM_SIGNED_OUT:
+                raise BackendError(f"MetaMask's mm is not signed in as the signer's user ({code}): its person "
+                                   "runs mm login there")
+            why = MM_REFUSALS.get(code) or message or "no reason given"
+            held = next((n for n in notices if n.get("kind") == "AWAITING_MFA"), None)
+            raise BackendError(f"MetaMask refused ({code or 'error'}): {self._redact(why)}"
+                               + (f" (request {held.get('pollingId')})" if held and held.get("pollingId") else ""))
+        return res, notices
+
+    # ── the key work ─────────────────────────────────────────────────────────
+    def public(self, agent_id: str, role: str, ref: str = "") -> str:
+        if role != "evm":
+            raise Unsupported(f"the {self.name} back end (metamask) holds EVM wallet keys only, not {role}")
+        if not ref:
+            raise BackendError(f"the {self.name} back end needs the MetaMask wallet's address for this key")
+        from eth_utils import is_address, to_checksum_address
+        if not is_address(ref):
+            raise BackendError(f"{ref!r} is not an EVM address (a MetaMask wallet is named by its address)")
+        return to_checksum_address(ref)
+
+    def _limits(self, full_message: dict) -> int:
+        """This back end's own limits; the chain id the request is for."""
+        primary = str(full_message.get("primaryType") or "")
+        if primary not in MM_PRIMARY_TYPES:
+            raise Unsupported(f"the {self.name} back end (metamask) signs {' and '.join(MM_PRIMARY_TYPES)} "
+                              f"only, not {primary or 'untyped data'}")
+        domain = full_message.get("domain") or {}
+        try:
+            chain = int(domain["chainId"])
+        except (KeyError, TypeError, ValueError):
+            raise BackendError("MetaMask signs typed data for one chain; this names none") from None
+        chains = self._chain_ids()
+        if chain not in chains:
+            raise BackendError(f"the {self.name} back end signs on chain {', '.join(map(str, sorted(chains)))} "
+                               f"only, not {chain} (its chain_ids)")
+        contracts = self._contracts(chains)
+        if contracts is not None and str(domain.get("verifyingContract", "")).lower() not in contracts:
+            raise BackendError(f"the {self.name} back end signs for its token contracts only, not "
+                               f"{domain.get('verifyingContract')} (its verifying_contracts)")
+        if (cap := self.settings.get("max_value")) not in (None, ""):
+            value = int((full_message.get("message") or {}).get("value", 0))
+            if value > int(cap):
+                raise BackendError(f"the {self.name} back end signs at most {cap} base units, not {value} "
+                                   "(its max_value)")
+        return chain
+
+    def _guarded(self, address: str) -> None:
+        """MetaMask's own layer is there only in Guard Mode: refuse a wallet in Beast Mode."""
+        import time
+        if time.monotonic() - self._modes.get(address, -1e9) < 300:
+            return
+        res, _ = self._call("wallet", "trading-mode", "get", "--address", address)
+        found: list[str] = []
+
+        def walk(v: Any) -> None:
+            if isinstance(v, dict):
+                for x in v.values():
+                    walk(x)
+            elif isinstance(v, list):
+                for x in v:
+                    walk(x)
+            elif isinstance(v, str) and v.lower() in ("guard", "beast"):
+                found.append(v.lower())
+        walk(res.get("data"))
+        if "beast" in found or not found:
+            raise BackendError(f"the MetaMask wallet {address} is " + ("in Beast Mode" if found else
+                               "in no trading mode mm would say") + ": its allowlists are not there, so it "
+                               "signs nothing for Emporia — its person runs mm wallet trading-mode set guard")
+        self._modes[address] = time.monotonic()
+
+    def sign_typed_data(self, agent_id: str, full_message: dict, ref: str = "") -> bytes:
+        self.require("evm-typed-data", "sign EIP-712 typed data")
+        address = self.public(agent_id, "evm", ref)
+        chain = self._limits(full_message)
+        payload = json.dumps(_json_ready({"domain": full_message["domain"], "types": full_message["types"],
+                                          "primaryType": full_message["primaryType"],
+                                          "message": full_message["message"]}), separators=(",", ":"))
+        message = full_message.get("message") or {}
+        intent = (f"Emporia {agent_id}: {full_message['primaryType']} of {message.get('value')} to "
+                  f"{message.get('to')}")[:200]
+        wait = self._wait()
+        with self._LOCK:
+            self._guarded(address)
+            self._call("wallet", "select", address)
+            res, _ = self._call("wallet", "sign-typed-data", "--chain-id", str(chain), "--payload", payload,
+                                "--wait", "--wallet-timeout", str(wait), "--intent", intent, timeout=wait + 30)
+        try:
+            sig = bytes.fromhex(str((res.get("data") or {})["signature"]).removeprefix("0x"))
+        except (KeyError, TypeError, ValueError, AttributeError):
+            raise BackendError("MetaMask's answer carried no signature") from None
+        if len(sig) != 65 or recover_typed_data(full_message, sig) != address:
+            raise BackendError("MetaMask's signature is not from the wallet it named")
+        return sig
+
+    def make(self, agent_id: str, role: str) -> str:
+        self.require("make-keys", "make keys")
+        if role != "evm":
+            raise Unsupported(f"the {self.name} back end (metamask) makes EVM wallets only, not {role}")
+        import re
+        name = re.sub(r"[^A-Za-z0-9-]", "-", f"emporia-{agent_id}")[:36]
+        with self._LOCK:
+            res, _ = self._call("wallet", "create", "--chain-namespace", "evm", "--name", name,
+                                "--trading-mode", "guard")
+        data = res.get("data") or {}
+        address = data.get("address") or (data.get("wallet") or {}).get("address") if isinstance(data, dict) else None
+        from eth_utils import is_address, to_checksum_address
+        if not address or not is_address(address):
+            raise BackendError("MetaMask's answer carried no wallet address: make it with mm wallet create, then "
+                               f"emporia signer backend {self.name} use {agent_id} evm ADDRESS")
+        return to_checksum_address(address)
+
+
 def _p256_key(b64_der: str, what: str):
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import ec
@@ -797,9 +1056,12 @@ def _jwt(header: dict, claims: dict, secret: str, what: str, es256: bool = False
 
 # What `emporia signer backend NAME add TYPE …` accepts; the rest is refused.
 SETTINGS = {"vault": (), "aws-kms": ("region", "profile"), "privy": ("app_id", "policy_id", "owner_id", "base_url"),
-            "cdp": ("api_key_id", "policy_id", "base_url")}
-SECRETS = {"vault": ("op_service_account_token", "bw_session"), "aws-kms": (), "privy": ("app_secret", "authorization_key"), "cdp": ("api_key_secret", "wallet_secret")}
-_CLASSES = {"local": LocalBackend, "vault": VaultBackend, "aws-kms": KmsBackend, "privy": PrivyBackend, "cdp": CdpBackend}
+            "cdp": ("api_key_id", "policy_id", "base_url"),
+            "metamask": ("chain_ids", "verifying_contracts", "max_value", "wait_seconds", "mm")}
+SECRETS = {"vault": ("op_service_account_token", "bw_session"), "aws-kms": (), "privy": ("app_secret", "authorization_key"),
+           "cdp": ("api_key_secret", "wallet_secret"), "metamask": ("cli_token",)}
+_CLASSES = {"local": LocalBackend, "vault": VaultBackend, "aws-kms": KmsBackend, "privy": PrivyBackend, "cdp": CdpBackend,
+            "metamask": MetaMaskBackend}
 # Tests put fakes here: {back end name: Backend}. Never used outside tests.
 OVERRIDES: dict[str, Backend] = {}
 

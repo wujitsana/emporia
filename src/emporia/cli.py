@@ -2174,6 +2174,8 @@ def _signer_backend(args: argparse.Namespace) -> int:
       emporia signer backend NAME add aws-kms region=R [profile=P]
       emporia signer backend NAME add privy app_id=ID [policy_id=P] [owner_id=O]
       emporia signer backend NAME add cdp api_key_id=ID [policy_id=P]
+      emporia signer backend NAME add metamask [chain_ids=84532] [verifying_contracts=0x…|any] [max_value=N]
+                                                          its mm session (mm login, as the signer's user)
       emporia signer backend NAME add vault           a password manager (its token asked, hidden)
       emporia signer backend NAME use AGENT ROLE REF      a key already there (a KMS key id, a wallet id)
       emporia signer backend NAME make AGENT ROLE         a new key made there
@@ -2189,7 +2191,7 @@ def _signer_backend(args: argparse.Namespace) -> int:
         print("The signer's back ends (signer-phase-2.md § 3.1):")
         for line in _backends_lines():
             print(line)
-        print("Add: emporia signer backend NAME add vault|aws-kms|privy|cdp … · route a key: emporia signer backend NAME "
+        print("Add: emporia signer backend NAME add vault|aws-kms|privy|cdp|metamask … · route a key: emporia signer backend NAME "
               "use|make AGENT ROLE")
         return 0
     if not _persons_terminal():
@@ -2212,7 +2214,7 @@ def _signer_backend(args: argparse.Namespace) -> int:
             return 0
         if verb == "add":
             if len(rest) < 2:
-                print("signer backend: NAME add vault|aws-kms|privy|cdp key=value …")
+                print("signer backend: NAME add vault|aws-kms|privy|cdp|metamask key=value …")
                 return 1
             type_ = rest[1]
             pairs = dict(p.split("=", 1) for p in rest[2:] if "=" in p)

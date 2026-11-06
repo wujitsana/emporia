@@ -4747,6 +4747,20 @@ What an agent's process can do once a takeover has it, behind a signer that hold
 Not tested against the live services: AWS KMS, Privy, Coinbase Developer Platform, 1Password and
 Bitwarden were reached only through fakes; `emporia signer backend` says so beside each.
 
+### 11-06: the MetaMask Agent Wallet back end
+
+| Finding | Fix |
+|---|---|
+| MetaMask's own daily outflow limit does not count signatures (its docs, "Outflow policy: Limitations"), and every payment Emporia makes through it is a signature (EIP-3009, an escrow hold's ReceiveWithAuthorization). Its server-side limit would not bound x402 payments | The back end has limits of its own, after the signer's and before `mm` is asked: those two primary types only, the chains in `chain_ids` (Base Sepolia by default), the token contracts in `verifying_contracts` (USDC on those chains by default), at most `max_value` (`tests/test_signer_backends.py::test_metamask_back_end_limits_of_its_own`) |
+| In Beast Mode a MetaMask wallet keeps only threat scanning: no allowlists, no outflow limit | A wallet is made in Guard Mode, and one whose mode `mm` reports as Beast, or does not report, signs nothing (`::test_metamask_refuses_beast_mode_and_a_signature_from_another_key`) |
+| `mm wallet sign-typed-data` signs with the account's *active* wallet and takes no address: two agents' requests, or its person using `mm` meanwhile, could sign with the wrong wallet | Select and sign run under one lock, and the signature is recovered and checked against the agent's address before use (same test) |
+| `mm` keeps its session in the signer user's `~/.metamask`; an agent on the same user could run `mm` itself, past every limit | The key guard blocks the `mm` commands that sign, move money or change its wallets and policy, `~/.metamask`, and `MM_CLI_TOKEN`, `MM_MNEMONIC`, `MM_PASSWORD`, and hides their values in tool results (`tests/test_signer_phase2.py::test_the_key_guard_keeps_an_agent_from_the_signers_back_ends_and_backups`). The wall is the signer as its own user |
+| The CLI token (`cliToken:cliRefreshToken`) could reach a command line, a log or a refusal | It is asked hidden, kept in `backends/<name>.secret` (0600), given to `mm login` only in its environment, removed from the environment of every other `mm` call, and redacted from any `mm` error passed on (`::test_metamask_session_token_goes_in_the_environment_and_nowhere_else`) |
+
+Not tested against the live service: reached only through a fake `mm`. Its JSON field names for
+`wallet create`, `trading-mode get` and errors are not in its docs and are marked unconfirmed in
+signer-phase-2.md § 3.1.
+
 
 ## P298 — the 11-05 security audit
 

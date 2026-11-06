@@ -320,9 +320,12 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
   - AWS KMS: wallets, the identity key up to 4096 bytes, Solana;
   - Privy: EVM typed data, Solana transactions;
   - Coinbase Developer Platform: EVM typed data;
-  - a password manager read by the signer.
+  - a password manager read by the signer;
+  - MetaMask Agent Wallet (11-06): EVM typed data through its `mm` command, Guard Mode only, with
+    limits of the back end's own because MetaMask's outflow limit does not count signatures; its
+    "bring your own phrase" mode is not used (signer-phase-2.md § 3.1).
 
-  Next: each tried live on testnet, then MetaMask Agent Wallet and Phantom checked the same way.
+  Next: each tried live on testnet, then Phantom checked the same way.
   Solana Pay is a payment rail for a separate wallet plugin, not a signer back end.
 - **Encrypting the phrase and keys at rest** with a passphrase (today: 0600 files, or linked to
   a password manager since P162).

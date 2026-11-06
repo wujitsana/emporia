@@ -43,8 +43,9 @@ in § 9.
   - **Backup:** `emporia signer backup NAME --out PATH` seals the keys the signer holds under a
     passphrase (scrypt, AES-256-GCM); `emporia signer restore NAME --from PATH`. Keys a back end
     holds are named in it, never copied.
-- **Built (§ 3.1, P299):** the back-end interface (`src/emporia/signer_backends.py`), with five back
-  ends: local, a password manager, AWS KMS, Privy and Coinbase Developer Platform. Configured with
+- **Built (§ 3.1, P299):** the back-end interface (`src/emporia/signer_backends.py`), with six back
+  ends: local, a password manager, AWS KMS, Privy, Coinbase Developer Platform and (11-06) MetaMask
+  Agent Wallet. Configured with
   `emporia signer backend`, by the person only.
 - **Phase 1's hand sittings** (manual-testing.md "Signer" and "Signer apart") include trying
   `--identity`, `--make` and each back end.
@@ -145,6 +146,7 @@ something it cannot do is refused with a reason (`Unsupported`), never done anot
 | `aws-kms` | wallet keys (`ECC_SECG_P256K1`), the identity key and Solana keys (`ECC_NIST_EDWARDS25519`, `ED25519_SHA_512`) | `identity` (payloads ≤ 4096 bytes), `evm-typed-data`, `evm-transaction`, `solana`, `make-keys` | a fake KMS client; **not yet tested against the live service** |
 | `privy` (server wallets) | EVM and Solana wallets | `evm-typed-data`, `solana`, `make-keys` | a fake API; **not yet tested against the live service** |
 | `cdp` (Coinbase Developer Platform server wallets, v2) | EVM accounts | `evm-typed-data`, `make-keys` | a fake API; **not yet tested against the live service** |
+| `metamask` (MetaMask Agent Wallet server wallets, through its `mm` command) | EVM wallets, in Guard Mode | `evm-typed-data` (EIP-3009 and ReceiveWithAuthorization only), `make-keys` | a fake `mm` on PATH; **not yet tested against the live service** |
 
 **Opening** stays with the keys the signer itself holds: local files, or a key it read from a
 password manager. Wallet providers and KMS sign; they don't decrypt (KMS has no X25519).
@@ -167,12 +169,12 @@ is the signer's, so an agent's profile names no vault at all. This is the recomm
 password manager. An agent-side `cmd:` key source still works but is not recommended
 (docs/catalog-compliance.md).
 
-#### The hosted wallets: two providers, what each signs
+#### The hosted wallets: three providers, what each signs
 
-Both were checked against their current public API docs on 11-05. Both sign the EIP-712 that x402
-and escrow holds need, and both put a policy engine of their own in front of it. The docs fetches
-were the only network calls: the adapters are tested against fakes of these APIs, with no account
-or credential.
+Privy and CDP were checked against their current public API docs on 11-05, MetaMask on 11-06. All
+three sign the EIP-712 that x402 and escrow holds need, and each puts a policy engine of its own in
+front of it. The docs fetches were the only network calls: the adapters are tested against fakes of
+these APIs (and of MetaMask's `mm` command), with no account or credential.
 
 **Privy server wallets** (`type privy`)
 - **Calls:**
@@ -215,6 +217,74 @@ or credential.
   message's fields). The exact criteria schema should be confirmed in its portal when the first live
   test is set up.
 - **Not used:** its Solana accounts (only EVM typed data is wired); EVM transactions.
+
+**MetaMask Agent Wallet server wallets** (`type metamask`, added 11-06)
+- **Checked 2026-11-06** against its docs for CLI 7.2.0: https://docs.metamask.io/agent-wallet (the
+  whole set as one file: https://docs.metamask.io/llms-agent-wallet-full.txt), and its own agent
+  skill (https://github.com/MetaMask/agent-skills, `skills/metamask-agent-wallet`: `SKILL.md`,
+  `references/signing.md`, `references/wallet.md`, `scripts/x402_pay.py`).
+- **What it is:** a command, `mm` (`npm install -g @metamask/agent-wallet`, Node.js 22.18 or later),
+  over MetaMask's wallet service. Its docs describe no HTTP API, no API keys and no request signing:
+  the service is reached only through `mm`. In server-wallet mode the keys are kept in a trusted
+  execution environment on MetaMask's side.
+- **Can it pay?** Yes. `mm wallet sign-typed-data --chain-id N --payload JSON` signs EIP-712 typed
+  data (`domain`, `types`, `primaryType`, `message`; `CHAIN_ID_MISMATCH` if the domain's chain differs).
+  Its own x402 helper signs EIP-3009 `TransferWithAuthorization` this way, and its docs say "Guard
+  Mode permits EIP-712 signing". Base Sepolia (84532) is in its testnet list. Wallets are made with
+  `mm wallet create` (up to 100 per project).
+- **Calls** (each with `--json`; the signer runs them as its own user):
+  - `mm wallet create --chain-namespace evm --name emporia-AGENT --trading-mode guard` makes a
+    wallet → `data.address`; it is named by its address;
+  - `mm wallet trading-mode get --address A` before the first signature (then every 5 minutes): a
+    wallet in Beast Mode, or one whose mode `mm` does not say, is refused;
+  - `mm wallet select A`, then `mm wallet sign-typed-data --chain-id N --payload JSON --wait
+    --wallet-timeout S --intent TEXT` → `data.signature`. `sign-typed-data` takes no wallet address:
+    it signs with the account's active wallet, so the two run under one lock, and the signature is
+    checked against A afterwards.
+- **Credentials (signer side):** the `mm` session of the signer's user, made by its person with
+  `mm login` and `mm init --wallet server-wallet --mode guard` (session in `~/.metamask/session.json`,
+  which its docs say has restricted permissions). Optionally the `cli_token` secret
+  (`cliToken:cliRefreshToken`, from the dashboard's browser sign-in), asked hidden and kept in
+  `backends/<name>.secret`. When `mm` says it is signed out, the back end signs it in once with that
+  token in `MM_CLI_TOKEN`, never on the command line, and retries.
+- **Its policy, the second layer, and why this back end adds a third:**
+  - **MetaMask's (server-side):** in Guard Mode, network, address and token-recipient allowlists, a
+    rolling 24-hour outflow limit and threat scanning. A request outside its policy waits as
+    `AWAITING_MFA` for its person's 2FA approval (email or MetaMask Mobile). Raising a limit or
+    switching to Beast Mode also needs that approval; tightening applies at once. The back end waits
+    at most `wait_seconds` (60, at most 600) and then reports MetaMask's refusal (`TX_DENIED`,
+    `TX_EXPIRED`, `JOB_TIMEOUT`) with its request id.
+  - **Its gap:** its docs say signatures "are not included in the outflow calculation as of now"
+    ("Outflow policy: Limitations"). An EIP-3009 authorization is a signature, so MetaMask's daily
+    limit does not count x402 payments or escrow holds.
+  - **This back end's own limits**, after the signer's and before `mm` is asked: only
+    `TransferWithAuthorization` and `ReceiveWithAuthorization`; only the chains in `chain_ids`
+    (84532 by default); only the token contracts in `verifying_contracts` (by default the USDC that
+    `networks.py` knows on those chains; `any` turns the check off); at most `max_value` base units if
+    set. These are settings in the signer's folder, set by its person.
+- **Not confirmed in its docs** (to settle in the first live sitting):
+  - the JSON fields of `wallet create` (`data.address` is assumed; if it isn't there, the back end
+    says so and the person runs `use AGENT evm ADDRESS`) and of `trading-mode get` (the mode is
+    looked for as the value `guard` or `beast`; anything else is refused);
+  - the error shape (`{ok: false, error: {code, message}}` is assumed; the codes are the documented
+    ones);
+  - whether Guard Mode's allowlists or threat scanning look at typed data at all, and so whether an
+    escrow hold's `ReceiveWithAuthorization` (whose `to` is the escrow's collector, not the payee)
+    passes without a 2FA hold;
+  - whether `MM_CLI_TOKEN` is read by `mm login` without `--token` (the docs list it as that flag's
+    environment variable).
+- **Not used:**
+  - its "bring your own wallet" mode: you give `mm` a BIP-39 phrase (`MM_MNEMONIC`), which it keeps
+    locally, encrypted if you set a password. That would hand the phrase to a second program on the
+    signer's machine, and its docs label policy 2FA for that mode "coming soon", so it adds no
+    server-side limit over the local back end;
+  - message signing, raw transactions (Tempo is refused there, said so), transfers, swaps and the rest
+    of `mm`;
+  - the identity key and opening messages.
+- **The key guard** blocks an agent from the `mm` commands that sign, move money or change its wallets
+  and policy, from `~/.metamask`, and from `MM_CLI_TOKEN`, `MM_MNEMONIC` and `MM_PASSWORD`. On a
+  shared user that is a speed bump; the wall is the signer as its own user, whose `~/.metamask` the
+  agent cannot read.
 
 Every hosted signature is checked in the signer against the wallet's own address before it is used:
 a provider answering with another key's signature is refused.
@@ -369,5 +439,5 @@ and it loses everything new once it is gone.
    - a new manual check: a simulated takeover (the agent's process given a shell) finds no key file,
      and is refused when it tries a payout address or a home that isn't allowed, while its person
      gets the alert.
-6. **Back ends (built, P299):** the interface and five back ends (§ 3.1); the hosted ones, KMS and
+6. **Back ends (built, P299):** the interface and six back ends (§ 3.1); the hosted ones, KMS and
    the password manager wait for their first live test (manual-testing.md sitting 7, "Signer phase 2 and its back ends").
