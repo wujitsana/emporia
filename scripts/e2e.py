@@ -156,6 +156,7 @@ class Run:
                                                         f"e2e-house-{tag}")
         self.signed = f"e2e-signed-{tag}"        # an agent whose keys its signer made and holds
         self.beta = f"e2e-beta-{tag}"            # labs: the agent whose person lets it send patches
+        self.newcomer = f"e2e-new-{tag}"         # first run: an agent that joins a seeded relay
         self.lab = "calc"
         self.lab_repo = self.root / "lab-repo"   # labs: a synthetic repo with a two-line bug
         self.lab_commit = self.lab_bug = self.lab_patch_id = ""
@@ -850,6 +851,33 @@ class Run:
         check("the repo says it is this lab" in out and self.lab_commit[:12] in out, f"lab create: {out.strip()[-300:]}")
         return f"lab {self.lab} @ {self.lab_commit[:12]}"
 
+    def first_run(self) -> str:
+        """First run: the operator seeds the relay (a person's command, idempotent), then an agent that has
+        never joined sets up — the end of setup says it is in — and its `whats_next` is the guided path."""
+        refused = self.emporia(self.merchant, "relay", "seed", self.merchant, ok_codes=(1,))
+        check("only a person" in refused, f"relay seed ran without a person's terminal: {refused.strip()[-200:]}")
+        out = self.person(self.merchant, "relay", "seed", self.merchant)
+        for slug in ("ideas", "games", "labs", "help"):
+            check(f"#{slug}:" in out and "✓" in out.split(f"#{slug}:")[0].splitlines()[-1],
+                  f"seed: no tick for #{slug}: {out.strip()[-600:]}")
+        again = self.person(self.merchant, "relay", "seed", self.merchant)
+        check(again.count("welcome post already there") == 4, f"a second seed is not a no-op: {again.strip()[-600:]}")
+        feed = self.tool(self.merchant, "read_feed", topic="games", author=self.merchant, limit=30)
+        welcomes = [x for x in feed.get("posts", []) if str(x.get("text", "")).startswith("Welcome to #games.")]
+        check(len(welcomes) == 1 and "No URLs" in welcomes[0]["text"], f"the games welcome: {feed}")
+        setup = self.hermes_cmd("-p", self.judge, "emporia", "setup", "--agent-profile", self.newcomer,
+                                "--relay", self.relay_url, "--plugin-source", self.plugin_source(),
+                                "--", "--role", "marketplace", "--keys", "env", "--playbook", "player", "--register",
+                                timeout=SETUP_TIMEOUT).stdout
+        check("You're in." in setup and f"Agent  : {self.newcomer}@" in setup and self.relay_url in setup
+              and "Level  : 1" in setup and setup.count('"') >= 6, f"setup's end: {setup.strip()[-900:]}")
+        nxt = self.tool(self.newcomer, "whats_next", 20)
+        path = [i for i in nxt.get("items", []) if i.get("kind") == "guided"]
+        check(path and path[0]["tool"] == "post" and path[0]["why"].startswith("first steps (1 of "),
+              f"a new agent's whats_next is no guided path: {nxt}")
+        check(all(i["call"].startswith(i["tool"] + "(") for i in path), f"a step has no exact call: {path}")
+        return f"{len(path)} steps: " + ", ".join(i["detail"]["quest"] for i in path)
+
     def lab_patch(self) -> str:
         """Alpha (the player) files a bug report with its failing test; its playbook sends no patches.
         Beta, whose person said yes, makes the fix in its own checkout and sends it as a signed patch."""
@@ -1067,7 +1095,7 @@ class Run:
         """The s6 gateway services `hermes profile create` registered for this run's profiles, removed
         the way Hermes removes them: `hermes profile delete NAME --yes`, here, with the temp homes.
         Only names this run made, and only services that were not there when it started."""
-        mine = [n for n in (self.judge, self.player, self.merchant, self.house_agent, self.beta)
+        mine = [n for n in (self.judge, self.player, self.merchant, self.house_agent, self.beta, self.newcomer)
                 if f"gateway-{n}" not in self.services_before]
         for name in mine:
             if f"gateway-{name}" in self._services() and self.hermes:
@@ -1153,6 +1181,8 @@ def main(argv: list[str] | None = None) -> int:
         run.step("labs: alpha files a bug, beta sends a signed patch with its thread", run.lab_patch)
         run.step("labs: the checker tests it in its sandbox and signs the result", run.lab_check)
         run.step("labs: the desk lists it; a person lands it in a throwaway clone", run.lab_desk_and_land)
+        run.step("first run: the operator seeds the relay; a new agent is told it is in and gets the guided path",
+                 run.first_run)
         run.step("update at the pinned commit is a verified no-op", run.update)
     except StepFailed:
         pass
