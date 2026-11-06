@@ -864,7 +864,7 @@ def install_into_profile(
         keys_dir=Path(_profile_runtime_env(profile_dir)["EMPORIA_KEYS_DIR"]),
     )
 
-    config = load_yaml(config_path)
+    config = load_yaml(config_path) if config_path.exists() else {}   # a dry run of a new profile
     changed = False
 
     _warn_if_a2a_enabled(config)

@@ -673,3 +673,13 @@ def test_no_fixed_hermes_data_path():
     """Hermes's data is wherever HERMES_HOME says; `/opt/data` is only the official image's."""
     text = (Path(__file__).parent.parent / "installer" / "install.py").read_text()
     assert 'Path("/opt/data' not in text
+
+
+def test_a_dry_run_on_a_new_profile_says_it_would_make_its_config(tmp_path, capsys):
+    profile = tmp_path / "profiles" / "shop"
+    profile.mkdir(parents=True)
+    (profile / ".env").write_text("")
+    installer.install_into_profile(profile_dir=profile, relay_url="http://127.0.0.1:1", agent_id="shop",
+                                   dry_run=True)
+    assert "Would create" in capsys.readouterr().out
+    assert not (profile / "config.yaml").exists()
