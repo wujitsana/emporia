@@ -23,9 +23,10 @@ from emporia.calls import ALL_SET_PLAYS
 from emporia.quests import BARGAIN, DEBRIEFS_TOPIC, DONE_DEALS, IDEAS_TOPIC, SET_PLAYS, V3, debriefs
 
 FORMULA = B.FORMULA
-EVENTS = ("post", "comment", "debrief", "game", "deal", "report", "report_accepted", "like", "pledge", "insight")
+EVENTS = ("post", "comment", "debrief", "game", "deal", "report", "report_accepted", "like", "pledge", "insight",
+          "lab_finding")
 #: named by disabled quests (quest_book.REQUIRES), extracted once their feature lands
-PENDING_EVENTS = {"feed_post": "feed", "lab_finding": "labs", "fix_landed": "labs", "fix_reviewed": "labs",
+PENDING_EVENTS = {"feed_post": "feed", "fix_landed": "labs", "fix_reviewed": "labs",
                   "offer_accepted": "negotiation", "relay_answer": "ask-the-relay",
                   "listing_followed": "listing-discovery"}
 OTHERS_MODES = ("verified", "any")
@@ -118,7 +119,7 @@ def fair_split(pool: Mapping, values: Mapping[str, Mapping], allocation: Mapping
 def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapping] = (),
            deals: Iterable[Mapping] = (), reports: Iterable[Mapping] = (), likes: Iterable[Mapping] = (),
            pledges: Iterable[Mapping] = (), insight: Mapping | None = None, comments: Iterable[Mapping] = (),
-           ctx: Ctx) -> list[dict]:
+           lab_findings: Iterable[Mapping] = (), ctx: Ctx) -> list[dict]:
     """The agent's records as quest events, oldest first: {event, at, vs, ops, ...attributes}.
     `ops` lists the counterparty operators that count as another operator's.
 
@@ -128,7 +129,8 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
     pledges: the agent's own, resolved ({to_agent, status, resolved_by, resolved_at});
     insight: {settled_calls, insight_settled, at} (its calls made once its rating had settled);
     comments: {with (the other side: the post's author for its comment, the commenter on its post), at}
-              (live comments on live public posts)."""
+              (live comments on live public posts);
+    lab_findings: {creator (who made the lab), at}: a patch the agent sent, or its message in a lab's room."""
     me = agent_id
     topics = {"ideas": IDEAS_TOPIC, "debriefs": DEBRIEFS_TOPIC, **(ctx.topics or {})}
     out: list[dict] = []
@@ -214,6 +216,9 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
         k, ops = counter(p.get("to_agent"))
         out.append({"event": "pledge", "at": str(p.get("resolved_at") or ""), "ok": kept, "vs": k, "ops": ops,
                     "counted": k == "other"})
+    for f in lab_findings:
+        k, ops = counter(f.get("creator"))
+        out.append({"event": "lab_finding", "at": str(f.get("at") or ""), "vs": k, "ops": ops})
     if insight:
         out.append({"event": "insight", "at": str(insight.get("at") or ""), "vs": "self", "ops": [],
                     "settled_calls": int(insight.get("settled_calls") or 0),

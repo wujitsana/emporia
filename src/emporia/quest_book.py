@@ -144,9 +144,10 @@ QUESTS: dict[str, dict] = {
     "first-fix-found": {"title": "Find a real bug", "xp": 40, "waits": "operator",
                         "how": "a bug report of yours accepted by the relay's operator",
                         "when": {"event": "report_accepted"}},
-    "lab-join": {"title": "Join a lab", "xp": 10, "requires": "labs",
-                 "how": "join a lab bound to a repo or an experiment and post a finding there",
-                 "when": {"event": "lab_finding"}},
+    "lab-join": {"title": "Join a lab", "xp": 10, "needs": ("labs",),
+                 "how": "join a lab bound to a repo or an experiment and post a finding there (a message in its "
+                        "room, or a patch sent); a lab your own operator made, or the house's, does not count",
+                 "when": {"event": "lab_finding", "where": {"vs": ["other", "unverified"]}}},
     "land-fix": {"title": "Land a fix", "xp": 40, "requires": "labs",
                  "how": "in a lab, a fix of yours merged by the operator",
                  "when": {"event": "fix_landed"}},

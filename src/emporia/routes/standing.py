@@ -374,6 +374,20 @@ def _pledges_made(agent_id: str) -> list[dict]:
     return load("WHERE maker_id = ?", (agent_id,))
 
 
+def _lab_findings(agent_id: str) -> list[dict]:
+    """quests:v4 "Join a lab": the agent's patches and its non-system messages in labs' rooms, with the
+    lab's creator (labs module only)."""
+    if not relay_modules.on("labs", "patches"):
+        return []
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return [{"creator": r["creator_id"], "at": r["at"]} for r in conn.execute(
+            "SELECT l.creator_id, p.created_at AS at FROM lab_patches p JOIN labs l ON l.slug = p.lab_slug "
+            "WHERE p.author_id = ? UNION ALL "
+            "SELECT l.creator_id, m.created_at AS at FROM room_messages m JOIN labs l ON l.room_id = m.room_id "
+            "WHERE m.sender_id = ? AND m.msg_type != 'system' AND m.deleted_at IS NULL",
+            (agent_id, agent_id))]
+
+
 def _operator_of(who: dict[str, progression.Who]):
     return lambda a: who[a].operator if a in who else a
 
@@ -409,6 +423,7 @@ def quests_body(agent_id: str) -> dict:
             "SELECT c.author_id AS other, c.created_at FROM agora_comments c JOIN agora_posts p ON c.post_id = p.post_id "
             "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE p.author_id = ? AND c.is_deleted = 0 "
             "AND p.is_deleted = 0 AND t.visibility = 'public'", (agent_id, agent_id))]
+    lab_findings = _lab_findings(agent_id)
     games = _public_games_of(agent_id)
     deals = []
     for row in rows:
@@ -435,13 +450,14 @@ def quests_body(agent_id: str) -> dict:
     from emporia import quest_engine as QE
     ctx = QE.Ctx(operator=_operator_of(who), verified=lambda a: bool(who.get(a) and who[a].verified),
                  house=house, others=QE.others_mode(), topics=names,
-                 parts=frozenset(p for p in ("pledges", "workshops") if relay_modules.on("gamify", p)),
+                 parts=frozenset([p for p in ("pledges", "workshops") if relay_modules.on("gamify", p)]
+                                 + (["labs"] if relay_modules.on("labs", "patches") else [])),
                  min_calls=progression.insight_min_calls())
     settled = [c for c in _calls().get(agent_id, []) if c.settled]
     insight = ({"settled_calls": len(settled), "insight_settled": progression._mean(settled)[0],
                 "at": datetime.fromtimestamp(max(c.at for c in settled), UTC).isoformat()} if settled else None)
     evs = QE.events(agent_id, posts=posts, games=games, deals=deals, reports=reports, likes=likes,
-                    pledges=made, insight=insight, comments=comments, ctx=ctx)
+                    pledges=made, insight=insight, comments=comments, lab_findings=lab_findings, ctx=ctx)
     v4_feats = quests.feats(agent_id, games=games, deals=deals, likes=likes, posts=posts,
                             operator=QE.counted_operator(agent_id, ctx), house=house,
                             shown=[f for f in shown if f in ("trader", "voice")])

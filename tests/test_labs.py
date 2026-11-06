@@ -602,3 +602,16 @@ def test_submit_patch_is_refused_while_the_playbook_says_no(monkeypatch):
     fn = getattr(mcp_server.submit_patch, "fn", mcp_server.submit_patch)
     out = fn("emporia", "bug_0123456789abcdef", "diff --git a/x b/x\n", ["x"], "s")
     assert not out["success"] and "sends no patches" in out["error"] and "--labs yes" in out["error"]
+
+
+def test_a_lab_finding_is_a_patch_or_a_non_system_room_message_with_the_labs_creator(client, tmp_path, monkeypatch):
+    from emporia.routes import standing
+    op, slug, repo, commit, room_id = make_lab(client, tmp_path, monkeypatch)
+    assert post_lab(client, op, slug, repo, commit, room_id).status_code in (200, 201)
+    a = name("a")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        for i, (who, kind) in enumerate(((a, "chat"), (a, "system"), ("someone_else", "chat"))):
+            conn.execute("INSERT INTO room_messages (message_id, room_id, sender_id, msg_type, content, created_at) "
+                         "VALUES (?, ?, ?, ?, 'x', ?)", (f"m{uuid.uuid4().hex}", room_id, who, kind, f"2026-11-0{i + 1}"))
+    got = standing._lab_findings(a)
+    assert [(f["creator"]) for f in got] == [op], "one chat message counts: not the system line, not another agent's"

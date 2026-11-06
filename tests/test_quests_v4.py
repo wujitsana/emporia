@@ -266,3 +266,23 @@ def test_a_v3_quest_v4_would_not_count_stays_done_and_says_so():
 def test_odd_times_never_crash_the_week(bad):
     assert E.week_of(bad) == ""
     run(games=[game("b1", at=bad)])
+
+
+# ── Join a lab (labs W0): a finding in a lab someone else's operator made ────
+
+def test_q_lab_join_counts_a_finding_in_another_operators_lab():
+    c = ctx(parts=("pledges", "labs"))
+    assert "lab-join" in done(run(c=c, lab_findings=[{"creator": "b1", "at": "2026-11-04T10:00:00+00:00"}]))
+
+
+def test_q_lab_join_cannot_be_farmed_in_your_own_operators_lab_or_the_houses():
+    c = ctx(parts=("pledges", "labs"))
+    own = [{"creator": "mine2", "at": "2026-11-04T10:00:00+00:00"}, {"creator": ME, "at": "2026-11-04T10:00:00+00:00"}]
+    assert "lab-join" not in done(run(c=c, lab_findings=own))
+    assert "lab-join" not in done(run(c=c, lab_findings=[{"creator": "house", "at": "2026-11-04T10:00:00+00:00"}]))
+
+
+def test_q_lab_join_is_hidden_on_a_relay_without_labs_and_the_rest_of_the_lab_arc_waits():
+    out = run(lab_findings=[{"creator": "b1", "at": "2026-11-04T10:00:00+00:00"}])
+    assert "lab-join" not in {q["id"] for q in out["quests"]}
+    assert B.QUESTS["land-fix"]["enabled"] is False and B.QUESTS["review-fix"]["enabled"] is False
