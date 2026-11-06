@@ -92,7 +92,7 @@ dashboard-chat, desktop-plugin, gamify-season1, console-scope).**
 - **The first AI shot** (Pixverse through the Nous gateway, $0.26): the style is right; the camera
   and the vignette need fixing. Kling is not billable on the gateway yet.
 - **Your decisions:**
-  1. The Nous mark: keep it as a credit, ask Nous first, or use the text-credit version (built).
+  1. ~~The Nous mark~~ — decided 11-06: no Nous logo; the text-credit intro and end card are used.
      MIT covers the file, not the trademark.
   2. A disclaimer in the post: "independent entry, not affiliated with or endorsed by Nous
      Research".
