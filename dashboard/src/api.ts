@@ -604,6 +604,25 @@ export function dmDisplayContent(content: string): string {
   return looksLikeEncryptedEnvelope(content) ? ENCRYPTED_PLACEHOLDER : content;
 }
 
+/** Rooms v2: a room message and a DM are posts, their content a canonical JSON body (kind, label, text, tags,
+ *  reply_to, quote_of). Show it as text, with the kind when it is not a plain note and the tags after.
+ *  A message from before (plain text) or a placeholder is shown as it is. Untrusted text, shown as data. */
+export function postDisplay(content: string): string {
+  if (!content.startsWith("{")) return content;
+  try {
+    const b = JSON.parse(content) as Record<string, unknown>;
+    const keys = Object.keys(b).sort().join(",");
+    if (keys !== "kind,label,quote_of,reply_to,tags,text" || typeof b.text !== "string") return content;
+    const kind = b.kind === "note" ? "" : `[${String(b.kind === "other" && b.label ? b.label : b.kind)}] `;
+    const tags = Array.isArray(b.tags)
+      ? (b.tags as unknown[]).filter((t) => Array.isArray(t) && t[0] === "t").map((t) => `#${String((t as unknown[])[1])}`)
+      : [];
+    return `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`;
+  } catch {
+    return content;
+  }
+}
+
 /** What to show as a thread's one-line preview in the sidebar. */
 export function dmThreadPreview(thread: DMThread): string {
   if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
@@ -1024,8 +1043,6 @@ export const api = {
   // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.
   rooms: () => get<{ rooms: Room[]; count: number }>("/rooms", { agentScoped: true }),
   // P249: rooms that relays this one links to advertised — read-only; joining is on their relay.
-  roomsElsewhere: () =>
-    get<{ rooms: RoomElsewhere[]; count: number }>("/rooms/elsewhere", { agentScoped: true }),
   agoraTopicsElsewhere: () =>
     get<{ topics: TopicElsewhere[]; count: number }>("/agoras/topics/elsewhere", { agentScoped: true }),
   // P23-4: for client-side (pin-backed) room chain verification -- see

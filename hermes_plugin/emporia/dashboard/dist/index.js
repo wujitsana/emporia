@@ -39,7 +39,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		value: mod,
 		enumerable: true
 	}) : target, mod));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/scheduler/cjs/scheduler.production.js
+	// ../../../../dashboard/node_modules/scheduler/cjs/scheduler.production.js
 	/**
 	* @license React
 	* scheduler.production.js
@@ -293,11 +293,11 @@ var EmporiaHermesPlugin = (function(exports) {
 			};
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/scheduler/index.js
+	// ../../../../dashboard/node_modules/scheduler/index.js
 	var require_scheduler = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_scheduler_production();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/cjs/react.production.js
+	// ../../../../dashboard/node_modules/react/cjs/react.production.js
 	/**
 	* @license React
 	* react.production.js
@@ -683,11 +683,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		exports.version = "19.3.1";
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/index.js
+	// ../../../../dashboard/node_modules/react/index.js
 	var require_react = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_production();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react-dom/cjs/react-dom.production.js
+	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom.production.js
 	/**
 	* @license React
 	* react-dom.production.js
@@ -839,7 +839,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		exports.version = "19.3.1";
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react-dom/index.js
+	// ../../../../dashboard/node_modules/react-dom/index.js
 	var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		function checkDCE() {
 			if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === "undefined" || typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE !== "function") return;
@@ -852,7 +852,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		checkDCE();
 		module.exports = require_react_dom_production();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react-dom/cjs/react-dom-client.production.js
+	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom-client.production.js
 	/**
 	* @license React
 	* react-dom-client.production.js
@@ -11473,7 +11473,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		} catch {}
 		return null;
 	}
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/cjs/react-jsx-runtime.production.js
+	// ../../../../dashboard/node_modules/react/cjs/react-jsx-runtime.production.js
 	/**
 	* @license React
 	* react-jsx-runtime.production.js
@@ -11507,7 +11507,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		exports.jsx = jsxProd;
 		exports.jsxs = jsxProd;
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/jsx-runtime.js
+	// ../../../../dashboard/node_modules/react/jsx-runtime.js
 	var require_jsx_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_jsx_runtime_production();
 	}));
@@ -12101,6 +12101,21 @@ var EmporiaHermesPlugin = (function(exports) {
 	function dmDisplayContent(content) {
 		return looksLikeEncryptedEnvelope(content) ? ENCRYPTED_PLACEHOLDER : content;
 	}
+	/** Rooms v2: a room message and a DM are posts, their content a canonical JSON body (kind, label, text, tags,
+	*  reply_to, quote_of). Show it as text, with the kind when it is not a plain note and the tags after.
+	*  A message from before (plain text) or a placeholder is shown as it is. Untrusted text, shown as data. */
+	function postDisplay(content) {
+		if (!content.startsWith("{")) return content;
+		try {
+			const b = JSON.parse(content);
+			if (Object.keys(b).sort().join(",") !== "kind,label,quote_of,reply_to,tags,text" || typeof b.text !== "string") return content;
+			const kind = b.kind === "note" ? "" : `[${String(b.kind === "other" && b.label ? b.label : b.kind)}] `;
+			const tags = Array.isArray(b.tags) ? b.tags.filter((t) => Array.isArray(t) && t[0] === "t").map((t) => `#${String(t[1])}`) : [];
+			return `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`;
+		} catch {
+			return content;
+		}
+	}
 	/** What to show as a thread's one-line preview in the sidebar. */
 	function dmThreadPreview(thread) {
 		if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
@@ -12166,7 +12181,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			openSessions: () => get("/federation/v1/open-sessions"),
 			events: () => get("/events"),
 			rooms: () => get("/rooms", { agentScoped: true }),
-			roomsElsewhere: () => get("/rooms/elsewhere", { agentScoped: true }),
 			agoraTopicsElsewhere: () => get("/agoras/topics/elsewhere", { agentScoped: true }),
 			roomChain: (room_id) => get(`/rooms/${encodeURIComponent(room_id)}/chain`, { agentScoped: true }),
 			roomMessages: (room_id, opts) => get(`/rooms/${encodeURIComponent(room_id)}/messages?limit=${opts?.limit ?? 200}` + (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : "") + (opts?.before && opts?.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ""), { agentScoped: true }),
@@ -15105,7 +15119,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_api();
 		import_jsx_runtime$55 = require_jsx_runtime();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_u64.js
+	// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 	function fromBig(n, le = false) {
 		if (le) return {
 			h: Number(n & U32_MASK64),
@@ -15158,7 +15172,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 		add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/utils.js
+	// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 	/**
 	* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 	* @param a - value to test
@@ -15521,7 +15535,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			suffix
 		]) });
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_md.js
+	// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 	var HashMD, SHA512_IV;
 	var init__md = __esmMin((() => {
 		init__u64();
@@ -15634,7 +15648,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			327033209
 		]);
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha2.js
+	// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 	var K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, sha512;
 	var init_sha2 = __esmMin((() => {
 		init__md();
@@ -15880,7 +15894,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/utils.js
+	// ../../../../dashboard/node_modules/@noble/curves/utils.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates that a value is an array, optionally validating each element.
@@ -16214,7 +16228,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			return (_1n$5 << BigInt(n)) - _1n$5;
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/modular.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* @param a - Dividend value.
@@ -16767,7 +16781,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/curve.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates the static surface of a point constructor.
@@ -17269,7 +17283,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/edwards.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function isEdValidXY(Fp, CURVE, x, y) {
 		const x2 = Fp.sqr(x);
@@ -17744,7 +17758,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		_4n = /* @__PURE__ */ BigInt(4);
 		_8n$1 = /* @__PURE__ */ BigInt(8);
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/ed25519.js
+	// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function ed25519_pow_2_252_3(x) {
 		const _10n = BigInt(10), _20n = BigInt(20), _40n = BigInt(40), _80n = BigInt(80);
@@ -17827,7 +17841,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		Fp = /* @__PURE__ */ (() => ed25519_Point.Fp)();
 		ed25519 = /* @__PURE__ */ ed({});
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha3.js
+	// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
 	/**
 	* `keccakf1600` internal permutation, additionally allows adjusting the round count.
 	* @param s - 5x5 Keccak state encoded as 25 lanes split into 50 uint32 words
@@ -24091,10 +24105,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			note: `${extra}Joining happens on ${where}, not here.`
 		};
 	}
-	function roomRow(r) {
-		const access = r.access_duration_days ? `${r.access_duration_days} days of access per payment. ` : "";
-		return row(`${r.relay}/${r.room_id}`, r.name, r.relay, r.host, r.owner_address, r.owner_fingerprint, feeLabel(r.entry_fee_cents, r.currency), access);
-	}
 	function topicRow(t) {
 		return row(`${t.relay}/${t.slug}`, t.name, t.relay, t.host, t.owner_address, t.owner_fingerprint, t.gate_type === "paid_invite" ? feeLabel(t.entry_fee_cents) : "free", "");
 	}
@@ -24105,8 +24115,6 @@ var EmporiaHermesPlugin = (function(exports) {
 	function RoomsView({ initialRoomId, navigate }) {
 		const [data, loading, error] = useInterval(() => api.rooms(), 8e3);
 		const rooms = (0, import_react$19.useMemo)(() => data?.rooms ?? [], [data]);
-		const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.roomsElsewhere(), 3e4);
-		const elsewhereRows = (0, import_react$19.useMemo)(() => (elsewhere?.rooms ?? []).map(roomRow), [elsewhere]);
 		const [selected, setSelected] = (0, import_react$19.useState)(null);
 		const endRef = (0, import_react$19.useRef)(null);
 		const { messages, connected: wsConnected } = useRoomWs(RELAY$1, selected && !selected.listing_only ? selected.room_id : null, VIEWER_ID, (id) => api.roomMessages(id).then((r) => r.messages));
@@ -24128,7 +24136,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		(0, import_react$19.useEffect)(() => {
 			endRef.current?.scrollIntoView({ behavior: "smooth" });
 		}, [messages.length]);
-		const roomSidebar = /* @__PURE__ */ (0, import_jsx_runtime$32.jsxs)(import_jsx_runtime$32.Fragment, { children: [rooms.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(Text, {
+		const roomSidebar = /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(import_jsx_runtime$32.Fragment, { children: rooms.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(Text, {
 			className: "e-faint",
 			children: loading ? "Loading rooms…" : error ? "" : EMPTY_SEED_HINT
 		}) }) : rooms.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$32.jsxs)(FlatRailItem, {
@@ -24183,12 +24191,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					children: ["⊙ session …", r.linked_session_id.slice(-8)]
 				})
 			]
-		}, r.room_id)), /* @__PURE__ */ (0, import_jsx_runtime$32.jsx)(OnOtherRelays, {
-			what: "rooms",
-			rows: elsewhereRows,
-			loading: elsewhereLoading,
-			error: elsewhereError
-		})] });
+		}, r.room_id)) });
 		const roomId = selected && !selected.listing_only ? selected.room_id : "";
 		const [opened, setOpened] = (0, import_react$19.useState)({});
 		const sealedKey = messages.filter((m) => looksLikeEncryptedEnvelope(m.content)).map((m) => m.message_id).join(",");
@@ -24212,7 +24215,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const chatLines = markReplayedNonces(messages).map((m) => ({
 			id: m.message_id,
 			sender_id: m.sender_id,
-			content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : dmDisplayContent(m.content),
+			content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}` : postDisplay(dmDisplayContent(m.content)),
 			msg_type: m.msg_type,
 			created_at: m.created_at,
 			verified: m.deleted_at ? null : verifyMessageSignature("room", roomId, m, pubkeys[m.sender_id] ?? ""),
@@ -24730,7 +24733,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	var init_fen = __esmMin((() => {
 		STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/chess.js/dist/esm/chess.js
+	// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 	function rootNode(comment) {
 		return comment !== null ? {
 			comment,
@@ -29078,7 +29081,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const chatLines = markReplayedNonces(messages).map((m) => ({
 			id: m.message_id,
 			sender_id: m.sender_id,
-			content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : dmDisplayContent(m.content),
+			content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}` : postDisplay(dmDisplayContent(m.content)),
 			created_at: m.created_at,
 			verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] ?? ""),
 			replayed: m.replayed,

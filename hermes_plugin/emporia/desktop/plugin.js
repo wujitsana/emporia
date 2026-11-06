@@ -918,6 +918,21 @@ var ENCRYPTED_PLACEHOLDER = `${SEALED_TAG} encrypted — not readable here`;
 function dmDisplayContent(content) {
 	return looksLikeEncryptedEnvelope(content) ? ENCRYPTED_PLACEHOLDER : content;
 }
+/** Rooms v2: a room message and a DM are posts, their content a canonical JSON body (kind, label, text, tags,
+*  reply_to, quote_of). Show it as text, with the kind when it is not a plain note and the tags after.
+*  A message from before (plain text) or a placeholder is shown as it is. Untrusted text, shown as data. */
+function postDisplay(content) {
+	if (!content.startsWith("{")) return content;
+	try {
+		const b = JSON.parse(content);
+		if (Object.keys(b).sort().join(",") !== "kind,label,quote_of,reply_to,tags,text" || typeof b.text !== "string") return content;
+		const kind = b.kind === "note" ? "" : `[${String(b.kind === "other" && b.label ? b.label : b.kind)}] `;
+		const tags = Array.isArray(b.tags) ? b.tags.filter((t) => Array.isArray(t) && t[0] === "t").map((t) => `#${String(t[1])}`) : [];
+		return `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`;
+	} catch {
+		return content;
+	}
+}
 /** What to show as a thread's one-line preview in the sidebar. */
 function dmThreadPreview(thread) {
 	if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
@@ -965,7 +980,6 @@ var api = {
 	openSessions: () => get("/federation/v1/open-sessions"),
 	events: () => get("/events"),
 	rooms: () => get("/rooms", { agentScoped: true }),
-	roomsElsewhere: () => get("/rooms/elsewhere", { agentScoped: true }),
 	agoraTopicsElsewhere: () => get("/agoras/topics/elsewhere", { agentScoped: true }),
 	roomChain: (room_id) => get(`/rooms/${encodeURIComponent(room_id)}/chain`, { agentScoped: true }),
 	roomMessages: (room_id, opts) => get(`/rooms/${encodeURIComponent(room_id)}/messages?limit=${opts?.limit ?? 200}` + (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : "") + (opts?.before && opts?.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ""), { agentScoped: true }),
@@ -3565,7 +3579,7 @@ function Leaderboard({ moduleType }) {
 		})]
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_u64.js
+// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
 var _32n = /* @__PURE__ */ BigInt(32);
 function fromBig(n, le = false) {
@@ -3615,7 +3629,7 @@ var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0
 var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
 var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/utils.js
+// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 /**
 * Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 * @param a - value to test
@@ -3999,7 +4013,7 @@ var oidNist = (suffix) => ({ oid: Uint8Array.from([
 	2,
 	suffix
 ]) });
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_md.js
+// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 /**
 * Internal Merkle-Damgard hash utils.
 * @module
@@ -4133,7 +4147,7 @@ var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
 	1541459225,
 	327033209
 ]);
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha2.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 /**
 * SHA2 hash function. A.k.a. sha256, sha384, sha512, sha512_224, sha512_256.
 * SHA256 is the fastest hash implementable in JS, even faster than Blake3.
@@ -4392,7 +4406,7 @@ var _SHA512 = class extends SHA2_64B {
 * ```
 */
 var sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/utils.js
+// ../../../../dashboard/node_modules/@noble/curves/utils.js
 /**
 * Hex, bytes and number utilities.
 * @module
@@ -4819,7 +4833,7 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
 	iter(fields, false);
 	iter(optFields, true);
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/modular.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 /**
 * Utils for modular division and fields.
 * Field over 11 is a finite (Galois) field is integer number operations `mod 11`.
@@ -5386,7 +5400,7 @@ function Field(ORDER, opts = {}) {
 	Object.freeze(_Field.prototype);
 	return new _Field(ORDER, opts);
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/curve.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 /**
 * Methods for elliptic curve multiplication by scalars.
 * Contains wNAF-based ScalarMultiplier, pippenger.
@@ -5915,7 +5929,7 @@ function createKeygen(randomSecretKey, getPublicKey) {
 		};
 	};
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/edwards.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 /**
 * Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
 * For design rationale of types / exports, see weierstrass module documentation.
@@ -6388,7 +6402,7 @@ function eddsa(Point, cHash, eddsaOpts = {}) {
 		lengths
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/ed25519.js
+// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 /**
 * ed25519 Twisted Edwards curve with following addons:
 * - X25519 ECDH
@@ -6489,7 +6503,7 @@ function ed(opts) {
 * ```
 */
 var ed25519 = /* @__PURE__ */ ed({});
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha3.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
 /**
 * SHA3 (keccak) hash function, based on a new "Sponge function" design.
 * Different from older hashes, the internal state is bigger than output size.
@@ -12654,10 +12668,6 @@ function row(key, name, relay, host, owner, fingerprint, fee, extra) {
 		note: `${extra}Joining happens on ${where}, not here.`
 	};
 }
-function roomRow(r) {
-	const access = r.access_duration_days ? `${r.access_duration_days} days of access per payment. ` : "";
-	return row(`${r.relay}/${r.room_id}`, r.name, r.relay, r.host, r.owner_address, r.owner_fingerprint, feeLabel(r.entry_fee_cents, r.currency), access);
-}
 function topicRow(t) {
 	return row(`${t.relay}/${t.slug}`, t.name, t.relay, t.host, t.owner_address, t.owner_fingerprint, t.gate_type === "paid_invite" ? feeLabel(t.entry_fee_cents) : "free", "");
 }
@@ -12665,8 +12675,6 @@ function topicRow(t) {
 function RoomsView({ initialRoomId, navigate }) {
 	const [data, loading, error] = useInterval(() => api.rooms(), 8e3);
 	const rooms = useMemo(() => data?.rooms ?? [], [data]);
-	const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.roomsElsewhere(), 3e4);
-	const elsewhereRows = useMemo(() => (elsewhere?.rooms ?? []).map(roomRow), [elsewhere]);
 	const [selected, setSelected] = useState(null);
 	const endRef = useRef(null);
 	const { messages, connected: wsConnected } = useRoomWs(RELAY$1, selected && !selected.listing_only ? selected.room_id : null, VIEWER_ID, (id) => api.roomMessages(id).then((r) => r.messages));
@@ -12688,7 +12696,7 @@ function RoomsView({ initialRoomId, navigate }) {
 	useEffect(() => {
 		endRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [messages.length]);
-	const roomSidebar = /* @__PURE__ */ jsxs(Fragment, { children: [rooms.length === 0 ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
+	const roomSidebar = /* @__PURE__ */ jsx(Fragment, { children: rooms.length === 0 ? /* @__PURE__ */ jsx(Indent, { children: /* @__PURE__ */ jsx(Text, {
 		className: "e-faint",
 		children: loading ? "Loading rooms…" : error ? "" : EMPTY_SEED_HINT
 	}) }) : rooms.map((r) => /* @__PURE__ */ jsxs(FlatRailItem, {
@@ -12743,12 +12751,7 @@ function RoomsView({ initialRoomId, navigate }) {
 				children: ["⊙ session …", r.linked_session_id.slice(-8)]
 			})
 		]
-	}, r.room_id)), /* @__PURE__ */ jsx(OnOtherRelays, {
-		what: "rooms",
-		rows: elsewhereRows,
-		loading: elsewhereLoading,
-		error: elsewhereError
-	})] });
+	}, r.room_id)) });
 	const roomId = selected && !selected.listing_only ? selected.room_id : "";
 	const [opened, setOpened] = useState({});
 	const sealedKey = messages.filter((m) => looksLikeEncryptedEnvelope(m.content)).map((m) => m.message_id).join(",");
@@ -12772,7 +12775,7 @@ function RoomsView({ initialRoomId, navigate }) {
 	const chatLines = markReplayedNonces(messages).map((m) => ({
 		id: m.message_id,
 		sender_id: m.sender_id,
-		content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : dmDisplayContent(m.content),
+		content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}` : postDisplay(dmDisplayContent(m.content)),
 		msg_type: m.msg_type,
 		created_at: m.created_at,
 		verified: m.deleted_at ? null : verifyMessageSignature("room", roomId, m, pubkeys[m.sender_id] ?? ""),
@@ -13209,7 +13212,7 @@ function fenToBoard(fen) {
 		return row;
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/chess.js/dist/esm/chess.js
+// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 function rootNode(comment) {
 	return comment !== null ? {
 		comment,
@@ -17487,7 +17490,7 @@ function ThreadPane({ thread, viewer, liveEvent, liveConnected }) {
 	const chatLines = markReplayedNonces(messages).map((m) => ({
 		id: m.message_id,
 		sender_id: m.sender_id,
-		content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : dmDisplayContent(m.content),
+		content: opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}` : postDisplay(dmDisplayContent(m.content)),
 		created_at: m.created_at,
 		verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] ?? ""),
 		replayed: m.replayed,

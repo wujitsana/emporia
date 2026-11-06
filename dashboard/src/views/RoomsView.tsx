@@ -3,14 +3,14 @@ import { AcceptsTag } from "../ui/PayTag";
 import { LiveMark } from "../ui/chessControls";
 import { ReadOnlyChat } from "../ui/ReadOnlyChat";
 import { RoomChainBadge } from "../ui/RoomChainBadge";
-import { AdvertisedBadge, HostLine, OnOtherRelays } from "../ui/Adverts";
-import { feeLabel, roomRow } from "../advertFormat";
+import { AdvertisedBadge, HostLine } from "../ui/Adverts";
+import { feeLabel } from "../advertFormat";
 import { RELAY, VIEWER_ID } from "../relayEnv";
 import { VIA_CONSOLE, consoleUrl, httpFetch } from "../transport";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
 import { EMPTY_SEED_HINT } from "../navigation";
-import { OPENED_TAG, SEALED_TAG, api, dmDisplayContent, looksLikeEncryptedEnvelope } from "../api";
+import { OPENED_TAG, SEALED_TAG, api, dmDisplayContent, looksLikeEncryptedEnvelope, postDisplay } from "../api";
 import type { Room } from "../api";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Text from "@kit/Text";
@@ -30,9 +30,6 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
   // every effect depending on it re-ran on every render — which is what made the
   // deep-link effect below snap the selection back (see its own note).
   const rooms: Room[] = useMemo(() => data?.rooms ?? [], [data]);
-  // P249: rooms that relays this one links to advertised — read-only, joined on their own relay.
-  const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.roomsElsewhere(), 30_000);
-  const elsewhereRows = useMemo(() => (elsewhere?.rooms ?? []).map(roomRow), [elsewhere]);
   const [selected, setSelected] = useState<Room | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -132,7 +129,6 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
           </FlatRailItem>
         ))
       )}
-      <OnOtherRelays what="rooms" rows={elsewhereRows} loading={elsewhereLoading} error={elsewhereError} />
     </>
   );
 
@@ -169,7 +165,9 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     // access by design and cannot decrypt — the honest render is a lock, not base64.
     // Same helper the DM views use; the shape is identical, so the name is generic
     // rather than dm-specific in spirit even though it kept its original name.
-    content: opened[m.message_id] !== undefined ? `${OPENED_TAG} ${opened[m.message_id]}` : dmDisplayContent(m.content),
+    content: opened[m.message_id] !== undefined
+      ? `${OPENED_TAG} ${postDisplay(opened[m.message_id] ?? "")}`
+      : postDisplay(dmDisplayContent(m.content)),
     msg_type: m.msg_type,
     created_at: m.created_at,
     // P23-4: verified against the *stored* content (m.content, pre-display-
