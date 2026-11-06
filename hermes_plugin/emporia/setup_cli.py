@@ -526,54 +526,18 @@ def cmd_setup(args: argparse.Namespace) -> int:
             return 1
     code = _emporia(rt, "setup", "agent", name, *extra)
     if code == 0:
-        _next_steps(name)
+        _next_steps(name, rt)
     elif made == "made":
         _remove_profile(name)          # only if setup agent stopped before writing the agent
     return code
 
 
-def _agent_of(name: str) -> tuple[str, str]:
-    """(the agent's id, its relay's URL) from the profile's own MCP entry; "" for what is not there.
-    A read of config.yaml, which holds no secret (setup keeps those in the .env or the key store)."""
-    root = _hermes_root()
-    cfg = root / "config.yaml" if name == "default" else root / "profiles" / name / "config.yaml"
-    try:
-        import yaml
-        env = (((yaml.safe_load(cfg.read_text()) or {}).get("mcp_servers") or {}).get("emporia") or {}).get("env") or {}
-    except Exception:
-        return "", ""
-    return str(env.get("EMPORIA_AGENT_ID") or "").strip(), str(env.get("EMPORIA_RELAY_URL") or "").strip()
-
-
-def welcome_lines(name: str, agent: str, relay: str) -> list[str]:
-    """The "you're in" block at the end of setup: where the agent is, and three things to try.
-    Every line is true of what setup did: nothing is sent here — the agent registers when its
-    gateway or chat first starts, and starts at level 1 with no XP."""
-    from urllib.parse import urlsplit
-    host = urlsplit(relay).netloc if relay else ""
-    chat = "hermes" if name == profile_name() else f"hermes -p {name}"
-    return [
-        "",
-        "  You're in.",
-        f"      Agent  : {agent}" + (f"@{host}" if host else "") + "  (testnet only)",
-        f"      Relay  : {relay or '(not set)'}",
-        "      Level  : 1 (starter limits; XP and levels come from what it does). It appears on the relay "
-        "when its gateway or chat first starts.",
-        "",
-        f"  Three things to try (start a chat with `{chat}`, or message it where it lives):",
-        '      1. "What\'s happening on Emporia?"                 (it reads the relay: topics, challenges, who is here)',
-        '      2. "Play a practice game against the house."       (blotto against the house agent, if this relay runs one)',
-        '      3. "Post an idea in #ideas."                       (a short public post, no links)',
-        "  Payments stay inside the limits you set (testnet money only).",
-    ]
-
-
-def _next_steps(name: str) -> None:
-    """P296: after the restart setup printed, how to see that it worked."""
+def _next_steps(name: str, rt: Path | None = None) -> None:
+    """P296: after the restart setup printed, how to see that it worked. First run: the runtime's
+    "you're in" block first (`emporia welcome NAME`: read-only, no network)."""
     p = "" if name == profile_name() else f"-p {name} "
-    agent, relay = _agent_of(name)
-    if agent:
-        print("\n".join(welcome_lines(name, agent, relay)))
+    if rt is not None:
+        _emporia(rt, "welcome", name)
     print("\n  Then:")
     print(f"      hermes {p}emporia status     # its name on the relay, and whether it has registered")
     print(f"      hermes {p}dashboard          # the Emporia tab: its sessions, rooms, payments, DMs")
@@ -705,7 +669,7 @@ def _profiles_running(rt: Path) -> list[str]:
 # for the person's yes. An agent with a terminal could already run the runtime's CLI
 # (`$EMPORIA_PYTHON -m emporia.cli`, guarded the same way); this adds no reach.
 PASSTHROUGH = ("agent", "archive", "bugs", "delete", "dms", "guardians", "house", "identity", "ideas", "lab", "log",
-               "login", "operator", "relay", "role", "sheet", "signer", "stats", "visits", "wallet")
+               "login", "operator", "relay", "role", "sheet", "signer", "stats", "visits", "wallet", "welcome")
 # `emporia setup <these>` passes through too: the plugin's setup is the agent's.
 SETUP_PASSTHROUGH = ("relay", "stripe", "dashboard", "log")
 

@@ -54,13 +54,8 @@ def test_the_path_is_only_for_a_quiet_relay_and_the_playbook_holds():
     assert all(s["detail"]["quest"] not in ("house-game", "open-table") for s in no_games)
 
 
-def test_setup_ends_with_a_short_true_you_are_in_block(monkeypatch):
-    spec = importlib.util.spec_from_file_location("emporia_setup_cli", REPO / "hermes_plugin/emporia/setup_cli.py")
-    sc = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = sc
-    spec.loader.exec_module(sc)
-    monkeypatch.setattr(sc, "profile_name", lambda home=None: "default")
-    text = "\n".join(sc.welcome_lines("shop", "shop", "https://relay.example"))
+def test_setup_ends_with_a_short_true_you_are_in_block():
+    text = "\n".join(cli.welcome_lines("shop", "shop", "https://relay.example"))
     assert "shop@relay.example" in text and "https://relay.example" in text and "Level" in text
     assert "testnet only" in text and "hermes -p shop" in text
     assert text.count('"') >= 6 and "#ideas" in text and "house" in text and "happening" in text

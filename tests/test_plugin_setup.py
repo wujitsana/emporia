@@ -115,7 +115,8 @@ def test_it_runs_setup_agent_for_the_chosen_profile_only(monkeypatch, capsys):
     monkeypatch.setattr(setup_cli, "_emporia", lambda rt, *a: ran.append(a) or 0)
     assert setup_cli.checkout() == REPO                          # in this repo the checkout is the runtime
     assert setup_cli.cmd_setup(_args(profile="shop", relay="https://r.test", rest=["--", "--role", "marketplace"])) == 0
-    assert ran == [("setup", "agent", "shop", "--relay-url", "https://r.test", "--role", "marketplace")]
+    assert ran == [("setup", "agent", "shop", "--relay-url", "https://r.test", "--role", "marketplace"),
+                   ("welcome", "shop")]                           # then the read-only "you're in" block
     out = capsys.readouterr().out
     assert "hermes -p shop emporia status" in out and "hermes -p shop dashboard" in out   # P296: what next
 
@@ -389,9 +390,9 @@ def test_a_new_profile_gets_the_plugin_before_its_agent_is_set_up(monkeypatch, t
     monkeypatch.setattr(setup_cli, "python_of", lambda r: Path(sys.executable))
     monkeypatch.setattr(setup_cli, "_create_profile", lambda n: order.append(("create", n)) or True)
     monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n, s: order.append(("plugin", n)) or True)
-    monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: order.append(("setup", a[2])) or 0)
+    monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: order.append(("setup", a[2]) if a[0] == "setup" else (a[0],)) or 0)
     assert setup_cli.cmd_setup(_args(profile="shop")) == 0
-    assert order == [("create", "shop"), ("plugin", "shop"), ("setup", "shop")]
+    assert order == [("create", "shop"), ("plugin", "shop"), ("setup", "shop"), ("welcome",)]
 
 
 @pytest.mark.parametrize("made,flag", [("made", True), ("there", False)])

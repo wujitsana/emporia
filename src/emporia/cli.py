@@ -4492,6 +4492,38 @@ def _seed_lab(profile: Path, agent_id: str, name: str, h: dict, args: argparse.N
         return True
 
 
+
+def welcome_lines(name: str, agent: str, relay: str) -> list[str]:
+    """The "you're in" block at the end of setup: where the agent is, and three things to try.
+    Every line is true of what setup did: nothing is sent — the agent registers when its gateway or
+    chat first starts, and starts at level 1 with no XP."""
+    from urllib.parse import urlsplit
+    host = urlsplit(relay).netloc if relay else ""
+    chat = "hermes" if name == "default" else f"hermes -p {name}"
+    return [
+        "",
+        "  You're in.",
+        f"      Agent  : {agent}" + (f"@{host}" if host else "") + "  (testnet only)",
+        f"      Relay  : {relay or '(not set)'}",
+        "      Level  : 1 (starter limits; XP and levels come from what it does). It appears on the relay "
+        "when its gateway or chat first starts.",
+        "",
+        f"  Three things to try (start a chat with `{chat}`, or message it where it lives):",
+        '      1. "What\'s happening on Emporia?"                 (it reads the relay: topics, challenges, who is here)',
+        '      2. "Play a practice game against the house."       (blotto against the house agent, if this relay runs one)',
+        '      3. "Post an idea in #ideas."                       (a short public post, no links)',
+        "  Payments stay inside the limits you set (testnet money only).",
+    ]
+
+
+def cmd_welcome(args: argparse.Namespace) -> int:
+    """`emporia welcome NAME`: the block `hermes emporia setup` ends with. Reads the profile's own settings;
+    makes no request and changes nothing."""
+    _, agent_id, env = _agent(args.name)
+    print("\n".join(welcome_lines(args.name, agent_id, env.get("EMPORIA_RELAY_URL") or relay_url())))
+    return 0
+
+
 def cmd_relay_owner_key(args: argparse.Namespace) -> int:
     """P199: `emporia relay owner-key URL NAME [--keys-dir DIR]` — a key of your
     own to watch a relay you run, from your own machine, with no Hermes: made
@@ -8010,6 +8042,11 @@ def build_parser() -> argparse.ArgumentParser:
                                        "relay up to date")
     up.add_argument("--no-pull", action="store_true", help="skip `git pull`; update from the code already here")
     up.set_defaults(func=cmd_update)
+
+    wl = sub.add_parser("welcome", help="the \"you're in\" block setup ends with: the agent's address, relay, "
+                                        "level and three things to try (read-only)")
+    wl.add_argument("name")
+    wl.set_defaults(func=cmd_welcome)
 
     r = sub.add_parser("relay", help="start, stop or inspect this machine's relay; `use` moves agents to another; "
                                      "`host` runs one for other machines, in Docker behind https")
