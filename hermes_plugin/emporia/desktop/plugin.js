@@ -954,7 +954,7 @@ var api = {
 		if (params.limit) q.set("limit", String(params.limit));
 		return get(`/pledges${q.size ? `?${q}` : ""}`, { agentScoped: true });
 	},
-	likes: (kind, target_id) => get(`/likes?kind=${encodeURIComponent(kind)}&target_id=${encodeURIComponent(target_id)}`),
+	likes: (kind, target_id) => get(`/reactions?target=${encodeURIComponent(`${kind}:${target_id}`)}`),
 	bugs: () => get("/bugs"),
 	ideas: () => get("/ideas"),
 	agentPoints: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/points`),
@@ -3585,7 +3585,7 @@ function Leaderboard({ moduleType }) {
 		})]
 	});
 }
-// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
+// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_u64.js
 var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
 var _32n = /* @__PURE__ */ BigInt(32);
 function fromBig(n, le = false) {
@@ -3635,7 +3635,7 @@ var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0
 var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
 var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
-// ../../../../dashboard/node_modules/@noble/hashes/utils.js
+// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/utils.js
 /**
 * Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 * @param a - value to test
@@ -3667,22 +3667,6 @@ function anumber$1(n, title = "") {
 	if (typeof n !== "number") throw new TypeError(atitle$1(title) + "expected number, got " + typeof n);
 	if (!Number.isSafeInteger(n) || n < 0) throw new RangeError(atitle$1(title) + "expected integer >= 0, got " + n);
 	return n;
-}
-/**
-* Asserts something is a boolean.
-* @param value - value to validate
-* @param title - label included in thrown errors
-* @returns The validated boolean.
-* @throws On wrong argument types. {@link TypeError}
-* @example
-* Validate a boolean option.
-* ```ts
-* abool(true, 'enableXOF');
-* ```
-*/
-function abool$1(value, title = "") {
-	if (typeof value !== "boolean") throw new TypeError(atitle$1(title) + "expected boolean, got type=" + typeof value);
-	return value;
 }
 /**
 * Asserts something is Uint8Array.
@@ -3757,21 +3741,6 @@ function aoutput(out, instance) {
 	if (!(out.length >= min)) throw new RangeError("\"output\" expected length >= " + min);
 }
 /**
-* Casts a typed array view to Uint32Array.
-* `arr.byteOffset` must already be 4-byte aligned or the platform
-* Uint32Array constructor will throw.
-* @param arr - source typed array
-* @returns Uint32Array view over the same buffer.
-* @example
-* Reinterpret a byte array as 32-bit words.
-* ```ts
-* u32(new Uint8Array(8));
-* ```
-*/
-function u32(arr) {
-	return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
-}
-/**
 * Zeroizes typed arrays in place. Warning: JS provides no guarantees.
 * @param arrays - arrays to overwrite with zeros
 * @example
@@ -3796,47 +3765,20 @@ function clean(...arrays) {
 function createView(arr) {
 	return new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
 }
-/** Whether the current platform is little-endian. */
-var isLE = /* @__PURE__ */ (() => new Uint8Array(new Uint32Array([287454020]).buffer)[0] === 68)();
 /**
-* Byte-swap operation for uint32 values.
+* Rotate-right operation for uint32 values.
 * @param word - source word
-* @returns Word with reversed byte order.
+* @param shift - shift amount in bits
+* @returns Rotated word.
 * @example
-* Reverse the byte order of a 32-bit word.
+* Rotate a 32-bit word to the right.
 * ```ts
-* byteSwap(0x11223344);
+* rotr(0x12345678, 8);
 * ```
 */
-function byteSwap(word) {
-	return word << 24 & 4278190080 | word << 8 & 16711680 | word >>> 8 & 65280 | word >>> 24 & 255;
+function rotr(word, shift) {
+	return word << 32 - shift | word >>> shift;
 }
-/**
-* Byte-swaps every word of a Uint32Array in place.
-* @param arr - array to mutate
-* @returns The same array after mutation; callers pass live state arrays here.
-* @example
-* Reverse the byte order of every word in place.
-* ```ts
-* byteSwap32(new Uint32Array([0x11223344]));
-* ```
-*/
-function byteSwap32(arr) {
-	for (let i = 0; i < arr.length; i++) arr[i] = byteSwap(arr[i]);
-	return arr;
-}
-/**
-* Conditionally byte-swaps a Uint32Array on big-endian platforms.
-* @param u - array to normalize for host endianness
-* @returns Original or byte-swapped array depending on platform endianness.
-*   On big-endian runtimes this mutates `u` in place via `byteSwap32(...)`.
-* @example
-* Normalize a word array for host endianness.
-* ```ts
-* swap32IfBE(new Uint32Array([0x11223344]));
-* ```
-*/
-var swap32IfBE = isLE ? (u) => u : byteSwap32;
 var hasHexBuiltin = /* @__PURE__ */ (() => typeof Uint8Array.from([]).toHex === "function" && typeof Uint8Array.fromHex === "function")();
 var hexes = /* @__PURE__ */ Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0"));
 /**
@@ -4019,11 +3961,45 @@ var oidNist = (suffix) => ({ oid: Uint8Array.from([
 	2,
 	suffix
 ]) });
-// ../../../../dashboard/node_modules/@noble/hashes/_md.js
+// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_md.js
 /**
 * Internal Merkle-Damgard hash utils.
 * @module
 */
+/**
+* Shared 32-bit conditional boolean primitive reused by SHA-256, SHA-1, and MD5 `F`.
+* Returns bits from `b` when `a` is set, otherwise from `c`.
+* The XOR form is equivalent to MD5's `F(X,Y,Z) = XY v not(X)Z` because the masked terms never
+* set the same bit.
+* @param a - selector word
+* @param b - word chosen when selector bit is set
+* @param c - word chosen when selector bit is clear
+* @returns Mixed 32-bit word.
+* @example
+* Combine three words with the shared 32-bit choice primitive.
+* ```ts
+* Chi(0xffffffff, 0x12345678, 0x87654321);
+* ```
+*/
+function Chi(a, b, c) {
+	return a & b ^ ~a & c;
+}
+/**
+* Shared 32-bit majority primitive reused by SHA-256 and SHA-1.
+* Returns bits shared by at least two inputs.
+* @param a - first input word
+* @param b - second input word
+* @param c - third input word
+* @returns Mixed 32-bit word.
+* @example
+* Combine three words with the shared 32-bit majority primitive.
+* ```ts
+* Maj(0xffffffff, 0x12345678, 0x87654321);
+* ```
+*/
+function Maj(a, b, c) {
+	return a & b ^ a & c ^ b & c;
+}
 /**
 * Merkle-Damgard hash construction base class.
 * Could be used to create MD5, RIPEMD, SHA1, SHA2.
@@ -4131,6 +4107,23 @@ var HashMD = class {
 		return this._cloneInto();
 	}
 };
+/**
+* Initial SHA-2 state: fractional parts of square roots of first 16 primes 2..53.
+* Check out `test/misc/sha2-gen-iv.js` for recomputation guide.
+*/
+/** Initial SHA256 state from RFC 6234 §6.1: the first 32 bits of the fractional parts of the
+* square roots of the first eight prime numbers. Exported as a shared table; callers must treat
+* it as read-only because constructors copy words from it by index. */
+var SHA256_IV = /* @__PURE__ */ Uint32Array.from([
+	1779033703,
+	3144134277,
+	1013904242,
+	2773480762,
+	1359893119,
+	2600822924,
+	528734635,
+	1541459225
+]);
 /** Initial SHA512 state from RFC 6234 §6.3: eight RFC 64-bit `H(0)` words stored as sixteen
 * big-endian 32-bit halves. Derived from the fractional parts of the square roots of the first
 * eight prime numbers. Exported as a shared table; callers must treat it as read-only because
@@ -4153,7 +4146,7 @@ var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
 	1541459225,
 	327033209
 ]);
-// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
+// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha2.js
 /**
 * SHA2 hash function. A.k.a. sha256, sha384, sha512, sha512_224, sha512_256.
 * SHA256 is the fastest hash implementable in JS, even faster than Blake3.
@@ -4161,6 +4154,174 @@ var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
 * {@link https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf | FIPS 180-4}.
 * @module
 */
+/**
+* SHA-224 / SHA-256 round constants from RFC 6234 §5.1: the first 32 bits
+* of the cube roots of the first 64 primes (2..311).
+*/
+var SHA256_K = /* @__PURE__ */ Uint32Array.from([
+	1116352408,
+	1899447441,
+	3049323471,
+	3921009573,
+	961987163,
+	1508970993,
+	2453635748,
+	2870763221,
+	3624381080,
+	310598401,
+	607225278,
+	1426881987,
+	1925078388,
+	2162078206,
+	2614888103,
+	3248222580,
+	3835390401,
+	4022224774,
+	264347078,
+	604807628,
+	770255983,
+	1249150122,
+	1555081692,
+	1996064986,
+	2554220882,
+	2821834349,
+	2952996808,
+	3210313671,
+	3336571891,
+	3584528711,
+	113926993,
+	338241895,
+	666307205,
+	773529912,
+	1294757372,
+	1396182291,
+	1695183700,
+	1986661051,
+	2177026350,
+	2456956037,
+	2730485921,
+	2820302411,
+	3259730800,
+	3345764771,
+	3516065817,
+	3600352804,
+	4094571909,
+	275423344,
+	430227734,
+	506948616,
+	659060556,
+	883997877,
+	958139571,
+	1322822218,
+	1537002063,
+	1747873779,
+	1955562222,
+	2024104815,
+	2227730452,
+	2361852424,
+	2428436474,
+	2756734187,
+	3204031479,
+	3329325298
+]);
+/** Reusable SHA-224 / SHA-256 message schedule buffer `W_t` from RFC 6234 §6.2 step 1. */
+var SHA256_W = /* @__PURE__ */ new Uint32Array(64);
+/** Internal SHA-224 / SHA-256 compression engine from RFC 6234 §6.2. */
+var SHA2_32B = class extends HashMD {
+	A = 0;
+	B = 0;
+	C = 0;
+	D = 0;
+	E = 0;
+	F = 0;
+	G = 0;
+	H = 0;
+	constructor(outputLen, IV) {
+		super(64, outputLen, 8, false);
+		this.A = IV[0] | 0;
+		this.B = IV[1] | 0;
+		this.C = IV[2] | 0;
+		this.D = IV[3] | 0;
+		this.E = IV[4] | 0;
+		this.F = IV[5] | 0;
+		this.G = IV[6] | 0;
+		this.H = IV[7] | 0;
+	}
+	get() {
+		const { A, B, C, D, E, F, G, H } = this;
+		return [
+			A,
+			B,
+			C,
+			D,
+			E,
+			F,
+			G,
+			H
+		];
+	}
+	set(A, B, C, D, E, F, G, H) {
+		this.A = A | 0;
+		this.B = B | 0;
+		this.C = C | 0;
+		this.D = D | 0;
+		this.E = E | 0;
+		this.F = F | 0;
+		this.G = G | 0;
+		this.H = H | 0;
+	}
+	_cloneInto(to) {
+		(to ||= new this.constructor()).set(...this.get());
+		return this._cloneIntoMeta(to);
+	}
+	process(view, offset) {
+		for (let i = 0; i < 16; i++, offset += 4) SHA256_W[i] = view.getUint32(offset, false);
+		for (let i = 16; i < 64; i++) {
+			const W15 = SHA256_W[i - 15];
+			const W2 = SHA256_W[i - 2];
+			const s0 = rotr(W15, 7) ^ rotr(W15, 18) ^ W15 >>> 3;
+			const s1 = rotr(W2, 17) ^ rotr(W2, 19) ^ W2 >>> 10;
+			SHA256_W[i] = s1 + SHA256_W[i - 7] + s0 + SHA256_W[i - 16] | 0;
+		}
+		let { A, B, C, D, E, F, G, H } = this;
+		for (let i = 0; i < 64; i++) {
+			const sigma1 = rotr(E, 6) ^ rotr(E, 11) ^ rotr(E, 25);
+			const T1 = H + sigma1 + Chi(E, F, G) + SHA256_K[i] + SHA256_W[i] | 0;
+			const T2 = (rotr(A, 2) ^ rotr(A, 13) ^ rotr(A, 22)) + Maj(A, B, C) | 0;
+			H = G;
+			G = F;
+			F = E;
+			E = D + T1 | 0;
+			D = C;
+			C = B;
+			B = A;
+			A = T1 + T2 | 0;
+		}
+		A = A + this.A | 0;
+		B = B + this.B | 0;
+		C = C + this.C | 0;
+		D = D + this.D | 0;
+		E = E + this.E | 0;
+		F = F + this.F | 0;
+		G = G + this.G | 0;
+		H = H + this.H | 0;
+		this.set(A, B, C, D, E, F, G, H);
+	}
+	roundClean() {
+		clean(SHA256_W);
+	}
+	destroy() {
+		this.destroyed = true;
+		this.set(0, 0, 0, 0, 0, 0, 0, 0);
+		clean(this.buffer);
+	}
+};
+/** Internal SHA-256 hash class grounded in RFC 6234 §6.2. */
+var _SHA256 = class extends SHA2_32B {
+	constructor() {
+		super(32, SHA256_IV);
+	}
+};
 var K512 = /* @__PURE__ */ (() => split([
 	"0x428a2f98d728ae22",
 	"0x7137449123ef65cd",
@@ -4401,6 +4562,23 @@ var _SHA512 = class extends SHA2_64B {
 	}
 };
 /**
+* SHA2-256 hash function from RFC 4634. In JS it's the fastest: even faster than Blake3. Some info:
+*
+* - Trying 2^128 hashes would get 50% chance of collision, using birthday attack.
+* - BTC network is doing 2^70 hashes/sec (2^95 hashes/year) as per 2025.
+* - Each sha256 hash is executing 2^18 bit operations.
+* - Good 2024 ASICs can do 200Th/sec with 3500 watts of power, corresponding to 2^36 hashes/joule.
+* @param msg - message bytes to hash
+* @param opts - Reserved hash options.
+* @returns Digest bytes.
+* @example
+* Hash a message with SHA2-256.
+* ```ts
+* sha256(new Uint8Array([97, 98, 99]));
+* ```
+*/
+var sha256 = /* @__PURE__ */ createHasher(() => new _SHA256(), /* @__PURE__ */ oidNist(1));
+/**
 * SHA2-512 hash function from RFC 4634.
 * @param msg - message bytes to hash
 * @param opts - Reserved hash options.
@@ -4412,7 +4590,7 @@ var _SHA512 = class extends SHA2_64B {
 * ```
 */
 var sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
-// ../../../../dashboard/node_modules/@noble/curves/utils.js
+// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/utils.js
 /**
 * Hex, bytes and number utilities.
 * @module
@@ -4557,8 +4735,8 @@ var isBytes = isBytes$1;
 * ```
 */
 var randomBytes = (bytesLength) => randomBytes$1(bytesLength);
-var _0n$4 = /* @__PURE__ */ BigInt(0);
-var _1n$5 = /* @__PURE__ */ BigInt(1);
+var _0n$3 = /* @__PURE__ */ BigInt(0);
+var _1n$4 = /* @__PURE__ */ BigInt(1);
 var atitle = (title) => title ? `"${title}" ` : "";
 /**
 * Validates that a flag is boolean.
@@ -4634,7 +4812,7 @@ function asafenumber(value, title = "") {
 */
 function hexToNumber(hex) {
 	if (typeof hex !== "string") throw new TypeError("hex string expected, got " + typeof hex);
-	return hex === "" ? _0n$4 : BigInt("0x" + hex);
+	return hex === "" ? _0n$3 : BigInt("0x" + hex);
 }
 /**
 * Parses big-endian bytes into bigint.
@@ -4733,7 +4911,7 @@ function copyBytes(bytes) {
 * ```
 */
 function isPosBig(n) {
-	return typeof n === "bigint" && _0n$4 <= n;
+	return typeof n === "bigint" && _0n$3 <= n;
 }
 /**
 * Checks whether a bigint lies inside a half-open range.
@@ -4785,8 +4963,8 @@ function aInRange(title, n, min, max) {
 * ```
 */
 function bitLen(n) {
-	if (n < _0n$4) throw new Error("expected non-negative bigint, got " + n);
-	return n === _0n$4 ? 0 : n.toString(2).length;
+	if (n < _0n$3) throw new Error("expected non-negative bigint, got " + n);
+	return n === _0n$3 ? 0 : n.toString(2).length;
 }
 /**
 * Calculate mask for N bits. Not using ** operator with bigints because of old engines.
@@ -4803,7 +4981,7 @@ function bitLen(n) {
 */
 var bitMask = (n) => {
 	asafenumber(n, "n");
-	return (_1n$5 << BigInt(n)) - _1n$5;
+	return (_1n$4 << BigInt(n)) - _1n$4;
 };
 /**
 * Validates declared required and optional field types on a plain object.
@@ -4839,7 +5017,7 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
 	iter(fields, false);
 	iter(optFields, true);
 }
-// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
+// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/modular.js
 /**
 * Utils for modular division and fields.
 * Field over 11 is a finite (Galois) field is integer number operations `mod 11`.
@@ -4847,13 +5025,13 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
 * @module
 */
 /*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-var _0n$3 = /* @__PURE__ */ BigInt(0);
-var _1n$4 = /* @__PURE__ */ BigInt(1);
-var _2n$3 = /* @__PURE__ */ BigInt(2);
+var _0n$2 = /* @__PURE__ */ BigInt(0);
+var _1n$3 = /* @__PURE__ */ BigInt(1);
+var _2n$2 = /* @__PURE__ */ BigInt(2);
 var _3n = /* @__PURE__ */ BigInt(3);
 var _4n$2 = /* @__PURE__ */ BigInt(4);
 var _5n$1 = /* @__PURE__ */ BigInt(5);
-var _7n$1 = /* @__PURE__ */ BigInt(7);
+var _7n = /* @__PURE__ */ BigInt(7);
 var _8n$2 = /* @__PURE__ */ BigInt(8);
 var _9n = /* @__PURE__ */ BigInt(9);
 var _15n = /* @__PURE__ */ BigInt(15);
@@ -4872,9 +5050,9 @@ var POW_WINDOWED_MIN = /* @__PURE__ */ BigInt("0x10000000000000000");
 * ```
 */
 function mod(a, b) {
-	if (b <= _0n$3) throw new Error("mod: expected positive modulus, got " + b);
+	if (b <= _0n$2) throw new Error("mod: expected positive modulus, got " + b);
 	const result = a % b;
-	return result >= _0n$3 ? result : b + result;
+	return result >= _0n$2 ? result : b + result;
 }
 /**
 * Efficiently raise num to a power with modular reduction.
@@ -4894,29 +5072,29 @@ function mod(a, b) {
 * ```
 */
 function pow(num, power, modulo) {
-	if (modulo <= _1n$4) throw new Error("pow: expected modulus > 1, got " + modulo);
+	if (modulo <= _1n$3) throw new Error("pow: expected modulus > 1, got " + modulo);
 	if (typeof power !== "bigint") throw new TypeError("invalid exponent: expected bigint, got " + typeof power);
-	if (power < _0n$3) throw new Error("invalid exponent, negatives unsupported");
-	if (power === _0n$3) return _1n$4;
-	if (power === _1n$4) return num;
+	if (power < _0n$2) throw new Error("invalid exponent, negatives unsupported");
+	if (power === _0n$2) return _1n$3;
+	if (power === _1n$3) return num;
 	let d = num % modulo;
-	if (d < _0n$3) d += modulo;
+	if (d < _0n$2) d += modulo;
 	if (power < POW_WINDOWED_MIN) {
-		let p = _1n$4;
-		while (power > _0n$3) {
-			if (power & _1n$4) p = p * d % modulo;
+		let p = _1n$3;
+		while (power > _0n$2) {
+			if (power & _1n$3) p = p * d % modulo;
 			d = d * d % modulo;
-			power >>= _1n$4;
+			power >>= _1n$3;
 		}
 		return p;
 	}
 	const digits = [];
-	while (power > _0n$3) {
+	while (power > _0n$2) {
 		digits.push(Number(power & _15n));
 		power >>= _4n$2;
 	}
 	const table = new Array(16);
-	table[0] = _1n$4;
+	table[0] = _1n$3;
 	table[1] = d;
 	for (let i = 2; i < 16; i++) table[i] = table[i - 1] * d % modulo;
 	let p = table[digits[digits.length - 1]];
@@ -4947,10 +5125,10 @@ function pow(num, power, modulo) {
 * ```
 */
 function pow2(x, power, modulo) {
-	if (modulo <= _1n$4) throw new Error("pow2: expected modulus > 1, got " + modulo);
-	if (power < _0n$3) throw new Error("pow2: expected non-negative exponent, got " + power);
+	if (modulo <= _1n$3) throw new Error("pow2: expected modulus > 1, got " + modulo);
+	if (power < _0n$2) throw new Error("pow2: expected non-negative exponent, got " + power);
 	let res = x;
-	while (power-- > _0n$3) {
+	while (power-- > _0n$2) {
 		res *= res;
 		res %= modulo;
 	}
@@ -4971,18 +5149,18 @@ function pow2(x, power, modulo) {
 * ```
 */
 function invert(number, modulo) {
-	if (number === _0n$3) throw new Error("invert: expected non-zero number");
-	if (modulo <= _1n$4) throw new Error("invert: expected modulus > 1, got " + modulo);
+	if (number === _0n$2) throw new Error("invert: expected non-zero number");
+	if (modulo <= _1n$3) throw new Error("invert: expected modulus > 1, got " + modulo);
 	let a = mod(number, modulo);
 	let b = modulo;
-	let x = _0n$3, u = _1n$4;
-	while (a !== _0n$3) {
+	let x = _0n$2, u = _1n$3;
+	while (a !== _0n$2) {
 		const q = b / a;
 		const r = b - a * q;
 		const m = x - u * q;
 		b = a, a = r, x = u, u = m;
 	}
-	if (b !== _1n$4) throw new Error("invert: does not exist");
+	if (b !== _1n$3) throw new Error("invert: does not exist");
 	return mod(x, modulo);
 }
 function assertIsSquare(Fp, root, n) {
@@ -4990,11 +5168,11 @@ function assertIsSquare(Fp, root, n) {
 	if (!F.eql(F.sqr(root), n)) throw new Error("Cannot find square root");
 }
 function aoddModulus(order, fnName) {
-	if ((order & _1n$4) === _0n$3) throw new Error(fnName + ": expected odd modulus, got " + order);
+	if ((order & _1n$3) === _0n$2) throw new Error(fnName + ": expected odd modulus, got " + order);
 }
 function sqrt3mod4(Fp, n) {
 	const F = Fp;
-	const p1div4 = (F.ORDER + _1n$4) / _4n$2;
+	const p1div4 = (F.ORDER + _1n$3) / _4n$2;
 	const root = F.pow(n, p1div4);
 	assertIsSquare(F, root, n);
 	return root;
@@ -5002,10 +5180,10 @@ function sqrt3mod4(Fp, n) {
 function sqrt5mod8(Fp, n) {
 	const F = Fp;
 	const p5div8 = (F.ORDER - _5n$1) / _8n$2;
-	const n2 = F.mul(n, _2n$3);
+	const n2 = F.mul(n, _2n$2);
 	const v = F.pow(n2, p5div8);
 	const nv = F.mul(n, v);
-	const i = F.mul(F.mul(nv, _2n$3), v);
+	const i = F.mul(F.mul(nv, _2n$2), v);
 	const root = F.mul(nv, F.sub(i, F.ONE));
 	assertIsSquare(F, root, n);
 	return root;
@@ -5016,7 +5194,7 @@ function sqrt9mod16(P) {
 	const c1 = tn(Fp_, Fp_.neg(Fp_.ONE));
 	const c2 = tn(Fp_, c1);
 	const c3 = tn(Fp_, Fp_.neg(c1));
-	const c4 = (P + _7n$1) / _16n;
+	const c4 = (P + _7n) / _16n;
 	return ((Fp, n) => {
 		const F = Fp;
 		let tv1 = F.pow(n, c4);
@@ -5054,18 +5232,18 @@ function sqrt9mod16(P) {
 function tonelliShanks(P) {
 	if (P < _3n) throw new Error("sqrt is not defined for small field");
 	aoddModulus(P, "tonelliShanks");
-	let Q = P - _1n$4;
+	let Q = P - _1n$3;
 	let S = 0;
-	while (Q % _2n$3 === _0n$3) {
-		Q /= _2n$3;
+	while (Q % _2n$2 === _0n$2) {
+		Q /= _2n$2;
 		S++;
 	}
-	let Z = _2n$3;
+	let Z = _2n$2;
 	const _Fp = Field(P);
 	while (FpLegendre(_Fp, Z) === 1) if (Z++ > 1e3) throw new Error("Cannot find square root: probably non-prime P");
 	if (S === 1) return sqrt3mod4;
 	let cc = _Fp.pow(Z, Q);
-	const Q1div2 = (Q + _1n$4) / _2n$3;
+	const Q1div2 = (Q + _1n$3) / _2n$2;
 	return function tonelliSlow(Fp, n) {
 		const F = Fp;
 		if (F.is0(n)) return n;
@@ -5083,7 +5261,7 @@ function tonelliShanks(P) {
 				t_tmp = F.sqr(t_tmp);
 				if (i === M) throw new Error("Cannot find square root");
 			}
-			const exponent = _1n$4 << BigInt(M - i - 1);
+			const exponent = _1n$3 << BigInt(M - i - 1);
 			const b = F.pow(c, exponent);
 			M = i;
 			c = F.sqr(b);
@@ -5136,7 +5314,7 @@ function FpSqrt(P) {
 * isNegativeLE(3n, 11n);
 * ```
 */
-var isNegativeLE = (num, modulo) => (mod(num, modulo) & _1n$4) === _1n$4;
+var isNegativeLE = (num, modulo) => (mod(num, modulo) & _1n$3) === _1n$3;
 var FIELD_FIELDS = [
 	"create",
 	"isValid",
@@ -5177,7 +5355,7 @@ function validateField(field) {
 	asafenumber(field.BITS, "BITS");
 	for (const name of FIELD_FIELDS) afunction(field[name], "field." + name);
 	if (field.BYTES < 1 || field.BITS < 1) throw new Error("invalid field: expected BYTES/BITS > 0");
-	if (field.ORDER <= _1n$4) throw new Error("invalid field: expected ORDER > 1, got " + field.ORDER);
+	if (field.ORDER <= _1n$3) throw new Error("invalid field: expected ORDER > 1, got " + field.ORDER);
 	return field;
 }
 function FpInvertBatch(Fp, nums, passZero = false) {
@@ -5224,7 +5402,7 @@ function FpLegendre(Fp, n) {
 	validateField(Fp);
 	const F = Fp;
 	aoddModulus(F.ORDER, "FpLegendre");
-	const p1mod2 = (F.ORDER - _1n$4) / _2n$3;
+	const p1mod2 = (F.ORDER - _1n$3) / _2n$2;
 	const powered = F.pow(n, p1mod2);
 	const yes = F.eql(powered, F.ONE);
 	const zero = F.eql(powered, F.ZERO);
@@ -5247,7 +5425,7 @@ function FpLegendre(Fp, n) {
 */
 function nLength(n, nBitLength) {
 	if (nBitLength !== void 0) anumber(nBitLength);
-	if (n <= _0n$3) throw new Error("invalid n length: expected positive n, got " + n);
+	if (n <= _0n$2) throw new Error("invalid n length: expected positive n, got " + n);
 	if (nBitLength !== void 0 && nBitLength < 1) throw new Error("invalid n length: expected positive bit length, got " + nBitLength);
 	const bits = bitLen(n);
 	if (nBitLength !== void 0 && nBitLength < bits) throw new Error(`invalid n length: expected nBitLength (${nBitLength}) >= bitLen(n) (${bits})`);
@@ -5263,12 +5441,12 @@ var _Field = class {
 	BITS;
 	BYTES;
 	isLE;
-	ZERO = _0n$3;
-	ONE = _1n$4;
+	ZERO = _0n$2;
+	ONE = _1n$3;
 	_lengths;
 	_mod;
 	constructor(ORDER, opts = {}) {
-		if (ORDER <= _1n$4) throw new Error("invalid field: expected ORDER > 1, got " + ORDER);
+		if (ORDER <= _1n$3) throw new Error("invalid field: expected ORDER > 1, got " + ORDER);
 		let _nbitLength = void 0;
 		this.isLE = false;
 		if (opts != null && typeof opts === "object") {
@@ -5293,16 +5471,16 @@ var _Field = class {
 	}
 	isValid(num) {
 		if (typeof num !== "bigint") throw new TypeError("invalid field element: expected bigint, got " + typeof num);
-		return _0n$3 <= num && num < this.ORDER;
+		return _0n$2 <= num && num < this.ORDER;
 	}
 	is0(num) {
-		return num === _0n$3;
+		return num === _0n$2;
 	}
 	isValidNot0(num) {
 		return !this.is0(num) && this.isValid(num);
 	}
 	isOdd(num) {
-		return (num & _1n$4) === _1n$4;
+		return (num & _1n$3) === _1n$3;
 	}
 	neg(num) {
 		return mod(-num, this.ORDER);
@@ -5406,15 +5584,15 @@ function Field(ORDER, opts = {}) {
 	Object.freeze(_Field.prototype);
 	return new _Field(ORDER, opts);
 }
-// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
+// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/curve.js
 /**
 * Methods for elliptic curve multiplication by scalars.
 * Contains wNAF-based ScalarMultiplier, pippenger.
 * @module
 */
 /*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-var _0n$2 = /* @__PURE__ */ BigInt(0);
-var _1n$3 = /* @__PURE__ */ BigInt(1);
+var _0n$1 = /* @__PURE__ */ BigInt(0);
+var _1n$2 = /* @__PURE__ */ BigInt(1);
 var _4n$1 = /* @__PURE__ */ BigInt(4);
 var BLIND_BYTES = 16;
 var BLIND_BITS = 128;
@@ -5544,15 +5722,15 @@ function wnafDigits(n, W) {
 	const half = size / 2;
 	const mask = BigInt(size - 1);
 	const d = [];
-	while (n > _0n$2) {
+	while (n > _0n$1) {
 		let w = 0;
-		if (n & _1n$3) {
+		if (n & _1n$2) {
 			w = Number(n & mask);
 			if (w >= half) w -= size;
 			n -= BigInt(w);
 		}
 		d.push(w);
-		n >>= _1n$3;
+		n >>= _1n$2;
 	}
 	return d;
 }
@@ -5572,11 +5750,11 @@ function signedWindowDigits(n, W, windows) {
 		n >>= shiftBy;
 		if (v > half) {
 			v -= size;
-			n += _1n$3;
+			n += _1n$2;
 		}
 		d.push(v);
 	}
-	if (n !== _0n$2) throw new Error("invalid wnaf");
+	if (n !== _0n$1) throw new Error("invalid wnaf");
 	return d;
 }
 /**
@@ -5725,7 +5903,7 @@ var ScalarMultiplier = class {
 	}
 	validateMulInput(point, scalar) {
 		this.assertPoint(point);
-		if (!inRange(scalar, _1n$3, this.Point.Fn.ORDER)) throw new Error("invalid scalar");
+		if (!inRange(scalar, _1n$2, this.Point.Fn.ORDER)) throw new Error("invalid scalar");
 	}
 	runCT(point, n, bits, transform) {
 		const W = getWindowSize(point);
@@ -5784,7 +5962,7 @@ var ScalarMultiplier = class {
 	}
 	shouldBlind(point, cofactor) {
 		if (this.randomBytes === void 0) return false;
-		if (cofactor === _1n$3) return true;
+		if (cofactor === _1n$2) return true;
 		if (point !== this.BASE) return false;
 		if (this.baseCanBeBlinded === void 0) this.baseCanBeBlinded = this.mulUnsafe(this.BASE, this.Point.Fn.ORDER).is0();
 		return this.baseCanBeBlinded;
@@ -5894,7 +6072,7 @@ function createCurveFields(type, CURVE, curveOpts = {}, FpFnLE) {
 		"h"
 	]) {
 		const val = CURVE[p];
-		if (!(isPosBig(val) && val !== _0n$2)) throw new Error(`CURVE.${p} must be positive bigint`);
+		if (!(isPosBig(val) && val !== _0n$1)) throw new Error(`CURVE.${p} must be positive bigint`);
 	}
 	const Fp = createField(CURVE.p, curveOpts.Fp, FpFnLE);
 	const Fn = createField(CURVE.n, curveOpts.Fn, FpFnLE);
@@ -5935,7 +6113,7 @@ function createKeygen(randomSecretKey, getPublicKey) {
 		};
 	};
 }
-// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
+// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/edwards.js
 /**
 * Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
 * For design rationale of types / exports, see weierstrass module documentation.
@@ -5943,9 +6121,9 @@ function createKeygen(randomSecretKey, getPublicKey) {
 * @module
 */
 /*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-var _0n$1 = /* @__PURE__ */ BigInt(0);
-var _1n$2 = /* @__PURE__ */ BigInt(1);
-var _2n$2 = /* @__PURE__ */ BigInt(2);
+var _0n = /* @__PURE__ */ BigInt(0);
+var _1n$1 = /* @__PURE__ */ BigInt(1);
+var _2n$1 = /* @__PURE__ */ BigInt(2);
 var _4n = /* @__PURE__ */ BigInt(4);
 var _8n$1 = /* @__PURE__ */ BigInt(8);
 function isEdValidXY(Fp, CURVE, x, y) {
@@ -5990,7 +6168,7 @@ function edwards(params, extraOpts = {}) {
 		randomBytes: "function"
 	});
 	const randomBytes$2 = opts.randomBytes === void 0 ? randomBytes : opts.randomBytes;
-	const MASK = _2n$2 << BigInt(Fp.BYTES * 8) - _1n$2;
+	const MASK = _2n$1 << BigInt(Fp.BYTES * 8) - _1n$1;
 	function isOdd(n) {
 		if (!Fp.isOdd) throw new Error("Field does not have .isOdd()");
 		return Fp.isOdd(n);
@@ -6004,7 +6182,7 @@ function edwards(params, extraOpts = {}) {
 		} catch (e) {
 			return {
 				isValid: false,
-				value: _0n$1
+				value: _0n
 			};
 		}
 	} : opts.uvRatio;
@@ -6015,7 +6193,7 @@ function edwards(params, extraOpts = {}) {
 	* Coordinates >= Fp.ORDER are allowed for zip215.
 	*/
 	function acoord(title, n, banZero = false) {
-		const min = banZero ? _1n$2 : _0n$1;
+		const min = banZero ? _1n$1 : _0n;
 		aInRange("coordinate " + title, n, min, MASK);
 		return n;
 	}
@@ -6062,7 +6240,7 @@ function edwards(params, extraOpts = {}) {
 			const lastByte = bytes[len - 1];
 			normed[len - 1] = lastByte & -129;
 			const y = bytesToNumberLE(normed);
-			aInRange("point.y", y, _0n$1, zip215 ? MASK : Fp.ORDER);
+			aInRange("point.y", y, _0n, zip215 ? MASK : Fp.ORDER);
 			const y2 = Fp.sqr(y);
 			const u = Fp.sub(y2, Fp.ONE);
 			const v = Fp.sub(Fp.mulN(d, y2), a);
@@ -6088,7 +6266,7 @@ function edwards(params, extraOpts = {}) {
 		}
 		precompute(windowSize = 6, isLazy = true) {
 			wnaf.setWindowSize(this, windowSize);
-			if (!isLazy) this.multiply(_2n$2);
+			if (!isLazy) this.multiply(_2n$1);
 			return this;
 		}
 		assertValidity() {
@@ -6128,7 +6306,7 @@ function edwards(params, extraOpts = {}) {
 			const { X: X1, Y: Y1, Z: Z1 } = this;
 			const A = Fp.sqr(X1);
 			const B = Fp.sqr(Y1);
-			const C = Fp.mul(Fp.sqr(Z1), _2n$2);
+			const C = Fp.mul(Fp.sqr(Z1), _2n$1);
 			const D = mulA(A);
 			const x1y1 = Fp.addN(X1, Y1);
 			const E = Fp.sub(Fp.subN(Fp.sqr(x1y1), A), B);
@@ -6171,8 +6349,8 @@ function edwards(params, extraOpts = {}) {
 		}
 		multiplyUnsafe(scalar) {
 			if (!Fn.isValid(scalar)) throw new RangeError("invalid scalar: expected 0 <= sc < curve.n");
-			if (scalar === _0n$1) return Point.ZERO;
-			if (this.is0() || scalar === _1n$2) return this;
+			if (scalar === _0n) return Point.ZERO;
+			if (this.is0() || scalar === _1n$1) return this;
 			return wnaf.mulUnsafe(this, scalar, normalize);
 		}
 		isSmallOrder() {
@@ -6202,8 +6380,8 @@ function edwards(params, extraOpts = {}) {
 			};
 		}
 		clearCofactor() {
-			if (cofactor === _1n$2) return this;
-			if (cofactor === _2n$2) return this.double();
+			if (cofactor === _1n$1) return this;
+			if (cofactor === _2n$1) return this.double();
 			if (cofactor === _4n) return this.double().double();
 			if (cofactor === _8n$1) return this.double().double().double();
 			return this.multiplyUnsafe(cofactor);
@@ -6408,7 +6586,7 @@ function eddsa(Point, cHash, eddsaOpts = {}) {
 		lengths
 	});
 }
-// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
+// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/ed25519.js
 /**
 * ed25519 Twisted Edwards curve with following addons:
 * - X25519 ECDH
@@ -6417,8 +6595,8 @@ function eddsa(Point, cHash, eddsaOpts = {}) {
 * @module
 */
 /*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-var _1n$1 = /* @__PURE__ */ BigInt(1);
-var _2n$1 = /* @__PURE__ */ BigInt(2);
+var _1n = /* @__PURE__ */ BigInt(1);
+var _2n = /* @__PURE__ */ BigInt(2);
 var _5n = /* @__PURE__ */ BigInt(5);
 var _8n = /* @__PURE__ */ BigInt(8);
 var ed25519_CURVE_p = /* @__PURE__ */ BigInt("0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffed");
@@ -6435,13 +6613,13 @@ function ed25519_pow_2_252_3(x) {
 	const _10n = BigInt(10), _20n = BigInt(20), _40n = BigInt(40), _80n = BigInt(80);
 	const P = ed25519_CURVE_p;
 	const b2 = x * x % P * x % P;
-	const b5 = pow2(pow2(b2, _2n$1, P) * b2 % P, _1n$1, P) * x % P;
+	const b5 = pow2(pow2(b2, _2n, P) * b2 % P, _1n, P) * x % P;
 	const b10 = pow2(b5, _5n, P) * b5 % P;
 	const b20 = pow2(b10, _10n, P) * b10 % P;
 	const b40 = pow2(b20, _20n, P) * b20 % P;
 	const b80 = pow2(b40, _40n, P) * b40 % P;
 	return {
-		pow_p_5_8: pow2(pow2(pow2(pow2(b80, _80n, P) * b80 % P, _80n, P) * b80 % P, _10n, P) * b10 % P, _2n$1, P) * x % P,
+		pow_p_5_8: pow2(pow2(pow2(pow2(b80, _80n, P) * b80 % P, _80n, P) * b80 % P, _10n, P) * b10 % P, _2n, P) * x % P,
 		b2
 	};
 }
@@ -6475,7 +6653,7 @@ var ed25519_Point = /* @__PURE__ */ edwards(ed25519_CURVE, { uvRatio });
 var Fp = /* @__PURE__ */ (() => ed25519_Point.Fp)();
 function toMontgomery(point) {
 	const { y } = point;
-	return Fp.toBytes(Fp.div(_1n$1 + y, _1n$1 - y));
+	return Fp.toBytes(Fp.div(_1n + y, _1n - y));
 }
 function toMontgomerySecret(secretKey) {
 	const size = ed25519_Point.Fp.BYTES;
@@ -6509,268 +6687,6 @@ function ed(opts) {
 * ```
 */
 var ed25519 = /* @__PURE__ */ ed({});
-// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
-/**
-* SHA3 (keccak) hash function, based on a new "Sponge function" design.
-* Different from older hashes, the internal state is bigger than output size.
-*
-* Check out
-* {@link https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf | FIPS-202},
-* {@link https://keccak.team/keccak.html | Website}, and
-* {@link https://crypto.stackexchange.com/q/15727 | the differences between
-* SHA-3 and Keccak}.
-*
-* Check out `sha3-addons` module for cSHAKE, k12, and others.
-* @module
-*/
-var _0n = BigInt(0);
-var _1n = BigInt(1);
-var _2n = BigInt(2);
-var _7n = BigInt(7);
-var _256n = BigInt(256);
-var _0x71n = BigInt(113);
-var SHA3_PI = [];
-var SHA3_ROTL = [];
-var _SHA3_IOTA = [];
-for (let round = 0, R = _1n, x = 1, y = 0; round < 24; round++) {
-	[x, y] = [y, (2 * x + 3 * y) % 5];
-	SHA3_PI.push(2 * (5 * y + x));
-	SHA3_ROTL.push((round + 1) * (round + 2) / 2 % 64);
-	let t = _0n;
-	for (let j = 0; j < 7; j++) {
-		R = (R << _1n ^ (R >> _7n) * _0x71n) % _256n;
-		if (R & _2n) t ^= _1n << (_1n << BigInt(j)) - _1n;
-	}
-	_SHA3_IOTA.push(t);
-}
-var IOTAS = split(_SHA3_IOTA, true);
-var SHA3_IOTA_H = IOTAS[0];
-var SHA3_IOTA_L = IOTAS[1];
-var rotlSH = (h, l, s) => h << s | l >>> 32 - s;
-var rotlSL = (h, l, s) => l << s | h >>> 32 - s;
-var rotlBH = (h, l, s) => l << s - 32 | h >>> 64 - s;
-var rotlBL = (h, l, s) => h << s - 32 | l >>> 64 - s;
-var rotlH = (h, l, s) => s > 32 ? rotlBH(h, l, s) : rotlSH(h, l, s);
-var rotlL = (h, l, s) => s > 32 ? rotlBL(h, l, s) : rotlSL(h, l, s);
-var B = /* @__PURE__ */ new Uint32Array(10);
-/**
-* `keccakf1600` internal permutation, additionally allows adjusting the round count.
-* @param s - 5x5 Keccak state encoded as 25 lanes split into 50 uint32 words
-*   in this file's local little-endian lane-word order
-* @param rounds - number of rounds to execute
-* @throws On wrong argument types. {@link TypeError}
-* @throws On wrong argument ranges or values. {@link RangeError}
-* @throws If `rounds` is outside the supported `1..24` range. {@link Error}
-* @example
-* Permute a Keccak state with the default 24 rounds.
-* ```ts
-* keccakP(new Uint32Array(50));
-* ```
-*/
-function keccakP(s, rounds = 24) {
-	if (!(s instanceof Uint32Array)) throw new TypeError("\"s\" expected Uint32Array(50), got type=" + typeof s);
-	if (s.length !== 50) throw new RangeError("\"s\" expected Uint32Array(50), got length=" + s.length);
-	anumber$1(rounds, "rounds");
-	if (rounds < 1 || rounds > 24) throw new Error("\"rounds\" expected integer 1..24");
-	for (let round = 24 - rounds; round < 24; round++) {
-		for (let x = 0; x < 10; x++) B[x] = s[x] ^ s[x + 10] ^ s[x + 20] ^ s[x + 30] ^ s[x + 40];
-		for (let x = 0; x < 10; x += 2) {
-			const idx1 = (x + 8) % 10;
-			const idx0 = (x + 2) % 10;
-			const B0 = B[idx0];
-			const B1 = B[idx0 + 1];
-			const Th = rotlH(B0, B1, 1) ^ B[idx1];
-			const Tl = rotlL(B0, B1, 1) ^ B[idx1 + 1];
-			for (let y = 0; y < 50; y += 10) {
-				s[x + y] ^= Th;
-				s[x + y + 1] ^= Tl;
-			}
-		}
-		let curH = s[2];
-		let curL = s[3];
-		for (let t = 0; t < 24; t++) {
-			const shift = SHA3_ROTL[t];
-			const Th = rotlH(curH, curL, shift);
-			const Tl = rotlL(curH, curL, shift);
-			const PI = SHA3_PI[t];
-			curH = s[PI];
-			curL = s[PI + 1];
-			s[PI] = Th;
-			s[PI + 1] = Tl;
-		}
-		for (let y = 0; y < 50; y += 10) {
-			const b0 = s[y], b1 = s[y + 1], b2 = s[y + 2], b3 = s[y + 3];
-			s[y] ^= ~s[y + 2] & s[y + 4];
-			s[y + 1] ^= ~s[y + 3] & s[y + 5];
-			s[y + 2] ^= ~s[y + 4] & s[y + 6];
-			s[y + 3] ^= ~s[y + 5] & s[y + 7];
-			s[y + 4] ^= ~s[y + 6] & s[y + 8];
-			s[y + 5] ^= ~s[y + 7] & s[y + 9];
-			s[y + 6] ^= ~s[y + 8] & b0;
-			s[y + 7] ^= ~s[y + 9] & b1;
-			s[y + 8] ^= ~b0 & b2;
-			s[y + 9] ^= ~b1 & b3;
-		}
-		s[0] ^= SHA3_IOTA_H[round];
-		s[1] ^= SHA3_IOTA_L[round];
-	}
-	clean(B);
-}
-/**
-* Keccak sponge function.
-* @param blockLen - absorb/squeeze rate in bytes
-* @param suffix - domain separation suffix byte
-* @param outputLen - default digest length in bytes. This base sponge only
-*   requires a non-negative integer; wrappers that need positive output
-*   lengths must enforce that themselves.
-* @param enableXOF - whether XOF output is allowed
-* @param rounds - number of Keccak-f rounds
-* @example
-* Build a sponge state, absorb bytes, then finalize a digest.
-* ```ts
-* const hash = new Keccak(136, 0x06, 32);
-* hash.update(new Uint8Array([1, 2, 3]));
-* hash.digest();
-* ```
-*/
-var Keccak = class Keccak {
-	state;
-	pos = 0;
-	posOut = 0;
-	finished = false;
-	state32;
-	destroyed = false;
-	blockLen;
-	suffix;
-	outputLen;
-	canXOF;
-	enableXOF = false;
-	rounds;
-	constructor(blockLen, suffix, outputLen, enableXOF = false, rounds = 24) {
-		anumber$1(blockLen, "blockLen");
-		anumber$1(suffix, "suffix");
-		anumber$1(rounds, "rounds");
-		abool$1(enableXOF, "enableXOF");
-		this.blockLen = blockLen;
-		this.suffix = suffix;
-		this.outputLen = outputLen;
-		this.enableXOF = enableXOF;
-		this.canXOF = enableXOF;
-		this.rounds = rounds;
-		anumber$1(outputLen, "outputLen");
-		if (!(0 < blockLen && blockLen < 200)) throw new Error("\"blockLen\" must be 1..199");
-		this.state = /* @__PURE__ */ new Uint8Array(200);
-		this.state32 = u32(this.state);
-	}
-	clone() {
-		return this._cloneInto();
-	}
-	keccak() {
-		swap32IfBE(this.state32);
-		keccakP(this.state32, this.rounds);
-		swap32IfBE(this.state32);
-		this.posOut = 0;
-		this.pos = 0;
-	}
-	update(data) {
-		aexists(this);
-		abytes$1(data);
-		const { blockLen, state, state32 } = this;
-		const len = data.length;
-		const canUseU32 = blockLen % 4 === 0 && data.byteOffset % 4 === 0;
-		const blockLen32 = blockLen / 4;
-		const data32 = canUseU32 && len >= blockLen ? u32(data) : void 0;
-		for (let pos = 0; pos < len;) {
-			if (data32 !== void 0 && this.pos === 0 && pos % 4 === 0 && len - pos >= blockLen) {
-				for (let i = 0, o = pos / 4; i < blockLen32; i++) state32[i] ^= data32[o + i];
-				pos += blockLen;
-				this.pos = blockLen;
-				this.keccak();
-				continue;
-			}
-			const take = Math.min(blockLen - this.pos, len - pos);
-			for (let i = 0; i < take; i++) state[this.pos++] ^= data[pos++];
-			if (this.pos === blockLen) this.keccak();
-		}
-		return this;
-	}
-	finish() {
-		if (this.finished) return;
-		this.finished = true;
-		const { state, suffix, pos, blockLen } = this;
-		state[pos] ^= suffix;
-		if ((suffix & 128) !== 0 && pos === blockLen - 1) this.keccak();
-		state[blockLen - 1] ^= 128;
-		this.keccak();
-	}
-	writeInto(out) {
-		aexists(this, false);
-		abytes$1(out);
-		this.finish();
-		const bufferOut = this.state;
-		const { blockLen } = this;
-		for (let pos = 0, len = out.length; pos < len;) {
-			if (this.posOut >= blockLen) this.keccak();
-			const take = Math.min(blockLen - this.posOut, len - pos);
-			out.set(bufferOut.subarray(this.posOut, this.posOut + take), pos);
-			this.posOut += take;
-			pos += take;
-		}
-		return out;
-	}
-	xofInto(out) {
-		if (!this.enableXOF) throw new Error("XOF is not enabled");
-		return this.writeInto(out);
-	}
-	xof(bytes) {
-		anumber$1(bytes);
-		return this.xofInto(new Uint8Array(bytes));
-	}
-	digestInto(out) {
-		aoutput(out, this);
-		if (this.finished) throw new Error("digest() was already called");
-		this.writeInto(out.length === this.outputLen ? out : out.subarray(0, this.outputLen));
-		this.destroy();
-	}
-	digest() {
-		const out = new Uint8Array(this.outputLen);
-		this.digestInto(out);
-		return out;
-	}
-	destroy() {
-		this.destroyed = true;
-		clean(this.state);
-	}
-	_cloneInto(to) {
-		const { blockLen, suffix, outputLen, rounds, enableXOF } = this;
-		to ||= new Keccak(blockLen, suffix, outputLen, enableXOF, rounds);
-		to.blockLen = blockLen;
-		to.state32.set(this.state32);
-		to.pos = this.pos;
-		to.posOut = this.posOut;
-		to.finished = this.finished;
-		to.rounds = rounds;
-		to.suffix = suffix;
-		to.outputLen = outputLen;
-		to.enableXOF = enableXOF;
-		to.canXOF = this.canXOF;
-		to.destroyed = this.destroyed;
-		return to;
-	}
-};
-var genKeccak = (suffix, blockLen, outputLen, info = {}) => createHasher(() => new Keccak(blockLen, suffix, outputLen), info);
-/**
-* SHA3-256 hash function. Different from keccak-256.
-* @param msg - message bytes to hash
-* @param opts - Reserved hash options.
-* @returns Digest bytes.
-* @example
-* Hash a message with SHA3-256.
-* ```ts
-* sha3_256(new Uint8Array([97, 98, 99]));
-* ```
-*/
-var sha3_256 = /* @__PURE__ */ genKeccak(6, 136, 32, /* @__PURE__ */ oidNist(8));
 // src/encoding.ts
 /** Hex and base64url, as the relay writes keys and signatures. */
 function base64UrlToBytes(b64url) {
@@ -6861,12 +6777,12 @@ function prefixedHash(prefix, keyHex) {
 	const data = new Uint8Array(head.length + key.length);
 	data.set(head);
 	data.set(key, head.length);
-	return bytesToHex(sha3_256(data));
+	return bytesToHex(sha256(data));
 }
 /** wire.stable_id_for */
-var stableIdFor = (publicKeyHex) => prefixedHash("emporia:agent:v1:", publicKeyHex);
+var stableIdFor = (publicKeyHex) => prefixedHash("emporia:agent:v2:", publicKeyHex);
 /** wire.recovery_commitment_for */
-var recoveryCommitmentFor = (recoveryKeyHex) => prefixedHash("emporia:recovery:v1:", recoveryKeyHex);
+var recoveryCommitmentFor = (recoveryKeyHex) => prefixedHash("emporia:recovery:v2:", recoveryKeyHex);
 /** wire.when_of, as microseconds since the epoch (Python keeps microseconds;
 *  a Date only milliseconds). An ISO time without a zone is UTC. */
 function whenOf(value) {
@@ -13343,7 +13259,7 @@ function fenToBoard(fen) {
 		return row;
 	});
 }
-// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
+// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/chess.js/dist/esm/chess.js
 function rootNode(comment) {
 	return comment !== null ? {
 		comment,

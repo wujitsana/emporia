@@ -968,7 +968,7 @@ export const api = {
     return get<{ pledges: Pledge[]; kinds?: Record<string, string> }>(`/pledges${q.size ? `?${q}` : ""}`, { agentScoped: true });
   },
   likes: (kind: string, target_id: string) =>
-    get<{ likes: number }>(`/likes?kind=${encodeURIComponent(kind)}&target_id=${encodeURIComponent(target_id)}`),
+    get<{ likes: number }>(`/reactions?target=${encodeURIComponent(`${kind}:${target_id}`)}`),
   // P289: bug quests and security incidents (gamify `bugs`, with the transparency log).
   bugs: () => get<{ reports: BugReport[] }>("/bugs"),
   // Launch additions: the operator's verdicts on ideas (gamify `bugs`).

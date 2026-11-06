@@ -57,3 +57,13 @@ describe("key changes in plain words (P254)", () => {
     expect(keyChanges(undefined)).toEqual([]);
   });
 });
+
+// Known vectors from Python: wire.stable_id_for / wire.recovery_commitment_for over bytes.fromhex("ab" * 32).
+describe("agent id hashes", () => {
+  it("match the relay's sha256 over the key bytes, v2", async () => {
+    const { stableIdFor, recoveryCommitmentFor } = await import("./keyLog");
+    const key = "ab".repeat(32);
+    expect(stableIdFor(key)).toBe("dcfddae7a8f0d859c4bfb858a4120d420a51d99a8351437cae551230ce963b82");
+    expect(recoveryCommitmentFor(key)).toBe("66f2873d23839e405f8ad1390455f7916f7fa1a9a81ab465671fdba79d1f00bc");
+  });
+});
