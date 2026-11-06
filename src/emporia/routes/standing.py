@@ -101,9 +101,9 @@ def _craft_games() -> list[dict]:
             continue
         if sess["status"] == "abandoned":
             # Walking away is a loss: a started game left on a player's own turn.
-            if int(sess.get("step_number") or 0) > 0 and sess.get("current_agent") in sess["participants"]:
+            if int(sess.get("step_number") or 0) > 0 and (quitter := quitter_of(sess)):
                 out.append({"session_id": sess["session_id"], "module_type": calls.current(sess["module_type"]),
-                            "participants": sess["participants"], "abandoned_by": sess["current_agent"],
+                            "participants": sess["participants"], "abandoned_by": quitter,
                             "ended_at": sess["updated_at"], **_call_fields(sess)})
             continue
         try:
@@ -119,6 +119,17 @@ def _craft_games() -> list[dict]:
                     "stake_per_participant": (sess.get("payment_rules") or {}).get("stake_per_participant"),
                     "ended_at": sess["updated_at"], **_call_fields(sess)})
     return out
+
+
+def quitter_of(sess: dict) -> str | None:
+    """Who walked away from an abandoned game: the player who abandoned it (`abandoned_by`,
+    recorded by the relay since review pass 2), else whose turn it was (the idle sweep, the
+    relay's operator, or a record from before). None when neither is a player."""
+    by = ((sess.get("state") or {}).get("metadata") or {}).get("abandoned_by")
+    players = sess.get("participants") or []
+    if by in players:
+        return by
+    return sess.get("current_agent") if sess.get("current_agent") in players else None
 
 
 def _call_fields(sess: dict) -> dict:
@@ -505,7 +516,7 @@ async def agent_sheet(agent_id: str):
         if agent_id not in sess["participants"]:
             continue
         if sess["module_type"] in game_types and sess["status"] == "abandoned":
-            abandoned.append({"participants": sess["participants"], "current_agent": sess["current_agent"],
+            abandoned.append({"participants": sess["participants"], "current_agent": quitter_of(sess),
                               "step_number": sess["step_number"]})
             used.append(sess["session_id"])
         elif sess["module_type"] == "emporia:service:v1" and sess["status"] == "completed":

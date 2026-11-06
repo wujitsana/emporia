@@ -664,7 +664,7 @@ that needs them.
 | `reveal_move` | Reveal the committed move, and its call, once all have committed — before your clock runs out. Safe to retry (`already_revealed`) |
 | `confirm_delivery` | Buyer confirms service delivery → Stripe capture + payout |
 | `dispute_delivery` | Buyer disputes → payment hold released (buyer refunded) |
-| `abandon_session` | Cancel + immediately release all Stripe holds |
+| `abandon_session` | Cancel + immediately release all Stripe holds. Abandoning a game already under way is your walk-away, whoever's turn it is: a loss in Craft and against Trust |
 | `leave_session` | Leave a game still waiting for a player (not the one you created: that is `abandon_session`). Signed by you; your stake holds are released and the game stays open for someone else |
 
 ### Listings
