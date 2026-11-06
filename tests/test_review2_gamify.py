@@ -11,7 +11,20 @@ from fastapi.testclient import TestClient
 from emporia import pledges as PL
 from emporia import relay_server as rs
 from tests.test_emporia import _register
-from tests.test_pledges import _drop_made_sessions, agents, make, record_action, session, set_session  # noqa: F401
+from tests.test_pledges import (  # noqa: F401
+    _drop_made_sessions,
+    act,
+    agents,
+    at,
+    deal,
+    make,
+    pick,
+    pledge,
+    record_action,
+    session,
+    set_session,
+    ts,
+)
 
 
 @pytest.fixture
@@ -64,3 +77,49 @@ def test_an_idle_or_old_abandon_still_blames_whose_turn_it_was():
     assert quitter_of({**old, "state": {"metadata": {"abandoned_by": "a"}}}) == "a"
     assert quitter_of({**old, "state": {"metadata": {"abandoned_by": "operator"}}}) == "b"
     assert quitter_of({**old, "current_agent": ""}) is None
+
+
+# ── pledges: evidence timing and the endings that used to void a broken pledge ──
+
+def test_a_pledge_dated_back_does_not_count_a_move_already_made():
+    """Found: the cut-off was the maker's signed `at`, which the relay takes up to ten minutes
+    old. A maker could commit, then pledge a tell of that very move dated a minute earlier,
+    and it was kept with evidence (or likewise a reveal it had already made in time)."""
+    tell = {**pledge("tell", {"tell": "move", "value": [4, 3, 3]}, made=5), "recorded_at": at(60)}
+    game = {"status": "completed", "participants": ["c", "m"], "updated_at": at(500), "turn_order": True,
+            "state": {"data": {"phase": "commit"}}}
+    acts = [act("m", "commit", 30), act("c", "commit", 40), act("m", "reveal", 50, [4, 3, 3]),
+            act("c", "reveal", 55, [5, 5, 0])]
+    assert PL.resolve(tell, game, acts, {}, ts(600))["status"] == "void", "the commit came before the relay had it"
+    honest = {**tell, "made_at": at(5), "recorded_at": at(6)}
+    assert PL.resolve(honest, game, acts, {}, ts(600))["status"] == "kept"
+    rev = {**pledge("reveal_within", {"seconds": 120}, made=5), "recorded_at": at(45)}
+    commits = [act("m", "commit", 10), act("c", "commit", 20), act("x", "commit", 30)]
+    done = [*commits, act("m", "reveal", 35), act("c", "reveal", 50), act("x", "reveal", 60)]
+    assert PL.resolve(rev, pick(pending=[]), done, {}, ts(2000))["status"] == "void"
+
+
+def test_a_seller_cannot_void_a_missed_deadline_by_abandoning_the_deal():
+    p = pledge("deliver_by", {"by": at(3600)})
+    late = deal(status="abandoned", updated=4000)
+    assert PL.resolve(p, late, [], {}, ts(5000))["status"] == "broken", "called off after the deadline had passed"
+    base = deal(status="abandoned", updated=100)
+    by_seller = {**base, "state": {**base["state"], "metadata": {"abandoned_by": "m"}}}
+    assert PL.resolve(p, by_seller, [], {}, ts(200))["status"] == "broken", "the seller walked away from its word"
+    by_buyer = {**base, "state": {**base["state"], "metadata": {"abandoned_by": "c"}}}
+    assert PL.resolve(p, by_buyer, [], {}, ts(200))["status"] == "void", "the buyer called it off in time"
+
+
+def test_a_reveal_never_made_is_broken_even_before_the_pledged_deadline():
+    """Found: a maker who pledged reveal_within longer than the game's own clock, then never
+    revealed (lost on time, or abandoned its own turn), got `void`: the game ended before the
+    pledged deadline. It never revealed, so it broke its word."""
+    p = pledge("reveal_within", {"seconds": 3600}, made=5)
+    commits = [act("m", "commit", 10), act("c", "commit", 20), act("x", "commit", 30)]
+    on_time_loss = pick(pending=["m"], updated=640)          # the 600 s phase clock ran out
+    assert PL.resolve(p, on_time_loss, commits, {}, ts(700))["status"] == "broken"
+    walked = {**pick(status="abandoned", pending=["m"], updated=100),
+              "state": {"data": {"phase": "reveal", "pending": ["m"]}, "metadata": {"abandoned_by": "m"}}}
+    assert PL.resolve(p, walked, commits, {}, ts(200))["status"] == "broken"
+    other = {**walked, "state": {**walked["state"], "metadata": {"abandoned_by": "c"}}}
+    assert PL.resolve(p, other, commits, {}, ts(200))["status"] == "void", "another player ended it"

@@ -59,7 +59,11 @@ split" is `tell {"tell": "even_split"}`.
    - **Contest:** the maker may contest an attested `broken` within 7 days (`act: "contest"`); the
      pledge then shows `disputed`. Evidence is not contested: the record is the record.
    - **Void:** the subject ended without testing the pledge (a game over before a reveal turn, a deal
-     called off, a listing nobody bought). Void counts nothing either way.
+     the buyer called off before the deadline, a listing nobody bought). Void counts nothing either way.
+     A seller who abandons the deal, or a deal abandoned after its deadline, is `broken`; so is a reveal
+     turn still open when the game ended, unless another player abandoned it (review pass 2).
+   - **"After the pledge"** means after the relay recorded it (`recorded_at`), never earlier than that:
+     the signed `at` may be minutes old, and a pledge dated back must not count a move already made.
 3. **Shown** on the sheet as the agent's word.
 
 ### 1.3 Track record on the sheet

@@ -202,6 +202,12 @@ def _deal_times(deal: Mapping, actions: list[Mapping]) -> tuple[float | None, fl
     return delivered, resp[0], resp[1]
 
 
+def _abandoned_by(subject: Mapping) -> str | None:
+    """The player who abandoned the session (the relay records it), or None."""
+    by = ((subject.get("state") or {}).get("metadata") or {}).get("abandoned_by")
+    return by if by in (subject.get("participants") or []) else None
+
+
 def _ended(subject: Mapping) -> tuple[bool, float | None]:
     if subject.get("status") in ("completed", "abandoned"):
         return True, _ts(subject.get("updated_at"))
@@ -293,7 +299,10 @@ def resolve(p: Mapping[str, Any], subject: Mapping[str, Any] | None, actions: It
     acts = acts or {}
     actions = sorted(actions, key=lambda a: str(a.get("created_at") or ""))
     kind, terms, maker = p["kind"], p.get("terms") or {}, p["maker_id"]
-    made = _ts(p.get("made_at")) or 0.0
+    # Review pass 2: "made" is when the relay took the pledge, never earlier. `made_at` is the
+    # maker's signed `at`, which may lag the relay's clock by minutes (the signing window), so
+    # a pledge dated back counted a reveal or a commit the maker had already made.
+    made = max(_ts(p.get("made_at")) or 0.0, _ts(p.get("recorded_at")) or 0.0)
     session = subject if subject and subject.get("status") else None
     ended, end = _ended(session) if session else (False, None)
     if session is None:                       # a listing nobody bought from (yet)
@@ -321,7 +330,10 @@ def resolve(p: Mapping[str, Any], subject: Mapping[str, Any] | None, actions: It
             return {"status": "kept" if ok else "broken", "resolved_by": "evidence", "resolved_at": _iso(delivered),
                     "evidence": {"delivered_at": _iso(delivered), "by": _iso(by)}}
         data = (session.get("state") or {}).get("data") or {}
-        if session.get("status") == "abandoned":
+        # Review pass 2: calling the deal off voids the pledge only when the buyer did it
+        # before the deadline; a seller who abandons, or a deal abandoned after `by`, broke it.
+        if session.get("status") == "abandoned" and (end is None or end <= by) \
+                and _abandoned_by(session) != maker:
             return {"status": "void", "resolved_at": _iso(end), "evidence": {"why": "the deal was called off"}}
         if ended or now > by:
             when = min(t for t in (end, by) if t is not None) if ended else by
@@ -351,9 +363,16 @@ def resolve(p: Mapping[str, Any], subject: Mapping[str, Any] | None, actions: It
         secs = int(terms.get("seconds") or 0)
         turns = [t for t in _reveal_turns(session, actions, maker) if t["opened"] is not None
                  and t["opened"] > made]
+        # Review pass 2: a turn still open when the game ended (lost on time, or the maker
+        # walked away) is a reveal that never came — broken, not void, whatever the deadline.
+        # Only another player abandoning the game excuses it.
+        excused = session.get("status") == "abandoned" and _abandoned_by(session) not in (None, maker)
         for t in turns:
             due = t["opened"] + secs
-            late = t["revealed"] > due if t["revealed"] is not None else (end if ended else now) > due
+            if t["revealed"] is not None:
+                late = t["revealed"] > due
+            else:
+                late = (ended and not excused) or (not ended and now > due)
             if late:
                 return {"status": "broken", "resolved_by": "evidence", "resolved_at": _iso(due),
                         "evidence": {"turn_opened_at": _iso(t["opened"]), "revealed_at": _iso(t["revealed"]),

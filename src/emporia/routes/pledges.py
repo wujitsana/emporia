@@ -74,7 +74,8 @@ def _deal_for_listing(conn, p: dict[str, Any]) -> dict[str, Any] | None:
     its maker made after the pledge (the maker sells, the counterparty buys)."""
     rows = conn.execute("SELECT * FROM sessions WHERE module_type = 'emporia:service:v1' AND created_at >= ? "
                         "AND participants_json LIKE ? AND participants_json LIKE ? ORDER BY created_at",
-                        (p["made_at"], f'%"{p["maker_id"]}"%', f'%"{p["to_agent"]}"%')).fetchall()
+                        (max(p["made_at"], p.get("recorded_at") or ""), f'%"{p["maker_id"]}"%',
+                         f'%"{p["to_agent"]}"%')).fetchall()
     for r in rows:
         s = rs._session_row_to_dict(r)
         data = (s.get("state") or {}).get("data") or {}
@@ -86,7 +87,8 @@ def _deal_for_listing(conn, p: dict[str, Any]) -> dict[str, Any] | None:
 def _row(r) -> dict[str, Any]:
     return {"pledge_id": r["pledge_id"], "maker_id": r["maker_id"], "to_agent": r["to_agent"], "kind": r["kind"],
             "subject_type": r["subject_type"], "subject_id": r["subject_id"], "terms": json.loads(r["terms_json"] or "{}"),
-            "note": r["note"], "made_at": r["made_at"], "signature": r["signature"], "public": bool(r["public"])}
+            "note": r["note"], "made_at": r["made_at"], "recorded_at": r["recorded_at"], "signature": r["signature"],
+            "public": bool(r["public"])}
 
 
 def load(where: str = "", params: tuple = (), limit: int = _LOAD_LIMIT) -> list[dict[str, Any]]:
