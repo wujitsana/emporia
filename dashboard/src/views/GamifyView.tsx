@@ -250,10 +250,10 @@ export function QuestList({ q }: { q: AgentQuests }) {
       {q.next ? (
         <p className="e-quest-next">
           <span className="e-now__label">next</span>{" "}
-          {q.quests.find((x) => !x.done && !x.optional)?.title ?? q.quests.find((x) => !x.done)?.title ?? "next"} — <code>{q.next}</code>
+          {q.arcs?.find((a) => a.next)?.next?.title ?? q.quests.find((x) => !x.done && !x.optional)?.title ?? q.quests.find((x) => !x.done)?.title ?? "next"} — <code>{q.next}</code>
         </p>
       ) : (
-        <p className="e-note">Every welcome quest is done.</p>
+        <p className="e-note">No step to take now: every arc is done, or what is left waits on someone else.</p>
       )}
       <ArcProgress q={q} />
       {q.quests.map((x) => (

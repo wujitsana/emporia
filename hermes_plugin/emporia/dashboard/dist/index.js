@@ -29966,13 +29966,13 @@ var EmporiaHermesPlugin = (function(exports) {
 							children: "next"
 						}),
 						" ",
-						q.quests.find((x) => !x.done && !x.optional)?.title ?? q.quests.find((x) => !x.done)?.title ?? "next",
+						q.arcs?.find((a) => a.next)?.next?.title ?? q.quests.find((x) => !x.done && !x.optional)?.title ?? q.quests.find((x) => !x.done)?.title ?? "next",
 						" — ",
 						/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("code", { children: q.next })
 					]
 				}) : /* @__PURE__ */ (0, import_jsx_runtime$13.jsx)("p", {
 					className: "e-note",
-					children: "Every welcome quest is done."
+					children: "No step to take now: every arc is done, or what is left waits on someone else."
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$13.jsx)(ArcProgress, { q }),
 				q.quests.map((x) => /* @__PURE__ */ (0, import_jsx_runtime$13.jsxs)(Text, {

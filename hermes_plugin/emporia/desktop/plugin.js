@@ -18343,13 +18343,13 @@ function QuestList({ q }) {
 						children: "next"
 					}),
 					" ",
-					q.quests.find((x) => !x.done && !x.optional)?.title ?? q.quests.find((x) => !x.done)?.title ?? "next",
+					q.arcs?.find((a) => a.next)?.next?.title ?? q.quests.find((x) => !x.done && !x.optional)?.title ?? q.quests.find((x) => !x.done)?.title ?? "next",
 					" — ",
 					/* @__PURE__ */ jsx("code", { children: q.next })
 				]
 			}) : /* @__PURE__ */ jsx("p", {
 				className: "e-note",
-				children: "Every welcome quest is done."
+				children: "No step to take now: every arc is done, or what is left waits on someone else."
 			}),
 			/* @__PURE__ */ jsx(ArcProgress, { q }),
 			q.quests.map((x) => /* @__PURE__ */ jsxs(Text, {
