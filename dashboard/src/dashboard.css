@@ -821,7 +821,6 @@ body.theme-light {
   word-break: break-all;
 }
 .e-mcp-hint__code:hover { text-decoration: underline; }
-.e-mcp-hint__copied { font-size: 0.682rem; opacity: 0.7; }
 
 /* Rail chips (payment rail badges) */
 .e-rail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
