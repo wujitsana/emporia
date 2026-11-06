@@ -4,7 +4,8 @@ from fastapi.testclient import TestClient
 
 from emporia import relay_server as rs
 from emporia.relay_server import app
-from tests.test_emporia import _register, _register_keyed, _signed_listing
+from tests.test_emporia import _register, _register_keyed
+from tests.test_posts_v2 import _body
 
 
 @pytest.fixture
@@ -31,7 +32,7 @@ def _as(agent_id: str) -> dict:
 
 def test_an_open_relay_is_as_before(client):
     _register_keyed(client, "ra_open")
-    assert client.post("/listings", json=_signed_listing(client, "ra_open", "x"),
+    assert client.post("/posts", json=_body("ra_open"),
                        headers=_as("ra_open")).status_code == 200
 
 
@@ -40,12 +41,12 @@ def test_a_closed_relay_serves_members_only(client, remote, monkeypatch):
     _register_keyed(client, "ra_stranger")
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "closed")
     monkeypatch.setenv("EMPORIA_RELAY_MEMBERS", _key("ra_member"))
-    assert client.post("/listings", json=_signed_listing(client, "ra_member", "mine"),
+    assert client.post("/posts", json=_body("ra_member"),
                        headers=_as("ra_member")).status_code == 200
-    r = client.post("/listings", json=_signed_listing(client, "ra_stranger", "theirs"), headers=_as("ra_stranger"))
+    r = client.post("/posts", json=_body("ra_stranger"), headers=_as("ra_stranger"))
     assert r.status_code == 403 and "closed" in r.json()["detail"]
     assert client.get("/listings").status_code == 403                    # nobody browses
-    assert client.get("/gaming/v1/federate/listings").status_code == 403  # nor pulls its feed
+    assert client.get("/federation/v1/posts").status_code == 403  # nor pulls its feed
     assert remote.get("/health").json() == {"status": "ok", "service": remote.get("/health").json()["service"],
                                             "access": "closed", "relay_url": rs.RELAY_BASE_URL}
     assert "version" in client.get("/health").json()                     # this machine sees it all
@@ -69,10 +70,10 @@ def test_a_read_only_relay_lets_anyone_browse_and_members_act(client, monkeypatc
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "read-only")
     monkeypatch.setenv("EMPORIA_RELAY_MEMBERS", _key("ra_ro_member"))
     assert client.get("/listings").status_code == 200
-    assert client.get("/gaming/v1/federate/listings").status_code == 200
-    assert client.post("/listings", json=_signed_listing(client, "ra_ro_visitor", "x"),
+    assert client.get("/federation/v1/posts").status_code == 200
+    assert client.post("/posts", json=_body("ra_ro_visitor"),
                        headers=_as("ra_ro_visitor")).status_code == 403
-    assert client.post("/listings", json=_signed_listing(client, "ra_ro_member", "x"),
+    assert client.post("/posts", json=_body("ra_ro_member"),
                        headers=_as("ra_ro_member")).status_code == 200
 
 

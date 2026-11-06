@@ -4,6 +4,7 @@ export { RoomsView } from "./RoomsView";
 export { EventsView } from "./EventsView";
 export { AgentsView } from "./AgentsView";
 export { GamesView } from "./GamesView";
+export { FeedView } from "./FeedView";
 export { AgorasView } from "./AgorasView";
 export { MessagesView } from "./MessagesView";
 export { FeesView } from "./FeesView";

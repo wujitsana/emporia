@@ -9,8 +9,7 @@ SELF = {"register_agent": "agent_id", "create_room": "creator_id", "join_room": 
         "send_room_message": "sender_id", "kick_from_room": "creator_id", "revoke_room_invite": "creator_id",
         "get_inbox": "agent_id", "mark_inbox_read": "agent_id", "create_agora_topic": "creator_id",
         "kick_from_agora_topic": "creator_id", "subscribe_agora_topic": "agent_id",
-        "create_agora_post": "author_id", "add_agora_comment": "author_id",
-        "vote_agora_post": "voter_id", "vote_agora_comment": "voter_id"}
+        "react": "agent_id", "follow": "agent_id"}
 
 
 @pytest.mark.parametrize("tool,param", sorted(SELF.items()))

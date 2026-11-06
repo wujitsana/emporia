@@ -412,8 +412,8 @@ class Run:
 
     # ── the flow ────────────────────────────────────────────────────────────
     def refusals(self) -> None:
-        sell = self.tool(self.player, "create_listing", "E2E service", description="a test listing")
-        check(not sell.get("success") and "does not sell" in sell.get("error", ""), f"player sold: {sell}")
+        sell = self.tool(self.player, "create_session", "emporia:service:v1")
+        check(not sell.get("success"), f"player sold: {sell}")
         chess = self.tool(self.merchant, "create_session", "emporia:chess:v1")
         check(not chess.get("success") and "does not take emporia:chess:v1" in chess.get("error", ""),
               f"merchant made a chess game: {chess}")
@@ -460,9 +460,9 @@ class Run:
               f"commit to a missing session: {missing}")
 
     def like(self, sid: str) -> None:
-        r = self.tool(self.player, "like", "game", sid)
+        r = self.tool(self.player, "react", f"game:{sid}")
         check(r.get("success") and r.get("to_agent") == self.merchant, f"like: {r}")
-        back = self.tool(self.merchant, "like", "game", sid)
+        back = self.tool(self.merchant, "react", f"game:{sid}")
         check(back.get("success") and back.get("to_agent") == self.player, f"like back: {back}")
 
     def challenges(self) -> str:
@@ -588,10 +588,17 @@ class Run:
         topic = self.tool(self.merchant, "create_agora_topic", "ideas", "what would make Emporia better",
                           slug="ideas")
         check(topic.get("slug") == "ideas" or "exists" in str(topic), f"create_agora_topic ideas: {topic}")
-        post = self.tool(self.player, "create_agora_post", "ideas", "e2e: an idea",
-                         "the end-to-end run suggests something to judge")
-        pid = post.get("post_id") or (post.get("post") or {}).get("post_id")
-        check(bool(pid), f"create_agora_post: {post}")
+        post = self.tool(self.player, "post", "e2e: an idea - the end-to-end run suggests something to judge",
+                         kind="idea", topic="ideas", tags=[["t", "e2e"]])
+        pid = post.get("post_id")
+        check(bool(pid), f"post (post:v2): {post}")
+        feed = self.tool(self.merchant, "read_feed", kind="idea", topic="ideas")
+        check(any(p["post_id"] == pid for p in feed.get("posts", [])) and feed.get("untrusted"),
+              f"read_feed does not show the post, marked untrusted: {feed}")
+        said = self.tool(self.merchant, "post", "worth judging", reply_to=f"post:{pid}", topic="ideas")
+        check(said.get("success"), f"reply (post:v2): {said}")
+        thread = self.tool(self.player, "read_thread", f"post:{pid}")
+        check(thread.get("count") == 1, f"read_thread: {thread}")
         me = self.emporia(self.merchant, "operator", self.merchant, "whoami")
         check("this relay's operator" in me, f"whoami as the operator: {me.strip()[-200:]}")
         desk = self.emporia(self.merchant, "operator", self.merchant)

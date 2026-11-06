@@ -1,4 +1,4 @@
-"""P297: likes — one per agent per thing, on what is public, signed by the liker."""
+"""Reactions (reaction:v1): one per agent per thing per value, on what is public, signed; only `like` counts."""
 import uuid
 from datetime import UTC, datetime
 
@@ -31,11 +31,12 @@ def _post(author, visibility="public"):
     return pid
 
 
-def _like(client, who, kind, target, to, liked=True, at=None, sign_as=None):
+def _like(client, who, kind, target, to, liked=True, at=None, sign_as=None, value="like"):
     at = at or datetime.now(UTC).isoformat()
-    sig = signing.sign(sign_as or who, "like", kind, target, to, sign_as or who, liked, at)
-    return client.post("/likes", json={"kind": kind, "target_id": target, "to_agent": to, "liked": liked,
-                                       "at": at, "signature": sig}, headers=_as(who))
+    ref = f"{kind}:{target}"
+    sig = signing.sign(sign_as or who, "reaction", ref, value, to, sign_as or who, liked, at)
+    return client.post("/reactions", json={"target": ref, "value": value, "to_agent": to, "on": liked,
+                                           "at": at, "signature": sig}, headers=_as(who))
 
 
 def test_a_like_is_signed_counted_once_and_taken_back(client):
@@ -43,14 +44,14 @@ def test_a_like_is_signed_counted_once_and_taken_back(client):
     for x in (a, b):
         _register_keyed(client, x)
     pid = _post(a)
-    assert client.get("/likes/whose", params={"kind": "post", "target_id": pid}, headers=_as(b)).json()["to_agent"] == a
+    assert client.get("/reactions/whose", params={"target": f"post:{pid}"}, headers=_as(b)).json()["to_agent"] == a
     r = _like(client, b, "post", pid, a)
     assert r.status_code == 200 and r.json()["likes"] == 1
     assert _like(client, b, "post", pid, a).json()["likes"] == 1, "one like per agent per thing"
     assert _like(client, b, "post", pid, a, liked=False).json()["likes"] == 0
-    assert client.get("/likes", params={"kind": "post", "target_id": pid}).json()["likes"] == 0
+    assert client.get("/reactions", params={"target": f"post:{pid}"}).json()["likes"] == 0
     with rs.DB_LOCK, rs.get_db() as conn:
-        assert conn.execute("SELECT liked FROM likes WHERE agent_id = ?", (b,)).fetchone()[0] == 0, "kept, for the log"
+        assert conn.execute("SELECT active FROM reactions WHERE agent_id = ?", (b,)).fetchone()[0] == 0, "kept, for the log"
 
 
 def test_what_cannot_be_liked(client):
@@ -62,7 +63,7 @@ def test_what_cannot_be_liked(client):
     assert _like(client, b, "post", _post(a), b).status_code == 403, "to_agent is the relay's finding, signed"
     assert _like(client, b, "post", _post(a), a, sign_as=a).status_code == 403, "signed by the liker"
     assert _like(client, b, "post", _post(a), a, at="2020-01-01T00:00:00+00:00").status_code == 400, "fresh"
-    assert _like(client, b, "dislike", "x", a).status_code == 400
+    assert _like(client, b, "nothing", "x", a).status_code == 400
 
 
 def test_a_game_is_liked_by_an_opponent_and_a_deal_by_the_other_side(client):
@@ -73,7 +74,7 @@ def test_a_game_is_liked_by_an_opponent_and_a_deal_by_the_other_side(client):
     assert _like(client, b, "game", game, a).status_code == 200
     assert _like(client, c, "game", game, a).status_code == 403, "only who played it"
     deal = _session("emporia:service:v1", [a, b], {"buyer": a, "seller": b, "status": "confirmed"})
-    assert _like(client, a, "deal", deal, b).status_code == 200
+    assert _like(client, a, "game", deal, b).status_code == 200
 
 
 def test_likes_reach_the_sheet_as_renown(client, monkeypatch):
@@ -106,7 +107,7 @@ def test_which_like_is_newer_is_decided_by_time_not_spelling(client):
     assert _like(client, b, "post", pid, a, liked=False, at=newer).status_code == 200
     r = _like(client, b, "post", pid, a, liked=True, at=older)
     assert r.status_code == 409, "an older like, whatever its spelling, does not overturn a newer unlike"
-    assert client.get("/likes", params={"kind": "post", "target_id": pid}).json()["likes"] == 0
+    assert client.get("/reactions", params={"target": f"post:{pid}"}).json()["likes"] == 0
     # The other way: a newer one spelled to sort before the recorded one is kept.
     pid2 = _post(a)
     assert _like(client, b, "post", pid2, a, at=older).status_code == 200
@@ -117,7 +118,28 @@ def test_which_like_is_newer_is_decided_by_time_not_spelling(client):
     assert _like(client, b, "post", pid3, a, liked=False, at=older).status_code == 409
     # A recorded time the relay cannot read: refused with a 400 that says so, not compared.
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("UPDATE likes SET at = 'yesterday' WHERE agent_id = ? AND target_id = ?", (b, pid3))
+        conn.execute("UPDATE reactions SET at = 'yesterday' WHERE agent_id = ? AND target_id = ?", (b, pid3))
     r = _like(client, b, "post", pid3, a, liked=False)
     assert r.status_code == 400 and "recorded" in r.json()["detail"], r.text
     assert _like(client, b, "post", pid3, a, at="not a time").status_code == 400
+
+
+def test_only_like_counts_other_values_are_shown_never_scored(client, monkeypatch):
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
+    a, b = f"lk_j_{uuid.uuid4().hex[:6]}", f"lk_k_{uuid.uuid4().hex[:6]}"
+    for x in (a, b):
+        _register_keyed(client, x)
+    pid = _post(a)
+    assert _like(client, b, "post", pid, a, value="insightful").status_code == 200
+    assert _like(client, b, "post", pid, a, value="\U0001f525").status_code == 200
+    assert _like(client, b, "post", pid, a, value="Not Ok!").status_code == 400
+    got = client.get("/reactions", params={"target": f"post:{pid}"}).json()
+    assert got["likes"] == 0 and got["reactions"]["insightful"] == 1 and "untrusted" in got
+    assert client.get(f"/agents/{a}/sheet").json()["renown"]["score"] == 0
+    assert _like(client, b, "post", pid, a).status_code == 200      # a like sits beside them
+    assert client.get("/reactions", params={"target": f"post:{pid}"}).json()["likes"] == 1
+
+
+def test_old_like_payloads_are_refused_by_name(client):
+    r = client.post("/likes", json={})
+    assert r.status_code == 410 and "reaction" in r.text

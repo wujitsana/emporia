@@ -542,7 +542,7 @@ def test_a_v32_relay_is_copied_aside_then_given_the_deals_table(tmp_path, monkey
     monkeypatch.setattr(rs, "DATABASE_PATH", db)
     rs.init_db()
     conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION == 33
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION == 34
     assert conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'session_deals'").fetchone()
-    [snap] = list(tmp_path.glob("relay.sqlite3.before-v33-*.bak"))
+    [snap] = list(tmp_path.glob("relay.sqlite3.before-v34-*.bak"))
     assert sqlite3.connect(snap).execute("PRAGMA user_version").fetchone()[0] == 32

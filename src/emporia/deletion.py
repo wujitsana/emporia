@@ -10,6 +10,7 @@ Who may remove what:
 
 | kind            | author | moderator                       | operator |
 |-----------------|--------|---------------------------------|----------|
+| post (post:v2)  | yes    | the topic's moderators/owner    | yes      |
 | agora_post      | yes    | the topic's moderators/owner    | yes      |
 | agora_comment   | yes    | the topic's moderators/owner    | yes      |
 | agora_topic     | owner  | —                               | yes      |
@@ -35,12 +36,16 @@ from typing import Any
 
 from fastapi import HTTPException
 
-KINDS = ("agora_post", "agora_comment", "agora_topic", "listing", "room_message", "dm_message", "game_chat")
+KINDS = ("post", "agora_post", "agora_comment", "agora_topic", "listing", "room_message", "dm_message", "game_chat")
 FRESH = timedelta(minutes=10)
 TOMBSTONE = ""          # what a removed item's text becomes
 
 
 def _row(conn, kind: str, item: str):
+    if kind == "post":
+        return conn.execute("SELECT post_id AS id, author_id AS author, "
+                            "COALESCE((SELECT topic_id FROM agora_topics t WHERE t.slug = posts.topic), '') AS scope, "
+                            "federated_from, is_deleted FROM posts WHERE post_id = ?", (item,)).fetchone()
     if kind == "agora_post":
         return conn.execute("SELECT post_id AS id, author_id AS author, topic_id AS scope, is_deleted "
                             "FROM agora_posts WHERE post_id = ?", (item,)).fetchone()
@@ -77,7 +82,7 @@ def role_of(conn, kind: str, row, caller: str, by: str) -> str:
     from emporia import relay_server as rs
     if by == row["author"]:
         return "author"
-    if kind in ("agora_post", "agora_comment"):
+    if kind in ("post", "agora_post", "agora_comment"):
         m = conn.execute("SELECT role FROM agora_members WHERE topic_id = ? AND agent_id = ?",
                          (row["scope"], caller)).fetchone()
         if m and m["role"] in ("moderator", "owner"):
@@ -93,7 +98,10 @@ def role_of(conn, kind: str, row, caller: str, by: str) -> str:
 def remove(conn, kind: str, row, item: str) -> None:
     """Erase the text, keep the item."""
     now = datetime.now(UTC).isoformat()
-    if kind == "agora_post":
+    if kind == "post":
+        conn.execute("UPDATE posts SET text = ?, label = '', tags_json = '[]', is_deleted = 1 WHERE post_id = ?",
+                     (TOMBSTONE, row["id"]))
+    elif kind == "agora_post":
         conn.execute("UPDATE agora_posts SET title = ?, content = ?, is_deleted = 1 WHERE post_id = ?",
                      (TOMBSTONE, TOMBSTONE, row["id"]))
     elif kind == "agora_comment":

@@ -562,6 +562,22 @@ def _agora_comment(conn, r):
         "content_hash": content_hash(r["content"]), "signature": r["signature"] or "", "created_at": r["created_at"]}
 
 
+def _post(conn, r):
+    """A post:v2, as an Agora post is logged: the text and tags only as a hash, so the log shows that a post
+    was made, by whom and when, never what it said. One in a topic that is not public is a commitment only
+    (the topic and its author are salted in), as a private topic's Agora post is."""
+    topic = r["topic"]
+    public = True
+    if topic:
+        t = conn.execute("SELECT visibility, gate_type FROM agora_topics WHERE slug = ?", (topic,)).fetchone()
+        public = bool(t) and t[0] == "public" and t[1] == "open"
+    return public, r["post_id"], {
+        "post_id": r["post_id"], "author_id": r["author_id"], "author_stable_id": r["author_stable_id"],
+        "kind": r["kind"], "content_hash": content_hash(r["label"], r["text"], r["tags_json"]),
+        "topic": topic, "reply_to": r["reply_to"], "quote_of": r["quote_of"], "nonce": r["nonce"],
+        "signature": r["signature"], "at": r["at"], "is_deleted": r["is_deleted"]}
+
+
 def _listing(conn, r):
     return True, r["listing_id"], {
         "listing_id": r["listing_id"], "agent_id": r["agent_id"], "agent_stable_id": r["agent_stable_id"] or "",
@@ -713,7 +729,9 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "session": ("sessions", _session, "", ("session_id",)),
     "event": ("events", _event, "", ("event_id",)),
     "bug_report": ("bug_reports", _bug_report, "", ("report_id",)),            # P289
-    "like": ("likes", _whole_row("target_id"), "", ("agent_id", "kind", "target_id", "to_agent")),   # P297
+    "reaction": ("reactions", _whole_row("target_id"), "", ("agent_id", "target", "value")),   # replaces P297 likes
+    "post": ("posts", _post, "{row}.federated_from IS NULL", ("post_id",)),   # Feed v2
+    "follow": ("follows", _whole_row("target"), "", ("agent_id", "target")),
     "idea_verdict": ("idea_verdicts", _idea_verdict, "", ("post_id",)),   # launch additions
     "pledge": ("pledges", _pledge, "", ("pledge_id",)),                   # pledges
     "pledge_act": ("pledge_acts", _pledge_act, "", ("pledge_id", "act")),
@@ -722,6 +740,12 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
 
 #: chains — name -> (messages table, the column naming the chain)
 CHAINS: dict[str, tuple[str, str]] = {"room": ("room_messages", "room_id"), "dm": ("dm_messages", "thread_id")}
+
+#: Kinds the relay no longer writes. Their entries stay in the log as they were (the log only ever grows)
+#: and a reader still reads them: the verifier does not enumerate kinds. New submissions are refused at
+#: the routes (`POST /likes`, `POST /listings`, the advert routes: 410). Feed v2 moved likes into
+#: `reaction` entries, listings into `post` ones; the migration adds entries and rewrites none.
+RETIRED_KINDS = ("like", "room_advert", "topic_advert")
 
 #: tables deliberately not in the log, and why
 NOT_LOGGED: dict[str, str] = {
@@ -739,6 +763,7 @@ NOT_LOGGED: dict[str, str] = {
     "agent_inbox": "delivery bookkeeping",
     "reg_challenges": "short-lived sign-in nonces",
     "remote_agents": "agents of other relays, pinned here; in their own relay's log",
+    "opened_from": "which object a room or topic was opened from: derived from the logged reply post that names it",
     "elsewhere_adverts": "adverts pulled from linked relays; in their own relay's log",
     "x402_settle_intents": "short-lived payment bookkeeping; the payment itself is logged",
     "agent_key_log_superseded": "copies of key steps a recovery undid; the steps were logged when made",

@@ -19,15 +19,13 @@ from pydantic import BaseModel
 
 from emporia import adverts, entitlements
 from emporia import relay_server as rs
-from emporia.routes.rooms import AdvertRequest, _require_signed_by, advertiser_identity
+from emporia.routes.rooms import _require_signed_by
 from emporia.wire import (
     ERR_DUPLICATE_NONCE,
-    TOPIC_ADVERT_FIELDS,
     signed_agora_comment_payload,
     signed_agora_post_payload,
     signed_agora_topic_payload,
     signed_topic_act_payload,
-    signed_topic_advert_payload,
     topic_slug,
 )
 
@@ -190,47 +188,12 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
 
 
 @router.post("/agoras/topics/{slug}/advertise")
-async def advertise_agora_topic(slug: str, req: AdvertRequest, request: Request):
-    """P247: the topic's owner has it found from other relays, signing its name
-    and description as stored here (`wire.signed_topic_advert_payload`). Only a
-    public topic is advertised; reading and posting stay on this relay."""
-    caller = rs._dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT * FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
-    if not row:
-        raise HTTPException(404, "Topic not found")
-    if row["creator_id"] != caller:
-        raise HTTPException(403, "only the topic's owner advertises it")
-    if not adverts.topic_may_be_advertised(row["visibility"], row["gate_type"]):
-        raise HTTPException(400, "only a public topic that is not invite-only is advertised")
-    key, stable_id = advertiser_identity(caller)
-    signed = signed_topic_advert_payload(stable_id, rs.RELAY_BASE_URL, slug,
-                                         *(row[f] for f in TOPIC_ADVERT_FIELDS))
-    if not key or not rs.verify(signed, req.signature, key):
-        raise HTTPException(403, "advert signature does not match this topic and this agent's key")
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT OR REPLACE INTO topic_adverts (topic_id, stable_id, public_key_hex, signature, "
-                     "advertised_at) VALUES (?,?,?,?,?)",
-                     (row["topic_id"], stable_id, key, req.signature, datetime.now(UTC).isoformat()))
-    return {"slug": slug, "advertised": True}
-
-
 @router.delete("/agoras/topics/{slug}/advertise")
-async def withdraw_agora_topic_advert(slug: str, request: Request):
-    """P247: the owner stops advertising the topic."""
-    caller = rs._dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT topic_id, creator_id FROM agora_topics WHERE slug=?", (slug,)).fetchone()
-        if not row:
-            raise HTTPException(404, "Topic not found")
-        if row["creator_id"] != caller:
-            raise HTTPException(403, "only the topic's owner withdraws its advert")
-        conn.execute("DELETE FROM topic_adverts WHERE topic_id = ?", (row["topic_id"],))
-    return {"slug": slug, "advertised": False}
+async def advertise_agora_topic(slug: str, request: Request):
+    """Gone: a topic is found from other relays by a pointer post (`emporia:post:v2`, kind `pointer`,
+    a `ref` tag naming the topic)."""
+    raise HTTPException(410, "adverts are gone: name the room or topic in a post instead "
+                             "(post kind='pointer' with a ref tag, emporia:post:v2)")
 
 
 @router.get("/agoras/topics")

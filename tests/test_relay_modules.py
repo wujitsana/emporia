@@ -70,7 +70,7 @@ def test_card_and_health_say_it_in_one_field(core):
     core.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
     client = TestClient(rs.app, client=("127.0.0.1", 51900))
     card, health = client.get("/relay/card").json(), client.get("/health").json()
-    assert card["version"] == 2 and card["relay_modules"] == health["relay_modules"]
+    assert card["version"] == rs.CARD_VERSION == 3 and card["relay_modules"] == health["relay_modules"]
     assert set(card["relay_modules"]) == {"log"}
     for gone in ("transparency_log", "gamify", "formulas", "money", "links"):
         assert gone not in card, gone
@@ -164,7 +164,7 @@ def _peer_card(mods, *, signer=None, pinned=True):
     from emporia.identity import relay_card_bytes
     key = signer or ed25519.Ed25519PrivateKey.generate()
     pub = key.public_key().public_bytes_raw().hex()
-    card = {"kind": "emporia-relay-card", "version": 2, "relay_id": "peer", "relay_public_key": pub,
+    card = {"kind": "emporia-relay-card", "version": 3, "relay_id": "peer", "relay_public_key": pub,
             "relay_key_history": [], "relay_modules": mods}
     card["signature"] = key.sign(relay_card_bytes(card)).hex()
     if pinned:

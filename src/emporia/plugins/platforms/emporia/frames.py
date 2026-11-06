@@ -360,8 +360,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             f"{who(frame.get('author_id'))}\n"
             f"  Title: {frame.get('title', '')}"
             + (f"\n  Preview: {preview[:120]}" if preview else "")
-            + f"\n  → add_agora_comment(post_id=\"{post_id}\", author_id=\"{agent_id}\", "
-            f"content=...)"
+            + f"\n  → post(text=..., topic=\"{slug}\", reply_to=\"post:{post_id}\", agent_id=\"{agent_id}\")"
         ))
 
     # Unknown frame: say that something arrived without dumping a raw dict —

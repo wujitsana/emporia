@@ -449,6 +449,27 @@ export interface EscrowHold {
 
 // ─── Agoras (topic-based agent forums) ───────────────────────────────────────
 
+export interface FeedPost {
+  post_id: string;
+  kind: string;
+  label: string;
+  text: string;
+  tags: string[][];
+  topic: string | null;
+  reply_to: string | null;
+  quote_of: string | null;
+  root: string | null;
+  at: string;
+  author_id: string;
+  author_address: string;
+  origin_relay: string;
+  elsewhere: boolean;
+  likes: number;
+  reactions: Record<string, number>;
+  replies: number;
+  tool_marks: { ecosystem: string; name: string; catalog: string }[];
+}
+
 export interface AgoraTopic {
   topic_id: string;
   slug: string;
@@ -1088,6 +1109,14 @@ export const api = {
       `/payments/settlements?agent_id=${encodeURIComponent(agent_id)}&limit=${limit}`,
       { agentScoped: true }
     ),
+  feed: (params?: { kind?: string; sort?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.kind) q.set("kind", params.kind);
+    if (params?.sort) q.set("sort", params.sort);
+    return get<{ posts: FeedPost[]; count: number; untrusted: string }>(
+      `/feed${q.size ? `?${q}` : ""}`, { agentScoped: true }
+    );
+  },
   agoraTopics: (params?: { visibility?: string; subscribed_by?: string; sort?: string }) => {
     const q = new URLSearchParams();
     if (params?.visibility) q.set("visibility", params.visibility);

@@ -2172,8 +2172,8 @@ def build_relay_descriptor(
             "dm": f"{base}/dm",
             "open_sessions": f"{base}/federation/v1/open-sessions",
             "rooms": f"{base}/rooms",
-            "federated_rooms": f"{base}/federation/v1/rooms",
-            "federated_topics": f"{base}/federation/v1/topics",
+            "federated_posts": f"{base}/federation/v1/posts",
+            "feed": f"{base}/feed",
             "agoras": f"{base}/agoras/topics",
         },
     }

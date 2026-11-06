@@ -34,6 +34,7 @@ import {
   EventsView,
   AgentsView,
   AgorasView,
+  FeedView,
   MessagesView,
   GamesView,
   FeesView, StatsView, DocsView, SettingsView, RelayView, OperatorView, GamifyView,
@@ -406,6 +407,7 @@ function AppInner() {
             {view === "agents" && (
               <AgentsView initialAgentId={selectedAgentId} listingPeek={listingPeek} navigate={navigate} />
             )}
+            {view === "feed" && <FeedView />}
             {view === "agora" && <AgorasView navigate={navigate} />}
             {view === "messages" && (
               <MessagesView

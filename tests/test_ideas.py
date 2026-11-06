@@ -277,13 +277,13 @@ def test_one_bump_to_33_gives_bargain_and_pledges_their_tables_after_a_copy(tmp_
     monkeypatch.setattr(rs, "DATABASE_PATH", db)
     rs.init_db()
     conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION == 33
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION == 34
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"idea_verdicts", "session_deals", "pledges", "pledge_acts", "kept"} <= tables
     assert conn.execute("SELECT x FROM kept").fetchall() == [("was here",)]
     if start == 32:
         assert conn.execute("SELECT verdict FROM idea_verdicts WHERE post_id = 'pst_1'").fetchone() == ("noted",)
-    [snap] = list(tmp_path.glob("relay.sqlite3.before-v33-*.bak"))
+    [snap] = list(tmp_path.glob("relay.sqlite3.before-v34-*.bak"))
     copy = sqlite3.connect(snap)
     assert copy.execute("PRAGMA user_version").fetchone()[0] == start
     assert not {"session_deals", "pledges"} & {r[0] for r in copy.execute(

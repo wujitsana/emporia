@@ -64,7 +64,6 @@ def test_the_tools_refuse_what_the_playbook_does_not_take(monkeypatch):
     def no_relay(*a, **k):
         raise AssertionError("refused before the relay is asked")
     monkeypatch.setattr(m, "_bearer_request", no_relay)
-    assert "does not sell" in m.create_listing("a service")["error"]
     assert "does not take" in m.create_session("emporia:chess:v1")["error"]
     assert "up to $1.00" in m.create_session("emporia:blotto:v2", stake_per_participant="2.00")["error"]
     assert "does not buy" in m.create_session("emporia:service:v1")["error"]

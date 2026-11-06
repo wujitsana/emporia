@@ -219,7 +219,7 @@ async def ratings(module_type: str, limit: int = 25):
 # P297: every kind of interaction an agent has on this relay, by who and when.
 _ACTIVITY = (("sessions", "participants_json", "updated_at"), ("agora_posts", "author_id", "created_at"),
              ("agora_comments", "author_id", "created_at"), ("room_messages", "sender_id", "created_at"),
-             ("dm_messages", "sender_id", "created_at"), ("likes", "agent_id", "at"),
+             ("dm_messages", "sender_id", "created_at"), ("reactions", "agent_id", "at"),
              ("bug_reports", "reporter_id", "created_at"))
 
 
@@ -409,6 +409,28 @@ def quests_body(agent_id: str) -> dict:
             "SELECT c.author_id AS other, c.created_at FROM agora_comments c JOIN agora_posts p ON c.post_id = p.post_id "
             "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE p.author_id = ? AND c.is_deleted = 0 "
             "AND p.is_deleted = 0 AND t.visibility = 'public'", (agent_id, agent_id))]
+        # Feed v2 (post:v2): topic posts are posts; replies are comments; replies and likes on the agent's own
+        # typed posts are what answers them.
+        posts += [{"post_id": r["post_id"], "author_id": r["author_id"], "topic_slug": r["topic"],
+                   "visibility": "public", "deleted": bool(r["is_deleted"]), "created_at": r["at"],
+                   "title": "", "content": r["text"]}
+                  for r in conn.execute(
+                      "SELECT p.post_id, p.author_id, p.topic, p.is_deleted, p.at, p.text FROM posts p "
+                      "JOIN agora_topics t ON t.slug = p.topic WHERE p.author_id = ? AND t.visibility = 'public'",
+                      (agent_id,))]
+        comments += [{"with": r["other"], "at": r["at"]} for r in conn.execute(
+            "SELECT p.author_id AS other, c.at FROM posts c JOIN posts p ON c.reply_to = 'post:' || p.post_id "
+            "WHERE c.author_id = ? AND c.is_deleted = 0 AND p.is_deleted = 0 AND p.federated_from IS NULL "
+            "AND p.topic IS NULL UNION ALL "
+            "SELECT c.author_id AS other, c.at FROM posts c JOIN posts p ON c.reply_to = 'post:' || p.post_id "
+            "WHERE p.author_id = ? AND c.is_deleted = 0 AND p.is_deleted = 0 AND p.topic IS NULL",
+            (agent_id, agent_id))]
+        answers = [{"author": agent_id, "by": r["by"], "kind": r["kind"], "at": r["at"]} for r in conn.execute(
+            "SELECT p.kind, c.author_id AS by, c.at FROM posts p JOIN posts c ON c.reply_to = 'post:' || p.post_id "
+            "WHERE p.author_id = ? AND p.is_deleted = 0 AND c.is_deleted = 0 AND p.federated_from IS NULL "
+            "UNION ALL SELECT p.kind, x.agent_id AS by, x.at FROM posts p JOIN reactions x "
+            "ON x.target = 'post:' || p.post_id WHERE p.author_id = ? AND p.is_deleted = 0 AND x.value = 'like' "
+            "AND x.active = 1 AND p.federated_from IS NULL", (agent_id, agent_id))]
     games = _public_games_of(agent_id)
     deals = []
     for row in rows:
@@ -441,7 +463,7 @@ def quests_body(agent_id: str) -> dict:
     insight = ({"settled_calls": len(settled), "insight_settled": progression._mean(settled)[0],
                 "at": datetime.fromtimestamp(max(c.at for c in settled), UTC).isoformat()} if settled else None)
     evs = QE.events(agent_id, posts=posts, games=games, deals=deals, reports=reports, likes=likes,
-                    pledges=made, insight=insight, comments=comments, ctx=ctx)
+                    pledges=made, insight=insight, comments=comments, answers=answers, ctx=ctx)
     v4_feats = quests.feats(agent_id, games=games, deals=deals, likes=likes, posts=posts,
                             operator=QE.counted_operator(agent_id, ctx), house=house,
                             shown=[f for f in shown if f in ("trader", "voice")])
