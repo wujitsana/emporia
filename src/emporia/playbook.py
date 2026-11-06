@@ -41,6 +41,7 @@ class Playbook:
     sells: bool                        # may create listings
     buys: bool                         # may pay for services and entries
     runs: str                          # model turns, or rules (no model; the house agent)
+    pledges: bool = True               # may sign pledges and attest others' (gamify pledges)
 
     def as_dict(self) -> dict:
         d = asdict(self)
@@ -53,24 +54,24 @@ PRESETS: dict[str, Playbook] = {
     "player": Playbook("player", SET_PLAYS, 100, "anyone", False, False, "model"),
     "merchant": Playbook("merchant", NONE, None, "anyone", True, False, "model"),
     "scout": Playbook("scout", NONE, None, "anyone", False, True, "model"),
-    "host": Playbook("host", (*SET_PLAYS, CHESS), 100, "anyone", True, False, "rules"),
+    "host": Playbook("host", (*SET_PLAYS, CHESS), 100, "anyone", True, False, "rules", pledges=False),
     # Operator section: the agent of the person who runs the relay. It answers questions, posts
     # and greets; it takes no game and no deal on the relay it judges. Verdicts are not in any
     # playbook: they are its person's signed decisions, a command the key guard refuses it.
-    "operator": Playbook("operator", NONE, None, "anyone", False, False, "model"),
+    "operator": Playbook("operator", NONE, None, "anyone", False, False, "model", pledges=False),
 }
 ABOUT = {
     "custom": "no bounds beyond its limits — its own instructions decide (the default)",
     "player": "takes set-play challenges up to $1.00; doesn't sell or buy",
     "merchant": "sells its listings; plays and buys nothing",
     "scout": "browses and buys within its limits; plays and sells nothing",
-    "host": "the house agent: takes set plays (and unstaked chess) up to $1.00, sells, runs on rules",
-    "operator": "the relay operator's agent: answers anyone, plays, sells and buys nothing; verdicts stay "
-                "with its person",
+    "host": "the house agent: takes set plays (and unstaked chess) up to $1.00, sells, runs on rules, pledges nothing",
+    "operator": "the relay operator's agent: answers anyone, plays, sells and buys nothing; pledges nothing; "
+                "verdicts stay with its person",
 }
 
 _FIELD_WORDS = {"games": "games", "max_stake_cents": "stake limit", "answers": "who it answers",
-                "sells": "selling", "buys": "buying", "runs": "how it runs"}
+                "sells": "selling", "buys": "buying", "runs": "how it runs", "pledges": "pledges"}
 
 
 def about(pb: Playbook) -> str:
@@ -91,6 +92,7 @@ SETTINGS = {   # .env name → field
     "EMPORIA_PLAYBOOK_SELLS": "sells",
     "EMPORIA_PLAYBOOK_BUYS": "buys",
     "EMPORIA_PLAYBOOK_RUNS": "runs",
+    "EMPORIA_PLAYBOOK_PLEDGES": "pledges",
 }
 
 
@@ -138,7 +140,7 @@ def resolve(env: dict[str, str] | None = None) -> Playbook:
                 fields[field] = parse_games(raw)
             elif field == "max_stake_cents":
                 fields[field] = None if raw.lower() == "none" else max(0, int(raw))
-            elif field in ("sells", "buys"):
+            elif field in ("sells", "buys", "pledges"):
                 fields[field] = _yes(raw)
             elif field == "answers":
                 if raw not in ANSWERS:
@@ -158,7 +160,7 @@ def current() -> Playbook:
     try:
         return resolve()
     except PlaybookError:
-        return Playbook("unreadable", NONE, 0, "nobody", False, False, "model")
+        return Playbook("unreadable", NONE, 0, "nobody", False, False, "model", pledges=False)
 
 
 def _how_to_change() -> str:
@@ -189,6 +191,11 @@ def may_sell(pb: Playbook) -> str:
 def may_buy(pb: Playbook) -> str:
     return "" if pb.buys else (f"your playbook ({pb.preset}) does not buy; "
                                + _how_to_change())
+
+
+def may_pledge(pb: Playbook) -> str:
+    """"" when it may sign a pledge, or attest or contest one; else why not."""
+    return "" if pb.pledges else (f"your playbook ({pb.preset}) makes no pledges; " + _how_to_change())
 
 
 def wakes_for(pb: Playbook, frame: dict) -> bool:

@@ -2237,6 +2237,7 @@ def test_no_new_identity_as_proof_params():
     # inline) or pure public-lookup keys — not identity-as-proof.
     _SAFE_LOOKUPS = {
         ("GET", "/agents/{agent_id}/quests"),  # P297: whose quests; public lookup, no auth decision
+        ("GET", "/agents/{agent_id}/next"),  # whats_next: the caller must be that agent itself, checked inline
         ("GET", "/agents/{agent_id}/available"),  # P296: is this name free; yes/no, no auth decision
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
         ("GET", "/agents/{agent_id}/card"),  # P187: whose card; public once the agent published a relay list
@@ -2420,6 +2421,9 @@ def test_every_route_has_a_reviewed_auth_posture():
     _AUTHENTICATED: set[tuple[str, str]] = {
         ("POST", "/likes"),  # P297: the liker, signed in, and its signature
         ("GET", "/likes/whose"),  # P297: signed in; a game's or deal's other side only to who was in it
+        ("POST", "/pledges"),  # pledges: the maker, signed in, and its signature
+        ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
+        ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
         ("POST", "/bugs"),  # P289: the reporter, signed in
         ("POST", "/bugs/{report_id}/verdict"),  # P289: the relay operator only
         ("POST", "/ideas/{post_id}/verdict"),  # season 1: the relay operator only, and its signature
@@ -2555,6 +2559,10 @@ def test_every_route_has_a_reviewed_auth_posture():
     }
     _VISIBILITY_FILTERED: set[tuple[str, str]] = {
         ("GET", "/agents/{agent_id}/sessions"),
+        # Pledges: public ones (a listing, a public game) to anyone; a private deal's to its
+        # maker, its counterparty and the operator; `due` only to the signed-in agent.
+        ("GET", "/pledges"),
+        ("GET", "/pledges/{pledge_id}"),
         ("GET", "/agents/{agent_id}/posts"),
         ("GET", "/payments/records"),
         # P105: 401 anonymous; operator sees all, an agent only holds it is party to.
@@ -27465,10 +27473,11 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V31 -> V32 (season 1): `idea_verdicts`, the operator's signed verdict on an idea.
 #
-# V32 -> V33 (Bargain): `session_deals`, the relay's secret seed for a game that deals hidden
-# hands, kept out of the session's state until the game ends. A V32 relay would serve a dealt
-# game it cannot deal or reveal.
-_SCHEMA_FINGERPRINT_V33 = "7fa7383385dcbb197e781cf659dcf359a86beab42d30a0703b2aef7f2a997eb7"  # Bargain: session deals
+# V32 -> V33 (gamify-all: Bargain and pledges in one bump): `session_deals`, the relay's secret
+# seed for a game that deals hidden hands, kept out of the session's state until the game ends
+# (a V32 relay would serve a dealt game it cannot deal or reveal); `pledges` and `pledge_acts`,
+# signed promises and their attestations.
+_SCHEMA_FINGERPRINT_V33 = "312c85d45bceb7b1e96e3394c74fdd93b2026fa09a91a7e74bb0fbe0ad0936f7"  # Bargain's session deals and pledges
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27752,6 +27761,9 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",
     "/likes/whose": "P297: whom a like would be for — the like tool's own lookup, machine-facing",
+    "/agents/{}/next": "whats_next: the agent's own to-do facts, signed in as that agent only — the tool's input, not a view",
+    "/pledges": "pledges: the Gamify tab's pledge list is ui-v2's (docs/proposals/gamify-pledges.md §5); no dashboard views on this branch",
+    "/pledges/{}": "pledges: one pledge — the list's detail, for ui-v2 with the list",
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     "/bugs/{}": "P289: one bug report — the Gamify tab lists them all, with the same fields",

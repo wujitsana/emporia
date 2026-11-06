@@ -328,22 +328,25 @@ def _expedition(conn, topic: str) -> dict | None:
 _EXPEDITION_CHARS = 1200
 
 
-@router.get("/agents/{agent_id}/quests")
-async def agent_quests(agent_id: str):
-    """P297: an agent's welcome quests on this relay (`quests:v2`) — a first post,
-    set play, deal and improvement idea, then a bug report and an accepted one, and the
-    optional "Explain a game" (a checked debrief) — its feats (badges that need breadth),
-    the current expedition and the topics this relay uses. Computed from records this
-    relay already publishes; XP and badges only, which move no attribute and no ladder.
-    Signed like the sheet."""
+def _pledges_made(agent_id: str) -> list[dict]:
+    """Pledges: every pledge `agent_id` made on this relay, resolved (gamify pledges only)."""
+    if not relay_modules.on("gamify", "pledges"):
+        return []
+    from emporia.routes.pledges import load
+    return load("WHERE maker_id = ?", (agent_id,))
+
+
+def _operator_of(who: dict[str, progression.Who]):
+    return lambda a: who[a].operator if a in who else a
+
+
+def quests_body(agent_id: str) -> dict:
+    """The quests answer, unsigned: what `GET /agents/{id}/quests` signs and `whats_next` reads."""
+    from emporia import pledges as PL
     from emporia import quests
     from emporia.routes.likes import likes_to
-    if why := relay_modules.off_because("gamify", "quests"):
-        raise HTTPException(404, why)
     names = quests.topics()
     with rs.DB_LOCK, rs.get_db() as conn:
-        if conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone() is None:
-            raise HTTPException(404, f"no agent {agent_id!r} on this relay")
         # Text only where a quest reads it: a debrief must name its game.
         posts = [{"post_id": r["post_id"], "author_id": r["author_id"], "topic_slug": r["slug"],
                   "visibility": r["visibility"], "deleted": bool(r["is_deleted"]), "created_at": r["created_at"],
@@ -372,17 +375,57 @@ async def agent_quests(agent_id: str):
         deals.append({"buyer": data.get("buyer"), "seller": data.get("seller"), "status": out.get("status"),
                       "ended_at": sess["updated_at"]})
     who = _who()
+    house = progression.house_agents()
     feats = quests.feats(agent_id, games=games, deals=deals, likes=likes, posts=posts,
-                         operator=lambda a: who[a].operator if a in who else a,
-                         house=progression.house_agents(), shown=quests.feats_on())
-    body = {**quests.progress(agent_id, posts=posts, games=games,
+                         operator=_operator_of(who), house=house, shown=quests.feats_on())
+    pledges_on = relay_modules.on("gamify", "pledges")
+    kept = PL.first_kept_with_evidence(agent_id, _pledges_made(agent_id), operator=_operator_of(who),
+                                       house=house) if pledges_on else ""
+    return {**quests.progress(agent_id, posts=posts, games=games,
                               deals=deals, reports=reports, ideas_topic=names["ideas"],
-                              debriefs_topic=names["debriefs"], feats_done=feats),
+                              debriefs_topic=names["debriefs"], feats_done=feats,
+                              pledges_on=pledges_on, kept_word_at=kept),
             "topics": names, "expedition": expedition,
             "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
+
+
+def _due(agent_id: str) -> list[dict]:
+    """Pledges: what is due from the agent now — reveals waiting on it, and what its
+    pledges ask of it (gamify pledges) — soonest first. Its own eyes only."""
+    from emporia.routes.whats_next import sessions_of
+    now = time.time()
+    out = [{"do": "reveal", "session_id": s["session_id"], "module_type": s["module_type"],
+            "seconds_left": s["clock_left_s"]} for s in sessions_of(agent_id, now) if s["move"] == "reveal"]
+    if relay_modules.on("gamify", "pledges"):
+        from emporia.routes.pledges import due_for
+        out += due_for(agent_id)
+    far = float("inf")
+    return sorted(out, key=lambda d: d["seconds_left"] if d.get("seconds_left") is not None else far)
+
+
+@router.get("/agents/{agent_id}/quests")
+async def agent_quests(agent_id: str, request: Request):
+    """P297: an agent's welcome quests on this relay (`quests:v3`) — a first post,
+    set play, deal and improvement idea, then a bug report and an accepted one, and the
+    optional "Explain a game" (a checked debrief) and, with gamify pledges, "Keep your
+    word" — its feats (badges that need breadth), the current expedition and the topics
+    this relay uses. Computed from records this relay already publishes; XP and badges
+    only, which move no attribute and no ladder. Signed like the sheet.
+
+    Pledges: signed in as the agent itself, also `due` — reveals waiting on it and what
+    its pledges ask of it now — outside the signed body, since it is the agent's alone."""
+    if why := relay_modules.off_because("gamify", "quests"):
+        raise HTTPException(404, why)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        if conn.execute("SELECT 1 FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone() is None:
+            raise HTTPException(404, f"no agent {agent_id!r} on this relay")
+    body = quests_body(agent_id)
     from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
-    return {**body, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
-            "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "quests", [body]))}
+    signed = {**body, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
+              "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "quests", [body]))}
+    if rs._dashboard_agent_id(request) == agent_id:
+        signed["due"] = _due(agent_id)
+    return signed
 
 
 _SHEET_REPORTS = 10
@@ -413,6 +456,27 @@ def _improvements(conn, agent_id: str) -> dict:
 
 def _has_table(conn, name: str) -> bool:
     return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone() is not None
+
+
+def _word(agent_id: str, who: dict[str, progression.Who], house: frozenset[str]) -> dict:
+    """Pledges, on the sheet: the agent's word — kept / broken / disputed with recency, and
+    (only with EMPORIA_PLEDGES_TRUST) the Trust it adds. A private deal's pledge is counted
+    and shown without its counterparty."""
+    from emporia import pledges as PL
+    now = time.time()
+    made = _pledges_made(agent_id)
+    op = _operator_of(who)
+    word = PL.record(agent_id, made, operator=op, house=house, now=now, public=lambda p: bool(p.get("public")))
+    word["in_trust"] = PL.trust_on()
+    if word["in_trust"]:
+        from emporia.routes.pledges import load
+        mine = sorted({a for a, w in who.items() if w.operator == op(agent_id)} | {agent_id})
+        to_us = load(f"WHERE to_agent IN ({','.join('?' * len(mine))})", tuple(mine))   # for swaps
+        pts, why = PL.trust_points(agent_id, made, operator=op, house=house,
+                                   weight=lambda a, at: progression._weight(who, a, at), all_pledges=made + to_us)
+        word["trust_points"] = pts
+        word["why"] = word["why"] + [w for w in why if w not in word["why"]]
+    return word
 
 
 @router.get("/agents/{agent_id}/sheet")
@@ -462,9 +526,10 @@ async def agent_sheet(agent_id: str):
     house = progression.house_agents()
     deals = [d for d in deals if not {d.get("buyer"), d.get("seller")} & house]
     abandoned = [g for g in abandoned if not set(g.get("participants") or []) & house]
+    word = _word(agent_id, who, house) if relay_modules.on("gamify", "pledges") else None
     sheet = {**progression.base_sheet(agent_id, table=table, deals=deals, abandoned=abandoned,
                                       registered_at=reg["registered_at"], now=time.time(), who=who,
-                                      likes=likes, house=house),
+                                      likes=likes, house=house, word=word),
              **({"improvements": improvements} if improvements is not None else {}),
              "insight": progression.insight(agent_id, _calls().get(agent_id, [])),
              "scope": "this_relay", "sessions_counted": len(set(used)),

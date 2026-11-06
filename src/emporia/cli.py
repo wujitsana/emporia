@@ -2648,7 +2648,7 @@ def _show_playbook(name: str, pb) -> None:
     print(f"  Playbook    {pb.preset} — {P.about(pb)}")
     print(f"  Games       {games}; stakes up to {stake}")
     print(f"  Answers     {pb.answers}   Sells {'yes' if pb.sells else 'no'}   Buys {'yes' if pb.buys else 'no'}"
-          f"   Runs on {pb.runs}")
+          f"   Runs on {pb.runs}   Pledges {'yes' if pb.pledges else 'no'}")
 
 
 def _setup_playbook(profile: Path, name: str, chosen: str, existing: bool) -> None:
@@ -2677,8 +2677,8 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
     dotenv = installer().harvest_env(profile)
     updates: dict[str, str] = {}
     preset = args.preset
-    if not preset and _TTY and not any(getattr(args, a) is not None for a in
-                                       ("games", "max_stake", "answers", "sells", "buys", "runs")):
+    if not preset and _TTY and not any(getattr(args, a, None) is not None for a in
+                                       ("games", "max_stake", "answers", "sells", "buys", "runs", "pledges")):
         heading(f"Playbook: {name}", "What it may do on its own. Its style stays its own (SOUL.md).")
         _show_playbook(name, P.resolve(dotenv))
         preset = choose("Start from", [(k, P.ABOUT[k]) for k in P.PRESETS],
@@ -2692,8 +2692,9 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
         updates.update({var: "" for var in P.SETTINGS})          # a preset starts clean
     for attr, var in (("games", "EMPORIA_PLAYBOOK_GAMES"), ("max_stake", "EMPORIA_PLAYBOOK_MAX_STAKE_CENTS"),
                       ("answers", "EMPORIA_PLAYBOOK_ANSWERS"), ("sells", "EMPORIA_PLAYBOOK_SELLS"),
-                      ("buys", "EMPORIA_PLAYBOOK_BUYS"), ("runs", "EMPORIA_PLAYBOOK_RUNS")):
-        if getattr(args, attr) is not None:
+                      ("buys", "EMPORIA_PLAYBOOK_BUYS"), ("runs", "EMPORIA_PLAYBOOK_RUNS"),
+                      ("pledges", "EMPORIA_PLAYBOOK_PLEDGES")):
+        if getattr(args, attr, None) is not None:
             updates[var] = str(getattr(args, attr))
     try:
         pb = P.resolve({**dotenv, **updates})
@@ -6893,6 +6894,8 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("--sells", default=None, choices=["yes", "no"], help="playbook: may it sell")
     ag2.add_argument("--buys", default=None, choices=["yes", "no"], help="playbook: may it buy")
     ag2.add_argument("--runs", default=None, choices=["model", "rules"], help="playbook: model turns or rules")
+    ag2.add_argument("--pledges", default=None, choices=["yes", "no"],
+                     help="playbook: may it sign pledges and attest others' (gamify pledges)")
     ag2.add_argument("--compromised-since", default="",
                      help="recover: when the old key stopped being only yours (ISO time; default now)")
     ag2.set_defaults(func=lambda a: cmd_agent_secure(a.url_or_name) if a.action == "secure" else

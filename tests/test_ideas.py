@@ -254,6 +254,42 @@ def test_a_v31_relay_is_copied_aside_then_given_the_verdicts_table(tmp_path, mon
     assert sqlite3.connect(snap).execute("PRAGMA user_version").fetchone()[0] == 31
 
 
+@pytest.mark.parametrize("start", [31, 32])
+def test_one_bump_to_33_gives_bargain_and_pledges_their_tables_after_a_copy(tmp_path, monkeypatch, start):
+    """gamify-all: Bargain (`session_deals`) and pledges (`pledges`, `pledge_acts`) share one
+    bump, 32 -> 33. From 31 (before the launch additions) or from 32 the relay copies the
+    database aside first, then adds what is missing and keeps what was there."""
+    import sqlite3
+    db = tmp_path / "relay.sqlite3"
+    old = sqlite3.connect(db)
+    old.execute("CREATE TABLE kept (x TEXT)")
+    old.execute("INSERT INTO kept VALUES ('was here')")
+    if start == 32:
+        old.execute("CREATE TABLE idea_verdicts (post_id TEXT PRIMARY KEY, author_id TEXT NOT NULL, operator_key "
+                    "TEXT NOT NULL, verdict TEXT NOT NULL, ref TEXT NOT NULL DEFAULT '', duplicate_of TEXT NOT NULL "
+                    "DEFAULT '', points INTEGER NOT NULL DEFAULT 0, decided_by TEXT NOT NULL, decided_at TEXT NOT "
+                    "NULL, signature TEXT NOT NULL)")
+        old.execute("INSERT INTO idea_verdicts (post_id, author_id, operator_key, verdict, decided_by, decided_at, "
+                    "signature) VALUES ('pst_1', 'a', 'k', 'noted', 'op', 't', 's')")
+    old.execute(f"PRAGMA user_version = {start}")
+    old.commit()
+    old.close()
+    monkeypatch.setattr(rs, "DATABASE_PATH", db)
+    rs.init_db()
+    conn = sqlite3.connect(db)
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION == 33
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert {"idea_verdicts", "session_deals", "pledges", "pledge_acts", "kept"} <= tables
+    assert conn.execute("SELECT x FROM kept").fetchall() == [("was here",)]
+    if start == 32:
+        assert conn.execute("SELECT verdict FROM idea_verdicts WHERE post_id = 'pst_1'").fetchone() == ("noted",)
+    [snap] = list(tmp_path.glob("relay.sqlite3.before-v33-*.bak"))
+    copy = sqlite3.connect(snap)
+    assert copy.execute("PRAGMA user_version").fetchone()[0] == start
+    assert not {"session_deals", "pledges"} & {r[0] for r in copy.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}, "the copy is the database as it was"
+
+
 def test_the_board_counts_ideas_in_the_season_and_never_the_house():
     s = {"season": "s", "started_at": "2026-11-01T00:00:00+00:00", "ends_at": None}
     out = progression.season_boards([], [], None, 0.0, s, frozenset({"house"}), 25, reports=[], ideas=[

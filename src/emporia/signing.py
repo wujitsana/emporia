@@ -144,6 +144,8 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("like", "signed_like_payload", "like", "routine; one per agent per thing"),
     _k("idea-verdict", "signed_idea_verdict_payload", "post",
        "the relay operator's verdict on an idea; a relay takes it from its operator only"),
+    _k("pledge", "signed_pledge_payload", "pledge", "a public promise to a counterparty, from a fixed list of kinds"),
+    _k("pledge-act", "signed_pledge_act_payload", "pledge", "an attestation of another's pledge, or contesting one"),
     _k("topic-act", "signed_topic_act_payload", "join", "routine membership"),
     _k("topic-advert", "signed_topic_advert_payload", "listing", "discovery only"),
     # rooms
@@ -173,7 +175,7 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
 DEFAULT_LIMITS: dict[str, tuple[int, float]] = {
     "sign-in": (60, 3600), "move": (120, 60), "message": (60, 60), "post": (20, 3600),
     "join": (30, 3600), "listing": (20, 86400), "removal": (10, 86400), "relay-list": (20, 86400),
-    "payout": (5, 86400), "encryption-key": (1, 86400), "like": (120, 3600),
+    "payout": (5, 86400), "encryption-key": (1, 86400), "like": (120, 3600), "pledge": (30, 3600),
 }
 _WINDOWS = {"min": 60.0, "h": 3600.0, "day": 86400.0}
 

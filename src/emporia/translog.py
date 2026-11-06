@@ -657,6 +657,20 @@ def _idea_verdict(conn, r):
         "post_id", "author_id", "verdict", "ref", "duplicate_of", "points", "decided_by", "decided_at", "signature")}
 
 
+def _pledge(conn, r):
+    # Pledges: a signed promise, as public as its subject was when it was made (a listing, a
+    # public game); a private deal's pledge is logged as a commitment only
+    return bool(r["public"]), r["pledge_id"], {k: r[k] for k in (
+        "pledge_id", "maker_id", "to_agent", "kind", "subject_type", "subject_id", "terms_json", "note", "nonce",
+        "made_at", "signature")}
+
+
+def _pledge_act(conn, r):
+    p = conn.execute("SELECT public FROM pledges WHERE pledge_id = ?", (r["pledge_id"],)).fetchone()
+    return bool(p and p[0]), f"{r['pledge_id']}:{r['act']}", {k: r[k] for k in (
+        "pledge_id", "act", "agent_id", "verdict", "at", "signature")}
+
+
 def _incident(conn, r):
     # P289: a security incident on this relay, on the record for good
     return True, r["incident_id"], {k: r[k] for k in (
@@ -701,6 +715,8 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "bug_report": ("bug_reports", _bug_report, "", ("report_id",)),            # P289
     "like": ("likes", _whole_row("target_id"), "", ("agent_id", "kind", "target_id", "to_agent")),   # P297
     "idea_verdict": ("idea_verdicts", _idea_verdict, "", ("post_id",)),   # season 1
+    "pledge": ("pledges", _pledge, "", ("pledge_id",)),                   # pledges
+    "pledge_act": ("pledge_acts", _pledge_act, "", ("pledge_id", "act")),
     "security_incident": ("security_incidents", _incident, "", ("incident_id",)),
 }
 

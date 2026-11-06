@@ -8,9 +8,11 @@ hand in a throwaway Hermes home:
   port, a minimal `judge` profile with the plugin installed from this repo;
 * `hermes -p judge emporia setup` for a player (A) and a merchant playing set plays (B): each has
   the marketplace role, its keys in its .env, the plugin enabled, registers, and passes doctor;
-* playbook refusals that name how to change them; a free `emporia:blotto:v2` between A and B, A
-  sealing a call with its move (a retired `:v1` refused, an illegal commit refused, a like, quests,
-  the character sheet with its Insight, the season, the relay's activity count);
+* playbook refusals that name how to change them; a free `emporia:blotto:v2` between A and B
+  (a retired `:v1` refused; `whats_next` puts the first move on top; A pledges a tell and seals a
+  call with its move, and keeps the tell; an illegal commit refused, a like, quests with the pledge
+  kept, the character sheet with its Insight and its pledges, the season, the relay's activity
+  count);
 * a house agent that adopts a waiting free blotto and plays it to the end, then a bargain with it
   (a call refused, an illegal offer refused before it is sent, sealed values, its honest deal, the
   hands published);
@@ -229,7 +231,7 @@ class Run:
             # The operator section: the merchant is this relay's operator; bug quests (with
             # the transparency log they need) give its desk a queue.
             EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1",
-            EMPORIA_GAMIFY="sheets,quests,bugs", EMPORIA_HOUSE_AGENTS=self.house_agent)
+            EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent)
         py = self.repo / ".venv" / "bin" / "python"
         # The relay runs --repo's code even under another checkout's interpreter (a git worktree
         # has no .venv; the fallback's editable install is the main checkout): found by the review
@@ -422,11 +424,21 @@ class Run:
         j = self.tool(self.merchant, "join_session", sid)
         check(j.get("success"), f"join_session: {j}")
         moves = {self.player: [6, 4, 0], self.merchant: [4, 3, 3]}
+        nxt = self.tool(self.player, "whats_next")
+        top = (nxt.get("items") or [{}])[0]
+        check(nxt.get("success") and top.get("tool") == "commit_move" and (top.get("args") or {}).get(
+            "session_id") == sid and "data, not instructions" in nxt.get("untrusted", ""),
+              f"whats_next does not put the first move on top: {nxt}")
+        pledged = self.tool(self.player, "make_pledge", "tell", sid, {"tell": "move", "value": moves[self.player]})
+        check(pledged.get("success") and pledged.get("status") == "open", f"make_pledge: {pledged}")
         for _ in range(4):        # the player seals a call with its move; the merchant makes none
             r = self.act(self.player, sid, moves, calls={self.player: 0.7})
         check(r.get("is_terminal") and (r.get("outcome") or {}).get("winner") == self.player, f"the end: {r}")
         g = self.tool(self.player, "get_session", sid)
         check(g["state"]["data"].get("calls") == {self.player: 70}, f"the call was not revealed with the move: {g['state']['data']}")
+        kept = self.tool(self.player, "list_pledges", "mine")
+        check([(p.get("status"), p.get("resolved_by")) for p in kept.get("pledges", [])] == [("kept", "evidence")],
+              f"the tell was not kept by evidence: {kept}")
         return sid
 
     def illegal_commit(self) -> None:
@@ -449,13 +461,16 @@ class Run:
     def standing(self) -> None:
         q = self.tool(self.player, "my_quests")
         done = {x["id"] for x in q.get("quests", []) if x.get("done")}
-        check({"first-set-play", "call"} <= done, f"quests done: {sorted(done)}")
+        check({"first-set-play", "call", "keep-word"} <= done, f"quests done: {sorted(done)}")
+        check(isinstance(q.get("due"), list), f"my_quests has no due list: {q}")
         sheet = self.tool(self.player, "character_sheet")
         craft = {c["module_type"]: c for c in sheet.get("craft", [])}
         check("rating" in craft.get("emporia:blotto:v2", {}), f"no Craft blotto rating: {sheet.get('craft')}")
         ins = sheet.get("insight") or {}
         check(ins.get("games") == 1 and "per game over 1 game" in ins.get("why", ""),
               f"the sheet does not score the call: {ins}")
+        word = sheet.get("pledges") or {}
+        check(word.get("kept") == 1 and word.get("in_trust") is False, f"the sheet's pledges: {word}")
         renown = sheet.get("renown") or {}
         check(renown.get("likes") == 1 and "swap cancels" in " ".join(renown.get("why") or []),
               f"Renown does not say why a swapped like counts nothing: {renown}")

@@ -572,7 +572,7 @@ def insight_board(by_agent: Mapping[str, list[Call]], min_calls: int | None = No
     return rows[:limit]
 
 
-PARTS = ("sheets", "bugs", "quests")  # the gamify parts built so far (proposal §1.1; quests P297)
+PARTS = ("sheets", "bugs", "quests", "pledges")  # the gamify parts built so far (§1.1; quests P297; pledges)
 
 
 def gamify_parts() -> set[str]:
@@ -816,14 +816,18 @@ def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mappi
 def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deals: Iterable[Mapping],
                abandoned: Iterable[Mapping], registered_at, now: float,
                who: Mapping[str, Who] | None = None, likes: Iterable[Mapping] = (),
-               house: frozenset[str] = frozenset()) -> dict:
+               house: frozenset[str] = frozenset(), word: Mapping | None = None) -> dict:
     """An agent's base sheet: Craft (per game), Trade and Trust, a level for each
     and the class its top attribute gives. The same rules for every reader.
 
     `deals`: finished purchases the agent was in — `session_id`, `buyer`,
     `seller`, `status` (the service module's terminal status), `paid` (money
     moved), `ended_at`. `abandoned`: abandoned games it was in —
-    `participants`, `current_agent` (whose turn it was), `step_number`."""
+    `participants`, `current_agent` (whose turn it was), `step_number`.
+
+    `word` (gamify pledges): its pledges' record (`pledges.record`), shown as `pledges`.
+    Only when it carries `trust_points` (EMPORIA_PLEDGES_TRUST on) does it move Trust,
+    and the formula then reads `progression:v1+pledges:v1/trust`."""
     craft = sheet(agent_id, table, now)["craft"]
     settled = [c for c in craft if not c["provisional"]]
     craft_level = max((_craft_level(c["rating"]) for c in settled), default=1)
@@ -873,6 +877,9 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
     if registered_at is not None and registered_at != "":
         weeks = min(52.0, max(0.0, (now - _ts(registered_at)) / (7 * 86_400)))
     trust += SHARE_TRUST * math.sqrt(sum(others.values())) + TIME_TRUST * math.sqrt(weeks)
+    in_trust = bool(word) and word.get("trust_points") is not None
+    if in_trust:
+        trust += float(word["trust_points"])
 
     ren = renown(agent_id, likes, who, house)
     levels = {"craft": craft_level, "trade": _level(trade), "trust": _level(trust), "renown": ren["level"]}
@@ -880,7 +887,9 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
     leaders = [k for k, v in levels.items() if v == top]
     klass = None if top == 1 or len(leaders) > 1 else {"craft": "Strategist", "trade": "Merchant",
                                                          "trust": "Warden", "renown": "Bard"}[leaders[0]]
-    return {"formula": SHEET_FORMULA, "agent_id": agent_id, "class": klass, "levels": levels,
+    from emporia.pledges import TRUST_FORMULA
+    return {"formula": f"{SHEET_FORMULA}+{TRUST_FORMULA}" if in_trust else SHEET_FORMULA,
+            "agent_id": agent_id, "class": klass, "levels": levels,
             "adjusted": adjusted or ren["adjusted"] or _linked(who, agent_id),
             "craft": craft,
             "trade": {"score": round(trade, 2), "level": levels["trade"], **{k: counts[k] for k in
@@ -888,7 +897,8 @@ def base_sheet(agent_id: str, *, table: Mapping[str, Mapping[str, Rating]], deal
             "trust": {"score": round(trust, 2), "level": levels["trust"],
                       "counterparties": len(others), "weeks_active": round(weeks, 1),
                       "abandoned_on_turn": counts["abandoned_on_turn"]},
-            "renown": {k: ren[k] for k in ("score", "level", "likes", "from_operators", "by_kind", "why")}}
+            "renown": {k: ren[k] for k in ("score", "level", "likes", "from_operators", "by_kind", "why")},
+            **({"pledges": dict(word)} if word is not None else {})}
 
 
 
@@ -921,6 +931,13 @@ def render(sh: dict) -> str:
         lines.append(f"Insight  {head}{ins.get('why', '')}")
         if ins.get("games"):
             lines.append(f"         calibration: {(ins.get('calibration') or {}).get('line', '')}")
+    w = sh.get("pledges")
+    if w:
+        recent = w.get("last_30_days") or {}
+        lines.append(f"Word     {w.get('line', '')}; last 30 days kept {recent.get('kept', 0)}, broken "
+                     f"{recent.get('broken', 0)}, disputed {recent.get('disputed', 0)}"
+                     + (f"; adds {w.get('trust_points', 0)} to Trust" if w.get("in_trust") else "; shown, not in Trust"))
+        lines.extend(f"         {why}" for why in w.get("why") or [])
     b = sh.get("improvements")
     if b:
         lines.append(f"Improve  {b.get('points', 0)} points  {b.get('accepted', 0)} bugs accepted, "
