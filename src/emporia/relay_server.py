@@ -1144,7 +1144,8 @@ def init_db() -> None:
                 post_count INTEGER NOT NULL DEFAULT 0,
                 subscriber_count INTEGER NOT NULL DEFAULT 0,
                 flair_options TEXT NOT NULL DEFAULT '[]',
-                access_duration_days INTEGER
+                access_duration_days INTEGER,
+                encrypted INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS agora_members (
                 topic_id TEXT NOT NULL,
@@ -1261,22 +1262,6 @@ def init_db() -> None:
                 offered_at TEXT NOT NULL
             );
 
-            -- P247: a room's creator's / topic's owner's signed advert, so other relays can find it.
-            CREATE TABLE IF NOT EXISTS room_adverts (
-                room_id TEXT PRIMARY KEY,
-                stable_id TEXT NOT NULL,
-                public_key_hex TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                advertised_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS topic_adverts (
-                topic_id TEXT PRIMARY KEY,
-                stable_id TEXT NOT NULL,
-                public_key_hex TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                advertised_at TEXT NOT NULL
-            );
-
             -- P245: an agent's key log, one row per signed step, by its stable id. Only
             -- this relay's own agents; what a linked relay served of its agents is kept
             -- beside the listing or remote agent it came with.
@@ -1305,18 +1290,6 @@ def init_db() -> None:
                 PRIMARY KEY (stable_id, seq)
             );
 
-            -- P249: rooms and topics other relays' owners advertised, as pulled from a linked
-            -- relay — each already checked against its owner's signature. The advert is kept
-            -- whole so it can be checked again when it is served.
-            CREATE TABLE IF NOT EXISTS elsewhere_adverts (
-                kind TEXT NOT NULL,
-                peer_url TEXT NOT NULL,
-                ident TEXT NOT NULL,
-                item_json TEXT NOT NULL,
-                pulled_at TEXT NOT NULL,
-                PRIMARY KEY (kind, peer_url, ident)
-            );
-
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 key TEXT PRIMARY KEY,
                 applied_at TEXT NOT NULL
@@ -1335,6 +1308,7 @@ def init_db() -> None:
         _migrate_settlement_atomic_columns(conn)
         _migrate_listings_federated_from(conn)
         _migrate_likes_to_reactions(conn)
+        _drop_advert_tables(conn)
         _migrate_listings_agent_key(conn)
         _migrate_listings_agent_signature(conn)
         _migrate_payout_wallet_proofs(conn)
@@ -1769,6 +1743,10 @@ def _migrate_agora_tables(conn: Any) -> None:
     # (_migrate_rooms). No backfill needed: NULL is already the right value.
     if "access_duration_days" not in topic_cols:
         conn.execute("ALTER TABLE agora_topics ADD COLUMN access_duration_days INTEGER")
+    # Agora v2: a private invite topic may be sealed to its members, as an encrypted room is. Every older
+    # topic stays as it was (members only, not encrypted).
+    if "encrypted" not in topic_cols:
+        conn.execute("ALTER TABLE agora_topics ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0")
 
 
 def _migrate_rooms(conn: Any) -> None:
@@ -2160,6 +2138,13 @@ def _migrate_agora_signatures(conn: Any) -> None:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
         conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_nonce ON {table}(nonce) "
                      "WHERE nonce IS NOT NULL")
+
+
+def _drop_advert_tables(conn: Any) -> None:
+    """Agora v2: adverts are gone (a pointer post names a room or topic instead), and with them the tables
+    that held a creator's signed advert and the adverts pulled from linked relays."""
+    for table in ("room_adverts", "topic_adverts", "elsewhere_adverts"):
+        conn.execute(f"DROP TABLE IF EXISTS {table}")  # noqa: S608 - fixed names
 
 
 def _migrate_likes_to_reactions(conn: Any) -> None:
@@ -3792,7 +3777,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("agora_topics", "gate_type"), ("agora_topics", "entry_fee_cents"),
     ("agora_topics", "created_at"), ("agora_topics", "post_count"),
     ("agora_topics", "subscriber_count"), ("agora_topics", "flair_options"),
-    ("agora_topics", "access_duration_days"),
+    ("agora_topics", "access_duration_days"), ("agora_topics", "encrypted"),
     # agora_votes
     ("agora_votes", "target_id"), ("agora_votes", "target_type"), ("agora_votes", "value"),
     ("agora_votes", "created_at"),
@@ -3845,12 +3830,6 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("participants", "join_at"), ("participants", "join_signature"),                      # P272
     ("session_leaves", "session_id"), ("session_leaves", "at"), ("session_leaves", "signature"),   # P273
     ("session_leaves", "left_at"), ("dm_blocks", "created_at"), ("dm_blocks", "blocked_stable_id"),
-    ("room_adverts", "room_id"), ("room_adverts", "stable_id"), ("room_adverts", "public_key_hex"),
-    ("room_adverts", "signature"), ("room_adverts", "advertised_at"),
-    ("topic_adverts", "topic_id"), ("topic_adverts", "stable_id"), ("topic_adverts", "public_key_hex"),
-    ("topic_adverts", "signature"), ("topic_adverts", "advertised_at"),
-    ("elsewhere_adverts", "kind"), ("elsewhere_adverts", "peer_url"), ("elsewhere_adverts", "ident"),
-    ("elsewhere_adverts", "item_json"), ("elsewhere_adverts", "pulled_at"),
     # P256: the transparency log is append-only and never rewritten — a rename
     # changing a leaf would break every proof. Its records name agents by stable_id.
     ("translog_leaves", "idx"), ("translog_leaves", "ref_key"), ("translog_leaves", "record"),
@@ -8944,6 +8923,8 @@ class CreateAgoraTopicRequest(BaseModel):
     # P2-3: how long one payment's access lasts for a paid_invite topic. None
     # (default) = no expiry.
     access_duration_days: int | None = None
+    # Agora v2: a private or restricted `invite` topic sealed to its members (as an encrypted room is).
+    encrypted: bool = False
     # P278: signed by the creator over every setting (wire.signed_agora_topic_payload).
     nonce: str = ""
     signature: str = ""
@@ -9217,6 +9198,7 @@ from emporia.routes import whats_next as _next_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
 from emporia.routes import posts as _post_routes  # noqa: E402
 from emporia.routes import beacon as _beacon_routes  # noqa: E402
+from emporia.routes import happening as _happening_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
@@ -9246,5 +9228,6 @@ app.include_router(_next_routes.router)
 app.include_router(_like_routes.router)
 app.include_router(_post_routes.router)
 app.include_router(_beacon_routes.router)
+app.include_router(_happening_routes.router)
 app.include_router(_deletion_routes.router)
 app.include_router(_translog_routes.router)

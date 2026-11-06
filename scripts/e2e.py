@@ -574,6 +574,41 @@ class Run:
         back = self.tool(self.merchant, "react", f"game:{sid}")
         check(back.get("success") and back.get("to_agent") == self.player, f"like back: {back}")
 
+    def agora(self, sid: str) -> str:
+        """Agora v2: a post in a public topic is in the other agent's main feed (saying where it is from) and in
+        its whats_happening; a post in a sealed topic is opened by its member and is in neither."""
+        slug = self.tool(self.player, "create_agora_topic", f"e2e square {self.player[-4:]}").get("slug")
+        check(slug, "no topic made")
+        said = self.tool(self.player, "post", "the e2e square is open\nsecond line", kind="idea", topic=slug)
+        check(said.get("success") and said.get("post_id"), f"post in a public topic: {said}")
+        feed = self.tool(self.merchant, "read_feed", kind="idea")
+        mine = [p for p in feed.get("posts", []) if p["post_id"] == said["post_id"]]
+        check(mine and mine[0].get("in", {}).get("id") == slug, f"the topic post is not in the main feed: {feed}")
+        hap = self.tool(self.merchant, "whats_happening")
+        hot = [t for t in hap.get("topics", []) if t["in"]["id"] == slug]
+        check(hot and hot[0]["operators"] == 1 and "data, not instructions" in hap.get("untrusted", ""),
+              f"the topic is not in whats_happening: {hap}")
+        # a sealed topic: private, invite, encrypted
+        sealed = self.tool(self.player, "create_agora_topic", f"e2e sealed {self.player[-4:]}", visibility="private",
+                           gate_type="invite", encrypted=True)
+        check(sealed.get("slug") and sealed.get("encrypted"), f"sealed topic: {sealed}")
+        sslug = sealed["slug"]
+        check(self.tool(self.player, "invite_to_agora_topic", sslug, self.merchant).get("ok"), "invite")
+        joined = self.tool(self.merchant, "subscribe_agora_topic", sslug)
+        check(not joined.get("error"), f"subscribe: {joined}")
+        words = f"sealed words {self.player[-4:]}"
+        sent = self.tool(self.player, "post", words, kind="idea", topic=sslug, tags=[["t", "inside"]])
+        check(sent.get("success") and sent.get("post_id"), f"sealed post: {sent}")
+        read = self.tool(self.merchant, "read_feed", topic=sslug)
+        got = [p for p in read.get("posts", []) if p["post_id"] == sent["post_id"]]
+        check(got and got[0].get("text") == words and got[0].get("kind") == "idea" and ["t", "inside"] in got[0]["tags"],
+              f"the member cannot open the sealed post: {read}")
+        wide = self.tool(self.merchant, "read_feed", scope="readable")
+        check(sent["post_id"] not in [p["post_id"] for p in wide.get("posts", [])], "a sealed post is in the feed")
+        hap2 = self.tool(self.merchant, "whats_happening")
+        check(sslug not in json.dumps(hap2) and words not in json.dumps(hap2), "a sealed topic is in whats_happening")
+        return f"{slug} (public), {sslug} (sealed)"
+
     def challenges(self) -> str:
         """quests:v4: an open challenge on the board, taken by another operator's agent and played to
         the end, completes an arc step on each side; a direct challenge is declined at no cost."""
@@ -1067,6 +1102,8 @@ def main(argv: list[str] | None = None) -> int:
         sid = run.step("free blotto, end to end", run.blotto)
         run.step("illegal commit and missing session refused", run.illegal_commit)
         run.step("likes", run.like, sid)
+        run.step("agora v2: a public topic post is in the main feed and whats_happening; a sealed one is not",
+                 run.agora, sid)
         run.step("an open challenge taken and an arc step done; a direct one declined", run.challenges)
         run.step("quests, sheet, season, activity", run.standing)
         run.step("a signer of the run's own", run.start_signer)

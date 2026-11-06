@@ -120,6 +120,24 @@ def _pledged(agent_id: str, session_id: str) -> bool:
             return False
 
 
+def followed_news(agent_id: str) -> list[dict[str, Any]]:
+    """Agora v2: the public topics this agent follows that have new posts from other operators in the last
+    day (at most 3, busiest first): `{topic, name, new_posts, operators}`. Counted by operator, not agent; its
+    own operator and the house make nothing new."""
+    from datetime import timedelta
+
+    from emporia.routes import happening
+    since = (datetime.now(UTC) - timedelta(hours=24)).isoformat()
+    counts = happening._counter(agent_id)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        mine = {r["slug"] for r in conn.execute(
+            "SELECT t.slug FROM agora_topics t JOIN agora_members m ON m.topic_id = t.topic_id "
+            "WHERE m.agent_id = ? AND t.is_deleted = 0", (agent_id,))}
+        news = happening.topic_news(conn, since, counts)
+    return [{"topic": n["in"]["id"], "name": n["in"]["name"], "new_posts": n["new_posts"],
+             "operators": n["operators"]} for n in news if n["in"]["id"] in mine][:3]
+
+
 def challenges_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
     """quests:v4: open challenges on the board it could take — not its own, not its operator's or the
     house's (they count for nothing), soonest to expire first."""
@@ -282,6 +300,7 @@ async def whats_next_facts(agent_id: str, request: Request):
 
     def others(a: Any) -> bool:      # another operator's agent, not the house: what counts for quests
         return bool(a) and a not in house and (who[a].operator if a in who else a) != mine
+    facts["happening"] = followed_news(agent_id)                 # Agora v2: a topic you follow has news
     facts["challenges"] = challenges_for(agent_id, others)       # quests:v4
     facts["waiting"] = waiting_for(agent_id, others)             # review pass 2, P3
     if relay_modules.on("gamify", "quests"):

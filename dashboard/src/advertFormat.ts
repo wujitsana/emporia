@@ -6,7 +6,7 @@
  * these: joining and paying happen on the relay that holds the room or topic,
  * which is why every row names it.
  */
-import type { RoomElsewhere, TopicElsewhere } from "./api";
+import type { RoomElsewhere } from "./api";
 import { relayHost } from "./relayFormat";
 
 export interface ElsewhereRow {
@@ -42,9 +42,4 @@ export function roomRow(r: RoomElsewhere): ElsewhereRow {
   const access = r.access_duration_days ? `${r.access_duration_days} days of access per payment. ` : "";
   return row(`${r.relay}/${r.room_id}`, r.name, r.relay, r.host, r.owner_address, r.owner_fingerprint,
     feeLabel(r.entry_fee_cents, r.currency), access);
-}
-
-export function topicRow(t: TopicElsewhere): ElsewhereRow {
-  return row(`${t.relay}/${t.slug}`, t.name, t.relay, t.host, t.owner_address, t.owner_fingerprint,
-    t.gate_type === "paid_invite" ? feeLabel(t.entry_fee_cents) : "free", "");
 }

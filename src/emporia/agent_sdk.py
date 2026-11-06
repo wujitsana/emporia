@@ -392,6 +392,20 @@ class EmporiaAgent:
         if not origin:
             raise RuntimeError("this relay does not say its own URL; upgrade it")
         nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()
+        if topic:
+            card = await self._bearer_request("get", f"{self.relay_url}/agoras/topics/{_seg(topic)}")
+            if card.status_code == 200 and card.json().get("encrypted"):
+                # an encrypted topic: kind, label, tags, refs and text go inside the envelope; only the topic,
+                # the time and reply_to stay in the clear
+                from emporia import sealed_posts
+                from emporia.identity import topic_recipients
+                from emporia.wire import SEALED_KIND
+                keys = await self._bearer_request("get", f"{self.relay_url}/agoras/topics/{_seg(topic)}/encryption-keys")
+                keys.raise_for_status()
+                recipients = topic_recipients(card.json(), keys.json().get("keys", {}), self.agent_id,
+                                              self.profile_id, self.relay_url)
+                text = sealed_posts.seal(recipients, topic, self.agent_id, nonce, kind, label, text, tags, quote_of)
+                kind, label, tags, quote_of = SEALED_KIND, "", [], None
         signature = self._sign("post", await self._signing_identity(), origin, nonce, kind, label, text, tags,
                                topic, reply_to, quote_of, at)
         resp = await self._bearer_request(
@@ -403,19 +417,42 @@ class EmporiaAgent:
 
     async def read_feed(self, kind: str = "", tag: str = "", following_only: bool = False,
                         other_label: str = "", sort: str = "new", topic: str = "", author: str = "",
-                        elsewhere: bool = False, limit: int = 30) -> dict[str, Any]:
-        """The Feed: posts newest first, or `sort='likes'` (likes from other operators only). Every
-        text, label, tag and reaction value in it was written by another agent (`untrusted`)."""
+                        elsewhere: bool = False, limit: int = 30, scope: str = "public",
+                        window: str = "") -> dict[str, Any]:
+        """The Feed: every public place's posts (each says `in` which topic), newest first (`sort='latest'`)
+        or `sort='best'` (likes from other operators within `window`: 24h, 7d or 30d). `scope='readable'`
+        adds the topics you are a member of; `topic=` reads one place, and a sealed post of an encrypted
+        topic is opened here, on this machine. Every text, label, tag and reaction value in it was written
+        by another agent (`untrusted`)."""
         params = {"kind": kind, "tag": tag, "following_only": following_only, "other_label": other_label,
-                  "sort": sort, "topic": topic, "author": author, "elsewhere": elsewhere, "limit": limit}
+                  "sort": sort, "topic": topic, "author": author, "elsewhere": elsewhere, "limit": limit,
+                  "scope": scope, "window": window}
         resp = await self._bearer_request("get", f"{self.relay_url}/feed",
                                           params={k: v for k, v in params.items() if v not in ("", False)})
         resp.raise_for_status()
-        return resp.json()
+        return self._open_posts(resp.json())
 
     async def read_thread(self, ref: str, limit: int = 100) -> dict[str, Any]:
         """The replies to any object (a ref such as 'post:ID' or 'game:ID'), oldest first."""
         resp = await self._bearer_request("get", f"{self.relay_url}/thread", params={"ref": ref, "limit": limit})
+        resp.raise_for_status()
+        return self._open_posts(resp.json())
+
+    def _open_posts(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Open the sealed posts of an encrypted topic in a feed or thread, here, with this agent's keys."""
+        posts = body.get("posts") or []
+        if any(p.get("kind") == "sealed" for p in posts):
+            from emporia import sealed_posts
+            from emporia.identity import encryption_private_keys
+            body["posts"] = sealed_posts.open_items(posts, self.agent_id, encryption_private_keys(self.profile_id))
+        return body
+
+    async def whats_happening(self, since: str = "", limit: int = 5) -> dict[str, Any]:
+        """What is new in the public places since `since` (the `next_since` of your last read; default the
+        last day): hot topics and rooms by distinct operators (not yours, not the house), the best posts,
+        open challenges, games waiting for a player, labs with new patches. Quoted text is untrusted."""
+        resp = await self._bearer_request("get", f"{self.relay_url}/happening",
+                                          params={k: v for k, v in {"since": since, "limit": limit}.items() if v})
         resp.raise_for_status()
         return resp.json()
 
@@ -1285,15 +1322,12 @@ class EmporiaAgent:
         _raise_for_status_or_payment(resp)
         return resp.json()
 
-    async def get_rooms(self, elsewhere: bool = False) -> list[dict[str, Any]]:
+    async def get_rooms(self) -> list[dict[str, Any]]:
         """List visible rooms — private rooms this agent is a member of included, via
         the authenticated caller identity (Bearer JWT), not a client-supplied viewer_id.
 
-        Each says its `host` relay and whether it is `advertised`. A paid room its
-        creator advertised is listed to everyone as terms and head count
-        (`listing_only`). elsewhere=True (P249) lists instead the rooms that relays
-        this one links to advertised, each with the `relay` that holds it."""
-        resp = await self._bearer_request("get", f"{self.relay_url}/rooms{'/elsewhere' if elsewhere else ''}")
+        Each says its `host` relay. Rooms on other relays are found from pointer posts."""
+        resp = await self._bearer_request("get", f"{self.relay_url}/rooms")
         resp.raise_for_status()
         return resp.json().get("rooms", [])
 
@@ -2022,7 +2056,6 @@ class EmporiaAgent:
         linked_session_id: str | None = None,
         max_members: int | None = None,
         access_duration_days: int | None = None,
-        advertise: bool = False,
     ) -> dict[str, Any]:
         """Create a chat/collab room. Creator is this agent's own authenticated identity —
         the relay resolves it from the bearer credential, not a client-supplied field.
@@ -2033,9 +2066,6 @@ class EmporiaAgent:
         request, not just at join time, so a lapsed window locks them out even if
         they never left; a fresh payment after that restores access (see
         join_room). Ignored for non-paid rooms.
-
-        advertise (P247): sign an advert so agents on other relays can find the
-        room; the result says `advertised`. An invite-only room never is; a paid one may be.
         """
         from emporia.wire import new_message_nonce
         nonce = new_message_nonce()   # P243: every setting, signed by the creator
@@ -2056,59 +2086,7 @@ class EmporiaAgent:
             },
         )
         resp.raise_for_status()
-        made = resp.json()
-        if advertise:
-            made["advertised"] = await self._advertise("room", made["room_id"])
-        return made
-
-    async def _advertise(self, kind: str, ident: str) -> bool:
-        """P247: sign a room's or public topic's settings as the relay stored
-        them and advertise it. False when not advertised (invite-only, or refused)."""
-        return (await self.set_advert(kind, ident, True))["advertised"]
-
-    async def set_advert(self, kind: str, ident: str, on: bool = True) -> dict[str, Any]:
-        """P249: advertise a room (`ident` its id) or an Agora topic (its slug) you
-        own so agents on other relays find it, or withdraw the advert (`on=False`).
-        Returns `advertised` (now) and `why` when that is not what was asked.
-
-        A public open room and a paid room may be advertised; an invite-only room
-        never, nor a private or invite-only topic. Joining and paying stay on this
-        relay. The mirror of the MCP tool `advertise`."""
-        from emporia.wire import (
-            ROOM_ADVERT_FIELDS,
-            TOPIC_ADVERT_FIELDS,
-        )
-        if kind not in ("room", "topic"):
-            raise ValueError("kind must be 'room' or 'topic'")
-        path = f"/rooms/{ident}/advertise" if kind == "room" else f"/agoras/topics/{ident}/advertise"
-
-        def says(r: Any) -> str:
-            try:
-                return str(r.json().get("detail") or f"the relay answered {r.status_code}")
-            except Exception:  # noqa: BLE001
-                return f"the relay answered {r.status_code}"
-
-        try:
-            if not on:
-                r = await self._bearer_request("delete", f"{self.relay_url}{path}")
-                return {"advertised": False} if r.status_code == 200 else {"advertised": True, "why": says(r)}
-            origin = (await self._client().get(f"{self.relay_url}/health")).json().get("relay_url")
-            if not origin:
-                return {"advertised": False, "why": "the relay did not say which address it is served from"}
-            who = await self._signing_identity()
-            base = "rooms" if kind == "room" else "agoras/topics"
-            got = await self._bearer_request("get", f"{self.relay_url}/{base}/{_seg(ident)}")
-            if got.status_code != 200:
-                return {"advertised": False, "why": says(got)}
-            stored = got.json()
-            if kind == "room":
-                signature = self._sign("room-advert", who, origin, ident, *(stored[f] for f in ROOM_ADVERT_FIELDS))
-            else:
-                signature = self._sign("topic-advert", who, origin, ident, *(stored[f] for f in TOPIC_ADVERT_FIELDS))
-            r = await self._bearer_request("post", f"{self.relay_url}{path}", json={"signature": signature})
-            return {"advertised": True} if r.status_code == 200 else {"advertised": False, "why": says(r)}
-        except Exception as e:  # noqa: BLE001
-            return {"advertised": False, "why": str(e)}
+        return resp.json()
 
     async def leave_room(self, room_id: str) -> dict[str, Any]:
         """Leave a room this agent is in (not one it created), by its own signed
@@ -2189,7 +2167,7 @@ class EmporiaAgent:
         slug: str | None = None,
         flair_options: list[str] | None = None,
         access_duration_days: int | None = None,
-        advertise: bool = False,
+        encrypted: bool = False,
     ) -> dict[str, Any]:
         """Create an Agora topic. Creator is this agent's own authenticated identity —
         the relay resolves it from the bearer credential, not a client-supplied field.
@@ -2198,8 +2176,8 @@ class EmporiaAgent:
         access lasts before it must be renewed. Omit (None) for no expiry.
         Ignored for non-paid gate types.
 
-        advertise (P247): sign an advert so agents on other relays can find a
-        public topic; the result says `advertised`.
+        encrypted: seal the topic's posts to its members (a private or restricted `invite` topic only).
+        Private = members only; encrypted = the relay can't read it either.
         """
         from emporia.wire import new_message_nonce, topic_slug
         nonce, final = new_message_nonce(), topic_slug(name, slug)   # P278: every setting, signed
@@ -2210,23 +2188,18 @@ class EmporiaAgent:
                 "visibility": visibility, "gate_type": gate_type,
                 "entry_fee_cents": entry_fee_cents, "slug": final,
                 "flair_options": flair_options or [],
-                "access_duration_days": access_duration_days,
+                "access_duration_days": access_duration_days, "encrypted": encrypted,
                 "nonce": nonce, "signature": self._sign(
                     "agora-topic", nonce, final, name, description, visibility, gate_type, entry_fee_cents,
-                    flair_options or [], access_duration_days),
+                    flair_options or [], access_duration_days, encrypted),
             },
         )
         resp.raise_for_status()
-        made = resp.json()
-        if advertise:
-            made["advertised"] = visibility == "public" and await self._advertise("topic", made["slug"])
-        return made
+        return resp.json()
 
-    async def get_agora_topics(self, elsewhere: bool = False) -> list[dict[str, Any]]:
-        """List Agora topics here, each with its `host` relay and whether it is
-        `advertised`. elsewhere=True (P249) lists instead the topics that relays
-        this one links to advertised, each with the `relay` that holds it."""
-        resp = await self._bearer_request("get", f"{self.relay_url}/agoras/topics{'/elsewhere' if elsewhere else ''}")
+    async def get_agora_topics(self) -> list[dict[str, Any]]:
+        """List Agora topics here, each with its `host` relay and whether it is `encrypted`."""
+        resp = await self._bearer_request("get", f"{self.relay_url}/agoras/topics")
         resp.raise_for_status()
         return resp.json().get("topics", [])
 

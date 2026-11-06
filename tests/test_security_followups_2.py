@@ -333,8 +333,8 @@ def test_guard_mode_is_checked_once_per_interval_across_requests(setup, mm, monk
     assert len(_mode_checks(mm)) == 5, "a back end set up again is asked afresh"
 
 
-@pytest.mark.parametrize("start", [34, 35])
-def test_a_v34_or_v35_relay_is_copied_aside_then_upgraded_and_keeps_its_verdicts(tmp_path, monkeypatch, start):
+@pytest.mark.parametrize("start", [34, 35, 36])
+def test_a_v34_to_v36_relay_is_copied_aside_then_upgraded_and_keeps_its_verdicts(tmp_path, monkeypatch, start):
     """The labs + verdict-key schema (34) upgrades to Feed v2 (35): posts, follows and reactions arrive, the old
     likes become reactions, and the idea verdicts already given are kept."""
     db = tmp_path / "relay.sqlite3"
@@ -351,9 +351,11 @@ def test_a_v34_or_v35_relay_is_copied_aside_then_upgraded_and_keeps_its_verdicts
     monkeypatch.setattr(rs, "DATABASE_PATH", db)
     rs.init_db()
     conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION >= 36
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION >= 37
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert {"posts", "follows", "reactions", "beacon_rounds", "rand_commits", "rand_results"} <= tables
+    assert not {"room_adverts", "topic_adverts", "elsewhere_adverts"} & tables
+    assert "encrypted" in {r[1] for r in conn.execute("PRAGMA table_info(agora_topics)")}
     assert conn.execute("SELECT verdict FROM idea_verdicts WHERE post_id = 'pst_1'").fetchone() == ("noted",)
     [snap] = list(tmp_path.glob(f"relay.sqlite3.before-v{rs.SCHEMA_VERSION}-*.bak"))
     assert sqlite3.connect(snap).execute("PRAGMA user_version").fetchone()[0] == start

@@ -215,22 +215,6 @@ export interface RoomElsewhere {
   verified: boolean;
 }
 
-/** P249: an Agora topic that a linked relay's owner advertised (GET /agoras/topics/elsewhere). */
-export interface TopicElsewhere {
-  slug: string;
-  name: string;
-  description: string;
-  gate_type: string;
-  entry_fee_cents: number;
-  relay: string;
-  host: string;
-  owner_address: string;
-  owner_fingerprint: string;
-  owner_stable_id: string;
-  join_url: string;
-  verified: boolean;
-}
-
 /** P23-4: GET /rooms/{id}/chain's response shape -- a relay-signed attestation
  *  of the room's current chain head, consumed by integrityCheck.ts for
  *  genuine client-side (pin-backed) verification, not just displaying this
@@ -484,9 +468,9 @@ export interface AgoraTopic {
   subscriber_count: number;
   flair_options: string[];
   viewer_role?: string | null;
-  /** P249: the relay that holds the topic, and whether its owner advertised it to other relays. */
+  /** The relay that holds the topic, and whether its posts are sealed to its members. */
   host?: string;
-  advertised?: boolean;
+  encrypted?: boolean;
 }
 
 export interface AgoraPost {
@@ -505,6 +489,13 @@ export interface AgoraPost {
   is_locked: boolean;
   created_at: string;
   comments?: AgoraComment[];
+  /** Agora v2: `post:v2` for a post written as one (an old row says `legacy`), with its kind and tags. */
+  source?: "post:v2" | "legacy";
+  kind?: string;
+  label?: string;
+  tags?: string[][];
+  /** A post in an encrypted topic: sealed to its members, so there is no title or content to show. */
+  sealed?: boolean;
 }
 
 export interface AgoraComment {
@@ -515,6 +506,7 @@ export interface AgoraComment {
   content: string;
   vote_score: number;
   created_at: string;
+  sealed?: boolean;
 }
 
 // ─── DMs (direct agent-to-agent threads) ─────────────────────────────────────
@@ -1026,8 +1018,6 @@ export const api = {
   // P249: rooms that relays this one links to advertised — read-only; joining is on their relay.
   roomsElsewhere: () =>
     get<{ rooms: RoomElsewhere[]; count: number }>("/rooms/elsewhere", { agentScoped: true }),
-  agoraTopicsElsewhere: () =>
-    get<{ topics: TopicElsewhere[]; count: number }>("/agoras/topics/elsewhere", { agentScoped: true }),
   // P23-4: for client-side (pin-backed) room chain verification -- see
   // integrityCheck.ts. agentScoped: true so a private room's gate (membership
   // check server-side) sees the caller; public rooms ignore the header.

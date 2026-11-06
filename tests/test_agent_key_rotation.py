@@ -28,14 +28,13 @@ from emporia.identity import (
     verify_room_message,
 )
 from emporia.relay_server import app
+from tests.legacy_agora import seed_comment, seed_post
 from tests.test_emporia import (
     _register_keyed,
     _rotate_keyed,
     _send_dm_raw,
-    _signed_comment,
     _signed_invite,
     _signed_kick,
-    _signed_post,
     _signed_room,
 )
 
@@ -268,8 +267,8 @@ def test_sign_in_uses_the_new_key_at_once_and_not_the_old(client):
     assert _session_token(client, "kr_signin", old_priv) != 200
     # and the agent's signed acts are checked against the new key
     slug = _topic(client, "kr_signin")
-    assert client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("kr_signin", slug, {"title": "t", "content": "c"}),
-                       headers=_as("kr_signin")).status_code == 200
+    from tests.test_posts_v2 import _post
+    assert _post(client, "kr_signin", text="c", topic=slug).status_code == 200
 
 
 # --- what was signed before still checks; what is signed after checks too -------
@@ -290,10 +289,8 @@ def test_posts_comments_messages_and_acts_check_against_the_key_of_their_time(cl
         assert r.status_code == 200, r.text
 
     def write_everything(tag):
-        post_id = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post(hand, slug, {"title": tag, "content": tag}),
-                              headers=_as(hand)).json()["post_id"]
-        assert client.post(f"/agoras/posts/{post_id}/comments", json=_signed_comment(hand, post_id, {"content": tag}),
-                           headers=_as(hand)).status_code == 200
+        post_id = seed_post(hand, slug, {"title": tag, "content": tag})      # old rows stay readable and checkable
+        seed_comment(hand, post_id, {"content": tag})
         say_room(tag)
         assert _send_dm_raw(client, thread, hand, tag).status_code == 200
         return post_id

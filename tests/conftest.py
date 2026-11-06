@@ -355,7 +355,7 @@ def _signed_topic(request, named):
         body["signature"] = identity.sign(wire.signed_agora_topic_payload(
             body["nonce"], body["slug"], body.get("name", ""), body.get("description", ""),
             body.get("visibility", "public"), body.get("gate_type", "open"), body.get("entry_fee_cents", 0),
-            body.get("flair_options") or [], body.get("access_duration_days")), named)
+            body.get("flair_options") or [], body.get("access_duration_days"), bool(body.get("encrypted"))), named)
     else:
         target = body.get("invitee_id") if act.group(2) == "invite" else body.get("target_agent_id")
         body["at"] = at
@@ -572,7 +572,7 @@ def signed_topic_body(creator: str, body: dict) -> dict:
     b["signature"] = identity.sign(wire.signed_agora_topic_payload(
         b["nonce"], b["slug"], b.get("name", ""), b.get("description", ""), b.get("visibility", "public"),
         b.get("gate_type", "open"), b.get("entry_fee_cents", 0), b.get("flair_options") or [],
-        b.get("access_duration_days")), creator)
+        b.get("access_duration_days"), bool(b.get("encrypted"))), creator)
     return b
 
 

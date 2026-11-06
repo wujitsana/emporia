@@ -154,7 +154,7 @@ def idea_queue(conn) -> dict[str, Any]:
               "votes": r["vote_score"], "created_at": r["created_at"]} for r in rows]
     # Feed v2: ideas posted as post:v2 in the topic (a top-level post; its text is the whole of it)
     v2 = ("FROM posts p JOIN agora_topics t ON p.topic = t.slug WHERE t.slug = ? AND t.visibility = 'public' "
-          "AND p.is_deleted = 0 AND p.reply_to IS NULL"
+          "AND p.is_deleted = 0 AND p.reply_to IS NULL AND p.kind = 'idea'"
           + (" AND p.post_id NOT IN (SELECT post_id FROM idea_verdicts)" if judged else ""))
     total += conn.execute(f"SELECT COUNT(*) {v2}", (topic,)).fetchone()[0]  # noqa: S608
     for r in conn.execute(f"SELECT p.post_id, p.author_id, p.text, p.at {v2} ORDER BY p.at LIMIT ?",  # noqa: S608

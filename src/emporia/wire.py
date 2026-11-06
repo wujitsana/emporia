@@ -1135,54 +1135,6 @@ def signed_room_leave_payload(room_id: str, agent_id: str, at: str) -> dict[str,
     return {"type": "emporia:room-leave:v1", "room_id": room_id, "agent_id": agent_id, "at": at}
 
 
-#: P247: the room settings a finder reads in an advert, all of them signed.
-ROOM_ADVERT_FIELDS = ("name", "description", "room_type", "gate_type", "entry_fee_cents", "currency",
-                      "max_members", "encrypted", "access_duration_days")
-
-
-def signed_room_advert_payload(
-    stable_id: str, origin_relay: str, room_id: str, name: str, description: str, room_type: str,
-    gate_type: str, entry_fee_cents: int, currency: str, max_members: int | None, encrypted: bool,
-    access_duration_days: int | None,
-) -> dict[str, Any]:
-    """P247: what a room's creator signs to have it found from other relays —
-    the terms a joiner will meet, named by stable id and the relay that hosts
-    the room, as `signed_open_session_payload` is. The room itself never moves:
-    its order, members and money stay on that relay."""
-    return {"type": "emporia:room-advert:v1", "stable_id": stable_id, "origin_relay": origin_relay,
-            "room_id": room_id, "name": name, "description": description, "room_type": room_type,
-            "gate_type": gate_type, "entry_fee_cents": entry_fee_cents, "currency": currency,
-            "max_members": max_members, "encrypted": encrypted,
-            "access_duration_days": access_duration_days}
-
-
-def _advert_owner(item: dict[str, Any], verify: Any) -> tuple[str, str]:
-    """(stable id, "") of an advert's owner, or ("", why not) if the key isn't
-    the last of the item's `key_log` (P245) for it."""
-    if not item.get("advert_signature"):
-        return "", "not advertised by its owner"
-    stable_id = str(item.get("owner_stable_id") or "")
-    if why := key_verdict(stable_id, str(item.get("owner_public_key_hex") or ""), item.get("key_log"), verify):
-        return "", why.replace("no agent key", "no owner key")
-    return stable_id, ""
-
-
-def room_advert_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -> str:
-    """P247: why a room in a relay's feed can't be taken as its creator's own
-    advert, or "" when it can. `origin_relay` is the relay serving the feed."""
-    derived, why = _advert_owner(item, verify)
-    if why:
-        return why
-    if item.get("origin_relay") != origin_relay:
-        return "it names a different relay than the one serving it"
-    signed = signed_room_advert_payload(
-        derived, origin_relay, str(item.get("room_id") or ""),
-        *(item.get(f) for f in ROOM_ADVERT_FIELDS))
-    if not verify(signed, str(item["advert_signature"]), str(item["owner_public_key_hex"]).lower()):
-        return "its creator's signature does not match"
-    return ""
-
-
 def topic_slug(name: str, slug: str | None = None) -> str:
     """P278: the slug a topic gets — the creator signs it, so both sides make it
     the same way."""
@@ -1193,19 +1145,20 @@ def topic_slug(name: str, slug: str | None = None) -> str:
 def signed_agora_topic_payload(
     nonce: str, slug: str, name: str, description: str, visibility: str, gate_type: str,
     entry_fee_cents: int, flair_options: list[str], access_duration_days: int | None,
+    encrypted: bool = False,
 ) -> dict[str, Any]:
     """P278: what a topic's creator signs to make it — every setting, as a room's
-    creator does (P243), so a relay can't change a topic's fee, gate or
-    visibility, or say someone else made it. Topics can't be edited."""
+    creator does (P243), so a relay can't change a topic's fee, gate, visibility or
+    whether it is encrypted, or say someone else made it. Topics can't be edited."""
     return {"type": "emporia:agora-topic:v1", "nonce": nonce, "slug": slug, "name": name,
             "description": description, "visibility": visibility, "gate_type": gate_type,
             "entry_fee_cents": entry_fee_cents, "flair_options": list(flair_options or []),
-            "access_duration_days": access_duration_days}
+            "access_duration_days": access_duration_days, "encrypted": bool(encrypted)}
 
 
 #: P278: the topic settings a reader checks against the creator's signed ones.
 TOPIC_SIGNED_SETTINGS = ("slug", "name", "description", "visibility", "gate_type", "entry_fee_cents",
-                         "flair_options", "access_duration_days")
+                         "flair_options", "access_duration_days", "encrypted")
 #: P278: what a topic's creator signs it does to someone there.
 TOPIC_ACTS = ("invite", "uninvite", "kick")
 
@@ -1214,36 +1167,6 @@ def signed_topic_act_payload(act: str, slug: str, agent_id: str, at: str) -> dic
     """P278: a topic creator's invite, taking one back, or removal of an agent —
     `{type: "emporia:topic-<act>:v1", slug, agent_id, at}`, `at` near the relay's clock."""
     return {"type": f"emporia:topic-{act}:v1", "slug": slug, "agent_id": agent_id, "at": at}
-
-
-#: P247: the topic settings a finder reads in an advert, all of them signed.
-TOPIC_ADVERT_FIELDS = ("name", "description", "gate_type", "entry_fee_cents")
-
-
-def signed_topic_advert_payload(
-    stable_id: str, origin_relay: str, slug: str, name: str, description: str, gate_type: str,
-    entry_fee_cents: int,
-) -> dict[str, Any]:
-    """P247: what an Agora topic's owner signs to have it found from other
-    relays, its gate and fee included so a relay cannot show a paid topic as
-    free. Slugs never change, so the slug and the relay name the topic."""
-    return {"type": "emporia:topic-advert:v1", "stable_id": stable_id, "origin_relay": origin_relay,
-            "slug": slug, "name": name, "description": description, "gate_type": gate_type,
-            "entry_fee_cents": entry_fee_cents}
-
-
-def topic_advert_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -> str:
-    """P247: `room_advert_verdict` for an Agora topic."""
-    derived, why = _advert_owner(item, verify)
-    if why:
-        return why
-    if item.get("origin_relay") != origin_relay:
-        return "it names a different relay than the one serving it"
-    signed = signed_topic_advert_payload(derived, origin_relay, str(item.get("slug") or ""),
-                                         *(item.get(f) for f in TOPIC_ADVERT_FIELDS))
-    if not verify(signed, str(item["advert_signature"]), str(item["owner_public_key_hex"]).lower()):
-        return "its owner's signature does not match"
-    return ""
 
 
 # ── Feed posts (post:v2) and follows ────────────────────────────────────────
@@ -1258,6 +1181,9 @@ def topic_advert_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -
 POST_TYPE = "emporia:post:v2"
 FOLLOW_TYPE = "emporia:follow:v1"
 POST_KINDS = ("note", "idea", "question", "answer", "challenge", "offer", "pointer", "other")
+#: The kind a relay stores for a post sealed to the members of an encrypted topic: its real kind, label,
+#: tags, refs and text are inside the ciphertext, which is the post's `text`. Never a kind an agent picks.
+SEALED_KIND = "sealed"
 MAX_POST_TAGS = 12
 MAX_TAG_STRING = 64
 MAX_LABEL = 24
@@ -1293,6 +1219,8 @@ def post_problem(kind: Any, label: Any, text: Any, tags: Any, *, topic: Any = No
     """Why this is not a post a relay or a client may sign or store, or "" when it is. One rule, used
     by the tools before they sign and by the relay before it stores: a URL is refused by naming the
     field it is in; a pointer must point at something."""
+    if kind == SEALED_KIND:
+        return sealed_post_problem(label, text, tags, topic=topic, reply_to=reply_to, quote_of=quote_of)
     if kind not in POST_KINDS:
         return f"kind must be one of {', '.join(POST_KINDS)} (a new use goes under 'other' with a label)"
     label = label or ""
@@ -1341,6 +1269,26 @@ def post_problem(kind: Any, label: Any, text: Any, tags: Any, *, topic: Any = No
             return f"tag {i}: p is [\"p\", agent address]"
     if kind == "pointer" and not any(t[0] in ("ref", "tool") for t in tags):
         return "a pointer post must carry at least one ref or tool tag (what it points at)"
+    return ""
+
+
+def sealed_post_problem(label: Any, text: Any, tags: Any, *, topic: Any, reply_to: Any, quote_of: Any) -> str:
+    """Why this is not a sealed post, or "". What the relay sees of one is only: its author, its topic, its
+    time, a `reply_to` that threads it, and an envelope. The kind, label, tags, refs and text are inside the
+    envelope, so none may be outside it; and the relay cannot read the inside, so it checks nothing there."""
+    if not isinstance(topic, str) or not _OBJECT_ID.fullmatch(topic):
+        return "a sealed post belongs to an encrypted topic: topic is required"
+    if label or tags or quote_of:
+        return "a sealed post carries no label, tags or quote_of outside the envelope (they are sealed inside it)"
+    if reply_to is not None:
+        if why := refs.problem(reply_to):
+            return f"reply_to: {why}"
+        if not isinstance(reply_to, str) or reply_to != refs.text(reply_to) or not reply_to.startswith("post:"):
+            return "reply_to of a sealed post is a post in the same topic: post:<id>"
+    if not isinstance(text, str) or not text.strip():
+        return "text (the envelope) is required"
+    if len(text.encode("utf-8")) > MAX_CONTENT_BYTES * 2:
+        return f"the envelope is too large (limit {MAX_CONTENT_BYTES * 2} bytes)"
     return ""
 
 

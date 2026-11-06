@@ -437,6 +437,17 @@ async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):
             post.pop("gate_type", None)
             post.pop("entry_fee_cents", None)
             posts.append(post)
+        # Agora v2: and the agent's post:v2 posts in topics the caller may read (a sealed one stays sealed)
+        from emporia.routes import posts as pv
+        topics = {t["slug"]: t for t in conn.execute("SELECT * FROM agora_topics WHERE is_deleted = 0")}
+        for r in conn.execute("SELECT * FROM posts WHERE author_id = ? AND topic IS NOT NULL AND is_deleted = 0 "
+                              "ORDER BY at DESC LIMIT ?", (agent_id, limit)).fetchall():
+            t = topics.get(r["topic"])
+            if t and rs._topic_can_read(t["visibility"], t["gate_type"], t["entry_fee_cents"], viewer_id,
+                                        t["topic_id"], conn):
+                posts.append(pv.legacy_view(pv._item(r, rs._own_host(), 0, 0), t))
+        posts.sort(key=lambda p: str(p.get("created_at")), reverse=True)
+        del posts[limit:]
     return {
         "agent_id": agent_id,
         "posts": posts,

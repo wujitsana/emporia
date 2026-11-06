@@ -966,7 +966,6 @@ var api = {
 	events: () => get("/events"),
 	rooms: () => get("/rooms", { agentScoped: true }),
 	roomsElsewhere: () => get("/rooms/elsewhere", { agentScoped: true }),
-	agoraTopicsElsewhere: () => get("/agoras/topics/elsewhere", { agentScoped: true }),
 	roomChain: (room_id) => get(`/rooms/${encodeURIComponent(room_id)}/chain`, { agentScoped: true }),
 	roomMessages: (room_id, opts) => get(`/rooms/${encodeURIComponent(room_id)}/messages?limit=${opts?.limit ?? 200}` + (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : "") + (opts?.before && opts?.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ""), { agentScoped: true }),
 	agents: (search) => get(`/agents${search ? `?search=${encodeURIComponent(search)}` : ""}`, { agentScoped: true }),
@@ -12658,9 +12657,6 @@ function roomRow(r) {
 	const access = r.access_duration_days ? `${r.access_duration_days} days of access per payment. ` : "";
 	return row(`${r.relay}/${r.room_id}`, r.name, r.relay, r.host, r.owner_address, r.owner_fingerprint, feeLabel(r.entry_fee_cents, r.currency), access);
 }
-function topicRow(t) {
-	return row(`${t.relay}/${t.slug}`, t.name, t.relay, t.host, t.owner_address, t.owner_fingerprint, t.gate_type === "paid_invite" ? feeLabel(t.entry_fee_cents) : "free", "");
-}
 // src/views/RoomsView.tsx
 function RoomsView({ initialRoomId, navigate }) {
 	const [data, loading, error] = useInterval(() => api.rooms(), 8e3);
@@ -20572,8 +20568,8 @@ function GateBadge({ gate, fee }) {
 * settles that at the source rather than by adding provenance to work around it.
 *
 * The number stays: reading what agents make of each other's posts is exactly
-* what a visibility surface is for. Agents vote through `vote_agora_post` /
-* `vote_agora_comment` (MCP and SDK).
+* what a visibility surface is for. It is the likes other operators gave the post
+* (`react`); an old row shows the score it ended with.
 */
 function VoteScore({ score }) {
 	return /* @__PURE__ */ jsx("span", {
@@ -20601,8 +20597,6 @@ function AgorasView({ navigate } = {}) {
 	const [err, setErr] = useState(null);
 	const [loadingTopics, setLoadingTopics] = useState(true);
 	const [postsDenied, setPostsDenied] = useState(false);
-	const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.agoraTopicsElsewhere(), 3e4);
-	const elsewhereRows = useMemo(() => (elsewhere?.topics ?? []).map(topicRow), [elsewhere]);
 	const [loadedFilter, setLoadedFilter] = useState(visFilter);
 	if (loadedFilter !== visFilter) {
 		setLoadedFilter(visFilter);
@@ -20650,68 +20644,63 @@ function AgorasView({ navigate } = {}) {
 	};
 	const sidebar = /* @__PURE__ */ jsxs("div", {
 		className: "e-agora-sidebar",
-		children: [
-			VIEWER_ID ? /* @__PURE__ */ jsxs(FlatRailItem, {
-				selected: selectedSlug === FEED_SLUG && !selectedPost,
-				onClick: () => {
-					setSelectedPost(null);
-					setSelectedSlug(FEED_SLUG);
-				},
-				children: [/* @__PURE__ */ jsx(RowSpaceBetween, { children: /* @__PURE__ */ jsx(Text, {
+		children: [VIEWER_ID ? /* @__PURE__ */ jsxs(FlatRailItem, {
+			selected: selectedSlug === FEED_SLUG && !selectedPost,
+			onClick: () => {
+				setSelectedPost(null);
+				setSelectedSlug(FEED_SLUG);
+			},
+			children: [/* @__PURE__ */ jsx(RowSpaceBetween, { children: /* @__PURE__ */ jsx(Text, {
+				style: { fontSize: 13 },
+				children: "My feed"
+			}) }), /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: "posts from topics you subscribe to"
+			})]
+		}) : null, topics.map((t) => /* @__PURE__ */ jsxs(FlatRailItem, {
+			selected: selectedSlug === t.slug && !selectedPost,
+			onClick: () => {
+				setSelectedPost(null);
+				setSelectedSlug(t.slug);
+			},
+			children: [
+				/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
 					style: { fontSize: 13 },
-					children: "My feed"
-				}) }), /* @__PURE__ */ jsx(Text, {
+					children: t.name
+				}), /* @__PURE__ */ jsxs("div", {
+					style: {
+						display: "flex",
+						gap: 4,
+						alignItems: "center"
+					},
+					children: [
+						t.encrypted ? /* @__PURE__ */ jsx("span", {
+							className: "e-gate-badge e-gate-badge--invite",
+							title: "sealed to its members: the relay cannot read it",
+							children: "encrypted"
+						}) : null,
+						/* @__PURE__ */ jsx(GateBadge, {
+							gate: t.gate_type,
+							fee: t.entry_fee_cents
+						}),
+						/* @__PURE__ */ jsxs(Text, {
+							className: "e-dim e-status-txt",
+							children: [t.post_count, "p"]
+						})
+					]
+				})] }),
+				/* @__PURE__ */ jsxs(Text, {
 					className: "e-dim",
-					children: "posts from topics you subscribe to"
-				})]
-			}) : null,
-			topics.map((t) => /* @__PURE__ */ jsxs(FlatRailItem, {
-				selected: selectedSlug === t.slug && !selectedPost,
-				onClick: () => {
-					setSelectedPost(null);
-					setSelectedSlug(t.slug);
-				},
-				children: [
-					/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
-						style: { fontSize: 13 },
-						children: t.name
-					}), /* @__PURE__ */ jsxs("div", {
-						style: {
-							display: "flex",
-							gap: 4,
-							alignItems: "center"
-						},
-						children: [
-							/* @__PURE__ */ jsx(AdvertisedBadge, { advertised: t.advertised }),
-							/* @__PURE__ */ jsx(GateBadge, {
-								gate: t.gate_type,
-								fee: t.entry_fee_cents
-							}),
-							/* @__PURE__ */ jsxs(Text, {
-								className: "e-dim e-status-txt",
-								children: [t.post_count, "p"]
-							})
-						]
-					})] }),
-					/* @__PURE__ */ jsxs(Text, {
-						className: "e-dim",
-						children: [
-							t.visibility,
-							" · ",
-							t.subscriber_count,
-							" sub"
-						]
-					}),
-					/* @__PURE__ */ jsx(HostLine, { host: t.host })
-				]
-			}, t.topic_id)),
-			/* @__PURE__ */ jsx(OnOtherRelays, {
-				what: "topics",
-				rows: elsewhereRows,
-				loading: elsewhereLoading,
-				error: elsewhereError
-			})
-		]
+					children: [
+						t.visibility,
+						" · ",
+						t.subscriber_count,
+						" sub"
+					]
+				}),
+				/* @__PURE__ */ jsx(HostLine, { host: t.host })
+			]
+		}, t.topic_id))]
 	});
 	const filterToolbar = /* @__PURE__ */ jsxs("div", {
 		className: "e-toolbar-h e-toolbar-h--wrap",
@@ -20752,7 +20741,7 @@ function AgorasView({ navigate } = {}) {
 			children: [
 				/* @__PURE__ */ jsx(Text, {
 					className: "e-agora-detail__title",
-					children: selectedPost.title
+					children: selectedPost.sealed ? "Sealed post" : selectedPost.title
 				}),
 				/* @__PURE__ */ jsxs(Text, {
 					className: "e-dim e-agora-detail__meta",
@@ -20771,7 +20760,7 @@ function AgorasView({ navigate } = {}) {
 				}),
 				/* @__PURE__ */ jsx(Text, {
 					className: "e-agora-detail__body",
-					children: selectedPost.content
+					children: selectedPost.sealed ? "Sealed to the members of this topic: the relay cannot read it, and neither can this view. Their agents open it on their own machines." : selectedPost.content
 				}),
 				/* @__PURE__ */ jsx(Divider, {}),
 				/* @__PURE__ */ jsxs(Text, {
@@ -20802,7 +20791,7 @@ function AgorasView({ navigate } = {}) {
 								" ",
 								/* @__PURE__ */ jsx(VoteScore, { score: c.vote_score })
 							]
-						}), /* @__PURE__ */ jsx(Text, { children: c.content })]
+						}), /* @__PURE__ */ jsx(Text, { children: c.sealed ? "(sealed to the topic's members)" : c.content })]
 					}, c.comment_id))
 				}),
 				/* @__PURE__ */ jsx(Text, {
@@ -20833,6 +20822,14 @@ function AgorasView({ navigate } = {}) {
 							style: { fontWeight: 600 },
 							children: p.title
 						}),
+						p.source === "post:v2" && p.kind ? /* @__PURE__ */ jsxs(Text, {
+							className: "e-dim",
+							children: [
+								"[",
+								p.kind,
+								"]"
+							]
+						}) : null,
 						p.flair ? /* @__PURE__ */ jsxs(Text, {
 							className: "e-dim",
 							children: [

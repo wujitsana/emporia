@@ -1081,6 +1081,52 @@ def room_members_by_acts(room: dict[str, Any], key_of: Any) -> set[str]:
     return members
 
 
+class TopicMembershipUnproven(ValueError):
+    """The relay lists a member of an encrypted topic whom no signed invite of the creator's puts there."""
+
+
+def topic_members_by_acts(topic: dict[str, Any], key_of: Any) -> set[str]:
+    """The members an encrypted topic's signed acts put in it: its creator (by its signed creation) and
+    those it signed an invite for, less those it signed a kick of. `topic` is `GET /agoras/topics/{slug}`
+    (with `signed_acts`); `key_of(agent_id)` the signing key this client pinned. An encrypted topic is an
+    invite topic, so a relay cannot add a member of its own: it has no creator's invite to show."""
+    from emporia.wire import signed_topic_act_payload
+    slug, creator = topic.get("slug", ""), topic.get("creator_id", "")
+    acts = topic.get("signed_acts") or []
+
+    def signed_by_creator(act: dict, expected: dict) -> bool:
+        key = signing_key_for(key_of(creator), act.get("at"))
+        return bool(key) and act.get("payload") == expected and verify(expected, act.get("signature", ""), key)
+
+    create = next((a for a in acts if a.get("act") == "create"), None)
+    if not create or not signed_by_creator(create, create.get("payload") or {}):
+        return set()
+    invited: set[str] = set()
+    kicked: set[str] = set()
+    for a in acts:
+        who, at = str(a.get("target") or ""), str(a.get("at") or "")
+        kind = a.get("act")
+        if kind in ("invite", "kick") and who and signed_by_creator(a, signed_topic_act_payload(kind, slug, who, at)):
+            (invited if kind == "invite" else kicked).add(who)
+    return {creator} | (invited - kicked)
+
+
+def topic_recipients(topic: dict[str, Any], bundle: dict[str, Any], me: str, profile_id: str,
+                     relay_url: str) -> dict[str, str]:
+    """`{member: encryption key}` to seal a post to an encrypted topic, from the relay's key bundle
+    (`GET /agoras/topics/{slug}/encryption-keys`) and the topic with its signed acts. Every peer key goes
+    through `trust_peer_encryption_key()`, as for a room; and every member must be one the creator's signed
+    acts put there, else this refuses, naming them, rather than seal to one the relay added."""
+    recipients = _trusted_bundle(bundle, me, profile_id, relay_url)
+    key_of = _bundle_key_of(bundle, me, profile_id, relay_url)
+    unproven = sorted(set(recipients) - topic_members_by_acts(topic, key_of))
+    if unproven:
+        raise TopicMembershipUnproven(
+            f"the relay lists {', '.join(unproven)} as members of topic {topic.get('slug')}, but no invite signed "
+            f"by its creator puts them there — refusing to seal to them.")
+    return recipients
+
+
 def _trusted_bundle(bundle: dict[str, Any], me: str, profile_id: str, relay_url: str) -> dict[str, str]:
     """`{member: encryption key}` from a relay's key bundle, every peer key
     through `trust_peer_encryption_key()`, as on the DM path."""

@@ -8,7 +8,8 @@ from emporia import wire
 from emporia.identity import sign
 from emporia.relay_server import app
 from tests.test_posts_v2 import _body
-from tests.test_emporia import _register_keyed, _signed_post, _signed_room
+from tests.legacy_agora import seed_post
+from tests.test_emporia import _register_keyed, _signed_room
 
 
 @pytest.fixture
@@ -37,7 +38,7 @@ def test_archive_keeps_dms_rooms_posts_listings_and_sessions_and_only_fetches_wh
         "content": "room line", "msg_type": "chat", "nonce": n2,
         "signature": sign(wire.signed_room_message_payload(room, "room line", "chat", n2), "ar_me")})
     slug = client.post("/agoras/topics", json={"name": "Archive topic"}, headers=_h("ar_me")).json()["slug"]
-    client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("ar_me", slug, {"title": "t", "content": "mine"}), headers=_h("ar_me"))
+    seed_post("ar_me", slug, {"title": "t", "content": "mine"})
     client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": "ar_me", "config": {},
                                    "payment_rules": {"mode": "free"}}, headers=_h("ar_me"))
 
