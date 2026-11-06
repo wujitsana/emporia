@@ -87,6 +87,111 @@ def test_turns_and_collect_name_what_the_relay_refused(tmp_path):
     assert out["missing"] == ["payments"] and out["payments"] == []
 
 
+def test_room_and_topic_entry_fees_count_as_the_creators_earnings():
+    """A room's or an Agora topic's paid entry is settled to its creator (`winner_id`), with the
+    payer in `payer_id` and the room or topic id in `session_id` (ROADMAP "Settlements by
+    resource"). The creator's ?agent_id= read had no arm for those rows, so its entry fees never
+    counted. Now they come back — each with its `kind`, the payer's identifiers redacted — and
+    the stats count them as earnings from rooms and topics. No schema change."""
+    from datetime import UTC, datetime
+
+    from fastapi.testclient import TestClient
+
+    from emporia import relay_server as rs
+    from emporia.relay_server import record_settlement
+    from tests.test_emporia import _register, _register_keyed, _signed_room
+
+    client = TestClient(rs.app, client=("127.0.0.1", 51288))
+    creator, payer, stranger = "stats_creator", "stats_payer", "stats_stranger"
+    _register_keyed(client, creator)
+    _register(client, payer)
+    _register(client, stranger)
+    r = client.post("/rooms", json=_signed_room(creator, {
+        "name": "Stats Paid Room", "creator_id": creator,
+        "room_type": "private", "gate_type": "paid", "entry_fee_cents": 150}),
+        headers={"x-emporia-agent-id": creator})
+    assert r.status_code == 200, r.text
+    room_id = r.json()["room_id"]
+    topic_id = "topic_stats_paid"
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT INTO agora_topics (topic_id, slug, name, gate_type, entry_fee_cents, creator_id, "
+                     "created_at) VALUES (?, ?, 'Stats', 'paid_invite', 75, ?, ?)",
+                     (topic_id, "stats-paid", creator, datetime.now(UTC).isoformat()))
+    for resource, cents, rail, transfer in ((room_id, 150, "x402", "direct"),
+                                            (topic_id, 75, "stripe", "transferred")):
+        record_settlement({
+            "session_id": resource, "winner_id": creator, "outcome_type": "room_entry",
+            "status": "settled", "total_stake_cents": cents, "platform_fee_cents": 0,
+            "winner_payout_cents": cents, "platform_fee_bps": 0,
+            "payment_intent_ids": [f"pi_stats_{resource}"], "transfer_id": f"tr_stats_{resource}",
+            "transfer_status": transfer, "payer_id": payer, "rail": rail,
+        })
+
+    def get(who, path):
+        r = client.get(path, headers={"x-emporia-agent-id": who})
+        return r.status_code, r.json()
+
+    status, body = get(creator, f"/payments/settlements?agent_id={creator}&limit=500")
+    assert status == 200, body
+    sales = {s["session_id"]: s for s in body["settlements"]}
+    assert set(sales) == {room_id, topic_id}
+    assert sales[room_id]["kind"] == "room" and sales[topic_id]["kind"] == "topic"
+    for s in sales.values():             # the payer's receipt identifiers are not the creator's
+        assert s["payer_id"] == "[redacted]" and s["payment_intent_ids"] == ["[redacted]"]
+        assert s["transfer_id"] == "[redacted]"
+    # The payer still reads its own receipts in full, and a stranger the creator's not at all.
+    status, own = get(payer, f"/payments/settlements?agent_id={payer}")
+    mine = [s for s in own["settlements"] if s["session_id"] in (room_id, topic_id)]
+    assert len(mine) == 2 and all(s["payer_id"] == payer and s["payment_intent_ids"][0].startswith("pi_")
+                                  for s in mine)
+    assert get(stranger, f"/payments/settlements?agent_id={creator}")[0] == 403
+
+    relay = analytics.collect(lambda path: get(creator, path), creator)
+    st = analytics.agent_stats(creator, relay, days=7)
+    assert st["earned_cents"] == 225 and st["earned_by_rail"] == {"x402": 150, "stripe": 75}
+    assert st["earned_by_source"] == {"rooms": 150, "topics": 75}
+    assert st["access_sales"] == {"rooms": 1, "topics": 1}
+    assert "from   rooms $1.50, topics $0.75" in analytics.render(st)
+
+
+def test_a_sessions_settlement_kind_is_its_module_or_its_bounty():
+    from datetime import UTC, datetime
+
+    from emporia import relay_server as rs
+    now = datetime.now(UTC).isoformat()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        for sid, module, config in (("kind_game", "emporia:chess:v1", "{}"),
+                                    ("kind_service", "emporia:service:v1", "{}"),
+                                    ("kind_bounty", "emporia:service:v1", '{"bounty_id": "b1"}')):
+            conn.execute("INSERT OR REPLACE INTO sessions (session_id, module_type, config_json, payment_rules_json, "
+                         "state_json, current_agent, participants_json, created_at, updated_at) "
+                         "VALUES (?, ?, ?, '{}', '{}', '', '[]', ?, ?)", (sid, module, config, now, now))
+        rows = [{"settlement_id": f"stl_{sid}", "session_id": sid, "payer_id": None}
+                for sid in ("kind_game", "kind_service", "kind_bounty", "kind_gone")]
+        rows.append({"settlement_id": "stl_access_gone", "session_id": "room_gone", "payer_id": "p"})
+        kinds = rs._settlement_kinds(conn, rows)
+    assert kinds == {"stl_kind_game": "game", "stl_kind_service": "service", "stl_kind_bounty": "bounty",
+                     "stl_kind_gone": "session", "stl_access_gone": "access"}
+
+
+def test_earnings_by_source_and_payout_states_from_settlement_kinds():
+    """Games, services and bounties apart; a payout the relay still holds is owed, and a failed
+    transfer is not earned. A relay that names no kind still counts an access sale."""
+    t = _iso(NOW - DAY)
+    rows = [
+        {"winner_id": "a", "winner_payout_cents": 100, "kind": "game", "transfer_status": "escrow_captured", "created_at": t},
+        {"winner_id": "a", "winner_payout_cents": 200, "kind": "service", "transfer_status": "destination", "created_at": t},
+        {"winner_id": "a", "winner_payout_cents": 300, "kind": "bounty", "transfer_status": "transferred", "created_at": t},
+        {"winner_id": "a", "winner_payout_cents": 40, "payer_id": "[redacted]", "transfer_status": "direct", "created_at": t},
+        {"winner_id": "a", "winner_payout_cents": 50, "kind": "room", "transfer_status": "no_stripe_account", "created_at": t},
+        {"winner_id": "a", "winner_payout_cents": 60, "kind": "topic", "transfer_status": "transfer_failed: x", "created_at": t},
+    ]
+    st = analytics.agent_stats("a", {"settlements": rows}, now=NOW)
+    assert st["earned_by_source"] == {"games": 100, "services": 200, "bounties": 300, "rooms_topics": 40}
+    assert st["earned_cents"] == 640 and st["owed_cents"] == 50 and st["failed_payout_cents"] == 60
+    assert st["access_sales"] == {"rooms_topics": 1, "rooms": 1, "topics": 1}
+
+
 def test_the_relay_gives_an_agent_its_own_payments_only():
     from fastapi.testclient import TestClient
     from emporia import relay_server as rs
