@@ -659,6 +659,19 @@ def _charge_daily(agent_id: str, amount_atomic: int) -> None:
     charge_daily(agent_id, amount_atomic, max_daily_cents() * _USDC_ATOMIC_PER_CENT)
 
 
+def _or_refund(agent_id: str, amount_atomic: int, sign):
+    """`sign()`, charged already; the charge given back if it raises. Review pass 2: a back
+    end that would not sign (a provider's policy, MetaMask's Guard Mode or its 2FA timing
+    out, a signature from another key) or an offer refused at signing left its amount on the
+    day's total, so every refusal used up the daily cap. Only for signatures, which nobody
+    holds when this raises; a Tempo payment sends a transaction, and keeps its charge."""
+    try:
+        return sign()
+    except BaseException:
+        refund_daily(agent_id, amount_atomic)
+        raise
+
+
 def _payee_label(statement: Any, family: str, address: Any) -> str:
     """P262: refuse unless `address` is a wallet its payee signed (`payee.check`);
     the payee's name for the approval prompt. Runs here so the signer checks too."""
@@ -720,12 +733,12 @@ def sign_exact(agent_id: str, body: dict, network: str = "") -> str:
         from emporia import x402_svm
         seed = solana_signer(agent_id)
         _charge_daily(agent_id, amount)
-        return x402_payer.payment_signature_header(x402_svm.build_payment_payload(
-            requirement, seed, resource=challenge.get("resource")))
+        return _or_refund(agent_id, amount, lambda: x402_payer.payment_signature_header(
+            x402_svm.build_payment_payload(requirement, seed, resource=challenge.get("resource"))))
     key = evm_signer(agent_id)
     _charge_daily(agent_id, amount)
-    return x402_payer.payment_signature_header(x402_payer.build_payment_payload(
-        requirement, key, resource=challenge.get("resource")))
+    return _or_refund(agent_id, amount, lambda: x402_payer.payment_signature_header(
+        x402_payer.build_payment_payload(requirement, key, resource=challenge.get("resource"))))
 
 
 def pay_tempo(agent_id: str, offer: dict) -> str:
@@ -787,8 +800,8 @@ def sign_escrow(agent_id: str, offer: dict, *, expected_amount: int) -> str:
                       **{k: str(info.get(k) or "").lower() for k in ("receiver", "operator", "fee_receiver")},
                       **{k: str(info.get(k) or "") for k in ("max_amount", "min_fee_bps", "max_fee_bps")}})
     _charge_daily(agent_id, expected_amount)
-    return escrow.sign_offer(offer, key, expected_amount=expected_amount,
-                             allowed_networks=networks)
+    return _or_refund(agent_id, expected_amount, lambda: escrow.sign_offer(
+        offer, key, expected_amount=expected_amount, allowed_networks=networks))
 
 
 def reclaim_escrow(agent_id: str, hold: dict) -> dict:

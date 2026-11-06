@@ -103,7 +103,10 @@ Why nobody can bias the deal:
   commitment and cannot be computed without the joiner's key. So the relay cannot try seeds until
   one suits it.
 - **The relay cannot make a player re-sign** by refusing a join: the share is deterministic, so a
-  retry produces the same share.
+  retry produces the same share. Nothing but the relay binds the commitment, though, so a relay
+  could refuse the join and serve a *new* commitment on the retry, for a second share and a second
+  deal. The joiner's tools keep the first commitment they signed for, per game, and refuse a game
+  whose commitment changed (review pass 2, `test_a_bargain_joiner_signs_one_deal_share_per_game`).
 - **Neither player** knows the relay's seed until the end, so neither can steer the result.
 
 What it does not stop: the relay knows both hands during play, because it has to serve each

@@ -4051,6 +4051,21 @@ def join_session(
     if commitment:
         # Bargain: this agent's one share of the seed its hidden hand is dealt from — a
         # signature over the relay's commitment, which also proves the commitment it saw.
+        # Review pass 2: one share per game, for good. Nothing binds the commitment but the
+        # relay's word, so a relay that refused the join and served a new commitment on the
+        # retry got a second share, and a second deal, to pick the hands it liked.
+        if not (isinstance(commitment, str) and len(commitment) == 64
+                and all(c in "0123456789abcdef" for c in commitment)):
+            return {"error": "not joined: the game's deal_commitment is not a commitment (64 hex digits)",
+                    "success": False}
+        with _commitments(_commitments_file(aid, session_id).with_suffix(".deal.json")) as saved:
+            first = saved.get("deal_commitment")
+            if first and first != commitment:
+                return {"error": ("not joined: this game's deal commitment is not the one you signed a share "
+                                  f"for ({first[:12]}…, now {commitment[:12]}…). A relay that changes it can "
+                                  "deal again until it likes the hands; this game is not fair to play"),
+                        "success": False}
+            saved["deal_commitment"] = commitment
         body["deal_signature"] = signing.sign(aid, "deal-seed", session_id, aid, commitment)
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id

@@ -4828,3 +4828,16 @@ Limits: a thread first seen in a `GET /dm/{id}` (one the peer started) is truste
 | P298's second finding, its proposal: the dashboard's console held every profile's keys (`--hermes-root`) and answered its socket with no credential. One agent's terminal on the `local` backend could read another profile's inbox and have its DMs opened; the key guard stops only commands that name the socket | `plugin_api.py` keeps one console per Hermes profile (the home Hermes scopes the request to) and starts it with `--profile`. A socket console serves that profile's keys folder alone and refuses `--hermes-root` and `--keys-dir`. Each start gets `secrets.token_urlsafe(32)` on stdin (never argv or environ), which every request and websocket carries as `x-emporia-console-secret` (401 / 1008 without it; one sent by the browser is dropped). The tab's profile picker (P234) still lists the other agent profiles, by name only, from the plugin's own `/agents` (`tests/test_console.py::test_the_dashboards_console_answers_only_with_its_secret`, `::test_the_dashboards_console_serves_its_own_profile_only`, `tests/test_dashboard_plugin.py::test_each_profile_gets_its_own_console_with_its_own_secret`, `::test_the_plugin_forwards_to_the_console_and_never_its_hermes_credentials`) |
 
 Limits: a process that can read the dashboard's or the console's memory (ptrace by the same user when `ptrace_scope` is 0, or root) can take the secret; a sandboxed terminal backend is still the wall. Two dashboards on one machine replace each other's console. Trade-offs and options: `docs/proposals/console-scope.md`.
+
+
+## Security review, pass 2 (11-06)
+
+Each proved by a test that fails without its fix (`tests/test_review2_security.py`); details, proposals and what was checked: `docs/review-pass-2026-11-06-security.md`.
+
+| Finding | Fix |
+|---|---|
+| The signer found an agent's token under any spelling `agent_dir` folds to it (`P2_AGENT`, ` p2_agent`), while its open cap, backlog alert and approvals counted per spelling: a takeover read the backlog past `EMPORIA_SIGNER_OPEN_PER_MIN` without the alert | The `X-Emporia-Agent` header must be the id exactly as filed (cac794f) |
+| `hermes config set EMPORIA_X402_MAINNET 1`, or the line in the agent's `.env` / `config.yaml`, unlocked what `wallet mainnet` (person-only) guards, and the caps what `wallet limits` asks for; `~/.metamask` mid-command, `mm` through npx, and a signer folder outside the default paths were not matched | The mainnet switch written to the agent's config is person-only, the limits need the person's yes; the mm and signer paths matched by name (57b58c0) |
+| A Bargain joiner signed a share for whatever commitment the relay served, so a relay that refused the join and served a new one re-dealt until it liked the hands | One share per game: a moved commitment is refused (a57c452) |
+| A payment its back end refused stayed on the day's total | The charge is given back when signing raises (bdd2f38) |
+| The chat drawer offered "session" for the relay operator's controls | Once or deny, as for key changes (c3f797e) |

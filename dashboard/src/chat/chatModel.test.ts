@@ -87,6 +87,16 @@ describe("approvals", () => {
     expect(s.items[0]).toMatchObject({ emporia: true, choices: ["once", "deny"] });
   });
 
+  it("a relay operator's control (house, snapshot, expedition) gets once or deny only too", () => {
+    // Review pass 2: key_guard's RELAY_CONTROL text was not recognised, so it was offered "session".
+    const s = applyRequest(EMPTY, "srq-4", "approval", {
+      ...REQ,
+      command: "hermes emporia house start house1",
+      description: "Emporia: the agent wants to run one of the relay operator's controls (the house agent, a copy of the relay's database, this week's expedition). Approve only if you asked for it.",
+    });
+    expect(s.items[0]).toMatchObject({ emporia: true, choices: ["once", "deny"] });
+  });
+
   it("records the answer and a withdrawal", () => {
     let s = applyRequest(EMPTY, "srq-1", "approval", REQ);
     s = markAnswered(s, "srq-1", "deny");
