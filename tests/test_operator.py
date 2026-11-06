@@ -270,6 +270,8 @@ def _built(case):
         return operator_desk.expedition_command(case["name"])
     if k == "house":
         return operator_desk.house_commands(case["name"], case.get("running"))
+    if k == "patch":
+        return operator_desk.patch_commands(case["name"], case["item"])
     return operator_desk.snapshot_command(case["name"])
 
 

@@ -58,7 +58,14 @@ _KEY_PATHS = re.compile(
     # has its DMs opened. Its socket and folder, and starting one or loading its key
     # discovery directly, are the keys by another name.
     r"|\bconsole\.sock\b|\bemporia-console\b|\bplugin-data/emporia/console\b"
-    r"|-m\s+emporia\.console\b|\bfrom\s+emporia\.console\b|\bimport\s+emporia\.console\b")
+    r"|-m\s+emporia\.console\b|\bfrom\s+emporia\.console\b|\bimport\s+emporia\.console\b"
+    # Labs (W0): the checker's work folder (mirrors, patched clones, logs) and its code, run
+    # directly: an agent neither reads what it tests nor signs a result in its name
+    r"|\bemporia-lab-check\b|\bEMPORIA_LAB_WORKDIR\b|-m\s+emporia\.lab_(?:check|sandbox)\b"
+    r"|\bfrom\s+emporia(?:\.lab_check)?\s+import\s+[\w\s,]*\b(?:lab_check|check_patch|land_patch)\b"
+    r"|\bimport\s+emporia\.lab_check\b"
+    # GitHub credentials are keys too: no Emporia profile holds one (labs: a person opens PRs)
+    r"|\bgh\s+auth\s+token\b|\.config/gh/hosts\.ya?ml\b")
 # Catalog rule 11: Emporia's processes get their settings and keys in their environment,
 # through Hermes (an MCP server's `${NAME}` env, the bridge's from the gateway's scope). A
 # process's environment is readable by its own user: /proc/<pid>/environ (Hermes's file tool
@@ -76,7 +83,9 @@ _KEY_NAMES = re.compile(
     # the tokens that unlock a remote vault holding a linked key
     r"|\bVAULT_TOKEN\b|\bDOPPLER_TOKEN\b|\bINFISICAL_TOKEN\b|\bAZURE_CLIENT_SECRET\b"
     r"|\bEMPORIA_SIGNER_TOKEN\b"
-    r"|\bMM_CLI_TOKEN\b|\bMM_MNEMONIC\b|\bMM_PASSWORD\b")       # MetaMask's mm: its session token, a phrase
+    r"|\bMM_CLI_TOKEN\b|\bMM_MNEMONIC\b|\bMM_PASSWORD\b"        # MetaMask's mm: its session token, a phrase
+    # labs: no Emporia profile holds a GitHub token (a person opens pull requests)
+    r"|\bGH_TOKEN\b|\bGITHUB_TOKEN\b|\bGH_ENTERPRISE_TOKEN\b|\bGITHUB_ENTERPRISE_TOKEN\b")
 # P170/P173: `emporia` commands that change an agent's keys, wallets, limits or
 # role. An agent may run them to help its operator, but only with the
 # operator's yes: a developer agent must not, say, hand a marketplace agent back
@@ -106,6 +115,9 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate", 
                 ("bugs", {"verdict", "incident", "fixed"}),
                 # Operator section: so does adopting an idea (the launch additions) — the operator's verdict
                 ("ideas", {"adopt", "noted", "duplicate"}),
+                # Labs (W0): making a lab, the checker (it signs results and runs patches in its
+                # sandbox) and landing a patch in a checkout are a person's
+                ("lab", {"create", "check", "land"}),
                 # P290: the guardians of a relay's key are people, not agents
                 ("guardians", {"key", "set", "propose", "sign", "apply"}),
                 # P203: the signer is what an agent cannot change — its keys, limits and approvals

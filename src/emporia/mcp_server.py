@@ -4601,6 +4601,90 @@ def bug_reports(status: str = "", agent_id: str = "") -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
+def _lab_refusal() -> dict[str, Any] | None:
+    """Labs (W0): contributing is the person's choice, off until they say yes (playbook `labs`)."""
+    from emporia import playbook
+    pb = playbook.current()
+    why = playbook.may_contribute(pb)
+    return {"error": why, "playbook": pb.preset, "success": False} if why else None
+
+
+@mcp.tool()
+@_relay_aware
+def submit_patch(lab: str, thread: str, diff: str, files: list[str], summary: str,
+                 base_commit: str = "") -> dict[str, Any]:
+    """Send a signed patch to a lab (labs W0): a unified diff (`git diff` output, text only)
+    against the lab's pinned commit, answering a bug report (`thread`: its bug_… id) or an
+    adopted idea (its post id). `files`: exactly the paths the diff touches. `summary`: what it
+    does, in your words (shown as yours, unchecked). The relay stores it as data and never runs
+    it; a checker tests it in a sandbox and a person lands it. Make the diff in your operator's
+    own checkout, never on a live relay. Only if your playbook allows labs."""
+    from datetime import UTC, datetime
+
+    from emporia import labs
+    from emporia.wire import new_message_nonce
+    if refusal := _lab_refusal():
+        return refusal
+    aid = AGENT_ID
+    if not aid:
+        return {"success": False, "error": "set EMPORIA_AGENT_ID"}
+    try:
+        if not base_commit:
+            r = httpx.get(f"{_base()}/labs/{_seg(lab)}", timeout=10)
+            if r.status_code != 200:
+                return {"success": False, "error": f"Relay {r.status_code}", "detail": r.json().get("detail")}
+            base_commit = r.json().get("commit") or ""
+        got, _facts, why = labs.check_patch(lab, thread, base_commit, diff, files, summary)
+        if why:
+            return {"success": False, "error": why}
+        nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()
+        sig = signing.sign(aid, "lab-patch", lab, thread, base_commit, labs.sha256(diff), got, labs.sha256(summary),
+                           nonce, aid, at)
+        body = {"thread": thread, "base_commit": base_commit, "diff": diff, "files": sorted(got),
+                "summary": summary, "nonce": nonce, "at": at, "signature": sig}
+        r = _bearer_request("post", f"{_base()}/labs/{_seg(lab)}/patches", agent_id=aid, json=body, timeout=20)
+        d = r.json() if r.content else {}
+    except signing.Refused as e:
+        return {"success": False, "error": str(e)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    if r.status_code != 200:
+        return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+    return {"success": True, "patch_id": d.get("patch_id"), "status": d.get("status"), "lab": lab,
+            "thread_message_id": d.get("thread_message_id"), "note": d.get("note")}
+
+
+@mcp.tool()
+@_relay_aware
+def patch_status(lab: str = "", patch_id: str = "") -> dict[str, Any]:
+    """Labs (W0): with neither, the labs on this relay (repo, branch, pinned commit, room); with
+    `lab`, that lab and your patches there; with `patch_id` too, that patch and its checker
+    results (applied, files as claimed, secret scan, tests, the sandbox it ran in)."""
+    try:
+        if not lab:
+            r = httpx.get(f"{_base()}/labs", timeout=10)
+            d = r.json() if r.content else {}
+            if r.status_code != 200:
+                return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+            return {"success": True, "labs": d.get("labs", [])}
+        if patch_id:
+            r = httpx.get(f"{_base()}/labs/{_seg(lab)}/patches/{_seg(patch_id)}", timeout=10)
+            d = r.json() if r.content else {}
+            if r.status_code != 200:
+                return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+            d.pop("diff", None)                 # yours to keep; the record holds its hash
+            return {"success": True, **d}
+        r = httpx.get(f"{_base()}/labs/{_seg(lab)}", timeout=10)
+        d = r.json() if r.content else {}
+        if r.status_code != 200:
+            return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
+        mine = httpx.get(f"{_base()}/labs/{_seg(lab)}/patches", params={"author": AGENT_ID}, timeout=10)
+        return {"success": True, "lab": d, "your_patches": (mine.json().get("patches") if mine.status_code == 200
+                                                             else [])}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def _ideas_judged(verdict: str = "") -> dict[str, Any]:
     """Launch additions: the operator's verdicts on ideas, for `emporia ideas NAME`."""
     try:

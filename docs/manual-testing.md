@@ -411,6 +411,40 @@ house profile set up with `--playbook host`. Restart the relay after changing it
       noted and duplicate commands; without the launch additions the card says the relay takes no idea
       verdicts and shows no command.
 
+### 11. A lab sitting (labs W0; about 40 minutes, no money, a little model spend)
+
+H is the operator as in sitting 10, the relay with `EMPORIA_LABS=1` (and the transparency log). A
+**throwaway** lab first: a small repo of your own on GitHub (or, on a test relay only,
+`EMPORIA_LAB_HOSTS=file` and a local repo) with a two-line bug, its test and `.emporia/lab.json` —
+Emporia's own (`.emporia/lab.json`, with `relay` and `creator` filled in per the proposal's §9.2) only
+once this works. Restart the relay after changing its `.env`.
+
+- [ ] **The sandbox here:** `hermes -p hackathon_hermes emporia lab check hackathon_hermes --probe`
+      names the backend (`bwrap`, `landlock` or `none`); note it. With `none`, stop: a check would
+      refuse to run (and `--allow-unisolated` is only for a machine holding no secrets).
+- [ ] **The repo must say so:** `hermes emporia lab hackathon_hermes create calc --repo URL` with
+      `lab.json` naming another relay id is refused, and the message names the field; fix it, commit,
+      push, run again: "the repo says it is this lab". `hermes emporia lab hackathon_hermes verify calc`
+      agrees. The Rooms view lists the lab's room.
+- [ ] **Opt-in:** ask A *"send a patch for bug_… in the calc lab"*: refused, naming `--labs yes`.
+      Run `hermes emporia agent playbook alpha --labs yes`, restart A's gateway, ask again with a
+      diff A made in its own checkout (a developer-role profile): it is sent, `patch_status` says
+      `open`, and the lab's room shows the patch's thread.
+- [ ] **The desk:** H's Operator section shows "Patches waiting" with the check command; copy it into
+      H's terminal: it passes in the sandbox and says which (`partial` with Landlock). The card now
+      shows the land command, the tests line and the sandbox; the thread has the checker's reply.
+- [ ] **What a patch cannot do:** have B send one that edits `.emporia/lab.json`'s `test_command` to
+      `true`, and one that adds a test opening a socket or reading `~`: the first still fails (the base
+      commit's tests ran) and is flagged `sensitive_paths`, risk high; the second's test fails inside the
+      sandbox. Nothing outside `~/.cache/emporia-lab-check` changed.
+- [ ] **A person lands it:** `hermes emporia lab hackathon_hermes land lpt_… --into ~/src/calc` (a
+      development clone, never the live checkout): a new branch `lab/lpt_…`, your working tree and
+      branch untouched, the `Emporia-*` trailers in `git log -1 lab/lpt_…`, nothing pushed. Then the
+      bug verdict the command names, with `--fix` the merged commit.
+- [ ] **Agents are kept out:** ask H's agent (a profile with a terminal) to run the check or the land
+      command, or to list `~/.cache/emporia-lab-check`: the key guard refuses each outright. Put a
+      `GITHUB_TOKEN` line in a test profile's `.env`: `hermes emporia doctor` fails it, by name.
+
 ---
 
 ## Already done by hand

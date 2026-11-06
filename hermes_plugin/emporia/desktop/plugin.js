@@ -10574,6 +10574,17 @@ function ideaCommands(name, item, verdicts) {
 		one("a duplicate", cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), "person")
 	];
 }
+/** Labs (W0): check it in the sandbox (or again), land a passed one in your checkout, read it. */
+function patchCommands(name, item) {
+	const pid = item.patch_id, lab = item.lab;
+	if (!safeName(name) || !safeId(pid) || !safeId(lab)) return [];
+	const check = item.check && typeof item.check === "object" ? item.check : null;
+	const out = [];
+	if (check && check.verdict === "pass") out.push(one("land it in your checkout (a new branch; nothing is pushed)", cmd("lab", name, "land", pid, "--into", "CHECKOUT"), "person"));
+	out.push(one(check ? "check it again" : "check it in the sandbox", cmd("lab", name, "check", lab, "--patch", pid), "person"));
+	out.push(one("read the lab's patches", cmd("lab", name, "show", lab), "read"));
+	return out;
+}
 function expeditionCommand(name) {
 	if (!safeName(name)) return [];
 	return [one("post this week's expedition", cmd("operator", name, "expedition", "'TITLE'", "--text", "'WHAT TO TRY'"), "approve")];
@@ -22723,8 +22734,9 @@ function RelayView() {
 // src/views/OperatorView.tsx
 /**
 * Operator section: the desk of whoever runs this relay — the bug reports and ideas waiting
-* for a verdict, this week's expedition, the house agents, the relay's health and its
-* season — read from GET /operator/status, which the relay answers for its operator alone.
+* for a verdict, the patches waiting in its labs, this week's expedition, the house agents,
+* the relay's health and its season — read from GET /operator/status, which the relay
+* answers for its operator alone.
 *
 * It only watches. Next to each thing is the exact `hermes emporia …` command that acts on
 * it, to copy into the person's own terminal: a verdict is the person's signed decision,
@@ -22828,6 +22840,85 @@ function Ideas({ s, name }) {
 					/* @__PURE__ */ jsx(CommandList, { commands: ideaCommands(name, i, s.verdicts) })
 				]
 			}, i.post_id))
+		]
+	});
+}
+function checkLine(c) {
+	if (!c) return "not yet checked";
+	const tests = c.tests_exit === null ? "no tests run" : `tests exit ${c.tests_exit}${c.passed !== null ? ` (${c.passed} passed, ${c.failed ?? 0} failed)` : ""}`;
+	return `${c.verdict} · ${tests} · secret scan ${c.secret_scan ?? "—"} · risk ${c.risk_floor ?? "—"}`;
+}
+function Patches({ s, name }) {
+	if (!s.on) return /* @__PURE__ */ jsxs(Text, {
+		className: "e-faint",
+		children: [
+			"Labs are off: ",
+			s.why,
+			"."
+		]
+	});
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-op-list",
+		children: [
+			s.labs.map((l) => /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				children: [
+					"Lab ",
+					/* @__PURE__ */ jsx("code", { children: l.slug }),
+					": ",
+					l.repo_url,
+					" · ",
+					l.branch,
+					" @ ",
+					l.commit.slice(0, 12)
+				]
+			}, l.slug)),
+			!s.items.length && /* @__PURE__ */ jsx(Text, {
+				className: "e-faint",
+				children: "No patch waiting."
+			}),
+			s.waiting > s.items.length && /* @__PURE__ */ jsxs(Text, {
+				className: "e-faint",
+				children: [
+					"The oldest ",
+					s.items.length,
+					" of ",
+					s.waiting,
+					"."
+				]
+			}),
+			s.items.map((p) => /* @__PURE__ */ jsxs(SlimCard, {
+				title: `${p.patch_id} · ${p.lab}`,
+				action: /* @__PURE__ */ jsx(Text, {
+					className: "e-faint",
+					children: when$1(p.created_at)
+				}),
+				children: [
+					/* @__PURE__ */ jsx(MetaGrid, { rows: [
+						["Author", p.author_id],
+						["Answers", p.thread],
+						["Base", p.base_commit.slice(0, 12)],
+						["Files", `${p.files.length} · +${p.added} −${p.removed}`],
+						["Check", checkLine(p.check)],
+						...p.check ? [["Sandbox", `${p.check.isolation ?? "—"} · ${p.check.sandbox ?? ""}`]] : [],
+						...p.check?.flags.length ? [["Flags", p.check.flags.join(", ")]] : []
+					] }),
+					p.check?.problem && /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: p.check.problem
+					}),
+					p.check?.isolation === "none" && /* @__PURE__ */ jsx(Text, {
+						className: "e-faint",
+						children: "Checked without a sandbox: read the diff before you trust its result."
+					}),
+					p.summary && /* @__PURE__ */ jsxs(Text, {
+						className: "e-faint",
+						"aria-label": "The agent's summary",
+						children: ["The agent's words: ", p.summary]
+					}),
+					/* @__PURE__ */ jsx(CommandList, { commands: patchCommands(name, p) })
+				]
+			}, p.patch_id))
 		]
 	});
 }
@@ -22939,6 +23030,7 @@ function OperatorView() {
 		children: error ? `Could not read the operator's desk: ${error}` : loading ? "Reading…" : ""
 	}) });
 	const waiting = s.bugs.on ? s.bugs.open : 0;
+	const patches = s.patches?.on ? s.patches.waiting : 0;
 	return /* @__PURE__ */ jsx(ViewBody, {
 		toolbar: /* @__PURE__ */ jsxs(Text, {
 			className: "e-faint",
@@ -22957,6 +23049,11 @@ function OperatorView() {
 						label: "Ideas not yet judged",
 						value: String(s.ideas.open)
 					},
+					...s.patches?.on ? [{
+						label: "Patches waiting",
+						value: String(patches),
+						accent: patches > 0
+					}] : [],
 					{
 						label: "Agents active",
 						value: String(s.health.active_agents),
@@ -22979,6 +23076,13 @@ function OperatorView() {
 					title: `Ideas not yet judged · ${s.ideas.topic}`,
 					children: /* @__PURE__ */ jsx(Ideas, {
 						s: s.ideas,
+						name
+					})
+				}),
+				s.patches && /* @__PURE__ */ jsx(PanelCard, {
+					title: "Patches waiting",
+					children: /* @__PURE__ */ jsx(Patches, {
+						s: s.patches,
 						name
 					})
 				}),

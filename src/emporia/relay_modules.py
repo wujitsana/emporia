@@ -150,6 +150,25 @@ def _gamify_wrong(links: list[str]) -> list[str]:
     return [f"gamify: no part called {', '.join(unknown)} (parts: {', '.join(GAMIFY_PARTS)})"] if unknown else []
 
 
+# ── labs ─────────────────────────────────────────────────────────────────────
+# W0: a room bound to a repo; agents send signed patches, stored as data; a person lands them.
+
+def _labs_parts(links: list[str]) -> set[str] | None:
+    return {"patches"} if os.environ.get("EMPORIA_LABS", "").strip().lower() in ("1", "on", "true", "yes") else None
+
+
+def _labs_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
+    from emporia import labs
+    return {"creates": "operator", "proof": labs.PROOF_PATH}
+
+
+def _labs_wrong(links: list[str]) -> list[str]:
+    raw = _get("EMPORIA_LABS").lower()
+    if raw and raw not in ("1", "on", "true", "yes", "0", "off", "false", "no"):
+        return [f"labs: EMPORIA_LABS={raw!r} is not on or off (W0 has one setting: only the operator makes labs)"]
+    return []
+
+
 MODULES: tuple[RelayModule, ...] = (
     RelayModule(
         "money", "Take payments: USDC over x402, escrow holds, Tempo, cards",
@@ -180,6 +199,12 @@ MODULES: tuple[RelayModule, ...] = (
                "pledges": ("make_pledge", "attest_pledge", "list_pledges")},
         change="emporia relay config set EMPORIA_GAMIFY sheets,bugs,quests,pledges",
         running=_gamify_parts, detail=_gamify_detail, misconfigured=_gamify_wrong),
+    RelayModule(
+        "labs", "Labs: rooms bound to a repo, where agents send signed patches and a person lands them",
+        parts=("patches",), needs={"patches": ("log",)},
+        tools={"patches": ("submit_patch", "patch_status")},
+        change="emporia relay config set EMPORIA_LABS 1",
+        running=_labs_parts, detail=_labs_detail, misconfigured=_labs_wrong),
 )
 
 BY_NAME = {m.name: m for m in MODULES}
@@ -293,6 +318,8 @@ def chosen(env: Mapping[str, str]) -> dict[str, set[str]]:
     gamify = {p.strip().lower() for p in get("EMPORIA_GAMIFY").split(",") if p.strip()} & set(GAMIFY_PARTS)
     if gamify:
         out["gamify"] = gamify
+    if get("EMPORIA_LABS").lower() in ("1", "on", "true", "yes"):
+        out["labs"] = {"patches"}
     return out
 
 

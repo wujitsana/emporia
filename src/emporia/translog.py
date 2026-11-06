@@ -671,6 +671,26 @@ def _pledge_act(conn, r):
         "pledge_id", "act", "agent_id", "verdict", "at", "signature")}
 
 
+def _lab(conn, r):
+    # Labs (W0): a lab is public — its repo, branch, pin, checkers and its creator's signature
+    return True, r["slug"], {k: r[k] for k in (
+        "slug", "name", "room_id", "repo_url", "branch", "pinned_commit", "creator_id", "checkers_json", "licence",
+        "represents", "checked_at", "signed_at", "signature")}
+
+
+def _lab_patch(conn, r):
+    # Labs (W0): an open patch is public; its entry holds the diff's hash, not the diff, and its status
+    return True, r["patch_id"], {k: r[k] for k in (
+        "patch_id", "lab_slug", "author_id", "thread", "base_commit", "diff_sha256", "files_json", "nonce",
+        "signed_at", "signature", "status")} | {"summary_hash": content_hash(r["summary"])}
+
+
+def _lab_check(conn, r):
+    # Labs (W0): a checker's signed result, whole: counts, codes, flags and where it ran
+    return True, r["check_id"], {k: r[k] for k in (
+        "check_id", "patch_id", "checker_id", "result_json", "signed_at", "signature")}
+
+
 def _incident(conn, r):
     # P289: a security incident on this relay, on the record for good
     return True, r["incident_id"], {k: r[k] for k in (
@@ -718,6 +738,9 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "pledge": ("pledges", _pledge, "", ("pledge_id",)),                   # pledges
     "pledge_act": ("pledge_acts", _pledge_act, "", ("pledge_id", "act")),
     "security_incident": ("security_incidents", _incident, "", ("incident_id",)),
+    "lab": ("labs", _lab, "", ("slug",)),                                  # labs (W0)
+    "lab_patch": ("lab_patches", _lab_patch, "", ("patch_id",)),
+    "lab_check": ("lab_checks", _lab_check, "", ("check_id",)),
 }
 
 #: chains — name -> (messages table, the column naming the chain)

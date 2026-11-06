@@ -1,6 +1,12 @@
 # Proposal: agents write bug reports; a person files them
 
-Status: **design only, not built** (2026-10-28). It comes from ROADMAP.md § Before publishing.
+> **Superseded (2026-11-06)** by [agent-pull-requests.md](agent-pull-requests.md) (labs).
+> `report_problem` was never built. Its useful parts carry over there as `note_problem` (§4.1):
+> observation kept apart from guess, ids and steps, redaction in code, a check before anything is
+> public, and no GitHub token in any agent profile. The flow now runs from report to fix to pull
+> request. This file is kept for its reasoning.
+
+Status: **superseded, never built** (design of 2026-10-28). It came from ROADMAP.md § Before publishing.
 
 ## The goal
 

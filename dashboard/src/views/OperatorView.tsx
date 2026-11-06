@@ -1,7 +1,8 @@
 /**
  * Operator section: the desk of whoever runs this relay — the bug reports and ideas waiting
- * for a verdict, this week's expedition, the house agents, the relay's health and its
- * season — read from GET /operator/status, which the relay answers for its operator alone.
+ * for a verdict, the patches waiting in its labs, this week's expedition, the house agents,
+ * the relay's health and its season — read from GET /operator/status, which the relay
+ * answers for its operator alone.
  *
  * It only watches. Next to each thing is the exact `hermes emporia …` command that acts on
  * it, to copy into the person's own terminal: a verdict is the person's signed decision,
@@ -12,8 +13,8 @@ import Text from "@kit/Text";
 import { api } from "../api";
 import { useInterval } from "../hooks";
 import {
-  bugCommands, bytes, expeditionCommand, houseCommands, ideaCommands, snapshotCommand, uptime,
-  type OperatorStatus,
+  bugCommands, bytes, expeditionCommand, houseCommands, ideaCommands, patchCommands, snapshotCommand, uptime,
+  type OperatorStatus, type PatchItem,
 } from "../operatorCommands";
 import { useProfileName } from "../profileName";
 import { MetaGrid, SlimCard } from "../ui/cards";
@@ -65,6 +66,45 @@ function Ideas({ s, name }: { s: OperatorStatus["ideas"]; name: string }) {
           <Text className="e-faint">by {i.author_id} · {when(i.created_at)} · {i.votes} votes</Text>
           <Text>{i.excerpt}{i.truncated ? "…" : ""}</Text>
           <CommandList commands={ideaCommands(name, i, s.verdicts)} />
+        </SlimCard>
+      ))}
+    </div>
+  );
+}
+
+function checkLine(c: PatchItem["check"]): string {
+  if (!c) return "not yet checked";
+  const tests = c.tests_exit === null ? "no tests run" : `tests exit ${c.tests_exit}${c.passed !== null ? ` (${c.passed} passed, ${c.failed ?? 0} failed)` : ""}`;
+  return `${c.verdict} · ${tests} · secret scan ${c.secret_scan ?? "—"} · risk ${c.risk_floor ?? "—"}`;
+}
+
+function Patches({ s, name }: { s: NonNullable<OperatorStatus["patches"]>; name: string }) {
+  if (!s.on) return <Text className="e-faint">Labs are off: {s.why}.</Text>;
+  return (
+    <div className="e-op-list">
+      {s.labs.map((l) => (
+        <Text key={l.slug} className="e-faint">Lab <code>{l.slug}</code>: {l.repo_url} · {l.branch} @ {l.commit.slice(0, 12)}</Text>
+      ))}
+      {!s.items.length && <Text className="e-faint">No patch waiting.</Text>}
+      {s.waiting > s.items.length && <Text className="e-faint">The oldest {s.items.length} of {s.waiting}.</Text>}
+      {s.items.map((p) => (
+        <SlimCard key={p.patch_id} title={`${p.patch_id} · ${p.lab}`}
+          action={<Text className="e-faint">{when(p.created_at)}</Text>}>
+          <MetaGrid rows={[
+            ["Author", p.author_id],
+            ["Answers", p.thread],
+            ["Base", p.base_commit.slice(0, 12)],
+            ["Files", `${p.files.length} · +${p.added} −${p.removed}`],
+            ["Check", checkLine(p.check)],
+            ...(p.check ? [["Sandbox", `${p.check.isolation ?? "—"} · ${p.check.sandbox ?? ""}`] as [string, string]] : []),
+            ...(p.check?.flags.length ? [["Flags", p.check.flags.join(", ")] as [string, string]] : []),
+          ]} />
+          {p.check?.problem && <Text className="e-faint">{p.check.problem}</Text>}
+          {p.check?.isolation === "none" && (
+            <Text className="e-faint">Checked without a sandbox: read the diff before you trust its result.</Text>
+          )}
+          {p.summary && <Text className="e-faint" aria-label="The agent's summary">The agent's words: {p.summary}</Text>}
+          <CommandList commands={patchCommands(name, p)} />
         </SlimCard>
       ))}
     </div>
@@ -159,17 +199,20 @@ export function OperatorView() {
     );
   }
   const waiting = s.bugs.on ? s.bugs.open : 0;
+  const patches = s.patches?.on ? s.patches.waiting : 0;
   return (
     <ViewBody toolbar={<Text className="e-faint">Your relay · read-only: each action is a command you run · updated {new Date(s.as_of).toLocaleTimeString()}</Text>}>
       <div className="e-relay e-op">
         <StatHero items={[
           { label: "Bug reports waiting", value: String(waiting), accent: waiting > 0 },
           { label: "Ideas not yet judged", value: String(s.ideas.open) },
+          ...(s.patches?.on ? [{ label: "Patches waiting", value: String(patches), accent: patches > 0 }] : []),
           { label: "Agents active", value: String(s.health.active_agents), hint: `last ${Math.round(s.health.window_s / 60)} min` },
           { label: "Up", value: uptime(s.health.uptime_s), hint: `v${s.health.version}` },
         ]} />
         <PanelCard title="Bug reports waiting for a verdict"><Bugs s={s.bugs} name={name} /></PanelCard>
         <PanelCard title={`Ideas not yet judged · ${s.ideas.topic}`}><Ideas s={s.ideas} name={name} /></PanelCard>
+        {s.patches && <PanelCard title="Patches waiting"><Patches s={s.patches} name={name} /></PanelCard>}
         <PanelCard title={`Expedition · ${s.expedition.topic}`}><Expedition s={s.expedition} name={name} /></PanelCard>
         <PanelCard title="House agents"><House s={s.house} /></PanelCard>
         <PanelCard title="Relay health"><Health s={s.health} name={name} /></PanelCard>

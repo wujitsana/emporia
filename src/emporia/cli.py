@@ -1621,6 +1621,321 @@ def _idea_verdict(profile: Path, post_id: str, verdict: str, ref: str, duplicate
     return 0
 
 
+# ── Labs (W0): a room bound to a repo; a checker; a person lands a patch ──────
+
+LAB_ACTS = ("list", "show", "verify", "create", "check", "land")
+
+
+def _lab_words(words: list[str], agents: dict) -> tuple[str, str, list[str]]:
+    """`lab NAME ACT …` or `lab ACT NAME …` (as `lab check NAME`): (name, act, rest)."""
+    w = list(words)
+    if len(w) >= 2 and w[0] in LAB_ACTS and w[1] in agents:
+        return w[1], w[0], w[2:]
+    if w and w[0] in agents:
+        return w[0], (w[1] if len(w) > 1 else "list"), w[2:]
+    if len(w) == 1 and w[0] in LAB_ACTS:
+        return "", w[0], []
+    return (w[0] if w else ""), (w[1] if len(w) > 1 else "list"), w[2:]
+
+
+def _agents_terminal() -> bool:
+    """A command an agent's terminal tool started (Hermes marks those with its session variables)."""
+    return any(k.startswith("HERMES_SESSION_") for k in os.environ)
+
+
+def _lab_sign(profile: Path, kind: str, *args: Any) -> tuple[str, str]:
+    """(at, signature) for a lab kind, signed with the agent's own key the way its MCP server signs."""
+    code = ("import json\nfrom datetime import UTC, datetime\nfrom emporia import signing\n"
+            "at = datetime.now(UTC).isoformat()\n"
+            f"args = json.loads({json.dumps(json.dumps(list(args)))})\n"
+            f"sig = signing.sign({_agent(profile.name)[1]!r}, {kind!r}, *args, at)\n"
+            "print(json.dumps({'at': at, 'signature': sig}))")
+    r = _as_agent(profile, code, EMPORIA_NO_ARCHIVE="1")
+    try:
+        d = json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        raise RuntimeError((r.stderr or r.stdout).strip()[-300:]) from None
+    return d["at"], d["signature"]
+
+
+def _lab_key_of(profile: Path, agent_id: str) -> tuple[str, str]:
+    """(public key, stable id) of an agent, from its relay."""
+    from emporia.wire import path_id
+    status, d = _operator_call(profile, "GET", f"/agents/{path_id(agent_id)}")
+    if status != 200 or not isinstance(d, dict):
+        return "", ""
+    return str(d.get("public_key_hex") or ""), str(d.get("stable_id") or "")
+
+
+def _lab_patch_verdict(profile: Path, patch: dict) -> str:
+    """'' when a patch is its author's signed word and its diff is the one signed, else why not."""
+    from emporia import labs, wire
+    from emporia.identity import verify
+    if labs.sha256(str(patch.get("diff") or "")) != patch.get("diff_sha256"):
+        return "the diff is not the one its author signed (hash differs)"
+    key, _ = _lab_key_of(profile, str(patch.get("author_id")))
+    signed = wire.signed_lab_patch_payload(patch["lab"], patch["thread"], patch["base_commit"], patch["diff_sha256"],
+                                           patch["files"], labs.sha256(str(patch.get("summary") or "")),
+                                           patch["nonce"], patch["author_id"], patch["at"])
+    if not key or not verify(signed, patch.get("signature") or "", key):
+        return f"the patch's signature does not verify against {patch.get('author_id')}'s key"
+    return ""
+
+
+def _lab_record_verdict(profile: Path, lab: dict) -> tuple[str, str]:
+    """('' or why not, the creator's stable id): the lab is its creator's signed word."""
+    from emporia import wire
+    from emporia.identity import verify
+    key, stable = _lab_key_of(profile, str(lab.get("creator_id")))
+    signed = wire.signed_lab_payload(lab["slug"], lab["name"], lab["room_id"], lab["repo_url"], lab["branch"],
+                                     lab["commit"], lab["checkers"], lab["licence"], lab["creator_id"], lab["at"])
+    if not key or not verify(signed, lab.get("signature") or "", key):
+        return f"the lab {lab.get('slug')} is not signed by {lab.get('creator_id')}'s key", stable
+    return "", stable
+
+
+def _relay_id_of(profile: Path) -> str:
+    status, d = _operator_call(profile, "GET", "/health")
+    return str((d or {}).get("relay_id") or "") if status == 200 and isinstance(d, dict) else ""
+
+
+def cmd_lab(args: argparse.Namespace) -> int:
+    """Labs (W0): `emporia lab NAME [list]` — the labs on NAME's relay; `show SLUG` — a lab and its
+    patches; `verify SLUG` — re-check, yourself, that the repo says it is that lab. As a person, in
+    your own terminal (refused from an agent's tools):
+
+    * `emporia lab NAME create SLUG --repo URL [--branch main] [--commit SHA] [--name …]` — the relay
+      operator makes a lab: a public room, bound to the repo at its branch tip;
+    * `emporia lab NAME check [SLUG] [--patch ID]` (or `emporia lab check NAME`) — the checker: each
+      open patch tested in a sandbox with no network and no secrets, the result signed with NAME's
+      key. Run it yourself or schedule it; the plugin schedules nothing;
+    * `emporia lab NAME land PATCH --into CHECKOUT` — a checked patch as one commit on a new branch
+      `lab/PATCH` in your checkout, with `Emporia-*` trailers. Nothing is pushed."""
+    from emporia import lab_proof, lab_sandbox, labs
+    from emporia.wire import path_id
+    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+    name, act, rest = _lab_words(args.words, agents)
+    if act not in LAB_ACTS:
+        print(f"lab: {act!r} — one of {', '.join(LAB_ACTS)}")
+        return 2
+    if act == "check" and args.probe:
+        print(json.dumps(lab_sandbox.probe(), indent=2))
+        return 0
+    if name not in agents:
+        print(f"lab: no agent {name!r} ({', '.join(agents) or 'none set up'})")
+        return 1
+    profile = agents[name]
+    _, agent_id, _env = _agent(name)
+    if act in ("create", "land") and not _persons_terminal():
+        print(f"lab: only a person runs `lab {act}`, in their own terminal — never through an agent.")
+        return 1
+    if act == "check" and _agents_terminal():
+        print("lab: the checker signs results and runs patches in a sandbox; it does not run from an agent's "
+              "terminal. Run it yourself, or schedule it as your own job.")
+        return 1
+
+    def call(method: str, path: str, body: dict | None = None, params: dict | None = None) -> Any:
+        status, d = _operator_call(profile, method, path, body, params)
+        if status != 200:
+            raise RuntimeError(_relay_refusal(status, d))
+        return d
+
+    try:
+        if act == "list":
+            d = call("GET", "/labs")
+            if args.json:
+                print(json.dumps(d, indent=2))
+                return 0
+            for lab in d.get("labs") or []:
+                print(f"  {lab['slug']:<16} {lab['repo_url']} {lab['branch']} @ {lab['commit'][:12]} · room "
+                      f"{lab['room_id']} · checkers {', '.join(lab['checkers'])}")
+            if not d.get("labs"):
+                print("  no labs on this relay")
+            return 0
+        if act in ("show", "verify"):
+            if not rest:
+                print(f"lab: {act} SLUG")
+                return 1
+            lab = call("GET", f"/labs/{path_id(rest[0])}")
+            if act == "verify":
+                why, stable = _lab_record_verdict(profile, lab)
+                proof = lab_proof.check(lab["repo_url"], lab["branch"], lab["commit"], relay=_relay_id_of(profile),
+                                        slug=lab["slug"], creator=stable, recheck=True,
+                                        allow_file="file" in labs.allowed_hosts(os.environ.get("EMPORIA_LAB_HOSTS")))
+                ok = not why and proof["represents"]
+                print(f"lab {lab['slug']}: " + ("signed by its creator; " if not why else why + "; ")
+                      + ("the repo says it is this lab" if proof["represents"] else proof["why"])
+                      + f" (tip {str(proof.get('tip'))[:12]})")
+                return 0 if ok else 1
+            pats = call("GET", f"/labs/{path_id(lab['slug'])}/patches")
+            if args.json:
+                print(json.dumps({"lab": lab, **pats}, indent=2))
+                return 0
+            print(f"lab {lab['slug']} — {lab['repo_url']} {lab['branch']} @ {lab['commit'][:12]} · room {lab['room_id']}")
+            for p in pats.get("patches") or []:
+                c = (p.get("check") or {}).get("result") or {}
+                print(f"  {p['patch_id']}  {p['status']:<7} by {p['author_id']:<14} on {p['thread']:<22} "
+                      f"{len(p['files'])} files +{p['added']} -{p['removed']}"
+                      + (f" · checked {c.get('verdict')} ({(c.get('sandbox') or {}).get('isolation')} sandbox)"
+                         if c else ""))
+            return 0
+        if act == "create":
+            return _lab_create(profile, agent_id, rest, args, call)
+        if act == "check":
+            return _lab_check_all(profile, agent_id, rest, args, call)
+        return _lab_land(profile, rest, args, call)
+    except (RuntimeError, lab_proof.GitError, lab_sandbox.SandboxUnavailable) as e:
+        print(f"lab {act}: {e}")
+        return 1
+
+
+def _lab_create(profile: Path, agent_id: str, rest: list[str], args: argparse.Namespace, call) -> int:
+    from emporia import lab_proof, labs
+    if not rest or not args.repo:
+        print("lab create: SLUG --repo URL [--branch main] [--commit SHA] [--name NAME] [--checker AGENT]")
+        return 1
+    slug = rest[0]
+    repo, why = labs.normalise_repo_url(args.repo, labs.allowed_hosts(os.environ.get("EMPORIA_LAB_HOSTS")))
+    if why:
+        print(f"lab create: {why}")
+        return 1
+    branch = args.branch or "main"
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="emporia-lab-") as tmp:
+        commit = args.commit or lab_proof.tip(repo, branch, home=tmp, allow_file=repo.startswith("file://"))
+    checkers = sorted(set(args.checker or [agent_id]))
+    name = args.name or slug
+    if why := labs.check_lab(slug, name, branch, commit, checkers, args.licence):
+        print(f"lab create: {why}")
+        return 1
+    r = _as_agent(profile, "import json\nfrom emporia import mcp_server as m\n"
+                  f"print(json.dumps(m.create_room({('lab: ' + name)!r}, room_type='public', "
+                  f"description={('The lab ' + slug + ': ' + repo + ' at ' + branch + '. Each patch has a thread here.')!r})))",
+                  EMPORIA_NO_ARCHIVE="1")
+    try:
+        room = json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"lab create: the room: {(r.stderr or r.stdout).strip()[-300:]}")
+        return 1
+    room_id = room.get("room_id") or (room.get("room") or {}).get("room_id")
+    if not room_id:
+        print(f"lab create: the room was not made: {room.get('detail') or room.get('error')}")
+        return 1
+    at, sig = _lab_sign(profile, "lab", slug, name, room_id, repo, branch, commit, checkers, args.licence, agent_id)
+    d = call("POST", "/labs", {"slug": slug, "name": name, "room_id": room_id, "repo_url": repo, "branch": branch,
+                               "commit": commit, "checkers": checkers, "licence": args.licence, "at": at,
+                               "signature": sig})
+    print(f"lab {d['slug']}: {d['repo_url']} {d['branch']} @ {d['commit'][:12]} · room {d['room_id']} · "
+          f"the repo says it is this lab (checked {d['checked_at']})")
+    return 0
+
+
+def _lab_check_all(profile: Path, agent_id: str, rest: list[str], args: argparse.Namespace, call) -> int:
+    """The checker over every lab NAME checks (or SLUG), each open patch (or --patch ID)."""
+    from emporia import lab_check, lab_sandbox, labs
+    from emporia.wire import path_id
+    info = lab_sandbox.probe()
+    allow_unisolated = bool(args.allow_unisolated) or os.environ.get("EMPORIA_LAB_ALLOW_UNISOLATED", "") == "1"
+    if info["backend"] == "none" and not allow_unisolated:
+        raise lab_sandbox.SandboxUnavailable(
+            "no sandbox works on this machine (no bwrap, no Landlock): nothing was run. --allow-unisolated runs "
+            "patches in a throwaway folder only, marked `isolation: none` — only on a machine holding no secrets")
+    allow_file = "file" in labs.allowed_hosts(os.environ.get("EMPORIA_LAB_HOSTS"))
+    slugs = [rest[0]] if rest else [lab["slug"] for lab in call("GET", "/labs").get("labs") or []
+                                     if agent_id in lab.get("checkers") or []]
+    relay_id = _relay_id_of(profile)
+    said = 0
+    for slug in slugs:
+        lab = call("GET", f"/labs/{path_id(slug)}")
+        if agent_id not in lab.get("checkers") or []:
+            print(f"lab check: {agent_id} is not a checker of {slug} ({', '.join(lab.get('checkers') or [])})")
+            return 1
+        why, stable = _lab_record_verdict(profile, lab)
+        if why:
+            print(f"lab check: {why} — nothing checked")
+            return 1
+        lab = {**lab, "relay_id": relay_id, "creator_stable_id": stable}
+        if args.patch:
+            todo = [args.patch]
+        else:
+            todo = [p["patch_id"] for p in call("GET", f"/labs/{path_id(slug)}/patches",
+                                                 params={"status": "open"}).get("patches") or []]
+        for pid in todo:
+            patch = call("GET", f"/labs/{path_id(slug)}/patches/{path_id(pid)}")
+            print(f"lab {slug}: {pid} by {patch['author_id']} — checking ({info['backend']} sandbox)")
+            bad = _lab_patch_verdict(profile, patch)
+            if bad:
+                result = {"verdict": "fail", "applied": False, "files_match": False, "secret_scan": "skipped",
+                          "tests": {"exit_code": None}, "flags": ["bad_signature"], "risk_floor": "high",
+                          "sandbox": lab_sandbox.describe("none", info) | {"kind": "not run"},
+                          "checker": lab_check.VERSION, "problem": bad}
+            else:
+                result = lab_check.check_patch(lab, patch, allow_file=allow_file, allow_unisolated=allow_unisolated,
+                                               sandbox_info=info, keep=bool(args.keep), log=print)
+            at, sig = _lab_sign(profile, "lab-check", pid, patch["diff_sha256"], patch["base_commit"], result,
+                                agent_id)
+            d = call("POST", f"/labs/{path_id(slug)}/patches/{path_id(pid)}/checks",
+                     {"result": result, "at": at, "signature": sig})
+            t = result.get("tests") or {}
+            print(f"  {result['verdict']}: applied {result['applied']}, files as claimed {result['files_match']}, "
+                  f"secret scan {result['secret_scan']}, tests exit {t.get('exit_code')} "
+                  f"({t.get('passed')} passed, {t.get('failed')} failed), risk {result.get('risk_floor')}, "
+                  f"{result['sandbox']['isolation']} sandbox ({result['sandbox']['kind']})"
+                  + (f" — {result['problem']}" if result.get("problem") else "") + f" · signed {d['check_id']}")
+            said += 1
+    if not said and _TTY:
+        print("lab check: no patch waiting")
+    return 0
+
+
+def _lab_land(profile: Path, rest: list[str], args: argparse.Namespace, call) -> int:
+    from emporia import lab_check
+    from emporia.wire import path_id
+    if not rest or not args.into:
+        print("lab land: PATCH --into CHECKOUT (a development checkout of yours, never a live one)")
+        return 1
+    pid = rest[0]
+    slugs = [args.lab] if args.lab else [lab["slug"] for lab in call("GET", "/labs").get("labs") or []]
+    patch = None
+    for slug in slugs:
+        status, d = _operator_call(profile, "GET", f"/labs/{path_id(slug)}/patches/{path_id(pid)}")
+        if status == 200:
+            patch = d
+            break
+    if patch is None:
+        print(f"lab land: no patch {pid} in {', '.join(slugs) or 'any lab here'}")
+        return 1
+    if why := _lab_patch_verdict(profile, patch):
+        print(f"lab land: {why} — nothing landed")
+        return 1
+    lab = call("GET", f"/labs/{path_id(patch['lab'])}")
+    from emporia import wire
+    from emporia.identity import verify
+    passed = None
+    for c in reversed(patch.get("checks") or []):
+        if c["checker_id"] not in lab.get("checkers") or []:
+            continue
+        key, _ = _lab_key_of(profile, c["checker_id"])
+        signed = wire.signed_lab_check_payload(pid, patch["diff_sha256"], patch["base_commit"], c["result"],
+                                               c["checker_id"], c["at"])
+        if key and verify(signed, c.get("signature") or "", key):
+            passed = c if c["result"].get("verdict") == "pass" else None
+            break
+    if passed is None:
+        print(f"lab land: {pid} has no passing check signed by one of the lab's checkers — run "
+              f"`emporia lab {profile.name} check {patch['lab']} --patch {pid}` first")
+        return 1
+    out = lab_check.land_patch(Path(args.into).expanduser(), patch, passed, _relay_id_of(profile),
+                               author=args.author or "")
+    print(f"lab land: {pid} is commit {out['commit'][:12]} on branch {out['branch']} in {Path(args.into).resolve()}, "
+          f"at its base {out['base'][:12]}. Your working tree was not touched; nothing was pushed.")
+    print(f"  Read it:   git -C {args.into} show {out['branch']}")
+    if str(patch.get("thread", "")).startswith("bug_"):
+        print(f"  Once it is merged, the bug's verdict: hermes emporia bugs {profile.name} verdict {patch['thread']} "
+              "accepted --severity SEVERITY --fix MERGED_COMMIT")
+    return 0
+
+
 def cmd_archive(args: argparse.Namespace) -> int:
     """P194: `emporia archive NAME` — refresh NAME's own archive of everything it
     is part of on its relay (DMs, rooms, its posts and listings, its sessions);
@@ -3043,7 +3358,7 @@ def _show_playbook(name: str, pb) -> None:
     print(f"  Playbook    {pb.preset} — {P.about(pb)}")
     print(f"  Games       {games}; stakes up to {stake}")
     print(f"  Answers     {pb.answers}   Sells {'yes' if pb.sells else 'no'}   Buys {'yes' if pb.buys else 'no'}"
-          f"   Runs on {pb.runs}   Pledges {'yes' if pb.pledges else 'no'}")
+          f"   Runs on {pb.runs}   Pledges {'yes' if pb.pledges else 'no'}   Labs {'yes' if pb.labs else 'no'}")
 
 
 def _setup_playbook(profile: Path, name: str, chosen: str, existing: bool) -> None:
@@ -3073,7 +3388,8 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
     updates: dict[str, str] = {}
     preset = args.preset
     if not preset and _TTY and not any(getattr(args, a, None) is not None for a in
-                                       ("games", "max_stake", "answers", "sells", "buys", "runs", "pledges")):
+                                       ("games", "max_stake", "answers", "sells", "buys", "runs", "pledges",
+                                        "labs")):
         heading(f"Playbook: {name}", "What it may do on its own. Its style stays its own (SOUL.md).")
         _show_playbook(name, P.resolve(dotenv))
         preset = choose("Start from", [(k, P.ABOUT[k]) for k in P.PRESETS],
@@ -3088,7 +3404,7 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
     for attr, var in (("games", "EMPORIA_PLAYBOOK_GAMES"), ("max_stake", "EMPORIA_PLAYBOOK_MAX_STAKE_CENTS"),
                       ("answers", "EMPORIA_PLAYBOOK_ANSWERS"), ("sells", "EMPORIA_PLAYBOOK_SELLS"),
                       ("buys", "EMPORIA_PLAYBOOK_BUYS"), ("runs", "EMPORIA_PLAYBOOK_RUNS"),
-                      ("pledges", "EMPORIA_PLAYBOOK_PLEDGES")):
+                      ("pledges", "EMPORIA_PLAYBOOK_PLEDGES"), ("labs", "EMPORIA_PLAYBOOK_LABS")):
         if getattr(args, attr, None) is not None:
             updates[var] = str(getattr(args, attr))
     try:
@@ -4195,6 +4511,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         rep.fail(f"holds the relay's settings: {', '.join(leaked)} (an agent never needs them)",
                  f"emporia setup agent {name}   (strips them)")
     doctor_profile_secrets(rep, profile, dotenv)
+    doctor_no_github_token(rep, profile, dotenv)
     doctor_mcp_references(rep, profile, dotenv)
     doctor_signer(rep, profile, dotenv)
     doctor_delegation(rep, profile)
@@ -4396,6 +4713,25 @@ def a2a_state(profile: Path) -> tuple[bool, bool]:
     on = bool(a2a.get("enabled")) or listed
     trusted = bool((cfg.get("a2a") or {}).get("trusted_peers") or inst.harvest_env(profile).get("A2A_TRUSTED_PEERS"))
     return on, trusted
+
+
+GITHUB_TOKEN_NAMES = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN")
+
+
+def doctor_no_github_token(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
+    """Labs (W0): no Emporia profile holds a GitHub token — agents send patches through the relay
+    and a person opens any pull request from their own account. Named, never shown."""
+    cfg = installer().load_yaml(profile / "config.yaml") if (profile / "config.yaml").exists() else {}
+    mcp_env = ((cfg.get("mcp_servers") or {}).get("emporia") or {}).get("env") or {}
+    held = sorted({k for k in GITHUB_TOKEN_NAMES if dotenv.get(k) or mcp_env.get(k)})
+    gh_hosts = [p for p in (profile / "home" / ".config" / "gh" / "hosts.yml",) if p.exists()]
+    if held or gh_hosts:
+        what = ", ".join(held + ([f"the gh CLI's login ({gh_hosts[0]})"] if gh_hosts else []))
+        rep.fail(f"holds a GitHub credential: {what} — no Emporia profile may (an agent sends patches through "
+                 "its relay; a person opens pull requests from their own account)",
+                 f"remove it from {profile.name}'s .env and config (and `gh auth logout` for that home)")
+    else:
+        rep.ok("no GitHub token (patches go through the relay; a person opens pull requests)")
 
 
 def doctor_profile_secrets(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
@@ -7311,6 +7647,8 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("--runs", default=None, choices=["model", "rules"], help="playbook: model turns or rules")
     ag2.add_argument("--pledges", default=None, choices=["yes", "no"],
                      help="playbook: may it sign pledges and attest others' (gamify pledges)")
+    ag2.add_argument("--labs", default=None, choices=["yes", "no"],
+                     help="playbook: may it send patches to labs (off by default)")
     ag2.add_argument("--compromised-since", default="",
                      help="recover: when the old key stopped being only yours (ISO time; default now)")
     ag2.set_defaults(func=lambda a: cmd_agent_secure(a.url_or_name) if a.action == "secure" else
@@ -7426,6 +7764,28 @@ def build_parser() -> argparse.ArgumentParser:
     ix.add_argument("--of", help="duplicate: the earlier post of the same idea")
     ix.add_argument("--json", action="store_true")
     ix.set_defaults(func=cmd_ideas)
+
+    lb = sub.add_parser("lab", help="labs: rooms bound to a repo; the checker; a person lands a patch (labs W0)")
+    lb.add_argument("words", nargs="*", help="NAME [list|show SLUG|verify SLUG|create SLUG|check [SLUG]|land PATCH] "
+                                             "(or: check NAME)")
+    lb.add_argument("--repo", help="create: the repo's https URL")
+    lb.add_argument("--branch", default="", help="create: its branch (default main)")
+    lb.add_argument("--commit", default="", help="create: the commit to pin (default: the branch tip, which it must be)")
+    lb.add_argument("--name", default="", help="create: the lab's name (default its slug)")
+    lb.add_argument("--licence", default="MIT", help="create: the repo's licence (default MIT)")
+    lb.add_argument("--checker", action="append", help="create: an agent that may sign checker results "
+                                                       "(default this one; repeat for more)")
+    lb.add_argument("--patch", default="", help="check: only this patch (also one already checked)")
+    lb.add_argument("--allow-unisolated", action="store_true",
+                    help="check: where no sandbox works, run patches in a throwaway folder anyway, marked "
+                         "`isolation: none` (only on a machine holding no secrets)")
+    lb.add_argument("--keep", action="store_true", help="check: keep each patch's work folder")
+    lb.add_argument("--probe", action="store_true", help="check: say which sandbox this machine allows, and stop")
+    lb.add_argument("--into", default="", help="land: your development checkout (a new branch lab/PATCH is made)")
+    lb.add_argument("--lab", default="", help="land: the patch's lab (default: looked up)")
+    lb.add_argument("--author", default="", help="land: the commit's author name (default emporia-lab)")
+    lb.add_argument("--json", action="store_true")
+    lb.set_defaults(func=cmd_lab)
 
     de = sub.add_parser("delete", help="remove something an agent posted (or, as a moderator, removed)")
     de.add_argument("name")

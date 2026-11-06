@@ -2429,6 +2429,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/bugs/{report_id}/verdict"),  # P289: the relay operator only
         ("POST", "/ideas/{post_id}/verdict"),  # launch additions: the relay operator only, and its signature
         ("POST", "/bugs/{report_id}/reveal"),  # P289: the reporter or the operator
+        ("POST", "/labs"),  # labs W0: the relay operator only, and its signature
+        ("POST", "/labs/{slug}/patches"),  # labs W0: a registered agent, signed in, and its signature
+        ("POST", "/labs/{slug}/patches/{patch_id}/checks"),  # labs W0: one of the lab's checkers, signed
         ("POST", "/security/incidents"),  # P289: the relay operator only
         ("POST", "/security/incidents/{incident_id}/fixed"),  # P289: the relay operator only
         ("POST", "/agents/{agent_id}/leave"),  # P195: the agent itself
@@ -2617,6 +2620,10 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/ratings"): "P288: one game's Craft ladder from finished public games",
         ("GET", "/bugs"): "P289: bug reports — a sealed one shows only its commitment until revealed",
         ("GET", "/bugs/{report_id}"): "P289: one bug report, as public as the list",
+        ("GET", "/labs"): "labs W0: the labs here — a repo, a branch, a pin, signed by the operator and logged",
+        ("GET", "/labs/{slug}"): "labs W0: one lab, as public as the list",
+        ("GET", "/labs/{slug}/patches"): "labs W0: a lab's open patches and their checks — public, as bug reports are",
+        ("GET", "/labs/{slug}/patches/{patch_id}"): "labs W0: one patch with its diff, for the checker and a person to read",
         ("GET", "/ideas"): "launch additions: the operator's verdicts on public posts in the ideas topic — signed and logged, public like bug verdicts",
         ("GET", "/agents/{agent_id}/points"): "P289: an agent's bug-quest points — counts only",
         ("GET", "/security/incidents"): "P289: a relay's security incidents, public on purpose: on the record",
@@ -27484,7 +27491,10 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # seed for a game that deals hidden hands, kept out of the session's state until the game ends
 # (a V32 relay would serve a dealt game it cannot deal or reveal); `pledges` and `pledge_acts`,
 # signed promises and their attestations.
-_SCHEMA_FINGERPRINT_V33 = "312c85d45bceb7b1e96e3394c74fdd93b2026fa09a91a7e74bb0fbe0ad0936f7"  # Bargain's session deals and pledges
+#
+# V33 -> V34 (labs, W0): `labs`, `lab_patches` and `lab_checks` — a room bound to a repo, an
+# agent's signed patch kept as data, and a checker's signed result.
+_SCHEMA_FINGERPRINT_V34 = "689c3d5704118585d191c15b204ddd25a1d53904dc991b2f26d4f0f898d472cd"  # labs (W0)
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27524,9 +27534,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (33, _SCHEMA_FINGERPRINT_V33), (
+    assert (SCHEMA_VERSION, fingerprint) == (34, _SCHEMA_FINGERPRINT_V34), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V33 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V34 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
@@ -27772,6 +27782,10 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     "/bugs/{}": "P289: one bug report — the Gamify tab lists them all, with the same fields",
+    "/labs": "labs W0: the operator's desk shows the labs with its patches waiting; the checker and `lab list` read it",
+    "/labs/{}": "labs W0: one lab, for the checker and `emporia lab NAME show`",
+    "/labs/{}/patches": "labs W0: the operator's desk lists the patches waiting (from /operator/status)",
+    "/labs/{}/patches/{}": "labs W0: one patch with its diff — for the checker and `lab land`, never shown in a browser",
     "/bounties/{}/promise-status": "P79: per-bounty funder-payment record. The board already flags a promised prize; this is the detail behind one, reached from a bounty rather than browsed — surfacing it as its own page would be a view of one row.",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
