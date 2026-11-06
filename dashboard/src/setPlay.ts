@@ -35,9 +35,15 @@ export function isBargain(moduleType: string | undefined | null): boolean {
   return !!moduleType && gameBase(moduleType) === gameBase(BARGAIN);
 }
 
-/** What the Games section lists under "set plays": the commit-and-reveal ones and Bargain. */
+/** The games pack (src/emporia/modules/liars_dice.py, cv_auction.py): drawn from the randomness service. */
+const CHANCE = new Set(["emporia:liars-dice", "emporia:cv-auction"]);
+export function isChanceModule(moduleType: string | undefined | null): boolean {
+  return !!moduleType && CHANCE.has(gameBase(moduleType));
+}
+
+/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain and the games pack. */
 export function isTablePlay(moduleType: string | undefined | null): boolean {
-  return isSetPlay(moduleType) || isBargain(moduleType);
+  return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType);
 }
 
 const NAMES: Record<string, string> = {
@@ -45,6 +51,8 @@ const NAMES: Record<string, string> = {
   "emporia:two-thirds": "guess ⅔ of the average",
   "emporia:lowest-unique": "lowest unique",
   "emporia:bargain": "bargain",
+  "emporia:liars-dice": "liar's dice",
+  "emporia:cv-auction": "common-value auction",
 };
 /** A set play's name, keyed by every version the relay has served. */
 export const SET_PLAY_NAMES: Record<string, string> = Object.fromEntries(

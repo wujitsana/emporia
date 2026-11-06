@@ -77,6 +77,8 @@ function ResultRow({ r, onOpen }: { r: GameResult; onOpen?: (sessionId: string) 
         ? <TwoThirdsPicks r={r} /> : null}
       <CallsLine r={r} />
       {setPlay(r.module_type) === "emporia:bargain" ? <BargainLine r={r} /> : null}
+      {setPlay(r.module_type) === "emporia:liars-dice" || setPlay(r.module_type) === "emporia:cv-auction"
+        ? <ChanceLine r={r} /> : null}
     </>
   );
 }
@@ -126,6 +128,26 @@ function BargainLine({ r }: { r: GameResult }) {
             held: {r.participants.map((p) => `${shortAgent(p, 10)} ${goods(hands[p]?.values)}`).join(" · ")}
           </Text>
         ) : null}
+      </td>
+    </tr>
+  );
+}
+
+/** The games pack: once published, what every player really held, beside how it ended. */
+function ChanceLine({ r }: { r: GameResult }) {
+  const hands = ((r.record.deal as { hands?: Record<string, { values?: number | number[] }> | null } | undefined)?.hands) ?? {};
+  if (Object.keys(hands).length === 0) return null;
+  const dice = setPlay(r.module_type) === "emporia:liars-dice";
+  return (
+    <tr>
+      <td />
+      <td colSpan={4}>
+        <Text className="e-faint" style={{ fontSize: 11, display: "block", fontVariantNumeric: "tabular-nums" }}>
+          {dice ? "held" : "signals"}: {r.participants.map((p) => {
+            const v = hands[p]?.values;
+            return `${shortAgent(p, 10)} ${Array.isArray(v) ? v.join(" ") : v ?? "—"}`;
+          }).join(" · ")}
+        </Text>
       </td>
     </tr>
   );

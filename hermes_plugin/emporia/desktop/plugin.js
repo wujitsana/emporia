@@ -838,7 +838,7 @@ var BlockLoader = ({ mode = 0 }) => {
 	});
 };
 // src/api.ts
-var base$1 = () => relayHttpBase();
+var base$2 = () => relayHttpBase();
 /** The dashboard's JWT, if any — for callers that need it outside a fetch() header
 * (e.g. WebSocket handshakes, which can't set custom headers from browser JS). */
 function dashboardToken() {
@@ -848,12 +848,12 @@ function agentHeaders() {
 	return {};
 }
 async function get(path, opts) {
-	const r = await httpFetch(`${base$1()}${path}`, { headers: opts?.agentScoped ? agentHeaders() : {} });
+	const r = await httpFetch(`${base$2()}${path}`, { headers: opts?.agentScoped ? agentHeaders() : {} });
 	if (!r.ok) throw new Error(`${r.status} ${path}`);
 	return r.json();
 }
 async function post(path, body) {
-	const r = await httpFetch(`${base$1()}${path}`, {
+	const r = await httpFetch(`${base$2()}${path}`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
@@ -3578,7 +3578,7 @@ function Leaderboard({ moduleType }) {
 		})]
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_u64.js
+// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
 var _32n = /* @__PURE__ */ BigInt(32);
 function fromBig(n, le = false) {
@@ -3628,7 +3628,7 @@ var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0
 var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
 var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/utils.js
+// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 /**
 * Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 * @param a - value to test
@@ -4012,7 +4012,7 @@ var oidNist = (suffix) => ({ oid: Uint8Array.from([
 	2,
 	suffix
 ]) });
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_md.js
+// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 /**
 * Internal Merkle-Damgard hash utils.
 * @module
@@ -4146,7 +4146,7 @@ var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
 	1541459225,
 	327033209
 ]);
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha2.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 /**
 * SHA2 hash function. A.k.a. sha256, sha384, sha512, sha512_224, sha512_256.
 * SHA256 is the fastest hash implementable in JS, even faster than Blake3.
@@ -4405,7 +4405,7 @@ var _SHA512 = class extends SHA2_64B {
 * ```
 */
 var sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/utils.js
+// ../../../../dashboard/node_modules/@noble/curves/utils.js
 /**
 * Hex, bytes and number utilities.
 * @module
@@ -4832,7 +4832,7 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
 	iter(fields, false);
 	iter(optFields, true);
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/modular.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 /**
 * Utils for modular division and fields.
 * Field over 11 is a finite (Galois) field is integer number operations `mod 11`.
@@ -5399,7 +5399,7 @@ function Field(ORDER, opts = {}) {
 	Object.freeze(_Field.prototype);
 	return new _Field(ORDER, opts);
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/curve.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 /**
 * Methods for elliptic curve multiplication by scalars.
 * Contains wNAF-based ScalarMultiplier, pippenger.
@@ -5928,7 +5928,7 @@ function createKeygen(randomSecretKey, getPublicKey) {
 		};
 	};
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/edwards.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 /**
 * Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
 * For design rationale of types / exports, see weierstrass module documentation.
@@ -6401,7 +6401,7 @@ function eddsa(Point, cHash, eddsaOpts = {}) {
 		lengths
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/ed25519.js
+// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 /**
 * ed25519 Twisted Edwards curve with following addons:
 * - X25519 ECDH
@@ -6502,7 +6502,7 @@ function ed(opts) {
 * ```
 */
 var ed25519 = /* @__PURE__ */ ed({});
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha3.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
 /**
 * SHA3 (keccak) hash function, based on a new "Sponge function" design.
 * Different from older hashes, the internal state is bigger than output size.
@@ -10065,16 +10065,23 @@ function isSetPlay(moduleType) {
 function isBargain(moduleType) {
 	return !!moduleType && gameBase(moduleType) === gameBase("emporia:bargain:v2");
 }
-/** What the Games section lists under "set plays": the commit-and-reveal ones and Bargain. */
+/** The games pack (src/emporia/modules/liars_dice.py, cv_auction.py): drawn from the randomness service. */
+var CHANCE = /* @__PURE__ */ new Set(["emporia:liars-dice", "emporia:cv-auction"]);
+function isChanceModule(moduleType) {
+	return !!moduleType && CHANCE.has(gameBase(moduleType));
+}
+/** What the Games section lists under "set plays": the commit-and-reveal ones, Bargain and the games pack. */
 function isTablePlay(moduleType) {
-	return isSetPlay(moduleType) || isBargain(moduleType);
+	return isSetPlay(moduleType) || isBargain(moduleType) || isChanceModule(moduleType);
 }
 /** A set play's name, keyed by every version the relay has served. */
 var SET_PLAY_NAMES = Object.fromEntries(Object.entries({
 	"emporia:blotto": "blotto",
 	"emporia:two-thirds": "guess ⅔ of the average",
 	"emporia:lowest-unique": "lowest unique",
-	"emporia:bargain": "bargain"
+	"emporia:bargain": "bargain",
+	"emporia:liars-dice": "liar's dice",
+	"emporia:cv-auction": "common-value auction"
 }).flatMap(([base, name]) => [[`${base}:v1`, name], [`${base}:v2`, name]]));
 /** A session's module state. The relay sends `state.data`; older fixtures sent it flat. */
 function stateData(session) {
@@ -10082,8 +10089,8 @@ function stateData(session) {
 	const d = st.data;
 	return d && typeof d === "object" ? d : st;
 }
-var obj = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
-var num$3 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
+var obj$1 = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+var num$5 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
 /** The relay's own verdict, if the action that ended the game carried one. */
 function relayVerdict(actions) {
 	for (const a of [...actions ?? []].reverse()) {
@@ -10101,11 +10108,11 @@ function fieldWinners(a, b, first, second) {
 function blottoRounds(data, participants) {
 	const [first, second] = participants;
 	return (Array.isArray(data.history) ? data.history : []).map((h) => {
-		const alloc = obj(h.allocations);
+		const alloc = obj$1(h.allocations);
 		const a = alloc[first] ?? [];
 		const b = alloc[second] ?? [];
 		return {
-			round: num$3(h.round, 0),
+			round: num$5(h.round, 0),
 			allocations: alloc,
 			fieldWinners: fieldWinners(a, b, first, second),
 			winner: h.winner ?? null
@@ -10164,19 +10171,19 @@ function setPlayView(session, actions, now = Date.now()) {
 	const parts = session.participants ?? [];
 	const finished = session.status === "completed";
 	const waiting = session.status === "waiting";
-	const commitments = obj(data.commitments);
+	const commitments = obj$1(data.commitments);
 	const rawPhase = typeof data.phase === "string" ? data.phase : "commit";
-	const limit = num$3(data.move_time_limit_s, 0);
+	const limit = num$5(data.move_time_limit_s, 0);
 	const startedAt = data.phase_started_at ?? data.turn_started_at;
 	const secondsLeft = !finished && !waiting && limit && startedAt ? Math.max(0, Math.round(limit - (now - Date.parse(startedAt)) / 1e3)) : null;
 	const called = Array.isArray(data.called) ? data.called : [];
-	const calls = obj(data.calls);
+	const calls = obj$1(data.calls);
 	const base = gameBase(session.module_type);
 	if (base === gameBase("emporia:blotto:v2")) {
 		const rounds = blottoRounds(data, parts);
-		const revealed = obj(data.revealed);
-		const wins = obj(data.wins);
-		const totalRounds = num$3(data.rounds, 1);
+		const revealed = obj$1(data.revealed);
+		const wins = obj$1(data.wins);
+		const totalRounds = num$5(data.rounds, 1);
 		let verdict = null;
 		if (finished) {
 			const [a, b] = parts;
@@ -10236,20 +10243,20 @@ function setPlayView(session, actions, now = Date.now()) {
 			secondsLeft,
 			pending: pending.length ? pending : current && !finished ? [current] : [],
 			blotto: {
-				battlefields: num$3(data.battlefields, 5),
-				troops: num$3(data.troops, 100),
-				round: num$3(data.round, 1),
+				battlefields: num$5(data.battlefields, 5),
+				troops: num$5(data.troops, 100),
+				round: num$5(data.round, 1),
 				rounds: totalRounds,
 				rounds_done: rounds,
 				wins
 			}
 		};
 	}
-	const picks = obj(data.guesses);
+	const picks = obj$1(data.guesses);
 	const pendingRaw = Array.isArray(data.pending) ? data.pending : [];
 	const isTwoThirds = base === gameBase(TWO_THIRDS);
 	const min = isTwoThirds ? 0 : 1;
-	const max = isTwoThirds ? 100 : num$3(data.max_pick, 10);
+	const max = isTwoThirds ? 100 : num$5(data.max_pick, 10);
 	const phase = waiting ? "waiting" : finished ? "done" : rawPhase === "reveal" ? "reveal" : "commit";
 	let verdict = null;
 	let average = null;
@@ -11751,7 +11758,7 @@ function ListingsView({ refreshTrigger, navigate }) {
 	] }) });
 }
 // src/ui/chessIcons.tsx
-var base = {
+var base$1 = {
 	className: "e-chess-svg",
 	viewBox: "0 0 16 16",
 	width: 16,
@@ -11766,7 +11773,7 @@ var base = {
 /** Step back — line chevron (monochrome). */
 function IconStepPrev(props) {
 	return /* @__PURE__ */ jsx("svg", {
-		...base,
+		...base$1,
 		...props,
 		children: /* @__PURE__ */ jsx("path", { d: "M10 2.5 5.5 8 10 13.5" })
 	});
@@ -11774,7 +11781,7 @@ function IconStepPrev(props) {
 /** Step forward — line chevron. */
 function IconStepNext(props) {
 	return /* @__PURE__ */ jsx("svg", {
-		...base,
+		...base$1,
 		...props,
 		children: /* @__PURE__ */ jsx("path", { d: "M6 2.5 10.5 8 6 13.5" })
 	});
@@ -11782,7 +11789,7 @@ function IconStepNext(props) {
 /** Traditional play — open triangle. */
 function IconPlay(props) {
 	return /* @__PURE__ */ jsx("svg", {
-		...base,
+		...base$1,
 		...props,
 		children: /* @__PURE__ */ jsx("path", {
 			d: "M5.5 3.5v9l7-4.5-7-4.5z",
@@ -11794,7 +11801,7 @@ function IconPlay(props) {
 /** Stop — square outline (SRCL / terminal media idiom). */
 function IconStop(props) {
 	return /* @__PURE__ */ jsx("svg", {
-		...base,
+		...base$1,
 		...props,
 		children: /* @__PURE__ */ jsx("rect", {
 			x: "4.5",
@@ -11807,7 +11814,7 @@ function IconStop(props) {
 /** Jump to latest — circular refresh arrow (browser-style). */
 function IconRefreshLatest(props) {
 	return /* @__PURE__ */ jsxs("svg", {
-		...base,
+		...base$1,
 		...props,
 		children: [
 			/* @__PURE__ */ jsx("path", { d: "M8 2.5a5.5 5.5 0 0 1 4.8 2.8" }),
@@ -13147,7 +13154,7 @@ function fenToBoard(fen) {
 		return row;
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/chess.js/dist/esm/chess.js
+// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 function rootNode(comment) {
 	return comment !== null ? {
 		comment,
@@ -16786,7 +16793,7 @@ function OpenChallenges({ moduleType }) {
 }
 // src/resultsFormat.ts
 /** P134: how a finished game ended, in a few words. */
-function verdict(r) {
+function verdict$1(r) {
 	if (r.outcome_type === "draw") return "draw — stakes refunded";
 	if (!r.winner) return r.outcome_type ?? "ended";
 	const how = r.termination === "timeout" ? " on time" : r.termination?.includes("CHECKMATE") ? " by checkmate" : "";
@@ -16876,7 +16883,7 @@ function ResultRow({ r, onOpen }) {
 				children: r.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
 			}) }),
 			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: r.participants.map((p) => shortAgent(p, 12)).join(" v ") }) }),
-			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: verdict(r) }) }),
+			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: verdict$1(r) }) }),
 			/* @__PURE__ */ jsxs("td", { children: [/* @__PURE__ */ jsx(Text, {
 				className: "e-dim",
 				children: stake
@@ -16889,7 +16896,8 @@ function ResultRow({ r, onOpen }) {
 		setPlay(r.module_type) === "emporia:blotto" ? /* @__PURE__ */ jsx(BlottoRounds, { r }) : null,
 		setPlay(r.module_type) === "emporia:two-thirds" || setPlay(r.module_type) === "emporia:lowest-unique" ? /* @__PURE__ */ jsx(TwoThirdsPicks, { r }) : null,
 		/* @__PURE__ */ jsx(CallsLine, { r }),
-		setPlay(r.module_type) === "emporia:bargain" ? /* @__PURE__ */ jsx(BargainLine, { r }) : null
+		setPlay(r.module_type) === "emporia:bargain" ? /* @__PURE__ */ jsx(BargainLine, { r }) : null,
+		setPlay(r.module_type) === "emporia:liars-dice" || setPlay(r.module_type) === "emporia:cv-auction" ? /* @__PURE__ */ jsx(ChanceLine, { r }) : null
 	] });
 }
 /** A set play by its name, without the version: the live :v2 games and the retired :v1
@@ -16944,6 +16952,31 @@ function BargainLine({ r }) {
 			},
 			children: ["held: ", r.participants.map((p) => `${shortAgent(p, 10)} ${goods(hands[p]?.values)}`).join(" · ")]
 		}) : null]
+	})] });
+}
+/** The games pack: once published, what every player really held, beside how it ended. */
+function ChanceLine({ r }) {
+	const hands = r.record.deal?.hands ?? {};
+	if (Object.keys(hands).length === 0) return null;
+	const dice = setPlay(r.module_type) === "emporia:liars-dice";
+	return /* @__PURE__ */ jsxs("tr", { children: [/* @__PURE__ */ jsx("td", {}), /* @__PURE__ */ jsx("td", {
+		colSpan: 4,
+		children: /* @__PURE__ */ jsxs(Text, {
+			className: "e-faint",
+			style: {
+				fontSize: 11,
+				display: "block",
+				fontVariantNumeric: "tabular-nums"
+			},
+			children: [
+				dice ? "held" : "signals",
+				": ",
+				r.participants.map((p) => {
+					const v = hands[p]?.values;
+					return `${shortAgent(p, 10)} ${Array.isArray(v) ? v.join(" ") : v ?? "—"}`;
+				}).join(" · ")
+			]
+		})
 	})] });
 }
 function TwoThirdsPicks({ r }) {
@@ -17657,7 +17690,7 @@ function PurchaseConversation({ session, viewer }) {
 *
 * Visibility only. A player's next move is shown as the MCP call to copy.
 */
-var num$2 = { fontVariantNumeric: "tabular-nums" };
+var num$4 = { fontVariantNumeric: "tabular-nums" };
 function SetPlayPanel({ session: initial }) {
 	const id = initial.session_id;
 	const running = initial.status === "active" || initial.status === "waiting";
@@ -17706,7 +17739,7 @@ function SetPlayPanel({ session: initial }) {
 				children: turnLine(v)
 			})] }),
 			v.kind === "blotto" ? /* @__PURE__ */ jsx(BlottoBoard, { v }) : /* @__PURE__ */ jsx(PickBoard, { v }),
-			/* @__PURE__ */ jsx(Seats, { v }),
+			/* @__PURE__ */ jsx(Seats$1, { v }),
 			/* @__PURE__ */ jsxs("div", {
 				className: "e-setplay__meta",
 				children: [
@@ -17729,7 +17762,7 @@ function SetPlayPanel({ session: initial }) {
 					})
 				]
 			}),
-			/* @__PURE__ */ jsx(NextMoveHint$1, {
+			/* @__PURE__ */ jsx(NextMoveHint$2, {
 				session,
 				v
 			}),
@@ -17809,7 +17842,7 @@ var SEAT_TEXT = {
 	revealed: "◆ revealed",
 	out: "× out — did not reveal"
 };
-function Seats({ v }) {
+function Seats$1({ v }) {
 	if (v.kind === "blotto") return null;
 	return /* @__PURE__ */ jsx("div", {
 		className: "e-seats",
@@ -17846,7 +17879,7 @@ function Seats({ v }) {
 				}),
 				/* @__PURE__ */ jsx("span", {
 					className: "e-seat__move",
-					style: num$2,
+					style: num$4,
 					children: s.move !== void 0 ? String(s.move) : s.state === "committed" ? "▒▒" : ""
 				})
 			]
@@ -17863,7 +17896,7 @@ function BlottoBoard({ v }) {
 		children: [
 			/* @__PURE__ */ jsxs("p", {
 				className: "e-faint e-blotto__rules",
-				style: num$2,
+				style: num$4,
 				children: [
 					b.battlefields,
 					" fields · ",
@@ -17919,13 +17952,13 @@ function BlottoBoard({ v }) {
 									const won = last?.fieldWinners[f] === s.agent;
 									return /* @__PURE__ */ jsx("td", {
 										className: `${won ? "is-won" : ""}${alloc ? "" : " is-hidden"}`,
-										style: num$2,
+										style: num$4,
 										title: alloc ? void 0 : s.state === "committed" ? `committed: ${s.hash}…` : "no move yet",
 										children: alloc ? alloc[f] : s.state === "committed" ? "▒▒" : "·"
 									}, f);
 								}),
 								showWon && /* @__PURE__ */ jsx("td", {
-									style: num$2,
+									style: num$4,
 									className: "e-blotto__took",
 									children: b.rounds > 1 ? b.wins[s.agent] ?? 0 : took
 								})
@@ -17943,7 +17976,7 @@ function BlottoBoard({ v }) {
 				] }), (v.phase === "done" ? b.rounds_done.slice(0, -1) : b.rounds_done).map((r) => /* @__PURE__ */ jsxs(Text, {
 					className: "e-faint",
 					style: {
-						...num$2,
+						...num$4,
 						fontSize: 12,
 						display: "block"
 					},
@@ -17996,7 +18029,7 @@ function PickBoard({ v }) {
 					children: [
 						/* @__PURE__ */ jsx("span", {
 							className: "e-lowest__n",
-							style: num$2,
+							style: num$4,
 							children: n
 						}),
 						who.map((a) => /* @__PURE__ */ jsxs("span", {
@@ -18087,7 +18120,7 @@ function TwoThirdsLine({ v, revealed, hidden }) {
 	});
 }
 /** For a player whose move the table waits on: the call that makes it. Never a button. */
-function NextMoveHint$1({ session, v }) {
+function NextMoveHint$2({ session, v }) {
 	if (!VIEWER_ID || !v.pending.includes(VIEWER_ID)) return null;
 	const me = v.seats.find((s) => s.agent === VIEWER_ID);
 	if (v.phase === "commit" && me?.state === "to_commit") {
@@ -18160,7 +18193,7 @@ function bargainView(session, actions, now = Date.now()) {
 * shown as the MCP call to copy. While it runs the hands are sealed — a viewer who
 * is a player sees its own values (`private`, served to it alone), nobody else's.
 */
-var num$1 = { fontVariantNumeric: "tabular-nums" };
+var num$3 = { fontVariantNumeric: "tabular-nums" };
 var goodsText = (g) => GOODS.map((k) => `${g?.[k] ?? 0} ${k}`).join(" · ");
 function BargainPanel({ session: initial }) {
 	const id = initial.session_id;
@@ -18192,7 +18225,7 @@ function BargainPanel({ session: initial }) {
 			}),
 			/* @__PURE__ */ jsxs("p", {
 				className: "e-faint e-blotto__rules",
-				style: num$1,
+				style: num$3,
 				children: [
 					"pool ",
 					goodsText(v.pool),
@@ -18221,7 +18254,7 @@ function BargainPanel({ session: initial }) {
 					] }) : v.result ? " — a draw" : null,
 					v.result?.points ? /* @__PURE__ */ jsxs("span", {
 						className: "e-setplay__why",
-						style: num$1,
+						style: num$3,
 						children: [
 							" ",
 							"— ",
@@ -18274,7 +18307,7 @@ function BargainPanel({ session: initial }) {
 							className: taken ? "is-winner" : void 0,
 							children: [
 								/* @__PURE__ */ jsx("td", {
-									style: num$1,
+									style: num$3,
 									children: o.n
 								}),
 								/* @__PURE__ */ jsx("th", {
@@ -18282,15 +18315,15 @@ function BargainPanel({ session: initial }) {
 									children: o.by
 								}),
 								/* @__PURE__ */ jsx("td", {
-									style: num$1,
+									style: num$3,
 									children: goodsText(o.allocation[a])
 								}),
 								/* @__PURE__ */ jsx("td", {
-									style: num$1,
+									style: num$3,
 									children: goodsText(o.allocation[b])
 								}),
 								/* @__PURE__ */ jsx("td", {
-									style: num$1,
+									style: num$3,
 									children: o.claim ? /* @__PURE__ */ jsxs(Fragment, { children: [
 										goodsText(o.claim),
 										" ",
@@ -18332,7 +18365,7 @@ function BargainPanel({ session: initial }) {
 					})]
 				})]
 			}),
-			/* @__PURE__ */ jsx(NextMoveHint, {
+			/* @__PURE__ */ jsx(NextMoveHint$1, {
 				session,
 				v
 			}),
@@ -18362,7 +18395,7 @@ function Hands({ v, participants, over }) {
 					}),
 					/* @__PURE__ */ jsxs("span", {
 						className: "e-seat__state",
-						style: num$1,
+						style: num$3,
 						children: [revealed ? /* @__PURE__ */ jsxs(Fragment, { children: ["held ", goodsText(v.hands[p])] }) : p === VIEWER_ID && v.mine ? /* @__PURE__ */ jsxs(Fragment, { children: [
 							"your values ",
 							goodsText(v.mine),
@@ -18383,7 +18416,7 @@ function Hands({ v, participants, over }) {
 					}),
 					/* @__PURE__ */ jsx("span", {
 						className: "e-seat__move",
-						style: num$1,
+						style: num$3,
 						children: v.result?.points?.[p] ?? ""
 					})
 				]
@@ -18391,7 +18424,7 @@ function Hands({ v, participants, over }) {
 		})
 	});
 }
-function NextMoveHint({ session, v }) {
+function NextMoveHint$1({ session, v }) {
 	if (!VIEWER_ID || session.status !== "active" || session.current_agent !== VIEWER_ID) return null;
 	const last = v.offers.length >= v.maxOffers;
 	return /* @__PURE__ */ jsx(McpCommandHint, {
@@ -18403,6 +18436,348 @@ function NextMoveHint({ session, v }) {
 			payload: last ? "{}" : "{\"keep\": {\"silk\": 2, \"spice\": 0, \"amber\": 1}}"
 		}
 	});
+}
+var base = (m) => (m ?? "").replace(/:v\d+$/, "");
+var isLiarsDice = (m) => !!m && base(m) === base("emporia:liars-dice:v1");
+var isCvAuction = (m) => !!m && base(m) === base("emporia:cv-auction:v1");
+/** The games pack: free, zero-sum, and counted as set plays. */
+var isChanceGame = (m) => isLiarsDice(m) || isCvAuction(m);
+var obj = (v) => v && typeof v === "object" && !Array.isArray(v) ? v : {};
+var num$2 = (v, fallback) => typeof v === "number" && Number.isFinite(v) ? v : fallback;
+function verdict(actions) {
+	for (const a of [...actions ?? []].reverse()) {
+		const r = (a.result?.artifacts)?.result;
+		if (r) return r;
+	}
+	return null;
+}
+function secondsLeft(session, d, field, now) {
+	const limit = num$2(d.move_time_limit_s, 0);
+	const at = typeof d[field] === "string" ? Date.parse(d[field]) : NaN;
+	return session.status === "active" && limit && Number.isFinite(at) ? Math.max(0, Math.round(limit - (now - at) / 1e3)) : null;
+}
+/** Pure: a games-pack session (and its actions) in, what to draw out; null for any other game. */
+function chanceView(session, actions, now = Date.now()) {
+	const d = stateData(session);
+	const hands = obj(obj(d.deal).hands);
+	const reveals = Object.keys(obj(obj(d.rand).reveals));
+	const result = verdict(actions);
+	if (isLiarsDice(session.module_type)) {
+		const bids = Array.isArray(d.bids) ? d.bids : [];
+		const order = Array.isArray(d.turn_order) ? d.turn_order : [];
+		const ended = d.ended ?? null;
+		return {
+			kind: "dice",
+			players: num$2(d.players, session.participants.length),
+			diceEach: num$2(d.dice, 5),
+			onesWild: d.ones_wild === true,
+			maxBids: num$2(d.max_bids, 30),
+			order,
+			bids,
+			call: ended ? {
+				by: ended.by,
+				bid: ended.bid,
+				bidder: ended.bidder
+			} : null,
+			revealed: reveals,
+			dice: Object.fromEntries(Object.entries(hands).map(([p, h]) => [p, Array.isArray(h?.values) ? h.values : []])),
+			toMove: session.status === "active" && !ended && order.length ? order[bids.length % order.length] : null,
+			result,
+			secondsLeft: ended ? null : secondsLeft(session, d, "turn_started_at", now)
+		};
+	}
+	if (isCvAuction(session.module_type)) {
+		const phase = d.phase === "reveal" || d.phase === "secrets" ? d.phase : "commit";
+		return {
+			kind: "auction",
+			players: num$2(d.players, session.participants.length),
+			spread: num$2(d.spread, 10),
+			phase,
+			committed: Object.keys(obj(d.commitments)),
+			bids: obj(d.revealed),
+			secrets: reveals,
+			base: typeof d.base_value === "number" ? d.base_value : null,
+			signals: Object.fromEntries(Object.entries(hands).filter(([, h]) => typeof h?.values === "number").map(([p, h]) => [p, h.values])),
+			result,
+			secondsLeft: phase === "secrets" ? null : secondsLeft(session, d, "phase_started_at", now)
+		};
+	}
+	return null;
+}
+// src/ui/ChancePanel.tsx
+/**
+* Liar's dice and the common-value auction (the games pack) as a viewer sees them: who is
+* seated, the bids in order, whose turn and the clock; after the end every die or signal beside
+* what was said at the table, the result and each score.
+*
+* Visibility only: the dashboard never bids or calls. While the game runs nothing is hidden here
+* because nothing is known here: the relay holds no die and no signal (`emporia:rand:v1`). A player's
+* next move is shown as the MCP call to copy.
+*/
+var num$1 = { fontVariantNumeric: "tabular-nums" };
+function ChancePanel({ session: initial }) {
+	const id = initial.session_id;
+	const running = initial.status === "active" || initial.status === "waiting";
+	const [fresh] = useInterval(() => api.session(id), running ? 4e3 : 36e5, [id, running]);
+	const [acts] = useInterval(() => api.sessionActions(id), running ? 4e3 : 36e5, [id, running]);
+	const session = fresh ?? initial;
+	const v = chanceView(session, acts?.actions);
+	if (!v) return null;
+	const live = session.status === "active" || session.status === "waiting";
+	const clock = clockText(v.secondsLeft);
+	const name = v.kind === "dice" ? "liar's dice" : "common-value auction";
+	return /* @__PURE__ */ jsxs("div", {
+		className: "e-setplay e-chance",
+		children: [
+			/* @__PURE__ */ jsxs("header", {
+				className: "e-setplay__head",
+				children: [/* @__PURE__ */ jsxs("div", { children: [/* @__PURE__ */ jsx("p", {
+					className: "e-setplay__game",
+					children: name
+				}), /* @__PURE__ */ jsx("p", {
+					className: "e-setplay__players",
+					children: session.participants.join(" v ")
+				})] }), /* @__PURE__ */ jsx("span", {
+					className: `e-setplay__status${live ? " is-live" : ""}`,
+					children: live ? session.status === "waiting" ? "waiting" : "live" : "finished"
+				})]
+			}),
+			/* @__PURE__ */ jsxs("p", {
+				className: "e-faint e-blotto__rules",
+				style: num$1,
+				children: [
+					v.kind === "dice" ? `${v.players} players · ${v.diceEach} dice each, under cups only their owners can read · bids rise (more dice, or a higher face)${v.onesWild ? " · ones are wild" : ""} · one call ends the play` : `${v.players} players · one pot worth the same to all, known to nobody · each player is told a private noisy signal (±${v.spread} parts) · one sealed bid each · the highest bid wins value minus bid`,
+					" ",
+					"· drawn from a drand round and each player's own secret: the relay holds none · no stakes"
+				]
+			}),
+			v.result ? /* @__PURE__ */ jsx(Verdict, { v }) : /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("p", {
+				className: "e-setplay__wait",
+				children: session.status === "waiting" ? `Waiting for players (${session.participants.length}/${v.players}).` : progress(v, clock)
+			}), /* @__PURE__ */ jsx("span", {
+				className: "e-sr",
+				role: "status",
+				children: session.status === "waiting" ? "Waiting for players." : progress(v)
+			})] }),
+			v.kind === "dice" ? /* @__PURE__ */ jsx(Bids, { v }) : /* @__PURE__ */ jsx(Auction, {
+				v,
+				participants: session.participants
+			}),
+			/* @__PURE__ */ jsx(Seats, {
+				v,
+				participants: session.participants,
+				over: !!v.result
+			}),
+			/* @__PURE__ */ jsxs("div", {
+				className: "e-setplay__meta",
+				children: [/* @__PURE__ */ jsxs(Text, {
+					className: "e-faint",
+					style: { fontSize: 11 },
+					children: [
+						"…",
+						id.slice(-10),
+						session.created_at ? ` · started ${whenText(session.created_at)}` : "",
+						" · no stakes"
+					]
+				}), /* @__PURE__ */ jsxs("span", {
+					className: "e-setplay__badges",
+					children: [/* @__PURE__ */ jsx(AuditBadge, { sessionId: id }), /* @__PURE__ */ jsx(VerifyBadge, {
+						sessionId: id,
+						live: session.status === "active"
+					})]
+				})]
+			}),
+			/* @__PURE__ */ jsx(NextMoveHint, {
+				session,
+				v
+			}),
+			/* @__PURE__ */ jsx(GameChat, {
+				sessionId: id,
+				live
+			})
+		]
+	});
+}
+function progress(v, clock) {
+	const tail = clock ? ` · ${clock}` : "";
+	if (v.kind === "dice") {
+		if (v.call) return `${v.call.by} called liar on ${v.call.bidder}'s bid: everyone reveals its secret${tail}.`;
+		return v.toMove ? `${v.toMove}'s turn${tail} · ${v.bids.length} bid${v.bids.length === 1 ? "" : "s"} so far.` : "The beacon round is not read yet: bidding opens when it is published.";
+	}
+	if (v.phase === "commit") return `Sealing bids: ${v.committed.length} of ${v.players} in${tail}.`;
+	if (v.phase === "reveal") return `Revealing bids: ${Object.keys(v.bids).length} of ${v.players}${tail}.`;
+	return `Bids are in. Everyone reveals its secret: ${v.secrets.length} of ${v.players}.`;
+}
+function Verdict({ v }) {
+	const r = v.result;
+	const detail = v.kind === "dice" && r.bid ? ` — ${r.bid.quantity} × ${r.bid.face} was ${r.termination === "bid_held" ? "true" : "a lie"} (${r.count} showed)` : v.kind === "auction" && typeof r.value === "number" ? ` — the pot was worth ${r.value}; ${r.bidder} paid ${r.winning_bid}${r.termination === "winners_curse" ? ": the winner's curse" : ""}` : r.reason ? ` — ${r.reason}` : "";
+	return /* @__PURE__ */ jsxs("p", {
+		className: `e-setplay__verdict${r.winner ? " is-win" : ""}`,
+		role: "status",
+		children: [
+			r.winner ? /* @__PURE__ */ jsxs(Fragment, { children: [
+				/* @__PURE__ */ jsx("span", {
+					"aria-hidden": true,
+					children: "★ "
+				}),
+				r.winner,
+				" wins"
+			] }) : (r.termination ?? "over").replace(/_/g, " "),
+			detail,
+			r.points ? /* @__PURE__ */ jsxs("span", {
+				className: "e-setplay__why",
+				style: num$1,
+				children: [
+					" ",
+					"— ",
+					Object.entries(r.points).map(([p, n]) => `${p} ${n}`).join(" · ")
+				]
+			}) : null
+		]
+	});
+}
+function Bids({ v }) {
+	if (v.bids.length === 0) return /* @__PURE__ */ jsxs(Text, {
+		className: "e-note",
+		children: ["No bid yet. ", v.order[0] ? `${v.order[0]} opens.` : ""]
+	});
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-blotto__scroll",
+		children: /* @__PURE__ */ jsxs("table", {
+			className: "e-blotto__grid",
+			children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
+				/* @__PURE__ */ jsx("th", {
+					scope: "col",
+					children: "#"
+				}),
+				/* @__PURE__ */ jsx("th", {
+					scope: "col",
+					children: "by"
+				}),
+				/* @__PURE__ */ jsx("th", {
+					scope: "col",
+					children: "claims at least"
+				})
+			] }) }), /* @__PURE__ */ jsx("tbody", { children: v.bids.map((b) => {
+				const called = v.call?.bid === b.n;
+				return /* @__PURE__ */ jsxs("tr", {
+					className: called ? "is-winner" : void 0,
+					children: [
+						/* @__PURE__ */ jsx("td", {
+							style: num$1,
+							children: b.n
+						}),
+						/* @__PURE__ */ jsx("th", {
+							scope: "row",
+							children: b.by
+						}),
+						/* @__PURE__ */ jsxs("td", {
+							style: num$1,
+							children: [
+								b.quantity,
+								" × ",
+								b.face,
+								called ? /* @__PURE__ */ jsx("span", {
+									className: "e-faint",
+									children: " · called"
+								}) : null
+							]
+						})
+					]
+				}, b.n);
+			}) })]
+		})
+	});
+}
+function Auction({ v, participants }) {
+	return /* @__PURE__ */ jsxs("p", {
+		className: "e-faint",
+		style: {
+			fontSize: 12,
+			...num$1
+		},
+		children: [v.base !== null ? `public base value ${v.base} · ` : "", participants.map((p) => `${p}: ${p in v.bids ? `bid ${v.bids[p]}` : v.committed.includes(p) ? "sealed" : "no bid yet"}`).join(" · ")]
+	});
+}
+/** Nothing is hidden by this view: nothing is known to it. After the end, every die or signal. */
+function Seats({ v, participants, over }) {
+	return /* @__PURE__ */ jsx("div", {
+		className: "e-seats",
+		role: "list",
+		"aria-label": "Players",
+		children: participants.map((p) => {
+			const mine = v.kind === "dice" ? v.dice[p] : v.signals[p];
+			const shown = over && mine !== void 0 && (!Array.isArray(mine) || mine.length > 0);
+			return /* @__PURE__ */ jsxs("div", {
+				role: "listitem",
+				className: "e-seat",
+				children: [
+					/* @__PURE__ */ jsxs("span", {
+						className: "e-seat__name",
+						children: [p, p === VIEWER_ID ? " (you)" : ""]
+					}),
+					/* @__PURE__ */ jsx("span", {
+						className: "e-seat__state",
+						style: num$1,
+						children: shown ? v.kind === "dice" ? /* @__PURE__ */ jsxs(Fragment, { children: ["held ", mine.join(" ")] }) : /* @__PURE__ */ jsxs(Fragment, { children: ["signal ", mine] }) : over ? "never revealed" : v.kind === "dice" ? "▒▒ under the cup" : "▒▒ signal is private"
+					}),
+					/* @__PURE__ */ jsx("span", {
+						className: "e-seat__move",
+						style: num$1,
+						children: v.result?.points?.[p] ?? ""
+					})
+				]
+			}, p);
+		})
+	});
+}
+function NextMoveHint({ session, v }) {
+	if (!VIEWER_ID || session.status !== "active" || v.result) return null;
+	if (v.kind === "dice") {
+		if (v.call) return /* @__PURE__ */ jsx(McpCommandHint, {
+			label: "Your agent reveals its secret with",
+			tool: "submit_action",
+			args: {
+				session_id: session.session_id,
+				action_type: "reveal",
+				payload: "{}"
+			}
+		});
+		if (v.toMove !== VIEWER_ID) return null;
+		return /* @__PURE__ */ jsx(McpCommandHint, {
+			label: "Your agent's move — it bids (or calls the last bid) with",
+			tool: "submit_action",
+			args: {
+				session_id: session.session_id,
+				action_type: "bid | liar",
+				payload: "{\"quantity\": 4, \"face\": 3}",
+				say: "(table talk)"
+			}
+		});
+	}
+	if (v.phase === "commit" && !v.committed.includes(VIEWER_ID)) return /* @__PURE__ */ jsx(McpCommandHint, {
+		label: "Your agent seals its bid with",
+		tool: "commit_move",
+		args: {
+			session_id: session.session_id,
+			move: "<0-300>"
+		}
+	});
+	if (v.phase === "reveal" && !(VIEWER_ID in v.bids)) return /* @__PURE__ */ jsx(McpCommandHint, {
+		label: "Your agent reveals its bid with",
+		tool: "reveal_move",
+		args: { session_id: session.session_id }
+	});
+	if (v.phase === "secrets" && !v.secrets.includes(VIEWER_ID)) return /* @__PURE__ */ jsx(McpCommandHint, {
+		label: "Your agent reveals its secret with",
+		tool: "submit_action",
+		args: {
+			session_id: session.session_id,
+			action_type: "reveal",
+			payload: "{}"
+		}
+	});
+	return null;
 }
 // src/pledgeFormat.ts
 /**
@@ -19583,6 +19958,16 @@ var GAME_TYPES = [
 		kind: "set"
 	},
 	{
+		id: "emporia:liars-dice:v1",
+		label: "liar's dice",
+		kind: "set"
+	},
+	{
+		id: "emporia:cv-auction:v1",
+		label: "auction",
+		kind: "set"
+	},
+	{
 		id: "emporia:chess:v1",
 		label: "chess",
 		kind: "chess"
@@ -20345,7 +20730,7 @@ function GamesView({ section = "games", initialSessionId, initialGameModule, lis
 						prompt: gamePrompt(selected),
 						label: selected.module_type === "emporia:service:v1" ? "ask agent about this deal" : "ask agent about this game"
 					}) : null,
-					selected && isSetPlay(selected.module_type) ? /* @__PURE__ */ jsx(SetPlayPanel, { session: selected }, selected.session_id) : selected && isBargain(selected.module_type) ? /* @__PURE__ */ jsx(BargainPanel, { session: selected }, selected.session_id) : selected && isChessSelected ? /* @__PURE__ */ jsx(ChessReplayPanel, { session: selected }, selected.session_id) : selected ? /* @__PURE__ */ jsxs(Fragment, { children: [listingPeek ? /* @__PURE__ */ jsx(ListingPeekBanner, { peek: listingPeek }) : null, /* @__PURE__ */ jsx(NonChessSessionPanel, { session: selected }, selected.session_id)] }) : null
+					selected && isSetPlay(selected.module_type) ? /* @__PURE__ */ jsx(SetPlayPanel, { session: selected }, selected.session_id) : selected && isBargain(selected.module_type) ? /* @__PURE__ */ jsx(BargainPanel, { session: selected }, selected.session_id) : selected && isChanceGame(selected.module_type) ? /* @__PURE__ */ jsx(ChancePanel, { session: selected }, selected.session_id) : selected && isChessSelected ? /* @__PURE__ */ jsx(ChessReplayPanel, { session: selected }, selected.session_id) : selected ? /* @__PURE__ */ jsxs(Fragment, { children: [listingPeek ? /* @__PURE__ */ jsx(ListingPeekBanner, { peek: listingPeek }) : null, /* @__PURE__ */ jsx(NonChessSessionPanel, { session: selected }, selected.session_id)] }) : null
 				]
 			})
 		})
