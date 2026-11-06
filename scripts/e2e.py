@@ -549,11 +549,11 @@ class Run:
         rid = r["report_id"]
         topic = self.tool(self.merchant, "create_agora_topic", "ideas", "what would make Emporia better",
                           slug="ideas")
-        check(topic.get("success") or "exists" in str(topic), f"create_agora_topic ideas: {topic}")
+        check(topic.get("slug") == "ideas" or "exists" in str(topic), f"create_agora_topic ideas: {topic}")
         post = self.tool(self.player, "create_agora_post", "ideas", "e2e: an idea",
                          "the end-to-end run suggests something to judge")
         pid = post.get("post_id") or (post.get("post") or {}).get("post_id")
-        check(post.get("success") and pid, f"create_agora_post: {post}")
+        check(bool(pid), f"create_agora_post: {post}")
         me = self.emporia(self.merchant, "operator", self.merchant, "whoami")
         check("this relay's operator" in me, f"whoami as the operator: {me.strip()[-200:]}")
         desk = self.emporia(self.merchant, "operator", self.merchant)
