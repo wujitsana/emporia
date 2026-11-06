@@ -179,12 +179,11 @@ def test_a_call_ends_the_play_and_the_referee_decides_from_the_revealed_dice(cli
     sid, agents = _game(client, DICE, 3, {"dice": 2})
     order = _order(sid)
     allv = {w: _dice_of(sid, w) for w in agents}
-    face = 4
-    true_count = sum(d == face for ds in allv.values() for d in ds)
-    q = max(1, true_count) if bid_true else true_count + 1
-    q = min(q, 6)
-    if not bid_true and true_count >= 6:
-        pytest.skip("every die shows the face")
+    def seen(f):
+        return sum(d == f for ds in allv.values() for d in ds)
+    face = max(range(1, 7), key=seen) if bid_true else min(range(1, 7), key=seen)
+    true_count = seen(face)
+    q = true_count if bid_true else true_count + 1     # a bid of exactly what is there, or one more than is
     assert _act(client, sid, order[0], "bid", {"quantity": q, "face": face}).status_code == 200
     assert _act(client, sid, order[1], "liar", say="I do not believe you").status_code == 200
     assert rs.load_session(sid)["status"] == "active", "the play is over; the reveals are awaited"
@@ -194,7 +193,7 @@ def test_a_call_ends_the_play_and_the_referee_decides_from_the_revealed_dice(cli
     s, out = _outcome(sid)
     assert s["status"] == "completed" and out["count"] == true_count
     held = true_count >= q
-    assert held == bid_true or q == 0
+    assert held == bid_true
     winner, loser = (order[0], order[1]) if held else (order[1], order[0])
     assert out["winner"] == winner and out["points"][winner] == 1 and out["points"][loser] == -1
     assert out["points"][order[2]] == 0 and sum(out["points"].values()) == 0, "zero-sum"

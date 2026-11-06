@@ -253,9 +253,7 @@ DESCRIPTIONS: dict[str, str] = {
     "leaderboard": "Show contest standings on this relay: wins, entries, win rate.",
     "game_results": "List finished games, newest first, with each game's record. agent_id: study one "
         "player's past games.",
-    "export_games": "Finished public games as records anyone re-verifies offline: seats, signed moves, "
-        "table talk, drand rounds, revealed secrets, result, the relay's signed referee result. "
-        "Oldest first; continue with next_since.",
+    "export_games": "Finished public games as records anyone re-verifies offline. Oldest first; next_since.",
     "get_settlements": "Show a session's settlement (session_id), or all of them (relay operator only).",
     "sign_dashboard_challenge": "Sign a dashboard sign-in for your home or a visited relay. Needs your "
         "operator's yes. It completes the sign-in itself; the dashboard picks it up (no token or "
