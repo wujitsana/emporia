@@ -3,6 +3,7 @@
 The operator's signed verdict on a post in the ideas topic, reusing the bug verdict's
 mechanism (operator only, final, logged); a reporter's claimed severity beside the
 awarded one; adopted ideas' points on the season's bug board and the sheet."""
+import os
 import uuid
 from datetime import UTC, datetime
 
@@ -191,22 +192,49 @@ def test_adopted_ideas_and_called_it_reach_the_board_the_points_and_the_sheet(cl
     assert "improvements" not in client.get(f"/agents/{finder}/sheet").json(), "with bug quests only"
 
 
-def test_the_operators_command_signs_and_sends_the_verdict(client, monkeypatch):
+def test_the_operators_command_signs_and_sends_the_verdict(client, monkeypatch, capsys, tmp_path):
+    """`emporia ideas NAME adopt POST --ref X`: signed with the operator agent's key (run as
+    its MCP server runs), sent with its sign-in — a person's command, never an MCP tool."""
+    import json
+    import subprocess
+    from pathlib import Path
+
     from emporia import cli
-    from emporia import mcp_server as m
     op, a = setup(client, monkeypatch, "a")
     pid = idea(a)
-    monkeypatch.setattr(m, "AGENT_ID", op)
+    profile = tmp_path / "alpha"
+    monkeypatch.setattr(cli, "_agent_profiles", lambda root: [(profile, {})])
+    monkeypatch.setattr(cli, "_agent", lambda n: (profile, op, {"EMPORIA_AGENT_ID": op}))
+    monkeypatch.setattr(cli, "_key_file", lambda p, aid, which: Path(tmp_path / "keys" / "k"))
+
+    def as_agent(prof, code, **env):             # the agent's own process, here in this one
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            exec(code, {})                        # noqa: S102 — the CLI's own code string
+        return subprocess.CompletedProcess([], 0, out.getvalue(), "")
+    monkeypatch.setattr(cli, "_as_agent", as_agent)
     sent = []
 
-    def bearer(method, url, *, agent_id="", **kw):
-        sent.append(kw["json"])
-        return client.post(url[url.index("/ideas/"):], json=kw["json"], headers=as_(agent_id))
-    monkeypatch.setattr(m, "_bearer_request", bearer)
-    out = m._idea_verdict(pid, "adopted", ref=uuid.uuid4().hex[:10], duplicate_of="ignored")
-    assert out["success"] and out["points"] == 10 and sent[0]["duplicate_of"] == ""
-    args = cli.build_parser().parse_args(["ideas", "alpha", "adopt", pid, "--ref", "a1b2c3d"])
-    assert args.func is cli.cmd_ideas and args.rest == [pid] and args.ref == "a1b2c3d"
+    def signed(agent_id, key_dir, path, method="GET", body=None):
+        sent.append((path, body))
+        r = client.post("/" + path, json=body, headers=as_(agent_id))
+        return r.status_code, r.json()
+    monkeypatch.setattr(cli, "_signed_get", signed)
+    ref = uuid.uuid4().hex[:10]
+    args = cli.build_parser().parse_args(["ideas", "alpha", "adopt", pid, "--ref", ref])
+    assert args.func is cli.cmd_ideas and args.rest == [pid] and args.ref == ref
+    monkeypatch.setattr(cli, "_TTY", False)
+    assert cli.cmd_ideas(args) == 1 and "only a person" in capsys.readouterr().out and not sent
+    monkeypatch.setattr(cli, "_TTY", True)
+    for k in [k for k in os.environ if k.startswith("HERMES_SESSION_")]:
+        monkeypatch.delenv(k)
+    assert cli.cmd_ideas(args) == 0, capsys.readouterr().out
+    out = json.loads(capsys.readouterr().out)
+    assert out["points"] == 10 and sent[0][0] == f"ideas/{pid}/verdict" and sent[0][1]["duplicate_of"] == ""
+    src = (Path(__file__).parent.parent / "src" / "emporia" / "mcp_server.py").read_text()
+    assert "/verdict" not in src, "no MCP tool reaches a verdict"
 
 
 def test_a_v31_relay_is_copied_aside_then_given_the_verdicts_table(tmp_path, monkeypatch):

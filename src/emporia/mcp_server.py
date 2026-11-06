@@ -4325,27 +4325,6 @@ def bug_reports(status: str = "", agent_id: str = "") -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def _idea_verdict(post_id: str, verdict: str, ref: str = "", duplicate_of: str = "") -> dict[str, Any]:
-    """Season 1: the relay operator's signed verdict on an idea — for `emporia ideas`, a
-    person's command. Not an MCP tool: an agent does not judge ideas (the relay takes a
-    verdict from its operator only)."""
-    from datetime import UTC, datetime
-    ref = ref.strip() if verdict == "adopted" else ""
-    duplicate_of = duplicate_of.strip() if verdict == "duplicate" else ""
-    at = datetime.now(UTC).isoformat()
-    try:
-        sig = signing.sign(AGENT_ID, "idea-verdict", post_id, verdict, ref, duplicate_of, AGENT_ID, at)
-        r = _bearer_request("post", f"{_base()}/ideas/{post_id}/verdict", agent_id=AGENT_ID, timeout=15,
-                            json={"verdict": verdict, "ref": ref, "duplicate_of": duplicate_of, "at": at,
-                                  "signature": sig})
-        d = r.json() if r.content else {}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-    if r.status_code != 200:
-        return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-    return {"success": True, **d}
-
-
 def _ideas_judged(verdict: str = "") -> dict[str, Any]:
     """Season 1: the operator's verdicts on ideas, for `emporia ideas NAME`."""
     try:

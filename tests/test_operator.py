@@ -180,22 +180,23 @@ def test_the_ideas_queue_is_the_unjudged_posts_in_the_ideas_topic(client, monkey
     q = client.get("/operator/status", headers=as_(op)).json()["ideas"]
     assert q["topic"] == topic and q["topic_exists"]
     assert [i["post_id"] for i in q["items"]] == [first, second], "oldest first, live posts in the topic only"
-    # A relay that takes idea verdicts (gamify season 1's table): a judged post leaves the queue.
+    # The relay takes idea verdicts (the launch additions' `idea_verdicts`, with gamify bugs):
+    # a judged post leaves the queue.
+    assert q["verdicts"] is True
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS idea_verdicts (post_id TEXT PRIMARY KEY, author_id TEXT, "
-                     "operator_key TEXT, verdict TEXT, ref TEXT, duplicate_of TEXT, points INTEGER, "
-                     "decided_by TEXT, decided_at TEXT, signature TEXT)")
-        conn.execute("INSERT INTO idea_verdicts (post_id, verdict) VALUES (?, 'noted')", (first,))
+        conn.execute("INSERT INTO idea_verdicts (post_id, author_id, operator_key, verdict, decided_by, decided_at, "
+                     "signature) VALUES (?, ?, 'k', 'noted', ?, '2026-11-05T04:00:00+00:00', 's')", (first, author, op))
         conn.commit()
     try:
         q = client.get("/operator/status", headers=as_(op)).json()["ideas"]
         assert [i["post_id"] for i in q["items"]] == [second] and q["verdicts"] is True
     finally:
         with rs.DB_LOCK, rs.get_db() as conn:
-            conn.execute("DROP TABLE idea_verdicts")
+            conn.execute("DELETE FROM idea_verdicts WHERE post_id = ?", (first,))
             conn.commit()
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
     q = client.get("/operator/status", headers=as_(op)).json()["ideas"]
-    assert q["verdicts"] is False, "no idea verdicts on this relay: the view offers no command for one"
+    assert q["verdicts"] is False, "no bug quests, no idea verdicts: the view offers no command for one"
 
 
 def test_the_expedition_is_the_operators_newest_post_there(client, monkeypatch):

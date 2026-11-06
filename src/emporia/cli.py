@@ -1564,9 +1564,12 @@ def cmd_ideas(args: argparse.Namespace) -> int:
             print("ideas: duplicate POST_ID --of EARLIER_POST_ID")
             return 1
         verdict = {"adopt": "adopted", "noted": "noted", "duplicate": "duplicate"}[act]
-        call = (f"m._idea_verdict({args.rest[0]!r}, {verdict!r}, ref={(args.ref or '')!r}, "
-                f"duplicate_of={(args.of or '')!r})")
-        code = f"import json\nfrom emporia import mcp_server as m\nprint(json.dumps({call}))"
+        if not _persons_terminal():
+            # As a bug verdict: points on the board and an entry in the log for good — the
+            # person's signed decision, in their own terminal (the key guard refuses it too).
+            print(f"ideas: only a person gives a verdict ({act}), in their own terminal — never through an agent.")
+            return 1
+        return _idea_verdict(agents[args.name], args.rest[0], verdict, args.ref or "", args.of or "")
     r = _as_agent(agents[args.name], code, EMPORIA_NO_ARCHIVE="1")
     try:
         out = _json.loads(r.stdout.strip().splitlines()[-1])
@@ -1584,6 +1587,37 @@ def cmd_ideas(args: argparse.Namespace) -> int:
         what = v.get("ref") or (f"duplicate of {v['duplicate_of']}" if v.get("duplicate_of") else "")
         print(f"  {v['post_id']}  {v['verdict']:<9} {v['points']:>3} pts  {v['author_id']:<12} "
               f"{(v.get('title') or '')[:40]:<40}  {what}")
+    return 0
+
+
+def _idea_verdict(profile: Path, post_id: str, verdict: str, ref: str, duplicate_of: str) -> int:
+    """Sign an idea verdict with the operator agent's key (`emporia:idea-verdict:v1`, run the
+    way its MCP server runs, so its own key source signs) and send it with the operator's
+    sign-in, the way a bug verdict goes. No MCP tool reaches `/ideas/{id}/verdict`."""
+    import json as _json
+
+    from emporia.wire import path_id
+    _, agent_id, _env = _agent(profile.name)
+    ref = ref.strip() if verdict == "adopted" else ""
+    duplicate_of = duplicate_of.strip() if verdict == "duplicate" else ""
+    code = ("import json\nfrom datetime import UTC, datetime\nfrom emporia import signing\n"
+            "at = datetime.now(UTC).isoformat()\n"
+            f"sig = signing.sign({agent_id!r}, 'idea-verdict', {post_id!r}, {verdict!r}, {ref!r}, "
+            f"{duplicate_of!r}, {agent_id!r}, at)\n"
+            f"print(json.dumps({{'verdict': {verdict!r}, 'ref': {ref!r}, 'duplicate_of': {duplicate_of!r}, "
+            "'at': at, 'signature': sig}))")
+    r = _as_agent(profile, code, EMPORIA_NO_ARCHIVE="1")
+    try:
+        body = _json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        print(f"ideas: {(r.stderr or r.stdout).strip()[-300:]}")
+        return 1
+    status, d = _signed_get(agent_id, _key_file(profile, agent_id, "identity").parent,
+                            f"ideas/{path_id(post_id)}/verdict", "POST", body)
+    if status != 200:
+        print(f"ideas: {(d or {}).get('detail', d) if isinstance(d, dict) else d}")
+        return 1
+    print(_json.dumps(d, indent=2))
     return 0
 
 
