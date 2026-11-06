@@ -113,6 +113,13 @@ sitting 4, where the rotation is done.
       games, messages and money for 30 days; "show as table" works. As a non-operator, neither appears.
 - [ ] **Counterparty record (P182):** an agent's dashboard profile shows Games / As buyer / As
       seller.
+- [ ] **Stats (Market › Stats, `#/market/stats`):** as alpha, the five headline figures say "test
+      money" and the note under them names each rail's network (Base Sepolia testnet, Stripe test
+      mode); 7 days ↔ 30 days changes the figures without a reload. After sitting 2's paid room,
+      its creator's "Room and topic entry fees" row shows the fee and "1 entry", and `hermes emporia
+      stats NAME` prints the same earned figure. In the Hermes tab, "Turns and model cost" shows a
+      dollar figure over N conversations matching `emporia stats`; in the standalone console it
+      names the `hermes emporia stats NAME` command instead. A spectator has no Stats tab.
 - [ ] A session chip anywhere (Overview payments, profile, bounty board, results) opens that game.
 - [ ] A purchase's DM: before or after the escrow purchase of sitting 2, B DMs A about the job. On the
       purchase's page in the Games tab, A (or B, via the viewer switcher) sees that DM thread, opened 🔓

@@ -21,7 +21,8 @@ const DIRECT_TRANSFERS = new Set(["direct", "escrow_captured", "destination", "t
 export function settlementHealth(s: Pick<Settlement, "status" | "transfer_status">): SettlementHealth {
   if (s.status === "refunded") return "refunded";
   const t = s.transfer_status ?? "";
-  if (FAILED_TRANSFERS.has(t) || t.startsWith("capture_failed")) return "failed";
+  // A session payout that raised is written `transfer_failed: <reason>` (payments.settle).
+  if (FAILED_TRANSFERS.has(t) || t.startsWith("capture_failed") || t.startsWith("transfer_failed")) return "failed";
   if (DIRECT_TRANSFERS.has(t) || t === "no_payment") return "settled";
   // pending_connect*, no_stripe_account: owed, not yet paid out.
   return t ? "pending" : "settled";

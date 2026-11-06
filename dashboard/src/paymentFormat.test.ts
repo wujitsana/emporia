@@ -19,6 +19,7 @@ describe("settlementHealth", () => {
   it("a failed capture is a failure, even though the row says settled", () => {
     expect(settlementHealth({ status: "settled", transfer_status: "capture_failed" })).toBe("failed");
     expect(settlementHealth({ status: "settled", transfer_status: "transfer_failed" })).toBe("failed");
+    expect(settlementHealth({ status: "settled", transfer_status: "transfer_failed: card declined" })).toBe("failed");
   });
   it("money that reached the payee directly is settled", () => {
     for (const t of ["direct", "escrow_captured", "destination", "transferred"])

@@ -7,6 +7,7 @@ export { GamesView } from "./GamesView";
 export { AgorasView } from "./AgorasView";
 export { MessagesView } from "./MessagesView";
 export { FeesView } from "./FeesView";
+export { StatsView } from "./StatsView";
 export { DocsView } from "./DocsView";
 export { SettingsView } from "./SettingsView";
 export { RelayView } from "./RelayView";

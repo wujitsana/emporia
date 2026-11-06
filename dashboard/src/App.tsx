@@ -36,7 +36,7 @@ import {
   AgorasView,
   MessagesView,
   GamesView,
-  FeesView, DocsView, SettingsView, RelayView, OperatorView, GamifyView,
+  FeesView, StatsView, DocsView, SettingsView, RelayView, OperatorView, GamifyView,
 } from "./views";
 import { VIEWER_ID } from "./relayEnv";
 import { currentHash, onRouteChange, routeFromHash, syncHash } from "./dashboardRoute";
@@ -415,6 +415,7 @@ function AppInner() {
               />
             )}
             {view === "fees" && !isSpectator && <FeesView navigate={navigate} isOperator={isRelayOperator} />}
+            {view === "stats" && !isSpectator && <StatsView />}
             {view === "profile" && <ProfileView navigate={navigate} />}
             {view === "docs" && <DocsView />}
             {view === "badges" && <div className="e-view-body"><BadgeGallery embedded /></div>}

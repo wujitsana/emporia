@@ -6989,6 +6989,48 @@ def _settlement_public_dict(row: Any) -> dict[str, Any]:
     return d
 
 
+#: What a settlement paid for, as the ?agent_id= branch names it (`kind`), worked out from
+#: the row and the tables it points into — no schema change (ROADMAP "Settlements by
+#: resource" plans a stored resource_type). `session_id` holds a session, a room or a topic.
+SETTLEMENT_KINDS = ("game", "service", "bounty", "room", "topic", "access", "session")
+
+
+def _settlement_kinds(conn: Any, rows: list[Any]) -> dict[str, str]:
+    """Each row's kind, by settlement id: a row with a payer bought access to a room or an
+    Agora topic (`room`, `topic`; `access` if that resource is gone); a row without one is a
+    session's — a `bounty` contest, a `game` (a module that names a winner), or else a
+    `service` purchase (`session` if the session is gone)."""
+    from emporia.standing import game_module_types
+
+    access = {r["session_id"] for r in rows if r["payer_id"] is not None}
+    sessions = {r["session_id"] for r in rows if r["payer_id"] is None}
+
+    def found(sql: str, ids: set[str]) -> dict[str, Any]:
+        if not ids:
+            return {}
+        marks = ",".join("?" * len(ids))
+        return {row[0]: row for row in conn.execute(sql.format(marks=marks), list(ids)).fetchall()}
+
+    rooms = found("SELECT room_id FROM rooms WHERE room_id IN ({marks})", access)
+    topics = found("SELECT topic_id FROM agora_topics WHERE topic_id IN ({marks})", access)
+    sess = found("SELECT session_id, module_type, json_extract(config_json, '$.bounty_id') "
+                 "FROM sessions WHERE session_id IN ({marks})", sessions)
+    games = set(game_module_types())
+    kinds: dict[str, str] = {}
+    for r in rows:
+        sid = r["session_id"]
+        if r["payer_id"] is not None:
+            kind = "room" if sid in rooms else "topic" if sid in topics else "access"
+        elif sid not in sess:
+            kind = "session"
+        elif sess[sid][2]:
+            kind = "bounty"
+        else:
+            kind = "game" if sess[sid][1] in games else "service"
+        kinds[r["settlement_id"]] = kind
+    return kinds
+
+
 def _settlement_row_dict(
     row: Any, caller: str | None, participant_session_ids: set[str]
 ) -> dict[str, Any]:
@@ -7107,8 +7149,12 @@ async def list_settlements(
                           `limit` (default 50) with `has_more` in the response (N8 review R2 —
                           this and the unfiltered branch below were hardcoded to `LIMIT 100` and
                           always reported `has_more: false`, reintroducing on these two branches
-                          the exact truncation-signal defect N6-3 fixed for ?session_id=)
-      - no filter      → requires dashboard auth AND relay operator identity. Same `limit`/
+                          the exact truncation-signal defect N6-3 fixed for ?session_id=).
+                          Also X's own sales of access (a room or topic X created, paid
+                          for by another agent; the payer's identifiers redacted), and
+                          each row's `kind` (_settlement_kinds) — the Stats view's
+                          earnings by source.
+      - no filter     → requires dashboard auth AND relay operator identity. Same `limit`/
                           `has_more` contract as the other two branches (N8 review R2)
 
     A caller authorized to see a resource's settlements (via ?session_id=, above) still only
@@ -7164,15 +7210,30 @@ async def list_settlements(
             # query or _caller_owns_settlement_row, change both — the agreement
             # test (test_settlement_ownership_sql_matches_python_predicate) is
             # what keeps them honest.
+            #
+            # Stats view: the third arm is the agent's own sales of access — a room
+            # or Agora topic it created, paid for by someone else (one row per
+            # payer, `winner_id` the creator, `payer_id` set). Before it, a
+            # creator had no path to its entry fees at all, so they never counted
+            # as its earnings. Those rows are the payer's receipts too, so they go
+            # through _settlement_row_dict and the payer's identifiers stay
+            # redacted; the first two arms (what the caller owns) are unchanged.
             rows, has_more = _fetch_page(
                 conn,
                 "SELECT * FROM settlements WHERE payer_id = ? "
                 "OR (payer_id IS NULL AND session_id IN "
                 "(SELECT session_id FROM participants WHERE agent_id = ?)) "
+                "OR (payer_id IS NOT NULL AND winner_id = ?) "
                 "ORDER BY created_at DESC LIMIT ?",
-                (agent_id, agent_id), limit,
+                (agent_id, agent_id, agent_id), limit,
             )
-            settlements = [_settlement_public_dict(r) for r in rows]
+            kinds = _settlement_kinds(conn, rows)
+            settlements = []
+            for r in rows:
+                owned = r["payer_id"] is None or r["payer_id"] == agent_id
+                d = _settlement_public_dict(r) if owned else _settlement_row_dict(r, dashboard_id, set())
+                d["kind"] = kinds.get(r["settlement_id"], "session")
+                settlements.append(d)
         else:
             rows, has_more = _fetch_page(
                 conn,

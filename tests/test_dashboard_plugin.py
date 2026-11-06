@@ -473,3 +473,94 @@ def test_a_refused_socket_closes_cleanly_never_with_an_incomplete_handshake(monk
     assert out["auth"][0] == 1011 and "not running" in out["auth"][1], out["auth"]
     assert bad not in out["unauth_logs"] and bad not in out["auth_logs"], out["auth_logs"]
     assert out["denied"] in (501, "refused") and bad in out["denied_logs"], "the check sees the error when it happens"
+
+
+def test_the_stats_route_sums_one_agents_emporia_conversations_and_nothing_else(monkeypatch, tmp_path):
+    """Stats view: model cost per Emporia conversation through Hermes's documented
+    `hermes_state.SessionDB` (read-only; catalog rule 9: no private import). Only this agent's
+    `emporia:<agent>[:<kind>:<id>]` conversations in the period count; actual cost wins over the
+    estimate; no title or preview reaches the answer; and the turn cap's own counter is read."""
+    import sys
+    import time
+    import types
+
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    now = time.time()
+    rows = [  # newest first, as list_sessions_rich orders them
+        {"chat_id": "emporia:alpha", "started_at": now - 60, "estimated_cost_usd": 0.10,
+         "actual_cost_usd": None, "input_tokens": 100, "output_tokens": 10, "title": "secret", "preview": "secret"},
+        {"chat_id": "emporia:alpha:dm:beta", "started_at": now - 120, "estimated_cost_usd": 0.05,
+         "actual_cost_usd": 0.04, "input_tokens": 50, "output_tokens": 5},
+        {"chat_id": "emporia:alphabet:room:r1", "started_at": now - 130, "estimated_cost_usd": 3.0},  # another agent
+        {"chat_id": "emporia:alpha:session:s1", "started_at": now - 3 * 86400, "estimated_cost_usd": 0.02,
+         "input_tokens": 20, "output_tokens": 2},
+        {"chat_id": "emporia:alpha:room:old", "started_at": now - 40 * 86400, "estimated_cost_usd": 9.0},
+    ]
+
+    class FakeDB:
+        def __init__(self, read_only=False):
+            assert read_only is True, "the stats route never opens Hermes's records for writing"
+
+        def list_sessions_rich(self, **kw):
+            assert kw["source"] == "emporia"
+            return rows[kw["offset"]:kw["offset"] + kw["limit"]]
+
+        def close(self):
+            pass
+
+    fake = types.ModuleType("hermes_state")
+    fake.SessionDB = FakeDB
+    monkeypatch.setitem(sys.modules, "hermes_state", fake)
+    storage = types.ModuleType("plugins.plugin_storage")
+    (tmp_path / "turns.json").write_text(json.dumps({"turns": [now - 10, now - 20, now - 2 * 86400]}))
+    storage.plugin_data_dir = lambda name: tmp_path
+    monkeypatch.setitem(sys.modules, "plugins", types.ModuleType("plugins"))
+    monkeypatch.setitem(sys.modules, "plugins.plugin_storage", storage)
+
+    app = FastAPI()
+    app.include_router(_plugin_module().router, prefix="/api/plugins/emporia")
+    c = TestClient(app)
+    week = c.get("/api/plugins/emporia/_hermes_stats", params={"agent": "alpha", "days": 7}).json()
+    m = week["model"]
+    assert m["available"] and m["sessions"] == 3 and m["usd"] == 0.16 and m["tokens"] == 187
+    assert m["by_kind"] == {"main": {"usd": 0.1, "sessions": 1}, "dm": {"usd": 0.04, "sessions": 1},
+                            "session": {"usd": 0.02, "sessions": 1}}
+    assert week["turns_24h"] == 2
+    assert "secret" not in json.dumps(week)
+    day = c.get("/api/plugins/emporia/_hermes_stats", params={"agent": "alpha", "days": 1}).json()
+    assert day["model"]["sessions"] == 2
+    assert c.get("/api/plugins/emporia/_hermes_stats", params={"agent": "../x"}).status_code == 400
+
+    monkeypatch.setitem(sys.modules, "hermes_state", None)          # no Hermes here: say so
+    gone = c.get("/api/plugins/emporia/_hermes_stats", params={"agent": "alpha"}).json()
+    assert gone["model"]["available"] is False and gone["model"]["reason"]
+
+
+@pytest.mark.skipif(not HERMES_PYTHON.exists(), reason="Hermes is not installed here")
+def test_the_stats_route_reads_real_hermes_session_records(tmp_path):
+    """The same reader under Hermes's interpreter, against a real `state.db` in a throwaway
+    HERMES_HOME: the public SessionDB API it uses exists and returns what it reads."""
+    harness = tmp_path / "harness.py"
+    harness.write_text(f'''
+import importlib.util, json, time
+from hermes_state import SessionDB
+db = SessionDB()
+for sid, chat, cost in (("s1", "emporia:alpha", 0.25), ("s2", "emporia:alpha:dm:beta", 0.5),
+                        ("s3", "emporia:gamma", 7.0)):
+    db.create_session(sid, "emporia", model="m", chat_id=chat)
+    db.update_token_counts(sid, input_tokens=10, output_tokens=1, estimated_cost_usd=cost)
+db.create_session("s4", "cli", model="m")
+db.close()
+spec = importlib.util.spec_from_file_location("p", {str(PLUGIN / "plugin_api.py")!r})
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+print(json.dumps(m._model_cost("alpha", 30, time.time() + 1)))
+''')
+    out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes", capture_output=True, text=True,
+                         timeout=120, env={**os.environ, "PYTHONPATH": "/opt/hermes",
+                                           "HERMES_HOME": str(tmp_path / "home")})
+    assert out.returncode == 0, out.stderr[-2000:]
+    m = json.loads(out.stdout.strip().splitlines()[-1])
+    assert m["available"] and m["sessions"] == 2, m
+    assert set(m["by_kind"]) == {"main", "dm"}

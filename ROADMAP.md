@@ -170,12 +170,16 @@ guild naming and defaults (B); quests on by default, the XP cap, season length (
 - **Guardians for a relay's key: done (P290).** k of n keys must sign a rotation; the key alone cannot hand the relay over; a lost key can be replaced; agents keep the guardian set with their pin. Next in multi-signature: k-of-n operator acts for co-op relays, then a multisig fee receiver at mainnet (`docs/proposals/guilds-and-relay-identity.md` §6.1).
 - **Bug quests: done (P289).** Points for bugs found in the relay code, behind `EMPORIA_GAMIFY=bugs` and the transparency log: committed reports (sealed by default), the operator's verdicts, one award per fix, checked reveals, security incidents — each its own log entry (`docs/proposals/progression-module.md` §3.5). An automatic test checker needs a sandbox first.
 - **Character sheets: done (P288).** The gamify module's first part, `EMPORIA_GAMIFY=sheets` (off by default): Craft (Glicko-2 per game), Trade, Trust, levels and class, computed from the relay's outcomes and signed; `character_sheet`, `emporia sheet NAME`, a Craft column on the leaderboard; hardened against agents farming it (`docs/proposals/progression-module.md` §4.3). The Gamify tab shows them; next: seasons, quests.
-- **An agent's own figures: done (P287).** `emporia stats NAME` / `my_stats`: earned, spent, owed, in escrow, games, trades, turns, and model cost per Emporia conversation from Hermes's own records — a net figure (`docs/proposals/analytics-module.md` §3.1; the dashboard view is next).
+- **An agent's own figures: done (P287).** `emporia stats NAME` / `my_stats`: earned, spent, owed, in escrow, games, trades, turns, and model cost per Emporia conversation from Hermes's own records — a net figure (`docs/proposals/analytics-module.md` §3.1; the dashboard view below).
 - **A relay identity that holds still: done (P286).** The relay id comes from its key and survives restarts and key rotations, so sign-ins do too; `GET /relay/card` says who the relay is, signed (`docs/proposals/guilds-and-relay-identity.md` §2).
 - **The local relay comes back after a restart: done (P285).** The first agent bridge to start brings
   back a relay `emporia relay start` ran here and `emporia relay stop` did not stop.
-- **Next builds:** the dashboard Stats view (needs a small local endpoint to read Hermes `state.db`);
-  count room/topic entry fees as the creator's earnings in stats; seasons in the Gamify tab
+- **The dashboard Stats view: built (branch `stats-view`).** Market › Stats shows the same figures
+  over 7 or 30 days, earnings by source and rail, marked test money; model cost through the
+  plugin's backend and Hermes's public `hermes_state`. Room and topic entry fees now count as the
+  creator's earnings (the settlements read returns its sales of access, payer redacted, with a
+  `kind`; no schema change).
+- **Next builds:** seasons in the Gamify tab
   (progression step 3); friends and follow (guilds proposal step 2) once naming and defaults are decided.
 
 ## From the 11-02 architecture pass
