@@ -5,7 +5,14 @@
  * focus (review pass 2, docs/review-pass-2026-11-06-ui.md).
  */
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ComponentType } from "react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+// The whole app is a large import: once, not per test (under a full run it took over 5 s).
+let App: ComponentType;
+beforeAll(async () => {
+  App = (await import("./App")).default;
+}, 60_000);
 
 class NoSocket {
   static OPEN = 1;
@@ -37,7 +44,6 @@ function narrowWindow(narrow: boolean) {
 }
 
 beforeEach(() => {
-  vi.resetModules();
   vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("offline in this test"))));
   vi.stubGlobal("WebSocket", NoSocket);
   Element.prototype.scrollIntoView = () => {};
@@ -51,7 +57,6 @@ afterEach(() => {
 
 async function renderAt(hash: string) {
   window.location.hash = hash;
-  const { default: App } = await import("./App");
   render(<App />);
   await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 }
