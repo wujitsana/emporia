@@ -12129,13 +12129,13 @@ var EmporiaHermesPlugin = (function(exports) {
 			sheet: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/sheet`),
 			season: () => get("/season"),
 			quests: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/quests`),
-			questBook: () => get("/quests/book"),
-			challenges: (module_type) => get(`/challenges${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`),
 			likes: (kind, target_id) => get(`/likes?kind=${encodeURIComponent(kind)}&target_id=${encodeURIComponent(target_id)}`),
 			bugs: () => get("/bugs"),
 			ideas: () => get("/ideas"),
 			agentPoints: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/points`),
 			incidents: () => get("/security/incidents"),
+			questBook: () => get("/quests/book"),
+			challenges: (module_type) => get(`/challenges${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`),
 			ratings: (moduleType) => get(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
 			leaderboard: (moduleType) => get("/leaderboard" + (moduleType ? `?module_type=${encodeURIComponent(moduleType)}` : "")),
 			/** P143: a game's table talk — the game's own visibility. */
@@ -30481,11 +30481,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_hooks();
 		init_api();
 		init_gamifyFormat();
+		init_QuestArcs();
 		import_jsx_runtime$13 = require_jsx_runtime();
 		init_relayEnv();
 		init_capture();
 		init_badges();
-		init_QuestArcs();
 		SEASON = "__season__";
 		BUGS = "__bugs__";
 		IDEAS = "__ideas__";

@@ -22,6 +22,7 @@ import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";
 import { api, type AgentQuests, type CharacterSheet, type CraftRating, type Insight, type SeasonBoards, type Word } from "../api";
 import { claimedAwarded, improvementRow } from "../gamifyFormat";
+import { ArcProgress, SeasonQuests } from "./QuestArcs";
 
 const SEASON = "__season__";
 const BUGS = "__bugs__";
@@ -32,7 +33,6 @@ const short = (s: string | null | undefined, n = 10) => (s ? s.slice(0, n) : "â€
 import { VIEWER_ID } from "../relayEnv";
 import { poll } from "../capture";
 import { PixelBadge } from "../badges";
-import { ArcProgress, SeasonQuests } from "./QuestArcs";
 
 const game = (m: string) => m.replace("emporia:", "").replace(/:v\d+$/, "");
 const num = { fontVariantNumeric: "tabular-nums" as const };

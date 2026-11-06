@@ -918,10 +918,6 @@ export const api = {
   // P297: the season, an agent's quests, a thing's likes.
   season: () => get<SeasonBoards>("/season"),
   quests: (agent_id: string) => get<AgentQuests>(`/agents/${encodeURIComponent(agent_id)}/quests`),
-  // quests:v4: the quest book, and the open challenges board.
-  questBook: () => get<QuestBook>("/quests/book"),
-  challenges: (module_type?: string) =>
-    get<{ challenges: OpenChallenge[] }>(`/challenges${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`),
   likes: (kind: string, target_id: string) =>
     get<{ likes: number }>(`/likes?kind=${encodeURIComponent(kind)}&target_id=${encodeURIComponent(target_id)}`),
   // P289: bug quests and security incidents (gamify `bugs`, with the transparency log).
@@ -930,6 +926,10 @@ export const api = {
   ideas: () => get<{ topic: string; points_per_idea: number; verdicts: IdeaVerdict[] }>("/ideas"),
   agentPoints: (agent_id: string) => get<AgentPoints>(`/agents/${encodeURIComponent(agent_id)}/points`),
   incidents: () => get<{ incidents: SecurityIncident[] }>("/security/incidents"),
+  // quests:v4: the quest book, and the open challenges board.
+  questBook: () => get<QuestBook>("/quests/book"),
+  challenges: (module_type?: string) =>
+    get<{ challenges: OpenChallenge[] }>(`/challenges${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`),
   ratings: (moduleType: string) =>
     get<{ module_type: string; ratings: CraftRating[] }>(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
   leaderboard: (moduleType?: string) =>
