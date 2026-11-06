@@ -6,9 +6,6 @@
  * these: joining and paying happen on the relay that holds the room or topic,
  * which is why every row names it.
  */
-import type { RoomElsewhere } from "./api";
-import { relayHost } from "./relayFormat";
-
 export interface ElsewhereRow {
   key: string;
   name: string;
@@ -27,19 +24,4 @@ export function feeLabel(cents: number | undefined | null, currency?: string | n
   const amount = `$${(cents / 100).toFixed(2)}`;
   const cur = (currency ?? "").toUpperCase();
   return cur && cur !== "USD" ? `${amount} ${cur}` : amount;
-}
-
-function row(key: string, name: string, relay: string, host: string | undefined, owner: string | undefined,
-             fingerprint: string | undefined, fee: string, extra: string): ElsewhereRow {
-  const where = relayHost(host || relay) || "another relay";
-  return {
-    key, name, host: where, owner: owner ?? "", fingerprint: fingerprint ?? "", fee,
-    note: `${extra}Joining happens on ${where}, not here.`,
-  };
-}
-
-export function roomRow(r: RoomElsewhere): ElsewhereRow {
-  const access = r.access_duration_days ? `${r.access_duration_days} days of access per payment. ` : "";
-  return row(`${r.relay}/${r.room_id}`, r.name, r.relay, r.host, r.owner_address, r.owner_fingerprint,
-    feeLabel(r.entry_fee_cents, r.currency), access);
 }
