@@ -627,3 +627,5 @@ def _never_write_this_machines_hermes(monkeypatch):
     for name in _INSTALLER_WRITES:
         if hasattr(inst, name):
             monkeypatch.setattr(inst, name, guarded(name, getattr(inst, name)))
+
+pytest_plugins = ["tests.legacy_posts"]

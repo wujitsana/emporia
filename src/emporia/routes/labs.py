@@ -132,7 +132,9 @@ def _post_in_room(room_id: str, content: str, parent: str | None, meta: dict) ->
     """The relay's own note in a lab's room (a thread's first message, a check's reply)."""
     try:
         msg = rooms_db.post_message(room_id=room_id, sender_id=LAB_SENDER, content=content, msg_type="system",
-                                    parent_message_id=parent, metadata=meta, db_path=rs.DATABASE_PATH)
+                                    parent_message_id=parent, metadata=meta, db_path=rs.DATABASE_PATH,
+                                    reply_to=f"message:{parent}" if parent else None,
+                                    root=f"message:{parent}" if parent else "self")
     except Exception:  # noqa: BLE001 — the record is what counts; a note that fails is only a note
         return None
     return msg.message_id

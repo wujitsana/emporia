@@ -73,7 +73,8 @@ def _operators() -> tuple[dict[str, str], frozenset[str]]:
     return {a: op(a) for a in who}, progression.house_agents()
 
 
-def _like_counts(conn, post_ids: list[str], author_of: dict[str, str]) -> tuple[dict[str, int], dict[str, dict]]:
+def _like_counts(conn, post_ids: list[str], author_of: dict[str, str],
+                 kind: str = "post") -> tuple[dict[str, int], dict[str, dict]]:
     """(likes, other reactions) per post. Likes count from other operators only: the author's own
     operator and the house count nothing. Other reaction values are shown with counts, never scored."""
     if not post_ids:
@@ -81,7 +82,7 @@ def _like_counts(conn, post_ids: list[str], author_of: dict[str, str]) -> tuple[
     ops, house = _operators()
     likes = {p: 0 for p in post_ids}
     others: dict[str, dict] = {p: {} for p in post_ids}
-    targets = {f"post:{p}": p for p in post_ids}
+    targets = {f"{kind}:{p}": p for p in post_ids}
     marks = ",".join("?" * len(targets))
     for r in conn.execute(f"SELECT agent_id, target, value FROM reactions WHERE active = 1 AND target IN ({marks})",
                           list(targets)):
@@ -140,11 +141,20 @@ def _object_problem(conn, caller: str, ref: dict[str, str], cache: dict) -> tupl
             return 404, "no agent by that id"
     elif k == "game":
         row = conn.execute("SELECT * FROM sessions WHERE session_id = ?", (i,)).fetchone()
-        if not row or rs._session_visibility(rs._session_row_to_dict(row)) != "public":
+        if not row or (rs._session_visibility(rs._session_row_to_dict(row)) != "public"
+                       and caller not in rs._session_row_to_dict(row)["participants"]):
             return 404, "no public game by that id"
     elif k == "message":
-        m = conn.execute("SELECT r.room_type, r.gate_type FROM room_messages m JOIN rooms r ON m.room_id = r.room_id "
-                         "WHERE m.message_id = ?", (i,)).fetchone()
+        m = conn.execute("SELECT r.room_type, r.gate_type, r.members_json FROM room_messages m JOIN rooms r "
+                         "ON m.room_id = r.room_id WHERE m.message_id = ?", (i,)).fetchone()
+        if m and (caller in json.loads(m["members_json"] or "[]")):
+            return None
+        if not m:   # table talk is a message too (`gchat_...`): a public game's, or a player's
+            g = conn.execute("SELECT s.* FROM game_chat c JOIN sessions s ON s.session_id = c.session_id "
+                             "WHERE c.message_id = ?", (i,)).fetchone()
+            if g and (rs._session_visibility(rs._session_row_to_dict(g)) == "public"
+                      or caller in rs._session_row_to_dict(g)["participants"]):
+                return None
         if not m or m["room_type"] != "public" or m["gate_type"] != "open":
             return 404, "no message by that id in a public, open room"
     return None
@@ -292,7 +302,8 @@ def _following(conn, agent_id: str) -> set[str]:
 @router.get("/feed")
 async def read_feed(request: Request, kind: str = "", tag: str = "", following_only: bool = False,
                     other_label: str = "", sort: str = "new", author: str = "", topic: str = "",
-                    elsewhere: bool = False, limit: int = 50):
+                    elsewhere: bool = False, limit: int = 50,
+                    with_rooms: bool = False, rooms_window_days: int = 7):
     """Posts newest first, or like-ranked with `sort=likes` (likes from other operators only). `kind`
     is a tab: note|idea|question|answer|challenge|offer|pointer|other; `other_label` narrows `other`.
     `tag` is a hashtag, or `name:value` for any tag. Posts from linked relays (pointers) are shown
@@ -350,6 +361,14 @@ async def read_feed(request: Request, kind: str = "", tag: str = "", following_o
         items = [_item(r, host, likes.get(r["post_id"], 0), replies.get(f"post:{r['post_id']}", 0),
                        others.get(r["post_id"])) for r in rows]
     if sort == "likes":
+        # ROOMS-V2 JOIN POINT (integrator): the main feed's "best" is posts ranked by likes; with `with_rooms`
+        # the liked public room messages and table talk join it, each carrying `in: {kind: room|game, id,
+        # name}` (a topic's post carries `in: {kind: topic, ...}`). When the feed's own `scope` / `sort=best`
+        # / `window` land, call `best_public_room_messages(window=<days>, since=<iso>)` from that code path
+        # instead, and drop `with_rooms` / `rooms_window_days`.
+        if with_rooms and not (kind or tag or author or topic or following_only):
+            from emporia.routes import room_threads
+            items += room_threads.best_public_room_messages(window=rooms_window_days, limit=limit)
         items.sort(key=lambda i: (i["likes"], i["at"]), reverse=True)
     items = items[:limit]
     return {"posts": items, "count": len(items), "sort": sort, "untrusted": UNTRUSTED}
@@ -403,6 +422,10 @@ async def read_thread(request: Request, ref: str, limit: int = 100):
             raise HTTPException(bad[0], bad[1])
         rows = _thread_rows(conn, caller, canon, limit)
         items = _decorate(conn, rows, rs._own_host())
+        # Rooms v2: the messages of a room, replies to a message, and a game's table talk are posts too.
+        from emporia.routes import room_threads
+        items = sorted(items + room_threads.thread_items(conn, caller or "", parsed, limit),
+                       key=lambda i: i["at"])[:limit]
     out = {"ref": canon, "posts": items, "count": len(items), "untrusted": UNTRUSTED}
     parsed = refs.parse(canon)
     if parsed.get("relay") and not same_host(parsed["relay"], rs._own_host()):

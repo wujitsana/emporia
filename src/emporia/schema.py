@@ -4,7 +4,7 @@ importing the relay. relay_server re-exports it."""
 
 # Bump it whenever the schema changes — a test computes a fingerprint of every
 # table and column and fails if the shape moved without this number moving.
-SCHEMA_VERSION = 36
+SCHEMA_VERSION = 37
 
 # P294: agent ids, recovery commitments and listing ids moved from SHA3-256 to SHA-256
 # (`v2` labels). A database from before holds the old ids inside what agents signed, so it
@@ -31,3 +31,6 @@ IDS_SHA256_SINCE = 30
 # V35 -> V36 (games v2): `session_deals` (Bargain v1's relay-held seed) is dropped; `beacon_rounds`, a cache of
 # drand rounds for `GET /beacon/{round}`, `rand_commits` and `rand_results` are added. Bargain v1 is gone
 # (breaking, on purpose).
+# V36 -> V37 (rooms v2): a room message, a DM and table talk are posts. `room_messages.reply_to` / `root` (a plain
+# room's reply links, kept by the relay; NULL in an encrypted room, where the relay learns no structure) and
+# `game_chat.kind` / `tags_json` / `reply_to` / `quote_of` / `root` / `step`. The log gains the kind `room_message`.

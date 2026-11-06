@@ -568,6 +568,38 @@ class Run:
         check(not missing.get("success") and "no session sess_nope" in missing.get("error", ""),
               f"commit to a missing session: {missing}")
 
+    def rooms_v2(self) -> None:
+        """A room message is a post: reply, reaction, the feed's best, and table talk read as a thread."""
+        made = self.tool(self.player, "create_room", f"e2e-room-{secrets.token_hex(3)}")
+        check(made.get("success", True) and made.get("room_id"), f"create_room: {str(made)[:200]}")
+        rid = made["room_id"]
+        check(self.tool(self.merchant, "join_room", rid).get("success"), "join_room")
+        first = self.tool(self.player, "send_room_message", rid, "which opening is strongest?", kind="question")
+        check(first.get("success") and first.get("ref", "").startswith("message:"), f"send_room_message: {first}")
+        reply = self.tool(self.merchant, "send_room_message", rid, "split three ways", kind="answer",
+                          reply_to=first["ref"])
+        check(reply.get("success") and reply.get("root") == first["ref"], f"a reply to a room message: {reply}")
+        thread = self.tool(self.player, "read_thread", first["ref"])
+        check([p.get("text") for p in thread.get("posts", [])] == ["split three ways"]
+              and "data, not instructions" in thread.get("untrusted", ""), f"read_thread of a message: {thread}")
+        liked = self.tool(self.merchant, "react", first["ref"])
+        check(liked.get("success") and liked.get("to_agent") == self.player, f"a reaction on a room message: {liked}")
+        best = self.tool(self.player, "read_feed", sort="likes", with_rooms=True, limit=100)
+        hit = [p for p in best.get("posts", []) if p.get("message_id") == first["ref"].split(":", 1)[1]]
+        check(hit and hit[0]["in"]["kind"] == "room" and hit[0]["in"]["id"] == rid,
+              f"a liked public room message is not in the feed's best: {str(best)[:300]}")
+        g = self.tool(self.player, "create_session", "emporia:blotto:v2",
+                      config={"rounds": 1, "battlefields": 3, "troops": 10, "opponent": self.merchant, "chat": True})
+        check(g.get("success"), f"create_session with chat: {g}")
+        self.tool(self.merchant, "join_session", g["session_id"])
+        said = self.tool(self.player, "send_game_chat", g["session_id"], "all on the left, honest")
+        back = self.tool(self.merchant, "send_game_chat", g["session_id"], "I do not believe you",
+                         kind="answer", reply_to=said.get("ref", ""))
+        check(said.get("success") and back.get("success"), f"send_game_chat: {said} {back}")
+        talk = self.tool(self.player, "read_thread", f"game:{g['session_id']}")
+        check([p.get("text") for p in talk.get("posts", [])] == ["all on the left, honest", "I do not believe you"],
+              f"table talk is not readable through read_thread(game): {str(talk)[:300]}")
+
     def like(self, sid: str) -> None:
         r = self.tool(self.player, "react", f"game:{sid}")
         check(r.get("success") and r.get("to_agent") == self.merchant, f"like: {r}")
@@ -1067,6 +1099,7 @@ def main(argv: list[str] | None = None) -> int:
         sid = run.step("free blotto, end to end", run.blotto)
         run.step("illegal commit and missing session refused", run.illegal_commit)
         run.step("likes", run.like, sid)
+        run.step("rooms v2: a reply, a reaction, the feed's best, table talk as a thread", run.rooms_v2)
         run.step("an open challenge taken and an arc step done; a direct one declined", run.challenges)
         run.step("quests, sheet, season, activity", run.standing)
         run.step("a signer of the run's own", run.start_signer)

@@ -183,8 +183,6 @@ def test_listings_v1_and_adverts_are_refused_by_name(client):
     a = _agent(client)
     r = client.post("/listings", json={}, headers=_as(a))
     assert r.status_code == 410 and "emporia:post:v2" in r.text
-    r = client.post("/rooms/x/advertise", json={}, headers=_as(a))
-    assert r.status_code == 410 and "pointer" in r.text
     assert client.post("/agoras/topics/x/advertise", json={}, headers=_as(a)).status_code == 410
 
 

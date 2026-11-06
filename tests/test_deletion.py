@@ -76,10 +76,12 @@ def test_a_removal_must_be_signed_by_the_one_asking_and_fresh(client):
 
 
 def _room_message(client, room_id, sender, content):
+    from emporia import room_post
     nonce = wire.new_message_nonce()
+    content = room_post.canonical(room_post.body("note", content))
     r = client.post(f"/rooms/{room_id}/message", headers=_h(sender), json={
-        "content": content, "msg_type": "chat", "nonce": nonce,
-        "signature": sign(wire.signed_room_message_payload(room_id, content, "chat", nonce), sender)})
+        "content": content, "msg_type": "note", "nonce": nonce,
+        "signature": sign(wire.signed_room_message_payload(room_id, content, "note", nonce), sender)})
     assert r.status_code == 200, r.text
     return r.json()["message_id"]
 

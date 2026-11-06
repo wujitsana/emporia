@@ -483,7 +483,7 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     # Local import + resolved-once pattern matches P12-3's room-message fix.
     from emporia.wire import ERR_DUPLICATE_NONCE, DEFAULT_MSG_TYPE, signed_dm_thread_payload
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
-    rs._require_valid_msg_type(effective_msg_type)
+    rs._require_valid_msg_type(effective_msg_type, sealed=bool(thread["encrypted"]))
     rs._require_content_within_limit(req.content)
     # P16: enforce the thread's mode. The relay reads no plaintext and holds no key
     # here — `validate_envelope_for()` inspects the envelope's structure and the set
@@ -591,6 +591,13 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     # cannot scan what it cannot read. msg_type is unaffected — it sits outside the
     # envelope and is already restricted to a closed six-value enum.
     if not thread["encrypted"]:
+        # Rooms v2: a DM is a post body (kind, text, tags, refs). An encrypted thread's is inside the seal.
+        from emporia import room_post
+        b = room_post.parse(req.content)
+        if b is None or room_post.canonical(b) != req.content:
+            raise HTTPException(400, "a DM's content is a post body, as canonical JSON (room_post.canonical)")
+        if why := room_post.problem(b, effective_msg_type):
+            raise HTTPException(400, why)
         try:
             await rs._assert_payload_safe_counted({"content": req.content})
         except PermissionError as e:
@@ -787,7 +794,12 @@ async def dm_messages(
         with rs.DB_LOCK, rs.get_db() as conn:
             for item, removal in deletion.removals_for(conn, "dm_message", list(gone)).items():
                 gone[item]["removed"] = removal
-    return {"thread_id": thread_id, "messages": messages, "my_label": _my_label(thread, agent_id)}
+    from emporia import room_post
+    for m in messages:      # a plaintext thread's message is a post: its fields beside `content`
+        if m["msg_type"] != "sealed" and not m.get("deleted_at"):
+            m.update(room_post.view(m["msg_type"], m["content"]))
+    return {"thread_id": thread_id, "messages": messages, "my_label": _my_label(thread, agent_id),
+            "untrusted": room_post.UNTRUSTED}
 
 
 # ============================================================================
