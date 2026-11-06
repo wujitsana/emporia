@@ -881,6 +881,12 @@ app = FastAPI(title="Emporia signer", docs_url=None, redoc_url=None, openapi_url
 def _agent(request: Request) -> str:
     agent_id = request.headers.get("x-emporia-agent", "")
     token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    # Review pass 2: the id exactly as the signer files it. `agent_dir` folds case and odd
+    # characters, so `ALICE` or ` alice` found alice's policy and token, while the
+    # per-process counters (`_OPENS`, the open cap and its burst alert) and approvals keyed
+    # the spelling: each new spelling started a fresh count.
+    if agent_id != identity._keyfile_stem(agent_id):
+        agent_id = ""
     want = policy(agent_id).get("token_sha256", "") if agent_id else ""
     if not (want and token and hmac.compare_digest(want, _hash(token))):
         raise HTTPException(401, "not an agent this signer holds keys for, or the wrong token")
