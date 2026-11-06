@@ -79,6 +79,26 @@ def test_an_idle_or_old_abandon_still_blames_whose_turn_it_was():
     assert quitter_of({**old, "current_agent": ""}) is None
 
 
+# ── pledges: a tell must say something ──────────────────────────────────────
+
+def test_a_tell_that_rules_nothing_out_or_no_legal_move_is_refused(client):
+    """Found: `pick_below 101` in guess ⅔ (picks 0–100) holds for every pick: a pledge kept
+    with evidence for nothing. A declared move the game would never take could only break."""
+    m, c, x = agents(client, "tm", "tc", "tx")
+    sid = session("emporia:two-thirds:v2", [m, c, x], {"phase": "commit", "pending": [m, c, x], "commitments": {}})
+    for vacuous in ({"tell": "pick_below", "value": 101}, {"tell": "pick_below", "value": 0},
+                    {"tell": "pick_above", "value": 100}, {"tell": "pick_above", "value": -1}):
+        r = make(client, m, c, "tell", sid, vacuous)
+        assert r.status_code == 422 and "rules out no pick" in r.json()["detail"], (vacuous, r.text)
+    assert make(client, m, c, "tell", sid, {"tell": "pick_below", "value": 34}).status_code == 200
+    assert make(client, m, c, "tell", sid, {"tell": "move", "value": 500}).status_code == 422
+    b = session("emporia:blotto:v2", [c, m], {"phase": "commit", "commitments": {}, "revealed": {},
+                                             "battlefields": 5, "troops": 100})
+    r = make(client, m, c, "tell", b, {"tell": "move", "value": [50, 50, 50, 0, 0]})
+    assert r.status_code == 422 and "not a legal move" in r.json()["detail"]
+    assert make(client, m, c, "tell", b, {"tell": "move", "value": [20, 20, 20, 20, 20]}).status_code == 200
+
+
 # ── pledges: evidence timing and the endings that used to void a broken pledge ──
 
 def test_a_pledge_dated_back_does_not_count_a_move_already_made():

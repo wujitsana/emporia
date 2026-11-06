@@ -207,6 +207,31 @@ def _check_session_subject(conn, req: PledgeIn, caller: str, kind: PL.Kind) -> t
     return sess["module_type"], sess
 
 
+def _tell_problem(terms: dict[str, Any], sess: dict[str, Any]) -> str:
+    """Review pass 2: why a tell says nothing about this game, or "". `pick_below 101` in a
+    0–100 game held for every pick, so it was kept with evidence for free; a `move` that is
+    no legal move could only ever be broken. A tell must rule out some legal pick and leave
+    some, and a declared move must be one the game would take."""
+    from emporia.module_sdk import get_interaction_module
+    try:
+        module = get_interaction_module(sess["module_type"])
+    except ValueError:
+        return ""
+    data = (sess.get("state") or {}).get("data") or {}
+    tell, value = terms.get("tell"), terms.get("value")
+    try:
+        if tell in ("pick_below", "pick_above") and hasattr(module, "pick_range"):
+            lo, hi = module.pick_range(data)
+            if not (lo < value <= hi if tell == "pick_below" else lo <= value < hi):
+                return (f"{tell} {value} rules out no pick in this game (picks are {lo}–{hi}): "
+                        f"a tell must say something — pick_below {lo + 1}–{hi} or pick_above {lo}–{hi - 1}")
+        if tell == "move" and (check := getattr(module, "move_problem", None)) and (why := check(data, value)):
+            return f"the declared move is not a legal move here: {why}"
+    except (KeyError, TypeError, ValueError):   # a state the module cannot read: the record decides later
+        return ""
+    return ""
+
+
 @router.post("/pledges")
 async def make_pledge(req: PledgeIn, request: Request):
     """A signed promise to a counterparty (`pledges.KINDS`), on a session or a listing."""
@@ -251,6 +276,8 @@ async def make_pledge(req: PledgeIn, request: Request):
                 raise HTTPException(409, "that listing has expired")
             module_type = ""
     if why := PL.check_terms(req.kind, req.terms, module_type, now.timestamp()):
+        raise HTTPException(422, why)
+    if req.kind == "tell" and sess is not None and (why := _tell_problem(req.terms, sess)):
         raise HTTPException(422, why)
     public = req.subject_type == "listing"
     if sess is not None:
