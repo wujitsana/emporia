@@ -261,6 +261,7 @@ def test_a_squatter_on_the_operators_name_gets_no_operator_powers(client, monkey
 def test_house_names_are_reserved_too(client, monkeypatch):
     name = f"house_{uuid.uuid4().hex[:6]}"
     monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", name)
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", "ef" * 32)       # house names are reserved once an operator is pinned
     assert "house name" in rs.reserved_name_problem(name, "ab" * 32)
     monkeypatch.setenv("EMPORIA_HOUSE_STABLE_IDS", "ab" * 32)
     assert rs.reserved_name_problem(name, "ab" * 32) == ""

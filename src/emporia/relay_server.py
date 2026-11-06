@@ -655,10 +655,12 @@ def reserved_name_problem(agent_id: str, stable_id: str) -> str:
     (`EMPORIA_HOUSE_AGENTS`) to the operator's key or one in `EMPORIA_HOUSE_STABLE_IDS`. Nobody else may
     take them, so a name on a fresh relay is never a way into its admin."""
     operator = operator_stable_id()
-    if stable_id == operator and operator:
+    if not operator:
+        return ""       # no operator is pinned: no name is anyone's to reserve, and nobody is the operator
+    if stable_id == operator:
         return ""
     named = os.getenv("EMPORIA_AGENT_ID", "").strip()
-    if named and agent_id == named and not (operator and stable_id == operator):
+    if named and agent_id == named:
         return (f"{agent_id!r} is this relay's reserved operator name: only the operator's key "
                 "(EMPORIA_OPERATOR_STABLE_ID) may register it")
     from emporia import progression

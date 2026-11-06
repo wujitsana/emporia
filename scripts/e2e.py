@@ -237,10 +237,11 @@ class Run:
         return self.profile(self.judge) / "plugin-data" / "emporia" / "runtime" / ".venv" / "bin" / "python"
 
     # ── steps ───────────────────────────────────────────────────────────────
-    def start_relay(self) -> str:
-        port = free_port()
+    def start_relay(self, pins: dict[str, str] | None = None) -> str:
+        port = getattr(self, "relay_port", None) or free_port()
         while port == 8088:                       # never the dev relay's port
             port = free_port()
+        self.relay_port = port
         self.relay_url = f"http://127.0.0.1:{port}"
         r = self.relay_dir
         env = self.env(
@@ -251,7 +252,7 @@ class Run:
             EMPORIA_X402_ENABLED="0", RATE_LIMIT_PER_MINUTE="5000",
             # The operator section: the merchant is this relay's operator; bug quests (with
             # the transparency log they need) give its desk a queue.
-            EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1",
+            EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1", **(pins or {}),
             EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent,
             # quests:v4: the run's agents are key-only (no Nous sign-in), so each counts as its own operator.
             EMPORIA_QUEST_OTHERS="any", EMPORIA_STARTER_LIMITS="0",
@@ -288,6 +289,23 @@ class Run:
             check(pid == proc.pid, f"the relay serves from pid {pid}, not the {proc.pid} started")
         self.note(f"relay {self.relay_url} pid {proc.pid}")
         return f"pid {proc.pid}"
+
+    def pin_operator(self) -> str:
+        """The operator is a key, not a name: once the merchant (the operator) and the house agent have
+        registered, the relay is restarted with their stable ids, as `emporia relay` setup would set them."""
+        import sqlite3
+        db = sqlite3.connect(self.relay_dir / "relay.sqlite3")
+        stable = dict(db.execute("SELECT agent_id, stable_id FROM authorized_agents WHERE agent_id IN (?, ?)",
+                                 (self.merchant, self.house_agent)).fetchall())
+        db.close()
+        check(self.merchant in stable and self.house_agent in stable, f"both registered first: {sorted(stable)}")
+        for p in [p for p in self.procs.values() if p.poll() is None and "emporia.relay_server" in " ".join(
+                map(str, p.args))]:
+            p.terminate()
+            p.wait(timeout=20)
+        self.start_relay({"EMPORIA_OPERATOR_STABLE_ID": stable[self.merchant],
+                          "EMPORIA_HOUSE_STABLE_IDS": stable[self.house_agent]})
+        return f"operator {stable[self.merchant][:12]}"
 
     def make_verdict_key(self) -> str:
         """The operator's verdict key, made as its person makes it (`operator_verdicts.new`, what
@@ -1143,6 +1161,7 @@ def main(argv: list[str] | None = None) -> int:
         run.step(f"{run.signed}: keys made in the signer, registered through it", run.signer_agent)
         run.step("a sealed DM opened through the signer", run.signer_dm)
         run.step(f"setup {run.house_agent} (house)", run.setup_agent, run.house_agent, "--playbook", "host")
+        run.step("the relay pins its operator and house keys (restart)", run.pin_operator)
         run.step("house adopts a waiting blotto and finishes it", run.house)
         run.step("bargain v2 between two players on the drand beacon: hands only client-side, reveal, hands published", run.bargain)
         run.step("the operator sees its desk; a player is refused", run.operator)
