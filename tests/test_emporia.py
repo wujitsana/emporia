@@ -27420,13 +27420,13 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V31 -> V32 (launch additions): `idea_verdicts`, the operator's signed verdict on an idea.
 #
-# V33 -> V34 (games v2): `session_deals` is dropped, `beacon_rounds` (a cache of drand rounds) added.
+# V33 -> V34 (games v2): `session_deals` is dropped, `beacon_rounds` (a cache of drand rounds), `rand_commits` and `rand_results` added.
 #
 # V32 -> V33 (gamify-all: Bargain and pledges in one bump): `session_deals`, the relay's secret
 # seed for a game that deals hidden hands, kept out of the session's state until the game ends
 # (a V32 relay would serve a dealt game it cannot deal or reveal); `pledges` and `pledge_acts`,
 # signed promises and their attestations.
-_SCHEMA_FINGERPRINT_V34 = "7a4160d3743012b19d4dee06e3e2ba9777d0e80d9d95778174092b7113209c85"  # games v2: the beacon cache replaces Bargain v1's session deals
+_SCHEMA_FINGERPRINT_V34 = "0f37a103216f41adfad871fa4aed8d868446fa1448173bd905f39171c1a3ad7f"  # games v2: the beacon cache replaces Bargain v1's session deals
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:

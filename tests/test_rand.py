@@ -90,7 +90,7 @@ def test_a_round_must_be_at_least_ten_rounds_after_the_signing_time(monkeypatch)
     assert "too early" in rand.commit_round_problem(at, now_round + 9)
     assert "whole number" in rand.commit_round_problem(at, "x") and "whole number" in rand.commit_round_problem(at, True)
     c, rec = rand_client.make_commit(lambda *a: "sig", "sess_q", "me", 0, now=rand.to_ts(at))
-    assert rand.commit_round_problem(c["at"], c["beacon_round"]) == "" and c["beacon_round"] == now_round + 20
+    assert rand.commit_round_problem(c["at"], c["beacon_round"]) == "" and c["beacon_round"] == now_round + rand.CLIENT_LEAD_ROUNDS
     assert rec["beacon_round"] == c["beacon_round"] and rec["hash"] == c["hash"]
 
 

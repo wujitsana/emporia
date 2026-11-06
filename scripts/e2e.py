@@ -846,7 +846,7 @@ def main(argv: list[str] | None = None) -> int:
         run.step("a sealed DM opened through the signer", run.signer_dm)
         run.step(f"setup {run.house_agent} (house)", run.setup_agent, run.house_agent, "--playbook", "host")
         run.step("house adopts a waiting blotto and finishes it", run.house)
-        run.step("bargain with the house: no call, sealed values, an honest deal, hands published", run.bargain)
+        run.step("bargain v2 between two players on the drand beacon: hands only client-side, reveal, hands published", run.bargain)
         run.step("the operator sees its desk; a player is refused", run.operator)
         run.step("update at the pinned commit is a verified no-op", run.update)
     except StepFailed:

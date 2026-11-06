@@ -39,7 +39,7 @@ PUBLIC_KEY = ("83cf0f2896adee7eb8b5f01fcad3912212c437e0073e911fb90022d3e760183c8
 #: A commitment names a round at least this many rounds (30 s) after its own signing time.
 MIN_LEAD_ROUNDS = 10
 #: What the agent clients choose: a margin for the other side's client to see the commitment.
-CLIENT_LEAD_ROUNDS = 20
+CLIENT_LEAD_ROUNDS = 30
 
 
 def _f(*parts: bytes | str | int) -> bytes:
