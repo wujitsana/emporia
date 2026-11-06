@@ -15,6 +15,7 @@ import json
 from typing import Any
 
 from emporia import crypto_box, wire
+from emporia.engine.guardrails import injection_flags
 
 MSG_TYPE = "post"
 INNER_FIELDS = ("kind", "label", "text", "tags", "quote_of")
@@ -55,6 +56,10 @@ def open_item(item: dict[str, Any], agent_id: str, private_key: Any) -> dict[str
                 topic=item.get("topic"), quote_of=got.get("quote_of")):
             out.update({f: got.get(f) for f in INNER_FIELDS}, opened=True)
             out["tags"] = got.get("tags") or []
+            # Opened on this machine, so the relay never read it: flag a match, keep the post as sent.
+            flags = injection_flags({f: got.get(f) for f in INNER_FIELDS})
+            if flags:
+                out["flags"] = flags
     except (crypto_box.DecryptionError, ValueError, KeyError, TypeError):
         out["why"] = "not sealed to you (sent before you were a member, or not sealed correctly)"
     return out

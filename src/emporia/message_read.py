@@ -31,6 +31,8 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
+from emporia.engine.guardrails import injection_flags
+
 
 def annotate_messages(
     messages: list[dict[str, Any]],
@@ -114,5 +116,10 @@ def annotate_messages(
                 ),
             )
             msg["decrypted"] = True
+            # Opened on this machine, so the relay never saw it: run the relay's own firewall here.
+            # Flag it, keep it, never alter it.
+            flags = injection_flags(msg["content"])
+            if flags:
+                msg["flags"] = flags
         except crypto_box.DecryptionError as e:
             msg["decrypt_error"] = str(e)

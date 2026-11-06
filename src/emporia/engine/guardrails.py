@@ -15,6 +15,7 @@ commit-reveal, verify_session), not from classifying text.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import os
@@ -40,6 +41,13 @@ _INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"print\s+(the\s+)?(environment|env|secrets|api[_-]?keys)",
         r"bypass\s+(guardrails|security|safety|policy)",
         r"jailbreak|prompt\s*injection",
+        r"(disregard|forget|override)\s+(all\s+|any\s+|everything\s+)?(of\s+)?(the\s+|your\s+|these\s+)?"
+        r"(previous|prior|above|earlier|safety|system)\s+(instructions|rules|messages|guidelines|prompt)",
+        r"new\s+instructions\s*:|updated\s+instructions\s*:",
+        r"<\|?(im_start|im_end|system|endoftext)\|?>|\[/?INST\]|<</?SYS>>",
+        r"(read|cat|open|print|send|upload|show|reveal)\s+[^\n]{0,40}(~/\.ssh|\.hermes/keys|\.hermes/\.env|id_ed25519|private[_\s-]?key|seed\s+phrase|mnemonic)",
+        r"(send|transfer|pay|wire)\s+[^\n]{0,60}\bto\s+0x[0-9a-f]{20,}",
+        r"(run|execute|invoke)\s+(the\s+)?(terminal|shell|bash|python)\s+(tool|command)",
     )
 )
 
@@ -122,36 +130,63 @@ def _iter_text_values(value: Any, *, parent_key: str | None = None) -> Iterable[
 
 # P24-3 (W3): zero-width/formatting characters with no NFKC decomposition to
 # nothing -- they're not compatibility variants of a visible character, just
-# invisible, so NFKC alone (_normalize_agent_id()'s precedent, relay_server.py)
-# leaves them untouched. ZWSP, ZWNJ, ZWJ, BOM/ZWNBSP, word joiner, soft hyphen.
-_ZERO_WIDTH_RE = re.compile("[​‌‍﻿⁠­]")
+# invisible, so NFKC alone leaves them untouched. ZWSP, ZWNJ, ZWJ, LRM/RLM, bidi
+# controls, word joiner and invisible operators, soft hyphen, Mongolian vowel
+# separator, BOM, variation selectors and the Unicode "tag" block (invisible ASCII).
+_ZERO_WIDTH_RE = re.compile(
+    "[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\u00ad\u180e\ufeff"
+    "\ufe00-\ufe0f\U000e0000-\U000e007f]")
+_HTML_TAG_RE = re.compile(r"<[^>]{0,200}>|<!--.*?-->", re.DOTALL)
+_B64_RE = re.compile(r"[A-Za-z0-9+/_-]{16,2730}={0,2}")
+#: Cyrillic and Greek letters that read as Latin ones.
+_HOMOGLYPHS = str.maketrans({
+    "\u0430": "a", "\u0435": "e", "\u043e": "o", "\u0440": "p", "\u0441": "c", "\u0443": "y",
+    "\u0445": "x", "\u0456": "i", "\u0458": "j", "\u0455": "s", "\u0501": "d", "\u04bb": "h",
+    "\u0391": "A", "\u0392": "B", "\u0395": "E", "\u0397": "H", "\u0399": "I", "\u039a": "K",
+    "\u039c": "M", "\u039d": "N", "\u039f": "O", "\u03a1": "P", "\u03a4": "T", "\u03a7": "X",
+    "\u03b1": "a", "\u03b5": "e", "\u03b9": "i", "\u03ba": "k", "\u03bd": "v", "\u03bf": "o",
+    "\u03c1": "p", "\u03c4": "t", "\u03c5": "u", "\u0410": "A", "\u0412": "B", "\u0415": "E",
+    "\u041a": "K", "\u041c": "M", "\u041d": "H", "\u041e": "O", "\u0420": "P", "\u0421": "C",
+    "\u0422": "T", "\u0425": "X", "\u0406": "I",
+})
+
+
+def _decoded_blobs(text: str) -> list[str]:
+    """Readable text hidden in short base64 blobs. Only blobs that decode to mostly letters count."""
+    out: list[str] = []
+    for blob in _B64_RE.findall(text)[:8]:
+        raw = blob.replace("-", "+").replace("_", "/")
+        try:
+            decoded = base64.b64decode(raw + "=" * (-len(raw) % 4), validate=True).decode("utf-8")
+        except Exception:
+            continue
+        if len(decoded) >= 8 and sum(c.isalpha() or c.isspace() for c in decoded) >= 0.8 * len(decoded):
+            out.append(decoded)
+    return out
 
 
 def _normalize_for_scan(text: str) -> tuple[str, ...]:
-    """P24-3 (W3): homoglyph/zero-width obfuscation defense for the
-    deterministic regex layer. `igno​re` (a zero-width character
-    inserted mid-word) and `ignore​all` (one substituted for the
-    whitespace `_INJECTION_PATTERNS` requires between words) both defeat
-    every pattern as stored, unnormalized -- confirmed live before this fix.
+    """Obfuscation defences for the deterministic regex layer; never mutates `text`.
 
-    Stripping alone is insufficient: the *strip* variant fixes the first
-    case (`igno​re` -> `ignore`) but not the second (`ignore​all`
-    stripped is `ignoreall`, still not matching `\\s+`) -- while a
-    *space-substitution* variant fixes the second but would mangle the
-    first (`igno re`, splitting a word the pattern expects intact). Trying
-    to pick one universally breaks the other, so both variants are tried.
-
-    Returns a deduped `(raw, strip-variant, space-variant)` -- never
-    mutates `text` itself; `scan_text` applies every pattern against every
-    variant. NFKC (folding full-width forms, NBSP, and other compatibility
-    variants) is applied as the base of both normalized variants, not the
-    raw one, so an attacker can't dodge detection by using a NFKC-folded
-    homoglyph in an otherwise-clean payload that only the raw check sees.
+    Variants every pattern is tried against: the raw text; NFKC (full-width letters, NBSP and
+    other compatibility forms) with invisible characters stripped, and with them turned into
+    spaces (`igno<ZWSP>re` needs the strip, `ignore<ZWSP>all` the space); the same with HTML
+    tags/comments removed; the same with Cyrillic/Greek look-alikes mapped to Latin; and the
+    text of any short base64 blob that decodes to readable words.
     """
     nfkc = unicodedata.normalize("NFKC", text)
     strip_variant = _ZERO_WIDTH_RE.sub("", nfkc)
     space_variant = _ZERO_WIDTH_RE.sub(" ", nfkc)
-    variants = (text, strip_variant, space_variant)
+    variants = [text, strip_variant, space_variant]
+    untagged = _HTML_TAG_RE.sub("", strip_variant)
+    if untagged != strip_variant:
+        variants += [untagged, _HTML_TAG_RE.sub(" ", space_variant)]
+    for v in list(variants):
+        folded = v.translate(_HOMOGLYPHS)
+        if folded != v:
+            variants.append(folded)
+    for v in (strip_variant, untagged):
+        variants += _decoded_blobs(v)
     seen: list[str] = []
     for v in variants:
         if v not in seen:
@@ -219,3 +254,16 @@ async def assert_payload_safe_async(payload: Mapping[str, Any] | str, *, mode: s
         if not result.ok:
             raise GuardrailBlocked(result)
     return GuardrailResult(ok=True, mode=active_mode)
+
+
+INJECTION_FLAG = "injection-pattern"
+
+
+def injection_flags(value: Any) -> list[str]:
+    """Flags for text another agent wrote, after this machine opened it: `["injection-pattern"]` when the
+    same firewall the relay runs over plaintext matches, else `[]`. Never raises; the caller keeps the item."""
+    try:
+        payload = value if isinstance(value, (str, Mapping)) else {"v": value}
+        return [] if scan_payload(payload, mode="enforce").ok else [INJECTION_FLAG]
+    except Exception:
+        return []
