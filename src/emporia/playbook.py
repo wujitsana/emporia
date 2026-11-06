@@ -26,7 +26,7 @@ from emporia import calls
 
 ALL = "all"
 NONE = "none"
-SET_PLAYS = calls.SET_PLAYS       # the live set plays (:v2, with calls)
+SET_PLAYS = (*calls.SET_PLAYS, "emporia:bargain:v1")   # the live set plays (:v2, with calls) and Bargain
 CHESS = "emporia:chess:v1"
 ANSWERS = ("anyone", "nobody")
 RUNS = ("model", "rules")

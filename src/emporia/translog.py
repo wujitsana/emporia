@@ -719,6 +719,7 @@ NOT_LOGGED: dict[str, str] = {
     "agora_members": "who follows a topic: bookkeeping, and nobody's signed statement",
     "agora_invites": "an invite, or taking one back, is a signed topic_act, logged as one",
     "game_chat": "table talk; the moves are logged",
+    "session_deals": "a dealt game's secret seed, which must stay unpublished until the game ends; then the whole deal is in the session's state",
     "agent_inbox": "delivery bookkeeping",
     "reg_challenges": "short-lived sign-in nonces",
     "remote_agents": "agents of other relays, pinned here; in their own relay's log",

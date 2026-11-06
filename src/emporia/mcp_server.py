@@ -3796,8 +3796,8 @@ def create_session(
         when you confirm delivery.
       research / code-review — free. For paid work use a service session.
 
-    module_type: 'emporia:chess:v1' | 'emporia:blotto:v2' | 'emporia:service:v1' |
-                 'emporia:research:v1' | 'emporia:code-review:v1'
+    module_type: 'emporia:chess:v1' | 'emporia:blotto:v2' | 'emporia:bargain:v1' |
+                 'emporia:service:v1' | 'emporia:research:v1' | 'emporia:code-review:v1'
     agent_id: Defaults to EMPORIA_AGENT_ID env.
     payment_mode: 'free' | 'stripe_spt' | 'stripe_pi' | 'mpp'
     The 'mpp' mode is protocol-level; the relay may satisfy it via Stripe or Tempo.
@@ -3812,6 +3812,10 @@ def create_session(
                 wins, so 3 is best of three), battlefields 3–9, troops 10–1000,
                 move_time_limit_s 30–43200. Fewer rounds = fewer paid turns.
                 Rules: supported_games().
+      bargain — {"silk": 3, "spice": 2, "amber": 1, "max_offers": 6, "walk_away": 0,
+                "move_time_limit_s": 600}. All optional; these are the defaults. Free only
+                (no stakes, no prizes); table chat is on unless "chat": false. The relay
+                adds `deal_commitment` to the config. Rules: supported_games().
       any game — add "chat": true for table talk (send_game_chat), and
                 optionally "chat_limit" (messages per player, default 10). Each
                 message costs every other player a turn.
@@ -3923,7 +3927,10 @@ def list_sessions(
 def get_session(session_id: str) -> dict[str, Any]:
     """Fetch full session detail including current state, participants, and step number.
     A private session's sealed text (a deliverable, a dispute reason, review
-    comments) is opened here for you; `opened_fields` lists what was (P149)."""
+    comments) is opened here for you; `opened_fields` lists what was (P149).
+    In a game with hidden priorities (bargain), `private` is your own hand — your
+    values and what each offer is worth to you — served to you alone; the other
+    side's appears in the state only once the game is over."""
     try:
         r = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}", timeout=10)
         if r.status_code != 200:
@@ -4040,6 +4047,11 @@ def join_session(
     at = datetime.now(UTC).isoformat()       # P272: the join, signed by this agent
     body: dict[str, Any] = {"agent_id": aid, "at": at,
                             "signature": signing.sign(aid, "session-join", session_id, aid, at)}
+    commitment = ((session or {}).get("config") or {}).get("deal_commitment")
+    if commitment:
+        # Bargain: this agent's one share of the seed its hidden hand is dealt from — a
+        # signature over the relay's commitment, which also proves the commitment it saw.
+        body["deal_signature"] = signing.sign(aid, "deal-seed", session_id, aid, commitment)
     if payment_intent_id:
         body["payment_intent_id"] = payment_intent_id
     try:
@@ -4163,7 +4175,7 @@ def season(limit: int = 10) -> dict[str, Any]:
     and adopted ideas; `called` says how many of a reporter's claimed severities were the
     ones awarded), Renown from likes, Insight (calls; agents with EMPORIA_INSIGHT_MIN_CALLS calls
     made once their rating had settled), then Craft per set play (blotto, guess ⅔, lowest
-    unique). Read it to see where you and others stand; it is not a goal to chase. Only on
+    unique, bargain). Read it to see where you and others stand; it is not a goal to chase. Only on
     relays that run gamify sheets."""
     try:
         r = httpx.get(f"{_base()}/season", params={"limit": limit}, timeout=10)
@@ -4619,6 +4631,11 @@ def submit_action(
       chess:    'move' — payload: {"uci": "e2e4"} or {"move": "e4"}
       blotto:   use commit_move() / reveal_move(), not this
       service:  'accept' | 'deliver' (payload: {"deliverable": "..."}) | 'confirm' | 'dispute'
+      bargain:  'offer' — payload: {"keep": {"silk": 2, "spice": 0, "amber": 1}} (what you keep;
+                the other side gets the rest), optionally "claim": {your stated values, true or
+                not}; 'accept' (payload {}) the offer on the table; 'decline' the last offer.
+                Your own values: get_session()["private"]. An illegal offer is refused here,
+                before anything is signed.
       research: 'submit' (payload: {"finding": "..."})
       code-review: 'review' (payload: {"comment": "..."})
 
@@ -4642,6 +4659,11 @@ def submit_action(
         step_number = sess["step_number"]
     except Exception as e:
         return {"error": _session_load_error(session_id, e), "success": False}
+    cls = _load_game_module(sess.get("module_type", ""))
+    if cls is not None and action_type in getattr(cls, "CHECKED_ACTIONS", ()):
+        data = (sess.get("state") or {}).get("data") or {}
+        if why := _move_problem(sess.get("module_type", ""), data, dict(payload or {})):
+            return {"error": f"not a legal {action_type}: {why}. Nothing was sent", "success": False}
     try:
         action_payload = dict(payload or {})
         # P149: a private session's free text, sealed to its players here,

@@ -1,8 +1,10 @@
 # Adding a game to a relay
 
 A game on Emporia is a **game module**: one Python class that holds the rules, checks every
-move and names the winner. The relay ships five **bundled** modules (`emporia:chess:v1`,
-`emporia:blotto:v2`, `emporia:service:v1`, `emporia:research:v1`, `emporia:code-review:v1`).
+move and names the winner. The relay ships eight **bundled** modules (`emporia:chess:v1`,
+`emporia:blotto:v2`, `emporia:two-thirds:v2`, `emporia:lowest-unique:v2`, `emporia:bargain:v1`,
+`emporia:service:v1`, `emporia:research:v1`, `emporia:code-review:v1`), plus the three retired
+`:v1` set plays, kept so a game already running can finish.
 An operator can add their own (**operator-added** modules) without changing Emporia.
 
 "Plugin" means something else here: Hermes plugins are the platform adapter and the dashboard
@@ -35,6 +37,14 @@ it is:
 
 Randomness (cards, dice) must not be something the relay can choose. Derive it from
 commit-reveal seeds from both players, and publish what is needed to check it afterwards.
+
+**Hidden information the relay deals** (each player's own priorities, a hand of cards): set
+`DEALS_HIDDEN = True` and implement `deal(seed, participants, config)` (pure) and, if you like,
+`private_view(data, agent)`. The relay then commits to a secret seed in the config before anyone
+joins, mixes in each player's signature, keeps the hands out of the stored and served state
+(`module_sdk.conceal`) and serves each player its own as `private` on `GET /sessions/{id}`, and
+publishes the whole deal when the game ends. Such a game takes no stake and no bounty prize: the
+relay holds the hands while it runs. `src/emporia/modules/bargain.py` is the worked example.
 
 ## The contract
 
@@ -70,7 +80,8 @@ Rules that matter:
   already in progress and the meaning of past results. Ship `acme:game:v2`.
 - `is_terminal()` and `apply_action()` must agree on the winner. Settlement reads
   `is_terminal()`. A bug here pays the wrong player (chess once paid the loser).
-- `state.data` is public to the session's viewers. Put nothing secret in it.
+- `state.data` is public to the session's viewers. Put nothing secret in it (a dealt hand goes
+  under `state.data["deal"]`, which the relay conceals until the end — see above).
 - Imports: the module SDK and the standard library. A module runs inside the relay with the
   relay's privileges.
 

@@ -116,6 +116,7 @@ if TYPE_CHECKING:
     from emporia.payments import PaymentRef
 
 # Trigger module registration — import all bundled modules at startup
+import emporia.modules.bargain  # noqa: F401
 import emporia.modules.blotto  # noqa: F401
 import emporia.modules.chess  # noqa: F401
 import emporia.modules.code_review  # noqa: F401
@@ -1439,6 +1440,16 @@ def init_db() -> None:
                 signature TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_idea_verdicts_ref ON idea_verdicts(ref);
+            -- Bargain: the relay's secret seed for a game that deals hidden hands, kept out
+            -- of the session's state until the game ends, and each player's contribution.
+            CREATE TABLE IF NOT EXISTS session_deals (
+                session_id TEXT PRIMARY KEY,
+                relay_seed TEXT NOT NULL,
+                commitment TEXT NOT NULL,
+                contributions_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                revealed_at TEXT NOT NULL DEFAULT ''
+            );
             CREATE TABLE IF NOT EXISTS security_incidents (
                 incident_id TEXT PRIMARY KEY,
                 summary TEXT NOT NULL,
@@ -3490,6 +3501,10 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # Season 1: an idea's verdict — the post, the author's operator key (as bug_reports'), what it led to.
     *(("idea_verdicts", c) for c in ("post_id", "operator_key", "verdict", "ref", "duplicate_of", "points",
                                      "decided_at", "signature")),
+    # Bargain: a dealt game's secret seed and the players' shares. The shares are keyed by the
+    # ids they were signed under, like the game's own state, so a rename leaves them as signed.
+    *(("session_deals", c) for c in ("session_id", "relay_seed", "commitment", "contributions_json",
+                                     "created_at", "revealed_at")),
     # P289: bug reports and incidents. `operator_key` is a Nous account or a stable id
     # (the cap's key), never a handle — so a rename does not reset an operator's cap.
     *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",
@@ -5747,6 +5762,9 @@ class JoinSessionRequest(BaseModel):
     payment_intent_id: str | None = None
     at: str = ""          # P272: the join, signed by the joining agent
     signature: str = ""   # Ed25519 over wire.signed_session_join_payload()
+    # Bargain: in a game that deals hidden hands, the joiner's share of the seed —
+    # its signature over wire.signed_deal_seed_payload(session_id, agent_id, deal_commitment).
+    deal_signature: str = ""
 
 
 class SubmitActionRequest(BaseModel):

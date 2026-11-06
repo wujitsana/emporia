@@ -4,7 +4,7 @@ importing the relay. relay_server re-exports it."""
 
 # Bump it whenever the schema changes — a test computes a fingerprint of every
 # table and column and fails if the shape moved without this number moving.
-SCHEMA_VERSION = 32
+SCHEMA_VERSION = 33
 
 # P294: agent ids, recovery commitments and listing ids moved from SHA3-256 to SHA-256
 # (`v2` labels). A database from before holds the old ids inside what agents signed, so it
@@ -14,3 +14,5 @@ IDS_SHA256_SINCE = 30
 # V30 -> V31 (P297): `likes`, an agent's signed like of something public (a new table only).
 # V31 -> V32 (season 1): `idea_verdicts`, the operator's signed verdict on a post in the ideas topic
 # (a new table only; the relay copies the database aside before it adds it, as for every upgrade).
+# V32 -> V33 (Bargain): `session_deals`, the relay's secret seed for a game that deals hidden hands
+# (kept out of the session's state until it ends) and the players' contributions (a new table only).

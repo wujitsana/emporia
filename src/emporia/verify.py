@@ -15,6 +15,10 @@ What it checks:
 - **Every receipt this agent holds is the relay's signature, and its move is
   in the log** with the same content. A receipt whose move is missing is the
   relay having accepted a move and then dropped it.
+- **A dealt game's hands are what nobody could choose** (Bargain): the revealed
+  relay seed hashes to the commitment published in the config, each player's
+  share is its own signature (the creator's signed creation, the joiner's
+  signature over that commitment), and re-dealing the seed gives the same hands.
 - **The relay's verdict is what the rules give.** The moves are replayed
   through the game's own module, here. A game ended by the clock cannot be
   replayed without the times, so it is reported as such, with the receipts'
@@ -105,6 +109,8 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
     if cls is None:
         note("verdict", UNCHECKED, f"{session['module_type']} is not installed here, so its rules cannot be replayed")
     else:
+        if getattr(cls, "DEALS_HIDDEN", False):
+            note(*_deal_check(cls(), session, public_keys))
         note(*_replay(cls(), session, entries, relay_verdict))
 
     failed = [f for f in findings if f["status"] == FAIL]
@@ -112,9 +118,39 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
             "unchecked": sum(f["status"] == UNCHECKED for f in findings), "findings": findings}
 
 
+def _deal_check(module, session: dict[str, Any], public_keys: dict[str, str]) -> tuple[str, str, str]:
+    """Bargain: the hands were dealt from a seed neither the relay nor a player chose."""
+    from emporia import wire
+    from emporia.module_sdk import check_deal
+    players = list(session.get("participants") or [])
+    deal = ((session.get("state") or {}).get("data") or {}).get("deal") or {}
+    if session.get("status") not in ("completed", "abandoned"):
+        return "deal", UNCHECKED, "the game is not over, so its deal is not published yet"
+    if why := check_deal(module, players, session.get("config") or {}, deal):
+        return "deal", FAIL, why
+    contrib, sid = deal["contributions"], session["session_id"]
+    terms = (session.get("payment_rules") or {}).get("signed_terms")
+    for i, p in enumerate(players):
+        c, key = contrib[p], public_keys.get(p)
+        if not key:
+            return "deal", UNCHECKED, f"the seed matches; no public key for {p} to check its share"
+        if i == 0:
+            signed = wire.signed_session_create_payload(sid, p, session["module_type"], c.get("at", ""), terms)
+        else:
+            signed = wire.signed_deal_seed_payload(sid, p, deal["commitment"])
+        at_key = identity.signing_key_for(key, c.get("at")) if c.get("at") else key
+        if not (at_key and identity.verify(signed, c.get("signature", ""), at_key)):
+            return "deal", FAIL, f"{p}'s share of the seed is not its own signature"
+    return "deal", OK, ("the hands are the seed's: the relay's seed matches its commitment and every "
+                        "player's share is its own signature")
+
+
 def _replay(module, session: dict[str, Any], entries: list[dict[str, Any]],
             relay_verdict: dict[str, Any] | None) -> tuple[str, str, str]:
     state = module.initial_state(list(session["participants"]), session.get("config") or {})
+    if getattr(module, "DEALS_HIDDEN", False):
+        from emporia.module_sdk import with_deal
+        state = with_deal(state, **(((session.get("state") or {}).get("data") or {}).get("deal") or {}))
     outcome: dict[str, Any] | None = None
     for i, e in enumerate(entries):
         try:

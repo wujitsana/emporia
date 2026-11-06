@@ -319,6 +319,59 @@ def test_commit_move_refuses_a_call_where_none_is_taken(monkeypatch, tmp_path):
         assert not out["success"] and ("takes no call" in out["error"] or "first move" in out["error"])
 
 
+# ── Bargain takes no call (gamify-all: calls and Bargain together) ──────────
+
+BARGAIN = "emporia:bargain:v1"
+
+
+def test_bargain_takes_no_call(monkeypatch, tmp_path):
+    """A bargain is scored out of 10 (each side's own value), not won or lost, so a
+    probability of winning means nothing there: it is no :v2 set play, and commit_move
+    refuses a call on one before anything is committed."""
+    from emporia import mcp_server as m
+    assert not calls.takes_calls(BARGAIN) and BARGAIN not in calls.ALL_SET_PLAYS
+    assert MODULE_REGISTRY[BARGAIN].RETIRED_FOR is None
+    monkeypatch.setattr("emporia.identity.KEY_DIR", tmp_path)
+    monkeypatch.setattr(m, "_session_json", lambda sid, aid: {"module_type": BARGAIN, "state": {"data": {
+        "round": 1, "offers": [], "pool": {"silk": 3, "spice": 2, "amber": 1}}}})
+    sent = []
+    monkeypatch.setattr(m, "submit_action", lambda *a, **k: sent.append(a) or {"success": True})
+    out = m.commit_move("sess_b", [1], "sealing a call on a bargain", agent_id="me", call=0.6)
+    assert not out["success"] and "takes no call" in out["error"] and not sent
+    assert not list(tmp_path.rglob("*commit*")), "nothing was saved to reveal"
+
+
+def _bargain(sid, a, b, day, sa, sb, **extra):
+    return {"session_id": sid, "module_type": BARGAIN, "played_as": BARGAIN, "participants": [a, b],
+            "winner": a if sa > sb else (b if sb > sa else None), "termination": "deal",
+            "rating_scores": {a: sa / 10, b: sb / 10}, "ended_at": f"2026-11-{day:02d}T00:00:00+00:00", **extra}
+
+
+def test_insight_never_reads_a_bargain_and_craft_rates_its_own_score():
+    """Craft rates a bargain by each side's own score (both gain from a good deal, both lose
+    from none); Insight counts no bargain, even one whose record somehow carried calls, and
+    a bargain in the same history does not move a blotto call's score."""
+    good, none = _bargain("b1", "a", "b", 1, 7, 7), _bargain("b2", "c", "d", 1, 0, 0)
+    t = pg.craft_ratings([good, none])[BARGAIN]
+    assert t["a"].rating > 1500 and t["b"].rating > 1500, "a deal good for both raises both"
+    assert t["c"].rating < 1500 and t["d"].rating < 1500, "no deal lowers both"
+    assert pg.calls_of([{**good, "calls": {"a": 90}}]) == {}, "no call is read from a bargain"
+    blotto = _g("s1", "a", "b", "a", 2, calls={"a": 70})
+    alone, mixed = pg.calls_of([blotto]), pg.calls_of([good, blotto])
+    assert [c.session_id for c in mixed["a"]] == ["s1"]
+    assert mixed["a"][0].forecast == alone["a"][0].forecast, "Insight's forecast is per game type"
+    board = pg.season_boards([good, blotto], [], None, 0.0, {"season": "s", "started_at": None, "ends_at": None})
+    assert BARGAIN in board["boards"] and board["boards"]["insight"] == []
+
+
+def test_strike_a_bargain_is_no_call_quest():
+    from emporia import quests
+    g = {"session_id": "b1", "module_type": BARGAIN, "participants": ["a", "b"], "termination": "deal",
+         "ended_at": "2026-11-05T00:00:00+00:00", "calls": {"a": 60}}
+    done = {q["id"] for q in quests.progress("a", posts=[], games=[g], deals=[], reports=[])["quests"] if q["done"]}
+    assert {"first-set-play", "bargain"} <= done and "call" not in done
+
+
 def test_the_call_argument_is_documented_for_the_agent():
     from emporia import mcp_server
     import asyncio

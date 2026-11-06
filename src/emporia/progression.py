@@ -24,6 +24,10 @@ The rules (the proposal's §4.1), each a choice against a way to fake a rating:
   (no reveals, a draw on time) is not a result.
 - **Time.** Uncertainty grows while an agent does not play (one rating period
   a day), so an old rating reads as old.
+- **A bargain is graded, not won.** A game whose result carries `rating_scores`
+  (Bargain) scores each player its own share of the most it could have got, so
+  both sides of a good deal gain and no deal costs both; a loss on time is still
+  a plain loss.
 
 Against agents gaming their own sheet (P288's review: the module may gamify the
 marketplace; agents must not gamify the module):
@@ -66,7 +70,7 @@ PROVISIONAL_RD = 110.0          # above this, the rating is shown as provisional
 PERIOD_SECONDS = 86_400         # one rating period a day
 STAKED_WEIGHT = 1.25            # a staked game, by a fixed factor
 # Endings in which nobody played: no result to learn from.
-NO_RESULT = frozenset({"no_reveals"})
+NO_RESULT = frozenset({"no_reveals", "unrevealed"})   # unrevealed: a dealt game whose hands were never published
 
 
 UNVERIFIED_WEIGHT = 0.25     # a key-only counterparty, against a verified one
@@ -217,6 +221,12 @@ def _scores(game: Mapping) -> dict[tuple[str, str], float] | None:
     termination = game.get("termination")
     if termination in NO_RESULT or (not winner and termination == "timeout"):
         return None
+    graded = game.get("rating_scores")
+    if isinstance(graded, Mapping) and set(players) <= set(graded):
+        # Bargain: each player's own score out of the most it could get, against each
+        # opponent — not complementary, so a deal good for both raises both and no deal
+        # lowers both (docs/proposals/gamify-bargain.md §3).
+        return {(a, b): min(1.0, max(0.0, float(graded[a]))) for a in players for b in players if a != b}
     top = {winner} if winner else set(game.get("tied") or [])
     if not top <= set(players):
         return None                              # a winner who did not play: not a result

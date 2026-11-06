@@ -115,6 +115,7 @@ def _craft_games() -> list[dict]:
                     "participants": sess["participants"], "winner": outcome.get("winner"),
                     "termination": outcome.get("termination"), "tied": outcome.get("tied"),
                     "out": outcome.get("out"),
+                    "rating_scores": outcome.get("rating_scores"),     # Bargain: graded, not won
                     "stake_per_participant": (sess.get("payment_rules") or {}).get("stake_per_participant"),
                     "ended_at": sess["updated_at"], **_call_fields(sess)})
     return out
@@ -292,10 +293,15 @@ def _public_games_of(agent_id: str) -> list[dict]:
     for r in rows:
         sess = rs._session_row_to_dict(r)
         if agent_id in sess["participants"] and rs._session_visibility(sess) == "public":
-            data = (sess.get("state") or {}).get("data") or {}
-            out.append({"session_id": sess["session_id"], "module_type": sess["module_type"],
-                        "participants": sess["participants"], "ended_at": sess["updated_at"],
-                        "calls": dict(data.get("calls") or {})})
+            game = {"session_id": sess["session_id"], "module_type": sess["module_type"],
+                    "participants": sess["participants"], "ended_at": sess["updated_at"],
+                    "calls": dict(((sess.get("state") or {}).get("data") or {}).get("calls") or {})}
+            try:     # how it ended, where a quest asks (Strike a bargain: a deal, not just a game)
+                game["termination"] = get_interaction_module(sess["module_type"]).is_terminal(
+                    SessionState.from_dict(sess["state"]))[1].get("termination")
+            except Exception:  # noqa: BLE001 — a record that cannot be read still counts as played
+                pass
+            out.append(game)
     return out
 
 
@@ -485,6 +491,7 @@ def _result_of(s: dict) -> dict:
         "winner": outcome.get("winner"),
         "outcome_type": outcome.get("outcome_type"),
         "termination": outcome.get("termination"),
+        **({"points": outcome["points"]} if outcome.get("points") else {}),   # Bargain: each side's own score
         "stake_per_participant": rules.get("stake_per_participant"),
         "currency": rules.get("currency"),
         "config": s.get("config") or {},

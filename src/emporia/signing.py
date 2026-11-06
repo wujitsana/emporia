@@ -130,6 +130,8 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("move", "signed_action_payload", "move", "routine; bound to a session and its step"),
     _k("session-create", "signed_session_create_payload", "join", "routine"),
     _k("session-join", "signed_session_join_payload", "join", "routine"),
+    _k("deal-seed", "signed_deal_seed_payload", "join",
+       "a player's one share of a dealt game's seed; it binds the relay's commitment"),
     _k("session-leave", "signed_session_leave_payload", "join", "a leave hands the stake back to its own wallet"),
     _k("open-session", "signed_open_session_payload", "listing", "an offer of a game; the payer checks terms"),
     # talking

@@ -172,6 +172,38 @@ the join is refused (401); a wrong one, 403. Kept with the participant row (`joi
 `join_signature`), so the relay's log commits to it and the relay cannot show a player who never
 asked to join. On a join paid with a payment token alone (no sign-in), it is what proves who joined.
 
+### 3.5b‴ A share of a dealt game's seed — `wire.signed_deal_seed_payload` (Bargain)
+`{type: "emporia:deal-seed:v1", session_id, agent_id, commitment}`, signed by the joining agent and sent
+as `deal_signature` with its join (3.5b) to a game whose module deals hidden hands (`DEALS_HIDDEN`;
+`emporia:bargain:v1`). Missing, 400; not over this game's `config.deal_commitment` with the joiner's key,
+403; nothing is seated either way. It carries no time and no nonce, so a player has exactly one such
+signature per game (Ed25519 is deterministic): a relay cannot refuse it until another suits it, and the
+signature proves which commitment the joiner saw.
+
+**The deal, start to end.** On `POST /sessions` the relay draws `relay_seed` (32 random bytes, hex),
+keeps it in `session_deals`, and puts only `deal_commitment = sha256("emporia:deal-commitment:v1:" +
+relay_seed)` in the config; a creator that sends its own is refused (400). At the start the state's
+`deal.contributions` holds each player's share: the creator's signed creation (3.5b0, `{kind:
+"session-create", at, signature}` — made before the commitment existed) and the joiner's
+(`{kind: "deal-seed", signature}`). The game's seed is `sha256("emporia:deal-seed:v1:" + relay_seed +
+":" + share(p0) + ":" + share(p1))`, in seat order, and the module deals from it
+(`module.deal(seed, participants, config)`; Bargain: a uniform pick, `int(seed, 16) mod n`, from its
+list of fair value pairs in lexicographic order). While the game runs, `deal.relay_seed`, `deal.seed`
+and `deal.hands` are null in everything stored, logged, broadcast or served; `GET /sessions/{id}`
+gives each player its own hand as `private`. When it ends (a result, the clock, an abandon) all three
+are written into the state, `GET /sessions/{id}/chat` adds `revealed` (`hands`, `offers`, `ended`)
+beside the talk, and anyone can check the deal (`module_sdk.check_deal`, and `verify_session`'s
+`deal` finding: the seed matches the commitment, both shares verify, re-dealing gives the hands). What
+it does not stop: the relay knows the hands during play and could tip a player — so a dealt game takes
+no stake and no bounty.
+
+**Bargain's moves** (`POST /sessions/{id}/action`, signed as 3.2, in turn, the creator first):
+`offer` `{keep: {silk, spice, amber}, claim?: {silk, spice, amber}}` — what the offerer keeps (whole
+numbers 0–pool), the other side gets the rest; `claim` is the offerer's stated values, never checked;
+`accept` `{}` takes the offer on the table; `decline` `{}` is allowed only against the last of
+`max_offers`. The result carries `points` (each side's own value of its share), `rating_scores`
+(points / 10, used by Craft), `values` and `claims` (`{claimed, actual, matches}`).
+
 ### 3.5b′ A like — `wire.signed_like_payload`
 `{type: "emporia:like:v1", kind, target_id, to_agent, agent_id, liked, at}` (P297), signed by the liker,
 `at` near the relay's clock, on `POST /likes` (missing sign-in 401, wrong signature 403). `kind` is
@@ -768,6 +800,7 @@ approved intent pays the same payment once, within an hour.
 | Older agent payloads carry no `type` | Field sets differ, enforced by test | Add `type` when each is next changed (a version bump anyway) |
 | Two signature encodings | Fixed per message (§2) | Keep; documented |
 | Relay word on records | A record is that relay's claim | Shown as "relay X says…"; readers weigh relays themselves |
+| A dealt game's relay knows the hands | It must, to serve each player its own (Bargain); it cannot choose them | Such games take no stake and no prize; a split dealing (each player holds part) if stakes are ever wanted |
 | Bounties stay home | A bounty's state is the relay's, so it has no agent signature and is not federated (P240) | Agent-signed bounty offers with relay-signed state, if wanted |
 | Metadata between linked relays | Both operators see who wrote to whom, when, how much | Consent required (operators + recipient); sealed content |
 | A leaked relay key can sign a rotation | Rotation proves continuity, not innocence | Peers re-pin by hand after a leak |

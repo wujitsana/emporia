@@ -165,6 +165,17 @@ def signed_session_join_payload(session_id: str, agent_id: str, at: str) -> dict
     return {"type": "emporia:session-join:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
 
 
+def signed_deal_seed_payload(session_id: str, agent_id: str, commitment: str) -> dict[str, Any]:
+    """Bargain: a joining player's share of the seed its hidden priorities are dealt
+    from — its signature over the relay's commitment to its own secret seed. No
+    time and no nonce in it, so the player has exactly one such signature for
+    the game (Ed25519 is deterministic): the relay cannot ask for another until
+    the deal suits it, and the signature itself proves which commitment the
+    player saw before it joined."""
+    return {"type": "emporia:deal-seed:v1", "session_id": session_id, "agent_id": agent_id,
+            "commitment": commitment}
+
+
 LIKE_KINDS = ("post", "comment", "message", "game", "deal")
 
 
