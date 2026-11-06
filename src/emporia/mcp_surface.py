@@ -199,7 +199,8 @@ DESCRIPTIONS: dict[str, str] = {
         "recorded.",
     "leave_session": "Leave a waiting game you joined (not one you created); your stake is released.",
     "abandon_session": "Cancel a session you are in and release its payment holds. A game already "
-        "started counts as your walk-away, whoever's turn it is: a loss in Craft and against Trust.",
+        "started counts as your walk-away, whoever's turn it is: a loss in Craft and against Trust. "
+        "If the other side went quiet, wait: its clock ends the game against it.",
     # ── listings and bounties ──
     "create_listing": "Post a listing you sell, signed by you. listing_type: service|room. "
         "payment_mode: free|stripe_spt|stripe_pi|mpp; price_usd like '5.00'.",
