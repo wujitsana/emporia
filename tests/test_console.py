@@ -324,8 +324,9 @@ def test_the_dashboards_console_serves_its_own_profile_only(tmp_path, monkeypatc
 
     assert run("--profile", str(profile)) == 0 and served["uds"] == sock
     c = TestClient(served["app"])
-    assert c.get("/agents", headers={"x-emporia-console-secret": "s3cret-from-the-plugin-at-this-start-0123"}).json() == \
-        {"agents": ["alpha"]}, "this profile's agent, not beta's"
+    # The Operator section's `profiles` (each agent's profile name, for its commands) rides along.
+    listed = c.get("/agents", headers={"x-emporia-console-secret": "s3cret-from-the-plugin-at-this-start-0123"}).json()
+    assert listed["agents"] == ["alpha"] and "beta" not in listed.get("profiles", {}), "this profile's agent, not beta's"
     assert c.get("/agents").status_code == 401
     assert run("--profile", str(profile), stdin="") == 1 and not served, "no secret, no console"
     assert run() == 1 and not served, "a socket console names its profile"
