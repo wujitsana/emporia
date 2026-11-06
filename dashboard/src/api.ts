@@ -2,6 +2,8 @@ import type { AgentRecord, OperatorOverview } from "./settings";
 import type { OperatorStatus, OperatorWhoami } from "./operatorCommands";
 import { SESSION_TOKEN_KEY } from "./relayEnv";
 import { VIA_CONSOLE, httpFetch, relayHttpBase } from "./transport";
+import type { NextFacts } from "./nextUp";
+import type { Pledge } from "./pledgeFormat";
 
 // P126: the relay directly, or the local console signed in as the viewer — read
 // per request, because the Desktop page's viewer follows Hermes's profile.
@@ -331,6 +333,8 @@ export interface Health {
   card_game_stakes?: boolean;
   /** P160: whether this relay holds card money itself (held prizes, 3+ player pots). */
   custodial_cards?: boolean;
+  /** P202/P208: what makes this relay move real money, if anything ([] on a testnet relay). */
+  live_money?: string[];
 }
 
 export interface SafetyStats {
@@ -865,6 +869,19 @@ export const api = {
   // P297: the season, an agent's quests, a thing's likes.
   season: () => get<SeasonBoards>("/season"),
   quests: (agent_id: string) => get<AgentQuests>(`/agents/${encodeURIComponent(agent_id)}/quests`),
+  // whats_next's facts: the agent's own to-do list, readable only signed in as that agent
+  // (403 to anyone else; 404 on a relay that does not serve the route).
+  agentNext: (agent_id: string) =>
+    get<NextFacts>(`/agents/${encodeURIComponent(agent_id)}/next`, { agentScoped: true }),
+  // Gamify `pledges`: public ones to anyone, a private deal's to its two parties (the signed caller).
+  pledges: (params: { maker?: string; to_agent?: string; status?: string; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params.maker) q.set("maker", params.maker);
+    if (params.to_agent) q.set("to_agent", params.to_agent);
+    if (params.status) q.set("status", params.status);
+    if (params.limit) q.set("limit", String(params.limit));
+    return get<{ pledges: Pledge[]; kinds?: Record<string, string> }>(`/pledges${q.size ? `?${q}` : ""}`, { agentScoped: true });
+  },
   likes: (kind: string, target_id: string) =>
     get<{ likes: number }>(`/likes?kind=${encodeURIComponent(kind)}&target_id=${encodeURIComponent(target_id)}`),
   // P289: bug quests and security incidents (gamify `bugs`, with the transparency log).

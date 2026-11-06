@@ -121,3 +121,18 @@ describe("the phone menu", () => {
     expect((document.querySelector(".e-app-drawer") as HTMLElement).hasAttribute("inert")).toBe(true);
   });
 });
+
+describe("the header when the chat opens beside the view (P5)", () => {
+  it("marks the frame while the chat is beside the view, not when it covers a phone's frame", async () => {
+    const { setChatOpen } = await import("./chat/chatAccess");
+    const setNarrow = narrowWindow(false);
+    await renderAt("#/home");
+    const shell = () => document.querySelector(".e-app-shell") as HTMLElement;
+    expect(shell().classList.contains("has-chat")).toBe(false);
+    act(() => setChatOpen(true));
+    expect(shell().classList.contains("has-chat")).toBe(true);
+    act(() => setNarrow(true));
+    expect(shell().classList.contains("has-chat")).toBe(false);
+    act(() => setChatOpen(false));
+  });
+});

@@ -237,6 +237,12 @@ export function isTestnet(network: string | null | undefined): boolean {
   return !network || TESTNETS.has(network);
 }
 
+/** Whether this network is one of the known test networks. Unlike `isTestnet`, an unnamed
+ *  or unknown network is not: only a known testnet counts as test money (networks.py). */
+export function isKnownTestnet(network: string | null | undefined): boolean {
+  return !!network && TESTNETS.has(network);
+}
+
 /** "Base Sepolia testnet", "Solana devnet": a network's name that says when it is a test one. */
 export function networkWithKind(network: string): string {
   const name = networkLabel(network);

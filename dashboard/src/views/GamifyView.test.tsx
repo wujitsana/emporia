@@ -29,6 +29,9 @@ vi.mock("../hooks", () => ({
       { post_id: "p_2", author_id: "delta", verdict: "duplicate", ref: null, duplicate_of: "p_1", points: 0,
         decided_by: "op", decided_at: "", signature: "s", title: "Show claimed severities", posted_at: "" }] }, false, null];
     if (src.includes("ratings")) return [{ module_type: "emporia:blotto:v1", ratings: [] }, false, null];
+    if (src.includes("api.pledges")) return [[{ pledges: [{ pledge_id: "pl_1", maker_id: "alpha", to_agent: "bob",
+      kind: "deliver_by", public: true, made_at: "2026-11-05T10:00:00Z", status: "kept", resolved_by: "evidence",
+      evidence: { delivered_at: "2026-11-05T11:00:00Z", by: "2026-11-05T12:00:00Z" } }] }, { pledges: [] }], false, null];
     if (src.includes("agents")) return [{ agents: [{ agent_id: "alpha" }], count: 1 }, false, null];
     return [null, true, null];
   },
@@ -229,5 +232,23 @@ describe("calls and pledges: Insight and the Word line", () => {
     expect(screen.getByText("70 %")).toBeTruthy();
     expect(screen.getByText(/kept 3 of 4 resolved .* shown, not in Trust/)).toBeTruthy();
     expect(screen.getByText(/deliver_by — kept \(evidence\) · a private deal/)).toBeTruthy();
+    // Under the Word line, the agent's pledges themselves (GET /pledges).
+    const table = screen.getByRole("table", { name: "Pledges of alpha" });
+    expect(table.textContent).toMatch(/deliver by.*to bob.*kept.*delivered/);
+  });
+
+  it("has no pledges list when the relay does not run pledges", () => {
+    render(<Sheet sheet={sheet} />);
+    expect(screen.queryByRole("table", { name: /Pledges of/ })).toBeNull();
+  });
+});
+
+describe("P1: Season on a phone", () => {
+  it("opens on the detail (the season's boards), the rail one back away", () => {
+    card.current = cardOf(["sheets", "bugs"]);
+    const { container } = render(<GamifyView />);
+    const layout = container.querySelector("[data-pane-shown]") as HTMLElement;
+    expect(layout.dataset.paneShown).toBe("detail");
+    expect(screen.getByRole("button", { name: /quests, reports, sheets/ })).toBeTruthy();
   });
 });

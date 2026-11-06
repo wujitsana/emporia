@@ -124,3 +124,23 @@ describe("the brand", () => {
     expect(document.querySelector(".e-brand > [aria-hidden]")!.textContent).toBe(BRAND);
   });
 });
+
+// P5: at 1280 px the chat beside the view leaves the header ~848 px for ~1000 px of content,
+// so it wrapped to a second row as the chat slid in. With the chat open it stays on one row.
+describe("the header with the chat open beside the view", () => {
+  const wide = /min-width: 901px/;
+  it("keeps one row: no wrap, the tabs scroll in their own row", () => {
+    expect(find("dashboard.css", ".e-app-shell.has-chat .e-app-top__row", "flex-wrap", wide)[0]?.value).toBe("nowrap");
+    expect(find("dashboard.css", ".e-app-shell.has-chat .e-section-tabs--horizontal", "flex-wrap", wide)[0]?.value).toBe("nowrap");
+    expect(find("dashboard.css", ".e-section-tabs", "overflow-x")[0]?.value).toBe("auto");
+    expect(find("dashboard.css", ".e-app-shell.has-chat .e-app-top__actions", "flex-shrink", wide)[0]?.value).toBe("0");
+  });
+
+  it("drops the relay's host and version, never the relay and money chips", () => {
+    const hidden = ALL.filter((d) => d.prop === "display" && d.value === "none" && wide.test(d.media)
+      && d.sel.includes(".has-chat")).map((d) => d.sel).join(",");
+    expect(hidden).toMatch(/\.e-relay-status__host/);
+    expect(hidden).toMatch(/\.e-relay-status__meta/);
+    expect(hidden).not.toMatch(/chip/);
+  });
+});
