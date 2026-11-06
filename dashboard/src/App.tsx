@@ -4,7 +4,7 @@ import "./dashboard.css";
 import Text from "@kit/Text";
 import { RelayStrip } from "./RelayStrip";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "./api";
 import { MobileNavDrawer, SectionTabs, SubNav } from "./AppNav";
 import { ThemeCompact } from "./ThemeControls";
@@ -20,7 +20,9 @@ import { DESKTOP_ROOT } from "./shadowScope";
 import { RelayHealthCtx } from "./healthCtx";
 import { applyTheme, nextTint, toggleTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
-import { destById, destinationOf, navById, navForHotkey, siblingView, type Destination, type View } from "./navConfig";
+import { canSee, destById, destinationOf, navById, navForHotkey, siblingView, type Destination, type View } from "./navConfig";
+import { GatedNote } from "./ui/GatedNote";
+import { isNarrow, useNarrow, useOverlayFocus } from "./ui/overlayFocus";
 import { PageHeading, ViewBoundary } from "./ui/layout";
 import { isTyping } from "./keyTarget";
 import { sessionSection, type NavOpts } from "./eventNav";
@@ -41,7 +43,7 @@ import { currentHash, onRouteChange, routeFromHash, syncHash } from "./dashboard
 import { CAPTURE, PARAM_THEME, PARAM_TINT } from "./capture";
 import { AnimaticHudFoot, BrandTitle } from "./ui/LookChrome";
 import { AgentChatDrawer, ChatMenuItem, ChatToggle } from "./chat/AgentChat";
-import { setChatOpen } from "./chat/chatAccess";
+import { chatOpen, setChatOpen, subscribeChatOpen } from "./chat/chatAccess";
 import { BadgeGallery } from "./badges/BadgeGallery";
 
 const LS_THEME = "emporia_theme";
@@ -61,15 +63,6 @@ function readTint(): Tint {
   return (TINTS as readonly string[]).includes(v ?? "") ? (v as Tint) : "";
 }
 
-/** Below the header-nav width the chat covers the frame (ChatDrawer.module.css); above it, it sits beside. */
-function chatIsFullPage(): boolean {
-  try {
-    return window.matchMedia?.("(max-width: 900px)").matches ?? false;
-  } catch {
-    return false;
-  }
-}
-
 export default function App() {
   return (
     <RelayContextProvider>
@@ -87,6 +80,17 @@ function AppInner() {
   const [tint, setTint] = useState<Tint>(readTint);
   const [navOpen, setNavOpen] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
+  const drawerRef = useRef<HTMLElement>(null);
+  const narrow = useNarrow();
+  const chatIsOpen = useSyncExternalStore(subscribeChatOpen, chatOpen);
+  // The phone menu takes the focus while open and gives it back on close (ui/overlayFocus.ts).
+  useOverlayFocus(navOpen, drawerRef);
+  // The menu exists below the header-nav width only: widening the window closes it,
+  // or the view would stay inert behind a menu that is no longer drawn.
+  if (navOpen && !narrow) setNavOpen(false);
+  // What an overlay covers is out of reach of Tab and of a screen reader: the view under
+  // the menu, and the view under full-page chat.
+  const mainCovered = navOpen || (narrow && chatIsOpen);
 
   // From the route at first render: a child effect (GamesView naming its session) runs before
   // App's own effects, so reading the hash later would read the one it just rewrote.
@@ -190,7 +194,7 @@ function AppInner() {
       applyView(id);
       setNavOpen(false);
       // A section picked from the menu over full-page chat is shown; beside the drawer it stays open.
-      if (chatIsFullPage()) setChatOpen(false);
+      if (isNarrow()) setChatOpen(false);
       setListingPeek(null);
       setGameModuleType(null);
       setSelectedSessionId(null);
@@ -291,7 +295,7 @@ function AppInner() {
   return (
     <RelayHealthCtx.Provider value={relayHealth}>
     <div ref={shellRef} className={`e-app-shell e-dashboard-shell e-app-shell--header-nav${navOpen ? " is-nav-open" : ""}`}>
-        <aside className="e-app-drawer" aria-label="Menu" inert={!navOpen}>
+        <aside ref={drawerRef} className="e-app-drawer" aria-label="Menu" inert={!navOpen}>
           <MobileNavDrawer
             view={view}
             onGoDest={goToDest}
@@ -310,7 +314,7 @@ function AppInner() {
           aria-label="Close menu"
           onClick={() => setNavOpen(false)}
         />
-        <main className="e-app-main">
+        <main className="e-app-main" inert={mainCovered}>
           <header className="e-app-top">
             <div className="e-app-top__row">
               <Text className="e-brand-title e-brand-title--header"><BrandTitle replay={view} /></Text>
@@ -367,7 +371,8 @@ function AppInner() {
             <NotAnAgentNote />
             {!hermesNonAgent && <PageHeading item={currentNav} />}
             {/* P234: a Hermes profile that is no agent shows nothing of the relay. */}
-            {!hermesNonAgent && (<ViewBoundary key={view} name={currentNav?.label ?? "This section"}>
+            {!hermesNonAgent && !canSee(view, { isSpectator, isOperator: isRelayOperator }) && <GatedNote view={view} />}
+            {!hermesNonAgent && canSee(view, { isSpectator, isOperator: isRelayOperator }) && (<ViewBoundary key={view} name={currentNav?.label ?? "This section"}>
             {view === "overview" && (
               <OverviewView
                 events={events}
@@ -418,7 +423,7 @@ function AppInner() {
           </div>
         </main>
         {/* Full-page chat (a phone, a narrow tab) keeps the menu: its ☰ opens the same drawer, above it. */}
-        <AgentChatDrawer onMenu={() => setNavOpen(true)} />
+        <AgentChatDrawer onMenu={() => setNavOpen(true)} covered={navOpen} />
     </div>
     </RelayHealthCtx.Provider>
   );

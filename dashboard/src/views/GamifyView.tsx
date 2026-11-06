@@ -93,7 +93,15 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
           <thead><tr><td>GAME</td><td>RATING</td><td>GAMES</td><td>OPPONENTS</td></tr></thead>
           <tbody>
             {sheet.craft.map((c) => (
-              <tr key={c.module_type} onClick={() => setLadder(c.module_type)} style={{ cursor: "pointer" }}>
+              <tr key={c.module_type} onClick={() => setLadder(c.module_type)} style={{ cursor: "pointer" }}
+                tabIndex={0} aria-label={`${game(c.module_type)}: show this relay's ladder`}
+                aria-current={c.module_type === shown ? "true" : undefined}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setLadder(c.module_type);
+                  }
+                }}>
                 <td><Text>{game(c.module_type)}</Text></td>
                 <td><Text style={num} title={c.provisional ? "provisional: too few settled games to be sure" : undefined}>{range(c)}</Text></td>
                 <td><Text className="e-dim" style={num}>{c.games}</Text></td>

@@ -821,7 +821,6 @@ body.theme-light {
   word-break: break-all;
 }
 .e-mcp-hint__code:hover { text-decoration: underline; }
-.e-mcp-hint__copied { font-size: 0.682rem; opacity: 0.7; }
 
 /* Rail chips (payment rail badges) */
 .e-rail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -1926,6 +1925,10 @@ body.theme-light {
   background: var(--theme-background, transparent); color: inherit;
   border: 1px solid var(--theme-border, rgba(128,128,128,0.4)); border-radius: 4px;
 }
+/* A phone (the switcher sits in the menu): under 16px, iOS zooms the page when the select takes focus. */
+@media (max-width: 900px) {
+  .e-viewer-switch select { font-size: 16px; min-height: 40px; }
+}
 
 /* P124: inbox / sent / all above the conversation list. */
 .e-messages-boxes { padding: 8px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12)); }
@@ -3002,6 +3005,24 @@ body.e-look.theme-dark {
 .e-look .e-slim-card__title,
 .e-look .e-blotto__grid td.is-hidden,
 .e-look .e-phase-strip__step.is-next,
+/* Review pass 2: labels and hints still dimmed by opacity (2.9–4.0:1 on light green). */
+.e-look .e-meta-grid dt,
+.e-look .e-overview-card__body p,
+.e-look .e-overview-card--failed .e-overview-card__body,
+.e-look .e-empty-pane__hint,
+.e-look .e-slim-card__foot,
+.e-look .e-hero-stat__label,
+.e-look .e-hero-stat__hint,
+.e-look .e-chess-players__vs,
+.e-look .e-chess-speed__lbl,
+.e-look .e-lowest__tag,
+.e-look .e-chess-move-idx,
+.e-look .e-role-pill--spectator,
+.e-look .e-entity-chip--inert,
+.e-look .e-inbox-event--read,
+.e-look .e-seat.is-to_commit,
+.e-look .e-trust-key,
+.e-look [style*="opacity: 0.4"],
 .e-look [style*="opacity: 0.5"],
 .e-look [style*="opacity: 0.6"] {
   opacity: 1 !important;

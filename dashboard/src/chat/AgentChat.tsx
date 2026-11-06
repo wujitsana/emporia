@@ -51,12 +51,12 @@ export function ChatMenuItem({ onOpen }: { onOpen: () => void }) {
 }
 
 /** The drawer, mounted once at the shell level. */
-export function AgentChatDrawer({ onMenu }: { onMenu?: () => void } = {}) {
+export function AgentChatDrawer({ onMenu, covered = false }: { onMenu?: () => void; covered?: boolean } = {}) {
   if (!chatAvailable()) return null;
-  return <DrawerInner onMenu={onMenu} />;
+  return <DrawerInner onMenu={onMenu} covered={covered} />;
 }
 
-function DrawerInner({ onMenu }: { onMenu?: () => void }) {
+function DrawerInner({ onMenu, covered }: { onMenu?: () => void; covered: boolean }) {
   const isOpen = useOpen();
   const gw = useMemo(() => makeGateway(), []);
   const api = useChat(gw, chatFetch);
@@ -87,6 +87,7 @@ function DrawerInner({ onMenu }: { onMenu?: () => void }) {
       setPanel={setPanel}
       focusTick={focusTick}
       onMenu={onMenu}
+      covered={covered}
     />
   );
 }

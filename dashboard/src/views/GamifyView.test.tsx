@@ -196,6 +196,14 @@ describe("calls and pledges: Insight and the Word line", () => {
     expect(screen.getByText(/from 10 calls made with a settled rating/)).toBeTruthy();
   });
 
+  // Review pass 2: a craft row opened its ladder on a click only.
+  it("opens a game's ladder from the keyboard too", () => {
+    render(<Sheet sheet={sheet} />);
+    const row = screen.getByRole("row", { name: /blotto: show this relay's ladder/ });
+    expect(row.getAttribute("tabindex")).toBe("0");
+    expect(row.getAttribute("aria-current")).toBe("true");
+  });
+
   it("says what an empty Insight board waits for", async () => {
     const { Season } = await import("./GamifyView");
     render(<Season data={{ season: "season-0", started_at: null, ends_at: null, formula: "progression:v1/season",

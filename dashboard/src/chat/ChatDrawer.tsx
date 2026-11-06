@@ -15,6 +15,7 @@ import styles from "./ChatDrawer.module.css";
 import type { ChatItem } from "./chatModel";
 import type { CompletionRow } from "./commands";
 import { reachNote } from "./commands";
+import { useOverlayFocus } from "../ui/overlayFocus";
 import type { ChatApi, SessionRow } from "./useChat";
 
 const CHOICE_LABEL: Record<string, string> = {
@@ -423,6 +424,7 @@ export function ChatDrawer({
   setPanel,
   focusTick,
   onMenu,
+  covered = false,
 }: {
   api: ChatApi;
   open: boolean;
@@ -435,9 +437,15 @@ export function ChatDrawer({
   focusTick: number;
   /** Opens the dashboard's menu over the full-page chat (phone, narrow tab). */
   onMenu?: () => void;
+  /** The dashboard's menu is open above it (full-page chat's ☰): out of reach until it closes. */
+  covered?: boolean;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const rootRef = useRef<HTMLElement>(null);
+  // Opening the chat puts the focus in its composer (else its first control); closing it
+  // gives the focus back (ui/overlayFocus.ts).
+  useOverlayFocus(open, rootRef, () => (inputRef.current && !inputRef.current.disabled ? inputRef.current : null));
 
   useEffect(() => {
     if (open) void api.connect();
@@ -493,10 +501,11 @@ export function ChatDrawer({
 
   return (
     <aside
+      ref={rootRef}
       className={`${styles.root} ${open ? styles.open : ""}`}
       aria-label="Chat with your agent"
       aria-hidden={!open}
-      inert={!open}
+      inert={!open || covered}
       onKeyDown={(e) => {
         if (e.key === "Escape") {
           e.stopPropagation();

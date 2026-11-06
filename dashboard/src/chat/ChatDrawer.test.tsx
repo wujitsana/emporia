@@ -219,4 +219,30 @@ describe("agent chat drawer", () => {
     expect(sentMethods()).not.toContain("prompt.submit");
     expect(sentMethods()).not.toContain("session.create");
   });
+
+  // Review pass 2: opening the chat left the focus on the toggle, under full-page chat.
+  it("takes the focus when it opens and gives it back to the toggle when it closes", async () => {
+    render(
+      <>
+        <ChatToggle />
+        <AgentChatDrawer />
+      </>,
+    );
+    const toggle = screen.getByRole("button", { name: "Open agent chat" });
+    toggle.focus();
+    fireEvent.click(toggle);
+    const drawer = document.querySelector('aside[aria-label="Chat with your agent"]') as HTMLElement;
+    expect(drawer.contains(document.activeElement)).toBe(true);
+    await waitFor(() => expect(screen.getByText(/connected/)).toBeTruthy());
+    fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+    expect(drawer.hasAttribute("inert")).toBe(true);
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  it("is out of reach while the dashboard's menu is open above it", () => {
+    act(() => setChatOpen(true));
+    render(<AgentChatDrawer covered />);
+    const drawer = document.querySelector('aside[aria-label="Chat with your agent"]') as HTMLElement;
+    expect(drawer.hasAttribute("inert")).toBe(true);
+  });
 });

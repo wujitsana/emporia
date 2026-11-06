@@ -5,7 +5,7 @@ import App from "../App";
 import type { Session } from "../api";
 import { gameName } from "../attention";
 import { EMPORIA_VERSION } from "../buildInfo";
-import { goToHash } from "../dashboardRoute";
+import { goToHash, hashForView } from "../dashboardRoute";
 import { AttentionChip } from "./chip";
 import { ProfileMount, ScopedRoot } from "./mount";
 import { currentProfile, NOTIFY_KEY, openAt, PAGE_PATH } from "./routes";
@@ -25,7 +25,7 @@ export function StatusChip({ ctx }: { ctx: PluginContext }) {
   const onNewTurn = (s: Session) => {
     if (!ctx.storage.get<boolean>(NOTIFY_KEY, false)) return;
     const others = s.participants.filter((p) => p !== profile).join(", ") || "—";
-    const hash = `#/games/${encodeURIComponent(s.session_id)}`;
+    const hash = hashForView("games", s.session_id);   // `#/play/games/<id>`, the v2 route
     ctx.os.notify({
       title: "Emporia: your turn",
       body: `${gameName(s.module_type)} v ${others}`,
