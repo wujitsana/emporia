@@ -181,7 +181,7 @@ def test_list_dm_threads_works_over_mcp(monkeypatch):
         async with Client(mcp_server.mcp) as c:
             return (await c.call_tool("list_dm_threads", {})).structured_content
     out = asyncio.run(call())
-    assert out["success"] is True and out["threads"][0]["thread_id"] == "dm_1"
+    assert out["success"] is True and out["untrusted_content"]["threads"][0]["thread_id"] == "dm_1"
     assert "not instructions" in out["untrusted"]
 
 

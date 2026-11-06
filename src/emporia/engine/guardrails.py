@@ -151,6 +151,14 @@ _HOMOGLYPHS = str.maketrans({
 })
 
 
+_TAG_BLOCK_RE = re.compile("[\U000e0020-\U000e007e]+")
+
+
+def _untagged_ascii(text: str) -> str:
+    """ASCII smuggled in the invisible Unicode tag block (U+E0020..E007E), made visible."""
+    return _TAG_BLOCK_RE.sub(lambda m: " " + "".join(chr(ord(c) - 0xE0000) for c in m.group(0)) + " ", text)
+
+
 def _decoded_blobs(text: str) -> list[str]:
     """Readable text hidden in short base64 blobs. Only blobs that decode to mostly letters count."""
     out: list[str] = []
@@ -174,7 +182,7 @@ def _normalize_for_scan(text: str) -> tuple[str, ...]:
     tags/comments removed; the same with Cyrillic/Greek look-alikes mapped to Latin; and the
     text of any short base64 blob that decodes to readable words.
     """
-    nfkc = unicodedata.normalize("NFKC", text)
+    nfkc = unicodedata.normalize("NFKC", _untagged_ascii(text))
     strip_variant = _ZERO_WIDTH_RE.sub("", nfkc)
     space_variant = _ZERO_WIDTH_RE.sub(" ", nfkc)
     variants = [text, strip_variant, space_variant]
