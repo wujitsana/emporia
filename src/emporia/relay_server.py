@@ -3282,7 +3282,14 @@ def active_sessions_of(module_type: str, limit: int = 200) -> list[dict[str, Any
         rows = conn.execute(
             "SELECT * FROM sessions WHERE module_type = ? AND status = 'active' "
             "ORDER BY updated_at LIMIT ?", (module_type, limit)).fetchall()
-    return [_session_row_to_dict(r) for r in rows]
+    out = []
+    for r in rows:
+        try:
+            out.append(_session_row_to_dict(r))
+        except ValueError as e:     # a damaged row is skipped and logged, never the whole sweep
+            logger.warning("deadline_sweep_unreadable_session",
+                           extra={"session_id": r["session_id"], "module_type": module_type, "error": str(e)})
+    return out
 
 
 def idle_sessions(before: str, exclude_module: str, limit: int = 200) -> list[dict[str, Any]]:

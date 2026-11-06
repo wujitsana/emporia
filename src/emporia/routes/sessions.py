@@ -1597,10 +1597,19 @@ async def sweep_service_deadlines(limit: int = 200) -> dict[str, int]:
             continue
         key = "service_timeouts" if module_type == SERVICE_MODULE else "game_timeouts"
         for s in rs.active_sessions_of(module_type, limit):
-            state = SessionState.from_dict(s["state"])
-            if module.DEALS_HIDDEN:     # so a result on time carries the revealed hands too
-                state = session_deals.dealt(s["session_id"], module, state, s["config"] or {})
-            is_over, outcome = module.is_terminal(state)
+            try:
+                state = SessionState.from_dict(s["state"])
+                if module.DEALS_HIDDEN:     # so a result on time carries the revealed hands too
+                    state = session_deals.dealt(s["session_id"], module, state, s["config"] or {})
+                is_over, outcome = module.is_terminal(state)
+            except Exception as e:  # noqa: BLE001 — one unreadable session must not stop the sweep
+                # gamify-all review: the first timed session the sweep could not read raised out
+                # of it, so no later session (of this game or any after it) was ever ended on time.
+                rs.logger.warning("deadline_sweep_skipped_session",
+                                  extra={"session_id": s.get("session_id"), "module_type": module_type,
+                                         "error": f"{type(e).__name__}: {e}"})
+                counts["skipped"] = counts.get("skipped", 0) + 1
+                continue
             if not is_over:
                 continue
             # Claimed like a fund, so a racing submit_action and this sweep

@@ -117,6 +117,49 @@ def test_declining_to_reveal_loses_on_time(client):
     assert s["status"] == "completed"
 
 
+def test_one_unreadable_session_does_not_stop_the_deadline_sweep(client, caplog):
+    """gamify-all review: the sweep stopped at the first timed session it could not read, so
+    one bad row left every later session (of that game and every game after it) never ended
+    on time. Now the bad rows are skipped and logged, and the sweep goes on."""
+    import logging
+    sid, a, b = _game(client, {"rounds": 1, "move_time_limit_s": 60})
+    na, nb = commit_reveal.new_nonce(), commit_reveal.new_nonce()
+    _act(client, sid, a, "commit", {"commitment": calls.commitment([30, 30, 30, 5, 5], None, na)})
+    _act(client, sid, b, "commit", {"commitment": calls.commitment([20] * 5, None, nb)})
+    _act(client, sid, a, "reveal", {"move": [30, 30, 30, 5, 5], "nonce": na})
+    s = rs.load_session(sid)
+    state = s["state"]
+    state["data"]["turn_started_at"] = (datetime.now(UTC) - timedelta(seconds=61)).isoformat()
+    rs.save_session(session_id=sid, module_type=BLOTTO, config=s["config"],
+                    payment_rules=s["payment_rules"], state=SessionState.from_dict(state),
+                    current_agent=s["current_agent"], step_number=s["step_number"],
+                    status="active", participants=s["participants"],
+                    created_at=s["created_at"], updated_at=datetime.now(UTC).isoformat())
+    # Two bad rows of the same game, older (so the sweep meets them first): one whose JSON
+    # does not parse, one that parses but is no state the module can read.
+    bad = [f"sess_bad_{uuid.uuid4().hex[:8]}" for _ in range(2)]
+    with rs.DB_LOCK, rs.get_db() as conn:
+        for sid_bad, state_json in zip(bad, ("{not json", "[]")):
+            conn.execute("INSERT INTO sessions (session_id, module_type, config_json, payment_rules_json, "
+                         "state_json, current_agent, step_number, status, participants_json, created_at, "
+                         "updated_at) VALUES (?, ?, '{}', '{}', ?, ?, 0, 'active', ?, ?, ?)",
+                         (sid_bad, BLOTTO, state_json, a, json.dumps([a, b]),
+                          "2000-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00"))
+        conn.commit()
+    try:
+        from emporia.routes.sessions import sweep_service_deadlines
+        with caplog.at_level(logging.WARNING):
+            counts = asyncio.run(sweep_service_deadlines())
+        assert rs.load_session(sid)["status"] == "completed", "the good session after the bad ones was ended"
+        assert counts["game_timeouts"] >= 1 and counts.get("skipped", 0) >= 1
+        logged = " ".join(r.getMessage() for r in caplog.records)
+        assert "deadline_sweep_unreadable_session" in logged and "deadline_sweep_skipped_session" in logged
+    finally:
+        with rs.DB_LOCK, rs.get_db() as conn:
+            conn.executemany("DELETE FROM sessions WHERE session_id = ?", [(x,) for x in bad])
+            conn.commit()
+
+
 @pytest.mark.parametrize("config", [{"battlefields": 2}, {"troops": 5}, {"rounds": 0},
                                     {"move_time_limit_s": 10}, {"rounds": "3"}])
 def test_bad_settings_are_refused(client, config):
