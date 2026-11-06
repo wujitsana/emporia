@@ -146,7 +146,7 @@ def test_q9_a_ladder_challenge_to_your_own_agent_the_house_or_a_key_only_one_is_
     b, = _agents(client, "b")
     r = _challenge(client, a, opponent=b, ladder=True)
     assert r.status_code == 400 and "not on this game's ladder" in r.text
-    r = _challenge(client, a, module="emporia:bargain:v1", opponent=b, ladder=True, config={"rounds": None})
+    r = _challenge(client, a, module="emporia:bargain:v2", opponent=b, ladder=True, config={"rounds": None})
     assert r.status_code == 400 and "zero-sum" in r.text, "P1: bargain climbs nothing"
 
 

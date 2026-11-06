@@ -426,6 +426,7 @@ GET  /relay/activity                      public: how many agents did anything l
 GET  /season                              public, gamify sheets: the season and its ladders (bug points, Renown, Insight, Craft per set play) (P297; Insight: calls)
 POST /likes                               like (or unlike) a public thing, signed; one per agent per thing (P297)
 GET  /likes                               public: how many like a thing (P297)
+GET  /beacon/{round}                      drand's signed round, cached and verified (emporia:rand:v1)
 GET  /likes/whose                         whom a like of a thing would be for — what the liker signs (P297)
 GET  /agents/{id}/record                  public: an agent's record, counts only (P182)
 GET  /agents/{id}/card                    public once published: address, keys, signed relay list (P187)

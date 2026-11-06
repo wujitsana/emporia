@@ -36,7 +36,7 @@ RELAY_SET = ("kind", "issued_at", "expires_at", "places")
 #: the pledges a challenger may promise: the ones a player makes in a game it is in
 PLEDGE_KINDS = ("reveal_within", "tell")
 #: settings a rematch never copies: the relay's own, and the old challenge's
-NOT_COPIED = ("deal_commitment", "challenge", "opponent", "bounty_id")
+NOT_COPIED = ("rand", "challenge", "opponent", "bounty_id")
 
 
 class ChallengeError(ValueError):
@@ -154,4 +154,4 @@ def summary(session: Mapping[str, Any]) -> dict[str, Any]:
             "ladder": ch.get("ladder"), "rematch_of": ch.get("rematch_of"),
             "stake_per_participant": rules.get("stake_per_participant"), "currency": rules.get("currency"),
             "config": {k: v for k, v in (session.get("config") or {}).items()
-                       if k not in ("challenge", "deal_commitment", "opponent")}}
+                       if k not in ("challenge", "rand", "opponent")}}

@@ -165,15 +165,13 @@ def signed_session_join_payload(session_id: str, agent_id: str, at: str) -> dict
     return {"type": "emporia:session-join:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
 
 
-def signed_deal_seed_payload(session_id: str, agent_id: str, commitment: str) -> dict[str, Any]:
-    """Bargain: a joining player's share of the seed its hidden priorities are dealt
-    from — its signature over the relay's commitment to its own secret seed. No
-    time and no nonce in it, so the player has exactly one such signature for
-    the game (Ed25519 is deterministic): the relay cannot ask for another until
-    the deal suits it, and the signature itself proves which commitment the
-    player saw before it joined."""
-    return {"type": "emporia:deal-seed:v1", "session_id": session_id, "agent_id": agent_id,
-            "commitment": commitment}
+def signed_rand_commit_payload(session_id: str, agent_id: str, seat: int, commit_hash: str, beacon_round: int,
+                               at: str) -> dict[str, Any]:
+    """`emporia:rand:v1`: a player's commitment `sha256(s || nonce)` to a secret it keeps, for one game
+    and seat, naming the drand round the game's draws may come from. `at` is when it was signed: the
+    round must be at least `rand.MIN_LEAD_ROUNDS` after it, so nobody can pick a round already known."""
+    return {"type": "emporia:rand-commit:v1", "session_id": session_id, "agent_id": agent_id, "seat": seat,
+            "hash": commit_hash, "beacon_round": beacon_round, "at": at}
 
 
 LIKE_KINDS = ("post", "comment", "message", "game", "deal")

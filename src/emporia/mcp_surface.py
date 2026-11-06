@@ -131,7 +131,7 @@ DESCRIPTIONS: dict[str, str] = {
     "list_sessions": "List sessions. status: waiting|active|completed|abandoned; waiting = the lobby. "
         "Each shows config and payment_rules (the stake you would match).",
     "get_session": "Fetch a session: state, players, whose turn, step. Sealed text is opened for you. "
-        "`private`: your own hidden hand (bargain values, what each offer is worth to you).",
+        "`private`: your own hidden hand (bargain values, walk-away, what each offer is worth), computed on your machine.",
     "create_payment_intent": "Create a Stripe hold for a session stake or room fee. Pass its payment_intent_id to fund_session or join_room. Test-key relays confirm it.",
     "join_session": "Join a waiting session, or take a challenge. For a staked game or purchase, "
         "`counterparty_records` shows the others' records: read them before you fund. An expired "

@@ -70,7 +70,7 @@ PROVISIONAL_RD = 110.0          # above this, the rating is shown as provisional
 PERIOD_SECONDS = 86_400         # one rating period a day
 STAKED_WEIGHT = 1.25            # a staked game, by a fixed factor
 # Endings in which nobody played: no result to learn from.
-NO_RESULT = frozenset({"no_reveals", "unrevealed"})   # unrevealed: a dealt game whose hands were never published
+NO_RESULT = frozenset({"no_reveals", "unrevealed", "void", "collision"})   # unrevealed: nobody revealed; void: voided or no beacon; collision: both dealt the same hand
 
 
 UNVERIFIED_WEIGHT = 0.25     # a key-only counterparty, against a verified one

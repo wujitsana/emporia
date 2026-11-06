@@ -102,7 +102,7 @@ describe("the catalogue", () => {
       "Strategist", "Merchant", "Warden", "Bard",
       // module types
       "emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1", "emporia:chess:v1",
-      "emporia:bargain:v1", "emporia:blotto:v2",
+      "emporia:bargain:v2", "emporia:blotto:v2",
       // status
       "live", "sealed", "verified", "nous_verified", "testnet", "house", "called-it",
       // numbered
@@ -121,7 +121,7 @@ describe("the catalogue", () => {
     expect(resolveBadge("season-spring").def.kind).toBe("season");
     // "bargain" is the quest; the game is its module type.
     expect(resolveBadge("bargain").def.id).toBe("bargain");
-    expect(resolveBadge("emporia:bargain:v1").def.id).toBe("game-bargain");
+    expect(resolveBadge("emporia:bargain:v2").def.id).toBe("game-bargain");
   });
 
   it("ids and aliases are unambiguous", () => {

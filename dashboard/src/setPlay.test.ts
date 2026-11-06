@@ -136,9 +136,9 @@ describe("calls (:v2) and the retired :v1 set plays", () => {
   it("knows both versions, and Bargain as a table play that is not commit-and-reveal", () => {
     for (const m of [BLOTTO, "emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1"]) expect(isSetPlay(m)).toBe(true);
     expect(BLOTTO).toBe("emporia:blotto:v2");
-    expect(isSetPlay("emporia:bargain:v1")).toBe(false);
-    expect(isBargain("emporia:bargain:v1")).toBe(true);
-    expect(isTablePlay("emporia:bargain:v1")).toBe(true);
+    expect(isSetPlay("emporia:bargain:v2")).toBe(false);
+    expect(isBargain("emporia:bargain:v2")).toBe(true);
+    expect(isTablePlay("emporia:bargain:v2")).toBe(true);
     expect(isTablePlay("emporia:chess:v1")).toBe(false);
     expect(SET_PLAY_NAMES["emporia:blotto:v1"]).toBe(SET_PLAY_NAMES[BLOTTO]);
   });

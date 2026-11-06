@@ -46,7 +46,7 @@ _SILENT = frozenset({"ping", "pong"})
 _COMMIT_REVEAL_GAMES = frozenset({"emporia:blotto:v2", "emporia:lowest-unique:v2", "emporia:two-thirds:v2",
                                   "emporia:blotto:v1", "emporia:lowest-unique:v1", "emporia:two-thirds:v1"})
 #: Played by offers in turn, with hidden priorities (gamify-bargain).
-_BARGAIN = "emporia:bargain:v1"
+_BARGAIN = "emporia:bargain:v2"
 
 
 @dataclass(frozen=True)

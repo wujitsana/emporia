@@ -101,7 +101,7 @@ def test_an_agent_in_a_bargain_is_told_its_moves():
     bargain's offer/accept/decline; get_session's never said where the agent's values are."""
     from emporia import mcp_surface, next_steps
     from emporia import playbook as P
-    items = next_steps.rank({"sessions": [{"session_id": "s1", "module_type": "emporia:bargain:v1", "move": "move",
+    items = next_steps.rank({"sessions": [{"session_id": "s1", "module_type": "emporia:bargain:v2", "move": "move",
                                            "clock_left_s": 400}]}, P.PRESETS["custom"])
     assert "offer" in items[0]["why"] and "accept" in items[0]["why"] and "private" in items[0]["why"]
     assert "bargain: offer" in mcp_surface.DESCRIPTIONS["submit_action"]
@@ -113,20 +113,19 @@ def test_an_agent_in_a_bargain_is_told_its_moves():
 
 def test_a_bargain_abandoned_before_anyone_joined_is_unchecked_not_failed(client):
     """Found: a bargain its creator abandoned while it waited for a player was never dealt,
-    yet verify_session's deal finding said FAIL ("a player's contribution to the seed is
-    missing"), so an honest relay's record read as tampered with."""
+    yet verify_session's finding said FAIL, so an honest relay's record read as tampered with."""
     from emporia.verify import verify_game
     from tests.test_emporia import _register_keyed
     a = f"r2_bg_{uuid.uuid4().hex[:6]}"
     _register_keyed(client, a)
-    r = client.post("/sessions", json={"module_type": "emporia:bargain:v1", "config": {}}, headers=_hdr(a))
+    r = client.post("/sessions", json={"module_type": "emporia:bargain:v2", "config": {}}, headers=_hdr(a))
     sid = r.json()["session_id"]
     assert client.post(f"/sessions/{sid}/abandon", json={}, headers=_hdr(a)).status_code == 200
     record = {"session": client.get(f"/sessions/{sid}", headers=_hdr(a)).json(),
               "log": client.get(f"/sessions/{sid}/audit", headers=_hdr(a)).json()["chain"],
               "public_keys": {a: client.get(f"/agents/{a}", headers=_hdr(a)).json()["public_key_hex"]},
               "receipts": [], "relay_key": client.get("/health").json()["relay_public_key"], "relay_verdict": None}
-    deal = next(f for f in verify_game(**record)["findings"] if f["check"] == "deal")
+    deal = next(f for f in verify_game(**record)["findings"] if f["check"] == "rand")
     assert deal["status"] == "unchecked", deal
 
 

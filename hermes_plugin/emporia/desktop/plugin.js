@@ -3542,7 +3542,7 @@ function Leaderboard({ moduleType }) {
 		})]
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_u64.js
+// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
 var _32n = /* @__PURE__ */ BigInt(32);
 function fromBig(n, le = false) {
@@ -3592,7 +3592,7 @@ var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0
 var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
 var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/utils.js
+// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 /**
 * Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 * @param a - value to test
@@ -3976,7 +3976,7 @@ var oidNist = (suffix) => ({ oid: Uint8Array.from([
 	2,
 	suffix
 ]) });
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_md.js
+// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 /**
 * Internal Merkle-Damgard hash utils.
 * @module
@@ -4110,7 +4110,7 @@ var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
 	1541459225,
 	327033209
 ]);
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha2.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 /**
 * SHA2 hash function. A.k.a. sha256, sha384, sha512, sha512_224, sha512_256.
 * SHA256 is the fastest hash implementable in JS, even faster than Blake3.
@@ -4369,7 +4369,7 @@ var _SHA512 = class extends SHA2_64B {
 * ```
 */
 var sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/utils.js
+// ../../../../dashboard/node_modules/@noble/curves/utils.js
 /**
 * Hex, bytes and number utilities.
 * @module
@@ -4796,7 +4796,7 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
 	iter(fields, false);
 	iter(optFields, true);
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/modular.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 /**
 * Utils for modular division and fields.
 * Field over 11 is a finite (Galois) field is integer number operations `mod 11`.
@@ -5363,7 +5363,7 @@ function Field(ORDER, opts = {}) {
 	Object.freeze(_Field.prototype);
 	return new _Field(ORDER, opts);
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/curve.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 /**
 * Methods for elliptic curve multiplication by scalars.
 * Contains wNAF-based ScalarMultiplier, pippenger.
@@ -5892,7 +5892,7 @@ function createKeygen(randomSecretKey, getPublicKey) {
 		};
 	};
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/edwards.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 /**
 * Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
 * For design rationale of types / exports, see weierstrass module documentation.
@@ -6365,7 +6365,7 @@ function eddsa(Point, cHash, eddsaOpts = {}) {
 		lengths
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/ed25519.js
+// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 /**
 * ed25519 Twisted Edwards curve with following addons:
 * - X25519 ECDH
@@ -6466,7 +6466,7 @@ function ed(opts) {
 * ```
 */
 var ed25519 = /* @__PURE__ */ ed({});
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha3.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
 /**
 * SHA3 (keccak) hash function, based on a new "Sponge function" design.
 * Different from older hashes, the internal state is bigger than output size.
@@ -8245,7 +8245,7 @@ var CALLED_IT = [
 *
 * The optional quests (`call`, `bargain`, `keep-word`, quests:v3) came with the launch additions;
 * their titles and older spellings resolve too. A bare "bargain" is the
-* quest; the game is its module type (`emporia:bargain:v1`) or `game-bargain`.
+* quest; the game is its module type (`emporia:bargain:v2`) or `game-bargain`.
 *
 * quests:v4 (quest_book.py) adds the arcs' steps, the arcs' own badges (`arrived`, `agora`,
 * `good-name`, `challenger`, `market`; Welcome's is `welcomed`, Bug hunt's `bug-finder`), the
@@ -8339,7 +8339,7 @@ var BADGES = [
 	]),
 	def("game-lowest-unique", "game", "Lowest unique", "a set play: the lowest number nobody else picked wins", GAME_LOWEST_UNIQUE, "modules/lowest_unique.py emporia:lowest-unique:v2", ["lowest-unique"]),
 	def("game-chess", "game", "Chess", "a public chess game", GAME_CHESS, "modules/chess.py emporia:chess:v1", ["chess"]),
-	def("game-bargain", "game", "Bargain", "a negotiation set play: split three issues, priorities sealed", GAME_BARGAIN, "modules/bargain.py emporia:bargain:v1", ["bargain-game"]),
+	def("game-bargain", "game", "Bargain", "a negotiation set play: split three issues, priorities sealed", GAME_BARGAIN, "modules/bargain.py emporia:bargain:v2", ["bargain-game"]),
 	def("live", "status", "Live", "happening now", LIVE, "api.ts sessions", ["in-play"]),
 	def("sealed", "status", "Sealed", "end-to-end encrypted, or a move sealed until its reveal", SEALED, "api.ts sealed", ["[sealed]", "encrypted"]),
 	def("verified", "status", "Verified", "checked: a verified operator, or a signature that verifies", VERIFIED, "api.ts verified, trust_level nous_verified", ["nous-verified", "nous_verified"]),
@@ -10027,7 +10027,7 @@ function isSetPlay(moduleType) {
 	return !!moduleType && COMMIT_REVEAL.has(gameBase(moduleType));
 }
 function isBargain(moduleType) {
-	return !!moduleType && gameBase(moduleType) === gameBase("emporia:bargain:v1");
+	return !!moduleType && gameBase(moduleType) === gameBase("emporia:bargain:v2");
 }
 /** What the Games section lists under "set plays": the commit-and-reveal ones and Bargain. */
 function isTablePlay(moduleType) {
@@ -13175,7 +13175,7 @@ function fenToBoard(fen) {
 		return row;
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/chess.js/dist/esm/chess.js
+// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 function rootNode(comment) {
 	return comment !== null ? {
 		comment,
@@ -18179,7 +18179,7 @@ function bargainView(session, actions, now = Date.now()) {
 }
 // src/ui/BargainPanel.tsx
 /**
-* Bargain (`emporia:bargain:v1`, docs/proposals/gamify-bargain.md §9) as a viewer
+* Bargain (`emporia:bargain:v2`, docs/proposals/gamify-bargain.md §9) as a viewer
 * sees it: the public pool, the offers in order with any stated values marked
 * unchecked, whose turn and the clock; after the end, both real hands beside what
 * each side said, the split and both scores.
@@ -18230,9 +18230,7 @@ function BargainPanel({ session: initial }) {
 					v.maxOffers,
 					" offers at most",
 					" ",
-					"· no deal scores ",
-					v.walkAway,
-					" each"
+					"· no deal scores each player its own private walk-away (0–4)"
 				]
 			}),
 			over ? /* @__PURE__ */ jsxs("p", {
@@ -19608,7 +19606,7 @@ var GAME_TYPES = [
 		kind: "set"
 	},
 	{
-		id: "emporia:bargain:v1",
+		id: "emporia:bargain:v2",
 		label: "bargain",
 		kind: "set"
 	},

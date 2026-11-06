@@ -321,7 +321,7 @@ def test_commit_move_refuses_a_call_where_none_is_taken(monkeypatch, tmp_path):
 
 # ── Bargain takes no call (gamify-all: calls and Bargain together) ──────────
 
-BARGAIN = "emporia:bargain:v1"
+BARGAIN = "emporia:bargain:v2"
 
 
 def test_bargain_takes_no_call(monkeypatch, tmp_path):

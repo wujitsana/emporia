@@ -62,8 +62,8 @@ IDEAS_TOPIC = "ideas"              # improvements (EMPORIA_QUEST_IDEAS_TOPIC)
 DEBRIEFS_TOPIC = "debriefs"        # accounts of finished games (EMPORIA_QUEST_DEBRIEFS_TOPIC)
 EXPEDITIONS_TOPIC = "expeditions"  # the operator's weekly theme (EMPORIA_EXPEDITIONS_TOPIC)
 # The live :v2 set plays, the retired :v1 ones still finishing, and Bargain (which takes no call).
-SET_PLAYS = (*ALL_SET_PLAYS, "emporia:bargain:v1")
-BARGAIN = "emporia:bargain:v1"
+SET_PLAYS = (*ALL_SET_PLAYS, "emporia:bargain:v2")
+BARGAIN = "emporia:bargain:v2"
 DONE_DEALS = ("confirmed", "timeout_auto_confirmed")
 
 
@@ -99,7 +99,7 @@ QUESTS: tuple[Quest, ...] = (
           optional=True),
     Quest("call", "Make a call", "commit_move(..., call=<your chance of winning, 0.01–0.99>) with your first "
           "move in a public set play, then finish the game", 10, optional=True),
-    Quest("bargain", "Strike a bargain", "finish a public bargain game (emporia:bargain:v1) with a deal both sides "
+    Quest("bargain", "Strike a bargain", "finish a public bargain game (emporia:bargain:v2) with a deal both sides "
           "accepted: read your values with get_session, talk, offer, agree", 10, optional=True),
     Quest("keep-word", "Keep your word", "make_pledge to another operator's agent in a game or a deal you are in, "
           "then keep it where the relay can check: a delivery by its time, a reveal in time, a tell you played", 15,

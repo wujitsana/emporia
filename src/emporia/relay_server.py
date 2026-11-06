@@ -1439,15 +1439,34 @@ def init_db() -> None:
                 signature TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_idea_verdicts_ref ON idea_verdicts(ref);
-            -- Bargain: the relay's secret seed for a game that deals hidden hands, kept out
-            -- of the session's state until the game ends, and each player's contribution.
-            CREATE TABLE IF NOT EXISTS session_deals (
+            -- The randomness service: a cache of drand rounds (public; every reader verifies
+            -- the signature itself). Bargain v1's relay-held seed table is gone (emporia:rand:v1).
+            DROP TABLE IF EXISTS session_deals;
+            CREATE TABLE IF NOT EXISTS beacon_rounds (
+                round INTEGER PRIMARY KEY,
+                signature TEXT NOT NULL,
+                fetched_at TEXT NOT NULL
+            );
+            -- emporia:rand:v1: each player's signed commitment (public: a hash and a round), and how
+            -- a game that drew from the beacon ended. Both go in the transparency log.
+            CREATE TABLE IF NOT EXISTS rand_commits (
+                session_id TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                seat INTEGER NOT NULL,
+                hash TEXT NOT NULL,
+                beacon_round INTEGER NOT NULL,
+                at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                PRIMARY KEY (session_id, agent_id)
+            );
+            CREATE TABLE IF NOT EXISTS rand_results (
                 session_id TEXT PRIMARY KEY,
-                relay_seed TEXT NOT NULL,
-                commitment TEXT NOT NULL,
-                contributions_json TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL,
-                revealed_at TEXT NOT NULL DEFAULT ''
+                beacon_round INTEGER NOT NULL,
+                beacon_signature TEXT NOT NULL DEFAULT '',
+                termination TEXT NOT NULL,
+                winner TEXT NOT NULL DEFAULT '',
+                outcome_hash TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
             );
             -- Pledges: an agent's signed promise to a counterparty, and the signed acts on it.
             CREATE TABLE IF NOT EXISTS pledges (
@@ -3517,6 +3536,8 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("idea_verdicts", "author_id"), ("idea_verdicts", "decided_by"),
     # Pledges: who promised, to whom, and who attested or contested. The signatures keep the handles signed with.
     ("pledges", "maker_id"), ("pledges", "to_agent"), ("pledge_acts", "agent_id"),
+    # emporia:rand:v1: whose commitment, and who won. The signature keeps the handle it was signed with.
+    ("rand_commits", "agent_id"), ("rand_results", "winner"),
 )
 
 # Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
@@ -3538,10 +3559,11 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # Launch additions: an idea's verdict — the post, the author's operator key (as bug_reports'), what it led to.
     *(("idea_verdicts", c) for c in ("post_id", "operator_key", "verdict", "ref", "duplicate_of", "points",
                                      "decided_at", "signature")),
-    # Bargain: a dealt game's secret seed and the players' shares. The shares are keyed by the
-    # ids they were signed under, like the game's own state, so a rename leaves them as signed.
-    *(("session_deals", c) for c in ("session_id", "relay_seed", "commitment", "contributions_json",
-                                     "created_at", "revealed_at")),
+    # The randomness service: a cached drand round, its signature and when it was fetched.
+    *(("beacon_rounds", c) for c in ("round", "signature", "fetched_at")),
+    *(("rand_commits", c) for c in ("session_id", "seat", "hash", "beacon_round", "at", "signature")),
+    *(("rand_results", c) for c in ("session_id", "beacon_round", "beacon_signature", "termination",
+                                    "outcome_hash", "recorded_at")),
     # Pledges: what was promised on which session or listing, its terms and note, and the signed acts on it.
     *(("pledges", c) for c in ("pledge_id", "kind", "subject_type", "subject_id", "terms_json", "note", "nonce",
                                "made_at", "signature", "public", "recorded_at")),
@@ -5799,6 +5821,8 @@ class CreateSessionRequest(BaseModel):
     nonce: str = ""
     at: str = ""
     signature: str = ""
+    # emporia:rand:v1: the creator's signed commitment, for a game that draws from the beacon.
+    rand_commit: dict[str, Any] | None = None
 
 
 class JoinSessionRequest(BaseModel):
@@ -5807,9 +5831,9 @@ class JoinSessionRequest(BaseModel):
     payment_intent_id: str | None = None
     at: str = ""          # P272: the join, signed by the joining agent
     signature: str = ""   # Ed25519 over wire.signed_session_join_payload()
-    # Bargain: in a game that deals hidden hands, the joiner's share of the seed —
-    # its signature over wire.signed_deal_seed_payload(session_id, agent_id, deal_commitment).
-    deal_signature: str = ""
+    # emporia:rand:v1: in a game that draws from the beacon, the joiner's signed commitment
+    # {hash, beacon_round, at, signature} over wire.signed_rand_commit_payload(...).
+    rand_commit: dict[str, Any] | None = None
 
 
 class SubmitActionRequest(BaseModel):
@@ -9166,6 +9190,7 @@ from emporia.routes import ideas as _idea_routes  # noqa: E402
 from emporia.routes import pledges as _pledge_routes  # noqa: E402
 from emporia.routes import whats_next as _next_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
+from emporia.routes import beacon as _beacon_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
@@ -9192,5 +9217,6 @@ app.include_router(_idea_routes.router)
 app.include_router(_pledge_routes.router)
 app.include_router(_next_routes.router)
 app.include_router(_like_routes.router)
+app.include_router(_beacon_routes.router)
 app.include_router(_deletion_routes.router)
 app.include_router(_translog_routes.router)

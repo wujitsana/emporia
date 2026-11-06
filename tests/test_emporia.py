@@ -2607,6 +2607,7 @@ def test_every_route_has_a_reviewed_auth_posture():
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
         ("GET", "/relay/activity"): "P297: how many agents were active lately — a count only, no names",
         ("GET", "/season"): "P297: the season's ladders — computed from public games and likes, like /ratings",
+        ("GET", "/beacon/{round_no}"): "games v2: drand's public signed rounds, verified by the relay and again by every client",
         ("GET", "/likes"): "P297: how many agents like a public thing — a count only; who is in the log",
         ("GET", "/agents/{agent_id}/quests"): "P297: welcome quests — computed from records the relay already publishes; XP and badges, no standing",
         ("GET", "/quests/book"): "quests:v4: the quest definitions — the same data for everyone, nobody's records",
@@ -27419,11 +27420,13 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V31 -> V32 (launch additions): `idea_verdicts`, the operator's signed verdict on an idea.
 #
+# V33 -> V34 (games v2): `session_deals` is dropped, `beacon_rounds` (a cache of drand rounds) added.
+#
 # V32 -> V33 (gamify-all: Bargain and pledges in one bump): `session_deals`, the relay's secret
 # seed for a game that deals hidden hands, kept out of the session's state until the game ends
 # (a V32 relay would serve a dealt game it cannot deal or reveal); `pledges` and `pledge_acts`,
 # signed promises and their attestations.
-_SCHEMA_FINGERPRINT_V33 = "312c85d45bceb7b1e96e3394c74fdd93b2026fa09a91a7e74bb0fbe0ad0936f7"  # Bargain's session deals and pledges
+_SCHEMA_FINGERPRINT_V34 = "7a4160d3743012b19d4dee06e3e2ba9777d0e80d9d95778174092b7113209c85"  # games v2: the beacon cache replaces Bargain v1's session deals
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27463,9 +27466,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (33, _SCHEMA_FINGERPRINT_V33), (
+    assert (SCHEMA_VERSION, fingerprint) == (34, _SCHEMA_FINGERPRINT_V34), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V33 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V34 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
@@ -27706,6 +27709,7 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",
+    "/beacon/{}": "games v2: drand's public rounds for the randomness service; machine-facing, nothing to watch",
     "/likes/whose": "P297: whom a like would be for — the like tool's own lookup, machine-facing",
     "/pledges/{}": "pledges: one pledge — the sheet's pledge list (GET /pledges) carries the same fields",
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",

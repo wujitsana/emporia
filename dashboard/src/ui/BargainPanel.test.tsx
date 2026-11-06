@@ -7,7 +7,7 @@ import { bargainView } from "../bargain";
 const pool = { silk: 3, spice: 2, amber: 1 };
 function session(status: string, data: Record<string, unknown>, extra: Record<string, unknown> = {}): Session {
   return {
-    session_id: "s-b", module_type: "emporia:bargain:v1", status, participants: ["alpha", "beta"], current_agent: "beta",
+    session_id: "s-b", module_type: "emporia:bargain:v2", status, participants: ["alpha", "beta"], current_agent: "beta",
     step_number: 1, created_at: "2026-11-05T10:00:00Z", state: { data }, ...extra,
   } as Session;
 }

@@ -23,6 +23,7 @@ dependencies = [
     "stripe>=9.0.0,<16",
     "chess>=1.10.0,<2",
     "sentry-sdk>=2.0.0,<3",
+    "py-ecc>=8.0.0,<9",   # the randomness service verifies drand BLS signatures in pure Python (emporia.beacon)
 ]
 
 [project.optional-dependencies]

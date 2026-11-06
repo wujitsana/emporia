@@ -717,6 +717,10 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "idea_verdict": ("idea_verdicts", _idea_verdict, "", ("post_id",)),   # launch additions
     "pledge": ("pledges", _pledge, "", ("pledge_id",)),                   # pledges
     "pledge_act": ("pledge_acts", _pledge_act, "", ("pledge_id", "act")),
+    # emporia:rand:v1 (games v2): each player's signed commitment, and how the game ended (the beacon round
+    # used, forfeits, collisions and voids included). Reveals and voids are session_actions, as every move is.
+    "rand_commit": ("rand_commits", _whole_row("session_id"), "", ("session_id", "agent_id")),
+    "rand_result": ("rand_results", _whole_row("session_id"), "", ("session_id",)),
     "security_incident": ("security_incidents", _incident, "", ("incident_id",)),
 }
 
@@ -735,7 +739,7 @@ NOT_LOGGED: dict[str, str] = {
     "agora_members": "who follows a topic: bookkeeping, and nobody's signed statement",
     "agora_invites": "an invite, or taking one back, is a signed topic_act, logged as one",
     "game_chat": "table talk; the moves are logged",
-    "session_deals": "a dealt game's secret seed, which must stay unpublished until the game ends; then the whole deal is in the session's state",
+    "beacon_rounds": "a cache of drand's public rounds; anyone refetches and verifies them",
     "agent_inbox": "delivery bookkeeping",
     "reg_challenges": "short-lived sign-in nonces",
     "remote_agents": "agents of other relays, pinned here; in their own relay's log",

@@ -1,7 +1,8 @@
-"""Bargain (`emporia:bargain:v1`): a negotiation set play with sealed priorities.
+"""Bargain v2 (`emporia:bargain:v2`): a negotiation set play whose hands nobody deals.
 
-The rules, the hidden deal (verifiable, unbiasable, never leaked before the end), the
-score and the Craft rating, the house's exclusion and its honest policy."""
+Each player commits to a secret with its create/join; its hand and walk-away come from that secret and
+a public drand round (`emporia:rand:v1`). The relay holds neither. The tests use the shim's fake
+beacon (conftest `rand_testmode`); the real BLS check has its own tests in test_rand.py."""
 import asyncio
 import copy
 import json
@@ -11,24 +12,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import house as H
-from emporia import identity, progression, wire
+from emporia import progression, rand
 from emporia import relay_server as rs
-from emporia.module_sdk import (
-    SessionAction,
-    SessionState,
-    check_deal,
-    conceal,
-    deal_commitment,
-    deal_seed,
-    get_interaction_module,
-    with_deal,
-)
+from emporia.module_sdk import SessionState, get_interaction_module
 from emporia.modules import bargain as B
 from emporia.relay_server import app
+from conftest import RAND_SECRETS, fake_beacon_sig, make_test_commit
 from tests.test_emporia import _register_keyed, _signed_action_body
 
-BARGAIN = "emporia:bargain:v1"
+BARGAIN = "emporia:bargain:v2"
 POOL = (3, 2, 1)
 WHY = "Reading what they asked for and what they gave up"
 
@@ -59,251 +51,331 @@ def _act(client, sid, who, action, payload=None, say=""):
                        json=_signed_action_body(client, sid, who, action, payload or {}, WHY, say=say))
 
 
-def _values(client, sid, who):
-    return client.get(f"/sessions/{sid}", headers=_hdr(who)).json()["private"]["values"]
+def _hand(sid, who):
+    """What the player's own client computes: (hand, walk-away) from its secret and the round."""
+    s = rs.load_session(sid)
+    r = s["state"]["data"]["rand"]
+    seat = s["participants"].index(who)
+    return B.draw(r["scope"], seat, bytes.fromhex(fake_beacon_sig(r["round"])),
+                  bytes.fromhex(RAND_SECRETS[(sid, who)][0]))
 
 
-def _expire(sid, seconds_late=1):
+def _reveal(client, sid, who):
+    s, nonce = RAND_SECRETS[(sid, who)]
+    return _act(client, sid, who, "reveal", {"s": s, "nonce": nonce})
+
+
+def _play_deal(client, sid, a, b, keep=None):
+    assert _act(client, sid, a, "offer", {"keep": keep or {"silk": 2, "amber": 1}}).status_code == 200
+    assert _act(client, sid, b, "accept").status_code == 200
+
+
+def _expire(sid, seconds_late=1, field="turn_started_at", window=None):
     s = rs.load_session(sid)
     state = s["state"]
-    state["data"]["turn_started_at"] = (datetime.now(UTC) - timedelta(
-        seconds=state["data"]["move_time_limit_s"] + seconds_late)).isoformat()
+    state["data"][field] = (datetime.now(UTC) - timedelta(
+        seconds=(window if window is not None else state["data"]["move_time_limit_s"]) + seconds_late)).isoformat()
     rs.save_session(session_id=sid, module_type=BARGAIN, config=s["config"], payment_rules=s["payment_rules"],
                     state=SessionState.from_dict(state), current_agent=s["current_agent"],
                     step_number=s["step_number"], status="active", participants=s["participants"],
                     created_at=s["created_at"], updated_at=datetime.now(UTC).isoformat())
 
 
-# ── the deal: fair by construction ───────────────────────────────────────────
-
-def test_every_possible_deal_is_fair_and_neither_seat_is_favoured():
-    pairs = B.deal_pairs(POOL)
-    assert pairs and set(pairs) == {(b, a) for a, b in pairs}, "symmetric: no seat is dealt better hands"
-    for a, b in pairs:
-        assert B.worth(a, POOL) == B.worth(b, POOL) == B.TOTAL, "the whole pool is worth the same to both"
-        assert a != b, "the priorities differ"
-        assert any(2 * B.worth(a, k) > B.TOTAL and 2 * B.worth(b, B.rest(POOL, k)) > B.TOTAL
-                   for k in B.bundles(POOL)), "a real gain from trade: some split gives both more than half"
-        assert all(sum(x > 0 for x in v) >= B.MIN_GOODS_VALUED for v in (a, b))
+def _sweep():
+    from emporia.routes.sessions import sweep_service_deadlines
+    asyncio.run(sweep_service_deadlines())
 
 
-def test_a_pool_with_no_fair_deal_is_refused():
+def _outcome(sid):
+    s = rs.load_session(sid)
+    return s, get_interaction_module(BARGAIN).is_terminal(SessionState.from_dict(s["state"]))[1]
+
+
+# ── the hands: fair by construction ──────────────────────────────────────────
+
+def test_the_eight_hands_every_distinct_ordered_pair_has_a_gain_from_trade():
+    assert len(B.HANDS) == len(set(B.HANDS)) == 8
+    for h in B.HANDS:
+        assert B.worth(h, POOL) == B.TOTAL, "the whole pool is worth 10 to every hand"
+    pairs = [(x, y) for x in B.HANDS for y in B.HANDS if x != y]
+    assert len(pairs) == 56
+    for x, y in pairs:
+        assert any(2 * B.worth(x, k) > B.TOTAL and 2 * B.worth(y, B.rest(POOL, k)) > B.TOTAL
+                   for k in B.bundles(POOL)), (x, y)
+    assert not any(2 * B.worth(h, k) > B.TOTAL and 2 * B.worth(h, B.rest(POOL, k)) > B.TOTAL
+                   for h in B.HANDS for k in B.bundles(POOL)), "identical hands never have one: that is the collision"
+
+
+def test_the_draw_is_the_players_own_and_uniform_over_hands_and_walk_aways():
+    sig, s = bytes.fromhex(fake_beacon_sig(7)), bytes(32)
+    assert B.draw("sess_x", 0, sig, s) == B.draw("sess_x", 0, sig, s), "deterministic: anyone redoes it at the end"
+    seen_h, seen_w = set(), set()
+    for i in range(400):
+        h, w = B.draw("sess_x", 0, sig, i.to_bytes(32, "big"))
+        seen_h.add(h)
+        seen_w.add(w)
+    assert seen_h == set(B.HANDS) and seen_w == set(range(5))
+    with pytest.raises(ValueError):
+        rand.priv("sess_x", 0, "hand", b"", s)     # no beacon, no private draw: it would be the player's own choice
+
+
+def test_settings_are_validated_and_the_pool_and_walk_away_are_fixed():
     mod = get_interaction_module(BARGAIN)
-    assert mod.validate_config({})[0]
-    assert not mod.validate_config({"silk": 4, "spice": 4, "amber": 4})[0], "4·a+4·b+4·c is never 10"
-    for bad in ({"max_offers": 1}, {"walk_away": 5}, {"silk": 0}, {"move_time_limit_s": 5}, {"silk": "3"}):
+    assert mod.validate_config({})[0] and mod.validate_config({"silk": 3, "spice": 2, "amber": 1})[0]
+    for bad in ({"max_offers": 1}, {"walk_away": 2}, {"silk": 4}, {"move_time_limit_s": 5}, {"reveal_window_s": 1}):
         assert not mod.validate_config(bad)[0], bad
 
 
-def test_the_seed_needs_every_share_and_each_share_changes_the_deal():
-    relay_seed, shares = "ab" * 32, ["sig-creator", "sig-joiner"]
-    seed = deal_seed(relay_seed, shares)
-    assert deal_seed(relay_seed, shares) == seed, "deterministic: anyone can redo it"
-    assert seed != deal_seed("cd" * 32, shares), "the relay's secret matters"
-    assert seed != deal_seed(relay_seed, ["sig-creator", "other"]), "the joiner's share matters"
-    assert seed != deal_seed(relay_seed, ["other", "sig-joiner"]), "the creator's share matters"
-    # Over many joiner shares the deals spread over the whole set: no share is special.
-    dealt = {B.deal_values(deal_seed(relay_seed, ["c", f"j{i}"]), POOL) for i in range(4000)}
-    assert len(dealt) == len(B.deal_pairs(POOL))
+def test_the_old_label_is_refused_by_name(client):
+    a = f"gv1_{uuid.uuid4().hex[:6]}"
+    _register_keyed(client, a)
+    r = client.post("/sessions", json={"module_type": "emporia:bargain:v1"}, headers=_hdr(a))
+    assert r.status_code == 400 and "emporia:bargain:v1" in r.text and "v2" in r.text
 
 
-def test_a_joiner_has_exactly_one_share_so_the_relay_cannot_ask_for_another():
-    """The joiner's share signs the commitment and nothing it chooses (no time, no nonce):
-    Ed25519 is deterministic, so a relay that refuses a join gets the same share again."""
-    agent = f"gj_{uuid.uuid4().hex[:6]}"
-    payload = wire.signed_deal_seed_payload("sess_x", agent, deal_commitment("ab" * 32))
-    assert identity.sign(payload, agent) == identity.sign(payload, agent)
-    assert set(payload) == {"type", "session_id", "agent_id", "commitment"}
+# ── the relay holds nothing private ──────────────────────────────────────────
 
-
-def test_the_relay_commits_before_anyone_joins_and_the_deal_checks_out_after(client):
+def test_the_relays_stored_state_of_a_live_game_holds_no_hand_and_no_walk_away(client):
     sid, a, b = _game(client)
+    assert _act(client, sid, a, "offer", {"keep": {"silk": 2}, "claim": {"silk": 4, "spice": 3, "amber": 0}}).status_code == 200
+    hands = {p: _hand(sid, p) for p in (a, b)}
     s = rs.load_session(sid)
-    commitment = s["config"]["deal_commitment"]
-    with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT * FROM session_deals WHERE session_id = ?", (sid,)).fetchone()
-    assert deal_commitment(row["relay_seed"]) == commitment
-    contrib = s["state"]["data"]["deal"]["contributions"]
-    assert contrib[a]["kind"] == "session-create" and contrib[b]["kind"] == "deal-seed"
-    assert identity.verify(wire.signed_deal_seed_payload(sid, b, commitment), contrib[b]["signature"],
-                           identity.get_public_key_hex(b)), "the joiner's share binds the commitment it saw"
-    assert _act(client, sid, a, "offer", {"keep": {"silk": 3}}).status_code == 200
-    assert _act(client, sid, b, "accept").status_code == 200
-    s = rs.load_session(sid)
-    assert s["status"] == "completed"
-    deal = s["state"]["data"]["deal"]
-    assert deal["relay_seed"] == row["relay_seed"], "published at the end"
-    assert check_deal(get_interaction_module(BARGAIN), s["participants"], s["config"], deal) == ""
-    forged = {**deal, "hands": {a: deal["hands"][b], b: deal["hands"][a]}}
-    assert check_deal(get_interaction_module(BARGAIN), s["participants"], s["config"], forged), \
-        "swapped hands do not pass"
+    assert s["status"] == "active"
+    blob = json.dumps(s)
+    with rs.DB_LOCK, rs.get_db() as conn:     # and nothing else the relay keeps about this game
+        for table in ("sessions", "session_actions", "game_chat", "participants"):
+            try:
+                rows = conn.execute(f"SELECT * FROM {table} WHERE session_id = ?", (sid,)).fetchall()
+            except Exception:  # noqa: BLE001
+                continue
+            blob += json.dumps([dict(r) for r in rows], default=str)
+    for p in (a, b):
+        secret = RAND_SECRETS[(sid, p)]
+        assert secret[0] not in blob and secret[1] not in blob, "a secret never reaches the relay before the reveal"
+    data = s["state"]["data"]
+    assert "walk_away" not in data and "values" not in blob.replace('"values": {}', "")
+    assert set(data["rand"]) == {"scope", "commits", "round", "beacon_sig", "reveals"}
+    assert data["rand"]["reveals"] == {} and data["rand"]["beacon_sig"] is None
+    assert "private" not in client.get(f"/sessions/{sid}", headers=_hdr(a)).json(), "the relay serves no view"
+    assert hands[a][0] in B.HANDS
 
 
-def test_a_creator_cannot_set_the_commitment_and_a_join_without_its_share_is_refused(client):
+def test_a_game_needs_a_commitment_to_create_and_to_join(client):
+    from datetime import UTC, datetime
+
+    from emporia import identity, wire
+    from conftest import signed_session_body
     a, b = f"gc_{uuid.uuid4().hex[:6]}", f"gd_{uuid.uuid4().hex[:6]}"
     _register_keyed(client, a)
     _register_keyed(client, b)
-    r = client.post("/sessions", json={"module_type": BARGAIN, "config": {"deal_commitment": "0" * 64}},
-                    headers=_hdr(a))
-    assert r.status_code == 400 and "relay's" in r.text
+    r = client.post("/sessions", json=signed_session_body(a, {"module_type": BARGAIN}), headers=_hdr(a))
+    assert r.status_code == 400 and "rand_commit" in r.text
     sid = client.post("/sessions", json={"module_type": BARGAIN}, headers=_hdr(a)).json()["session_id"]
-    r = client.post(f"/sessions/{sid}/join", json={"agent_id": b, "deal_signature": ""}, headers=_hdr(b))
-    assert r.status_code == 400 and "deal_signature" in r.text
-    other = wire.signed_deal_seed_payload(sid, b, deal_commitment("ff" * 32))
-    r = client.post(f"/sessions/{sid}/join", json={"agent_id": b, "deal_signature": identity.sign(other, b)},
-                    headers=_hdr(b))
-    assert r.status_code == 403, "a share over another commitment does not verify"
-    assert rs.load_session(sid)["status"] == "waiting" and rs.load_session(sid)["participants"] == [a]
+    at = datetime.now(UTC).isoformat()
+    body = {"agent_id": b, "at": at, "signature": identity.sign(wire.signed_session_join_payload(sid, b, at), b)}
+    r = client.post(f"/sessions/{sid}/join", json=body, headers=_hdr(b))
+    assert r.status_code == 400 and "rand_commit" in r.text
+    assert rs.load_session(sid)["participants"] == [a]
 
 
-# ── private information stays private until the end ──────────────────────────
+def test_a_commitment_must_be_signed_by_its_player_and_name_a_round_ten_ahead(client, monkeypatch):
+    from conftest import signed_session_body
+    a = f"ge_{uuid.uuid4().hex[:6]}"
+    _register_keyed(client, a)
+    body = signed_session_body(a, {"module_type": BARGAIN})
+    from emporia import wire
+    sid = wire.session_id_for(body["nonce"])
+    monkeypatch.setattr(rand, "MIN_LEAD_ROUNDS", 10)
+    early = make_test_commit(sid, a, 0, round_offset=3)
+    r = client.post("/sessions", json={**body, "rand_commit": early}, headers=_hdr(a))
+    assert r.status_code == 400 and "at least 10 rounds" in r.text
+    ok = make_test_commit(sid, a, 0, round_offset=10)
+    forged = {**ok, "signature": "00" * 64}
+    assert client.post("/sessions", json={**body, "rand_commit": forged}, headers=_hdr(a)).status_code == 403
+    wrong_seat = make_test_commit(sid, a, 1, round_offset=10)
+    assert client.post("/sessions", json={**body, "rand_commit": wrong_seat}, headers=_hdr(a)).status_code == 403
+    r = client.post("/sessions", json={**body, "rand_commit": ok}, headers=_hdr(a))
+    assert r.status_code == 200, r.text
+    assert rs.load_session(sid)["config"]["rand"]["commits"][a]["beacon_round"] == ok["beacon_round"]
 
-def _everything_served_to(client, sid, viewer):
-    out = [client.get(f"/sessions/{sid}", headers=_hdr(viewer)).json(),
-           client.get(f"/sessions/{sid}/state", headers=_hdr(viewer)).json(),
-           client.get(f"/sessions/{sid}/actions", headers=_hdr(viewer)).json(),
-           client.get(f"/sessions/{sid}/audit", headers=_hdr(viewer)).json(),
-           client.get(f"/sessions/{sid}/chat", headers=_hdr(viewer)).json(),
-           [x for x in client.get("/sessions", params={"module_type": BARGAIN}, headers=_hdr(viewer)).json()
-            ["sessions"] if x["session_id"] == sid]]
-    return json.dumps(out)
+
+def test_config_rand_is_the_relays_not_a_clients(client):
+    a = f"gf_{uuid.uuid4().hex[:6]}"
+    _register_keyed(client, a)
+    r = client.post("/sessions", json={"module_type": BARGAIN, "config": {"rand": {"commits": {}}}}, headers=_hdr(a))
+    assert r.status_code == 400 and "config.rand" in r.text
 
 
-def test_no_one_sees_the_other_hand_or_the_seed_before_the_end(client, monkeypatch):
-    sent = []
-
-    async def capture(*args):
-        sent.append(json.dumps(args[-1], default=str))
-    for name in ("broadcast_to_session", "broadcast_to_agent", "broadcast_global"):
-        monkeypatch.setattr(rs, name, capture)
-    sid, a, b = _game(client)
-    with rs.DB_LOCK, rs.get_db() as conn:
-        relay_seed = conn.execute("SELECT relay_seed FROM session_deals WHERE session_id = ?", (sid,)).fetchone()[0]
-    va, vb = _values(client, sid, a), _values(client, sid, b)
-    assert va != vb
-    mine = client.get(f"/sessions/{sid}", headers=_hdr(a)).json()
-    assert mine["private"]["values"] == va and mine["state"]["data"]["deal"]["hands"] is None
-    assert "private" not in client.get(f"/sessions/{sid}", headers=_hdr(f"spectator_{uuid.uuid4().hex[:4]}")).json()
-    for step, (who, action, payload) in enumerate([(a, "offer", {"keep": {"silk": 2, "spice": 1}}),
-                                                   (b, "offer", {"keep": {"amber": 1, "spice": 2},
-                                                                 "claim": {"silk": 0, "spice": 4, "amber": 2}}),
-                                                   (a, "offer", {"keep": {"silk": 3, "spice": 1}})]):
-        r = _act(client, sid, who, action, payload, say="my turn" if step == 0 else "")
-        assert r.status_code == 200, r.text
-        assert relay_seed not in r.text and "hands\": {" not in r.text
-        for viewer in (a, b, "outsider"):
-            served = _everything_served_to(client, sid, viewer)
-            assert relay_seed not in served, "the relay's seed is never served during play"
-            assert '"hands": {' not in served and '"seed": "' not in served
-        assert json.loads(_everything_served_to(client, sid, a))[0]["private"]["values"] == va
-        assert json.loads(_everything_served_to(client, sid, b))[0]["private"]["values"] == vb
-    stored = json.dumps(rs.load_session(sid)) + json.dumps(client.get(f"/sessions/{sid}/actions",
-                                                                      headers=_hdr(a)).json())
-    assert relay_seed not in stored and '"hands": {' not in stored
-    assert "revealed" not in client.get(f"/sessions/{sid}/chat", headers=_hdr(a)).json()
-    assert sent and not any(relay_seed in e or '"hands": {' in e for e in sent), "nor in any event pushed out"
-    assert _act(client, sid, b, "accept").status_code == 200
-    chat = client.get(f"/sessions/{sid}/chat", headers=_hdr("outsider")).json()
-    assert chat["revealed"]["hands"] == {a: {"values": va}, b: {"values": vb}}, "beside the talk, after the end"
-    assert [m["content"] for m in chat["messages"]] == ["my turn"]
-    assert len(chat["revealed"]["offers"]) == 3
-
+# ── playing ──────────────────────────────────────────────────────────────────
 
 def test_the_chat_is_on_by_default_and_can_be_turned_off(client):
-    sid, a, _ = _game(client)
+    sid, _, _ = _game(client)
     assert rs.load_session(sid)["config"]["chat"] is True
     sid2, _, _ = _game(client, {"chat": False})
     assert rs.load_session(sid2)["config"]["chat"] is False
 
 
-# ── the rules ────────────────────────────────────────────────────────────────
-
 def test_legal_and_illegal_offers(client):
     sid, a, b = _game(client)
-    for bad, why in (({"keep": ["silk"]}, "names goods"), ({"keep": 3}, "names goods"), ({}, "names goods"),
-                     ({"keep": {"silk": 4}}, "0–3"), ({"keep": {"gold": 1}}, "names goods"),
-                     ({"keep": {"silk": -1}}, "0–3"), ({"keep": {"silk": True}}, "0–3"),
-                     ({"keep": {}, "claim": {"silk": 11}}, "claim"), ({"keep": {}, "extra": 1}, "an offer is")):
-        r = _act(client, sid, a, "offer", bad)
-        assert r.status_code == 400 and why in r.text, (bad, r.text)
+    assert _act(client, sid, b, "offer", {"keep": {"silk": 1}}).status_code == 400, "creator moves first"
+    assert _act(client, sid, a, "offer", {"keep": {"silk": 9}}).status_code == 400
+    assert _act(client, sid, a, "offer", {"keep": {"gold": 1}}).status_code == 400
     assert _act(client, sid, a, "accept").status_code == 400, "nothing on the table yet"
-    assert _act(client, sid, a, "decline").status_code == 400
-    assert _act(client, sid, b, "offer", {"keep": {}}).status_code == 400, "the creator opens"
-    assert _act(client, sid, a, "offer", {"keep": {}}).status_code == 200, "keeping nothing is an offer"
-    assert _act(client, sid, a, "offer", {"keep": {}}).status_code == 400, "not twice in a row"
-    assert _act(client, sid, b, "decline").status_code == 400, "decline is for the last offer only"
-    assert _act(client, sid, b, "bid", {}).status_code == 400
+    assert _act(client, sid, a, "offer", {"keep": {"silk": 1}}).status_code == 200
 
 
-def test_an_accepted_offer_scores_each_side_its_own_values(client):
+def test_the_hands_are_not_dealt_before_the_round_is_published(client):
+    a, b = f"gg_{uuid.uuid4().hex[:6]}", f"gh_{uuid.uuid4().hex[:6]}"
+    _register_keyed(client, a)
+    _register_keyed(client, b)
+    from conftest import signed_session_body
+    from emporia import wire
+    body = signed_session_body(a, {"module_type": BARGAIN})
+    sid = wire.session_id_for(body["nonce"])
+    commit = make_test_commit(sid, a, 0, round_offset=1000)         # ~50 minutes ahead
+    assert client.post("/sessions", json={**body, "rand_commit": commit}, headers=_hdr(a)).status_code == 200
+    assert client.post(f"/sessions/{sid}/join", json={"agent_id": b}, headers=_hdr(b)).status_code == 200
+    r = _act(client, sid, a, "offer", {"keep": {"silk": 1}})
+    assert r.status_code == 400 and "not dealt yet" in r.text and str(commit["beacon_round"]) in r.text
+
+
+def test_the_game_uses_the_latest_round_named(client):
     sid, a, b = _game(client)
-    va, vb = _values(client, sid, a), _values(client, sid, b)
-    keep = {"silk": 2, "spice": 1, "amber": 0}
-    _act(client, sid, a, "offer", {"keep": keep})
-    r = _act(client, sid, b, "accept")
-    out = r.json()["outcome"]
-    gets_b = {"silk": 1, "spice": 1, "amber": 1}
-    pa = sum(va[g] * keep[g] for g in B.GOODS)
-    pb = sum(vb[g] * gets_b[g] for g in B.GOODS)
+    rounds = [c["beacon_round"] for c in rs.load_session(sid)["config"]["rand"]["commits"].values()]
+    assert rs.load_session(sid)["state"]["data"]["rand"]["round"] == max(rounds)
+    with rs.DB_LOCK, rs.get_db() as conn:     # the signed commitments are rows, and so in the transparency log
+        got = conn.execute("SELECT agent_id, seat FROM rand_commits WHERE session_id = ? ORDER BY seat", (sid,)).fetchall()
+    assert [(r["agent_id"], r["seat"]) for r in got] == [(a, 0), (b, 1)]
+
+
+def test_an_accepted_offer_is_scored_from_both_revealed_hands(client):
+    sid, a, b = _game(client)
+    _play_deal(client, sid, a, b, {"silk": 2, "amber": 1})
+    assert rs.load_session(sid)["status"] == "active", "the reveal comes before the result"
+    assert _act(client, sid, a, "offer", {"keep": {}}).status_code == 400
+    ha, hb = _hand(sid, a), _hand(sid, b)
+    assert _reveal(client, sid, a).status_code == 200
+    assert rs.load_session(sid)["status"] == "active", "one reveal is not enough"
+    assert _reveal(client, sid, a).status_code == 400, "no second reveal"
+    rb = _reveal(client, sid, b)
+    assert rb.status_code == 200, rb.text
+    s, out = _outcome(sid)
+    assert s["status"] == "completed"
+    if ha[0] == hb[0]:
+        assert out["termination"] == "collision"
+        return
+    pa = B.worth(ha[0], (2, 0, 1))
+    pb = B.worth(hb[0], (1, 2, 0))
     assert out["termination"] == "deal" and out["points"] == {a: pa, b: pb}
     assert out["rating_scores"] == {a: pa / 10, b: pb / 10}
+    assert out["values"] == {a: B._as_dict(ha[0]), b: B._as_dict(hb[0])}
     assert out["winner"] == (a if pa > pb else b if pb > pa else None)
-    assert out["allocation"] == {a: keep, b: gets_b} and out["values"] == {a: va, b: vb}
-    assert _act(client, sid, a, "offer", {"keep": {}}).status_code == 400, "over"
-    result = next(x for x in client.get("/results", params={"module_type": BARGAIN}).json()["results"]
-                  if x["session_id"] == sid)
-    assert result["points"] == {a: pa, b: pb} and result["record"]["deal"]["hands"][a]["values"] == va
+    assert out["walk_aways"] == {a: ha[1], b: hb[1]}
 
 
-def test_the_last_offer_can_only_be_accepted_or_declined_and_declining_is_no_deal(client):
-    sid, a, b = _game(client, {"max_offers": 2, "walk_away": 1})
-    _act(client, sid, a, "offer", {"keep": {"silk": 3, "spice": 2, "amber": 1}})
-    _act(client, sid, b, "offer", {"keep": {"silk": 3, "spice": 2, "amber": 1}, "claim": {"silk": 3, "amber": 1}})
-    r = _act(client, sid, a, "offer", {"keep": {}})
-    assert r.status_code == 400 and "no offers are left" in r.text
-    out = _act(client, sid, a, "decline").json()["outcome"]
-    assert out["termination"] == "no_deal" and out["winner"] is None and out["outcome_type"] == "draw"
-    assert out["points"] == {a: 1, b: 1} and out["rating_scores"] == {a: 0.1, b: 0.1}
-    claims = out["claims"]
-    assert set(claims) == {b} and claims[b]["claimed"] == {"silk": 3, "spice": 0, "amber": 1}
-    assert claims[b]["matches"] == (claims[b]["actual"] == claims[b]["claimed"]), "said beside dealt, no penalty"
+def test_declining_the_last_offer_scores_each_its_own_walk_away(client):
+    sid, a, b = _game(client, {"max_offers": 2})
+    assert _act(client, sid, a, "offer", {"keep": {"silk": 3}}).status_code == 200
+    assert _act(client, sid, b, "offer", {"keep": {"silk": 3}}).status_code == 200
+    assert _act(client, sid, a, "decline").status_code == 200
+    ha, hb = _hand(sid, a), _hand(sid, b)
+    _reveal(client, sid, a)
+    _reveal(client, sid, b)
+    s, out = _outcome(sid)
+    if ha[0] == hb[0]:
+        assert out["termination"] == "collision"
+        return
+    assert out["termination"] == "no_deal" and out["points"] == {a: ha[1], b: hb[1]}
+
+
+def test_a_reveal_must_be_the_committed_secret_and_only_after_the_end(client):
+    sid, a, b = _game(client)
+    s, nonce = RAND_SECRETS[(sid, a)]
+    assert _act(client, sid, a, "reveal", {"s": s, "nonce": nonce}).status_code == 400, "not before it ends"
+    _play_deal(client, sid, a, b)
+    r = _act(client, sid, a, "reveal", {"s": "00" * 32, "nonce": nonce})
+    assert r.status_code == 400 and "hashes" in r.text
+    assert _act(client, sid, a, "reveal", {"s": s}).status_code == 400
+    assert _act(client, sid, b, "reveal", {"s": s, "nonce": nonce}).status_code == 400, "another's secret is not yours"
+
+
+def test_a_refused_reveal_forfeits_and_the_other_scores_by_its_own_hand(client):
+    sid, a, b = _game(client)
+    _play_deal(client, sid, a, b, {"silk": 3})
+    assert _reveal(client, sid, b).status_code == 200
+    _expire(sid, field="reveal_by", window=0)
+    s = rs.load_session(sid)
+    s["state"]["data"]["reveal_by"] = (datetime.now(UTC) - timedelta(seconds=5)).isoformat()
+    rs.save_session(session_id=sid, module_type=BARGAIN, config=s["config"], payment_rules=s["payment_rules"],
+                    state=SessionState.from_dict(s["state"]), current_agent=s["current_agent"],
+                    step_number=s["step_number"], status="active", participants=s["participants"],
+                    created_at=s["created_at"], updated_at=datetime.now(UTC).isoformat())
+    _sweep()
+    s, out = _outcome(sid)
+    hb = _hand(sid, b)
+    assert s["status"] == "completed" and out["termination"] == "forfeit"
+    assert out["points"] == {a: 0, b: B.worth(hb[0], (0, 2, 1))}
+    assert out["rating_scores"][a] == 0.0 and set(out["values"]) == {b}, "only the revealed hand is published"
+
+
+def test_both_refusing_is_no_result(client):
+    sid, a, b = _game(client)
+    _play_deal(client, sid, a, b)
+    s = rs.load_session(sid)
+    s["state"]["data"]["reveal_by"] = (datetime.now(UTC) - timedelta(seconds=5)).isoformat()
+    rs.save_session(session_id=sid, module_type=BARGAIN, config=s["config"], payment_rules=s["payment_rules"],
+                    state=SessionState.from_dict(s["state"]), current_agent=s["current_agent"],
+                    step_number=s["step_number"], status="active", participants=s["participants"],
+                    created_at=s["created_at"], updated_at=datetime.now(UTC).isoformat())
+    _sweep()
+    s, out = _outcome(sid)
+    assert s["status"] == "completed" and out["termination"] == "unrevealed" and out["winner"] is None
+    assert progression._scores({"participants": [a, b], **out}) is None, "counts for nothing"
+
+
+def test_two_players_dealt_the_same_hand_have_no_game(client, monkeypatch):
+    monkeypatch.setattr(B, "HANDS", ((2, 1, 2),))
+    sid, a, b = _game(client)
+    _play_deal(client, sid, a, b)
+    _reveal(client, sid, a)
+    _reveal(client, sid, b)
+    s, out = _outcome(sid)
+    assert s["status"] == "completed" and out["termination"] == "collision" and out["winner"] is None
+    assert progression._scores({"participants": [a, b], **out}) is None, "a collision counts nothing"
+
+
+def test_a_late_commit_voids_the_game_without_a_result(client):
+    sid, a, b = _game(client)
+    assert _act(client, sid, b, "void", {"reason": "other"}).status_code == 400
+    assert _act(client, sid, b, "void", {"reason": "late_commit"}).status_code == 200
+    s, out = _outcome(sid)
+    assert s["status"] == "completed" and out["termination"] == "void" and out["voided_by"] == b
+    assert progression._scores({"participants": [a, b], **out}) is None, "no result, no penalty"
 
 
 def test_running_out_of_time_loses_and_scores_zero(client):
-    sid, a, b = _game(client, {"move_time_limit_s": 60, "walk_away": 2})
+    sid, a, b = _game(client)
     _act(client, sid, a, "offer", {"keep": {"silk": 1}})
     _expire(sid)
-    assert _act(client, sid, b, "accept").status_code == 400, "too late"
-    from emporia.routes.sessions import sweep_service_deadlines
-    assert asyncio.run(sweep_service_deadlines())["game_timeouts"] >= 1
-    s = rs.load_session(sid)
-    assert s["status"] == "completed"
-    _, out = get_interaction_module(BARGAIN).is_terminal(SessionState.from_dict(s["state"]))
-    assert out["winner"] == a and out["termination"] == "timeout" and out["points"] == {b: 0, a: 2}
-    assert "rating_scores" not in out, "a loss on time is a plain loss, as in every set play"
-    assert out["values"][a] and s["state"]["data"]["deal"]["relay_seed"], "the deal is published on time too"
-    assert progression._scores({"participants": [a, b], **out}) == {(a, b): 1.0, (b, a): 0.0}
+    _sweep()
+    s, out = _outcome(sid)
+    assert s["status"] == "completed" and out["winner"] == a and out["termination"] == "timeout"
+    assert out["points"] == {b: 0, a: 0}
 
 
 def test_an_opener_who_never_opens_loses_on_time_review2_p2(client):
-    """Review pass 2, P2 (F11): both have seen their hands when the game starts, so letting the first
-    clock run out is no free reroll: the opener loses on time. A game made before the rule (its state
-    has no `leaving_counts`) still reads as a draw with no result, as it did when it was played."""
+    """Review pass 2, P2: both are committed when the game starts, so letting the first clock run out is
+    no free reroll: the opener loses on time."""
     sid, a, b = _game(client, {"move_time_limit_s": 60})
     _expire(sid)
-    from emporia.routes.sessions import sweep_service_deadlines
-    asyncio.run(sweep_service_deadlines())
-    s = rs.load_session(sid)
-    _, out = get_interaction_module(BARGAIN).is_terminal(SessionState.from_dict(s["state"]))
+    _sweep()
+    s, out = _outcome(sid)
     assert s["status"] == "completed" and out["winner"] == b and out["termination"] == "timeout"
     assert progression._scores({"participants": [a, b], **out}) == {(b, a): 1.0, (a, b): 0.0}
-    old = SessionState.from_dict(s["state"])
-    old.data.pop("leaving_counts")
-    _, before = get_interaction_module(BARGAIN).is_terminal(old)
-    assert before["winner"] is None and progression._scores({"participants": [a, b], **before}) is None
+    assert s["state"]["data"]["leaving_counts"] is True, "an abandon at step 0 is a walk-away"
 
 
-def test_no_stakes_and_no_bounty_on_a_game_whose_relay_holds_the_hands(client):
+def test_no_stakes_and_no_bounty_on_a_game_that_draws_from_the_beacon(client):
     from emporia.bounties import judging_modules
     from emporia.module_sdk import MODULE_REGISTRY, list_available_modules
     assert BARGAIN not in judging_modules(MODULE_REGISTRY)
@@ -317,12 +389,10 @@ def test_no_stakes_and_no_bounty_on_a_game_whose_relay_holds_the_hands(client):
     assert "private.values" in listed["rules"]
 
 
-def test_verify_session_checks_the_deal_and_catches_forged_hands(client):
-    from emporia.verify import verify_game
-    sid, a, b = _game(client)
-    _act(client, sid, a, "offer", {"keep": {"silk": 2, "amber": 1}})
-    _act(client, sid, b, "accept")
-    record = {
+# ── verify_session ───────────────────────────────────────────────────────────
+
+def _record(client, sid, a, b):
+    return {
         "session": client.get(f"/sessions/{sid}", headers=_hdr(a)).json(),
         "log": client.get(f"/sessions/{sid}/audit", headers=_hdr(a)).json()["chain"],
         "public_keys": {x: client.get(f"/agents/{x}", headers=_hdr(a)).json()["public_key_hex"] for x in (a, b)},
@@ -330,42 +400,106 @@ def test_verify_session_checks_the_deal_and_catches_forged_hands(client):
         "relay_verdict": next(r for r in client.get("/results", params={"agent_id": a}).json()["results"]
                               if r["session_id"] == sid),
     }
-    report = verify_game(**record)
-    deal = next(f for f in report["findings"] if f["check"] == "deal")
-    assert deal["status"] == "ok", deal
-    assert next(f for f in report["findings"] if f["check"] == "verdict")["status"] == "ok"
-    forged = copy.deepcopy(record)
-    d = forged["session"]["state"]["data"]["deal"]
-    d["hands"] = {a: d["hands"][b], b: d["hands"][a]}
-    assert next(f for f in verify_game(**forged)["findings"] if f["check"] == "deal")["status"] == "fail"
-    regrind = copy.deepcopy(record)
-    regrind["session"]["state"]["data"]["deal"]["contributions"][b]["signature"] = "x" * 86
-    assert next(f for f in verify_game(**regrind)["findings"] if f["check"] == "deal")["status"] == "fail"
+
+
+def test_verify_session_rechecks_a_finished_game_and_catches_forgery(client, monkeypatch):
+    from emporia import beacon
+    from emporia.verify import verify_game
+    monkeypatch.setattr(beacon, "verify", lambda rnd, sig: sig == fake_beacon_sig(rnd))   # the BLS check: test_rand.py
+    sid, a, b = _game(client)
+    _play_deal(client, sid, a, b)
+    _reveal(client, sid, a)
+    _reveal(client, sid, b)
+    record = _record(client, sid, a, b)
+    record["relay_verdict"] = {**record["relay_verdict"], **_outcome(sid)[1]}     # with the published hands
+    ok = next(f for f in verify_game(**record)["findings"] if f["check"] == "rand")
+    assert ok["status"] == "ok", ok
+
+    def broken(mutate):
+        forged = copy.deepcopy(record)
+        mutate(forged["session"])
+        return next(f for f in verify_game(**forged)["findings"] if f["check"] == "rand")["status"]
+    assert broken(lambda s: s["state"]["data"]["rand"]["reveals"][b].update(s="11" * 32)) == "fail", "a secret off its hash"
+    assert broken(lambda s: s["state"]["data"]["rand"].update(beacon_sig="22" * 48)) == "fail", "not drand's signature"
+    assert broken(lambda s: s["config"]["rand"]["commits"][a].update(signature="x" * 86)) == "fail"
+    assert broken(lambda s: s["config"]["rand"]["commits"][a].update(beacon_round=1)) == "fail", "a round already known"
+    swapped = copy.deepcopy(record)
+    swapped["relay_verdict"]["values"] = {a: {"silk": 9, "spice": 0, "amber": 0}, b: swapped["relay_verdict"]["values"][b]}
+    assert next(f for f in verify_game(**swapped)["findings"] if f["check"] == "rand")["status"] == "fail"
 
 
 # ── the module on its own ────────────────────────────────────────────────────
 
-def _dealt_state(values_a=(1, 2, 3), values_b=(2, 1, 2), config=None):
-    mod = get_interaction_module(BARGAIN)
-    st = mod.initial_state(["a", "b"], config or {})
-    hands = {"a": {"values": dict(zip(B.GOODS, values_a))}, "b": {"values": dict(zip(B.GOODS, values_b))}}
-    return mod, with_deal(st, hands=hands, relay_seed="x", seed="y")
+def test_the_players_view_is_computed_client_side_from_its_secret(monkeypatch):
+    from emporia import rand_client
+    sess_id = "sess_view"
+    now = rand.GENESIS + 1_000_000 * rand.PERIOD_S
+    rec_a = rand_client.make_commit(lambda *a: "sig", sess_id, "a", 0, now=now)
+    rec_b = rand_client.make_commit(lambda *a: "sig", sess_id, "b", 1, now=now + 5)
+    (ca, sa), (cb, _sb) = rec_a, rec_b
+    assert ca["beacon_round"] == rand.round_at(now) + rand.CLIENT_LEAD_ROUNDS
+    assert not rand.commit_round_problem(ca["at"], ca["beacon_round"]), "the tools always name a legal round"
+    sess = {"session_id": sess_id, "config": {"rand": {"scope": sess_id, "commits": {"a": {**ca, "seat": 0}, "b": {**cb, "seat": 1}}}},
+            "state": {"data": {"pool": B._as_dict(POOL), "offers": [
+                {"n": 1, "by": "a", "allocation": {"a": B._as_dict((3, 0, 0)), "b": B._as_dict((0, 2, 1))}}]}}}
+    rnd = B.game_round(sess["config"]["rand"]["commits"])
+    early = rand_client.private_view(sess, "a", dict(sa), now=now + 1)
+    assert early["wait_s"] > 0 and "values" not in early, "no hand before the round exists"
+    ready = rand.round_time(rnd) + 1
+    view = rand_client.private_view(sess, "a", dict(sa, seen_all_at=now + 1), now=ready, fetch=lambda r, base=None: fake_beacon_sig(r))
+    hand, walk = B.draw(sess_id, 0, bytes.fromhex(fake_beacon_sig(rnd)), bytes.fromhex(sa["s"]))
+    assert view["values"] == B._as_dict(hand) and view["walk_away"] == walk and view["all_goods_worth"] == 10
+    assert view["offers"] == [{"n": 1, "by": "a", "worth_to_you": B.worth(hand, (3, 0, 0))}]
+    # a client that first saw the other commitment only after the round voids
+    late = dict(sa, seen_all_at=rand.round_time(rnd) + 1)
+    assert rand_client.private_view(sess, "a", late, now=ready, fetch=lambda r, base=None: fake_beacon_sig(r))["void"] == "late_commit"
 
 
-def test_conceal_strips_the_seed_and_hands_and_nothing_else():
-    _, st = _dealt_state()
-    hidden = conceal(st)
-    assert hidden.data["deal"]["hands"] is None and hidden.data["deal"]["relay_seed"] is None
-    assert st.data["deal"]["hands"], "the original is untouched"
-    assert {k: v for k, v in hidden.data.items() if k != "deal"} == {k: v for k, v in st.data.items() if k != "deal"}
+def test_the_mcp_tools_commit_on_create_and_join_and_reveal_from_the_local_secret(monkeypatch, tmp_path):
+    from emporia import identity, mcp_server as m, wire
 
+    class R:
+        def __init__(self, body, code=200):
+            self._b, self.status_code = body, code
 
-def test_private_view_is_the_players_own_hand_and_what_each_offer_is_worth_to_it():
-    mod, st = _dealt_state()
-    st = mod.apply_action(st, SessionAction("a", "offer", {"keep": {"silk": 3}})).new_state
-    view = mod.private_view(st.data, "b")
-    assert view["values"] == {"silk": 2, "spice": 1, "amber": 2} and view["all_goods_worth"] == 10
-    assert view["offers"] == [{"n": 1, "by": "a", "worth_to_you": 1 * 2 + 1 * 2}]   # b gets 2 spice, 1 amber
+        def json(self):
+            return self._b
+
+        def raise_for_status(self):
+            pass
+
+    sess = {"session_id": "sess_t", "module_type": BARGAIN, "step_number": 4, "status": "active",
+            "participants": ["x", "me"], "config": {}, "payment_rules": {},
+            "state": {"data": {"pool": B._as_dict(POOL), "offers": [], "max_offers": 6, "ended": {"how": "accepted"}}}}
+    posted = []
+
+    def fake(method, url, **kw):
+        if method == "post":
+            posted.append((url, kw.get("json")))
+            return R({"session_id": "sess_t"})
+        return R(sess)
+    monkeypatch.setattr(m, "_bearer_request", fake)
+    me = f"gm_{uuid.uuid4().hex[:6]}"
+    monkeypatch.setattr(m, "AGENT_ID", me)
+    identity.get_public_key_hex(me)
+    r = m.join_session("sess_t", agent_id=me)
+    commit = posted[-1][1]["rand_commit"]
+    assert identity.verify(wire.signed_rand_commit_payload("sess_t", me, 2, commit["hash"], commit["beacon_round"],
+                                                           commit["at"]), commit["signature"],
+                           identity.get_public_key_hex(me)), "seat = players already seated"
+    assert not rand.commit_round_problem(commit["at"], commit["beacon_round"]) and "s" not in commit
+    m.submit_action("sess_t", "reveal", {}, WHY, agent_id=me)
+    sent = posted[-1][1]["payload"]
+    assert rand.commit_hash(bytes.fromhex(sent["s"]), bytes.fromhex(sent["nonce"])) == commit["hash"]
+    created = []
+    monkeypatch.setattr(m, "_offer_session", lambda *a: False)
+    m.create_session("emporia:bargain:v2", agent_id=me)
+    created.append(posted[-1][1])
+    c = created[0]["rand_commit"]
+    assert identity.verify(wire.signed_rand_commit_payload(wire.session_id_for(created[0]["nonce"]), me, 0, c["hash"],
+                                                           c["beacon_round"], c["at"]), c["signature"],
+                           identity.get_public_key_hex(me))
+    assert r.get("success") is True
 
 
 # ── the rating ───────────────────────────────────────────────────────────────
@@ -401,8 +535,11 @@ def test_a_house_bargain_counts_for_no_rating_but_does_for_quests(client, monkey
     from emporia.routes import standing
     sid, a, h = _game(client)
     monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", h)
+    monkeypatch.setattr(B, "draw", lambda scope, seat, sig, s: (B.HANDS[2 + 3 * seat], seat))   # two different hands
     _act(client, sid, a, "offer", {"keep": {"silk": 1}})
     _act(client, sid, h, "accept")
+    _reveal(client, sid, a)
+    _reveal(client, sid, h)
     standing._TABLE_CACHE.update(key=None, value=None)
     assert sid not in {g["session_id"] for g in standing._craft_games()}, "practice with the house counts nothing"
     games = standing._public_games_of(a)
@@ -429,120 +566,3 @@ def test_bargain_counts_for_craft_and_is_not_engine_decided():
 
 
 # ── the house's honest policy ────────────────────────────────────────────────
-
-def test_the_house_offers_about_half_by_its_own_values_and_says_them():
-    pool = {"silk": 3, "spice": 2, "amber": 1}
-    for values in B.value_vectors(POOL):
-        v = dict(zip(B.GOODS, values))
-        keep = H.bargain_keep(v, pool, 10)
-        w = H._worth(v, keep)
-        assert 5 <= w and all(5 > H._worth(v, dict(zip(B.GOODS, k))) or H._worth(v, dict(zip(B.GOODS, k))) >= w
-                              for k in B.bundles(POOL)), "the least bundle worth half or more"
-    session = {"config": {"chat": True}, "private": {"values": {"silk": 2, "spice": 1, "amber": 2}},
-               "state": {"data": {"pool": pool, "total": 10, "max_offers": 6, "walk_away": 0, "offers": []}}}
-    action, payload, said = H.bargain_move(session, "house")
-    assert action == "offer" and payload["claim"] == {"silk": 2, "spice": 1, "amber": 2}, "it claims the truth"
-    assert "silk 2, spice 1, amber 2" in said
-    assert H.bargain_move({**session, "private": {}}, "house") is None, "no hand: no move"
-
-
-def test_the_house_accepts_half_or_better_and_any_deal_at_the_end():
-    assert H.bargain_accepts(5, 10, False, 0) and not H.bargain_accepts(4, 10, False, 0)
-    assert H.bargain_accepts(1, 10, True, 0) and not H.bargain_accepts(1, 10, True, 1)
-    pool = {"silk": 3, "spice": 2, "amber": 1}
-    offer = {"n": 1, "by": "x", "allocation": {"x": {"silk": 3, "spice": 0, "amber": 0},
-                                               "house": {"silk": 0, "spice": 2, "amber": 1}}}
-    s = {"config": {}, "private": {"values": {"silk": 2, "spice": 1, "amber": 2}},
-         "state": {"data": {"pool": pool, "total": 10, "max_offers": 6, "walk_away": 0, "offers": [offer]}}}
-    assert H.bargain_move(s, "house")[0] == "offer", "worth 4 to it: it counters"
-    last = copy.deepcopy(s)
-    last["state"]["data"]["max_offers"] = 1
-    assert H.bargain_move(last, "house")[0] == "accept", "the last offer: 4 beats nothing"
-    last["state"]["data"]["walk_away"] = 4
-    assert H.bargain_move(last, "house")[0] == "decline"
-
-
-def test_the_house_knows_its_turn_and_adopts_a_waiting_bargain():
-    now = datetime.now(UTC).timestamp()
-    s = {"session_id": "s1", "module_type": BARGAIN, "status": "active", "participants": ["house", "x"],
-         "current_agent": "house", "state": {"current_agent": "house", "data": {"ended": None}},
-         "created_at": (datetime.now(UTC) - timedelta(seconds=300)).isoformat(), "payment_rules": {}}
-    assert H.my_turn(s, "house") == "bargain"
-    assert H.my_turn({**s, "current_agent": "x", "state": {"current_agent": "x", "data": {}}}, "house") == ""
-    assert H.adoptable({**s, "status": "waiting", "participants": ["x"]}, "house", now, 120, False)
-
-
-def test_the_house_bargains_a_whole_game_through_the_relay(client):
-    """The house's policy against the relay's real game: each turn it reads its own hand
-    (get_session's `private`) and moves; a newcomer who asks for half by the house's
-    stated values gets a deal."""
-    sid, newcomer, house = _game(client)
-    hdr = _hdr(house)
-    _act(client, sid, newcomer, "offer", {"keep": {"silk": 3, "spice": 2, "amber": 1}}, say="all mine?")
-    for _ in range(6):
-        s = client.get(f"/sessions/{sid}", headers=hdr).json()
-        if s["status"] != "active":
-            break
-        if s["current_agent"] == house:
-            action, payload, said = H.bargain_move(s, house)
-            assert _act(client, sid, house, action, payload, say=said).status_code == 200
-        else:   # the newcomer accepts the house's honest offer
-            assert _act(client, sid, newcomer, "accept").status_code == 200
-    out = get_interaction_module(BARGAIN).is_terminal(SessionState.from_dict(rs.load_session(sid)["state"]))[1]
-    assert out["termination"] == "deal" and out["points"][house] >= 5
-    chat = client.get(f"/sessions/{sid}/chat", headers=hdr).json()
-    assert any("Honest house" in m["content"] for m in chat["messages"])
-    vals = chat["revealed"]["hands"][house]["values"]
-    assert all(str(vals[g]) in m["content"] for m in chat["messages"] if "Honest house" in m["content"]
-               for g in B.GOODS), "what it said is what it was dealt"
-
-
-def test_the_mcp_tools_refuse_an_illegal_offer_before_signing_and_join_with_a_share(monkeypatch):
-    from emporia import mcp_server as m
-
-    class R:
-        def __init__(self, body, code=200):
-            self._b, self.status_code = body, code
-
-        def json(self):
-            return self._b
-
-        def raise_for_status(self):
-            pass
-
-    sess = {"session_id": "sess_t", "module_type": BARGAIN, "step_number": 1, "status": "active",
-            "config": {"deal_commitment": "ab" * 32}, "payment_rules": {},
-            "state": {"data": {"pool": {"silk": 3, "spice": 2, "amber": 1}, "offers": [], "max_offers": 6}}}
-    posted = []
-
-    def fake(method, url, **kw):
-        if method == "post":
-            posted.append((url, kw.get("json")))
-            return R({"session_id": "sess_t"})
-        return R(sess)
-    monkeypatch.setattr(m, "_bearer_request", fake)
-    me = f"gm_{uuid.uuid4().hex[:6]}"
-    identity.get_public_key_hex(me)
-    r = m.submit_action("sess_t", "offer", {"keep": {"silk": 9}}, WHY, agent_id=me)
-    assert not r["success"] and "0–3" in r["error"] and not posted, "nothing signed, nothing sent"
-    m.join_session("sess_t", agent_id=me)
-    body = posted[-1][1]
-    assert identity.verify(wire.signed_deal_seed_payload("sess_t", me, "ab" * 32), body["deal_signature"],
-                           identity.get_public_key_hex(me))
-
-
-def test_a_v32_relay_is_copied_aside_then_given_the_deals_table(tmp_path, monkeypatch):
-    import sqlite3
-    db = tmp_path / "relay.sqlite3"
-    old = sqlite3.connect(db)
-    old.execute("CREATE TABLE kept_from_v32 (x TEXT)")
-    old.execute("PRAGMA user_version = 32")
-    old.commit()
-    old.close()
-    monkeypatch.setattr(rs, "DATABASE_PATH", db)
-    rs.init_db()
-    conn = sqlite3.connect(db)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == rs.SCHEMA_VERSION == 33
-    assert conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'session_deals'").fetchone()
-    [snap] = list(tmp_path.glob("relay.sqlite3.before-v33-*.bak"))
-    assert sqlite3.connect(snap).execute("PRAGMA user_version").fetchone()[0] == 32

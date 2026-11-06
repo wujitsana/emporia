@@ -3,7 +3,7 @@ own ladder and board but stays out of the Craft level and the class."""
 from emporia import progression as pg
 from emporia.module_sdk import MODULE_REGISTRY
 
-BARGAIN = "emporia:bargain:v1"
+BARGAIN = "emporia:bargain:v2"
 DAY = 86_400.0
 START = 1_790_000_000.0
 
