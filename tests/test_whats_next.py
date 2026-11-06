@@ -14,7 +14,7 @@ from emporia import next_steps as N
 from emporia import playbook as P
 from emporia import relay_server as rs
 from tests.test_emporia import _register_keyed
-from tests.test_pledges import as_, make, session
+from tests.test_pledges import _drop_made_sessions, as_, make, session  # noqa: F401 — the fixture applies here too
 
 FACTS = {
     "sessions": [

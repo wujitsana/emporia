@@ -341,7 +341,25 @@ def session(module, players, data, status="active", current=""):
                      "current_agent, step_number, status, participants_json, created_at, updated_at) "
                      "VALUES (?,?,?,?,?,?,?,?,?,?,?)", (sid, module, "{}", "{}", json.dumps(state), current or players[0],
                                                         1, status, json.dumps(players), now, now))
+    _MADE.append(sid)
     return sid
+
+
+_MADE: list[str] = []
+
+
+@pytest.fixture(autouse=True)
+def _drop_made_sessions():
+    """These sessions carry only the state a pledge reads, not a full game's. Left active in
+    the suite's shared database, the deadline sweeper (which reads every timed session)
+    would stop on one and never reach a later test's game; so each test takes its own away."""
+    yield
+    made, _MADE[:] = list(_MADE), []
+    if made:
+        marks = ",".join("?" * len(made))
+        with rs.DB_LOCK, rs.get_db() as conn:
+            for table in ("actions", "participants", "sessions"):
+                conn.execute(f"DELETE FROM {table} WHERE session_id IN ({marks})", made)  # noqa: S608
 
 
 def set_session(sid, status, data, current=""):
