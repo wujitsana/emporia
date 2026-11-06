@@ -216,19 +216,15 @@ def test_a_player_who_leaves_a_waiting_game_gets_the_stake_held_for_it_back(clie
     assert client.get(f"/sessions/{sid}", headers=_as("sh273_host")).json()["status"] == "waiting"
 
 
-def test_a_vote_can_be_taken_back(client):
+def test_the_agoras_own_write_routes_are_gone_and_name_what_replaces_them(client):
     _register_keyed(client, "v273_author")
-    _register_keyed(client, "v273_voter")
-    from tests.test_emporia import _signed_post
     slug = client.post("/agoras/topics", json={"name": "v273 topic", "description": "d", "visibility": "public",
                                                "gate_type": "open", "creator_id": "v273_author"},
                        headers=_as("v273_author")).json()["slug"]
-    post = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("v273_author", slug, {"title": "t", "content": "c"}),
-                       headers=_as("v273_author")).json()["post_id"]
-    assert client.post(f"/agoras/posts/{post}/vote", json={"value": 1}, headers=_as("v273_voter")).json()["vote_score"] == 1
-    assert client.post(f"/agoras/posts/{post}/vote", json={"value": 0}, headers=_as("v273_voter")).json()["vote_score"] == 0
-    assert client.post(f"/agoras/posts/{post}/vote", json={"value": 0}, headers=_as("v273_voter")).json()["vote_score"] == 0
-    assert client.post(f"/agoras/posts/{post}/vote", json={"value": 2}, headers=_as("v273_voter")).status_code == 400
+    for path in (f"/agoras/topics/{slug}/posts", "/agoras/posts/pst_x/vote", "/agoras/posts/pst_x/comments",
+                 "/agoras/comments/cmt_x/vote"):
+        r = client.post(path, json={}, headers=_as("v273_author"))
+        assert r.status_code == 410 and "post" in r.json()["detail"] and "react" in r.json()["detail"], path
 
 
 def test_an_unused_topic_invite_can_be_taken_back(client):
@@ -358,7 +354,7 @@ def test_a_player_who_signed_a_leave_is_not_sealed_to(client):
 def test_a_topic_creator_removes_a_subscriber_for_good(client):
     """P274: as a room kick — even a public topic, which anyone may read, takes
     no more posts, comments or votes from the removed agent."""
-    from tests.test_emporia import _signed_comment, _signed_post
+    from tests.test_posts_v2 import _post
     for a in ("tk274_owner", "tk274_pest", "tk274_other"):
         _register_keyed(client, a)
     slug = client.post("/agoras/topics", json={"name": "tk274 topic", "description": "d", "visibility": "public",
@@ -366,8 +362,7 @@ def test_a_topic_creator_removes_a_subscriber_for_good(client):
                        headers=_as("tk274_owner")).json()["slug"]
     assert client.post(f"/agoras/topics/{slug}/subscribe", json={"agent_id": "tk274_pest"},
                        headers=_as("tk274_pest")).status_code == 200
-    post = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("tk274_owner", slug, {"title": "t", "content": "c"}),
-                       headers=_as("tk274_owner")).json()["post_id"]
+    post = _post(client, "tk274_owner", text="c", topic=slug).json()["post_id"]
     assert client.post(f"/agoras/topics/{slug}/kick", json={"target_agent_id": "tk274_pest"},
                        headers=_as("tk274_other")).status_code == 403
     assert client.post(f"/agoras/topics/{slug}/kick", json={"target_agent_id": "tk274_owner"},
@@ -376,13 +371,10 @@ def test_a_topic_creator_removes_a_subscriber_for_good(client):
     assert r.status_code == 200 and r.json()["was_member"] is True
     assert client.post(f"/agoras/topics/{slug}/subscribe", json={"agent_id": "tk274_pest"},
                        headers=_as("tk274_pest")).status_code == 403
-    assert client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("tk274_pest", slug, {"title": "x", "content": "y"}),
-                       headers=_as("tk274_pest")).status_code == 403
-    assert client.post(f"/agoras/posts/{post}/comments", json=_signed_comment("tk274_pest", post, {"content": "z"}),
-                       headers=_as("tk274_pest")).status_code == 403
-    assert client.post(f"/agoras/posts/{post}/vote", json={"value": -1}, headers=_as("tk274_pest")).status_code == 403
+    assert _post(client, "tk274_pest", text="y", topic=slug).status_code == 403
+    assert _post(client, "tk274_pest", text="z", reply_to=f"post:{post}", topic=slug).status_code == 403
     assert client.get(f"/agoras/posts/{post}", headers=_as("tk274_pest")).status_code == 200      # public: still readable
-    assert client.post(f"/agoras/posts/{post}/vote", json={"value": 1}, headers=_as("tk274_other")).status_code == 200
+    assert _post(client, "tk274_other", text="fine", topic=slug).status_code == 200
 
 
 def test_a_block_follows_the_sender_to_another_relay(client):

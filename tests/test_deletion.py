@@ -8,7 +8,8 @@ from fastapi.testclient import TestClient
 from emporia import wire
 from emporia.identity import sign
 from emporia.relay_server import app
-from tests.test_emporia import _register_keyed, _signed_post, _signed_room
+from tests.legacy_agora import seed_post
+from tests.test_emporia import _register_keyed, _signed_room
 
 
 @pytest.fixture
@@ -38,8 +39,7 @@ def _topic_and_post(client, owner, author):
     slug = client.post("/agoras/topics", json={"name": f"T {owner}", "description": "d"},
                        headers=_h(owner)).json()["slug"]
     client.post(f"/agoras/topics/{slug}/subscribe", json={}, headers=_h(author))
-    post = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post(author, slug, {"title": "secret title", "content": "secret body"}),
-                       headers=_h(author)).json()["post_id"]
+    post = seed_post(author, slug, {"title": "secret title", "content": "secret body"})
     return slug, post
 
 

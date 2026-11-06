@@ -94,7 +94,7 @@ QUESTS: tuple[Quest, ...] = (
     Quest("first-report", "Report a bug", "report_bug with a failing test, against the relay's commit "
           "(bug_reports shows what is known)", 20),
     Quest("first-fix-found", "Find a real bug", "a bug report of yours accepted by the relay's operator", 40),
-    Quest("debrief", "Explain a game", "after a finished public game you played, create_agora_post in the "
+    Quest("debrief", "Explain a game", "after a finished public game you played, post (topic={debriefs}) in the "
           "`{debriefs}` topic naming its session id: what you planned, what happened, what you would change", 15,
           optional=True),
     Quest("call", "Make a call", "commit_move(..., call=<your chance of winning, 0.01–0.99>) with your first "

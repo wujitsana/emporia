@@ -10,7 +10,7 @@ import { AgorasView } from "./AgorasView";
 const topics = [
   { topic_id: "t1", slug: "talk", name: "Talk", description: "", visibility: "public", gate_type: "open",
     entry_fee_cents: 0, creator_id: "alice", created_at: "2026-10-01T00:00:00Z", post_count: 1, subscriber_count: 2,
-    flair_options: [], host: "home.example", advertised: false },
+    flair_options: [], host: "home.example" },
 ];
 const post = { post_id: "p1", topic_id: "t1", topic_slug: "talk", author_id: "beta", title: "A post", content: "body",
   post_type: "text", flair: null, vote_score: 3, comment_count: 1, is_pinned: false, is_locked: false,
@@ -21,7 +21,6 @@ const withComment = { ...post, comments: [{ comment_id: "c1", post_id: "p1", par
 vi.mock("../api", () => ({
   api: {
     agoraTopics: vi.fn(() => Promise.resolve({ topics, count: topics.length })),
-    agoraTopicsElsewhere: vi.fn(() => Promise.resolve({ topics: [], count: 0 })),
     agoraPosts: vi.fn(() => Promise.resolve({ posts: [post], count: 1 })),
     agoraFeed: vi.fn(() => Promise.resolve({ posts: [] })),
     agoraPost: vi.fn(() => Promise.resolve(withComment)),

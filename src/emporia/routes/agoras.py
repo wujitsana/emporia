@@ -8,7 +8,6 @@ scratchpad/extract_router.py's main_defs(). Shared helpers stay in
 from __future__ import annotations
 
 import json
-import sqlite3
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -17,13 +16,12 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from emporia import adverts, entitlements
+from emporia import entitlements
 from emporia import relay_server as rs
+from emporia.routes import posts as pv
 from emporia.routes.rooms import _require_signed_by
 from emporia.wire import (
     ERR_DUPLICATE_NONCE,
-    signed_agora_comment_payload,
-    signed_agora_post_payload,
     signed_agora_topic_payload,
     signed_topic_act_payload,
     topic_slug,
@@ -144,6 +142,13 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
         raise HTTPException(400, f"visibility must be one of {sorted(rs._AGORA_VISIBILITIES)}")
     if req.access_duration_days is not None and req.access_duration_days <= 0:
         raise HTTPException(400, "access_duration_days must be a positive integer or omitted")
+    if req.encrypted:
+        # Members are the creator and those it invites by signed invites: a client seals to exactly those.
+        # An open topic has no such list, a public one is read by all, a paid one has members by payment.
+        if req.visibility == "public" or req.gate_type != "invite":
+            raise HTTPException(400, "encrypted is for a private or restricted topic with gate_type 'invite': "
+                                     "its members are the ones its creator invites by signed invite")
+        rs._require_encryption_keys_published([caller])
     topic_id = f"tpc_{uuid.uuid4().hex[:12]}"
     slug = topic_slug(req.name, req.slug)
     # P278: the creator's signature over every setting, as for a room (P243).
@@ -151,7 +156,8 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
         raise HTTPException(401, "a topic is signed by its creator (nonce, signature over "
                                  "wire.signed_agora_topic_payload)")
     signed = signed_agora_topic_payload(req.nonce, slug, req.name, req.description, req.visibility, req.gate_type,
-                                        req.entry_fee_cents, req.flair_options, req.access_duration_days)
+                                        req.entry_fee_cents, req.flair_options, req.access_duration_days,
+                                        req.encrypted)
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
         raise HTTPException(403, "topic signature does not match its settings and this agent's key")
     now = datetime.now(UTC).isoformat()
@@ -160,11 +166,11 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
             conn.execute(
                 "INSERT INTO agora_topics (topic_id, slug, name, description, visibility, "
                 "gate_type, entry_fee_cents, creator_id, created_at, flair_options, "
-                "access_duration_days) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "access_duration_days, encrypted) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (topic_id, slug, req.name, req.description, req.visibility,
                  req.gate_type, req.entry_fee_cents,
-                 caller, now, json.dumps(req.flair_options), req.access_duration_days),
+                 caller, now, json.dumps(req.flair_options), req.access_duration_days, int(req.encrypted)),
             )
             # Creator auto-subscribes as owner
             conn.execute(
@@ -183,7 +189,7 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
     return {
         "topic_id": topic_id, "slug": slug, "name": req.name,
         "visibility": req.visibility, "gate_type": req.gate_type,
-        "entry_fee_cents": req.entry_fee_cents,
+        "entry_fee_cents": req.entry_fee_cents, "encrypted": req.encrypted,
     }
 
 
@@ -244,7 +250,6 @@ async def list_agora_topics(
                 q += "AND visibility=? "
                 params.append(visibility)
             rows = conn.execute(q + f"ORDER BY {order} LIMIT ?", (*params, limit)).fetchall()
-    advertised = {x["slug"] for x in adverts.own_topic_adverts({r["slug"] for r in rows})}
     topics = []
     for r in rows:
         topics.append({
@@ -255,18 +260,9 @@ async def list_agora_topics(
             "creator_id": r["creator_id"], "created_at": r["created_at"],
             "post_count": r["post_count"], "subscriber_count": r["subscriber_count"],
             "flair_options": json.loads(r["flair_options"] or "[]"),
-            "advertised": r["slug"] in advertised, "host": rs._own_host(),
+            "host": rs._own_host(), "encrypted": bool(r["encrypted"]),
         })
     return {"topics": topics, "count": len(topics)}
-@router.get("/agoras/topics/elsewhere")
-async def agora_topics_elsewhere(request: Request):
-    """P249: public topics their owners advertised on relays this one links to —
-    checked against the owner's signature when pulled and again now. Joining and
-    any fee are on the relay named in `relay`, not here."""
-    if not rs._dashboard_agent_id(request):
-        raise HTTPException(401, "Authentication required")
-    found = adverts.elsewhere("topics")
-    return {"topics": found, "count": len(found)}
 @router.get("/agoras/topics/{slug}")
 async def get_agora_topic(slug: str, request: Request):
     viewer_id = rs._dashboard_agent_id(request)
@@ -274,7 +270,6 @@ async def get_agora_topic(slug: str, request: Request):
         row = conn.execute("SELECT * FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
         if not row:
             raise HTTPException(404, "Topic not found")
-        advertised = bool(adverts.own_topic_adverts({slug}))
         card = {   # P278: what anyone shown the topic may check before paying, against its creator's signature
             "topic_id": row["topic_id"], "slug": row["slug"], "name": row["name"],
             "description": row["description"], "visibility": row["visibility"],
@@ -282,14 +277,14 @@ async def get_agora_topic(slug: str, request: Request):
             "creator_id": row["creator_id"], "created_at": row["created_at"],
             "flair_options": json.loads(row["flair_options"] or "[]"),
             "access_duration_days": row["access_duration_days"],
-            "advertised": advertised, "host": rs._own_host(),
+            "host": rs._own_host(), "encrypted": bool(row["encrypted"]),
         }
         if not rs._topic_can_read(
             row["visibility"], row["gate_type"], row["entry_fee_cents"], viewer_id, row["topic_id"], conn,
         ):
             invited = bool(viewer_id) and conn.execute(
                 "SELECT 1 FROM agora_invites WHERE topic_id=? AND agent_id=?", (row["topic_id"], viewer_id)).fetchone()
-            if not (advertised or invited):
+            if not invited:
                 raise HTTPException(403, "Private topic — subscribe to access")
             return {**card, "listing_only": True, "signed_acts": _topic_acts(conn, row["topic_id"], only_create=True)}
         acts = _topic_acts(conn, row["topic_id"])
@@ -304,6 +299,27 @@ async def get_agora_topic(slug: str, request: Request):
         **card, "post_count": row["post_count"], "subscriber_count": row["subscriber_count"],
         "viewer_role": member_role, "signed_acts": acts,
     }
+@router.get("/agoras/topics/{slug}/encryption-keys")
+async def get_topic_encryption_keys(slug: str, request: Request):
+    """Every member's encryption key in one round trip, as for a room: what a client needs to seal a post
+    to an encrypted topic. Members only (the key material is public, the member list is not)."""
+    from types import SimpleNamespace
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "Authentication required")
+    with rs.DB_LOCK, rs.get_db() as conn:
+        row = conn.execute("SELECT * FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Topic not found")
+        members = [r["agent_id"] for r in conn.execute(
+            "SELECT agent_id FROM agora_members WHERE topic_id=? ORDER BY joined_at", (row["topic_id"],))]
+        creator = row["creator_id"]
+    if caller not in members:
+        raise HTTPException(403, "Not a member of this topic")
+    return {"slug": slug, "encrypted": bool(row["encrypted"]), "creator": creator,
+            "keys": rs._room_member_encryption_keys(SimpleNamespace(members=members))}
+
+
 @router.post("/agoras/topics/{slug}/invite")
 async def invite_to_agora_topic(slug: str, req: rs.AgoraInviteRequest, request: Request):
     """Invite a specific agent to a private or paid_invite topic."""
@@ -397,6 +413,9 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
         entry_fee = row["entry_fee_cents"] if "entry_fee_cents" in row.keys() else 0
         topic_id = row["topic_id"]
         creator_id = row["creator_id"]
+        if row["encrypted"]:
+            # as joining an encrypted room: no key published would leave every post unreadable to this member
+            rs._require_encryption_keys_published([req.agent_id])
         access_duration_days = (
             row["access_duration_days"] if "access_duration_days" in row.keys() else None
         )
@@ -591,74 +610,15 @@ async def unsubscribe_agora_topic(slug: str, agent_id: str, request: Request):
             (row["topic_id"],),
         )
     return {"ok": True}
+_GONE = ("the Agora's own post, comment and vote routes are gone: post to a topic with `post` "
+         "(emporia:post:v2, topic=<slug>; a comment is a post with reply_to) and like with `react`")
+
+
 @router.post("/agoras/topics/{slug}/posts")
-async def create_agora_post(slug: str, req: rs.CreateAgoraPostRequest, request: Request):
-    caller = rs._dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    rs._require_registered(caller)
-    rs._enforce_agent_rate_limit(caller)
-    # P242: the author's signature first, before the (possibly paid) guardrails scan.
-    _require_author_signed(caller, req.nonce, req.signature, signed_agora_post_payload(
-        slug, req.title, req.content, req.post_type, req.flair, req.nonce))
-    # P21-5 (B5): title/flair/content bounded automatically — see
-    # _require_payload_content_within_limit.
-    try:
-        await rs._assert_payload_safe_counted(req.model_dump())
-    except PermissionError as e:
-        raise HTTPException(403, str(e))
-    now = datetime.now(UTC).isoformat()
-    post_id = f"pst_{uuid.uuid4().hex[:12]}"
-    with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT * FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
-        if not row:
-            raise HTTPException(404, "Topic not found")
-        # N4-4 (N4 review R3): used to check membership only for visibility=="restricted",
-        # so any registered non-member could post into a "private" topic — the write side
-        # of a rule the read endpoints (list_agora_posts, get_agora_post) already enforce
-        # via _topic_can_read. Reuse that helper instead of a second, narrower rule.
-        if not rs._topic_can_read(
-            row["visibility"], row["gate_type"], row["entry_fee_cents"], caller, row["topic_id"], conn,
-        ):
-            raise HTTPException(403, "Private topic — must be a member to post")
-        _require_not_removed(row["topic_id"], caller)   # P274: removed by the topic's creator
-        try:
-            conn.execute(
-                "INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, "
-                "post_type, flair, created_at, nonce, signature) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (post_id, row["topic_id"], caller, req.title, req.content,
-                 req.post_type, req.flair, now, req.nonce, req.signature),
-            )
-        except sqlite3.IntegrityError as e:
-            raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "already posted"}) from e
-        conn.execute(
-            "UPDATE agora_topics SET post_count=post_count+1 WHERE topic_id=?",
-            (row["topic_id"],),
-        )
-        # Collect subscribers to notify (excluding the author)
-        subscribers = [
-            r["agent_id"]
-            for r in conn.execute(
-                "SELECT agent_id FROM agora_members WHERE topic_id=? AND agent_id != ?",
-                (row["topic_id"], caller),
-            ).fetchall()
-        ]
-        topic_name = row["name"]
-    event = {
-        "type": "agora_post_created",
-        "post_id": post_id,
-        "topic_slug": slug,
-        "topic_name": topic_name,
-        "author_id": caller,
-        "title": req.title,
-        "preview": req.content[:200] if req.content else "",
-    }
-    if row["visibility"] == "public":
-        await rs.broadcast_global(event)
-    # Push to each subscriber's inbox so offline agents catch it on next poll
-    for sub in subscribers:
-        await rs.broadcast_to_agent(sub, event)
-    return {"post_id": post_id, "topic_slug": slug, "title": req.title, "author_id": caller}
+async def create_agora_post(slug: str):
+    raise HTTPException(410, _GONE)
+
+
 @router.get("/agoras/topics/{slug}/posts")
 async def list_agora_posts(
     slug: str,
@@ -687,21 +647,53 @@ async def list_agora_posts(
             f"{flair_clause} ORDER BY {order} LIMIT ?",
             params,
         ).fetchall()
+        cap = rs._clamp_limit(limit)
+        v2 = [pv.legacy_view(i, row) for i in pv.topic_posts(conn, viewer_id, slug, cap, flair or "")]
+    old = [
+        {
+            "post_id": p["post_id"], "topic_id": p["topic_id"], "author_id": p["author_id"],
+            "title": p["title"], "content": p["content"], "post_type": p["post_type"],
+            "flair": p["flair"], "vote_score": p["vote_score"],
+            "comment_count": p["comment_count"], "is_pinned": bool(p["is_pinned"]),
+            "is_locked": bool(p["is_locked"]), "created_at": p["created_at"],
+            "nonce": p["nonce"], "signature": p["signature"], "source": "legacy",
+        }
+        for p in posts
+    ]
+    # One list, old rows and post:v2 posts together: pinned old rows first, then by score or time.
+    if sort == "top":
+        merged = sorted(old + v2, key=lambda x: (x["vote_score"], x["created_at"]), reverse=True)
+    else:
+        merged = sorted([x for x in old if x["is_pinned"]], key=lambda x: x["created_at"], reverse=True) + sorted(
+            [x for x in old if not x["is_pinned"]] + v2, key=lambda x: x["created_at"], reverse=True)
+    merged = merged[:cap]
     return {
-        "posts": [
-            {
-                "post_id": p["post_id"], "topic_id": p["topic_id"], "author_id": p["author_id"],
-                "title": p["title"], "content": p["content"], "post_type": p["post_type"],
-                "flair": p["flair"], "vote_score": p["vote_score"],
-                "comment_count": p["comment_count"], "is_pinned": bool(p["is_pinned"]),
-                "is_locked": bool(p["is_locked"]), "created_at": p["created_at"],
-                "nonce": p["nonce"], "signature": p["signature"],
-            }
-            for p in posts
-        ],
-        "count": len(posts),
-        "topic": {"slug": row["slug"], "name": row["name"]},
+        "posts": merged,
+        "count": len(merged),
+        "topic": {"slug": row["slug"], "name": row["name"], "encrypted": bool(row["encrypted"])},
+        "untrusted": pv.UNTRUSTED,
     }
+
+
+def _get_v2_post(conn, post_id: str, viewer_id: str | None) -> dict[str, Any]:
+    """A post:v2 in a topic, in the legacy post's shape, with its replies as `comments`."""
+    r = conn.execute("SELECT * FROM posts WHERE post_id = ? AND topic IS NOT NULL AND is_deleted = 0",
+                     (post_id,)).fetchone()
+    if not r:
+        raise HTTPException(404, "Post not found")
+    topic = conn.execute("SELECT * FROM agora_topics WHERE slug = ?", (r["topic"],)).fetchone()
+    if not topic or not rs._topic_can_read(topic["visibility"], topic["gate_type"], topic["entry_fee_cents"],
+                                           viewer_id, topic["topic_id"], conn):
+        raise HTTPException(403, "Private topic")
+    host = rs._own_host()
+    kids = pv._thread_rows(conn, viewer_id, f"post:{post_id}", pv.MAX_FEED)
+    item = pv._decorate(conn, [r], host)[0]
+    item["replies"] = len(kids)
+    replies = pv._decorate(conn, kids, host)
+    return {**pv.legacy_view(item, topic),
+            "comments": [pv.legacy_comment(c, post_id) for c in replies], "untrusted": pv.UNTRUSTED}
+
+
 @router.get("/agoras/posts/{post_id}")
 async def get_agora_post(post_id: str, request: Request):
     viewer_id = rs._dashboard_agent_id(request)
@@ -714,7 +706,7 @@ async def get_agora_post(post_id: str, request: Request):
             (post_id,),
         ).fetchone()
         if not p:
-            raise HTTPException(404, "Post not found")
+            return _get_v2_post(conn, post_id, viewer_id)
         if not rs._topic_can_read(
             p["visibility"], p["gate_type"], p["entry_fee_cents"], viewer_id, p["topic_id"], conn,
         ):
@@ -742,170 +734,26 @@ async def get_agora_post(post_id: str, request: Request):
         ],
     }
 @router.post("/agoras/posts/{post_id}/vote")
-async def vote_agora_post(post_id: str, req: rs.AgoraVoteRequest, request: Request):
-    caller = rs._dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    rs._require_registered(caller)
-    rs._enforce_agent_rate_limit(caller)
-    if req.value not in (1, -1, 0):   # P273: 0 takes a vote back
-        raise HTTPException(400, "value must be 1, -1, or 0 to take a vote back")
-    now = datetime.now(UTC).isoformat()
-    with rs.DB_LOCK, rs.get_db() as conn:
-        # N4-4 (R3): this endpoint had no _topic_can_read check at all — any registered
-        # agent could vote on a post in a private/restricted topic they can't read.
-        post = conn.execute(
-            "SELECT p.topic_id, t.visibility, t.gate_type, t.entry_fee_cents FROM agora_posts p "
-            "JOIN agora_topics t ON p.topic_id=t.topic_id WHERE p.post_id=?",
-            (post_id,),
-        ).fetchone()
-        if not post:
-            raise HTTPException(404, "Post not found")
-        if not rs._topic_can_read(
-            post["visibility"], post["gate_type"], post["entry_fee_cents"], caller, post["topic_id"], conn,
-        ):
-            raise HTTPException(403, "Private topic")
-        _require_not_removed(post["topic_id"], caller)   # P274
-        existing = conn.execute(
-            "SELECT value FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='post'",
-            (caller, post_id),
-        ).fetchone()
-        if req.value == 0:
-            delta = -(existing["value"] if existing else 0)
-            conn.execute("DELETE FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='post'",
-                         (caller, post_id))
-        elif existing:
-            delta = req.value - existing["value"]
-            conn.execute(
-                "UPDATE agora_votes SET value=?, created_at=? "
-                "WHERE voter_id=? AND target_id=? AND target_type='post'",
-                (req.value, now, caller, post_id),
-            )
-        else:
-            delta = req.value
-            conn.execute(
-                "INSERT INTO agora_votes (voter_id, target_id, target_type, value, created_at) "
-                "VALUES (?,?,?,?,?)",
-                (caller, post_id, "post", req.value, now),
-            )
-        if delta != 0:
-            conn.execute(
-                "UPDATE agora_posts SET vote_score=vote_score+? WHERE post_id=?",
-                (delta, post_id),
-            )
-        row = conn.execute("SELECT vote_score FROM agora_posts WHERE post_id=?", (post_id,)).fetchone()
-    return {"ok": True, "vote_score": row["vote_score"] if row else 0}
+async def vote_agora_post(post_id: str):
+    raise HTTPException(410, _GONE)
+
+
 @router.post("/agoras/posts/{post_id}/comments")
-async def add_agora_comment(post_id: str, req: rs.AddAgoraCommentRequest, request: Request):
-    caller = rs._dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    rs._require_registered(caller)
-    rs._enforce_agent_rate_limit(caller)
-    # P242: the author's signature first, before the (possibly paid) guardrails scan.
-    _require_author_signed(caller, req.nonce, req.signature, signed_agora_comment_payload(
-        post_id, req.parent_comment_id, req.content, req.nonce))
-    # P21-5 (B5): content bounded automatically — see
-    # _require_payload_content_within_limit.
-    try:
-        await rs._assert_payload_safe_counted(req.model_dump())
-    except PermissionError as e:
-        raise HTTPException(403, str(e))
-    now = datetime.now(UTC).isoformat()
-    comment_id = f"cmt_{uuid.uuid4().hex[:12]}"
-    with rs.DB_LOCK, rs.get_db() as conn:
-        p = conn.execute(
-            "SELECT p.is_locked, t.visibility, t.topic_id, t.gate_type, t.entry_fee_cents "
-            "FROM agora_posts p JOIN agora_topics t ON p.topic_id=t.topic_id "
-            "WHERE p.post_id=? AND p.is_deleted=0",
-            (post_id,),
-        ).fetchone()
-        if not p:
-            raise HTTPException(404, "Post not found")
-        # N4-4 (R3): t.visibility was already selected above but never checked — any
-        # registered agent could comment into a private/restricted topic they can't read.
-        if not rs._topic_can_read(
-            p["visibility"], p["gate_type"], p["entry_fee_cents"], caller, p["topic_id"], conn,
-        ):
-            raise HTTPException(403, "Private topic")
-        if p["is_locked"]:
-            raise HTTPException(403, "Post is locked")
-        _require_not_removed(p["topic_id"], caller)   # P274: removed by the topic's creator
-        try:
-            conn.execute(
-                "INSERT INTO agora_comments (comment_id, post_id, parent_comment_id, "
-                "author_id, content, created_at, nonce, signature) VALUES (?,?,?,?,?,?,?,?)",
-                (comment_id, post_id, req.parent_comment_id, caller, req.content, now,
-                 req.nonce, req.signature),
-            )
-        except sqlite3.IntegrityError as e:
-            raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "already posted"}) from e
-        conn.execute(
-            "UPDATE agora_posts SET comment_count=comment_count+1 WHERE post_id=?", (post_id,)
-        )
-    return {"comment_id": comment_id, "post_id": post_id, "author_id": caller}
+async def add_agora_comment(post_id: str):
+    raise HTTPException(410, _GONE)
+
+
 @router.post("/agoras/comments/{comment_id}/vote")
-async def vote_agora_comment(comment_id: str, req: rs.AgoraVoteRequest, request: Request):
-    caller = rs._dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    rs._require_registered(caller)
-    rs._enforce_agent_rate_limit(caller)
-    if req.value not in (1, -1, 0):   # P273: 0 takes a vote back
-        raise HTTPException(400, "value must be 1, -1, or 0 to take a vote back")
-    now = datetime.now(UTC).isoformat()
-    with rs.DB_LOCK, rs.get_db() as conn:
-        # N4-4 (R3): sibling of vote_agora_post's fix above — no _topic_can_read check
-        # at all, so any registered agent could vote on a comment in a private/
-        # restricted topic they can't read.
-        comment = conn.execute(
-            "SELECT p.topic_id, t.visibility, t.gate_type, t.entry_fee_cents FROM agora_comments c "
-            "JOIN agora_posts p ON c.post_id=p.post_id "
-            "JOIN agora_topics t ON p.topic_id=t.topic_id WHERE c.comment_id=?",
-            (comment_id,),
-        ).fetchone()
-        if not comment:
-            raise HTTPException(404, "Comment not found")
-        if not rs._topic_can_read(
-            comment["visibility"], comment["gate_type"], comment["entry_fee_cents"],
-            caller, comment["topic_id"], conn,
-        ):
-            raise HTTPException(403, "Private topic")
-        _require_not_removed(comment["topic_id"], caller)   # P274
-        existing = conn.execute(
-            "SELECT value FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='comment'",
-            (caller, comment_id),
-        ).fetchone()
-        delta = req.value - (existing["value"] if existing else 0)
-        if req.value == 0:
-            conn.execute("DELETE FROM agora_votes WHERE voter_id=? AND target_id=? AND target_type='comment'",
-                         (caller, comment_id))
-        elif existing:
-            conn.execute(
-                "UPDATE agora_votes SET value=?, created_at=? "
-                "WHERE voter_id=? AND target_id=? AND target_type='comment'",
-                (req.value, now, caller, comment_id),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO agora_votes (voter_id, target_id, target_type, value, created_at) "
-                "VALUES (?,?,?,?,?)",
-                (caller, comment_id, "comment", req.value, now),
-            )
-        if delta != 0:
-            conn.execute(
-                "UPDATE agora_comments SET vote_score=vote_score+? WHERE comment_id=?",
-                (delta, comment_id),
-            )
-        row = conn.execute(
-            "SELECT vote_score FROM agora_comments WHERE comment_id=?", (comment_id,)
-        ).fetchone()
-    return {"ok": True, "vote_score": row["vote_score"] if row else 0}
+async def vote_agora_comment(comment_id: str):
+    raise HTTPException(410, _GONE)
+
+
 @router.get("/agoras/feed")
 async def agora_feed(agent_id: str, request: Request, sort: str = "new", limit: int = 50):
-    """Posts from topics the agent subscribes to."""
+    """Posts from topics the agent subscribes to: old rows and post:v2 posts together."""
     rs._require_caller_is(agent_id, request)
     order = "p.vote_score DESC, p.created_at DESC" if sort == "top" else "p.created_at DESC"
+    cap = rs._clamp_limit(limit)
     with rs.DB_LOCK, rs.get_db() as conn:
         posts = conn.execute(
             f"SELECT p.*, t.slug, t.name AS topic_name FROM agora_posts p "
@@ -913,18 +761,21 @@ async def agora_feed(agent_id: str, request: Request, sort: str = "new", limit: 
             f"JOIN agora_members m ON m.topic_id=t.topic_id "
             f"WHERE m.agent_id=? AND p.is_deleted=0 "
             f"ORDER BY {order} LIMIT ?",
-            (agent_id, rs._clamp_limit(limit)),
+            (agent_id, cap),
         ).fetchall()
-    return {
-        "posts": [
-            {
-                "post_id": p["post_id"], "topic_slug": p["slug"], "topic_name": p["topic_name"],
-                "author_id": p["author_id"], "title": p["title"], "post_type": p["post_type"],
-                "flair": p["flair"], "vote_score": p["vote_score"],
-                "comment_count": p["comment_count"], "is_pinned": bool(p["is_pinned"]),
-                "created_at": p["created_at"],
-            }
-            for p in posts
-        ],
-        "count": len(posts),
-    }
+        topics = conn.execute("SELECT t.* FROM agora_topics t JOIN agora_members m ON m.topic_id = t.topic_id "
+                              "WHERE m.agent_id = ? AND t.is_deleted = 0", (agent_id,)).fetchall()
+        v2 = [pv.legacy_view(i, t) for t in topics for i in pv.topic_posts(conn, agent_id, t["slug"], cap)]
+    old = [
+        {
+            "post_id": p["post_id"], "topic_slug": p["slug"], "topic_name": p["topic_name"],
+            "author_id": p["author_id"], "title": p["title"], "post_type": p["post_type"],
+            "flair": p["flair"], "vote_score": p["vote_score"],
+            "comment_count": p["comment_count"], "is_pinned": bool(p["is_pinned"]),
+            "created_at": p["created_at"], "source": "legacy",
+        }
+        for p in posts
+    ]
+    key = (lambda x: (x["vote_score"], x["created_at"])) if sort == "top" else (lambda x: x["created_at"])
+    merged = sorted(old + v2, key=key, reverse=True)[:cap]
+    return {"posts": merged, "count": len(merged), "untrusted": pv.UNTRUSTED}

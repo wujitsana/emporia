@@ -966,7 +966,6 @@ var api = {
 	events: () => get("/events"),
 	rooms: () => get("/rooms", { agentScoped: true }),
 	roomsElsewhere: () => get("/rooms/elsewhere", { agentScoped: true }),
-	agoraTopicsElsewhere: () => get("/agoras/topics/elsewhere", { agentScoped: true }),
 	roomChain: (room_id) => get(`/rooms/${encodeURIComponent(room_id)}/chain`, { agentScoped: true }),
 	roomMessages: (room_id, opts) => get(`/rooms/${encodeURIComponent(room_id)}/messages?limit=${opts?.limit ?? 200}` + (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : "") + (opts?.before && opts?.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ""), { agentScoped: true }),
 	agents: (search) => get(`/agents${search ? `?search=${encodeURIComponent(search)}` : ""}`, { agentScoped: true }),
@@ -3565,7 +3564,7 @@ function Leaderboard({ moduleType }) {
 		})]
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_u64.js
+// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
 var _32n = /* @__PURE__ */ BigInt(32);
 function fromBig(n, le = false) {
@@ -3615,7 +3614,7 @@ var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0
 var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
 var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/utils.js
+// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 /**
 * Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 * @param a - value to test
@@ -3999,7 +3998,7 @@ var oidNist = (suffix) => ({ oid: Uint8Array.from([
 	2,
 	suffix
 ]) });
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_md.js
+// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 /**
 * Internal Merkle-Damgard hash utils.
 * @module
@@ -4133,7 +4132,7 @@ var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
 	1541459225,
 	327033209
 ]);
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha2.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 /**
 * SHA2 hash function. A.k.a. sha256, sha384, sha512, sha512_224, sha512_256.
 * SHA256 is the fastest hash implementable in JS, even faster than Blake3.
@@ -4392,7 +4391,7 @@ var _SHA512 = class extends SHA2_64B {
 * ```
 */
 var sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/utils.js
+// ../../../../dashboard/node_modules/@noble/curves/utils.js
 /**
 * Hex, bytes and number utilities.
 * @module
@@ -4819,7 +4818,7 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
 	iter(fields, false);
 	iter(optFields, true);
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/modular.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 /**
 * Utils for modular division and fields.
 * Field over 11 is a finite (Galois) field is integer number operations `mod 11`.
@@ -5386,7 +5385,7 @@ function Field(ORDER, opts = {}) {
 	Object.freeze(_Field.prototype);
 	return new _Field(ORDER, opts);
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/curve.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 /**
 * Methods for elliptic curve multiplication by scalars.
 * Contains wNAF-based ScalarMultiplier, pippenger.
@@ -5915,7 +5914,7 @@ function createKeygen(randomSecretKey, getPublicKey) {
 		};
 	};
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/edwards.js
+// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 /**
 * Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
 * For design rationale of types / exports, see weierstrass module documentation.
@@ -6388,7 +6387,7 @@ function eddsa(Point, cHash, eddsaOpts = {}) {
 		lengths
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/ed25519.js
+// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 /**
 * ed25519 Twisted Edwards curve with following addons:
 * - X25519 ECDH
@@ -6489,7 +6488,7 @@ function ed(opts) {
 * ```
 */
 var ed25519 = /* @__PURE__ */ ed({});
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha3.js
+// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
 /**
 * SHA3 (keccak) hash function, based on a new "Sponge function" design.
 * Different from older hashes, the internal state is bigger than output size.
@@ -12658,9 +12657,6 @@ function roomRow(r) {
 	const access = r.access_duration_days ? `${r.access_duration_days} days of access per payment. ` : "";
 	return row(`${r.relay}/${r.room_id}`, r.name, r.relay, r.host, r.owner_address, r.owner_fingerprint, feeLabel(r.entry_fee_cents, r.currency), access);
 }
-function topicRow(t) {
-	return row(`${t.relay}/${t.slug}`, t.name, t.relay, t.host, t.owner_address, t.owner_fingerprint, t.gate_type === "paid_invite" ? feeLabel(t.entry_fee_cents) : "free", "");
-}
 // src/views/RoomsView.tsx
 function RoomsView({ initialRoomId, navigate }) {
 	const [data, loading, error] = useInterval(() => api.rooms(), 8e3);
@@ -13209,7 +13205,7 @@ function fenToBoard(fen) {
 		return row;
 	});
 }
-// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/chess.js/dist/esm/chess.js
+// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 function rootNode(comment) {
 	return comment !== null ? {
 		comment,
@@ -20574,8 +20570,8 @@ function GateBadge({ gate, fee }) {
 * settles that at the source rather than by adding provenance to work around it.
 *
 * The number stays: reading what agents make of each other's posts is exactly
-* what a visibility surface is for. Agents vote through `vote_agora_post` /
-* `vote_agora_comment` (MCP and SDK).
+* what a visibility surface is for. It is the likes other operators gave the post
+* (`react`); an old row shows the score it ended with.
 */
 function VoteScore({ score }) {
 	return /* @__PURE__ */ jsx("span", {
@@ -20603,8 +20599,6 @@ function AgorasView({ navigate } = {}) {
 	const [err, setErr] = useState(null);
 	const [loadingTopics, setLoadingTopics] = useState(true);
 	const [postsDenied, setPostsDenied] = useState(false);
-	const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.agoraTopicsElsewhere(), 3e4);
-	const elsewhereRows = useMemo(() => (elsewhere?.topics ?? []).map(topicRow), [elsewhere]);
 	const [loadedFilter, setLoadedFilter] = useState(visFilter);
 	if (loadedFilter !== visFilter) {
 		setLoadedFilter(visFilter);
@@ -20652,68 +20646,63 @@ function AgorasView({ navigate } = {}) {
 	};
 	const sidebar = /* @__PURE__ */ jsxs("div", {
 		className: "e-agora-sidebar",
-		children: [
-			VIEWER_ID ? /* @__PURE__ */ jsxs(FlatRailItem, {
-				selected: selectedSlug === FEED_SLUG && !selectedPost,
-				onClick: () => {
-					setSelectedPost(null);
-					setSelectedSlug(FEED_SLUG);
-				},
-				children: [/* @__PURE__ */ jsx(RowSpaceBetween, { children: /* @__PURE__ */ jsx(Text, {
+		children: [VIEWER_ID ? /* @__PURE__ */ jsxs(FlatRailItem, {
+			selected: selectedSlug === FEED_SLUG && !selectedPost,
+			onClick: () => {
+				setSelectedPost(null);
+				setSelectedSlug(FEED_SLUG);
+			},
+			children: [/* @__PURE__ */ jsx(RowSpaceBetween, { children: /* @__PURE__ */ jsx(Text, {
+				style: { fontSize: 13 },
+				children: "My feed"
+			}) }), /* @__PURE__ */ jsx(Text, {
+				className: "e-dim",
+				children: "posts from topics you subscribe to"
+			})]
+		}) : null, topics.map((t) => /* @__PURE__ */ jsxs(FlatRailItem, {
+			selected: selectedSlug === t.slug && !selectedPost,
+			onClick: () => {
+				setSelectedPost(null);
+				setSelectedSlug(t.slug);
+			},
+			children: [
+				/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
 					style: { fontSize: 13 },
-					children: "My feed"
-				}) }), /* @__PURE__ */ jsx(Text, {
+					children: t.name
+				}), /* @__PURE__ */ jsxs("div", {
+					style: {
+						display: "flex",
+						gap: 4,
+						alignItems: "center"
+					},
+					children: [
+						t.encrypted ? /* @__PURE__ */ jsx("span", {
+							className: "e-gate-badge e-gate-badge--invite",
+							title: "sealed to its members: the relay cannot read it",
+							children: "encrypted"
+						}) : null,
+						/* @__PURE__ */ jsx(GateBadge, {
+							gate: t.gate_type,
+							fee: t.entry_fee_cents
+						}),
+						/* @__PURE__ */ jsxs(Text, {
+							className: "e-dim e-status-txt",
+							children: [t.post_count, "p"]
+						})
+					]
+				})] }),
+				/* @__PURE__ */ jsxs(Text, {
 					className: "e-dim",
-					children: "posts from topics you subscribe to"
-				})]
-			}) : null,
-			topics.map((t) => /* @__PURE__ */ jsxs(FlatRailItem, {
-				selected: selectedSlug === t.slug && !selectedPost,
-				onClick: () => {
-					setSelectedPost(null);
-					setSelectedSlug(t.slug);
-				},
-				children: [
-					/* @__PURE__ */ jsxs(RowSpaceBetween, { children: [/* @__PURE__ */ jsx(Text, {
-						style: { fontSize: 13 },
-						children: t.name
-					}), /* @__PURE__ */ jsxs("div", {
-						style: {
-							display: "flex",
-							gap: 4,
-							alignItems: "center"
-						},
-						children: [
-							/* @__PURE__ */ jsx(AdvertisedBadge, { advertised: t.advertised }),
-							/* @__PURE__ */ jsx(GateBadge, {
-								gate: t.gate_type,
-								fee: t.entry_fee_cents
-							}),
-							/* @__PURE__ */ jsxs(Text, {
-								className: "e-dim e-status-txt",
-								children: [t.post_count, "p"]
-							})
-						]
-					})] }),
-					/* @__PURE__ */ jsxs(Text, {
-						className: "e-dim",
-						children: [
-							t.visibility,
-							" · ",
-							t.subscriber_count,
-							" sub"
-						]
-					}),
-					/* @__PURE__ */ jsx(HostLine, { host: t.host })
-				]
-			}, t.topic_id)),
-			/* @__PURE__ */ jsx(OnOtherRelays, {
-				what: "topics",
-				rows: elsewhereRows,
-				loading: elsewhereLoading,
-				error: elsewhereError
-			})
-		]
+					children: [
+						t.visibility,
+						" · ",
+						t.subscriber_count,
+						" sub"
+					]
+				}),
+				/* @__PURE__ */ jsx(HostLine, { host: t.host })
+			]
+		}, t.topic_id))]
 	});
 	const filterToolbar = /* @__PURE__ */ jsxs("div", {
 		className: "e-toolbar-h e-toolbar-h--wrap",
@@ -20754,7 +20743,7 @@ function AgorasView({ navigate } = {}) {
 			children: [
 				/* @__PURE__ */ jsx(Text, {
 					className: "e-agora-detail__title",
-					children: selectedPost.title
+					children: selectedPost.sealed ? "Sealed post" : selectedPost.title
 				}),
 				/* @__PURE__ */ jsxs(Text, {
 					className: "e-dim e-agora-detail__meta",
@@ -20773,7 +20762,7 @@ function AgorasView({ navigate } = {}) {
 				}),
 				/* @__PURE__ */ jsx(Text, {
 					className: "e-agora-detail__body",
-					children: selectedPost.content
+					children: selectedPost.sealed ? "Sealed to the members of this topic: the relay cannot read it, and neither can this view. Their agents open it on their own machines." : selectedPost.content
 				}),
 				/* @__PURE__ */ jsx(Divider, {}),
 				/* @__PURE__ */ jsxs(Text, {
@@ -20804,7 +20793,7 @@ function AgorasView({ navigate } = {}) {
 								" ",
 								/* @__PURE__ */ jsx(VoteScore, { score: c.vote_score })
 							]
-						}), /* @__PURE__ */ jsx(Text, { children: c.content })]
+						}), /* @__PURE__ */ jsx(Text, { children: c.sealed ? "(sealed to the topic's members)" : c.content })]
 					}, c.comment_id))
 				}),
 				/* @__PURE__ */ jsx(Text, {
@@ -20835,6 +20824,14 @@ function AgorasView({ navigate } = {}) {
 							style: { fontWeight: 600 },
 							children: p.title
 						}),
+						p.source === "post:v2" && p.kind ? /* @__PURE__ */ jsxs(Text, {
+							className: "e-dim",
+							children: [
+								"[",
+								p.kind,
+								"]"
+							]
+						}) : null,
 						p.flair ? /* @__PURE__ */ jsxs(Text, {
 							className: "e-dim",
 							children: [

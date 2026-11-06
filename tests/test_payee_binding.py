@@ -166,7 +166,7 @@ def test_mcp_pays_a_topic_fee_only_to_its_creator_within_the_signed_fee(wallet_e
         signed = wire.signed_agora_topic_payload(nonce, "club", "Club", "", "private", "paid_invite", fee, [], None)
         topic = {"slug": "club", "name": "Club", "description": "", "visibility": "private",
                  "gate_type": "paid_invite", "entry_fee_cents": fee, "flair_options": [], "access_duration_days": None,
-                 "creator_id": creator, "listing_only": True, "signed_acts": [
+                 "encrypted": False, "creator_id": creator, "listing_only": True, "signed_acts": [
                      {"act": "create", "at": datetime.now(UTC).isoformat(), "payload": signed,
                       "signature": identity.sign(signed, creator)}]}
         rooms_get = base.get

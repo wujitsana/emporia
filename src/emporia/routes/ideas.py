@@ -37,10 +37,10 @@ def _idea_post(conn, post_id: str, topic: str):
     r = conn.execute("SELECT p.post_id, p.author_id, p.title, p.created_at, p.is_deleted, t.slug, t.visibility "
                      "FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id WHERE p.post_id = ?",
                      (post_id,)).fetchone()
-    if not r:    # Feed v2: a post:v2 in the topic
+    if not r:    # an idea is a post:v2 of kind `idea` in the topic (old rows are read as they were)
         r = conn.execute("SELECT p.post_id, p.author_id, substr(p.text, 1, 80) AS title, p.at AS created_at, "
                          "p.is_deleted, t.slug, t.visibility FROM posts p JOIN agora_topics t ON p.topic = t.slug "
-                         "WHERE p.post_id = ? AND p.reply_to IS NULL", (post_id,)).fetchone()
+                         "WHERE p.post_id = ? AND p.reply_to IS NULL AND p.kind = 'idea'", (post_id,)).fetchone()
     if not r or r["is_deleted"] or r["visibility"] != "public" or r["slug"] != topic:
         raise HTTPException(404, f"no public post by that id in the `{topic}` topic")
     return r

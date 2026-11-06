@@ -20,10 +20,10 @@ const rooms = [
 const topics = [
   { topic_id: "t1", slug: "talk", name: "Talk", description: "", visibility: "public", gate_type: "open",
     entry_fee_cents: 0, creator_id: "alice", created_at: "2026-10-01T00:00:00Z", post_count: 1, subscriber_count: 2,
-    flair_options: [], host: "home.example", advertised: true },
+    flair_options: [], host: "home.example", encrypted: true },
   { topic_id: "t2", slug: "quiet", name: "Quiet topic", description: "", visibility: "public", gate_type: "open",
     entry_fee_cents: 0, creator_id: "alice", created_at: "2026-10-01T00:00:00Z", post_count: 0, subscriber_count: 0,
-    flair_options: [], host: "home.example", advertised: false },
+    flair_options: [], host: "home.example" },
 ];
 const roomsElsewhere = [{
   room_id: "x1", name: "Remote club", description: "tips", room_type: "private", gate_type: "paid",
@@ -31,12 +31,6 @@ const roomsElsewhere = [{
   relay: "https://peer.example", host: "peer.example", owner_address: "seller@peer.example",
   owner_fingerprint: "3f9a·c21e", owner_stable_id: "abc", join_url: "https://peer.example/rooms/x1/join", verified: true,
 }];
-const topicsElsewhere = [{
-  slug: "far", name: "Far topic", description: "", gate_type: "open", entry_fee_cents: 0, relay: "https://peer.example",
-  host: "peer.example", owner_address: "seller@peer.example", owner_fingerprint: "3f9a·c21e", owner_stable_id: "abc",
-  join_url: "https://peer.example/agoras/topics/far", verified: true,
-}];
-
 const calls: string[] = [];
 vi.mock("../api", () => ({
   api: {
@@ -46,7 +40,6 @@ vi.mock("../api", () => ({
     roomChain: vi.fn(() => new Promise(() => {})),
     agentProfile: vi.fn(() => Promise.resolve({})),
     agoraTopics: vi.fn(() => Promise.resolve({ topics, count: topics.length })),
-    agoraTopicsElsewhere: vi.fn(() => Promise.resolve({ topics: topicsElsewhere, count: 1 })),
     agoraPosts: vi.fn(() => Promise.resolve({ posts: [], count: 0 })),
     agoraFeed: vi.fn(() => Promise.resolve({ posts: [] })),
     agoraPost: vi.fn(),
@@ -97,15 +90,12 @@ describe("P249 rooms view", () => {
   });
 });
 
-describe("P249 agoras view", () => {
-  it("shows each topic's host and which are advertised, and the topics on other relays", async () => {
+describe("agoras view", () => {
+  it("shows each topic's host and which are encrypted, and no adverts", async () => {
     render(<AgorasView />);
     expect(await screen.findByText("Talk")).toBeTruthy();
-    expect(screen.getAllByText("advertised")).toHaveLength(1);
+    expect(screen.getAllByText("encrypted")).toHaveLength(1);
     expect(screen.getAllByText("on home.example")).toHaveLength(2);
-    expect(await screen.findByText("Far topic")).toBeTruthy();
-    expect(screen.getByText("On other relays (1)")).toBeTruthy();
-    expect(screen.getByText("on peer.example")).toBeTruthy();
-    expect(screen.getByText("Joining happens on peer.example, not here.")).toBeTruthy();
+    expect(screen.queryByText(/On other relays/)).toBeNull();
   });
 });

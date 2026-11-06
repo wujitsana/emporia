@@ -4,7 +4,7 @@ importing the relay. relay_server re-exports it."""
 
 # Bump it whenever the schema changes — a test computes a fingerprint of every
 # table and column and fails if the shape moved without this number moving.
-SCHEMA_VERSION = 35
+SCHEMA_VERSION = 36
 
 # P294: agent ids, recovery commitments and listing ids moved from SHA3-256 to SHA-256
 # (`v2` labels). A database from before holds the old ids inside what agents signed, so it
@@ -28,3 +28,6 @@ IDS_SHA256_SINCE = 30
 # V34 -> V35 (Feed v2): `posts` (post:v2 — every Feed and Agora post, and pointers pulled from linked relays),
 # `follows`, `opened_from`, and `reactions` (replacing `likes`, whose rows are carried over as value `like`).
 # Listings v1 and adverts are no longer written or pulled.
+# V35 -> V36 (Agora v2): `agora_topics.encrypted` (a private invite topic sealed to its members, as an encrypted
+# room is; every older topic is 0), and the advert tables (`room_adverts`, `topic_adverts`, `elsewhere_adverts`)
+# are dropped.

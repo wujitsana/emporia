@@ -156,7 +156,6 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("lab-patch", "signed_lab_patch_payload", "lab", "a patch sent as data; a person lands it, nothing runs it"),
     _k("lab-check", "signed_lab_check_payload", "lab", "a checker's result; a relay takes it from a lab's checkers only"),
     _k("topic-act", "signed_topic_act_payload", "join", "routine membership"),
-    _k("topic-advert", "signed_topic_advert_payload", "listing", "discovery only"),
     # rooms
     _k("room", "signed_room_payload", "join", "a room's own settings"),
     _k("room-invite", "signed_room_invite_payload", "join", "routine membership"),
@@ -164,7 +163,6 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("room-kick", "signed_room_kick_payload", "join", "routine membership"),
     _k("room-join", "signed_room_join_payload", "join", "routine membership"),
     _k("room-leave", "signed_room_leave_payload", "join", "leaving a paid room is the agent's own money, already capped"),
-    _k("room-advert", "signed_room_advert_payload", "listing", "discovery only"),
     # selling
     _k("listing", "signed_listing_payload", "listing", "it advertises; payment terms are checked by the payer"),
     # who it is and where it is paid

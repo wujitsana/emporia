@@ -207,12 +207,12 @@ def test_entries_are_found_by_ref(client):
         assert translog.leaf_at(conn, step["index"]).hex() == step["leaf_hash"]
 
 
-def test_a_changed_profile_and_a_withdrawn_advert_are_new_entries():
+def test_a_changed_profile_and_a_withdrawn_offer_are_new_entries():
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("INSERT INTO authorized_agents (agent_id, public_key_hex, stable_id, registered_at) "
                      "VALUES ('tl-eps', ?, 'sid_eps', '2026-10-31')", ("cd" * 32,))
-        conn.execute("INSERT INTO room_adverts (room_id, stable_id, public_key_hex, signature, advertised_at) "
-                     "VALUES ('room_tl_ad', 'sid_eps', ?, 'sig', '2026-10-31')", ("cd" * 32,))
+        conn.execute("INSERT INTO session_offers (session_id, stable_id, public_key_hex, signature, offered_at) "
+                     "VALUES ('sess_tl_offer', 'sid_eps', ?, 'sig', '2026-10-31')", ("cd" * 32,))
         translog.fold_all(conn)
         before = translog.size(conn)
         translog.backfill(conn)
@@ -220,10 +220,10 @@ def test_a_changed_profile_and_a_withdrawn_advert_are_new_entries():
         assert translog.size(conn) == before                                  # nothing changed, nothing added
         conn.execute("UPDATE authorized_agents SET x402_pay_to_json = '{\"base\": \"0xthief\"}' "
                      "WHERE agent_id = 'tl-eps'")
-        conn.execute("DELETE FROM room_adverts WHERE room_id = 'room_tl_ad'")
+        conn.execute("DELETE FROM session_offers WHERE session_id = 'sess_tl_offer'")
         translog.fold_all(conn)
         kinds = [e["record"]["kind"] for e in translog.entries(conn, before)]
-    assert sorted(kinds) == ["agent", "room_advert_gone"]
+    assert sorted(kinds) == ["agent", "session_offer_gone"]
 
 
 def test_a_relay_used_without_a_log_starts_one_with_everything_it_holds(tmp_path, monkeypatch):

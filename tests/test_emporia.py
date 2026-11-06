@@ -1249,7 +1249,7 @@ def test_relay_jwt_secret_persists_across_restart():
 def test_dashboard_jwt_survives_simulated_relay_restart():
     """End-to-end proof: a token minted before a simulated restart (in-process JWT secret
     cache cleared, forcing a reload from disk) still verifies after."""
-    from emporia import identity, relay_server
+    from emporia import identity
 
     with __import__("conftest").header_shim_off():
         client = TestClient(app, client=("127.0.0.1", 51216))
@@ -2358,7 +2358,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/rooms/{room_id}/advertise"),  # P247: the creator only
         ("DELETE", "/rooms/{room_id}/advertise"),
         ("GET", "/rooms/elsewhere"),  # P249: a caller; rooms linked relays advertised, each checked again as served
-        ("GET", "/agoras/topics/elsewhere"),  # P249: the same, for topics
         ("POST", "/rooms/{room_id}/message"),
         ("POST", "/agoras/topics"),
         ("POST", "/agoras/topics/{slug}/invite"),
@@ -2371,10 +2370,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         # definition even before that fix, since a caller was always resolved and
         # rejected on absence; the content-visibility gap this guard doesn't claim to
         # catch is a separate, deeper class.
-        ("POST", "/agoras/topics/{slug}/posts"),
-        ("POST", "/agoras/posts/{post_id}/vote"),
-        ("POST", "/agoras/posts/{post_id}/comments"),
-        ("POST", "/agoras/comments/{comment_id}/vote"),
         ("GET", "/agoras/feed"),
         ("POST", "/dm/start"),
         ("POST", "/dm/{thread_id}/send"),
@@ -2431,6 +2426,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         # public, but the membership list it is keyed by is not, so this is
         # members-only rather than merely authenticated.
         ("GET", "/rooms/{room_id}/encryption-keys"),
+        ("GET", "/agoras/topics/{slug}/encryption-keys"),   # Agora v2: the same, for an encrypted topic's members
         ("WS", "/ws/rooms/{room_id}"),
         ("GET", "/agoras/topics"),
         ("GET", "/agoras/topics/{slug}"),
@@ -2442,6 +2438,11 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/season"): "P297: the season's ladders — computed from public games and likes, like /ratings",
         ("GET", "/reactions"): "how many agents gave each value to a public thing — counts only; a post in a closed topic answers its members only",
         ("GET", "/feed"): "posts newest first or like-ranked: those in a topic the caller cannot read are left out",
+        ("GET", "/happening"): "Agora v2: counts and first lines of public places only (no private, paid or encrypted one)",
+        ("POST", "/agoras/topics/{slug}/posts"): "Agora v2: gone (410), names `post`",
+        ("POST", "/agoras/posts/{post_id}/vote"): "Agora v2: gone (410), names `react`",
+        ("POST", "/agoras/posts/{post_id}/comments"): "Agora v2: gone (410), names `post` with reply_to",
+        ("POST", "/agoras/comments/{comment_id}/vote"): "Agora v2: gone (410), names `react`",
         ("GET", "/posts/{post_id}"): "one post: 404 for one in a topic the caller cannot read",
         ("GET", "/thread"): "the replies to any object: a private room or topic needs membership (403)",
         ("GET", "/follows"): "whom an agent follows, and a count: signed, public acts",
@@ -6400,9 +6401,8 @@ def test_public_paid_invite_topic_entry_fee_gates_reads_and_posts(mock_verify, m
         headers={"x-emporia-agent-id": "p1b1_stranger"})
     assert stranger_read.status_code == 403, stranger_read.text
 
-    stranger_post = client.post(f"/agoras/topics/{slug}/posts",
-        json=_signed_post("p1b1_stranger", slug, {"title": "never paid a cent", "content": "..."}),
-        headers={"x-emporia-agent-id": "p1b1_stranger"})
+    from tests.legacy_agora import v2_post
+    stranger_post = v2_post(client, "p1b1_stranger", slug, "never paid a cent")
     assert stranger_post.status_code == 403, stranger_post.text
 
     # "public" still means discoverable — the topic listing itself is unaffected.
@@ -6434,9 +6434,7 @@ def test_public_paid_invite_topic_entry_fee_gates_reads_and_posts(mock_verify, m
     payer_read = client.get(f"/agoras/topics/{slug}/posts", headers={"x-emporia-agent-id": "p1b1_payer"})
     assert payer_read.status_code == 200, payer_read.text
 
-    payer_post = client.post(f"/agoras/topics/{slug}/posts",
-        json=_signed_post("p1b1_payer", slug, {"title": "paid up", "content": "..."}),
-        headers={"x-emporia-agent-id": "p1b1_payer"})
+    payer_post = v2_post(client, "p1b1_payer", slug, "paid up")
     assert payer_post.status_code == 200, payer_post.text
 
 
@@ -9664,7 +9662,6 @@ def test_agent_sdk_send_dm_uses_shared_wire_contract_and_relay_accepts_it():
 
     import httpx as httpx_module
 
-    from emporia import wire
     from emporia.agent_sdk import EmporiaAgent
     from emporia.identity import get_public_key_hex
     from emporia.relay_server import app as relay_app
@@ -9916,26 +9913,19 @@ def test_attributed_content_creation_requires_authentication(prod_client):
     assert r.status_code == 200
     slug = r.json()["slug"]
 
-    r = prod_client.post(
-        f"/agoras/topics/{slug}/posts",
-        json=_signed_post("attr_real", slug, {"title": "Forged post", "content": "c"}),
-    )
+    from tests.legacy_agora import v2_body
+    r = prod_client.post("/posts", json=v2_body("attr_real", "Forged post", topic=slug))
     assert r.status_code == 401
-    r = prod_client.post(
-        f"/agoras/topics/{slug}/posts", json=_signed_post("attr_real", slug, {"title": "Real post", "content": "c"}),
-        headers=bearer_for(prod_client, "attr_real"),
-    )
+    r = prod_client.post("/posts", json=v2_body("attr_real", "Real post", topic=slug),
+                         headers=bearer_for(prod_client, "attr_real"))
     assert r.status_code == 200
     assert r.json()["author_id"] == "attr_real"
     post_id = r.json()["post_id"]
 
-    r = prod_client.post(f"/agoras/posts/{post_id}/comments",
-                         json=_signed_comment("attr_real", post_id, {"content": "Forged comment"}))
+    r = prod_client.post("/posts", json=v2_body("attr_real", "Forged comment", topic=slug, reply_to=f"post:{post_id}"))
     assert r.status_code == 401
-    r = prod_client.post(
-        f"/agoras/posts/{post_id}/comments", json=_signed_comment("attr_real", post_id, {"content": "Real comment"}),
-        headers=bearer_for(prod_client, "attr_real"),
-    )
+    r = prod_client.post("/posts", json=v2_body("attr_real", "Real comment", topic=slug, reply_to=f"post:{post_id}"),
+                         headers=bearer_for(prod_client, "attr_real"))
     assert r.status_code == 200
     assert r.json()["author_id"] == "attr_real"
 
@@ -9956,43 +9946,6 @@ def test_attributed_content_creation_requires_authentication(prod_client):
 # N2-4 tranche 4 — caller-identity enforcement on integrity/economics
 # endpoints (votes, /payments/create-intent).
 # ============================================================================
-
-def test_vote_ballot_stuffing_closed(prod_client):
-    """Regression for N2-4 tranche 4 (R1) headline attack: POST /agoras/posts/{id}/vote
-    and /agoras/comments/{id}/vote deduped on PRIMARY KEY (voter_id, target_id) but
-    trusted a bare, attacker-chosen voter_id body field — enumerate GET /agents and
-    iterate, and a post's score rises by N with zero real distinct voters. voter_id is
-    now gone from the body; the relay resolves the voter from the authenticated caller,
-    so one caller can only ever cast one vote no matter how many times it POSTs.
-    """
-    _register_keyed(prod_client, "vote_author")
-    _register_keyed(prod_client, "vote_caller")
-
-    r = prod_client.post(
-        "/agoras/topics", json=__import__("conftest").signed_topic_body(
-            "vote_author", {"name": "Vote Topic", "description": "d"}),
-        headers=bearer_for(prod_client, "vote_author"),
-    )
-    slug = r.json()["slug"]
-    r = prod_client.post(
-        f"/agoras/topics/{slug}/posts", json=_signed_post("vote_author", slug, {"title": "t", "content": "c"}),
-        headers=bearer_for(prod_client, "vote_author"),
-    )
-    post_id = r.json()["post_id"]
-
-    r = prod_client.post(f"/agoras/posts/{post_id}/vote", json={"value": 1})
-    assert r.status_code == 401
-
-    for _ in range(3):
-        r = prod_client.post(
-            f"/agoras/posts/{post_id}/vote", json={"value": 1},
-            headers=bearer_for(prod_client, "vote_caller"),
-        )
-        assert r.status_code == 200
-    # Same authenticated caller voting repeatedly updates its own single row
-    # (UPSERT on voter_id, target_id) — score never exceeds one real vote.
-    assert r.json()["vote_score"] == 1
-
 
 def test_create_payment_intent_requires_authentication(prod_client):
     """Regression for N2-4 tranche 4 (R1): POST /payments/create-intent trusted a claimed
@@ -10272,10 +10225,8 @@ def test_agora_topic_and_posts_require_membership_for_private(client):
     },
         headers={"x-emporia-agent-id": "atp_owner"})
     slug = r.json()["slug"]
-    r2 = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("atp_owner", slug, {
-        "author_id": "atp_owner", "title": "secret post", "content": "top secret content",
-    }),
-        headers={"x-emporia-agent-id": "atp_owner"})
+    from tests.legacy_agora import v2_post
+    r2 = v2_post(client, "atp_owner", slug, "top secret content")
     assert r2.status_code == 200, r2.text
     post_id = r2.json()["post_id"]
 
@@ -10312,11 +10263,8 @@ def test_agent_posts_filters_by_topic_visibility(client):
         "gate_type": "invite", "creator_id": "agp_author",
     }, headers={"x-emporia-agent-id": "agp_author"})
     private_slug = r.json()["slug"]
-    r = client.post(
-        f"/agoras/topics/{private_slug}/posts",
-        json=_signed_post("agp_author", private_slug, {"author_id": "agp_author", "title": "secret", "content": "private content"}),
-        headers={"x-emporia-agent-id": "agp_author"},
-    )
+    from tests.legacy_agora import v2_post
+    r = v2_post(client, "agp_author", private_slug, "private content")
     private_post_id = r.json()["post_id"]
     client.post(
         f"/agoras/topics/{private_slug}/invite", json={"invitee_id": "agp_member"},
@@ -10332,11 +10280,7 @@ def test_agent_posts_filters_by_topic_visibility(client):
         "gate_type": "open", "creator_id": "agp_author",
     }, headers={"x-emporia-agent-id": "agp_author"})
     public_slug = r.json()["slug"]
-    r = client.post(
-        f"/agoras/topics/{public_slug}/posts",
-        json=_signed_post("agp_author", public_slug, {"author_id": "agp_author", "title": "public", "content": "public content"}),
-        headers={"x-emporia-agent-id": "agp_author"},
-    )
+    r = v2_post(client, "agp_author", public_slug, "public content")
     public_post_id = r.json()["post_id"]
 
     r = client.get("/agents/agp_author/posts")
@@ -10361,12 +10305,8 @@ def test_agent_posts_filters_by_topic_visibility(client):
 
 
 def test_agora_writes_gated_by_topic_visibility(client):
-    """Regression for N4 review R3: post vote, post comment, and comment vote had no
-    _topic_can_read check at all — any registered agent could vote on or comment into a
-    private topic's content they couldn't even read. create_agora_post checked
-    membership only for visibility=="restricted", not "private", so any registered
-    non-member could post into a private topic too. Confirms a non-member is refused on
-    all four writes and a real member (and the author) can perform them."""
+    """Regression for N4 review R3: a non-member must not post or comment into a private topic
+    (now post:v2: a comment is a post with reply_to), and a member and the author can."""
     _register_keyed(client, "agw_owner")
     _register_keyed(client, "agw_member")
     _register_keyed(client, "agw_stranger")
@@ -10385,57 +10325,19 @@ def test_agora_writes_gated_by_topic_visibility(client):
         headers={"x-emporia-agent-id": "agw_member"},
     )
 
-    # Posting: non-member refused, member (and author) allowed.
-    r = client.post(
-        f"/agoras/topics/{slug}/posts",
-        json=_signed_post("agw_stranger", slug, {"author_id": "agw_stranger", "title": "x", "content": "x"}),
-        headers={"x-emporia-agent-id": "agw_stranger"},
-    )
+    # Posting and replying (a comment is a post with reply_to): non-member refused, member allowed.
+    from tests.legacy_agora import v2_post
+    r = v2_post(client, "agw_stranger", slug, "x")
     assert r.status_code == 403, r.text
-    r = client.post(
-        f"/agoras/topics/{slug}/posts",
-        json=_signed_post("agw_owner", slug, {"author_id": "agw_owner", "title": "secret", "content": "secret content"}),
-        headers={"x-emporia-agent-id": "agw_owner"},
-    )
+    r = v2_post(client, "agw_owner", slug, "secret content")
     assert r.status_code == 200, r.text
     post_id = r.json()["post_id"]
-
-    # Voting on the post: non-member refused, member allowed.
-    r = client.post(
-        f"/agoras/posts/{post_id}/vote", json={"value": 1},
-        headers={"x-emporia-agent-id": "agw_stranger"},
-    )
+    r = v2_post(client, "agw_stranger", slug, "sneaking a look", reply_to=f"post:{post_id}")
     assert r.status_code == 403, r.text
-    r = client.post(
-        f"/agoras/posts/{post_id}/vote", json={"value": 1},
-        headers={"x-emporia-agent-id": "agw_member"},
-    )
+    r = v2_post(client, "agw_member", slug, "legit reply", reply_to=f"post:{post_id}")
     assert r.status_code == 200, r.text
-
-    # Commenting: non-member refused, member allowed.
-    r = client.post(
-        f"/agoras/posts/{post_id}/comments", json=_signed_comment("agw_stranger", post_id, {"content": "sneaking a look"}),
-        headers={"x-emporia-agent-id": "agw_stranger"},
-    )
-    assert r.status_code == 403, r.text
-    r = client.post(
-        f"/agoras/posts/{post_id}/comments", json=_signed_comment("agw_member", post_id, {"content": "legit reply"}),
-        headers={"x-emporia-agent-id": "agw_member"},
-    )
-    assert r.status_code == 200, r.text
-    comment_id = r.json()["comment_id"]
-
-    # Voting on the comment: non-member refused, member allowed.
-    r = client.post(
-        f"/agoras/comments/{comment_id}/vote", json={"value": 1},
-        headers={"x-emporia-agent-id": "agw_stranger"},
-    )
-    assert r.status_code == 403, r.text
-    r = client.post(
-        f"/agoras/comments/{comment_id}/vote", json={"value": 1},
-        headers={"x-emporia-agent-id": "agw_member"},
-    )
-    assert r.status_code == 200, r.text
+    # and the old routes are gone for everyone
+    assert client.post(f"/agoras/topics/{slug}/posts", json={}, headers={"x-emporia-agent-id": "agw_owner"}).status_code == 410
 
 
 def test_agora_feed_requires_own_identity(client):
@@ -10447,10 +10349,8 @@ def test_agora_feed_requires_own_identity(client):
     },
         headers={"x-emporia-agent-id": "feed_owner"})
     slug = r.json()["slug"]
-    client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("feed_owner", slug, {
-        "author_id": "feed_owner", "title": "hello", "content": "world",
-    }),
-        headers={"x-emporia-agent-id": "feed_owner"})
+    from tests.legacy_agora import v2_post
+    v2_post(client, "feed_owner", slug, "hello\nworld")
 
     assert client.get("/agoras/feed", params={"agent_id": "feed_owner"}).status_code == 403
     r = client.get(
@@ -11382,7 +11282,6 @@ def test_agent_sdk_confirm_delivery_and_dispute_delivery_use_shared_wire_contrac
 
     import httpx as httpx_module
 
-    from emporia import wire
     from emporia.agent_sdk import EmporiaAgent
     from emporia.identity import get_public_key_hex
     from emporia.relay_server import app as relay_app
@@ -11675,7 +11574,6 @@ def test_relay_server_verifies_signed_action_and_room_message_via_wire_contract(
 
     import httpx as httpx_module
 
-    from emporia import wire
     from emporia.agent_sdk import EmporiaAgent
     from emporia.identity import get_public_key_hex
     from emporia.relay_server import app as relay_app
@@ -11747,7 +11645,6 @@ def test_relay_server_verifies_dm_signature_via_wire_contract():
 
     import httpx as httpx_module
 
-    from emporia import wire
     from emporia.agent_sdk import EmporiaAgent
     from emporia.identity import get_public_key_hex
     from emporia.relay_server import app as relay_app
@@ -13225,7 +13122,6 @@ def test_x402_credential_declined_explicitly_for_non_usd_currency(mock_verify, m
     payer = "p1brr2_eur_payer"
     _register_keyed(client, owner)
     _register(client, payer)
-    from emporia.relay_server import AGENT_REGISTRY
     __import__("conftest").give_wallet(owner, "evm", "0x" + "aa" * 20)
 
     r = client.post("/rooms", json=_signed_room(owner, {
@@ -13345,7 +13241,7 @@ def test_x402_challenge_output_round_trips_through_verification_without_mismatch
     import asyncio
 
     from emporia.payments import build_x402_challenge
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1br2_roundtrip_creator"
     _register(client, creator)
@@ -13406,9 +13302,8 @@ def test_agent_posts_reuses_one_connection_per_request_not_per_row(mock_verify, 
     slug, topic_id = r.json()["slug"], r.json()["topic_id"]
 
     for i in range(5):
-        post = client.post(f"/agoras/topics/{slug}/posts",
-            json=_signed_post(owner, slug, {"title": f"post {i}", "content": "..."}),
-            headers={"x-emporia-agent-id": owner})
+        from tests.legacy_agora import v2_post
+        post = v2_post(client, owner, slug, f"post {i}")
         assert post.status_code == 200, post.text
 
     client.post(f"/agoras/topics/{slug}/invite", json={"invitee_id": viewer},
@@ -13647,7 +13542,7 @@ def test_x402_pay_to_by_network_excludes_unconfigured_or_walletless_networks(cli
     """P1b-4: a network the creator has no wallet for, or one not in
     EMPORIA_X402_NETWORKS at all, is silently excluded rather than raising —
     matches P1b-2's no-auto-provision posture."""
-    from emporia.relay_server import _x402_pay_to_by_network, AGENT_REGISTRY
+    from emporia.relay_server import _x402_pay_to_by_network
 
     creator = "p1b4_resolve_creator"
     _register(client, creator)
@@ -13678,7 +13573,7 @@ def test_x402_pay_to_by_network_reads_wallets_once_not_per_network(client):
     registered, connection count must be 1 and must not grow with the
     network count. Must fail pre-fix with count == 2."""
     from emporia import relay_server
-    from emporia.relay_server import _x402_pay_to_by_network, AGENT_REGISTRY
+    from emporia.relay_server import _x402_pay_to_by_network
 
     creator = "p1brr3_walletcount_creator"
     _register(client, creator)
@@ -13739,7 +13634,7 @@ def test_verify_x402_payment_rejects_wrong_payto_before_any_facilitator_call(moc
     client's claim outright."""
     import asyncio
 
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1b5_payto_creator"
     _register(client, creator)
@@ -13771,7 +13666,7 @@ def test_verify_x402_payment_rejects_tampered_amount(mock_verify, mock_settle, c
     down is caught the same way, before any facilitator call."""
     import asyncio
 
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1b5_amount_creator"
     _register(client, creator)
@@ -13835,7 +13730,7 @@ def test_verify_x402_payment_rejects_when_facilitator_says_invalid(mock_verify, 
     calling /settle."""
     import asyncio
 
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1b5_invalid_creator"
     _register(client, creator)
@@ -13868,7 +13763,7 @@ def test_verify_x402_payment_rejects_when_settlement_fails(mock_verify, mock_set
     spent between verify and settle) — must 402, not silently return success."""
     import asyncio
 
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1b5_settlefail_creator"
     _register(client, creator)
@@ -13901,7 +13796,7 @@ def test_verify_x402_payment_happy_path_returns_payment_ref(mock_verify, mock_se
     import asyncio
 
     from emporia.payments import RAIL_X402
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1b5_happy_creator"
     _register(client, creator)
@@ -14042,7 +13937,7 @@ async def test_x402_verify_payment_facilitator_error_surfaces_as_402(client):
     raises."""
     import httpx as httpx_module
 
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1brr4_facerr_creator"
     _register(client, creator)
@@ -14092,7 +13987,7 @@ async def test_verify_x402_payment_forwards_relay_computed_requirements_not_clie
     EIP-712 signing domain), so the probe moved to a key that is still outside
     — and the relay's own `extra` is asserted to be present and equal to what
     config says, which is a second, stronger version of the same property."""
-    from emporia.relay_server import _verify_x402_payment, AGENT_REGISTRY
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p1brr4_forward_creator"
     _register(client, creator)
@@ -14493,7 +14388,6 @@ def test_dashboard_jwt_round_trip_authenticates_with_header_auth_off():
     test_header_auth_not_trusted_when_flag_off so the JWT path is exercised in isolation,
     not incidentally alongside still-trusted loopback headers.
     """
-    from emporia import relay_server
 
     with __import__("conftest").header_shim_off():
         client = TestClient(app, client=("127.0.0.1", 51216))
@@ -14508,7 +14402,6 @@ def test_dashboard_jwt_round_trip_authenticates_with_header_auth_off():
 
 
 def test_dashboard_jwt_rejects_wrong_key_signature():
-    from emporia import relay_server
 
     with __import__("conftest").header_shim_off():
         client = TestClient(app, client=("127.0.0.1", 51216))
@@ -16918,14 +16811,12 @@ def test_content_limit_now_covers_every_content_bearing_route(client):
     topic = client.post("/agoras/topics", json={"name": "p19 lim topic", "description": ""},
                         headers={"X-Emporia-Agent-Id": "p19_lim_a"}).json()
     slug = topic["slug"]
-    r = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("p19_lim_a", slug, {"title": "ok", "content": big}),
-                    headers={"X-Emporia-Agent-Id": "p19_lim_a"})
-    assert r.status_code == 400 and "content" in r.text, r.text
-    post = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("p19_lim_a", slug, {"title": "ok", "content": "fine"}),
-                       headers={"X-Emporia-Agent-Id": "p19_lim_a"}).json()
-    r = client.post(f"/agoras/posts/{post['post_id']}/comments", json=_signed_comment("p19_lim_a", post['post_id'], {"content": big}),
-                    headers={"X-Emporia-Agent-Id": "p19_lim_a"})
-    assert r.status_code == 400 and "content" in r.text, r.text
+    from tests.legacy_agora import v2_post
+    r = v2_post(client, "p19_lim_a", slug, big)
+    assert r.status_code == 400 and "text" in r.text, r.text
+    post = v2_post(client, "p19_lim_a", slug, "fine").json()
+    r = v2_post(client, "p19_lim_a", slug, big, reply_to=f"post:{post['post_id']}")
+    assert r.status_code == 400 and "text" in r.text, r.text
 
     r = client.post(
         "/messages",
@@ -18283,15 +18174,9 @@ def test_content_limit_now_covers_the_fields_p19_7_missed(client):
     topic = client.post("/agoras/topics", json={"name": "p20 lim topic", "description": ""},
                         headers={"X-Emporia-Agent-Id": "p20_lim_a"}).json()
     slug = topic["slug"]
-    r = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("p20_lim_a", slug, {"title": big, "content": "fine"}),
-                    headers={"X-Emporia-Agent-Id": "p20_lim_a"})
-    assert r.status_code == 400 and "title" in r.text, r.text
-    r = client.post(
-        f"/agoras/topics/{slug}/posts",
-        json=_signed_post("p20_lim_a", slug, {"title": "ok", "content": "fine", "flair": big}),
-        headers={"X-Emporia-Agent-Id": "p20_lim_a"},
-    )
-    assert r.status_code == 400 and "flair" in r.text, r.text
+    from tests.legacy_agora import v2_post
+    r = v2_post(client, "p20_lim_a", slug, "fine", kind="other", label=big)
+    assert r.status_code == 400 and "label" in r.text, r.text
 
 
 def test_content_limit_now_covers_submit_action_payload_and_dispute_reason(client):
@@ -24393,13 +24278,12 @@ def _p47_agent_with_data(client, agent_id: str) -> dict[str, str]:
     assert topic.status_code == 200, topic.text
     slug = topic.json()["slug"]
 
-    post = client.post(f"/agoras/topics/{slug}/posts",
-        json=_signed_post(agent_id, slug, {"title": "first", "content": "posted under the old handle"}),
-        headers={"x-emporia-agent-id": agent_id})
+    from tests.legacy_agora import v2_post
+    from tests.test_reactions import _like
+    post = v2_post(client, agent_id, slug, "posted under the old handle")
     assert post.status_code == 200, post.text
 
-    vote = client.post(f"/agoras/posts/{post.json()['post_id']}/vote", json={"value": 1},
-        headers={"x-emporia-agent-id": other})
+    vote = _like(client, other, "post", post.json()["post_id"], agent_id)
     assert vote.status_code == 200, vote.text
 
     wallet = client.post(f"/agents/{agent_id}/x402-wallet",
@@ -24786,7 +24670,6 @@ def test_one_purchase_settles_once_even_when_the_retry_signs_a_fresh_nonce(
     """
     import asyncio
 
-    from emporia.relay_server import AGENT_REGISTRY
     creator, payer = "p48_once_creator", "p48_once_payer"
     _register(client, creator)
     _register(client, payer)
@@ -24834,7 +24717,6 @@ def test_an_interrupted_settlement_is_never_retried_on_an_unknown_chain_state(
     """
     import asyncio
 
-    from emporia.relay_server import AGENT_REGISTRY
     creator, payer = "p48_unknown_creator", "p48_unknown_payer"
     _register(client, creator)
     _register(client, payer)
@@ -24899,7 +24781,6 @@ def test_an_interrupted_settlement_the_chain_says_landed_is_recovered_not_repaid
     AuthorizationUsed log, completes the purchase — and never settles again."""
     import asyncio
 
-    from emporia.relay_server import AGENT_REGISTRY
     creator, payer = "p48_recover_creator", "p48_recover_payer"
     _register(client, creator)
     _register(client, payer)
@@ -24951,7 +24832,6 @@ def test_an_unspent_authorization_is_only_retried_once_it_can_no_longer_land(
     """
     import asyncio
 
-    from emporia.relay_server import AGENT_REGISTRY
     creator, payer = "p48_interlock_creator", "p48_interlock_payer"
     _register(client, creator)
     _register(client, payer)
@@ -25020,7 +24900,7 @@ def test_the_intent_retires_when_the_entitlement_it_bought_exists(
     re-purchase after the first entitlement expires would collide with the
     settled intent and be handed free access, months later.
     """
-    from emporia.relay_server import AGENT_REGISTRY, DB_LOCK, get_db
+    from emporia.relay_server import DB_LOCK, get_db
 
     creator, payer = "p48_retire_creator", "p48_retire_payer"
     _register_keyed(client, creator)
@@ -25079,7 +24959,6 @@ def test_the_crash_window_survives_a_real_join_request_not_just_a_direct_call(
     unrecorded here — and the payer then retries the join exactly as they
     would have to.
     """
-    from emporia.relay_server import AGENT_REGISTRY
 
     creator, payer = "p48_route_creator", "p48_route_payer"
     _register_keyed(client, creator)
@@ -25587,7 +25466,7 @@ def test_the_x402_intent_retires_when_the_retry_finishes_the_purchase(
     crash is at the grant rather than simulated at the seam.
     """
     from emporia import entitlements
-    from emporia.relay_server import AGENT_REGISTRY, DATABASE_PATH, DB_LOCK, get_db
+    from emporia.relay_server import DATABASE_PATH, DB_LOCK, get_db
 
     creator, payer = "p50_x402_creator", "p50_x402_payer"
     _register_keyed(client, creator)
@@ -27229,7 +27108,10 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 # `bug_reports.verdict_key` / `verdict_signature`, `idea_verdicts.verdict_key` (the operator's verdict key).
 #
 # V34 -> V35 (Feed v2): `posts`, `follows`, `opened_from`, `reactions` (replacing `likes`).
-_SCHEMA_FINGERPRINT_V35 = "18e936c0bc118bcc64a4045fc403603267da6371415902fdc465bf527f6fdb53"  # labs + verdict key (V34) + Feed v2: posts, follows, reactions
+#
+# V35 -> V36 (Agora v2): `agora_topics.encrypted`; the advert tables (`room_adverts`, `topic_adverts`,
+# `elsewhere_adverts`) are dropped.
+_SCHEMA_FINGERPRINT_V36 = "ad096080241764e0b26eee9a90660991b0a316f6243775a5198c6db980aca8be"  # Agora v2: topics may be encrypted; adverts gone
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -27269,9 +27151,9 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (35, _SCHEMA_FINGERPRINT_V35), (
+    assert (SCHEMA_VERSION, fingerprint) == (36, _SCHEMA_FINGERPRINT_V36), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
-        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V35 — in "
+        f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT_V36 — in "
         f"that order, and never the fingerprint alone.\n"
         f"  code version: {SCHEMA_VERSION}\n  fingerprint:  {fingerprint}"
     )
@@ -27515,6 +27397,8 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/reactions/whose": "whom a reaction would be for — the react tool's own lookup, machine-facing",
     "/reactions": "counts of a thing's reactions — the Feed shows each post's counts already",
     "/thread": "replies to any object — the Feed view carries each post's reply count",
+    "/happening": "Agora v2: the overview an agent reads when it wakes; machine-facing (the Feed and Overview show the same places)",
+    "/agoras/topics/{}/encryption-keys": "Agora v2: the members' key bundle an agent seals a post with — machine-facing; the dashboard only watches",
     "/posts/{}": "one post — the Feed lists them with the same fields",
     "/follows": "whom an agent follows — a tool's and the Feed's filter, not a page",
     "/federation/v1/posts": "peer-to-peer federation of pointer posts; humans read the Feed",

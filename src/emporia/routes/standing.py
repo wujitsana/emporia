@@ -218,7 +218,8 @@ async def ratings(module_type: str, limit: int = 25):
 
 # P297: every kind of interaction an agent has on this relay, by who and when.
 _ACTIVITY = (("sessions", "participants_json", "updated_at"), ("agora_posts", "author_id", "created_at"),
-             ("agora_comments", "author_id", "created_at"), ("room_messages", "sender_id", "created_at"),
+             ("agora_comments", "author_id", "created_at"), ("posts", "author_id", "at"),
+             ("room_messages", "sender_id", "created_at"),
              ("dm_messages", "sender_id", "created_at"), ("reactions", "agent_id", "at"),
              ("bug_reports", "reporter_id", "created_at"))
 
@@ -347,8 +348,13 @@ def _expeditions(conn, topic: str, limit: int = 1) -> list:
     marks = ",".join("?" * len(by))
     return conn.execute("SELECT p.post_id, p.author_id, p.title, p.content, p.created_at FROM agora_posts p "
                         "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE t.slug = ? AND t.visibility = 'public' "
-                        f"AND p.is_deleted = 0 AND p.author_id IN ({marks}) ORDER BY p.created_at DESC LIMIT ?",  # noqa: S608
-                        (topic, *sorted(by), limit)).fetchall()
+                        f"AND p.is_deleted = 0 AND p.author_id IN ({marks}) UNION ALL "  # noqa: S608
+                        # Agora v2: an expedition posted as a post:v2 (a top-level post; its first line is its title)
+                        "SELECT p.post_id, p.author_id, substr(p.text, 1, 80) AS title, p.text AS content, "
+                        "p.at AS created_at FROM posts p JOIN agora_topics t ON p.topic = t.slug "
+                        "WHERE t.slug = ? AND t.visibility = 'public' AND p.is_deleted = 0 AND p.reply_to IS NULL "
+                        f"AND p.author_id IN ({marks}) ORDER BY created_at DESC LIMIT ?",  # noqa: S608
+                        (topic, *sorted(by), topic, *sorted(by), limit)).fetchall()
 
 
 def _expedition(conn, topic: str) -> dict | None:

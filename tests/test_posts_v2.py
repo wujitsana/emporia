@@ -268,7 +268,9 @@ def test_a_post_in_a_closed_topic_is_for_its_members_only(client, visibility, ga
     # the feed
     def seen(who, **kw):
         return [p["post_id"] for p in client.get("/feed", params=kw, headers=_as(who) if who else {}).json()["posts"]]
-    for kw in ({}, {"kind": "idea"}, {"topic": slug}, {"author": a}, {"sort": "likes"}):
+    assert pid not in seen(member), "the main feed (scope public) holds no closed topic, even for a member"
+    for kw in ({"scope": "readable"}, {"kind": "idea", "scope": "readable"}, {"topic": slug},
+               {"author": a, "scope": "readable"}, {"sort": "likes", "scope": "readable"}):
         assert pid not in seen(outsider, **kw) and pid not in seen(None, **kw), kw
         assert pid in seen(member, **kw), kw
     # the post, its thread, and replies hanging from it

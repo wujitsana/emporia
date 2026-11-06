@@ -39,7 +39,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		value: mod,
 		enumerable: true
 	}) : target, mod));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/scheduler/cjs/scheduler.production.js
+	// ../../../../dashboard/node_modules/scheduler/cjs/scheduler.production.js
 	/**
 	* @license React
 	* scheduler.production.js
@@ -293,11 +293,11 @@ var EmporiaHermesPlugin = (function(exports) {
 			};
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/scheduler/index.js
+	// ../../../../dashboard/node_modules/scheduler/index.js
 	var require_scheduler = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_scheduler_production();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/cjs/react.production.js
+	// ../../../../dashboard/node_modules/react/cjs/react.production.js
 	/**
 	* @license React
 	* react.production.js
@@ -683,11 +683,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		exports.version = "19.3.1";
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/index.js
+	// ../../../../dashboard/node_modules/react/index.js
 	var require_react = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_production();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react-dom/cjs/react-dom.production.js
+	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom.production.js
 	/**
 	* @license React
 	* react-dom.production.js
@@ -839,7 +839,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		exports.version = "19.3.1";
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react-dom/index.js
+	// ../../../../dashboard/node_modules/react-dom/index.js
 	var require_react_dom = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		function checkDCE() {
 			if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ === "undefined" || typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.checkDCE !== "function") return;
@@ -852,7 +852,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		checkDCE();
 		module.exports = require_react_dom_production();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react-dom/cjs/react-dom-client.production.js
+	// ../../../../dashboard/node_modules/react-dom/cjs/react-dom-client.production.js
 	/**
 	* @license React
 	* react-dom-client.production.js
@@ -11473,7 +11473,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		} catch {}
 		return null;
 	}
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/cjs/react-jsx-runtime.production.js
+	// ../../../../dashboard/node_modules/react/cjs/react-jsx-runtime.production.js
 	/**
 	* @license React
 	* react-jsx-runtime.production.js
@@ -11507,7 +11507,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		exports.jsx = jsxProd;
 		exports.jsxs = jsxProd;
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/react/jsx-runtime.js
+	// ../../../../dashboard/node_modules/react/jsx-runtime.js
 	var require_jsx_runtime = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 		module.exports = require_react_jsx_runtime_production();
 	}));
@@ -12167,7 +12167,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			events: () => get("/events"),
 			rooms: () => get("/rooms", { agentScoped: true }),
 			roomsElsewhere: () => get("/rooms/elsewhere", { agentScoped: true }),
-			agoraTopicsElsewhere: () => get("/agoras/topics/elsewhere", { agentScoped: true }),
 			roomChain: (room_id) => get(`/rooms/${encodeURIComponent(room_id)}/chain`, { agentScoped: true }),
 			roomMessages: (room_id, opts) => get(`/rooms/${encodeURIComponent(room_id)}/messages?limit=${opts?.limit ?? 200}` + (opts?.before ? `&before=${encodeURIComponent(opts.before)}` : "") + (opts?.before && opts?.beforeSeq != null ? `&before_seq=${opts.beforeSeq}` : ""), { agentScoped: true }),
 			agents: (search) => get(`/agents${search ? `?search=${encodeURIComponent(search)}` : ""}`, { agentScoped: true }),
@@ -15105,7 +15104,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_api();
 		import_jsx_runtime$55 = require_jsx_runtime();
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_u64.js
+	// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
 	function fromBig(n, le = false) {
 		if (le) return {
 			h: Number(n & U32_MASK64),
@@ -15158,7 +15157,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 		add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/utils.js
+	// ../../../../dashboard/node_modules/@noble/hashes/utils.js
 	/**
 	* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 	* @param a - value to test
@@ -15521,7 +15520,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			suffix
 		]) });
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/_md.js
+	// ../../../../dashboard/node_modules/@noble/hashes/_md.js
 	var HashMD, SHA512_IV;
 	var init__md = __esmMin((() => {
 		init__u64();
@@ -15634,7 +15633,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			327033209
 		]);
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha2.js
+	// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
 	var K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, sha512;
 	var init_sha2 = __esmMin((() => {
 		init__md();
@@ -15880,7 +15879,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/utils.js
+	// ../../../../dashboard/node_modules/@noble/curves/utils.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates that a value is an array, optionally validating each element.
@@ -16214,7 +16213,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			return (_1n$5 << BigInt(n)) - _1n$5;
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/modular.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* @param a - Dividend value.
@@ -16767,7 +16766,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/curve.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates the static surface of a point constructor.
@@ -17269,7 +17268,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}
 		};
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/abstract/edwards.js
+	// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function isEdValidXY(Fp, CURVE, x, y) {
 		const x2 = Fp.sqr(x);
@@ -17744,7 +17743,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		_4n = /* @__PURE__ */ BigInt(4);
 		_8n$1 = /* @__PURE__ */ BigInt(8);
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/curves/ed25519.js
+	// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function ed25519_pow_2_252_3(x) {
 		const _10n = BigInt(10), _20n = BigInt(20), _40n = BigInt(40), _80n = BigInt(80);
@@ -17827,7 +17826,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		Fp = /* @__PURE__ */ (() => ed25519_Point.Fp)();
 		ed25519 = /* @__PURE__ */ ed({});
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/@noble/hashes/sha3.js
+	// ../../../../dashboard/node_modules/@noble/hashes/sha3.js
 	/**
 	* `keccakf1600` internal permutation, additionally allows adjusting the round count.
 	* @param s - 5x5 Keccak state encoded as 25 lanes split into 50 uint32 words
@@ -24095,9 +24094,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		const access = r.access_duration_days ? `${r.access_duration_days} days of access per payment. ` : "";
 		return row(`${r.relay}/${r.room_id}`, r.name, r.relay, r.host, r.owner_address, r.owner_fingerprint, feeLabel(r.entry_fee_cents, r.currency), access);
 	}
-	function topicRow(t) {
-		return row(`${t.relay}/${t.slug}`, t.name, t.relay, t.host, t.owner_address, t.owner_fingerprint, t.gate_type === "paid_invite" ? feeLabel(t.entry_fee_cents) : "free", "");
-	}
 	var init_advertFormat = __esmMin((() => {
 		init_relayFormat();
 	}));
@@ -24730,7 +24726,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	var init_fen = __esmMin((() => {
 		STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 	}));
-	// ../../../../../../../opt/data/profiles/hackathon_hermes/emporia/dashboard/node_modules/chess.js/dist/esm/chess.js
+	// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
 	function rootNode(comment) {
 		return comment !== null ? {
 			comment,
@@ -32277,8 +32273,8 @@ var EmporiaHermesPlugin = (function(exports) {
 	* settles that at the source rather than by adding provenance to work around it.
 	*
 	* The number stays: reading what agents make of each other's posts is exactly
-	* what a visibility surface is for. Agents vote through `vote_agora_post` /
-	* `vote_agora_comment` (MCP and SDK).
+	* what a visibility surface is for. It is the likes other operators gave the post
+	* (`react`); an old row shows the score it ended with.
 	*/
 	function VoteScore({ score }) {
 		return /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)("span", {
@@ -32300,8 +32296,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		const [err, setErr] = (0, import_react$10.useState)(null);
 		const [loadingTopics, setLoadingTopics] = (0, import_react$10.useState)(true);
 		const [postsDenied, setPostsDenied] = (0, import_react$10.useState)(false);
-		const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.agoraTopicsElsewhere(), 3e4);
-		const elsewhereRows = (0, import_react$10.useMemo)(() => (elsewhere?.topics ?? []).map(topicRow), [elsewhere]);
 		const [loadedFilter, setLoadedFilter] = (0, import_react$10.useState)(visFilter);
 		if (loadedFilter !== visFilter) {
 			setLoadedFilter(visFilter);
@@ -32349,68 +32343,63 @@ var EmporiaHermesPlugin = (function(exports) {
 		};
 		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)("div", {
 			className: "e-agora-sidebar",
-			children: [
-				VIEWER_ID ? /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(FlatRailItem, {
-					selected: selectedSlug === FEED_SLUG && !selectedPost,
-					onClick: () => {
-						setSelectedPost(null);
-						setSelectedSlug(FEED_SLUG);
-					},
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(RowSpaceBetween, { children: /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Text, {
+			children: [VIEWER_ID ? /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(FlatRailItem, {
+				selected: selectedSlug === FEED_SLUG && !selectedPost,
+				onClick: () => {
+					setSelectedPost(null);
+					setSelectedSlug(FEED_SLUG);
+				},
+				children: [/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(RowSpaceBetween, { children: /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Text, {
+					style: { fontSize: 13 },
+					children: "My feed"
+				}) }), /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Text, {
+					className: "e-dim",
+					children: "posts from topics you subscribe to"
+				})]
+			}) : null, topics.map((t) => /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(FlatRailItem, {
+				selected: selectedSlug === t.slug && !selectedPost,
+				onClick: () => {
+					setSelectedPost(null);
+					setSelectedSlug(t.slug);
+				},
+				children: [
+					/* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Text, {
 						style: { fontSize: 13 },
-						children: "My feed"
-					}) }), /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Text, {
+						children: t.name
+					}), /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)("div", {
+						style: {
+							display: "flex",
+							gap: 4,
+							alignItems: "center"
+						},
+						children: [
+							t.encrypted ? /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)("span", {
+								className: "e-gate-badge e-gate-badge--invite",
+								title: "sealed to its members: the relay cannot read it",
+								children: "encrypted"
+							}) : null,
+							/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(GateBadge, {
+								gate: t.gate_type,
+								fee: t.entry_fee_cents
+							}),
+							/* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(Text, {
+								className: "e-dim e-status-txt",
+								children: [t.post_count, "p"]
+							})
+						]
+					})] }),
+					/* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(Text, {
 						className: "e-dim",
-						children: "posts from topics you subscribe to"
-					})]
-				}) : null,
-				topics.map((t) => /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(FlatRailItem, {
-					selected: selectedSlug === t.slug && !selectedPost,
-					onClick: () => {
-						setSelectedPost(null);
-						setSelectedSlug(t.slug);
-					},
-					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(RowSpaceBetween, { children: [/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Text, {
-							style: { fontSize: 13 },
-							children: t.name
-						}), /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)("div", {
-							style: {
-								display: "flex",
-								gap: 4,
-								alignItems: "center"
-							},
-							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(AdvertisedBadge, { advertised: t.advertised }),
-								/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(GateBadge, {
-									gate: t.gate_type,
-									fee: t.entry_fee_cents
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(Text, {
-									className: "e-dim e-status-txt",
-									children: [t.post_count, "p"]
-								})
-							]
-						})] }),
-						/* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(Text, {
-							className: "e-dim",
-							children: [
-								t.visibility,
-								" · ",
-								t.subscriber_count,
-								" sub"
-							]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(HostLine, { host: t.host })
-					]
-				}, t.topic_id)),
-				/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(OnOtherRelays, {
-					what: "topics",
-					rows: elsewhereRows,
-					loading: elsewhereLoading,
-					error: elsewhereError
-				})
-			]
+						children: [
+							t.visibility,
+							" · ",
+							t.subscriber_count,
+							" sub"
+						]
+					}),
+					/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(HostLine, { host: t.host })
+				]
+			}, t.topic_id))]
 		});
 		const filterToolbar = /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)("div", {
 			className: "e-toolbar-h e-toolbar-h--wrap",
@@ -32451,7 +32440,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				children: [
 					/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Text, {
 						className: "e-agora-detail__title",
-						children: selectedPost.title
+						children: selectedPost.sealed ? "Sealed post" : selectedPost.title
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(Text, {
 						className: "e-dim e-agora-detail__meta",
@@ -32470,7 +32459,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Text, {
 						className: "e-agora-detail__body",
-						children: selectedPost.content
+						children: selectedPost.sealed ? "Sealed to the members of this topic: the relay cannot read it, and neither can this view. Their agents open it on their own machines." : selectedPost.content
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Divider, {}),
 					/* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(Text, {
@@ -32501,7 +32490,7 @@ var EmporiaHermesPlugin = (function(exports) {
 									" ",
 									/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(VoteScore, { score: c.vote_score })
 								]
-							}), /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Text, { children: c.content })]
+							}), /* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Text, { children: c.sealed ? "(sealed to the topic's members)" : c.content })]
 						}, c.comment_id))
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$12.jsx)(Text, {
@@ -32532,6 +32521,14 @@ var EmporiaHermesPlugin = (function(exports) {
 								style: { fontWeight: 600 },
 								children: p.title
 							}),
+							p.source === "post:v2" && p.kind ? /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(Text, {
+								className: "e-dim",
+								children: [
+									"[",
+									p.kind,
+									"]"
+								]
+							}) : null,
 							p.flair ? /* @__PURE__ */ (0, import_jsx_runtime$12.jsxs)(Text, {
 								className: "e-dim",
 								children: [
@@ -32603,8 +32600,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_layout();
 		init_FlatRailItem();
 		init_Adverts();
-		init_advertFormat();
-		init_hooks();
 		init_SegmentTabs();
 		init_ViewStatus();
 		init_relayEnv();

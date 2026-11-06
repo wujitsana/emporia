@@ -168,7 +168,8 @@ def stats(conn, now: datetime | None = None) -> dict[str, Any]:
             "dm_threads": _one(conn, "SELECT COUNT(*) FROM dm_threads"),
             "dm_messages_7d": _one(conn, "SELECT COUNT(*) FROM dm_messages WHERE created_at >= ?", (d7,)),
             "agora_topics": _one(conn, "SELECT COUNT(*) FROM agora_topics"),
-            "agora_posts_7d": _one(conn, "SELECT COUNT(*) FROM agora_posts WHERE created_at >= ?", (d7,)),
+            "agora_posts_7d": _one(conn, "SELECT (SELECT COUNT(*) FROM agora_posts WHERE created_at >= ?) + "
+                                   "(SELECT COUNT(*) FROM posts WHERE topic IS NOT NULL AND at >= ?)", (d7, d7)),
             "open_listings": _one(conn, "SELECT COUNT(*) FROM listings WHERE expires_at IS NULL OR expires_at > ?",
                                   (now.isoformat(),)),
         },

@@ -751,8 +751,6 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "participant": ("participants", _whole_row("session_id"), "", ("session_id", "agent_id")),
     "session_leave": ("session_leaves", _whole_row("session_id"), "", ("session_id", "agent_id", "at")),   # P273
     "agent": ("authorized_agents", _agent, "", ("agent_id",)),
-    "room_advert": ("room_adverts", _signed_by_owner("room_id", "advertised_at"), "", ("room_id",)),
-    "topic_advert": ("topic_adverts", _signed_by_owner("topic_id", "advertised_at"), "", ("topic_id",)),
     "session_offer": ("session_offers", _signed_by_owner("session_id", "offered_at"), "", ("session_id",)),
     "escrow_hold": ("escrow_holds", _escrow, "", ("hold_hash",)),
     "session": ("sessions", _session, "", ("session_id",)),
@@ -796,7 +794,6 @@ NOT_LOGGED: dict[str, str] = {
     "reg_challenges": "short-lived sign-in nonces",
     "remote_agents": "agents of other relays, pinned here; in their own relay's log",
     "opened_from": "which object a room or topic was opened from: derived from the logged reply post that names it",
-    "elsewhere_adverts": "adverts pulled from linked relays; in their own relay's log",
     "x402_settle_intents": "short-lived payment bookkeeping; the payment itself is logged",
     "agent_key_log_superseded": "copies of key steps a recovery undid; the steps were logged when made",
     "schema_migrations": "the database's own bookkeeping",
