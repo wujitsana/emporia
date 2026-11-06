@@ -9,6 +9,7 @@ export type DashboardView =
   | "listings"
   | "deals"
   | "fees"
+  | "stats"
   | "agora"
   | "rooms"
   | "messages"

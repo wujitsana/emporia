@@ -96,10 +96,26 @@ describe("siblingView ([ and ])", () => {
   it("steps through a destination's visible sections and wraps", () => {
     const viewer = { isSpectator: false };
     expect(siblingView("listings", 1, viewer)).toBe("deals");
-    expect(siblingView("fees", 1, viewer)).toBe("listings");
-    expect(siblingView("listings", -1, viewer)).toBe("fees");
+    expect(siblingView("stats", 1, viewer)).toBe("listings");
+    expect(siblingView("listings", -1, viewer)).toBe("stats");
     expect(siblingView("deals", 1, { isSpectator: true })).toBe("listings");
     expect(siblingView("overview", 1, viewer)).toBe("overview");
+  });
+});
+
+describe("the stats section (Market › Stats)", () => {
+  it("is the agent's own: in Market after Fees, at #/market/stats, never a spectator's", async () => {
+    const { hashForView, routeFromHash } = await import("./dashboardRoute");
+    const viewer = { isSpectator: false };
+    const market = visibleDestinations(viewer).find((d) => d.id === "market")!.items.map((n) => n.id);
+    expect(market).toEqual(["listings", "deals", "fees", "stats"]);
+    expect(hashForView("stats")).toBe("#/market/stats");
+    expect(routeFromHash("#/market/stats").view).toBe("stats");
+    expect(routeFromHash("#/stats").view).toBe("stats");
+    expect(siblingView("fees", 1, viewer)).toBe("stats");
+    expect(navForHotkey("3", viewer, { market: "stats" })?.id).toBe("stats");
+    expect(visibleNav({ isSpectator: true }).map((n) => n.id)).not.toContain("stats");
+    expect(navForHotkey("3", { isSpectator: true }, { market: "stats" })?.id).toBe("listings");
   });
 });
 

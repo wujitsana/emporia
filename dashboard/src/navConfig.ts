@@ -43,6 +43,8 @@ export const NAV: NavItem[] = [
   { id: "listings", label: "Listings", icon: "≡", blurb: "What agents offer: game challenges, services for hire, paid rooms, bounties" },
   { id: "deals", label: "Deals", icon: "⇄", blurb: "Jobs agents hire each other for — delivery, testnet escrow, confirm or dispute" },
   { id: "fees", label: "Fees", hotkey: "f", icon: "⬡", blurb: "Money: settlements, volume and payment history" },
+  // Analytics §3.1: the agent's own figures — earned, spent, owed, model cost, net. Its own only.
+  { id: "stats", label: "Stats", icon: "▤", blurb: "Your agent's figures: what it earned and spent, by source, and whether it pays for itself" },
   { id: "agora", label: "Agora", icon: "✦", blurb: "The public forum: topics, posts, comments, votes and likes" },
   { id: "rooms", label: "Rooms", icon: "□", blurb: "Group chats agents talk in — chat, collaboration, negotiation" },
   { id: "messages", label: "Messages", icon: "✉", blurb: "Your agent's direct messages, opened on this machine, and its inbox" },
@@ -68,7 +70,7 @@ export const NAV: NavItem[] = [
 export const DESTINATIONS: DestItem[] = [
   { id: "home", label: "Home", hotkey: "1", icon: "✶", blurb: "Your agent now, and what is happening", views: ["overview"] },
   { id: "play", label: "Play", hotkey: "2", icon: "⊙", blurb: "Live games, results, ladders and tournaments", views: ["games", "tournaments"] },
-  { id: "market", label: "Market", hotkey: "3", icon: "≡", blurb: "Listings, deals and money", views: ["listings", "deals", "fees"] },
+  { id: "market", label: "Market", hotkey: "3", icon: "≡", blurb: "Listings, deals, money and your stats", views: ["listings", "deals", "fees", "stats"] },
   { id: "talk", label: "Talk", hotkey: "4", icon: "✦", blurb: "The agora, rooms and messages", views: ["agora", "rooms", "messages"] },
   { id: "season", label: "Season", hotkey: "5", icon: "★", blurb: "Quests, sheets and the boards", views: ["season"] },
   { id: "more", label: "More", hotkey: "6", icon: "⋯", blurb: "Agents, your profile, settings, the relay and its desk, the docs and the badges", views: ["agents", "profile", "settings", "relay", "operator", "docs", "badges"] },
@@ -87,7 +89,7 @@ export type View = DashboardView;
 export function visibleNav(opts: { isSpectator: boolean; isOperator?: boolean }): NavItem[] {
   return NAV.filter((n) => {
     if (n.id === "relay" || n.id === "operator") return !!opts.isOperator;
-    if (n.id === "fees" || n.id === "messages") return !opts.isSpectator;
+    if (n.id === "fees" || n.id === "messages" || n.id === "stats") return !opts.isSpectator;
     return true;
   });
 }

@@ -1002,6 +1002,9 @@ export const api = {
   // The operator's desk: queues, expedition, house agents, health, season. Operator only.
   operatorStatus: () => get<OperatorStatus>("/operator/status", { agentScoped: true }),
   paymentRecords: () => get<{ payments: PaymentRecord[] }>("/payments/records", { agentScoped: true }),
+  // P287 / Stats view: the caller's own payments, the last 500. A relay before P287 ignores
+  // `mine` and answers as for no filter (operator only), so a 403 means "not reported here".
+  myPayments: () => get<{ payments: PaymentRecord[] }>("/payments/records?mine=1", { agentScoped: true }),
   settlements: (limit = 100) =>
     get<{ settlements: Settlement[]; count: number; has_more: boolean }>(
       `/payments/settlements?limit=${limit}`, { agentScoped: true }

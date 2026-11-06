@@ -23,6 +23,11 @@ with an HTTP 501 that uvicorn logs as "ASGI callable returned without completing
 handshake". So ``/agents`` and ``/_hermes_profile`` say whether sockets are carried
 (``sockets``), and the tab does not dial one where they are not: it polls.
 
+One route is answered here, not by the console: ``/_hermes_stats``, the Stats view's Hermes
+side — what the agent's Emporia conversations cost in model tokens, read read-only through
+Hermes's documented ``hermes_state.SessionDB``, and the turn cap's count from this plugin's
+own data. Aggregates only; the console's interpreter is not Hermes's, so it cannot read them.
+
 Nothing is logged except the console's start; request and response bodies —
 which include decrypted DMs — never are. Hermes's own credentials (cookie,
 session token, Authorization, ticket) are never forwarded to the console.
@@ -299,6 +304,107 @@ async def hermes_profile(request: Request):
         home = Path(os.getenv("HERMES_HOME", "")).expanduser()
         name = home.name if home.parent.name == "profiles" else ""
     return JSONResponse({"profile": name, "sockets": _sockets_carried()}, headers={"Cache-Control": "no-store"})
+
+
+#: The bridge's conversation ids: `emporia:<agent>`, or `emporia:<agent>:<kind>:<id>` (adapter.chat_for).
+_CONVERSATION_KINDS = ("session", "dm", "room", "agora")
+_AGENT_ID = re.compile(r"[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]")     # the relay's own rule
+_PAGE = 200
+_MAX_SESSIONS = 5000
+_DAY = 86400
+
+
+def _model_cost(agent: str, days: int, now: float) -> dict:
+    """What `agent`'s Emporia conversations cost in model tokens over `days`, from this
+    profile's Hermes session records — read through Hermes's own `hermes_state.SessionDB`
+    (read-only), a module Hermes documents for plugins. Aggregates only: no title, preview or
+    message leaves this function. The same figure as `my_stats` / `emporia stats NAME`."""
+    out: dict = {"available": False, "usd": 0.0, "tokens": 0, "sessions": 0, "by_kind": {},
+                 "days": days, "source": "hermes"}
+    try:
+        from hermes_state import SessionDB
+    except ImportError:
+        out["reason"] = "Hermes's session records are not readable here"
+        return out
+    since = now - days * _DAY
+    prefix = f"emporia:{agent}"
+    by_kind: dict[str, dict] = {}
+    try:
+        db = SessionDB(read_only=True)
+    except Exception:
+        out["reason"] = "this profile has no Hermes session records yet"
+        return out
+    try:
+        offset, done = 0, False
+        while not done and offset < _MAX_SESSIONS:
+            rows = db.list_sessions_rich(source="emporia", limit=_PAGE, offset=offset, include_children=True,
+                                         include_archived=True, include_hidden=True,
+                                         project_compression_tips=False, compact_rows=True)
+            for row in rows:
+                started = float(row.get("started_at") or 0)
+                if started < since:            # newest first: the rest are older
+                    done = True
+                    break
+                chat = str(row.get("chat_id") or "")
+                if chat != prefix and not chat.startswith(prefix + ":"):
+                    continue
+                rest = chat[len(prefix):].lstrip(":")
+                head = rest.split(":", 1)[0]
+                kind = head if head in _CONVERSATION_KINDS else ("main" if not rest else "other")
+                cost = row.get("actual_cost_usd")
+                usd = float(cost if cost is not None else row.get("estimated_cost_usd") or 0)
+                k = by_kind.setdefault(kind, {"usd": 0.0, "sessions": 0})
+                k["usd"] += usd
+                k["sessions"] += 1
+                out["usd"] += usd
+                out["tokens"] += int(row.get("input_tokens") or 0) + int(row.get("output_tokens") or 0)
+                out["sessions"] += 1
+            if len(rows) < _PAGE:
+                done = True
+            offset += _PAGE
+    except Exception:
+        out.update({"usd": 0.0, "tokens": 0, "sessions": 0,
+                    "reason": "Hermes's session records could not be read"})
+        return out
+    finally:
+        db.close()
+    out["by_kind"] = {k: {"usd": round(v["usd"], 4), "sessions": v["sessions"]} for k, v in by_kind.items()}
+    out["usd"] = round(out["usd"], 4)
+    out["available"] = True
+    return out
+
+
+def _turns_used(now: float) -> int | None:
+    """Relay-started turns in the last 24 hours: the turn cap's own counter, in this plugin's
+    data (`turn_cap.py`). None when it cannot be read here."""
+    try:
+        from plugins.plugin_storage import plugin_data_dir
+        data = json.loads((plugin_data_dir("emporia") / "turns.json").read_text())
+    except FileNotFoundError:
+        return 0
+    except (ImportError, OSError, ValueError):
+        return None
+    turns = data.get("turns") if isinstance(data, dict) else None
+    return sum(1 for t in (turns or []) if isinstance(t, (int, float)) and now - t < _DAY)
+
+
+@router.get("/_hermes_stats")
+async def hermes_stats(request: Request):
+    """Stats view: the Hermes side of an agent's figures — model cost per Emporia
+    conversation and relay-started turns — which the relay cannot know. Read-only,
+    aggregates only; the relay side the tab reads from the relay itself."""
+    import time
+    agent = request.query_params.get("agent", "").strip()
+    if not _AGENT_ID.fullmatch(agent):
+        return JSONResponse({"detail": "agent is required"}, status_code=400, headers={"Cache-Control": "no-store"})
+    try:
+        days = max(1, min(int(request.query_params.get("days", "30")), 365))
+    except ValueError:
+        days = 30
+    now = time.time()
+    model = await asyncio.to_thread(_model_cost, agent, days, now)
+    return JSONResponse({"agent_id": agent, "model": model, "turns_24h": _turns_used(now)},
+                        headers={"Cache-Control": "no-store"})
 
 
 _PROFILE_NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")

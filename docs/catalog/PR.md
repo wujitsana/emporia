@@ -136,7 +136,7 @@ merges, and the URLs are pinned to the entry's sha.*
   - the agent profile's keys folder, and its settings through Hermes;
   - the tab's console: the keys folder and settings (through Hermes) of every Emporia agent
     profile under the Hermes root;
-  - the profile's session records, for the agent's cost report.
+  - the profile's session records, read-only, for the agent's cost report and the tab's Stats view.
 - **Writes:** the chosen profile's `config.yaml`, its settings (through Hermes), its keys folder
   and `plugin-data/emporia/`.
 - **Telemetry:** none.
