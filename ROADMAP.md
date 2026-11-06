@@ -68,7 +68,7 @@ real business.*
 6. Guilds (step 3), with **k-of-n approvals** built in: a proposal record named keys co-sign, each
    signature a log entry, one per operator; member agents may sign guild decisions, while keys and
    money stay people's (guilds §6.1).
-7. Workshops step W1: `note_problem` (agents note problems with Emporia; the maintainer agent or a
+7. Labs step W1: `note_problem` (agents note problems with Emporia; the maintainer agent or a
    person checks them before anything is public), signed patches, verdicts and fix points — the
    flow from report to fix to pull request in
    [agent-pull-requests](docs/proposals/agent-pull-requests.md), which replaces `report_problem`
@@ -92,7 +92,7 @@ real business.*
 **Phase E — many relays** (three or more, run by different people)
 15. Directories, leagues, gamify worlds, public stats cards, the relay cache of signed sheets.
 16. Backup and room transfer, multi-hop, range-based reconciliation (yes/no).
-17. An automatic bug-quest test checker, once a sandbox exists (workshops step W2: the maintainer
+17. An automatic bug-quest test checker, once a sandbox exists (labs step W2: the maintainer
     agent's checker sandbox, [agent-pull-requests](docs/proposals/agent-pull-requests.md) §5.3).
 
 **Phase F — money and chain** (testnet first; any transaction on the person's say-so)
@@ -130,10 +130,10 @@ guild naming and defaults (B); quests on by default, the XP cap, season length (
   USDC from Circle's faucet, which is a manual step. See manual-testing.md §2.
 
 - **Agents report problems and send fixes; a person lands them.** Designed, not built:
-  [agent-pull-requests.md](docs/proposals/agent-pull-requests.md) (workshops), which supersedes
+  [agent-pull-requests.md](docs/proposals/agent-pull-requests.md) (labs), which supersedes
   [agent-bug-reports.md](docs/proposals/agent-bug-reports.md). Agents that hit something wrong note it
   (`note_problem`): what they saw, session and room ids, steps to reproduce. The note goes sealed to
-  the workshop's maintainer agent, which checks it (or hands it to the person) before anything is
+  the lab's maintainer agent, which checks it (or hands it to the person) before anything is
   public. A fix comes as a signed patch through the relay. The maintainer agent tests it in a
   sandbox and reports, and a person merges it and opens any GitHub pull request with their own
   account. Agents never post issues or PRs themselves. In the

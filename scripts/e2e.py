@@ -21,6 +21,12 @@ hand in a throwaway Hermes home:
 * the operator section: the relay names the merchant its operator; its desk shows a player's
   open bug report with the verdict command and a post in the ideas topic with the adopt command,
   and the player is refused the desk;
+* labs: the operator makes a lab for a synthetic repo whose `.emporia/lab.json` names it (in a
+  terminal of its own: a person's command); the player files a bug report and its playbook sends no
+  patch; a fourth agent, whose person said yes, sends the fix as a signed patch with its thread in
+  the lab's room; the checker tests it in the sandbox this machine allows and signs the result; the
+  desk lists it with the land command; a person lands it into a throwaway clone (new branch,
+  `Emporia-*` trailers, working tree untouched, nothing pushed);
 * `hermes emporia update`, twice: the runtime is already at the pinned commit, so each verifies it
   and changes nothing.
 
@@ -143,6 +149,10 @@ class Run:
         self.player, self.merchant, self.house_agent = (f"e2e-player-{tag}", f"e2e-merchant-{tag}",
                                                         f"e2e-house-{tag}")
         self.signed = f"e2e-signed-{tag}"        # an agent whose keys its signer made and holds
+        self.beta = f"e2e-beta-{tag}"            # labs: the agent whose person lets it send patches
+        self.lab = "calc"
+        self.lab_repo = self.root / "lab-repo"   # labs: a synthetic repo with a two-line bug
+        self.lab_commit = self.lab_bug = self.lab_patch_id = ""
         self.services_before = self._services()
         self.pids: list[int] = []                # every process this run started and still owns
         self.procs: dict[int, subprocess.Popen] = {}
@@ -234,7 +244,9 @@ class Run:
             # The operator section: the merchant is this relay's operator; bug quests (with
             # the transparency log they need) give its desk a queue.
             EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1",
-            EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent)
+            EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent,
+            # Labs: on, with local file:// repositories allowed (a test relay's only)
+            EMPORIA_LABS="1", EMPORIA_LAB_HOSTS="file")
         py = self.repo / ".venv" / "bin" / "python"
         # The relay runs --repo's code even under another checkout's interpreter (a git worktree
         # has no .venv; the fallback's editable install is the main checkout): found by the review
@@ -327,11 +339,54 @@ class Run:
             check((head, origin) == (self.sha, self.https_repo), f"the runtime is {head[:12]} from {origin}")
             check(self.runtime_python().is_file(), "setup installed no packages into the runtime")
 
-    def emporia(self, profile: str, *args: str, ok_codes=(0,), timeout: float = 120) -> str:
+    def emporia(self, profile: str, *args: str, ok_codes=(0,), timeout: float = 120, **env: str) -> str:
         """`hermes -p PROFILE emporia …`: the plugin's own commands, and the runtime's CLI
         passed through for this profile."""
-        p = self.hermes_cmd("-p", profile, "emporia", *args, timeout=timeout, ok_codes=ok_codes)
+        check(self.hermes, "hermes is not on PATH")
+        p = self.run([self.hermes, "-p", profile, "emporia", *args], timeout=timeout, ok_codes=ok_codes,
+                     env=self.env(**env) if env else None)
         return p.stdout + p.stderr
+
+    def person(self, profile: str, *args: str, ok_codes=(0,), timeout: float = 300, **env: str) -> str:
+        """`hermes -p PROFILE emporia …` as a person runs it: in a terminal of its own (a pty), the
+        way the person-only commands (`lab create`, `lab land`) are allowed to run. Its PID is
+        recorded like every process this run starts."""
+        import pty
+        import select
+        check(self.hermes, "hermes is not on PATH")
+        argv = [self.hermes, "-p", profile, "emporia", *args]
+        self.note("$ (in a terminal) " + " ".join(argv))
+        master, slave = pty.openpty()
+        proc = subprocess.Popen(argv, env=self.env(**env), cwd=self.root, stdin=slave, stdout=slave, stderr=slave,
+                                start_new_session=True)
+        os.close(slave)
+        self.pids.append(proc.pid)
+        self.procs[proc.pid] = proc
+        out, deadline = b"", time.monotonic() + timeout
+        try:
+            while True:
+                if time.monotonic() > deadline:
+                    proc.kill()
+                    raise StepFailed(f"`{' '.join(argv[:6])}` took longer than {int(timeout)}s")
+                ready, _, _ = select.select([master], [], [], 0.5)
+                if ready:
+                    try:
+                        chunk = os.read(master, 65536)
+                    except OSError:        # the terminal closed: it exited
+                        chunk = b""
+                    if not chunk:
+                        break
+                    out += chunk
+                elif proc.poll() is not None:
+                    break
+        finally:
+            os.close(master)
+        code = proc.wait()
+        text = out.decode("utf-8", "replace").replace("\r\n", "\n")
+        self.note(text + f"[exit {code}]")
+        if code not in ok_codes:
+            raise StepFailed(f"`{' '.join(argv[:6])}` exited {code}: " + " | ".join(text.strip().splitlines()[-3:]))
+        return text
 
     def check_agent(self, name: str) -> None:
         import yaml
@@ -570,6 +625,107 @@ class Run:
         check("relay operator access required" in refused and rid not in refused,
               f"a player reached the operator's desk: {refused.strip()[-200:]}")
 
+    # ── labs ────────────────────────────────────────────────────────────────
+    def git(self, *args: str, cwd: Path) -> str:
+        """git in one of the run's own folders, with no config of the person's."""
+        return self.run(["git", "-C", str(cwd), "-c", "user.name=e2e", "-c", "user.email=e2e@localhost",
+                         "-c", "commit.gpgsign=false", *args],
+                        env={**self.env(), "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}).stdout.strip()
+
+    def lab_create(self) -> str:
+        """A synthetic repo whose `.emporia/lab.json` names this relay, the lab and the operator's stable
+        id; the operator (a person, in a terminal) makes the lab; the relay checks the repo says so."""
+        with urllib.request.urlopen(f"{self.relay_url}/agents/{self.merchant}/card", timeout=10) as resp:
+            card = json.loads(resp.read()).get("card") or {}
+        stable = str(card.get("stable_id") or "")
+        check(stable, f"no stable id on {self.merchant}'s card")
+        repo = self.lab_repo
+        (repo / "scripts").mkdir(parents=True)
+        (repo / ".emporia").mkdir()
+        (repo / "calc.py").write_text("def add(a, b):\n    return a - b\n")
+        (repo / "test_calc.py").write_text("import unittest\n\nfrom calc import add\n\n\nclass T(unittest.TestCase):\n"
+                                           "    def test_add(self):\n        self.assertEqual(add(2, 3), 5)\n")
+        shutil.copy(self.repo / "scripts" / "secret_scan.py", repo / "scripts" / "secret_scan.py")
+        (repo / ".emporia" / "lab.json").write_text(json.dumps({
+            "type": "emporia:lab-proof:v1", "relay": "e2e", "lab": self.lab, "creator": stable,
+            "test_command": ["{python}", "-m", "unittest", "-q"], "secret_scan": "scripts/secret_scan.py",
+            "sensitive_paths": [".emporia/", "scripts/"], "timeout_s": 120}, indent=1) + "\n")
+        self.git("init", "-q", "-b", "main", cwd=repo)
+        self.git("add", "-A", cwd=repo)
+        self.git("commit", "-q", "-m", "a calculator with a bug", cwd=repo)
+        self.lab_commit = self.git("rev-parse", "HEAD", cwd=repo)
+        refused = self.emporia(self.merchant, "lab", self.merchant, "create", self.lab, "--repo", f"file://{repo}",
+                               ok_codes=(1,), EMPORIA_LAB_HOSTS="file")
+        check("only a person" in refused, f"lab create ran without a person's terminal: {refused.strip()[-200:]}")
+        out = self.person(self.merchant, "lab", self.merchant, "create", self.lab, "--repo", f"file://{repo}",
+                          "--name", "Calc (e2e)", EMPORIA_LAB_HOSTS="file")
+        check("the repo says it is this lab" in out and self.lab_commit[:12] in out, f"lab create: {out.strip()[-300:]}")
+        return f"lab {self.lab} @ {self.lab_commit[:12]}"
+
+    def lab_patch(self) -> str:
+        """Alpha (the player) files a bug report with its failing test; its playbook sends no patches.
+        Beta, whose person said yes, makes the fix in its own checkout and sends it as a signed patch."""
+        bug = self.tool(self.player, "report_bug", self.lab_commit, "add() subtracts",
+                        "from calc import add\nassert add(2, 3) == 5", "add(2, 3) is -1", "medium", False)
+        check(bug.get("success") and bug.get("report_id"), f"report_bug: {bug}")
+        self.lab_bug = bug["report_id"]
+        no = self.tool(self.player, "submit_patch", self.lab, self.lab_bug, "diff --git a/x b/x\n", ["x"], "x")
+        check(not no.get("success") and "sends no patches" in no.get("error", ""), f"alpha sent a patch: {no}")
+        labs_here = self.tool(self.beta, "patch_status")
+        lab = next((x for x in labs_here.get("labs") or [] if x.get("slug") == self.lab), None)
+        check(lab and lab["commit"] == self.lab_commit and lab["represents"], f"patch_status: {labs_here}")
+        mine = self.root / "beta-checkout"
+        self.git("clone", "-q", str(self.lab_repo), str(mine), cwd=self.root)
+        (mine / "calc.py").write_text("def add(a, b):\n    return a + b\n")
+        diff = self.git("diff", cwd=mine) + "\n"
+        sent = self.tool(self.beta, "submit_patch", self.lab, self.lab_bug, diff, ["calc.py"],
+                         "add() subtracted; it adds now")
+        check(sent.get("success") and sent.get("patch_id") and sent.get("thread_message_id"), f"submit_patch: {sent}")
+        self.lab_patch_id = sent["patch_id"]
+        st = self.tool(self.beta, "patch_status", self.lab, self.lab_patch_id)
+        check(st.get("status") == "open" and st.get("thread") == self.lab_bug and "diff" not in st, f"patch_status: {st}")
+        room = self.tool(self.beta, "get_room_messages", lab["room_id"])
+        check(any(self.lab_patch_id in str(m.get("content")) for m in room.get("messages") or []),
+              f"no thread for the patch in the lab's room: {str(room)[:300]}")
+        return f"{self.lab_patch_id} on {self.lab_bug}"
+
+    def lab_check(self) -> str:
+        """The checker, as the operator's own command: a fresh clone at the pin, the patch applied,
+        the base commit's secret scan and tests in the sandbox, the result signed back."""
+        probe = self.emporia(self.merchant, "lab", "check", self.merchant, "--probe")
+        backend = json.loads(probe[probe.index("{"):probe.rindex("}") + 1]).get("backend")
+        out = self.emporia(self.merchant, "lab", "check", self.merchant, timeout=600, EMPORIA_LAB_HOSTS="file",
+                           **({"EMPORIA_LAB_ALLOW_UNISOLATED": "1"} if backend == "none" else {}))
+        check(self.lab_patch_id in out and "pass: applied True, files as claimed True, secret scan clean" in out,
+              f"lab check: {out.strip()[-400:]}")
+        st = self.tool(self.beta, "patch_status", self.lab, self.lab_patch_id)
+        res = ((st.get("checks") or [{}])[-1]).get("result") or {}
+        check(st.get("status") == "passed" and res.get("tests", {}).get("exit_code") == 0, f"after the check: {st}")
+        return f"{backend} sandbox: {res.get('sandbox', {}).get('isolation')} ({res.get('sandbox', {}).get('kind')})"
+
+    def lab_desk_and_land(self) -> str:
+        """The operator's desk lists the patch with the command to land it; a person lands it into a
+        throwaway clone as one commit on a new branch, with the Emporia-* trailers, pushing nothing."""
+        desk = self.emporia(self.merchant, "operator", self.merchant)
+        land = f"hermes emporia lab {self.merchant} land {self.lab_patch_id} --into CHECKOUT"
+        check("Patches waiting: 1" in desk and land in desk, f"the desk: {desk.strip()[-600:]}")
+        theirs = self.root / "person-checkout"
+        self.git("clone", "-q", str(self.lab_repo), str(theirs), cwd=self.root)
+        refused = self.emporia(self.merchant, "lab", self.merchant, "land", self.lab_patch_id, "--into", str(theirs),
+                               ok_codes=(1,))
+        check("only a person" in refused, "lab land ran without a person's terminal")
+        out = self.person(self.merchant, "lab", self.merchant, "land", self.lab_patch_id, "--into", str(theirs))
+        branch = f"lab/{self.lab_patch_id}"
+        check(branch in out and "nothing was pushed" in out, f"lab land: {out.strip()[-300:]}")
+        msg = self.git("log", "-1", "--format=%B", branch, cwd=theirs)
+        for want in (f"Emporia-Patch: {self.lab_patch_id}", f"Emporia-Agent: {self.beta}@e2e",
+                     f"Emporia-Thread: {self.lab_bug}", "Emporia-Check: lck_"):
+            check(want in msg, f"the landed commit lacks {want!r}: {msg}")
+        check(self.git("show", f"{branch}:calc.py", cwd=theirs).endswith("a + b"), "the landed commit is not the fix")
+        check((theirs / "calc.py").read_text().endswith("a - b\n"), "landing touched the working tree")
+        check(self.git("rev-parse", "--abbrev-ref", "HEAD", cwd=theirs) == "main", "landing changed the branch")
+        return f"{branch} {self.git('rev-parse', '--short', branch, cwd=theirs)}"
+
     def update(self) -> None:
         """At the pinned commit, update is a verified no-op: twice, nothing moves or installs."""
         rt = self.runtime_python().parent.parent.parent
@@ -723,7 +879,7 @@ class Run:
         """The s6 gateway services `hermes profile create` registered for this run's profiles, removed
         the way Hermes removes them: `hermes profile delete NAME --yes`, here, with the temp homes.
         Only names this run made, and only services that were not there when it started."""
-        mine = [n for n in (self.judge, self.player, self.merchant, self.house_agent)
+        mine = [n for n in (self.judge, self.player, self.merchant, self.house_agent, self.beta)
                 if f"gateway-{n}" not in self.services_before]
         for name in mine:
             if f"gateway-{name}" in self._services() and self.hermes:
@@ -798,6 +954,13 @@ def main(argv: list[str] | None = None) -> int:
         run.step("house adopts a waiting blotto and finishes it", run.house)
         run.step("bargain with the house: no call, sealed values, an honest deal, hands published", run.bargain)
         run.step("the operator sees its desk; a player is refused", run.operator)
+        run.step(f"setup {run.beta} (player)", run.setup_agent, run.beta, "--playbook", "player")
+        run.step(f"{run.beta}'s person lets it send patches to labs", run.emporia, run.beta, "agent", "playbook",
+                 run.beta, "--labs", "yes")
+        run.step("labs: the operator makes a lab for a repo that names it", run.lab_create)
+        run.step("labs: alpha files a bug, beta sends a signed patch with its thread", run.lab_patch)
+        run.step("labs: the checker tests it in its sandbox and signs the result", run.lab_check)
+        run.step("labs: the desk lists it; a person lands it in a throwaway clone", run.lab_desk_and_land)
         run.step("update at the pinned commit is a verified no-op", run.update)
     except StepFailed:
         pass

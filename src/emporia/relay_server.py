@@ -1440,6 +1440,57 @@ def init_db() -> None:
                 signature TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_idea_verdicts_ref ON idea_verdicts(ref);
+            -- Labs (W0): a room bound to a repo; signed patches stored as data; checker results.
+            CREATE TABLE IF NOT EXISTS labs (
+                slug TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                room_id TEXT NOT NULL UNIQUE,
+                repo_url TEXT NOT NULL,
+                branch TEXT NOT NULL,
+                pinned_commit TEXT NOT NULL,
+                creator_id TEXT NOT NULL,
+                checkers_json TEXT NOT NULL DEFAULT '[]',
+                licence TEXT NOT NULL DEFAULT '',
+                represents INTEGER NOT NULL DEFAULT 0,
+                proof_json TEXT NOT NULL DEFAULT '',
+                checked_at TEXT NOT NULL DEFAULT '',
+                signed_at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS lab_patches (
+                patch_id TEXT PRIMARY KEY,
+                lab_slug TEXT NOT NULL,
+                author_id TEXT NOT NULL,
+                operator_key TEXT NOT NULL,
+                thread TEXT NOT NULL,
+                base_commit TEXT NOT NULL,
+                diff TEXT NOT NULL,
+                diff_sha256 TEXT NOT NULL,
+                files_json TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                signed_at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                lines_added INTEGER NOT NULL DEFAULT 0,
+                lines_removed INTEGER NOT NULL DEFAULT 0,
+                thread_message_id TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TEXT NOT NULL,
+                UNIQUE (author_id, nonce)
+            );
+            CREATE INDEX IF NOT EXISTS idx_lab_patches_lab ON lab_patches(lab_slug, status, created_at);
+            CREATE INDEX IF NOT EXISTS idx_lab_patches_operator ON lab_patches(operator_key, lab_slug, status);
+            CREATE TABLE IF NOT EXISTS lab_checks (
+                check_id TEXT PRIMARY KEY,
+                patch_id TEXT NOT NULL,
+                checker_id TEXT NOT NULL,
+                result_json TEXT NOT NULL,
+                signed_at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_lab_checks_patch ON lab_checks(patch_id, created_at);
             -- Bargain: the relay's secret seed for a game that deals hidden hands, kept out
             -- of the session's state until the game ends, and each player's contribution.
             CREATE TABLE IF NOT EXISTS session_deals (
@@ -3518,6 +3569,8 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("idea_verdicts", "author_id"), ("idea_verdicts", "decided_by"),
     # Pledges: who promised, to whom, and who attested or contested. The signatures keep the handles signed with.
     ("pledges", "maker_id"), ("pledges", "to_agent"), ("pledge_acts", "agent_id"),
+    # Labs (W0): who made a lab, who sent a patch, who checked it. The signatures keep the handles signed with.
+    ("labs", "creator_id"), ("lab_patches", "author_id"), ("lab_checks", "checker_id"),
 )
 
 # Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
@@ -3547,6 +3600,15 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("pledges", c) for c in ("pledge_id", "kind", "subject_type", "subject_id", "terms_json", "note", "nonce",
                                "made_at", "signature", "public", "recorded_at")),
     *(("pledge_acts", c) for c in ("pledge_id", "act", "verdict", "at", "signature", "recorded_at")),
+    # Labs (W0): a lab's repo and pin, a patch's text and hashes, a check's result. `checkers_json`
+    # names agents, as signed: like a signed payload, a rename leaves it as it was signed.
+    *(("labs", c) for c in ("slug", "name", "room_id", "repo_url", "branch", "pinned_commit", "checkers_json",
+                            "licence", "represents", "proof_json", "checked_at", "signed_at", "signature",
+                            "created_at")),
+    *(("lab_patches", c) for c in ("patch_id", "lab_slug", "operator_key", "thread", "base_commit", "diff",
+                                   "diff_sha256", "files_json", "summary", "nonce", "signed_at", "signature",
+                                   "lines_added", "lines_removed", "thread_message_id", "status", "created_at")),
+    *(("lab_checks", c) for c in ("check_id", "patch_id", "result_json", "signed_at", "signature", "created_at")),
     # P289: bug reports and incidents. `operator_key` is a Nous account or a stable id
     # (the cap's key), never a handle — so a rename does not reset an operator's cap.
     *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",
@@ -9104,6 +9166,7 @@ from emporia.routes import standing as _standing_routes  # noqa: E402
 from emporia.routes import bugs as _bug_routes  # noqa: E402
 from emporia.routes import operator as _operator_routes  # noqa: E402
 from emporia.routes import ideas as _idea_routes  # noqa: E402
+from emporia.routes import labs as _lab_routes  # noqa: E402
 from emporia.routes import pledges as _pledge_routes  # noqa: E402
 from emporia.routes import whats_next as _next_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
@@ -9130,6 +9193,7 @@ app.include_router(_standing_routes.router)
 app.include_router(_bug_routes.router)
 app.include_router(_operator_routes.router)
 app.include_router(_idea_routes.router)
+app.include_router(_lab_routes.router)
 app.include_router(_pledge_routes.router)
 app.include_router(_next_routes.router)
 app.include_router(_like_routes.router)
