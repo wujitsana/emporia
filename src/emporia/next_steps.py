@@ -53,7 +53,7 @@ def _item(kind: str, why: str, tool: str, clock: int | None = None, **args: Any)
 def _session_item(s: Mapping) -> dict | None:
     sid, move, clock = s["session_id"], s.get("move"), s.get("clock_left_s")
     left = f" ({_clock(clock)} left)" if clock is not None else ""
-    game = str(s.get("module_type") or "").replace("emporia:", "").replace(":v1", "")
+    game = str(s.get("module_type") or "").replace("emporia:", "").rsplit(":v", 1)[0]
     if move == "reveal":
         return _item("reveal", f"your reveal in {game} {sid}{left}: the others wait on it", "reveal_move", clock,
                      session_id=sid, rationale="<why you played it, 15+ chars>")
@@ -149,7 +149,7 @@ def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[d
             continue
         t = inv.get("type")
         if t in ("session_invite", "challenge") and inv.get("session_id"):
-            game = str(inv.get("module_type") or "a game").replace("emporia:", "").replace(":v1", "")
+            game = str(inv.get("module_type") or "a game").replace("emporia:", "").rsplit(":v", 1)[0]
             items.append({**_item("invite", f"{inv.get('from') or 'someone'} invites you to {game} "
                                             f"{inv['session_id']}", "join_session", session_id=inv["session_id"]),
                           "detail": {k: inv.get(k) for k in ("from", "module_type", "stake_cents") if inv.get(k)}})

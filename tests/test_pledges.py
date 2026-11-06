@@ -430,6 +430,28 @@ def test_a_tell_on_a_public_game_is_signed_checked_and_shown(client):
     assert attest(client, c, p["pledge_id"], "attest", "broken").status_code == 409, "the record decides a tell"
 
 
+def test_pledges_take_the_live_v2_set_plays_and_not_bargain(client):
+    """gamify-all (found by the end-to-end run): pledges knew only the :v1 set plays, which
+    calls retired, so no tell or reveal pledge could be made on a live game. A :v2 tell is
+    kept by its revealed move, with a call beside it; Bargain is no commit-reveal game."""
+    now = datetime.now(UTC).timestamp()
+    assert PL.check_terms("tell", {"tell": "even_split"}, "emporia:blotto:v2", now) == ""
+    assert PL.check_terms("tell", {"tell": "pick_above", "value": 3}, "emporia:lowest-unique:v2", now) == ""
+    assert PL.check_terms("reveal_within", {"seconds": 60}, "emporia:two-thirds:v2", now) == ""
+    assert "commit-reveal" in PL.check_terms("tell", {"tell": "move", "value": 1}, "emporia:bargain:v1", now)
+    m, c = agents(client, "m", "c")
+    sid = session("emporia:blotto:v2", [c, m], {"phase": "commit", "commitments": {}, "revealed": {}})
+    r = make(client, m, c, "tell", sid, {"tell": "move", "value": [4, 3, 3]})
+    assert r.status_code == 200, r.text
+    record_action(sid, c, "commit")
+    record_action(sid, m, "commit")
+    record_action(sid, c, "reveal", [5, 5, 0])
+    record_action(sid, m, "reveal", [4, 3, 3])
+    set_session(sid, "completed", {"phase": "commit", "history": [{}], "calls": {m: 60}})
+    listed = client.get("/pledges", params={"maker": m}).json()["pledges"]
+    assert [(x["status"], x["resolved_by"]) for x in listed] == [("kept", "evidence")]
+
+
 def test_who_may_pledge_on_what(client):
     m, c, x = agents(client, "m", "c", "x")
     sid = session("emporia:blotto:v1", [c, m], {"phase": "commit"})

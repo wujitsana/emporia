@@ -55,12 +55,17 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from emporia.calls import ALL_SET_PLAYS, SET_PLAYS as LIVE_SET_PLAYS
+
 FORMULA = "pledges:v1"
 TRUST_FORMULA = "pledges:v1/trust"
 
 DEALS = ("emporia:service:v1",)
-COMMIT_REVEAL = ("emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1")
-PICK_GAMES = ("emporia:two-thirds:v1", "emporia:lowest-unique:v1")
+# gamify-all: the commit-reveal set plays are :v2 (calls); a :v1 game still running keeps its
+# pledges too. Bargain is no commit-reveal game, so it takes no reveal or tell pledge.
+COMMIT_REVEAL = ALL_SET_PLAYS
+BLOTTO = ("emporia:blotto:v2", "emporia:blotto:v1")
+PICK_GAMES = ("emporia:two-thirds:v2", "emporia:lowest-unique:v2", "emporia:two-thirds:v1", "emporia:lowest-unique:v1")
 TELLS = ("even_split", "pick_below", "pick_above", "move")
 STATUSES = ("open", "kept", "broken", "disputed", "void")
 VERDICTS = ("kept", "broken")
@@ -159,12 +164,12 @@ def check_terms(kind: str, terms: Mapping[str, Any], module_type: str, now: floa
         if isinstance(s, bool) or not isinstance(s, int) or not MIN_SECONDS <= s <= MAX_SECONDS:
             return f"terms.seconds: a whole number, {MIN_SECONDS}-{MAX_SECONDS}"
     if kind in ("reveal_within", "tell") and module_type not in COMMIT_REVEAL:
-        return f"{kind}: only in a commit-reveal game ({', '.join(COMMIT_REVEAL)})"
+        return f"{kind}: only in a commit-reveal game ({', '.join(LIVE_SET_PLAYS)})"
     if kind == "tell":
         t, v = terms.get("tell"), terms.get("value")
         if t not in TELLS:
             return f"terms.tell: one of {', '.join(TELLS)}"
-        if t == "even_split" and (module_type != "emporia:blotto:v1" or "value" in terms):
+        if t == "even_split" and (module_type not in BLOTTO or "value" in terms):
             return "even_split: blotto only, and takes no value"
         if t in ("pick_below", "pick_above") and (module_type not in PICK_GAMES or isinstance(v, bool)
                                                    or not isinstance(v, int)):
