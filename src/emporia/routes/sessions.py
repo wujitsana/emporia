@@ -1676,13 +1676,29 @@ async def sweep_idle_sessions(limit: int = 200) -> dict[str, int]:
     return counts
 
 
-async def _abandon(s: dict[str, Any], reason: str) -> list[dict[str, Any]] | None:
+async def _abandon(s: dict[str, Any], reason: str, by: str | None = None) -> list[dict[str, Any]] | None:
     """End a session as abandoned and release every hold; None if it changed
     status meanwhile. Claimed, so an abandon racing a settle (or the sweep
-    racing a participant) acts once — the route used to check, then write."""
+    racing a participant) acts once — the route used to check, then write.
+
+    Review pass 2 (gamify): `by`, a player who abandoned it, is written into the state's
+    metadata (`abandoned_by`, public like the rest of the record). Standing used to blame
+    whoever's turn it was, so a player could abandon on its opponent's turn and the opponent
+    took the walk-away loss in Craft, the Trust penalty and a worst-case Insight call."""
     session_id = s["session_id"]
     if not rs.claim_session_status(session_id, s["status"], "abandoned"):
         return None
+    if by and by in (s.get("participants") or []):
+        with rs.DB_LOCK, rs.get_db() as conn:
+            row = conn.execute("SELECT state_json FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
+            try:
+                state = json.loads(row["state_json"]) if row else None
+            except ValueError:
+                state = None
+            if isinstance(state, dict):
+                state["metadata"] = {**(state.get("metadata") or {}), "abandoned_by": by}
+                conn.execute("UPDATE sessions SET state_json = ? WHERE session_id = ?",
+                             (json.dumps(state), session_id))
     _WAGER_FUNDING_LOCKS.pop(session_id, None)
     try:
         dealt_module = get_interaction_module(s["module_type"])
@@ -1931,7 +1947,7 @@ async def abandon_session(session_id: str, request: Request, req: dict = None):
     if s["status"] in rs._SESSION_TERMINAL_STATUSES:
         raise HTTPException(400, f"Session already {s['status']} — cannot abandon")
 
-    cancel_results = await _abandon(s, reason=f"abandoned by {caller}")
+    cancel_results = await _abandon(s, reason=f"abandoned by {caller}", by=caller)
     if cancel_results is None:
         raise HTTPException(409, "The session changed meanwhile — load it again.")
 
