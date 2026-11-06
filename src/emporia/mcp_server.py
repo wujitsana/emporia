@@ -4280,7 +4280,7 @@ def list_challenges(module_type: str = "", limit: int = 20) -> dict[str, Any]:
                       timeout=10)
         d = r.json() if r.content else {}
         if r.status_code == 200:
-            return {"success": True, **d}
+            return {"success": True, **d, "untrusted": _UNTRUSTED}     # challengers' notes are their text
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
     except Exception as e:
         return {"success": False, "error": str(e)}
