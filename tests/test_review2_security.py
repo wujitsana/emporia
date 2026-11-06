@@ -2,6 +2,7 @@
 import base64
 
 from emporia import signer
+from tests.test_signer_backends import setup  # noqa: F401  (fixture)
 from tests.test_signer_phase2 import AGENT, _open, _sealed, held  # noqa: F401  (fixture)
 
 
@@ -103,3 +104,22 @@ def test_the_key_guard_keeps_the_mm_session_and_the_signers_files_by_name():
         assert (g.pre_tool_call("terminal", {"command": cmd}) or {}).get("action") == "block", cmd
     for fine in ("open https://docs.metamask.io/agent-wallet", "npm view @metamask/agent-wallet version"):
         assert g.pre_tool_call("terminal", {"command": fine}) is None, fine
+
+
+def test_a_payment_its_back_end_refused_does_not_count_against_the_day(setup, monkeypatch):  # noqa: F811
+    """The day's total was charged before the back end was asked, and never given back when it
+    said no (a provider's policy, MetaMask's Guard Mode or its 2FA timing out, a signature from
+    the wrong key): each refusal used up the daily cap, until the agent could pay nothing."""
+    import pytest
+
+    from emporia import agent_wallet
+    from tests.test_signer_backends import AGENT as BA
+    from tests.test_signer_backends import _challenge_for, _privy
+    _privy(setup, monkeypatch, max_value=300 * 10_000)
+    signer.make_agent_keys(BA, {"evm": "privy1"})
+    assert agent_wallet.sign_exact(BA, _challenge_for(250))
+    assert agent_wallet.spent_today_atomic(BA) == 250 * 10_000
+    for _ in range(3):
+        with pytest.raises(agent_wallet.AgentWalletError, match="Policy violation"):
+            agent_wallet.sign_exact(BA, _challenge_for(400))          # under our cap, over Privy's
+    assert agent_wallet.spent_today_atomic(BA) == 250 * 10_000, "a refused payment is not a payment"
