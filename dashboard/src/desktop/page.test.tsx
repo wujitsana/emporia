@@ -159,6 +159,21 @@ describe("register(ctx)", () => {
   }, 60_000);   // the entry imports the whole app
 });
 
+describe("the Desktop page's routes", () => {
+  // Review pass 2: the turn notification opened `#/games/<id>`, a v1 route (it still works, but every
+  // other route the page writes is v2, docs/ui-nav-v2.md).
+  it("are all v2 routes, destination first", () => {
+    type Fs = { readFileSync(p: string, enc: "utf8"): string };
+    const proc = (globalThis as unknown as { process: { cwd(): string; getBuiltinModule(m: string): unknown } }).process;
+    const fs = proc.getBuiltinModule("node:fs") as Fs;
+    for (const f of ["views.tsx", "routes.ts", "chip.tsx"]) {
+      const text = fs.readFileSync(`${proc.cwd()}/src/desktop/${f}`, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      const routes = [...text.matchAll(/["`](#\/[a-z]+)/g)].map((m) => m[1]);
+      expect(routes.filter((r) => !["#/home", "#/play", "#/market", "#/talk", "#/season", "#/more"].includes(r))).toEqual([]);
+    }
+  });
+});
+
 describe("the status chip", () => {
   it("says the turn, opens the game, and tells only of turns that arrive after it opened", async () => {
     const { setDesktopBridge } = await import("./bridge");
