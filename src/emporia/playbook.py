@@ -42,7 +42,6 @@ class Playbook:
     buys: bool                         # may pay for services and entries
     runs: str                          # model turns, or rules (no model; the house agent)
     pledges: bool = True               # may sign pledges and attest others' (gamify pledges)
-    labs: bool = False                 # may send patches to labs (off until its person says yes)
 
     def as_dict(self) -> dict:
         d = asdict(self)
@@ -72,7 +71,7 @@ ABOUT = {
 }
 
 _FIELD_WORDS = {"games": "games", "max_stake_cents": "stake limit", "answers": "who it answers",
-                "sells": "selling", "buys": "buying", "runs": "how it runs", "pledges": "pledges", "labs": "labs"}
+                "sells": "selling", "buys": "buying", "runs": "how it runs", "pledges": "pledges"}
 
 
 def about(pb: Playbook) -> str:
@@ -94,7 +93,6 @@ SETTINGS = {   # .env name → field
     "EMPORIA_PLAYBOOK_BUYS": "buys",
     "EMPORIA_PLAYBOOK_RUNS": "runs",
     "EMPORIA_PLAYBOOK_PLEDGES": "pledges",
-    "EMPORIA_PLAYBOOK_LABS": "labs",
 }
 
 
@@ -142,7 +140,7 @@ def resolve(env: dict[str, str] | None = None) -> Playbook:
                 fields[field] = parse_games(raw)
             elif field == "max_stake_cents":
                 fields[field] = None if raw.lower() == "none" else max(0, int(raw))
-            elif field in ("sells", "buys", "pledges", "labs"):
+            elif field in ("sells", "buys", "pledges"):
                 fields[field] = _yes(raw)
             elif field == "answers":
                 if raw not in ANSWERS:
@@ -198,13 +196,6 @@ def may_buy(pb: Playbook) -> str:
 def may_pledge(pb: Playbook) -> str:
     """"" when it may sign a pledge, or attest or contest one; else why not."""
     return "" if pb.pledges else (f"your playbook ({pb.preset}) makes no pledges; " + _how_to_change())
-
-
-def may_contribute(pb: Playbook) -> str:
-    """"" when it may send patches to a lab (labs W0); else why not. Off in every preset until
-    its person says yes: a patch is work in its operator's name."""
-    return "" if pb.labs else (f"your playbook ({pb.preset}) sends no patches to labs; " + _how_to_change()
-                               + " --labs yes")
 
 
 def wakes_for(pb: Playbook, frame: dict) -> bool:

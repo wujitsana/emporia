@@ -40,7 +40,7 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("a Stripe webhook secret", re.compile(r"\bwhsec_[A-Za-z0-9]{16,}")),
     ("a 1Password service account token", re.compile(r"\bops_[A-Za-z0-9_\-]{30,}")),
     ("an AWS access key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
-    ("a GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}")),
+    ("a GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}|\bgithub_pat_[A-Za-z0-9_]{30,}")),
     ("a model provider API key", re.compile(r"\bsk-(?:or-|ant-|proj-)?[A-Za-z0-9_\-]{20,}")),
     ("a login token (JWT)", re.compile(r"\beyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}")),
     ("a secret from a .env file", re.compile(

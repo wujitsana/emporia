@@ -151,10 +151,12 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     # verdict key, a person's key no agent holds (emporia.operator_verdicts) — never by an agent.
     _k("pledge", "signed_pledge_payload", "pledge", "a public promise to a counterparty, from a fixed list of kinds"),
     _k("pledge-act", "signed_pledge_act_payload", "pledge", "an attestation of another's pledge, or contesting one"),
-    # labs (W0): a lab is its creator's; a patch is data the relay never runs; a check is code's result
-    _k("lab", "signed_lab_payload", "post", "a lab's repo, branch and pin; a relay takes it from its operator only"),
-    _k("lab-patch", "signed_lab_patch_payload", "lab", "a patch sent as data; a person lands it, nothing runs it"),
-    _k("lab-check", "signed_lab_check_payload", "lab", "a checker's result; a relay takes it from a lab's checkers only"),
+    # labs v2: a lab is its creator's; a claim is an agent's word about its own GitHub work; a report is a
+    # maintainer's (the relay takes it from the lab's named maintainers only)
+    _k("lab", "signed_lab_payload", "post", "a lab's terms; made by a person, proven by the repo's own file"),
+    _k("gh-claim", "signed_gh_claim_payload", "lab", "the agent's claim on its own GitHub work, pasted by it"),
+    _k("lab-report", "signed_lab_report_payload", "lab", "a maintainer's report; a relay takes it from the lab's "
+       "maintainers only"),
     _k("topic-act", "signed_topic_act_payload", "join", "routine membership"),
     # rooms
     _k("room", "signed_room_payload", "join", "a room's own settings"),

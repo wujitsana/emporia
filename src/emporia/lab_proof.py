@@ -27,7 +27,14 @@ from pathlib import Path
 from typing import Any
 
 from emporia import labs
-from emporia.lab_sandbox import search_path as _search_path
+import shutil as _shutil
+
+
+def _search_path() -> str:
+    """A PATH of the system's folders and the one git is in, never the person's whole PATH."""
+    found = _shutil.which("git")
+    return ":".join(dict.fromkeys([*([os.path.dirname(found)] if found else []), "/usr/local/bin", "/usr/bin",
+                                   "/bin"]))
 
 GIT_TIMEOUT_S = 60
 MAX_FETCH_BYTES = 500 * 1024 * 1024
@@ -109,7 +116,7 @@ def read_file(bare: Path, commit: str, path: str, *, home: str | Path, max_bytes
 
 
 def verify_in_repo(repo: Path, commit: str, branch_tip: str, *, relay: str, slug: str, creator: str,
-                   home: str | Path) -> dict[str, Any]:
+                   maintainers: tuple[str, ...] = (), home: str | Path) -> dict[str, Any]:
     """The proof, read in a repository that holds the branch's history: the pin is the tip or an
     ancestor of it; the proof file at the pin names this lab; and it still does at the tip (else
     the lab has **lapsed**: its repo took the file back). {represents, lapsed, why, proof}."""
@@ -125,7 +132,7 @@ def verify_in_repo(repo: Path, commit: str, branch_tip: str, *, relay: str, slug
     except GitError as e:
         out["why"] = str(e)
         return out
-    why = why or labs.proof_names(proof, relay, slug, creator)
+    why = why or labs.proof_names(proof, relay, slug, creator, maintainers)
     if why:
         out["why"] = why
         return out
@@ -133,7 +140,7 @@ def verify_in_repo(repo: Path, commit: str, branch_tip: str, *, relay: str, slug
     if branch_tip != commit:
         try:
             now, why = labs.parse_proof(read_file(repo, branch_tip, labs.PROOF_PATH, home=home))
-            why = why or labs.proof_names(now, relay, slug, creator)
+            why = why or labs.proof_names(now, relay, slug, creator, maintainers)
         except GitError as e:
             why = str(e)
         if why:
@@ -144,7 +151,7 @@ def verify_in_repo(repo: Path, commit: str, branch_tip: str, *, relay: str, slug
 
 
 def check(repo_url: str, branch: str, commit: str, *, relay: str, slug: str, creator: str,
-          allow_file: bool = False, workdir: str | Path | None = None, recheck: bool = False) -> dict[str, Any]:
+          maintainers: tuple[str, ...] = (), allow_file: bool = False, workdir: str | Path | None = None, recheck: bool = False) -> dict[str, Any]:
     """Whether the repo says it is this lab: {represents, lapsed, why, tip, proof, checked_at}.
 
     At creation (the relay) the branch tip must be the pinned commit and the proof file there must
@@ -155,14 +162,18 @@ def check(repo_url: str, branch: str, commit: str, *, relay: str, slug: str, cre
     from datetime import UTC, datetime
     now = datetime.now(UTC).isoformat(timespec="seconds")
     out: dict[str, Any] = {"represents": False, "lapsed": False, "why": "", "tip": None, "proof": None,
-                           "checked_at": now}
+                           "checked_at": now, "unreachable": False}
     tmp = Path(tempfile.mkdtemp(prefix="emporia-lab-proof-", dir=workdir))
     try:
         home = tmp / "home"
         home.mkdir()
         bare = tmp / "repo.git"
         try:
-            t = tip(repo_url, branch, home=home, allow_file=allow_file)
+            try:
+                t = tip(repo_url, branch, home=home, allow_file=allow_file)
+            except GitError as e:      # not readable without credentials: a private repo, or a wrong URL
+                out["unreachable"] = True
+                raise e
             out["tip"] = t
             if t != commit and not recheck:
                 out["why"] = (f"the tip of {branch} is {t[:12]}, not the pinned {commit[:12]} — "
@@ -184,7 +195,8 @@ def check(repo_url: str, branch: str, commit: str, *, relay: str, slug: str, cre
         except GitError as e:
             out["why"] = str(e)
             return out
-        out.update(verify_in_repo(bare, commit, t, relay=relay, slug=slug, creator=creator, home=home))
+        out.update(verify_in_repo(bare, commit, t, relay=relay, slug=slug, creator=creator,
+                                     maintainers=maintainers, home=home))
         return out
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

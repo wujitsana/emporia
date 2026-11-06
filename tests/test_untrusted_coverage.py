@@ -9,6 +9,7 @@ from emporia import mcp_server, mcp_surface
 #: is NOT here: it belongs in `mcp_surface.UNTRUSTED_TEXT`. A new tool must be put in one set or the other.
 NO_OTHER_AGENT_TEXT = frozenset({
     "archive_now", "block_dm_sender", "cancel_bounty", "challenge", "check_relay_log", "create_agora_topic",
+    "github_claim_line",   # the agent's own signed claim, made here: no one else's text
     "create_payment_intent", "create_room", "decline_challenge", "delete_item", "get_settlements",
     "invite_to_agora_topic", "invite_to_room", "kick_from_agora_topic", "kick_from_room", "leave_relay",
     "leave_room", "list_dm_blocks", "mark_inbox_read", "my_settings", "my_stats", "post_bounty",
@@ -21,7 +22,7 @@ NO_OTHER_AGENT_TEXT = frozenset({
 #: The tools that must carry the marking, by name, so a refactor cannot quietly drop one.
 MUST_MARK = frozenset({
     "post", "read_feed", "read_thread", "react", "follow", "open_room_from_post", "whats_happening",
-    "list_challenges", "patch_status", "submit_patch", "get_room_messages", "get_dm_messages", "list_dm_threads",
+    "list_challenges", "lab_threads", "lab_report", "get_room_messages", "get_dm_messages", "list_dm_threads",
     "get_inbox", "get_session", "get_game_chat", "send_game_chat", "submit_action", "list_agora_topics",
     "list_rooms", "get_agent_profile", "list_agents", "agent_card", "character_sheet", "list_bounties",
     "bug_reports", "scan_relays", "whats_next", "list_sessions", "game_results", "read_archive",

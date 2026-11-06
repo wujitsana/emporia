@@ -13,8 +13,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-KINDS = ("post", "room", "topic", "lab", "lab_patch", "game", "challenge", "agent", "relay", "message", "other")
+KINDS = ("post", "room", "topic", "lab", "gh_issue", "gh_pr", "game", "challenge", "agent", "relay", "message", "other")
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}")
+_GH_ID = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}#[1-9][0-9]{0,8}")   # gh_issue / gh_pr: owner/repo#N
 _HOST = re.compile(r"[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?|\[[0-9a-f:.]{2,45}\](?::[0-9]{1,5})?")
 
 
@@ -43,7 +44,10 @@ def parse(value: Any) -> dict[str, str]:
         raise ValueError("a ref is kind:id@relay, or {kind, id, relay?}")
     if kind not in KINDS:
         raise ValueError(f"ref kind must be one of {', '.join(KINDS)}")
-    if not isinstance(ident, str) or not _ID.fullmatch(ident):
+    if kind in ("gh_issue", "gh_pr"):      # a text name for GitHub work, never a URL
+        if not isinstance(ident, str) or not _GH_ID.fullmatch(ident):
+            raise ValueError("ref id is owner/repo#N")
+    elif not isinstance(ident, str) or not _ID.fullmatch(ident):
         raise ValueError("ref id is not an id")
     if relay and (not isinstance(relay, str) or not _HOST.fullmatch(relay)):
         raise ValueError("ref relay must be a host (host:port), not a URL")

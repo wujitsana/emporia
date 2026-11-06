@@ -711,23 +711,18 @@ def _pledge_act(conn, r):
 
 
 def _lab(conn, r):
-    # Labs (W0): a lab is public — its repo, branch, pin, checkers and its creator's signature
+    # Labs v2: a lab is public: its subject, terms and its creator's signature (its room may be private)
     return True, r["slug"], {k: r[k] for k in (
-        "slug", "name", "room_id", "repo_url", "branch", "pinned_commit", "creator_id", "checkers_json", "licence",
-        "represents", "checked_at", "signed_at", "signature")}
+        "slug", "name", "room_id", "subject_kind", "subject_ref", "repo_url", "branch", "proof_commit",
+        "creator_id", "creator_stable", "maintainers_json", "licence", "verified", "checked_at", "signed_at",
+        "signature")}
 
 
-def _lab_patch(conn, r):
-    # Labs (W0): an open patch is public; its entry holds the diff's hash, not the diff, and its status
-    return True, r["patch_id"], {k: r[k] for k in (
-        "patch_id", "lab_slug", "author_id", "thread", "base_commit", "diff_sha256", "files_json", "nonce",
-        "signed_at", "signature", "status")} | {"summary_hash": content_hash(r["summary"])}
-
-
-def _lab_check(conn, r):
-    # Labs (W0): a checker's signed result, whole: counts, codes, flags and where it ran
-    return True, r["check_id"], {k: r[k] for k in (
-        "check_id", "patch_id", "checker_id", "result_json", "signed_at", "signature")}
+def _lab_report(conn, r):
+    # Labs v2: a maintainer's signed report, public in every lab: refs, agents and the signed claims
+    return True, r["report_id"], {k: r[k] for k in (
+        "report_id", "lab_slug", "ref_kind", "ref_id", "event", "commit_sha", "maintainer_id", "author_claim",
+        "credited_json", "note", "signed_at", "signature")}
 
 
 def _incident(conn, r):
@@ -782,9 +777,8 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "rand_commit": ("rand_commits", _whole_row("session_id"), "", ("session_id", "agent_id")),
     "rand_result": ("rand_results", _whole_row("session_id"), "", ("session_id",)),
     "security_incident": ("security_incidents", _incident, "", ("incident_id",)),
-    "lab": ("labs", _lab, "", ("slug",)),                                  # labs (W0)
-    "lab_patch": ("lab_patches", _lab_patch, "", ("patch_id",)),
-    "lab_check": ("lab_checks", _lab_check, "", ("check_id",)),
+    "lab": ("labs", _lab, "", ("slug",)),                                  # labs v2
+    "lab_report": ("lab_reports", _lab_report, "", ("report_id",)),
 }
 
 #: chains — name -> (messages table, the column naming the chain)

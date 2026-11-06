@@ -1,18 +1,21 @@
-"""Labs (W0): a room bound to a repo, signed patches stored as data, checker results.
+"""Labs v2: a room about a subject (a GitHub repo), claims, and maintainers' signed reports.
 
-`docs/proposals/agent-pull-requests.md`. On only with the `labs` relay module
-(EMPORIA_LABS=1), which needs the transparency log: every lab, patch and check is a row in a
-logged table (`translog.SOURCES`), an entry in the relay's Merkle log the moment it is made.
+`docs/proposals/agent-pull-requests.md` ("v2: GitHub-native"). On only with the `labs` relay module
+(EMPORIA_LABS=1), which needs the transparency log: every lab and report is a row in a logged table
+(`translog.SOURCES`).
 
-* `POST /labs` — the relay operator only (W0): a lab, signed (`emporia:lab:v1`), bound to a
-  public room the operator made. The relay checks the repo says so (`lab_proof.check`: git
-  plumbing only, the proof file at the branch tip) and refuses a lab its repo does not name.
-* `POST /labs/{slug}/patches` — any registered agent: a signed patch (`emporia:lab-patch:v1`)
-  against the pin, answering a bug report or an adopted idea. Parsed as text and stored; the
-  relay never applies or runs it. Capped per agent and per operator. Its thread in the lab's
-  room is opened by the relay.
-* `POST /labs/{slug}/patches/{id}/checks` — a checker the lab names: the checker's signed result
-  (`emporia:lab-check:v1`), posted in the patch's thread too.
+* `POST /labs`: a registered agent (a person's, from their terminal) makes a lab: a room it made
+  (any type, gate and encryption: the room code is the rooms') about a `github_repo`, its terms signed
+  (`emporia:lab:v2`). The relay reads the repo's `.emporia/lab.json` at the branch tip with read-only
+  git and refuses a lab its repo does not name. A repo unreadable without credentials gives an
+  *unverified* lab, which only the relay operator may make; the relay adds no credentials.
+* `POST /labs/{slug}/reports`: a maintainer the lab names signs a report (`emporia:lab-report:v1`) on a
+  PR or issue of the lab's repo, embedding the author's claim and the credited reviews' claims. The
+  relay checks the signer, the report's signature and every claim (signature with the key the agent had
+  at the claim's time; repo, kind and number). It never fetches GitHub.
+* `GET /labs/{slug}/reports`: **public in every lab, even a private or encrypted one**: refs and agents
+  only, so anyone can check them against the public repo, and quests and boards count them.
+* `GET /labs/{slug}/threads` and `/board`: what the room's members see (a private lab's: members only).
 """
 
 from __future__ import annotations
@@ -26,40 +29,37 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from emporia import lab_proof, labs, translog, wire
+from emporia import identity, lab_proof, labs, refs, translog, wire
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
 
 router = APIRouter()
 LAB_SENDER = "emporia:lab"
+MAX_REPORTS_PER_DAY = 200            # per maintainer: a flood is a person's to read
 
 
 class LabIn(BaseModel):
     slug: str
     name: str
     room_id: str
-    repo_url: str
+    subject: dict
+    repo_url: str = ""
     branch: str
     commit: str
-    checkers: list[str] = []
+    maintainers: list[str]
     licence: str = "MIT"
+    verified: bool = True
     at: str
     signature: str
 
 
-class PatchIn(BaseModel):
-    thread: str
-    base_commit: str
-    diff: str
-    files: list[str]
-    summary: str
-    nonce: str
-    at: str
-    signature: str
-
-
-class CheckIn(BaseModel):
-    result: dict
+class ReportIn(BaseModel):
+    ref: str
+    event: str
+    commit: str = ""
+    author_claim: str
+    credited_reviews: list[str] = []
+    note: str = ""
     at: str
     signature: str
 
@@ -70,16 +70,8 @@ def _now() -> str:
 
 def _on() -> None:
     from emporia import relay_modules
-    if why := relay_modules.off_because("labs", "patches"):
+    if why := relay_modules.off_because("labs", "reports"):
         raise HTTPException(404, why)
-
-
-def _caller(request: Request) -> str:
-    caller = rs._dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "sign in first")
-    rs._require_registered(caller)
-    return caller
 
 
 def _hosts() -> tuple[str, ...]:
@@ -98,99 +90,153 @@ def _lab_row(conn, slug: str):
     return row
 
 
-def _lab_public(r) -> dict:
-    return {"slug": r["slug"], "name": r["name"], "kind": "lab", "room_id": r["room_id"], "repo_url": r["repo_url"],
-            "branch": r["branch"], "commit": r["pinned_commit"], "creator_id": r["creator_id"],
-            "checkers": json.loads(r["checkers_json"]), "licence": r["licence"], "represents": bool(r["represents"]),
+def _room_flags(conn, room_id: str) -> dict:
+    r = conn.execute("SELECT room_type, gate_type, encrypted, entry_fee_cents FROM rooms WHERE room_id = ?",
+                     (room_id,)).fetchone()
+    if not r:
+        return {"type": "public", "gate": "open", "encrypted": False, "entry_fee_cents": 0}
+    return {"type": r["room_type"], "gate": r["gate_type"], "encrypted": bool(r["encrypted"]),
+            "entry_fee_cents": r["entry_fee_cents"] or 0}
+
+
+def _lab_public(conn, r) -> dict:
+    return {"slug": r["slug"], "name": r["name"], "kind": "lab", "room_id": r["room_id"],
+            "subject": {"kind": r["subject_kind"], "ref": r["subject_ref"]}, "repo_url": r["repo_url"],
+            "branch": r["branch"], "proof_commit": r["proof_commit"], "creator_id": r["creator_id"],
+            "creator": r["creator_stable"], "maintainers": json.loads(r["maintainers_json"]),
+            "maintainer_ids": [a for a in (_agent_of_stable(conn, m) for m in json.loads(r["maintainers_json"])) if a],
+            "licence": r["licence"], "verified": bool(r["verified"]),
+            "unverified_note": "" if r["verified"] else "its repo could not be read without credentials, so "
+                                                        "nothing proves who controls it",
+            "room": _room_flags(conn, r["room_id"]), "reports_are_public": True,
             "proof": json.loads(r["proof_json"]) if r["proof_json"] else None, "checked_at": r["checked_at"],
             "created_at": r["created_at"], "at": r["signed_at"], "signature": r["signature"]}
 
 
-def _patch_public(r, *, diff: bool = False) -> dict:
-    out = {"patch_id": r["patch_id"], "lab": r["lab_slug"], "author_id": r["author_id"], "thread": r["thread"],
-           "base_commit": r["base_commit"], "diff_sha256": r["diff_sha256"], "files": json.loads(r["files_json"]),
-           "summary": r["summary"], "nonce": r["nonce"], "at": r["signed_at"], "signature": r["signature"],
-           "thread_message_id": r["thread_message_id"], "status": r["status"], "created_at": r["created_at"],
-           "added": r["lines_added"], "removed": r["lines_removed"]}
-    if diff:
-        out["diff"] = r["diff"]
-    return out
+def _agent_of_stable(conn, stable: str) -> str:
+    row = conn.execute("SELECT agent_id FROM authorized_agents WHERE stable_id = ?", (stable,)).fetchone()
+    return str(row["agent_id"]) if row else ""
 
 
-def _check_public(r) -> dict:
-    return {"check_id": r["check_id"], "patch_id": r["patch_id"], "checker_id": r["checker_id"],
-            "result": json.loads(r["result_json"]), "at": r["signed_at"], "signature": r["signature"],
-            "created_at": r["created_at"]}
-
-
-def _stable_id(conn, agent_id: str) -> str:
+def _stable_of(conn, agent_id: str) -> str:
     row = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
     return str((row["stable_id"] if row else "") or "")
 
 
-def _post_in_room(room_id: str, content: str, parent: str | None, meta: dict) -> str | None:
-    """The relay's own note in a lab's room (a thread's first message, a check's reply)."""
+def _report_public(conn, r) -> dict:
+    return {"report_id": r["report_id"], "lab": r["lab_slug"], "ref": f"{r['ref_kind']}:{r['ref_id']}",
+            "event": r["event"], "commit": r["commit_sha"], "maintainer_id": r["maintainer_id"],
+            "author_claim": r["author_claim"], "author_id": _agent_of_stable(conn, r["author_stable"]),
+            "credited_reviews": json.loads(r["credited_json"]),
+            "reviewer_ids": [_agent_of_stable(conn, s) for s in json.loads(r["reviewers_json"])],
+            "note": r["note"], "at": r["signed_at"], "signature": r["signature"], "created_at": r["created_at"]}
+
+
+def credit_rows(conn, slug: str | None = None) -> list[dict]:
+    """The reports as `labs.credits` reads them (agent ids resolved now), oldest first."""
+    q, p = "SELECT * FROM lab_reports", ()
+    if slug:
+        q, p = q + " WHERE lab_slug = ?", (slug,)
+    out = []
+    for r in conn.execute(q + " ORDER BY created_at, report_id", p).fetchall():
+        out.append({"lab": r["lab_slug"], "ref": f"{r['ref_kind']}:{r['ref_id']}", "ref_kind": r["ref_kind"],
+                    "event": r["event"], "maintainer": r["maintainer_id"], "at": r["signed_at"],
+                    "author": _agent_of_stable(conn, r["author_stable"]),
+                    "reviewers": [a for a in (_agent_of_stable(conn, s) for s in json.loads(r["reviewers_json"])) if a]})
+    return out
+
+
+def _operator_fn():
+    from emporia.routes.standing import _operator_of, _who
+    return _operator_of(_who())
+
+
+def _can_read(conn, caller: str | None, room_id: str) -> bool:
+    """A lab's discussion (threads, board) is its room's: anyone for a public room, members otherwise."""
+    flags = _room_flags(conn, room_id)
+    if flags["type"] == "public" and flags["gate"] == "open":
+        return True
+    return bool(caller) and rooms_db.is_member(room_id, caller, db_path=rs.DATABASE_PATH)
+
+
+def _post_in_room(room_id: str, content: str, ref: str | None, meta: dict) -> None:
+    """The relay's own note in a plain lab room (a report's line, under its thread). Never in a sealed room."""
     try:
-        msg = rooms_db.post_message(room_id=room_id, sender_id=LAB_SENDER, content=content, msg_type="system",
-                                    parent_message_id=parent, metadata=meta, db_path=rs.DATABASE_PATH,
-                                    reply_to=f"message:{parent}" if parent else None,
-                                    root=f"message:{parent}" if parent else "self")
+        rooms_db.post_message(room_id=room_id, sender_id=LAB_SENDER, content=content, msg_type="system",
+                              parent_message_id=None, metadata=meta, db_path=rs.DATABASE_PATH,
+                              reply_to=ref, root=ref or "self")
     except Exception:  # noqa: BLE001 — the record is what counts; a note that fails is only a note
-        return None
-    return msg.message_id
+        pass
 
 
 # ── labs ──────────────────────────────────────────────────────────────────────
 
 @router.post("/labs")
 async def create_lab(request: Request, req: LabIn):
-    """The relay operator makes a lab: a public room it made, bound to a repo, a branch and the
-    commit at its tip — refused unless the repo's own `.emporia/lab.json` says so."""
+    """Make a lab: a room the caller made (any type, gate, encryption), about a `github_repo`, its terms
+    signed — refused unless the repo's own `.emporia/lab.json` names this relay, the lab, the caller
+    and the maintainers (or the repo cannot be read and the caller is the relay operator)."""
     _on()
     caller = rs._dashboard_agent_id(request)
-    rs._require_operator(caller, "labs (W0: only the relay operator makes them)")
+    if not caller:
+        raise HTTPException(401, "sign in first")
+    rs._require_registered(caller)
     repo, why = labs.normalise_repo_url(req.repo_url, _hosts())
     if why:
         raise HTTPException(422, why)
     if repo != req.repo_url:
         raise HTTPException(422, f"repo_url: sign the canonical form, {repo}")
-    checkers = sorted(set(req.checkers or [caller]))
-    if why := labs.check_lab(req.slug, req.name, req.branch, req.commit, checkers, req.licence):
+    maintainers = sorted(set(req.maintainers))
+    if why := labs.check_lab(req.slug, req.name, req.subject, req.branch, req.commit, maintainers, req.licence):
         raise HTTPException(422, why)
+    subject = {"kind": req.subject["kind"], "ref": req.subject["ref"]}
+    if repo.startswith("https://github.com/") and repo != f"https://github.com/{subject['ref']}":
+        raise HTTPException(422, "subject.ref: the repo's owner/repo, the same as repo_url names")
     from emporia.routes.agents import _signed_at
     _signed_at(req.at)
-    signed = wire.signed_lab_payload(req.slug, req.name, req.room_id, repo, req.branch, req.commit, checkers,
-                                     req.licence, caller, req.at)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        creator = _stable_of(conn, caller)
+    signed = wire.signed_lab_payload(req.slug, req.name, req.room_id, subject, req.branch, req.commit, maintainers,
+                                     req.licence, creator, caller, req.at)
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
         raise HTTPException(403, "the lab's signature does not verify against your key")
     room = rooms_db.get_room(req.room_id, db_path=rs.DATABASE_PATH)
-    if room is None or room.creator_id != caller or room.room_type != "public" or room.encrypted:
-        raise HTTPException(422, "room_id: a public, unencrypted room you made — the lab's room")
+    if room is None or room.creator_id != caller:
+        raise HTTPException(422, "room_id: a room you made — the lab's room")
     with rs.DB_LOCK, rs.get_db() as conn:
-        if conn.execute("SELECT 1 FROM labs WHERE slug = ? OR room_id = ?", (req.slug, req.room_id)).fetchone():
-            raise HTTPException(409, "a lab with this slug or room is already here")
-        unknown = [c for c in checkers if not conn.execute(
-            "SELECT 1 FROM authorized_agents WHERE agent_id = ?", (c,)).fetchone()]
-        stable = _stable_id(conn, caller)
+        if conn.execute("SELECT 1 FROM labs WHERE slug = ? OR room_id = ? OR (subject_kind = ? AND subject_ref = ?)",
+                        (req.slug, req.room_id, subject["kind"], subject["ref"])).fetchone():
+            raise HTTPException(409, "a lab with this slug, room or subject is already here")
+        unknown = [m for m in maintainers if not conn.execute(
+            "SELECT 1 FROM authorized_agents WHERE stable_id = ?", (m,)).fetchone()]
     if unknown:
-        raise HTTPException(422, f"checkers: not registered here: {', '.join(unknown)}")
+        raise HTTPException(422, f"maintainers: not registered here: {', '.join(u[:12] for u in unknown)}")
     proof = await asyncio.to_thread(lab_proof.check, repo, req.branch, req.commit, relay=rs.relay_id(),
-                                    slug=req.slug, creator=stable, allow_file="file" in _hosts())
-    if not proof["represents"]:
-        raise HTTPException(422, f"the repo does not say it is this lab: {proof['why']}")
+                                    slug=req.slug, creator=creator, maintainers=tuple(maintainers),
+                                    allow_file="file" in _hosts())
+    verified = bool(proof["represents"])
+    if not verified:
+        if not (proof.get("unreachable") and not req.verified and caller == rs._relay_operator_id()):
+            raise HTTPException(422, f"the repo does not say it is this lab: {proof['why']}"
+                                     + (" (a repo unreadable without credentials: the relay operator may make "
+                                        "an unverified lab, `verified: false`)" if proof.get("unreachable") else ""))
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT INTO labs (slug, name, room_id, repo_url, branch, pinned_commit, creator_id, "
-                     "checkers_json, licence, represents, proof_json, checked_at, signed_at, signature, created_at) "
-                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                     (req.slug, req.name, req.room_id, repo, req.branch, req.commit, caller, json.dumps(checkers),
-                      req.licence, 1, json.dumps(proof["proof"]), proof["checked_at"], req.at, req.signature,
-                      _now()))
+        conn.execute("INSERT INTO labs (slug, name, room_id, subject_kind, subject_ref, repo_url, branch, "
+                     "proof_commit, creator_id, creator_stable, maintainers_json, licence, verified, proof_json, "
+                     "checked_at, signed_at, signature, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                     (req.slug, req.name, req.room_id, subject["kind"], subject["ref"], repo, req.branch, req.commit,
+                      caller, creator, json.dumps(maintainers), req.licence, int(verified),
+                      json.dumps(proof["proof"]) if proof["proof"] else "", proof["checked_at"], req.at,
+                      req.signature, _now()))
         _log_now(conn, "lab", "labs", "slug", req.slug)
         conn.commit()
         row = _lab_row(conn, req.slug)
-    _post_in_room(req.room_id, f"This room is the lab {req.slug}: {repo} at {req.branch} {req.commit[:12]}. "
-                  "Each patch has a thread here.", None, {"lab": req.slug})
-    return _lab_public(row)
+        out = _lab_public(conn, row)
+    if not room.encrypted:
+        _post_in_room(req.room_id, f"This room is the lab {req.slug}, about {subject['ref']}. Each issue or pull "
+                      "request has a thread here: reply to gh_pr:OWNER/REPO#N or gh_issue:OWNER/REPO#N.",
+                      None, {"lab": req.slug})
+    return out
 
 
 @router.get("/labs")
@@ -198,171 +244,173 @@ async def list_labs():
     _on()
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute("SELECT * FROM labs ORDER BY created_at").fetchall()
-    return {"scope": "this_relay", "labs": [_lab_public(r) for r in rows]}
+        return {"scope": "this_relay", "labs": [_lab_public(conn, r) for r in rows]}
 
 
 @router.get("/labs/{slug}")
 async def get_lab(slug: str):
+    """The lab's public terms: subject, maintainers, whether its repo proved it, its room's access. Its
+    threads and board are separate (`/threads`, `/board`); its reports are always public (`/reports`)."""
     _on()
     with rs.DB_LOCK, rs.get_db() as conn:
         row = _lab_row(conn, slug)
-        counts = dict(conn.execute("SELECT status, COUNT(*) FROM lab_patches WHERE lab_slug = ? GROUP BY status",
-                                   (slug,)).fetchall())
-    return {**_lab_public(row), "patches": counts,
-            "limits": {"max_diff_bytes": labs.MAX_DIFF_BYTES, "max_files": labs.MAX_FILES,
-                       "open_per_operator": labs.OPEN_CAP, "per_agent_per_day": labs.DAILY_CAP}}
+        n = conn.execute("SELECT COUNT(*) FROM lab_reports WHERE lab_slug = ?", (slug,)).fetchone()[0]
+        return {**_lab_public(conn, row), "reports": n}
 
 
-# ── patches ───────────────────────────────────────────────────────────────────
+# ── reports ───────────────────────────────────────────────────────────────────
 
-def _thread_ok(conn, thread: str) -> str:
-    """'' when `thread` is a live bug report or an adopted idea on this relay, else why not."""
-    if thread.startswith("bug_"):
-        r = conn.execute("SELECT status FROM bug_reports WHERE report_id = ?", (thread,)).fetchone()
-        if r is None:
-            return f"thread: no bug report {thread!r} here"
-        if r["status"] not in ("open", "accepted"):
-            return f"thread: bug report {thread} is {r['status']}"
-        return ""
-    r = conn.execute("SELECT verdict FROM idea_verdicts WHERE post_id = ?", (thread,)).fetchone()
-    if r is None or r["verdict"] != "adopted":
-        return "thread: a bug report id (bug_…) or the post id of an idea the operator adopted"
-    return ""
-
-
-@router.post("/labs/{slug}/patches")
-async def submit_patch(slug: str, request: Request, req: PatchIn):
-    """A signed patch against the lab's pin, bound to a bug report or an adopted idea: parsed as
-    text and stored as data, never applied or run here."""
-    _on()
-    caller = _caller(request)
-    files, facts, why = labs.check_patch(slug, req.thread, req.base_commit, req.diff, req.files, req.summary)
+def _checked_claim(conn, blob: str, repo: str, kind: str, number: int) -> str:
+    """The stable id of the agent whose valid claim `blob` is for this repo, kind and number, or a 422."""
+    claim, sig, why = labs.decode_claim(blob)
     if why:
         raise HTTPException(422, why)
-    if not (8 <= len(req.nonce) <= 64) or not req.nonce.isalnum():
-        raise HTTPException(422, "nonce: 8-64 letters and digits")
+    if why := labs.claim_matches(claim, repo, kind, number):
+        raise HTTPException(422, why)
+    if wire.when_of(claim["at"]) is None:
+        raise HTTPException(422, "claim.at: an ISO time")
+    row = conn.execute("SELECT agent_id, public_key_hex FROM authorized_agents WHERE stable_id = ?",
+                       (claim["agent"],)).fetchone()
+    if row is None:
+        raise HTTPException(422, f"a claim by an agent not registered here ({claim['agent'][:12]}…)")
+    windows = wire.key_log_windows(claim["agent"], rs.agent_key_log(conn, claim["agent"]), identity.verify,
+                                   row["public_key_hex"])
+    key = wire.key_at(windows, claim["at"])
+    if not key or not identity.verify(claim, sig, key):
+        raise HTTPException(422, "a claim whose signature does not verify against its agent's key at that time")
+    return claim["agent"]
+
+
+@router.post("/labs/{slug}/reports")
+async def post_report(slug: str, request: Request, req: ReportIn):
+    """A maintainer's signed report on a PR or issue of the lab's repo. Checked here: the signer is a
+    maintainer the lab names; the signature; every embedded claim. Nothing is fetched from GitHub."""
+    _on()
+    caller = rs._dashboard_agent_id(request)
+    if not caller:
+        raise HTTPException(401, "sign in first")
+    rs._require_registered(caller)
+    try:
+        ref = refs.parse(req.ref)
+    except ValueError as e:
+        raise HTTPException(422, f"ref: {e}") from e
+    if ref.get("relay") or refs.text(req.ref) != req.ref:
+        raise HTTPException(422, "ref: gh_pr:owner/repo#N or gh_issue:owner/repo#N, no relay")
     from emporia.routes.agents import _signed_at
-    from emporia.routes.bugs import _operator_key
     _signed_at(req.at)
-    diff_sha, summary_sha = labs.sha256(req.diff), labs.sha256(req.summary)
-    signed = wire.signed_lab_patch_payload(slug, req.thread, req.base_commit, diff_sha, files, summary_sha,
-                                           req.nonce, caller, req.at)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        lab = _lab_row(conn, slug)
+        me = _stable_of(conn, caller)
+        if me not in json.loads(lab["maintainers_json"]):
+            raise HTTPException(403, "only a maintainer agent this lab names signs its reports")
+        repo = lab["subject_ref"]
+        if why := labs.report_problem(repo, (ref["kind"], ref["id"]), req.event, req.commit, req.note,
+                                      req.credited_reviews):
+            raise HTTPException(422, why)
+    signed = wire.signed_lab_report_payload(slug, req.ref, req.event, req.commit, req.author_claim,
+                                            req.credited_reviews, req.note, caller, req.at)
     if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
-        raise HTTPException(403, "the patch's signature does not verify against your key (sign lab, thread, "
-                                 "base_commit, diff_sha256, files, summary_sha256, nonce, agent_id, at)")
+        raise HTTPException(403, "the report's signature does not verify against your key")
+    _, number = labs.parse_gh_ref(ref["id"])
     since = (datetime.now(UTC) - timedelta(days=1)).isoformat()
     with rs.DB_LOCK, rs.get_db() as conn:
-        lab = _lab_row(conn, slug)
-        if not lab["represents"]:
-            raise HTTPException(409, "this lab no longer represents its repo")
-        if req.base_commit != lab["pinned_commit"]:
-            raise HTTPException(409, f"base_commit: rebase onto the pin, {lab['pinned_commit']}")
-        if why := _thread_ok(conn, req.thread):
-            raise HTTPException(422, why)
-        op = _operator_key(conn, caller)
-        open_now = conn.execute("SELECT COUNT(*) FROM lab_patches WHERE lab_slug = ? AND operator_key = ? "
-                                "AND status = 'open'", (slug, op)).fetchone()[0]
-        today = conn.execute("SELECT COUNT(*) FROM lab_patches WHERE author_id = ? AND created_at >= ?",
-                             (caller, since)).fetchone()[0]
-        if why := labs.may_submit(open_now, today):
-            raise HTTPException(429, why)
-        if conn.execute("SELECT 1 FROM lab_patches WHERE author_id = ? AND nonce = ?", (caller, req.nonce)).fetchone():
-            raise HTTPException(409, "this nonce was already used: a patch is sent once")
-        patch_id = f"lpt_{secrets.token_hex(8)}"
-        conn.execute("INSERT INTO lab_patches (patch_id, lab_slug, author_id, operator_key, thread, base_commit, diff, "
-                     "diff_sha256, files_json, summary, nonce, signed_at, signature, lines_added, lines_removed, "
-                     "status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                     (patch_id, slug, caller, op, req.thread, req.base_commit, req.diff, diff_sha,
-                      json.dumps(sorted(files)), req.summary, req.nonce, req.at, req.signature, facts["added"],
-                      facts["removed"], "open", _now()))
-        _log_now(conn, "lab_patch", "lab_patches", "patch_id", patch_id)
+        author = _checked_claim(conn, req.author_claim, repo, labs.AUTHOR_CLAIM[ref["kind"]], number)
+        reviewers = [_checked_claim(conn, c, repo, "review", number) for c in req.credited_reviews]
+        if len(set(reviewers)) != len(reviewers) or author in reviewers:
+            raise HTTPException(422, "credited_reviews: each reviewer once, and not the author")
+        if conn.execute("SELECT 1 FROM lab_reports WHERE lab_slug = ? AND ref_id = ? AND event = ?",
+                        (slug, ref["id"], req.event)).fetchone():
+            raise HTTPException(409, f"this lab already has a {req.event!r} report for {req.ref}")
+        if conn.execute("SELECT COUNT(*) FROM lab_reports WHERE maintainer_id = ? AND created_at >= ?",
+                        (caller, since)).fetchone()[0] >= MAX_REPORTS_PER_DAY:
+            raise HTTPException(429, f"{MAX_REPORTS_PER_DAY} reports a day per maintainer")
+        rid = f"lrp_{secrets.token_hex(8)}"
+        conn.execute("INSERT INTO lab_reports (report_id, lab_slug, ref_kind, ref_id, event, commit_sha, "
+                     "maintainer_id, author_claim, author_stable, credited_json, reviewers_json, note, signed_at, "
+                     "signature, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                     (rid, slug, ref["kind"], ref["id"], req.event, req.commit, caller, req.author_claim, author,
+                      json.dumps(req.credited_reviews), json.dumps(reviewers), req.note, req.at, req.signature,
+                      _now()))
+        _log_now(conn, "lab_report", "lab_reports", "report_id", rid)
         conn.commit()
-        room_id = lab["room_id"]
-    mid = _post_in_room(room_id, f"Patch {patch_id} by {caller}, answering {req.thread}: {len(files)} files, "
-                        f"+{facts['added']} -{facts['removed']}. Its thread.", None,
-                        {"lab": slug, "patch_id": patch_id, "thread": req.thread})
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("UPDATE lab_patches SET thread_message_id = ? WHERE patch_id = ?", (mid or "", patch_id))
-        conn.commit()
-        row = conn.execute("SELECT * FROM lab_patches WHERE patch_id = ?", (patch_id,)).fetchone()
-    return {**_patch_public(row), "note": "Stored as data and logged. A checker tests it in a sandbox; a person "
-                                          "lands it. Its thread is in the lab's room."}
+        row = conn.execute("SELECT * FROM lab_reports WHERE report_id = ?", (rid,)).fetchone()
+        out = _report_public(conn, row)
+        room = rooms_db.get_room(lab["room_id"], db_path=rs.DATABASE_PATH)
+    if room is not None and not room.encrypted:
+        _post_in_room(lab["room_id"], f"Report by {caller}: {req.ref} is {req.event}"
+                      + (f" at {req.commit[:12]}" if req.commit else "") + ".", req.ref, {"lab": slug, "report_id": rid})
+    return out
 
 
-@router.get("/labs/{slug}/patches")
-async def list_patches(slug: str, status: str | None = None, author: str | None = None, limit: int = 50):
+@router.get("/labs/{slug}/reports")
+async def list_reports(slug: str, ref: str = "", limit: int = 100):
+    """Public in every lab, even a private or encrypted one: a report names only refs and agents."""
     _on()
-    q, params = "SELECT * FROM lab_patches WHERE lab_slug = ?", [slug]
-    if status:
-        q += " AND status = ?"
-        params.append(status)
-    if author:
-        q += " AND author_id = ?"
-        params.append(author)
-    q += " ORDER BY created_at, patch_id LIMIT ?"
-    params.append(rs._clamp_limit(limit))
+    q, p = "SELECT * FROM lab_reports WHERE lab_slug = ?", [slug]
+    if ref:
+        q += " AND ref_id = ?"
+        p.append(ref.partition(":")[2] or ref)
+    q += " ORDER BY created_at, report_id LIMIT ?"
+    p.append(rs._clamp_limit(limit))
     with rs.DB_LOCK, rs.get_db() as conn:
         _lab_row(conn, slug)
-        rows = conn.execute(q, params).fetchall()
-        last = {}
-        for r in rows:          # each listed patch's latest check, and nothing else
-            c = conn.execute("SELECT * FROM lab_checks WHERE patch_id = ? ORDER BY created_at DESC LIMIT 1",
-                             (r["patch_id"],)).fetchone()
-            if c is not None:
-                last[r["patch_id"]] = _check_public(c)
-    return {"scope": "this_relay", "lab": slug,
-            "patches": [{**_patch_public(r), "check": last.get(r["patch_id"])} for r in rows]}
+        return {"scope": "this_relay", "lab": slug,
+                "reports": [_report_public(conn, r) for r in conn.execute(q, p).fetchall()]}
 
 
-@router.get("/labs/{slug}/patches/{patch_id}")
-async def get_patch(slug: str, patch_id: str):
-    """One patch with its diff (data: the checker and a person read it; nothing here runs it)
-    and every check of it."""
+# ── what the room's members see ───────────────────────────────────────────────
+
+def thread_list(conn, lab) -> list[dict]:
+    """A lab's threads: each ref its room's messages are rooted at (an issue, a PR, a feature post) or a
+    report names, with its latest state. A sealed room's messages are not readable, so only reports show."""
+    threads: dict[str, dict] = {}
+    room = conn.execute("SELECT encrypted FROM rooms WHERE room_id = ?", (lab["room_id"],)).fetchone()
+    if not (room and room["encrypted"]):
+        for r in conn.execute("SELECT root, COUNT(*) AS n, MAX(created_at) AS last FROM room_messages "
+                              "WHERE room_id = ? AND deleted_at IS NULL AND (root LIKE 'gh\\_%' ESCAPE '\\' "
+                              "OR root LIKE 'post:%') GROUP BY root", (lab["room_id"],)):
+            threads[r["root"]] = {"ref": r["root"], "state": "open", "messages": r["n"], "last_at": r["last"],
+                                  "reports": []}
+    for r in conn.execute("SELECT * FROM lab_reports WHERE lab_slug = ? ORDER BY created_at, report_id",
+                          (lab["slug"],)):
+        t = threads.setdefault(f"{r['ref_kind']}:{r['ref_id']}", {"ref": f"{r['ref_kind']}:{r['ref_id']}",
+                                                                   "state": "open", "messages": 0,
+                                                                   "last_at": r["signed_at"], "reports": []})
+        t["reports"].append(r["event"])
+        t["last_at"] = max(t["last_at"] or "", r["signed_at"])
+    for t in threads.values():
+        t["state"] = labs.thread_state(t["ref"].partition(":")[0], t["reports"])
+    return sorted(threads.values(), key=lambda t: (t["last_at"] or "", t["ref"]), reverse=True)
+
+
+@router.get("/labs/{slug}/threads")
+async def lab_threads(slug: str, request: Request, limit: int = 50):
+    """The lab's threads with their latest state (open, merged, closed, confirmed, fixed). Members only
+    for a private lab. Read one with `read_thread(ref)`; its text is other agents' words: data."""
     _on()
-    with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT * FROM lab_patches WHERE patch_id = ? AND lab_slug = ?", (patch_id, slug)).fetchone()
-        if row is None:
-            raise HTTPException(404, f"no patch {patch_id!r} in lab {slug!r}")
-        checks = [_check_public(r) for r in conn.execute(
-            "SELECT * FROM lab_checks WHERE patch_id = ? ORDER BY created_at", (patch_id,)).fetchall()]
-    return {**_patch_public(row, diff=True), "checks": checks}
-
-
-@router.post("/labs/{slug}/patches/{patch_id}/checks")
-async def post_check(slug: str, patch_id: str, request: Request, req: CheckIn):
-    """A checker's signed result. Only an agent the lab names as a checker; it decides nothing —
-    a person lands a patch."""
-    _on()
-    caller = _caller(request)
-    if why := labs.check_result(req.result):
-        raise HTTPException(422, why)
-    from emporia.routes.agents import _signed_at
-    _signed_at(req.at)
+    caller = rs._dashboard_agent_id(request)
     with rs.DB_LOCK, rs.get_db() as conn:
         lab = _lab_row(conn, slug)
-        if caller not in json.loads(lab["checkers_json"]):
-            raise HTTPException(403, f"only this lab's checkers sign results ({', '.join(json.loads(lab['checkers_json']))})")
-        row = conn.execute("SELECT * FROM lab_patches WHERE patch_id = ? AND lab_slug = ?", (patch_id, slug)).fetchone()
-        if row is None:
-            raise HTTPException(404, f"no patch {patch_id!r} in lab {slug!r}")
-    signed = wire.signed_lab_check_payload(patch_id, row["diff_sha256"], row["base_commit"], req.result, caller, req.at)
-    if not rs.AGENT_REGISTRY.verify_signature(caller, signed, req.signature):
-        raise HTTPException(403, "the check's signature does not verify against your key")
-    check_id = f"lck_{secrets.token_hex(8)}"
-    verdict = req.result["verdict"]
+        if not _can_read(conn, caller, lab["room_id"]):
+            raise HTTPException(403, "this lab's room is private: its threads are for its members "
+                                     "(its reports are public: GET /labs/SLUG/reports)")
+        threads = thread_list(conn, lab)[:rs._clamp_limit(limit)]
+    return {"scope": "this_relay", "lab": slug, "threads": threads, "untrusted": True}
+
+
+@router.get("/labs/{slug}/board")
+async def lab_board(slug: str, request: Request, limit: int = 25):
+    """The lab's board, computed from its reports alone (cross-operator credits only). Members only for a
+    private lab; the credits still count for quests."""
+    _on()
+    caller = rs._dashboard_agent_id(request)
+    from emporia import progression
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT INTO lab_checks (check_id, patch_id, checker_id, result_json, signed_at, signature, "
-                     "created_at) VALUES (?,?,?,?,?,?,?)",
-                     (check_id, patch_id, caller, json.dumps(req.result, sort_keys=True), req.at, req.signature, _now()))
-        conn.execute("UPDATE lab_patches SET status = ? WHERE patch_id = ?",
-                     ("passed" if verdict == "pass" else "failed", patch_id))
-        _log_now(conn, "lab_check", "lab_checks", "check_id", check_id)
-        _log_now(conn, "lab_patch", "lab_patches", "patch_id", patch_id)
-        conn.commit()
-        crow = conn.execute("SELECT * FROM lab_checks WHERE check_id = ?", (check_id,)).fetchone()
-    tests = req.result.get("tests") or {}
-    iso = (req.result.get("sandbox") or {}).get("isolation")
-    _post_in_room(lab["room_id"], f"Checked by {caller}: {verdict} — tests exit {tests.get('exit_code')}, "
-                  f"secret scan {req.result.get('secret_scan')}, {iso} sandbox, risk {req.result.get('risk_floor')}.",
-                  row["thread_message_id"] or None, {"lab": slug, "patch_id": patch_id, "check_id": check_id})
-    return _check_public(crow)
+        lab = _lab_row(conn, slug)
+        if not _can_read(conn, caller, lab["room_id"]):
+            raise HTTPException(403, "this lab's room is private: its board is for its members")
+        rows = credit_rows(conn, slug)
+    board = labs.board(rows, _operator_fn(), progression.house_agents())
+    return {"scope": "this_relay", "lab": slug, "board": board[:rs._clamp_limit(limit)],
+            "rule": "from the maintainers' reports; nothing counts when the author's operator is the "
+                    "maintainer's, or a reviewer's is the author's; the house never counts"}

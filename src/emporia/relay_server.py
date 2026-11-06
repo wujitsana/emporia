@@ -1470,57 +1470,49 @@ def init_db() -> None:
                 verdict_key TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_idea_verdicts_ref ON idea_verdicts(ref);
-            -- Labs (W0): a room bound to a repo; signed patches stored as data; checker results.
+            -- Labs v2: a room about a subject (a GitHub repo), and the maintainers' signed reports on its
+            -- PRs and issues (each embeds the claims it relies on). Public records, in the log.
             CREATE TABLE IF NOT EXISTS labs (
                 slug TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 room_id TEXT NOT NULL UNIQUE,
-                repo_url TEXT NOT NULL,
+                subject_kind TEXT NOT NULL,
+                subject_ref TEXT NOT NULL,
+                repo_url TEXT NOT NULL DEFAULT '',
                 branch TEXT NOT NULL,
-                pinned_commit TEXT NOT NULL,
+                proof_commit TEXT NOT NULL,
                 creator_id TEXT NOT NULL,
-                checkers_json TEXT NOT NULL DEFAULT '[]',
+                creator_stable TEXT NOT NULL,
+                maintainers_json TEXT NOT NULL DEFAULT '[]',
                 licence TEXT NOT NULL DEFAULT '',
-                represents INTEGER NOT NULL DEFAULT 0,
+                verified INTEGER NOT NULL DEFAULT 0,
                 proof_json TEXT NOT NULL DEFAULT '',
                 checked_at TEXT NOT NULL DEFAULT '',
                 signed_at TEXT NOT NULL,
                 signature TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS lab_patches (
-                patch_id TEXT PRIMARY KEY,
+            CREATE INDEX IF NOT EXISTS idx_labs_subject ON labs(subject_kind, subject_ref);
+            CREATE TABLE IF NOT EXISTS lab_reports (
+                report_id TEXT PRIMARY KEY,
                 lab_slug TEXT NOT NULL,
-                author_id TEXT NOT NULL,
-                operator_key TEXT NOT NULL,
-                thread TEXT NOT NULL,
-                base_commit TEXT NOT NULL,
-                diff TEXT NOT NULL,
-                diff_sha256 TEXT NOT NULL,
-                files_json TEXT NOT NULL,
-                summary TEXT NOT NULL,
-                nonce TEXT NOT NULL,
+                ref_kind TEXT NOT NULL,
+                ref_id TEXT NOT NULL,
+                event TEXT NOT NULL,
+                commit_sha TEXT NOT NULL DEFAULT '',
+                maintainer_id TEXT NOT NULL,
+                author_claim TEXT NOT NULL,
+                author_stable TEXT NOT NULL,
+                credited_json TEXT NOT NULL DEFAULT '[]',
+                reviewers_json TEXT NOT NULL DEFAULT '[]',
+                note TEXT NOT NULL DEFAULT '',
                 signed_at TEXT NOT NULL,
                 signature TEXT NOT NULL,
-                lines_added INTEGER NOT NULL DEFAULT 0,
-                lines_removed INTEGER NOT NULL DEFAULT 0,
-                thread_message_id TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'open',
                 created_at TEXT NOT NULL,
-                UNIQUE (author_id, nonce)
+                UNIQUE (lab_slug, signature)
             );
-            CREATE INDEX IF NOT EXISTS idx_lab_patches_lab ON lab_patches(lab_slug, status, created_at);
-            CREATE INDEX IF NOT EXISTS idx_lab_patches_operator ON lab_patches(operator_key, lab_slug, status);
-            CREATE TABLE IF NOT EXISTS lab_checks (
-                check_id TEXT PRIMARY KEY,
-                patch_id TEXT NOT NULL,
-                checker_id TEXT NOT NULL,
-                result_json TEXT NOT NULL,
-                signed_at TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_lab_checks_patch ON lab_checks(patch_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_lab_reports_lab ON lab_reports(lab_slug, created_at);
+            CREATE INDEX IF NOT EXISTS idx_lab_reports_ref ON lab_reports(lab_slug, ref_id, created_at);
             -- The randomness service: a cache of drand rounds (public; every reader verifies
             -- the signature itself). Bargain v1's relay-held seed table is gone (emporia:rand:v1).
             DROP TABLE IF EXISTS session_deals;
@@ -3665,7 +3657,7 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     # Pledges: who promised, to whom, and who attested or contested. The signatures keep the handles signed with.
     ("pledges", "maker_id"), ("pledges", "to_agent"), ("pledge_acts", "agent_id"),
     # Labs (W0): who made a lab, who sent a patch, who checked it. The signatures keep the handles signed with.
-    ("labs", "creator_id"), ("lab_patches", "author_id"), ("lab_checks", "checker_id"),
+    ("labs", "creator_id"), ("lab_reports", "maintainer_id"),
     # emporia:rand:v1: whose commitment, and who won. The signature keeps the handle it was signed with.
     ("rand_commits", "agent_id"), ("rand_results", "winner"),
 )
@@ -3708,15 +3700,14 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("pledges", c) for c in ("pledge_id", "kind", "subject_type", "subject_id", "terms_json", "note", "nonce",
                                "made_at", "signature", "public", "recorded_at")),
     *(("pledge_acts", c) for c in ("pledge_id", "act", "verdict", "at", "signature", "recorded_at")),
-    # Labs (W0): a lab's repo and pin, a patch's text and hashes, a check's result. `checkers_json`
-    # names agents, as signed: like a signed payload, a rename leaves it as it was signed.
-    *(("labs", c) for c in ("slug", "name", "room_id", "repo_url", "branch", "pinned_commit", "checkers_json",
-                            "licence", "represents", "proof_json", "checked_at", "signed_at", "signature",
-                            "created_at")),
-    *(("lab_patches", c) for c in ("patch_id", "lab_slug", "operator_key", "thread", "base_commit", "diff",
-                                   "diff_sha256", "files_json", "summary", "nonce", "signed_at", "signature",
-                                   "lines_added", "lines_removed", "thread_message_id", "status", "created_at")),
-    *(("lab_checks", c) for c in ("check_id", "patch_id", "result_json", "signed_at", "signature", "created_at")),
+    # Labs v2: a lab's terms (stable ids are what is signed) and a maintainer's report with the claims it
+    # embeds. Reports are public in every lab, even a private or encrypted one: refs and agents only.
+    *(("labs", c) for c in ("slug", "name", "room_id", "subject_kind", "subject_ref", "repo_url", "branch",
+                            "proof_commit", "creator_stable", "maintainers_json", "licence", "verified",
+                            "proof_json", "checked_at", "signed_at", "signature", "created_at")),
+    *(("lab_reports", c) for c in ("report_id", "lab_slug", "ref_kind", "ref_id", "event", "commit_sha",
+                                   "author_claim", "author_stable", "credited_json", "reviewers_json", "note",
+                                   "signed_at", "signature", "created_at")),
     # P289: bug reports and incidents. `operator_key` is a Nous account or a stable id
     # (the cap's key), never a handle — so a rename does not reset an operator's cap.
     *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",

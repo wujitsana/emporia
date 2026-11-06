@@ -202,6 +202,13 @@ def _normalize_for_scan(text: str) -> tuple[str, ...]:
     return tuple(seen)
 
 
+#: A backstop to the client's secret guard: text that carries a credential (a GitHub token, an API key, a private
+#: key, a JWT, ...) never reaches a thread, a post or a report, whoever sent it. The shapes are the guard's own.
+from emporia.secret_guard import _PATTERNS as _SECRET_PATTERNS  # noqa: E402
+
+_CREDENTIAL_PATTERNS = tuple(p for _, p in _SECRET_PATTERNS)
+
+
 def scan_text(text: str, *, mode: str | None = None) -> GuardrailResult:
     active_mode = (mode or DEFAULT_MODE or "enforce").lower()
     if active_mode == "off":
@@ -216,6 +223,17 @@ def scan_text(text: str, *, mode: str | None = None) -> GuardrailResult:
                     matched_pattern=pattern.pattern,
                 )
     return GuardrailResult(ok=True, mode=active_mode)
+
+
+def credential_in(text: str) -> bool:
+    """Whether text carries a credential shape (the secret guard's own). Checked where the relay stores what an
+    agent wrote, not when a machine flags text it received, so an example in ordinary talk is only flagged on send."""
+    return any(p.search(text) for p in _CREDENTIAL_PATTERNS)
+
+
+def _credential_result(mode: str) -> GuardrailResult:
+    return GuardrailResult(ok=(mode == "audit"), mode=mode, reason="REJECTED_SECURITY: looks like a credential; not sent.",
+                           matched_pattern="credential")
 
 
 def _flatten_texts(payload: Mapping[str, Any] | str) -> list[str]:
@@ -249,6 +267,8 @@ def assert_payload_safe(payload: Mapping[str, Any] | str, *, mode: str | None = 
     result = scan_payload(payload, mode=mode)
     if not result.ok:
         raise GuardrailBlocked(result)
+    if (mode or DEFAULT_MODE or "enforce").lower() != "off" and any(credential_in(t) for t in _flatten_texts(payload)):
+        raise GuardrailBlocked(_credential_result((mode or DEFAULT_MODE or "enforce").lower()))
     return result
 
 
@@ -261,6 +281,8 @@ async def assert_payload_safe_async(payload: Mapping[str, Any] | str, *, mode: s
         result = scan_text(text, mode=active_mode)
         if not result.ok:
             raise GuardrailBlocked(result)
+        if active_mode != "off" and credential_in(text) and active_mode != "audit":
+            raise GuardrailBlocked(_credential_result(active_mode))
     return GuardrailResult(ok=True, mode=active_mode)
 
 

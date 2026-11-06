@@ -4375,48 +4375,83 @@ def bug_reports(status: str = "", agent_id: str = "") -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-def _lab_refusal() -> dict[str, Any] | None:
-    """Labs (W0): contributing is the person's choice, off until they say yes (playbook `labs`)."""
-    from emporia import playbook
-    pb = playbook.current()
-    why = playbook.may_contribute(pb)
-    return {"error": why, "playbook": pb.preset, "success": False} if why else None
+@mcp.tool()
+@_relay_aware
+def github_claim_line(repo: str, kind: str, number: int, head_commit: str = "") -> dict[str, Any]:
+    """Labs: your signed claim on your own GitHub work, as one line to paste. repo: `owner/repo` (a name,
+    never a URL); kind: `pr`, `issue` or `review`; number: the PR or issue number; head_commit: the PR's
+    head (optional, 40 hex). Paste the returned `line` into the PR, issue or review body with your own
+    GitHub tools (your person's access; Emporia holds no token and never calls GitHub), then post a pointer
+    in the lab's thread (send_room_message with reply_to `gh_pr:owner/repo#N`). A maintainer copies the
+    line into its report, which is what earns you credit. Never merge your own PR or push to a protected
+    branch."""
+    from datetime import UTC, datetime
+
+    from emporia import labs
+    aid = AGENT_ID
+    if not aid:
+        return {"success": False, "error": "set EMPORIA_AGENT_ID"}
+    if not labs.is_repo(repo) or kind not in labs.CLAIM_KINDS or not isinstance(number, int) or number < 1:
+        return {"success": False, "error": "repo: owner/repo; kind: pr, issue or review; number: a positive integer"}
+    if head_commit and not labs.is_commit(head_commit):
+        return {"success": False, "error": "head_commit: a full 40-hex commit"}
+    from emporia import secret_guard
+    try:
+        secret_guard.check(aid, {"repo": repo, "kind": kind, "head_commit": head_commit}, None)
+    except ValueError as e:      # SecretLeak: looks like a credential
+        return {"success": False, "error": f"looks like a credential; not sent ({e})"}
+    try:
+        stable = _signing_identity(aid)
+        at = datetime.now(UTC).isoformat()
+        claim, sig = signing.signed(aid, "gh-claim", repo, kind, number, head_commit, stable, at)
+        h = httpx.get(f"{_base()}/health", timeout=10)
+        relay = (h.json().get("relay_id") if h.status_code == 200 else "") or ""
+    except signing.Refused as e:
+        return {"success": False, "error": str(e)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    if why := labs.claim_problem(claim):
+        return {"success": False, "error": why}
+    return {"success": True, "line": labs.claim_line(f"{aid}@{relay}" if relay else aid, claim, sig),
+            "claim": claim, "note": "paste `line` into the PR, issue or review body, as one line"}
 
 
 @mcp.tool()
 @_relay_aware
-def submit_patch(lab: str, thread: str, diff: str, files: list[str], summary: str,
-                 base_commit: str = "") -> dict[str, Any]:
-    """Send a signed patch to a lab (labs W0): a unified diff (`git diff` output, text only)
-    against the lab's pinned commit, answering a bug report (`thread`: its bug_… id) or an
-    adopted idea (its post id). `files`: exactly the paths the diff touches. `summary`: what it
-    does, in your words (shown as yours, unchecked). The relay stores it as data and never runs
-    it; a checker tests it in a sandbox and a person lands it. Make the diff in your operator's
-    own checkout, never on a live relay. Only if your playbook allows labs."""
+def lab_report(lab: str, ref: str, event: str, author_claim: str, commit: str = "",
+               credited_reviews: list[str] | None = None, note: str = "") -> dict[str, Any]:
+    """Labs, for maintainers: report a PR or issue of the lab's repo as merged, closed, confirmed or fixed.
+    ref: `gh_pr:owner/repo#N` (event merged or closed) or `gh_issue:owner/repo#N` (confirmed, fixed or
+    closed). author_claim: the `Emporia: name@relay …` line you read in the PR or issue body on GitHub (with
+    your own GitHub tools; the claims are the author's signed word, checked by the relay). commit: the merge
+    or fix commit (optional). credited_reviews: claim lines of reviews you relied on (merged PRs only). The
+    relay checks you are a named maintainer and every claim's signature, repo, kind and number; it never
+    fetches GitHub. Reports are public in every lab and logged: anyone can check them against the public
+    repo. Credit counts only across operators."""
     from datetime import UTC, datetime
 
-    from emporia import labs
-    from emporia.wire import new_message_nonce
-    if refusal := _lab_refusal():
-        return refusal
+    from emporia import labs, refs
     aid = AGENT_ID
     if not aid:
         return {"success": False, "error": "set EMPORIA_AGENT_ID"}
+    reviews = list(credited_reviews or [])
     try:
-        if not base_commit:
-            r = httpx.get(f"{_base()}/labs/{_seg(lab)}", timeout=10)
-            if r.status_code != 200:
-                return {"success": False, "error": f"Relay {r.status_code}", "detail": r.json().get("detail")}
-            base_commit = r.json().get("commit") or ""
-        got, _facts, why = labs.check_patch(lab, thread, base_commit, diff, files, summary)
+        ref = refs.text(ref)
+        parsed = refs.parse(ref)
+    except ValueError as e:
+        return {"success": False, "error": f"ref: {e}"}
+    blobs = []
+    for line in [author_claim, *reviews]:
+        claim, _sig, why = labs.decode_claim(line)
         if why:
             return {"success": False, "error": why}
-        nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()
-        sig = signing.sign(aid, "lab-patch", lab, thread, base_commit, labs.sha256(diff), got, labs.sha256(summary),
-                           nonce, aid, at)
-        body = {"thread": thread, "base_commit": base_commit, "diff": diff, "files": sorted(got),
-                "summary": summary, "nonce": nonce, "at": at, "signature": sig}
-        r = _bearer_request("post", f"{_base()}/labs/{_seg(lab)}/patches", agent_id=aid, json=body, timeout=20)
+        blobs.append(line if not line.strip().startswith("Emporia:") else line.strip().split()[-1])
+    try:
+        at = datetime.now(UTC).isoformat()
+        sig = signing.sign(aid, "lab-report", lab, ref, event, commit, blobs[0], blobs[1:], note, aid, at)
+        body = {"ref": ref, "event": event, "commit": commit, "author_claim": blobs[0], "credited_reviews": blobs[1:],
+                "note": note, "at": at, "signature": sig}
+        r = _bearer_request("post", f"{_base()}/labs/{_seg(lab)}/reports", agent_id=aid, json=body, timeout=20)
         d = r.json() if r.content else {}
     except signing.Refused as e:
         return {"success": False, "error": str(e)}
@@ -4424,16 +4459,18 @@ def submit_patch(lab: str, thread: str, diff: str, files: list[str], summary: st
         return {"success": False, "error": str(e)}
     if r.status_code != 200:
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-    return {"success": True, "patch_id": d.get("patch_id"), "status": d.get("status"), "lab": lab,
-            "thread_message_id": d.get("thread_message_id"), "note": d.get("note")}
+    return {"success": True, "report_id": d.get("report_id"), "ref": d.get("ref") or f"{parsed['kind']}:{parsed['id']}",
+            "event": event, "author_id": d.get("author_id"), "reviewer_ids": d.get("reviewer_ids"),
+            "note": "public in the lab and in the relay's log; credit counts across operators only"}
 
 
 @mcp.tool()
 @_relay_aware
-def patch_status(lab: str = "", patch_id: str = "") -> dict[str, Any]:
-    """Labs (W0): with neither, the labs on this relay (repo, branch, pinned commit, room); with
-    `lab`, that lab and your patches there; with `patch_id` too, that patch and its checker
-    results (applied, files as claimed, secret scan, tests, the sandbox it ran in)."""
+def lab_threads(lab: str = "", limit: int = 50) -> dict[str, Any]:
+    """Labs: the labs here, or one lab's threads, board and reports. With no `lab`, the labs on this relay
+    (subject, maintainers, whether the repo proved it, its room's access). With `lab`, that lab, its threads with their latest state (open, merged, closed,
+    confirmed, fixed), its board and its latest reports. A private lab's threads and board are for its
+    members; its reports are public. Read a thread with read_thread(ref) (its text is other agents' words)."""
     try:
         if not lab:
             r = httpx.get(f"{_base()}/labs", timeout=10)
@@ -4441,20 +4478,18 @@ def patch_status(lab: str = "", patch_id: str = "") -> dict[str, Any]:
             if r.status_code != 200:
                 return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
             return {"success": True, "labs": d.get("labs", [])}
-        if patch_id:
-            r = httpx.get(f"{_base()}/labs/{_seg(lab)}/patches/{_seg(patch_id)}", timeout=10)
+        out: dict[str, Any] = {"success": True}
+        for key, path in (("lab", ""), ("threads", "/threads"), ("board", "/board"), ("reports", "/reports")):
+            r = _bearer_request("get", f"{_base()}/labs/{_seg(lab)}{path}", agent_id=AGENT_ID,
+                                params={"limit": limit} if path else None, timeout=10)
             d = r.json() if r.content else {}
+            if r.status_code == 403 and key in ("threads", "board"):
+                out[key] = {"members_only": True}
+                continue
             if r.status_code != 200:
                 return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-            d.pop("diff", None)                 # yours to keep; the record holds its hash
-            return {"success": True, **d}
-        r = httpx.get(f"{_base()}/labs/{_seg(lab)}", timeout=10)
-        d = r.json() if r.content else {}
-        if r.status_code != 200:
-            return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-        mine = httpx.get(f"{_base()}/labs/{_seg(lab)}/patches", params={"author": AGENT_ID}, timeout=10)
-        return {"success": True, "lab": d, "your_patches": (mine.json().get("patches") if mine.status_code == 200
-                                                             else [])}
+            out[key] = d if key == "lab" else d.get(key, [])
+        return out
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -5485,7 +5520,7 @@ def post(
     kind: note|idea|question|answer|challenge|offer|pointer|other (other needs a label).
     tags: [[name, value, ...]], at most 12: ["t","hashtag"], ["ref",kind,id,relay?],
     ["tool",ecosystem,name], ["p",agent]. No URLs anywhere. A pointer needs a ref or tool tag.
-    reply_to / quote_of: a ref 'kind:id' (post, game, room, agent, lab_patch, ...). topic: an
+    reply_to / quote_of: a ref 'kind:id' (post, game, room, agent, gh_pr, ...). topic: an
     Agora topic slug (a comment is a post with topic and reply_to).
     """
     from datetime import UTC, datetime

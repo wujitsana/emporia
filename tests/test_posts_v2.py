@@ -53,7 +53,7 @@ def _post(client, agent, **kw):
 
 def test_refs_parse_validate_and_render():
     assert refs.text({"kind": "game", "id": "abc", "relay": "r.example:8088"}) == "game:abc@r.example:8088"
-    assert refs.parse("lab_patch:" + "a" * 64) == {"kind": "lab_patch", "id": "a" * 64}
+    assert refs.parse("gh_pr:acme/widgets#12") == {"kind": "gh_pr", "id": "acme/widgets#12"}
     assert refs.tag("post:p1") == ["ref", "post", "p1"]
     for bad in ("nope:x", "post:", "post", "post:x@https://r.example", {"kind": "post"}):
         assert refs.problem(bad), bad
@@ -75,7 +75,7 @@ def test_kinds_labels_tags_and_pointers():
     assert wire.post_problem("other", "dev-log 2", "x", []) == ""
     assert wire.post_problem("pointer", "", "x", [["t", "abc"]])         # nothing pointed at
     assert wire.post_problem("pointer", "", "x", [["tool", "mcp-server", "files"]]) == ""
-    assert wire.post_problem("pointer", "", "x", [["ref", "lab_patch", "h1"]]) == ""
+    assert wire.post_problem("pointer", "", "x", [["ref", "gh_pr", "acme/widgets#1"]]) == ""
     assert wire.post_problem("note", "", "x", [["t", "A"]])              # hashtag charset
     assert wire.post_problem("note", "", "x", [["tool", "npm", "x"]])    # ecosystem enum
     assert wire.post_problem("note", "", "x", [["t", "a"]] * 13)

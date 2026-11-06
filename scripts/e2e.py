@@ -155,10 +155,11 @@ class Run:
         self.player, self.merchant, self.house_agent = (f"e2e-player-{tag}", f"e2e-merchant-{tag}",
                                                         f"e2e-house-{tag}")
         self.signed = f"e2e-signed-{tag}"        # an agent whose keys its signer made and holds
-        self.beta = f"e2e-beta-{tag}"            # labs: the agent whose person lets it send patches
+        self.beta = f"e2e-beta-{tag}"            # labs: the contributor, another operator's agent
         self.lab = "calc"
-        self.lab_repo = self.root / "lab-repo"   # labs: a synthetic repo with a two-line bug
-        self.lab_commit = self.lab_bug = self.lab_patch_id = ""
+        self.lab_subject = "acme/calc"           # labs: the (synthetic) GitHub repo the lab is about
+        self.lab_repo = self.root / "lab-repo"   # labs: a local repo carrying its `.emporia/lab.json`
+        self.lab_commit = self.lab_room = self.lab_pr_line = self.lab_review_line = ""
         self.person_dir = self.root / "person-signer"   # the person's side: the operator's verdict key
         self.verdict_key = ""
         self.services_before = self._services()
@@ -821,98 +822,97 @@ class Run:
                         env={**self.env(), "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}).stdout.strip()
 
     def lab_create(self) -> str:
-        """A synthetic repo whose `.emporia/lab.json` names this relay, the lab and the operator's stable
-        id; the operator (a person, in a terminal) makes the lab; the relay checks the repo says so."""
+        """A synthetic repo whose `.emporia/lab.json` names this relay, the lab, its creator and its maintainer
+        agent (the merchant); a person makes the lab; the relay checks the repo says so."""
         with urllib.request.urlopen(f"{self.relay_url}/agents/{self.merchant}/card", timeout=10) as resp:
             card = json.loads(resp.read()).get("card") or {}
         stable = str(card.get("stable_id") or "")
         check(stable, f"no stable id on {self.merchant}'s card")
         repo = self.lab_repo
-        (repo / "scripts").mkdir(parents=True)
-        (repo / ".emporia").mkdir()
-        (repo / "calc.py").write_text("def add(a, b):\n    return a - b\n")
-        (repo / "test_calc.py").write_text("import unittest\n\nfrom calc import add\n\n\nclass T(unittest.TestCase):\n"
-                                           "    def test_add(self):\n        self.assertEqual(add(2, 3), 5)\n")
-        shutil.copy(self.repo / "scripts" / "secret_scan.py", repo / "scripts" / "secret_scan.py")
+        (repo / ".emporia").mkdir(parents=True)
+        (repo / "README").write_text("calc\n")
         (repo / ".emporia" / "lab.json").write_text(json.dumps({
             "type": "emporia:lab-proof:v1", "relay": "e2e", "lab": self.lab, "creator": stable,
-            "test_command": ["{python}", "-m", "unittest", "-q"], "secret_scan": "scripts/secret_scan.py",
-            "sensitive_paths": [".emporia/", "scripts/"], "timeout_s": 120}, indent=1) + "\n")
+            "maintainers": [stable]}, indent=1) + "\n")
         self.git("init", "-q", "-b", "main", cwd=repo)
         self.git("add", "-A", cwd=repo)
-        self.git("commit", "-q", "-m", "a calculator with a bug", cwd=repo)
+        self.git("commit", "-q", "-m", "a calculator", cwd=repo)
         self.lab_commit = self.git("rev-parse", "HEAD", cwd=repo)
-        refused = self.emporia(self.merchant, "lab", self.merchant, "create", self.lab, "--repo", f"file://{repo}",
-                               ok_codes=(1,), EMPORIA_LAB_HOSTS="file")
+        args = ("lab", self.merchant, "create", self.lab, "--repo", f"file://{repo}", "--subject", self.lab_subject)
+        refused = self.emporia(self.merchant, *args, ok_codes=(1,), EMPORIA_LAB_HOSTS="file")
         check("only a person" in refused, f"lab create ran without a person's terminal: {refused.strip()[-200:]}")
-        out = self.person(self.merchant, "lab", self.merchant, "create", self.lab, "--repo", f"file://{repo}",
-                          "--name", "Calc (e2e)", EMPORIA_LAB_HOSTS="file")
-        check("the repo says it is this lab" in out and self.lab_commit[:12] in out, f"lab create: {out.strip()[-300:]}")
-        return f"lab {self.lab} @ {self.lab_commit[:12]}"
+        out = self.person(self.merchant, *args, "--name", "Calc (e2e)", EMPORIA_LAB_HOSTS="file")
+        check("the repo says it is this lab" in out, f"lab create: {out.strip()[-300:]}")
+        info = self.tool(self.beta, "lab_threads", self.lab)
+        lab = info.get("lab") or {}
+        check(info.get("success") and lab.get("verified") and lab["subject"]["ref"] == self.lab_subject
+              and lab.get("reports_are_public"), f"lab_threads: {info}")
+        self.lab_room = lab["room_id"]
+        return f"lab {self.lab} about {self.lab_subject}, room {self.lab_room}"
 
-    def lab_patch(self) -> str:
-        """Alpha (the player) files a bug report with its failing test; its playbook sends no patches.
-        Beta, whose person said yes, makes the fix in its own checkout and sends it as a signed patch."""
-        bug = self.tool(self.player, "report_bug", self.lab_commit, "add() subtracts",
-                        "from calc import add\nassert add(2, 3) == 5", "add(2, 3) is -1", "medium", False)
-        check(bug.get("success") and bug.get("report_id"), f"report_bug: {bug}")
-        self.lab_bug = bug["report_id"]
-        no = self.tool(self.player, "submit_patch", self.lab, self.lab_bug, "diff --git a/x b/x\n", ["x"], "x")
-        check(not no.get("success") and "sends no patches" in no.get("error", ""), f"alpha sent a patch: {no}")
-        labs_here = self.tool(self.beta, "patch_status")
-        lab = next((x for x in labs_here.get("labs") or [] if x.get("slug") == self.lab), None)
-        check(lab and lab["commit"] == self.lab_commit and lab["represents"], f"patch_status: {labs_here}")
-        mine = self.root / "beta-checkout"
-        self.git("clone", "-q", str(self.lab_repo), str(mine), cwd=self.root)
-        (mine / "calc.py").write_text("def add(a, b):\n    return a + b\n")
-        diff = self.git("diff", cwd=mine) + "\n"
-        sent = self.tool(self.beta, "submit_patch", self.lab, self.lab_bug, diff, ["calc.py"],
-                         "add() subtracted; it adds now")
-        check(sent.get("success") and sent.get("patch_id") and sent.get("thread_message_id"), f"submit_patch: {sent}")
-        self.lab_patch_id = sent["patch_id"]
-        st = self.tool(self.beta, "patch_status", self.lab, self.lab_patch_id)
-        check(st.get("status") == "open" and st.get("thread") == self.lab_bug and "diff" not in st, f"patch_status: {st}")
-        room = self.tool(self.beta, "get_room_messages", lab["room_id"])
-        check(any(self.lab_patch_id in str(m.get("content")) for m in room.get("messages") or []),
-              f"no thread for the patch in the lab's room: {str(room)[:300]}")
-        return f"{self.lab_patch_id} on {self.lab_bug}"
+    def lab_claims(self) -> str:
+        """Beta (another operator) opened a pull request on GitHub (synthetic: nobody calls GitHub) and gets its
+        claim line; the player reviewed it and gets a review line. Nothing here touches a token."""
+        got = self.tool(self.beta, "github_claim_line", self.lab_subject, "pr", 7, self.lab_commit)
+        check(got.get("success") and got["line"].startswith(f"Emporia: {self.beta}@e2e "), f"github_claim_line: {got}")
+        self.lab_pr_line = got["line"]
+        rev = self.tool(self.player, "github_claim_line", self.lab_subject, "review", 7)
+        check(rev.get("success"), f"review claim: {rev}")
+        self.lab_review_line = rev["line"]
+        bad = self.tool(self.beta, "github_claim_line", "https://github.com/acme/calc", "pr", 7)
+        check(not bad.get("success"), "a URL was taken for a repo")
+        return f"{self.lab_pr_line.split()[1]}"
 
-    def lab_check(self) -> str:
-        """The checker, as the operator's own command: a fresh clone at the pin, the patch applied,
-        the base commit's secret scan and tests in the sandbox, the result signed back."""
-        probe = self.emporia(self.merchant, "lab", "check", self.merchant, "--probe")
-        backend = json.loads(probe[probe.index("{"):probe.rindex("}") + 1]).get("backend")
-        out = self.emporia(self.merchant, "lab", "check", self.merchant, timeout=600, EMPORIA_LAB_HOSTS="file",
-                           **({"EMPORIA_LAB_ALLOW_UNISOLATED": "1"} if backend == "none" else {}))
-        check(self.lab_patch_id in out and "pass: applied True, files as claimed True, secret scan clean" in out,
-              f"lab check: {out.strip()[-400:]}")
-        st = self.tool(self.beta, "patch_status", self.lab, self.lab_patch_id)
-        res = ((st.get("checks") or [{}])[-1]).get("result") or {}
-        check(st.get("status") == "passed" and res.get("tests", {}).get("exit_code") == 0, f"after the check: {st}")
-        return f"{backend} sandbox: {res.get('sandbox', {}).get('isolation')} ({res.get('sandbox', {}).get('kind')})"
+    def lab_thread(self) -> str:
+        """Beta joins the lab's room and says so in the pull request's thread; anyone reads it with read_thread."""
+        ref = f"gh_pr:{self.lab_subject}#7"
+        j = self.tool(self.beta, "join_room", self.lab_room)
+        check(j.get("success", True), f"join_room: {j}")
+        sent = self.tool(self.beta, "send_room_message", self.lab_room,
+                         "PR 7 fixes add(): it subtracted. Claim line is in the PR body.", reply_to=ref)
+        check(sent.get("success", True) and not sent.get("error"), f"send_room_message: {sent}")
+        th = self.tool(self.player, "read_thread", ref)
+        check(th.get("count", 0) >= 1, f"read_thread({ref}): {str(th)[:300]}")
+        return f"{ref}: {th.get('count')} message(s)"
 
-    def lab_desk_and_land(self) -> str:
-        """The operator's desk lists the patch with the command to land it; a person lands it into a
-        throwaway clone as one commit on a new branch, with the Emporia-* trailers, pushing nothing."""
+    def lab_report(self) -> str:
+        """The maintainer agent (the merchant) files a `merged` report with the author's claim and a credited
+        review from a third operator; Land a fix and Review a fix complete; the thread reads merged."""
+        ref = f"gh_pr:{self.lab_subject}#7"
+        rep = self.tool(self.merchant, "lab_report", self.lab, ref, "merged", self.lab_pr_line,
+                        commit=self.lab_commit, credited_reviews=[self.lab_review_line], note="e2e")
+        check(rep.get("success") and rep.get("author_id") == self.beta and rep.get("reviewer_ids") == [self.player],
+              f"lab_report: {rep}")
+        b = {x["id"] for x in self.tool(self.beta, "my_quests").get("quests", []) if x.get("done")}
+        r = {x["id"] for x in self.tool(self.player, "my_quests").get("quests", []) if x.get("done")}
+        check("land-fix" in b, f"beta: Land a fix not done: {sorted(b)}")
+        check("review-fix" in r, f"the player: Review a fix not done: {sorted(r)}")
+        m = {x["id"] for x in self.tool(self.merchant, "my_quests").get("quests", []) if x.get("done")}
+        check("land-fix" not in m, "the maintainer earned from its own report")
+        info = self.tool(self.beta, "lab_threads", self.lab)
+        state = {t["ref"]: t["state"] for t in info.get("threads") or []}
+        check(state.get(ref) == "merged", f"thread states: {state}")
+        check(any(x["agent_id"] == self.beta for x in info.get("board") or []), f"the lab board: {info.get('board')}")
+        with urllib.request.urlopen(f"{self.relay_url}/labs/{self.lab}/reports", timeout=10) as resp:
+            check(len(json.loads(resp.read()).get("reports") or []) == 1, "the report is not public")
         desk = self.emporia(self.merchant, "operator", self.merchant)
-        land = f"hermes emporia lab {self.merchant} land {self.lab_patch_id} --into CHECKOUT"
-        check("Patches waiting: 1" in desk and land in desk, f"the desk: {desk.strip()[-600:]}")
-        theirs = self.root / "person-checkout"
-        self.git("clone", "-q", str(self.lab_repo), str(theirs), cwd=self.root)
-        refused = self.emporia(self.merchant, "lab", self.merchant, "land", self.lab_patch_id, "--into", str(theirs),
-                               ok_codes=(1,))
-        check("only a person" in refused, "lab land ran without a person's terminal")
-        out = self.person(self.merchant, "lab", self.merchant, "land", self.lab_patch_id, "--into", str(theirs))
-        branch = f"lab/{self.lab_patch_id}"
-        check(branch in out and "nothing was pushed" in out, f"lab land: {out.strip()[-300:]}")
-        msg = self.git("log", "-1", "--format=%B", branch, cwd=theirs)
-        for want in (f"Emporia-Patch: {self.lab_patch_id}", f"Emporia-Agent: {self.beta}@e2e",
-                     f"Emporia-Thread: {self.lab_bug}", "Emporia-Check: lck_"):
-            check(want in msg, f"the landed commit lacks {want!r}: {msg}")
-        check(self.git("show", f"{branch}:calc.py", cwd=theirs).endswith("a + b"), "the landed commit is not the fix")
-        check((theirs / "calc.py").read_text().endswith("a - b\n"), "landing touched the working tree")
-        check(self.git("rev-parse", "--abbrev-ref", "HEAD", cwd=theirs) == "main", "landing changed the branch")
-        return f"{branch} {self.git('rev-parse', '--short', branch, cwd=theirs)}"
+        check("Lab activity" in desk and ref in desk and "Patches" not in desk, f"the desk: {desk.strip()[-500:]}")
+        return f"{ref} merged; beta Land a fix, the player Review a fix"
+
+    def lab_forged(self) -> str:
+        """A claim whose number was edited after signing, and a claim line for another repo, are refused."""
+        import base64
+        blob = self.lab_pr_line.split()[-1]
+        d = json.loads(base64.urlsafe_b64decode(blob + "=" * (-len(blob) % 4)))
+        d["claim"]["number"] = 8
+        forged = base64.urlsafe_b64encode(json.dumps(d, sort_keys=True, separators=(",", ":")).encode()).decode().rstrip("=")
+        out = self.tool(self.merchant, "lab_report", self.lab, f"gh_pr:{self.lab_subject}#8", "merged",
+                        f"Emporia: x@e2e {forged}")
+        check(not out.get("success") and "does not verify" in json.dumps(out), f"a forged claim was taken: {out}")
+        other = self.tool(self.beta, "github_claim_line", "elsewhere/repo", "pr", 9)
+        out = self.tool(self.merchant, "lab_report", self.lab, f"gh_pr:{self.lab_subject}#9", "merged", other["line"])
+        check(not out.get("success") and "not this lab's" in json.dumps(out), f"another repo's claim was taken: {out}")
+        return "refused: a forged claim, a claim for another repo"
 
     def update(self) -> None:
         """At the pinned commit, update is a verified no-op: twice, nothing moves or installs."""
@@ -1147,12 +1147,11 @@ def main(argv: list[str] | None = None) -> int:
         run.step("bargain v2 between two players on the drand beacon: hands only client-side, reveal, hands published", run.bargain)
         run.step("the operator sees its desk; a player is refused", run.operator)
         run.step(f"setup {run.beta} (player)", run.setup_agent, run.beta, "--playbook", "player")
-        run.step(f"{run.beta}'s person lets it send patches to labs", run.emporia, run.beta, "agent", "playbook",
-                 run.beta, "--labs", "yes")
-        run.step("labs: the operator makes a lab for a repo that names it", run.lab_create)
-        run.step("labs: alpha files a bug, beta sends a signed patch with its thread", run.lab_patch)
-        run.step("labs: the checker tests it in its sandbox and signs the result", run.lab_check)
-        run.step("labs: the desk lists it; a person lands it in a throwaway clone", run.lab_desk_and_land)
+        run.step("labs: a person makes a lab for a repo whose file names its maintainer", run.lab_create)
+        run.step("labs: another operator's agent gets a claim line for a pull request; a reviewer gets one", run.lab_claims)
+        run.step("labs: the contributor posts in the pull request's thread", run.lab_thread)
+        run.step("labs: the maintainer reports it merged with a credited review; two quests complete", run.lab_report)
+        run.step("labs: a forged claim and a claim for another repo are refused", run.lab_forged)
         run.step("update at the pinned commit is a verified no-op", run.update)
     except StepFailed:
         pass

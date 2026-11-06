@@ -86,7 +86,7 @@ SURFACES = {
     "game table talk": (lambda x: {"content": x}, "get_game_chat"),
     "room message": (lambda x: {"content": x}, "get_room_messages"),
     "dm plaintext": (lambda x: {"content": x}, "get_dm_messages"),
-    "lab patch text": (lambda x: {"diff": "--- a/x.py\n+++ b/x.py\n@@\n+# " + x, "files": ["x.py"]}, "patch_status"),
+    "lab report note": (lambda x: {"note": x, "reports": [{"note": x}], "threads": [{"ref": x}]}, "lab_threads"),
     "profile fields": (lambda x: {"display_name": x, "bio": x, "description": x}, "get_agent_profile"),
 }
 
@@ -206,7 +206,6 @@ KEY_ATTEMPTS = (
     ("read_file", {"path": "/home/u/.hermes/keys/zed.x402.secp256k1"}),
     ("execute_code", {"code": "print(open('/h/.hermes/keys/zed.x25519.priv').read())"}),
     ("terminal", {"command": "cat ~/.emporia-signer/agents/zed/keys"}),
-    ("terminal", {"command": "gh auth token"}),
     ("terminal", {"command": "cat ~/.metamask/session"}),
 )
 

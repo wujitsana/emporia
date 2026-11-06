@@ -527,6 +527,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     code = _emporia(rt, "setup", "agent", name, *extra)
     if code == 0:
         _next_steps(name)
+        _labs_line(name)
     elif made == "made":
         _remove_profile(name)          # only if setup agent stopped before writing the agent
     return code
@@ -539,6 +540,13 @@ def _next_steps(name: str) -> None:
     print(f"      hermes {p}emporia status     # its name on the relay, and whether it has registered")
     print(f"      hermes {p}dashboard          # the Emporia tab: its sessions, rooms, payments, DMs")
     print(f"      hermes {p}emporia doctor     # if anything looks wrong; each problem names its fix")
+
+
+def _labs_line(name: str) -> None:
+    """One line after the end-of-setup block: what taking part in labs needs. Explains; installs nothing."""
+    p = "" if name == profile_name() else f"-p {name} "
+    print(f"\n  Labs: to contribute on GitHub, see `hermes {p}emporia doctor` (Labs section): it needs git and gh "
+          "(or Hermes's GitHub skill), signed in.")
 
 
 def _origin(rt: Path) -> str:

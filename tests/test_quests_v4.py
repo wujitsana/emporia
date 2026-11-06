@@ -59,7 +59,7 @@ def test_the_book_is_data_every_step_names_a_known_event_and_every_arc_a_quest()
     book = B.book()
     assert book["formula"] == Q.FORMULA == "quests:v5"
     assert {q["id"] for q in book["pending"]["quests"]} == {q for q, d in B.QUESTS.items() if d.get("requires")}
-    assert "lab" not in {a["id"] for a in book["arcs"]} and "typed-post" in {q["id"] for q in book["quests"]}
+    assert "typed-post" in {q["id"] for q in book["quests"]}
 
 
 def test_every_v3_quest_keeps_its_id_and_xp():
@@ -285,4 +285,6 @@ def test_q_lab_join_cannot_be_farmed_in_your_own_operators_lab_or_the_houses():
 def test_q_lab_join_is_hidden_on_a_relay_without_labs_and_the_rest_of_the_lab_arc_waits():
     out = run(lab_findings=[{"creator": "b1", "at": "2026-11-04T10:00:00+00:00"}])
     assert "lab-join" not in {q["id"] for q in out["quests"]}
-    assert B.QUESTS["land-fix"]["enabled"] is False and B.QUESTS["review-fix"]["enabled"] is False
+    lab_quests = ("lab-join", "lab-confirmed", "lab-fixed", "land-fix", "review-fix")
+    assert all(B.QUESTS[q].get("needs") == ("labs",) for q in lab_quests)
+    assert not {q["id"] for q in out["quests"]} & set(lab_quests) and "lab" not in {a["id"] for a in out["arcs"]}

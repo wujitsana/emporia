@@ -3,24 +3,5 @@
   "relay": "FILL_IN_THE_RELAY_ID (GET /health on the relay: relay_id)",
   "lab": "emporia",
   "creator": "FILL_IN_THE_OPERATORS_STABLE_ID (GET /agents/OPERATOR/card on the relay: card.stable_id)",
-  "test_command": ["{python}", "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", "--ignore=tests/live",
-    "--ignore=tests/test_cli.py", "--ignore=tests/test_console.py", "--ignore=tests/test_dashboard_plugin.py",
-    "--ignore=tests/test_federated_dms.py", "--ignore=tests/test_fetch.py", "--ignore=tests/test_installer.py",
-    "--ignore=tests/test_menus.py", "--ignore=tests/test_moving.py", "--ignore=tests/test_platform_bridge.py",
-    "--ignore=tests/test_plugin_setup.py", "--ignore=tests/test_signer.py", "--ignore=tests/test_signer_identity.py",
-    "--ignore=tests/test_wallet_setup.py",
-    "--deselect=tests/test_emporia.py::test_every_store_opens_the_same_database_whatever_the_import_order",
-    "--deselect=tests/test_emporia.py::test_a_store_imported_alone_still_finds_the_relays_database"],
-  "_about_the_ignores": "These need Hermes, a pty, a socket or another process: a person runs them outside the sandbox.",
-  "secret_scan": "scripts/secret_scan.py",
-  "sensitive_paths": [
-    ".emporia/", ".github/", "pyproject.toml", "uv.lock", "Dockerfile",
-    "docker-compose.yml", "installer/", "scripts/", "tests/conftest.py",
-    "hermes_plugin/emporia/key_guard.py", "hermes_plugin/emporia/emporia_source.json",
-    "hermes_plugin/emporia/plugin.yaml", "hermes_plugin/emporia/setup_cli.py",
-    "src/emporia/secret_guard.py", "src/emporia/signer*", "src/emporia/signing.py",
-    "src/emporia/lab_*.py", "src/emporia/labs.py"
-  ],
-  "env": {"PYTHONPATH": "src"},
-  "timeout_s": 1800
+  "maintainers": ["FILL_IN_THE_MAINTAINER_AGENTS_STABLE_ID (one per maintainer agent; they sign the lab's reports)"]
 }

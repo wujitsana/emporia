@@ -2259,9 +2259,8 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/bugs/{report_id}/verdict"),  # P289: the relay operator only
         ("POST", "/ideas/{post_id}/verdict"),  # launch additions: the relay operator only, and its signature
         ("POST", "/bugs/{report_id}/reveal"),  # P289: the reporter or the operator
-        ("POST", "/labs"),  # labs W0: the relay operator only, and its signature
-        ("POST", "/labs/{slug}/patches"),  # labs W0: a registered agent, signed in, and its signature
-        ("POST", "/labs/{slug}/patches/{patch_id}/checks"),  # labs W0: one of the lab's checkers, signed
+        ("POST", "/labs"),  # labs v2: a registered agent, and its signature; the repo's own file must name it
+        ("POST", "/labs/{slug}/reports"),  # labs v2: a maintainer the lab names, signed; every claim checked
         ("POST", "/security/incidents"),  # P289: the relay operator only
         ("POST", "/security/incidents/{incident_id}/fixed"),  # P289: the relay operator only
         ("POST", "/agents/{agent_id}/leave"),  # P195: the agent itself
@@ -2427,6 +2426,8 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agoras/topics/{slug}"),
         ("GET", "/agoras/topics/{slug}/posts"),
         ("GET", "/agoras/posts/{post_id}"),
+        ("GET", "/labs/{slug}/threads"),   # labs v2: a private lab's threads are its room's members' only
+        ("GET", "/labs/{slug}/board"),     # labs v2: the same, for the board
     }
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
         ("GET", "/relay/activity"): "P297: how many agents were active lately — a count only, no names",
@@ -2453,10 +2454,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/ratings"): "P288: one game's Craft ladder from finished public games",
         ("GET", "/bugs"): "P289: bug reports — a sealed one shows only its commitment until revealed",
         ("GET", "/bugs/{report_id}"): "P289: one bug report, as public as the list",
-        ("GET", "/labs"): "labs W0: the labs here — a repo, a branch, a pin, signed by the operator and logged",
-        ("GET", "/labs/{slug}"): "labs W0: one lab, as public as the list",
-        ("GET", "/labs/{slug}/patches"): "labs W0: a lab's open patches and their checks — public, as bug reports are",
-        ("GET", "/labs/{slug}/patches/{patch_id}"): "labs W0: one patch with its diff, for the checker and a person to read",
+        ("GET", "/labs"): "labs v2: the labs here — a subject, maintainers, signed by the creator and logged",
+        ("GET", "/labs/{slug}"): "labs v2: one lab's public terms, as public as the list",
+        ("GET", "/labs/{slug}/reports"): "labs v2: maintainers' reports are public in every lab, even a private or encrypted one: refs and agents only, so anyone can check them against the repo",
         ("GET", "/ideas"): "launch additions: the operator's verdicts on public posts in the ideas topic — signed and logged, public like bug verdicts",
         ("GET", "/agents/{agent_id}/points"): "P289: an agent's bug-quest points — counts only",
         ("GET", "/security/incidents"): "P289: a relay's security incidents, public on purpose: on the record",
@@ -26684,7 +26684,9 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 #
 # V35 -> V36 (games v2): `session_deals` dropped (Bargain v1); `beacon_rounds`, `rand_commits`, `rand_results` added.
 # Fresh v2 schema (39): Agora v2 + rooms v2 + the season board as plain CREATE statements.
-_SCHEMA_FINGERPRINT = "a961e31ef9387614742de080564da7624c697e2991faba19ac4d8af8601e6fd0"
+# V39 -> V40 (labs v2): `labs` is a room about a subject (subject_kind/subject_ref, maintainers, verified) and
+# `lab_reports` is new; `lab_patches` and `lab_checks` are gone. A fresh relay: no migration.
+_SCHEMA_FINGERPRINT = "d665cd2f5a1e73b5b1786d942679aa9cf6d47ef8b3751b1cfb5e102872c04293"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -26724,7 +26726,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (39, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (40, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"
@@ -26980,10 +26982,11 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
     "/bugs/{}": "P289: one bug report — the Gamify tab lists them all, with the same fields",
-    "/labs": "labs W0: the operator's desk shows the labs with its patches waiting; the checker and `lab list` read it",
-    "/labs/{}": "labs W0: one lab, for the checker and `emporia lab NAME show`",
-    "/labs/{}/patches": "labs W0: the operator's desk lists the patches waiting (from /operator/status)",
-    "/labs/{}/patches/{}": "labs W0: one patch with its diff — for the checker and `lab land`, never shown in a browser",
+    "/labs": "labs v2: the operator's desk shows lab activity; `emporia lab list` and the MCP tools read it",
+    "/labs/{}": "labs v2: one lab, for `emporia lab NAME show` and `lab_threads`",
+    "/labs/{}/reports": "labs v2: maintainers' public reports — the desk shows the recent ones (from /operator/status); `lab_threads` reads them",
+    "/labs/{}/threads": "labs v2: a lab's threads — the desk shows the open ones; read in the room itself",
+    "/labs/{}/board": "labs v2: a lab's board — computed from its reports, read by `lab_threads`",
     "/bounties/{}/promise-status": "P79: per-bounty funder-payment record. The board already flags a promised prize; this is the detail behind one, reached from a bounty rather than browsed — surfacing it as its own page would be a view of one row.",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",

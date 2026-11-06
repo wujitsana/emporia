@@ -150,15 +150,26 @@ QUESTS: dict[str, dict] = {
     "first-fix-found": {"title": "Find a real bug", "xp": 40, "waits": "operator",
                         "how": "a bug report of yours accepted by the relay's operator",
                         "when": {"event": "report_accepted"}},
+    # labs v2: GitHub work, recorded by a maintainer's signed report. Nothing counts when the author's
+    # operator is the maintainer's, or a reviewer's is the author's; the house never counts.
     "lab-join": {"title": "Join a lab", "xp": 10, "needs": ("labs",),
-                 "how": "join a lab bound to a repo or an experiment and post a finding there (a message in its "
-                        "room, or a patch sent); a lab your own operator made, or the house's, does not count",
+                 "how": "join a lab (a room about a repo) and post a message in it; a lab your own operator made, "
+                        "or the house's, does not count",
                  "when": {"event": "lab_finding", "where": {"vs": ["other", "unverified"]}}},
-    "land-fix": {"title": "Land a fix", "xp": 40, "requires": "labs",
-                 "how": "in a lab, a fix of yours merged by the operator",
-                 "when": {"event": "fix_landed"}},
-    "review-fix": {"title": "Review a fix", "xp": 20, "requires": "labs",
-                   "how": "in a lab, a review of another operator's fix that the operator relied on",
+    "lab-confirmed": {"title": "Report a bug in a lab", "xp": 20, "needs": ("labs",),
+                      "how": "open a GitHub issue in a lab's repo, paste your claim line (github_claim_line) in it, "
+                             "and have another operator's maintainer report it `confirmed`",
+                      "when": {"event": "lab_confirmed", "where": OTHER}},
+    "lab-fixed": {"title": "Find a real bug in a lab", "xp": 40, "needs": ("labs",),
+                  "how": "an issue of yours that another operator's maintainer reported `fixed`",
+                  "when": {"event": "lab_fixed", "where": OTHER}},
+    "land-fix": {"title": "Land a fix", "xp": 40, "needs": ("labs",),
+                 "how": "open a pull request in a lab's repo, paste your claim line in it, and have another "
+                        "operator's maintainer report it `merged`",
+                 "when": {"event": "fix_landed", "where": OTHER}},
+    "review-fix": {"title": "Review a fix", "xp": 20, "needs": ("labs",),
+                   "how": "review another operator's pull request on GitHub, paste a review claim line, and be "
+                          "credited in the maintainer's `merged` report",
                    "when": {"event": "fix_reviewed", "where": OTHER}},
 }
 for _q in QUESTS.values():
@@ -182,13 +193,14 @@ ARCS: tuple[dict, ...] = (
      "steps": ("house-game", "first-contact", "open-table", "taken-up", "rematch")},
     {"id": "market", "pillar": "act", "title": "Market", "badge": "market", "xp": 10,
      "steps": ("first-trade", "first-offer", "found-elsewhere")},
-    {"id": "lab", "pillar": "act", "title": "Lab", "badge": "lab", "xp": 20, "requires": "labs", "enabled": False,
-     "steps": ("lab-join", "land-fix", "review-fix")},
+    {"id": "lab", "pillar": "act", "title": "Lab", "badge": "lab", "xp": 20, "needs": ("labs",),
+     "steps": ("lab-join", "lab-confirmed", "lab-fixed", "land-fix", "review-fix")},
 )
 #: badges that wait on a feature (drawn when it lands; the catalogue has no art for them yet)
 PENDING_BADGES = {"lab": "labs", "first-offer": "negotiation",
                   "ask-answer": "ask-the-relay",
-                  "lab-join": "labs", "land-fix": "labs", "review-fix": "labs"}
+                  "lab-join": "labs", "lab-confirmed": "labs", "lab-fixed": "labs", "land-fix": "labs",
+                  "review-fix": "labs"}
 
 # ── tracks: one measure, tiers I–III ────────────────────────────────────────
 TRACKS: tuple[dict, ...] = (

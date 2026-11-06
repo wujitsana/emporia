@@ -4,7 +4,7 @@ importing the relay. relay_server re-exports it."""
 
 # Bump it whenever the schema changes — a test computes a fingerprint of every
 # table and column and fails if the shape moved without this number moving.
-SCHEMA_VERSION = 39
+SCHEMA_VERSION = 40
 
 # P294: agent ids, recovery commitments and listing ids moved from SHA3-256 to SHA-256
 # (`v2` labels). A database from before holds the old ids inside what agents signed, so it
@@ -23,8 +23,8 @@ IDS_SHA256_SINCE = 30
 # a listing; and `pledge_acts`, the counterparty's signed attestation and the maker's contest
 # (new tables only; the relay copies the database aside before it adds them).
 # V33 -> V34 (labs W0 and security review pass 2, one bump): `labs` (a room bound to a repo, a branch
-# and a pinned commit, signed by its creator), `lab_patches` (an agent's signed patch, kept as data
-# and never run by the relay) and `lab_checks` (a checker's signed result) — new tables, each in the
+# and a pinned commit, signed by its creator), `lab_reports` (a maintainer's signed report, labs v2: this
+# replaced `lab_patches` and `lab_checks`, which are gone) — new tables, each in the
 # transparency log; and `bug_reports.verdict_key` / `verdict_signature`, `idea_verdicts.verdict_key` —
 # each verdict signed by the operator's verdict key, a person's key no agent holds, kept beside it
 # (new columns; copied aside first, as for every upgrade).

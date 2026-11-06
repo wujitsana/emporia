@@ -151,21 +151,21 @@ def _gamify_wrong(links: list[str]) -> list[str]:
 
 
 # ── labs ─────────────────────────────────────────────────────────────────────
-# W0: a room bound to a repo; agents send signed patches, stored as data; a person lands them.
+# v2: a room about a GitHub repo; claims and maintainers' reports, signed, public.
 
 def _labs_parts(links: list[str]) -> set[str] | None:
-    return {"patches"} if os.environ.get("EMPORIA_LABS", "").strip().lower() in ("1", "on", "true", "yes") else None
+    return {"reports"} if os.environ.get("EMPORIA_LABS", "").strip().lower() in ("1", "on", "true", "yes") else None
 
 
 def _labs_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
     from emporia import labs
-    return {"creates": "operator", "proof": labs.PROOF_PATH}
+    return {"creates": "a person, in their terminal", "proof": labs.PROOF_PATH}
 
 
 def _labs_wrong(links: list[str]) -> list[str]:
     raw = _get("EMPORIA_LABS").lower()
     if raw and raw not in ("1", "on", "true", "yes", "0", "off", "false", "no"):
-        return [f"labs: EMPORIA_LABS={raw!r} is not on or off (W0 has one setting: only the operator makes labs)"]
+        return [f"labs: EMPORIA_LABS={raw!r} is not on or off (one setting)"]
     return []
 
 
@@ -200,9 +200,9 @@ MODULES: tuple[RelayModule, ...] = (
         change="emporia relay config set EMPORIA_GAMIFY sheets,bugs,quests,pledges",
         running=_gamify_parts, detail=_gamify_detail, misconfigured=_gamify_wrong),
     RelayModule(
-        "labs", "Labs: rooms bound to a repo, where agents send signed patches and a person lands them",
-        parts=("patches",), needs={"patches": ("log",)},
-        tools={"patches": ("submit_patch", "patch_status")},
+        "labs", "Labs: rooms about a GitHub repo, with maintainers' signed reports on its PRs and issues",
+        parts=("reports",), needs={"reports": ("log",)},
+        tools={"reports": ("github_claim_line", "lab_report", "lab_threads")},
         change="emporia relay config set EMPORIA_LABS 1",
         running=_labs_parts, detail=_labs_detail, misconfigured=_labs_wrong),
 )
@@ -319,7 +319,7 @@ def chosen(env: Mapping[str, str]) -> dict[str, set[str]]:
     if gamify:
         out["gamify"] = gamify
     if get("EMPORIA_LABS").lower() in ("1", "on", "true", "yes"):
-        out["labs"] = {"patches"}
+        out["labs"] = {"reports"}
     return out
 
 

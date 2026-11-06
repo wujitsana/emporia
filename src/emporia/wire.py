@@ -228,32 +228,34 @@ def signed_bug_verdict_payload(report_id: str, verdict: str, severity: str, fix_
             "verdict_key": verdict_key, "at": at}
 
 
-def signed_lab_payload(slug: str, name: str, room_id: str, repo_url: str, branch: str, commit: str,
-                       checkers: list[str], licence: str, agent_id: str, at: str) -> dict[str, Any]:
-    """Labs (W0): a lab — a room (`room_id`) bound to a repo, a branch and a pinned commit, and
-    who may sign its checker results (`checkers`). Signed by its creator (the relay operator in
-    W0), so a relay can neither invent a lab nor move its pin."""
-    return {"type": "emporia:lab:v1", "slug": slug, "name": name, "room_id": room_id, "repo_url": repo_url,
-            "branch": branch, "commit": commit, "checkers": sorted(checkers), "licence": licence,
+def signed_lab_payload(slug: str, name: str, room_id: str, subject: dict[str, Any], branch: str, commit: str,
+                       maintainers: list[str], licence: str, creator: str, agent_id: str,
+                       at: str) -> dict[str, Any]:
+    """Labs v2: a lab, the terms its creator signs: a room (`room_id`) about a subject
+    (`{kind, ref}`), the creator's stable id and the maintainer agents' stable ids (who may sign
+    reports). `branch`/`commit` are where the repo's proof file was read."""
+    return {"type": "emporia:lab:v2", "slug": slug, "name": name, "room_id": room_id, "subject": subject,
+            "branch": branch, "commit": commit, "maintainers": sorted(maintainers), "licence": licence,
+            "creator": creator, "agent_id": agent_id, "at": at}
+
+
+def signed_gh_claim_payload(repo: str, kind: str, number: int, head_commit: str, stable_id: str,
+                            at: str) -> dict[str, Any]:
+    """Labs v2: an agent's claim on GitHub work (a PR, an issue or a review), signed by its key and
+    pasted into the work as one line. `repo` is `owner/repo`, never a URL."""
+    return {"type": "emporia:gh-claim:v1", "repo": repo, "kind": kind, "number": number,
+            "head_commit": head_commit or "", "agent": stable_id, "at": at}
+
+
+def signed_lab_report_payload(lab: str, ref: str, event: str, commit: str, author_claim: str,
+                              credited_reviews: list[str], note: str, agent_id: str,
+                              at: str) -> dict[str, Any]:
+    """Labs v2: a maintainer's report on a lab's PR or issue (`ref` = `gh_pr:owner/repo#N`): merged,
+    closed, confirmed or fixed, with the author's pasted claim and the credited reviews' claims
+    (each an opaque claim blob, itself signed)."""
+    return {"type": "emporia:lab-report:v1", "lab": lab, "ref": ref, "event": event, "commit": commit or "",
+            "author_claim": author_claim, "credited_reviews": list(credited_reviews), "note": note or "",
             "agent_id": agent_id, "at": at}
-
-
-def signed_lab_patch_payload(lab: str, thread: str, base_commit: str, diff_sha256: str, files: list[str],
-                             summary_sha256: str, nonce: str, agent_id: str, at: str) -> dict[str, Any]:
-    """Labs (W0): a patch to a lab, against its pinned commit, answering a bug report or an
-    adopted idea (`thread`). The diff and summary are bound by their hashes; `files` are the
-    paths it claims to touch. Signed by its author, so a relay cannot alter what it sends."""
-    return {"type": "emporia:lab-patch:v1", "lab": lab, "thread": thread, "base_commit": base_commit,
-            "diff_sha256": diff_sha256, "files": sorted(files), "summary_sha256": summary_sha256, "nonce": nonce,
-            "agent_id": agent_id, "at": at}
-
-
-def signed_lab_check_payload(patch_id: str, diff_sha256: str, base_commit: str, result: dict[str, Any],
-                             agent_id: str, at: str) -> dict[str, Any]:
-    """Labs (W0): a checker's result for a patch — applied, files as claimed, secret scan, tests,
-    the sandbox it ran in — made by code, no model. Signed by a checker the lab names."""
-    return {"type": "emporia:lab-check:v1", "patch_id": patch_id, "diff_sha256": diff_sha256,
-            "base_commit": base_commit, "result": result, "agent_id": agent_id, "at": at}
 
 
 def signed_pledge_payload(agent_id: str, to_agent: str, kind: str, subject_type: str, subject_id: str,

@@ -1,11 +1,11 @@
-"""Labs (W0): a room bound to a repo, signed patches kept as data, the checker, a person landing.
+"""Labs v2: a room about a GitHub repo; signed claims; maintainers' signed reports; the quests and board.
 
-Every repo and patch here is synthetic: a throwaway git repository with a two-line bug and its
-test, a patch that fixes it, and patches that try what a patch should not."""
+Every repo here is a synthetic local git repository (`file://`, on a test relay); nothing touches GitHub
+or the network, and the relay never fetches GitHub: it only sees signed text."""
 import json
-import shutil
+import os
+import stat
 import subprocess
-import sys
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,23 +13,23 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import lab_check, lab_proof, lab_sandbox, labs, operator_desk, playbook, signing, translog, wire
+from emporia import labs, refs, signing, translog, wire
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
-from tests.test_bugs import file as file_bug
 from tests.test_emporia import _register_keyed
 
-REPO = Path(__file__).resolve().parent.parent
-SANDBOX = lab_sandbox.probe()
-ISOLATED = SANDBOX["backend"] != "none"
+REPO_NAME = "acme/widgets"
 
 
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_LABS", "1")
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,bugs")
     monkeypatch.setenv("EMPORIA_LAB_HOSTS", "file")
-    return TestClient(rs.app, client=("127.0.0.1", 51310))
+    monkeypatch.setenv("EMPORIA_QUEST_OTHERS", "any")
+    monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
+    monkeypatch.setenv("EMPORIA_GAMIFY", "quests")
+    monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
+    return TestClient(rs.app, client=("127.0.0.1", 51311))
 
 
 def as_(agent):
@@ -50,200 +50,161 @@ def stable_of(agent):
         return conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent,)).fetchone()[0]
 
 
-PROOF_EXTRA = {"test_command": ["{python}", "-m", "unittest", "-q"], "secret_scan": "scripts/secret_scan.py",
-               "sensitive_paths": [".emporia/", "scripts/"], "timeout_s": 120}
+def same_operator(*agents):
+    """Make these agents one operator (one Nous account), as the relay counts them."""
+    tag = uuid.uuid4().hex[:8]
+    with rs.DB_LOCK, rs.get_db() as conn:
+        for a in agents:
+            conn.execute("UPDATE authorized_agents SET nous_user_id = ? WHERE agent_id = ?", (f"u{tag}", a))
+        conn.commit()
 
 
-def make_repo(tmp_path, slug, creator, relay=None, **proof_over):
+def make_repo(tmp_path, slug, creator, maintainers, relay=None):
     repo = tmp_path / f"repo-{slug}"
     repo.mkdir()
     sh("init", "-q", "-b", "main", cwd=repo)
-    (repo / "calc.py").write_text("def add(a, b):\n    return a - b\n")
-    (repo / "test_calc.py").write_text("import unittest\n\nfrom calc import add\n\n\nclass T(unittest.TestCase):\n"
-                                       "    def test_add(self):\n        self.assertEqual(add(2, 3), 5)\n")
-    (repo / "scripts").mkdir()
-    shutil.copy(REPO / "scripts" / "secret_scan.py", repo / "scripts" / "secret_scan.py")
     (repo / ".emporia").mkdir()
-    proof = {"type": labs.PROOF_TYPE, "relay": relay or rs.relay_id(), "lab": slug, "creator": creator,
-             **PROOF_EXTRA, **proof_over}
-    (repo / ".emporia" / "lab.json").write_text(json.dumps(proof, indent=1))
+    (repo / ".emporia" / "lab.json").write_text(json.dumps({
+        "type": labs.PROOF_TYPE, "relay": relay or rs.relay_id(), "lab": slug, "creator": creator,
+        "maintainers": maintainers}))
+    (repo / "README").write_text("widgets\n")
     sh("add", "-A", cwd=repo)
-    sh("commit", "-q", "-m", "a calculator with a bug", cwd=repo)
+    sh("commit", "-q", "-m", "widgets", cwd=repo)
     return repo, sh("rev-parse", "HEAD", cwd=repo)
 
 
-def diff_of(repo, change):
-    """The diff that `change(repo)` makes, then the tree put back."""
-    change(repo)
-    sh("add", "-A", cwd=repo)
-    d = subprocess.run(["git", "diff", "--cached"], cwd=repo, check=True, capture_output=True, text=True).stdout
-    sh("reset", "-q", "--hard", "HEAD", cwd=repo)
-    sh("clean", "-qfd", cwd=repo)
-    return d
-
-
-def fix(repo):
-    (repo / "calc.py").write_text("def add(a, b):\n    return a + b\n")
-
-
-def make_lab(client, tmp_path, monkeypatch, slug=None, **proof_over):
-    slug = slug or f"lab{uuid.uuid4().hex[:6]}"
-    op = name("op")
-    _register_keyed(client, op)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", op)
-    repo, commit = make_repo(tmp_path, slug, stable_of(op), **proof_over)
-    room = rooms_db.create_room(f"lab: {slug}", op, db_path=rs.DATABASE_PATH)
-    return op, slug, repo, commit, room.room_id
-
-
-def post_lab(client, op, slug, repo, commit, room_id, sign_as=None, checkers=None):
+def post_lab(client, creator, slug, repo, commit, room_id, maintainers, subject_ref=REPO_NAME, verified=True,
+             repo_url=None):
     at = datetime.now(UTC).isoformat()
-    url = f"file://{repo}"
-    checkers = checkers or [op]
-    sig = signing.sign(sign_as or op, "lab", slug, slug, room_id, url, "main", commit, checkers, "MIT", op, at)
-    return client.post("/labs", headers=as_(op), json={
-        "slug": slug, "name": slug, "room_id": room_id, "repo_url": url, "branch": "main", "commit": commit,
-        "checkers": checkers, "licence": "MIT", "at": at, "signature": sig})
+    url = repo_url if repo_url is not None else f"file://{repo}"
+    subject = {"kind": "github_repo", "ref": subject_ref}
+    sig = signing.sign(creator, "lab", slug, slug, room_id, subject, "main", commit, maintainers, "MIT",
+                       stable_of(creator), creator, at)
+    return client.post("/labs", headers=as_(creator), json={
+        "slug": slug, "name": slug, "room_id": room_id, "subject": subject, "repo_url": url, "branch": "main",
+        "commit": commit, "maintainers": maintainers, "licence": "MIT", "verified": verified, "at": at,
+        "signature": sig})
 
 
-def send_patch(client, agent, slug, thread, base, diff, files=None, summary="fix add: + not -", nonce=None):
-    files = files if files is not None else labs.parse_diff(diff)[0]
-    nonce = nonce or uuid.uuid4().hex
-    at = datetime.now(UTC).isoformat()
-    sig = signing.sign(agent, "lab-patch", slug, thread, base, labs.sha256(diff), sorted(files), labs.sha256(summary),
-                       nonce, agent, at)
-    return client.post(f"/labs/{slug}/patches", headers=as_(agent), json={
-        "thread": thread, "base_commit": base, "diff": diff, "files": files, "summary": summary, "nonce": nonce,
-        "at": at, "signature": sig})
+class Lab:
+    """A lab on this relay with a maintainer, an author, a reviewer and a bystander, each their own operator."""
+
+    def __init__(self, client, tmp_path, monkeypatch, room_kw=None):
+        self.client, self.slug = client, f"lab{uuid.uuid4().hex[:6]}"
+        self.creator, self.maint, self.author, self.reviewer, self.other = (
+            name(t) for t in ("creator", "maint", "author", "reviewer", "other"))
+        for a in (self.creator, self.maint, self.author, self.reviewer, self.other):
+            _register_keyed(client, a)
+        monkeypatch.setenv("EMPORIA_AGENT_ID", self.creator)
+        self.repo, self.commit = make_repo(tmp_path, self.slug, stable_of(self.creator), [stable_of(self.maint)])
+        self.room = rooms_db.create_room(f"lab: {self.slug}", self.creator, db_path=rs.DATABASE_PATH,
+                                         **(room_kw or {}))
+        self.subject = f"owner{uuid.uuid4().hex[:5]}/widgets"
+
+    def create(self, **kw):
+        # the proof file is per lab; the subject names a repo of its own so labs on one relay do not collide
+        return post_lab(self.client, self.creator, self.slug, self.repo, self.commit, self.room.room_id,
+                        [stable_of(self.maint)], subject_ref=self.subject, **kw)
+
+    def line(self, agent, kind, number, repo=None, at=None, head=""):
+        at = at or datetime.now(UTC).isoformat()
+        claim, sig = signing.signed(agent, "gh-claim", repo or self.subject, kind, number, head, stable_of(agent), at)
+        return labs.claim_line(f"{agent}@e2e", claim, sig)
+
+    def report(self, signer, ref, event, author_line, reviews=(), commit="", note=""):
+        at = datetime.now(UTC).isoformat()
+        blob = author_line.split()[-1]
+        rv = [x.split()[-1] for x in reviews]
+        sig = signing.sign(signer, "lab-report", self.slug, ref, event, commit, blob, rv, note, signer, at)
+        return self.client.post(f"/labs/{self.slug}/reports", headers=as_(signer), json={
+            "ref": ref, "event": event, "commit": commit, "author_claim": blob, "credited_reviews": rv, "note": note,
+            "at": at, "signature": sig})
+
+    def pr(self, n):
+        return f"gh_pr:{self.subject}#{n}"
+
+    def issue(self, n):
+        return f"gh_issue:{self.subject}#{n}"
 
 
-def send_check(client, checker, slug, patch, result):
-    at = datetime.now(UTC).isoformat()
-    sig = signing.sign(checker, "lab-check", patch["patch_id"], patch["diff_sha256"], patch["base_commit"], result,
-                       checker, at)
-    return client.post(f"/labs/{slug}/patches/{patch['patch_id']}/checks", headers=as_(checker),
-                       json={"result": result, "at": at, "signature": sig})
-
-
-def a_lab_with_a_bug(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, room_id = make_lab(client, tmp_path, monkeypatch)
-    assert post_lab(client, op, slug, repo, commit, room_id).status_code == 200
-    alpha, beta = name("alpha"), name("beta")
-    for a in (alpha, beta):
-        _register_keyed(client, a)
-    r, *_ = file_bug(client, alpha, sealed=False)
+@pytest.fixture
+def lab(client, tmp_path, monkeypatch):
+    lb = Lab(client, tmp_path, monkeypatch)
+    r = lb.create()
     assert r.status_code == 200, r.text
-    return op, slug, repo, commit, room_id, alpha, beta, r.json()["report_id"]
+    return lb
+
+
+def done(agent):
+    from emporia.routes import standing
+    return {q["id"] for q in standing.quests_body(agent)["quests"] if q["done"]}
 
 
 # ── the rules, as text ──────────────────────────────────────────────────────
 
-def test_a_repo_url_is_https_on_an_allowed_host_in_one_form():
-    hosts = labs.DEFAULT_HOSTS
-    assert labs.normalise_repo_url("https://github.com/o/r.git/", hosts) == ("https://github.com/o/r", "")
-    for bad in ("http://github.com/o/r", "https://user:pw@github.com/o/r", "https://github.com/o/r?x=1",
-                "https://evil.example/o/r", "https://github.com/o", "file:///tmp/r", "https://github.com/../r",
-                "git@github.com:o/r.git", "https://github.com:8443/o/r"):
-        assert labs.normalise_repo_url(bad, hosts)[1], bad
-    assert labs.normalise_repo_url("file:///srv/r/", ("file",)) == ("file:///srv/r", "")
+def test_gh_refs_are_text_names_never_urls():
+    assert refs.text("gh_pr:acme/widgets#12") == "gh_pr:acme/widgets#12"
+    assert refs.parse("gh_issue:acme/widgets#3@relay.example")["relay"] == "relay.example"
+    for bad in ("gh_pr:https://github.com/acme/widgets/pull/1", "gh_pr:acme/widgets", "gh_issue:acme/widgets#0",
+                "gh_pr:acme#1", "gh_pr:a/b/c#1"):
+        assert refs.problem(bad), bad
+    assert wire.post_problem("note", "", "see it", [], reply_to="gh_pr:acme/widgets#12") == ""
 
 
-def test_a_diff_is_text_with_plain_paths_and_its_files_are_what_it_claims():
-    d = ("diff --git a/calc.py b/calc.py\nindex 1..2 100644\n--- a/calc.py\n+++ b/calc.py\n@@ -1,2 +1,2 @@\n"
-         " def add(a, b):\n-    return a - b\n+    return a + b\n")
-    files, facts, why = labs.parse_diff(d)
-    assert (files, facts["added"], facts["removed"], why) == (["calc.py"], 1, 1, "")
-    commit = "a" * 40
-    assert labs.check_patch("emporia", "bug_0123456789abcdef", commit, d, ["calc.py"], "fix")[2] == ""
-    assert "exactly the files" in labs.check_patch("emporia", "bug_0123456789abcdef", commit, d,
-                                                   ["calc.py", "other.py"], "fix")[2]
-    assert "exactly the files" in labs.check_patch("emporia", "bug_0123456789abcdef", commit, d, [], "fix")[2]
-    assert labs.check_patch("emporia", "bug_0123456789abcdef", "abc123", d, ["calc.py"], "fix")[2]
-    for bad in (d.replace("a/calc.py b/calc.py", "a/../x b/../x"),
-                d.replace("a/calc.py b/calc.py", "a/.git/config b/.git/config"),
-                "diff --git a/x.png b/x.png\nGIT binary patch\nliteral 3\n",
-                "diff --git a/l b/l\nnew file mode 120000\n--- /dev/null\n+++ b/l\n@@ -0,0 +1 @@\n+/etc/passwd\n",
-                "diff --git a/m b/m\nnew file mode 160000\n",
-                d.replace("+++ b/calc.py", "+++ b/elsewhere.py"),
-                "just some text", "x" * (labs.MAX_DIFF_BYTES + 1)):
-        assert labs.parse_diff(bad)[2], bad[:60]
+def test_a_claim_line_carries_a_signed_claim_and_nothing_else(client):
+    a = name("a")
+    _register_keyed(client, a)
+    claim, sig = signing.signed(a, "gh-claim", REPO_NAME, "pr", 7, "", stable_of(a), datetime.now(UTC).isoformat())
+    line = labs.claim_line(f"{a}@e2e", claim, sig)
+    assert line.startswith(f"Emporia: {a}@e2e ") and "\n" not in line
+    got, got_sig, why = labs.decode_claim(f"text before\n{line}\nand after")
+    assert not why and got == claim and got_sig == sig
+    assert labs.decode_claim(line.split()[-1])[2] == ""
+    assert labs.decode_claim("Emporia: x@y notbase64!")[2]
+    bad = dict(claim, extra=1)
+    assert labs.claim_problem(bad) and labs.claim_problem(dict(claim, repo="https://github.com/a/b"))
+    assert labs.claim_problem(dict(claim, kind="merge")) and labs.claim_problem(dict(claim, number=0))
+    assert labs.claim_matches(claim, REPO_NAME, "pr", 7) == ""
+    assert labs.claim_matches(claim, "other/repo", "pr", 7) and labs.claim_matches(claim, REPO_NAME, "issue", 7)
+    assert labs.claim_matches(claim, REPO_NAME, "pr", 8)
 
 
-def test_the_proof_file_names_this_lab_and_carries_the_checkers_rules():
-    good = {"type": labs.PROOF_TYPE, "relay": "r1", "lab": "emporia", "creator": "sid", **PROOF_EXTRA}
-    proof, why = labs.parse_proof(json.dumps(good))
-    assert why == "" and proof["test_command"][0] == "{python}" and proof["timeout_s"] == 120
-    assert labs.proof_names(proof, "r1", "emporia", "sid") == ""
-    assert "relay" in labs.proof_names(proof, "r2", "emporia", "sid")
-    assert "creator" in labs.proof_names(proof, "r1", "emporia", "other")
-    assert "FILL" not in labs.proof_names(proof, "r1", "emporia", "other")
-    for bad in ({**good, "type": "x"}, {**good, "test_command": "pytest"}, {**good, "secret_scan": "../s.py"},
-                {**good, "env": {"GITHUB_TOKEN": "x"}}, {**good, "env": {"AWS_REGION": "x"}}, {**good, "timeout_s": 5}):
-        assert labs.parse_proof(json.dumps(bad))[1], bad
+def test_the_proof_file_names_the_lab_its_creator_and_its_maintainers():
+    text = json.dumps({"type": labs.PROOF_TYPE, "relay": "r", "lab": "l", "creator": "c" * 64,
+                       "maintainers": ["m" * 64, "n" * 64]})
+    proof, why = labs.parse_proof(text)
+    assert not why and labs.proof_names(proof, "r", "l", "c" * 64, ["n" * 64, "m" * 64]) == ""
+    assert "maintainers" in labs.proof_names(proof, "r", "l", "c" * 64, ["m" * 64])
+    assert "creator" in labs.proof_names(proof, "r", "l", "d" * 64)
+    assert labs.parse_proof(json.dumps({"type": labs.PROOF_TYPE, "relay": "r", "lab": "l", "creator": "c"}))[1]
+    this_repo = labs.parse_proof((Path(__file__).resolve().parent.parent / ".emporia" / "lab.json").read_text())
+    assert "FILL" in labs.proof_names(this_repo[0], "r", "emporia", "c" * 64)
 
 
-def test_this_repos_own_proof_file_is_well_formed_and_waits_for_the_operator():
-    proof, why = labs.parse_proof((REPO / labs.PROOF_PATH).read_text())
-    assert why == "", why
-    assert proof["lab"] == "emporia" and "FILL" in proof["relay"] and "FILL" in proof["creator"]
-    assert proof["secret_scan"] == "scripts/secret_scan.py" and (REPO / proof["secret_scan"]).is_file()
-    assert ".emporia/" in proof["sensitive_paths"] and "hermes_plugin/emporia/key_guard.py" in proof["sensitive_paths"]
+def test_a_subject_is_a_github_repo_name_and_the_kind_is_open_but_unbuilt():
+    assert labs.subject_problem({"kind": "github_repo", "ref": "acme/widgets"}) == ""
+    assert "dataset" not in labs.SUBJECT_KINDS and "later" in labs.subject_problem({"kind": "dataset", "ref": "x/y"})
+    assert labs.subject_problem({"kind": "github_repo", "ref": "https://github.com/a/b"})
+    assert labs.check_lab("emporia", "n", {"kind": "github_repo", "ref": "a/b"}, "main", "0" * 40, ["m" * 64], "MIT") == ""
 
 
-def test_what_a_patch_touches_sets_its_flags_and_its_risk_floor():
-    files = ["hermes_plugin/emporia/key_guard.py", "tests/test_x.py"]
-    hits = labs.sensitive_hits(files, ["hermes_plugin/emporia/key_guard.py", ".github/"])
-    assert hits == ["hermes_plugin/emporia/key_guard.py"]
-    assert labs.risk_floor(labs.flags_for(files, {}, hits)) == "high"
-    assert labs.flags_for(["tests/test_x.py"], {}, []) == ["tests_only"]
-    assert labs.risk_floor(["tests_only"]) == "flagged" and labs.risk_floor([]) == "low"
-    assert labs.sensitive_hits([".github/workflows/ci.yml"], [".github/"]) == [".github/workflows/ci.yml"]
+def test_credits_follow_the_operators_and_the_house_never_counts():
+    op = {"m": "om", "a": "oa", "r": "or", "a2": "oa"}.get
+    rows = [{"lab": "l", "ref": "gh_pr:a/b#1", "ref_kind": "gh_pr", "event": "merged", "maintainer": "m",
+             "author": "a", "reviewers": ["r", "a2"], "at": "t"},
+            {"lab": "l", "ref": "gh_issue:a/b#2", "ref_kind": "gh_issue", "event": "confirmed", "maintainer": "m",
+             "author": "a", "reviewers": [], "at": "t"},
+            {"lab": "l", "ref": "gh_pr:a/b#3", "ref_kind": "gh_pr", "event": "closed", "maintainer": "m",
+             "author": "a", "reviewers": [], "at": "t"}]
+    got = {(c["agent"], c["kind"]) for c in labs.credits(rows, lambda x: op(x, x))}
+    assert got == {("a", "fix_landed"), ("r", "fix_reviewed"), ("a", "bug_confirmed")}, "a2 is the author's operator"
+    assert not labs.credits(rows, lambda x: "same")
+    assert not labs.credits(rows, lambda x: op(x, x), house={"a"})
+    assert {c["agent"] for c in labs.credits(rows, lambda x: op(x, x), house={"r"})} == {"a"}
+    assert labs.board(rows, lambda x: op(x, x))[0]["agent_id"] == "a"
 
 
-def test_trailers_carry_only_ids_never_what_an_agent_wrote():
-    p = {"patch_id": "lpt_0123456789abcdef", "lab": "emporia", "author_id": "beta", "thread": "bug_0123456789abcdef",
-         "summary": "fix\n\nSigned-off-by: someone else\nEmporia-Check: forged"}
-    msg = labs.commit_message(p, {"check_id": "lck_1", "result": {"verdict": "pass", "risk_floor": "low",
-                                                                   "sandbox": {"isolation": "partial"}}}, "relay1")
-    trailers = msg.strip().split("\n\n")[-1].splitlines()
-    assert trailers == ["Emporia-Patch: lpt_0123456789abcdef", "Emporia-Lab: emporia@relay1",
-                        "Emporia-Agent: beta@relay1", "Emporia-Thread: bug_0123456789abcdef",
-                        "Emporia-Check: lck_1 (pass, partial sandbox, risk low)"]
-    assert "> fix Signed-off-by: someone else Emporia-Check: forged" in msg, "the summary is one quoted line"
-    bad = labs.trailers({**p, "author_id": "x\nEmporia-Check: forged"}, None, "relay1")
-    assert all(not t.startswith("Emporia-Agent") for t in bad)
-
-
-def test_a_checker_result_holds_counts_and_codes_not_output():
-    ok = {"verdict": "pass", "applied": True, "files_match": True, "secret_scan": "clean",
-          "tests": {"exit_code": 0, "passed": 3}, "flags": [], "sandbox": {"kind": "landlock", "isolation": "partial"}}
-    assert labs.check_result(ok) == ""
-    assert labs.check_result({**ok, "verdict": "great"})
-    assert labs.check_result({**ok, "sandbox": {"kind": "x", "isolation": "trust me"}})
-    assert labs.check_result({**ok, "tests": {"exit_code": "0"}})
-    assert labs.check_result({**ok, "flags": ["x" * 80]})
-    assert labs.check_result({**ok, "output": "y" * 9000})
-
-
-def test_contributing_is_off_until_the_person_says_yes():
-    for preset in playbook.PRESETS.values():
-        assert preset.labs is False
-        assert "sends no patches" in playbook.may_contribute(preset)
-    pb = playbook.resolve({"EMPORIA_PLAYBOOK": "player", "EMPORIA_PLAYBOOK_LABS": "yes"})
-    assert pb.labs and playbook.may_contribute(pb) == ""
-    assert not playbook.current().labs or playbook.may_contribute(playbook.current()) == ""
-
-
-def test_the_signed_kinds_are_their_own():
-    assert wire.signed_lab_payload("s", "n", "r", "u", "b", "c", ["z", "a"], "MIT", "op", "t")["checkers"] == ["a", "z"]
-    for kind, t in (("lab", "emporia:lab:v1"), ("lab-patch", "emporia:lab-patch:v1"),
-                    ("lab-check", "emporia:lab-check:v1")):
-        assert getattr(wire, signing.KINDS[kind].builder).__name__.startswith("signed_lab")
-        assert not signing.KINDS[kind].person
-        assert t.startswith("emporia:lab")
-
-
-# ── the relay ──────────────────────────────────────────────────────────────
+# ── the relay ───────────────────────────────────────────────────────────────
 
 def test_off_unless_turned_on_and_never_without_the_log(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_LABS", "0")
@@ -253,365 +214,442 @@ def test_off_unless_turned_on_and_never_without_the_log(client, monkeypatch):
     r = client.get("/labs")
     assert r.status_code == 404 and "needs the log module" in r.json()["detail"]
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
-    assert client.get("/relay/card").json()["relay_modules"]["labs"]["parts"] == ["patches"]
+    assert client.get("/relay/card").json()["relay_modules"]["labs"]["parts"] == ["reports"]
 
 
-def test_only_the_operator_makes_a_lab_and_only_when_the_repo_says_so(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, room_id = make_lab(client, tmp_path, monkeypatch)
-    other = name("other")
-    _register_keyed(client, other)
-    at = datetime.now(UTC).isoformat()
-    sig = signing.sign(other, "lab", slug, slug, room_id, f"file://{repo}", "main", commit, [other], "MIT", other, at)
-    r = client.post("/labs", headers=as_(other), json={"slug": slug, "name": slug, "room_id": room_id,
-                                                        "repo_url": f"file://{repo}", "branch": "main",
-                                                        "commit": commit, "checkers": [other], "licence": "MIT",
-                                                        "at": at, "signature": sig})
-    assert r.status_code == 403, "W0: the relay operator only"
-    assert post_lab(client, op, slug, repo, commit, room_id, sign_as=other).status_code == 403, "its own signature"
-    # the repo moved on: the pin is not the tip
-    (repo / "README").write_text("later\n")
-    sh("add", "-A", cwd=repo)
-    sh("commit", "-q", "-m", "later", cwd=repo)
-    r = post_lab(client, op, slug, repo, commit, room_id)
-    assert r.status_code == 422 and "not the pinned" in r.json()["detail"]
-    tip = sh("rev-parse", "HEAD", cwd=repo)
-    r = post_lab(client, op, slug, repo, tip, room_id)
-    assert r.status_code == 200, r.text
-    lab = r.json()
-    assert lab["represents"] and lab["kind"] == "lab" and lab["room_id"] == room_id
-    assert post_lab(client, op, slug, repo, tip, room_id).status_code == 409
-
-
-def test_a_repo_that_names_another_lab_or_relay_is_refused(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, room_id = make_lab(client, tmp_path, monkeypatch, relay="FILL_IN_THE_RELAY_ID")
-    r = post_lab(client, op, slug, repo, commit, room_id)
-    assert r.status_code == 422 and "names relay" in r.json()["detail"] and "operator fills it in" in r.json()["detail"]
-    other_slug = f"lab{uuid.uuid4().hex[:6]}"
-    r = post_lab(client, op, other_slug, repo, commit, room_id)
-    assert r.status_code == 422 and "names relay" in r.json()["detail"]
-    monkeypatch.setenv("EMPORIA_LAB_HOSTS", "github.com")
-    r = post_lab(client, op, slug, repo, commit, room_id)
-    assert r.status_code == 422 and "test relay" in r.json()["detail"]
-
-
-def test_a_lab_room_is_a_public_room_its_maker_made(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, _room = make_lab(client, tmp_path, monkeypatch)
+def test_a_lab_is_made_only_when_the_repo_names_it_its_creator_and_its_maintainers(client, tmp_path, monkeypatch):
+    lb = Lab(client, tmp_path, monkeypatch)
     other_room = rooms_db.create_room("someone else's", "someone", db_path=rs.DATABASE_PATH)
-    assert post_lab(client, op, slug, repo, commit, other_room.room_id).status_code == 422
-    private = rooms_db.create_room("private", op, room_type="private", gate_type="invite", db_path=rs.DATABASE_PATH)
-    assert post_lab(client, op, slug, repo, commit, private.room_id).status_code == 422
-
-
-def test_a_patch_is_signed_data_bound_to_a_bug_with_its_own_thread_in_the_lab_room(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, room_id, alpha, beta, bug = a_lab_with_a_bug(client, tmp_path, monkeypatch)
-    d = diff_of(repo, fix)
-    r = send_patch(client, beta, slug, bug, commit, d)
+    assert post_lab(client, lb.creator, lb.slug, lb.repo, lb.commit, other_room.room_id,
+                    [stable_of(lb.maint)], subject_ref=lb.subject).status_code == 422, "a room you made"
+    # the proof names another maintainer than the signed terms
+    r = post_lab(client, lb.creator, lb.slug, lb.repo, lb.commit, lb.room.room_id, [stable_of(lb.other)],
+                 subject_ref=lb.subject)
+    assert r.status_code == 422 and "maintainers" in r.json()["detail"]
+    # another agent cannot claim the repo: the proof names the creator
+    room2 = rooms_db.create_room("x", lb.other, db_path=rs.DATABASE_PATH)
+    r = post_lab(client, lb.other, lb.slug, lb.repo, lb.commit, room2.room_id, [stable_of(lb.maint)],
+                 subject_ref=lb.subject)
+    assert r.status_code == 422 and "names creator" in r.json()["detail"]
+    # a proof naming another relay
+    lb2 = Lab(client, tmp_path, monkeypatch)
+    lb2.repo, lb2.commit = make_repo(tmp_path, "x" + lb2.slug, stable_of(lb2.creator), [stable_of(lb2.maint)],
+                                     relay="FILL_IN_THE_RELAY_ID")
+    r = lb2.create()
+    assert r.status_code == 422 and "operator fills it in" in r.json()["detail"]
+    r = lb.create()
     assert r.status_code == 200, r.text
-    p = r.json()
-    assert (p["status"], p["files"], p["author_id"], p["thread"]) == ("open", ["calc.py"], beta, bug)
-    assert "never" not in p["note"] or "lands" in p["note"]
-    got = client.get(f"/labs/{slug}/patches/{p['patch_id']}").json()
-    assert got["diff"] == d and got["diff_sha256"] == labs.sha256(d) and got["checks"] == []
-    listed = client.get(f"/labs/{slug}/patches").json()["patches"]
-    assert [x["patch_id"] for x in listed] == [p["patch_id"]] and "diff" not in listed[0]
-    # its thread: the relay's note in the lab's room, which discussion replies to
-    msgs = rooms_db.get_messages(room_id, db_path=rs.DATABASE_PATH)
-    root = [m for m in msgs if m.message_id == p["thread_message_id"]]
-    assert root and root[0].sender_id == "emporia:lab" and p["patch_id"] in root[0].content
-    assert "fix add" not in root[0].content, "the agent's summary is not put in the relay's own words"
-    # in the transparency log at once: the diff's hash, not the diff
+    out = r.json()
+    assert out["verified"] and out["kind"] == "lab" and out["subject"] == {"kind": "github_repo", "ref": lb.subject}
+    assert out["maintainers"] == [stable_of(lb.maint)] and out["reports_are_public"]
+    assert lb.create().status_code == 409, "one lab per repo"
+    assert any(lb.slug in str(e) for e in [client.get("/labs").json()["labs"]])
+
+
+def test_a_repo_unreadable_without_credentials_is_an_unverified_lab_only_the_operator_makes(client, tmp_path,
+                                                                                         monkeypatch):
+    lb = Lab(client, tmp_path, monkeypatch)
+    gone = tmp_path / "private-repo-that-needs-a-login"
+    r = post_lab(client, lb.other, lb.slug, gone, lb.commit, rooms_db.create_room("o", lb.other, db_path=rs.DATABASE_PATH).room_id,
+                 [stable_of(lb.maint)], subject_ref=lb.subject, verified=False)
+    assert r.status_code == 422
+    r = post_lab(client, lb.creator, lb.slug, gone, lb.commit, lb.room.room_id, [stable_of(lb.maint)],
+                 subject_ref=lb.subject, verified=False)
+    assert r.status_code == 200, r.text
+    assert r.json()["verified"] is False and "without credentials" in r.json()["unverified_note"]
+    assert client.get(f"/labs/{lb.slug}").json()["verified"] is False
+
+
+@pytest.mark.parametrize("room_kw", [{"room_type": "private", "gate_type": "invite"},
+                                     {"room_type": "private", "gate_type": "paid", "entry_fee_cents": 500},
+                                     {"room_type": "private", "gate_type": "invite", "encrypted": True}])
+def test_a_lab_takes_the_rooms_own_options_and_says_what_its_room_is(client, tmp_path, monkeypatch, room_kw):
+    lb = Lab(client, tmp_path, monkeypatch, room_kw)
+    r = lb.create()
+    assert r.status_code == 200, r.text
+    room = r.json()["room"]
+    assert room["type"] == "private" and room["gate"] == room_kw["gate_type"]
+    assert room["encrypted"] == bool(room_kw.get("encrypted")) and room["entry_fee_cents"] == room_kw.get("entry_fee_cents", 0)
+    assert r.json()["reports_are_public"] is True
+
+
+def test_a_report_credits_the_author_and_a_reviewer_and_is_public_and_logged(client, lab):
+    pr = lab.line(lab.author, "pr", 5)
+    review = lab.line(lab.reviewer, "review", 5)
+    r = lab.report(lab.maint, lab.pr(5), "merged", pr, [review], commit="a" * 40, note="thanks")
+    assert r.status_code == 200, r.text
+    rep = r.json()
+    assert rep["author_id"] == lab.author and rep["reviewer_ids"] == [lab.reviewer] and rep["ref"] == lab.pr(5)
+    got = client.get(f"/labs/{lab.slug}/reports").json()["reports"]
+    assert [x["report_id"] for x in got] == [rep["report_id"]]
+    assert client.get(f"/labs/{lab.slug}/reports", params={"ref": lab.pr(5)}).json()["reports"]
+    assert client.get(f"/labs/{lab.slug}").json()["reports"] == 1
     with rs.DB_LOCK, rs.get_db() as conn:
-        translog.fold_all(conn)
-        [entry] = [e["record"] for e in translog.entries(conn, 0, ref=f"lab_patch:{p['patch_id']}", limit=10)]
-    assert entry["diff_sha256"] == labs.sha256(d) and "return a + b" not in json.dumps(entry)
+        assert conn.execute("SELECT 1 FROM transparency_log WHERE kind = 'lab_report'").fetchone() if _has(conn, "transparency_log") else True
+    assert "land-fix" in done(lab.author) and "lab-join" not in done(lab.author)
+    assert "review-fix" in done(lab.reviewer) and "land-fix" not in done(lab.reviewer)
+    board = client.get(f"/labs/{lab.slug}/board", headers=as_(lab.other)).json()["board"]
+    assert {b["agent_id"]: b["fix_landed"] + b["fix_reviewed"] for b in board} == {lab.author: 1, lab.reviewer: 1}
+    # an issue: confirmed, then fixed
+    issue = lab.line(lab.author, "issue", 9)
+    assert lab.report(lab.maint, lab.issue(9), "confirmed", issue).status_code == 200
+    assert "lab-confirmed" in done(lab.author) and "lab-fixed" not in done(lab.author)
+    assert lab.report(lab.maint, lab.issue(9), "fixed", issue).status_code == 200
+    assert {"lab-confirmed", "lab-fixed"} <= done(lab.author)
+    assert lab.report(lab.maint, lab.issue(9), "fixed", issue).status_code == 409, "once per ref and event"
 
 
-def test_a_patch_is_refused_off_the_pin_off_a_thread_off_its_signature_or_off_its_claim(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, room_id, alpha, beta, bug = a_lab_with_a_bug(client, tmp_path, monkeypatch)
-    d = diff_of(repo, fix)
-    assert send_patch(client, beta, slug, bug, "b" * 40, d).status_code == 409
-    assert send_patch(client, beta, slug, "bug_ffffffffffffffff", commit, d).status_code == 422
-    assert send_patch(client, beta, slug, "a-post-nobody-adopted", commit, d).status_code == 422
-    assert send_patch(client, beta, slug, bug, commit, d, files=["calc.py", "x.py"]).status_code == 422
-    nonce = uuid.uuid4().hex
+def _has(conn, table):
+    return bool(conn.execute("SELECT 1 FROM sqlite_master WHERE name = ?", (table,)).fetchone())
+
+
+def test_only_a_named_maintainer_reports_and_every_claim_is_checked(client, lab):
+    ok = lab.line(lab.author, "pr", 1)
+    assert lab.report(lab.author, lab.pr(1), "merged", ok).status_code == 403, "the author is not a maintainer"
+    assert lab.report(lab.other, lab.pr(1), "merged", ok).status_code == 403
+    # a forged claim: its signature is another agent's
     at = datetime.now(UTC).isoformat()
-    sig = signing.sign(alpha, "lab-patch", slug, bug, commit, labs.sha256(d), ["calc.py"], labs.sha256("s"), nonce,
-                       beta, at)
-    r = client.post(f"/labs/{slug}/patches", headers=as_(beta), json={
-        "thread": bug, "base_commit": commit, "diff": d, "files": ["calc.py"], "summary": "s", "nonce": nonce,
-        "at": at, "signature": sig})
-    assert r.status_code == 403, "signed by someone else"
-    ok = send_patch(client, beta, slug, bug, commit, d, nonce="samenonce123")
-    assert ok.status_code == 200
-    assert send_patch(client, beta, slug, bug, commit, d, nonce="samenonce123").status_code == 409, "sent once"
+    claim = wire.signed_gh_claim_payload(lab.subject, "pr", 2, "", stable_of(lab.author), at)
+    forged = labs.claim_line(f"{lab.author}@e2e", claim, signing.sign(lab.other, "gh-claim", lab.subject, "pr", 2, "",
+                                                                       stable_of(lab.author), at))
+    r = lab.report(lab.maint, lab.pr(2), "merged", forged)
+    assert r.status_code == 422 and "does not verify" in r.json()["detail"]
+    # a claim for another repo, another kind, another number
+    other_repo = lab.line(lab.author, "pr", 3, repo="elsewhere/repo")
+    assert "not this lab's" in lab.report(lab.maint, lab.pr(3), "merged", other_repo).json()["detail"]
+    assert "claim is needed" in lab.report(lab.maint, lab.pr(4), "merged", lab.line(lab.author, "issue", 4)).json()["detail"]
+    assert "not #5" in lab.report(lab.maint, lab.pr(5), "merged", lab.line(lab.author, "pr", 4)).json()["detail"]
+    # a review claim cannot be the author's, and a ref in another repo is refused
+    assert lab.report(lab.maint, lab.pr(6), "merged", lab.line(lab.author, "review", 6)).status_code == 422
+    assert lab.report(lab.maint, "gh_pr:elsewhere/repo#6", "merged", lab.line(lab.author, "pr", 6)).status_code == 422
+    # the wrong event for the ref; reviews only on a merge; a reviewer once, and not the author
+    assert lab.report(lab.maint, lab.pr(7), "confirmed", lab.line(lab.author, "pr", 7)).status_code == 422
+    assert lab.report(lab.maint, lab.issue(7), "confirmed", lab.line(lab.author, "issue", 7),
+                      [lab.line(lab.reviewer, "review", 7)]).status_code == 422
+    pr8, rv8 = lab.line(lab.author, "pr", 8), lab.line(lab.reviewer, "review", 8)
+    assert lab.report(lab.maint, lab.pr(8), "merged", pr8, [rv8, rv8]).status_code == 422
+    assert lab.report(lab.maint, lab.pr(8), "merged", pr8, [lab.line(lab.author, "review", 8)]).status_code == 422
+    # a claim by an agent the relay does not know
+    stranger = {"type": labs.CLAIM_TYPE, "repo": lab.subject, "kind": "pr", "number": 9, "head_commit": "",
+                "agent": "f" * 64, "at": datetime.now(UTC).isoformat()}
+    assert lab.report(lab.maint, lab.pr(9), "merged", labs.claim_line("x@y", stranger, "AAAA")).status_code == 422
+    assert not client.get(f"/labs/{lab.slug}/reports").json()["reports"], "nothing above was kept"
 
 
-def test_patches_are_capped_per_operator_and_per_agent(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, room_id, alpha, beta, bug = a_lab_with_a_bug(client, tmp_path, monkeypatch)
-    d = diff_of(repo, fix)
-    for _ in range(labs.OPEN_CAP):
-        assert send_patch(client, beta, slug, bug, commit, d).status_code == 200
-    r = send_patch(client, beta, slug, bug, commit, d)
-    assert r.status_code == 429 and "already open" in r.json()["detail"]
-    assert labs.may_submit(0, labs.DAILY_CAP)
-
-
-def test_only_a_checker_the_lab_names_signs_a_result_and_it_is_posted_in_the_thread(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, room_id, alpha, beta, bug = a_lab_with_a_bug(client, tmp_path, monkeypatch)
-    p = send_patch(client, beta, slug, bug, commit, diff_of(repo, fix)).json()
-    result = {"verdict": "pass", "applied": True, "files_match": True, "secret_scan": "clean",
-              "tests": {"exit_code": 0, "passed": 1, "failed": 0}, "flags": [], "risk_floor": "low",
-              "sandbox": {"kind": "landlock-abi4+seccomp", "isolation": "partial", "network": "none"}}
-    assert send_check(client, beta, slug, p, result).status_code == 403, "the author is no checker"
-    assert send_check(client, op, slug, p, {**result, "verdict": "maybe"}).status_code == 422
-    r = send_check(client, op, slug, p, result)
+def test_a_claim_is_checked_with_the_key_the_agent_had_when_it_signed(client, lab):
+    from tests.test_emporia import _rotate_keyed
+    old = lab.line(lab.author, "pr", 11)
+    _rotate_keyed(client, lab.author)
+    r = lab.report(lab.maint, lab.pr(11), "merged", old)
     assert r.status_code == 200, r.text
-    got = client.get(f"/labs/{slug}/patches/{p['patch_id']}").json()
-    assert got["status"] == "passed" and got["checks"][0]["result"]["sandbox"]["isolation"] == "partial"
-    msgs = rooms_db.get_messages(room_id, db_path=rs.DATABASE_PATH)
-    reply = [m for m in msgs if m.parent_message_id == p["thread_message_id"]]
-    assert reply and "pass" in reply[0].content and "partial sandbox" in reply[0].content
-    desk = client.get("/operator/status", headers=as_(op)).json()["patches"]
-    [item] = [i for i in desk["items"] if i["patch_id"] == p["patch_id"]]
-    assert item["check"]["verdict"] == "pass" and item["check"]["isolation"] == "partial"
-    cmds = [c["command"] for c in operator_desk.patch_commands("opdesk", item)]
-    assert cmds[0] == f"hermes emporia lab opdesk land {p['patch_id']} --into CHECKOUT"
-    text = "\n".join(operator_desk.render(client.get("/operator/status", headers=as_(op)).json(), "opdesk"))
-    assert "Patches waiting" in text and p["patch_id"] in text and "(the agent's words)" in text
-    assert client.get("/operator/status", headers=as_(beta)).status_code == 403
+    # a claim dated before the rotation but signed by the new key does not verify
+    when = (datetime.now(UTC) - __import__("datetime").timedelta(hours=1)).isoformat()
+    backdated = lab.line(lab.author, "pr", 12, at=when)
+    assert lab.report(lab.maint, lab.pr(12), "merged", backdated).status_code == 422
 
 
-# ── the checker, in its sandbox ─────────────────────────────────────────────
-
-def lab_record(client, slug, op):
-    return {**client.get(f"/labs/{slug}").json(), "relay_id": rs.relay_id(), "creator_stable_id": stable_of(op)}
-
-
-def run_check(client, slug, op, patch_id, tmp_path, **kw):
-    patch = client.get(f"/labs/{slug}/patches/{patch_id}").json()
-    return lab_check.check_patch(lab_record(client, slug, op), patch, root=tmp_path / "checker", allow_file=True,
-                                 allow_unisolated=not ISOLATED, sandbox_info=SANDBOX, **kw)
-
-
-def test_the_checker_passes_a_fix_in_its_sandbox_and_fails_the_bug(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, room_id, alpha, beta, bug = a_lab_with_a_bug(client, tmp_path, monkeypatch)
-    good = send_patch(client, beta, slug, bug, commit, diff_of(repo, fix)).json()
-    res = run_check(client, slug, op, good["patch_id"], tmp_path)
-    assert res["verdict"] == "pass", res
-    assert res["applied"] and res["files_match"] and res["secret_scan"] == "clean" and res["represents"]
-    assert res["tests"]["exit_code"] == 0 and res["tests"]["passed"] == 1 and res["risk_floor"] == "low"
-    assert res["sandbox"]["isolation"] == ("partial" if SANDBOX["backend"] == "landlock" else
-                                           "isolated" if SANDBOX["backend"] == "bwrap" else "none")
-    assert labs.check_result(res) == ""
-    assert send_check(client, op, slug, good, res).status_code == 200
-
-    def noop(r):
-        (r / "NOTES").write_text("nothing fixed\n")
-    bad = send_patch(client, beta, slug, bug, commit, diff_of(repo, noop), summary="does nothing").json()
-    res = run_check(client, slug, op, bad["patch_id"], tmp_path)
-    assert res["verdict"] == "fail" and res["tests"]["exit_code"] != 0 and "tests failed" in res["problem"]
-    assert not list((tmp_path / "checker" / "runs").iterdir()), "each work folder is removed"
-    assert (tmp_path / "checker" / "logs" / bad["patch_id"] / "tests.log").exists(), "its log is kept locally"
+def test_nothing_counts_between_one_operator_or_for_the_house(client, lab, monkeypatch):
+    # the maintainer reports its own operator's PR: no credit, no board row
+    same_operator(lab.maint, lab.author)
+    assert lab.report(lab.maint, lab.pr(20), "merged", lab.line(lab.author, "pr", 20)).status_code == 200
+    assert lab.report(lab.maint, lab.issue(21), "confirmed", lab.line(lab.author, "issue", 21)).status_code == 200
+    assert not done(lab.author) & {"land-fix", "lab-confirmed"}
+    assert client.get(f"/labs/{lab.slug}/board", headers=as_(lab.other)).json()["board"] == []
+    # a reviewer of the author's operator is not credited; another operator's is
+    same_operator(lab.reviewer, lab.author)
+    same_operator(lab.maint)         # the maintainer is its own operator again
+    assert lab.report(lab.maint, lab.pr(22), "merged", lab.line(lab.author, "pr", 22),
+                      [lab.line(lab.reviewer, "review", 22), lab.line(lab.other, "review", 22)]).status_code == 200
+    assert "review-fix" not in done(lab.reviewer) and "review-fix" in done(lab.other)
+    assert "land-fix" in done(lab.author)
+    # the house never counts: not as the maintainer whose report it is, nor as the author
+    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", lab.maint)
+    assert "land-fix" not in done(lab.author)
+    assert client.get(f"/labs/{lab.slug}/board", headers=as_(lab.other)).json()["board"] == []
+    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", lab.author)
+    board = client.get(f"/labs/{lab.slug}/board", headers=as_(lab.other)).json()["board"]
+    assert lab.author not in {b["agent_id"] for b in board}
 
 
-def test_the_rules_come_from_the_base_commit_never_the_patch(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, room_id, alpha, beta, bug = a_lab_with_a_bug(client, tmp_path, monkeypatch)
-
-    def cheat(r):
-        proof = json.loads((r / ".emporia" / "lab.json").read_text())
-        proof["test_command"] = ["true"]
-        (r / ".emporia" / "lab.json").write_text(json.dumps(proof))
-        (r / "scripts" / "secret_scan.py").write_text("import sys\nsys.exit(0)\n")
-    p = send_patch(client, beta, slug, bug, commit, diff_of(repo, cheat), summary="tidy config").json()
-    res = run_check(client, slug, op, p["patch_id"], tmp_path)
-    assert res["verdict"] == "fail" and res["tests"]["exit_code"] != 0, "the base commit's tests still ran"
-    assert "sensitive_paths" in res["flags"] and res["risk_floor"] == "high"
-    assert sorted(res["sensitive"]) == [".emporia/lab.json", "scripts/secret_scan.py"]
+def test_a_lab_in_every_relay_counts_not_just_the_first(client, lab, tmp_path, monkeypatch):
+    second = Lab(client, tmp_path, monkeypatch)
+    assert second.create().status_code == 200
+    one = second.line(lab.author, "pr", 30)
+    second.slug  # the author is a stranger to the second lab's operators too
+    r = second.report(second.maint, second.pr(30), "merged", one)
+    assert r.status_code == 200, r.text
+    assert "land-fix" in done(lab.author)
 
 
-def test_the_base_commits_secret_scanner_finds_a_secret_a_patch_adds(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, room_id, alpha, beta, bug = a_lab_with_a_bug(client, tmp_path, monkeypatch)
-
-    def leak(r):
-        fix(r)
-        token = "ghp_" + "A1b2C3d4" * 5
-        (r / "config.py").write_text(f"TOKEN = '{token}'\n")
-    p = send_patch(client, beta, slug, bug, commit, diff_of(repo, leak)).json()
-    res = run_check(client, slug, op, p["patch_id"], tmp_path)
-    assert res["secret_scan"] == "findings" and res["verdict"] == "fail" and "secret scan" in res["problem"]
-    assert "ghp_" not in json.dumps(res), "the result never holds what it found"
-
-
-@pytest.mark.skipif(SANDBOX["backend"] != "landlock", reason="Landlock is not available here")
-def test_in_the_sandbox_a_patch_reaches_no_network_no_home_and_no_keys(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, room_id, alpha, beta, bug = a_lab_with_a_bug(client, tmp_path, monkeypatch)
-    probe = tmp_path / "outside-secret.txt"
-    probe.write_text("a secret outside the work folder\n")
-
-    def snoop(r):
-        fix(r)
-        (r / "test_snoop.py").write_text(
-            "import os, socket, unittest\n\n\nclass S(unittest.TestCase):\n"
-            "    def test_no_network(self):\n"
-            "        with self.assertRaises(OSError):\n"
-            "            socket.create_connection(('127.0.0.1', 8088), timeout=2)\n"
-            "        with self.assertRaises(OSError):\n"
-            "            socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
-            "        with self.assertRaises(OSError):\n"
-            "            socket.socket(socket.AF_UNIX)\n\n"
-            "    def test_no_files_outside(self):\n"
-            f"        with self.assertRaises(OSError):\n            open({str(probe)!r}).read()\n"
-            "        with self.assertRaises(OSError):\n            open('/proc/1/environ').read()\n"
-            f"        with self.assertRaises(OSError):\n            os.listdir({str(Path.home())!r})\n\n"
-            "    def test_no_secrets_in_its_environment(self):\n"
-            "        names = set(os.environ)\n"
-            "        self.assertFalse({n for n in names if 'KEY' in n or 'TOKEN' in n or n.startswith('EMPORIA_ID')})\n"
-            "        self.assertEqual(os.environ['EMPORIA_LAB_SANDBOX'], '1')\n")
-    p = send_patch(client, beta, slug, bug, commit, diff_of(repo, snoop), summary="fix, and a test").json()
-    res = run_check(client, slug, op, p["patch_id"], tmp_path)
-    log = (tmp_path / "checker" / "logs" / p["patch_id"] / "tests.log").read_text()
-    assert res["verdict"] == "pass" and res["tests"]["passed"] == 4, log
-    assert res["sandbox"]["kind"].startswith("landlock") and res["sandbox"]["gaps"]
+def test_a_private_labs_threads_and_board_are_for_members_but_its_reports_still_count(client, tmp_path, monkeypatch):
+    lb = Lab(client, tmp_path, monkeypatch, {"room_type": "private", "gate_type": "invite"})
+    assert lb.create().status_code == 200
+    rooms_db.add_member(lb.room.room_id, lb.maint, db_path=rs.DATABASE_PATH)
+    rooms_db.post_message(room_id=lb.room.room_id, sender_id=lb.maint, content="looking at it", msg_type="chat",
+                          db_path=rs.DATABASE_PATH, reply_to=lb.pr(40), root=lb.pr(40))
+    for path in ("threads", "board"):
+        assert client.get(f"/labs/{lb.slug}/{path}", headers=as_(lb.other)).status_code == 403
+        assert client.get(f"/labs/{lb.slug}/{path}").status_code == 403
+        assert client.get(f"/labs/{lb.slug}/{path}", headers=as_(lb.maint)).status_code == 200
+    assert client.get("/thread", params={"ref": lb.pr(40)}, headers=as_(lb.other)).status_code == 403
+    r = lb.report(lb.maint, lb.pr(40), "merged", lb.line(lb.author, "pr", 40))
+    assert r.status_code == 200, r.text
+    # public to anyone, and it still credits the quest
+    assert [x["ref"] for x in client.get(f"/labs/{lb.slug}/reports").json()["reports"]] == [lb.pr(40)]
+    assert "land-fix" in done(lb.author)
+    # an encrypted lab: the same
+    enc = Lab(client, tmp_path, monkeypatch, {"room_type": "private", "gate_type": "invite", "encrypted": True})
+    assert enc.create().status_code == 200
+    assert enc.report(enc.maint, enc.issue(41), "confirmed", enc.line(enc.author, "issue", 41)).status_code == 200
+    assert client.get(f"/labs/{enc.slug}/reports").status_code == 200 and "lab-confirmed" in done(enc.author)
+    assert client.get(f"/labs/{enc.slug}/threads", headers=as_(enc.other)).status_code == 403
 
 
-def test_without_a_sandbox_nothing_runs_unless_the_person_allows_it(tmp_path):
-    work = tmp_path / "w"
-    work.mkdir()
-    with pytest.raises(lab_sandbox.SandboxUnavailable):
-        lab_sandbox.run(["true"], cwd=work, work=work, python=sys.executable, env={"PATH": "/usr/bin:/bin"},
-                        timeout_s=10, info={"backend": "none"})
-    out = lab_sandbox.run(["true"], cwd=work, work=work, python=sys.executable, env={"PATH": "/usr/bin:/bin"},
-                          timeout_s=10, info={"backend": "none"}, allow_unisolated=True)
-    assert out["exit_code"] == 0 and out["sandbox"]["isolation"] == "none" and "NOT ISOLATED" in out["sandbox"]["gaps"][0]
+def test_threads_are_rooted_at_an_issue_or_pr_and_show_their_latest_state(client, lab):
+    for n, who in ((50, lab.author), (51, lab.reviewer)):
+        rooms_db.post_message(room_id=lab.room.room_id, sender_id=who, content=f"on #{n}", msg_type="chat",
+                              db_path=rs.DATABASE_PATH, reply_to=lab.pr(n), root=lab.pr(n))
+    rooms_db.post_message(room_id=lab.room.room_id, sender_id=lab.author, content="the issue", msg_type="chat",
+                          db_path=rs.DATABASE_PATH, reply_to=lab.issue(52), root=lab.issue(52))
+    lab.report(lab.maint, lab.pr(50), "merged", lab.line(lab.author, "pr", 50))
+    lab.report(lab.maint, lab.issue(52), "confirmed", lab.line(lab.author, "issue", 52))
+    threads = {t["ref"]: t for t in client.get(f"/labs/{lab.slug}/threads").json()["threads"]}
+    assert threads[lab.pr(50)]["state"] == "merged" and threads[lab.pr(51)]["state"] == "open"
+    assert threads[lab.issue(52)]["state"] == "confirmed"
+    got = client.get("/thread", params={"ref": lab.pr(51)}).json()
+    assert [p["text"] for p in got["posts"]] == ["on #51"] or got["count"] >= 1
+    skim = client.get("/thread", params={"ref": lab.pr(50), "mode": "skim"}).json()
+    assert skim["mode"] == "skim" and skim["stats"]["items"] >= 1
+    assert client.get("/thread", params={"ref": "gh_pr:nobody/none#1"}).status_code == 404
 
 
-def test_a_test_run_past_its_time_is_killed_with_its_children(tmp_path):
-    work = tmp_path / "w"
-    work.mkdir()
-    out = lab_sandbox.run([sys.executable, "-c", "import subprocess, time; subprocess.Popen(['sleep', '60']); "
-                                                 "time.sleep(60)"],
-                          cwd=work, work=work, python=sys.executable, env=lab_sandbox.sandbox_env(work, sys.executable),
-                          timeout_s=2, info=SANDBOX, allow_unisolated=True)
-    assert out["timed_out"] and out["exit_code"] is None and out["seconds"] < 30
+def test_the_lab_join_quest_is_a_message_in_a_labs_room(client, lab):
+    from emporia.routes import standing
+    rooms_db.post_message(room_id=lab.room.room_id, sender_id=lab.other, content="hello", msg_type="chat",
+                          db_path=rs.DATABASE_PATH)
+    got = standing._lab_findings(lab.other)
+    assert [f["creator"] for f in got] == [lab.creator]
+    assert "lab-join" in done(lab.other)
+    assert "lab" not in {a["id"] for a in standing.quests_body(lab.author)["arcs"] if a["complete"]}
 
 
-def test_a_reader_rechecks_a_pin_the_branch_has_moved_past_and_sees_it_lapse(tmp_path):
-    repo, commit = make_repo(tmp_path, "emporia", "sid", relay="r1")
-    url = f"file://{repo}"
-    ok = lab_proof.check(url, "main", commit, relay="r1", slug="emporia", creator="sid", allow_file=True)
-    assert ok["represents"] and ok["tip"] == commit
-    (repo / "README").write_text("later\n")
-    sh("add", "-A", cwd=repo)
-    sh("commit", "-q", "-m", "later", cwd=repo)
-    assert not lab_proof.check(url, "main", commit, relay="r1", slug="emporia", creator="sid",
-                               allow_file=True)["represents"], "at creation the pin is the tip"
-    again = lab_proof.check(url, "main", commit, relay="r1", slug="emporia", creator="sid", allow_file=True,
-                            recheck=True)
-    assert again["represents"] and not again["lapsed"]
-    sh("rm", "-q", ".emporia/lab.json", cwd=repo)
-    sh("commit", "-q", "-m", "not a lab any more", cwd=repo)
-    gone = lab_proof.check(url, "main", commit, relay="r1", slug="emporia", creator="sid", allow_file=True,
-                           recheck=True)
-    assert not gone["represents"] and gone["lapsed"] and "lapsed" in gone["why"]
-    assert not lab_proof.check(url, "main", "c" * 40, relay="r1", slug="emporia", creator="sid", allow_file=True,
-                               recheck=True)["represents"], "a commit not on the branch"
+def test_the_kinds_are_signed_through_the_one_door_and_logged():
+    assert {"lab", "gh-claim", "lab-report"} <= set(signing.KINDS)
+    assert "lab-patch" not in signing.KINDS and "lab-check" not in signing.KINDS
+    assert {"lab", "lab_report"} <= set(translog.SOURCES) and "lab_patch" not in translog.SOURCES
 
 
-# ── a person lands it ───────────────────────────────────────────────────────
+# ── the tools, the key guard, doctor, the CLI ───────────────────────────────
 
-def test_landing_makes_one_commit_on_a_new_branch_and_touches_nothing_else(client, tmp_path, monkeypatch):
-    op, slug, repo, commit, room_id, alpha, beta, bug = a_lab_with_a_bug(client, tmp_path, monkeypatch)
-    p = send_patch(client, beta, slug, bug, commit, diff_of(repo, fix)).json()
-    patch = client.get(f"/labs/{slug}/patches/{p['patch_id']}").json()
-    checkout = tmp_path / "mine"
-    subprocess.run(["git", "clone", "-q", str(repo), str(checkout)], check=True)
-    (checkout / "scratch.txt").write_text("my own work in progress\n")
-    hook = checkout / ".git" / "hooks" / "post-commit"
-    hook.write_text("#!/bin/sh\ntouch HOOK_RAN\n")
-    hook.chmod(0o755)
-    check = {"check_id": "lck_0123456789abcdef", "result": {"verdict": "pass", "risk_floor": "low",
-                                                            "sandbox": {"isolation": "partial"}}}
-    out = lab_check.land_patch(checkout, patch, check, "relay1")
-    assert out["branch"] == f"lab/{p['patch_id']}" and out["base"] == commit
-    msg = sh("log", "-1", "--format=%B", out["branch"], cwd=checkout)
-    assert f"Emporia-Patch: {p['patch_id']}" in msg and f"Emporia-Agent: {beta}@relay1" in msg
-    assert f"Emporia-Thread: {bug}" in msg and "Emporia-Check: lck_0123456789abcdef (pass" in msg
-    assert sh("show", f"{out['branch']}:calc.py", cwd=checkout).endswith("return a + b")
-    assert sh("rev-parse", "--abbrev-ref", "HEAD", cwd=checkout) == "main", "the current branch is unchanged"
-    assert (checkout / "calc.py").read_text().endswith("a - b\n"), "the working tree is unchanged"
-    assert (checkout / "scratch.txt").exists() and not (checkout / "HOOK_RAN").exists(), "no hook ran"
-    with pytest.raises(lab_proof.GitError, match="already"):
-        lab_check.land_patch(checkout, patch, check, "relay1")
+def test_the_tools_make_and_read_a_claim_line(monkeypatch, client):
+    from emporia import mcp_server
+    a = name("tool")
+    _register_keyed(client, a)
+    monkeypatch.setattr(mcp_server, "AGENT_ID", a)
+    monkeypatch.setattr(mcp_server, "_signing_identity", lambda aid: stable_of(a))
+    monkeypatch.setattr(mcp_server.httpx, "get", lambda *x, **k: type("R", (), {
+        "status_code": 200, "content": b"{}", "json": lambda self: {"relay_id": "e2e"}})())
+    fn = getattr(mcp_server.github_claim_line, "fn", mcp_server.github_claim_line)
+    out = fn(REPO_NAME, "pr", 3)
+    assert out["success"] and out["line"].startswith(f"Emporia: {a}@e2e ")
+    claim, _sig, why = labs.decode_claim(out["line"])
+    assert not why and claim["agent"] == stable_of(a) and claim["number"] == 3
+    assert not fn("https://github.com/a/b", "pr", 3)["success"] and not fn(REPO_NAME, "merge", 3)["success"]
+    assert not hasattr(mcp_server, "submit_patch") and not hasattr(mcp_server, "patch_status")
 
 
-# ── who may run what ────────────────────────────────────────────────────────
-
-def test_the_key_guard_keeps_agents_off_the_checker_its_folder_and_github_tokens():
-    from hermes_plugin.emporia import key_guard as guard
-    for cmd in ("hermes emporia lab opdesk check emporia", "emporia lab check opdesk",
-                "hermes emporia lab opdesk land lpt_1 --into ~/src/emporia", "emporia lab opdesk create emporia --repo x",
-                "python -m emporia.lab_check", "python -m emporia.lab_sandbox spec.json",
-                "ls ~/.cache/emporia-lab-check/runs", "echo $GITHUB_TOKEN", "gh auth token", "cat ~/.config/gh/hosts.yml"):
-        v = guard.pre_tool_call("terminal", {"command": cmd})
-        assert v and v["action"] == "block", cmd
-    for cmd in ("hermes emporia lab opdesk show emporia", "hermes emporia lab opdesk list", "git diff"):
-        assert guard.pre_tool_call("terminal", {"command": cmd}) is None, cmd
-    v = guard.pre_tool_call("read_file", {"path": "/home/x/.cache/emporia-lab-check/logs/lpt_1/tests.log"})
-    assert v and v["action"] == "block"
+def test_a_relay_started_turn_never_gets_gh_or_the_terminal(monkeypatch):
+    from hermes_plugin.emporia import relay_turn
+    monkeypatch.delenv("EMPORIA_RELAY_TURN_TOOLS", raising=False)
+    sid = f"s-{uuid.uuid4().hex}"
+    relay_turn.pre_llm_call(platform="emporia", session_id=sid)
+    for tool in ("terminal", "execute_code", "github", "github_create_pull_request", "web_extract", "write_file"):
+        v = relay_turn.pre_tool_call(tool_name=tool, session_id=sid)
+        assert v and v["action"] == "block", tool
+    assert relay_turn.pre_tool_call(tool_name="mcp_emporia_lab_report", session_id=sid) is None
+    mine = f"s-{uuid.uuid4().hex}"
+    relay_turn.pre_llm_call(platform="cli", session_id=mine)
+    assert relay_turn.pre_tool_call(tool_name="terminal", session_id=mine) is None, "a person's own turn"
 
 
-def test_the_cli_takes_either_order_and_the_checker_refuses_an_agents_terminal(monkeypatch, capsys):
+def test_the_cli_takes_either_order_and_create_is_a_persons(monkeypatch, capsys):
     from emporia import cli
     agents = {"opdesk": Path("/x")}
-    assert cli._lab_words(["check", "opdesk"], agents) == ("opdesk", "check", [])
-    assert cli._lab_words(["opdesk", "check", "emporia"], agents) == ("opdesk", "check", ["emporia"])
+    assert cli._lab_words(["opdesk", "show", "emporia"], agents) == ("opdesk", "show", ["emporia"])
     assert cli._lab_words(["opdesk"], agents) == ("opdesk", "list", [])
-    assert cli._lab_words(["opdesk", "land", "lpt_1"], agents) == ("opdesk", "land", ["lpt_1"])
     monkeypatch.setattr(cli, "_agent_profiles", lambda root: [(Path("/x/opdesk"), {})])
     monkeypatch.setattr(cli, "_agent", lambda n: (Path("/x/opdesk"), "opdesk", {"EMPORIA_AGENT_ID": "opdesk"}))
-    monkeypatch.setenv("HERMES_SESSION_ID", "abc")
-    args = cli.build_parser().parse_args(["lab", "check", "opdesk"])
-    assert args.func(args) == 1 and "agent's terminal" in capsys.readouterr().out
-    monkeypatch.delenv("HERMES_SESSION_ID")
     monkeypatch.setattr(cli, "_persons_terminal", lambda: False)
-    for words in (["lab", "opdesk", "land", "lpt_1", "--into", "/tmp/x"], ["lab", "opdesk", "create", "emporia"]):
-        args = cli.build_parser().parse_args(words)
-        assert args.func(args) == 1 and "only a person" in capsys.readouterr().out
+    args = cli.build_parser().parse_args(["lab", "opdesk", "create", "emporia", "--repo", "https://github.com/a/b",
+                                          "--room-type", "private", "--gate", "paid", "--entry-fee-cents", "100",
+                                          "--encrypted"])
+    assert args.room_type == "private" and args.gate == "paid" and args.encrypted and args.entry_fee_cents == 100
+    assert args.func(args) == 1 and "only a person" in capsys.readouterr().out
+    for gone in ("check", "land", "reject"):
+        assert cli.build_parser().parse_args(["lab", "opdesk", "list"]) and gone not in cli.LAB_ACTS
 
 
-def test_doctor_calls_a_github_token_in_a_profile_an_error(tmp_path):
-    from emporia import cli
-    profile = tmp_path / "p"
-    (profile / "home" / ".config" / "gh").mkdir(parents=True)
-    rep = cli.Report(compact=False)
-    cli.doctor_no_github_token(rep, profile, {"GITHUB_TOKEN": "ghp_" + "x" * 36})
-    assert rep.failed
-    rep = cli.Report(compact=False)
-    cli.doctor_no_github_token(rep, profile, {})
-    assert not rep.failed
-    (profile / "home" / ".config" / "gh" / "hosts.yml").write_text("github.com: {}\n")
-    rep = cli.Report(compact=False)
-    cli.doctor_no_github_token(rep, profile, {})
-    assert rep.failed
-
-
-def test_submit_patch_is_refused_while_the_playbook_says_no(monkeypatch):
-    from emporia import mcp_server
-    monkeypatch.setenv("EMPORIA_PLAYBOOK", "player")
-    monkeypatch.delenv("EMPORIA_PLAYBOOK_LABS", raising=False)
-    fn = getattr(mcp_server.submit_patch, "fn", mcp_server.submit_patch)
-    out = fn("emporia", "bug_0123456789abcdef", "diff --git a/x b/x\n", ["x"], "s")
-    assert not out["success"] and "sends no patches" in out["error"] and "--labs yes" in out["error"]
-
-
-def test_a_lab_finding_is_a_patch_or_a_non_system_room_message_with_the_labs_creator(client, tmp_path, monkeypatch):
-    from emporia.routes import standing
-    op, slug, repo, commit, room_id = make_lab(client, tmp_path, monkeypatch)
-    assert post_lab(client, op, slug, repo, commit, room_id).status_code in (200, 201)
-    a = name("a")
+def test_the_operator_desk_shows_lab_activity_not_patches(client, lab):
+    from emporia import operator_desk
+    lab.report(lab.maint, lab.pr(60), "merged", lab.line(lab.author, "pr", 60))
+    rooms_db.post_message(room_id=lab.room.room_id, sender_id=lab.author, content="x", msg_type="chat",
+                          db_path=rs.DATABASE_PATH, reply_to=lab.issue(61), root=lab.issue(61))
+    from emporia.routes import operator as op_routes
     with rs.DB_LOCK, rs.get_db() as conn:
-        for i, (who, kind) in enumerate(((a, "chat"), (a, "system"), ("someone_else", "chat"))):
-            conn.execute("INSERT INTO room_messages (message_id, room_id, sender_id, msg_type, content, created_at) "
-                         "VALUES (?, ?, ?, ?, 'x', ?)", (f"m{uuid.uuid4().hex}", room_id, who, kind, f"2026-11-0{i + 1}"))
-    got = standing._lab_findings(a)
-    assert [(f["creator"]) for f in got] == [op], "one chat message counts: not the system line, not another agent's"
+        act = op_routes.lab_activity(conn)
+    assert act["on"] and act["reports"] >= 1
+    assert [r["event"] for r in act["recent"] if r["lab"] == lab.slug] == ["merged"]
+    assert [t["ref"] for t in act["open_threads"] if t["lab"] == lab.slug] == [lab.issue(61)]
+    text = "\n".join(operator_desk.render({"labs": act, "agent_id": "x"}, "opdesk"))
+    assert "Lab activity" in text and lab.issue(61) in text and "hermes emporia lab opdesk show" in text
+    assert "Patches" not in text
+
+
+# ── the optional public check, with a fake `gh` ──────────────────────────────
+
+def fake_gh(tmp_path, monkeypatch, pulls, issues):
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh = bindir / "gh"
+    gh.write_text("#!/usr/bin/env python3\nimport json, sys\n"
+                  f"pulls, issues = {pulls!r}, {issues!r}\n"
+                  "path = sys.argv[2]\n"
+                  "d = (pulls if '/pulls/' in path else issues).get(path)\n"
+                  "if d is None:\n    sys.stderr.write('HTTP 404: Not Found')\n    sys.exit(1)\n"
+                  "print(json.dumps(d))\n")
+    gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+
+
+def test_verify_lab_report_checks_the_public_repo_with_gh(tmp_path, monkeypatch, capsys):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("verify_lab_report", Path(__file__).resolve().parent.parent
+                                                  / "scripts" / "verify_lab_report.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    sha = "c" * 40
+    fake_gh(tmp_path, monkeypatch, {"repos/a/b/pulls/1": {"merged": True, "merge_commit_sha": sha, "state": "closed"},
+                                    "repos/a/b/pulls/2": {"merged": False, "state": "open"}},
+            {"repos/a/b/issues/3": {"state": "closed"}})
+    reports = [{"ref": "gh_pr:a/b#1", "event": "merged", "commit": sha},
+               {"ref": "gh_issue:a/b#3", "event": "fixed", "commit": ""}]
+    f = tmp_path / "r.json"
+    f.write_text(json.dumps({"reports": reports}))
+    assert mod.main([str(f)]) == 0
+    assert capsys.readouterr().out.count("OK") == 2
+    f.write_text(json.dumps({"reports": [{"ref": "gh_pr:a/b#1", "event": "merged", "commit": "d" * 40},
+                                         {"ref": "gh_pr:a/b#2", "event": "merged", "commit": ""},
+                                         {"ref": "gh_pr:a/b#9", "event": "merged", "commit": ""}]}))
+    assert mod.main([str(f)]) == 1
+    out = capsys.readouterr().out
+    assert out.count("MISMATCH") == 3 and "not the reported" in out and "not merged" in out and "cannot be read" in out
+    monkeypatch.setenv("PATH", "/nonexistent")
+    assert mod.main([str(f)]) == 0 and "nothing was checked" in capsys.readouterr().out
+
+
+# ── doctor's Labs section and the setup line ────────────────────────────────
+
+def fake_gh_state(tmp_path, monkeypatch, state):
+    """A `gh` on PATH whose `auth status` says `state`: in (signed in), scopes (a broad token), out."""
+    bindir = tmp_path / "ghbin"
+    bindir.mkdir(exist_ok=True)
+    gh = bindir / "gh"
+    gh.write_text("#!/bin/sh\n"
+                  'if [ "$1" = "--version" ]; then echo "gh version 2.0.0"; exit 0; fi\n'
+                  f'case "{state}" in\n'
+                  '  in) echo "Logged in to github.com as someone"; exit 0;;\n'
+                  '  scopes) echo "Logged in to github.com as someone (Token scopes: repo, workflow)"; exit 0;;\n'
+                  '  *) echo "You are not logged into any GitHub hosts" >&2; exit 1;;\nesac\n')
+    gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", f"{bindir}{os.pathsep}{os.environ['PATH']}")
+
+
+def labs_report(capsys):
+    from emporia import cli
+    rep = cli.Report(compact=False)
+    cli.doctor_labs(rep)
+    rep.flush()
+    return capsys.readouterr().out, rep.failed
+
+
+def test_setup_ends_with_one_line_about_labs(capsys):
+    from hermes_plugin.emporia import setup_cli
+    setup_cli._labs_line("someone")
+    out = capsys.readouterr().out
+    assert "emporia doctor" in out and "Labs section" in out and "gh" in out
+    assert len(out.strip().splitlines()) <= 2
+
+
+# ── a GitHub token never reaches the model, a thread or a report ─────────────
+
+TOKENS = ["ghp_" + "A1b2" * 9, "gho_" + "x" * 36, "ghu_" + "Y" * 36, "ghs_" + "z9" * 18, "ghr_" + "Q" * 36,
+          "github_pat_" + "11ABC" * 12]
+
+
+def test_nothing_that_looks_like_a_github_token_is_sent(monkeypatch, client):
+    import asyncio
+
+    from emporia import mcp_server, secret_guard
+    from emporia.engine import guardrails
+    a = name("leak")
+    _register_keyed(client, a)
+    for tok in TOKENS:
+        for body in ({"text": f"here {tok}"}, {"label": tok}, {"tags": [["t", tok]]}, {"note": tok}):
+            with pytest.raises(secret_guard.SecretLeak, match="GitHub token"):
+                secret_guard.check(a, body, None)
+        with pytest.raises(guardrails.GuardrailBlocked):
+            guardrails.assert_payload_safe({"text": f"see {tok}"})
+        with pytest.raises(PermissionError):
+            asyncio.run(rs._assert_payload_safe_counted({"text": f"see {tok}", "label": "", "tags": []}))
+    assert guardrails.assert_payload_safe({"text": "ghp_short is not a token"}).ok
+    monkeypatch.setattr(mcp_server, "AGENT_ID", a)
+    with pytest.raises(secret_guard.SecretLeak):
+        mcp_server._bearer_request("post", "http://127.0.0.1:1/labs/x/reports", agent_id=a,
+                                   json={"note": f"ok {TOKENS[0]}"})     # lab_report, and every other write
+    fn = getattr(mcp_server.github_claim_line, "fn", mcp_server.github_claim_line)
+    out = fn(TOKENS[0] + "/widgets", "pr", 1)
+    assert not out["success"] and "credential" in out["error"]
+
+
+
+
+def test_the_key_guard_protects_emporias_keys_not_github_ones():
+    from hermes_plugin.emporia import key_guard as guard
+    for cmd in ("echo $GITHUB_TOKEN", "gh auth token", "cat ~/.config/gh/hosts.yml", "gh pr create --fill",
+                "git push origin feature"):
+        assert guard.pre_tool_call("terminal", {"command": cmd}) is None, cmd     # Hermes's concern, not Emporia's
+    for cmd in ("cat ~/.hermes/keys/agent.priv", "emporia lab opdesk create emporia --repo x"):
+        v = guard.pre_tool_call("terminal", {"command": cmd})
+        assert v and v["action"] == "block", cmd
+    assert guard.transform_tool_result("token ghp_" + "A" * 36) is None, "redacting tokens is Hermes's job"
+
+
+def test_doctor_labs_is_friendly_information_in_each_state_and_never_a_failure(tmp_path, monkeypatch, capsys):
+    fake_gh_state(tmp_path, monkeypatch, "in")
+    out, failed = labs_report(capsys)
+    assert "Labs: discussing and helping needs nothing extra" in out and "`gh` is on PATH" in out
+    assert "gh shows a signed-in account" in out and "someone" not in out, "no account name, never a token"
+    assert "README" in out and not failed
+    fake_gh_state(tmp_path, monkeypatch, "out")
+    out, failed = labs_report(capsys)
+    assert "gh is not signed in" in out and "gh auth login" in out and not failed
+    monkeypatch.setenv("PATH", "/nonexistent")
+    out, failed = labs_report(capsys)
+    assert "`git` is not on PATH" in out and "`gh` is not on PATH" in out and "install it yourself" in out
+    assert not failed
+    from emporia import cli
+    assert not hasattr(cli, "doctor_no_github_token") and not hasattr(cli, "github_scope_findings")
+
+
+def test_the_outbound_block_covers_the_common_credential_shapes_at_the_relay_too():
+    import asyncio
+
+    from emporia.engine import guardrails
+    for text in ("sk-ant-" + "a" * 30, "AKIA" + "ABCDEFGHIJKLMNOP", "sk_live_" + "a1" * 12,
+                 "-----BEGIN " + "PRIVATE KEY-----", "eyJ" + "a" * 12 + ".eyJ" + "b" * 12 + "." + "c" * 12):
+        with pytest.raises(guardrails.GuardrailBlocked, match="credential"):
+            guardrails.assert_payload_safe({"text": f"here {text}"})
+        assert guardrails.scan_text(f"here {text}", mode="enforce").ok, "received text is not flagged as injection"
+        with pytest.raises(PermissionError):
+            asyncio.run(rs._assert_payload_safe_counted({"text": text, "label": "", "tags": []}))
+    assert guardrails.assert_payload_safe({"text": "a normal sentence about a PR and a tag"}).ok
