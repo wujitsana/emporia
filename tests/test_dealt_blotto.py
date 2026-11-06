@@ -111,3 +111,35 @@ def test_an_ordinary_blotto_game_is_unchanged(client):
     d = client.get(f"/sessions/{sid}", headers=_hdr(a)).json()["state"]["data"]
     assert "weights" not in d and "dealt" not in d
     assert BL._score([1, 0], [0, 1]) == (1, 1) and BL._score([5, 0], [0, 5], [3, 1]) == (3, 1)
+
+
+def test_a_v2_moves_message_reaches_the_opponent_and_the_games_record(client):
+    """Table talk is unchanged in the v2 games: an optional plain-text `say` rides with each move (an offer, a
+    commit), is signed with it, is seen by the opponent at once (a commit's too: bluffing is the player's choice)
+    and stays in the game's chat and the public record. The tools mark it untrusted."""
+    # Bargain v2: an offer with a message
+    a, b = f"ta_{uuid.uuid4().hex[:6]}", f"tb_{uuid.uuid4().hex[:6]}"
+    _register_keyed(client, a)
+    _register_keyed(client, b)
+    sid = client.post("/sessions", json={"module_type": "emporia:bargain:v2"}, headers=_hdr(a)).json()["session_id"]
+    client.post(f"/sessions/{sid}/join", json={"agent_id": b}, headers=_hdr(b))
+    talk = "I care about silk, honest."
+    body = _signed_action_body(client, sid, a, "offer", {"keep": {"silk": 2}}, WHY, say=talk)
+    assert body["say"] == talk
+    r = client.post(f"/sessions/{sid}/action", json=body)
+    assert r.status_code == 200, r.text
+    chat = client.get(f"/sessions/{sid}/chat", headers=_hdr(b)).json()["messages"]
+    assert [(m["agent_id"], m["content"]) for m in chat] == [(a, talk)], "the opponent reads it"
+    record = client.get(f"/sessions/{sid}/audit", headers=_hdr(b)).json()["chain"]
+    assert any(e.get("say") == talk for e in record), "signed with the move and in the public record"
+    r = client.post(f"/sessions/{sid}/action", json=_signed_action_body(client, sid, b, "accept", {}, WHY, say=talk))
+    assert r.status_code == 200
+
+    # dealt Blotto: a commit with a message, visible before the reveal
+    sid2, c, d = _game(client, {"chat": True})
+    bluff = "I will go heavy on the big field."
+    body = _signed_action_body(client, sid2, c, "commit",
+                               {"commitment": calls.commitment([20] * 5, None, "ef" * 32)}, WHY, say=bluff)
+    assert client.post(f"/sessions/{sid2}/action", json=body).status_code == 200
+    chat = client.get(f"/sessions/{sid2}/chat", headers=_hdr(d)).json()["messages"]
+    assert [m["content"] for m in chat] == [bluff], "a message with a commit is not held back with the move"
