@@ -158,17 +158,25 @@ def _rand_check(module, session: dict[str, Any], public_keys: dict[str, str],
     for p, rev in (r.get("reveals") or {}).items():
         if why := module.reveal_problem(commits[p], rev):
             return "rand", FAIL, f"{p}'s reveal: {why}"
-    hands = module._hands(data, players)
-    if relay_verdict and relay_verdict.get("values"):
-        for p, v in relay_verdict["values"].items():
-            if p not in hands or v != module._as_dict(hands[p][0]):
-                return "rand", FAIL, f"{p}'s published hand is not the one its secret and the beacon give"
-    if relay_verdict and relay_verdict.get("walk_aways"):
-        for p, w in relay_verdict["walk_aways"].items():
-            if p not in hands or w != hands[p][1]:
-                return "rand", FAIL, f"{p}'s published walk-away is not the one its secret and the beacon give"
+    if why := module.rand_problem(data, players, relay_verdict):
+        return "rand", FAIL, why
+    if relay_verdict and (outcome := _recomputed(module, session)) is not None and \
+            (outcome.get("winner"), outcome.get("outcome_type")) != \
+            (relay_verdict.get("winner"), relay_verdict.get("outcome_type")):
+        return "rand", FAIL, (f"recomputing the result gives {outcome.get('winner') or 'a draw'}, the relay "
+                              f"declared {relay_verdict.get('winner') or 'a draw'}")
     return "rand", OK, (f"commitments are the players' own, round {rnd} is drand's, "
-                        f"{len(hands)} revealed hand(s) recompute to what was published")
+                        f"{len(r.get('reveals') or {})} revealed secret(s) recompute to what was published")
+
+
+def _recomputed(module, session: dict[str, Any]) -> dict[str, Any] | None:
+    """The result the rules give from the stored state alone (secrets revealed, beacon stored), or None."""
+    from emporia.module_sdk import SessionState
+    try:
+        over, outcome = module.is_terminal(SessionState.from_dict(session["state"]))
+    except Exception:  # noqa: BLE001
+        return None
+    return outcome if over and outcome else None
 
 
 def _replay(module, session: dict[str, Any], entries: list[dict[str, Any]],

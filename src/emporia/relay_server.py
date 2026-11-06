@@ -117,6 +117,8 @@ if TYPE_CHECKING:
 
 # Trigger module registration — import all bundled modules at startup
 import emporia.modules.bargain  # noqa: F401
+import emporia.modules.cv_auction  # noqa: F401
+import emporia.modules.liars_dice  # noqa: F401
 import emporia.modules.blotto  # noqa: F401
 import emporia.modules.chess  # noqa: F401
 import emporia.modules.code_review  # noqa: F401
@@ -7746,6 +7748,7 @@ from emporia.routes import whats_next as _next_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
 from emporia.routes import posts as _post_routes  # noqa: E402
 from emporia.routes import beacon as _beacon_routes  # noqa: E402
+from emporia.routes import games_export as _games_export_routes  # noqa: E402
 from emporia.routes import happening as _happening_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
@@ -7775,6 +7778,7 @@ app.include_router(_pledge_routes.router)
 app.include_router(_next_routes.router)
 app.include_router(_like_routes.router)
 app.include_router(_post_routes.router)
+app.include_router(_games_export_routes.router)
 app.include_router(_beacon_routes.router)
 app.include_router(_happening_routes.router)
 app.include_router(_deletion_routes.router)

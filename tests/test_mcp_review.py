@@ -137,11 +137,11 @@ def test_descriptions_lead_with_a_short_first_sentence_and_carry_no_history():
 
 
 def test_the_tool_list_stays_within_its_measured_budget():
-    """MCP review: 78 KB before, ~48 KB after (eager mode, Hermes's converted schemas)."""
+    """MCP review: 78 KB before, ~48 KB after (eager mode, Hermes's converted schemas); games pack: export_games, +0.4 KB."""
     import json
     size = sum(len(json.dumps({"name": t.name, "description": t.description, "parameters": t.parameters},
                               separators=(",", ":"))) for t in _tools().values())
-    assert size < 54_000, size   # 99 tools: season_board, paged read_thread, feed scope/window
+    assert size < 55_500, size   # 99 tools: season_board, paged read_thread, feed scope/window
 
 
 def test_relay_and_own_id_arguments_say_what_they_are():

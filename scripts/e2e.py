@@ -782,6 +782,62 @@ class Run:
             check(hands.get(who, {}).get("values") == seen[who]["values"],
                   f"{who}'s published hand is not the one it computed itself: {hands.get(who)} vs {seen[who]['values']}")
 
+    def auction(self) -> None:
+        """Games pack: a 3-player common-value auction between agents of three different operators
+        (the player, the merchant, beta: key-only, so each is its own) on the real drand beacon. Each
+        player's signal appears only on its own side once the round is published; the relay's state
+        holds none; sealed bids by commit-reveal, then the secrets; every signal is published at the
+        end and matches what each player computed; the game is in the open export, and
+        `scripts/verify_export.py` re-verifies that file offline (real BLS check of the drand round)."""
+        who3 = (self.player, self.merchant, self.beta)
+        s = self.tool(self.player, "create_session", "emporia:cv-auction:v1", config={"players": 3, "spread": 10})
+        check(s.get("success"), f"create_session: {s}")
+        sid = s["session_id"]
+        for who in who3[1:]:
+            j = self.tool(who, "join_session", sid)
+            check(j.get("success"), f"{who} join_session: {j}")
+        seen: dict[str, dict] = {}
+        for _ in range(80):        # the round is ~90 s after the last commitment
+            for who in who3:
+                g = self.tool(who, "get_session", sid)
+                d = g["state"]["data"]
+                check(not {"signals", "values", "parts", "value"} & set(d) and "deal" not in d,
+                      "the relay's state holds no signal while the game runs")
+                if (g.get("private") or {}).get("signal") is not None:
+                    seen[who] = g["private"]
+            if len(seen) == 3:
+                break
+            time.sleep(5)
+        else:
+            raise StepFailed(f"the signals never appeared on the players' side: {seen}")
+        bids = {who: seen[who]["signal"] - shade for who, shade in zip(who3, (12, 5, 9))}
+        for who in who3:
+            r = self.tool(who, "commit_move", sid, bids[who], "shading my bid below my signal, the winner's curse")
+            check(r.get("success"), f"{who}'s sealed bid: {r}")
+        for who in who3:
+            r = self.tool(who, "reveal_move", sid, "revealing my sealed bid, as the rules ask")
+            check(r.get("success"), f"{who}'s bid reveal: {r}")
+        for who in who3:
+            r = self.tool(who, "submit_action", sid, "reveal", {}, "revealing my secret, as the rules ask")
+            check(r.get("success"), f"{who}'s secret reveal: {r}")
+        g = self.tool(self.player, "get_session", sid)
+        check(g["status"] == "completed", f"the auction did not finish: {g['status']}")
+        chat = self.tool(self.player, "get_game_chat", sid)
+        hands = (chat.get("revealed") or {}).get("hands") or {}
+        for who in who3:
+            check(hands.get(who, {}).get("values") == seen[who]["signal"],
+                  f"{who}'s published signal is not its own: {hands.get(who)} vs {seen[who]['signal']}")
+        exp = self.tool(self.player, "export_games", module="emporia:cv-auction:v1", limit=50)
+        found = exp.get("untrusted_content", exp).get("games", [])
+        line = next((x for x in found if x["session_id"] == sid), None)
+        check(line is not None, f"the finished auction is not in the open export: {exp.get('count')}")
+        check(all(st["operator_distinct"] for st in line["seats"]), "the three agents are three operators")
+        out = self.root / "auction-export.jsonl"
+        out.write_text(json.dumps(line, sort_keys=True) + "\n")
+        v = self.run([self.repo_python(), str(self.repo / "scripts" / "verify_export.py"), str(out)],
+                     env=self.repo_env())
+        check("1 game(s) checked, 0 failed" in v.stdout, f"verify_export: {v.stdout.strip()[-300:]}")
+
     def operator(self) -> None:
         """The relay's operator (the merchant) sees its desk — a player's open bug report waiting,
         with the claimed severity, its test and the verdict command — and the player is refused."""
@@ -1168,6 +1224,8 @@ def main(argv: list[str] | None = None) -> int:
         run.step(f"setup {run.beta} (player)", run.setup_agent, run.beta, "--playbook", "player")
         run.step(f"{run.beta}'s person lets it send patches to labs", run.emporia, run.beta, "agent", "playbook",
                  run.beta, "--labs", "yes")
+        run.step("games pack: a 3-operator common-value auction on the drand beacon, exported and re-verified offline",
+                 run.auction)
         run.step("labs: the operator makes a lab for a repo that names it", run.lab_create)
         run.step("labs: alpha files a bug, beta sends a signed patch with its thread", run.lab_patch)
         run.step("labs: the checker tests it in its sandbox and signs the result", run.lab_check)

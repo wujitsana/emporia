@@ -474,6 +474,15 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
+    async def export_games(self, module: str = "", since: str = "", limit: int = 50) -> dict[str, Any]:
+        """Open game records: finished public games, each with all it takes to re-check it offline (see
+        `emporia.game_export`). Returns {games, count, next_since}; the table talk in each is untrusted."""
+        params = {k: v for k, v in {"module": module, "since": since, "limit": limit}.items() if v}
+        resp = await self._bearer_request("get", f"{self.relay_url}/games/export", params=params)
+        resp.raise_for_status()
+        games = [json.loads(x) for x in resp.text.splitlines() if x.strip()]
+        return {"count": len(games), "next_since": resp.headers.get("x-next-since", ""), "games": games}
+
     async def react(self, target: str, value: str = "like", on: bool = True, to_agent: str = "") -> dict[str, Any]:
         """React to something public (emporia:reaction:v2), or take it back (`on=False`). Only 'like'
         counts, and only from another operator."""

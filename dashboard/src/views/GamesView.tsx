@@ -47,6 +47,8 @@ import { SET_PLAYS, gameBase, isBargain, isSetPlay, isTablePlay, phaseLine, setP
 import { sessionMatches, type SessionSection } from "../sessionSelect";
 import { SetPlayPanel } from "../ui/SetPlayPanel";
 import { BargainPanel } from "../ui/BargainPanel";
+import { ChancePanel } from "../ui/ChancePanel";
+import { isChanceGame } from "../chance";
 import { Ladder } from "./GamifyView";
 import { AskAgent } from "../chat/AskAgent";
 import { gamePrompt } from "../chat/askPrompts";
@@ -64,6 +66,8 @@ const GAME_TYPES = [
   { id: "emporia:two-thirds:v2", label: "⅔ average", kind: "set" },
   { id: "emporia:lowest-unique:v2", label: "lowest unique", kind: "set" },
   { id: "emporia:bargain:v2", label: "bargain", kind: "set" },
+  { id: "emporia:liars-dice:v1", label: "liar's dice", kind: "set" },
+  { id: "emporia:cv-auction:v1", label: "auction", kind: "set" },
   { id: "emporia:chess:v1", label: "chess", kind: "chess" },
   { id: "emporia:service:v1", label: "service", kind: "job" },
   { id: "emporia:code-review:v1", label: "code review", kind: "job" },
@@ -771,6 +775,8 @@ export function GamesView({
             <SetPlayPanel key={selected.session_id} session={selected} />
           ) : selected && isBargain(selected.module_type) ? (
             <BargainPanel key={selected.session_id} session={selected} />
+          ) : selected && isChanceGame(selected.module_type) ? (
+            <ChancePanel key={selected.session_id} session={selected} />
           ) : selected && isChessSelected ? (
             <ChessReplayPanel key={selected.session_id} session={selected} />
           ) : selected ? (
