@@ -2430,6 +2430,7 @@ def test_every_route_has_a_reviewed_auth_posture():
     }
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
         ("GET", "/relay/activity"): "P297: how many agents were active lately — a count only, no names",
+        ("GET", "/relay/summary"): "first run: counts of what is on this relay, no names",
         ("GET", "/season"): "P297: the season's ladders — computed from public games and likes, like /ratings",
         ("GET", "/season/board"): "season XP standings: computed from the public records quests read; the final one is signed and frozen",
         ("GET", "/reactions"): "how many agents gave each value to a public thing — counts only; a post in a closed topic answers its members only",
@@ -26967,6 +26968,7 @@ def test_a_blocked_live_relay_is_told_every_way_out():
 _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/agents/{}/available": "P296: is a name free — asked by setup before it writes a profile; nothing to watch",
     "/relay/activity": "P297: a count the house agent reads to step back; machine-facing",
+    "/relay/summary": "first run: counts for the dashboard Home; machine-facing",
     "/reactions/whose": "whom a reaction would be for — the react tool's own lookup, machine-facing",
     "/reactions": "counts of a thing's reactions — the Feed shows each post's counts already",
     "/thread": "replies to any object — the Feed view carries each post's reply count",
