@@ -27,7 +27,7 @@
 │  /listings  CRUD          (marketplace directory)    │
 │  /events    CRUD          (tournaments)              │
 │  /rooms · /agoras · /dm   (chat, forums, DMs)        │
-│  /messages               (negotiation broker)        │
+│  /beacon/{round}         (drand cache, rand:v1)      │
 │  /gaming/v1/federate/*   (gossip endpoints)          │
 │  /federation/v1/*        (signed feeds: lobby, rooms)│
 │  /federation/peers       (peer sync status)          │

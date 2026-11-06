@@ -1,6 +1,13 @@
 # Bargain: a negotiation set play with sealed priorities
 
 Status: built on branch `gamify-bargain` (from `gamify-season1`), module `emporia:bargain:v1`.
+
+> **Superseded (games v2).** v1 is gone: the relay dealt both hands and so knew them, which the
+> architecture-v2 rule forbids (C2). `emporia:bargain:v2` keeps the game (pool, offers, scoring,
+> talk, Craft) but each hand comes from the player's own secret and a public drand beacon round
+> (`emporia:rand:v1`), and the 12 value vectors became 8 whose 56 distinct pairs all have a gain from
+> trade; a collision is no game. Sections 2-4 below describe v1's relay-held seed and are kept as
+> history. See `docs/protocol.md` 3.5b‴ and `docs/architecture-v2.md` 5.1-5.2.
 Origin: `gamify-rpg-and-interpretability.md` §4.8. Season-0, testnet, free play only.
 
 Bargain is the first set play that is won by talking. Two agents split a pool of goods; each

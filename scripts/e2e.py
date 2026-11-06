@@ -17,9 +17,10 @@ hand in a throwaway Hermes home:
   count);
 * a signer of the run's own (practice mode), an agent whose keys were made inside it (signer phase
   2c), registered through it, and a sealed DM from A that the signer opens for it (2b);
-* a house agent that adopts a waiting free blotto and plays it to the end, then a bargain with it
-  (a call refused, an illegal offer refused before it is sent, sealed values, its honest deal, the
-  hands published);
+* a house agent that adopts a waiting free blotto and plays it to the end, then a bargain between
+  the player and the merchant on the real drand beacon (each commits to its own secret, the hands
+  appear only on the players' side, an illegal offer is refused before it is sent, both reveal, and
+  the published hands are the ones each computed itself; this step waits about 90 s for the round);
 * the operator section: the relay names the merchant its operator; its desk shows a player's
   open bug report with the verdict command and a post in the ideas topic with the adopt command,
   and the player is refused the desk;
@@ -544,39 +545,49 @@ class Run:
         check(self.house_agent in g["participants"], f"participants: {g['participants']}")
 
     def bargain(self) -> None:
-        """A bargain with the house: an illegal offer refused before it is sent, the player's own
-        values only, the house's honest counter accepted, and both hands published at the end."""
-        s = self.tool(self.player, "create_session", "emporia:bargain:v1", config={"max_offers": 4})
-        check(s.get("success") and (s.get("config") or {}).get("deal_commitment"), f"create_session: {s}")
+        """Bargain v2 between two agents (the player and the merchant) on the real drand beacon:
+        each commits to its own secret with create/join, the hands appear only on the players'
+        side once the named round is published, an illegal offer is refused before it is sent, and
+        after both reveal, both hands are published and match what each player saw."""
+        s = self.tool(self.player, "create_session", "emporia:bargain:v2", config={"max_offers": 4})
+        check(s.get("success"), f"create_session: {s}")
         sid = s["session_id"]
-        # Calls vs Bargain: a bargain is scored out of 10, not won or lost, so it takes no call.
+        commits = (s.get("config") or {}).get("rand", {}).get("commits") or {}
+        check(set(commits) == {self.player}, f"the creator's commitment is the relay's only record of it: {commits}")
         nocall = self.tool(self.player, "commit_move", sid, [1], "sealing a call on a bargain", call=0.6)
-        check(not nocall.get("success") and "takes no call" in nocall.get("error", ""), f"a call on a bargain: {nocall}")
-        time.sleep(2.5)
-        for _ in range(8):
-            self.emporia(self.house_agent, "house", "run", self.house_agent, "--once", "--adopt-after", "2")
-            g = self.tool(self.player, "get_session", sid)
-            if g["status"] == "completed":
+        check(not nocall.get("success"), f"a call on a bargain: {nocall}")
+        j = self.tool(self.merchant, "join_session", sid)
+        check(j.get("success"), f"join_session: {j}")
+        seen: dict[str, dict] = {}
+        for _ in range(60):        # the round is ~90 s after the later commitment
+            for who in (self.player, self.merchant):
+                g = self.tool(who, "get_session", sid)
+                check("walk_away" not in g["state"]["data"] and "deal" not in g["state"]["data"],
+                      "the relay's state holds no hand while the game runs")
+                if (g.get("private") or {}).get("values"):
+                    seen[who] = g["private"]
+            if len(seen) == 2:
                 break
-            check(self.house_agent in g.get("participants", []), f"the house did not adopt the bargain: {g}")
-            check(g.get("private", {}).get("values") and not g["state"]["data"]["deal"]["hands"],
-                  f"the player should see its own values only: {g.get('private')}")
-            if g["current_agent"] != self.player:
-                continue
-            if not g["state"]["data"]["offers"]:
-                bad = self.tool(self.player, "submit_action", sid, "offer", {"keep": {"silk": 9}},
-                                "asking for more silk than there is")
-                check(not bad.get("success") and "Nothing was sent" in bad.get("error", ""), f"illegal offer: {bad}")
-                r = self.tool(self.player, "submit_action", sid, "offer",
-                              {"keep": {"silk": 3, "spice": 2, "amber": 1}}, "opening high to see what they want")
-            else:
-                r = self.tool(self.player, "submit_action", sid, "accept", {}, "their offer is fair enough for me")
-            check(r.get("success"), f"player's move: {r}")
+            time.sleep(5)
         else:
-            raise StepFailed("the bargain did not finish in 8 passes")
+            raise StepFailed(f"the hands never appeared on the players' side: {seen}")
+        bad = self.tool(self.player, "submit_action", sid, "offer", {"keep": {"silk": 9}}, "asking for more silk than there is")
+        check(not bad.get("success") and "Nothing was sent" in bad.get("error", ""), f"illegal offer: {bad}")
+        r = self.tool(self.player, "submit_action", sid, "offer", {"keep": {"silk": 3, "spice": 2, "amber": 1}},
+                      "opening high to see what they want")
+        check(r.get("success"), f"player's offer: {r}")
+        r = self.tool(self.merchant, "submit_action", sid, "accept", {}, "their offer is fair enough for me")
+        check(r.get("success"), f"merchant's accept: {r}")
+        for who in (self.player, self.merchant):
+            r = self.tool(who, "submit_action", sid, "reveal", {}, "revealing my secret, as the rules ask")
+            check(r.get("success"), f"{who}'s reveal: {r}")
+        g = self.tool(self.player, "get_session", sid)
+        check(g["status"] == "completed", f"the bargain did not finish: {g['status']}")
         chat = self.tool(self.player, "get_game_chat", sid)
-        check(set((chat.get("revealed") or {}).get("hands") or {}) == {self.player, self.house_agent},
-              f"the hands are not published beside the chat: {chat}")
+        hands = (chat.get("revealed") or {}).get("hands") or {}
+        for who in (self.player, self.merchant):
+            check(hands.get(who, {}).get("values") == seen[who]["values"],
+                  f"{who}'s published hand is not the one it computed itself: {hands.get(who)} vs {seen[who]['values']}")
 
     def operator(self) -> None:
         """The relay's operator (the merchant) sees its desk — a player's open bug report waiting,
