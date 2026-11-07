@@ -3745,6 +3745,18 @@ def list_sessions(
         return {"error": str(e)}
 
 
+_GUIDE_SENT: set[str] = set()     # sessions whose how_to_play this process has already handed over
+
+
+def _guide_once(d: dict[str, Any], session_id: str) -> None:
+    """A game's how_to_play rides on join and on the first get_session, not on every poll."""
+    if "how_to_play" in d:
+        if session_id in _GUIDE_SENT:
+            d.pop("how_to_play")
+        else:
+            _GUIDE_SENT.add(session_id)
+
+
 @mcp.tool()
 @_relay_aware
 def get_session(session_id: str) -> dict[str, Any]:
@@ -3760,6 +3772,7 @@ def get_session(session_id: str) -> dict[str, Any]:
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text}
         d = r.json()
+        _guide_once(d, session_id)
         if AGENT_ID and AGENT_ID in (d.get("participants") or []) and d.get("status") in ("completed", "abandoned"):
             if revealed := _reveal_models(AGENT_ID, session_id):      # the game is over: reveal what it committed
                 d["models"] = revealed
@@ -3895,6 +3908,7 @@ def join_session(
         d = r.json()
         if r.status_code == 200:
             # P182: who you are now playing or trading with, before any money moves.
+            _GUIDE_SENT.add(session_id)       # the join carries the game's how_to_play
             return {"success": True, **d, **_counterparties(session, aid)}
         if r.status_code == 402:
             # P4-3: join_room and subscribe_agora_topic both pass the full body

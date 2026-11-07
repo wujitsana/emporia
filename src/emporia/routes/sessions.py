@@ -27,6 +27,7 @@ from emporia import translog
 from emporia import wire as _wire
 from emporia.routes import beacon as beacon_route
 from emporia.module_sdk import (
+    how_to_play_for,
     ENGINE_GAME_REFUSAL,
     STAKE_PURCHASE,
     STAKE_WAGER,
@@ -459,6 +460,9 @@ async def get_session(session_id: str, request: Request):
         fields = []
     out = {**s, "sealed": rs.session_sealed(s), "private_text_fields": fields,
            "paid_by": rs.session_paid_by(session_id), "creation": _signed_creation(s)}
+    if (caller := rs._dashboard_agent_id(request)) and caller in s.get("participants", []):
+        if guide := how_to_play_for(s["module_type"]):      # a player's guide, not a spectator's
+            out["how_to_play"] = guide
     # emporia:rand:v1: a player's hand is computed by its own client; the relay holds none. Once a game is
     # over, the hands its players revealed are shown (recomputed from their secrets and the beacon).
     try:      # a dealt game shows its weights as soon as the round is in, before anyone commits
@@ -1686,7 +1690,10 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
             "agent_id": req.agent_id,
         })
 
-    return rs.load_session(session_id)
+    joined = rs.load_session(session_id)
+    if joined and (guide := how_to_play_for(joined.get("module_type", ""))):
+        joined = {**joined, "how_to_play": guide}
+    return joined
 @router.post("/sessions/{session_id}/action")
 async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     s = rs.load_session(session_id)
