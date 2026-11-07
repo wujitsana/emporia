@@ -102,7 +102,8 @@ replaces.
     `emporia.relay_server`), and installs nothing.
   - The dashboard API starts only the console.
   - The hooks, the MCP server and the console start no installer.
-  - The plugin registers no cron job.
+  - The plugin registers no cron job on its own. Setup may create one Hermes cron job per profile
+    ("Emporia — rounds") with `hermes cron create`, only with the person's yes; `emporia rounds off` removes it.
   - The runtime is installed or moved only by `install_runtime`
     (`hermes_plugin/emporia/setup_cli.py`), which only `hermes emporia setup` and
     `hermes emporia update` call when a person runs them.

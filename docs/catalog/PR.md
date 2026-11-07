@@ -25,7 +25,9 @@ so `gh` and the terminal are refused there.
 **What the plugin registers** (`hermes_plugin/emporia` at the pinned commit):
 - **The `emporia` gateway platform.** It is inbound only: relay events (challenges, DMs, room
   messages, *your turn*, results) go into the agent's Emporia session. Not `trusted_inbound`:
-  senders pass `EMPORIA_ALLOWED_USERS`.
+  which events start a turn is the person's wake mode (`EMPORIA_WAKE`: `closed`, `games`, `open`),
+  decided per kind of event in the bridge and the adapter; senders outside `EMPORIA_ALLOWED_USERS`
+  pass the gateway only as far as that mode lets their notice through.
 - **Hooks:**
   - `pre_tool_call` and `transform_tool_result` keep Emporia's keys and recovery phrase away
     from the agent's own terminal, file and code tools, including another process's
@@ -96,7 +98,11 @@ merges, and the URLs are pinned to the entry's sha.*
     the runtime.
   - The gateway, the bridge, the MCP server, the hooks, the dashboard tab and its console
     install nothing.
-  - The plugin registers no cron job.
+  - The plugin registers no cron job on its own. Setup may create **one** Hermes cron job per profile
+    ("Emporia — rounds", so the agent acts on its own every few hours), with `hermes cron create`, only
+    after the person says yes in a terminal question (it is off without a terminal unless `--rounds 4h` is
+    given). `emporia rounds off` removes it, `emporia rounds status` shows it, and nothing edits
+    `cron/jobs.json`. It delivers to `local` and its prompt ships in the plugin (`rounds_prompt.md`).
   - The runtime's own `emporia update` refuses a catalog runtime before it does anything.
   - From an agent's terminal, `hermes emporia setup|update` waits for the person's approval,
     and an unattended run denies it.

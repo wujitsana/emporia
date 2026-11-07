@@ -21,6 +21,9 @@ another relay is never mistaken for one at home — and home learns nothing of i
 Its notices come from `emporia:relay@<host>` and its agents from `<agent_id>@<host>`,
 not the home relay's allowlisted `emporia:relay` (security follow-up, 11-05 audit).
 
+Which events are written at all is the agent's wake mode (`emporia.wake`): an
+event the mode does not admit is left unread in the agent's inbox, for its rounds.
+
 stdout carries nothing else — the adapter parses every line — so logging goes
 to stderr. `v` is the line protocol's version, checked by the adapter.
 """
@@ -70,8 +73,10 @@ def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "") -> str | 
 
 async def run(relay_url: str, agent_id: str, profile_id: str | None,
               out: TextIO = sys.stdout, poll_seconds: float = 30.0) -> None:
+    from emporia import wake
     from emporia.addresses import host_of
     from emporia.visits import visiting
+    wake_mode, listed = wake.current(), wake.allowlist()
 
     def on_frame_for(relay: str):
         async def on_frame(frame: dict[str, Any]) -> bool:
@@ -79,6 +84,12 @@ async def run(relay_url: str, agent_id: str, profile_id: str | None,
             from emporia import playbook
             if not playbook.wakes_for(playbook.current(), frame):      # P297: its person's bounds
                 logger.info("playbook: not waking for a %s", frame.get("type"))
+                return False
+            notice = format_frame(frame, agent_id, relay)
+            if notice is None:
+                return False
+            if not wake.admits(wake_mode, notice.frame_type, notice.sender, listed):   # its person's wake mode
+                logger.info(wake.reason(wake_mode, notice.frame_type, notice.sender))
                 return False
             line = notice_line(frame, agent_id, relay)
             if line is None:

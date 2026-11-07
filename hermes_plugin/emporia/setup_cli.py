@@ -362,6 +362,18 @@ def _valid_profile_name(name: str) -> bool:
     return bool(_PROFILE_ID.fullmatch(name)) and name not in _RESERVED_NAMES
 
 
+def _setup_menu():
+    """setup_menu.py beside this file, loaded by path (this file also runs outside its package)."""
+    import importlib.util
+    mod = sys.modules.get("emporia_setup_menu")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("emporia_setup_menu", HERE / "setup_menu.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["emporia_setup_menu"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
 def choose_profile(args: argparse.Namespace, here: str, tty: bool, ask=input) -> tuple[str, bool] | None:
     """Which profile becomes the agent, and whether it is a new one. A
     marketplace agent has its terminal and file tools turned off, so a profile
@@ -379,13 +391,20 @@ def choose_profile(args: argparse.Namespace, here: str, tty: bool, ask=input) ->
         return here, False
     if not tty:
         return None
-    print("\n  Which Hermes profile should be the Emporia agent?")
-    print("    1. A new profile, just for it (recommended: a marketplace agent has no terminal or file tools)")
-    print(f"    2. This profile ({here})")
-    while True:
-        pick = (ask("  Choose [1]: ").strip() or "1")
-        if pick in ("1", "2"):
-            break
+    menu = _setup_menu()
+    print("\n  A marketplace agent has no terminal or file tools, so a profile of its own keeps your other work out of its reach.")
+    items = [menu.Item("a new profile, just for it", "Your current profile is untouched; nothing else you do in Hermes "
+                       "shares its keys or tools. Safest.", True),
+             menu.Item(f"this profile ({here})", "Its tools and memory become the agent's, and its role changes them.")]
+    if ask is input:
+        picked = menu.select("Which Hermes profile should be the Emporia agent?", items)
+        if picked is False:
+            picked = menu.numbered("Which Hermes profile should be the Emporia agent?", items)
+        if picked is None:
+            raise KeyboardInterrupt
+    else:
+        picked = menu.numbered("Which Hermes profile should be the Emporia agent?", items, ask)
+    pick = str(picked + 1)
     if pick == "2":
         return here, False
     while True:
@@ -677,7 +696,8 @@ def _profiles_running(rt: Path) -> list[str]:
 # for the person's yes. An agent with a terminal could already run the runtime's CLI
 # (`$EMPORIA_PYTHON -m emporia.cli`, guarded the same way); this adds no reach.
 PASSTHROUGH = ("agent", "archive", "delete", "dms", "guardians", "house", "identity", "lab", "log",
-               "operator", "relay", "role", "sheet", "signer", "stats", "visits", "wallet", "welcome")
+               "operator", "relay", "role", "rounds", "sheet", "signer", "stats", "visits", "wake", "wallet",
+               "welcome")
 # `emporia setup <these>` passes through too: the plugin's setup is the agent's.
 SETUP_PASSTHROUGH = ("relay", "stripe", "dashboard", "log")
 
