@@ -29,7 +29,6 @@ import json
 import os
 import re
 import sys
-from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
