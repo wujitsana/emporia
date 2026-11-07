@@ -128,25 +128,20 @@ def _doctor(root, capsys, monkeypatch):
     return capsys.readouterr().out
 
 
-def test_doctor_checks_old_skill_copies_api_server_and_turn_cap(profiles, capsys, monkeypatch):
+def test_doctor_checks_api_server_and_turn_cap(profiles, capsys, monkeypatch):
     import json
     import time
     root, _ = profiles
     prof = _agent_profile(root, env="API_SERVER_KEY=" + "k" * 20 + "\nAPI_SERVER_HOST=0.0.0.0\nEMPORIA_DAILY_TURNS=2\n")
     now = time.time()
     (prof / "emporia_turns.json").write_text(json.dumps({"turns": [now - 10, now - 100, now - 90000], "notified": 0}))
-    (prof / "skills" / "emporia").mkdir(parents=True)                 # P284's copy, before P295
-    (prof / "skills" / ".emporia-copies.json").write_text(json.dumps(["emporia"]))
     out = _doctor(root, capsys, monkeypatch)
-    assert "older copies of Emporia's skills in its skills/ (emporia)" in out and "emporia agent refresh zed" in out
     assert "api_server listens on 0.0.0.0" in out and "make zed act and pay" in out
     assert "relay-started turns in 24 h: 2 / 2 — at the cap" in out
     assert "k" * 20 not in out
 
-    cli.installer().remove_old_skill_copies(prof)
     (prof / ".env").write_text("API_SERVER_KEY=" + "k" * 20 + "\n")   # key alone: enabled, loopback default
     out = _doctor(root, capsys, monkeypatch)
-    assert "Emporia's skills come from its plugin, read-only" in out
     assert "api_server listens" not in out
     assert "relay-started turns in 24 h: 2 / 300" in out
 
@@ -162,23 +157,6 @@ def test_doctor_api_server_off_or_loopback_is_quiet(profiles, capsys, monkeypatc
     cfg["platforms"]["api_server"]["enabled"] = False
     (prof / "config.yaml").write_text(yaml.dump(cfg))
     assert "api_server listens" not in _doctor(root, capsys, monkeypatch)
-
-
-def test_old_copies_of_emporias_skills_are_removed_and_the_operators_own_kept(tmp_path, capsys):
-    """P295: the skills ship in the plugin, so what installers since P284 put in a
-    profile's skills/ — a link into the repo, or a recorded copy — goes; a folder
-    Emporia did not put there stays."""
-    import json
-    inst = cli.installer()
-    prof = tmp_path / "zed"
-    (prof / "skills" / "emporia-setup").mkdir(parents=True)
-    (prof / "skills" / "emporia.md").symlink_to(tmp_path / "gone")             # an older link
-    (prof / "skills" / ".emporia-copies.json").write_text(json.dumps(["emporia-setup"]))
-    (prof / "skills" / "emporia").mkdir()                                      # not recorded: the operator's
-    inst._install_skill_link(prof)
-    assert not (prof / "skills" / "emporia-setup").exists() and not (prof / "skills" / "emporia.md").is_symlink()
-    assert (prof / "skills" / "emporia").is_dir() and not (prof / "skills" / ".emporia-copies.json").exists()
-    assert "the plugin carries Emporia's skills now" in capsys.readouterr().out
 
 
 def test_the_plugin_passes_the_catalogs_own_validation_and_registers_everything(tmp_path):

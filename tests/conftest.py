@@ -614,7 +614,7 @@ def signed_topic_act(act: str, slug: str, target: str, creator: str) -> dict:
 # profile and the root. Whatever a later change forgets to stand in for, the
 # installer's writes into this machine's Hermes fail the test instead.
 _INSTALLER_WRITES = ("install_platform_plugin", "install_dashboard_plugin", "_install_skill_link",
-                     "remove_old_skill_copies", "write_tab_settings", "save_yaml", "_write_private",
+                     "write_tab_settings", "save_yaml", "_write_private",
                      "_place_plugin", "_enable_plugin", "create_profile", "install_into_profile")
 
 

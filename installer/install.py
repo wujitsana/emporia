@@ -105,9 +105,7 @@ _RELAY_ONLY_ENV_KEYS = frozenset({
 
 
 def _apply_guardrails_env(env_block: dict[str, str], *, disabled: bool = False) -> None:
-    """The regex firewall: enforce, or off. P151 removed the NVIDIA-hosted
-    semantic layer; its old setting is dropped from any profile set up again."""
-    env_block.pop("EMPORIA_NEMO_GUARDRAILS_ENABLED", None)
+    """The regex firewall: enforce, or off."""
     if disabled:
         env_block["EMPORIA_GUARDRAILS_MODE"] = "off"
         return
@@ -960,7 +958,6 @@ def install_into_profile(
         env_lines, _ = _set_env_line(env_lines, "STRIPE_PROFILE_ID", stripe_profile_id)
     elif not stripe_secret_key:
         env_lines = [ln for ln in env_lines if not ln.startswith("STRIPE_PROFILE_ID=")]
-    env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_NEMO_GUARDRAILS_ENABLED=")]
     env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_MPP_TEMPO_ENABLED=")]
     if max_budget_cents is not None:
         if max_budget_cents > 0:
@@ -1482,9 +1479,7 @@ def _hermes_optional_skills_root() -> Path | None:
 
 
 # P295: one plugin, `<home>/plugins/emporia`, keyed `emporia` in plugins.enabled.
-# Before, the platform plugin alone sat in `plugins/platforms/emporia`, keyed so.
 PLUGIN_KEY = "emporia"
-LEGACY_PLATFORM_KEY = "platforms/emporia"
 # The relay's own reports (your turn, results) are attributed to this sender by
 # frames.RELAY_SENDER; it is allowlisted so they reach the agent. Other agents'
 # messages pass only if the operator adds them (or sets EMPORIA_WAKE=open).
@@ -1558,13 +1553,12 @@ def _place_plugin(dst: Path, dry_run: bool = False) -> bool:
 
 
 def _enable_plugin(profile_dir: Path) -> None:
-    """`emporia` in plugins.enabled (and out of disabled); the old key
-    `platforms/emporia` (P92-P294, the platform plugin alone) out of both."""
+    """`emporia` in plugins.enabled (and out of disabled)."""
     config_path = profile_dir / "config.yaml"
     config = load_yaml(config_path) if config_path.exists() else {}
     plugins = config.get("plugins") if isinstance(config.get("plugins"), dict) else {}
-    enabled = [e for e in (plugins.get("enabled") or []) if e != LEGACY_PLATFORM_KEY]
-    disabled = [d for d in (plugins.get("disabled") or []) if d not in (PLUGIN_KEY, LEGACY_PLATFORM_KEY)]
+    enabled = list(plugins.get("enabled") or [])
+    disabled = [d for d in (plugins.get("disabled") or []) if d != PLUGIN_KEY]
     if PLUGIN_KEY not in enabled:
         enabled.append(PLUGIN_KEY)
     if enabled != plugins.get("enabled") or disabled != (plugins.get("disabled") or []):
@@ -1629,11 +1623,7 @@ def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
     global _GATEWAY_RESTART_NEEDED, _DASHBOARD_RESTART_NEEDED
     if profile_dir.name not in _TOUCHED_PROFILES:
         _TOUCHED_PROFILES.append(profile_dir.name)
-    legacy = profile_dir / "plugins" / "platforms" / "emporia"
     changed = _place_plugin(dst)
-    if legacy.exists():                       # P295: the platform plugin alone, before
-        shutil.rmtree(legacy)
-        changed = True
     if changed:
         _GATEWAY_RESTART_NEEDED = _DASHBOARD_RESTART_NEEDED = True     # the tab is in it too
         print(f"  + Emporia plugin: {dst} (new or changed — needs a gateway restart)")
@@ -1668,41 +1658,6 @@ def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
     write_tab_settings(profile_dir, profile_dir, values.get("EMPORIA_RELAY_URL", ""))
 
 
-# P284 copied Emporia's own skills into each agent profile and locked them there.
-# P295: they ship in the plugin (hermes_plugin/emporia/skills), which registers
-# them read-only as `emporia:emporia` and `emporia:emporia-setup`; what the
-# installer once put in a profile's skills/ is removed.
-OLD_SKILL_FILES: tuple[str, ...] = ("emporia", "emporia-setup", "emporia.md")
-_SKILL_COPIES = ".emporia-copies.json"     # in skills/: which of them Emporia copied there
-
-
-def old_skill_copies(profile_dir: Path) -> list[Path]:
-    """Emporia's skills where an installer before P295 put them: its links into
-    the repo, and the copies it recorded. A folder of the operator's own is not one."""
-    skills_dir = profile_dir / "skills"
-    try:
-        data = json.loads((skills_dir / _SKILL_COPIES).read_text())
-        copies = {str(n) for n in data} if isinstance(data, list) else set()
-    except (OSError, ValueError):
-        copies = set()
-    return [d for n in OLD_SKILL_FILES if (d := skills_dir / n).is_symlink() or (d.exists() and n in copies)]
-
-
-def remove_old_skill_copies(profile_dir: Path, dry_run: bool = False) -> None:
-    for old in old_skill_copies(profile_dir):
-        if dry_run:
-            print(f"  [dry-run] Would remove {old} (the plugin carries Emporia's skills now)")
-            continue
-        if old.is_symlink() or old.is_file():
-            old.unlink()
-        else:
-            shutil.rmtree(old)
-        print(f"  - {old} (the plugin carries Emporia's skills now: emporia:{old.stem})")
-    marker = profile_dir / "skills" / _SKILL_COPIES
-    if marker.exists() and not dry_run:
-        marker.unlink()
-
-
 def _install_skill_link(
     profile_dir: Path,
     dry_run: bool = False,
@@ -1713,9 +1668,8 @@ def _install_skill_link(
 
     Links the payment skills (mpp-agent, stripe-link-cli, stripe-projects) from
     the Hermes install's optional-skills catalog, and with dev_skills the repo's
-    dev skills. Removes the copies of Emporia's own skills older installs made.
+    dev skills.
     """
-    remove_old_skill_copies(profile_dir, dry_run=dry_run)
     skills_dir = profile_dir / "skills"
     links: list[tuple[Path, Path]] = []
     optional_root = _hermes_optional_skills_root()

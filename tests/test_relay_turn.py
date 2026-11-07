@@ -121,7 +121,6 @@ def test_doctor_reports_wide_open_relay_turns(tmp_path, capsys, monkeypatch):
     prof.mkdir()
     (prof / "config.yaml").write_text(json.dumps({"platform_toolsets": {"emporia": ["terminal", "emporia"]}}))
     monkeypatch.setattr(cli, "turns_in_24h", lambda p: 0)
-    monkeypatch.setattr(cli, "doctor_skills", lambda rep, p: None)
     cli.doctor_agent_hardening(Report(), prof, {"EMPORIA_RELAY_TURN_TOOLS": "all"})
     text = capsys.readouterr().out
     assert "EMPORIA_RELAY_TURN_TOOLS=all" in text and "platform_toolsets.emporia" in text and "terminal" in text

@@ -4923,18 +4923,6 @@ def _plugin_origin(profile: Path) -> str:
     return f"installed from {source}" if source else "installed (Hermes keeps no record of where from)"
 
 
-def doctor_skills(rep: Report, profile: Path) -> None:
-    """P295: Emporia's skills are the plugin's (`emporia:emporia`, `emporia:emporia-setup`),
-    read-only to the agent and to Hermes's background review. No older copies beside them."""
-    inst = installer()
-    old = inst.old_skill_copies(profile)
-    if old:
-        rep.warn(f"older copies of Emporia's skills in its skills/ ({', '.join(o.name for o in old)}), "
-                 "beside the plugin's own", f"emporia agent refresh {profile.name}")
-    else:
-        rep.ok("Emporia's skills come from its plugin, read-only (emporia:emporia, emporia:emporia-setup)")
-
-
 def api_server_host(profile: Path, dotenv: dict[str, str]) -> str | None:
     """The host Hermes's api_server listens on for this profile, or None when it is off.
     On when config.yaml enables it (platforms.api_server, or under gateway.), or when
@@ -4969,7 +4957,6 @@ RISKY_TOOLSETS = frozenset({"terminal", "file", "code_execution", "browser", "co
 
 def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
     name = profile.name
-    doctor_skills(rep, profile)
     host = api_server_host(profile, dotenv)
     if host is not None and host.lower().strip("[]") not in ("127.0.0.1", "::1", "localhost"):
         rep.warn(f"api_server listens on {host} — anyone with API_SERVER_KEY can make {name} act and pay "

@@ -36,11 +36,9 @@ def test_warn_if_a2a_enabled_silent_when_absent(capsys):
 
 
 def test_guardrails_are_the_regex_firewall_only():
-    """P151: the NVIDIA-hosted semantic layer is gone. Setting a profile up
-    writes only the firewall's mode, drops the old NeMo setting from a profile
-    that had it, and leaves an NVIDIA_API_KEY alone — it may be the key an
-    agent's own model runs on."""
-    env_block = {"EMPORIA_NEMO_GUARDRAILS_ENABLED": "1", "NVIDIA_API_KEY": "nvapi-model-key"}
+    """Setting a profile up writes only the firewall's mode and leaves an
+    NVIDIA_API_KEY alone — it may be the key an agent's own model runs on."""
+    env_block = {"NVIDIA_API_KEY": "nvapi-model-key"}
     installer._apply_guardrails_env(env_block, disabled=False)
     assert env_block == {"EMPORIA_GUARDRAILS_MODE": "enforce", "NVIDIA_API_KEY": "nvapi-model-key"}
     off: dict[str, str] = {}
@@ -170,11 +168,8 @@ def test_the_testnet_runner_refuses_a_mainnet_chain_id():
 def test_the_platform_plugin_is_installed_enabled_and_configured(tmp_path):
     profile = tmp_path / "profile"
     profile.mkdir()
-    (profile / "config.yaml").write_text("plugins:\n  enabled: [other/plugin, platforms/emporia]\n")
+    (profile / "config.yaml").write_text("plugins:\n  enabled: [other/plugin]\n")
     (profile / ".env").write_text("EMPORIA_ALLOWED_USERS=trusted_agent\nOTHER=1\nEMPORIA_RELAY_URL=http://r.test\n")
-    legacy = profile / "plugins" / "platforms" / "emporia"     # the platform plugin alone, before P295
-    legacy.mkdir(parents=True)
-    (legacy / "plugin.yaml").write_text("name: emporia-platform\n")
 
     installer.install_platform_plugin(profile)
     installer.install_platform_plugin(profile)   # idempotent
@@ -183,7 +178,7 @@ def test_the_platform_plugin_is_installed_enabled_and_configured(tmp_path):
     for part in ("plugin.yaml", "adapter.py", "setup_cli.py", "skills/emporia/SKILL.md",
                  "dashboard/manifest.json", "dashboard/dist/index.js"):
         assert (dst / part).exists(), part
-    assert not (dst / "__pycache__").exists() and not legacy.exists()
+    assert not (dst / "__pycache__").exists()
     config = installer.load_yaml(profile / "config.yaml")
     assert config["plugins"]["enabled"] == ["other/plugin", "emporia"]
     import json
