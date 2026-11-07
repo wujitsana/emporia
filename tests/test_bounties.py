@@ -1,7 +1,7 @@
 """Bounty rules (P72-2). Pure — no relay, no database, no network.
 
 The Sybil test is the one that matters. Everything else here is a guard on a
-guard; `one_nous_account_gets_one_entry` is the rule the money rests on.
+guard; `one_operator_gets_one_entry` is the rule the money rests on.
 """
 from datetime import UTC, datetime, timedelta
 
@@ -47,11 +47,10 @@ def _spec(**kw):
 def _enter(**kw):
     return may_enter(
         agent_id=kw.get("agent_id", "entrant"),
-        agent_nous_user_id=kw.get("agent_nous_user_id", "nous_1"),
-        is_nous_verified=kw.get("is_nous_verified", True),
+        agent_operator=kw.get("agent_operator", "label:op_1"),
         spec=kw.get("spec") or _spec(),
-        funder_nous_user_id=kw.get("funder_nous_user_id", "nous_funder"),
-        existing_entrant_nous_ids=kw.get("existing_entrant_nous_ids", set()),
+        funder_operator=kw.get("funder_operator", "label:op_funder"),
+        existing_entrant_operators=kw.get("existing_entrant_operators", set()),
         now=kw.get("now", NOW),
     )
 
@@ -91,41 +90,26 @@ class TestSpec:
 
 
 class TestWhoMayEnter:
-    def test_one_nous_account_gets_one_entry(self):
-        """THE rule. nous_user_id is one-to-many by design — the index on it is
-        deliberately non-unique because "one Nous user may operate multiple
-        agent personas". Counting entries per agent_id would let one operator
-        buy a contest in lottery tickets for the price of one Nous account."""
-        ok, _ = _enter(agent_id="persona_a", agent_nous_user_id="nous_7")
+    def test_one_operator_gets_one_entry(self):
+        """THE rule. An operator runs any number of agents, so counting entries per agent_id would let one
+        operator buy a contest in lottery tickets. Entries are counted per operator."""
+        ok, _ = _enter(agent_id="agent_a", agent_operator="label:op_7")
         assert ok
-        # A second, entirely distinct agent — different agent_id, different
-        # keypair, genuinely nous_verified — but the same human behind it.
+        # A second, entirely distinct agent — different agent_id, different keypair — but the same operator.
         ok, why = _enter(
-            agent_id="persona_b", agent_nous_user_id="nous_7",
-            existing_entrant_nous_ids={"nous_7"},
+            agent_id="agent_b", agent_operator="label:op_7",
+            existing_entrant_operators={"label:op_7"},
         )
-        assert not ok and "one per account" in why
+        assert not ok and "one per operator" in why
 
     def test_the_funder_cannot_win_their_own_prize(self):
         ok, why = _enter(agent_id="funder")
         assert not ok and "own prize" in why
 
-    def test_nor_under_a_second_persona(self):
-        """The wash trade the agent_id check alone would miss: a different
-        agent_id sharing the funder's Nous account."""
-        ok, why = _enter(agent_id="funders_other_face", agent_nous_user_id="nous_funder")
-        assert not ok and "shares a Nous account" in why
-
-    def test_key_only_agents_are_not_entrants(self):
-        ok, why = _enter(is_nous_verified=False)
-        assert not ok and "nous_verified" in why
-
-    def test_verified_but_unattributable_is_refused_not_waved_through(self):
-        """nous_verified with no account id cannot be counted against an
-        account, so it cannot be Sybil-limited. Refused rather than admitted as
-        an unlimited entrant — 'could not tell' is not 'yes'."""
-        ok, why = _enter(agent_nous_user_id=None)
-        assert not ok and "cannot be counted" in why
+    def test_nor_under_a_second_agent(self):
+        """The wash trade the agent_id check alone would miss: a different agent_id sharing the funder's operator."""
+        ok, why = _enter(agent_id="funders_other_face", agent_operator="label:op_funder")
+        assert not ok and "shares an operator" in why
 
     def test_entry_closes_at_the_deadline(self):
         ok, why = _enter(now=SOON)
@@ -133,7 +117,7 @@ class TestWhoMayEnter:
 
     def test_a_clean_entrant_still_gets_in(self):
         """The guard has to admit somebody, or it is just a wall."""
-        ok, why = _enter(agent_id="stranger", agent_nous_user_id="nous_stranger")
+        ok, why = _enter(agent_id="stranger", agent_operator="label:op_stranger")
         assert ok and why == ""
 
 
@@ -179,13 +163,13 @@ class TestCapacity:
         assert (spec.min_entrants, spec.max_entrants) == (2, 2)
 
     def test_entry_closes_when_the_seats_are_taken(self):
-        ok, why = _enter(existing_entrant_nous_ids={"nous_a", "nous_b"})
+        ok, why = _enter(existing_entrant_operators={"label:a", "label:b"})
         assert not ok and "full" in why
 
     def test_the_last_seat_is_still_available(self):
         """The capacity check must admit the entrant who fills the contest, not
         refuse them — an off-by-one here silently halves every bounty."""
-        ok, why = _enter(existing_entrant_nous_ids={"nous_a"})
+        ok, why = _enter(existing_entrant_operators={"label:a"})
         assert ok and why == ""
 
 

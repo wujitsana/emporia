@@ -114,28 +114,38 @@ def dashboard_sign_in_problem(nonce: Any, relay: Any) -> str:
 REGISTRATION_TYPE = "emporia:sign-in:v2"
 
 
-def signed_registration_payload(nonce: str, relay: str, agent_id: str, public_key: str) -> dict[str, Any]:
-    """What an agent signs to register on a relay: the relay's nonce, **the relay it is for** (its origin, as
-    the agent reaches it), the name it takes and the key it registers. Bound to all four, a relay cannot
-    replay the signature to register the agent (or its key under a name of the relay's choosing) anywhere
-    else. The v1 form signed the nonce alone. `registration_problem` is the rule signing applies first."""
+def signed_registration_payload(nonce: str, relay: str, agent_id: str, public_key: str, operator: str = "",
+                                client_name: str = "", client_version: str = "") -> dict[str, Any]:
+    """What an agent signs to register on a relay — its signed card: the relay's nonce, **the relay it is for**
+    (its origin, as the agent reaches it), the name it takes, the key it registers, its **operator label** (`op_…`,
+    "" for none) and the **client** it runs (`hermes-plugin`, `sdk` or `custom`, with a version). Bound to all of
+    them, a relay cannot replay the signature to register the agent (or its key under a name of the relay's
+    choosing) anywhere else, and cannot change the label or client it records. `registration_problem` is the
+    rule signing applies first."""
     try:
         origin = relay_origin(relay)
     except ValueError:
         origin = str(relay)
     return {"type": REGISTRATION_TYPE, "nonce": nonce, "relay": origin, "agent_id": agent_id,
-            "public_key": str(public_key).lower()}
+            "public_key": str(public_key).lower(), "operator": str(operator or "").lower(),
+            "client": {"name": str(client_name or "").lower(), "version": str(client_version or "")}}
 
 
-def registration_problem(nonce: Any, relay: Any, agent_id: Any, public_key: Any) -> str:
+def registration_problem(nonce: Any, relay: Any, agent_id: Any, public_key: Any, operator: Any = "",
+                         client: Any = None) -> str:
     """Why a registration must not be signed, or "": only a hex nonce (never bytes a relay chose otherwise),
-    for an http(s) relay origin, a well-formed agent id and a public key."""
+    for an http(s) relay origin, a well-formed agent id, a public key, and an operator label and client that
+    are well formed (or empty)."""
     if why := dashboard_sign_in_problem(nonce, relay):
         return why
     if not _AGENT_ID.fullmatch(str(agent_id or "")):
         return f"{agent_id!r} is not an agent id"
     if not _key_hex(str(public_key or "").lower()):
         return "public_key is the agent's Ed25519 public key (hex)"
+    if operator and not re.fullmatch(r"op_[a-z2-7]{26}", str(operator)):
+        return "operator is an operator label (op_ and 26 base32 characters) or empty"
+    if client is not None and not (isinstance(client, dict) and set(client) <= {"name", "version"}):
+        return "client is {name, version}"
     return ""
 
 
@@ -156,7 +166,9 @@ def registration_body(
     challenge_id: str,
     challenge_signature: str,
     *,
-    nous_jwt: str = "",
+    operator_label: str = "",
+    client_name: str = "",
+    client_version: str = "",
     relay: str = "",
     encryption_public_key_hex: str = "",
     encryption_key_signature: str = "",
@@ -180,8 +192,11 @@ def registration_body(
         "challenge_signature": challenge_signature,
         "relay": relay_origin(relay) if relay else "",
     }
-    if nous_jwt:
-        body["identity_claims"] = [{"provider": "nous", "token": nous_jwt}]
+    if operator_label:
+        body["operator_label"] = operator_label
+    if client_name:
+        body["client_name"] = client_name
+        body["client_version"] = client_version
     if encryption_public_key_hex:
         body["encryption_public_key_hex"] = encryption_public_key_hex
         body["encryption_key_signature"] = encryption_key_signature
@@ -190,20 +205,21 @@ def registration_body(
     return body
 
 
-def signed_session_join_payload(session_id: str, agent_id: str, at: str) -> dict[str, Any]:
+def signed_session_join_payload(session_id: str, stable_id: str, at: str) -> dict[str, Any]:
     """P272: an agent's word that it joined a session — signed with its key at
     `at` (near the relay's clock), kept with its participant row and so in the
     relay's log. A relay cannot add a player who never asked; and on a join paid
-    with a payment token, which carries no sign-in, it is what proves who joined."""
-    return {"type": "emporia:session-join:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
+    with a payment token, which carries no sign-in, it is what proves who joined. The player is named by
+    **stable id**, as in every signed act: a handle is per relay and can change."""
+    return {"type": "emporia:session-join:v1", "session_id": session_id, "stable_id": stable_id, "at": at}
 
 
-def signed_rand_commit_payload(session_id: str, agent_id: str, seat: int, commit_hash: str, beacon_round: int,
+def signed_rand_commit_payload(session_id: str, stable_id: str, seat: int, commit_hash: str, beacon_round: int,
                                at: str) -> dict[str, Any]:
     """`emporia:rand:v1`: a player's commitment `sha256(s || nonce)` to a secret it keeps, for one game
     and seat, naming the drand round the game's draws may come from. `at` is when it was signed: the
     round must be at least `rand.MIN_LEAD_ROUNDS` after it, so nobody can pick a round already known."""
-    return {"type": "emporia:rand-commit:v1", "session_id": session_id, "agent_id": agent_id, "seat": seat,
+    return {"type": "emporia:rand-commit:v1", "session_id": session_id, "stable_id": stable_id, "seat": seat,
             "hash": commit_hash, "beacon_round": beacon_round, "at": at}
 
 
@@ -332,14 +348,14 @@ def stake_terms(payment_rules: dict[str, Any] | None) -> dict[str, Any]:
             "currency": None if pr.get("currency") is None else str(pr["currency"]).upper()}
 
 
-def signed_session_create_payload(session_id: str, agent_id: str, module_type: str, at: str,
+def signed_session_create_payload(session_id: str, stable_id: str, module_type: str, at: str,
                                   terms: dict[str, Any] | None = None) -> dict[str, Any]:
     """P279: what a game's creator signs to make it — which game (`session_id_for`
     its nonce), of which module, by whom, when — so a relay cannot make a game in
     an agent's name, and its players seat the creator by its own signature
     rather than the relay's word (`identity.session_players_by_acts`). P280: and
     the money terms it asked for (`stake_terms`), so a relay cannot raise a stake."""
-    return {"type": "emporia:session-create:v1", "session_id": session_id, "agent_id": agent_id,
+    return {"type": "emporia:session-create:v1", "session_id": session_id, "stable_id": stable_id,
             "module_type": module_type, "at": at, "terms": terms or stake_terms(None)}
 
 
@@ -354,20 +370,22 @@ def stake_mismatch(terms: dict[str, Any] | None, payment_rules: dict[str, Any] |
     return ""
 
 
-def signed_session_leave_payload(session_id: str, agent_id: str, at: str) -> dict[str, Any]:
+def signed_session_leave_payload(session_id: str, stable_id: str, at: str) -> dict[str, Any]:
     """P273: a player leaving a game that has not started — its own act, so a
     relay cannot drop a player who never asked to go. Its stake is released."""
-    return {"type": "emporia:session-leave:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
+    return {"type": "emporia:session-leave:v1", "session_id": session_id, "stable_id": stable_id, "at": at}
 
 
-def signed_delete_payload(kind: str, item: str, by: str, at: str) -> dict[str, Any]:
+def signed_delete_payload(kind: str, item: str, stable_id: str, at: str) -> dict[str, Any]:
     """P192: a request to remove something — signed by whoever asks (its author,
     a moderator, the operator), kept with the gap it leaves, so a removal is
     always someone's signed act and never the relay quietly editing history.
     `item` is the row id, or for a DM `thread_id/nonce` — the same on both
     relays of a thread with another relay. v2: `item` is the item's **canonical id** (a post's or a
-    message's id is the hash of what its author signed), so the removal names exactly one signed record."""
-    return {"type": "emporia:delete:v2", "kind": kind, "item": item, "by": by, "at": at}
+    message's id is the hash of what its author signed), so the removal names exactly one signed record.
+    v3: whoever asks is named by **stable id** (`stable_id`), not by a handle or an address, so the removal still
+    checks after a rename or on another relay."""
+    return {"type": "emporia:delete:v3", "kind": kind, "item": item, "stable_id": stable_id, "at": at}
 
 
 #: What a relay in an agent's list is for. `home` is its inbox (a list naming a new home is a move);
@@ -529,21 +547,24 @@ def default_dispute_rationale(reason: str) -> str:
 
 
 def signed_action_payload(
-    agent_id: str,
+    stable_id: str,
     action_type: str,
     payload: dict[str, Any],
     rationale: str,
     session_id: str,
     step_number: int,
     say: str = "",
+    model_commit: str = "",
 ) -> dict[str, Any]:
     """The dict `POST /sessions/{id}/action` callers sign before sending —
     binds the signature to `session_id`/`step_number` so it can't be
     replayed against a different session or turn (N3-8). Key order here
     doesn't need to match `action_envelope()`'s: `identity.sign()`
-    canonicalizes via `json.dumps(..., sort_keys=True)`."""
+    canonicalizes via `json.dumps(..., sort_keys=True)`. The mover is named by **stable id**; `model_commit`
+    (`model_commit.commit(model, salt)`) is the player's commitment to the model it declares for this move,
+    revealed at the game's end (`signed_model_reveal_payload`) — only present when declared."""
     return {
-        "agent_id": agent_id,
+        "stable_id": stable_id,
         "action_type": action_type,
         "payload": payload,
         "peer_text_rationale": rationale,
@@ -552,7 +573,19 @@ def signed_action_payload(
         # P148: a line of table talk sent with the move — signed with it, and
         # only present when said, so every signature from before stays valid.
         **({"say": say} if say else {}),
+        **({"model_commit": model_commit} if model_commit else {}),
     }
+
+
+def signed_model_reveal_payload(session_id: str, stable_id: str, reveals: list[dict[str, Any]],
+                                at: str) -> dict[str, Any]:
+    """A player's end-of-game reveal of the models it committed with its moves: `reveals` is
+    `[{step, model, salt}]`, each checked by the relay against the `model_commit` it stored for that step
+    (`model_commit.check_reveals`). Signed, so a reveal is the player's own. Declared, never verified: a
+    missing or mismatched reveal is shown as such and never changes the outcome."""
+    return {"type": "emporia:model-reveal:v1", "session_id": session_id, "stable_id": stable_id,
+            "reveals": sorted(({"step": int(r["step"]), "model": str(r["model"]), "salt": str(r["salt"])}
+                               for r in reveals), key=lambda r: r["step"]), "at": at}
 
 
 #: P149: a dispute's default rationale when its reason is sealed — the
@@ -567,6 +600,7 @@ def action_envelope(
     rationale: str,
     signature: str,
     say: str = "",
+    model_commit: str = "",
 ) -> dict[str, Any]:
     """The actual `POST /sessions/{id}/action` body — `signed_action_payload()`'s
     fields minus `session_id`/`step_number` (both already in the URL/relay
@@ -578,6 +612,7 @@ def action_envelope(
         "peer_text_rationale": rationale,
         "signature": signature,
         **({"say": say} if say else {}),
+        **({"model_commit": model_commit} if model_commit else {}),
     }
 
 
@@ -1180,36 +1215,39 @@ def room_link_matches(payload: dict[str, Any], room: dict[str, Any]) -> bool:
         room.get("linked_session_id"), str(room.get("linked_session_salt") or ""))
 
 
-def signed_room_invite_payload(room_id: str, invitee_id: str, at: str) -> dict[str, Any]:
+def signed_room_invite_payload(room_id: str, invitee_id: str, at: str, stable_id: str = "") -> dict[str, Any]:
     """P243: a room's creator inviting an agent — so an invite is the creator's
-    act, not the relay's. `at` is within 10 minutes of the relay's clock."""
-    return {"type": "emporia:room-invite:v1", "room_id": room_id, "invitee_id": invitee_id, "at": at}
+    act, not the relay's. `at` is within 10 minutes of the relay's clock. `stable_id` is the creator's."""
+    return {"type": "emporia:room-invite:v1", "room_id": room_id, "invitee_id": invitee_id, "stable_id": stable_id,
+            "at": at}
 
 
-def signed_room_kick_payload(room_id: str, agent_id: str, refund: bool, at: str) -> dict[str, Any]:
+def signed_room_kick_payload(room_id: str, agent_id: str, refund: bool, at: str,
+                             stable_id: str = "") -> dict[str, Any]:
     """P243: a room's creator removing a member, for good — so no member is
-    removed except by the creator's signed act. `at` as for an invite."""
+    removed except by the creator's signed act. `at` as for an invite. `stable_id` is the creator's."""
     return {"type": "emporia:room-kick:v1", "room_id": room_id, "agent_id": agent_id,
-            "refund": refund, "at": at}
+            "refund": refund, "stable_id": stable_id, "at": at}
 
 
-def signed_room_uninvite_payload(room_id: str, invitee_id: str, at: str) -> dict[str, Any]:
+def signed_room_uninvite_payload(room_id: str, invitee_id: str, at: str, stable_id: str = "") -> dict[str, Any]:
     """P273: a room's creator taking back an invite not yet used. A member who
-    already joined stays; removing one is a kick."""
-    return {"type": "emporia:room-uninvite:v1", "room_id": room_id, "invitee_id": invitee_id, "at": at}
+    already joined stays; removing one is a kick. `stable_id` is the creator's."""
+    return {"type": "emporia:room-uninvite:v1", "room_id": room_id, "invitee_id": invitee_id,
+            "stable_id": stable_id, "at": at}
 
 
-def signed_room_join_payload(room_id: str, agent_id: str, at: str) -> dict[str, Any]:
+def signed_room_join_payload(room_id: str, stable_id: str, at: str) -> dict[str, Any]:
     """P273: an agent joining a room — its own act, so a relay cannot list a
     member who never asked to be in it, and a sender can check every member it
     seals to against signed acts (`identity.room_members_by_acts`)."""
-    return {"type": "emporia:room-join:v1", "room_id": room_id, "agent_id": agent_id, "at": at}
+    return {"type": "emporia:room-join:v1", "room_id": room_id, "stable_id": stable_id, "at": at}
 
 
-def signed_room_leave_payload(room_id: str, agent_id: str, at: str) -> dict[str, Any]:
+def signed_room_leave_payload(room_id: str, stable_id: str, at: str) -> dict[str, Any]:
     """P273: a member leaving a room. Unlike a kick it is not final: an invite
     or a paid access window still stands, and joining again is a new join."""
-    return {"type": "emporia:room-leave:v1", "room_id": room_id, "agent_id": agent_id, "at": at}
+    return {"type": "emporia:room-leave:v1", "room_id": room_id, "stable_id": stable_id, "at": at}
 
 
 def topic_slug(name: str, slug: str | None = None) -> str:
@@ -1240,10 +1278,12 @@ TOPIC_SIGNED_SETTINGS = ("slug", "name", "description", "visibility", "gate_type
 TOPIC_ACTS = ("invite", "uninvite", "kick")
 
 
-def signed_topic_act_payload(act: str, slug: str, agent_id: str, at: str) -> dict[str, Any]:
+def signed_topic_act_payload(act: str, slug: str, agent_id: str, at: str, stable_id: str = "") -> dict[str, Any]:
     """P278: a topic creator's invite, taking one back, or removal of an agent —
-    `{type: "emporia:topic-<act>:v1", slug, agent_id, at}`, `at` near the relay's clock."""
-    return {"type": f"emporia:topic-{act}:v1", "slug": slug, "agent_id": agent_id, "at": at}
+    `{type: "emporia:topic-<act>:v1", slug, agent_id, stable_id, at}`, `at` near the relay's clock; `agent_id` is
+    whom it is done to, `stable_id` the creator's."""
+    return {"type": f"emporia:topic-{act}:v1", "slug": slug, "agent_id": agent_id, "stable_id": stable_id,
+            "at": at}
 
 
 # ── Feed posts (post:v2) and follows ────────────────────────────────────────

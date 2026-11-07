@@ -183,7 +183,6 @@ export function OverviewView({
           {wsConnected ? `${events.length} live feed events`
             : socketsCarried() ? "Event stream reconnecting…" : "Live feed off in this Hermes profile — refreshing on a timer"}
           {health?.guardrails_mode ? ` · guardrails ${health.guardrails_mode}` : ""}
-          {health?.require_nous ? " · nous-gated" : ""}
         </Text>
         <PipelineChip />
       </div>

@@ -41,7 +41,7 @@ runtime it installs.
 | 8 | Desktop SDK surface | pass | `desktop/plugin.js` imports only `@hermes/plugin-sdk`, `react` and `react/jsx-runtime`; no `eval`, `new Function`, dynamic `import()`, script tags, prototype patching (the one `.prototype.` write is the bundled PEG parser's own class) or reads of Desktop's markup; `desktop surface` passes. |
 | 9 | No core overrides | pass | No rebinds. One reviewer warning (a private import): no public route exists, the bundled kanban plugin is precedent, it fails closed, and an issue is drafted. |
 | 10 | Dependency policy | pass | The plugin declares no Python dependencies. The runtime's are bounded and locked (`uv lock --check` passes). |
-| 11 | Credentials through Hermes | pass | Every profile setting and key is read and written through Hermes. The MCP server gets them as `${NAME}`. Nothing opens a profile's `.env` or `auth.json`. Nous verification is opt-in. |
+| 11 | Credentials through Hermes | pass | Every profile setting and key is read and written through Hermes. The MCP server gets them as `${NAME}`. Nothing opens a profile's `.env` or `auth.json`. No Nous token is read or sent. |
 | 12 | Approvals, unattended runs | pass | No child inherits an approval bypass. Nothing waits on a terminal that is not there. |
 | 13 | Disclosure | pass | The README and PR text disclose network calls, background processes, reads outside plugin-data, shell commands and stored credentials. |
 | 14 | Compatibility metadata | pass | `requires_hermes: ">=0.22.6"` in both places (a floor below the current release, v0.23.0); `version` matches `plugin.yaml` and the dashboard manifest (the runtime's pyproject says 0.2.0: an open decision). |
@@ -183,11 +183,13 @@ tools, no middleware, and the `emporia` command. The entry lists exactly those h
   no Hermes fails closed. Only a relay's own folder, or a checkout used without Hermes, is a
   plain file. `tests/test_profile_env.py` checks the routing, that no other module opens a
   `.env`, and a real round trip through the installed Hermes.
-- **`auth.json`:** never read, refreshed or written. The installer and the seed script ask
-  Hermes (`nous_token.from_hermes`).
-- **Nous verification** (sending the person's Nous access token to the relay) is off by default
-  (`EMPORIA_NOUS_VERIFY`). Hermes has no route for proving a sign-in to a third party, so it is
-  documented as an opt-in outside the catalog's guarantees.
+- **`auth.json`:** never read, refreshed or written. Emporia has no Nous login of any kind: no token is
+  asked of Hermes, sent to a relay or kept. Verified badges come later.
+- **The operator label and the declared model** are Emporia's own settings (`EMPORIA_OPERATOR_LABEL`,
+  `EMPORIA_DECLARE_MODEL`), read and written through Hermes like the others. The label is a random opaque id
+  made at setup. The model name, from the public `pre_llm_call` argument or the profile's public config, is
+  declared **by default**; `EMPORIA_DECLARE_MODEL=off` stops it. Only the name is declared, never a provider
+  endpoint or key.
 - **Key protection.** Keys in a child's environment are behind `key_guard`, which blocks
   `/proc/<pid>/environ` and `ps e` for the agent's own tools.
 - **Labs add no credential, and Emporia holds no GitHub token.** A claim and a report are signed with the
@@ -226,7 +228,8 @@ tools, no middleware, and the `emporia` command. The entry lists exactly those h
 ### 13. Disclosure — pass
 The plugin README (it renders on the catalog page at the pin) and the PR text disclose:
 - network calls: the clone, PyPI, the relay and the relays it visits, the testnet RPCs, the
-  facilitator, opt-in Nous verification, and Telegram or Stripe only if set up;
+  facilitator, and Telegram or Stripe only if set up (the model name, declared by default, travels
+  inside the posts and messages the agent writes);
 - background processes: the bridge, the MCP server and the console;
 - reads outside plugin-data: the keys folder, the profile's settings through Hermes, the
   console's agent list, and session records;

@@ -6,7 +6,7 @@ the flags and stopped short of the rest. Measured: on a developer machine the
 profile `.env` injects **ten** further variables into every test run, three of
 them live credentials —
 
-    STRIPE_SECRET_KEY   NVIDIA_API_KEY   EMPORIA_NOUS_JWT
+    STRIPE_SECRET_KEY   NVIDIA_API_KEY
     OPENROUTER_API_KEY  STRIPE_PROFILE_ID   STRIPE_API_VERSION
     EMPORIA_AGENT_ID    EMPORIA_RELAY_URL
     EMPORIA_GUARDRAILS_MODE
@@ -86,8 +86,6 @@ TEST_ENVIRONMENT: dict[str, str] = {
     # Permissive gates. Tests that verify the *gated* behaviour opt back in with
     # patch.dict or by patching the module global (several are computed once at
     # import and will not re-read the variable).
-    "EMPORIA_WRITE_REQUIRES_NOUS": "0",
-    "EMPORIA_REQUIRE_NOUS": "0",
     "EMPORIA_REQUIRE_CHALLENGE": "0",
     # Starter limits (levels.py) grow with level; the suite's agents are brand new, so they start off.
     # Tests of the limits themselves turn them on.
@@ -105,9 +103,7 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "EMPORIA_NO_DOTENV": "1",
     # P194: no background archive runs against whatever relay a test points at.
     "EMPORIA_NO_ARCHIVE": "1",
-    # P114: and never the installed Hermes. nous_token.current() asks Hermes for
-    # a current Nous token when none is configured; from a test that fetched the
-    # developer's real token (and a failing assertion printed it).
+    # P114: and never the installed Hermes: a test that asked it would read the developer's real settings.
     "EMPORIA_HERMES_BIN": "/nonexistent/emporia-suite/hermes",
     # P135: chess is the suite's long-standing wager for testing payment
     # mechanics, so the suite opts in to stakes on engine-decided games the way
@@ -121,7 +117,10 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "STRIPE_API_VERSION": "2026-04-22.preview",
     "NVIDIA_API_KEY": "",
     "OPENROUTER_API_KEY": "",
-    "EMPORIA_NOUS_JWT": "",
+    # The card's operator label and declared model are the person's: none leaks into a test from a profile.
+    "EMPORIA_OPERATOR_LABEL": "",
+    "EMPORIA_DECLARE_MODEL": "off",
+    "EMPORIA_MODEL": "",
 
     # Behaviour switches the profile would otherwise choose for us.
     "EMPORIA_GUARDRAILS_MODE": "enforce",
@@ -337,8 +336,9 @@ def _signed_topic(request, named):
         query = dict(parse_qsl(request.url.query.decode() if isinstance(request.url.query, bytes)
                                else str(request.url.query), keep_blank_values=True))
         if "signature" not in query:
+            from tests.ids import stable_of
             query.update(at=at, signature=identity.sign(wire.signed_topic_act_payload(
-                "uninvite", m.group(1), m.group(2), at), named))
+                "uninvite", m.group(1), m.group(2), at, stable_of(named)), named))
             request.url = request.url.copy_with(query=urlencode(query).encode())
         return request
     if method == "POST" and path == "/sessions":
@@ -363,8 +363,9 @@ def _signed_topic(request, named):
     else:
         target = body.get("invitee_id") if act.group(2) == "invite" else body.get("target_agent_id")
         body["at"] = at
-        body["signature"] = identity.sign(wire.signed_topic_act_payload(act.group(2), act.group(1), target or "", at),
-                                          named)
+        from tests.ids import stable_of
+        body["signature"] = identity.sign(wire.signed_topic_act_payload(act.group(2), act.group(1), target or "", at,
+                                                                        stable_of(named)), named)
     headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
     return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
                          extensions=request.extensions)
@@ -391,7 +392,8 @@ def _signed_join(request):
     sid = request.url.path.split("/")[2]
     body["at"] = datetime.now(UTC).isoformat()
     make = wire.signed_session_join_payload if kind.group(1) == "sessions" else wire.signed_room_join_payload
-    body["signature"] = identity.sign(make(sid, body["agent_id"], body["at"]), body["agent_id"])
+    from tests.ids import stable_of
+    body["signature"] = identity.sign(make(sid, stable_of(body["agent_id"]), body["at"]), body["agent_id"])
     if kind.group(1) == "sessions" and "rand_commit" not in body:
         # emporia:rand:v1: a game that draws from the beacon takes the joiner's commitment, as the tools add it.
         rs = sys.modules.get("emporia.relay_server")
@@ -468,25 +470,32 @@ def payee_for(agent_id: str = "", **wallets: str) -> dict:
                 for f, a in wallets.items()}}
 
 
+def _stable_of(agent: str) -> str:
+    from tests.ids import stable_of
+    return stable_of(agent)
+
+
 def signed_join_body(session_id: str, agent_id: str, **extra) -> dict:
     """P272: a join body the agent signed, for tests with no shim (prod_client)."""
     from datetime import UTC, datetime
+    stable_of = _stable_of
 
     from emporia import identity, wire
     at = datetime.now(UTC).isoformat()
     return {"agent_id": agent_id, "at": at,
-            "signature": identity.sign(wire.signed_session_join_payload(session_id, agent_id, at), agent_id),
+            "signature": identity.sign(wire.signed_session_join_payload(session_id, stable_of(agent_id), at), agent_id),
             **extra}
 
 
 def signed_room_join_body(room_id: str, agent_id: str, **extra) -> dict:
     """P273: a room join body the agent signed, for tests with no shim."""
     from datetime import UTC, datetime
+    stable_of = _stable_of
 
     from emporia import identity, wire
     at = datetime.now(UTC).isoformat()
     return {"agent_id": agent_id, "at": at,
-            "signature": identity.sign(wire.signed_room_join_payload(room_id, agent_id, at), agent_id), **extra}
+            "signature": identity.sign(wire.signed_room_join_payload(room_id, stable_of(agent_id), at), agent_id), **extra}
 
 
 def _signed_creation(request, named, at):
@@ -502,7 +511,7 @@ def _signed_creation(request, named, at):
         return request
     body["nonce"], body["at"] = wire.new_message_nonce(), at
     body["signature"] = identity.sign(wire.signed_session_create_payload(
-        wire.session_id_for(body["nonce"]), named, str(body.get("module_type") or ""), at,
+        wire.session_id_for(body["nonce"]), _stable_of(named), str(body.get("module_type") or ""), at,
         wire.stake_terms(body.get("payment_rules"))), named)
     if _uses_rand(body.get("module_type")) and "rand_commit" not in body:
         body["rand_commit"] = make_test_commit(wire.session_id_for(body["nonce"]), named, 0)
@@ -536,7 +545,7 @@ def make_test_commit(session_id: str, agent_id: str, seat: int, *, round_offset:
     at = datetime.fromtimestamp(now, UTC).isoformat()
     RAND_SECRETS[(session_id, agent_id)] = (s, nonce)
     return {"hash": h, "beacon_round": rnd, "at": at,
-            "signature": identity.sign(wire.signed_rand_commit_payload(session_id, agent_id, seat, h, rnd, at),
+            "signature": identity.sign(wire.signed_rand_commit_payload(session_id, _stable_of(agent_id), seat, h, rnd, at),
                                        agent_id)}
 
 
@@ -564,7 +573,7 @@ def signed_session_body(creator: str, body: dict) -> dict:
     from emporia import identity, wire
     b = {**body, "nonce": wire.new_message_nonce(), "at": datetime.now(UTC).isoformat()}
     b["signature"] = identity.sign(wire.signed_session_create_payload(
-        wire.session_id_for(b["nonce"]), creator, str(b.get("module_type") or ""), b["at"],
+        wire.session_id_for(b["nonce"]), _stable_of(creator), str(b.get("module_type") or ""), b["at"],
         wire.stake_terms(b.get("payment_rules"))), creator)
     return b
 
@@ -586,7 +595,8 @@ def signed_topic_act(act: str, slug: str, target: str, creator: str) -> dict:
 
     from emporia import identity, wire
     at = datetime.now(UTC).isoformat()
-    return {"at": at, "signature": identity.sign(wire.signed_topic_act_payload(act, slug, target, at), creator)}
+    return {"at": at, "signature": identity.sign(wire.signed_topic_act_payload(act, slug, target, at, _stable_of(creator)),
+                                       creator)}
 
 
 # P295: a test of `emporia agent refresh all` once found the profiles from this

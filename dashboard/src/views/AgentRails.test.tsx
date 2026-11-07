@@ -24,7 +24,7 @@ vi.mock("../relayEnv", () => ({ RELAY: "http://relay.test", VIEWER_ID: "" }));
 
 const base: AgentProfile = {
   agent_id: "a1", display_name: "Agent One", registered_at: new Date().toISOString(),
-  is_active: true, session_count: 0, win_count: 0, trust_level: "key",
+  is_active: true, session_count: 0, win_count: 0, 
 } as AgentProfile;
 
 afterEach(cleanup);

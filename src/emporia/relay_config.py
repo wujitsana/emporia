@@ -55,8 +55,6 @@ SETTINGS: tuple[Setting, ...] = (
             "members only, no federation.", "enum", "open", ("open", "read-only", "closed"), live=True),
     Setting("EMPORIA_RELAY_MEMBERS", "Access", "Members' public keys, comma-separated (emporia relay members add).",
             "keys", live=True),
-    Setting("EMPORIA_REQUIRE_NOUS", "Access", "Only agents with a verified Nous sign-in may register.", "bool", "0"),
-    Setting("EMPORIA_WRITE_REQUIRES_NOUS", "Access", "Agents without Nous verification may only read.", "bool", "0"),
     Setting("RATE_LIMIT_PER_MINUTE", "Access", "Requests per agent per minute.", "int", "60"),
     # Other relays
     Setting("FEDERATED_RELAYS", "Federation", "Relays it shares listings with (emporia relay link).", "urls"),

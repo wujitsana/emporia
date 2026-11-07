@@ -228,7 +228,7 @@ def who(**ops):
 
 
 def test_your_own_other_agent_is_not_an_opponent_or_a_customer():
-    w = who(a="nous:1", sock="nous:1", b="nous:2")
+    w = who(a="label:1", sock="label:1", b="label:2")
     t = pg.craft_ratings([game("a", "sock", "a", i) for i in range(20)], w)
     assert t == {}                                                     # nothing at all
     sh = pg.base_sheet("a", table={}, deals=[deal("sock", "a", "confirmed", i) for i in range(20)],
@@ -237,31 +237,31 @@ def test_your_own_other_agent_is_not_an_opponent_or_a_customer():
 
 
 def test_many_agents_of_one_operator_are_one_counterparty():
-    flock = {f"b{i}": "nous:farm" for i in range(10)}
-    w = who(s="nous:me", **flock, **{f"c{i}": f"nous:{i}" for i in range(10)})
+    flock = {f"b{i}": "label:farm" for i in range(10)}
+    w = who(s="label:me", **flock, **{f"c{i}": f"label:{i}" for i in range(10)})
     one = pg.base_sheet("s", table={}, deals=[deal(f"b{i}", "s", "confirmed", i) for i in range(10)],
                         abandoned=[], registered_at=None, now=0, who=w)
     ten = pg.base_sheet("s", table={}, deals=[deal(f"c{i}", "s", "confirmed", i) for i in range(10)],
                         abandoned=[], registered_at=None, now=0, who=w)
     assert one["trust"]["counterparties"] == 1 and ten["trust"]["counterparties"] == 10
     assert one["trade"]["score"] < ten["trade"]["score"] / 2
-    games = pg.craft_ratings([game("a", f"b{i}", "a", i) for i in range(10)], {**w, "a": pg.Who("nous:a", True, 0)})
+    games = pg.craft_ratings([game("a", f"b{i}", "a", i) for i in range(10)], {**w, "a": pg.Who("label:a", True, 0)})
     assert games["emporia:blotto:v2"]["a"].opponents == 1
 
 
 def test_fresh_and_unverified_agents_count_for_little():
-    verified = who(s="nous:me", **{f"b{i}": f"nous:{i}" for i in range(10)})
-    keyonly = who(s="nous:me", **{f"b{i}": (f"b{i}", False, -100) for i in range(10)})
-    fresh = who(s="nous:me", **{f"b{i}": (f"nous:{i}", True, 0) for i in range(10)})   # registered that day
+    verified = who(s="label:me", **{f"b{i}": f"label:{i}" for i in range(10)})
+    keyonly = who(s="label:me", **{f"b{i}": (f"b{i}", False, -100) for i in range(10)})
+    fresh = who(s="label:me", **{f"b{i}": (f"label:{i}", True, 0) for i in range(10)})   # registered that day
     deals = [deal(f"b{i}", "s", "confirmed", 0) for i in range(10)]
     score = {name: pg.base_sheet("s", table={}, deals=deals, abandoned=[], registered_at=None, now=0,
                                  who=w)["trade"]["score"] for name, w in
              (("verified", verified), ("keyonly", keyonly), ("fresh", fresh))}
     assert score["keyonly"] <= score["verified"] / 4 + 0.01 and score["fresh"] <= score["verified"] / 10 + 0.01
     beat_verified = pg.craft_ratings([game("a", f"b{i}", "a", 0) for i in range(10)],
-                                     {**verified, "a": pg.Who("nous:a", True, -100 * DAY)})
+                                     {**verified, "a": pg.Who("label:a", True, -100 * DAY)})
     beat_fresh = pg.craft_ratings([game("a", f"b{i}", "a", 0) for i in range(10)],
-                                  {**fresh, "a": pg.Who("nous:a", True, -100 * DAY)})
+                                  {**fresh, "a": pg.Who("label:a", True, -100 * DAY)})
     assert beat_fresh["emporia:blotto:v2"]["a"].rating < beat_verified["emporia:blotto:v2"]["a"].rating - 100
 
 
@@ -288,7 +288,7 @@ def test_the_relay_weighs_by_operator_and_never_says_who_is_linked(client, monke
     for x in (a, sock):
         _register(x)
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("UPDATE authorized_agents SET nous_user_id = ? WHERE agent_id IN (?, ?)", (nous, a, sock))
+        conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id IN (?, ?)", (nous, a, sock))
     for _ in range(3):
         _session("emporia:blotto:v2", [a, sock], {"wins": {a: 2, sock: 0}, "history": [{}, {}], "rounds": 3})
     _session("emporia:service:v1", [sock, a], {"buyer": sock, "seller": a, "status": "confirmed"})
@@ -299,7 +299,7 @@ def test_the_relay_weighs_by_operator_and_never_says_who_is_linked(client, monke
 
 
 def test_leaving_a_game_against_your_own_agent_counts_nothing_either_way():
-    w = who(a="nous:1", sock="nous:1")
+    w = who(a="label:1", sock="label:1")
     sh = pg.base_sheet("a", table={}, deals=[], registered_at=None, now=0, who=w,
                        abandoned=[{"participants": ["a", "sock"], "current_agent": "a", "step_number": 9}])
     assert sh["trust"]["abandoned_on_turn"] == 0 and sh["trust"]["score"] == 0 and sh["adjusted"] is True

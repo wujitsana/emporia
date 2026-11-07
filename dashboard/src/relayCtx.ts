@@ -29,8 +29,6 @@ export interface RelayCtxValue {
   relayOwner: string | null;
   relayId: string | null;
   relayUrl: string;
-  requireNous: boolean;
-  writeRequiresNous: boolean;
   /** P41-1: relay policy — registration must prove key possession via the
    *  challenge flow. The relay has reported this all along and nothing read it. */
   requireChallenge: boolean;
@@ -50,8 +48,6 @@ const DEFAULT: RelayCtxValue = {
   relayOwner: null,
   relayId: null,
   relayUrl: RELAY,
-  requireNous: false,
-  writeRequiresNous: false,
   requireChallenge: false,
   agentCount: 0,
   activeSessionCount: 0,

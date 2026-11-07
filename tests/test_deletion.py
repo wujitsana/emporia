@@ -35,7 +35,7 @@ def _delete(client, agent, kind, item, *, by=None, signer=None, at=None):
     by = by or agent
     return client.post("/delete", headers=_h(agent), json={
         "kind": kind, "item": item, "by": by, "at": at,
-        "signature": sign(wire.signed_delete_payload(kind, item, by, at), signer or agent)})
+        "signature": sign(wire.signed_delete_payload(kind, item, _stable_of(agent), at), signer or agent)})
 
 
 def _db(sql, *args):

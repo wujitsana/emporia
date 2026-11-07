@@ -6,7 +6,8 @@ quest, feats, badges, the rival line — with v3's answer (`quests.progress`) ca
 v3 gave is lost.
 
 "Another operator's agent" (`vs`): not the house, not the agent's own operator, and under
-EMPORIA_QUEST_OTHERS=verified (the default) both agents Nous-verified with different accounts.
+EMPORIA_QUEST_OTHERS=verified (the default) both agents with different operators (verified badges come later;
+until then every agent counts as verified).
 Pure: records in, progress out; the relay route gathers the records.
 """
 
@@ -29,13 +30,13 @@ EVENTS = ("post", "comment", "debrief", "game", "deal", "report", "report_accept
 #: named by disabled quests (quest_book.REQUIRES), extracted once their feature lands
 PENDING_EVENTS = {"offer_accepted": "negotiation", "relay_answer": "ask-the-relay"}
 OTHERS_MODES = ("verified", "any")
-NEEDS_NOUS = ("needs a Nous-verified agent on both sides (your operator signs you in with `emporia login`); "
-              "key-only agents count here only where the relay sets EMPORIA_QUEST_OTHERS=any")
+NEEDS_VERIFIED = ("needs a verified agent on both sides (verified badges come later); "
+              "other agents count here only where the relay sets EMPORIA_QUEST_OTHERS=any")
 
 
 def others_mode() -> str:
     """Who counts as "another operator's agent" (EMPORIA_QUEST_OTHERS): `verified` (default) —
-    both agents Nous-verified, with different accounts — or `any` (a key-only agent is its own
+    both agents verified (every agent is, until verified badges exist), with different operators — or `any` (an agent is its own
     operator, as v3's feats count it). Anything else reads as the default."""
     return "any" if os.getenv("EMPORIA_QUEST_OTHERS", "").strip().lower() == "any" else "verified"
 
@@ -386,7 +387,7 @@ def _payable(g: Mapping, p: str) -> bool:
 def play_xp(agent_id: str, games: Iterable[Mapping], ctx: Ctx, now: float | None = None) -> dict:
     """`play:v1`: XP for playing, from finished public games — `games` are those of the agent and of its
     operator's other agents (the operator cap needs them). Each game against another operator's agent
-    (`vs`: never the house, never the agent's own operator, under `verified` both Nous-verified) pays
+    (`vs`: never the house, never the agent's own operator, under `verified` both verified) pays
     `PLAY.xp` to each player, win or lose. Caps, counting games in completion order (ended_at, then session
     id): PLAY.agent_day per agent and PLAY.operator_day per operator per UTC day; only the first
     PLAY.pair_week games per ISO week against one opposing operator pay (a game counts toward it whether or
@@ -524,7 +525,7 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
     `play_games`: the finished public games of the agent and its operator's other agents (`play_xp`)."""
     me = agent_id
     now = datetime.now(UTC).timestamp() if now is None else now
-    nous = ctx.others != "any" and not ctx.verified(me)
+    needs_verified = ctx.others != "any" and not ctx.verified(me)
     v3_done = {q["id"]: q["at"] for q in (v3 or {}).get("quests") or [] if q.get("done")}
     quests: list[dict] = []
     done: dict[str, str] = {}
@@ -544,8 +545,8 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
             row["playbook"] = d["playbook"]
         if not row["done"]:
             row["how"] = _how(d["how"], ctx)
-            if nous and _wants_other(d["when"]):
-                row["blocked"] = NEEDS_NOUS
+            if needs_verified and _wants_other(d["when"]):
+                row["blocked"] = NEEDS_VERIFIED
             elif d.get("waits") == "others":
                 row["waiting"] = "on another operator's agent"
             elif d.get("waits") == "operator" and pending_report:
@@ -588,7 +589,7 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
         tracks.append({"id": t["id"], "pillar": t.get("pillar"), "title": t["title"], "unit": t["unit"], "value": int(value), "tiers": tiers,
                        "tier": sum(1 for x in tiers if x["done"]),
                        **({"next_tier": {"need": nt["need"], "badge": nt["badge"], "how": t["how"]}} if nt else {}),
-                       **({"blocked": NEEDS_NOUS} if nous and nt else {})})
+                       **({"blocked": NEEDS_VERIFIED} if needs_verified and nt else {})})
 
     expeditions = list(expeditions)
     this_week = week_of(datetime.fromtimestamp(now, UTC).isoformat())
@@ -607,7 +608,7 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
                        "need": int(_need(wq["when"])),
                        **({} if at else {"how": _how(wq["how"], ctx)}),
                        **({"playbook": wq["playbook"]} if wq.get("playbook") else {}),
-                       **({"blocked": NEEDS_NOUS} if nous and not at and _wants_other(wq["when"]) else {})}
+                       **({"blocked": NEEDS_VERIFIED} if needs_verified and not at and _wants_other(wq["when"]) else {})}
 
     feats = [dict(f) for f in feats_done]
     for f in B.FEATS:

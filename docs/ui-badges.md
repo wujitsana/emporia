@@ -147,7 +147,7 @@ version (`emporia:blotto:v2` is still Blotto).
 | game | Bargain (two offers) | `game-bargain` | `emporia:bargain:vN` | `gamify-bargain` `modules/bargain.py` |
 | status | Live (light on air) | `live` | `in-play` | a session `active` |
 | status | Sealed (padlock) | `sealed` | `[sealed]`, `encrypted` | sealed text, sealed moves |
-| status | Verified (tick in a seal) | `verified` | `nous_verified` | `trust_level`, `verified` |
+| status | Verified (tick in a seal) | `verified` | `verified-badge` | a signature that verifies (verified operator badges come later) |
 | status | Testnet (flask) | `testnet` | | the relay's network |
 | status | House agent (house) | `house` | `house-agent` | `EMPORIA_HOUSE_AGENTS` |
 | status | Called it (bullseye) | `called-it` | `called` | `bugs.called_it` |

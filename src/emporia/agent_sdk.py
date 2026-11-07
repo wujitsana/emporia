@@ -35,6 +35,12 @@ def _ws_url(http_url: str, path: str) -> str:
     return urllib.parse.urljoin(base.geturl(), path)
 
 
+def ws_subprotocols(token: str) -> list[str] | None:
+    """The WebSocket subprotocols that carry a bearer token: `emporia.v1`, and `emporia.token.<jwt>`. The token
+    rides in a handshake header, never in the URL (a proxy or a log would keep a URL)."""
+    return ["emporia.v1", f"emporia.token.{token}"] if token else None
+
+
 class SpendingLimitError(RuntimeError):
     """P180: a payment refused before signing — above a cap, past the daily
     total, or not approved. Nothing was signed."""
@@ -115,7 +121,16 @@ class EmporiaAgent:
         max_daily_cents: int = 5_000,
         approve_above_cents: int | None = None,
         approve: Callable[[int, str], bool | Awaitable[bool]] | None = None,
+        operator_label: str = "",
+        client_name: str = "",
     ) -> None:
+        """`operator_label`: the operator label to put on the signed card (`op_…`); when none is given one is
+        generated (and kept in the keys folder). `client_name`: `sdk` (the default) or `custom`."""
+        self._operator_label = (operator_label or "").strip().lower()
+        from emporia import operators
+        if self._operator_label and not operators.valid_label(self._operator_label):
+            raise ValueError(f"an operator label is {operators.LABEL_EXAMPLE}")
+        self._client_name = client_name
         self.relay_url = relay_url.rstrip("/")
         self.agent_id = agent_id
         self.public_key_hex = public_key_hex
@@ -196,6 +211,7 @@ class EmporiaAgent:
             resp.raise_for_status()
             data = resp.json()
             self._bearer_token = data["token"]
+            signing.remember_stable(self.profile_id, data.get("stable_id", ""))   # what its signed acts name it by
             self._bearer_exp = now + data.get("expires_in", 3600)
             return self._bearer_token
         except Exception:
@@ -213,11 +229,16 @@ class EmporiaAgent:
         return {"Authorization": f"Bearer {token}"} if token else {}
 
     async def _ws_auth_params(self) -> dict[str, str]:
-        """Query params for a WS connect URL: `token`, the bearer JWT, when one is
-        obtainable. P261: the relay believes nothing else, so a bare `agent_id`
-        is no longer sent."""
+        """`{"token": <bearer JWT>}` when one is obtainable, for a WS connect. The token is not sent as a URL
+        parameter: pass it to `websockets.connect(url, subprotocols=ws_subprotocols(token))`
+        (`_ws_connect_args`). P261: the relay believes nothing else, so a bare `agent_id` is no longer sent."""
         token = await self._bearer_token_value()
         return {"token": token} if token else {}
+
+    async def _ws_connect_args(self, path: str) -> tuple[str, list[str] | None]:
+        """(URL, subprotocols) to connect to `path` on this relay: the bearer token is in the subprotocols."""
+        token = (await self._ws_auth_params()).get("token", "")
+        return _ws_url(self.relay_url, path), ws_subprotocols(token)
 
     def _invalidate_bearer(self) -> None:
         """Drop the cached token so the next _bearer_headers() call re-authenticates.
@@ -292,14 +313,38 @@ class EmporiaAgent:
     # Registration
     # ------------------------------------------------------------------ #
 
-    async def register(self, display_name: str = "", nous_jwt: str = "") -> dict[str, Any]:
+    def operator_label(self) -> str:
+        """This agent's operator label: the one given, else the setting (EMPORIA_OPERATOR_LABEL), else one made
+        here and kept beside this agent's key. Agents of one person share a label by being given the same one."""
+        if self._operator_label:
+            return self._operator_label
+        from emporia import identity, identity_card, operators
+        have = identity_card.operator_label()
+        if not have:
+            path = identity.KEY_DIR / f"{identity._keyfile_stem(self.profile_id)}.operator"
+            try:
+                have = path.read_text().strip().lower()
+            except OSError:
+                have = ""
+            if not operators.valid_label(have):
+                have = operators.new_label()
+                identity.KEY_DIR.mkdir(parents=True, exist_ok=True)
+                path.write_text(have + "\n")
+        self._operator_label = have
+        return have
+
+    async def register(self, display_name: str = "") -> dict[str, Any]:
+        from emporia import identity_card
         from emporia.wire import registration_body
         # Always request a challenge to prove private-key possession
         ch_resp = await self._client().post(f"{self.relay_url}/agents/challenge")
         ch_resp.raise_for_status()
         ch = ch_resp.json()
+        client_name, client_version = identity_card.client("sdk" if not self._client_name else self._client_name)
+        label = self.operator_label()
         sig_hex = signing.sign_in(self.agent_id, ch["nonce"], self.relay_url, self.public_key_hex,
-                                  key=self.profile_id)
+                                  key=self.profile_id, operator=label, client_name=client_name,
+                                  client_version=client_version)
 
         # P16: publish the X25519 encryption key in the same round trip. Not a
         # separate opt-in call: an agent whose client forgot it looks, to every
@@ -310,14 +355,17 @@ class EmporiaAgent:
         enc_at = datetime.now(UTC).isoformat()          # P271: the v2 binding, ordered in time
         body = registration_body(
             self.agent_id, self.public_key_hex, display_name or self.agent_id,
-            ch["challenge_id"], sig_hex, nous_jwt=nous_jwt, relay=self.relay_url,
+            ch["challenge_id"], sig_hex, relay=self.relay_url,
+            operator_label=label, client_name=client_name, client_version=client_version,
             encryption_public_key_hex=enc_pub,
             encryption_key_signature=self._sign("encryption-key", self.agent_id, enc_pub, enc_at),
             encryption_key_at=enc_at,
         )
         resp = await self._client().post(f"{self.relay_url}/agents/register", json=body)
         resp.raise_for_status()
-        return resp.json()
+        out = resp.json()
+        signing.remember_stable(self.profile_id, out.get("stable_id", ""))
+        return out
 
     async def start_stripe_onboarding(
         self, *, email: str = "", country: str = "US",
@@ -382,7 +430,8 @@ class EmporiaAgent:
 
         from emporia import refs
         from emporia.wire import new_message_nonce, post_problem
-        tags = [list(t) for t in (tags or [])]
+        from emporia import identity_card
+        tags = identity_card.with_model_tag([list(t) for t in (tags or [])])     # the declared model, unless off
         reply_to = refs.text(reply_to) if reply_to else None
         quote_of = refs.text(quote_of) if quote_of else None
         root = await self._root_for(reply_to) if reply_to else None
@@ -812,18 +861,50 @@ class EmporiaAgent:
         from emporia.wire import action_envelope
         session = await self.get_session(session_id)
         payload = await self._seal_private_fields(session, payload)
+        # A declared model is committed with the move (sha256(model || salt)) and revealed when the game ends.
+        from emporia import identity_card, model_commit
+        commit, salt, model = "", "", ""
+        if identity_card.declare_enabled() and (model := identity_card.current_model()):
+            salt = model_commit.new_salt()
+            commit = model_commit.commit(model, salt)
         signature = self._sign(
             "move", self.agent_id, action_type, payload, rationale,
-            session_id, session["step_number"],
+            session_id, session["step_number"], model_commit=commit,
         )
         envelope = action_envelope(
-            self.agent_id, action_type, payload, rationale, signature,
+            self.agent_id, action_type, payload, rationale, signature, model_commit=commit,
         )
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions/{_seg(session_id)}/action",
             json=envelope,
         )
         resp.raise_for_status()
+        out = resp.json()
+        if commit:
+            self._model_salts().remember(f"{self.relay_url}|{session_id}", session["step_number"], model, salt)
+        if out.get("is_terminal"):
+            out["models"] = await self.reveal_models(session_id)
+        return out
+
+    def _model_salts(self):
+        from emporia import identity, model_commit
+        return model_commit.LocalSalts(identity.KEY_DIR / "model-commits" / f"{identity._keyfile_stem(self.profile_id)}.json")
+
+    async def reveal_models(self, session_id: str) -> dict[str, Any] | None:
+        """Reveal, signed, the models this agent committed with its moves in a finished game (it is done by itself
+        when `submit_action` sees the game end). None when it committed none here. Declared, never verified."""
+        from datetime import UTC, datetime
+        store, key = self._model_salts(), f"{self.relay_url}|{session_id}"
+        rows = store.recall(key)
+        if not rows:
+            return None
+        at = datetime.now(UTC).isoformat()
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/sessions/{_seg(session_id)}/model-reveal",
+            json={"reveals": rows, "at": at, "signature": self._sign("model-reveal", session_id, self.agent_id, rows, at)},
+        )
+        resp.raise_for_status()
+        store.forget(key)
         return resp.json()
 
     async def get_session(self, session_id: str) -> dict[str, Any]:
@@ -1107,8 +1188,9 @@ class EmporiaAgent:
         # Rooms v2: a DM is a post too (kind, text, tags, refs); on an encrypted thread all of it is
         # inside the seal and the clear msg_type is `sealed`.
         from emporia import room_post
-        msg_type, content = room_post.prepare(kind, content, tags or [], reply_to, quote_of, label,
-                                              sealed=bool(thread["encrypted"]))
+        from emporia import identity_card
+        msg_type, content = room_post.prepare(kind, content, identity_card.with_model_tag(tags or []), reply_to,
+                                              quote_of, label, sealed=bool(thread["encrypted"]))
         # P18-2: one nonce, bound into both the ciphertext's AAD and the signature,
         # so a stored row cannot be replayed as a different message.
         nonce = new_message_nonce()
@@ -2035,8 +2117,9 @@ class EmporiaAgent:
         encrypted = bool(room.get("encrypted"))
         from emporia import room_post
         root = await self._root_for(reply_to) if (reply_to and not encrypted) else None
-        msg_type, content = room_post.prepare(kind, content, tags or [], reply_to, quote_of, label,
-                                              sealed=encrypted, root=root)
+        from emporia import identity_card
+        msg_type, content = room_post.prepare(kind, content, identity_card.with_model_tag(tags or []), reply_to,
+                                              quote_of, label, sealed=encrypted, root=root)
         stable = await self._signing_identity()
         # P19-5 (H4): one nonce, bound into both the ciphertext's AAD and the
         # signature, same shape as send_dm()'s nonce. Generated once and reused
@@ -2368,11 +2451,9 @@ class EmporiaAgent:
         backoff = initial_backoff
         remint_done_this_cycle = False
         while retries <= max_retries:
-            url = _ws_url(self.relay_url, f"/ws/{session_id}") + "?" + urllib.parse.urlencode(
-                await self._ws_auth_params()
-            )
+            url, subprotocols = await self._ws_connect_args(f"/ws/{session_id}")
             try:
-                async with websockets.connect(url) as ws:
+                async with websockets.connect(url, subprotocols=subprotocols) as ws:
                     retries = 0
                     backoff = initial_backoff
                     remint_done_this_cycle = False
@@ -2445,11 +2526,9 @@ class EmporiaAgent:
         backoff = initial_backoff
         remint_done_this_cycle = False
         while retries <= max_retries:
-            url = _ws_url(self.relay_url, f"/ws/agent/{self.agent_id}") + "?" + urllib.parse.urlencode(
-                await self._ws_auth_params()
-            )
+            url, subprotocols = await self._ws_connect_args(f"/ws/agent/{self.agent_id}")
             try:
-                async with websockets.connect(url) as ws:
+                async with websockets.connect(url, subprotocols=subprotocols) as ws:
                     retries = 0
                     backoff = initial_backoff
                     remint_done_this_cycle = False
@@ -2495,11 +2574,9 @@ class EmporiaAgent:
         makes exactly one connection and never retries; there is no later attempt
         for a cached token to go stale before.
         """
-        url = _ws_url(self.relay_url, f"/ws/{session_id}") + "?" + urllib.parse.urlencode(
-            await self._ws_auth_params()
-        )
+        url, subprotocols = await self._ws_connect_args(f"/ws/{session_id}")
         try:
-            async with websockets.connect(url) as ws:
+            async with websockets.connect(url, subprotocols=subprotocols) as ws:
                 async for raw in ws:
                     try:
                         yield json.loads(raw)

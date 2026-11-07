@@ -11,7 +11,7 @@ Covers (per plan):
   - Session lifecycle (create, join, action, terminal)
   - Stripe intent mocked + arbitrate_and_refund
   - dual-track audit chain verify
-  - identity registry nous_user_id deduplication
+  - identity registry operator-label recording
 
 Run:
     pytest tests/test_emporia.py -v
@@ -47,9 +47,9 @@ from emporia.relay_server import app
 
 
 def _stable_of(agent: str) -> str:
-    """The stable id of a test agent that never rotated: the hash of its key."""
-    from emporia import identity, wire
-    return wire.stable_id_for(identity.get_public_key_hex(agent))
+    """The stable id of a test agent: the relay's, once it holds one, else the hash of its key."""
+    from tests.ids import stable_of
+    return stable_of(agent)
 
 
 @pytest.fixture(autouse=True)
@@ -996,7 +996,8 @@ def _signed_invite(agent_id: str, room_id: str, body: dict) -> dict:
     from emporia.identity import sign
     from emporia.wire import signed_room_invite_payload
     at = datetime.now(UTC).isoformat()
-    return {**body, "at": at, "signature": sign(signed_room_invite_payload(room_id, body["invitee_id"], at), agent_id)}
+    return {**body, "at": at, "signature": sign(signed_room_invite_payload(room_id, body["invitee_id"], at, _stable_of(agent_id)),
+                                        agent_id)}
 
 
 def _signed_kick(agent_id: str, room_id: str, body: dict) -> dict:
@@ -1008,7 +1009,7 @@ def _signed_kick(agent_id: str, room_id: str, body: dict) -> dict:
     at = datetime.now(UTC).isoformat()
     refund = bool(body.get("refund", False))
     return {**body, "refund": refund, "at": at, "signature": sign(signed_room_kick_payload(
-        room_id, body["target_agent_id"], refund, at), agent_id)}
+        room_id, body["target_agent_id"], refund, at, _stable_of(agent_id)), agent_id)}
 
 
 def _signed_post(agent_id: str, slug: str, body: dict) -> dict:
@@ -1099,7 +1100,7 @@ def _signed_action_body(
         "step_number": step_number,
         "action_type": action_type,
         "payload": payload,
-        "agent_id": agent_id,
+        "stable_id": _stable_of(agent_id),
         "peer_text_rationale": rationale,
         **({"say": say} if say else {}),  # P148
     }
@@ -1121,7 +1122,7 @@ def _signed_confirm_delivery_body(client, session_id: str, agent_id: str, ration
     ).json()["step_number"]
     signed_payload = {
         "session_id": session_id, "step_number": step_number, "action_type": "confirm",
-        "payload": {}, "agent_id": agent_id, "peer_text_rationale": rationale,
+        "payload": {}, "stable_id": _stable_of(agent_id), "peer_text_rationale": rationale,
     }
     return {"agent_id": agent_id, "rationale": rationale, "signature": sign(signed_payload, agent_id)}
 
@@ -1136,7 +1137,7 @@ def _signed_dispute_delivery_body(
     ).json()["step_number"]
     signed_payload = {
         "session_id": session_id, "step_number": step_number, "action_type": "dispute",
-        "payload": {"reason": reason}, "agent_id": agent_id, "peer_text_rationale": rationale,
+        "payload": {"reason": reason}, "stable_id": _stable_of(agent_id), "peer_text_rationale": rationale,
     }
     return {
         "agent_id": agent_id, "reason": reason, "rationale": rationale,
@@ -10093,12 +10094,8 @@ def test_mcp_register_agent_uses_shared_wire_contract(prod_client):
 
     adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
     pub_hex = get_public_key_hex("p6_3_mcp_register_agent")
-    # This environment's profile .env sets a real NOUS_JWT (mirrors the
-    # EMPORIA_WRITE_REQUIRES_NOUS leakage noted elsewhere) — isolate this
-    # test from it so it neither depends on nor touches a real secret.
     with patch.object(mcp_server, "httpx", adapter), \
-         patch.object(mcp_server, "NOUS_JWT", ""), \
-         patch.dict(os.environ, {"EMPORIA_NOUS_JWT": ""}), \
+         patch.dict(os.environ, {"EMPORIA_OPERATOR_LABEL": ""}), \
          patch.object(wire, "registration_body", wraps=wire.registration_body) as spy:
         result = mcp_server.register_agent(agent_id="p6_3_mcp_register_agent", display_name="P6-3 MCP Agent")
 
@@ -10111,10 +10108,10 @@ def test_mcp_register_agent_uses_shared_wire_contract(prod_client):
     assert isinstance(args[3], str) and args[3], "challenge_id must be a real, non-empty value"
     assert len(args[4]) == 86, "challenge_signature must be a real 64-byte base64url Ed25519 signature"
     # P16: registration now also publishes the X25519 encryption key in this same
-    # body. The nous_jwt assertion stays exact; the two encryption kwargs are
+    # body. The card's operator label is empty here and its client is declared; the two encryption kwargs are
     # asserted for presence and shape rather than value, since the key is generated
     # per key-dir and the signature over it is fresh each run.
-    assert spy.call_args.kwargs["nous_jwt"] == ""
+    assert spy.call_args.kwargs["operator_label"] == "" and spy.call_args.kwargs["client_name"]
     assert len(spy.call_args.kwargs["encryption_public_key_hex"]) == 64
     assert spy.call_args.kwargs["encryption_key_signature"]
 
@@ -10148,7 +10145,7 @@ def test_agent_sdk_register_uses_shared_wire_contract():
     assert spy.call_args.args == (
         "sdk_register_agent", "cd" * 32, "SDK Register Agent", "ch_reg_test", "feedface",
     )
-    assert spy.call_args.kwargs["nous_jwt"] == ""
+    assert spy.call_args.kwargs["operator_label"].startswith("op_") and spy.call_args.kwargs["client_name"] == "sdk"
     assert len(spy.call_args.kwargs["encryption_public_key_hex"]) == 64
     assert spy.call_args.kwargs["encryption_key_signature"]
 
@@ -13544,32 +13541,11 @@ def test_ws_room_unknown_id_rejected(client):
 
 
 # ============================================================================
-# Identity providers
+# The signed card: operator label, client, declared model
 # ============================================================================
 
-def test_identity_provider_registry():
-    """supported_providers() returns at least 'nous'."""
-    from emporia.identity_providers import supported_providers
-    providers = supported_providers()
-    assert "nous" in providers
-
-
-def test_nous_provider_rejects_garbage():
-    """NousIdentityProvider raises IdentityVerificationError on bad token."""
-    from emporia.identity_providers import verify_claim, IdentityVerificationError
-    with pytest.raises(IdentityVerificationError):
-        verify_claim("nous", "not-a-jwt")
-
-
-def test_unknown_provider_raises():
-    """Unknown provider name raises IdentityVerificationError."""
-    from emporia.identity_providers import verify_claim, IdentityVerificationError
-    with pytest.raises(IdentityVerificationError, match="Unknown identity provider"):
-        verify_claim("spacely_sprockets", "sometoken")
-
-
-def test_register_without_identity_claim_is_key_only(client):
-    """Registration without identity_claims gets trust_level='key_only'."""
+def test_register_without_a_label_has_none(client):
+    """Registration without an operator label records none: the agent is its own operator."""
     r = client.post("/agents/register", json={
         "agent_id": "plain_key_agent",
         "public_key_hex": _test_pubkey("plain_key_agent"),
@@ -13577,144 +13553,53 @@ def test_register_without_identity_claim_is_key_only(client):
     })
     assert r.status_code == 200
     data = r.json()
-    assert data["trust_level"] == "key_only"
-    assert data["providers_verified"] == []
-    assert data["nous_user_id"] is None
+    assert data["operator_label"] == "" and data["client"]["name"] == ""
+    assert "trust_level" not in data and "nous_user_id" not in data
 
 
-def test_register_with_bad_nous_token_degrades_gracefully(client):
-    """Bad Nous token: registration succeeds but stays key_only (not rejected)."""
-    r = client.post("/agents/register", json={
-        "agent_id": "bad_nous_agent",
-        "public_key_hex": _test_pubkey("bad_nous_agent"),
-        "display_name": "Bad Nous Agent",
-        "identity_claims": [{"provider": "nous", "token": "invalid.jwt.token"}],
-    })
-    assert r.status_code == 200
-    data = r.json()
-    # Bad token: verification fails silently, falls back to key_only
-    assert data["trust_level"] == "key_only"
-    assert data["providers_verified"] == []
+def test_a_label_and_client_are_recorded_and_a_change_is_kept_and_shown(client):
+    from emporia import operators
+    a, b = operators.new_label(), operators.new_label()
+    body = {"agent_id": "card_agent", "public_key_hex": _test_pubkey("card_agent"), "display_name": "Card",
+            "operator_label": a, "client_name": "hermes-plugin", "client_version": "0.2.0"}
+    r = client.post("/agents/register", json=body)
+    assert r.status_code == 200 and r.json()["operator_label"] == a
+    assert r.json()["client"] == {"name": "hermes-plugin", "version": "0.2.0"}
+    hdr = {"x-emporia-agent-id": "card_agent"}
+    shown = client.get("/agents/card_agent", headers=hdr).json()
+    assert shown["operator_label"] == a and shown["operator_changed"] == []      # first set: not a change
+    # a re-register with no label keeps it; the same label changes nothing
+    client.post("/agents/register", json={**body, "operator_label": ""})
+    client.post("/agents/register", json=body)
+    assert client.get("/agents/card_agent", headers=hdr).json()["operator_changed"] == []
+    # another label: kept in history, shown as a change, the new one in force
+    client.post("/agents/register", json={**body, "operator_label": b, "client_name": "weird"})
+    shown = client.get("/agents/card_agent", headers=hdr).json()
+    assert shown["operator_label"] == b and shown["client"]["name"] == "custom"
+    assert len(shown["operator_changed"]) == 1 and shown["operator_changed"][0]["text"].startswith("operator changed on ")
+    # others see that there is a label and when it changed, never the label itself
+    _register(client, "card_viewer")
+    seen = client.get("/agents/card_agent", headers={"x-emporia-agent-id": "card_viewer"}).json()
+    assert seen["operator_label"] is None and seen["has_operator_label"] is True and len(seen["operator_changed"]) == 1
 
 
-def test_register_with_mocked_nous_verified(client):
-    """Mocked Nous verification promotes trust_level to 'nous_verified'."""
-    from unittest.mock import patch
-    from emporia.identity_providers.base import IdentityClaim
-
-    mock_claim = IdentityClaim(
-        provider="nous",
-        subject_id="nous_test_user_001",
-        display_name="Alice Tester",
-        org_id="org_test",
-    )
-
-    with patch(
-        "emporia.identity_providers.nous.NousIdentityProvider.verify",
-        return_value=mock_claim,
-    ):
-        r = client.post("/agents/register", json={
-            "agent_id": "nous_verified_agent",
-            "public_key_hex": _test_pubkey("nous_verified_agent"),
-            "display_name": "",  # blank — should be filled from Nous claim
-            "identity_claims": [{"provider": "nous", "token": "fake_but_mocked"}],
-        })
-
-    assert r.status_code == 200
-    data = r.json()
-    assert data["trust_level"] == "nous_verified"
-    assert "nous" in data["providers_verified"]
-    assert data["nous_user_id"] == "nous_test_user_001"
-    # display_name populated from Nous claim since none was provided
-    assert data["display_name"] == "Alice Tester"
+def test_a_malformed_label_is_refused(client):
+    r = client.post("/agents/register", json={"agent_id": "bad_label_agent",
+                                              "public_key_hex": _test_pubkey("bad_label_agent"),
+                                              "operator_label": "not-a-label"})
+    assert r.status_code == 400 and "operator label" in r.text
 
 
-def test_a_claimless_re_register_keeps_nous_verification(client):
-    """P110: Nous access tokens last an hour and the MCP server re-registers on
-    every start, so a re-register with no (or an expired) token used to
-    overwrite nous_verified with key_only. It keeps what was proven for this
-    key now; a claim for another Nous user still replaces it."""
-    from unittest.mock import patch
-    from emporia.identity_providers.base import IdentityClaim
-
-    aid, pub = "p110_agent", _test_pubkey("p110_agent")
-
-    def claim(user):
-        return patch("emporia.identity_providers.nous.NousIdentityProvider.verify",
-                     return_value=IdentityClaim(provider="nous", subject_id=user, display_name=""))
-
-    with claim("nous_user_a"):
-        first = client.post("/agents/register", json={
-            "agent_id": aid, "public_key_hex": pub,
-            "identity_claims": [{"provider": "nous", "token": "fresh"}]}).json()
-    assert first["trust_level"] == "nous_verified"
-
-    again = client.post("/agents/register", json={"agent_id": aid, "public_key_hex": pub}).json()
-    assert (again["trust_level"], again["nous_user_id"]) == ("nous_verified", "nous_user_a")
-    expired = client.post("/agents/register", json={
-        "agent_id": aid, "public_key_hex": pub,
-        "identity_claims": [{"provider": "nous", "token": "expired.jwt.token"}]}).json()
-    assert expired["trust_level"] == "nous_verified"
-    profile = client.get(f"/agents/{aid}", headers={"x-emporia-agent-id": aid}).json()
-    assert profile["trust_level"] == "nous_verified"
-
-    with claim("nous_user_b"):
-        moved = client.post("/agents/register", json={
-            "agent_id": aid, "public_key_hex": pub,
-            "identity_claims": [{"provider": "nous", "token": "other"}]}).json()
-    assert moved["nous_user_id"] == "nous_user_b"
-
-
-def test_nous_portability_same_user_two_profiles(client):
-    """Same nous_user_id on two separate profiles — relay tracks both independently.
-
-    Design intent: one Nous user may operate multiple agent personas (demo bots,
-    specialist profiles, etc.). nous_user_id is stored for auditing/correlation
-    only; it does NOT deduplicate to a canonical agent_id.
-    """
-    from unittest.mock import patch
-    from emporia.identity_providers.base import IdentityClaim
-
-    shared_nous_id = "nous_shared_user_999"
-
-    def make_claim(*a, **kw):
-        return IdentityClaim(
-            provider="nous", subject_id=shared_nous_id, display_name="Shared User"
-        )
-
-    with patch("emporia.identity_providers.nous.NousIdentityProvider.verify", side_effect=make_claim):
-        r1 = client.post("/agents/register", json={
-            "agent_id": "profile_alpha_999",
-            "public_key_hex": _test_pubkey("profile_alpha_999"),
-            "identity_claims": [{"provider": "nous", "token": "tok1"}],
-        })
-        assert r1.status_code == 200
-        assert r1.json()["agent_id"] == "profile_alpha_999"
-        assert r1.json()["nous_user_id"] == shared_nous_id
-
-        # Second profile with same Nous account — registers as its own identity
-        r2 = client.post("/agents/register", json={
-            "agent_id": "profile_beta_999",
-            "public_key_hex": _test_pubkey("profile_beta_999"),
-            "identity_claims": [{"provider": "nous", "token": "tok2"}],
-        })
-        assert r2.status_code == 200
-        assert r2.json()["agent_id"] == "profile_beta_999"
-        assert r2.json()["nous_user_id"] == shared_nous_id
-        assert r2.json()["trust_level"] == "nous_verified"
-
-
-def test_agents_list_includes_trust_fields(client):
-    """GET /agents includes trust_level and providers_verified for each agent."""
+def test_agents_list_includes_identity_fields(client):
+    """GET /agents says who runs each agent only as declared: client, model, and whether it has a label."""
     _register(client, "agents_list_viewer")
     r = client.get("/agents", headers={"x-emporia-agent-id": "agents_list_viewer"})
     assert r.status_code == 200
     agents = r.json()["agents"]
     assert len(agents) > 0
     for a in agents:
-        assert "trust_level" in a
-        assert "providers_verified" in a
-        assert isinstance(a["providers_verified"], list)
+        assert "has_operator_label" in a and "client" in a and a["client"]["declared"] is True
+        assert "trust_level" not in a and "nous_user_id" not in a and "address" in a
 
 
 # ============================================================================
@@ -22717,26 +22602,15 @@ def test_testnet_paid_room_join_settles_through_mpp_spt(client, monkeypatch):
 # key, the display handle, and the identity. That works until any one of them
 # needs to change, and then none of them can.
 #
-# docs/archive/roadmap-hackathon-era.md proposed anchoring on `content_address_for()` or on
-# `nous_user_id`. Both were checked against the code and both are wrong:
-#
-#   * `identity.content_address_for(name, nous_user_id)` digests
-#     `f"emporia:v1:{normalized}:{material}"` — the **name is inside the
-#     digest**, so it changes on rename. It cannot be a rename-stable id, and
-#     its only caller is the games lobby; relay registration never touches it.
-#   * `nous_user_id` is one-to-many *by design* — `relay_server.py` drops any
-#     unique index on it, commented "one Nous user may operate multiple agent
-#     personas." Worse, re-registration UPSERTs `trust_level`, so a key_only
-#     agent upgrading to nous_verified would *acquire* a Nous-derived id it
-#     didn't have, changing identity at exactly the moment continuity matters.
+# An id anchored on anything but the key was ruled out: `content_address_for(name, ...)` digests the name,
+# so it changes on rename, and an operator label is one-to-many by design (one person runs several agents).
 #
 # The pubkey is already the ownership proof — registration requires an Ed25519
 # key and already refuses a taken handle presented under a different one. It
 # simply was never written down as an id. So: `stable_id` is derived from the
 # genesis pubkey, allocated once, then **stored** and never recomputed, which
-# is what lets a key rotate without identity following it. `nous_user_id` stays
-# what it honestly is: a one-to-many linkage answering "same operator", which
-# is the "combo" half a Nous anchor can actually support.
+# is what lets a key rotate without identity following it. The operator label
+# stays what it honestly is: a one-to-many linkage answering "same operator".
 # ============================================================================
 
 def _p47_pubkey(seed: str) -> str:
@@ -22829,59 +22703,28 @@ def test_re_registering_after_a_rotation_does_not_reallocate_identity(client):
     )
 
 
-def test_trust_upgrade_preserves_the_stable_id(client, monkeypatch):
-    """The case that kills the Nous-anchored design outright. Registration
-    UPSERTs `trust_level`, so a key_only agent presenting a Nous claim becomes
-    nous_verified on an ordinary re-register — under a Nous anchor that would
-    hand it a *new* identity at the exact moment its identity became better
-    attested."""
-    from emporia.relay_server import AGENT_REGISTRY
-
+def test_a_label_change_preserves_the_stable_id(client):
+    """Gaining or changing an operator label is a re-register: the agent's identity stays the one first allocated."""
+    from emporia import operators
     key = _p47_pubkey("p47_upgrade")
     first = client.post("/agents/register", json={"agent_id": "p47_upgrade", "public_key_hex": key})
     assert first.status_code == 200, first.text
     original = first.json()["stable_id"]
-    assert first.json()["trust_level"] == "key_only"
-
-    class _Claim:
-        subject_id = "nous_user_p47"
-        display_name = "P47 Upgraded"
-
-    import emporia.identity_providers as idp
-    monkeypatch.setattr(idp, "verify_claim", lambda provider, token: _Claim())
-
-    upgraded = AGENT_REGISTRY.register(
-        "p47_upgrade", key, identity_claims=[{"provider": "nous", "token": "t"}],
-    )
-    assert upgraded["trust_level"] == "nous_verified"
-    assert upgraded["nous_user_id"] == "nous_user_p47"
-    assert upgraded["stable_id"] == original, \
-        "gaining a Nous attestation must not change the agent's identity"
+    labelled = client.post("/agents/register", json={"agent_id": "p47_upgrade", "public_key_hex": key,
+                                                     "operator_label": operators.new_label()})
+    assert labelled.json()["operator_label"].startswith("op_")
+    assert labelled.json()["stable_id"] == original, "an operator label must not change the agent's identity"
 
 
-def test_one_nous_user_still_maps_to_many_agents_each_with_its_own_identity(client, monkeypatch):
-    """`nous_user_id` is a linkage, not an identity — the relay deliberately
-    dropped any unique index on it because one operator runs several personas.
-    Pinned from both directions: the personas share the Nous id and do not
-    share a `stable_id`."""
-    class _Claim:
-        subject_id = "nous_operator_p47"
-        display_name = ""
-
-    import emporia.identity_providers as idp
-    monkeypatch.setattr(idp, "verify_claim", lambda provider, token: _Claim())
-
+def test_one_label_still_maps_to_many_agents_each_with_its_own_identity(client):
+    """The label is a linkage, not an identity: two agents of one operator share it and not a `stable_id`."""
+    from emporia import operators
     from emporia.relay_server import AGENT_REGISTRY
-    personas = [
-        AGENT_REGISTRY.register(
-            f"p47_persona_{n}", _p47_pubkey(f"persona{n}"),
-            identity_claims=[{"provider": "nous", "token": "t"}],
-        )
-        for n in ("a", "b")
-    ]
-    assert {p["nous_user_id"] for p in personas} == {"nous_operator_p47"}
-    assert len({p["stable_id"] for p in personas}) == 2, \
-        "two personas of one operator must not share an identity"
+    label = operators.new_label()
+    personas = [AGENT_REGISTRY.register(f"p47_persona_{n}", _p47_pubkey(f"persona{n}"), operator_label=label)
+                for n in ("a", "b")]
+    assert {p["operator_label"] for p in personas} == {label}
+    assert len({p["stable_id"] for p in personas}) == 2, "two agents of one operator must not share an identity"
 
 
 
@@ -25054,125 +24897,6 @@ def test_one_unreconcilable_row_does_not_take_the_rest_of_the_sweep_with_it(
 # failing halfway through building a 402 challenge". These are the places that
 # don't.
 # ---------------------------------------------------------------------------
-
-
-def test_an_unreachable_identity_provider_degrades_instead_of_500ing():
-    """`_JwksCache.get()` fetches Nous's JWKS over the network and calls
-    `raise_for_status()`. When the provider is unreachable that raises
-    `httpx.ConnectError` — which is not an `IdentityVerificationError`, and the
-    registration route catches only that. So a Nous outage turned every
-    registration carrying a JWT into a 500.
-
-    Fail-closed is the requirement, and it already worked for a *bad* claim
-    (skipped, agent stays `key_only`). "The provider is down" is the same
-    answer — this relay cannot verify you — and must arrive the same way, not
-    as a stack trace. A relay running with `EMPORIA_REQUIRE_NOUS=1`, which the
-    README recommends for public deployments, then refuses registration with a
-    reason instead of failing to answer at all.
-    """
-    import httpx as _httpx
-
-    from emporia.identity_providers import IdentityVerificationError, verify_claim
-
-    def _provider_down(*a, **k):
-        raise _httpx.ConnectError("nous portal unreachable")
-
-    with patch("httpx.get", _provider_down):
-        with pytest.raises(IdentityVerificationError):
-            verify_claim("nous", "eyJhbGciOiJSUzI1NiJ9.e30.sig")
-
-
-def test_registration_survives_an_identity_provider_outage(client):
-    """The same thing through the route that actually matters. The agent
-    registers, is told nothing verified, and lands at `key_only` — the trust
-    level an unverifiable claim has always produced."""
-    import httpx as _httpx
-
-    def _provider_down(*a, **k):
-        raise _httpx.ConnectError("nous portal unreachable")
-
-    with patch("httpx.get", _provider_down):
-        r = client.post("/agents/register", json={
-            "agent_id": "p53_outage_agent",
-            "public_key_hex": _test_pubkey("p53_outage_agent"),
-            "identity_claims": [
-                {"provider": "nous", "token": "eyJhbGciOiJSUzI1NiJ9.e30.s"}
-            ],
-        })
-    assert r.status_code == 200, (
-        f"a provider outage must not become a 500 on the registration route; "
-        f"got {r.status_code}: {r.text[:300]}"
-    )
-    assert r.json()["trust_level"] == "key_only", (
-        f"an outage is not a verification: {r.json()}"
-    )
-
-
-@pytest.mark.asyncio
-async def test_a_slow_identity_provider_does_not_stall_the_whole_relay():
-    """`AgentRegistry.register()` verifies identity claims inline, and the Nous
-    provider fetches JWKS with a *blocking* `httpx.get` carrying a 5s timeout —
-    twice (OIDC discovery, then the keyset). On the event loop that stalls the
-    entire relay, not just the one request, and the JWKS cache only stores on
-    success so every attempt against a down provider pays it again.
-
-    Deterministic rather than timed: the fake provider blocks until a
-    concurrent `/health` request releases it. If registration is running on the
-    loop, `/health` can never be served, the event is never set, and the fake
-    gives up on its own timeout — so the assertion fails on state, not on how
-    fast the machine is.
-    """
-    import asyncio as _asyncio
-    import threading as _threading
-
-    import httpx as _httpx
-
-    released = _threading.Event()
-    served_health = _threading.Event()
-    observed: dict[str, bool] = {}
-
-    def _blocking_provider(*a, **k):
-        # Waits for the loop to prove it is still alive. Recording *how* the
-        # wait ended is the whole test: a blocked loop cannot serve /health, so
-        # the wait ends on its own timeout with the event still clear. Checking
-        # `released.is_set()` after the gather instead would pass either way —
-        # on a blocked loop /health is still served, just five seconds later,
-        # once the timeout releases the loop. (My first version of this test did
-        # exactly that and passed with the defect reintroduced.)
-        released.wait(timeout=5.0)
-        observed["released_by_health"] = released.is_set()
-        raise _httpx.ConnectError("provider unreachable")
-
-    transport = _httpx.ASGITransport(app=app)
-    async with _httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
-        with patch("httpx.get", _blocking_provider):
-            async def _register_slowly():
-                return await ac.post("/agents/register", json={
-                    "agent_id": "p53_slow_provider_agent",
-                    "public_key_hex": _test_pubkey("p53_slow_provider_agent"),
-                    "identity_claims": [
-                        {"provider": "nous", "token": "eyJhbGciOiJSUzI1NiJ9.e30.s"}
-                    ],
-                })
-
-            async def _health_meanwhile():
-                await _asyncio.sleep(0.05)
-                r = await ac.get("/health")
-                served_health.set()
-                released.set()
-                return r
-
-            reg, health = await _asyncio.gather(_register_slowly(), _health_meanwhile())
-
-    assert observed.get("released_by_health") is True, (
-        "/health had to be served *while* the provider was hanging. It was not, "
-        "so the blocking fetch is running on the event loop and stalls the whole "
-        "relay for the provider's timeout on every registration attempt"
-    )
-    assert served_health.is_set()
-    assert health.status_code == 200, health.text
-    assert reg.status_code == 200, reg.text
-    assert reg.json()["trust_level"] == "key_only"
 
 
 # ---------------------------------------------------------------------------

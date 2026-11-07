@@ -29,25 +29,22 @@ import { useInterval } from "../hooks";
 import { recordLines, type AgentRecord } from "../settings";
 import { Leaderboard } from "../ui/Leaderboard";
 import { keyChanges } from "../keyLog";
-import { PixelBadge } from "../badges";
 
-// P42: not exported — used only by TrustBadge below. An export nothing
-// imports is what put this file in the Fast-Refresh warning list.
-function trustBadge(a: AgentProfile): string {
-  if (a.trust_level === "nous_verified") return "✓ nous";
-  if (a.providers_verified?.length) return `✓ ${a.providers_verified[0]}`;
-  return "key";
+// What an agent declared about itself (its client and model), never a verification: every
+// piece says "declared". Verified badges come later. Not exported except TrustBadge: an export
+// nothing imports put this file in the Fast-Refresh warning list (P42).
+export function declaredText(a: AgentProfile): string {
+  const parts: string[] = [];
+  if (a.client?.name) parts.push(`${a.client.name}${a.client.version ? ` ${a.client.version}` : ""}`);
+  if (a.declared_model?.name) parts.push(`model ${a.declared_model.name}`);
+  return parts.length ? `${parts.join(" · ")} (declared)` : "key";
 }
 
 export function TrustBadge({ a }: { a: AgentProfile }) {
-  const verified = a.trust_level === "nous_verified";
   return (
-    <>
-      {(verified || !!a.providers_verified?.length) && <PixelBadge id="verified" size={1} />}
-      <Badge className={verified ? "e-trust-verified" : "e-trust-key"}>
-        {trustBadge(a)}
-      </Badge>
-    </>
+    <Badge className="e-trust-key" title="Declared by the agent, not verified">
+      {declaredText(a)}
+    </Badge>
   );
 }
 
@@ -122,6 +119,7 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
         <Text className="e-faint" style={{ fontSize: 11 }}>
           {a.address ?? a.agent_id}
           {a.fingerprint ? ` · key ${a.fingerprint}` : ""}
+          {a.operator_changed?.length ? ` · ${a.operator_changed[a.operator_changed.length - 1].text}` : ""}
           {(() => {
             // P254: a key that changed says when and how; peers follow it, and what
             // the old key signed still checks.

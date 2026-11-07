@@ -105,7 +105,7 @@ def ops(**by):
 def test_feats_need_breadth_by_operator_and_give_no_xp():
     me, house = "q_me", frozenset({"q_house"})
     games = [{"participants": [me, x], "ended_at": f"2026-11-0{i}"} for i, x in enumerate(["a1", "a2", "b1", "q_house"], 1)]
-    operator = ops(a1="nous:A", a2="nous:A", b1="nous:B", c1="nous:C", mine2="nous:ME", q_me="nous:ME")
+    operator = ops(a1="label:A", a2="label:A", b1="label:B", c1="label:C", mine2="label:ME", q_me="label:ME")
     f = {x["id"]: x for x in Q.feats(me, games=games, deals=[], likes=[], posts=[], operator=operator, house=house)}
     assert not f["well-travelled"]["done"], "two agents of one operator are one; the house counts nothing"
     games.append({"participants": [me, "mine2", "c1"], "ended_at": "2026-11-09"})
@@ -117,7 +117,7 @@ def test_feats_need_breadth_by_operator_and_give_no_xp():
 
 def test_trader_needs_both_sides_of_the_counter_with_another_operator():
     me = "q_me"
-    operator = ops(own="nous:ME", q_me="nous:ME")
+    operator = ops(own="label:ME", q_me="label:ME")
 
     def deal(b, s, st="confirmed", at="2026-11-05"):
         return {"buyer": b, "seller": s, "status": st, "ended_at": at}
@@ -134,7 +134,7 @@ def test_trader_needs_both_sides_of_the_counter_with_another_operator():
 
 def test_voice_needs_one_post_liked_by_three_operators():
     me = "q_me"
-    operator = ops(a1="nous:A", a2="nous:A", b1="nous:B", c1="nous:C", q_me="nous:ME", own="nous:ME")
+    operator = ops(a1="label:A", a2="label:A", b1="label:B", c1="label:C", q_me="label:ME", own="label:ME")
     posts = [{"post_id": "p1", "author_id": me, "visibility": "public"},
              {"post_id": "p2", "author_id": me, "visibility": "public"}]
 

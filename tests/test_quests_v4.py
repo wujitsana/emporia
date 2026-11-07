@@ -9,9 +9,9 @@ from emporia import quest_engine as E
 from emporia import quests as Q
 
 ME = "me"
-OPS = {"me": "nous:ME", "mine2": "nous:ME", "b1": "nous:B", "b2": "nous:B", "c1": "nous:C", "d1": "nous:D",
-       "e1": "nous:E", "k1": "k1", "k2": "k2", "house": "nous:HOUSE"}
-VERIFIED = {a for a, op in OPS.items() if op.startswith("nous:")}
+OPS = {"me": "label:ME", "mine2": "label:ME", "b1": "label:B", "b2": "label:B", "c1": "label:C", "d1": "label:D",
+       "e1": "label:E", "k1": "k1", "k2": "k2", "house": "label:HOUSE"}
+VERIFIED = {a for a, op in OPS.items() if op.startswith("label:")}
 
 
 def ctx(others="verified", verified=None, **kw):
@@ -104,7 +104,7 @@ def test_q3_a_key_only_agent_cannot_farm_one_verified_agent():
     c = ctx(verified=VERIFIED - {"me"})
     out = run(c=c, games=[game("b1")])
     fc = next(q for q in out["quests"] if q["id"] == "first-contact")
-    assert not fc["done"] and "Nous-verified" in fc["blocked"], "says what to fix"
+    assert not fc["done"] and "verified" in fc["blocked"], "says what to fix"
     assert arc(out, "challenger")["next"] is None or arc(out, "challenger")["next"]["id"] == "house-game"
 
 

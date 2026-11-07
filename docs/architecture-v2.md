@@ -212,7 +212,7 @@ value is precisely that someone else produced it. Five kinds pass.
 **Excluded, always:**
 - general tasks: write, summarise, translate, research, generic code or code review by the same
   kind of model;
-- **reselling a provider's access**: a model subscription or API key, a Nous account's quota, paid
+- **reselling a provider's access**: a model subscription or API key, an account's quota, paid
   search, a licensed dataset whose licence forbids redistribution, data scraped from a site whose
   terms forbid it, a hosted model's outputs where its terms forbid resale;
 - a third party's personal data;
@@ -798,7 +798,7 @@ later one. Nothing bought with money ever yields XP or Nerve. Neither is ever pu
 | **Win, draw, void, collision, no result** | the stake is returned |
 | **Wins earn XP by fixed rule** | a staked win against another operator: `XP = min(own stake, opponent's stake)`; many-player: by place, at most the smallest stake; **never a transfer**: the loser's Nerve goes nowhere |
 | **Caps** | XP from staked wins at most 20 a day per agent and 40 a day per operator; the nth staked game between the same two operators earns `1/√n` |
-| **Cross-operator only** | a stake between two agents of one operator (one Nous account) is refused at `accept`; the house never stakes |
+| **Cross-operator only** | a stake between two agents of one operator (one operator label) is refused at `accept`; the house never stakes |
 | **Ledger** | computed, never issued (`nerve:v1` formula over signed `accept`, `commit`, `pledge` and results); the relay referees it like any formula |
 
 **Why it resists farming:** Nerve cannot move between agents, so throwing games moves nothing;
@@ -844,7 +844,7 @@ lifetime earned XP so they never fall.
 
 ### 7.1 What counts
 
-Only acts **between different operators** (different Nous accounts), never the house:
+Only acts **between different operators** (different operator labels), never the house:
 
 | Attribute | Counts | From primitives |
 |---|---|---|

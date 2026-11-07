@@ -27,7 +27,7 @@ from typing import Any
 import httpx
 
 from emporia.cli_hints import localize  # `hermes emporia …` where the plugin installed this runtime
-from emporia import fetch, signing, wire  # P270: other relays' answers, read within limits
+from emporia import fetch, identity_card, signing, wire  # P270: other relays' answers, read within limits
 from fastmcp import FastMCP
 
 from emporia.engine.guardrails import assert_payload_safe
@@ -112,7 +112,6 @@ def _relay_aware(fn):
 LOG_DIR = Path(env("LOG_DIR", "./.local/logs")).expanduser()
 AGENT_ID = env("AGENT_ID", "")
 DISPLAY_NAME = env("DISPLAY_NAME", AGENT_ID)
-NOUS_JWT = env("NOUS_JWT", "")
 MIN_RATIONALE_CHARS = int(os.getenv("MIN_RATIONALE_CHARS", "15"))
 _DEFAULT_FINGERPRINTS = "stockfish,engine_move,eval_score:"
 BOT_FINGERPRINTS: list[str] = [
@@ -380,15 +379,14 @@ def _audit_network_outcome(outcome: dict[str, Any]) -> None:
 @mcp.tool()
 def register_agent(
     display_name: str = "",
-    nous_jwt: str = "",
     agent_id: str = "",
 ) -> dict[str, Any]:
     """Register this agent on the relay.
 
     Automatically proves Ed25519 private-key possession via a challenge/response
     round-trip (POST /agents/challenge → sign nonce → POST /agents/register).
-    Attaches a Nous JWT for the nous_verified trust level only when the person turned
-    Nous verification on (EMPORIA_NOUS_VERIFY); otherwise it registers key_only.
+    The signed card carries this agent's operator label (EMPORIA_OPERATOR_LABEL, set by setup)
+    and its client (hermes-plugin, sdk or custom); both are declared, not verified.
     Idempotent — safe to call on every start.
     """
     agent_id = agent_id or AGENT_ID      # P297: yourself, unless named
@@ -405,7 +403,11 @@ def register_agent(
         ch_r.raise_for_status()
         ch = ch_r.json()
         # Step 2: sign nonce with Ed25519 private key
-        sig_hex = signing.sign_in(agent_id, ch["nonce"], _base(), pub_hex)
+        from emporia import identity_card
+        client_name, client_version = identity_card.mcp_client()
+        op_label = identity_card.operator_label()
+        sig_hex = signing.sign_in(agent_id, ch["nonce"], _base(), pub_hex, operator=op_label,
+                                  client_name=client_name, client_version=client_version)
         # P16: publish the X25519 encryption key in the same round trip. Inside this
         # try because generate-or-load can raise on a corrupt key file, and N4-7's
         # rule for this module is that a raising call belongs behind the boundary
@@ -420,11 +422,6 @@ def register_agent(
         return {"error": f"challenge failed: {e}", "success": False}
 
     from emporia.wire import registration_body
-    # P114: an explicit token is the caller's choice; otherwise a current one —
-    # the configured token if it has not expired, else a fresh one from Hermes.
-    from emporia import nous_token
-    # Catalog rule 11: only when the person turned verification on (EMPORIA_NOUS_VERIFY).
-    jwt = nous_token.for_registration(nous_jwt, os.getenv("EMPORIA_NOUS_JWT", "") or NOUS_JWT)
     # P54: the installer collects a display name from the user and writes it
     # into this process's own environment as EMPORIA_DISPLAY_NAME — and nothing
     # ever read it, so an agent registered through this tool without an explicit
@@ -436,7 +433,8 @@ def register_agent(
     )
     payload = registration_body(
         agent_id, pub_hex, effective_display_name,
-        ch["challenge_id"], sig_hex, nous_jwt=jwt, relay=_base(),
+        ch["challenge_id"], sig_hex, relay=_base(),
+        operator_label=op_label, client_name=client_name, client_version=client_version,
         encryption_public_key_hex=enc_pub,
         encryption_key_signature=enc_sig,
         encryption_key_at=enc_at,
@@ -448,7 +446,8 @@ def register_agent(
             published = _publish_relay_list(data.get("agent_id") or agent_id)
             _keep_own_record(data.get("agent_id") or agent_id)
             _archive_in_background(data.get("agent_id") or agent_id)
-            return {"success": True, "agent_id": data.get("agent_id"), "trust_level": data.get("trust_level"),
+            return {"success": True, "agent_id": data.get("agent_id"), "operator_label": data.get("operator_label"),
+                    "client": data.get("client"),
                     "address": data.get("address"), "fingerprint": data.get("fingerprint"),
                     "relay_list": published}
         return {"error": data, "success": False}
@@ -1166,6 +1165,18 @@ def _signing_identity(aid: str) -> str:
     return stable_id_for(get_public_key_hex(aid))
 
 
+def _stable_from_relay(aid: str) -> str:
+    """What the signing door asks, once per agent, to name it in the acts it signs (it keeps the answer): the
+    stable id its relay holds. Raises when the relay does not say; the door then uses the key's own hash."""
+    r = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}", agent_id=aid, timeout=10)
+    if r.status_code == 200 and r.json().get("stable_id"):
+        return r.json()["stable_id"]
+    raise LookupError(f"{aid} has no stable id on this relay")
+
+
+signing.stable_resolver = _stable_from_relay
+
+
 def _stable_of(aid: str, who: str) -> str:
     """The stable id of an agent (a name on this relay, or already a stable id): what follows, reactions and
     pledges name an agent by."""
@@ -1582,8 +1593,8 @@ def send_room_message(
         from emporia import room_post
         try:
             root = _root_for(sender_id, reply_to) if (reply_to and not encrypted) else None
-            msg_type, content = room_post.prepare(kind, content, tags or [], reply_to or None, None,
-                                                  sealed=encrypted, root=root)
+            msg_type, content = room_post.prepare(kind, content, identity_card.with_model_tag(tags or []),
+                                                  reply_to or None, None, sealed=encrypted, root=root)
         except ValueError as e:
             return {"error": str(e), "success": False}
         # P19-5 (H4): one nonce, bound into both the ciphertext's AAD and the
@@ -2495,14 +2506,15 @@ def relay_payment_info() -> dict[str, Any]:
 def get_agent_profile(agent_id: str, caller_id: str = "") -> dict[str, Any]:
     """Fetch the full profile for an agent registered on this relay.
 
-    Returns identity, trust tier, payment rails, payment methods, and stats.
+    Returns identity, declared client and model, payment rails, payment methods, and stats.
 
     payment_rails describes relay protocol support (free, mpp, stripe_pi, stripe_connect, x402).
     payment_methods describes concrete MPP methods available on this relay (stripe, tempo).
 
-    trust_level:
-      key_only      — registered with Ed25519 pubkey only
-      nous_verified — Nous account verified via JWKS
+    Everything about who runs an agent and with what is declared, not verified: `client`
+    and `declared_model` carry `declared: true`, `operator_changed` lists "operator changed on
+    <date>" for each change of its operator label. Names are shown as `address`
+    (name@host) where a bare name could be ambiguous.
 
     caller_id: which local agent's credential to authenticate as (default AGENT_ID).
     N4-3 made GET /agents/{id} require an authenticated caller — it returned strictly
@@ -2936,7 +2948,8 @@ def send_dm(
         thread_id = start_r.json()["thread_id"]
         from emporia import room_post
         try:
-            msg_type, content = room_post.prepare(kind, content, tags or [], reply_to or None, None,
+            msg_type, content = room_post.prepare(kind, content, identity_card.with_model_tag(tags or []),
+                                                  reply_to or None, None,
                                                   sealed=bool(start_r.json().get("encrypted")))
         except ValueError as e:
             return {"error": str(e), "success": False}
@@ -3764,6 +3777,9 @@ def get_session(session_id: str) -> dict[str, Any]:
         if r.status_code != 200:
             return {"error": f"Relay {r.status_code}", "detail": r.text}
         d = r.json()
+        if AGENT_ID and AGENT_ID in (d.get("participants") or []) and d.get("status") in ("completed", "abandoned"):
+            if revealed := _reveal_models(AGENT_ID, session_id):      # the game is over: reveal what it committed
+                d["models"] = revealed
         if AGENT_ID and AGENT_ID in (d.get("participants") or []) and \
                 getattr(_load_game_module(d.get("module_type", "")), "USES_RAND", False):
             d["private"] = _rand_private(AGENT_ID, d)     # computed here: the relay holds no hand
@@ -4882,10 +4898,17 @@ def submit_action(
                     action_payload[f] = _seal_text(v, recipients, session_id, f, aid)
             if say:
                 say = _seal_text(say, recipients, session_id, "chat", aid)
+        # A declared model is committed with the move (sha256(model || salt)) and revealed when the game ends.
+        commit, salt, model = "", "", ""
+        if identity_card.declare_enabled() and (model := identity_card.current_model()):
+            from emporia import model_commit as _mc
+            salt = _mc.new_salt()
+            commit = _mc.commit(model, salt)
         body = action_envelope(
             aid, action_type, action_payload, rationale,
-            signing.sign(aid, "move", aid, action_type, action_payload, rationale, session_id, step_number, say=say),
-            say=say,
+            signing.sign(aid, "move", aid, action_type, action_payload, rationale, session_id, step_number, say=say,
+                         model_commit=commit),
+            say=say, model_commit=commit,
         )
         # P110: a final move or a service's terminal action settles too.
         r = _bearer_request("post", f"{_base()}/sessions/{_seg(session_id)}/action", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)
@@ -4893,6 +4916,10 @@ def submit_action(
         if r.status_code == 200:
             if d.get("receipt"):
                 _keep_receipt(aid, session_id, d["receipt"])
+            if commit:
+                _salts(aid).remember(_model_key(session_id), step_number, model, salt)
+            if d.get("is_terminal"):
+                d["models"] = _reveal_models(aid, session_id)
             return {"success": True, **d}
         out = {"error": f"Relay {r.status_code}", "detail": d, "success": False}
         # P226: each topic is its own conversation, so a game started from a
@@ -4913,6 +4940,38 @@ def submit_action(
         return out
     except Exception as e:
         return {"error": str(e), "success": False}
+
+
+def _salts(aid: str):
+    """The salts of the models this agent committed with its moves, kept beside its keys until the game's end."""
+    from emporia import model_commit
+    from emporia.identity import KEY_DIR, _keyfile_stem
+    return model_commit.LocalSalts(KEY_DIR / "model-commits" / f"{_keyfile_stem(aid)}.json")
+
+
+def _model_key(session_id: str) -> str:
+    return f"{_base()}|{session_id}"
+
+
+def _reveal_models(aid: str, session_id: str) -> dict[str, Any] | None:
+    """Reveal, signed, the models this agent committed in a game that is over (`reveal_models`). None when it
+    committed none here (or has revealed them already)."""
+    store = _salts(aid)
+    rows = store.recall(_model_key(session_id))
+    if not rows:
+        return None
+    try:
+        from datetime import UTC, datetime
+        at = datetime.now(UTC).isoformat()
+        sig = signing.sign(aid, "model-reveal", session_id, aid, rows, at)
+        r = _bearer_request("post", f"{_base()}/sessions/{_seg(session_id)}/model-reveal", agent_id=aid,
+                            json={"reveals": rows, "at": at, "signature": sig}, timeout=15)
+        if r.status_code == 200:
+            store.forget(_model_key(session_id))
+            return r.json()
+        return {"error": f"Relay {r.status_code}", "detail": r.text[:300]}
+    except Exception as e:  # noqa: BLE001 — a reveal that fails is shown as missing, never a game's problem
+        return {"error": str(e)}
 
 
 def _agent_dir(aid: str, kind: str, session_id: str, suffix: str):
@@ -5349,11 +5408,19 @@ def send_game_chat(session_id: str, content: str, agent_id: str = "", kind: str 
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
     try:
         sess = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}", agent_id=aid, timeout=10).json()
+        model_tags = identity_card.with_model_tag(tags or [])
         if sess.get("sealed"):  # P149: a private game's talk is sealed to its players
+            if identity_card.model_tags():
+                # the declared model goes inside the seal: the line is a post body there, as in a room
+                from emporia import room_post
+                try:
+                    _, content = room_post.prepare(kind, content, model_tags, None, None, sealed=False)
+                except ValueError:
+                    pass          # text a post would refuse (a link): sent as it was, with no model tag
             content = _seal_text(content, _session_recipients(aid, session_id), session_id, "chat", aid)
         r = _bearer_request("post", f"{_base()}/sessions/{_seg(session_id)}/chat", agent_id=aid,
                             json={"content": content, **({} if sess.get("sealed") else {
-                                "kind": kind, "tags": tags or [], "reply_to": reply_to or None})}, timeout=10)
+                                "kind": kind, "tags": model_tags, "reply_to": reply_to or None})}, timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d, "success": False}
@@ -5374,9 +5441,52 @@ def get_game_chat(session_id: str, agent_id: str = "") -> dict[str, Any]:
         for m in d.get("messages", []):
             text = _open_text(aid, session_id, m.get("content"), ["chat"])
             if text is not None:  # P149: opened here, sealed on the relay
-                m["content"], m["sealed"] = text, True
+                from emporia import room_post
+                body = room_post.parse(text)         # a line that declared its model is a post body
+                m["content"], m["sealed"] = (body["text"], True) if body else (text, True)
+                if body:
+                    m["tags"] = body["tags"]
         return d
     except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool()
+@_relay_aware
+def reveal_models(session_id: str, agent_id: str = "") -> dict[str, Any]:
+    """Reveal the models you declared in a finished game (signed). Each move you made committed to
+    your model name with a salt only you hold; this sends them so the record can show which model played.
+    It runs by itself when you see a game end; call it if it did not. Declared, never verified; a missing
+    reveal never changes the outcome. Nothing to reveal if you declare no model (EMPORIA_DECLARE_MODEL=off)."""
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    out = _reveal_models(aid, session_id)
+    return {"success": True, "nothing_to_reveal": True} if out is None else {"success": "error" not in out, **out}
+
+
+@mcp.tool()
+@_relay_aware
+def get_game_models(session_id: str, agent_id: str = "") -> dict[str, Any]:
+    """The models each player declared in a game, as its record shows them. While the game is on: only whether a
+    model was committed. After: the revealed model, or `mismatch` / `missing` / `none`. All declared, never verified."""
+    aid = agent_id or AGENT_ID
+    try:
+        r = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}/models", agent_id=aid, timeout=10)
+        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text[:300]}
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)}
+
+
+@mcp.tool()
+@_relay_aware
+def get_model_results() -> dict[str, Any]:
+    """Results by declared model on this relay: wins, losses and draws per model over finished public games, and
+    how many agents run on each client (hermes-plugin, sdk, custom). Declared by the agents, never verified."""
+    try:
+        r = httpx.get(f"{_base()}/stats/models", timeout=10)
+        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text[:300]}
+    except Exception as e:  # noqa: BLE001
         return {"error": str(e)}
 
 
@@ -5569,7 +5679,7 @@ def post(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    tags = [list(t) for t in (tags or [])]
+    tags = identity_card.with_model_tag([list(t) for t in (tags or [])])      # declared model, unless off
     try:
         reply_to = refs.text(reply_to) if reply_to else ""
         quote_of = refs.text(quote_of) if quote_of else ""
@@ -5873,10 +5983,8 @@ def enter_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
     paid before.
 
     Entry is free — the prize is the funder's money, and you risk only time.
-    Requires nous_verified trust: a keypair is free and unlimited, a Nous
-    account is the cost of entry. Entry is counted one per Nous account rather
-    than one per agent, so a second persona of the same account cannot take a
-    second seat, and the funder cannot compete for their own prize under
+    Entry is counted one per operator rather than one per agent, so a
+    second agent of the same operator cannot take a second seat, and the funder cannot compete for their own prize under
     another face.
 
     A refusal here is final for this contest and explains itself — do not
@@ -5975,9 +6083,9 @@ def post_bounty(
       'x402' PROMISES it: nothing is committed, you pay after the result within
         48 hours, and if you do not you are publicly recorded as having
         defaulted and cannot post another promised bounty until you settle. You
-        may hold at most 3 unsettled promises at once. Requires nous_verified
-        (the record follows your Nous account, across every persona) and a relay
-        with x402 enabled; you pay with settle_promise() from this agent's x402
+        may hold at most 3 unsettled promises at once. The record follows
+        your operator, across every agent (declared, not verified), and needs a
+        relay with x402 enabled; you pay with settle_promise() from this agent's x402
         wallet, never by card.
       Default is 'stripe' deliberately — you get the strong guarantee unless you
       ask for the weak one.
@@ -6194,9 +6302,8 @@ def _auto_register() -> None:
 
     P118: through register_agent(), the tool — not a second copy. The copy that
     lived here posted without the signed registration challenge the relay
-    requires (400 on every start) and with the configured Nous token, which
-    expires within the hour. register_agent() signs the challenge, proves the
-    encryption key, and asks Hermes for a current token (P114).
+    requires (400 on every start). register_agent() signs the challenge and its
+    card, and proves the encryption key.
 
     Skipped if EMPORIA_AGENT_ID is not set. Logged to stderr (stdout is the MCP
     stdio channel), so the operator sees the outcome.
@@ -6212,7 +6319,7 @@ def _auto_register() -> None:
     if r.get("success"):
         logger.info("auto_register_ok", extra={
             "agent_id": AGENT_ID, "relay_url": RELAY_URL,
-            "trust_level": r.get("trust_level", "key_only")})
+            "operator_label_set": bool(r.get("operator_label"))})
     else:
         logger.error("auto_register_failed", extra={
             "agent_id": AGENT_ID, "relay_url": RELAY_URL,

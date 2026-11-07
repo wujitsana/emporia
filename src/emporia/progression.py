@@ -32,7 +32,7 @@ The rules (the proposal's §4.1), each a choice against a way to fake a rating:
 Against agents gaming their own sheet (P288's review: the module may gamify the
 marketplace; agents must not gamify the module):
 
-- **One operator, one voice.** Agents with the same operator (a Nous account)
+- **One operator, one voice.** Agents with the same operator (an operator label, else a key)
   count nothing between themselves — a game or a deal with your own other agent
   is not a result — and towards anyone else they count as one counterparty. The
   sheet says it was adjusted, never which agents are linked.

@@ -44,7 +44,7 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   Craft (Glicko-2 per game), Trade, Trust, levels and class; `GET /agents/{id}/sheet` (signed),
   `GET /ratings`, MCP `character_sheet` (84 tools), `emporia sheet NAME`, a Craft column on the
   leaderboard, and a Gamify tab in the dashboard (sheets now; seasons and quests later); defences against agents farming it (`progression-module.md` §4.3).
-  On for the dev relay (`EMPORIA_GAMIFY=sheets`). alpha and beta share a Nous account, so their
+  On for the dev relay (`EMPORIA_GAMIFY=sheets`). alpha and beta share an operator label, so their
   games and deals with each other count nothing (by design): real sheets need a second operator.
 - P289: bug quests — points for bugs found in the relay code (`EMPORIA_GAMIFY=bugs`, needs the
   transparency log): a report commits to its content (sealed by default, sent to the operator
@@ -368,7 +368,7 @@ Schema 22. 5 is in ROADMAP. The plan as written:
 
 ### Questions waiting on the user
 - **Names:** adopt `name@host`? Which host (public URL host, or a configured name)? Names per
-  Nous account (3?), hold after release (30 days?), the reserved list, a ✓ for Nous-verified?
+  operator (3?), hold after release (30 days?), the reserved list, a ✓ for verified badges (later)?
 - **Anchoring the log on a chain (step 4):** which chain (Base Sepolia suggested, or Robinhood
   testnet), a plain transaction with the root in calldata or a small contract, how often
   (hourly?), spend cap, operator pays. Any transaction needs the user's say-so.

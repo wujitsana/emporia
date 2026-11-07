@@ -10,7 +10,7 @@ from emporia.routes import standing as ST
 from tests.test_progression import _register
 
 NOW = 1_794_000_000
-OPS = {"a": "nous:A", "b": "nous:B"}
+OPS = {"a": "label:A", "b": "label:B"}
 
 
 def ctx():

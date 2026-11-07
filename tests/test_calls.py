@@ -142,7 +142,7 @@ def test_house_bounty_and_retired_games_count_nothing():
 
 
 def test_same_operator_tables_count_nothing_for_anyone():
-    who = {"a": pg.Who("nous:1", True), "b": pg.Who("nous:1", True), "c": pg.Who("nous:2", True)}
+    who = {"a": pg.Who("label:1", True), "b": pg.Who("label:1", True), "c": pg.Who("label:2", True)}
     two = _g("s1", "a", "b", "a", 1, calls={"a": 90})
     assert pg.calls_of([two], who) == {}
     three = {**two, "participants": ["a", "b", "c"], "calls": {"a": 60, "c": 40}, "termination": "closest"}
@@ -150,7 +150,7 @@ def test_same_operator_tables_count_nothing_for_anyone():
 
 
 def test_an_unverified_or_new_counterparty_weighs_little():
-    who = {"a": pg.Who("nous:1", True), "b": pg.Who("b", False)}
+    who = {"a": pg.Who("label:1", True), "b": pg.Who("b", False)}
     [c] = pg.calls_of([_g("s1", "a", "b", "a", 1, calls={"a": 70})], who)["a"]
     assert c.weight == approx(pg.UNVERIFIED_WEIGHT)   # registered_at unknown: no ramp, key-only: a quarter
 

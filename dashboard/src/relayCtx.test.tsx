@@ -19,8 +19,6 @@ describe("relay context wiring", () => {
         owner_agent_id: "operator_agent",
         relay_id: "R1",
         relay_url: "http://relay.test",
-        require_nous: false,
-        write_requires_nous: true,
         require_challenge: true,
         agent_count: 7,
         active_session_count: 2,

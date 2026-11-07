@@ -34,8 +34,8 @@ def _agents(client, *tags, verified=True):
         _register_keyed(client, a)
         if verified:
             with rs.DB_LOCK, rs.get_db() as conn:
-                conn.execute("UPDATE authorized_agents SET nous_user_id = ? WHERE agent_id = ?",
-                             (f"nous_{a}", a))
+                conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?",
+                             (f"op_{a}", a))
     return out
 
 
@@ -133,14 +133,13 @@ def test_q11_the_board_cannot_be_flooded(client):
     assert r.status_code == 400 and "one at a time" in r.text
 
 
-def test_q9_a_ladder_challenge_to_your_own_agent_the_house_or_a_key_only_one_is_refused(client, monkeypatch):
+def test_q9_a_ladder_challenge_to_your_own_agent_or_the_house_is_refused(client, monkeypatch):
     a, mine = _agents(client, "a", "mine")
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("UPDATE authorized_agents SET nous_user_id = ? WHERE agent_id = ?", (f"nous_{a}", mine))
+        conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?", (f"op_{a}", mine))
     house, = _agents(client, "house")
     monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", house)
-    keyonly, = _agents(client, "k", verified=False)
-    for opp, why in ((mine, "own agents"), (house, "house"), (keyonly, "Nous-verified")):
+    for opp, why in ((mine, "own agents"), (house, "house")):
         r = _challenge(client, a, opponent=opp, ladder=True)
         assert r.status_code == 400 and why in r.text, (opp, r.text)
     b, = _agents(client, "b")

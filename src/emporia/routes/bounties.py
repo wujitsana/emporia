@@ -38,6 +38,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from emporia import bounties as rules
+from emporia import operators
 from emporia import relay_server as rs
 from emporia.module_sdk import MODULE_REGISTRY
 from emporia.module_sdk import get_interaction_module
@@ -60,16 +61,15 @@ class CreateBountyRequest(BaseModel):
     rail: str = RAIL_STRIPE
 
 
-def _agent_identity(conn, agent_id: str) -> tuple[str, str | None]:
-    """(trust_level, nous_user_id) — read together because entry needs both and
-    reading them separately invites them to disagree."""
+def _agent_operator(conn, agent_id: str) -> str:
+    """The agent's operator (`operators.operator_of`): its label, else its key."""
     row = conn.execute(
-        "SELECT trust_level, nous_user_id FROM authorized_agents WHERE agent_id = ?",
+        "SELECT agent_id, operator_label, stable_id FROM authorized_agents WHERE agent_id = ?",
         (agent_id,),
     ).fetchone()
     if not row:
         raise HTTPException(404, f"Unknown agent {agent_id!r}")
-    return (row["trust_level"] or "key_only"), row["nous_user_id"]
+    return operators.operator_of_row(row)
 
 
 def _require_hosted_here(row) -> None:
@@ -183,19 +183,11 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
                 "be paid. Fund it on the held rail (rail='stripe') instead."
             ))
         with rs.DB_LOCK, rs.get_db() as conn:
-            trust, _ = _agent_identity(conn, caller)
             unpaid, outstanding = _funder_promise_record(conn, caller)
-        # P84: the consequence that backs a promise has to bind the operator,
-        # not the key. Counted per key, a funder who defaulted registered a
-        # fresh keypair (free, unlimited) and promised again. Entry is already
-        # counted per Nous account for the same reason.
-        if trust != "nous_verified":
-            raise HTTPException(403, (
-                "Posting a bounty backed by a promise requires nous_verified. Its only "
-                "backing is the record of whether you paid, and that record has to follow "
-                "your account rather than a key you can replace. A held prize needs no "
-                "such record — fund it on rail='stripe'."
-            ))
+        # P84: the record that backs a promise follows the operator, not the key: counted per
+        # key, a funder who defaulted registered a fresh keypair and promised again. The operator
+        # label is declared, not proven, so this is a record, not a guarantee; a held prize
+        # (rail='stripe') needs no record.
         allowed, why = rules.funder_may_promise(
             unpaid_defaults=unpaid, outstanding_promises=outstanding,
         )
@@ -258,18 +250,17 @@ def _funder_promise_record(conn, agent_id: str) -> tuple[int, int]:
     together, and two queries a moment apart could disagree about the same
     funder mid-contest.
     """
-    # P84: counted across every persona of the funder's Nous account, via the
-    # `funder_nous_user_id` pinned on each bounty at funding — otherwise a
+    # P84: counted across every agent of the funder's operator, via the
+    # `funder_operator` pinned on each bounty at funding — otherwise a
     # default follows only the key that incurred it.
-    _, nous_id = _agent_identity(conn, agent_id)
+    op = _agent_operator(conn, agent_id)
     rows = conn.execute(
         "SELECT metadata_json FROM listings WHERE listing_type = ? AND origin_relay = ? "
-        "AND (agent_id = ? OR (? IS NOT NULL AND "
-        "json_extract(metadata_json, '$.funder_nous_user_id') = ?))",
+        "AND (agent_id = ? OR json_extract(metadata_json, '$.funder_operator') = ?)",
         # P83: hosted here only. A peer's bounty rows carry whatever agent_id
         # and state the peer wrote, and an agent_id is only unique per relay —
         # counting them let a peer plant a default against a local agent.
-        (rules.BOUNTY_LISTING_TYPE, rs.RELAY_BASE_URL, agent_id, nous_id, nous_id),
+        (rules.BOUNTY_LISTING_TYPE, rs.RELAY_BASE_URL, agent_id, op),
     ).fetchall()
     unpaid = outstanding = 0
     for r in rows:
@@ -294,7 +285,7 @@ async def _write_bounty(*, listing_id, req, spec, caller, now, rail, payment_int
     rules keep catching.
     """
     with rs.DB_LOCK, rs.get_db() as conn:
-        _, funder_nous = _agent_identity(conn, caller)
+        funder_operator = _agent_operator(conn, caller)
         conn.execute(
             "INSERT INTO listings (listing_id, title, description, listing_type, agent_id, "
             "payment_mode, price_usd, module_type, origin_relay, expires_at, metadata_json, "
@@ -308,7 +299,7 @@ async def _write_bounty(*, listing_id, req, spec, caller, now, rail, payment_int
                  # Pinned at funding. Nothing reads it back from the funder's
                  # current row, so re-registering cannot change who is barred
                  # from entering a bounty already posted.
-                 "funder_nous_user_id": funder_nous,
+                 "funder_operator": funder_operator,
                  # The hold. Settlement captures this and pays the winner;
                  # the no-entrants path cancels it.
                  "payment_intent_id": payment_intent_id,
@@ -612,20 +603,19 @@ async def enter_bounty(listing_id: str, request: Request):
         # kept taking entries for a prize that had been released.
         if meta.get("state", "open") != "open":
             raise HTTPException(409, f"This bounty is {meta.get('state')}; entry is closed.")
-        trust, nous_id = _agent_identity(conn, caller)
+        my_operator = _agent_operator(conn, caller)
         existing = {
-            r["nous_user_id"] for r in conn.execute(
-                "SELECT nous_user_id FROM bounty_entries WHERE listing_id = ?",
+            r["operator"] for r in conn.execute(
+                "SELECT operator FROM bounty_entries WHERE listing_id = ?",
                 (listing_id,),
             ).fetchall()
         }
         allowed, why = rules.may_enter(
             agent_id=caller,
-            agent_nous_user_id=nous_id,
-            is_nous_verified=(trust == "nous_verified"),
+            agent_operator=my_operator,
             spec=spec,
-            funder_nous_user_id=meta.get("funder_nous_user_id"),
-            existing_entrant_nous_ids=existing,
+            funder_operator=meta.get("funder_operator"),
+            existing_entrant_operators=existing,
         )
         if not allowed:
             raise HTTPException(403, why)
@@ -639,18 +629,18 @@ async def enter_bounty(listing_id: str, request: Request):
             ))
         try:
             conn.execute(
-                "INSERT INTO bounty_entries (listing_id, agent_id, nous_user_id, entered_at) "
+                "INSERT INTO bounty_entries (listing_id, agent_id, operator, entered_at) "
                 "VALUES (?,?,?,?)",
-                (listing_id, caller, nous_id, datetime.now(UTC).isoformat()),
+                (listing_id, caller, my_operator, datetime.now(UTC).isoformat()),
             )
         except sqlite3.IntegrityError:
-            # The check above read, then this wrote. Two personas of one account
+            # The check above read, then this wrote. Two agents of one operator
             # entering at once both pass the read and race here; the UNIQUE
             # index decides, and the loser gets the same answer the check would
             # have given it a moment later.
             raise HTTPException(403, (
-                "This Nous account has already entered. Entry is one per account, not one "
-                "per agent, because one Nous account may operate any number of personas."
+                "This operator has already entered. Entry is one per operator, not one "
+                "per agent, because one operator may run any number of agents."
             ))
     return {"listing_id": listing_id, "agent_id": caller, "entered": True}
 

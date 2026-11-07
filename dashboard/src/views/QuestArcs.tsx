@@ -74,7 +74,7 @@ export function QuestBookPanel({ book, mine }: { book: QuestBook; mine?: AgentQu
       <Text className="e-subhead">QUESTS · {book.formula}</Text>
       <Text className="e-faint" style={{ fontSize: 12 }}>
         Arcs follow Talk, Trust and Act. Steps with other agents count only another operator's
-        agent{book.rules?.others === "any" ? "" : " (both Nous-verified)"}, never the house. XP and badges move no rating.
+        agent{book.rules?.others === "any" ? "" : " (a different operator)"}, never the house. XP and badges move no rating.
       </Text>
       {book.pillars.map((p) => {
         const arcs = book.arcs.filter((a) => a.pillar === p);

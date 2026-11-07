@@ -72,25 +72,6 @@ RELAY = os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088").rstrip("/")
 GATEWAY = os.getenv("HERMES_DEMO_GATEWAY_URL", "https://hermes-agent.nousresearch.com")
 DB_PATH = os.getenv("EMPORIA_DB_PATH", os.path.expanduser("~/.hermes/emporia.sqlite3"))
 
-# The Nous JWT: EMPORIA_NOUS_JWT while it is current, else asked of Hermes for the
-# profile this script runs in (catalog rule 11: Hermes's auth.json is Hermes's to read
-# and refresh, never this script's).
-def _nous_jwt() -> str | None:
-    from emporia import nous_token
-    token = os.getenv("EMPORIA_NOUS_JWT", "")
-    if nous_token.is_current(token):
-        return token
-    profile = next((p for p in Path(__file__).resolve().parents if (p / "config.yaml").exists()), None)
-    fresh = nous_token.from_hermes(profile)
-    if fresh:
-        os.environ["EMPORIA_NOUS_JWT"] = fresh
-    return fresh
-
-
-# Resolved at seed() time after dotenv (module-level snapshot can miss profile .env ordering).
-def _resolve_nous_jwt() -> str | None:
-    return _nous_jwt()
-
 # All demo agents use ~/.hermes/keys/<agent_id>.priv — same keypair as the real
 # Hermes profile. Seed and profile share one key; no 409 conflicts on agent start.
 DEMO_AGENTS = [
@@ -263,12 +244,12 @@ async def _ensure_topics(http: httpx.AsyncClient, agents: dict[str, EmporiaAgent
 async def _register_agent(
     agent_id: str,
     display: str,
-    nous_jwt: str,
+    operator_label: str,
 ) -> dict:
     pub = _pub(agent_id)
-    async with EmporiaAgent(RELAY, agent_id, pub, profile_id=agent_id) as ag:
+    async with EmporiaAgent(RELAY, agent_id, pub, profile_id=agent_id, operator_label=operator_label) as ag:
         try:
-            return await ag.register(display, nous_jwt=nous_jwt)
+            return await ag.register(display)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 409:
                 detail = e.response.text[:300]
@@ -300,19 +281,16 @@ async def seed() -> None:
         pass
 
     summary: dict[str, int] = {}
-    nous_jwt = _resolve_nous_jwt() or ""
-    if os.getenv("EMPORIA_WRITE_REQUIRES_NOUS", "").strip() == "1" and not nous_jwt:
-        print(
-            "WARNING: EMPORIA_WRITE_REQUIRES_NOUS=1 but no Nous JWT "
-            "(set EMPORIA_NOUS_JWT in profile .env or refresh hermes auth nous)"
-        )
+    # One person's demo agents: one operator label, so they count as one operator.
+    from emporia import operators
+    operator_label = os.getenv("EMPORIA_OPERATOR_LABEL", "").strip() or operators.new_label()
 
     async with httpx.AsyncClient(timeout=30.0) as http:
         # --- Agents ---
         for agent_id, display in DEMO_AGENTS:
-            prof = await _register_agent(agent_id, display, nous_jwt)
+            prof = await _register_agent(agent_id, display, operator_label)
             if agent_id == "hackathon_hermes":
-                print(f"  registered {agent_id} trust={prof.get('trust_level', '?')}")
+                print(f"  registered {agent_id} client={prof.get('client')}")
         summary["agents"] = len(DEMO_AGENTS)
 
         hermes_pub = _pub("hackathon_hermes")

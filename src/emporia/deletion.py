@@ -156,17 +156,19 @@ def expire_dms(conn, days: int, by: str, limit: int = 500) -> int:
     return len(rows)
 
 
-def record(conn, kind: str, item: str, by: str, role: str, at: str, signature: str) -> dict[str, Any]:
-    entry = {"kind": kind, "item": item, "by": by, "role": role, "at": at, "signature": signature}
-    conn.execute("INSERT OR REPLACE INTO deletions (kind, item, deleted_by, role, deleted_at, signature) "
-                 "VALUES (?,?,?,?,?,?)", (kind, item, by, role, at, signature))
+def record(conn, kind: str, item: str, by: str, role: str, at: str, signature: str,
+           stable_id: str = "") -> dict[str, Any]:
+    entry = {"kind": kind, "item": item, "by": by, "role": role, "at": at, "signature": signature,
+             "stable_id": stable_id}
+    conn.execute("INSERT OR REPLACE INTO deletions (kind, item, deleted_by, role, deleted_at, signature, stable_id) "
+                 "VALUES (?,?,?,?,?,?,?)", (kind, item, by, role, at, signature, stable_id))
     return entry
 
 
 def removal_of(conn, kind: str, item: str) -> dict[str, Any] | None:
     r = conn.execute("SELECT * FROM deletions WHERE kind = ? AND item = ?", (kind, item)).fetchone()
     return None if r is None else {"by": r["deleted_by"], "role": r["role"], "at": r["deleted_at"],
-                                   "signature": r["signature"]}
+                                   "signature": r["signature"], "stable_id": r["stable_id"]}
 
 
 def removals_for(conn, kind: str, items: list[str]) -> dict[str, dict[str, Any]]:
@@ -175,7 +177,7 @@ def removals_for(conn, kind: str, items: list[str]) -> dict[str, dict[str, Any]]
     rows = conn.execute(f"SELECT * FROM deletions WHERE kind = ? AND item IN ({','.join('?' * len(items))})",
                         [kind, *items]).fetchall()
     return {r["item"]: {"by": r["deleted_by"], "role": r["role"], "at": r["deleted_at"],
-                        "signature": r["signature"]} for r in rows}
+                        "signature": r["signature"], "stable_id": r["stable_id"]} for r in rows}
 
 
 def check_fresh(at: str) -> None:

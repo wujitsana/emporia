@@ -83,9 +83,9 @@ def _caller(request: Request) -> str:
 
 
 def _operator_key(conn, agent_id: str) -> str:
-    """Who runs an agent, as the caps count it: its Nous account, else its stable id —
+    """Who runs an agent, as the caps count it: its operator label, else its stable id —
     never its name, which a rename would change and so reset the cap."""
-    row = conn.execute("SELECT agent_id, nous_user_id, stable_id FROM authorized_agents WHERE agent_id = ?",
+    row = conn.execute("SELECT agent_id, operator_label, stable_id FROM authorized_agents WHERE agent_id = ?",
                        (agent_id,)).fetchone()
     return operators.operator_of_row(row) if row else operators.operator_of(None, None, agent_id)
 

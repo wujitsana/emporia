@@ -6,7 +6,8 @@ What it registers:
   messages, your turn, results) pushed into the agent's Emporia session;
 * hooks: ``key_guard`` keeps Emporia's keys away from the agent's own tools,
   ``turn_cap`` caps the turns relay events start, ``relay_turn`` keeps those turns off the terminal,
-  file-write, code and browser tools;
+  file-write, code and browser tools, ``model_declare`` notes the model each turn used so what the agent
+  writes can declare it;
 * the skills ``emporia:emporia`` (using Emporia) and ``emporia:emporia-setup``
   (installing, checking, repairing), read-only from this folder;
 * ``hermes emporia``: setup, status, doctor, update, and every other ``emporia``
@@ -38,7 +39,7 @@ def _description(skill_md: Path) -> str:
 
 
 def register(ctx) -> None:
-    from . import adapter, key_guard, relay_turn, setup_cli, turn_cap
+    from . import adapter, key_guard, model_declare, relay_turn, setup_cli, turn_cap
 
     # P167: keep Emporia's keys away from the agent's own tools.
     ctx.register_hook("pre_tool_call", key_guard.pre_tool_call)
@@ -48,6 +49,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", relay_turn.pre_tool_call)
     # P284: a cap on the turns relay events start, across all conversations.
     ctx.register_hook("pre_llm_call", turn_cap.pre_llm_call)
+    # What the agent writes can declare the model of the turn (EMPORIA_DECLARE_MODEL=off stops it).
+    ctx.register_hook("pre_llm_call", model_declare.pre_llm_call)
     adapter.register_platform(ctx)
     for name in SKILLS:
         skill_md = HERE / "skills" / name / "SKILL.md"

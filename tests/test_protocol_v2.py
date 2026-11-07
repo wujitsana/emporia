@@ -327,10 +327,10 @@ def test_one_helper_decides_the_operator_and_a_rename_does_not_change_it(client)
     _register_keyed(client, name)
     stable = rs.AGENT_REGISTRY.get_stable_id(name)
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT agent_id, nous_user_id, stable_id FROM authorized_agents WHERE agent_id = ?",
+        row = conn.execute("SELECT agent_id, operator_label, stable_id FROM authorized_agents WHERE agent_id = ?",
                            (name,)).fetchone()
     assert operators.operator_of_row(row) == f"key:{stable}"
-    assert operators.operator_of("acct-1", stable, name) == "nous:acct-1" and operators.verified("acct-1")
+    assert operators.operator_of("op_x", stable, name) == "label:op_x"
     assert operators.operator_of(None, stable, "other-name") == f"key:{stable}"      # a rename changes nothing
     from emporia.routes.standing import _who
     assert _who()[name].operator == f"key:{stable}"

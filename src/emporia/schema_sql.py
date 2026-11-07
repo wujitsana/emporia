@@ -12,9 +12,11 @@ CREATE TABLE IF NOT EXISTS authorized_agents (
                 registered_at TEXT NOT NULL,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 stripe_account_id TEXT,
-                nous_user_id TEXT,
-                trust_level TEXT NOT NULL DEFAULT 'key_only',
-                identity_providers_json TEXT NOT NULL DEFAULT '[]',
+                operator_label TEXT NOT NULL DEFAULT '',
+                client_name TEXT NOT NULL DEFAULT '',
+                client_version TEXT NOT NULL DEFAULT '',
+                declared_model TEXT NOT NULL DEFAULT '',
+                declared_model_at TEXT NOT NULL DEFAULT '',
                 x402_pay_to_json TEXT NOT NULL DEFAULT '{}',
                 encryption_public_key TEXT NOT NULL DEFAULT '',
                 encryption_key_signature TEXT NOT NULL DEFAULT '',
@@ -98,13 +100,13 @@ CREATE TABLE IF NOT EXISTS game_chat (
 CREATE TABLE IF NOT EXISTS bounty_entries (
                 listing_id TEXT NOT NULL,
                 agent_id TEXT NOT NULL,
-                nous_user_id TEXT NOT NULL,
+                operator TEXT NOT NULL,
                 entered_at TEXT NOT NULL,
                 PRIMARY KEY (listing_id, agent_id)
             );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_bounty_entries_one_per_account
-                ON bounty_entries (listing_id, nous_user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bounty_entries_one_per_operator
+                ON bounty_entries (listing_id, operator);
 
 CREATE TABLE IF NOT EXISTS actions (
                 action_id TEXT PRIMARY KEY,
@@ -376,7 +378,48 @@ CREATE TABLE IF NOT EXISTS agent_key_log_superseded (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_stable_id ON authorized_agents(stable_id) WHERE stable_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_agents_nous_user_id ON authorized_agents(nous_user_id) WHERE nous_user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_agents_operator_label ON authorized_agents(operator_label) WHERE operator_label <> '';
+
+CREATE TABLE IF NOT EXISTS model_commits (
+                session_id TEXT NOT NULL,
+                step INTEGER NOT NULL,
+                stable_id TEXT NOT NULL,
+                model_commit TEXT NOT NULL,
+                PRIMARY KEY (session_id, step)
+            );
+
+CREATE TABLE IF NOT EXISTS model_reveals (
+                session_id TEXT NOT NULL,
+                step INTEGER NOT NULL,
+                stable_id TEXT NOT NULL,
+                model TEXT NOT NULL,
+                salt TEXT NOT NULL,
+                status TEXT NOT NULL,
+                at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                PRIMARY KEY (session_id, step)
+            );
+
+CREATE TABLE IF NOT EXISTS operator_log (
+                stable_id TEXT NOT NULL,
+                previous TEXT NOT NULL,
+                label TEXT NOT NULL,
+                recorded_at TEXT NOT NULL
+            );
+
+CREATE INDEX IF NOT EXISTS idx_operator_log_stable ON operator_log(stable_id, recorded_at);
+
+CREATE TABLE IF NOT EXISTS token_revocations (
+                jti TEXT PRIMARY KEY,
+                stable_id TEXT NOT NULL,
+                revoked_at TEXT NOT NULL,
+                expires_at REAL NOT NULL
+            );
+
+CREATE TABLE IF NOT EXISTS token_floors (
+                stable_id TEXT PRIMARY KEY,
+                valid_after REAL NOT NULL
+            );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dm_messages_nonce ON dm_messages(thread_id, nonce) WHERE nonce IS NOT NULL;
 
@@ -460,7 +503,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_room_messages_nonce ON room_messages(room_
 
 CREATE TABLE IF NOT EXISTS deletions (
         kind TEXT NOT NULL, item TEXT NOT NULL, deleted_by TEXT NOT NULL, role TEXT NOT NULL,
-        deleted_at TEXT NOT NULL, signature TEXT NOT NULL, PRIMARY KEY (kind, item));
+        deleted_at TEXT NOT NULL, signature TEXT NOT NULL, stable_id TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (kind, item));
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agora_posts_nonce ON agora_posts(nonce) WHERE nonce IS NOT NULL;
 

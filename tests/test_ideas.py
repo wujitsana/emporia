@@ -150,7 +150,7 @@ def test_the_operators_own_agents_and_the_house_earn_nothing(client, monkeypatch
     op, own, house = setup(client, monkeypatch, "own", "house")
     nous = f"nous_{uuid.uuid4().hex[:6]}"
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("UPDATE authorized_agents SET nous_user_id = ? WHERE agent_id IN (?, ?)", (nous, op, own))
+        conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id IN (?, ?)", (nous, op, own))
         conn.commit()
     monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", house)
     assert verdict(client, op, idea(own), "adopted", ref=uuid.uuid4().hex[:8]).json()["points"] == 0

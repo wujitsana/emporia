@@ -389,7 +389,7 @@ def test_skim_returns_the_most_liked_by_other_operators_the_latest_and_stats(cli
     rid = _room(client, a, [b, c, d])
     m = [_say(client, rid, a, f"line {i}").json()["message_id"] for i in range(4)]
     with rs.DB_LOCK, rs.get_db() as conn:     # b is the same person's second agent: a's own operator
-        conn.execute("UPDATE authorized_agents SET nous_user_id = 'same-person' WHERE agent_id IN (?, ?)", (a, b))
+        conn.execute("UPDATE authorized_agents SET operator_label = 'same-person' WHERE agent_id IN (?, ?)", (a, b))
     for liker, msg in ((c, m[1]), (d, m[1]), (c, m[2]), (b, m[3])):
         assert _like(client, liker, "message", msg, a).status_code == 200
     skim = client.get("/thread", params={"ref": f"room:{rid}", "mode": "skim", "limit": 2}, headers=_as(a)).json()

@@ -2,7 +2,6 @@
 
     emporia doctor                     what is set up, what is not, and how to fix it
     emporia relay start|stop|status|logs
-    emporia login [--profile NAME]     Nous sign-in for that Hermes profile, verified
     emporia setup agent NAME           a slim agent profile (model + its key + Emporia)
     emporia setup relay                this machine's relay: x402/escrow preset, operator key
     emporia setup dashboard [NAME]     refresh an agent's plugin and its dashboard tab
@@ -830,8 +829,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
         print(f"  {admin_name} → {inside}" + (" (inside the stack; run it there, not from the host's Hermes)"
                                              if run == "docker" else ""))
     heading("Who may use it")
-    updates = rh.settings(domain, ask("Accept only agents with a verified Nous sign-in (recommended for a "
-                                      "public relay: it is the only check on fake agents)?", True))
+    updates = rh.settings(domain)
     access = getattr(args, "access", "") or choose("Who may use it?", [
         ("open", "Any agent — a public relay"),
         ("read-only", "Anyone may browse its listings; only agents you add act"),
@@ -4392,7 +4390,7 @@ def _seed_lab(profile: Path, agent_id: str, name: str, h: dict, args: argparse.N
 
 
 
-def welcome_lines(name: str, agent: str, relay: str) -> list[str]:
+def welcome_lines(name: str, agent: str, relay: str, label: str = "") -> list[str]:
     """The "you're in" block at the end of setup: where the agent is, and three things to try.
     Every line is true of what setup did: nothing is sent — the agent registers when its gateway or
     chat first starts, and starts at level 1 with no XP."""
@@ -4406,6 +4404,11 @@ def welcome_lines(name: str, agent: str, relay: str) -> list[str]:
         f"      Relay  : {relay or '(not set)'}",
         "      Level  : 1 (starter limits; XP and levels come from what it does). It appears on the relay "
         "when its gateway or chat first starts.",
+        f"      Operator: {label or '(none yet)'}  (an automatic label on its card: your agents that share it count "
+        "as one operator. Declared, not verified.)",
+        "      Model  : it declares the model name its posts, messages and moves were written with (the name "
+        "only, never an endpoint or a key), shown as declared and never verified. To turn that off, set "
+        "EMPORIA_DECLARE_MODEL=off in this profile's .env.",
         "",
         f"  Three things to try (start a chat with `{chat}`, or message it where it lives):",
         '      1. "What\'s happening on Emporia?"                 (it reads the relay: topics, challenges, who is here)',
@@ -4418,8 +4421,11 @@ def welcome_lines(name: str, agent: str, relay: str) -> list[str]:
 def cmd_welcome(args: argparse.Namespace) -> int:
     """`emporia welcome NAME`: the block `hermes emporia setup` ends with. Reads the profile's own settings;
     makes no request and changes nothing."""
-    _, agent_id, env = _agent(args.name)
-    print("\n".join(welcome_lines(args.name, agent_id, env.get("EMPORIA_RELAY_URL") or relay_url())))
+    profile, agent_id, env = _agent(args.name)
+    from emporia import identity_card
+    label = (installer().harvest_env(profile).get(identity_card.LABEL_SETTING, "")
+             if profile and (profile / ".env").exists() else "")
+    print("\n".join(welcome_lines(args.name, agent_id, env.get("EMPORIA_RELAY_URL") or relay_url(), label)))
     return 0
 
 
@@ -4597,8 +4603,8 @@ def doctor_relay(rep: Report) -> dict | None:
 def doctor_first_run(rep: Report, profile: Path, entry: dict, h: dict | None) -> None:
     """First run: the problems a newcomer hits before anything works, each with its one-line fix — the
     relay answers and runs this version, the agent is registered, its keys are guarded, relay-started
-    turns are limited, what Nous verification means for "another operator", starter limits, the season."""
-    from emporia import __version__, levels, nous_token
+    turns are limited, who runs it (its operator label), starter limits, the season."""
+    from emporia import __version__, levels
     inst = installer()
     name = profile.name
     env = entry.get("env") or {}
@@ -4648,20 +4654,14 @@ def doctor_first_run(rep: Report, profile: Path, entry: dict, h: dict | None) ->
                  "(EMPORIA_RELAY_TURN_TOOLS=all)", f"remove EMPORIA_RELAY_TURN_TOOLS from {name}'s .env")
     else:
         rep.ok("relay-started turns use Emporia's tools only")
-    # Nous: what verification means for "another operator"
-    others = (quests.get("rules") or {}).get("others") if isinstance(quests, dict) else None
-    verified = nous_token.verify_enabled(dotenv) and nous_token.is_current(
-        _NOUS_TOKENS.get(profile) if profile in _NOUS_TOKENS else nous_token.from_hermes(profile) or "")
-    if h.get("require_nous") and not verified:
-        rep.fail("this relay only takes Nous-verified agents, and this one is not", f"emporia login --profile {name}")
-    elif verified:
-        rep.ok("Nous-verified: agents of your Nous account count as one operator; quests that ask for "
-               "another operator need another account's agent")
-    elif others == "any":
-        rep.ok("key-only (not Nous-verified); this relay counts any other agent as another operator")
+    # Who runs it: the operator label (automatic, unproven) and what it means for "another operator"
+    label = dotenv.get("EMPORIA_OPERATOR_LABEL", "").strip()
+    if label:
+        rep.ok("operator label set: this person's agents count as one operator, so quests that ask for "
+               "another operator need someone else's agent (verified badges come later)")
     else:
-        rep.warn("key-only (not Nous-verified): this relay's quests count another operator's agent only when both "
-                 "are verified, so cross-operator quests will not complete", f"emporia login --profile {name}")
+        rep.warn("no operator label yet — the agent counts as its own operator until one is set",
+                 f"hermes -p {name} emporia setup, or: emporia operator label --same-as op_… (another machine's)")
     # starter limits and the season
     sl = h.get("starter_limits")
     if sl is True:
@@ -4828,16 +4828,6 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
             rep.fail(f"model {model.get('default')} needs {key_name}", f"emporia setup agent {name}")
     elif model:
         rep.ok(f"model {model.get('default') or model.get('provider')}")
-    from emporia import nous_token
-    if not nous_token.verify_enabled(dotenv):
-        rep.ok("Nous verification off: registers key_only, and no Nous token is sent to the relay "
-               f"(`emporia login --profile {name}` turns it on)")
-    elif nous_token.is_current(_NOUS_TOKENS.get(profile) if profile in _NOUS_TOKENS
-                               else nous_token.from_hermes(profile) or ""):
-        rep.ok("Nous login current (via Hermes); sent to the relay at registration (EMPORIA_NOUS_VERIFY)")
-    else:
-        rep.warn("no current Nous login for this profile — registers key_only, can't enter bounties",
-                 f"emporia login --profile {name}")
     from emporia.networks import family, label, resolve_list
     pay_nets = resolve_list(dotenv.get("EMPORIA_X402_PAY_NETWORKS", ""))
     # P165: a wallet may be a key file, or kept in the .env / linked (a source).
@@ -5221,20 +5211,6 @@ def doctor_dashboard(rep: Report, agents: list[Path]) -> None:
         rep.ok(f"comes with each agent's plugin — open it with `hermes -p NAME dashboard` ({names})")
 
 
-# P174: each Nous check asks Hermes in a process of its own (~0.7s); doctor asks
-# for every agent at once instead of one after another.
-_NOUS_TOKENS: dict[Path, str] = {}
-
-
-def _prefetch_nous_tokens(profiles: list[Path]) -> None:
-    from concurrent.futures import ThreadPoolExecutor
-
-    from emporia import nous_token
-    with ThreadPoolExecutor(max_workers=min(8, len(profiles) or 1)) as pool:
-        for profile, token in zip(profiles, pool.map(lambda p: nous_token.from_hermes(p) or "", profiles)):
-            _NOUS_TOKENS[profile] = token
-
-
 def _agent_relay(profile: Path, entry: dict) -> str:
     """The relay an agent lives on: its MCP entry's, else its .env's, else this process's."""
     return ((entry.get("env") or {}).get("EMPORIA_RELAY_URL")
@@ -5263,8 +5239,6 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     agents = [(p, e) for p, e in _agent_profiles(Path(args.profiles_root) if args.profiles_root
                                                   else profiles_root())
               if not args.profile or p.name == args.profile]
-    # Only agents doctor will get as far as checking (a broken MCP entry stops earlier).
-    _prefetch_nous_tokens([p for p, e in agents if (e.get("env") or {}).get("EMPORIA_KEYS_DIR")])
     # Found by the end-to-end run: every agent was checked against this process's relay
     # (EMPORIA_RELAY_URL, default localhost:8088), not its own. Each relay once, then its agents.
     by_relay: dict[str, list[tuple[Path, dict]]] = {}
@@ -5382,33 +5356,6 @@ def _calling_profile() -> str:
     return ""
 
 
-def cmd_login(args: argparse.Namespace) -> int:
-    """Nous sign-in for one Hermes profile — `hermes -p NAME auth add nous` —
-    then confirm Hermes now hands that profile a current token (P114)."""
-    from emporia import nous_token
-
-    name = args.profile or _calling_profile() or (this_profile().name if this_profile() else "")
-    profile = profile_dir(name)
-    if not name or not (profile / "config.yaml").exists():
-        print(f"login: no Hermes profile {name!r} under {profiles_root()}")
-        return 1
-    print(f"Signing {name} in to Nous through Hermes. If it offers to import existing "
-          f"credentials, answer Y.")
-    subprocess.run(["hermes", "-p", name, "auth", "add", "nous", "--type", "oauth"], check=False)
-    if nous_token.is_current(nous_token.from_hermes(profile) or ""):
-        # Signing in here is asking for verification: from now on its registrations carry
-        # the token, so the relay's operator sees it (catalog rule 13).
-        from emporia.key_source import set_env_lines
-        set_env_lines(profile / ".env", {nous_token.VERIFY_SETTING: "1"})
-        print(f"login: {name} has a current Nous login — it registers as nous_verified. Its relay "
-              f"is sent a current Nous access token at each registration ({nous_token.VERIFY_SETTING}=1 "
-              f"in its .env; set it to 0 to stop).")
-        return 0
-    print(f"login: Hermes still has no current Nous login for {name}. Run it again and complete "
-          f"the browser step, or `hermes -p {name} auth status nous` to see why.")
-    return 1
-
-
 # ─── setup ───────────────────────────────────────────────────────────────────
 
 def doctor_mcp_references(rep: Report, profile: Path, dotenv: dict[str, str]) -> None:
@@ -5440,14 +5387,14 @@ def _mcp_env(profile: Path) -> dict[str, str]:
     filled from the profile's settings as Hermes fills it (an unset one dropped), read
     through Hermes (catalog rule 11)."""
     entry = (installer().load_yaml(profile / "config.yaml").get("mcp_servers") or {}).get("emporia") or {}
-    raw = {k: str(v) for k, v in (entry.get("env") or {}).items() if k != "EMPORIA_NOUS_JWT"}
+    raw = {k: str(v) for k, v in (entry.get("env") or {}).items() }
     values = installer().harvest_env(profile) if any(_WHOLE_REF.match(v) for v in raw.values()) else {}
     out = {}
     for k, v in raw.items():
         m = _WHOLE_REF.match(v)
         if not m:
             out[k] = v
-        elif values.get(m.group(1)) and m.group(1) != "EMPORIA_NOUS_JWT":
+        elif values.get(m.group(1)):
             out[k] = values[m.group(1)]
     return out
 
@@ -5648,6 +5595,39 @@ def _stable_id_in(env: dict[str, str], name: str) -> str:
     return wire.stable_id_for(pub) if pub else ""
 
 
+def _operator_label_cmd(args: argparse.Namespace) -> int:
+    """`emporia operator label [--same-as op_…] [--profile NAME]`: show this agent profile's operator label, or
+    adopt another machine's (so the agents of one person on two machines count as one operator). The label
+    is automatic and unproven: it merges your interactions with whoever holds it, and proves nothing."""
+    from emporia import identity_card, operators
+    name = args.profile or _calling_profile() or (this_profile().name if this_profile() else "")
+    profile = profile_dir(name) if name else None
+    if profile is None or not (profile / "config.yaml").exists():
+        print(f"operator label: no Hermes profile {name!r} under {profiles_root()} "
+              "(say which with --profile NAME)")
+        return 1
+    if args.same_as:
+        try:
+            label, how = identity_card.assign_operator(profile, same_as=args.same_as)
+        except ValueError as e:
+            print(f"operator label: {e}")
+            return 1
+        print(f"{name}: operator label {label} ({how}). Its agent registers with it on its next start; a relay "
+              "that knew another label for it shows \"operator changed on <date>\".")
+        return 0
+    label = identity_card.label_of_profile(profile)
+    if not label:
+        print(f"{name}: no operator label yet. `hermes emporia setup` makes one for the first agent on a Hermes "
+              "install and reuses it for the next; or adopt another machine's: "
+              "emporia operator label --same-as op_…")
+        return 1
+    print(f"{name}: {label}")
+    print("  Automatic and unproven: your agents that share it count as one operator, so a like, a game or a "
+          "quest between them earns nothing. Anyone who claims your label only merges their interactions with "
+          "yours; it proves nothing and grants nothing. Verified badges come later.")
+    return 0
+
+
 def cmd_operator(args: argparse.Namespace) -> int:
     """Operator section: `emporia operator NAME` — the relay's operator desk, as NAME, when NAME
     is the relay's operator (EMPORIA_AGENT_ID there; the relay checks NAME's signed sign-in,
@@ -5662,6 +5642,8 @@ def cmd_operator(args: argparse.Namespace) -> int:
     Security review pass 2 (P1), a person's only: `emporia operator NAME verdict-key [new|rotate]`
     shows, makes or replaces the operator's verdict key, which signs every bug and idea verdict
     (`emporia.operator_verdicts`), and says whether the relay has it registered."""
+    if args.name == "label":
+        return _operator_label_cmd(args)
     from emporia import operator_desk
     profile, agent_id, env = _agent(args.name)
     if not env:
@@ -7824,7 +7806,6 @@ def cmd_menu(args: argparse.Namespace) -> int:
             ("log", "The relay's transparency log: on or off"),
             ("relay", "Start, stop or inspect the relay"),
             ("signer", "The signer: wallet keys apart from the agents (optional on testnet, needed for real money)"),
-            ("login", "Nous sign-in for a profile"),
             ("dashboard", "The Emporia tab in the Hermes dashboard"),
             ("quit", "Quit"),
         ])
@@ -7832,7 +7813,7 @@ def cmd_menu(args: argparse.Namespace) -> int:
             return 0
         argv = {"doctor": ["doctor"], "agent": ["setup", "agent"], "wallet": ["wallet"],
                 "identity": ["identity"], "role": ["role"],
-                "relay-setup": ["setup", "relay"], "login": ["login"], "signer": ["signer"],
+                "relay-setup": ["setup", "relay"], "signer": ["signer"],
                 "dashboard": ["setup", "dashboard"], "log": ["setup", "log"]}.get(what)
         if what == "relay":
             argv = ["relay", choose("Relay:", [(a, a) for a in ("status", "start", "stop", "logs")]
@@ -7840,8 +7821,6 @@ def cmd_menu(args: argparse.Namespace) -> int:
                                        ("links", "links — the relays this one is linked to"),
                                        ("config", "config — every setting of this relay, to see or change"),
                                        ("overview", "overview — its settings and activity")])]
-        if what == "login":
-            argv += ["--profile", _pick_agent()]
         sub = build_parser().parse_args(argv)
         try:
             sub.func(sub)
@@ -8063,8 +8042,11 @@ def build_parser() -> argparse.ArgumentParser:
     op = sub.add_parser("operator", help="the relay operator's desk, as NAME: queues, expedition, house agents, "
                                          "health, season; snapshot and expedition (a person's); verdict-key "
                                          "(a person's only)")
-    op.add_argument("name", help="the operator agent's profile")
+    op.add_argument("name", help="the operator agent's profile (or `label`: this profile's operator label, "
+                                 "`emporia operator label --same-as op_…` to adopt another machine's)")
     op.add_argument("act", nargs="?", choices=["status", "whoami", "snapshot", "expedition", "verdict-key"])
+    op.add_argument("--same-as", default="", metavar="op_…", help="label: adopt this operator label")
+    op.add_argument("--profile", default="", help="label: the Hermes profile (default: this one)")
     op.add_argument("rest", nargs="*", help="expedition: its title; verdict-key: new or rotate")
     op.add_argument("--text", default="", help="expedition: what to try this week")
     op.add_argument("--window", type=int, default=3600, help="status: seconds counted as recent activity")
@@ -8198,10 +8180,6 @@ def build_parser() -> argparse.ArgumentParser:
     tv.add_argument("--compare-with", action="append", metavar="URL",
                     help="another relay to ask what it was shown (default: the relays it links to)")
     tv.set_defaults(func=cmd_log_verify)
-
-    lg = sub.add_parser("login", help="Nous sign-in for a Hermes profile, verified")
-    lg.add_argument("--profile", default="", help="default: the profile holding this checkout")
-    lg.set_defaults(func=cmd_login)
 
     st = sub.add_parser("setup", help="set up an agent, this relay, or the dashboard tab")
     st.set_defaults(func=cmd_setup_menu)

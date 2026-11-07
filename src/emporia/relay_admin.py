@@ -63,11 +63,6 @@ def settings() -> list[dict[str, Any]]:
               "open: any agent. read-only: anyone browses, members act. closed: members only, no federation.",
               "emporia relay access open|read-only|closed · emporia relay members add NAME|KEY",
               "warn" if relay_access.mode() == "open" and live else "ok"),
-        _item("Access", "Nous sign-in to register", "required" if rs.REQUIRE_NOUS else "not required",
-              "Recommended for a public relay: one verified account per agent seat.",
-              f"EMPORIA_REQUIRE_NOUS=1 — {_RESTART}"),
-        _item("Access", "Writes need Nous", "yes" if rs.WRITE_REQUIRES_NOUS else "no",
-              "Unverified agents can read but not act.", f"EMPORIA_WRITE_REQUIRES_NOUS=1 — {_RESTART}"),
         _item("Access", "Proof of key at registration", "required" if rs.REQUIRE_CHALLENGE else "OFF",
               "An agent proves it holds its key before it registers.",
               f"EMPORIA_REQUIRE_CHALLENGE=1 — {_RESTART}", "ok" if rs.REQUIRE_CHALLENGE else "danger"),
@@ -144,8 +139,10 @@ def stats(conn, now: datetime | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {
         "agents": {
             "registered": _one(conn, "SELECT COUNT(*) FROM authorized_agents WHERE is_active = 1"),
-            "nous_verified": _one(conn, "SELECT COUNT(*) FROM authorized_agents WHERE is_active = 1 "
-                                        "AND trust_level = 'nous_verified'"),
+            "by_client": {r[0] or "unknown": r[1] for r in conn.execute(
+                "SELECT client_name, COUNT(*) FROM authorized_agents WHERE is_active = 1 GROUP BY client_name")},
+            "with_operator_label": _one(conn, "SELECT COUNT(*) FROM authorized_agents WHERE is_active = 1 "
+                                              "AND operator_label <> ''"),
             "with_wallet": _one(conn, "SELECT COUNT(*) FROM authorized_agents WHERE is_active = 1 "
                                       "AND x402_pay_to_json NOT IN ('', '{}')"),
             "new_7d": _one(conn, "SELECT COUNT(*) FROM authorized_agents WHERE registered_at >= ?", (d7,)),

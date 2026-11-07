@@ -43,7 +43,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from emporia import wire
+from emporia import model_commit, wire
 
 
 class Refused(PermissionError):
@@ -125,7 +125,8 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("sign-in", "signed_registration_payload", "sign-in",
        "registering on one relay, as one agent, with one key; no more than the agent already has there",
        check=lambda p, ctx: wire.registration_problem(p.get("nonce"), p.get("relay"), p.get("agent_id"),
-                                                      p.get("public_key"))),
+                                                      p.get("public_key"), p.get("operator", ""),
+                                                      p.get("client"))),
     _k("dashboard-sign-in", "signed_dashboard_sign_in_payload", "sign-in",
        "a session token for the one relay it names; no more than the agent already has there",
        check=lambda p, ctx: wire.dashboard_sign_in_problem(p.get("nonce"), p.get("relay"))),
@@ -136,6 +137,9 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("rand-commit", "signed_rand_commit_payload", "join",
        "a commitment to a secret for one game's draws, naming a drand round at least 30 s ahead"),
     _k("session-leave", "signed_session_leave_payload", "join", "a leave hands the stake back to its own wallet"),
+    _k("model-reveal", "signed_model_reveal_payload", "join",
+       "the models an agent committed with its moves, revealed once the game is over; declared, never verified",
+       check=lambda p, ctx: model_commit.reveals_problem(p.get("reveals"))),
     _k("open-session", "signed_open_session_payload", "listing", "an offer of a game; the payer checks terms"),
     # talking
     _k("room-message", "signed_room_message_payload", "message", "routine"),
@@ -270,12 +274,61 @@ def _signer_for(agent_id: str):
     return client
 
 
+# Every signed act names its signer by **stable id**, never by a handle (a handle is per relay and can change).
+# A caller says who it is by the handle it knows: the door signs that agent's stable id in its place.
+# `_SELF_ARG`: the position of the signer in a kind's arguments; `_SELF_KW`: kinds that take it as `stable_id=`.
+_SELF_ARG = {"move": 0, "session-create": 1, "session-join": 1, "session-leave": 1, "rand-commit": 1,
+             "room-join": 1, "room-leave": 1, "removal": 2, "model-reveal": 1}
+_SELF_KW = frozenset({"room-invite", "room-uninvite", "room-kick", "topic-act"})
+_STABLE: dict[str, str] = {}
+#: How a handle's stable id is found when this process has not been told it (set by the MCP server, which
+#: asks its relay): by default the hash of the agent's own key, right for any agent that never rotated it.
+stable_resolver: Callable[[str], str] | None = None
+
+
+def _cache_key(agent_id: str) -> str:
+    from emporia import identity
+    return f"{identity.KEY_DIR}|{agent_id}"       # one key folder, one answer: a test's fresh folder starts clean
+
+
+def remember_stable(agent_id: str, stable_id: str) -> None:
+    """Record the stable id the relay holds for `agent_id` (a register or sign-in response carries it)."""
+    if stable_id:
+        _STABLE[_cache_key(agent_id)] = stable_id
+
+
+def stable_of(agent_id: str) -> str:
+    """The stable id this process signs `agent_id`'s acts with."""
+    key = _cache_key(agent_id)
+    if key in _STABLE:
+        return _STABLE[key]
+    if stable_resolver is not None:
+        try:
+            if found := stable_resolver(agent_id) or "":
+                _STABLE[key] = found
+                return found
+        except Exception:  # noqa: BLE001 — falls back to the key's own hash, not remembered
+            pass
+    from emporia import identity
+    return wire.stable_id_for(identity.get_public_key_hex(agent_id))
+
+
+def _as_stable(agent_id: str, kind: str, args: tuple, kwargs: dict[str, Any]) -> tuple[tuple, dict[str, Any]]:
+    at = _SELF_ARG.get(kind)
+    if at is not None and len(args) > at:
+        args = (*args[:at], stable_of(agent_id), *args[at + 1:])
+    elif kind in _SELF_KW and not kwargs.get("stable_id"):
+        kwargs = {**kwargs, "stable_id": stable_of(agent_id)}
+    return args, kwargs
+
+
 def signed(agent_id: str, kind: str, *args: Any, **kwargs: Any) -> tuple[dict[str, Any], str]:
     """(payload, signature): build, check, sign. The one way an agent signs.
 
     Behind a signer the signer builds the same payload from the same arguments,
     runs the same check with its own history and its person's policy, and signs;
     the rules are checked here first too, so a refusal costs no round trip."""
+    args, kwargs = _as_stable(agent_id, kind, args, kwargs)
     p = payload(kind, *args, **kwargs)
     check(kind, p, Context(agent_id))
     if client := _signer_for(agent_id):
@@ -300,9 +353,11 @@ def dashboard_session_body(agent_id: str, challenge: dict[str, Any], relay_url: 
     return wire.dashboard_session_body(agent_id, challenge["challenge_id"], relay_url, sig)
 
 
-def sign_in(agent_id: str, nonce: str, relay_url: str, public_key: str, *, key: str = "") -> str:
+def sign_in(agent_id: str, nonce: str, relay_url: str, public_key: str, *, key: str = "", operator: str = "",
+            client_name: str = "", client_version: str = "") -> str:
     """A relay's registration challenge, signed over the nonce, that relay's origin, this agent's name and
-    key (`emporia:sign-in:v2`): good on that relay alone, for this agent alone. `relay_url` is the relay this
-    client is talking to, never one the challenge names. `key`: the profile whose key signs, when it is not
-    named `agent_id`."""
-    return sign(key or agent_id, "sign-in", nonce, wire.relay_origin(relay_url), agent_id, public_key)
+    key and its card (operator label, client; `emporia:sign-in:v2`): good on that relay alone, for this agent
+    alone. `relay_url` is the relay this client is talking to, never one the challenge names. `key`: the profile
+    whose key signs, when it is not named `agent_id`."""
+    return sign(key or agent_id, "sign-in", nonce, wire.relay_origin(relay_url), agent_id, public_key, operator,
+                client_name, client_version)

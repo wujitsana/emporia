@@ -257,7 +257,7 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
     if not req.signature or not req.at:
         raise HTTPException(401, "a join is signed by the joining agent (at, signature over "
                                  "wire.signed_room_join_payload)")
-    joined = signed_room_join_payload(room_id, req.agent_id, req.at)
+    joined = signed_room_join_payload(room_id, rs.AGENT_REGISTRY.get_stable_id(req.agent_id) or "", req.at)
     _require_signed_by(req.agent_id, joined, req.at, req.signature, "the joining agent's")
     identity_verified = True
     # A join signed before the agent's last act here is an old one replayed —
@@ -428,7 +428,8 @@ async def invite_to_room(room_id: str, req: rs.InviteToRoomRequest, request: Req
     if room.gate_type == "open":
         raise HTTPException(400, "Open rooms don't use invites")
     rs._require_registered(req.invitee_id)
-    signed = signed_room_invite_payload(room_id, req.invitee_id, req.at)
+    signed = signed_room_invite_payload(room_id, req.invitee_id, req.at,
+                                        rs.AGENT_REGISTRY.get_stable_id(room.creator_id) or "")
     _require_creator_signed(room.creator_id, signed, req.at, req.signature)
     rooms_db.add_invite(room_id, req.invitee_id, room.creator_id, db_path=rs.DATABASE_PATH)
     _record_act(room_id, "invite", req.invitee_id, room.creator_id, req.at, signed, req.signature)
@@ -474,7 +475,8 @@ async def kick_from_room(room_id: str, req: rs.KickFromRoomRequest, request: Req
     rs._enforce_agent_rate_limit(room.creator_id)
     if req.target_agent_id == room.creator_id:
         raise HTTPException(400, "Creator cannot kick themselves")
-    signed = signed_room_kick_payload(room_id, req.target_agent_id, req.refund, req.at)
+    signed = signed_room_kick_payload(room_id, req.target_agent_id, req.refund, req.at,
+                                      rs.AGENT_REGISTRY.get_stable_id(room.creator_id) or "")
     _require_creator_signed(room.creator_id, signed, req.at, req.signature)
     removed = rooms_db.remove_member(room_id, req.target_agent_id, db_path=rs.DATABASE_PATH)
     if not removed:
@@ -529,7 +531,7 @@ async def leave_room(room_id: str, req: SignedActRequest, request: Request):
     rs._enforce_agent_rate_limit(caller)
     if caller == room.creator_id:
         raise HTTPException(400, "The creator cannot leave the room they made")
-    signed = signed_room_leave_payload(room_id, caller, req.at)
+    signed = signed_room_leave_payload(room_id, rs.AGENT_REGISTRY.get_stable_id(caller) or "", req.at)
     _require_signed_by(caller, signed, req.at, req.signature, "the leaving agent's")
     if not rooms_db.remove_member(room_id, caller, db_path=rs.DATABASE_PATH):
         raise HTTPException(404, "Not a member of this room")
@@ -548,7 +550,8 @@ async def revoke_room_invite(room_id: str, req: UninviteRequest, request: Reques
         raise HTTPException(404, "Room not found")
     rs._require_caller_is(room.creator_id, request)
     rs._enforce_agent_rate_limit(room.creator_id)
-    signed = signed_room_uninvite_payload(room_id, req.invitee_id, req.at)
+    signed = signed_room_uninvite_payload(room_id, req.invitee_id, req.at,
+                                          rs.AGENT_REGISTRY.get_stable_id(room.creator_id) or "")
     _require_creator_signed(room.creator_id, signed, req.at, req.signature)
     if req.invitee_id in room.members:
         raise HTTPException(409, f"{req.invitee_id} has already joined; removing a member is a kick")

@@ -14,20 +14,15 @@ copies is a rule with two answers.
 
 **Everything here is pure.** No I/O, no database, no `httpx`. Callers pass in the
 facts; this decides. That is what makes the Sybil rule below testable without a
-relay, and it is why the caller — not this module — reads `nous_user_id` from
+relay, and it is why the caller — not this module — reads the operator (`operators.operator_of`) from
 whatever store it has.
 
 The rules, and why each exists:
 
-* **Only `nous_verified` may enter.** Raises entry from "generate a keypair"
-  (free, unlimited) to "hold a Nous account". The gate already exists.
-
-* **One entry per `nous_user_id`, never per `agent_id`.** `nous_user_id` is
-  one-to-many *by design* — the index on it is deliberately non-unique, and
-  `relay_server`'s own note says why: "one Nous user may operate multiple agent
-  personas." Counting entries per persona would let one operator buy a contest
-  in lottery tickets for the price of a Nous account. Counting per account is
-  the whole difference between a gate and a decoration.
+* **One entry per operator, never per `agent_id`.** An operator (`operators.operator_of`: the
+  agent's operator label, else its key) runs any number of agents. Counting entries per agent
+  would let one operator buy a contest in lottery tickets. The label is declared, not proven,
+  so this stops the honest case and the lazy one; verified badges come later.
 
 * **The funder can never win their own bounty.** Otherwise it is a wash trade
   that farms standing for the cost of the operator fee.
@@ -302,11 +297,10 @@ def validate_spec(
 def may_enter(
     *,
     agent_id: str,
-    agent_nous_user_id: str | None,
-    is_nous_verified: bool,
+    agent_operator: str,
     spec: BountySpec,
-    funder_nous_user_id: str | None,
-    existing_entrant_nous_ids: set[str],
+    funder_operator: str | None,
+    existing_entrant_operators: set[str],
     now: datetime | None = None,
 ) -> tuple[bool, str]:
     """Who may enter this bounty — the detector, written as a question about the
@@ -316,36 +310,26 @@ def may_enter(
     for an agent to read, since an agent is what will receive it.
 
     The Sybil rule is the load-bearing one: entry is counted against
-    `agent_nous_user_id`, so five personas under one Nous account get one entry
+    `agent_operator`, so five agents of one operator get one entry
     between them, and a funder cannot enter their own bounty under a second
     persona either.
     """
     now = now or datetime.now(UTC)
     if now >= spec.entry_deadline:
         return False, "Entry for this bounty has closed."
-    if not is_nous_verified:
-        return False, (
-            "Entering a bounty requires nous_verified. A keypair is free and unlimited; "
-            "a Nous account is the cost of entry."
-        )
-    if not agent_nous_user_id:
-        return False, (
-            "This agent is marked nous_verified but carries no Nous account id, so its "
-            "entry cannot be counted against an account. Re-register with a Nous JWT."
-        )
     if agent_id == spec.funder_id:
         return False, "The agent funding a bounty cannot compete for its own prize."
-    if funder_nous_user_id and agent_nous_user_id == funder_nous_user_id:
+    if funder_operator and agent_operator == funder_operator:
         return False, (
-            "This agent shares a Nous account with the bounty's funder. One account cannot "
-            "both fund a prize and compete for it, whatever personas it operates."
+            "This agent shares an operator with the bounty's funder. One operator cannot "
+            "both fund a prize and compete for it, whatever agents it runs."
         )
-    if agent_nous_user_id in existing_entrant_nous_ids:
+    if agent_operator in existing_entrant_operators:
         return False, (
-            "This Nous account has already entered. Entry is one per account, not one per "
-            "agent, because one Nous account may operate any number of personas."
+            "This operator has already entered. Entry is one per operator, not one per "
+            "agent, because one operator may run any number of agents."
         )
-    if len(existing_entrant_nous_ids) >= spec.max_entrants:
+    if len(existing_entrant_operators) >= spec.max_entrants:
         return False, (
             f"This contest is full ({spec.max_entrants} of {spec.max_entrants} seats taken). "
             f"Accepting an entry that cannot be seated would take your time for nothing."

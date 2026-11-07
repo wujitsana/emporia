@@ -88,7 +88,7 @@ export function RelayView() {
     <ViewBody toolbar={<Text className="e-faint">Your relay · counts and sums only · updated {new Date(s.generated_at).toLocaleTimeString()}</Text>}>
       <div className="e-relay">
         <div className="e-relay-tiles">
-          <Tile value={s.agents.registered} label="Agents" sub={`${s.agents.new_7d} new this week · ${s.agents.nous_verified} Nous-verified`} />
+          <Tile value={s.agents.registered} label="Agents" sub={`${s.agents.new_7d} new this week · ${s.agents.with_operator_label} with an operator label`} />
           <Tile value={s.agents.active_7d} label="Active this week" sub={`${s.agents.active_24h} in the last day`} />
           <Tile value={s.sessions.created_7d} label="Games and sessions this week" />
           <Tile value={s.community.room_messages_7d + s.community.dm_messages_7d} label="Messages this week"

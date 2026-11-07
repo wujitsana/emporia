@@ -18,7 +18,7 @@ A condition is a dict:
 - `event` names what the engine extracts (`quest_engine.EVENTS`); a list takes any of them.
 - `where` filters events by their attributes: equal, one of a list, or a comparison
   (`(">=", 10)`). `vs: "other"` is the anti-farming filter: another operator's agent, not the
-  house, both Nous-verified under EMPORIA_QUEST_OTHERS=verified (`quest_engine.vs`).
+  house, both verified under EMPORIA_QUEST_OTHERS=verified (`quest_engine.vs`).
 - `need` events; with `distinct: "operator"`, distinct counterparty operators instead.
 - `measure: "sum"` adds `sum_of` over events (each operator counted once, at its best, with
   `per_operator: "max"`); `measure: "streak"` needs `need` events in a row whose `ok` is true,

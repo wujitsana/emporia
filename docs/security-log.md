@@ -2781,7 +2781,7 @@ ergonomics. The `conftest.py` half turned out to be a correctness item.
 **What was measured.** `test_emporia.py` pinned five permissive flags at module scope, with a comment
 noting "profile .env may have stricter settings" — right about the flags, and it stopped there. On a
 developer machine the profile `.env` injects **ten further variables** into every test run, three of
-them live credentials: `STRIPE_SECRET_KEY`, `NVIDIA_API_KEY`, `EMPORIA_NOUS_JWT`. Also
+them live credentials: `STRIPE_SECRET_KEY`, `NVIDIA_API_KEY`, a Nous token setting (since removed). Also
 `OPENROUTER_API_KEY`, `STRIPE_PROFILE_ID`, `STRIPE_API_VERSION`, `EMPORIA_AGENT_ID`,
 `EMPORIA_RELAY_URL`, and the two guardrail switches.
 
@@ -4001,7 +4001,7 @@ took three restarts, each refused by the live-key guard, before I stopped workin
 and read why its own advice was not working.
 
 **Checked and cleared, recorded because the reasoning is not obvious.** `tests/conftest.py`
-deliberately blanks `NVIDIA_API_KEY`, `EMPORIA_NOUS_JWT` and `OPENROUTER_API_KEY`, and all three are
+deliberately blanks `NVIDIA_API_KEY`, a Nous token setting (since removed) and `OPENROUTER_API_KEY`, and all three are
 defined in this profile's `.env`. Under the old truthiness check those blanks looked like they could
 be silently refilled with real credentials. They are not: `load_profile_dotenv()` runs once at
 `emporia.config` import, before conftest assigns, and the `_dotenv_loaded` guard means nothing

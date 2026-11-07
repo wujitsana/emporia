@@ -302,41 +302,38 @@ def _jwt(exp: float) -> str:
     return f"h.{body}.s"
 
 
-def test_the_nous_token_comes_from_hermes_never_from_auth_json(tmp_path, monkeypatch):
-    """Catalog rule 11: the installer used to read auth.json itself, refresh the token as
-    Hermes's client and write it back. Now: the flag, a current EMPORIA_NOUS_JWT, else Hermes
-    for this profile; auth.json is never opened, so it is never changed."""
-    import time
-
-    from emporia import nous_token
-    profile = tmp_path / "profile"
-    profile.mkdir()
-    auth = profile / "auth.json"
-    auth.write_text('{"providers": {"nous": {"access_token": "from-the-file", "refresh_token": "r"}}}')
-    before = auth.read_bytes()
-    asked = []
-    current = _jwt(time.time() + 3600)
-    monkeypatch.setattr(nous_token, "from_hermes", lambda p=None: asked.append(p) or current)
-
-    assert installer.resolve_nous_token("explicit", profile_dir=profile) == "explicit"
-    monkeypatch.setenv("EMPORIA_NOUS_JWT", current)
-    assert installer.resolve_nous_token(None, profile_dir=profile) == current and asked == []
-    monkeypatch.setenv("EMPORIA_NOUS_JWT", _jwt(time.time() - 60))          # expired: ask Hermes
-    assert installer.resolve_nous_token(None, profile_dir=profile) == current and asked == [profile]
-    monkeypatch.setattr(nous_token, "from_hermes", lambda p=None: None)        # no login: key_only
-    assert installer.resolve_nous_token(None, profile_dir=profile) is None
-    assert auth.read_bytes() == before
-    assert not hasattr(installer, "_find_auth_json") and not hasattr(installer, "_try_refresh_nous")
+def test_the_operator_label_is_given_reused_or_minted(tmp_path, monkeypatch):
+    """The installer resolves one operator label per agent profile: the one given; else the profile's own;
+    else one an Emporia profile under the same Hermes root holds (one person's agents share it); else a new
+    random one. auth.json is never opened."""
+    from emporia import operators
+    root = tmp_path / "hermes"
+    first, second = root / "profiles" / "first", root / "profiles" / "second"
+    for p in (first, second):
+        p.mkdir(parents=True)
+        (p / "config.yaml").write_text("{}\n")
+    monkeypatch.setenv("EMPORIA_HERMES_BIN", "")           # a plain file: no Hermes to ask
+    minted = installer.resolve_operator_label(None, profile_dir=first)
+    assert operators.valid_label(minted)
+    (first / ".env").write_text(f"EMPORIA_OPERATOR_LABEL={minted}\n")
+    assert installer.resolve_operator_label(None, profile_dir=first) == minted                  # its own
+    assert installer.resolve_operator_label(None, profile_dir=second) == minted                 # reused beside it
+    other = operators.new_label()
+    assert installer.resolve_operator_label(other, profile_dir=second) == other                 # given
+    with pytest.raises(SystemExit):
+        installer.resolve_operator_label("op_nope", profile_dir=second)
+    assert not [n for n in dir(installer) if "nous" in n.lower()] and not hasattr(installer, "_find_auth_json")
     repo = _INSTALLER_PATH.parent.parent
     src = (repo / "installer" / "install.py").read_text() + (repo / "scripts" / "seed_demo_relay.py").read_text()
     assert '"auth.json"' not in src and "refresh_token" not in src
+    assert installer._DASHBOARD_RESTART_NEEDED
 
 
 def test_each_agent_profile_shares_the_relay_but_owns_its_identity(tmp_path, monkeypatch):
     """P109: one relay, separate identities. create_profile() built the MCP
     entry without the profile dir, so it carried no key dir or .env; Hermes
     gives an MCP server only that `env`, and the server then loaded the .env
-    beside its code — the relay profile's keys, Nous token and Stripe secret."""
+    beside its code — the relay profile's keys and Stripe secret."""
     import os
     from unittest.mock import patch
 
@@ -541,19 +538,19 @@ def test_secrets_move_out_of_config_yaml_into_the_env(tmp_path):
     profile = tmp_path / "profiles" / "p201"
     profile.mkdir(parents=True)
     (profile / "config.yaml").write_text(yaml.dump({
-        "env": {"EMPORIA_NOUS_JWT": "jwt-in-config", "OPENROUTER_API_KEY": "or-config", "EMPORIA_RELAY_URL": "u",
+        "env": {"EMPORIA_SIGNER_TOKEN": "token-in-config", "OPENROUTER_API_KEY": "or-config", "EMPORIA_RELAY_URL": "u",
                 "EMPORIA_PUBLIC_KEY": "ab"},
-        "mcp_servers": {"emporia": {"env": {"EMPORIA_NOUS_JWT": "jwt-in-config", "EMPORIA_KEYS_DIR": "/k"}},
+        "mcp_servers": {"emporia": {"env": {"EMPORIA_SIGNER_TOKEN": "token-in-config", "EMPORIA_KEYS_DIR": "/k"}},
                         "other": {"env": {"SOME_TOKEN": "${SOME_TOKEN}"}}}}))
     (profile / "config.yaml").chmod(0o644)
     (profile / ".env").write_text("OPENROUTER_API_KEY=or-env\n")
     moved = installer.secure_profile(profile)
-    assert moved == ["EMPORIA_NOUS_JWT", "OPENROUTER_API_KEY"]
+    assert moved == ["EMPORIA_SIGNER_TOKEN", "OPENROUTER_API_KEY"]
     cfg = yaml.safe_load((profile / "config.yaml").read_text())
     assert cfg["env"] == {"EMPORIA_RELAY_URL": "u", "EMPORIA_PUBLIC_KEY": "ab"}
-    assert cfg["mcp_servers"]["emporia"]["env"] == {"EMPORIA_NOUS_JWT": "${EMPORIA_NOUS_JWT}", "EMPORIA_KEYS_DIR": "/k"}
+    assert cfg["mcp_servers"]["emporia"]["env"] == {"EMPORIA_SIGNER_TOKEN": "${EMPORIA_SIGNER_TOKEN}", "EMPORIA_KEYS_DIR": "/k"}
     env = (profile / ".env").read_text()
-    assert "EMPORIA_NOUS_JWT=jwt-in-config" in env and "OPENROUTER_API_KEY=or-env" in env   # the .env's wins
+    assert "EMPORIA_SIGNER_TOKEN=token-in-config" in env and "OPENROUTER_API_KEY=or-env" in env   # the .env's wins
     assert "or-config" not in env
     for f in ("config.yaml", ".env"):
         assert oct((profile / f).stat().st_mode)[-3:] == "600"

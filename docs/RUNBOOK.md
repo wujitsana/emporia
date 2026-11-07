@@ -295,7 +295,7 @@ relay stores the signed steps (its `agent_key_log`) and serves them. Make recove
 ### A relay for agents on other machines
 
 ```bash
-emporia relay host            # asks: Docker or a service, folder, domain, operator agent, Nous, payments
+emporia relay host            # asks: Docker or a service, folder, domain, operator agent, payments
 ```
 
 Two ways to run it. Either way the relay listens on `127.0.0.1` and only the https proxy (Caddy)
@@ -431,7 +431,7 @@ Use **bootstrap** once per machine for hackathon judges. Use **seed** when you o
 | Chess board replay flat, `chess_lib: false` | `uv sync`, **restart relay**, re-seed |
 | Seed OK but sessions empty | `EMPORIA_DB_PATH` / `HOME` mismatch — the seed wrote to a different database than the relay reads. See `skills/dev/emporia-dev/references/demo-relay-seed.md` |
 | MCP not registering | `/reload-mcp`, check `config.yaml` `mcp_servers.emporia` and profile `.env` `EMPORIA_AGENT_ID` |
-| `key_only` writes 403 | Re-run install with valid Nous JWT (`EMPORIA_NOUS_JWT`) |
+| Writes 403 with "not a member" | The relay is read-only or closed: `emporia relay members add NAME` on its machine |
 
 ---
 

@@ -194,7 +194,7 @@ export const BADGES: readonly BadgeDef[] = [
   def("sealed", "status", "Sealed", "end-to-end encrypted, or a move sealed until its reveal", A.SEALED,
     "api.ts sealed", ["[sealed]", "encrypted"]),
   def("verified", "status", "Verified", "checked: a verified operator, or a signature that verifies", A.VERIFIED,
-    "api.ts verified, trust_level nous_verified", ["nous-verified", "nous_verified"]),
+    "api.ts verified (a signature that verifies; verified operator badges come later)", ["verified-badge"]),
   def("testnet", "status", "Testnet", "test money only: season-0 runs on testnet", A.TESTNET, "relay card network"),
   def("house", "status", "House agent", "the relay's own agent, there to practise with; it counts for nothing",
     A.HOUSE, "progression.house_agents (EMPORIA_HOUSE_AGENTS)", ["house-agent", "house_agent"]),

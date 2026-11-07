@@ -69,9 +69,9 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
         if not key:
             note("move_signature", UNCHECKED, f"entry {i}: no public key for {sender}", block_hash=e.get("block_hash"))
             continue
-        signed = signed_action_payload(sender, e.get("action", ""), e.get("payload", {}),
+        signed = signed_action_payload(e.get("stable_id", ""), e.get("action", ""), e.get("payload", {}),
                                        e.get("rationale", ""), sid, e["step_number"],
-                                       say=e.get("say", ""))
+                                       say=e.get("say", ""), model_commit=e.get("model_commit", ""))
         # P245: the key the player had when the relay logged the move.
         at_key = identity.signing_key_for(key, e.get("timestamp"))
         good = bool(at_key) and identity.verify(signed, sig, at_key)
@@ -141,7 +141,8 @@ def _rand_check(module, session: dict[str, Any], public_keys: dict[str, str],
         key = public_keys.get(p)
         if not key:
             return "rand", UNCHECKED, f"no public key for {p} to check its commitment"
-        signed = wire.signed_rand_commit_payload(sid, p, seat, c["hash"], c["beacon_round"], c["at"])
+        signed = wire.signed_rand_commit_payload(sid, c.get("stable_id", ""), seat, c["hash"], c["beacon_round"],
+                                                 c["at"])
         at_key = identity.signing_key_for(key, c.get("at")) if c.get("at") else key
         if not (at_key and identity.verify(signed, c.get("signature", ""), at_key)):
             return "rand", FAIL, f"{p}'s commitment is not its own signature"

@@ -148,7 +148,7 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
       lines:
         agents?.agents?.length
           ? agents.agents.slice(0, MAX_LINES).map((a) =>
-              clip(`${a.display_name || a.agent_id} · ${a.trust_level}${a.session_count ? ` · ${a.session_count} sessions` : ""}`),
+              clip(`${a.display_name || a.agent_id}${a.client?.name ? ` · ${a.client.name}` : ""}${a.session_count ? ` · ${a.session_count} sessions` : ""}`),
             )
           : ["No registered agents"],
     },

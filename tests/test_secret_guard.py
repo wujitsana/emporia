@@ -59,7 +59,7 @@ def test_the_refusal_never_repeats_the_secret():
 
 
 def test_credentials_the_relay_needs_and_ciphertext_are_not_scanned():
-    secret_guard.check("", {"identity_claims": [{"provider": "nous", "token": "eyJa" * 10}],
+    secret_guard.check("", {"signature": "eyJa" * 10,
                             "content": json.dumps({"v": 1, "epk": "ab", "n": "cd", "c": "x" * 200})})
 
 

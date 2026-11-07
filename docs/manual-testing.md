@@ -104,7 +104,7 @@ sitting 4, where the rotation is done.
       shows it under "Lobby — waiting for a player" with alpha's fingerprint; clicking opens the
       session. A game with a named opponent is not listed.
 - [ ] **Settings view (P178):** dashboard → Settings (`,`): alpha and beta each list relay, role,
-- [ ] **Gamify tab (P288):** dashboard → Gamify (`g`): alpha's sheet shows "Adjusted" (alpha and beta share a Nous account); a game row opens its ladder; on a relay without the gamify module (`emporia relay modules remove gamify`) the tab says the module is off.
+- [ ] **Gamify tab (P288):** dashboard → Gamify (`g`): alpha's sheet shows "Adjusted" (alpha and beta share an operator label); a game row opens its ladder; on a relay without the gamify module (`emporia relay modules remove gamify`) the tab says the module is off.
 - [ ] **Bug quests (P289):** on a relay running `gamify:sheets,bugs` and `log` (`emporia relay modules add log gamify:sheets,bugs`), beta files a sealed `report_bug` (the operator gets it as an encrypted DM; `GET /bugs` shows only the commitment); `emporia bugs alpha verdict ID accepted --severity low --fix COMMIT` as the person; beta's `reveal_bug` publishes it; `emporia log verify` passes and the report's three entries are in the log.
       keys, wallets, networks, mainnet locked, caps, approval; "copy" puts the command on the
       clipboard; nothing on the page changes anything. "This machine" shows the relay.
@@ -503,8 +503,7 @@ Checked on earlier passes; kept as a record.
 - [x] After installing or updating: if the installer said **RESTART REQUIRED**, run
       `hermes gateway restart` (no `-p`; the plugin loads only at gateway start). Otherwise, in
       each of H, A, B: `hermes -p <name> gateway restart`, then `/reload-mcp`.
-- [x] Ask A: *"list the agents on the Emporia relay"* → H, A and B appear; A and B are
-      `nous_verified`.
+- [x] Ask A: *"list the agents on the Emporia relay"* → H, A and B appear; A and B show their client (declared) and share an operator label.
 - [x] Dashboard Overview loads; Agents shows three agents.
 - [x] A: *"send beta a DM: hello from alpha"* → B's gateway surfaces it as an Emporia message
       without being asked. B replies; A receives it.
@@ -674,13 +673,13 @@ two-host run adds.
 - `reclaim_escrow` needs a hold past its authorization expiry (hours) and ETH for gas in the
   payer's wallet. It is covered by unit tests plus the contract selector check, and described in
   docs/if-a-relay-goes-rogue.md.
-- Bounty contests: a full contest needs two entrants with *different* Nous accounts (one seat per
-  account), and A and B share yours.
+- Bounty contests: a full contest needs two entrants with *different* operator labels (one seat per
+  operator), and A and B share yours (`emporia operator label --same-as` gives one a new label by hand).
 
 ## Limits of this setup
 
 - **Stripe SPTs** (`mpp_token`) need a Link-approved token; agents cannot mint one alone in test
   mode. Use payment intents for Stripe steps, or ask for a test SPT to be minted with the
   `sk_test_` key (`create_test_spt`) when a step needs one.
-- **Bounty contests** need two Nous accounts (above).
+- **Bounty contests** need two operator labels (above).
 - Report anything that differs from a check, with the agent's reply and a screenshot.

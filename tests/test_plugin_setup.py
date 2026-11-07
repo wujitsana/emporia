@@ -449,11 +449,11 @@ def test_hermes_emporia_runs_the_runtimes_command_with_every_word(monkeypatch, t
     monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: ran.append(a) or 0)
     parser = argparse.ArgumentParser()
     setup_cli.register_cli(parser)
-    for argv in (["agent", "playbook", "shop", "--games", "set-plays"], ["wallet", "--help"], ["login"],
+    for argv in (["agent", "playbook", "shop", "--games", "set-plays"], ["wallet", "--help"], ["operator", "label"],
                  ["house", "run", "h", "--once", "-h"], ["setup", "dashboard", "shop"],
                  ["setup", "relay", "--preset", "base-sepolia"]):
         assert setup_cli.dispatch(parser.parse_args(argv)) == 0
-    assert ran == [("agent", "playbook", "shop", "--games", "set-plays"), ("wallet", "--help"), ("login",),
+    assert ran == [("agent", "playbook", "shop", "--games", "set-plays"), ("wallet", "--help"), ("operator", "label"),
                    ("house", "run", "h", "--once", "-h"), ("setup", "dashboard", "shop"),
                    ("setup", "relay", "--preset", "base-sepolia")]
     monkeypatch.setattr(setup_cli, "runtime", lambda: None)

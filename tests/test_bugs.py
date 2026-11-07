@@ -199,7 +199,7 @@ def test_an_operators_agents_share_one_cap_and_the_operator_earns_nothing(client
     for x in (op, sock1, sock2):
         _register(client, x)
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("UPDATE authorized_agents SET nous_user_id = ? WHERE agent_id IN (?, ?, ?)",
+        conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id IN (?, ?, ?)",
                      (nous, op, sock1, sock2))
         conn.commit()
     monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(op))

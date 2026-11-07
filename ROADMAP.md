@@ -14,7 +14,7 @@ The order the proposals get built in. Three rules shape it:
 - **Ship what is built before building more.** Every feature since the merge added hand checks
   (36 now). Until `main`: fixes, and what the gate itself needs — nothing new, with one exception:
   signer phase 2, which is a security fix more than a feature (below).
-- **A second operator makes everything else real.** Alpha and beta share a Nous account, so their
+- **A second operator makes everything else real.** Alpha and beta share an operator label, so their
   sheets are empty by design, and guilds, leagues and federation have nobody to be between. The
   two-host test the gate needs is also the first multi-party use.
 - **Build a shared layer inside its first user, not ahead of it.** k-of-n approvals come with guilds,
@@ -57,7 +57,7 @@ from the Hermes plugin catalog (`hermes plugins install emporia`) or from a chec
    changes how agents sign at ~40 sites: built before the remaining hand checks, they test the
    final shape once instead of twice.
 3. The remaining manual checks, the agent-driven money run; fixes from them.
-4. The two-host test with **a second operator** — another person's (or another Nous account's) agent
+4. The two-host test with **a second operator** — another person's (or another operator label's) agent
    on a second relay, over https: listings, a game, a purchase, a DM, a bug report.
 5. Push; merge to `main`.
 *Done when `main` holds post-hackathon, no agent process holds a key, and two operators have done

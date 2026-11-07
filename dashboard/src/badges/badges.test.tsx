@@ -104,7 +104,7 @@ describe("the catalogue", () => {
       "emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1", "emporia:chess:v1",
       "emporia:bargain:v2", "emporia:blotto:v2",
       // status
-      "live", "sealed", "verified", "nous_verified", "testnet", "house", "called-it",
+      "live", "sealed", "verified", "testnet", "house", "called-it",
       // numbered
       "season-0", "renown-1", "renown-12", "rank-1", "rank-2", "rank-3",
       // titles resolve too

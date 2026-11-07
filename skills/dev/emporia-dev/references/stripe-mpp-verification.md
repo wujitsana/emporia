@@ -140,5 +140,5 @@ set -a && . ../.env && set +a
 ## Support detail
 
 Session-specific notes: `references/stripe-mpp-setup.md`, `references/stripe-profile-id.md`.
-For `nous_verified` vs `key_only` trust troubleshooting (separate from payments):
+For registration and operator-label troubleshooting (separate from payments):
 `references/agents-registry-and-seed.md`.

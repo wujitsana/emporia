@@ -10,7 +10,7 @@ covered too — and refuses anything that looks like a credential:
   * a BIP-39 recovery phrase (12+ consecutive words from the wordlist);
   * a Solana secret key (base58, 64 bytes) or a solana-keygen key file;
   * PEM private keys; Stripe, 1Password, cloud and model-provider API keys;
-    JSON web tokens (a Nous login is one); `.env` lines naming a secret.
+    JSON web tokens; `.env` lines naming a secret.
 
 A bare 64-hex string is *not* refused unless it is one of this agent's own
 keys: transaction hashes look the same and agents share those all the time.
@@ -155,8 +155,8 @@ def _own_secrets_uncached(agent_id: str) -> list[str]:
 
 # Fields that legitimately carry credentials to the relay, or ciphertext.
 _SKIP_KEYS = frozenset({
-    "identity_claims", "signature", "challenge_signature", "encryption_key_signature",
-    "public_key_hex", "encryption_public_key", "payment_info", "token", "nous_jwt",
+    "signature", "challenge_signature", "encryption_key_signature",
+    "public_key_hex", "encryption_public_key", "payment_info", "token",
 })
 
 

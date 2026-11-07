@@ -213,11 +213,10 @@ def _write(files: dict[Path, str]) -> list[Path]:
     return list(files)
 
 
-def settings(domain: str, require_nous: bool) -> dict[str, str]:
+def settings(domain: str) -> dict[str, str]:
     """The relay's own settings, before payments."""
     return {
         "EMPORIA_RELAY_URL": f"https://{domain}" if domain else f"http://127.0.0.1:{LOCAL_PORT}",
-        "EMPORIA_REQUIRE_NOUS": "1" if require_nous else "0",
     }
 
 

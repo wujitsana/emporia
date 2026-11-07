@@ -97,7 +97,7 @@ def annotate_messages(
                 # P245: the key it had when it signed the removal.
                 key = signing_key_for(pubkeys[sender], removal.get("at"))
                 removal["verified"] = bool(key) and _verify(
-                    signed_delete_payload(f"{kind}_message", item, removal.get("by", ""), removal.get("at", "")),
+                    signed_delete_payload(f"{kind}_message", item, removal.get("stable_id", ""), removal.get("at", "")),
                     removal.get("signature", ""), key)
             continue
         msg["verified"] = verify(msg, pubkeys.get(sender, ""))

@@ -67,7 +67,7 @@ def _require_topic_act(creator: str, act: str, slug: str, agent_id: str, at: str
     if not at or not signature:
         raise HTTPException(401, f"a topic {act} is signed by the topic's creator (at, signature over "
                                  f"wire.signed_topic_act_payload)")
-    signed = signed_topic_act_payload(act, slug, agent_id, at)
+    signed = signed_topic_act_payload(act, slug, agent_id, at, rs.AGENT_REGISTRY.get_stable_id(creator) or "")
     _require_signed_by(creator, signed, at, signature, "the topic creator's")
     return signed
 

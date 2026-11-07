@@ -22,11 +22,11 @@ def via_plugin(runtime: Path = _RUNTIME) -> bool:
 
 # The CLI's commands (tests keep this in step with emporia.cli).
 COMMANDS = ("agent", "archive", "bugs", "delete", "dms", "doctor", "guardians", "house", "identity", "ideas", "lab", "log",
-            "login", "operator", "relay", "role", "setup", "sheet", "signer", "stats", "update", "visits", "wallet", "welcome")
+            "operator", "relay", "role", "setup", "sheet", "signer", "stats", "update", "visits", "wallet", "welcome")
 # `--profile NAME` never reaches the runtime through `hermes emporia …`: Hermes takes it, anywhere
 # on its command line, as its own profile switch. So a hint naming one becomes `hermes -p NAME …`.
 _COMMAND = re.compile(r"(?<![\w./-])emporia (?:setup agent(?: (?P<agent>[\w-]+))?\b"
-                      r"|(?P<scoped>doctor|login) --profile (?P<doc>[\w-]+)"
+                      r"|(?P<scoped>doctor) --profile (?P<doc>[\w-]+)"
                       r"|(?:" + "|".join(COMMANDS) + r")\b)")
 _LAUNCHED = re.compile(r"hermes(?: -p [\w-]+)? $")
 
@@ -34,7 +34,7 @@ _LAUNCHED = re.compile(r"hermes(?: -p [\w-]+)? $")
 def _plugin_form(m: re.Match) -> str:
     if m.group(0).startswith("emporia setup agent"):       # the plugin's setup is the agent's
         return f"hermes emporia setup --agent-profile {m.group('agent') or 'NAME'}"
-    if m.group("doc"):                                      # the plugin's doctor (and login) is this profile's
+    if m.group("doc"):                                      # the plugin's doctor is this profile's
         return f"hermes -p {m.group('doc')} emporia {m.group('scoped')}"
     return "hermes " + m.group(0)
 

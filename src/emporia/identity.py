@@ -977,7 +977,7 @@ def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str, key_of: 
             continue
         payload = a.get("payload") or {}
         own = a.get("act") in ("join", "leave")
-        signer = key_of(str(payload.get("agent_id") or "")) if own and key_of else creator_public_key_hex
+        signer = key_of(str(a.get("by") or "")) if own and key_of else creator_public_key_hex
         key = signing_key_for(signer, a.get("at"))
         ok = (bool(key) and payload.get("room_id") == room.get("room_id")
               and verify(payload, a.get("signature", ""), key))
@@ -1072,15 +1072,16 @@ def room_members_by_acts(room: dict[str, Any], key_of: Any) -> set[str]:
     for a in acts:
         p, at = a.get("payload") or {}, str(a.get("at") or "")
         kind = a.get("act")
-        if kind == "invite" and signed_by(creator, a, signed_room_invite_payload(room_id, str(p.get("invitee_id")), at)):
+        if kind == "invite" and signed_by(creator, a, signed_room_invite_payload(
+                room_id, str(p.get("invitee_id")), at, str(p.get("stable_id") or ""))):
             invited.add(str(p.get("invitee_id")))
         elif kind == "kick" and signed_by(creator, a, signed_room_kick_payload(
-                room_id, str(p.get("agent_id")), bool(p.get("refund")), at)):
+                room_id, str(p.get("agent_id")), bool(p.get("refund")), at, str(p.get("stable_id") or ""))):
             kicked.add(str(p.get("agent_id")))
         elif kind in ("join", "leave"):
-            who = str(p.get("agent_id") or "")
+            who = str(a.get("by") or "")          # the signer's handle here; the payload names its stable id
             make = signed_room_join_payload if kind == "join" else signed_room_leave_payload
-            if who and when_of(at) is not None and signed_by(who, a, make(room_id, who, at)):
+            if who and when_of(at) is not None and signed_by(who, a, make(room_id, str(p.get("stable_id") or ""), at)):
                 own.setdefault(who, []).append((when_of(at), kind))
     members = {creator}
     for who, steps in own.items():
@@ -1118,7 +1119,8 @@ def topic_members_by_acts(topic: dict[str, Any], key_of: Any) -> set[str]:
     for a in acts:
         who, at = str(a.get("target") or ""), str(a.get("at") or "")
         kind = a.get("act")
-        if kind in ("invite", "kick") and who and signed_by_creator(a, signed_topic_act_payload(kind, slug, who, at)):
+        if kind in ("invite", "kick") and who and signed_by_creator(a, signed_topic_act_payload(
+                kind, slug, who, at, str((a.get("payload") or {}).get("stable_id") or ""))):
             (invited if kind == "invite" else kicked).add(who)
     return {creator} | (invited - kicked)
 
@@ -1214,20 +1216,20 @@ def session_players_by_acts(session_id: str, served: dict[str, Any], key_of: Any
     made = (served.get("joins") or {}).get(creator) or {}
     made_at = str(made.get("at") or "")
     seated = {creator} if creator and made_at and signed(
-        creator, signed_session_create_payload(session_id, creator, str(served.get("module_type") or ""), made_at,
-                                               served.get("terms")),
+        creator, signed_session_create_payload(session_id, str(made.get("stable_id") or ""),
+                                               str(served.get("module_type") or ""), made_at, served.get("terms")),
         made_at, made.get("signature", "")) else set()
     left: dict[str, Any] = {}
     for leave in served.get("leaves") or []:
         who, at = str(leave.get("agent_id") or ""), str(leave.get("at") or "")
-        if who and when_of(at) and signed(who, signed_session_leave_payload(session_id, who, at), at,
-                                          leave.get("signature", "")):
+        if who and when_of(at) and signed(who, signed_session_leave_payload(
+                session_id, str(leave.get("stable_id") or ""), at), at, leave.get("signature", "")):
             left[who] = max(left.get(who, when_of(at)), when_of(at))
     for who, join in (served.get("joins") or {}).items():
         at = str((join or {}).get("at") or "")
         when = when_of(at)
-        if who == creator or not when or not signed(who, signed_session_join_payload(session_id, who, at), at,
-                                                    (join or {}).get("signature", "")):
+        if who == creator or not when or not signed(who, signed_session_join_payload(
+                session_id, str((join or {}).get("stable_id") or ""), at), at, (join or {}).get("signature", "")):
             continue
         if who not in left or when > left[who]:
             seated.add(who)

@@ -31,10 +31,16 @@ def client():
     return TestClient(app, client=("127.0.0.1", 51233))
 
 
+def _stable(agent):
+    from tests.ids import stable_of
+    return stable_of(agent)
+
+
 def _entry(prev, sid, agent, step, action, payload, say=""):
-    sig = identity.sign(wire.signed_action_payload(agent, action, payload, WHY, sid, step, say=say), agent)
+    sig = identity.sign(wire.signed_action_payload(_stable(agent), action, payload, WHY, sid, step, say=say), agent)
     frame = f"{prev}:{agent}:{action}:{json.dumps(payload, sort_keys=True)}:{sig}"
-    return {"sender": agent, "action": action, "payload": payload, "rationale": WHY, "step_number": step,
+    return {"sender": agent, "stable_id": _stable(agent), "action": action, "payload": payload, "rationale": WHY,
+            "step_number": step,
             "say": say, "timestamp": 1700000000 + step, "signature": sig,
             "block_hash": hashlib.sha256(frame.encode()).hexdigest()}
 
@@ -50,8 +56,8 @@ def good_export() -> dict:
         s, nonce = rand.new_secret()
         h = rand.commit_hash(bytes.fromhex(s), bytes.fromhex(nonce))
         secrets[a] = (s, nonce)
-        commits[a] = {"seat": seat, "hash": h, "beacon_round": 1000, "at": at,
-                      "signature": identity.sign(wire.signed_rand_commit_payload(sid, a, seat, h, 1000, at), a)}
+        commits[a] = {"seat": seat, "stable_id": _stable(a), "hash": h, "beacon_round": 1000, "at": at,
+                      "signature": identity.sign(wire.signed_rand_commit_payload(sid, _stable(a), seat, h, 1000, at), a)}
     mod = LD.LiarsDiceModule()
     state = mod.initial_state(agents, {"players": 3, "dice": 2, "rand": {"scope": sid, "commits": commits}})
     data = {**state.data, "rand": {**state.data["rand"], "beacon_sig": R1000}}

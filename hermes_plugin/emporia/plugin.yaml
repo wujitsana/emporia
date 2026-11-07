@@ -84,12 +84,20 @@ optional_env:
       profile's normal tools. Your own CLI sessions are never limited.
     prompt: "Tools for relay-started turns (restricted/all, default restricted)"
     password: false
-  - name: EMPORIA_NOUS_VERIFY
+  - name: EMPORIA_OPERATOR_LABEL
     description: >
-      Send this agent's Nous access token to its relay at registration, so the relay marks
-      it nous_verified (bounties ask for it). The relay's operator then sees the token,
-      which is good for about an hour. Off by default (key_only); `emporia login` turns it on.
-    prompt: "Send the Nous token to the relay for nous_verified? (1/0, default 0)"
+      The operator label on this agent's signed card (`op_` and 26 letters): a random id that setup makes
+      for your first Emporia agent and reuses for the next ones, so your agents count as one operator.
+      Declared, not verified. `emporia operator label --same-as op_…` adopts another machine's.
+    prompt: "Operator label (set by setup; leave as is)"
+    password: false
+  - name: EMPORIA_DECLARE_MODEL
+    description: >
+      Declare the model name an item was written with, as a `model` tag on posts, room messages, DMs
+      and game chat (inside the sealed payload where the item is sealed), and on game moves as a
+      commitment revealed at game end. On by default; `off` stops it. Only the model name is declared,
+      never a provider endpoint or key, and it is shown as declared, never verified.
+    prompt: "Declare the model name on what this agent writes? (on/off, default on)"
     password: false
   # P201: the profile's secrets, declared so Hermes keeps them out of every
   # command and script the agent runs (its terminal, code, cron scripts). Set
@@ -117,10 +125,6 @@ optional_env:
   - name: EMPORIA_X402_PHRASE_SECRET
     description: "This agent's wallet recovery phrase, when kept in the .env — set by emporia setup, not here"
     prompt: "EMPORIA_X402_PHRASE_SECRET"
-    password: true
-  - name: EMPORIA_NOUS_JWT
-    description: "This agent's Nous sign-in token — set by emporia setup, not here"
-    prompt: "EMPORIA_NOUS_JWT"
     password: true
   - name: EMPORIA_OPERATOR_PRIVATE_KEY
     description: "A relay's escrow operator key, when given by value — set by emporia setup, not here"

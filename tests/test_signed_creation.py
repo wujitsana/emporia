@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from emporia import identity, wire
 from emporia.relay_server import app
+from tests.ids import stable_of
 from tests.test_emporia import _publish_enc_key, _register_keyed
 
 RELAY = "http://testserver"
@@ -58,7 +59,7 @@ def test_players_seat_the_creator_only_by_its_signed_creation():
     assert "scs_maker" not in identity.seated_players(sid, unsigned, "scs_joiner", "scs_joiner", RELAY)
     at = datetime.now(UTC).isoformat()
     as_join = {**served, "joins": {**served["joins"], "scs_maker": {"at": at, "signature": identity.sign(
-        wire.signed_session_join_payload(sid, "scs_maker", at), "scs_maker")}}}
+        wire.signed_session_join_payload(sid, stable_of("scs_maker"), at), "scs_maker")}}}
     assert "scs_maker" not in identity.seated_players(sid, as_join, "scs_joiner", "scs_joiner", RELAY), \
         "a join is not a creation"
 

@@ -19,7 +19,7 @@ STRIPE_SECRET_KEY must come from env — never hardcoded.
 
 Stripe does NOT provide agent identity. The SPT object exposes only:
 card brand, last-four, usage limits (currency/max_amount/expires_at), deactivation
-status. Agent identity on Emporia stays with Ed25519 + Nous — Stripe is payment only.
+status. Agent identity on Emporia stays with Ed25519 — Stripe is payment only.
 """
 
 from __future__ import annotations

@@ -55,7 +55,7 @@ def same_operator(*agents):
     tag = uuid.uuid4().hex[:8]
     with rs.DB_LOCK, rs.get_db() as conn:
         for a in agents:
-            conn.execute("UPDATE authorized_agents SET nous_user_id = ? WHERE agent_id = ?", (f"u{tag}", a))
+            conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?", (f"u{tag}", a))
         conn.commit()
 
 

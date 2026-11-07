@@ -3,7 +3,7 @@ from emporia import levels as L
 from emporia import quest_book as B
 from emporia import quest_engine as E
 
-OPS = {"me": "nous:ME", "b1": "nous:B", "mine2": "nous:ME", "house": "nous:H"}
+OPS = {"me": "label:ME", "b1": "label:B", "mine2": "label:ME", "house": "label:H"}
 
 
 def ctx():

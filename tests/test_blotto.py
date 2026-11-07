@@ -367,7 +367,7 @@ def test_a_line_said_with_a_move_arrives_in_the_same_notice(client):
                if e.get("say")]
     from emporia.wire import signed_action_payload
     key = client.get(f"/agents/{a}", headers={"x-emporia-agent-id": a}).json()["public_key_hex"]
-    assert identity.verify(signed_action_payload(a, "commit", entry["payload"], entry["rationale"], sid,
+    assert identity.verify(signed_action_payload(entry["stable_id"], "commit", entry["payload"], entry["rationale"], sid,
                                                  entry["step_number"], say=entry["say"]),
                            entry["signature"], key), "the line is signed with the move"
     # Over the limit, the move is refused whole — no half-applied action.

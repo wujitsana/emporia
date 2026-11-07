@@ -6,9 +6,9 @@ from emporia import quest_engine as E
 
 NOW = 1_794_000_000          # 2026-11-06 UTC
 DAY = "2026-11-06"
-OPS = {"me": "nous:ME", "mine2": "nous:ME", "mine3": "nous:ME", "b1": "nous:B", "c1": "nous:C", "d1": "nous:D",
-       "e1": "nous:E", "f1": "nous:F", "g1": "nous:G", "h1": "nous:H", "k1": "k1", "k2": "k2", "house": "nous:HOUSE"}
-VERIFIED = {a for a, op in OPS.items() if op.startswith("nous:")}
+OPS = {"me": "label:ME", "mine2": "label:ME", "mine3": "label:ME", "b1": "label:B", "c1": "label:C", "d1": "label:D",
+       "e1": "label:E", "f1": "label:F", "g1": "label:G", "h1": "label:H", "k1": "k1", "k2": "k2", "house": "label:HOUSE"}
+VERIFIED = {a for a, op in OPS.items() if op.startswith("label:")}
 _n = [0]
 
 

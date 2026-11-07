@@ -22,6 +22,7 @@ from starlette.concurrency import run_in_threadpool
 
 from emporia import relay_server as rs
 from emporia import rand as rand_module
+from emporia import model_commit as model_commit_rules
 from emporia import translog
 from emporia.routes import beacon as beacon_route
 from emporia.module_sdk import (
@@ -109,8 +110,8 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
                 raise C.ChallengeError("a ladder challenge is to another operator's agent: your own agents and the "
                                        "house count for no ladder; challenge them directly instead")
             if k == "unverified":
-                raise C.ChallengeError("a ladder challenge needs a Nous-verified agent on both sides (emporia "
-                                       "login); this relay counts key-only agents only with EMPORIA_QUEST_OTHERS=any")
+                raise C.ChallengeError("a ladder challenge needs a verified agent on both sides; this relay counts "
+                                       "other agents only with EMPORIA_QUEST_OTHERS=any")
             table, _, _ = ST._craft_table()
             relay["ladder"] = C.ladder_ranks(progression.ladder(table, current(module_type), time.time()), caller, them)
         opponent = config.get("opponent")
@@ -201,7 +202,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     session_id = session_id_for(req.nonce)
     from emporia.routes.rooms import _require_signed_by
     terms = stake_terms(req.payment_rules)   # P280: the money terms it asked for, signed with it
-    _require_signed_by(caller, signed_session_create_payload(session_id, caller, req.module_type, req.at, terms),
+    _require_signed_by(caller, signed_session_create_payload(session_id, rs.AGENT_REGISTRY.get_stable_id(caller) or "",
+                                                             req.module_type, req.at, terms),
                        req.at, req.signature, "the creating agent's")
     if rs.load_session(session_id):
         raise HTTPException(409, {"code": ERR_DUPLICATE_NONCE, "message": "a game with this nonce exists"})
@@ -536,9 +538,11 @@ async def get_session_encryption_keys(session_id: str, request: Request):
             "payment_rules": {k: rules.get(k) for k in ("mode", "stake_per_participant", "currency")},
             "keys": rs._room_member_encryption_keys(SimpleNamespace(members=list(s["participants"]))),
             "creator": s["participants"][0] if s["participants"] else "",
-            "joins": {r["agent_id"]: {"at": r["join_at"], "signature": r["join_signature"]}
+            "joins": {r["agent_id"]: {"at": r["join_at"], "signature": r["join_signature"],
+                                      "stable_id": rs.AGENT_REGISTRY.get_stable_id(r["agent_id"]) or ""}
                       for r in joins if r["join_signature"]},
-            "leaves": [{"agent_id": r["agent_id"], "at": r["at"], "signature": r["signature"]} for r in leaves]}
+            "leaves": [{"agent_id": r["agent_id"], "at": r["at"], "signature": r["signature"],
+                        "stable_id": rs.AGENT_REGISTRY.get_stable_id(r["agent_id"]) or ""} for r in leaves]}
 #: P143: table talk bounds. Every message wakes the other players' agents —
 #: a paid model turn each — so a game takes a few, short.
 CHAT_MAX_CHARS = 500
@@ -1450,9 +1454,11 @@ def _take_rand_commit(session_id: str, agent_id: str, seat: int, commit: dict[st
     if why:
         raise HTTPException(400, why)
     if not rs.AGENT_REGISTRY.verify_signature(agent_id, wire.signed_rand_commit_payload(
-            session_id, agent_id, seat, c["hash"], c["beacon_round"], c["at"]), c["signature"]):
+            session_id, rs.AGENT_REGISTRY.get_stable_id(agent_id) or "", seat, c["hash"], c["beacon_round"],
+            c["at"]), c["signature"]):
         raise HTTPException(403, "rand_commit's signature does not verify over this game, seat and your key")
-    return {"seat": seat, **{k: c[k] for k in ("hash", "beacon_round", "at", "signature")}}
+    return {"seat": seat, "stable_id": rs.AGENT_REGISTRY.get_stable_id(agent_id) or "",
+            **{k: c[k] for k in ("hash", "beacon_round", "at", "signature")}}
 
 
 def _record_rand_commits(session_id: str, config: dict[str, Any]) -> None:
@@ -1531,7 +1537,7 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     from emporia.routes.agents import _signed_at
     _signed_at(req.at)
     if not rs.AGENT_REGISTRY.verify_signature(req.agent_id, wire.signed_session_join_payload(
-            session_id, req.agent_id, req.at), req.signature):
+            session_id, rs.AGENT_REGISTRY.get_stable_id(req.agent_id) or "", req.at), req.signature):
         raise HTTPException(403, "the join's signature does not verify against this agent's key")
     identity_verified = True
     # P273: a join signed before the agent's last leave of this game is an old
@@ -1702,9 +1708,12 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     # "peer_text_rationale" (see signed_action_payload) — same bound, for free.
 
     from emporia.wire import signed_action_payload
+    mover = rs.AGENT_REGISTRY.get_stable_id(req.agent_id) or ""
+    if req.model_commit and (why := model_commit_rules.commit_problem(req.model_commit)):
+        raise HTTPException(400, why)
     full_payload = signed_action_payload(
-        req.agent_id, req.action_type, req.payload, req.peer_text_rationale,
-        session_id, s["step_number"], say=req.say,
+        mover, req.action_type, req.payload, req.peer_text_rationale,
+        session_id, s["step_number"], say=req.say, model_commit=req.model_commit,
     )
     # P148: a line of table talk with the move — the table's rules, checked
     # before the move is applied so a refused line does not half-happen.
@@ -1794,11 +1803,16 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         "artifacts": result.artifacts,
         "new_state": new_state.data if new_state else None,
     })
+    if req.model_commit:
+        with rs.DB_LOCK, rs.get_db() as conn:
+            conn.execute("INSERT OR IGNORE INTO model_commits (session_id, step, stable_id, model_commit) "
+                         "VALUES (?,?,?,?)", (session_id, s["step_number"], mover, req.model_commit))
 
     # Public audit receipt
     block_hash = (log_public_receipt(session_id, req.agent_id, req.action_type, req.payload,
                                      req.signature, step_number=s["step_number"],
-                                     rationale=req.peer_text_rationale, say=req.say)
+                                     rationale=req.peer_text_rationale, say=req.say,
+                                     stable_id=mover, model_commit=req.model_commit)
                   if req.signature else None)
     # Rooms v2: the line sent with a move is a post replying to the game, tied to the move's number
     said = (_store_chat(s, req.agent_id, req.say.strip(), kind=None if rs.session_sealed(s) else "note",
@@ -2196,7 +2210,8 @@ async def leave_session(session_id: str, req: LeaveSessionRequest, request: Requ
     from emporia import wire
     from emporia.routes.agents import _signed_at
     _signed_at(req.at)
-    if not rs.AGENT_REGISTRY.verify_signature(caller, wire.signed_session_leave_payload(session_id, caller, req.at),
+    if not rs.AGENT_REGISTRY.verify_signature(caller, wire.signed_session_leave_payload(
+            session_id, rs.AGENT_REGISTRY.get_stable_id(caller) or "", req.at),
                                               req.signature):
         raise HTTPException(403, "the leave's signature does not verify against this agent's key")
     now = datetime.now(UTC).isoformat()

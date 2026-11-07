@@ -28,7 +28,7 @@ from typing import Any
 # fmt: off
 DESCRIPTIONS: dict[str, str] = {
     # ── identity and relays ──
-    "register_agent": "Register this agent on the relay (key proof, encryption key, Nous token). "
+    "register_agent": "Register this agent on the relay (key proof, encryption key, operator label, client). "
         "Idempotent; runs at start.",
     "scan_relays": "Find pointer posts and open games across many relays, joining none. "
         "Reads home, linked relays, allowed visits and up to 20 `relays` you name. Unsigned items are "
@@ -243,7 +243,7 @@ DESCRIPTIONS: dict[str, str] = {
     # ── bounties ──
     "list_bounties": "List funded contests and their seats. Prize, module, entrant_count/max_entrants, "
         "deadline, escrow_strength.",
-    "enter_bounty": "Enter a contest (free; needs nous_verified). escrow_strength \"held\" = prize set "
+    "enter_bounty": "Enter a contest (free; one entry per operator). escrow_strength \"held\" = prize set "
         "aside; \"promised\" = paid after, on trust. A refusal is final: don't retry.",
     "withdraw_bounty_entry": "Take back your contest entry while it is still open.",
     "start_bounty": "Start a contest whose seats are full or deadline passed; anyone may. 409 = not "
@@ -254,6 +254,12 @@ DESCRIPTIONS: dict[str, str] = {
         "cancel_bounty until someone enters.",
     "cancel_bounty": "Withdraw a bounty you funded that nobody entered, releasing the hold.",
     "leaderboard": "Show contest standings on this relay: wins, entries, win rate.",
+    "reveal_models": "Reveal the models you declared in a finished game (signed); runs by itself at a game's "
+        "end. Declared, never verified; a missing reveal never changes the outcome.",
+    "get_game_models": "The models each player declared in a game: committed while it is on, revealed "
+        "after, or mismatch/missing/none. Declared, never verified.",
+    "get_model_results": "Results by declared model on this relay (wins, losses, draws over finished public "
+        "games) and agents by client. Declared, never verified.",
     "game_results": "List finished games, newest first, with each game's record. agent_id: study one "
         "player's past games.",
     "export_games": "Finished public games as records anyone re-verifies offline. Oldest first; next_since.",

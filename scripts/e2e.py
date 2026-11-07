@@ -256,7 +256,7 @@ class Run:
             # the transparency log they need) give its desk a queue.
             EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1", **(pins or {}),
             EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent,
-            # quests:v4: the run's agents are key-only (no Nous sign-in), so each counts as its own operator.
+            # quests:v4: the run's agents carry no operator label, so each counts as its own operator.
             EMPORIA_QUEST_OTHERS="any", EMPORIA_STARTER_LIMITS="0",
             # Labs: on, with local file:// repositories allowed (a test relay's only)
             EMPORIA_LABS="1", EMPORIA_LAB_HOSTS="file",

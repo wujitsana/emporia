@@ -42,17 +42,16 @@ def _hdr(agent_id):
     return {"x-emporia-agent-id": agent_id}
 
 
-def _mk_agent(client, *, nous_id=None, verified=True):
-    """Register, then set trust/nous directly — registering with a real Nous JWT
-    needs a live JWKS, and what is under test here is the entry rule, not the
-    identity provider."""
+def _mk_agent(client, *, label=None):
+    """Register, then set the operator label directly (registering with a signed card needs a challenge, and
+    what is under test here is the entry rule, not the card)."""
     from emporia import relay_server as rs
     agent = "bty_" + uuid.uuid4().hex[:8]
     _register(client, agent)
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute(
-            "UPDATE authorized_agents SET trust_level = ?, nous_user_id = ? WHERE agent_id = ?",
-            ("nous_verified" if verified else "key_only", nous_id, agent),
+            "UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?",
+            (label or "", agent),
         )
     return agent
 
@@ -157,8 +156,8 @@ def _post_bounty(client, funder, **kw):
 
 
 def test_a_bounty_is_posted_discovered_and_entered(client):
-    funder = _mk_agent(client, nous_id="nous_funder_" + uuid.uuid4().hex[:6])
-    entrant = _mk_agent(client, nous_id="nous_entrant_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_funder_" + uuid.uuid4().hex[:6])
+    entrant = _mk_agent(client, label="nous_entrant_" + uuid.uuid4().hex[:6])
 
     r = _post_bounty(client, funder)
     assert r.status_code == 200, r.text
@@ -178,29 +177,29 @@ def test_a_bounty_is_posted_discovered_and_entered(client):
 
 
 def test_the_funder_cannot_enter_their_own_bounty(client):
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
     listing_id = _post_bounty(client, funder).json()["listing_id"]
     r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(funder))
     assert r.status_code == 403 and "own prize" in r.json()["detail"]
 
 
-def test_nor_can_the_funders_second_persona(client):
-    """The wash trade an agent_id check alone misses. The funder's Nous account
+def test_nor_can_the_funders_second_agent(client):
+    """The wash trade an agent_id check alone misses. The funder's operator
     is pinned into the bounty at creation, so this holds even though the second
-    persona is a different agent with a different key."""
+    agent is a different agent with a different key."""
     shared = "nous_shared_" + uuid.uuid4().hex[:6]
-    funder = _mk_agent(client, nous_id=shared)
-    other_face = _mk_agent(client, nous_id=shared)
+    funder = _mk_agent(client, label=shared)
+    other_face = _mk_agent(client, label=shared)
     listing_id = _post_bounty(client, funder).json()["listing_id"]
     r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(other_face))
-    assert r.status_code == 403 and "shares a Nous account" in r.json()["detail"]
+    assert r.status_code == 403 and "shares an operator" in r.json()["detail"]
 
 
-def test_one_nous_account_gets_one_entry_through_the_api(client):
+def test_one_operator_gets_one_entry_through_the_api(client):
     shared = "nous_dup_" + uuid.uuid4().hex[:6]
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
-    a = _mk_agent(client, nous_id=shared)
-    b = _mk_agent(client, nous_id=shared)
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
+    a = _mk_agent(client, label=shared)
+    b = _mk_agent(client, label=shared)
     listing_id = _post_bounty(client, funder).json()["listing_id"]
     assert client.post(f"/bounties/{listing_id}/enter", headers=_hdr(a)).status_code == 200
     r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(b))
@@ -208,7 +207,7 @@ def test_one_nous_account_gets_one_entry_through_the_api(client):
 
 
 def test_the_unique_index_holds_when_the_check_is_bypassed(client):
-    """The check reads, then the insert writes. Two personas of one account
+    """The check reads, then the insert writes. Two agents of one account
     entering concurrently both pass the read — so the database, not the check,
     is what makes the rule true. Simulated by inserting directly, which is what
     a lost race looks like from the second writer's side.
@@ -219,9 +218,9 @@ def test_the_unique_index_holds_when_the_check_is_bypassed(client):
 
     from emporia import relay_server as rs
     shared = "nous_race_" + uuid.uuid4().hex[:6]
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
-    a = _mk_agent(client, nous_id=shared)
-    b = _mk_agent(client, nous_id=shared)
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
+    a = _mk_agent(client, label=shared)
+    b = _mk_agent(client, label=shared)
     listing_id = _post_bounty(client, funder).json()["listing_id"]
     assert client.post(f"/bounties/{listing_id}/enter", headers=_hdr(a)).status_code == 200
 
@@ -229,22 +228,14 @@ def test_the_unique_index_holds_when_the_check_is_bypassed(client):
     with rs.DB_LOCK, rs.get_db() as conn:
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
-                "INSERT INTO bounty_entries (listing_id, agent_id, nous_user_id, entered_at) "
+                "INSERT INTO bounty_entries (listing_id, agent_id, operator, entered_at) "
                 "VALUES (?,?,?,?)", (listing_id, b, shared, now),
             )
 
 
-def test_a_key_only_agent_is_not_an_entrant(client):
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
-    stranger = _mk_agent(client, nous_id=None, verified=False)
-    listing_id = _post_bounty(client, funder).json()["listing_id"]
-    r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(stranger))
-    assert r.status_code == 403 and "nous_verified" in r.json()["detail"]
-
-
 def test_an_unsettleable_bounty_is_refused_at_creation(client):
     """Refused now, not after an entrant has done the work."""
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
     assert _post_bounty(client, funder, prize_cents=1).status_code == 400
     assert _post_bounty(client, funder, module_type="emporia:research:v1").status_code == 400
     assert _post_bounty(
@@ -263,7 +254,7 @@ def test_no_hold_means_no_bounty(client, _escrow):
     """
     import httpx
 
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
     before = client.get("/bounties").json()["count"]
 
     for exc in (RuntimeError("no Stripe key configured"),
@@ -285,7 +276,7 @@ def test_funding_without_a_credential_is_a_402_not_a_bounty(client, _escrow):
     and called that escrow, so this case did not exist: a bounty was created
     for a funder who had presented nothing at all.
     """
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
     before = client.get("/bounties").json()["count"]
     r = client.post("/bounties", json={
         "title": "Unfunded", "description": "", "module_type": "emporia:chess:v1",
@@ -307,7 +298,7 @@ def test_the_prize_is_authorised_not_charged(client, _escrow):
     means authorised-and-not-yet-charged; `manual` is what makes releasing it
     later possible.
     """
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
     r = _post_bounty(client, funder, prize_cents=2500)
     assert r.status_code == 200 and r.json()["prize_escrowed"] is True
 
@@ -326,8 +317,8 @@ def test_the_funder_may_withdraw_only_before_anyone_enters(client, _escrow):
     """The escrow protects the entrant's time, not just the funder's money."""
     from unittest.mock import AsyncMock, patch
 
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
-    entrant = _mk_agent(client, nous_id="nous_e_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
+    entrant = _mk_agent(client, label="nous_e_" + uuid.uuid4().hex[:6])
     listing_id = _post_bounty(client, funder).json()["listing_id"]
 
     with patch("emporia.routes.bounties.cancel_payment_hold",
@@ -361,9 +352,9 @@ def test_a_full_contest_runs_and_hands_the_prize_to_the_session(client, _escrow)
     """
     from emporia import relay_server as rs
 
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
-    p1 = _mk_agent(client, nous_id="nous_p1_" + uuid.uuid4().hex[:6])
-    p2 = _mk_agent(client, nous_id="nous_p2_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
+    p1 = _mk_agent(client, label="nous_p1_" + uuid.uuid4().hex[:6])
+    p2 = _mk_agent(client, label="nous_p2_" + uuid.uuid4().hex[:6])
     listing_id = _post_bounty(client, funder, prize_cents=4000).json()["listing_id"]
 
     for a in (p1, p2):
@@ -392,19 +383,19 @@ def test_a_full_contest_runs_and_hands_the_prize_to_the_session(client, _escrow)
 def test_a_bounty_cannot_seat_more_than_the_module_allows(client, _escrow):
     """The defect P72-4 shipped: chess seats two, and nothing stopped a third
     agent entering a contest they could never play in."""
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
     listing_id = _post_bounty(client, funder).json()["listing_id"]
     for _ in range(2):
-        a = _mk_agent(client, nous_id="nous_" + uuid.uuid4().hex[:8])
+        a = _mk_agent(client, label="nous_" + uuid.uuid4().hex[:8])
         assert client.post(f"/bounties/{listing_id}/enter", headers=_hdr(a)).status_code == 200
-    third = _mk_agent(client, nous_id="nous_" + uuid.uuid4().hex[:8])
+    third = _mk_agent(client, label="nous_" + uuid.uuid4().hex[:8])
     r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(third))
     assert r.status_code == 403 and "full" in r.json()["detail"]
 
 
 def test_a_contest_short_of_entrants_will_not_start(client, _escrow):
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
-    lone = _mk_agent(client, nous_id="nous_l_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
+    lone = _mk_agent(client, label="nous_l_" + uuid.uuid4().hex[:6])
     listing_id = _post_bounty(client, funder).json()["listing_id"]
     client.post(f"/bounties/{listing_id}/enter", headers=_hdr(lone))
     r = client.post(f"/bounties/{listing_id}/start", headers=_hdr(lone))
@@ -414,9 +405,9 @@ def test_a_contest_short_of_entrants_will_not_start(client, _escrow):
 def test_a_running_contest_cannot_be_started_twice(client, _escrow):
     """Two cron ticks racing must not seat the same entrants into two sessions,
     each holding a claim on one prize."""
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
-    p1 = _mk_agent(client, nous_id="nous_p1_" + uuid.uuid4().hex[:6])
-    p2 = _mk_agent(client, nous_id="nous_p2_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
+    p1 = _mk_agent(client, label="nous_p1_" + uuid.uuid4().hex[:6])
+    p2 = _mk_agent(client, label="nous_p2_" + uuid.uuid4().hex[:6])
     listing_id = _post_bounty(client, funder).json()["listing_id"]
     for a in (p1, p2):
         client.post(f"/bounties/{listing_id}/enter", headers=_hdr(a))
@@ -451,7 +442,7 @@ def test_capacity_is_enforced_at_the_modules_real_size(client, _escrow):
 
     MODULE_REGISTRY[_FourSeater.MODULE_TYPE] = _FourSeater
     try:
-        funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+        funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
         listing_id = _post_bounty(
             client, funder, module_type=_FourSeater.MODULE_TYPE
         ).json()["listing_id"]
@@ -462,14 +453,14 @@ def test_capacity_is_enforced_at_the_modules_real_size(client, _escrow):
             f"the wire must carry the module's real seats, got {board}"
 
         for seat in range(4):
-            a = _mk_agent(client, nous_id="nous_" + uuid.uuid4().hex[:8])
+            a = _mk_agent(client, label="nous_" + uuid.uuid4().hex[:8])
             r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(a))
             assert r.status_code == 200, (
                 f"seat {seat + 1} of 4 was refused — capacity is being enforced at "
                 f"the default rather than the module's size: {r.text}"
             )
         # Five is genuinely too many.
-        fifth = _mk_agent(client, nous_id="nous_" + uuid.uuid4().hex[:8])
+        fifth = _mk_agent(client, label="nous_" + uuid.uuid4().hex[:8])
         r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(fifth))
         assert r.status_code == 403 and "full" in r.json()["detail"]
     finally:
@@ -497,7 +488,7 @@ def test_a_bounty_plays_to_the_end_and_the_winner_is_paid(client, _escrow):
 
     from emporia import relay_server as rs
 
-    funder = _mk_agent(client, nous_id="nous_f_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_f_" + uuid.uuid4().hex[:6])
     # Real keypairs: /sessions/{id}/action requires a signature.
     buyer = "bty_buyer_" + uuid.uuid4().hex[:6]
     seller = "bty_seller_" + uuid.uuid4().hex[:6]
@@ -505,8 +496,8 @@ def test_a_bounty_plays_to_the_end_and_the_winner_is_paid(client, _escrow):
         _register_keyed(client, a)
         with rs.DB_LOCK, rs.get_db() as conn:
             conn.execute(
-                "UPDATE authorized_agents SET trust_level=?, nous_user_id=? WHERE agent_id=?",
-                ("nous_verified", "nous_" + uuid.uuid4().hex[:8], a),
+                "UPDATE authorized_agents SET operator_label=? WHERE agent_id=?",
+                ("op_" + uuid.uuid4().hex[:8], a),
             )
 
     listing_id = _post_bounty(
@@ -606,7 +597,7 @@ def _force_state(listing_id, **fields):
 def test_a_promised_bounty_needs_no_credential_and_says_it_is_not_escrowed(client, _escrow):
     """Nothing is committed at funding because nothing can be — so no credential
     is asked for, and the response must not claim a prize is escrowed."""
-    funder = _mk_agent(client, nous_id="nous_p_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_p_" + uuid.uuid4().hex[:6])
     r = _promise_bounty(client, funder)
     assert r.status_code == 200, r.text
     assert r.json()["escrow_strength"] == "promised"
@@ -624,7 +615,7 @@ def test_a_funder_who_owes_a_winner_cannot_promise_again(client, _escrow):
     paying it, and this is that consequence. If a defaulted funder can keep
     posting, the model is decorative and an entrant competing on credit has
     been misled."""
-    funder = _mk_agent(client, nous_id="nous_d_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_d_" + uuid.uuid4().hex[:6])
     first = _promise_bounty(client, funder).json()["listing_id"]
     _force_state(first, state="defaulted", winner_id="somebody", prize_cents=5000)
 
@@ -638,7 +629,7 @@ def test_a_funder_who_owes_a_winner_cannot_promise_again(client, _escrow):
 
 
 def test_outstanding_promises_are_capped_through_the_api(client, _escrow):
-    funder = _mk_agent(client, nous_id="nous_c_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_c_" + uuid.uuid4().hex[:6])
     for i in range(3):
         assert _promise_bounty(client, funder, title=f"Open {i}").status_code == 200
     r = _promise_bounty(client, funder, title="One too many")
@@ -650,7 +641,7 @@ def test_the_default_flag_arrives_without_anyone_complaining(client, _escrow):
     somewhere to ask is not a consequence."""
     from emporia.routes.bounties import reconcile_bounties
 
-    funder = _mk_agent(client, nous_id="nous_r_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_r_" + uuid.uuid4().hex[:6])
     listing_id = _promise_bounty(client, funder).json()["listing_id"]
     _force_state(
         listing_id, state="awaiting_payment", winner_id="the_winner",
@@ -672,7 +663,7 @@ def test_a_bounty_still_within_its_window_is_not_defaulted(client, _escrow):
 
     from emporia.routes.bounties import reconcile_bounties
 
-    funder = _mk_agent(client, nous_id="nous_w_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_w_" + uuid.uuid4().hex[:6])
     listing_id = _promise_bounty(client, funder).json()["listing_id"]
     _force_state(
         listing_id, state="awaiting_payment", winner_id="the_winner",
@@ -696,7 +687,7 @@ def test_a_paid_held_bounty_stops_saying_it_is_running(client, _escrow):
     from emporia import relay_server as rs
     from emporia.routes.bounties import reconcile_bounties
 
-    funder = _mk_agent(client, nous_id="nous_h_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_h_" + uuid.uuid4().hex[:6])
     listing_id = _post_bounty(client, funder).json()["listing_id"]
     _force_state(listing_id, state="running", session_id="ses_held_done")
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -723,7 +714,7 @@ def test_a_refunded_contest_does_not_strand_the_bounty(client, _escrow):
     from emporia import relay_server as rs
     from emporia.routes.bounties import reconcile_bounties
 
-    funder = _mk_agent(client, nous_id="nous_rf_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_rf_" + uuid.uuid4().hex[:6])
     listing_id = _promise_bounty(client, funder).json()["listing_id"]
     _force_state(listing_id, state="running", session_id="ses_refunded")
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -748,7 +739,7 @@ def test_a_contest_still_being_played_is_left_alone(client, _escrow):
 
     from emporia.routes.bounties import reconcile_bounties
 
-    funder = _mk_agent(client, nous_id="nous_live_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_live_" + uuid.uuid4().hex[:6])
     listing_id = _promise_bounty(client, funder).json()["listing_id"]
     _force_state(listing_id, state="running", session_id="ses_still_playing")
     out = anyio.run(reconcile_bounties)
@@ -794,7 +785,7 @@ def test_a_held_prize_that_was_never_collected_is_not_called_settled(client, _es
     from emporia import relay_server as rs
     from emporia.routes.bounties import reconcile_bounties
 
-    funder = _mk_agent(client, nous_id="nous_u_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_u_" + uuid.uuid4().hex[:6])
     listing_id = _post_bounty(client, funder).json()["listing_id"]
     session_id = f"ses_unfunded_{uuid.uuid4().hex[:6]}"
     _force_state(listing_id, state="running", session_id=session_id)
@@ -811,7 +802,7 @@ def test_a_held_prize_that_was_never_collected_is_not_called_settled(client, _es
 
 
 def test_a_held_bounty_past_the_hold_window_is_refused(client, _escrow):
-    funder = _mk_agent(client, nous_id="nous_hw_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_hw_" + uuid.uuid4().hex[:6])
     r = _post_bounty(client, funder,
                      entry_deadline=(datetime.now(UTC) + timedelta(days=30)).isoformat())
     assert r.status_code == 400 and "at most 5 days" in r.json()["detail"]
@@ -819,7 +810,7 @@ def test_a_held_bounty_past_the_hold_window_is_refused(client, _escrow):
 
 
 def test_an_unknown_rail_is_refused(client, _escrow):
-    funder = _mk_agent(client, nous_id="nous_ur_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_ur_" + uuid.uuid4().hex[:6])
     body = {"title": "t", "module_type": "emporia:chess:v1", "prize_cents": 5000,
             "rail": "lightning",
             "entry_deadline": (datetime.now(UTC) + timedelta(days=1)).isoformat()}
@@ -887,7 +878,7 @@ def _pulled_before_p240(listing, peer_url):
 
 
 def test_a_peer_cannot_plant_a_default_on_a_local_agent(client, _escrow):
-    victim = _mk_agent(client, nous_id="nous_fv_" + uuid.uuid4().hex[:6])
+    victim = _mk_agent(client, label="nous_fv_" + uuid.uuid4().hex[:6])
     peer = _Peer()
     _pulled_before_p240(_foreign_bounty(victim, state="defaulted"), peer.url)
     assert _promise_bounty(client, victim).status_code == 200
@@ -897,7 +888,7 @@ def test_a_peers_bounty_is_entered_on_its_own_relay(client, _escrow):
     listing = _foreign_bounty("someone_remote")
     _pulled_before_p240(listing, _Peer().url)
     listing_id = listing["listing_id"]
-    entrant = _mk_agent(client, nous_id="nous_fe_" + uuid.uuid4().hex[:6])
+    entrant = _mk_agent(client, label="nous_fe_" + uuid.uuid4().hex[:6])
     r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(entrant))
     assert r.status_code == 409 and "hosted on" in r.json()["detail"]
 
@@ -923,29 +914,20 @@ def _resigned(listing, **changes):
 
 
 
-# P84 -- a promise binds the account, and can actually be paid ---------------
+# P84 -- a promise binds the operator, and can actually be paid ---------------
 
-def test_a_defaulted_funder_cannot_promise_again_under_another_persona(client, _escrow):
+def test_a_defaulted_funder_cannot_promise_again_under_another_agent(client, _escrow):
     nous = "nous_sy_" + uuid.uuid4().hex[:6]
-    funder = _mk_agent(client, nous_id=nous)
+    funder = _mk_agent(client, label=nous)
     first = _promise_bounty(client, funder).json()["listing_id"]
     _force_state(first, state="defaulted", winner_id="w", prize_cents=5000)
-    second_persona = _mk_agent(client, nous_id=nous)
-    r = _promise_bounty(client, second_persona)
+    second_agent = _mk_agent(client, label=nous)
+    r = _promise_bounty(client, second_agent)
     assert r.status_code == 403 and "unpaid bounty default" in r.json()["detail"]
 
 
-def test_a_fresh_keypair_cannot_promise_at_all(client, _escrow):
-    """The escape the audit reproduced: default, register a new key, promise again."""
-    from tests.test_emporia import _register
-    alt = "alt_" + uuid.uuid4().hex[:8]
-    _register(client, alt)
-    r = _promise_bounty(client, alt)
-    assert r.status_code == 403 and "nous_verified" in r.json()["detail"]
-
-
 def test_no_promise_where_x402_cannot_pay_it(client, _escrow):
-    funder = _mk_agent(client, nous_id="nous_nx_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_nx_" + uuid.uuid4().hex[:6])
     with patch("emporia.routes.bounties._x402_enabled", return_value=False):
         r = _promise_bounty(client, funder)
     assert r.status_code == 400 and "x402" in r.json()["detail"]
@@ -954,7 +936,7 @@ def test_no_promise_where_x402_cannot_pay_it(client, _escrow):
 def test_a_promise_is_not_settled_by_card(client, _escrow):
     """A card payment reaches the platform, not the winner — it used to be
     charged and the bounty marked settled with nothing transferred."""
-    funder = _mk_agent(client, nous_id="nous_sc_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_sc_" + uuid.uuid4().hex[:6])
     lid = _promise_bounty(client, funder).json()["listing_id"]
     _force_state(lid, state="awaiting_payment", winner_id="the_winner",
                  payment_due_at=(datetime.now(UTC) + timedelta(hours=1)).isoformat())
@@ -968,9 +950,9 @@ def test_a_promise_is_not_settled_by_card(client, _escrow):
 def test_entering_a_promise_needs_a_wallet_to_be_paid_into(client, _escrow):
     from emporia import relay_server as rs
 
-    funder = _mk_agent(client, nous_id="nous_pw_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_pw_" + uuid.uuid4().hex[:6])
     lid = _promise_bounty(client, funder).json()["listing_id"]
-    entrant = _mk_agent(client, nous_id="nous_pe_" + uuid.uuid4().hex[:6])
+    entrant = _mk_agent(client, label="nous_pe_" + uuid.uuid4().hex[:6])
     r = client.post(f"/bounties/{lid}/enter", headers=_hdr(entrant))
     assert r.status_code == 403 and "wallet" in r.json()["detail"]
     with patch.object(rs.AGENT_REGISTRY, "get_x402_pay_to_all",
@@ -988,11 +970,11 @@ def test_the_reconciler_reaches_a_bounty_behind_many_finished_ones(client, _escr
 
     from emporia.routes.bounties import reconcile_bounties
 
-    funder = _mk_agent(client, nous_id="nous_rl_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_rl_" + uuid.uuid4().hex[:6])
     for i in range(55):
         _force_state(_post_bounty(client, funder, title=f"old {i}").json()["listing_id"],
                      state="cancelled")
-    late = _mk_agent(client, nous_id="nous_rt_" + uuid.uuid4().hex[:6])
+    late = _mk_agent(client, label="nous_rt_" + uuid.uuid4().hex[:6])
     target = _promise_bounty(client, late).json()["listing_id"]
     _force_state(target, state="awaiting_payment", winner_id="w",
                  payment_due_at=(datetime.now(UTC) - timedelta(days=1)).isoformat())
@@ -1000,10 +982,10 @@ def test_the_reconciler_reaches_a_bounty_behind_many_finished_ones(client, _escr
 
 
 def test_a_cancelled_bounty_takes_no_entries(client, _escrow):
-    funder = _mk_agent(client, nous_id="nous_cx_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_cx_" + uuid.uuid4().hex[:6])
     lid = _post_bounty(client, funder).json()["listing_id"]
     assert client.post(f"/bounties/{lid}/cancel", headers=_hdr(funder)).status_code == 200
-    entrant = _mk_agent(client, nous_id="nous_ce_" + uuid.uuid4().hex[:6])
+    entrant = _mk_agent(client, label="nous_ce_" + uuid.uuid4().hex[:6])
     r = client.post(f"/bounties/{lid}/enter", headers=_hdr(entrant))
     assert r.status_code == 409, r.text
 
@@ -1019,7 +1001,7 @@ def _state_of(listing_id):
 def test_a_bounty_is_claimed_while_its_hold_is_released(client, _escrow):
     """Releasing the hold is a network call. The row stayed `open` across it, so
     an entry and a start could land in between and then be overwritten."""
-    funder = _mk_agent(client, nous_id="nous_cl_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_cl_" + uuid.uuid4().hex[:6])
     lid = _post_bounty(client, funder).json()["listing_id"]
     seen = []
 
@@ -1034,7 +1016,7 @@ def test_a_bounty_is_claimed_while_its_hold_is_released(client, _escrow):
 
 
 def test_a_failed_release_reopens_the_bounty(client, _escrow):
-    funder = _mk_agent(client, nous_id="nous_cf_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_cf_" + uuid.uuid4().hex[:6])
     lid = _post_bounty(client, funder).json()["listing_id"]
     with patch("emporia.routes.bounties.cancel_payment_hold",
                side_effect=RuntimeError("stripe down")):
@@ -1061,8 +1043,8 @@ def _stored(listing_id):
 
 def test_an_entry_can_be_withdrawn_while_the_bounty_is_open(client):
     """P273: before the contest starts an entrant may take its entry back."""
-    funder = _mk_agent(client, nous_id="nous_funder_" + uuid.uuid4().hex[:6])
-    entrant = _mk_agent(client, nous_id="nous_entrant_" + uuid.uuid4().hex[:6])
+    funder = _mk_agent(client, label="nous_funder_" + uuid.uuid4().hex[:6])
+    entrant = _mk_agent(client, label="nous_entrant_" + uuid.uuid4().hex[:6])
     listing_id = _post_bounty(client, funder).json()["listing_id"]
     assert client.delete(f"/bounties/{listing_id}/enter", headers=_hdr(entrant)).status_code == 404
     assert client.post(f"/bounties/{listing_id}/enter", headers=_hdr(entrant)).status_code == 200

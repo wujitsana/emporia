@@ -9,6 +9,7 @@ from emporia import identity, wire
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
 from emporia.relay_server import app
+from tests.ids import stable_of
 from tests.test_emporia import _publish_enc_key, _register_keyed, _signed_room
 
 RELAY = "http://testserver"
@@ -37,7 +38,8 @@ def _room(client, creator: str, **settings) -> str:
 
 def _signed(make, ident: str, agent: str, **extra) -> dict:
     at = datetime.now(UTC).isoformat()
-    return {"at": at, "signature": identity.sign(make(ident, agent, at), agent), **extra}
+    from tests.ids import stable_of
+    return {"at": at, "signature": identity.sign(make(ident, stable_of(agent), at), agent), **extra}
 
 
 def _recipients(client, room_id: str, me: str) -> dict:
@@ -73,7 +75,7 @@ def test_a_sender_refuses_a_member_the_relay_added_on_its_own(client):
     at = datetime.now(UTC).isoformat()
     assert client.post(f"/rooms/{room_id}/invite", headers=_as("rm273_host"), json={
         "invitee_id": "rm273_guest", "at": at,
-        "signature": identity.sign(wire.signed_room_invite_payload(room_id, "rm273_guest", at), "rm273_host"),
+        "signature": identity.sign(wire.signed_room_invite_payload(room_id, "rm273_guest", at, stable_of("rm273_host")), "rm273_host"),
     }).status_code == 200
     assert client.post(f"/rooms/{room_id}/join", json={"agent_id": "rm273_guest"},
                        headers=_as("rm273_guest")).status_code == 200
@@ -92,8 +94,8 @@ def test_a_sender_refuses_a_member_the_relay_added_on_its_own(client):
         conn.execute("INSERT INTO room_acts (act_id, room_id, act, target, by_agent, at, payload_json, signature) "
                      "VALUES ('act_puppet273', ?, 'join', 'rm273_puppet', 'rm273_puppet', ?, ?, ?)",
                      (room_id, at := datetime.now(UTC).isoformat(),
-                      __import__("json").dumps(wire.signed_room_join_payload(room_id, "rm273_puppet", at)),
-                      identity.sign(wire.signed_room_join_payload(room_id, "rm273_puppet", at), "rm273_puppet")))
+                      __import__("json").dumps(wire.signed_room_join_payload(room_id, stable_of("rm273_puppet"), at)),
+                      identity.sign(wire.signed_room_join_payload(room_id, stable_of("rm273_puppet"), at), "rm273_puppet")))
     with pytest.raises(identity.RoomMembershipUnproven, match="rm273_puppet"):
         _recipients(client, room_id, "rm273_host")
 
@@ -137,13 +139,13 @@ def test_an_unused_room_invite_can_be_taken_back(client):
         at = datetime.now(UTC).isoformat()
         return client.post(f"/rooms/{room_id}/invite", headers=_as("ui273_host"), json={
             "invitee_id": who, "at": at,
-            "signature": identity.sign(wire.signed_room_invite_payload(room_id, who, at), "ui273_host")})
+            "signature": identity.sign(wire.signed_room_invite_payload(room_id, who, at, stable_of("ui273_host")), "ui273_host")})
 
     def revoke(who, signer="ui273_host"):
         at = datetime.now(UTC).isoformat()
         return client.post(f"/rooms/{room_id}/invite/revoke", headers=_as(signer), json={
             "invitee_id": who, "at": at,
-            "signature": identity.sign(wire.signed_room_uninvite_payload(room_id, who, at), signer)})
+            "signature": identity.sign(wire.signed_room_uninvite_payload(room_id, who, at, stable_of(signer)), signer)})
     assert invite("ui273_guest").status_code == 200 and invite("ui273_other").status_code == 200
     assert revoke("ui273_guest", "ui273_other").status_code == 403
     assert revoke("ui273_guest").status_code == 200
@@ -324,7 +326,7 @@ def test_a_player_seals_only_to_players_their_own_signed_joins_seat(client):
     with pytest.raises(identity.SessionMembershipUnproven, match="pp274_mole"):
         _players(client, sid, "pp274_buyer")
     # a join signature for another game does not seat it either
-    other = wire.signed_session_join_payload("sess_elsewhere", "pp274_mole", at := datetime.now(UTC).isoformat())
+    other = wire.signed_session_join_payload("sess_elsewhere", stable_of("pp274_mole"), at := datetime.now(UTC).isoformat())
     rs.add_participant(sid, "pp274_mole", join_at=at, join_signature=identity.sign(other, "pp274_mole"))
     with pytest.raises(identity.SessionMembershipUnproven, match="pp274_mole"):
         _players(client, sid, "pp274_seller")

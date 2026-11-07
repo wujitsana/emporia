@@ -14,7 +14,7 @@ Nothing here opens a `.env` file. `available()` says whether Hermes is installed
 relay host or a checkout without Hermes has no route, and the caller decides (a runtime
 installed from the catalog always has Hermes beside it, so it never falls back).
 
-Hermes is found as `nous_token` finds it: EMPORIA_HERMES_BIN, else `hermes` on PATH, and
+Hermes is found by EMPORIA_HERMES_BIN, else `hermes` on PATH, and
 the interpreter of that install.
 """
 
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -61,8 +62,17 @@ _cache: dict[str, dict[str, str]] = {}
 
 
 def _hermes() -> tuple[Path, str] | None:
-    from emporia import nous_token
-    return nous_token._hermes_python()
+    """Hermes's own interpreter and import path, as its `hermes` launcher sets them. None when Hermes
+    is not installed here."""
+    launcher = os.getenv("EMPORIA_HERMES_BIN", "").strip() or shutil.which("hermes")
+    if not launcher:
+        return None
+    root = Path(os.path.realpath(launcher)).parent.parent
+    python = root / ".venv" / "bin" / "python"
+    sites = sorted(root.glob(".venv/lib/python3*/site-packages"))
+    if not python.is_file() or not sites:
+        return None
+    return python, os.pathsep.join([str(root), str(sites[-1])])
 
 
 def available() -> bool:

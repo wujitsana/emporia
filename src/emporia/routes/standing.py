@@ -156,11 +156,15 @@ def _call_fields(sess: dict) -> dict:
 
 
 def _who() -> dict[str, progression.Who]:
-    """P288: each agent's standing as progression weighs it — its operator (a Nous
-    account; agents sharing one are one voice), whether verified, and its age.
-    Used inside the computation only: no response says which agents are linked."""
+    """P288: each agent's standing as progression weighs it — its operator (a label or a key;
+    agents sharing one are one voice), and its age. Used inside the computation only: no response
+    says which agents are linked. Cached until an agent registers, renames or changes its label
+    (`rs.forget_who`), so a read-flood does not scan the agents table per request."""
+    cached = rs._WHO_CACHE.get("who")
+    if cached is not None:
+        return cached
     with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute("SELECT agent_id, nous_user_id, stable_id, registered_at FROM authorized_agents").fetchall()
+        rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at FROM authorized_agents").fetchall()
     out = {}
     for r in rows:
         try:
@@ -168,7 +172,8 @@ def _who() -> dict[str, progression.Who]:
         except ValueError:
             at = None
         out[r["agent_id"]] = progression.Who(operator=operators.operator_of_row(r),
-                                             verified=operators.verified(r["nous_user_id"]), registered_at=at)
+                                             verified=True, registered_at=at)    # no verified badges yet
+    rs._WHO_CACHE["who"] = out
     return out
 
 
@@ -181,7 +186,8 @@ def _craft_table() -> tuple[dict, list[dict], dict]:
     The same pass keeps every counted call (Insight), read by `_calls()`."""
     with rs.DB_LOCK, rs.get_db() as conn:
         key = (tuple(conn.execute("SELECT COUNT(*), MAX(updated_at) FROM sessions").fetchone()),
-               tuple(conn.execute("SELECT COUNT(*), COUNT(nous_user_id) FROM authorized_agents").fetchone()))
+               tuple(conn.execute("SELECT COUNT(*), COUNT(operator_label) FROM authorized_agents").fetchone()),
+               len(rs._WHO_CACHE))
     if _TABLE_CACHE["key"] != key:
         games, who = _craft_games(), _who()
         views: dict[str, dict] = {}
@@ -253,8 +259,8 @@ async def relay_activity(window_s: int = 3600):
 
 @router.get("/relay/summary")
 async def relay_summary():
-    """First run: what is on this relay, as counts only — agents, operators (a Nous account is one
-    operator; an unverified agent is its own), open challenges on the board, public topics with a post in the
+    """First run: what is on this relay, as counts only — agents, operators (an operator label is one
+    operator; an agent without one is its own), open challenges on the board, public topics with a post in the
     last week, labs. For the dashboard's Home on a quiet relay; no names, nothing private. House agents are
     not counted."""
     house = progression.house_agents()
@@ -262,6 +268,8 @@ async def relay_summary():
     since = datetime.fromtimestamp(time.time() - 7 * 86_400, UTC).isoformat()
     topics = labs = 0
     with rs.DB_LOCK, rs.get_db() as conn:
+        from emporia.routes.models import clients_count
+        clients = clients_count(conn)
         if _has_table(conn, "agora_topics") and _has_table(conn, "posts"):
             from emporia.routes import posts as pv
             slugs = list(pv.public_topics(conn))
@@ -275,6 +283,7 @@ async def relay_summary():
     from emporia.routes.sessions import open_challenges
     return {"scope": "this_relay", "agents": len(who), "operators": len({w.operator for w in who.values()}),
             "open_challenges": len(open_challenges(limit=50)), "active_topics": topics, "labs": labs,
+            "clients": clients,      # agents by the client on their card: declared, not verified
             "season": progression.season(), "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 
@@ -910,7 +919,7 @@ async def counterparty_record(agent_id: str):
     sales as a seller (paid, disputed, never delivered). Counts only — evidence,
     not a verdict, and only what this relay saw."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        reg = conn.execute("SELECT registered_at, trust_level, public_key_hex, carried_records_json "
+        reg = conn.execute("SELECT registered_at, client_name, client_version, declared_model, public_key_hex, carried_records_json "
                            "FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
         if reg is None:
             raise HTTPException(404, f"no agent {agent_id!r} on this relay")
@@ -977,7 +986,8 @@ async def counterparty_record(agent_id: str):
         "fingerprint": fingerprint(reg["public_key_hex"] or ""),
         "as_of": datetime.now(UTC).isoformat(),
         "registered_at": reg["registered_at"] if reg else None,
-        "trust_level": reg["trust_level"] if reg else None,
+        "client": {"name": reg["client_name"], "version": reg["client_version"], "declared": True} if reg else None,
+        "declared_model": reg["declared_model"] or None if reg else None,
         "games": games,
         "as_buyer": buyer,
         "as_seller": seller,

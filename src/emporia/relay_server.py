@@ -101,6 +101,8 @@ from emporia.module_sdk import (
     session_kind,
 )
 from emporia import __version__
+from emporia import names as _names
+from emporia import operators
 from emporia import rooms as rooms_db
 from emporia import entitlements
 from emporia import translog
@@ -231,10 +233,6 @@ def relay_id() -> str:
     return os.getenv("EMPORIA_RELAY_ID", "").strip() or load_or_derive_relay_id()
 
 
-# Set EMPORIA_REQUIRE_NOUS=1 to reject registrations without a verified Nous identity.
-REQUIRE_NOUS = os.getenv("EMPORIA_REQUIRE_NOUS", "0").strip() == "1"
-# Set EMPORIA_WRITE_REQUIRES_NOUS=1 to restrict key_only agents to read-only (GET) access.
-WRITE_REQUIRES_NOUS = os.getenv("EMPORIA_WRITE_REQUIRES_NOUS", "0").strip() == "1"
 # Set EMPORIA_REQUIRE_CHALLENGE=0 to allow registration without proof-of-key-possession
 # (default mandatory — every first-party client already completes the challenge round-trip
 # unconditionally, so this only weakens a direct REST caller's requirements; not recommended).
@@ -542,6 +540,7 @@ _CHALLENGE_TTL = 300.0  # 5-minute window to complete sign
 
 def _jwt_encode(payload: dict) -> str:
     import json as _json
+    payload = {"jti": secrets.token_hex(12), **payload}      # every token has an id, so it can be revoked
     body = base64.urlsafe_b64encode(_json.dumps(payload).encode()).rstrip(b"=").decode()
     sig = _hmac.new(load_or_generate_relay_jwt_secret(), body.encode(), hashlib.sha256).hexdigest()
     return f"{body}.{sig}"
@@ -566,7 +565,50 @@ def _jwt_decode(token: str) -> dict | None:
     floor = _SESSION_FLOOR.get(str(payload.get("agent_id") or ""))
     if floor is not None and payload.get("issued", 0) < floor:
         return None
+    # Revocation: a signed-out token (its `jti`), and every token issued before an agent's revoke-all.
+    if _token_revoked(payload):
+        return None
     return payload
+
+
+def _token_revoked(payload: dict) -> bool:
+    jti, stable = str(payload.get("jti") or ""), str(payload.get("stable_id") or "")
+    if not jti:
+        return True          # a token with no id cannot be revoked, so none is accepted
+    with DB_LOCK, get_db() as conn:
+        if conn.execute("SELECT 1 FROM token_revocations WHERE jti = ?", (jti,)).fetchone():
+            return True
+        row = conn.execute("SELECT valid_after FROM token_floors WHERE stable_id = ?", (stable,)).fetchone()
+    return bool(row and float(payload.get("issued", 0)) < row["valid_after"])
+
+
+def revoke_token(payload: dict) -> None:
+    """Sign out: this token (by its id) stops working, whoever holds a copy."""
+    with DB_LOCK, get_db() as conn:
+        conn.execute("INSERT OR IGNORE INTO token_revocations (jti, stable_id, revoked_at, expires_at) VALUES (?,?,?,?)",
+                     (str(payload.get("jti") or ""), str(payload.get("stable_id") or ""),
+                      datetime.now(UTC).isoformat(), float(payload.get("exp", 0))))
+        conn.execute("DELETE FROM token_revocations WHERE expires_at < ?", (time.time(),))
+
+
+def revoke_all_tokens(stable_id: str) -> float:
+    """Revoke-all: every token issued to this agent before now stops working (it signs in again)."""
+    now = time.time()
+    with DB_LOCK, get_db() as conn:
+        conn.execute("INSERT INTO token_floors (stable_id, valid_after) VALUES (?, ?) "
+                     "ON CONFLICT(stable_id) DO UPDATE SET valid_after = excluded.valid_after", (stable_id, now))
+    return now
+
+
+def bearer_payload(request: Request) -> dict | None:
+    """The verified token claims of the request's bearer credential (as `_dashboard_agent_id` reads it)."""
+    for name in ("authorization", "x-emporia-authorization"):
+        auth = request.headers.get(name, "")
+        if auth.startswith("Bearer "):
+            payload = _jwt_decode(auth[7:])
+            if _token_agent(payload):
+                return payload
+    return None
 
 
 def _token_agent(payload: dict | None) -> str | None:
@@ -617,14 +659,35 @@ def _ws_agent_id(ws: WebSocket) -> str | None:
     Resolve the connecting agent's identity for a WebSocket upgrade.
 
     As _dashboard_agent_id(), for WS: browsers cannot set headers on a WS
-    handshake, so the token comes as a query param:
-      - ?token=<jwt>  → verified via the same HMAC-SHA256 JWT used for REST
+    handshake, so the token comes as a subprotocol (`_ws_token`), never a URL parameter:
+      - Sec-WebSocket-Protocol: emporia.v1, emporia.token.<jwt>  → verified as the REST JWT is
       - otherwise     → None (unauthenticated). P261: a bare ?agent_id= proves nothing.
     """
-    token = ws.query_params.get("token")
+    token = _ws_token(ws)
     if token:
         return _token_agent(_jwt_decode(token))
     return None
+
+
+WS_SUBPROTOCOL = "emporia.v1"
+_WS_TOKEN_PREFIX = "emporia.token."
+
+
+def _ws_token(ws: WebSocket) -> str:
+    """The bearer token a WebSocket handshake carries: in `Sec-WebSocket-Protocol`, as the offered subprotocol
+    `emporia.token.<jwt>` beside `emporia.v1` (a browser sets no other header on a handshake). Never in the
+    URL, where a proxy or a log would keep it."""
+    for offered in str(ws.headers.get("sec-websocket-protocol", "")).split(","):
+        offered = offered.strip()
+        if offered.startswith(_WS_TOKEN_PREFIX):
+            return offered[len(_WS_TOKEN_PREFIX):]
+    return ""
+
+
+async def _ws_accept(ws: WebSocket) -> None:
+    """Accept, choosing `emporia.v1` when the client offered it (the token subprotocol is never echoed)."""
+    offered = [p.strip() for p in str(ws.headers.get("sec-websocket-protocol", "")).split(",")]
+    await ws.accept(subprotocol=WS_SUBPROTOCOL if WS_SUBPROTOCOL in offered else None)
 
 
 def operator_stable_id() -> str:
@@ -719,10 +782,10 @@ _MAX_LIMIT = 200
 MAX_FEDERATION_RESPONSE_BYTES = env_int("MAX_FEDERATION_RESPONSE_BYTES", 8 * 1024 * 1024)
 
 
-# Listing metadata a relay keeps to itself: who funded a bounty (their Nous
-# account, the one link from an agent to a person) and the payment holding its
+# Listing metadata a relay keeps to itself: who funded a bounty (their
+# operator, the one link from an agent to a person) and the payment holding its
 # prize. Never in a listing anyone reads — here, or on a linked relay.
-_PRIVATE_LISTING_METADATA = frozenset({"funder_nous_user_id", "payment_intent_id"})
+_PRIVATE_LISTING_METADATA = frozenset({"funder_operator", "payment_intent_id"})
 
 
 def public_listing(row: Any) -> dict[str, Any]:
@@ -2235,8 +2298,8 @@ _RENAME_JSON_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 # Every remaining column, declared not to hold an agent handle. Notable
-# judgements: `authorized_agents.nous_user_id` is an identity-provider subject
-# id, not a handle; `agora_votes.target_id` is a post or comment id;
+# judgements: `authorized_agents.operator_label` is an opaque operator label,
+# not a handle; `agora_votes.target_id` is a post or comment id;
 # `access_*.resource_id` is a room or topic id.
 _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # The protocol pass: a post's thread keys (its signed reply_to and root without author hints), whether it is a
@@ -2275,7 +2338,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("lab_reports", c) for c in ("report_id", "lab_slug", "ref_kind", "ref_id", "event", "commit_sha",
                                    "author_claim", "author_stable", "credited_json", "reviewers_json", "note",
                                    "signed_at", "signature", "created_at")),
-    # P289: bug reports and incidents. `operator_key` is a Nous account or a stable id
+    # P289: bug reports and incidents. `operator_key` is an operator label or a stable id
     # (the cap's key), never a handle — so a rename does not reset an operator's cap.
     *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",
                                    "severity_claimed", "content_json", "status", "severity", "points", "fix_commit",
@@ -2284,11 +2347,17 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("security_incidents", c) for c in ("incident_id", "summary", "affected", "report_id", "detected_at",
                                           "fixed_at", "recorded_at")),
     # bounty_entries (P72-4) — `agent_id` is a handle and lives in
-    # _RENAME_COLUMNS above. `nous_user_id` deliberately does NOT: it is an
-    # identity-provider subject, not an Emporia handle, and rewriting it on
-    # rename would break the one-entry-per-account rule it exists to enforce —
-    # the same reasoning that keeps payer_stable_id out, noted below.
-    ("bounty_entries", "listing_id"), ("bounty_entries", "nous_user_id"),
+    # _RENAME_COLUMNS above. `operator` deliberately does NOT: it is an operator id
+    # (`operator_of`), not an Emporia handle, and rewriting it on rename would break the
+    # one-entry-per-operator rule it exists to enforce — the same reasoning that keeps
+    # payer_stable_id out, noted below.
+    ("bounty_entries", "listing_id"), ("bounty_entries", "operator"),
+    # Identity round: an operator's label history, and the token revocation records, are keyed by stable id.
+    *(("model_commits", c) for c in ("session_id", "step", "stable_id", "model_commit")),
+    *(("model_reveals", c) for c in ("session_id", "step", "stable_id", "model", "salt", "status", "at", "signature")),
+    *(("operator_log", c) for c in ("stable_id", "previous", "label", "recorded_at")),
+    *(("token_revocations", c) for c in ("jti", "stable_id", "revoked_at", "expires_at")),
+    *(("token_floors", c) for c in ("stable_id", "valid_after")),
     # escrow_holds (P99): the on-chain record of a hold. Addresses are wallets,
     # not handles, and the PaymentInfo they sit in is what the payer signed —
     # rewriting either would make the hold uncapturable.
@@ -2357,8 +2426,9 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # authorized_agents
     ("authorized_agents", "public_key_hex"), ("authorized_agents", "display_name"),
     ("authorized_agents", "registered_at"), ("authorized_agents", "is_active"),
-    ("authorized_agents", "stripe_account_id"), ("authorized_agents", "nous_user_id"),
-    ("authorized_agents", "trust_level"), ("authorized_agents", "identity_providers_json"),
+    ("authorized_agents", "stripe_account_id"), ("authorized_agents", "operator_label"),
+    ("authorized_agents", "client_name"), ("authorized_agents", "client_version"),
+    ("authorized_agents", "declared_model"), ("authorized_agents", "declared_model_at"),
     ("authorized_agents", "x402_pay_to_json"), ("authorized_agents", "x402_pay_to_proofs_json"),
     ("authorized_agents", "encryption_public_key"),
     ("authorized_agents", "encryption_key_signature"),
@@ -2425,7 +2495,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("topic_acts", "nonce"), ("topic_acts", "payload_json"), ("topic_acts", "signature"),
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
-    ("deletions", "signature"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
+    ("deletions", "signature"), ("deletions", "stable_id"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
     ("dm_messages", "deleted_at"), ("game_chat", "deleted_at"),
     ("room_messages", "reply_to"), ("room_messages", "root"), ("game_chat", "kind"), ("game_chat", "tags_json"),
     ("game_chat", "reply_to"), ("game_chat", "quote_of"), ("game_chat", "root"), ("game_chat", "step"),
@@ -2483,7 +2553,33 @@ RESERVED_AGENT_IDS: frozenset[str] = frozenset({
     "relay", "emporia", "admin", "administrator", "system", "root", "operator",
     "support", "security", "official", "api", "www", "null", "none", "undefined",
     "me", "self", "everyone", "anonymous",
+    # Names a person would trust on sight: the house, the tools, the host, the makers.
+    "house", "bot", "hermes", "nous", "moderator", "mod", "staff", "team", "help", "owner", "founder",
+    "bank", "wallet", "escrow", "treasury", "signer", "relay-operator", "emporia-bot", "hermes-agent",
 })
+
+# What a client may call itself on the signed card; anything else is recorded as "custom".
+CLIENT_NAMES = ("hermes-plugin", "sdk", "custom")
+
+
+def _clean_display_name(display_name: str) -> str:
+    """The display name as stored (see `names.clean_display_name`); a ValueError names what is wrong."""
+    return _names.clean_display_name(display_name)
+
+
+def _handle_lookalike_problem(conn: Any, agent_id: str) -> str:
+    """Why a new handle is too close to a reserved name, this relay's own names or an existing handle, or ""."""
+    reserved = set(RESERVED_AGENT_IDS)
+    for name in (os.getenv("EMPORIA_AGENT_ID", "").strip(), *_house_names(), _own_host().split(".")[0]):
+        if name:
+            reserved.add(name)
+    existing = [r["agent_id"] for r in conn.execute("SELECT agent_id FROM authorized_agents").fetchall()]
+    return _names.lookalike_problem(agent_id, existing, reserved)
+
+
+def _house_names() -> list[str]:
+    from emporia import progression
+    return sorted(progression.house_agents())
 
 
 def _rename_in_json_column(
@@ -2534,12 +2630,8 @@ def stable_id_for(public_key_hex: str) -> str:
     * a content address over the name (the hackathon's `content_address_for`,
       removed in P294) changes on rename: it addresses a named thing, a
       different job.
-    * `nous_user_id` is one-to-many by design — the index on it is deliberately
-      non-unique ("one Nous user may operate multiple agent personas"), so it
-      cannot identify an agent. And `register()` UPSERTs `trust_level`, so a
-      key_only agent presenting a Nous claim on an ordinary re-register would
-      *acquire* a Nous-derived id: identity changing at the exact moment it
-      became better attested.
+    * the operator label is one-to-many by design (one person runs many agents),
+      so it cannot identify an agent.
 
     The pubkey was already the ownership proof — registration requires one and
     refuses a taken handle presented under a different key. This writes it down.
@@ -2599,6 +2691,13 @@ def _write_key_log_step(conn: Any, stable_id: str, step_no: int, step: dict[str,
 #: handle. A bearer token issued before then was issued to a key it no longer has.
 _SESSION_FLOOR: dict[str, float] = {}
 
+# `routes.standing._who`'s cache; emptied by `forget_who` when an agent registers, renames or changes label.
+_WHO_CACHE: dict[str, Any] = {}
+
+
+def forget_who() -> None:
+    _WHO_CACHE.clear()
+
 
 def _load_session_floors(conn: Any) -> None:
     _SESSION_FLOOR.clear()
@@ -2619,9 +2718,11 @@ class AgentRegistry:
         public_key_hex: str,
         display_name: str = "",
         stripe_account_id: str | None = None,
-        identity_claims: list[dict] | None = None,
+        operator_label: str = "",
+        client_name: str = "",
+        client_version: str = "",
     ) -> dict:
-        """Register an agent. Returns enriched profile dict with trust_level."""
+        """Register an agent. Returns its profile dict (stable id, operator label, declared client)."""
         agent_id = _normalize_agent_id(agent_id)
         # P47b: the denylist has to live at both doors. An agent refused `admin`
         # on rename could otherwise simply register it.
@@ -2636,32 +2737,14 @@ class AgentRegistry:
         except ValueError:
             raise ValueError("public_key_hex must be a 64-char hex string (Ed25519 public key)")
 
-        nous_user_id: str | None = None
-        trust_level = "key_only"
-        verified_display_name = display_name
-        providers_verified: list[str] = []
-
-        if identity_claims:
-            from emporia.identity_providers import verify_claim, IdentityVerificationError
-            for claim_req in identity_claims:
-                provider = claim_req.get("provider", "")
-                token = claim_req.get("token", "")
-                if not provider or not token:
-                    continue
-                try:
-                    claim = verify_claim(provider, token)
-                    providers_verified.append(provider)
-                    if provider == "nous":
-                        nous_user_id = claim.subject_id
-                        if claim.display_name and not verified_display_name:
-                            verified_display_name = claim.display_name
-                        trust_level = "nous_verified"
-                except IdentityVerificationError:
-                    pass  # skip bad claims; don't fail the whole registration
-
-        # nous_user_id is stored for auditing/correlation but does not
-        # redirect to a canonical agent_id — one Nous user may operate
-        # multiple agent personas (demo bots, specialist profiles, etc.).
+        operator_label = (operator_label or "").strip().lower()
+        if operator_label and not operators.valid_label(operator_label):
+            raise ValueError(f"operator label must look like {operators.LABEL_EXAMPLE}")
+        client_name = (client_name or "").strip().lower()[:32]
+        if client_name and client_name not in CLIENT_NAMES:
+            client_name = "custom"
+        client_version = (client_version or "").strip()[:32]
+        verified_display_name = _clean_display_name(display_name)
 
         try:
             with DB_LOCK, get_db() as conn:
@@ -2685,6 +2768,8 @@ class AgentRegistry:
                 # conflict instead of surfacing an IntegrityError.
                 derived_stable_id = stable_id_for(public_key_hex)
                 if not existing_row:
+                    if why := _handle_lookalike_problem(conn, agent_id):
+                        raise ValueError(why)
                     # P245: also a key some agent now holds after rotating — its
                     # stable id is from an earlier key, so it would not match above.
                     twin = conn.execute(
@@ -2710,11 +2795,13 @@ class AgentRegistry:
                 # DO UPDATE names precisely the columns registration owns; anything
                 # an agent set through another endpoint survives by construction
                 # rather than by remembering to add it to a list.
+                now_iso = datetime.now(UTC).isoformat()
+                before = conn.execute("SELECT operator_label FROM authorized_agents WHERE agent_id = ?",
+                                      (agent_id,)).fetchone()
                 conn.execute(
                     "INSERT INTO authorized_agents "
                     "(agent_id, public_key_hex, display_name, registered_at, is_active, "
-                    "stripe_account_id, nous_user_id, trust_level, identity_providers_json, "
-                    "stable_id) "
+                    "stripe_account_id, operator_label, client_name, client_version, stable_id) "
                     "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?) "
                     # P47: `stable_id` is deliberately ABSENT from DO UPDATE.
                     # Allocated once, on the row's first insert, and never
@@ -2727,43 +2814,32 @@ class AgentRegistry:
                     "display_name=excluded.display_name, "
                     "registered_at=excluded.registered_at, "
                     "is_active=1, "
-                    # P26-5: was `stripe_account_id=excluded.stripe_account_id`,
-                    # which writes NULL on any re-register that isn't
-                    # auto-provisioning (every live-mode one). stripe_account_status
-                    # is correctly not in this list, so it *survived* — leaving
-                    # 'active' with no account id. The next start_stripe_onboarding
-                    # then created a SECOND real Connected Account: a second real
-                    # KYC, orphaning the first and any balance on it. Registration
-                    # is documented as "safe to call on every start", so this was
-                    # reachable on an ordinary restart. COALESCE keeps an existing
-                    # id whenever this registration didn't mint one.
+                    # P26-5: COALESCE keeps an existing Stripe account id whenever this registration
+                    # didn't mint one (a live-mode re-register writes NULL, and the next onboarding
+                    # would otherwise create a second real Connected Account).
                     "stripe_account_id=COALESCE(excluded.stripe_account_id, authorized_agents.stripe_account_id), "
-                    # P110: a re-registration with no valid Nous claim keeps the
-                    # verification already proven for this key. Nous access
-                    # tokens last an hour and the MCP server re-registers on
-                    # every start, so this used to downgrade every agent to
-                    # key_only by the next day. Safe because the key cannot
-                    # change here (refused above): only the key's holder can
-                    # re-register, and a claim for a different Nous user
-                    # still replaces the old one.
-                    "nous_user_id=COALESCE(excluded.nous_user_id, authorized_agents.nous_user_id), "
-                    "trust_level=CASE WHEN excluded.nous_user_id IS NULL "
-                    "THEN authorized_agents.trust_level ELSE excluded.trust_level END, "
-                    "identity_providers_json=CASE WHEN excluded.nous_user_id IS NULL "
-                    "THEN authorized_agents.identity_providers_json "
-                    "ELSE excluded.identity_providers_json END",
-                    (agent_id, public_key_hex, verified_display_name,
-                     datetime.now(UTC).isoformat(), stripe_account_id,
-                     nous_user_id, trust_level, json.dumps(providers_verified),
-                     derived_stable_id),
+                    # The signed card's label and client: a registration with none keeps what the row has
+                    # (a change of label is logged below, never silent).
+                    "operator_label=CASE WHEN excluded.operator_label = '' THEN authorized_agents.operator_label "
+                    "ELSE excluded.operator_label END, "
+                    "client_name=CASE WHEN excluded.client_name = '' THEN authorized_agents.client_name "
+                    "ELSE excluded.client_name END, "
+                    "client_version=CASE WHEN excluded.client_name = '' THEN authorized_agents.client_version "
+                    "ELSE excluded.client_version END",
+                    (agent_id, public_key_hex, verified_display_name, now_iso, stripe_account_id,
+                     operator_label, client_name, client_version, derived_stable_id),
                 )
                 stored = conn.execute(
-                    "SELECT stable_id, trust_level, nous_user_id FROM authorized_agents "
+                    "SELECT stable_id, operator_label, client_name, client_version FROM authorized_agents "
                     "WHERE agent_id = ?", (agent_id,),
                 ).fetchone()
                 stable_id = stored["stable_id"]
-                # P110: what the row holds, which a claim-less re-register keeps.
-                trust_level, nous_user_id = stored["trust_level"], stored["nous_user_id"]
+                previous = (before["operator_label"] or "") if before else ""
+                forget_who()
+                if (stored["operator_label"] or "") != previous or (not before and stored["operator_label"]):
+                    conn.execute(
+                        "INSERT INTO operator_log (stable_id, previous, label, recorded_at) VALUES (?,?,?,?)",
+                        (stable_id, previous, stored["operator_label"] or "", now_iso))
             return {
                 "agent_id": agent_id,
                 # P47: read back rather than returned from `derived_stable_id`.
@@ -2773,9 +2849,8 @@ class AgentRegistry:
                 # would report an identity the database does not hold.
                 "stable_id": stable_id,
                 "display_name": verified_display_name,
-                "trust_level": trust_level,
-                "nous_user_id": nous_user_id,
-                "providers_verified": providers_verified,
+                "operator_label": stored["operator_label"] or "",
+                "client": {"name": stored["client_name"] or "", "version": stored["client_version"] or ""},
             }
         except ValueError:
             raise  # key-conflict or validation errors — preserve message for HTTP status mapping
@@ -2953,6 +3028,10 @@ class AgentRegistry:
             raise ValueError(f"'{new_agent_id}' is a reserved handle")
         if new_agent_id == agent_id:
             raise ValueError("that is already this agent's handle")
+        with DB_LOCK, get_db() as _conn:
+            if why := _handle_lookalike_problem(_conn, new_agent_id):
+                if not _names.skeleton(new_agent_id) == _names.skeleton(agent_id):    # renaming to a spelling of itself is fine
+                    raise ValueError(why)
 
         with DB_LOCK, get_db() as conn:
             row = conn.execute(
@@ -2973,6 +3052,7 @@ class AgentRegistry:
                 )
             for table, column in _RENAME_JSON_COLUMNS:
                 _rename_in_json_column(conn, table, column, agent_id, new_agent_id)
+            forget_who()
             if agent_id in _SESSION_FLOOR:      # P246: a recovery's cut-off goes with the agent
                 _SESSION_FLOOR[new_agent_id] = _SESSION_FLOOR.pop(agent_id)
 
@@ -4451,16 +4531,13 @@ async def _payout_reconcile_loop() -> None:
 # Pydantic Models
 # ============================================================================
 
-class IdentityClaimRequest(BaseModel):
-    provider: str   # "nous" | "github" | ...
-    token: str      # raw credential — verified server-side, never stored
-
-
 class RegisterAgentRequest(BaseModel):
     agent_id: str
     public_key_hex: str
     display_name: str = ""
-    identity_claims: list[IdentityClaimRequest] = Field(default_factory=list)
+    operator_label: str = ""       # the opaque operator label on the signed card ("" = none)
+    client_name: str = ""          # "hermes-plugin" | "sdk" | "custom"
+    client_version: str = ""
     challenge_id: str = ""
     challenge_signature: str = ""  # base64url Ed25519 sig of emporia:sign-in:v2 {nonce, relay, agent_id, public_key}
     relay: str = ""                # the origin the agent signed for (it must be one of this relay's)
@@ -4520,6 +4597,8 @@ class SubmitActionRequest(BaseModel):
     signature: str | None = None
     # P148: optional table talk sent with the move (signed with it).
     say: str = ""
+    # A declared model, committed with the move (`model_commit.commit(model, salt)`), revealed at the end.
+    model_commit: str = ""
 
 
 class SendMessageRequest(BaseModel):
@@ -4742,7 +4821,6 @@ async def health(request: Request):
         "listing_count": listing_count,
         "session_count": session_count,
         "guardrails_mode": guardrails.DEFAULT_MODE,
-        "require_nous": REQUIRE_NOUS,
         # First run: what a new agent's `emporia doctor` explains — the season this relay runs and
         # whether starter limits bind new agents (levels.py).
         "season": _season_public(),
@@ -4990,8 +5068,6 @@ async def ui_config(request: Request):
         "owner_agent_id": owner or None,
         "relay_id": relay_id(),
         "relay_url": RELAY_BASE_URL,
-        "require_nous": REQUIRE_NOUS,
-        "write_requires_nous": WRITE_REQUIRES_NOUS,
         "require_challenge": REQUIRE_CHALLENGE,
         "agent_count": agent_count,
         "active_session_count": active_session_count,
@@ -5119,12 +5195,14 @@ async def dashboard_session(req: DashboardSessionRequest):
         "iat": int(now),
         "issued": now,
         "exp": int(now + _JWT_TTL_SECONDS),
+        "jti": secrets.token_hex(12),          # its id: what sign-out revokes
     })
     # Store under challenge_id so the polling dashboard can pick it up automatically
     _PENDING_TOKENS[req.challenge_id] = jwt
     return {
         "token": jwt,
         "agent_id": req.agent_id,
+        "stable_id": row["stable_id"],
         "expires_in": _JWT_TTL_SECONDS,
         "token_type": "Bearer",
     }
@@ -5160,7 +5238,8 @@ _CHALLENGE_TTL_SECONDS = 300  # nonces expire after 5 minutes
 
 
 def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, relay: str = "",
-                       agent_id: str = "") -> None:
+                       agent_id: str = "", operator_label: str = "", client_name: str = "",
+                       client_version: str = "") -> None:
     """Verify and consume a registration challenge. Raises HTTPException on any failure.
 
     Consumption is a single conditional UPDATE (used=0 → used=1), not a separate
@@ -5189,10 +5268,11 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, r
         raise HTTPException(403, f"this registration is for {str(relay)[:100] or 'no relay'}, not this relay — "
                                  "sign emporia:sign-in:v2 for the relay you are talking to")
     from emporia.wire import signed_registration_payload
-    if not verify(signed_registration_payload(nonce, relay, agent_id, public_key_hex), signature,
+    if not verify(signed_registration_payload(nonce, relay, agent_id, public_key_hex, operator_label, client_name,
+                                              client_version), signature,
                   str(public_key_hex).lower()):
         raise HTTPException(403, "Challenge signature invalid — sign emporia:sign-in:v2 {nonce, relay, "
-                                 "agent_id, public_key} with the agent's key")
+                                 "agent_id, public_key, operator, client} with the agent's key")
 
 
 # ============================================================================
@@ -6838,7 +6918,7 @@ async def ws_global_events(ws: WebSocket):
     """
     if await _ws_refused(ws):
         return
-    await ws.accept()
+    await _ws_accept(ws)
     ws_id = uuid.uuid4().hex[:12]
     logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "global"})
     ws_connections["__global__"].add(ws)
@@ -6905,7 +6985,7 @@ async def ws_session(ws: WebSocket, session_id: str):
         logger.warning("ws_rejected", extra={"channel": "session", "session_id": session_id, "reason": "not_allowed"})
         await ws.close(code=1008)
         return
-    await ws.accept()
+    await _ws_accept(ws)
     ws_id = uuid.uuid4().hex[:12]
     logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "session", "session_id": session_id})
     ws_connections[session_id].add(ws)
@@ -6935,7 +7015,7 @@ async def ws_agent(ws: WebSocket, agent_id: str):
         logger.warning("ws_rejected", extra={"channel": "agent", "agent_id": agent_id, "reason": "not_authorized"})
         await ws.close(code=1008)
         return
-    await ws.accept()
+    await _ws_accept(ws)
     ws_id = uuid.uuid4().hex[:12]
     logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "agent", "agent_id": agent_id})
     key = f"agent:{agent_id}"
@@ -7444,7 +7524,7 @@ async def ws_room(ws: WebSocket, room_id: str):
         logger.warning("ws_rejected", extra={"channel": "room", "room_id": room_id, "reason": "not_a_member"})
         await ws.close(code=1008)
         return
-    await ws.accept()
+    await _ws_accept(ws)
     ws_id = uuid.uuid4().hex[:12]
     logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "room", "room_id": room_id})
     key = f"room:{room_id}"
@@ -7517,30 +7597,14 @@ class AgoraSubscribeRequest(BaseModel):
 
 
 def _require_registered(agent_id: str) -> None:
-    """Raise 403 if agent_id is not registered, or is key_only when WRITE_REQUIRES_NOUS is on.
+    """Raise 403 if agent_id is not registered.
 
     Read endpoints are open; all write operations (create/post/join/subscribe/vote/message)
-    require prior registration. With WRITE_REQUIRES_NOUS=1, only nous_verified agents may write.
+    require prior registration.
     """
     if not AGENT_REGISTRY.is_authorized(agent_id):
         raise HTTPException(403, f"Agent '{agent_id}' not registered on this relay. "
                             "Register first via POST /agents/register or MCP auto-registration.")
-    if WRITE_REQUIRES_NOUS:
-        try:
-            with DB_LOCK, get_db() as conn:
-                row = conn.execute(
-                    "SELECT trust_level FROM authorized_agents WHERE agent_id = ?", (agent_id,)
-                ).fetchone()
-            if not row or row["trust_level"] != "nous_verified":
-                raise HTTPException(
-                    403,
-                    f"Agent '{agent_id}' has key_only trust. "
-                    "Write operations require nous_verified — register with a valid Nous JWT.",
-                )
-        except HTTPException:
-            raise
-        except Exception:
-            pass
 
 
 _AGORA_VISIBILITIES = {"public", "private", "restricted"}
@@ -7772,8 +7836,10 @@ from emporia.routes import listings as _listings_routes  # noqa: E402
 from emporia.routes import rooms as _room_routes  # noqa: E402
 from emporia.routes import sessions as _session_routes  # noqa: E402
 from emporia.routes import translog as _translog_routes  # noqa: E402
+from emporia.routes import models as _model_routes  # noqa: E402
 
 app.include_router(_listings_routes.router)
+app.include_router(_model_routes.router)
 app.include_router(_events_routes.router)
 app.include_router(_dm_routes.router)
 app.include_router(_federation_routes.router)

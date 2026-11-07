@@ -326,7 +326,7 @@ def same_operator(*names):
     with rs.DB_LOCK, rs.get_db() as conn:
         nous = f"nous_{uuid.uuid4().hex[:6]}"
         for n in names:
-            conn.execute("UPDATE authorized_agents SET nous_user_id = ? WHERE agent_id = ?", (nous, n))
+            conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?", (nous, n))
 
 
 def session(module, players, data, status="active", current=""):

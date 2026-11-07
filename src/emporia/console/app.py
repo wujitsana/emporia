@@ -364,10 +364,12 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
             await socket.close(code=1008)
             return
         query = {k: v for k, v in socket.query_params.items() if k not in ("token", "agent_id")}
-        query.update({"agent_id": agent.agent_id, "token": await console.relay.token(agent)})
+        query.update({"agent_id": agent.agent_id})
+        from emporia.agent_sdk import ws_subprotocols
+        subprotocols = ws_subprotocols(await console.relay.token(agent))
         await socket.accept()
         try:
-            async with websockets.connect(console.relay.ws_url(path, query)) as upstream:
+            async with websockets.connect(console.relay.ws_url(path, query), subprotocols=subprotocols) as upstream:
                 async def down():
                     async for msg in upstream:
                         await (socket.send_text(msg) if isinstance(msg, str)

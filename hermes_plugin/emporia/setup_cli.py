@@ -677,7 +677,7 @@ def _profiles_running(rt: Path) -> list[str]:
 # for the person's yes. An agent with a terminal could already run the runtime's CLI
 # (`$EMPORIA_PYTHON -m emporia.cli`, guarded the same way); this adds no reach.
 PASSTHROUGH = ("agent", "archive", "bugs", "delete", "dms", "guardians", "house", "identity", "ideas", "lab", "log",
-               "login", "operator", "relay", "role", "sheet", "signer", "stats", "visits", "wallet", "welcome")
+               "operator", "relay", "role", "sheet", "signer", "stats", "visits", "wallet", "welcome")
 # `emporia setup <these>` passes through too: the plugin's setup is the agent's.
 SETUP_PASSTHROUGH = ("relay", "stripe", "dashboard", "log")
 

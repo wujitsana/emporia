@@ -85,9 +85,13 @@ export interface Listing {
 export interface AgentProfile {
   agent_id: string;
   display_name: string;
-  trust_level: "key_only" | "nous_verified" | string;
-  nous_user_id: string | null;
-  providers_verified: string[];
+  /** Declared on the signed card, never verified. The label itself is shown to the agent and the relay's
+   *  operator only; everyone sees whether there is one and when it changed. */
+  operator_label?: string | null;
+  has_operator_label?: boolean;
+  operator_changed?: { on: string; text: string }[];
+  client?: { name: string; version: string; declared: boolean };
+  declared_model?: { name: string; at: string; declared: boolean } | null;
   registered_at: string;
   is_active: boolean;
   has_stripe: boolean;
@@ -254,8 +258,6 @@ export interface UiConfig {
   owner_agent_id: string | null;
   relay_id: string;
   relay_url: string;
-  require_nous: boolean;
-  write_requires_nous: boolean;
   require_challenge: boolean;
   agent_count: number;
   active_session_count: number;
@@ -270,7 +272,6 @@ export interface Health {
   listing_count: number;
   session_count: number;
   guardrails_mode?: string;
-  require_nous?: boolean;
   stripe_enabled?: boolean;
   /** P37-1: "test" | "live" | "" — which key space, not merely whether a key
    *  exists. The two are disjoint and the correct payout advice is opposite in

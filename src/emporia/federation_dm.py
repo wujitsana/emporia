@@ -182,7 +182,7 @@ async def call_peer(peer: str, method: str, path: str, payload: dict | None = No
 def agent_record(agent_id: str) -> dict[str, Any] | None:
     """What a linked relay may know of an agent here: its address, public keys
     and the signed key log that leads to the current one. Nothing else — no
-    wallets, no Nous account, no activity."""
+    wallets, no operator label, no activity."""
     from emporia import relay_server as rs
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute(

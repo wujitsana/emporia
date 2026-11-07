@@ -3,6 +3,7 @@
 Each player commits to a secret with its create/join; its hand and walk-away come from that secret and
 a public drand round (`emporia:rand:v1`). The relay holds neither. The tests use the shim's fake
 beacon (conftest `rand_testmode`); the real BLS check has its own tests in test_rand.py."""
+from tests.ids import stable_of  # noqa: E402
 import asyncio
 import copy
 import json
@@ -172,7 +173,7 @@ def test_a_game_needs_a_commitment_to_create_and_to_join(client):
     assert r.status_code == 400 and "rand_commit" in r.text
     sid = client.post("/sessions", json={"module_type": BARGAIN}, headers=_hdr(a)).json()["session_id"]
     at = datetime.now(UTC).isoformat()
-    body = {"agent_id": b, "at": at, "signature": identity.sign(wire.signed_session_join_payload(sid, b, at), b)}
+    body = {"agent_id": b, "at": at, "signature": identity.sign(wire.signed_session_join_payload(sid, stable_of(b), at), b)}
     r = client.post(f"/sessions/{sid}/join", json=body, headers=_hdr(b))
     assert r.status_code == 400 and "rand_commit" in r.text
     assert rs.load_session(sid)["participants"] == [a]
@@ -541,7 +542,7 @@ def test_the_mcp_tools_commit_on_create_and_join_and_reveal_from_the_local_secre
     identity.get_public_key_hex(me)
     r = m.join_session("sess_t", agent_id=me)
     commit = posted[-1][1]["rand_commit"]
-    assert identity.verify(wire.signed_rand_commit_payload("sess_t", me, 2, commit["hash"], commit["beacon_round"],
+    assert identity.verify(wire.signed_rand_commit_payload("sess_t", stable_of(me), 2, commit["hash"], commit["beacon_round"],
                                                            commit["at"]), commit["signature"],
                            identity.get_public_key_hex(me)), "seat = players already seated"
     assert not rand.commit_round_problem(commit["at"], commit["beacon_round"]) and "s" not in commit
@@ -553,7 +554,7 @@ def test_the_mcp_tools_commit_on_create_and_join_and_reveal_from_the_local_secre
     m.create_session("emporia:bargain:v2", agent_id=me)
     created.append(posted[-1][1])
     c = created[0]["rand_commit"]
-    assert identity.verify(wire.signed_rand_commit_payload(wire.session_id_for(created[0]["nonce"]), me, 0, c["hash"],
+    assert identity.verify(wire.signed_rand_commit_payload(wire.session_id_for(created[0]["nonce"]), stable_of(me), 0, c["hash"],
                                                            c["beacon_round"], c["at"]), c["signature"],
                            identity.get_public_key_hex(me))
     assert r.get("success") is True

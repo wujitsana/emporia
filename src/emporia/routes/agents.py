@@ -51,20 +51,12 @@ async def register_agent(req: rs.RegisterAgentRequest):
     from emporia import relay_access
     if why := relay_access.registration_refusal(req.public_key_hex):   # P186
         raise HTTPException(403, why)
-    if rs.REQUIRE_NOUS:
-        has_nous = any(c.provider == "nous" and c.token for c in req.identity_claims)
-        if not has_nous:
-            raise HTTPException(
-                403,
-                "This relay requires Nous identity verification. "
-                "Include a valid Nous JWT in identity_claims[{provider: 'nous', token: '...'}].",
-            )
     if why := rs.reserved_name_problem(req.agent_id, rs.stable_id_for(req.public_key_hex)):
         raise HTTPException(403, why)
     # Challenge verification — proves the registrant holds the matching private key
     if req.challenge_id and req.challenge_signature:
         rs._consume_challenge(req.challenge_id, req.public_key_hex, req.challenge_signature, req.relay,
-                              req.agent_id)
+                              req.agent_id, req.operator_label, req.client_name, req.client_version)
     elif rs.REQUIRE_CHALLENGE:
         raise HTTPException(
             400,
@@ -74,21 +66,16 @@ async def register_agent(req: rs.RegisterAgentRequest):
         )
 
     try:
-        # P53: off the event loop. AgentRegistry.register() verifies identity
-        # claims inline, and the Nous provider fetches JWKS with a *blocking*
-        # httpx.get carrying a 5s timeout — twice (discovery, then the keyset).
-        # A slow or unreachable provider therefore stalled the entire relay for
-        # up to 10 seconds per registration attempt, not just that request, and
-        # the JWKS cache only stores on success so every attempt paid it again.
-        # Same treatment P44 gave the three heaviest read routes, for the same
-        # reason: blocking work does not belong on the loop.
+        # P53: off the event loop (registration takes the database lock and writes).
         profile = await run_in_threadpool(
             functools.partial(
                 rs.AGENT_REGISTRY.register,
                 req.agent_id,
                 req.public_key_hex,
                 req.display_name,
-                identity_claims=[c.model_dump() for c in req.identity_claims],
+                operator_label=req.operator_label,
+                client_name=req.client_name,
+                client_version=req.client_version,
             )
         )
     except ValueError as e:
@@ -160,9 +147,8 @@ async def register_agent(req: rs.RegisterAgentRequest):
         "address": address(canonical_id, rs._own_host()),
         "fingerprint": fingerprint(req.public_key_hex),
         "display_name": profile["display_name"],
-        "trust_level": profile["trust_level"],
-        "nous_user_id": profile["nous_user_id"],
-        "providers_verified": profile["providers_verified"],
+        "operator_label": profile["operator_label"],
+        "client": profile["client"],
         "stripe_account_id": stripe_account_id,
     }
 @router.get("/agents")
@@ -186,7 +172,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             rows, has_more = rs._fetch_page(
                 conn,
                 "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-                "nous_user_id, trust_level, identity_providers_json "
+                "operator_label, client_name, client_version, declared_model, declared_model_at, stable_id "
                 "FROM authorized_agents WHERE (agent_id LIKE ? OR display_name LIKE ?) "
                 + ("" if include_inactive else "AND is_active = 1 ")    # P222: one that left is gone
                 + "ORDER BY registered_at DESC LIMIT ?",
@@ -196,7 +182,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             rows, has_more = rs._fetch_page(
                 conn,
                 "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-                "nous_user_id, trust_level, identity_providers_json "
+                "operator_label, client_name, client_version, declared_model, declared_model_at, stable_id "
                 "FROM authorized_agents " + ("" if include_inactive else "WHERE is_active = 1 ")
                 + "ORDER BY registered_at DESC LIMIT ?",
                 (), limit,
@@ -207,6 +193,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
         # GROUP BY aggregates over just the returned agent_ids instead, one lock
         # acquisition regardless of row count.
         agent_ids = [row["agent_id"] for row in rows]
+        changes = _operator_changes(conn, [row["stable_id"] for row in rows])
         session_counts: dict[str, int] = {}
         win_counts: dict[str, int] = {}
         if agent_ids:
@@ -237,9 +224,8 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
         agents.append({
             "agent_id": agent_id,
             "display_name": row["display_name"] or agent_id,
-            "trust_level": row["trust_level"] or "key_only",
-            "nous_user_id": _own_nous_id(row, caller),
-            "providers_verified": json.loads(row["identity_providers_json"] or "[]"),
+            "address": address(agent_id, rs._own_host()),
+            **_identity_fields(row, caller, changes.get(row["stable_id"], [])),
             "registered_at": row["registered_at"],
             "is_active": bool(row["is_active"]),
             "has_stripe": bool(row["stripe_account_id"]),
@@ -247,13 +233,64 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             "win_count": win_counts.get(agent_id, 0),
         })
     return {"agents": agents, "count": len(agents), "has_more": has_more}
-def _own_nous_id(row: Any, caller: str | None) -> str | None:
-    """The Nous account behind an agent — the one link from an agent to a
-    person — for the agent itself and the operator only. Everyone else sees
-    whether it is verified (`trust_level`), not whose it is."""
-    if caller and caller in (row["agent_id"], rs._relay_operator_id()):
-        return row["nous_user_id"]
-    return None
+def _operator_changes(conn: Any, stable_ids: list[str]) -> dict[str, list[str]]:
+    """When each agent's operator label changed (not when it was first set), oldest first."""
+    ids = [i for i in stable_ids if i]
+    if not ids:
+        return {}
+    out: dict[str, list[str]] = {}
+    marks = ",".join("?" * len(ids))
+    for r in conn.execute(f"SELECT stable_id, recorded_at FROM operator_log WHERE previous <> '' "
+                          f"AND stable_id IN ({marks}) ORDER BY recorded_at", ids).fetchall():
+        out.setdefault(r["stable_id"], []).append(r["recorded_at"])
+    return out
+
+
+def _profile_changes(stable_id: str) -> list[str]:
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return _operator_changes(conn, [stable_id]).get(stable_id, [])
+
+
+def _identity_fields(row: Any, caller: str | None, changes: list[str]) -> dict[str, Any]:
+    """What an agent's card says of who runs it and with what — all of it *declared*, none verified. The
+    operator label itself is shown to the agent and the relay's operator only (claiming a label merges your
+    standing with its holder's, so it is not handed out); everyone sees whether there is one and when it
+    changed. The client is the one on the signed card; the model is the latest one the agent declared."""
+    own = bool(caller and caller in (row["agent_id"], rs._relay_operator_id()))
+    label = row["operator_label"] or ""
+    model = row["declared_model"] or ""
+    return {
+        "operator_label": label if own else None,
+        "has_operator_label": bool(label),
+        "operator_changed": [{"on": at, "text": f"operator changed on {at[:10]}"} for at in changes],
+        "client": {"name": row["client_name"] or "", "version": row["client_version"] or "", "declared": True},
+        "declared_model": {"name": model, "at": row["declared_model_at"] or "", "declared": True} if model else None,
+    }
+
+
+@router.post("/agents/{agent_id}/sign-out")
+async def sign_out(agent_id: str, request: Request):
+    """Sign out: the token this request carries stops working, for whoever holds a copy. The agent signs in
+    again with its key (`POST /dashboard/session`)."""
+    rs._require_caller_is(agent_id, request)
+    payload = rs.bearer_payload(request)
+    if not payload or payload.get("agent_id") != agent_id:
+        raise HTTPException(403, "sign out with the agent's own token")
+    rs.revoke_token(payload)
+    return {"ok": True, "agent_id": agent_id, "revoked": "this token"}
+
+
+@router.post("/agents/{agent_id}/revoke-tokens")
+async def revoke_tokens(agent_id: str, request: Request):
+    """Revoke-all: every token issued to this agent before now stops working (a stolen one included). The
+    agent signs in again with its key. Only the agent itself may ask (with a token it holds)."""
+    payload = rs.bearer_payload(request)
+    if not payload or payload.get("agent_id") != agent_id:
+        raise HTTPException(403, "revoke an agent's tokens with the agent's own token")
+    stable = payload.get("stable_id") or ""
+    at = rs.revoke_all_tokens(stable)
+    return {"ok": True, "agent_id": agent_id, "revoked": "every token issued before now",
+            "valid_after": datetime.fromtimestamp(at, UTC).isoformat()}
 
 
 @router.get("/agents/{agent_id}/available")
@@ -289,8 +326,8 @@ async def get_agent_profile(agent_id: str, request: Request):
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute(
             "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-            "stripe_account_status, nous_user_id, trust_level, identity_providers_json, "
-            "encryption_public_key, public_key_hex, stable_id, accepts_remote_dms "
+            "stripe_account_status, operator_label, client_name, client_version, declared_model, "
+            "declared_model_at, encryption_public_key, public_key_hex, stable_id, accepts_remote_dms "
             "FROM authorized_agents WHERE agent_id = ?",
             (agent_id,),
         ).fetchone()
@@ -322,9 +359,7 @@ async def get_agent_profile(agent_id: str, request: Request):
         "address": address(row["agent_id"], rs._own_host()),
         "fingerprint": fingerprint(row["public_key_hex"] or ""),
         "display_name": row["display_name"] or row["agent_id"],
-        "trust_level": row["trust_level"] or "key_only",
-        "nous_user_id": _own_nous_id(row, caller),
-        "providers_verified": json.loads(row["identity_providers_json"] or "[]"),
+        **_identity_fields(row, caller, _profile_changes(row["stable_id"])),
         # P16: "" means this agent has not published one — an ordinary state, not a
         # gap. Served here as well as on the dedicated route so a client already
         # fetching a profile doesn't need a second round trip to learn whether it

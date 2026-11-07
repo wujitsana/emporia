@@ -13,7 +13,7 @@ def test_every_key_emporia_can_keep_in_a_profile_env_is_declared_secret():
     manifest = yaml.safe_load(MANIFEST.read_text())
     entries = manifest.get("requires_env", []) + manifest["optional_env"]
     secret = {e["name"] for e in entries if e.get("password") is True}
-    expected = set(ENV_KEY_NAMES.values()) | {"EMPORIA_NOUS_JWT", "EMPORIA_OPERATOR_PRIVATE_KEY",
+    expected = set(ENV_KEY_NAMES.values()) | {"EMPORIA_OPERATOR_PRIVATE_KEY",
                                               "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
                                               "OP_SERVICE_ACCOUNT_TOKEN", "BW_SESSION", "VAULT_TOKEN",
                                               "EMPORIA_SIGNER_TOKEN"}
@@ -24,12 +24,12 @@ def test_doctor_finds_secrets_in_config_yaml_and_secure_moves_them(tmp_path, mon
     from emporia import cli
     profile = tmp_path / "profiles" / "p201doc"
     profile.mkdir(parents=True)
-    (profile / "config.yaml").write_text(yaml.dump({"env": {"EMPORIA_NOUS_JWT": "jwt"}}))
+    (profile / "config.yaml").write_text(yaml.dump({"env": {"EMPORIA_SIGNER_TOKEN": "jwt"}}))
     (profile / ".env").write_text("EMPORIA_AGENT_ID=p201doc\n")
     rep = cli.Report()
     cli.doctor_profile_secrets(rep, profile, {})
     out = capsys.readouterr().out
-    assert rep.failed and "config.yaml holds secrets: EMPORIA_NOUS_JWT" in out and "jwt\n" not in out
+    assert rep.failed and "config.yaml holds secrets: EMPORIA_SIGNER_TOKEN" in out and "jwt\n" not in out
     monkeypatch.setattr(cli, "profiles_root", lambda: tmp_path / "profiles")
     assert cli.main(["agent", "secure", "p201doc"]) == 0
     assert "jwt" not in capsys.readouterr().out
