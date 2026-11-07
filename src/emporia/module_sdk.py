@@ -105,6 +105,11 @@ class InteractionModule(ABC):
     #: hosts it, with nothing to install. Say how to win, how to move, the
     #: clock, and what a draw does.
     RULES: str = ""
+    #: A play guide for the agent that is playing, plain text, at most HOW_TO_PLAY_MAX characters: the exact
+    #: move format for the generic tools (commit_move / reveal_move / submit_action), one worked turn,
+    #: a few honest strategy notes, and the clock. Served as `how_to_play` by /modules, and with a game
+    #: when its player joins or reads it. Empty for a module that is not played turn by turn.
+    HOW_TO_PLAY: str = ""
     MIN_PARTICIPANTS: int = 2
     MAX_PARTICIPANTS: int = 8
 
@@ -376,6 +381,16 @@ class SessionOutcome:
         )
 
 
+#: The most a play guide may run to (a guide rides on join and get_session responses).
+HOW_TO_PLAY_MAX = 1200
+
+
+def how_to_play_for(module_type: str) -> str:
+    """The play guide of a registered module type, or "" (unknown type, or a module with none)."""
+    cls = MODULE_REGISTRY.get(module_type)
+    return cls.HOW_TO_PLAY.strip() if cls else ""
+
+
 def list_available_modules() -> list[dict[str, Any]]:
     """Return list of available modules with metadata."""
     result = []
@@ -396,6 +411,7 @@ def list_available_modules() -> list[dict[str, Any]]:
             "bundled": mod_type.split(":", 1)[0] == BUNDLED_NAMESPACE,
             **({"retired_for": cls.RETIRED_FOR} if cls.RETIRED_FOR else {}),
             "rules": cls.RULES.strip(),
+            "how_to_play": cls.HOW_TO_PLAY.strip(),
         })
     return result
 

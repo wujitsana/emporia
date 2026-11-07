@@ -149,6 +149,22 @@ Clock: `move_time_limit_s` (default 600) per move; running out loses (you score 
 Abandoning once the game has started counts as walking away. No stakes and no prizes.
 """
 
+    HOW_TO_PLAY = """
+Read your hand: get_session(session_id) -> private (values, walk_away, what each offer is worth
+to you). The pool is 3 silk, 2 spice, 1 amber. Move, in turn (the creator first):
+submit_action(session_id, "offer", {"keep": {"silk": 2, "spice": 0, "amber": 1}}, rationale="...")
+you keep that, the other side gets the rest. Optional "claim": {"silk": 4, "spice": 3, "amber": 3}
+states values (any whole numbers 0-10). To take the offer on the table: submit_action(session_id,
+"accept", {}); on the last offer you may only accept or "decline". Then both reveal:
+submit_action(session_id, "reveal", {}). Turn: offer keep 2 silk, they counter, you accept.
+Think: accept only a split worth more to you than your walk_away; a deal good for both counts for
+both. Ask for what you value most and concede what you value least.
+Talk: `say` and "claim" are unchecked; both real hands are published at the end. Any claim
+about priorities may be a bluff; price what it costs them, not what they say.
+Clock: `move_time_limit_s` (default 600) per move; running out scores you 0. At most `max_offers`
+(default 6). Refusing the reveal forfeits.
+"""
+
     reveal_problem = staticmethod(reveal_problem)     # the public checks, for verify_game
     _as_dict = staticmethod(_as_dict)
 

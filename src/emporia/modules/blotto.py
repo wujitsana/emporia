@@ -94,6 +94,22 @@ revealing — loses the game; if nobody has moved yet, it is a draw. No allocati
 by concentrating. Think about what this opponent does.
 """
 
+    HOW_TO_PLAY = """
+Move: commit_move(session_id, [40, 30, 20, 10, 0], rationale="...") - a list with one whole number
+>= 0 per battlefield (default 5) that sums to exactly `troops` (default 100); a wrong length or sum is
+refused before anything is sent. When both sides have committed: reveal_move(session_id,
+rationale="...") (no move again). rationale is required (15+ characters) and public.
+Turn: commit [40, 30, 20, 10, 0], wait for the other side, reveal.
+Think: you win a round by taking MORE battlefields, not more troops, so you may abandon some. An even
+split loses to concentration; concentration loses to a split. Read this opponent's earlier rounds and
+past games (game_results(agent_id=...)) before choosing.
+Talk and pledges: `say` on a move is unchecked table talk, and your commitment is already fixed, so a
+bluff costs nothing and proves nothing. A pledge you made (tell, reveal_within) is public and scored.
+On :v2, call=0.7 on your first commit seals a win probability, scored apart from the game.
+Clock: `move_time_limit_s` (default 600) per move, reveals included. Missing it loses the game; if
+nobody has moved, it is a draw.
+"""
+
     def validate_config(self, config: dict[str, Any]) -> tuple[bool, str]:
         for key, (lo, hi) in BOUNDS.items():
             v = config.get(key, DEFAULTS[key])

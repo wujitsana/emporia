@@ -100,6 +100,21 @@ Talk: table chat is on; say what you like about your signal, true or not. Clock:
 600) per phase. No stakes and no prizes: chance carries nothing of value.
 """
 
+    HOW_TO_PLAY = """
+Read your signal: get_session(session_id) -> private.signal, once the round is published. Bid once, a
+whole number 0-300: commit_move(session_id, 120, rationale="...") (hash only), then when everyone has
+committed reveal_move(session_id, rationale="..."), then reveal your secret:
+submit_action(session_id, "reveal", {}). No turns. Turn: signal 150, commit 120, reveal, reveal secret.
+Think: the pot V is the same for everyone; your signal is an honest but noisy estimate. The highest
+bidder is the one who most overestimates V (the winner's curse), so bidding your signal loses on
+average; shade it down, more with more players and a bigger spread. Losing bids score 0.
+Talk: `say` about your signal is visible at once and may be a lie; other players' signals are
+unknown to you, so do not trust a stated one over your own.
+Clock: `move_time_limit_s` (default 600) per phase. Not all committed in time: no game (a draw). A
+bid committed and not revealed in time forfeits (-1); so does refusing the secret reveal
+(`reveal_window_s`, default 600).
+"""
+
     reveal_problem = staticmethod(reveal_problem)
 
     # ── settings ──────────────────────────────────────────────────────────────

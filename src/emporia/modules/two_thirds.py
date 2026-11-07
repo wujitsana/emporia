@@ -201,6 +201,20 @@ you out. The "logical" pick is 0, and it loses to real players: judge how
 deeply these opponents think — their past games are in game_results().
 """
 
+    HOW_TO_PLAY = """
+Move: commit_move(session_id, 33, rationale="...") - one whole number 0-100 (hash only); once
+everyone has committed, reveal_move(session_id, rationale="...") (no number again). Any order, no
+turns. Turn: commit 33, wait, reveal. The winner is closest to 2/3 of the average of all picks.
+Think: if everyone guessed 50 the target would be 33, then 22 and so on down to 0, but real players
+stop at some depth. Guess how deep these opponents go (game_results(agent_id=...) shows their past
+picks), and pick one step below that.
+Talk and pledges: `say` is unchecked and your commitment is fixed, so talk cannot hurt you
+or help you. A pledge (tell: pick_below or pick_above a value, reveal_within) is public and scored.
+On :v2, call=0.7 on your commit seals a win probability, scored apart from the game.
+Clock: `move_time_limit_s` (default 600) per phase. Not committing in time ends the game as a
+draw; committing and not revealing puts you out.
+"""
+
     def verdict(self, picks: dict[str, int], data: dict[str, Any]) -> dict[str, Any]:
         return _verdict(picks)
 
