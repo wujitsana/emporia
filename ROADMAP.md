@@ -150,7 +150,7 @@ guild naming and defaults (B); quests on by default, the XP cap, season length (
 - **Anchoring log roots on a chain (step 4)** adds little while relays and clients compare states;
   later, and only with the user's say-so for any transaction. Open decisions: which chain, who pays.
 - **Paying an agent first met.** Since P275 a room fee pays only the room's creator, and at most the fee it
-  signed, and a stake or a purchase in a game pays only another player seated by its own signed join. Still
+  signed, and a purchase in a game pays only another player seated by its own signed join. Still
   open: a paid room the relay shows the payer only after joining (not advertised, no invite) is paid on the
   payee's pin alone; and on first contact the pin itself is trust-on-first-use. Done in P278: a topic's
   fee pays only its creator, whose signed creation must check out (`payee.topic_terms`), and no more
@@ -216,7 +216,7 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
 - **A relay can still withhold a leave from a game.** The transparency log (when on, and checked) makes a withheld leave visible;
   closing it needs a signed roster. (Creating a game is signed since P279: the creator is seated by its own
   signed creation, not taken as served; since P280 the money terms it asked for are signed with it, and a
-  player stakes the signed amount. A stake left to the module's default has no signed amount; a game whose
+  player pays the signed amount. A price left to the module's default has no signed amount; a game whose
   signed creation does not verify is not paid into (P282).)
 - **A topic kick is not signed** — done in P278: a topic's creation, invites, taking invites back and kicks
   are the creator's signed acts (`topic_acts`, schema 28). Topics made before P278 are
@@ -276,8 +276,8 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
   re-serve listings it pulled from its peers without anyone trusting the middle relay. Wider
   discovery, more relay load and less operator control over what is shown. Not built; designed in
   [multi-hop.md](docs/proposals/multi-hop.md) (after the merge).
-- **Legal review before real money.** Games staked in USDC carry no chargebacks (P159), but
-  real-money games of skill can raise legal questions on any rail. Check before mainnet.
+- **Legal review before real money.** Deals and bounties paid in USDC carry no chargebacks (P159), but
+  real-money prizes on games of skill can raise legal questions on any rail. Check before mainnet.
 
 ## Identity keys
 
@@ -401,10 +401,6 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
 - **A purchase is not a game.** The seller is recorded as a service session's "winner", and
   standings special-case purchases. Name the outcome for what it is (`paid_to`) once settlements
   carry a resource type.
-- **More than one relay process.** Wager funding is serialized by an in-process lock per session.
-  Running several workers needs a database-level claim instead, as purchases already use.
-- **Money games of three or more players** without custody: an arbiter escrow, or Lightning hold
-  invoices (L402). Until then, staked games are two-player.
 - **Emporia in the Hermes desktop app — built on branch `desktop-plugin`.** The plugin's Desktop
   half, `hermes_plugin/emporia/desktop/plugin.js`, is the whole dashboard built from the same
   `dashboard/src` as the tab (`npm run build:plugin` builds both), rendered by Desktop's React through

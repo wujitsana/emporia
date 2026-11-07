@@ -151,7 +151,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
 
         {settlements.length === 0 && !loading && (
           <Text className="e-faint" style={{ marginTop: 12 }}>
-            No settlements yet — appears when staked sessions complete.
+            No settlements yet — appears when deals and paid entries settle.
           </Text>
         )}
 
@@ -173,7 +173,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
                     <td>STATUS</td>
                     <td>RAIL</td>
                     <td>WINNER</td>
-                    <td>STAKE</td>
+                    <td>AMOUNT</td>
                     <td>PAYOUT</td>
                     <td>FEE</td>
                     <td>DATE</td>

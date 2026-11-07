@@ -93,7 +93,7 @@ export function ListingsView({
   const waiting: OpenSession[] = lobby?.open_sessions ?? [];
 
   const waitingRows: RowCells[] = waiting.map((w) => {
-    const stake = w.payment_rules?.mode && w.payment_rules.mode !== "free"
+    const price = w.payment_rules?.mode && w.payment_rules.mode !== "free"
       ? `$${w.payment_rules.stake_per_participant ?? "?"}` : "";
     return [
       <span key="game" className="e-badge e-badge--dim">
@@ -104,9 +104,9 @@ export function ListingsView({
         <span className="e-dim" style={{ fontSize: 11 }}>{w.creator}</span>
         {w.creator_fingerprint && <span className="e-faint" style={{ fontSize: 10 }}>{w.creator_fingerprint}</span>}
       </span>,
-      stake
-        ? <span key="stake" style={{ color: "var(--theme-focused-foreground)" }}>{stake}</span>
-        : <span key="stake" className="e-faint">free</span>,
+      price
+        ? <span key="price" style={{ color: "var(--theme-focused-foreground)" }}>{price}</span>
+        : <span key="price" className="e-faint">free</span>,
       <span key="seats" className="e-faint" style={{ fontSize: 11 }}>
         {w.players}/{w.max_players ?? "?"}
       </span>,
@@ -143,7 +143,7 @@ export function ListingsView({
         {waiting.length > 0 && (
           <SlimCard title="Lobby — waiting for a player" action={<Text className="e-dim">{waiting.length}</Text>}>
             <RowTable
-              headers={["GAME", "CREATOR", "STAKE", "SEATS", "OPENED"]}
+              headers={["GAME", "CREATOR", "PRICE", "SEATS", "OPENED"]}
               rows={waitingRows}
               keys={waiting.map((w) => w.session_id)}
               onOpen={(i) => navigate("session", { sessionId: waiting[i].session_id })}

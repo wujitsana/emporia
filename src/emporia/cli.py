@@ -3122,9 +3122,8 @@ def _after_key_change(profile: Path, agent_id: str, out: dict[str, Any], source:
 def _show_playbook(name: str, pb) -> None:
     from emporia import playbook as P
     games = pb.games if isinstance(pb.games, str) else ", ".join(g.split(":")[1] for g in pb.games)
-    stake = "its spending limits" if pb.max_stake_cents is None else f"${pb.max_stake_cents / 100:.2f}"
     print(f"  Playbook    {pb.preset} — {P.about(pb)}")
-    print(f"  Games       {games}; stakes up to {stake}")
+    print(f"  Games       {games}")
     print(f"  Answers     {pb.answers}   Sells {'yes' if pb.sells else 'no'}   Buys {'yes' if pb.buys else 'no'}"
           f"   Runs on {pb.runs}   Pledges {'yes' if pb.pledges else 'no'}")
 
@@ -3137,13 +3136,13 @@ def _setup_playbook(profile: Path, name: str, chosen: str, existing: bool) -> No
     if not chosen and (existing and current or not _TTY):
         return
     if not chosen:
-        heading("Playbook", "What it may do on its own: games, stakes, selling, buying. Never its style.")
+        heading("Playbook", "What it may do on its own: games, selling, buying. Never its style.")
         chosen = choose_setting("playbook")
     merge_env_file(profile / ".env", {"EMPORIA_PLAYBOOK": chosen, **{var: "" for var in P.SETTINGS}})
 
 
 def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
-    """P297: what an agent may do on its own — which games and stakes, whether it
+    """P297: what an agent may do on its own — which games, whether it
     answers, sells or buys. Its person's setting, in its .env, outside the agent's
     tools; the bridge and its MCP tools enforce it. Never its style (SOUL.md)."""
     from emporia import playbook as P
@@ -3156,7 +3155,7 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
     updates: dict[str, str] = {}
     preset = args.preset
     if not preset and _TTY and not any(getattr(args, a, None) is not None for a in
-                                       ("games", "max_stake", "answers", "sells", "buys", "runs", "pledges",
+                                       ("games", "answers", "sells", "buys", "runs", "pledges",
                                         "labs")):
         heading(f"Playbook: {name}", "What it may do on its own. Its style stays its own (SOUL.md).")
         _show_playbook(name, P.resolve(dotenv))
@@ -3168,7 +3167,7 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
             return 1
         updates["EMPORIA_PLAYBOOK"] = preset
         updates.update({var: "" for var in P.SETTINGS})          # a preset starts clean
-    for attr, var in (("games", "EMPORIA_PLAYBOOK_GAMES"), ("max_stake", "EMPORIA_PLAYBOOK_MAX_STAKE_CENTS"),
+    for attr, var in (("games", "EMPORIA_PLAYBOOK_GAMES"),
                       ("answers", "EMPORIA_PLAYBOOK_ANSWERS"), ("sells", "EMPORIA_PLAYBOOK_SELLS"),
                       ("buys", "EMPORIA_PLAYBOOK_BUYS"), ("runs", "EMPORIA_PLAYBOOK_RUNS"),
                       ("pledges", "EMPORIA_PLAYBOOK_PLEDGES")):
@@ -3650,7 +3649,7 @@ def cmd_relay_move(args: argparse.Namespace) -> int:
             still_open = []
         if still_open:
             print(f"relay move: {name} still has games or purchases open on {old}: {', '.join(still_open)}.\n"
-                  "  Finish or abandon them first — their stakes and any dispute live there.")
+                  "  Finish or abandon them first — any payment and dispute live there.")
             return 1
     else:
         print(f"  ! {old} is not answering. Open games there cannot be checked or finished; USDC held in "
@@ -4836,7 +4835,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
             if (health() or {}).get("stripe_enabled") and \
                     profile_json.get("stripe_account_status", "none") != "active":
                 rep.warn("cannot receive Stripe payouts (no active Connected Account) — "
-                         "wager winnings and card-paid fees to it stay owed",
+                         "card-paid fees and sales to it stay owed",
                          "in the Stripe Dashboard (test mode) enable Accounts v1 support "
                          "(Developers → API policies) or complete Connect → Platform profile; "
                          f"then restart its gateway so {agent_id} re-registers")
@@ -5479,7 +5478,7 @@ def cmd_house(args: argparse.Namespace) -> int:
     argv = [sys.executable, "-m", "emporia.house", "--home", str(profile.resolve()), "--interval", str(args.interval),
             "--adopt-after", str(args.adopt_after), "--step-back-at", str(args.step_back_at),
             "--busy-window", str(args.busy_window)] + (["--once"] if args.once else []) + \
-        (["--stakes"] if args.stakes else [])
+        []
     run_env = {"PATH": os.defpath, "HOME": str(Path.home()), "HERMES_HOME": str(profile), **_mcp_env(profile)}
     if args.action == "run":
         return subprocess.call(argv, env=run_env)
@@ -6466,7 +6465,7 @@ def _stripe_relay_settings(me: Path, args: argparse.Namespace) -> dict[str, str]
     if profile_id:
         updates["STRIPE_PROFILE_ID"] = profile_id
     print(f"  {_STRIPE_DASHBOARD_STEP}")
-    print("  Card money on games and custodial card flows stay off (EMPORIA_CARD_GAME_STAKES, "
+    print("  Card money behind bounty prizes and custodial card flows stay off (EMPORIA_CARD_BOUNTY_PRIZES, "
           "EMPORIA_CUSTODIAL_CARDS) — see docs/payments.md before turning either on.")
     return updates
 
@@ -7439,8 +7438,8 @@ def _set_mainnet(profile: Path, agent_id: str, name: str, dotenv: dict[str, str]
     print(f"""
   Mainnet means real money. Before {name} may pay with it:
     · Test on testnets first. Emporia is young and has not been audited.
-    · A payment cannot be taken back, and a staked game can be lost. Games of skill for money
-      are regulated in many places — check yours.
+    · A payment cannot be taken back. Deals and bounties with money are
+      regulated in many places — check yours.
     · Its caps still apply: ${cap / 100:.2f} a payment, ${day / 100:.2f} a day. Keep them small.
     · {'It asks you before any payment above $' + format(int(approve) / 100, '.2f') if approve
        else 'It never asks you before paying — set an approval threshold below.'}
@@ -7812,7 +7811,7 @@ def setup_overview() -> None:
     # A relay running older code may not report these yet: its settings say.
     escrow = h.get("x402_escrow_network") or relay_env.get("EMPORIA_ESCROW_NETWORK")
     line("✓" if escrow else "·", "Escrow holds",
-         label(escrow) if escrow else "off — purchases and wagers need it",
+         label(escrow) if escrow else "off — purchases need it",
          "" if escrow else "emporia setup relay")
     tempo_net = h.get("tempo_network") or relay_env.get("EMPORIA_TEMPO_NETWORK")
     line("✓" if tempo_net else "·", "Tempo", label(tempo_net) if tempo_net else "off",
@@ -7835,7 +7834,7 @@ def setup_overview() -> None:
     mods = relay_env.get("EMPORIA_MODULES", "")
     line("✓" if mods else "·", "Extra games", mods or "bundled games only (optional)",
          "" if mods else "docs/adding-a-game.md (optional)")
-    risky = [k for k in ("EMPORIA_CARD_GAME_STAKES", "EMPORIA_CUSTODIAL_CARDS", "EMPORIA_ENGINE_GAME_STAKES")
+    risky = [k for k in ("EMPORIA_CARD_BOUNTY_PRIZES", "EMPORIA_CUSTODIAL_CARDS")
              if relay_env.get(k, "").lower() in ("1", "true", "yes", "on")]
     line("!" if risky else "✓", "Risky switches", ", ".join(risky) + " ON" if risky else "all off (recommended)")
 
@@ -7967,7 +7966,6 @@ def build_parser() -> argparse.ArgumentParser:
                           "(without either, you are asked to type it)")
     ag2.add_argument("--preset", default="", help="playbook: custom, player, merchant, scout, host or operator")
     ag2.add_argument("--games", default=None, help="playbook: all, none, set-plays, or games (blotto,chess,…)")
-    ag2.add_argument("--max-stake", default=None, help="playbook: largest stake it takes, in cents (none: its limits)")
     ag2.add_argument("--answers", default=None, choices=["anyone", "nobody"],
                      help="playbook: whom its DMs and invites wake it for")
     ag2.add_argument("--sells", default=None, choices=["yes", "no"], help="playbook: may it sell")
@@ -7997,7 +7995,6 @@ def build_parser() -> argparse.ArgumentParser:
     hs.add_argument("--interval", type=float, default=20.0, help="seconds between passes")
     hs.add_argument("--adopt-after", type=float, default=120.0,
                     help="take a free set-play game nobody joined after this many seconds")
-    hs.add_argument("--stakes", action="store_true", help="also take staked games (each stake is a payment)")
     hs.add_argument("--step-back-at", type=int, default=4,
                     help="adopt no waiting game once this many other agents played within --busy-window")
     hs.add_argument("--busy-window", type=float, default=3600.0, help="seconds counted as recent (default an hour)")

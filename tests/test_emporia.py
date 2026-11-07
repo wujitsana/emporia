@@ -58,7 +58,7 @@ def _custodial_cards(monkeypatch):
     balance (platform charges, transfer-to-winner, held prizes) — the opt-in
     path. The default, non-custodial one: tests/test_noncustodial_cards.py."""
     monkeypatch.setenv("EMPORIA_CUSTODIAL_CARDS", "1")
-    monkeypatch.setenv("EMPORIA_CARD_GAME_STAKES", "1")   # P159: and card money on games
+    monkeypatch.setenv("EMPORIA_CARD_BOUNTY_PRIZES", "1")   # P159: and card money behind bounty prizes
 
 
 # _init_test_db moved to conftest.py (P72-4) — a session fixture in a test
@@ -929,17 +929,6 @@ def _register(client, agent_id: str, pubkey: str = None) -> None:
         "agent_id": agent_id,
         "public_key_hex": pubkey or _test_pubkey(agent_id),
     })
-
-
-def _creator_stake_held():
-    """P95: a wager's creator stakes at creation. Tests about the *join* gate
-    stub only the creator's payment, for the one creation call, so the join
-    they exercise still goes through the real payment funnel."""
-    import secrets
-
-    from emporia.payments import RAIL_STRIPE, PaymentRef
-    return patch("emporia.relay_server._verify_and_confirm_payment", new=AsyncMock(
-        side_effect=lambda *a, **kw: PaymentRef(RAIL_STRIPE, f"pi_creator_{secrets.token_hex(5)}")))
 
 
 def _register_keyed(client, agent_id: str) -> None:
@@ -3850,70 +3839,8 @@ def test_create_payment_intent_rejects_amount_mismatch(client):
     assert "amount_cents must match relay pricing" in r2.text
 
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_join_session_rejects_underpaid_payment_intent(mock_verify, client):
-    _register(client, "underpay_creator")
-    _register(client, "underpay_joiner")
-    with _creator_stake_held():
-        r = client.post("/sessions", json={
-            "module_type": "emporia:chess:v1",
-            "creator_agent_id": "underpay_creator",
-            "config": {"description": "Underpayment test"},
-            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-        },
-            headers={"x-emporia-agent-id": "underpay_creator"})
-    session_id = r.json()["session_id"]
-    mock_verify.return_value = {
-        "status": "requires_capture",
-        "payment_intent_id": "pi_underpay_test",
-        "amount": 1,
-        "currency": "usd",
-        "capture_method": "manual",
-        "metadata": {"resource_type": "session", "resource_id": session_id},
-    }
-
-    r2 = client.post(
-        f"/sessions/{session_id}/join",
-        json={"agent_id": "underpay_joiner", "payment_intent_id": "pi_underpay_test"},
-        headers={"x-emporia-agent-id": "underpay_joiner"},
-    )
-    assert r2.status_code == 402
-    assert "amount mismatch" in r2.text
-    session = client.get(
-        f"/sessions/{session_id}", headers={"x-emporia-agent-id": "underpay_creator"}
-    ).json()
-    assert session["participants"] == ["underpay_creator"]
 
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_join_session_rejects_payment_intent_replay(mock_verify, client):
-    _register(client, "replay_creator")
-    _register(client, "replay_joiner")
-    with _creator_stake_held():
-        r = client.post("/sessions", json={
-            "module_type": "emporia:chess:v1",
-            "creator_agent_id": "replay_creator",
-            "config": {"description": "Replay test"},
-            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-        },
-            headers={"x-emporia-agent-id": "replay_creator"})
-    session_id = r.json()["session_id"]
-    mock_verify.return_value = {
-        "status": "requires_capture",
-        "payment_intent_id": "pi_replay_test",
-        "amount": 100,
-        "currency": "usd",
-        "capture_method": "manual",
-        "metadata": {"resource_type": "session", "resource_id": "sess_other"},
-    }
-
-    r2 = client.post(
-        f"/sessions/{session_id}/join",
-        json={"agent_id": "replay_joiner", "payment_intent_id": "pi_replay_test"},
-        headers={"x-emporia-agent-id": "replay_joiner"},
-    )
-    assert r2.status_code == 402
-    assert "not bound to this resource" in r2.text
 
 
 @patch("emporia.payments.confirm_stripe_intent", new_callable=AsyncMock)
@@ -4154,75 +4081,6 @@ def test_record_payment_is_idempotent_and_rejects_reuse():
 # N4-2 — paid-Agora payment bypass (R1)
 # ============================================================================
 
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_join_session_payment_intent_replay_returns_402(mock_verify, client):
-    """Regression for N4 review R1: record_payment() raises ValueError on a
-    PaymentIntent id already recorded for a different resource — a captured PI being
-    replayed against a second session. join_session never caught that ValueError, so a
-    replay attempt 500'd instead of being rejected as a payment failure.
-
-    P1a-1 (R1): joiner2 now gets rejected one check earlier than record_payment's own
-    replay defense — the payer-binding check added in _assert_payment_intent_matches()
-    catches "this PI belongs to joiner1" before record_payment() ever runs, since a
-    genuine PI's metadata carries the real payer (buyer_agent_id) throughout its
-    lifetime, so replaying it against a second resource doesn't change who it's bound
-    to. Same outcome (402, never joined) via a more precise mechanism; record_payment()'s
-    own dedupe-by-id defense stays covered directly by
-    test_record_payment_is_idempotent_and_rejects_reuse."""
-    _register(client, "n42_sess_creator1")
-    _register(client, "n42_sess_creator2")
-    _register(client, "n42_sess_joiner1")
-    _register(client, "n42_sess_joiner2")
-
-    session_ids = []
-    for creator in ("n42_sess_creator1", "n42_sess_creator2"):
-        with _creator_stake_held():
-            r = client.post("/sessions", json={
-                "module_type": "emporia:chess:v1",
-                "creator_agent_id": creator,
-                "config": {"description": "d"},
-                "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-            },
-                headers={"x-emporia-agent-id": creator})
-        session_ids.append(r.json()["session_id"])
-
-    mock_verify.side_effect = [
-        {
-            "status": "requires_capture", "payment_intent_id": "pi_n42_shared",
-            "amount": 100, "currency": "usd", "capture_method": "manual",
-            "metadata": {
-                "resource_type": "session", "resource_id": session_ids[0],
-                "buyer_agent_id": "n42_sess_joiner1",
-            },
-        },
-        {
-            "status": "requires_capture", "payment_intent_id": "pi_n42_shared",
-            "amount": 100, "currency": "usd", "capture_method": "manual",
-            "metadata": {
-                "resource_type": "session", "resource_id": session_ids[1],
-                "buyer_agent_id": "n42_sess_joiner1",
-            },
-        },
-    ]
-
-    r1 = client.post(
-        f"/sessions/{session_ids[0]}/join",
-        json={"agent_id": "n42_sess_joiner1", "payment_intent_id": "pi_n42_shared"},
-        headers={"x-emporia-agent-id": "n42_sess_joiner1"},
-    )
-    assert r1.status_code == 200, r1.text
-
-    r2 = client.post(
-        f"/sessions/{session_ids[1]}/join",
-        json={"agent_id": "n42_sess_joiner2", "payment_intent_id": "pi_n42_shared"},
-        headers={"x-emporia-agent-id": "n42_sess_joiner2"},
-    )
-    assert r2.status_code == 402, r2.text
-    assert "not bound to this payer" in r2.text
-    session2 = client.get(
-        f"/sessions/{session_ids[1]}", headers={"x-emporia-agent-id": "n42_sess_creator2"}
-    ).json()
-    assert "n42_sess_joiner2" not in session2["participants"]
 
 
 @patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
@@ -7395,48 +7253,6 @@ def test_payment_records_redacts_other_payers_in_room(mock_verify, mock_payout, 
     assert all(p["agent_id"] == "[redacted]" for p in redacted)
 
 
-@patch("emporia.relay_server.MAX_TOTAL_SPEND_CENTS", 150)
-@patch("emporia.payments.verify_payment_intent", new_callable=AsyncMock)
-def test_join_session_rejects_total_budget_exceeded(mock_verify, client):
-    from emporia.relay_server import record_payment
-
-    _register(client, "budget_creator")
-    _register(client, "budget_joiner")
-    with _creator_stake_held():
-        r = client.post("/sessions", json={
-            "module_type": "emporia:chess:v1",
-            "creator_agent_id": "budget_creator",
-            "config": {"description": "Budget test"},
-            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-        },
-            headers={"x-emporia-agent-id": "budget_creator"})
-    session_id = r.json()["session_id"]
-
-    record_payment(
-        payment_intent_id="pi_budget_existing",
-        agent_id="budget_joiner",
-        amount_cents=100,
-        payment_type="room_entry",
-        room_id="room_budget_existing",
-        currency="usd",
-        rail="stripe",
-    )
-    mock_verify.return_value = {
-        "status": "requires_capture",
-        "payment_intent_id": "pi_budget_next",
-        "amount": 100,
-        "currency": "usd",
-        "capture_method": "manual",
-        "metadata": {"resource_type": "session", "resource_id": session_id},
-    }
-
-    r2 = client.post(
-        f"/sessions/{session_id}/join",
-        json={"agent_id": "budget_joiner", "payment_intent_id": "pi_budget_next"},
-        headers={"x-emporia-agent-id": "budget_joiner"},
-    )
-    assert r2.status_code == 402
-    assert "spend limit exceeded" in r2.text
 
 
 # ============================================================================
@@ -11017,131 +10833,8 @@ def test_mcp_get_settlements_authenticates_under_prod_auth(prod_client):
     assert r["settlements"][0]["winner_id"] == "mcpsettle_buyer"
 
 
-def test_mcp_join_session_surfaces_x402_declined_reason(prod_client):
-    """P4 item 3 (B4): mcp_server.join_session()'s 402 branch used to return
-    only {error, www_authenticate, success} -- its siblings join_room and
-    subscribe_agora_topic both pass the full body through as `detail`.
-    Session join is exactly the route where P1brr-2's route_unsupported
-    reason fires (session escrow has no x402 analogue), so this drives a
-    real session-join 402 with a PAYMENT-SIGNATURE header through the MCP
-    tool function end-to-end and confirms the machine-readable `declined`
-    key actually reaches the caller now."""
-    import base64
-    import json as _json
-
-    from emporia import mcp_server
-
-    _register_keyed(prod_client, "p4_3_mcp_creator")
-    _register_keyed(prod_client, "p4_3_mcp_joiner")
-
-    with _creator_stake_held():
-        r = prod_client.post("/sessions", json=__import__("conftest").signed_session_body("p4_3_mcp_creator", {
-            "module_type": "emporia:chess:v1",
-            "creator_agent_id": "p4_3_mcp_creator",
-            "config": {"description": "P4-3 session decline test"},
-            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-        }),
-            headers=bearer_for(prod_client, "p4_3_mcp_creator"))
-        assert r.status_code == 200, r.text
-    session_id = r.json()["session_id"]
-
-    payload = {
-        "x402Version": 2, "accepted": {
-            "scheme": "exact", "network": "eip155:8453", "amount": "100000000",
-            "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
-            "extra": _X402_EXTRA,
-        }, "payload": {"sig": "0xfake"},
-    }
-    x402_header = base64.urlsafe_b64encode(_json.dumps(payload).encode()).decode()
-
-    from emporia.mcp_server import _dashboard_bearer_headers as _real_headers
-
-    def _headers_with_x402(relay_url="", agent_id=""):
-        headers = _real_headers(relay_url=relay_url, agent_id=agent_id)
-        return {**headers, "PAYMENT-SIGNATURE": x402_header}
-
-    adapter = _ASGIHttpxAdapter(prod_client, mcp_server.RELAY_URL)
-    with patch.dict(os.environ, _X402_ENV, clear=False), \
-         patch.object(mcp_server, "httpx", adapter), \
-         patch.object(mcp_server, "_dashboard_bearer_headers", side_effect=_headers_with_x402):
-        result = mcp_server.join_session(session_id=session_id, agent_id="p4_3_mcp_joiner")
-
-    assert result["success"] is False
-    assert result["error"] == "payment_required"
-    assert result["detail"]["declined"] == {"rail": "x402", "reason": "route_unsupported"}
 
 
-def test_agent_sdk_join_session_surfaces_x402_declined_reason_via_payment_required_error():
-    """P7-2: agent_sdk.join_session() used to call resp.raise_for_status() on
-    every non-2xx response, so a 402 raised a bare httpx.HTTPStatusError and
-    discarded the body — including the same machine-readable `declined` key
-    the sibling test above confirms mcp_server.join_session() already
-    surfaces. Same real x402-declined scenario, driven through a real
-    EmporiaAgent wired to the real app via the established ASGI-transport
-    pattern; asserts join_session() now raises PaymentRequiredError with
-    .detail carrying the same information instead of losing it. Must fail
-    pre-fix (bare HTTPStatusError, no .detail) and pass post-fix."""
-    import asyncio
-    import base64
-    import json as _json
-
-    import httpx as httpx_module
-
-    from emporia.agent_sdk import EmporiaAgent, PaymentRequiredError
-    from emporia.identity import get_public_key_hex
-    from emporia.relay_server import app as relay_app
-
-    def _wired(agent_id: str) -> EmporiaAgent:
-        a = EmporiaAgent(
-            relay_url="http://testserver", agent_id=agent_id,
-            public_key_hex=get_public_key_hex(agent_id),
-        )
-        a._http = httpx_module.AsyncClient(
-            transport=httpx_module.ASGITransport(app=relay_app), base_url="http://testserver",
-        )
-        return a
-
-    async def scenario():
-        creator = _wired("p7_2_sdk_creator")
-        joiner = _wired("p7_2_sdk_joiner")
-        try:
-            await creator.register()
-            await joiner.register()
-
-            with _creator_stake_held():
-                session = await creator.create_session(
-                    "emporia:chess:v1",
-                    config={"description": "P7-2 session decline test"},
-                    payment_rules={"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-                )
-            session_id = session["session_id"]
-
-            payload = {
-                "x402Version": 2, "accepted": {
-                    "scheme": "exact", "network": "eip155:8453", "amount": "100000000",
-                    "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
-                    "extra": _X402_EXTRA,
-                }, "payload": {"sig": "0xfake"},
-            }
-            x402_header = base64.urlsafe_b64encode(_json.dumps(payload).encode()).decode()
-
-            original_bearer_headers = joiner._bearer_headers
-
-            async def _headers_with_x402():
-                headers = await original_bearer_headers()
-                return {**headers, "PAYMENT-SIGNATURE": x402_header}
-
-            with patch.dict(os.environ, _X402_ENV, clear=False), \
-                 patch.object(joiner, "_bearer_headers", side_effect=_headers_with_x402):
-                with pytest.raises(PaymentRequiredError) as exc_info:
-                    await joiner.join_session(session_id)
-
-            assert exc_info.value.detail["declined"] == {"rail": "x402", "reason": "route_unsupported"}
-        finally:
-            await creator._http.aclose()
-            await joiner._http.aclose()
-
-    asyncio.run(scenario())
 
 
 def test_agent_sdk_join_room_surfaces_402_detail_via_payment_required_error():
@@ -11698,49 +11391,6 @@ def test_stripe_profile_discovery_skips_restricted_key():
     assert stripe_mpp_admin_notice("rk_live_x", profile_ready=True) is None
 
 
-def test_mpp_402_challenge_issued(client):
-    """Paid session join without payment → relay returns 402 with Stripe MPP headers.
-
-    WWW-Authenticate format per https://docs.stripe.com/payments/machine/mpp:
-      Payment id="chal_xxx", method="stripe", intent="charge", request="<b64url>"
-    """
-    _register(client, "mpp_creator")
-    _register(client, "mpp_joiner")
-
-    with _creator_stake_held():
-        r = client.post("/sessions", json={
-            "module_type": "emporia:chess:v1",
-            "creator_agent_id": "mpp_creator",
-            "config": {"description": "Test MPP challenge"},
-            "payment_rules": {
-                "mode": "stripe_link",
-                "stake_per_participant": "1.00",
-                "currency": "usd",
-            },
-        },
-            headers={"x-emporia-agent-id": "mpp_creator"})
-        assert r.status_code == 200
-    session_id = r.json()["session_id"]
-
-    # A different agent joins without payment → must get 402 + MPP headers
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_mock"}):
-        r = client.post(
-        f"/sessions/{session_id}/join", json={"agent_id": "mpp_joiner"},
-        headers={"x-emporia-agent-id": "mpp_joiner"},
-    )
-
-    assert r.status_code == 402
-    assert r.json()["error"] == "payment_required"
-    assert r.json()["protocol"] == "emporia:v1+mpp"
-    # WWW-Authenticate must use the official Stripe MPP Payment scheme
-    assert "www-authenticate" in {k.lower() for k in r.headers.keys()}
-    auth_header = r.headers.get("www-authenticate") or r.headers.get("WWW-Authenticate", "")
-    # Per Stripe MPP spec: Payment id="chal_xxx", method="stripe", intent="charge"
-    assert auth_header.startswith("Payment "), f"Expected MPP Payment scheme, got: {auth_header!r}"
-    assert 'method="stripe"' in auth_header
-    assert 'intent="charge"' in auth_header
-    assert 'id="chal_' in auth_header
-    assert 'request="' in auth_header
 
 
 def test_room_join_402_is_byte_identical_when_x402_unconfigured(client):
@@ -11894,51 +11544,6 @@ def test_x402_credential_declined_explicitly_when_x402_disabled(mock_verify, moc
     mock_settle.assert_not_called()
 
 
-@patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
-@patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
-def test_x402_credential_declined_explicitly_on_session_join(mock_verify, mock_settle, client):
-    """P1br-1: session escrow has no x402 analogue — no creator_id is ever
-    threaded to _verify_and_confirm_payment on /sessions/{id}/join. A
-    PAYMENT-SIGNATURE header submitted there must be declined explicitly,
-    not routed into _verify_x402_payment (which would otherwise 402 on an
-    unrelated payTo mismatch, three layers away from the real reason: this
-    route just doesn't support x402 at all)."""
-    _register(client, "p1br1_session_creator")
-    _register(client, "p1br1_session_joiner")
-
-    with _creator_stake_held():
-        r = client.post("/sessions", json={
-            "module_type": "emporia:chess:v1",
-            "creator_agent_id": "p1br1_session_creator",
-            "config": {"description": "P1br-1 session decline test"},
-            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
-        },
-            headers={"x-emporia-agent-id": "p1br1_session_creator"})
-        assert r.status_code == 200, r.text
-    session_id = r.json()["session_id"]
-
-    header = _x402_payment_signature_header({
-        "scheme": "exact", "network": "eip155:8453", "amount": "100000000",
-        "asset": "0xUSDCFAKE", "payTo": "0x" + "aa" * 20, "maxTimeoutSeconds": 300,
-        "extra": _X402_EXTRA,
-    })
-
-    with patch.dict(os.environ, _X402_ENV, clear=False):
-        resp = client.post(f"/sessions/{session_id}/join",
-            json={"agent_id": "p1br1_session_joiner"},
-            headers={"x-emporia-agent-id": "p1br1_session_joiner", "PAYMENT-SIGNATURE": header})
-
-    assert resp.status_code == 402, resp.text
-    body = resp.json()
-    assert "x402 payment declined" in body["message"]
-    assert "no x402 analogue" in body["message"]
-    assert "x402" not in body
-    # P1brr-2: session join has no creator_id — this must be attributed as
-    # route_unsupported, not conflated with "no payout wallet" (P1br-1's
-    # message covered both cases with one ambiguous sentence).
-    assert body["declined"] == {"rail": "x402", "reason": "route_unsupported"}
-    mock_verify.assert_not_called()
-    mock_settle.assert_not_called()
 
 
 @patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
@@ -19555,8 +19160,8 @@ def test_dashboard_game_types_match_the_relay_module_registry():
 
 
 def test_dashboard_names_the_live_set_plays():
-    """Calls moved the set plays to :v2: the game rail, the results' set-play rendering and
-    the two-player wager list name the :v2 types (GameResults matches by name, so a retired
+    """Calls moved the set plays to :v2: the game rail, the results' set-play rendering
+    name the :v2 types (GameResults matches by name, so a retired
     :v1 game in the history still draws its rounds)."""
     import re
 
@@ -19567,7 +19172,6 @@ def test_dashboard_names_the_live_set_plays():
     for f in ("views/GamesView.tsx", "ui/GameResults.tsx", "paymentFormat.ts"):
         text = (root / f).read_text()
         assert not re.search(r"emporia:(blotto|two-thirds|lowest-unique):v1", text), f
-    assert '"emporia:blotto:v2"' in (root / "paymentFormat.ts").read_text()
 
 
 def test_relay_reports_one_version_everywhere():
@@ -22139,11 +21743,11 @@ def test_sdk_x402_retry_is_shared_by_all_three_paid_methods():
     # P99: fund_session takes the flag too, but pays by a different scheme -- an
     # escrow hold, signed through escrow.sign_offer(), not an `exact` x402
     # payment -- so it is counted on its own path below.
-    assert text.count("pay_with_x402: bool = False") == 4, \
-        "join_session, join_room, subscribe_agora_topic and fund_session must each take the flag"
+    assert text.count("pay_with_x402: bool = False") == 3, \
+        "join_room, subscribe_agora_topic and fund_session must each take the flag"
     # P104: settle_promise is the fourth exact-scheme payer (its flag defaults
     # to True — settling *is* paying — so it is not in the count above).
-    assert text.count("await self._pay_and_retry_x402(") == 4, \
+    assert text.count("await self._pay_and_retry_x402(") == 3, \
         "each exact-scheme paid method must route through the one shared retry, not its own copy"
     assert text.count("sign_offer(") == 1, \
         "escrow holds are signed in one place, escrow.sign_offer()"
@@ -25249,7 +24853,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. The relay starts fresh, so there is no upgrade history to
 # record: change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "94edae578601be2ca57a5fc694fb822ceab8506ac2005110a3e268bdcb093a89"
+_SCHEMA_FINGERPRINT = "5f2a66323fcae2673b4c549c8608a7c01bd2a200aaf22798ceb0ab883d3d511e"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -25289,7 +24893,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (45, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (46, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"

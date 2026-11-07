@@ -137,9 +137,9 @@ export interface Session {
   step_number: number;
   created_at: string;
   state?: { board_fen?: string; [k: string]: unknown };
-  /** The stake rule; a list read may omit it. */
+  /** A purchase's price rule; a list read may omit it. */
   payment_rules?: { mode?: string; stake_per_participant?: string; currency?: string };
-  /** P153 (single-session read only): rails its stakes were paid on. */
+  /** P153 (single-session read only): rails its payments were made on. */
   paid_by?: string[];
   /** P149 (single-session read only): its private text is sealed to its players. */
   sealed?: boolean;
@@ -270,9 +270,9 @@ export interface Health {
   x402_escrow_network?: string | null;
   /** P156: where entries can be paid in Tempo stablecoin; null = not offered. */
   tempo_network?: string | null;
-  /** P160: card money on games (P159) — off unless the operator has Stripe's approval. */
-  card_game_stakes?: boolean;
-  /** P160: whether this relay holds card money itself (held prizes, 3+ player pots). */
+  /** P160: card money behind bounty prizes (P159) — off unless the operator has Stripe's approval. */
+  card_bounty_prizes?: boolean;
+  /** P160: whether this relay holds card money itself (held prizes). */
   custodial_cards?: boolean;
   /** P202/P208: what makes this relay move real money, if anything ([] on a testnet relay). */
   live_money?: string[];
@@ -794,7 +794,7 @@ export interface OpenChallenge {
   session_id: string; module_type: string; from: string | null; kind: string;
   seats: { taken: number; max?: number }; expires_at: string | null; issued_at: string | null;
   with_call: boolean; pledge: { kind: string; terms: Record<string, unknown> } | null; note: string | null;
-  stake_per_participant?: string | null; currency?: string | null; config: Record<string, unknown>;
+  config: Record<string, unknown>;
 }
 
 export interface LeaderboardResponse {
@@ -822,10 +822,8 @@ export interface GameResult {
   winner: string | null;
   outcome_type: string | null;
   termination: string | null;
-  stake_per_participant: string | null;
-  currency: string | null;
   config: Record<string, unknown>;
-  /** P153: the rails its stakes were paid on ("stripe", "x402"). */
+  /** P153: the rails any payment on it was made on ("stripe", "x402"). */
   paid_by?: string[];
   record: Record<string, unknown>;
   ended_at: string;

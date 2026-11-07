@@ -353,29 +353,19 @@ def _stripe_account_mode_mismatch(account_mode: str) -> bool:
 
 def custodial_cards_allowed() -> bool:
     """Card flows that leave money on the operator's Stripe balance: a held
-    bounty prize, a wager of three or more players, an entry or a stake paid
-    to the platform and transferred on. Off by default — with it off, every
+    bounty prize, an entry or a purchase paid to the platform and transferred on. Off by default — with it off, every
     card payment is a destination charge to the person it is for, as USDC is
     (P157). An operator who wants those flows sets EMPORIA_CUSTODIAL_CARDS=1
     and takes on holding other people's money."""
     return os.environ.get("EMPORIA_CUSTODIAL_CARDS", "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def card_game_stakes_allowed() -> bool:
-    """Card money on a game: a wager's stakes or a bounty's held prize. Off by
-    default (P159) — Stripe lists games of skill with money prizes as a
-    restricted business, needing its approval, and a captured stake can be
-    charged back by the loser for months, debited from the operator. Games are
-    staked in USDC (x402 escrow) instead. EMPORIA_CARD_GAME_STAKES=1 is for an
-    operator Stripe has approved."""
-    return os.environ.get("EMPORIA_CARD_GAME_STAKES", "").strip().lower() in ("1", "true", "yes", "on")
-
-
-CARD_GAME_REFUSAL = (
-    "This relay does not take card money on games: Stripe restricts games of skill with money "
-    "prizes, and a card stake can be charged back after it is lost. Stake in USDC instead "
-    "(payment_mode='x402', both players with an x402 wallet), or play free."
-)
+def card_bounty_prizes_allowed() -> bool:
+    """Card money behind a bounty prize. Off by default (P159) — Stripe lists games
+    of skill with money prizes as a restricted business, needing its approval.
+    Bounties are backed by a promise (rail='x402') instead.
+    EMPORIA_CARD_BOUNTY_PRIZES=1 is for an operator Stripe has approved."""
+    return os.environ.get("EMPORIA_CARD_BOUNTY_PRIZES", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def stripe_payee_account(agent_id: str | None) -> str | None:
@@ -656,7 +646,7 @@ def _dashboard_agent_id(request: Request) -> str | None:
     and they used to share one header. `Authorization: Payment <spt>` displaced
     the identity bearer, so a remote agent paying with an SPT could not also
     prove who it was. Every route that must know the payer (posting a held
-    bounty, opening a wager, funding a purchase) 401'd for any agent not
+    bounty, funding a purchase) 401'd for any agent not
     co-located with the relay; MCP's `post_bounty` never sent a credential at
     all, so a held bounty had never been postable through it. The identity now
     has its own header when the payment needs that one.
@@ -868,7 +858,7 @@ def _escrow_network() -> str | None:
 
 
 def session_paid_by(session_id: str) -> list[str]:
-    """P153: the rails this session's stakes were actually paid on ("stripe",
+    """P153: the rails this session's payments were actually paid on ("stripe",
     "x402") — what a page shows as "paid by" once money has moved."""
     with DB_LOCK, get_db() as conn:
         rows = conn.execute("SELECT DISTINCT rail FROM payments WHERE session_id = ? "
@@ -2024,7 +2014,7 @@ def get_escrow_hold(hold_hash: str) -> dict[str, Any] | None:
 
 
 def escrow_holds_for_session(session_id: str) -> list[dict[str, Any]]:
-    """Every hold placed for one session, oldest first (P154: a wager has two)."""
+    """Every hold placed for one session, oldest first."""
     with DB_LOCK, get_db() as conn:
         rows = conn.execute("SELECT * FROM escrow_holds WHERE session_id = ? ORDER BY created_at",
                             (session_id,)).fetchall()
@@ -2083,8 +2073,7 @@ def idle_sessions(before: str, exclude_module: str, limit: int = 200) -> list[di
     than `exclude_module` (P129's idle sweep; service sessions have deadlines)."""
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
-            # P154: and a wager waiting for its stakes — a half-funded one holds
-            # a player's money until the sweep voids it.
+            # A purchase waiting for its funding: a half-funded one holds money until the sweep voids it.
             "SELECT * FROM sessions WHERE status IN ('waiting', 'active', 'awaiting_funding') "
             "AND updated_at < ? "
             "AND module_type != ? ORDER BY updated_at LIMIT ?",
@@ -2494,7 +2483,6 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("messages", "payload_json"), ("messages", "signature"), ("messages", "created_at"),
     # participants
     ("participants", "session_id"), ("participants", "joined_at"),
-    ("participants", "stake_paid"),
     # payments
     ("payments", "payment_id"), ("payments", "session_id"), ("payments", "room_id"),
     ("payments", "amount_cents"), ("payments", "currency"), ("payments", "payment_intent_id"),
@@ -3523,13 +3511,13 @@ def load_session(session_id: str) -> dict[str, Any] | None:
     return _session_row_to_dict(row) if row else None
 
 
-def add_participant(session_id: str, agent_id: str, stake_paid: bool = False,
+def add_participant(session_id: str, agent_id: str,
                     join_at: str = "", join_signature: str = "") -> None:
     with DB_LOCK, get_db() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO participants (session_id, agent_id, joined_at, stake_paid, join_at, "
-            "join_signature) VALUES (?, ?, ?, ?, ?, ?)",
-            (session_id, agent_id, datetime.now(UTC).isoformat(), int(stake_paid), join_at, join_signature),
+            "INSERT OR REPLACE INTO participants (session_id, agent_id, joined_at, join_at, "
+            "join_signature) VALUES (?, ?, ?, ?, ?)",
+            (session_id, agent_id, datetime.now(UTC).isoformat(), join_at, join_signature),
         )
 
 
@@ -4577,9 +4565,6 @@ class CreateSessionRequest(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     payment_rules: dict[str, Any] | None = None
     creator_gateway_url: str = ""
-    # P95: a wager's creator stakes too; the direct-PaymentIntent alternative
-    # to an `Authorization: Payment <spt>` credential, as on join.
-    payment_intent_id: str | None = None
     # P279: signed by the creator — the game's id is wire.session_id_for(nonce),
     # the signature over wire.signed_session_create_payload(that id, creator, module, at).
     nonce: str = ""
@@ -4592,7 +4577,6 @@ class CreateSessionRequest(BaseModel):
 class JoinSessionRequest(BaseModel):
     agent_id: str
     agent_gateway_url: str = ""
-    payment_intent_id: str | None = None
     at: str = ""          # P272: the join, signed by the joining agent
     signature: str = ""   # Ed25519 over wire.signed_session_join_payload()
     # emporia:rand:v1: in a game that draws from the beacon, the joiner's signed commitment
@@ -4845,7 +4829,7 @@ async def health(request: Request):
         "x402_facilitator": _x402_facilitator_url(),
         # P160: whether cards are taken on games (P159) and whether this relay
         # holds card money at all (P157), so a client says what is accepted.
-        "card_game_stakes": card_game_stakes_allowed(),
+        "card_bounty_prizes": card_bounty_prizes_allowed(),
         "custodial_cards": custodial_cards_allowed(),
     }
 
@@ -5565,17 +5549,11 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
         currency = (payment_rules.get("currency") or "usd").lower()
         service_type = service_type or session.get("module_type") or "emporia:session"
         if payment_rules.get("mode", "free") == "free" or expected_amount <= 0:
-            raise HTTPException(400, "Session does not require a paid stake")
-        if payment_rules.get("custody") == "direct":
-            # P157: a card wager stake is held for the opponent, once there is one.
-            if caller not in session["participants"] or len(session["participants"]) < 2:
-                raise HTTPException(409, "Stake once your opponent has joined: the hold is theirs if you lose.")
-            payee = next(p for p in session["participants"] if p != caller)
-        elif not custodial_cards_allowed():
+            raise HTTPException(400, "Session does not require a payment")
+        if not custodial_cards_allowed():
             raise HTTPException(409, (
-                "This relay does not hold card stakes on its own balance, so this session "
-                "cannot be staked with a card intent. Fund a purchase with fund_session, or "
-                "stake a two-player wager after both have joined."))
+                "This relay does not hold card money on its own balance, so this session "
+                "cannot be paid with a card intent. Fund a purchase with fund_session."))
     else:
         room = rooms_db.get_room(target_id, db_path=DATABASE_PATH)
         if not room:
@@ -5602,7 +5580,7 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
     # relay could have made itself. The operator set an unsellable price; say so.
     #
     # The `0 <` half is belt-and-braces, not load-bearing: both branches above
-    # already reject a free resource with "does not require a paid stake", so
+    # already reject a free resource with "does not require a payment", so
     # zero cannot reach here today. Stated rather than left to look protective —
     # a stash-verify that folded zero in broke nothing, which is how I know.
     from emporia.payments import STRIPE_MIN_CHARGE_CENTS
@@ -5625,8 +5603,7 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
                 f"{payee} has no active Stripe account here, and card payments go straight "
                 f"to the payee on this relay. Pay over x402 or Tempo if offered."))
         from emporia.payments import platform_fee
-        # A wager hold pays the fee on the whole pot — only the loser's is captured.
-        fee = platform_fee(expected_amount * (2 if resource_type == "session" else 1))
+        fee = platform_fee(expected_amount)
 
     try:
         result = await create_stake_intent(

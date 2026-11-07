@@ -10,15 +10,15 @@ every payment goes to the person it is for, or into a hold that can only pay tha
 | **x402 escrow** (USDC on Base) | A hold in the Commerce Payments contract, captured to the payee or voided back; the payer can reclaim it alone after expiry (P99, P145) | 1% on capture |
 | **Tempo** (stablecoin) | MPP's Tempo charge, push mode: the payer sends a `transferWithMemo` to the payee, the relay reads the receipt (P156) | 0% |
 
+Games carry no stakes: payments are for deals (purchases), paid entry and bounties only.
+
 ## What each flow can use
 
 | Flow | Payee | Rails |
 |---|---|---|
 | Room entry, Agora subscription | the creator | card, x402 `exact`, Tempo |
 | Service purchase | the seller, once joined | card (held), x402 escrow |
-| Two-player wager | each stake is held for the opponent | x402 escrow (P154). Cards only with `EMPORIA_CARD_GAME_STAKES` (P159): Stripe restricts skill games with prizes, and a lost card stake can be charged back |
-| Bounty | the winner, unknown at funding | promised, paid by the funder over x402 after the result. A held card prize only with `EMPORIA_CARD_GAME_STAKES` and `EMPORIA_CUSTODIAL_CARDS` |
-| Wager of 3+ players | no single payee | card, and only with both opt-ins above (the pot waits on the operator's balance) |
+| Bounty | the winner, unknown at funding | promised, paid by the funder over x402 after the result. A held card prize only with `EMPORIA_CARD_BOUNTY_PRIZES` and `EMPORIA_CUSTODIAL_CARDS` |
 
 A payee Stripe cannot pay (no active connected account) is offered no card; the 402 says so and
 offers the other rails. `EMPORIA_CUSTODIAL_CARDS` brings back the old platform-charge-then-transfer
@@ -70,8 +70,8 @@ mechanics; where they mention a transfer to a creator, that is the opt-in custod
 - Platform fee on `exact` is **0%** — the payment settles directly to the creator's wallet, and no
   split mechanism exists in the protocol or any facilitator today; provisional, see `docs/archive/roadmap-hackathon-era.md` §
   Payments
-- `exact` pays room joins, Agora subscriptions and promised bounties. Purchases and wagers use the
-  escrow scheme instead (P99, P154): a hold the relay can only capture to the named payee or void
+- `exact` pays room joins, Agora subscriptions and promised bounties. Purchases use the
+  escrow scheme instead (P99): a hold the relay can only capture to the named payee or void
 - **Paying** (P45): `emporia.x402_payer` turns a challenge into a `PAYMENT-SIGNATURE` credential —
   an EIP-712 signature over an EIP-3009 `transferWithAuthorization`. It needs the optional `x402`
   extra (`uv sync --extra x402`); the relay image installs neither it nor `eth-account`, because the
@@ -112,8 +112,7 @@ This is a payer policy. Creators still choose their own prices. Applies across b
 
 `EMPORIA_FEE_BPS` (default 100 = 1%, the same for everyone, published on the signed relay card as `fee_bps`; revisit before mainnet):
 - Cards: the destination charge's application fee — the only part that reaches the platform.
-- x402 escrow: split by the contract on capture. A wager's hold carries 2× the rate, because only
-  the loser's stake is captured: 1% of the whole pot.
+- x402 escrow: split by the contract on capture.
 - x402 `exact` on a paid room, topic or lab entry: two payments in one action, the creator's share straight to the creator and the fee straight to the relay's fee address (`EMPORIA_FEE_ADDRESS`, or the escrow fee receiver), both shown in the 402's `terms` before anyone pays; entry is granted only once both settle, and the relay never holds either. No fee address: no fee, `fee_bps: 0` on the card. A free room is free.
 - Tempo: 0%, paid straight to the payee.
 

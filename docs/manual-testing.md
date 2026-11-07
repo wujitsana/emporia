@@ -146,29 +146,27 @@ sitting 4, where the rotation is done.
 
 **Model spend — ask first**, and check the spend afterwards (your model provider's usage page). Prerequisites: the
 `settle` and `escrow` lanes of sitting 0 green; A and B each hold 5 USDC and some gas on Base
-Sepolia; keep chess games short (a staked one is refused, so use free ones); testnet USDC moves, so
+Sepolia; keep chess games short (a game with a price is refused); testnet USDC moves, so
 approve first.
 
 - [ ] Ask A and B: *"show your x402 wallet info"* → each holds 5 USDC on Basescan (the address, caps
       and `spent_today_cents: 0` are in the tests).
 - [ ] **Signed payout wallets (P262):** ask A and B to "register your x402 wallet" again → success,
-      with `at` and `signature` in the reply. Then a paid room entry or a Blotto stake over x402
+      with `at` and `signature` in the reply. Then a paid room entry or a purchase over x402
       between them settles on Base Sepolia; the Hermes approval prompt (above the threshold) names the
       payee as `name (stable-id prefix)` and, for an escrow hold, who may capture it and the fee (P265).
 - [ ] **Paid topic (P278):** A creates a `paid_invite` topic ($0.25) and invites B. B subscribes paying
       with x402 → subscribed; Basescan shows the payment to A, for no more than the signed fee.
-- [ ] **USDC wager (x402, no card):** A creates a Blotto with `payment_mode="x402"`, stake $0.50.
-      B joins; both get "stake to start" notices and call `fund_session(pay_with_x402=True)`. The
-      game starts after the second stake. After the result, the loser's hold is captured to the winner
-      (Base Sepolia), the winner's own is voided back, and Fees shows $0.975 to the winner on a $1.00
-      pot.
+- [ ] **A staked game is refused:** A creates a Blotto with `payment_mode="x402"` and a stake of $0.50
+      → refused with "takes no stakes". A free Blotto is created, B joins, and it plays to a result
+      with nothing held or paid.
 - [ ] **Setup by an agent:** ask hackathon_hermes to run `emporia role alpha both` → Hermes asks you
       to approve; decline → nothing changed. (`emporia doctor` run by it needs no approval; that part
       is in the tests.)
 
 ### 3. Stripe test mode (about 45 minutes)
 
-Prerequisites: an `sk_test_` key on the relay, started with `EMPORIA_CARD_GAME_STAKES=1`; two real
+Prerequisites: an `sk_test_` key on the relay, started with `EMPORIA_CUSTODIAL_CARDS=1` if you try a held card prize; two real
 Stripe test connected accounts, A's and B's (`start_stripe_onboarding`); `python scripts/testnet.py
 --lane 3` green first. Look in the Stripe test Dashboard.
 
@@ -177,14 +175,6 @@ Stripe test connected accounts, A's and B's (`start_stripe_onboarding`); `python
       admitted; dashboard shows rail `card (direct)`, fee 1%. In the Stripe test dashboard the
       payment's destination is A's connected account, with a 1% application fee, and there is no
       separate transfer.
-- [ ] **Card wager (P157: each stake held for the opponent).** A creates a Blotto game with a $1 stake,
-      `payment_mode="stripe_pi"`; B joins free. Each: `create_payment_intent(session_id=…,
-      amount_cents=100)`, then `fund_session(session_id=…, payment_intent_id=…)`. The game starts after
-      the second stake; both commit, then reveal. The two holds sit on A's and B's own Stripe accounts.
-- [ ] **Winner's settlement:** the loser's hold is captured with the **winner's account as its
-      destination** and a 2¢ application fee (1% of the $2 pot) — seen in Stripe's Dashboard; the
-      winner's own hold is cancelled; no transfer. Fees shows `card (direct)`, $1.95 to the winner.
-      Games tab: standings and the result, with both allocations, appear.
 
 ### 4. Gateway and container restart pass (about 30–45 minutes; fold into sitting 2)
 
@@ -598,11 +588,8 @@ refused and agent and console sign in again.
 - Dispute → hold voided, void link, wallet restored → tests/test_escrow_purchase.py::test_a_dispute_voids_the_hold_back_to_the_buyer; tests/test_escrow_testnet.py::test_testnet_escrow_dispute_voids_back_to_the_payer
 - Silent buyer: auto-confirms after the deadline plus 6 hours (simulated; do not wait it out) → tests/test_escrow_purchase.py::test_a_silent_buyer_is_auto_confirmed_and_the_seller_paid, ::test_a_service_deadline_must_end_inside_the_hold
 
-**Wager**
-- Card stake refused (P159) → tests/test_noncustodial_cards.py::test_by_default_games_are_staked_in_usdc_not_on_cards; dashboard/src/paymentFormat.test.ts "offers no card on games unless the operator opted in (P159)"
-- A 3-player card game and a held card bounty refused → tests/test_noncustodial_cards.py::test_a_card_wager_needs_two_players_who_can_be_paid, ::test_a_held_card_prize_is_refused
-- Staked chess refused; a near-mate free game ends in one move → tests/test_engine_games.py::test_a_staked_chess_game_is_refused_before_any_payment; tests/test_chess_settings.py::test_a_game_from_a_set_position_with_the_creator_on_black
-- A game nobody moves in for 24 h is abandoned, holds released → tests/test_platform_bridge.py::test_an_idle_game_is_abandoned_and_every_stake_released; tests/test_x402_wager.py::test_a_wager_left_half_staked_is_voided_by_the_idle_sweep
+**Games (no stakes)**
+- A game created with a price or a payment mode is refused; no text in a game's rules mentions stakes → tests/test_no_game_stakes.py
 - Table talk: `send_game_chat`, public → tests/test_blotto.py::test_table_talk_lives_in_the_game; tests/test_secret_guard.py::test_no_tool_can_send_it (the Games tab's "Table talk" render has no test)
 - Said with a move: one "your turn" notice carries the line → tests/test_blotto.py::test_a_line_said_with_a_move_arrives_in_the_same_notice
 - ⅔ of the average with three agents → tests/test_two_thirds.py::test_three_players_in_any_order_and_the_closest_wins, ::test_the_game_waits_for_the_players_its_creator_asked_for

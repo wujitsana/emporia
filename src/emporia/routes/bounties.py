@@ -78,7 +78,7 @@ def _require_hosted_here(row) -> None:
     Federation gossip copies a peer's bounties onto this board so they can be
     discovered — and every action route used to treat that copy as its own:
     entries recorded here for a contest run there, a peer's Stripe hold recorded
-    as a local session's stake, a peer-reported state driving this relay's
+    as a local session's hold, a peer-reported state driving this relay's
     reconciler. The hold, the entries and the contest all live where the bounty
     was posted, so that is where it is entered.
 
@@ -198,10 +198,10 @@ async def create_bounty(req: CreateBountyRequest, request: Request):
             rail=RAIL_X402, payment_intent_id=None,
         )
 
-    if not rs.card_game_stakes_allowed():
+    if not rs.card_bounty_prizes_allowed():
         # P159: a bounty is a game with a money prize — not on cards.
         raise HTTPException(400, (
-            "This relay does not take card money on games: Stripe restricts games of skill with "
+            "This relay does not take card money on bounty prizes: Stripe restricts games of skill with "
             "money prizes. Back the prize with a promise (rail='x402'), paid straight to the "
             "winner after the result."
         ))
@@ -331,7 +331,7 @@ async def _start_contest(listing_id: str) -> dict:
     """Seat the entrants and hand the funder's hold to the session (P72-6).
 
     The trick that makes this small: the contest is an ordinary session, and
-    the funder's escrowed PaymentIntent is recorded as that session's stake
+    the funder's escrowed PaymentIntent is recorded as that session's payment
     row. So when the module reaches a terminal state, the *existing* settlement
     path in routes/sessions.py reads it, captures it, and transfers to the
     winner — which P72-1 proved already works when the payer is not the winner.
@@ -389,8 +389,8 @@ async def _start_contest(listing_id: str) -> dict:
         created_at=now, updated_at=now,
     )
     for a in seated:
-        # stake_paid False: entrants pay nothing. The prize is the funder's.
-        rs.add_participant(session_id, a, stake_paid=False)
+        # Entrants pay nothing. The prize is the funder's.
+        rs.add_participant(session_id, a)
 
     pi = meta.get("payment_intent_id")
     if pi:

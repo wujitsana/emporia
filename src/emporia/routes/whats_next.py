@@ -166,25 +166,12 @@ def waiting_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
         if agent_id in players or not players or not others(players[0]) or len(players) >= module.MAX_PARTICIPANTS \
                 or not rs._session_viewer_allowed(s, None):
             continue
-        rules = s.get("payment_rules") or {}
         out.append({"session_id": s["session_id"], "module_type": s["module_type"], "from": players[0],
                     "seats": {"taken": len(players), "max": module.MAX_PARTICIPANTS},
-                    "stake_cents": _stake_cents(rules), "created_at": s["created_at"]})
+                    "created_at": s["created_at"]})
         if len(out) >= _BOUNTIES:
             break
     return out
-
-
-def _stake_cents(payload: dict[str, Any]) -> int:
-    if payload.get("stake_cents"):
-        try:
-            return int(payload["stake_cents"])
-        except (TypeError, ValueError):
-            return 0
-    try:
-        return round(float(payload.get("stake_per_participant") or 0) * 100)
-    except (TypeError, ValueError):
-        return 0
 
 
 def inbox_of(agent_id: str) -> dict[str, Any]:
@@ -224,10 +211,8 @@ def inbox_of(agent_id: str) -> dict[str, Any]:
                                                                        "creator_id", "from_agent") if payload.get(k)),
                                              inner.get("from")),
                                 "module_type": payload.get("module_type") or inner.get("module_type"),
-                                "stake_cents": _stake_cents({**inner, **payload}),
                                 "payload": {k: v for k, v in {**inner, **payload}.items()
-                                            if k in ("type", "module_type", "stake_cents", "stake_per_participant",
-                                                     "session_id", "challenge", "expires_at")},
+                                            if k in ("type", "module_type", "session_id", "challenge", "expires_at")},
                                 "created_at": r["created_at"]})
             elif t == "dm_received":
                 tid = payload.get("thread_id")

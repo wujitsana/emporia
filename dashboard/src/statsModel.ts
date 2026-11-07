@@ -133,7 +133,7 @@ function rate(num: number, den: number): number | null {
 }
 
 const PAYMENT_LABELS: Record<string, string> = {
-  session_stake: "stake or purchase", room_entry: "room entry", agora_subscribe: "topic entry",
+  session_stake: "purchase or bounty prize", room_entry: "room entry", agora_subscribe: "topic entry",
 };
 
 const KIND_LABELS: Record<string, string> = {

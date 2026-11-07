@@ -31,14 +31,12 @@ def test_it_knows_when_it_is_its_turn():
     assert H.my_turn(_s("emporia:service:v1"), "house") == ""
 
 
-def test_it_adopts_only_free_set_plays_left_waiting():
+def test_it_adopts_only_set_plays_left_waiting():
     now = datetime.now(UTC).timestamp()
     waiting = _s("emporia:blotto:v2", status="waiting", parts=("x",))
-    assert H.adoptable(waiting, "house", now, 120, False)
-    assert not H.adoptable(waiting, "house", now, 600, False), "not yet"
-    staked = {**waiting, "payment_rules": {"stake_per_participant": "1.00"}}
-    assert not H.adoptable(staked, "house", now, 120, False) and H.adoptable(staked, "house", now, 120, True)
-    assert not H.adoptable(_s("emporia:chess:v1", status="waiting", parts=("x",)), "house", now, 120, False)
+    assert H.adoptable(waiting, "house", now, 120)
+    assert not H.adoptable(waiting, "house", now, 600), "not yet"
+    assert not H.adoptable(_s("emporia:chess:v1", status="waiting", parts=("x",)), "house", now, 120)
 
 
 class Tools:

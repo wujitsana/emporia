@@ -1238,15 +1238,15 @@ def session_players_by_acts(session_id: str, served: dict[str, Any], key_of: Any
 
 def seated_players(session_id: str, served: dict[str, Any], me: str, profile_id: str, relay_url: str) -> set[str]:
     """P275: `session_players_by_acts` with each player's key trusted as on the DM
-    path — the players a stake or a purchase in this game may pay."""
+    path — the players a purchase in this game may pay."""
     return session_players_by_acts(session_id, served,
                                    _bundle_key_of(served.get("keys") or {}, me, profile_id, relay_url))
 
 
 def game_terms(session_id: str, served: dict[str, Any], me: str, profile_id: str,
                relay_url: str) -> tuple[set[str], str | None]:
-    """P280: whom a stake or purchase in this game may pay (the other players its
-    signed acts seat) and the stake its creator signed (None if it left that to
+    """P280: whom a purchase in this game may pay (the other players its
+    signed acts seat) and the price its creator signed (None if it left that to
     the module's default). Raises ValueError when the relay keeps terms other
     than the creator signed, or shows no signed creation at all."""
     from emporia.wire import stake_mismatch
@@ -1255,7 +1255,7 @@ def game_terms(session_id: str, served: dict[str, Any], me: str, profile_id: str
     terms = served.get("terms") or {}
     if creator not in seated:
         # Review of P280: every game since P279 is made by a signed creation (the creator stays seated
-        # by it even after a leave). Without one, the stake would be the relay's word: refused.
+        # by it even after a leave). Without one, the price would be the relay's word: refused.
         raise ValueError(f"game {session_id} carries no creation signed by {creator or 'its creator'} "
                          f"over the terms shown — refusing to pay into it")
     if why := stake_mismatch(terms, served.get("payment_rules")):

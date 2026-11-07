@@ -9,7 +9,7 @@ import {
   usdcAtomicToUsd,
   acceptsLabel,
   paidByLabel,
-  stakeText,
+  priceText,
   formatMicros,
   settlementFeeMicros,
   settlementPayoutMicros,
@@ -105,12 +105,11 @@ describe("what pays for what (P153)", () => {
     const nets = { ...both, x402_networks: ["eip155:84532", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"] };
     expect(acceptsLabel("entry", nets)).toBe("accepts card · USDC (Base Sepolia testnet, Solana devnet)");
   });
-  it("offers no card on games unless the operator opted in (P159)", () => {
-    expect(acceptsLabel("wager", both, "emporia:blotto:v2")).toBe("accepts USDC escrow (Base Sepolia testnet)");
-    expect(acceptsLabel("wager", both, "emporia:two-thirds:v2")).toBe("no payment rail on this relay");
-    expect(acceptsLabel("wager", { ...both, card_game_stakes: true }, "emporia:blotto:v2"))
-      .toBe("accepts card · USDC escrow (Base Sepolia testnet)");
+  it("offers a held card prize only with both operator opt-ins (P157, P159)", () => {
     expect(acceptsLabel("bounty_held", both)).toBe("no payment rail on this relay");
+    expect(acceptsLabel("bounty_held", { ...both, card_bounty_prizes: true, custodial_cards: true }))
+      .toBe("accepts card");
+    expect(acceptsLabel("bounty_held", { ...both, card_bounty_prizes: true })).toBe("no payment rail on this relay");
   });
   it("says after paying how", () => {
     expect(paidByLabel(["stripe"])).toBe("paid by card");
@@ -119,16 +118,16 @@ describe("what pays for what (P153)", () => {
   });
 });
 
-describe("stakeText", () => {
-  it("says a USDC stake is testnet money and is held in escrow", () => {
-    expect(stakeText(1, "usd", { rails: ["x402"], escrowNetwork: "eip155:84532" }))
+describe("priceText", () => {
+  it("says a USDC price is testnet money and is held in escrow", () => {
+    expect(priceText(1, "usd", { rails: ["x402"], escrowNetwork: "eip155:84532" }))
       .toEqual({ amount: "1.00 USDC (testnet)", via: "escrow" });
     // A relay that does not name its escrow network holds test funds.
-    expect(stakeText(2, "usd", { mode: "x402" })).toEqual({ amount: "2.00 USDC (testnet)", via: null });
+    expect(priceText(2, "usd", { mode: "x402" })).toEqual({ amount: "2.00 USDC (testnet)", via: null });
   });
 
-  it("does not call a real-money network a testnet, and leaves card stakes in their currency", () => {
-    expect(stakeText(1, "usd", { rails: ["x402"], escrowNetwork: "eip155:8453" }).amount).toBe("1.00 USDC");
-    expect(stakeText(3, "usd", { rails: ["stripe"] })).toEqual({ amount: "3.00 USD", via: "card" });
+  it("does not call a real-money network a testnet, and leaves card prices in their currency", () => {
+    expect(priceText(1, "usd", { rails: ["x402"], escrowNetwork: "eip155:8453" }).amount).toBe("1.00 USDC");
+    expect(priceText(3, "usd", { rails: ["stripe"] })).toEqual({ amount: "3.00 USD", via: "card" });
   });
 });

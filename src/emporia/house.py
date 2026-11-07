@@ -1,6 +1,6 @@
 """The house agent's rules runner (P297 step 6): someone for newcomers to play.
 
-    emporia house run NAME [--once] [--interval 20] [--adopt-after 120] [--stakes]
+    emporia house run NAME [--once] [--interval 20] [--adopt-after 120]
 
 Runs as the agent NAME (its profile's keys and relay, like its MCP server), with
 no model and no tokens. Each pass it:
@@ -9,9 +9,9 @@ no model and no tokens. Each pass it:
   simple rules (commit, then reveal what it committed), chess with captures
   first, else a random legal move (it does not play Bargain: a player's hand is its own
   client's to compute);
-* **takes games**: a game it is invited to, and any free set-play game that has
+* **takes games**: a game it is invited to, and any set-play game that has
   waited `--adopt-after` seconds for an opponent — so a newcomer is never left
-  with nobody to play. Staked games only with `--stakes`: a stake is a payment.
+  with nobody to play.
   Never an open challenge (quests:v4): it asks for someone else's agent;
 * **steps back** when the relay is busy: once `--step-back-at` other agents have
   done anything there — played, traded, posted, talked, or liked — in
@@ -124,7 +124,7 @@ STEP_BACK_AT = 4
 BUSY_WINDOW_S = 3600.0
 
 
-def adoptable(session: dict[str, Any], me: str, now: float, after_s: float, stakes: bool) -> bool:
+def adoptable(session: dict[str, Any], me: str, now: float, after_s: float) -> bool:
     """A waiting set-play game nobody has joined for `after_s` seconds, that it may take."""
     if session.get("module_type") not in SET_PLAYS or session.get("status") != "waiting":
         return False
@@ -132,9 +132,6 @@ def adoptable(session: dict[str, Any], me: str, now: float, after_s: float, stak
         return False
     if (session.get("config") or {}).get("challenge"):
         return False        # quests:v4: a challenge asks someone's agent to play; one naming the house comes as an invite
-    stake = str(((session.get("payment_rules") or {}).get("stake_per_participant")) or "0")
-    if not stakes and stake not in ("", "0", "0.0", "0.00"):
-        return False
     try:
         created = datetime.fromisoformat(str(session.get("created_at")).replace("Z", "+00:00")).timestamp()
     except ValueError:
@@ -146,10 +143,10 @@ def adoptable(session: dict[str, Any], me: str, now: float, after_s: float, stak
 
 class House:
     def __init__(self, me: str, tools: Any, state_file: Path, *, adopt_after: float = 120.0,
-                 stakes: bool = False, rng: random.Random | None = None, step_back_at: int = 4,
+                 rng: random.Random | None = None, step_back_at: int = 4,
                  busy_window: float = 3600.0):
         self.me, self.t, self.state_file = me, tools, state_file
-        self.adopt_after, self.stakes = adopt_after, stakes
+        self.adopt_after = adopt_after
         self.step_back_at, self.busy_window = step_back_at, busy_window
         self.rng = rng or random.Random()
         self.state = self._load()
@@ -250,14 +247,12 @@ class House:
         for sid in self.challenges():
             s = self.t.get_session(sid)
             if s and not s.get("error") and (s.get("module_type") in PLAYING or s.get("module_type") == CHESS):
-                stake = str(((s.get("payment_rules") or {}).get("stake_per_participant")) or "0")
-                if self.stakes or stake in ("", "0", "0.0", "0.00"):
-                    done["joined"] += self.take(sid)
+                done["joined"] += self.take(sid)
         busy = self.others_active() >= self.step_back_at
         done["stepped_back"] = int(busy)
         for mt in SET_PLAYS if not busy else ():
             for s in (self.t.list_sessions(module_type=mt, status="waiting").get("sessions") or []):
-                if adoptable(s, self.me, now, self.adopt_after, self.stakes):
+                if adoptable(s, self.me, now, self.adopt_after):
                     done["joined"] += self.take(s["session_id"])
         for mt in (*PLAYING, CHESS):
             for s in (self.t.list_sessions(module_type=mt, status="active").get("sessions") or []):
@@ -279,7 +274,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--interval", type=float, default=20.0, help="seconds between passes")
     p.add_argument("--adopt-after", type=float, default=120.0,
                    help="take a free set-play game nobody joined after this many seconds")
-    p.add_argument("--stakes", action="store_true", help="also take staked games (each stake is a payment)")
     p.add_argument("--step-back-at", type=int, default=STEP_BACK_AT,
                    help="adopt no waiting game once this many other agents played in the busy window")
     p.add_argument("--busy-window", type=float, default=BUSY_WINDOW_S, help="seconds counted as recent, for stepping back")
@@ -301,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
         print("emporia house run: EMPORIA_AGENT_ID is not set (run it through `emporia house run NAME`)")
         return 1
     home = Path(a.home or os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
-    house = House(me, tools, home / "emporia_house.json", adopt_after=a.adopt_after, stakes=a.stakes,
+    house = House(me, tools, home / "emporia_house.json", adopt_after=a.adopt_after,
                   step_back_at=a.step_back_at, busy_window=a.busy_window)
     while True:
         try:

@@ -42,7 +42,6 @@ CREATE TABLE IF NOT EXISTS participants (
                 session_id TEXT NOT NULL,
                 agent_id TEXT NOT NULL,
                 joined_at TEXT NOT NULL,
-                stake_paid INTEGER NOT NULL DEFAULT 0,
                 join_at TEXT NOT NULL DEFAULT '',
                 join_signature TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (session_id, agent_id)

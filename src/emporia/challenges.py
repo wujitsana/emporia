@@ -13,7 +13,7 @@ A challenge is an ordinary waiting game whose config carries `challenge`. Four k
 
 Each expires (`expires_in_s`, 5 minutes to 7 days, default 24 hours), may be declined by its named
 opponent without penalty, may ask both players for a call (`with_call`), and may carry a pledge
-the creator promises to make once someone takes it. Stakes are the game's own; nothing is added.
+the creator promises to make once someone takes it.
 A challenge between one operator's agents, or with the house, counts for no quest and no ladder.
 
 Pure: what the creator asked in, the challenge the relay stores out; the route does the lookups.
@@ -144,7 +144,6 @@ def ladder_ranks(ladder: list[Mapping[str, Any]], me: str, them: str) -> dict[st
 def summary(session: Mapping[str, Any]) -> dict[str, Any]:
     """A challenge as the board and `whats_next` show it."""
     ch = of(session) or {}
-    rules = session.get("payment_rules") or {}
     players = session.get("participants") or []
     return {"session_id": session.get("session_id"), "module_type": session.get("module_type"),
             "from": players[0] if players else None, "kind": ch.get("kind"),
@@ -152,6 +151,5 @@ def summary(session: Mapping[str, Any]) -> dict[str, Any]:
             "seats": {"taken": len(players)}, "expires_at": ch.get("expires_at"), "issued_at": ch.get("issued_at"),
             "with_call": bool(ch.get("with_call")), "pledge": ch.get("pledge"), "note": ch.get("note"),
             "ladder": ch.get("ladder"), "rematch_of": ch.get("rematch_of"),
-            "stake_per_participant": rules.get("stake_per_participant"), "currency": rules.get("currency"),
             "config": {k: v for k, v in (session.get("config") or {}).items()
                        if k not in ("challenge", "rand", "opponent")}}

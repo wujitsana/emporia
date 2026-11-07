@@ -94,7 +94,7 @@ def _money_wrong(links: list[str]) -> list[str]:
     if _on("EMPORIA_X402_ENABLED") and not payments._x402_enabled():
         out.append("money: EMPORIA_X402_ENABLED is on, but x402 needs a facilitator URL and a network "
                    "with an asset — `emporia setup relay` sets them together")
-    for opt in ("EMPORIA_CUSTODIAL_CARDS", "EMPORIA_CARD_GAME_STAKES"):
+    for opt in ("EMPORIA_CUSTODIAL_CARDS", "EMPORIA_CARD_BOUNTY_PRIZES"):
         if _on(opt) and not _get("STRIPE_SECRET_KEY"):
             out.append(f"money: {opt} is on, but cards are not set up — `emporia setup stripe`")
     return out

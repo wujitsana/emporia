@@ -36,7 +36,6 @@ RUNS = ("model", "rules")
 class Playbook:
     preset: str
     games: tuple[str, ...] | str       # module types, or ALL / NONE
-    max_stake_cents: int | None        # None: only its spending limits bound it
     answers: str                       # who its DMs and invites may wake it for
     sells: bool                        # may create listings
     buys: bool                         # may pay for services and entries
@@ -50,25 +49,25 @@ class Playbook:
 
 
 PRESETS: dict[str, Playbook] = {
-    "custom": Playbook("custom", ALL, None, "anyone", True, True, "model"),
-    "player": Playbook("player", SET_PLAYS, 100, "anyone", False, False, "model"),
-    "merchant": Playbook("merchant", NONE, None, "anyone", True, False, "model"),
-    "scout": Playbook("scout", NONE, None, "anyone", False, True, "model"),
-    "host": Playbook("host", (*SET_PLAYS, CHESS), 100, "anyone", True, False, "rules", pledges=False),
+    "custom": Playbook("custom", ALL, "anyone", True, True, "model"),
+    "player": Playbook("player", SET_PLAYS, "anyone", False, False, "model"),
+    "merchant": Playbook("merchant", NONE, "anyone", True, False, "model"),
+    "scout": Playbook("scout", NONE, "anyone", False, True, "model"),
+    "host": Playbook("host", (*SET_PLAYS, CHESS), "anyone", True, False, "rules", pledges=False),
     # Operator section: the agent of the person who runs the relay. It answers questions, posts
     # and greets; it takes no game and no deal on the relay it runs.
-    "operator": Playbook("operator", NONE, None, "anyone", False, False, "model", pledges=False),
+    "operator": Playbook("operator", NONE, "anyone", False, False, "model", pledges=False),
 }
 ABOUT = {
     "custom": "no bounds beyond its limits — its own instructions decide (the default)",
-    "player": "takes set-play challenges up to $1.00; doesn't sell or buy",
+    "player": "takes set-play challenges; doesn't sell or buy",
     "merchant": "sells its listings; plays and buys nothing",
     "scout": "browses and buys within its limits; plays and sells nothing",
-    "host": "the house agent: takes set plays (and unstaked chess) up to $1.00, sells, runs on rules, pledges nothing",
+    "host": "the house agent: takes set plays (and chess), sells, runs on rules, pledges nothing",
     "operator": "the relay operator's agent: answers anyone, plays, sells and buys nothing; pledges nothing",
 }
 
-_FIELD_WORDS = {"games": "games", "max_stake_cents": "stake limit", "answers": "who it answers",
+_FIELD_WORDS = {"games": "games", "answers": "who it answers",
                 "sells": "selling", "buys": "buying", "runs": "how it runs", "pledges": "pledges"}
 
 
@@ -85,7 +84,6 @@ def about(pb: Playbook) -> str:
 
 SETTINGS = {   # .env name → field
     "EMPORIA_PLAYBOOK_GAMES": "games",
-    "EMPORIA_PLAYBOOK_MAX_STAKE_CENTS": "max_stake_cents",
     "EMPORIA_PLAYBOOK_ANSWERS": "answers",
     "EMPORIA_PLAYBOOK_SELLS": "sells",
     "EMPORIA_PLAYBOOK_BUYS": "buys",
@@ -136,8 +134,6 @@ def resolve(env: dict[str, str] | None = None) -> Playbook:
         try:
             if field == "games":
                 fields[field] = parse_games(raw)
-            elif field == "max_stake_cents":
-                fields[field] = None if raw.lower() == "none" else max(0, int(raw))
             elif field in ("sells", "buys", "pledges"):
                 fields[field] = _yes(raw)
             elif field == "answers":
@@ -158,7 +154,7 @@ def current() -> Playbook:
     try:
         return resolve()
     except PlaybookError:
-        return Playbook("unreadable", NONE, 0, "nobody", False, False, "model", pledges=False)
+        return Playbook("unreadable", NONE, "nobody", False, False, "model", pledges=False)
 
 
 def _how_to_change() -> str:
@@ -167,7 +163,7 @@ def _how_to_change() -> str:
     return localize("your operator sets it: emporia agent playbook")
 
 
-def may_play(pb: Playbook, module_type: str, stake_cents: int = 0) -> str:
+def may_play(pb: Playbook, module_type: str) -> str:
     """"" when it may take this game, else why not (said to the agent)."""
     # Calls: a retired set play is its successor here, both ways — a playbook that names
     # blotto:v1 takes blotto:v2, and a blotto:v1 game still running is a blotto game.
@@ -175,9 +171,6 @@ def may_play(pb: Playbook, module_type: str, stake_cents: int = 0) -> str:
                             not in {calls.current(g) for g in pb.games}):
         return (f"your playbook ({pb.preset}) does not take {module_type} games; "
                 + _how_to_change())
-    if stake_cents and pb.max_stake_cents is not None and stake_cents > pb.max_stake_cents:
-        return (f"your playbook ({pb.preset}) takes stakes up to ${pb.max_stake_cents / 100:.2f}, "
-                f"not ${stake_cents / 100:.2f}; {_how_to_change()}")
     return ""
 
 
@@ -202,18 +195,12 @@ def wakes_for(pb: Playbook, frame: dict) -> bool:
     t = str(frame.get("type") or "")
     if t in ("dm_received", "room_invite", "agora_invite"):
         return pb.answers != "nobody"
-    if t == "session_invite":         # a game only it may join (P181): says its game and stake
-        return may_play(pb, str(frame.get("module_type") or ""), int(frame.get("stake_cents") or 0)) == ""
+    if t == "session_invite":         # a game only it may join (P181): says its game
+        return may_play(pb, str(frame.get("module_type") or "")) == ""
     if t == "challenge":
         payload = frame.get("payload") or {}
         module = payload.get("module_type") or frame.get("module_type") or ""
-        stake = payload.get("stake_cents") or 0
-        if not stake and payload.get("stake_per_participant"):
-            try:
-                stake = round(float(payload["stake_per_participant"]) * 100)
-            except (TypeError, ValueError):
-                stake = 0
-        if not module:      # it says only its session: join_session checks the game and stake
+        if not module:      # it says only its session: join_session checks the game
             return pb.games != NONE
-        return may_play(pb, module, int(stake)) == ""
+        return may_play(pb, module) == ""
     return True

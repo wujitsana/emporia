@@ -12735,7 +12735,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (status === "funding") return "funding…";
 		return status;
 	}
-	function acceptsLabel(move, h, moduleType) {
+	function acceptsLabel(move, h) {
 		const card = !!h?.stripe_enabled;
 		const usdc = !!h?.x402_enabled;
 		const on = (nets) => {
@@ -12753,19 +12753,15 @@ var EmporiaHermesPlugin = (function(exports) {
 				if (card) ways.push("card");
 				if (h?.x402_escrow_network) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
 				break;
-			case "wager":
-				if (card && h?.card_game_stakes) ways.push("card");
-				if (h?.x402_escrow_network && moduleType && TWO_PLAYER_GAMES.has(moduleType)) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
-				break;
 			case "bounty_held":
-				if (card && h?.card_game_stakes && h?.custodial_cards) ways.push("card");
+				if (card && h?.card_bounty_prizes && h?.custodial_cards) ways.push("card");
 				break;
 			case "bounty_promised": if (usdc) ways.push("USDC, paid after the result");
 		}
 		return ways.length ? `accepts ${ways.join(" · ")}` : "no payment rail on this relay";
 	}
 	/**
-	* Whether stakes on this escrow network are test money. A relay that does not
+	* Whether payments on this escrow network are test money. A relay that does not
 	* name its escrow network is holding test funds: agents pay on testnets unless
 	* a person unlocks a real-money network for that agent in their own terminal.
 	*/
@@ -12783,11 +12779,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		return TESTNETS.has(network) && !/devnet|testnet/i.test(name) ? `${name} testnet` : name;
 	}
 	/**
-	* The money line under a game or a deal, in two parts: what is staked or paid
+	* The money line under a deal, in two parts: what is paid
 	* ("1.00 USDC (testnet)") and how it is held ("escrow", "card"), or null when
 	* nobody has paid yet. USDC on a session is always held in escrow.
 	*/
-	function stakeText(amount, currency, opts) {
+	function priceText(amount, currency, opts) {
 		const rails = opts.rails ?? [];
 		const unit = rails.includes("x402") || opts.mode === "x402" ? `USDC${isTestnet(opts.escrowNetwork) ? " (testnet)" : ""}` : (currency ?? "").toUpperCase();
 		const via = rails.length ? rails.map((r) => r === "x402" ? "escrow" : r === "stripe" ? "card" : r === "tempo" ? "Tempo" : r).join(" + ") : null;
@@ -12796,7 +12792,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			via
 		};
 	}
-	var FAILED_TRANSFERS, DIRECT_TRANSFERS, EXPLORERS, NETWORK_NAMES, TWO_PLAYER_GAMES, TESTNETS;
+	var FAILED_TRANSFERS, DIRECT_TRANSFERS, EXPLORERS, NETWORK_NAMES, TESTNETS;
 	var init_paymentFormat = __esmMin((() => {
 		FAILED_TRANSFERS = /* @__PURE__ */ new Set(["capture_failed", "transfer_failed"]);
 		DIRECT_TRANSFERS = /* @__PURE__ */ new Set([
@@ -12817,7 +12813,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			"eip155:4217": "Tempo",
 			"eip155:42431": "Tempo Moderato"
 		};
-		TWO_PLAYER_GAMES = /* @__PURE__ */ new Set(["emporia:blotto:v2", "emporia:chess:v1"]);
 		TESTNETS = /* @__PURE__ */ new Set([
 			"eip155:84532",
 			"solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
@@ -19258,7 +19253,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const health = useRelayHealth();
 		const moved = settlements.filter((s) => settlementHealth(s) !== "failed");
 		const failedCount = settlements.length - moved.length;
-		const totalStakeCents = moved.reduce((s, r) => s + r.total_stake_cents, 0);
+		const totalMovedCents = moved.reduce((s, r) => s + r.total_stake_cents, 0);
 		const totalFeeMicros = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
 		const feeLabel = `${((health?.fee_bps ?? 0) / 100).toFixed(1)}%`;
 		const methods = health?.payment_methods?.join(", ") || "none";
@@ -19337,7 +19332,7 @@ var EmporiaHermesPlugin = (function(exports) {
 							className: "e-kpi",
 							children: [/* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)("span", {
 								className: "e-kpi__val",
-								children: ["$", (totalStakeCents / 100).toFixed(0)]
+								children: ["$", (totalMovedCents / 100).toFixed(0)]
 							}), /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)("span", {
 								className: "e-kpi__lbl",
 								children: "volume"
@@ -19388,7 +19383,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						marginTop: 8,
 						fontSize: "0.72rem"
 					},
-					children: "No settlements recorded yet — appears when staked games complete."
+					children: "No settlements recorded yet — appears when deals and paid entries settle."
 				})
 			]
 		});
@@ -22169,7 +22164,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			className: "e-pipeline-chip",
 			children: [/* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("summary", { children: "6 checks on every move" }), /* @__PURE__ */ (0, import_jsx_runtime$46.jsx)("span", {
 				className: "e-pipeline-chip__text",
-				children: "How the relay checks each move an agent sends: guardrails → Ed25519 signature → rate limit → Proof-of-Reasoning → audit log → the game's own rules. Stakes are checked once, when an agent joins."
+				children: "How the relay checks each move an agent sends: guardrails → Ed25519 signature → rate limit → Proof-of-Reasoning → audit log → the game's own rules."
 			})]
 		});
 	}
@@ -22587,7 +22582,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				/* @__PURE__ */ (0, import_jsx_runtime$46.jsxs)("p", {
 					className: "e-intro__text",
 					children: [
-						"Emporia is a marketplace for Hermes agents. On a relay they play quick games, sell services, talk in rooms and private messages, and stake or pay each other in USDC held in escrow",
+						"Emporia is a marketplace for Hermes agents. On a relay they play quick games, sell services, talk in rooms and private messages, and pay each other in USDC held in escrow",
 						realMoney ? " — this relay moves real money." : " — on a testnet, so it is test money.",
 						" This dashboard only watches: your agents act, and nothing here changes the relay."
 					]
@@ -22847,7 +22842,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const [lobby] = useInterval(() => api.openSessions(), 15e3, [refreshTrigger]);
 		const waiting = lobby?.open_sessions ?? [];
 		const waitingRows = waiting.map((w) => {
-			const stake = w.payment_rules?.mode && w.payment_rules.mode !== "free" ? `$${w.payment_rules.stake_per_participant ?? "?"}` : "";
+			const price = w.payment_rules?.mode && w.payment_rules.mode !== "free" ? `$${w.payment_rules.stake_per_participant ?? "?"}` : "";
 			return [
 				/* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", {
 					className: "e-badge e-badge--dim",
@@ -22876,13 +22871,13 @@ var EmporiaHermesPlugin = (function(exports) {
 						})
 					]
 				}, "agent"),
-				stake ? /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", {
+				price ? /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", {
 					style: { color: "var(--theme-focused-foreground)" },
-					children: stake
-				}, "stake") : /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", {
+					children: price
+				}, "price") : /* @__PURE__ */ (0, import_jsx_runtime$44.jsx)("span", {
 					className: "e-faint",
 					children: "free"
-				}, "stake"),
+				}, "price"),
 				/* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)("span", {
 					className: "e-faint",
 					style: { fontSize: 11 },
@@ -22942,7 +22937,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					headers: [
 						"GAME",
 						"CREATOR",
-						"STAKE",
+						"PRICE",
 						"SEATS",
 						"OPENED"
 					],
@@ -22973,8 +22968,8 @@ var EmporiaHermesPlugin = (function(exports) {
 	}));
 	// src/ui/PayTag.tsx
 	/** P153: what can pay for this, shown beside its price before anyone pays. */
-	function AcceptsTag({ move, moduleType }) {
-		const label = acceptsLabel(move, useRelayHealth(), moduleType);
+	function AcceptsTag({ move }) {
+		const label = acceptsLabel(move, useRelayHealth());
 		return /* @__PURE__ */ (0, import_jsx_runtime$43.jsx)("span", {
 			className: "e-faint",
 			style: { fontSize: 11 },
@@ -27989,8 +27984,7 @@ var EmporiaHermesPlugin = (function(exports) {
 						/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("td", { children: "ENDED" }),
 						/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("td", { children: "GAME" }),
 						/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("td", { children: "PLAYERS" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("td", { children: "RESULT" }),
-						/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("td", { children: "STAKE" })
+						/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("td", { children: "RESULT" })
 					] }) }), /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("tbody", { children: data.results.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(ResultRow, {
 						r,
 						onOpen
@@ -28000,12 +27994,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 	}
 	function ResultRow({ r, onOpen }) {
-		const health = useRelayHealth();
-		const money = r.stake_per_participant && Number(r.stake_per_participant) > 0 ? stakeText(Number(r.stake_per_participant), r.currency ?? void 0, {
-			rails: r.paid_by,
-			escrowNetwork: health?.x402_escrow_network
-		}) : null;
-		const stake = money ? money.amount : "free";
 		return /* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)(import_jsx_runtime$30.Fragment, { children: [
 			/* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)("tr", { children: [
 				/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(Text, {
@@ -28029,15 +28017,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					children: r.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
 				}) }),
 				/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(Text, { children: r.participants.map((p) => shortAgent(p, 12)).join(" v ") }) }),
-				/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(Text, { children: verdict$1(r) }) }),
-				/* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)("td", { children: [/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(Text, {
-					className: "e-dim",
-					children: stake
-				}), money?.via ? /* @__PURE__ */ (0, import_jsx_runtime$30.jsxs)(import_jsx_runtime$30.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("br", {}), /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("span", {
-					className: "e-faint",
-					style: { fontSize: 11 },
-					children: money.via
-				})] }) : null] })
+				/* @__PURE__ */ (0, import_jsx_runtime$30.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(Text, { children: verdict$1(r) }) })
 			] }),
 			setPlay(r.module_type) === "emporia:blotto" ? /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(BlottoRounds, { r }) : null,
 			setPlay(r.module_type) === "emporia:two-thirds" || setPlay(r.module_type) === "emporia:lowest-unique" ? /* @__PURE__ */ (0, import_jsx_runtime$30.jsx)(TwoThirdsPicks, { r }) : null,
@@ -28166,8 +28146,6 @@ var EmporiaHermesPlugin = (function(exports) {
 	var import_jsx_runtime$30, goods$1;
 	var init_GameResults = __esmMin((() => {
 		init_Text();
-		init_healthCtx();
-		init_paymentFormat();
 		init_hooks();
 		init_api();
 		init_chessReplay();
@@ -28326,18 +28304,17 @@ var EmporiaHermesPlugin = (function(exports) {
 	}));
 	// src/ui/SessionMoney.tsx
 	/**
-	* P153: a session's money in one line — its stake, then what can pay it
-	* (before anyone has) or how it is held (after): "stake 1.00 USDC (testnet) ·
-	* escrow". Nothing for a free session.
+	* P153: a purchase's money in one line — its price, then what can pay it
+	* (before anyone has) or how it is held (after): "price 1.00 USDC (testnet) ·
+	* escrow". Nothing for a game: games carry no stakes.
 	*/
 	function SessionMoney({ session }) {
 		const [full] = useInterval(() => api.session(session.session_id), 3e4, [session.session_id]);
 		const health = useRelayHealth();
 		const rules = full?.payment_rules ?? session.payment_rules;
-		const stake = Number(rules?.stake_per_participant ?? 0);
-		if (!stake) return null;
-		const purchase = session.module_type === "emporia:service:v1";
-		const money = stakeText(stake, rules?.currency, {
+		const price = Number(rules?.stake_per_participant ?? 0);
+		if (!price || session.module_type !== "emporia:service:v1") return null;
+		const money = priceText(price, rules?.currency, {
 			rails: full?.paid_by ?? [],
 			mode: rules?.mode,
 			escrowNetwork: health?.x402_escrow_network
@@ -28346,15 +28323,11 @@ var EmporiaHermesPlugin = (function(exports) {
 			className: "e-dim",
 			style: { fontSize: 11 },
 			children: [
-				purchase ? "price" : "stake",
-				" ",
+				"price ",
 				money.amount,
 				" ·",
 				" ",
-				money.via ?? /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)(AcceptsTag, {
-					move: purchase ? "purchase" : "wager",
-					moduleType: session.module_type
-				})
+				money.via ?? /* @__PURE__ */ (0, import_jsx_runtime$27.jsx)(AcceptsTag, { move: "purchase" })
 			]
 		});
 	}
@@ -29903,7 +29876,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	function Verdict({ v }) {
 		const r = v.result;
-		const detail = v.kind === "dice" && r.bid ? ` — ${r.bid.quantity} × ${r.bid.face} was ${r.termination === "bid_held" ? "true" : "a lie"} (${r.count} showed)` : v.kind === "auction" && typeof r.value === "number" ? ` — the pot was worth ${r.value}; ${r.bidder} paid ${r.winning_bid}${r.termination === "winners_curse" ? ": the winner's curse" : ""}` : r.reason ? ` — ${r.reason}` : "";
+		const detail = v.kind === "dice" && r.bid ? ` — ${r.bid.quantity} × ${r.bid.face} was ${r.termination === "bid_held" ? "true" : "a lie"} (${r.count} showed)` : v.kind === "auction" && typeof r.value === "number" ? ` — the pot was worth ${r.value}; ${r.bidder} bid ${r.winning_bid}${r.termination === "winners_curse" ? ": the winner's curse" : ""}` : r.reason ? ` — ${r.reason}` : "";
 		return /* @__PURE__ */ (0, import_jsx_runtime$20.jsxs)("p", {
 			className: `e-setplay__verdict${r.winner ? " is-win" : ""}`,
 			role: "status",
@@ -33931,7 +33904,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			settlements.length === 0 && !loading && /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(Text, {
 				className: "e-faint",
 				style: { marginTop: 12 },
-				children: "No settlements yet — appears when staked sessions complete."
+				children: "No settlements yet — appears when deals and paid entries settle."
 			}),
 			settlements.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$11.jsx)(SlimCard, {
 				title: "Settlement history",
@@ -33954,7 +33927,7 @@ var EmporiaHermesPlugin = (function(exports) {
 							/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("td", { children: "STATUS" }),
 							/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("td", { children: "RAIL" }),
 							/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("td", { children: "WINNER" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("td", { children: "STAKE" }),
+							/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("td", { children: "AMOUNT" }),
 							/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("td", { children: "PAYOUT" }),
 							/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("td", { children: "FEE" }),
 							/* @__PURE__ */ (0, import_jsx_runtime$11.jsx)("td", { children: "DATE" })
@@ -34351,7 +34324,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			"capture_pending"
 		]);
 		PAYMENT_LABELS = {
-			session_stake: "stake or purchase",
+			session_stake: "purchase or bounty prize",
 			room_entry: "room entry",
 			agora_subscribe: "topic entry"
 		};
@@ -34671,7 +34644,7 @@ var EmporiaHermesPlugin = (function(exports) {
 							]
 						}), /* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)("div", {
 							className: "e-empty-pane__hint",
-							children: ["Your agent earns by selling a service, winning a staked game or a bounty, or charging an entry fee for a room or topic it created. ", days === 7 ? "Try 30 days." : ""]
+							children: ["Your agent earns by selling a service, winning a bounty, or charging an entry fee for a room or topic it created. ", days === 7 ? "Try 30 days." : ""]
 						})]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$10.jsxs)(PanelCard, {

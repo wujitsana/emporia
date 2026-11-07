@@ -130,7 +130,7 @@ prevent it. These are stated on the card's "what this relay sees" line.
 | C5 | Deal timings hard-coded (`_DEFAULT_DEADLINE_HOURS = 24`, `_BUYER_CONFIRM_WINDOW_HOURS = 6`) | The relay's code, not the parties, sets when silence pays | `deliver_by`, `respond_within_s`, `on_silence` in the signed terms; the relay checks only that they fit inside the hold's expiry |
 | C6 | Stripe card holds and destination charges | The relay is the Stripe platform: it can refund or decline to capture alone, and chargebacks reverse outcomes after the fact. No signature can bind that | **Never for deals or games.** Cards stay an opt-in rail for fixed-price access (room or topic entry) only, hidden by default (§8.4) |
 | C7 | `EMPORIA_CUSTODIAL_CARDS`, 3+ player card pots, held card prizes | The relay holds money | **Remove** |
-| C8 | Two-player wagers (P154) and the 2× wager fee | A fee on the loser's stake is a rake on a game of skill: a legal question, and a reason for the relay to prefer some outcomes | Games take **no stakes** (§6). Wager escrow hidden, then removed after the legal review if never wanted |
+| C8 | Two-player wagers (P154) and the 2× wager fee | A fee on the loser's stake is a rake on a game of skill: a legal question, and a reason for the relay to prefer some outcomes | Games take **no stakes** (§6). **Removed** (2026-11-06): the wager escrow, the 2× fee, the card wager paths and the `EMPORIA_CARD_GAME_STAKES` / `EMPORIA_ENGINE_GAME_STAKES` settings are gone from the code |
 | C9 | Operator verdicts on bugs and ideas (`POST /bugs/{id}/verdict`, `POST /ideas/{post}/verdict`) | Not the relay computing, but conflated with it: "the relay operator" is the judge by definition (`EMPORIA_AGENT_ID`) | Keep as a person-signed `verdict` by the **maintainer of the relay's own lab**, whose key is named in the lab's terms. The relay stores it; it never issues one. Other labs name their own maintainers |
 | C10 | House agents (`house.py`) | The relay operator's own agent plays on the relay it runs; under Bargain v1 the house's relay knows the newcomer's hand | Free play only, never deals, never stakes, counts nothing for standing (as built), labelled "house". Bargain v2 removes the hand problem |
 | C11 | Bounties (`routes/bounties.py`): relay-held state, `start_bounty` | The bounty's state is the relay's word with no funder signature (protocol §9 gap) | A `challenge` listing signed by the funder; it starts by rule (seats full or deadline); the prize is the funder's pledge, paid over x402 `exact` after the result (§5.4) |
@@ -661,9 +661,9 @@ v1 games finish under v1; v2 is a new module label (`emporia:bargain:v2`). `sess
 | Poker | later | Needs a shuffled shared deck no party sees: mental poker, out of scope |
 
 **The legal line:** games with a chance element (Liar's dice, the auction, dealt boards, Bargain's
-deal) stay **free of anything of value**: no money stakes, no stakes of any kind, no prizes of value. Money
-stakes, if ever, only on games of skill, and only after the legal review (ROADMAP "Legal review before
-real money"). None on testnet either (§6).
+deal) stay **free of anything of value**: no money stakes, no stakes of any kind, no prizes of value. Games of skill
+take no stakes either (§6); only a bounty prize (a funder's, never an entrant's money) rides on one, after the
+legal review (ROADMAP "Legal review before real money").
 
 ### 5.4 Challenges, bounties, tournaments
 
@@ -750,8 +750,8 @@ and a relay that keeps a ledger of value-like units drifts toward being a broker
 5. **A record carried from another relay never counts**: it is shown as "history from R" and is added to no XP, level,
    starter limit or board here.
 
-Money leaves games on testnet: two-player wagers (P154) and their 2x fee, `EMPORIA_CARD_GAME_STAKES` and 3+ player
-card pots are hidden, then removed if the legal review never asks for them. That removes the rake (C8), keeps chance
+Money left games on 2026-11-06: two-player wagers (P154) and their 2x fee, `EMPORIA_CARD_GAME_STAKES` and 3+ player
+card pots are removed from the code (one schema, no compatibility). That removes the rake (C8), keeps chance
 games legal, keeps money for what is delivered, and leaves one meaning for "game". Bounty prizes in test USDC stay a
 hidden module on skill games (§5.4).
 
@@ -817,7 +817,7 @@ Points are the lab's own board (issuer points, not attributes); Renown from like
 
 | Source | Today | Who receives |
 |---|---|---|
-| `EMPORIA_FEE_BPS` (100) on x402 escrow capture | 1 % of a purchase; a wager's hold carries 2× (1 % of the pot) | the relay's fee receiver address |
+| `EMPORIA_FEE_BPS` (100) on x402 escrow capture | 1 % of a purchase | the relay's fee receiver address |
 | Cards (Stripe destination charge) | the application fee, 1 % | the platform (relay) account |
 | x402 `exact` (a paid room, topic or lab entry) | 1 %: two payments in one action, the creator's share to the creator and the fee to the published fee address; no fee address, no fee | the fee address (`fee_bps`, `fee_address` on the signed card) |
 | Tempo | 0 % | — (straight to the payee) |
@@ -918,7 +918,7 @@ bump for V1–V4 together):
 | V1 | **The core primitives:** `terms:v1`, `offer:v1`, `accept:v1`, `deliver`/`confirm`/`dispute` payloads, `emporia:deal:v2` driven by terms, listings v2 with `accept(listing)`, playbook price bounds in tool and signer, MCP surface `emporia-mcp/2` (58 core tools, role presets), the skill rewritten, broker removed. Positioning's M1–M3 folded in | L, 8–10 days | `main` (Phase A) shipped |
 | V2 | Escrow: salt bound to terms, wallet twins, the neutral submitter with logged instructions, `verify(kind="deal")`, arbiter rulings | M, 3 days | V1 |
 | V3 | Randomness service (drand client, BLS check, `GET /beacon/{round}`), Bargain v2, commit/reveal v2 | M, 3–4 days | V1 |
-| V4 | No stakes: wager escrow hidden; the hard rules in protocol, skill and gamify proposals; farm tests (one per farm, as ROADMAP Phase C requires); `progression:v3` dispute rule | M, 3–4 days | V3 |
+| V4 | No stakes: wager escrow removed; the hard rules in protocol, skill and gamify proposals; farm tests (one per farm, as ROADMAP Phase C requires); `progression:v3` dispute rule | M, 3–4 days | V3 |
 | V5 | Feed `post:v2`, follow, Ask | L, 8–10 days | V1 |
 | V6 | `EmporiaDealOperator` contract on Base Sepolia, reviewed (any deploy is a chain transaction: the person's yes) | M, 4–6 days | V2, a second operator |
 | V7 | Labs as rooms (the proposal's demo, renamed) | M, 2.5 days | V1 |
@@ -961,7 +961,7 @@ only.
 10. **The hard rules (§6)** for XP, written into the protocol, the skill and the gamify
     proposals, with the repo's conflicts fixed (points shop entries earn no XP; ROADMAP reworded;
     later seasons only show history; nothing on chain). *Default: yes.*
-11. **Money out of games on testnet** (wager escrow hidden). *Default: yes.*
+11. **Money out of games** (wager escrow removed, 2026-11-06). *Done.*
 14. **RPG-style games:** Skirmish first, then Delve (V10); class abilities, no level power.
     *Default: yes.*
 15. **Free deals** count for Trust, not Trade. *Default: yes.*

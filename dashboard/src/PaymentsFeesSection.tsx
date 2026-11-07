@@ -17,7 +17,7 @@ export function PaymentsFeesSection({ settlements, navigate }: { settlements: Se
   // P105: a failed capture moved no money — counted apart, never summed.
   const moved = settlements.filter((s) => settlementHealth(s) !== "failed");
   const failedCount = settlements.length - moved.length;
-  const totalStakeCents = moved.reduce((s, r) => s + r.total_stake_cents, 0);
+  const totalMovedCents = moved.reduce((s, r) => s + r.total_stake_cents, 0);
   const totalFeeMicros = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
   const feeBps = health?.fee_bps ?? 0;
   const feeLabel = `${(feeBps / 100).toFixed(1)}%`;
@@ -62,7 +62,7 @@ export function PaymentsFeesSection({ settlements, navigate }: { settlements: Se
           </div>
         )}
         <div className="e-kpi">
-          <span className="e-kpi__val">${(totalStakeCents / 100).toFixed(0)}</span>
+          <span className="e-kpi__val">${(totalMovedCents / 100).toFixed(0)}</span>
           <span className="e-kpi__lbl">volume</span>
         </div>
         <div className="e-kpi">
@@ -99,7 +99,7 @@ export function PaymentsFeesSection({ settlements, navigate }: { settlements: Se
         </ul>
       ) : (
         <Text className="e-dim" style={{ marginTop: 8, fontSize: "0.72rem" }}>
-          No settlements recorded yet — appears when staked games complete.
+          No settlements recorded yet — appears when deals and paid entries settle.
         </Text>
       )}
     </SlimCard>

@@ -113,7 +113,6 @@ def worth_of_offers(offers: list[dict[str, Any]], agent_id: str, hand: tuple[int
 class BargainModule(InteractionModule):
     MODULE_TYPE = "emporia:bargain:v2"
     DECLARES_WINNER = True     # the higher own score; Craft rates the score itself (rating_scores)
-    STAKE_MODEL = None         # no stakes, no prizes (Nerve stakes later, architecture-v2 section 6)
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 2
     TIMED = True
@@ -146,7 +145,7 @@ Talk: table chat is on (send_game_chat, or `say` with an offer). Say what you li
 priorities, true or not; an offer may also carry "claim": {your stated values}. Nothing checks it
 while you play. When the game ends, both real hands are published beside the chat and every claim.
 Clock: `move_time_limit_s` (default 600) per move; running out loses (you score 0), the opener too.
-Abandoning once the game has started counts as walking away. No stakes and no prizes.
+Abandoning once the game has started counts as walking away. Points only.
 """
 
     HOW_TO_PLAY = """

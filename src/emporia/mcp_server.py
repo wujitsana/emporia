@@ -1074,7 +1074,7 @@ def validate_turn(
 @mcp.tool()
 def supported_games() -> dict[str, Any]:
     """The games and services this relay hosts, each with its rules: how to
-    win, how to move, the clock, the stake. Read a game's `rules` before you
+    win, how to move, the clock. Read a game's `rules` before you
     create or join one — a relay may host games you have never seen."""
     try:
         r = _bearer_request("get", f"{_base()}/modules", timeout=10)
@@ -1356,8 +1356,8 @@ def _room_terms(aid: str, room_id: str) -> tuple[set[str], int | None]:
 
 def _game_payees(aid: str, session_id: str) -> tuple[set[str], str | None]:
     """P275: the other players of a game, each seated by its own signed join or
-    creation (`identity.game_terms`) — whom a stake or a purchase in it may pay;
-    P280: and the stake its creator signed, if it set one."""
+    creation (`identity.game_terms`) — whom a purchase in it may pay;
+    P280: and the price its creator signed, if it set one."""
     from emporia.agent_wallet import AgentWalletError
     from emporia.identity import game_terms
     r = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}/encryption-keys", agent_id=aid, timeout=10)
@@ -3413,72 +3413,25 @@ def _cents(dollars: Any) -> int:
         return 0
 
 
-class _StakeUnverified(Exception):
-    """The stake the relay shows for a game is not one its creator signed."""
-
-
-def _session_module_and_stake(aid: str, session_id: str,
-                              session: dict[str, Any] | None = None) -> tuple[str, int, dict[str, Any]]:
-    """A session's game, the stake the relay shows, and the relay's copy of it, for the
-    playbook; read only when the playbook bounds anything. `session`: the relay's copy,
-    when the caller already has it."""
+def _playbook_session_refusal(what: str, aid: str, session_id: str,
+                              session: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """`_playbook_refusal` for an existing session: its game, read from the relay's copy
+    when the playbook bounds anything."""
     from emporia import playbook
     if session is None:
         if playbook.current() == playbook.PRESETS["custom"]:
-            return "", 0, {}
+            return None
         try:
             session = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}", agent_id=aid, timeout=10).json()
         except Exception:  # noqa: BLE001 — unknown: treated as not a game, so a buy
-            return "", 0, {}
-    session = session if isinstance(session, dict) else {}
-    return (session.get("module_type", ""),
-            _cents((session.get("payment_rules") or {}).get("stake_per_participant")), session)
+            session = {}
+    module = (session if isinstance(session, dict) else {}).get("module_type", "")
+    return _playbook_refusal(what, module)
 
 
-def _signed_stake_cents(aid: str, session_id: str, session: dict[str, Any], shown_cents: int) -> int:
-    """Security follow-up (11-05 audit): the stake a game's creator signed (P280) — the one
-    payment signs a hold for — checked against the relay's copy. Read from the creator's
-    signed creation served with the game (`creation`, `identity.game_terms`). Raises
-    `_StakeUnverified` when the two disagree, or when no signed creation verifies. A stake
-    the creator left to the module's default is not signed: the relay's word, as for payment."""
-    from emporia.identity import game_terms
-    from emporia.wire import stake_mismatch
-    rules = session.get("payment_rules") or {}
-    served = {**(session.get("creation") or {}), "module_type": session.get("module_type", ""),
-              "terms": rules.get("signed_terms"), "leaves": [],
-              "payment_rules": {k: rules.get(k) for k in ("mode", "stake_per_participant", "currency")}}
-    try:
-        _, signed = game_terms(session_id, served, aid, aid, _base())
-    except ValueError as e:
-        raise _StakeUnverified(f"the stake shown for {session_id} is not one its creator signed ({e}); "
-                               "your playbook's stake limit holds to the signed stake") from None
-    if why := stake_mismatch(served["terms"], rules):
-        raise _StakeUnverified(f"the relay shows {session_id} on other terms than its creator signed: {why}")
-    return _cents(signed) if signed is not None else shown_cents
-
-
-def _playbook_session_refusal(what: str, aid: str, session_id: str,
-                              session: dict[str, Any] | None = None) -> dict[str, Any] | None:
-    """`_playbook_refusal` for an existing session — for a game, under a stake limit, with
-    the stake its creator signed, refused when the relay's copy disagrees."""
-    from emporia import playbook
-    from emporia.standing import game_module_types
-    module, shown, session = _session_module_and_stake(aid, session_id, session)
-    if refusal := _playbook_refusal(what, module, shown):
-        return refusal
-    pb = playbook.current()
-    if pb.max_stake_cents is None or not module or module not in game_module_types():
-        return None
-    try:
-        return _playbook_refusal(what, module, _signed_stake_cents(aid, session_id, session, shown))
-    except _StakeUnverified as e:
-        return {"error": str(e), "playbook": pb.preset, "success": False}
-
-
-def _playbook_refusal(what: str, module_type: str = "", stake_cents: int = 0) -> dict[str, Any] | None:
-    """P297: the playbook its person set — which games, up to what stake, and
-    whether it sells or buys. `what`: play (create or join a game, fund its
-    stake), join (a session that is not a game: providing it is selling),
+def _playbook_refusal(what: str, module_type: str = "") -> dict[str, Any] | None:
+    """P297: the playbook its person set — which games, and
+    whether it sells or buys. `what`: play (create or join a game), join (a session that is not a game: providing it is selling),
     create or fund (a session that is not a game: buying), sell, buy, enter (a
     bounty). Enforced here, before the relay is asked, so it holds whatever the
     model decides; the bridge also drops approaches the playbook turns away."""
@@ -3492,7 +3445,7 @@ def _playbook_refusal(what: str, module_type: str = "", stake_cents: int = 0) ->
     pb = playbook.current()
     game = bool(module_type) and module_type in game_module_types()
     if game and what in ("play", "join", "create", "fund", "enter"):
-        why = playbook.may_play(pb, module_type, stake_cents)
+        why = playbook.may_play(pb, module_type)
     elif what in ("join", "sell"):
         why = playbook.may_sell(pb)
     elif what in ("create", "fund", "buy"):
@@ -3546,36 +3499,23 @@ def create_session(
     stake_per_participant: str = "0",
     currency: str = "USD",
     mpp_token: str = "",
-    payment_intent_id: str = "",
 ) -> dict[str, Any]:
     """Create a new session on the relay. Creator auto-joins as first participant.
 
-    Staking a wager without a human (P137): once both have joined,
-    create_payment_intent(session_id=...) and pass its payment_intent_id to
-    fund_session. On a test-key relay the intent is confirmed server-side; an
-    SPT (mpp_token) needs a person to approve it.
-    Or in USDC (P154, two-player games): payment_mode='x402' — nothing is paid
-    at create or join; once both have joined, each player calls
-    fund_session(pay_with_x402=True). Both need a registered x402 wallet.
-
-    Stakes depend on the module (P95):
-      a two-player game (a wager) — on a card (P157): nothing is paid at
-        create or join; once both have joined each player stakes with
-        fund_session(mpp_token=... or payment_intent_id=...). Each stake is a
-        card hold paid to the opponent if you lose, so both need an active
-        Stripe account (start_stripe_onboarding). Games of 3+ take no card
-        stakes unless the relay operator holds them (EMPORIA_CUSTODIAL_CARDS).
-      service (a purchase) — you are the buyer and pay nothing now. A seller
-        joins free; then you fund_session() and the hold pays them directly
-        when you confirm delivery.
+    Games carry no stakes of any kind: no money, no XP, no Nerve. A game created with
+    a price or a payment mode other than free is refused. Money is for deals:
+      service (a purchase) — you are the buyer and pay nothing now. Set the price
+        with stake_per_participant (dollars) and a payment_mode. A seller joins free;
+        then you fund_session() and the hold pays them directly when you confirm
+        delivery.
       research / code-review — free. For paid work use a service session.
 
     module_type: 'emporia:chess:v1' | 'emporia:blotto:v2' | 'emporia:bargain:v2' |
                  'emporia:liars-dice:v1' | 'emporia:cv-auction:v1' |
                  'emporia:service:v1' | 'emporia:research:v1' | 'emporia:code-review:v1'
     agent_id: Defaults to EMPORIA_AGENT_ID env.
-    payment_mode: 'free' | 'stripe_spt' | 'stripe_pi' | 'mpp'
-    The 'mpp' mode is protocol-level; the relay may satisfy it via Stripe or Tempo.
+    payment_mode / stake_per_participant / currency: for a service session only — its price. Leave
+    them at their defaults for a game.
     config examples:
       chess   — {"start_fen": "<FEN>", "creator_plays": "black", "move_time_limit_s": 300}
                 All optional (P131). start_fen: begin from this position (legal,
@@ -3589,16 +3529,16 @@ def create_session(
                 Rules: supported_games().
       bargain — {"max_offers": 6, "move_time_limit_s": 600, "reveal_window_s": 600}. All
                 optional; these are the defaults. The pool is fixed: 3 silk, 2 spice, 1
-                amber. Free only (no stakes, no prizes); table chat is on unless "chat":
+                amber. Points only; table chat is on unless "chat":
                 false. Your tools commit to a secret you keep and name a drand round; your
                 hand comes from them (emporia:rand:v1). Rules: supported_games().
       liars-dice — {"players": 3, "dice": 5, "ones_wild": false, "max_bids": 30, "move_time_limit_s": 600,
                 "reveal_window_s": 600}. All optional; these are the defaults. players 2-6 (it starts
                 when that many have joined). Your dice come from your own secret and a drand round: read
-                them in get_session()["private"]. Free only; chat on. Rules: supported_games().
+                them in get_session()["private"]. Chat on. Rules: supported_games().
       cv-auction — {"players": 3, "spread": 10, "move_time_limit_s": 600, "reveal_window_s": 600}. All
                 optional. players 3-8. A pot of unknown common value; you are told a private signal
-                (get_session()["private"]); one sealed bid (commit_move, reveal_move). Free only.
+                (get_session()["private"]); one sealed bid (commit_move, reveal_move).
       dealt blotto (emporia:blotto:v2) — add "dealt": true: the battlefields carry weights 1-5
                 drawn from a drand round named now (your tools add `weights_round`); they show in
                 the state as `weights` before anyone commits, and a battlefield scores its weight.
@@ -3613,7 +3553,7 @@ def create_session(
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    if (refusal := _playbook_refusal("create", module_type, _cents(stake_per_participant))
+    if (refusal := _playbook_refusal("create", module_type)
             or _open_games_refusal(aid, module_type)):
         return refusal
     body: dict[str, Any] = {
@@ -3625,8 +3565,6 @@ def create_session(
             "currency": currency,
         },
     }
-    if payment_intent_id:
-        body["payment_intent_id"] = payment_intent_id
     if (config or {}).get("dealt") and "weights_round" not in config:
         # dealt Blotto: the field weights come from a drand round named now, ahead of the game
         import time as _time
@@ -3729,9 +3667,7 @@ def list_sessions(
 
     To find a game worth joining: status='waiting' with a module_type. Each
     session carries its `config` (for chess: start_fen, creator_plays,
-    move_time_limit_s) and `payment_rules` (the stake you would match). Join
-    only a game you judge you can win — a wager pays the winner, a draw
-    refunds both.
+    move_time_limit_s). Join only a game you judge you can win.
     """
     params: dict[str, Any] = {"limit": limit}
     if module_type:
@@ -3799,14 +3735,14 @@ def create_payment_intent(
 
     On a relay running with a Stripe *test* key (sk_test_...), join_session/
     join_room auto-confirm the intent server-side (no real card, no human
-    interaction) — the full stake→escrow→settle→payout cycle runs entirely
+    interaction) — the full hold→escrow→settle→payout cycle runs entirely
     agent-to-agent. On a live key, the buyer needs a real payment method
     already on file (Stripe Link / an SPT) — see relay_payment_info().
 
     Args:
-        amount_cents: Stake amount in cents (e.g. 500 = $5.00).
+        amount_cents: Amount in cents (e.g. 500 = $5.00).
         buyer_id: Paying agent's ID. Defaults to EMPORIA_AGENT_ID.
-        session_id: Session this stake is for (mutually exclusive-ish with room_id).
+        session_id: Session this payment is for (mutually exclusive-ish with room_id).
         room_id: Room this entry fee is for, if paying to join a room instead.
         seller_id: Receiving party — usually left as "relay" (escrow/marketplace).
         service_type: Free-form label stored in Stripe metadata.
@@ -3814,9 +3750,8 @@ def create_payment_intent(
     bid = buyer_id or AGENT_ID
     if not bid:
         return {"error": "buyer_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    # a game's stake by card is play; anything else is a buy
     if (refusal := (_playbook_session_refusal("fund", bid, session_id) if session_id
-                    else _playbook_refusal("fund", "", 0))):
+                    else _playbook_refusal("fund"))):
         return refusal
     body: dict[str, Any] = {
         "amount_cents": amount_cents,
@@ -3842,17 +3777,12 @@ def create_payment_intent(
 def join_session(
     session_id: str,
     agent_id: str = "",
-    payment_intent_id: str = "",
-    mpp_token: str = "",
 ) -> dict[str, Any]:
-    """Join an existing session as a participant.
+    """Join an existing session as a participant. Joining a game costs nothing: games carry no stakes.
 
-    For free sessions: just pass session_id + agent_id.
-    For paid sessions: call create_payment_intent() first and pass the
-    returned payment_intent_id here, OR let the relay issue an MPP 402
-    challenge (client handles via link-cli / mppx).
+    Just pass session_id + agent_id.
     Creators are auto-joined at create_session time — don't call join for them.
-    For a staked game or a purchase, the result carries counterparty_records:
+    For a purchase, the result carries counterparty_records:
     the others' records on this relay (counterparty_record). Read them before
     you fund.
     """
@@ -3881,7 +3811,6 @@ def join_session(
         joining = session.get("module_type", "")
     except Exception as e:  # noqa: BLE001
         return {"error": "not joined: " + _session_load_error(session_id, e), "success": False}
-    # The stake the playbook bounds is the one its creator signed (11-05 audit follow-up).
     if (refusal := _playbook_session_refusal("join", aid, session_id, session or {})
             or _open_games_refusal(aid, joining)):
         return refusal
@@ -3899,29 +3828,14 @@ def join_session(
         if seat + 1 >= _rc.need_of(session or {}):       # the last to join has seen every commitment now
             with _commitments(_rand_file(aid, session_id)) as saved:
                 saved["seen_all_at"] = __import__("time").time()
-    if payment_intent_id:
-        body["payment_intent_id"] = payment_intent_id
     try:
-        # P95: the payment and the payer's identity travel together.
         r = _bearer_request("post", f"{_base()}/sessions/{_seg(session_id)}/join", agent_id=aid,
-                            payment_token=mpp_token, json=body, timeout=10)
+                            json=body, timeout=10)
         d = r.json()
         if r.status_code == 200:
             # P182: who you are now playing or trading with, before any money moves.
             _GUIDE_SENT.add(session_id)       # the join carries the game's how_to_play
             return {"success": True, **d, **_counterparties(session, aid)}
-        if r.status_code == 402:
-            # P4-3: join_room and subscribe_agora_topic both pass the full body
-            # through as `detail` — this one used to return only www_authenticate,
-            # dropping the body entirely (including P1brr-2's machine-readable
-            # `declined` key). Session join is exactly the route where x402's
-            # route_unsupported reason fires (no x402 analogue for session
-            # escrow), so this was the one route where that reason mattered most
-            # and the one whose client discarded it.
-            return {
-                "error": "payment_required", "options": _payment_options(d, r), "detail": d,
-                "www_authenticate": r.headers.get("www-authenticate", ""), "success": False,
-            }
         return {"error": f"Relay {r.status_code}", "detail": d, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -4052,8 +3966,7 @@ def my_quests(agent_id: str = "") -> dict[str, Any]:
 @_relay_aware
 def challenge(module_type: str = "", opponent: str = "", rematch_of: str = "", ladder: bool = False,
               expires_in_s: int = 86_400, with_call: bool = False, pledge: dict[str, Any] | None = None,
-              note: str = "", config: dict[str, Any] | None = None, payment_mode: str = "free",
-              stake_per_participant: str = "0") -> dict[str, Any]:
+              note: str = "", config: dict[str, Any] | None = None) -> dict[str, Any]:
     """quests:v4 (docs/proposals/quests-v4.md §5): challenge someone to a game — create_session with
     `config.challenge`. No opponent: an open challenge on the board (list_challenges) that anyone may
     take, except the house. opponent: a direct challenge only it may take (it may decline). rematch_of:
@@ -4062,7 +3975,7 @@ def challenge(module_type: str = "", opponent: str = "", rematch_of: str = "", l
     ladder (`ratings`); a win records the places climbed. Expires after expires_in_s (300 s to 7 days,
     default a day). with_call asks both players to seal a call with their first move (commit-reveal set
     plays). pledge {kind: reveal_within|tell, terms}: one you promise to make once someone takes it.
-    Stakes are the game's own. Games with your own operator's agents or the house count for no quest
+    Games carry no stakes. Games with your own operator's agents or the house count for no quest
     or ladder."""
     if rematch_of and not module_type:
         try:
@@ -4089,8 +4002,7 @@ def challenge(module_type: str = "", opponent: str = "", rematch_of: str = "", l
     cfg = {**(config or {}), "challenge": asked}
     if opponent and not rematch_of:
         cfg["opponent"] = opponent
-    out = create_session(module_type=module_type, config=cfg, payment_mode=payment_mode,
-                         stake_per_participant=stake_per_participant)
+    out = create_session(module_type=module_type, config=cfg)
     if out.get("success"):
         ch = (out.get("config") or {}).get("challenge") or {}
         out["challenge"] = ch
@@ -4103,7 +4015,7 @@ def challenge(module_type: str = "", opponent: str = "", rematch_of: str = "", l
 @_relay_aware
 def list_challenges(module_type: str = "", limit: int = 20) -> dict[str, Any]:
     """quests:v4: the open challenges waiting for a player on this relay, newest first — each with its
-    game, settings, stake, expiry, whether calls are asked and any pledge its challenger promises.
+    game, settings, expiry, whether calls are asked and any pledge its challenger promises.
     join_session(session_id) takes one. Games with your own operator's agents or the house count for no
     quest or ladder."""
     try:
@@ -4417,8 +4329,8 @@ def lab_threads(lab: str = "", limit: int = 50) -> dict[str, Any]:
 @mcp.tool()
 @_relay_aware
 def counterparty_record(agent_id: str) -> dict[str, Any]:
-    """An agent's record on this relay (P182) — read it before you stake
-    against it, join its game, or buy from it: games finished, won, lost, lost
+    """An agent's record on this relay (P182) — read it before you
+    play it, join its game, or buy from it: games finished, won, lost, lost
     on time, abandoned; as a buyer, purchases confirmed, disputed, or left to
     auto-confirm; as a seller, sales paid, disputed, never delivered. Counts
     only, of what this relay saw: evidence, not a verdict. A new agent has no
@@ -4450,9 +4362,7 @@ def counterparty_record(agent_id: str) -> dict[str, Any]:
 
 def _counterparties(session: dict[str, Any], me: str) -> dict[str, Any]:
     """The records of the others in a session that takes money (P182)."""
-    rules = session.get("payment_rules") or {}
-    staked = float(rules.get("stake_per_participant") or 0) > 0
-    if not staked and session.get("module_type") != "emporia:service:v1":
+    if session.get("module_type") != "emporia:service:v1":
         return {}
     out = {}
     for other in session.get("participants") or []:
@@ -4472,21 +4382,11 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
     their connected account, captured when you confirm delivery and released if
     you dispute, so your money never sits with the relay. Pass an SPT as
     mpp_token. Or pay_with_x402=True: the relay's x402 escrow offer is checked
-    (network allowlist, your per-payment cap, the session's stake, a fee cap)
+    (network allowlist, your per-payment cap, the session's price, a fee cap)
     and signed with this agent's x402 wallet; your USDC moves into Base's
     Commerce Payments escrow, never to the relay, and you can reclaim it
     yourself if the relay never acts: reclaim_escrow(), after the hold's expiry.
 
-    Also stakes an x402 wager (P154) — a two-player game created with
-    payment_mode='x402': once both have joined, each player calls this with
-    pay_with_x402=True. Your hold is paid to your opponent if you lose and
-    voided back to you if you win or draw; the game starts when both are in.
-
-    And stakes a card wager (P157) — a two-player game staked on a card: once
-    both have joined, each player calls this with mpp_token, or with a
-    payment_intent_id from create_payment_intent(session_id=...). Your hold is
-    a card payment to your opponent's Stripe account, captured only if you
-    lose; the relay never holds it.
     """
     aid = agent_id or AGENT_ID
     if not aid:
@@ -4506,7 +4406,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
                                    agent_id=aid, timeout=10).json()
             offer = r.json()["escrow"]
             payees, signed_stake = _game_payees(aid, session_id)   # P275: another player, seated by its own act
-            # P280: the stake its creator signed, where it set one — not the relay's word for it.
+            # P280: the price its creator signed, where it set one — not the relay's word for it.
             stake = signed_stake or (sess.get("payment_rules") or {}).get("stake_per_participant", "0")
             _check_payee_pinned(offer.get("payee"), "evm", (offer.get("payment_info") or {}).get("receiver"), payees)
             header = agent_wallet.sign_escrow(
@@ -5366,7 +5266,7 @@ def confirm_delivery(
     """Confirm a service delivery (emporia:service:v1).
 
     Buyer calls this to accept the seller's deliverable. Triggers Stripe capture
-    and Stripe Transfer to the seller (97.5% of stake).
+    and Stripe Transfer to the seller (the price, less the relay's fee).
     rationale: optional (a default is sent); if given, at least 15 non-whitespace characters
     (the relay's MIN_RATIONALE_CHARS). It is public, signed with the confirmation and kept in
     the session's record, so the minimum keeps one-word filler out.
@@ -5446,8 +5346,7 @@ def dispute_delivery(
 @_relay_aware
 def leave_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
     """Leave a game you joined that has not started yet (P273). Signed by you,
-    so no relay can drop a player on its own say; your stake, if you paid
-    one, is released, and the game stays open for the others. A game you
+    so no relay can drop a player on its own say; the game stays open for the others. A game you
     created, or one already under way, is ended with abandon_session instead.
     """
     from datetime import UTC, datetime
@@ -5901,7 +5800,7 @@ def start_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
     worth retrying in a tight loop.
 
     On success the contest becomes a session and the funder's escrowed prize
-    becomes that session's stake: whoever the module names as winner is paid
+    becomes that session's prize: whoever the module names as winner is paid
     from it automatically when the session ends.
     """
     aid = agent_id or AGENT_ID
@@ -6024,7 +5923,7 @@ def leaderboard(module_type: str = "") -> dict[str, Any]:
 @_relay_aware
 def game_results(module_type: str = "", agent_id: str = "", limit: int = 10) -> dict[str, Any]:
     """Finished games on this relay, newest first: players, winner, how it
-    ended, stake, settings, and each game's full record (Blotto: every round's
+    ended, settings, and each game's full record (Blotto: every round's
     allocations; chess: the position and last move). Pass agent_id to study a
     player before you play them — their past choices are the edge in Blotto.
     """

@@ -126,7 +126,7 @@ async def federated_open_sessions():
     """P188: the lobby — games and purchases on this relay waiting for a player, for agents
     elsewhere to find — signed, like the listings feed. Only what anyone here
     may already see: public sessions, no named opponent; never a private one.
-    Joining one happens here, where its stake, receipts and any dispute live.
+    Joining one happens here, where its receipts and any dispute live.
     P241: only games their creator offered, each with the creator's signature."""
     out = _lobby_items()
     signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "open_sessions", out))

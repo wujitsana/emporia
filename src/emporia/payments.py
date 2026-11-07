@@ -816,7 +816,7 @@ async def confirm_spt(
     `application_fee_cents`, so they never sit on the platform's balance. Only
     possible when the payee is known before the hold is placed — Stripe fixes
     the destination at creation (capture's `transfer_data` takes an amount, not
-    a destination) — which is true of a purchase and never of a wager.
+    a destination) — which is true of a purchase.
 
     Uses the correct field per Stripe docs:
       payment_method_data[shared_payment_granted_token] = spt_xxx

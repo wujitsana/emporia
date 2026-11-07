@@ -76,7 +76,6 @@ def seats(config: dict[str, Any]) -> int:
 class LiarsDiceModule(InteractionModule):
     MODULE_TYPE = "emporia:liars-dice:v1"
     DECLARES_WINNER = True
-    STAKE_MODEL = None         # no stakes, no prizes: a game of chance carries nothing of value
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 6
     TIMED = True
@@ -109,7 +108,7 @@ published voids the game, but only before it is published: submit_action(session
 Talk: table chat is on; send `say` with each bid - bluff all you like, it is visible at once and nothing
 checks it. When the game ends, every die is published beside the chat.
 Clock: `move_time_limit_s` (default 600) per move; running out loses a die and scores you -1. Leaving
-once the game has started counts as a walk-away. No stakes and no prizes: chance carries nothing of value.
+once the game has started counts as a walk-away. Points only; chance carries nothing of value.
 """
 
     HOW_TO_PLAY = """

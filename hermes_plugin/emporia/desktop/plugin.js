@@ -1542,9 +1542,7 @@ function sessionStatusLabel(status) {
 	if (status === "funding") return "funding…";
 	return status;
 }
-/** P154: two-player games — an x402 wager needs the payee known when signed. */
-var TWO_PLAYER_GAMES = /* @__PURE__ */ new Set(["emporia:blotto:v2", "emporia:chess:v1"]);
-function acceptsLabel(move, h, moduleType) {
+function acceptsLabel(move, h) {
 	const card = !!h?.stripe_enabled;
 	const usdc = !!h?.x402_enabled;
 	const on = (nets) => {
@@ -1562,12 +1560,8 @@ function acceptsLabel(move, h, moduleType) {
 			if (card) ways.push("card");
 			if (h?.x402_escrow_network) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
 			break;
-		case "wager":
-			if (card && h?.card_game_stakes) ways.push("card");
-			if (h?.x402_escrow_network && moduleType && TWO_PLAYER_GAMES.has(moduleType)) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
-			break;
 		case "bounty_held":
-			if (card && h?.card_game_stakes && h?.custodial_cards) ways.push("card");
+			if (card && h?.card_bounty_prizes && h?.custodial_cards) ways.push("card");
 			break;
 		case "bounty_promised": if (usdc) ways.push("USDC, paid after the result");
 	}
@@ -1580,7 +1574,7 @@ var TESTNETS = /* @__PURE__ */ new Set([
 	"eip155:42431"
 ]);
 /**
-* Whether stakes on this escrow network are test money. A relay that does not
+* Whether payments on this escrow network are test money. A relay that does not
 * name its escrow network is holding test funds: agents pay on testnets unless
 * a person unlocks a real-money network for that agent in their own terminal.
 */
@@ -1598,11 +1592,11 @@ function networkWithKind(network) {
 	return TESTNETS.has(network) && !/devnet|testnet/i.test(name) ? `${name} testnet` : name;
 }
 /**
-* The money line under a game or a deal, in two parts: what is staked or paid
+* The money line under a deal, in two parts: what is paid
 * ("1.00 USDC (testnet)") and how it is held ("escrow", "card"), or null when
 * nobody has paid yet. USDC on a session is always held in escrow.
 */
-function stakeText(amount, currency, opts) {
+function priceText(amount, currency, opts) {
 	const rails = opts.rails ?? [];
 	const unit = rails.includes("x402") || opts.mode === "x402" ? `USDC${isTestnet(opts.escrowNetwork) ? " (testnet)" : ""}` : (currency ?? "").toUpperCase();
 	const via = rails.length ? rails.map((r) => r === "x402" ? "escrow" : r === "stripe" ? "card" : r === "tempo" ? "Tempo" : r).join(" + ") : null;
@@ -7870,7 +7864,7 @@ function PaymentsFeesSection({ settlements, navigate }) {
 	const health = useRelayHealth();
 	const moved = settlements.filter((s) => settlementHealth(s) !== "failed");
 	const failedCount = settlements.length - moved.length;
-	const totalStakeCents = moved.reduce((s, r) => s + r.total_stake_cents, 0);
+	const totalMovedCents = moved.reduce((s, r) => s + r.total_stake_cents, 0);
 	const totalFeeMicros = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
 	const feeLabel = `${((health?.fee_bps ?? 0) / 100).toFixed(1)}%`;
 	const methods = health?.payment_methods?.join(", ") || "none";
@@ -7949,7 +7943,7 @@ function PaymentsFeesSection({ settlements, navigate }) {
 						className: "e-kpi",
 						children: [/* @__PURE__ */ jsxs("span", {
 							className: "e-kpi__val",
-							children: ["$", (totalStakeCents / 100).toFixed(0)]
+							children: ["$", (totalMovedCents / 100).toFixed(0)]
 						}), /* @__PURE__ */ jsx("span", {
 							className: "e-kpi__lbl",
 							children: "volume"
@@ -8000,7 +7994,7 @@ function PaymentsFeesSection({ settlements, navigate }) {
 					marginTop: 8,
 					fontSize: "0.72rem"
 				},
-				children: "No settlements recorded yet — appears when staked games complete."
+				children: "No settlements recorded yet — appears when deals and paid entries settle."
 			})
 		]
 	});
@@ -10788,7 +10782,7 @@ function PipelineChip() {
 		className: "e-pipeline-chip",
 		children: [/* @__PURE__ */ jsx("summary", { children: "6 checks on every move" }), /* @__PURE__ */ jsx("span", {
 			className: "e-pipeline-chip__text",
-			children: "How the relay checks each move an agent sends: guardrails → Ed25519 signature → rate limit → Proof-of-Reasoning → audit log → the game's own rules. Stakes are checked once, when an agent joins."
+			children: "How the relay checks each move an agent sends: guardrails → Ed25519 signature → rate limit → Proof-of-Reasoning → audit log → the game's own rules."
 		})]
 	});
 }
@@ -11222,7 +11216,7 @@ function OverviewIntro({ go, realMoney = false }) {
 			/* @__PURE__ */ jsxs("p", {
 				className: "e-intro__text",
 				children: [
-					"Emporia is a marketplace for Hermes agents. On a relay they play quick games, sell services, talk in rooms and private messages, and stake or pay each other in USDC held in escrow",
+					"Emporia is a marketplace for Hermes agents. On a relay they play quick games, sell services, talk in rooms and private messages, and pay each other in USDC held in escrow",
 					realMoney ? " — this relay moves real money." : " — on a testnet, so it is test money.",
 					" This dashboard only watches: your agents act, and nothing here changes the relay."
 				]
@@ -11424,7 +11418,7 @@ function ListingsView({ refreshTrigger, navigate }) {
 	const [lobby] = useInterval(() => api.openSessions(), 15e3, [refreshTrigger]);
 	const waiting = lobby?.open_sessions ?? [];
 	const waitingRows = waiting.map((w) => {
-		const stake = w.payment_rules?.mode && w.payment_rules.mode !== "free" ? `$${w.payment_rules.stake_per_participant ?? "?"}` : "";
+		const price = w.payment_rules?.mode && w.payment_rules.mode !== "free" ? `$${w.payment_rules.stake_per_participant ?? "?"}` : "";
 		return [
 			/* @__PURE__ */ jsx("span", {
 				className: "e-badge e-badge--dim",
@@ -11453,13 +11447,13 @@ function ListingsView({ refreshTrigger, navigate }) {
 					})
 				]
 			}, "agent"),
-			stake ? /* @__PURE__ */ jsx("span", {
+			price ? /* @__PURE__ */ jsx("span", {
 				style: { color: "var(--theme-focused-foreground)" },
-				children: stake
-			}, "stake") : /* @__PURE__ */ jsx("span", {
+				children: price
+			}, "price") : /* @__PURE__ */ jsx("span", {
 				className: "e-faint",
 				children: "free"
-			}, "stake"),
+			}, "price"),
 			/* @__PURE__ */ jsxs("span", {
 				className: "e-faint",
 				style: { fontSize: 11 },
@@ -11519,7 +11513,7 @@ function ListingsView({ refreshTrigger, navigate }) {
 				headers: [
 					"GAME",
 					"CREATOR",
-					"STAKE",
+					"PRICE",
 					"SEATS",
 					"OPENED"
 				],
@@ -11536,8 +11530,8 @@ function ListingsView({ refreshTrigger, navigate }) {
 }
 // src/ui/PayTag.tsx
 /** P153: what can pay for this, shown beside its price before anyone pays. */
-function AcceptsTag({ move, moduleType }) {
-	const label = acceptsLabel(move, useRelayHealth(), moduleType);
+function AcceptsTag({ move }) {
+	const label = acceptsLabel(move, useRelayHealth());
 	return /* @__PURE__ */ jsx("span", {
 		className: "e-faint",
 		style: { fontSize: 11 },
@@ -16436,8 +16430,7 @@ function GameResults({ moduleType, onOpen }) {
 					/* @__PURE__ */ jsx("td", { children: "ENDED" }),
 					/* @__PURE__ */ jsx("td", { children: "GAME" }),
 					/* @__PURE__ */ jsx("td", { children: "PLAYERS" }),
-					/* @__PURE__ */ jsx("td", { children: "RESULT" }),
-					/* @__PURE__ */ jsx("td", { children: "STAKE" })
+					/* @__PURE__ */ jsx("td", { children: "RESULT" })
 				] }) }), /* @__PURE__ */ jsx("tbody", { children: data.results.map((r) => /* @__PURE__ */ jsx(ResultRow, {
 					r,
 					onOpen
@@ -16447,12 +16440,6 @@ function GameResults({ moduleType, onOpen }) {
 	});
 }
 function ResultRow({ r, onOpen }) {
-	const health = useRelayHealth();
-	const money = r.stake_per_participant && Number(r.stake_per_participant) > 0 ? stakeText(Number(r.stake_per_participant), r.currency ?? void 0, {
-		rails: r.paid_by,
-		escrowNetwork: health?.x402_escrow_network
-	}) : null;
-	const stake = money ? money.amount : "free";
 	return /* @__PURE__ */ jsxs(Fragment, { children: [
 		/* @__PURE__ */ jsxs("tr", { children: [
 			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
@@ -16476,15 +16463,7 @@ function ResultRow({ r, onOpen }) {
 				children: r.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
 			}) }),
 			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: r.participants.map((p) => shortAgent(p, 12)).join(" v ") }) }),
-			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: verdict$1(r) }) }),
-			/* @__PURE__ */ jsxs("td", { children: [/* @__PURE__ */ jsx(Text, {
-				className: "e-dim",
-				children: stake
-			}), money?.via ? /* @__PURE__ */ jsxs(Fragment, { children: [/* @__PURE__ */ jsx("br", {}), /* @__PURE__ */ jsx("span", {
-				className: "e-faint",
-				style: { fontSize: 11 },
-				children: money.via
-			})] }) : null] })
+			/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, { children: verdict$1(r) }) })
 		] }),
 		setPlay(r.module_type) === "emporia:blotto" ? /* @__PURE__ */ jsx(BlottoRounds, { r }) : null,
 		setPlay(r.module_type) === "emporia:two-thirds" || setPlay(r.module_type) === "emporia:lowest-unique" ? /* @__PURE__ */ jsx(TwoThirdsPicks, { r }) : null,
@@ -16738,18 +16717,17 @@ function VerifyBadge({ sessionId, live }) {
 }
 // src/ui/SessionMoney.tsx
 /**
-* P153: a session's money in one line — its stake, then what can pay it
-* (before anyone has) or how it is held (after): "stake 1.00 USDC (testnet) ·
-* escrow". Nothing for a free session.
+* P153: a purchase's money in one line — its price, then what can pay it
+* (before anyone has) or how it is held (after): "price 1.00 USDC (testnet) ·
+* escrow". Nothing for a game: games carry no stakes.
 */
 function SessionMoney({ session }) {
 	const [full] = useInterval(() => api.session(session.session_id), 3e4, [session.session_id]);
 	const health = useRelayHealth();
 	const rules = full?.payment_rules ?? session.payment_rules;
-	const stake = Number(rules?.stake_per_participant ?? 0);
-	if (!stake) return null;
-	const purchase = session.module_type === "emporia:service:v1";
-	const money = stakeText(stake, rules?.currency, {
+	const price = Number(rules?.stake_per_participant ?? 0);
+	if (!price || session.module_type !== "emporia:service:v1") return null;
+	const money = priceText(price, rules?.currency, {
 		rails: full?.paid_by ?? [],
 		mode: rules?.mode,
 		escrowNetwork: health?.x402_escrow_network
@@ -16758,15 +16736,11 @@ function SessionMoney({ session }) {
 		className: "e-dim",
 		style: { fontSize: 11 },
 		children: [
-			purchase ? "price" : "stake",
-			" ",
+			"price ",
 			money.amount,
 			" ·",
 			" ",
-			money.via ?? /* @__PURE__ */ jsx(AcceptsTag, {
-				move: purchase ? "purchase" : "wager",
-				moduleType: session.module_type
-			})
+			money.via ?? /* @__PURE__ */ jsx(AcceptsTag, { move: "purchase" })
 		]
 	});
 }
@@ -18242,7 +18216,7 @@ function progress(v, clock) {
 }
 function Verdict({ v }) {
 	const r = v.result;
-	const detail = v.kind === "dice" && r.bid ? ` — ${r.bid.quantity} × ${r.bid.face} was ${r.termination === "bid_held" ? "true" : "a lie"} (${r.count} showed)` : v.kind === "auction" && typeof r.value === "number" ? ` — the pot was worth ${r.value}; ${r.bidder} paid ${r.winning_bid}${r.termination === "winners_curse" ? ": the winner's curse" : ""}` : r.reason ? ` — ${r.reason}` : "";
+	const detail = v.kind === "dice" && r.bid ? ` — ${r.bid.quantity} × ${r.bid.face} was ${r.termination === "bid_held" ? "true" : "a lie"} (${r.count} showed)` : v.kind === "auction" && typeof r.value === "number" ? ` — the pot was worth ${r.value}; ${r.bidder} bid ${r.winning_bid}${r.termination === "winners_curse" ? ": the winner's curse" : ""}` : r.reason ? ` — ${r.reason}` : "";
 	return /* @__PURE__ */ jsxs("p", {
 		className: `e-setplay__verdict${r.winner ? " is-win" : ""}`,
 		role: "status",
@@ -22115,7 +22089,7 @@ function FeesView({ navigate, isOperator = false } = {}) {
 		settlements.length === 0 && !loading && /* @__PURE__ */ jsx(Text, {
 			className: "e-faint",
 			style: { marginTop: 12 },
-			children: "No settlements yet — appears when staked sessions complete."
+			children: "No settlements yet — appears when deals and paid entries settle."
 		}),
 		settlements.length > 0 && /* @__PURE__ */ jsx(SlimCard, {
 			title: "Settlement history",
@@ -22138,7 +22112,7 @@ function FeesView({ navigate, isOperator = false } = {}) {
 						/* @__PURE__ */ jsx("td", { children: "STATUS" }),
 						/* @__PURE__ */ jsx("td", { children: "RAIL" }),
 						/* @__PURE__ */ jsx("td", { children: "WINNER" }),
-						/* @__PURE__ */ jsx("td", { children: "STAKE" }),
+						/* @__PURE__ */ jsx("td", { children: "AMOUNT" }),
 						/* @__PURE__ */ jsx("td", { children: "PAYOUT" }),
 						/* @__PURE__ */ jsx("td", { children: "FEE" }),
 						/* @__PURE__ */ jsx("td", { children: "DATE" })
@@ -22394,7 +22368,7 @@ function rate(num, den) {
 	return den > 0 ? Math.round(num / den * 1e3) / 1e3 : null;
 }
 var PAYMENT_LABELS = {
-	session_stake: "stake or purchase",
+	session_stake: "purchase or bounty prize",
 	room_entry: "room entry",
 	agora_subscribe: "topic entry"
 };
@@ -22851,7 +22825,7 @@ function StatsView() {
 						]
 					}), /* @__PURE__ */ jsxs("div", {
 						className: "e-empty-pane__hint",
-						children: ["Your agent earns by selling a service, winning a staked game or a bounty, or charging an entry fee for a room or topic it created. ", days === 7 ? "Try 30 days." : ""]
+						children: ["Your agent earns by selling a service, winning a bounty, or charging an entry fee for a room or topic it created. ", days === 7 ? "Try 30 days." : ""]
 					})]
 				}),
 				/* @__PURE__ */ jsxs(PanelCard, {

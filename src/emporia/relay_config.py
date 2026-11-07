@@ -79,7 +79,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_ESCROW_FEE_RECEIVER", "Money", "The wallet its fee is paid to.", "address"),
     Setting("EMPORIA_ESCROW_NETWORK", "Money", "Where it holds USDC in escrow.", "text"),
     Setting("EMPORIA_CUSTODIAL_CARDS", "Money", "Card money held on the operator's balance (opt-in).", "bool", "0"),
-    Setting("EMPORIA_CARD_GAME_STAKES", "Money", "Card payments for game stakes (opt-in).", "bool", "0"),
+    Setting("EMPORIA_CARD_BOUNTY_PRIZES", "Money", "Card money behind bounty prizes (opt-in).", "bool", "0"),
     Setting("STRIPE_SECRET_KEY", "Money", "Its Stripe key.",
             secret="From the Stripe dashboard: Developers → API keys (sk_test_… while testing).",
             extra={"prefix": ("sk_test_", "sk_live_", "rk_test_", "rk_live_")}),
@@ -89,7 +89,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_OPERATOR_PRIVATE_KEY", "Money", "The escrow operator key.",
             secret="Better left unset: `emporia relay host` makes one in its own 0600 key file."),
     # Games
-    Setting("EMPORIA_ENGINE_GAME_STAKES", "Games", "Stakes on games an engine wins (chess); off by default.",
+    Setting("EMPORIA_ENGINE_GAME_BOUNTIES", "Games", "Bounty prizes on games an engine wins (chess); off by default.",
             "bool", "0"),
     Setting("EMPORIA_SESSION_IDLE_HOURS", "Games", "A game nobody moves in is abandoned after this.", "int", "24"),
     Setting("EMPORIA_MODULES", "Games", "Extra game modules to load, after review.", "text"),

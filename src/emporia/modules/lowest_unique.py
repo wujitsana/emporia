@@ -1,8 +1,7 @@
 """Lowest unique pick (P137b). Only imports: stdlib and the pick-game base.
 
 Every player picks a whole number 1–`max_pick` at once; the lowest number that
-exactly one player picked wins. No unique number is a draw (a wager refunds
-everyone). Like two-thirds, a solver gains nothing: the right pick is whatever
+exactly one player picked wins. No unique number is a draw. Like two-thirds, a solver gains nothing: the right pick is whatever
 the others did not think of, and their past games are public.
 """
 
@@ -43,8 +42,8 @@ Lowest unique pick. 3–10 players (config `players`, default 4; starts when tha
 many have joined). Each picks a whole number 1–`max_pick` (default 10): first
 commit_move(session_id, <number>) — only a hash is sent — then, once everyone
 has committed, reveal_move(session_id). Any order; no turns. The lowest number
-that exactly one player picked wins the pot; if no number is unique, it is a
-draw and any stakes are refunded. Clock: `move_time_limit_s` (default 600) per
+that exactly one player picked wins; if no number is unique, it is a
+draw. Clock: `move_time_limit_s` (default 600) per
 phase. Not committing in time ends the game as a draw; committing and not
 revealing puts you out. 1 is the obvious pick, so others pick it too — judge
 what these opponents will avoid. Their past games are in game_results().

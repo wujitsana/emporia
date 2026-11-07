@@ -74,7 +74,6 @@ class SessionResult:
     artifacts: dict[str, Any] | None = None
 
 
-STAKE_WAGER = "wager"
 STAKE_PURCHASE = "purchase"
 
 
@@ -142,20 +141,14 @@ class InteractionModule(ABC):
     # winner, and so are correctly excluded without either file changing.
     DECLARES_WINNER: bool = False
 
-    # P95: who stakes, and who can be paid. The session routes used to apply
-    # one rule to every module — "creator joins free, challenger pays" — which
-    # was wrong both ways it could be: a wager's creator risked nothing, and a
-    # service session charged the *seller* (the joiner) while the buyer paid
-    # nothing at all.
+    # Who pays, and who can be paid. Games take no stakes of any kind (no money,
+    # no XP, no Nerve): only a purchase carries money between participants.
     #
-    #   STAKE_WAGER     every participant holds the stake; the winner, decided
-    #                   later, is paid. Stripe holds only: an x402 authorization
-    #                   names its payee when signed and reserves nothing.
     #   STAKE_PURCHASE  participants[0] (the buyer) pays participants[1] (the
     #                   seller). The payee is known once the seller joins, so
     #                   the hold is a destination charge to the seller's own
     #                   Stripe account and never sits on the platform balance.
-    #   None            takes no stake; a session that asks for one is refused.
+    #   None            takes no money; a session that asks for any is refused.
     STAKE_MODEL: str | None = None
 
     #: P149: payload fields holding free text that, in a private session whose
@@ -172,8 +165,8 @@ class InteractionModule(ABC):
 
     #: P135: True when an engine decides the game (chess, Go): nothing the relay
     #: sees can tell an agent's own play from an engine's, so money on it pays
-    #: whoever runs the stronger engine. Such a module takes no wager stake and
-    #: no bounty prize unless the operator opts in (EMPORIA_ENGINE_GAME_STAKES=1).
+    #: whoever runs the stronger engine. Such a module takes no bounty prize
+    #: unless the operator opts in (EMPORIA_ENGINE_GAME_BOUNTIES=1).
     ENGINE_DECIDABLE: bool = False
 
     #: P131: True when is_terminal() can end a session by the clock alone, so
@@ -224,7 +217,7 @@ class InteractionModule(ABC):
         return 2
 
     def validate_config(self, config: dict[str, Any]) -> tuple[bool, str]:
-        """Check a session's settings at creation, before anyone stakes on them
+        """Check a session's settings at creation, before anyone plays on them
         (P131). Return (valid, error_message); the default accepts anything."""
         return True, ""
 
@@ -311,17 +304,17 @@ def load_bundled_modules() -> None:
         importlib.import_module(f"emporia.modules.{m.name}")
 
 
-def engine_game_stakes_allowed() -> bool:
-    """P135: the operator's opt-in to money on ENGINE_DECIDABLE games."""
+def engine_game_bounties_allowed() -> bool:
+    """P135: the operator's opt-in to a bounty prize on an ENGINE_DECIDABLE game. Games
+    themselves take no stakes; only a funder's prize can ride on one."""
     import os
-    return os.environ.get("EMPORIA_ENGINE_GAME_STAKES", "").strip().lower() in ("1", "true", "yes")
+    return os.environ.get("EMPORIA_ENGINE_GAME_BOUNTIES", "").strip().lower() in ("1", "true", "yes")
 
 
 ENGINE_GAME_REFUSAL = (
     "{mt} is decided by engines: nothing the relay sees can tell an agent's own play "
-    "from an engine's, so money on it pays whoever runs the stronger engine. This relay "
-    "takes no stakes or prizes on it — play it free, or stake on a game an engine cannot "
-    "simply win (emporia:blotto:v2). Operators can allow it with EMPORIA_ENGINE_GAME_STAKES=1."
+    "from an engine's, so a prize on it pays whoever runs the stronger engine. "
+    "This relay takes no bounty on it (an operator can allow one with EMPORIA_ENGINE_GAME_BOUNTIES=1)."
 )
 
 
@@ -331,7 +324,7 @@ def load_operator_modules(spec: str) -> list[str]:
     classes with @register_module. Returns the module types they added.
 
     Explicit and loud on purpose: a module that declares a winner decides who
-    receives staked money, so nothing loads by being installed, and a
+    receives money, so nothing loads by being installed, and a
     configured module that fails to import stops the relay rather than
     quietly serving without it. Operator modules name their own namespace — `emporia:`
     is reserved for the bundled games.
@@ -406,8 +399,6 @@ def list_available_modules() -> list[dict[str, Any]]:
             "declares_winner": cls.DECLARES_WINNER,
             "timed": cls.TIMED,
             "engine_decidable": cls.ENGINE_DECIDABLE,
-            "stakes_allowed": cls.STAKE_MODEL is not None and (
-                not cls.ENGINE_DECIDABLE or engine_game_stakes_allowed()),
             "bundled": mod_type.split(":", 1)[0] == BUNDLED_NAMESPACE,
             **({"retired_for": cls.RETIRED_FOR} if cls.RETIRED_FOR else {}),
             "rules": cls.RULES.strip(),

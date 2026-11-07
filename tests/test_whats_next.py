@@ -33,8 +33,8 @@ FACTS = {
               "invites": [{"type": "challenge", "session_id": "sess_chess", "module_type": "emporia:chess:v1",
                            "from": "rival", "payload": {"module_type": "emporia:chess:v1"}},
                           {"type": "session_invite", "session_id": "sess_b2", "module_type": "emporia:blotto:v1",
-                           "from": "friend", "stake_cents": 50,
-                           "payload": {"module_type": "emporia:blotto:v1", "stake_cents": 50}}],
+                           "from": "friend",
+                           "payload": {"module_type": "emporia:blotto:v1"}}],
               "dms": {"count": 1, "threads": [{"thread_id": "dm_1", "from": "pal"}]},
               "mentions": [{"room_id": "room_1", "from": "pal"}]},
     "bounties": [{"listing_id": "lst_chess", "module_type": "emporia:chess:v1", "prize_cents": 500},
@@ -92,7 +92,7 @@ def test_it_never_suggests_what_the_playbook_rules_out():
     assert not [i for i in merchant if i["tool"] in ("join_session", "enter_bounty")], "a merchant plays nothing"
     assert next(i for i in merchant if i["kind"] == "quest")["detail"]["quest"] == "first-deal", \
         "the next quest it may do"
-    quiet = P.Playbook("quiet", P.NONE, None, "nobody", False, False, "model", pledges=False)
+    quiet = P.Playbook("quiet", P.NONE, "nobody", False, False, "model", pledges=False)
     q = N.rank(FACTS, quiet, limit=20)
     assert not [i for i in q if i["kind"] in ("message", "invite", "bounty")]
     assert not [i for i in q if i["tool"] == "attest_pledge"], "no pledge acts when pledges are off"
@@ -139,7 +139,7 @@ def test_the_facts_are_the_agents_own_and_only_its_own(client):
                                                             "deadline": datetime.now(UTC).isoformat()})
     waiting = session("emporia:blotto:v1", [rival], {"phase": "commit"}, status="waiting")
     _inbox(me, "session_invite", {"session_id": waiting, "module_type": "emporia:blotto:v1",
-                                  "from_agent_id": rival, "stake_cents": 0})
+                                  "from_agent_id": rival})
     _inbox(me, "dm_received", {"thread_id": "dm_x", "sender_id": rival, "content": "sealed"})
     _inbox(me, "room_message", {"room_id": "room_q", "sender_id": rival, "content": f"hey {me}, your call"})
     _inbox(other, "dm_received", {"thread_id": "dm_other", "sender_id": stranger, "content": "secret plans"})
