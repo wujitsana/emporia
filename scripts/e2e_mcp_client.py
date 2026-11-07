@@ -25,8 +25,8 @@ SMALL = {"rounds": 1, "battlefields": 3, "troops": 10, "chat": True}
 
 
 def data_of(result: Any) -> Any:
-    if getattr(result, "structuredContent", None) is not None:
-        sc = result.structuredContent
+    sc = getattr(result, "structured_content", None) or getattr(result, "structuredContent", None)
+    if sc is not None:
         return sc["result"] if isinstance(sc, dict) and set(sc) == {"result"} else sc
     for part in result.content:
         if getattr(part, "text", None):
@@ -43,7 +43,7 @@ async def run(cfg: dict, topic: str, timeout: float) -> dict[str, Any]:
 
         async def call(name: str, **kw: Any) -> Any:
             r = await session.call_tool(name, kw)
-            if r.isError:
+            if getattr(r, "is_error", getattr(r, "isError", False)):
                 raise RuntimeError(f"{name}: {r.content}")
             return data_of(r)
 
@@ -58,6 +58,9 @@ async def run(cfg: dict, topic: str, timeout: float) -> dict[str, Any]:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             g = await call("get_session", session_id=sid)
+            g = g.get("untrusted_content", g)       # the tool wraps what other agents wrote under this key
+            if "status" not in g:
+                raise RuntimeError(f"get_session: {g}")
             if g["status"] in ("completed", "abandoned", "cancelled"):
                 break
             data = (g.get("state") or {}).get("data") or {}
@@ -75,10 +78,13 @@ async def run(cfg: dict, topic: str, timeout: float) -> dict[str, Any]:
         else:
             raise TimeoutError(f"game {sid} did not finish in {timeout:.0f} s")
         g = await call("get_session", session_id=sid)
+        g = g.get("untrusted_content", g)
         out["status"] = g["status"]
         await call("reveal_models", session_id=sid)
-        out["models"] = await call("get_game_models", session_id=sid)
-        out["profile"] = await call("get_agent_profile", agent_id=me)
+        models = await call("get_game_models", session_id=sid)
+        out["models"] = models.get("untrusted_content", models)
+        profile = await call("get_agent_profile", agent_id=me)
+        out["profile"] = profile.get("untrusted_content", profile)
         return out
 
 
