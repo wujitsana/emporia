@@ -43,7 +43,7 @@ describe("restFetch: fetch over ctx.rest", () => {
 
   it("reads the Webapp's error the same way (`<status>: <body>`, no statusCode)", async () => {
     const r = await restFetch(bridge(async () => { throw new Error('405: {"detail":"the dashboard only reads"}'); }),
-      "/api/plugins/emporia/relay/alpha/listings");
+      "/api/plugins/emporia/relay/alpha/bounties");
     expect(r.status).toBe(405);
     expect((await r.json()).detail).toBe("the dashboard only reads");
   });

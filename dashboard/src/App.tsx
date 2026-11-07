@@ -31,7 +31,6 @@ import {
   OverviewView,
   ListingsView,
   RoomsView,
-  EventsView,
   AgentsView,
   AgorasView,
   FeedView,
@@ -102,13 +101,11 @@ function AppInner() {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(() => routeFromHash().sessionId);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [gameModuleType, setGameModuleType] = useState<string | null>(null);
   const [listingPeek, setListingPeek] = useState<NavOpts["listingPeek"] | null>(null);
 
   const [sessionsRefresh, setSessionsRefresh] = useState(0);
   const [listingsRefresh, setListingsRefresh] = useState(0);
-  const [eventsRefresh, setEventsRefresh] = useState(0);
   const [inboxUnread, setInboxUnread] = useState(0);
 
   const { events, seed, wsConnected } = useGlobalEvents();
@@ -154,7 +151,6 @@ function AppInner() {
         || latestEvent.type === "action_result")
         setSessionsRefresh((n) => n + 1);
       if (latestEvent.type === "listing_created") setListingsRefresh((n) => n + 1);
-      if (latestEvent.type === "event_created") setEventsRefresh((n) => n + 1);
     }
   }
 
@@ -238,7 +234,6 @@ function AppInner() {
       if (opts?.sessionId !== undefined) setSelectedSessionId(opts.sessionId);
       if (opts?.roomId !== undefined) setSelectedRoomId(opts.roomId);
       if (opts?.agentId !== undefined) setSelectedAgentId(opts.agentId);
-      if (opts?.eventId !== undefined) setSelectedEventId(opts.eventId);
       if (opts?.gameModuleType !== undefined) setGameModuleType(opts.gameModuleType || null);
       if (opts?.listingPeek !== undefined) setListingPeek(opts.listingPeek ?? null);
     },
@@ -401,9 +396,6 @@ function AppInner() {
               />
             )}
             {view === "rooms" && <RoomsView initialRoomId={selectedRoomId} navigate={navigate} />}
-            {view === "tournaments" && (
-              <EventsView refreshTrigger={eventsRefresh} initialEventId={selectedEventId} />
-            )}
             {view === "agents" && (
               <AgentsView initialAgentId={selectedAgentId} listingPeek={listingPeek} navigate={navigate} />
             )}

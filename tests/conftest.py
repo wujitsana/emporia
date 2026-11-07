@@ -647,4 +647,3 @@ def _never_write_this_machines_hermes(monkeypatch):
         if hasattr(inst, name):
             monkeypatch.setattr(inst, name, guarded(name, getattr(inst, name)))
 
-pytest_plugins = ["tests.legacy_posts"]

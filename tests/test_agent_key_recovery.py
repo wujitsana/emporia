@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from emporia import identity, key_recovery, key_rotation, wire
 from emporia import relay_server as rs
-from emporia.identity import sign_payload, verify_agora_comment
+from emporia.identity import sign_payload, signing_key_for, verify
 from emporia.relay_server import app
 
 ORIGIN = "https://kc-relay.example"
@@ -94,12 +94,14 @@ def _recovery_body(stable: str, old: str, new, recovery, since: str | None, at: 
 
 def _comment(priv, created_at: str, text: str = "hello") -> dict:
     nonce = wire.new_message_nonce()
-    return {"post_id": "p1", "parent_comment_id": None, "content": text, "nonce": nonce, "created_at": created_at,
-            "signature": sign_payload(priv, wire.signed_agora_comment_payload("p1", None, text, nonce))}
+    payload = {"type": "test:note", "content": text, "nonce": nonce}
+    return {"payload": payload, "created_at": created_at, "signature": sign_payload(priv, payload)}
 
 
 def _checks(key, created_at: str, priv) -> bool | None:
-    return verify_agora_comment(_comment(priv, created_at), key)
+    note = _comment(priv, created_at)
+    picked = signing_key_for(key, created_at)      # the key the agent had when it was made
+    return bool(picked) and verify(note["payload"], note["signature"], picked)
 
 
 # --- the log, offline -------------------------------------------------------------------------

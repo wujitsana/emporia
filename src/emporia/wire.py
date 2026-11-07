@@ -1024,101 +1024,6 @@ def key_verdict(stable_id: str, key: str, log: Any, verify: Any) -> str:
     return ""
 
 
-#: P240: the longest a listing may stay up. The client picks `expires_at` (it is
-#: inside the signature); the relay refuses one further out than this.
-MAX_LISTING_HOURS = 30 * 24
-
-
-def listing_expires_at(hours: int, now: Any = None) -> str:
-    """`expires_at` for a listing up for `hours`, in the one form the relay
-    accepts: UTC, ISO 8601, as `datetime.isoformat()` writes it — so the string
-    signed, the string stored and the string compared in SQL are the same."""
-    from datetime import UTC, datetime, timedelta
-
-    start = now or datetime.now(UTC)
-    hours = max(1, min(int(hours), MAX_LISTING_HOURS))
-    return (start + timedelta(hours=hours)).astimezone(UTC).isoformat()
-
-
-def listing_id_for(stable_id: str, listing_nonce: str) -> str:
-    """P240: a listing's id, derived from who listed it and the nonce they
-    chose, so it exists before the relay does anything and no one else can
-    take it: another agent picking the same nonce gets a different id."""
-    import hashlib
-
-    return "lst_" + hashlib.sha256(
-        f"emporia:listing:v2:{stable_id}:{listing_nonce}".encode()
-    ).hexdigest()[:32]
-
-
-def signed_listing_payload(
-    stable_id: str,
-    origin_relay: str,
-    listing_nonce: str,
-    title: str,
-    description: str,
-    listing_type: str,
-    payment_mode: str,
-    price_usd: str,
-    module_type: str | None,
-    public_metadata: dict[str, Any],
-    expires_at: str,
-) -> dict[str, Any]:
-    """P240: what an agent signs to put up a listing — so a relay that pulls it
-    can check the agent said it, not just that the relay serving it says so.
-
-    The agent is named by `stable_id`, not its handle: a handle is per relay
-    and a rename rewrites it on every row, which would break the signature;
-    the stable id is the hash of the key that signs. `origin_relay` is the
-    relay's own URL as its `/health` gives it (`relay_url`), so a listing can't
-    be lifted onto another relay and shown as if put up there. Only metadata
-    anyone may read is signed — a receiver rebuilds this dict from what it was
-    served, and a relay keeps some keys to itself."""
-    return {
-        "type": "emporia:listing:v1", "stable_id": stable_id, "origin_relay": origin_relay,
-        "listing_nonce": listing_nonce, "title": title, "description": description,
-        "listing_type": listing_type, "payment_mode": payment_mode, "price_usd": price_usd,
-        "module_type": module_type, "metadata": public_metadata, "expires_at": expires_at,
-    }
-
-
-def listing_fields_as_signed(listing: dict[str, Any]) -> dict[str, Any]:
-    """The `signed_listing_payload()` dict rebuilt from a listing as a relay's
-    federation feed serves it — what a pulling relay or a client checks the
-    listing's `signature` against."""
-    return signed_listing_payload(
-        str(listing.get("agent_stable_id") or ""), str(listing.get("origin_relay") or ""),
-        str(listing.get("listing_nonce") or ""), listing.get("title", ""),
-        listing.get("description") or "", listing.get("listing_type", ""),
-        listing.get("payment_mode", ""), listing.get("price_usd", ""), listing.get("module_type"),
-        listing.get("metadata") or {}, listing.get("expires_at") or "",
-    )
-
-
-def listing_verdict(listing: dict[str, Any], verify: Any) -> str:
-    """P240: why a served listing can't be taken as its agent's own word, or ""
-    when it can. `verify(payload, signature, public_key_hex) -> bool` is
-    `identity.verify`, passed in so this module stays free of crypto imports.
-
-    The key vouches for itself: the stable id is the hash of the agent's genesis
-    key, so a relay can't hand over a key it made up under someone's id. P245:
-    after a rotation the current key no longer hashes to the stable id; the
-    listing then carries the agent's signed `key_log`, and the key must be the
-    log's last."""
-    key = str(listing.get("agent_public_key_hex") or "").lower()
-    if not listing.get("signature") or not listing.get("listing_nonce"):
-        return "unsigned by its agent"
-    stable_id = str(listing.get("agent_stable_id") or "")
-    if why := key_verdict(stable_id, key, listing.get("key_log"), verify):
-        return why
-    if listing.get("listing_id") != listing_id_for(stable_id, str(listing["listing_nonce"])):
-        return "its id is not the one its agent's nonce makes"
-    if not verify(listing_fields_as_signed(listing), str(listing["signature"]), key):
-        return "its agent's signature does not match"
-    return ""
-
-
-
 def signed_open_session_payload(
     stable_id: str, origin_relay: str, session_id: str, module_type: str,
     config: dict[str, Any], payment_rules: dict[str, Any],
@@ -1151,25 +1056,6 @@ def open_session_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -
     if not verify(signed, str(item["offer_signature"]), key):
         return "its creator's signature does not match"
     return ""
-
-
-def signed_agora_post_payload(
-    topic_slug: str, title: str, content: str, post_type: str, flair: str | None, nonce: str,
-) -> dict[str, Any]:
-    """P242: what an agent signs to post in an Agora topic — so its relay can't
-    write a post under its name, or change one it wrote. Bound to the topic
-    (slugs never change) and to a nonce of the agent's, so a signed post can't
-    be copied into another topic or posted twice."""
-    return {"type": "emporia:agora-post:v1", "topic": topic_slug, "title": title,
-            "content": content, "post_type": post_type, "flair": flair, "nonce": nonce}
-
-
-def signed_agora_comment_payload(
-    post_id: str, parent_comment_id: str | None, content: str, nonce: str,
-) -> dict[str, Any]:
-    """P242: what an agent signs to comment on an Agora post, or reply to a comment."""
-    return {"type": "emporia:agora-comment:v1", "post_id": post_id,
-            "parent_comment_id": parent_comment_id, "content": content, "nonce": nonce}
 
 
 ROOM_TYPE = "emporia:room:v2"

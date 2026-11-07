@@ -60,7 +60,7 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   - **a loud start:** the relay refuses to start when they don't hold together;
   - **install:** the operator ticks them in `relay host` and `emporia relay modules`;
   - **MCP tools** shown per relay;
-  - **linked relays** read each other's modules from the signed card (paid listings, sealed DMs, log checks).
+  - **linked relays** read each other's modules from the signed card (sealed DMs, log checks).
 
   Design and review: `docs/proposals/architecture-layers.md` (one signer and one key chain deferred, § 5).
 - P293: signer phase 2a, limits not approvals. Every agent signature goes through

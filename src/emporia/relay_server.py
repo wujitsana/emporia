@@ -237,7 +237,6 @@ def relay_id() -> str:
 # (default mandatory — every first-party client already completes the challenge round-trip
 # unconditionally, so this only weakens a direct REST caller's requirements; not recommended).
 REQUIRE_CHALLENGE = os.getenv("EMPORIA_REQUIRE_CHALLENGE", "1").strip() == "1"
-OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "250"))
 MAX_TOTAL_SPEND_CENTS = int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0"))
 # P152: EMPORIA_MPP_TEMPO_ENABLED used to advertise "tempo" as an MPP method
 # with nothing able to settle it. Gone until Tempo settlement exists; an
@@ -798,76 +797,9 @@ _MAX_LIMIT = 200
 MAX_FEDERATION_RESPONSE_BYTES = env_int("MAX_FEDERATION_RESPONSE_BYTES", 8 * 1024 * 1024)
 
 
-# Listing metadata a relay keeps to itself: who funded a bounty (their
-# operator, the one link from an agent to a person) and the payment holding its
-# prize. Never in a listing anyone reads — here, or on a linked relay.
-_PRIVATE_LISTING_METADATA = frozenset({"funder_operator", "payment_intent_id"})
-
-
-def public_listing(row: Any) -> dict[str, Any]:
-    """A listings row as anyone may read it: parsed metadata, private keys out.
-    P245: a listing pulled from another relay carries the key log that relay
-    served with it (`key_log`); `public_listings` fills in the others'."""
-    d = dict(row)
-    meta = json.loads(d.pop("metadata_json", None) or "{}")
-    d["metadata"] = {k: v for k, v in meta.items() if k not in _PRIVATE_LISTING_METADATA}
-    kept = d.pop("agent_key_log_json", None)
-    if d.get("federated_from"):
-        d["key_log"] = json.loads(kept or "[]")
-    return d
-
-
-def public_listings(rows: list[Any]) -> list[dict[str, Any]]:
-    """`public_listing` for each row, and for this relay's own listings the key
-    log of the agent that signed them (P245), so a reader can check the key
-    against the stable id after the agent has changed key."""
-    out = [public_listing(r) for r in rows]
-    own = sorted({x["agent_stable_id"] for x in out if not x.get("federated_from") and x.get("agent_stable_id")})
-    if own:
-        with DB_LOCK, get_db() as conn:
-            logs = {sid: agent_key_log(conn, sid) for sid in own}
-        for x in out:
-            if not x.get("federated_from") and x.get("agent_stable_id"):
-                x["key_log"] = logs[x["agent_stable_id"]]
-    return out
-
-
 def _own_host() -> str:
     from emporia.addresses import host_of
     return host_of(RELAY_BASE_URL)
-
-
-def annotate_federated(listings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """P184: a listing pulled from a linked relay says where the deal happens —
-    on that relay, which holds the money, the receipts and any dispute — and
-    whether an agent here goes by the same name with a different key.
-    P187: every listing names its seller by address and fingerprint."""
-    from emporia.addresses import address, fingerprint, host_of
-    ids = sorted({x.get("agent_id", "") for x in listings})
-    if not ids:
-        return listings
-    with DB_LOCK, get_db() as conn:
-        local = {r["agent_id"]: r["public_key_hex"] for r in conn.execute(
-            f"SELECT agent_id, public_key_hex FROM authorized_agents WHERE agent_id IN ({','.join('?' * len(ids))})",
-            ids).fetchall()}
-    here_host = _own_host()
-    for x in listings:
-        if x.get("federated_from"):
-            x["agent_address"] = address(x.get("agent_id", ""), host_of(x["federated_from"]))
-            x["agent_fingerprint"] = fingerprint(x.get("agent_public_key_hex") or "")
-        elif x.get("listing_type") != "room":
-            x["agent_address"] = address(x.get("agent_id", ""), here_host)
-            x["agent_fingerprint"] = fingerprint(local.get(x.get("agent_id", "")) or "")
-    for x in (y for y in listings if y.get("federated_from")):
-        x["deal_on"] = x["federated_from"]
-        x["how_to_deal"] = (f"On {x['federated_from']}, not here: visit it — visit_relay("
-                            f"'{x['federated_from']}'), with your operator's yes — and deal there. The same "
-                            f"key is the same agent there.")
-        here = local.get(x.get("agent_id", ""))
-        if here and x.get("agent_public_key_hex") and here != x["agent_public_key_hex"]:
-            x["name_clash"] = (f"'{x['agent_id']}' here is a different agent (another key) from the seller "
-                               f"on {x['federated_from']}.")
-    return listings
 
 
 def _clamp_limit(limit: int, max_limit: int = _MAX_LIMIT) -> int:
@@ -1457,7 +1389,9 @@ async def _verify_x402_payment(
     resource_type: str,
     resource_id: str,
     request: Request | None = None,
-) -> "PaymentRef":
+    pay_to_override: str | None = None,
+    verify_only: bool = False,
+) -> "PaymentRef | None":
     """The x402 analogue of `_verify_and_confirm_payment()`'s SPT/direct-PI
     branches — verify a client-supplied x402 credential against what this
     relay actually requires for this resource, then settle it. Raises
@@ -1508,7 +1442,8 @@ async def _verify_x402_payment(
     accepted = x402_payload.get("accepted") or {}
     network = accepted.get("network")
     family = x402_network_family(network) if network else None
-    pay_to = (
+    # `pay_to_override`: the relay's fee address, for the fee leg of a split entry (fees.py)
+    pay_to = pay_to_override or (
         AGENT_REGISTRY.get_x402_pay_to(creator_id, family)
         if creator_id and family else None
     )
@@ -1556,6 +1491,9 @@ async def _verify_x402_payment(
         raise
     except Exception as e:
         raise HTTPException(402, f"x402 verification failed: {e}")
+
+    if verify_only:
+        return None     # a split entry checks both payments before it settles either
 
     # P48: everything from here to the intent's close is the money path. The
     # /verify above is free and non-mutating, so the intent is claimed after
@@ -1615,6 +1553,41 @@ async def _verify_x402_payment(
     return PaymentRef(RAIL_X402, transaction)
 
 
+async def _pay_split_x402(
+    request: Request, creator_payload: dict[str, Any], fee_payload: dict[str, Any] | None, *,
+    creator_id: str | None, creator_cents: int, fee_cents: int, currency: str, challenge_resource: str,
+    payer_id: str, resource_type: str, resource_id: str, fee_pay_to: dict[str, str], refuse,
+) -> "PaymentRef | JSONResponse":
+    """A paid entry: the creator's share and the relay's fee, two x402 payments in one action. Both are
+    checked before either settles, and the entry is granted only when both have. The relay is the payee of
+    neither's money in transit: each settles straight to its own address, so nothing is ever held."""
+    from emporia.payments import RAIL_X402, PaymentRef
+    if fee_payload is None:
+        return refuse(f"this entry is two payments: {creator_cents}¢ to its creator and the relay's fee of "
+                      f"{fee_cents}¢; the fee payment (PAYMENT-SIGNATURE-FEE) is missing")
+    network = (creator_payload.get("accepted") or {}).get("network")
+    fee_network = (fee_payload.get("accepted") or {}).get("network")
+    if not network or network != fee_network:
+        return refuse("the creator's payment and the fee payment must be on the same network")
+    fee_to = fee_pay_to.get(network)
+    if not fee_to:
+        return refuse(f"the relay takes its fee on no address for {network}")
+    fee_type = f"{resource_type}:fee"
+    common = dict(currency=currency, challenge_resource=challenge_resource, payer_id=payer_id,
+                  resource_id=resource_id, request=request)
+    legs = (
+        dict(x402_payload=creator_payload, creator_id=creator_id, amount_cents=creator_cents,
+             resource_type=resource_type, **common),
+        dict(x402_payload=fee_payload, creator_id=None, amount_cents=fee_cents, resource_type=fee_type,
+             pay_to_override=fee_to, **common),
+    )
+    for leg in legs:     # free and non-mutating: nothing moves until both are right
+        await _verify_x402_payment(verify_only=True, **leg)
+    creator_ref = await _verify_x402_payment(**legs[0])
+    fee_ref = await _verify_x402_payment(**legs[1])
+    return PaymentRef(RAIL_X402, creator_ref.reference, fee_reference=fee_ref.reference, fee_cents=fee_cents)
+
+
 async def _verify_and_confirm_payment(
     request: Request,
     *,
@@ -1634,6 +1607,7 @@ async def _verify_and_confirm_payment(
     destination_account: str | None = None,
     application_fee_cents: int | None = None,
     card_unavailable: str | None = None,
+    x402_split: bool = False,
 ) -> "PaymentRef | JSONResponse":
     """Verify a payment credential (SPT via Authorization header, or a client-supplied
     PaymentIntent id) against the expected amount/currency/capture-method/resource binding,
@@ -1690,6 +1664,22 @@ async def _verify_and_confirm_payment(
     )
     _assert_agent_budget(agent_id, amount_cents)
 
+    # A paid entry (`x402_split`) is two x402 payments in one act (fees.py): the creator's share to the
+    # creator and the relay's fee to its published fee address. No fee address, no fee: one payment.
+    from emporia import fees
+    fee_cents = fees.fee_cents(amount_cents) if x402_split else 0
+    creator_cents = amount_cents - fee_cents
+
+    def _fee_pay_to_by_network() -> dict[str, str]:
+        from emporia.payments import _x402_networks, x402_network_family
+        found = fees.addresses()
+        return {n: found[f] for n in _x402_networks() if (f := x402_network_family(n)) in found}
+
+    def _x402_fee_offer() -> dict[str, Any] | None:
+        if not fee_cents or not _x402_enabled():
+            return None
+        return build_x402_challenge(fee_cents, challenge_resource, _fee_pay_to_by_network(), currency=currency)
+
     def _x402_offer() -> dict[str, Any] | None:
         """What x402 currently offers for this exact request, or None if
         nothing can be offered (disabled, no creator, no wallet, wrong
@@ -1707,10 +1697,12 @@ async def _verify_and_confirm_payment(
         `_verify_x402_payment()`'s currency check."""
         if not creator_id or not _x402_enabled():
             return None
-        return build_x402_challenge(
-            amount_cents, challenge_resource, _x402_pay_to_by_network(creator_id),
-            currency=currency,
-        )
+        pay_to = _x402_pay_to_by_network(creator_id)
+        if fee_cents:
+            # a network the fee cannot be paid on is not offered: the fee is not optional
+            fee_networks = _fee_pay_to_by_network()
+            pay_to = {n: a for n, a in pay_to.items() if n in fee_networks}
+        return build_x402_challenge(creator_cents, challenge_resource, pay_to, currency=currency)
 
     def _tempo_offer() -> dict[str, Any] | None:
         """P156: a Tempo charge paid straight to the creator, or None."""
@@ -1746,6 +1738,12 @@ async def _verify_and_confirm_payment(
         if offer:
             content["x402"] = offer["body"]
             challenge_headers = {**challenge_headers, **offer["headers"]}
+            if x402_split:
+                # the fee, shown before any payment: who gets what, and the second payment's requirement
+                content["terms"] = fees.terms(amount_cents)
+                if fee_offer := _x402_fee_offer():
+                    content["x402_fee"] = fee_offer["body"]
+                    challenge_headers["PAYMENT-REQUIRED-FEE"] = fee_offer["headers"]["PAYMENT-REQUIRED"]
         # P1brr-2: only set on the "a PAYMENT-SIGNATURE credential was
         # submitted and declined" path below — the ordinary no-credential
         # challenge (the call site with no declined_reason) never sets it,
@@ -1790,6 +1788,16 @@ async def _verify_and_confirm_payment(
     x402_payload = extract_x402_payload(request.headers.get("PAYMENT-SIGNATURE"))
     if x402_payload is not None:
         offer = _x402_offer()
+        if offer and fee_cents:
+            return await _pay_split_x402(
+                request, x402_payload, extract_x402_payload(request.headers.get("PAYMENT-SIGNATURE-FEE")),
+                creator_id=creator_id, creator_cents=creator_cents, fee_cents=fee_cents,
+                currency=currency, challenge_resource=challenge_resource, payer_id=agent_id,
+                resource_type=resource_type, resource_id=resource_id,
+                fee_pay_to=_fee_pay_to_by_network(),
+                refuse=lambda why: _no_credential_402(f"x402 payment declined: {why}. {challenge_message}", offer,
+                                                      declined_reason="fee_payment"),
+            )
         if offer:
             return await _verify_x402_payment(
                 x402_payload, creator_id=creator_id, amount_cents=amount_cents,
@@ -2171,7 +2179,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
                 settlement.get("total_stake_cents", 0),
                 settlement.get("platform_fee_cents", 0),
                 settlement.get("winner_payout_cents", 0),
-                settlement.get("platform_fee_bps", OPERATOR_FEE_BPS),
+                settlement.get("platform_fee_bps", _fee_bps_now()),
                 json.dumps(settlement.get("payment_intent_ids", [])),
                 settlement.get("transfer_id"),
                 settlement.get("transfer_status", "pending_connect"),
@@ -2258,14 +2266,14 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("bounty_entries", "agent_id"), ("game_chat", "agent_id"),
     ("escrow_holds", "payer_agent_id"), ("escrow_holds", "receiver_agent_id"),
     ("access_removals", "removed_by"), ("actions", "agent_id"),
-    ("agent_inbox", "agent_id"), ("agora_comments", "author_id"),
+    ("agent_inbox", "agent_id"),
     ("agora_invites", "agent_id"), ("agora_invites", "invited_by"),
-    ("agora_members", "agent_id"), ("agora_posts", "author_id"),
-    ("agora_topics", "creator_id"), ("agora_votes", "voter_id"),
+    ("agora_members", "agent_id"),
+    ("agora_topics", "creator_id"),
     ("dm_messages", "sender_id"),
     ("dm_threads", "agent_a"), ("dm_threads", "agent_b"), ("dm_threads", "local_agent"),
     ("deletions", "deleted_by"),
-    ("events", "organizer_id"), ("listings", "agent_id"),
+    ("listings", "agent_id"),
     ("messages", "from_agent"), ("messages", "to_agent"),
     ("participants", "agent_id"), ("payments", "agent_id"),
     ("session_leaves", "agent_id"), ("dm_blocks", "agent_id"), ("dm_blocks", "blocked"),   # P273
@@ -2309,15 +2317,13 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
 # done with a string replace: `"alice"` is a substring of `"alice_bot"`, so a
 # textual swap would corrupt a neighbour's membership. Parsed, mapped, re-dumped.
 _RENAME_JSON_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("events", "participants_json"),
     ("rooms", "members_json"),
     ("sessions", "participants_json"),
 )
 
 # Every remaining column, declared not to hold an agent handle. Notable
 # judgements: `authorized_agents.operator_label` is an opaque operator label,
-# not a handle; `agora_votes.target_id` is a post or comment id;
-# `access_*.resource_id` is a room or topic id.
+# not a handle; `access_*.resource_id` is a room or topic id.
 _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # The protocol pass: a post's thread keys (its signed reply_to and root without author hints), whether it is a
     # copy of another relay's record, its expiration tag; a room message's signed stable id; a session's kind.
@@ -2415,21 +2421,10 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # agent_inbox
     ("agent_inbox", "inbox_id"), ("agent_inbox", "event_type"), ("agent_inbox", "payload_json"),
     ("agent_inbox", "is_read"), ("agent_inbox", "created_at"),
-    # agora_comments
-    ("agora_comments", "comment_id"), ("agora_comments", "post_id"),
-    ("agora_comments", "parent_comment_id"), ("agora_comments", "content"),
-    ("agora_comments", "vote_score"), ("agora_comments", "is_deleted"),
-    ("agora_comments", "created_at"),
     # agora_invites
     ("agora_invites", "topic_id"), ("agora_invites", "created_at"),
     # agora_members
     ("agora_members", "topic_id"), ("agora_members", "role"), ("agora_members", "joined_at"),
-    # agora_posts
-    ("agora_posts", "post_id"), ("agora_posts", "topic_id"), ("agora_posts", "title"),
-    ("agora_posts", "content"), ("agora_posts", "post_type"), ("agora_posts", "flair"),
-    ("agora_posts", "vote_score"), ("agora_posts", "comment_count"),
-    ("agora_posts", "is_pinned"), ("agora_posts", "is_locked"), ("agora_posts", "is_deleted"),
-    ("agora_posts", "created_at"),
     # agora_topics
     ("agora_topics", "topic_id"), ("agora_topics", "slug"), ("agora_topics", "name"),
     ("agora_topics", "description"), ("agora_topics", "visibility"),
@@ -2437,9 +2432,6 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("agora_topics", "created_at"), ("agora_topics", "post_count"),
     ("agora_topics", "subscriber_count"), ("agora_topics", "flair_options"),
     ("agora_topics", "access_duration_days"), ("agora_topics", "encrypted"),
-    # agora_votes
-    ("agora_votes", "target_id"), ("agora_votes", "target_type"), ("agora_votes", "value"),
-    ("agora_votes", "created_at"),
     # authorized_agents
     ("authorized_agents", "public_key_hex"), ("authorized_agents", "display_name"),
     ("authorized_agents", "registered_at"), ("authorized_agents", "is_active"),
@@ -2464,11 +2456,6 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("remote_agents", "address"), ("remote_agents", "peer_url"), ("remote_agents", "public_key_hex"),
     ("remote_agents", "encryption_public_key"), ("remote_agents", "encryption_key_signature"),
     ("remote_agents", "updated_at"), ("authorized_agents", "accepts_remote_dms"),
-    # events
-    ("events", "event_id"), ("events", "title"), ("events", "description"),
-    ("events", "module_type"), ("events", "payment_mode"), ("events", "entry_fee_usd"),
-    ("events", "status"), ("events", "bracket_json"), ("events", "created_at"),
-    ("events", "updated_at"),
     # listings
     ("listings", "listing_id"), ("listings", "title"), ("listings", "description"),
     ("listings", "listing_type"), ("listings", "payment_mode"), ("listings", "price_usd"),
@@ -2504,8 +2491,6 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # an agent_id, but the outbox is drained within minutes and a rename queues the old and new keys)
     ("translog_outbox", "seq"), ("translog_outbox", "kind"), ("translog_outbox", "ref"),
     ("translog_outbox", "backfill"),
-    ("agora_posts", "nonce"), ("agora_posts", "signature"),
-    ("agora_comments", "nonce"), ("agora_comments", "signature"),
     ("room_acts", "act_id"), ("room_acts", "room_id"), ("room_acts", "act"), ("room_acts", "at"),
     ("room_acts", "nonce"), ("room_acts", "payload_json"), ("room_acts", "signature"),
     ("topic_acts", "act_id"), ("topic_acts", "topic_id"), ("topic_acts", "act"), ("topic_acts", "at"),
@@ -3321,11 +3306,11 @@ class AgentRegistry:
         except Exception:
             return False
 
-    def check_rate_limit(self, agent_id: str) -> bool:
+    def check_rate_limit(self, agent_id: str, limit: int | None = None) -> bool:
         now = time.time()
         minute_ago = now - 60
         self.rate_limits[agent_id] = [t for t in self.rate_limits[agent_id] if t > minute_ago]
-        if len(self.rate_limits[agent_id]) >= self.max_per_minute:
+        if len(self.rate_limits[agent_id]) >= (limit or self.max_per_minute):
             return False
         self.rate_limits[agent_id].append(now)
         return True
@@ -3364,6 +3349,22 @@ class AgentRegistry:
 AGENT_REGISTRY = AgentRegistry()
 
 
+#: An operator's agents together may write this many times one agent's per-minute budget (EMPORIA_OPERATOR_RATE_MULTIPLE).
+OPERATOR_RATE_MULTIPLE = max(1.0, float(os.getenv("EMPORIA_OPERATOR_RATE_MULTIPLE", "3") or 3))
+
+
+def _operator_key(agent_id: str) -> str:
+    """The operator of `agent_id` (`operators.operator_of`), "" when it is not registered."""
+    from emporia import operators
+    try:
+        with DB_LOCK, get_db() as conn:
+            row = conn.execute("SELECT agent_id, operator_label, stable_id FROM authorized_agents WHERE agent_id = ?",
+                               (agent_id,)).fetchone()
+    except Exception:  # noqa: BLE001 — a throttle that cannot look up an operator still throttles the agent
+        return ""
+    return operators.operator_of_row(row) if row else ""
+
+
 def _enforce_agent_rate_limit(agent_id: str) -> None:
     """Per-agent write throttle (N11-4). The identity-keyed complement to the global
     IP middleware below — that middleware exempts localhost and the Docker gateway
@@ -3376,6 +3377,12 @@ def _enforce_agent_rate_limit(agent_id: str) -> None:
     if not AGENT_REGISTRY.check_rate_limit(agent_id):
         RATE_LIMIT_HITS["agent"] += 1
         raise HTTPException(429, "Rate limit exceeded — too many requests, slow down")
+    # per operator as well: an operator's agents together get a few agents' worth, not a budget each
+    operator = _operator_key(agent_id)
+    if operator and not AGENT_REGISTRY.check_rate_limit(
+            f"operator:{operator}", int(AGENT_REGISTRY.max_per_minute * OPERATOR_RATE_MULTIPLE)):
+        RATE_LIMIT_HITS["agent"] += 1
+        raise HTTPException(429, "Rate limit exceeded for your operator's agents together — slow down")
 
 
 #: Operator section: how often a caller was turned away by a rate limit since this relay
@@ -3991,7 +3998,7 @@ app.add_middleware(
     # before it ever reaches the route. PAYMENT-RESPONSE must be exposed for
     # the same reason a JS client would otherwise be unable to read it off a
     # cross-origin response at all.
-    allow_headers=["Content-Type", "Authorization", "PAYMENT-SIGNATURE",
+    allow_headers=["Content-Type", "Authorization", "PAYMENT-SIGNATURE", "PAYMENT-SIGNATURE-FEE",
                    "X-Emporia-Authorization", "PAYMENT-ESCROW"],
     # P22: X-Request-Id is set by request_context (below), registered *after*
     # this middleware so it wraps outside CORS and adds the header once CORS
@@ -4628,29 +4635,6 @@ class SendMessageRequest(BaseModel):
     signature: str | None = None
 
 
-class CreateListingRequest(BaseModel):
-    """P240: signed by the agent (`wire.signed_listing_payload`). `expires_at`
-    is the agent's, inside the signature; `listing_nonce` makes the id."""
-    title: str
-    description: str = ""
-    listing_type: str = "service"
-    payment_mode: str = "free"
-    price_usd: str = "0"
-    module_type: str | None = None
-    expires_at: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    listing_nonce: str
-    signature: str
-
-
-class CreateEventRequest(BaseModel):
-    title: str
-    description: str = ""
-    module_type: str
-    payment_mode: str = "free"
-    entry_fee_usd: str = "0"
-
-
 class CreateRoomRequest(BaseModel):
     name: str
     description: str = ""
@@ -4844,7 +4828,7 @@ async def health(request: Request):
         # whether starter limits bind new agents (levels.py).
         "season": _season_public(),
         "starter_limits": _starter_limits_on(),
-        "operator_fee_bps": OPERATOR_FEE_BPS,
+        **_fees_card(),
         "mpp_enabled": bool(payment_methods),
         "payment_methods": payment_methods,
         "stripe_enabled": stripe_enabled,
@@ -4877,6 +4861,17 @@ async def health(request: Request):
         "card_game_stakes": card_game_stakes_allowed(),
         "custodial_cards": custodial_cards_allowed(),
     }
+
+
+def _fee_bps_now() -> int:
+    from emporia import fees
+    return fees.fee_bps()
+
+
+def _fees_card() -> dict:
+    """`fee_bps`, `fee_address`: the fee on paid entries (fees.py), the same for everyone."""
+    from emporia import fees
+    return fees.card()
 
 
 def _season_public() -> dict:
@@ -4987,7 +4982,7 @@ async def relay_identity_card(request: Request):
         "relay_url": RELAY_BASE_URL, "host": _own_host(),
         "operator": _relay_operator_id() or None,
         "access": access,
-        "operator_fee_bps": OPERATOR_FEE_BPS,
+        **_fees_card(),
         # P291 (card v2): what it runs beyond the core — money and its rails, the log,
         # federation and its links, gamify and its formulas — one field, as on /health
         "relay_modules": _relay_modules(),
@@ -5025,9 +5020,7 @@ async def relay_card():
     if not row:
         raise HTTPException(404, f"Owner agent '{owner}' is not yet registered on this relay")
     capabilities = [
-        "emporia:listings:v1",
         "emporia:sessions:v1",
-        "emporia:events:v1",
         "emporia:federation:v1",
         *MODULE_REGISTRY.keys(),
     ]
@@ -6248,23 +6241,6 @@ async def _fetch_federation_batch(url: str, *, client: httpx.AsyncClient | None 
             await client.aclose()
 
 
-def _peer_owns_listing(existing: Any, peer_url: str) -> bool:
-    """May the peer at `peer_url` replace this existing listing row? (P87)
-
-    Only the peer it was pulled from. A local row (`federated_from` NULL and
-    `origin_relay` this relay) is never peer-writable. A row pulled before P87
-    has no `federated_from`, so it is adopted by a peer whose URL is the row's
-    own origin — the ordinary case, where a relay is reached at the URL it
-    reports — and by no other.
-    """
-    if existing["federated_from"]:
-        return normalize_peer_url(existing["federated_from"]) == peer_url
-    origin = existing["origin_relay"] or ""
-    if not origin or normalize_peer_url(origin) == normalize_peer_url(RELAY_BASE_URL):
-        return False
-    return normalize_peer_url(origin) == peer_url
-
-
 async def _repin_if_rotated(peer_url: str, presented: str) -> bool:
     """P191: a peer presenting a new key keeps its pin only if its history shows
     the pinned key handing over to it, each step signed by the key before."""
@@ -6516,12 +6492,6 @@ async def _pull_peer_modules(peer_url: str) -> dict[str, Any] | None:
     sync["relay_modules"] = mods
     back = (mods.get("federation") or {}).get("links") or []
     sync["links_back"] = normalize_peer_url(RELAY_BASE_URL) in {normalize_peer_url(u) for u in back}
-    if "money" not in mods:
-        with DB_LOCK, get_db() as conn:
-            gone = conn.execute("DELETE FROM listings WHERE federated_from = ? AND payment_mode != 'free'",
-                                (peer_url,)).rowcount
-        if gone:
-            sync["listings_unpayable"] = gone
     return mods
 
 
@@ -6565,18 +6535,14 @@ def _check_peer_log(peer_url: str) -> dict[str, Any] | None:
 
 
 def drop_unlinked_federated_rows() -> int:
-    """P184: listings pulled from a relay no longer linked go — unlinking a
-    relay must not leave its listings shown here forever."""
+    """P184: pointer posts pulled from a relay no longer linked go — unlinking a
+    relay must not leave its posts shown here forever."""
     linked = [normalize_peer_url(u) for u in FEDERATED_RELAYS]
     with DB_LOCK, get_db() as conn:
-        q = "DELETE FROM listings WHERE federated_from IS NOT NULL"
-        post_q = "DELETE FROM posts WHERE federated_from IS NOT NULL"      # pointers follow the link too
+        post_q = "DELETE FROM posts WHERE federated_from IS NOT NULL"
         if linked:
-            marks = ",".join("?" * len(linked))
-            q += f" AND federated_from NOT IN ({marks})"
-            post_q += f" AND federated_from NOT IN ({marks})"
-        conn.execute(post_q, linked)
-        return conn.execute(q, linked).rowcount
+            post_q += f" AND federated_from NOT IN ({','.join('?' * len(linked))})"
+        return conn.execute(post_q, linked).rowcount
 
 
 _FEDERATION_SYNC_INTERVAL_SECONDS = float(os.getenv("EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS", "300"))
@@ -7169,11 +7135,18 @@ async def _settle_access_payment(
         # bought; see _retire_x402_intent().
         _retire_x402_intent(
             payer_id=payer_id, resource_type=resource_type,
-            resource_id=resource_id, amount_cents=amount_cents,
+            resource_id=resource_id, amount_cents=amount_cents - payment_ref.fee_cents,
         )
-        platform_fee = 0
-        creator_payout = amount_cents
-        platform_fee_bps = 0
+        if payment_ref.fee_cents:
+            # a split entry (fees.py): the fee was paid straight to the relay's fee address
+            _retire_x402_intent(
+                payer_id=payer_id, resource_type=f"{resource_type}:fee",
+                resource_id=resource_id, amount_cents=payment_ref.fee_cents,
+            )
+        platform_fee = payment_ref.fee_cents
+        creator_payout = amount_cents - platform_fee
+        from emporia import fees as _fees
+        platform_fee_bps = _fees.fee_bps() if platform_fee else 0
         transfer_id = None
         # "direct": no platform-held balance ever existed to transfer out of
         # — distinct from "no_stripe_account" (Stripe, platform holds funds,
@@ -7183,12 +7156,12 @@ async def _settle_access_payment(
     elif payment_ref.destination:
         # P157: a destination charge — Stripe paid the creator, less the fee,
         # when it was captured. Nothing reached the platform but the fee.
-        platform_fee_bps = OPERATOR_FEE_BPS
+        platform_fee_bps = _fee_bps_now()
         platform_fee = _platform_fee(amount_cents)
         creator_payout = amount_cents - platform_fee
         transfer_id, transfer_status = None, "destination"
     else:
-        platform_fee_bps = OPERATOR_FEE_BPS
+        platform_fee_bps = _fee_bps_now()
         platform_fee = _platform_fee(amount_cents)
         creator_payout = amount_cents - platform_fee
         transfer_id = None
@@ -7237,7 +7210,7 @@ async def _settle_access_payment(
         "platform_fee_cents": platform_fee,
         "winner_payout_cents": creator_payout,
         "platform_fee_bps": platform_fee_bps,
-        "payment_intent_ids": [payment_ref.reference],
+        "payment_intent_ids": [payment_ref.reference] + ([payment_ref.fee_reference] if payment_ref.fee_reference else []),
         "transfer_id": transfer_id,
         "transfer_status": transfer_status,
         "payer_id": payer_id,
@@ -7324,6 +7297,10 @@ async def _finish_interrupted_access_purchase(
                 return
             dest = None
         ref = PaymentRef(ref.rail, ref.reference, dest)
+    if ref.rail == "x402":
+        from emporia import fees
+        # a split entry was paid in two: the fee went to the relay's fee address (fees.py)
+        ref = PaymentRef(ref.rail, ref.reference, fee_cents=fees.fee_cents(row["amount_cents"]))
     await _settle_access_payment(
         resource_type=resource_type,
         resource_id=resource_id,
@@ -7351,7 +7328,7 @@ async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, An
     that transfer back would leave the platform eating the creator's share —
     so the order here undoes both hops in reverse: reverse the transfer,
     *then* refund the charge. Net effect: the payer is made whole, the
-    creator's payout is reversed, and the platform's 2.5% fee is simply never
+    creator's payout is reversed, and the platform's 1% fee is simply never
     kept — no separate "give back the fee" step, since reversing 100% of the
     transfer plus refunding 100% of the charge already nets to zero for the
     platform.
@@ -7849,17 +7826,13 @@ from emporia.routes import happening as _happening_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
-from emporia.routes import events as _events_routes  # noqa: E402
 from emporia.routes import federation as _federation_routes  # noqa: E402
-from emporia.routes import listings as _listings_routes  # noqa: E402
 from emporia.routes import rooms as _room_routes  # noqa: E402
 from emporia.routes import sessions as _session_routes  # noqa: E402
 from emporia.routes import translog as _translog_routes  # noqa: E402
 from emporia.routes import models as _model_routes  # noqa: E402
 
-app.include_router(_listings_routes.router)
 app.include_router(_model_routes.router)
-app.include_router(_events_routes.router)
 app.include_router(_dm_routes.router)
 app.include_router(_federation_routes.router)
 app.include_router(_agora_routes.router)

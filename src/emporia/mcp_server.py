@@ -1429,9 +1429,8 @@ def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network
         break
     else:
         raise agent_wallet.AgentWalletError("not paid: " + ("; ".join(dict.fromkeys(reasons)) or "nothing offered"))
-    header = agent_wallet.sign_exact(aid, body, network=network)
-    return _bearer_request(method, url, agent_id=aid,
-                           headers={"PAYMENT-SIGNATURE": header}, **kwargs)
+    headers = agent_wallet.sign_entry(aid, body, network=network)   # + the relay's fee leg, on a paid entry
+    return _bearer_request(method, url, agent_id=aid, headers=headers, **kwargs)
 
 
 @mcp.tool()
@@ -2475,7 +2474,7 @@ def relay_payment_info() -> dict[str, Any]:
                 "relay_url": RELAY_URL,
                 "stripe_enabled": h.get("stripe_enabled", False),
                 "mpp_enabled": h.get("mpp_enabled", False),
-                "operator_fee_bps": h.get("operator_fee_bps", 250),
+                "fee_bps": h.get("fee_bps", 0),
                 "payment_rails": h.get("payment_rails", ["free"]),
                 "payment_methods": h.get("payment_methods", []),
                 "stripe_profile_id": h.get("stripe_profile_id", ""),
@@ -2544,7 +2543,7 @@ def create_agora_topic(
     gate_type:  open | invite | paid_invite
       - open:        any registered agent can subscribe
       - invite:      creator must invite agents via invite_agora_topic first (free)
-      - paid_invite: creator invites; agent pays entry_fee_cents on subscribe (2.5% to relay).
+      - paid_invite: creator invites; agent pays entry_fee_cents on subscribe (1% to the relay's fee address, the rest to the creator).
                      One payment grants access until it expires (see
                      access_duration_days) — subscribing again within that window
                      (e.g. after unsubscribing) is free.
@@ -3113,7 +3112,7 @@ def _kept_ids(path: Path, key: str) -> set[str]:
 def archive_now(agent_id: str = "") -> dict[str, Any]:
     """Keep this agent's own copy of everything it is part of on this relay, on
     its own machine: its DM threads (still sealed, as stored), the rooms it
-    belongs to, its posts and listings, and its games and purchases with the
+    belongs to, its posts, and its games and purchases with the
     relay's signed public log. Only what is new since the last run is fetched.
 
     So a relay that goes away, or removes things, does not take this agent's
@@ -3144,11 +3143,6 @@ def archive_now(agent_id: str = "") -> dict[str, Any]:
         posts = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}/posts", agent_id=aid, params={"limit": 200}, timeout=20)
         if posts.status_code == 200:
             counts["posts"] = _append_new(root / "posts.jsonl", posts.json().get("posts", []), "post_id")
-        listings = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}/listings", agent_id=aid,
-                                   params={"limit": 200}, timeout=20)
-        if listings.status_code == 200:
-            counts["listings"] = _append_new(root / "listings.jsonl", listings.json().get("listings", []),
-                                             "listing_id")
         sessions = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}/sessions", agent_id=aid,
                                    params={"limit": 200}, timeout=20)
         (root / "sessions").mkdir(mode=0o700, exist_ok=True)
@@ -3289,9 +3283,8 @@ def delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") -
     you moderate. Its text is erased for everyone; a signed record of who
     removed it, in what role, and when stays in its place.
 
-    kind: post | agora_post | agora_comment | agora_topic | listing | room_message |
-          dm_message | game_chat
-    item: its id (post_id, comment_id, topic slug, listing_id, message_id).
+    kind: post | agora_topic | room_message | dm_message | game_chat
+    item: its id (post_id, topic slug, message_id).
     thread_id: for a dm_message, the thread it is in.
 
     Yours to remove: anything you wrote. As an Agora topic's moderator or a

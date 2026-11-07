@@ -21,14 +21,11 @@ from emporia.identity import (
     get_public_key_hex,
     sign,
     sign_payload,
-    verify_agora_comment,
-    verify_agora_post,
     verify_dm_message,
     verify_room_acts,
     verify_room_message,
 )
 from emporia.relay_server import app
-from tests.legacy_agora import seed_comment, seed_post
 from tests.test_emporia import (
     _register_keyed,
     _rotate_keyed,
@@ -284,45 +281,34 @@ def test_posts_comments_messages_and_acts_check_against_the_key_of_their_time(cl
     for a in ("kr_old_hand", "kr_reader", "kr_pal"):
         _register_keyed(client, a)
     hand = "kr_old_hand"
-    slug = _topic(client, hand)
     room_id = client.post("/rooms", json=_signed_room(hand, {"name": "kr room", "room_type": "private",
                                                              "gate_type": "invite"}), headers=_as(hand)).json()["room_id"]
     thread = client.post("/dm/start", json={"to_agent": "kr_pal"}, headers=_as(hand)).json()["thread_id"]
 
     def say_room(text):
+        from emporia import room_post
         nonce = wire.new_message_nonce()
+        content = room_post.canonical(room_post.body("note", text))
         r = client.post(f"/rooms/{room_id}/message", headers=_as(hand), json={
-            "content": text, "nonce": nonce, "signature": sign(wire.signed_room_message_payload(room_id, text, "chat", nonce, _stable_of(hand)), hand)})
+            "content": content, "msg_type": "note", "nonce": nonce,
+            "signature": sign(wire.signed_room_message_payload(room_id, content, "note", nonce, _stable_of(hand)), hand)})
         assert r.status_code == 200, r.text
 
     def write_everything(tag):
-        post_id = seed_post(hand, slug, {"title": tag, "content": tag})      # old rows stay readable and checkable
-        seed_comment(hand, post_id, {"content": tag})
         say_room(tag)
         assert _send_dm_raw(client, thread, hand, tag).status_code == 200
-        return post_id
 
-    old_post = write_everything("before")
+    write_everything("before")
     assert client.post(f"/rooms/{room_id}/invite", json=_signed_invite(hand, room_id, {"invitee_id": "kr_pal"}),
                        headers=_as(hand)).status_code == 200
     assert client.post(f"/rooms/{room_id}/join", json={"agent_id": "kr_pal"}, headers=_as("kr_pal")).status_code == 200
-    old_key = get_public_key_hex(hand)
     new_key = _rotate_keyed(client, hand)
-    new_post = write_everything("after")
+    write_everything("after")
     assert client.post(f"/rooms/{room_id}/kick", json=_signed_kick(hand, room_id, {"target_agent_id": "kr_pal"}),
                        headers=_as(hand)).status_code == 200
 
     key = _key_for(client, hand, "kr_reader")
     assert key == new_key and len(key.windows) == 2
-
-    # Agora
-    for post_id, tag in ((old_post, "before"), (new_post, "after")):
-        post = client.get(f"/agoras/posts/{post_id}", headers=_as("kr_reader")).json()
-        assert verify_agora_post(slug, post, key) is True, tag
-        assert verify_agora_comment(post["comments"][0], key) is True, tag
-    old = client.get(f"/agoras/posts/{old_post}", headers=_as("kr_reader")).json()
-    assert verify_agora_post(slug, old, new_key) is False                  # the new key alone does not explain it
-    assert verify_agora_post(slug, old, identity.SigningKey(old_key)) is True
 
     # room messages and DMs
     msgs = client.get(f"/rooms/{room_id}/messages", headers=_as(hand)).json()
@@ -341,33 +327,7 @@ def test_posts_comments_messages_and_acts_check_against_the_key_of_their_time(cl
     assert verify_room_acts(room, new_key)["settings"] is False
 
 
-# --- listings, offers and adverts need the current key ---------------------------
-
-def _listing(client, agent_id: str, title: str) -> dict:
-    stable = _profile(client, agent_id)["stable_id"]
-    body = {"title": title, "description": "", "listing_type": "service", "payment_mode": "free", "price_usd": "0",
-            "module_type": None, "metadata": {}, "expires_at": wire.listing_expires_at(72),
-            "listing_nonce": wire.new_message_nonce()}
-    body["signature"] = sign(wire.signed_listing_payload(
-        stable, client.get("/health").json()["relay_url"], body["listing_nonce"], title, "", "service", "free", "0",
-        None, {}, body["expires_at"]), agent_id)
-    r = client.post("/listings", json=body, headers=_as(agent_id))
-    assert r.status_code == 200, r.text
-    return r.json()
-
-
-def _feed_listing(client, listing_id: str):
-    return next((x for x in client.get("/gaming/v1/federate/listings").json()["listings"]
-                 if x["listing_id"] == listing_id), None)
-
-
-
-
-
-
-
-
-# --- pins follow a log, and only a real one ---------------------------------------
+# --- pinned keys follow the agent's own log ---------------------------------------------------
 
 def _pin(name: str) -> tuple[str, str]:
     return f"{name}@kr.example", "https://kr.example"

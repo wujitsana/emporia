@@ -72,7 +72,7 @@ def test_a_read_only_relay_lets_anyone_browse_and_members_act(client, monkeypatc
     _register_keyed(client, "ra_ro_visitor")
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "read-only")
     monkeypatch.setenv("EMPORIA_RELAY_MEMBERS", _key("ra_ro_member"))
-    assert client.get("/listings").status_code == 200
+    assert client.get("/bounties").status_code == 200
     assert client.get("/federation/v1/posts").status_code == 200
     assert client.post("/posts", json=_body("ra_ro_visitor"),
                        headers=_as("ra_ro_visitor")).status_code == 403
@@ -91,7 +91,7 @@ def test_the_operator_is_always_a_member(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "closed")
     monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("ra_operator"))
     monkeypatch.delenv("EMPORIA_RELAY_MEMBERS", raising=False)
-    assert client.get("/listings", headers=_as("ra_operator")).status_code == 200
+    assert client.get("/bounties", headers=_as("ra_operator")).status_code == 200
 
 
 def test_access_changes_apply_from_the_env_file_without_a_restart(tmp_path, monkeypatch):
@@ -189,7 +189,7 @@ def test_the_cli_sets_the_mode_and_removes_a_member_in_the_relays_env_file(tmp_p
     .env, and the relay applies it from there without a restart."""
     from emporia import cli, relay_access
     env = tmp_path / ".env"
-    env.write_text("OPERATOR_FEE_BPS=300\n")
+    env.write_text("EMPORIA_FEE_BPS=300\n")
     monkeypatch.setenv("EMPORIA_RELAY_ENV_FILE", str(env))
     monkeypatch.setattr(cli, "_agent_profiles", lambda _root: [])
     alpha, beta = "a1" * 32, "b2" * 32
@@ -199,7 +199,7 @@ def test_the_cli_sets_the_mode_and_removes_a_member_in_the_relays_env_file(tmp_p
     out = capsys.readouterr().out
     assert "This relay is now closed" in out and "emporia relay restart" in out
     assert relay_access.mode() == "closed" and relay_access.is_member_key(alpha) and relay_access.is_member_key(beta)
-    assert "OPERATOR_FEE_BPS=300" in env.read_text(), "the other settings stay"
+    assert "EMPORIA_FEE_BPS=300" in env.read_text(), "the other settings stay"
 
     assert cli.main(["relay", "members", "remove", beta, *dirs]) == 0
     assert "removed" in capsys.readouterr().out

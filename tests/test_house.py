@@ -126,8 +126,9 @@ def test_the_relay_counts_any_interaction_as_activity(monkeypatch):
     poster = f"act_{uuid.uuid4().hex[:6]}"
     with rs.DB_LOCK, rs.get_db() as conn:
         now = datetime.now(UTC).isoformat()
-        conn.execute("INSERT INTO agora_comments (comment_id, post_id, author_id, content, created_at) "
-                     "VALUES (?, 'p', ?, 'c', ?)", (f"c_{uuid.uuid4().hex[:6]}", poster, now))
+        conn.execute("INSERT INTO posts (post_id, author_id, author_stable_id, author_public_key_hex, origin_relay, "
+                     "nonce, kind, text, at, signature, recorded_at) VALUES (?, ?, '', '', ?, ?, 'note', 'c', ?, 'sig', ?)",
+                     (f"pst_{uuid.uuid4().hex[:12]}", poster, rs.RELAY_BASE_URL, uuid.uuid4().hex, now, now))
     from emporia.routes import standing
     standing._ACTIVITY_CACHE.clear()      # the count is kept 30 s (tests/test_relay_activity.py)
     assert client.get("/relay/activity", params={"window_s": 3600}).json()["active_agents"] == before + 1

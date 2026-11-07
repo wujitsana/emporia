@@ -70,7 +70,7 @@ def test_each_stake_is_held_for_the_opponent_and_the_loser_pays_the_winner(clien
     offer, r = _stake(client, sid, a, ka)
     assert r.status_code == 200, r.text
     assert offer["payment_info"]["receiver"].lower() == kb.address.lower(), "a's stake pays b if a loses"
-    assert int(offer["payment_info"]["min_fee_bps"]) == 500, "2× on one stake = 2.5% of the pot"
+    assert int(offer["payment_info"]["min_fee_bps"]) == 200, "2× on one stake = 1% of the pot"
     assert rs.load_session(sid)["status"] == "awaiting_funding", "waits for the second stake"
     again = client.post(f"/sessions/{sid}/fund", headers=_hdr(a))
     assert again.status_code == 409 and "already staked" in again.text, "staked once"
@@ -86,9 +86,9 @@ def test_each_stake_is_held_for_the_opponent_and_the_loser_pays_the_winner(clien
     assert voided.payer.lower() == ka.address.lower(), "a's own hold, back to a"
     [row] = _sql("SELECT * FROM settlements WHERE session_id = ?", sid)
     assert (row["rail"], row["winner_id"], row["transfer_status"]) == ("x402", a, "escrow_captured")
-    assert (row["total_stake_cents"], row["platform_fee_cents"], row["winner_payout_cents"]) == (1000, 25, 975)
-    assert (row["platform_fee_atomic"], row["winner_payout_atomic"]) == ("250000", "9750000"), \
-        "the winner receives the pot less 2.5%: 4.75 captured + 5.00 returned"
+    assert (row["total_stake_cents"], row["platform_fee_cents"], row["winner_payout_cents"]) == (1000, 10, 990)
+    assert (row["platform_fee_atomic"], row["winner_payout_atomic"]) == ("100000", "9900000"), \
+        "the winner receives the pot less 1%: 4.90 captured + 5.00 returned"
 
 
 def test_a_draw_returns_both_stakes(client, chain):

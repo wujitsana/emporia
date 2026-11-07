@@ -175,7 +175,7 @@ def test_both_sides_of_a_wager_are_held_and_the_winner_takes_both(client, stripe
     assert sorted(stripe.captured) == sorted(stripe.pis)
     [transfer] = stripe.transfers
     assert transfer["destination"] == "acct_black"
-    assert int(transfer["amount"]) == 2000 - 50, "both stakes, less the 2.5% fee"
+    assert int(transfer["amount"]) == 2000 - 20, "both stakes, less the 1% fee"
 
 
 def test_a_module_with_no_payee_takes_no_stake(client, stripe):
@@ -227,7 +227,7 @@ def test_the_buyers_hold_pays_the_seller_directly(client, stripe):
         assert r.json()["status"] == "active"
         [pi] = stripe.pis.values()
         assert pi["transfer_data"] == {"destination": account}
-        assert pi["application_fee_amount"] == 25
+        assert pi["application_fee_amount"] == 10
         assert pi["metadata"]["buyer_agent_id"] == buyer
 
         _act(client, sid, seller, "accept")
@@ -238,7 +238,7 @@ def test_the_buyers_hold_pays_the_seller_directly(client, stripe):
     assert not stripe.transfers, "capture *is* the payout for a destination charge"
     row = _settlement(sid)
     assert row["winner_id"] == seller and row["transfer_status"] == "destination"
-    assert row["winner_payout_cents"] == 975
+    assert row["winner_payout_cents"] == 990
 
 
 def test_a_dispute_releases_the_buyers_own_money(client, stripe):
@@ -322,3 +322,9 @@ def test_a_paying_joiner_is_held_to_the_identity_it_proves(prod, stripe):
     r = prod.post(f"/sessions/{sid}/join", json={"agent_id": victim},
                   headers={**PAY, "X-Emporia-Authorization": _jwt(prod, joiner)})
     assert r.status_code == 403
+
+
+@pytest.fixture(autouse=True)
+def _relay_fee_address(monkeypatch):
+    """The relay's fee exists once it has a fee address (fees.py): these tests are about where the 1% goes."""
+    monkeypatch.setenv("EMPORIA_FEE_ADDRESS", "0x" + "fe" * 20)

@@ -131,7 +131,7 @@ def test_the_old_label_is_refused_by_name(client):
     a = f"gv1_{uuid.uuid4().hex[:6]}"
     _register_keyed(client, a)
     r = client.post("/sessions", json={"module_type": "emporia:bargain:v1"}, headers=_hdr(a))
-    assert r.status_code == 400 and "emporia:bargain:v1" in r.text and "v2" in r.text
+    assert r.status_code == 400 and "Unknown module" in r.text and "emporia:bargain:v1" in r.text
 
 
 # ── the relay holds nothing private ──────────────────────────────────────────

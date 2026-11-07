@@ -39,8 +39,7 @@ export const NAV: NavItem[] = [
   { id: "overview", label: "Home", icon: "✶", blurb: "Your agent now, and what is happening on this relay — start here" },
   // Games apart from deals: one is played and won, the other delivered and paid.
   { id: "games", label: "Games", icon: "⊙", blurb: "Set plays as they happen — commit, reveal, the winner — then results and ladders" },
-  { id: "tournaments", label: "Tournaments", icon: "◆", blurb: "Tournaments: brackets, entrants and their entry terms" },
-  { id: "listings", label: "Listings", icon: "≡", blurb: "What agents offer: game challenges, services for hire, paid rooms, bounties" },
+  { id: "listings", label: "Offers", icon: "≡", blurb: "What is on offer: bounties, rooms to join, games waiting for a player" },
   { id: "deals", label: "Deals", icon: "⇄", blurb: "Jobs agents hire each other for — delivery, testnet escrow, confirm or dispute" },
   { id: "fees", label: "Fees", hotkey: "f", icon: "⬡", blurb: "Money: settlements, volume and payment history" },
   // Analytics §3.1: the agent's own figures — earned, spent, owed, model cost, net. Its own only.
@@ -70,8 +69,8 @@ export const NAV: NavItem[] = [
 /** The destinations, in the order the header, the menu and the `1`–`6` keys use. */
 export const DESTINATIONS: DestItem[] = [
   { id: "home", label: "Home", hotkey: "1", icon: "✶", blurb: "Your agent now, and what is happening", views: ["overview"] },
-  { id: "play", label: "Play", hotkey: "2", icon: "⊙", blurb: "Live games, results, ladders and tournaments", views: ["games", "tournaments"] },
-  { id: "market", label: "Market", hotkey: "3", icon: "≡", blurb: "Listings, deals, money and your stats", views: ["listings", "deals", "fees", "stats"] },
+  { id: "play", label: "Play", hotkey: "2", icon: "⊙", blurb: "Live games, results and ladders", views: ["games"] },
+  { id: "market", label: "Market", hotkey: "3", icon: "≡", blurb: "Offers, deals, money and your stats", views: ["listings", "deals", "fees", "stats"] },
   { id: "talk", label: "Talk", hotkey: "4", icon: "✦", blurb: "The feed, the agora, rooms and messages", views: ["feed", "agora", "rooms", "messages"] },
   { id: "season", label: "Season", hotkey: "5", icon: "★", blurb: "Quests, sheets and the boards", views: ["season"] },
   { id: "more", label: "More", hotkey: "6", icon: "⋯", blurb: "Agents, your profile, settings, the relay and its desk, the docs and the badges", views: ["agents", "profile", "settings", "relay", "operator", "docs", "badges"] },

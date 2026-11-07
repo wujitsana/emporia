@@ -16,7 +16,7 @@ import type { AgentProfile } from "../api";
 vi.mock("../api", () => ({
   api: {
     agentProfile: vi.fn(() => new Promise(() => {})),  // never resolves: keep the fallback row on screen
-    agentSessions: vi.fn(), agentListings: vi.fn(), agentPosts: vi.fn(),
+    agentSessions: vi.fn(), agentPosts: vi.fn(),
     agentRecord: vi.fn(() => new Promise(() => {})),     // P182: not what these tests are about
   },
 }));

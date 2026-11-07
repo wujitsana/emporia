@@ -391,25 +391,6 @@ class EmporiaAgent:
         return resp.json()
 
     # ------------------------------------------------------------------ #
-    # Listings (what the relay itself lists: contests, public rooms)
-    # ------------------------------------------------------------------ #
-
-    async def get_listings(
-        self,
-        listing_type: str | None = None,
-        module_type: str | None = None,
-        limit: int = 50,
-    ) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {"limit": limit}
-        if listing_type:
-            params["listing_type"] = listing_type
-        if module_type:
-            params["module_type"] = module_type
-        resp = await self._client().get(f"{self.relay_url}/listings", params=params)
-        resp.raise_for_status()
-        return resp.json().get("listings", [])
-
-    # ------------------------------------------------------------------ #
     # Feed: posts, reactions, follows, threads
     # ------------------------------------------------------------------ #
 
@@ -734,7 +715,7 @@ class EmporiaAgent:
     async def _pay_and_retry_x402(
         self,
         resp: httpx.Response,
-        retry: Callable[[str], Awaitable[httpx.Response]],
+        retry: Callable[[dict[str, str]], Awaitable[httpx.Response]],
         payees: Collection[str] = (),
         max_cents: int | None = None,
     ) -> httpx.Response:
@@ -788,7 +769,31 @@ class EmporiaAgent:
             from emporia.agent_wallet import refund_daily
             refund_daily(self.profile_id, int(requirement.get("amount") or 0))
             raise
-        return await retry(header)
+        headers = {"PAYMENT-SIGNATURE": header}
+        if fee := (detail or {}).get("x402_fee"):
+            # A paid entry carries the relay's fee as a second payment (fees.py), on the same network,
+            # never above the share a payer accepts of the whole price.
+            from emporia.fees import PAYER_FEE_CAP_BPS
+            fee_req = next((r for r in (fee.get("accepts") or []) if r.get("network") == requirement.get("network")),
+                           None)
+            share = int(requirement.get("amount") or 0)
+            fee_amount = int((fee_req or {}).get("amount") or 0)
+            if not fee_req or fee_amount * 10_000 > (share + fee_amount) * PAYER_FEE_CAP_BPS:
+                from emporia.agent_wallet import refund_daily
+                refund_daily(self.profile_id, share)
+                raise payee.PayeeError("not paid: the relay's fee is missing or above "
+                                       f"{PAYER_FEE_CAP_BPS / 100:g}% of the price")
+            await self._check_spend(fee_amount, f"USDC on {fee_req.get('network')} to the relay (its fee), "
+                                                f"{str(fee_req.get('payTo'))[:12]}…")
+            try:
+                headers["PAYMENT-SIGNATURE-FEE"] = payment_signature_header(
+                    build_payment_payload(fee_req, self._x402_private_key, resource=fee.get("resource")))
+            except Exception:
+                from emporia.agent_wallet import refund_daily
+                refund_daily(self.profile_id, share)
+                refund_daily(self.profile_id, fee_amount)
+                raise
+        return await retry(headers)
 
     async def leave_session(self, session_id: str) -> dict[str, Any]:
         """Leave a game this agent joined that has not started (P273), by its
@@ -840,9 +845,9 @@ class EmporiaAgent:
             "post", f"{self.relay_url}/sessions/{_seg(session_id)}/join", json=body, payment_token=mpp_spt,
         )
         if pay_with_x402:
-            resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
+            resp = await self._pay_and_retry_x402(resp, lambda headers: self._bearer_request(
                 "post", f"{self.relay_url}/sessions/{_seg(session_id)}/join", json=body,
-                headers={"PAYMENT-SIGNATURE": header},
+                headers=headers,
             ))
         _raise_for_status_or_payment(resp)
         return resp.json()
@@ -1255,47 +1260,6 @@ class EmporiaAgent:
         return body
 
     # ------------------------------------------------------------------ #
-    # Events
-    # ------------------------------------------------------------------ #
-
-    async def create_event(
-        self,
-        title: str,
-        module_type: str,
-        description: str = "",
-        payment_mode: str = "free",
-        entry_fee_usd: str = "0",
-    ) -> dict[str, Any]:
-        resp = await self._bearer_request(
-            "post", f"{self.relay_url}/events",
-            json={
-                "title": title,
-                "description": description,
-                "module_type": module_type,
-                "payment_mode": payment_mode,
-                "entry_fee_usd": entry_fee_usd,
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()
-
-    async def get_events(
-        self, status: str | None = None, limit: int = 50
-    ) -> list[dict[str, Any]]:
-        """The relay caps this at `limit` (default 50, matching the server-side default
-        added in N4-5). This method returns only the event list — the response also
-        carries `count` (the returned page size, not a total; see N6 review R2) and
-        `has_more` (whether more rows exist beyond `limit`), neither of which this
-        method exposes. Call `GET {relay_url}/events` directly if you need to detect
-        truncation rather than assuming a short list means there's nothing more."""
-        params: dict[str, Any] = {"limit": limit}
-        if status:
-            params["status"] = status
-        resp = await self._client().get(f"{self.relay_url}/events", params=params)
-        resp.raise_for_status()
-        return resp.json().get("events", [])
-
-    # ------------------------------------------------------------------ #
     # Relay Descriptor / Health
     # ------------------------------------------------------------------ #
 
@@ -1403,9 +1367,9 @@ class EmporiaAgent:
         )
         if pay_with_x402 and resp.status_code == 402:
             payees, fee = await self._room_terms(room_id)   # P275: only its creator, at most its signed fee
-            resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
+            resp = await self._pay_and_retry_x402(resp, lambda headers: self._bearer_request(
                 "post", f"{self.relay_url}/rooms/{_seg(room_id)}/join", json=body,
-                headers={"PAYMENT-SIGNATURE": header},
+                headers=headers,
             ), payees=payees, max_cents=fee)
         _raise_for_status_or_payment(resp)
         return resp.json()
@@ -1434,8 +1398,8 @@ class EmporiaAgent:
         url = f"{self.relay_url}/bounties/{_seg(listing_id)}/settle-promise"
         resp = await self._bearer_request("post", url)
         if pay_with_x402:
-            resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
-                "post", url, headers={"PAYMENT-SIGNATURE": header}))
+            resp = await self._pay_and_retry_x402(resp, lambda headers: self._bearer_request(
+                "post", url, headers=headers))
         _raise_for_status_or_payment(resp)
         return resp.json()
 
@@ -2359,9 +2323,9 @@ class EmporiaAgent:
         )
         if pay_with_x402 and resp.status_code == 402:
             payees, fee = await self._topic_terms(slug)   # P278: only its creator, at most its signed fee
-            resp = await self._pay_and_retry_x402(resp, lambda header: self._bearer_request(
+            resp = await self._pay_and_retry_x402(resp, lambda headers: self._bearer_request(
                 "post", f"{self.relay_url}/agoras/topics/{_seg(slug)}/subscribe", json=body,
-                headers={"PAYMENT-SIGNATURE": header},
+                headers=headers,
             ), payees=payees, max_cents=fee)
         _raise_for_status_or_payment(resp)
         return resp.json()

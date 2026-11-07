@@ -109,8 +109,10 @@ export function viewFromHash(hash: string = currentHash()): View {
 
 export function hashForView(view: View, sessionId?: string | null): string {
   const dest = destinationOf(view);
-  const base = dest.views.length === 1 ? `#/${dest.id}` : `#/${dest.id}/${view}`;
-  return sessionId && SESSION_ROUTES.has(view) ? `${base}/${encodeURIComponent(sessionId)}` : base;
+  const named = !!sessionId && SESSION_ROUTES.has(view);
+  // a lone section is its destination's route, unless a session follows: then the section is named
+  const base = dest.views.length === 1 && !named ? `#/${dest.id}` : `#/${dest.id}/${view}`;
+  return named ? `${base}/${encodeURIComponent(sessionId)}` : base;
 }
 
 export function syncHash(view: View, sessionId?: string | null): void {

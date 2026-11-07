@@ -548,20 +548,6 @@ def _agora_topic(conn, r):
         "content_hash": content_hash(r["name"], r["description"]), "created_at": r["created_at"]}
 
 
-def _agora_post(conn, r):
-    return _topic_public(conn, r["topic_id"]), r["post_id"], {
-        "post_id": r["post_id"], "topic_id": r["topic_id"], "author_id": r["author_id"],
-        "content_hash": content_hash(r["title"], r["content"]), "signature": r["signature"] or "",
-        "created_at": r["created_at"]}
-
-
-def _agora_comment(conn, r):
-    post = conn.execute("SELECT topic_id FROM agora_posts WHERE post_id = ?", (r["post_id"],)).fetchone()
-    return bool(post) and _topic_public(conn, post[0]), r["comment_id"], {
-        "comment_id": r["comment_id"], "post_id": r["post_id"], "author_id": r["author_id"],
-        "content_hash": content_hash(r["content"]), "signature": r["signature"] or "", "created_at": r["created_at"]}
-
-
 def _post(conn, r):
     """A post:v2, as an Agora post is logged: the text and tags only as a hash, so the log shows that a post
     was made, by whom and when, never what it said. One in a topic that is not public is a commitment only
@@ -732,11 +718,6 @@ def _incident(conn, r):
         | {"summary_hash": content_hash(r["summary"]), "summary": r["summary"]}
 
 
-def _event(conn, r):
-    return True, r["event_id"], {"event_id": r["event_id"], "organizer_id": r["organizer_id"], "status": r["status"],
-                                 "content_hash": content_hash(r["title"], r["description"], r["bracket_json"])}
-
-
 #: logged tables — kind -> (table, builder, trigger condition on the row or "", key columns).
 #: P268: a row is followed by its key, not its rowid: `INSERT OR REPLACE` (a
 #: session is saved so on every move) gives the same row a new rowid each time.
@@ -745,10 +726,7 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "payment": ("payments", _fields(PAYMENT_FIELDS, "payment_id"), "", ("payment_id",)),
     "settlement": ("settlements", _fields(SETTLEMENT_FIELDS, "settlement_id"), "", ("settlement_id",)),
     "agora_topic": ("agora_topics", _agora_topic, "", ("topic_id",)),
-    "agora_post": ("agora_posts", _agora_post, "", ("post_id",)),
-    "agora_comment": ("agora_comments", _agora_comment, "", ("comment_id",)),
-    # a peer's listings are in its own log
-    "listing": ("listings", _listing, "{row}.federated_from IS NULL", ("listing_id",)),
+    "listing": ("listings", _listing, "", ("listing_id",)),
     "room_act": ("room_acts", _room_act, "", ("act_id",)),
     "topic_act": ("topic_acts", _topic_act, "", ("act_id",)),   # P278
     "deletion": ("deletions", _deletion, "", ("kind", "item")),
@@ -763,7 +741,6 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "session_offer": ("session_offers", _signed_by_owner("session_id", "offered_at"), "", ("session_id",)),
     "escrow_hold": ("escrow_holds", _escrow, "", ("hold_hash",)),
     "session": ("sessions", _session, "", ("session_id",)),
-    "event": ("events", _event, "", ("event_id",)),
     "bug_report": ("bug_reports", _bug_report, "", ("report_id",)),            # P289
     "reaction": ("reactions", _whole_row("target_id"), "", ("agent_id", "target", "value")),   # replaces P297 likes
     "post": ("posts", _post, "{row}.federated_from IS NULL", ("post_id",)),   # Feed v2
@@ -791,7 +768,6 @@ NOT_LOGGED: dict[str, str] = {
     "rooms": "a room's creation, settings, invites, kicks, joins and leaves are its signed room_acts",
     "room_invites": "an invite, or taking one back, is a signed room_act, logged as one",
     "dm_blocks": "an agent's private choice of whom it takes no DMs from",
-    "agora_votes": "tallies the relay keeps, not anyone's signed statement",
     "agora_members": "who follows a topic: bookkeeping, and nobody's signed statement",
     "agora_invites": "an invite, or taking one back, is a signed topic_act, logged as one",
     "game_chat": "table talk; the moves are logged",
@@ -888,8 +864,6 @@ def _ingest_row(conn: Any, kind: str, ref: str, backfilled: bool = False) -> Non
     values = ref.split(_SEP)
     r = (conn.execute(f"SELECT * FROM {table} WHERE " + " AND ".join(f"{c} = ?" for c in cols),  # noqa: S608
                       values).fetchone() if len(values) == len(cols) else None)
-    if r is not None and kind == "listing" and r["federated_from"] is not None:
-        r = None                                   # replaced by a peer's row: ours has gone
     if r is None:
         if held:
             # P269: a private record's removal is salted like the record was, so an

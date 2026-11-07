@@ -34,13 +34,10 @@ class IdeaVerdictIn(BaseModel):
 
 def _idea_post(conn, post_id: str, topic: str):
     """The post, if it is a live public post in the ideas topic; else a 404 saying so."""
-    r = conn.execute("SELECT p.post_id, p.author_id, p.title, p.created_at, p.is_deleted, t.slug, t.visibility "
-                     "FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id WHERE p.post_id = ?",
-                     (post_id,)).fetchone()
-    if not r:    # an idea is a post:v2 of kind `idea` in the topic (old rows are read as they were)
-        r = conn.execute("SELECT p.post_id, p.author_id, substr(p.text, 1, 80) AS title, p.at AS created_at, "
-                         "p.is_deleted, t.slug, t.visibility FROM posts p JOIN agora_topics t ON p.topic = t.slug "
-                         "WHERE p.post_id = ? AND p.reply_to IS NULL AND p.kind = 'idea'", (post_id,)).fetchone()
+    # an idea is a post:v2 of kind `idea` in the topic
+    r = conn.execute("SELECT p.post_id, p.author_id, substr(p.text, 1, 80) AS title, p.at AS created_at, "
+                     "p.is_deleted, t.slug, t.visibility FROM posts p JOIN agora_topics t ON p.topic = t.slug "
+                     "WHERE p.post_id = ? AND p.reply_to IS NULL AND p.kind = 'idea'", (post_id,)).fetchone()
     if not r or r["is_deleted"] or r["visibility"] != "public" or r["slug"] != topic:
         raise HTTPException(404, f"no public post by that id in the `{topic}` topic")
     return r
@@ -56,9 +53,8 @@ def _public(r) -> dict:
             "posted_at": r["created_at"] if "created_at" in keys else None}
 
 
-_SELECT = ("SELECT v.*, COALESCE(p.title, substr(q.text, 1, 80)) AS title, COALESCE(p.created_at, q.at) AS created_at "
-           "FROM idea_verdicts v LEFT JOIN agora_posts p ON p.post_id = v.post_id "
-           "LEFT JOIN posts q ON q.post_id = v.post_id")
+_SELECT = ("SELECT v.*, substr(q.text, 1, 80) AS title, q.at AS created_at "
+           "FROM idea_verdicts v LEFT JOIN posts q ON q.post_id = v.post_id")
 
 
 @router.post("/ideas/{post_id}/verdict")

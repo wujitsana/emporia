@@ -945,7 +945,9 @@ def _run(request: Request, fn):
 @app.post("/v1/x402")
 async def sign_x402(request: Request) -> dict:
     body = await request.json()
-    return {"header": _run(request, lambda aid: agent_wallet.sign_exact(aid, body["body"], body.get("network", "")))}
+    return {"header": _run(request, lambda aid: agent_wallet.sign_exact(
+        aid, body["body"], body.get("network", ""), fee_leg=bool(body.get("fee_leg")),
+        creator_amount=int(body.get("creator_amount") or 0)))}
 
 
 @app.post("/v1/tempo")

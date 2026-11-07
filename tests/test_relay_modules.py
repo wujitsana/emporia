@@ -194,18 +194,6 @@ def peer(monkeypatch):
     rs._FEDERATION_LAST_SYNC.pop(PEER, None)
 
 
-def _federated_listing(listing_id, mode):
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT OR REPLACE INTO listings (listing_id, title, agent_id, payment_mode, price_usd, "
-                     "origin_relay, created_at, federated_from) VALUES (?,?,?,?,?,?,?,?)",
-                     (listing_id, "t", "seller", mode, "5" if mode != "free" else "0", PEER, "2026-11-04", PEER))
-
-
-def _listing_ids():
-    with rs.DB_LOCK, rs.get_db() as conn:
-        return {r[0] for r in conn.execute("SELECT listing_id FROM listings WHERE federated_from = ?", (PEER,))}
-
-
 def test_unknown_until_its_signed_card_says(peer):
     import anyio
     assert rs.peer_runs(PEER, "money") is None
@@ -217,20 +205,6 @@ def test_unknown_until_its_signed_card_says(peer):
     peer["card"] = _peer_card({"log": {"v": 1, "parts": []}})
     assert anyio.run(rs._pull_peer_modules, PEER) == {"log": {"v": 1, "parts": []}}
     assert rs.peer_runs(PEER, "log") is True and rs.peer_runs(PEER, "money") is False
-
-
-def test_paid_listings_from_a_relay_that_takes_no_payments_go(peer):
-    import anyio
-    _federated_listing("p291-free", "free")
-    _federated_listing("p291-paid", "x402")
-    peer["card"] = _peer_card({"log": {"v": 1, "parts": []}})
-    anyio.run(rs._pull_peer_modules, PEER)
-    assert _listing_ids() >= {"p291-free"} and "p291-paid" not in _listing_ids()
-    assert rs._FEDERATION_LAST_SYNC[PEER]["listings_unpayable"] == 1
-    _federated_listing("p291-paid", "x402")
-    peer["card"] = _peer_card({"money": {"v": 1, "parts": ["x402"]}})
-    anyio.run(rs._pull_peer_modules, PEER)
-    assert "p291-paid" in _listing_ids()
 
 
 def test_whether_it_links_back_is_recorded(peer, monkeypatch):

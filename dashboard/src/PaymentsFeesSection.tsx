@@ -19,7 +19,7 @@ export function PaymentsFeesSection({ settlements, navigate }: { settlements: Se
   const failedCount = settlements.length - moved.length;
   const totalStakeCents = moved.reduce((s, r) => s + r.total_stake_cents, 0);
   const totalFeeMicros = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
-  const feeBps = health?.operator_fee_bps ?? 250;
+  const feeBps = health?.fee_bps ?? 0;
   const feeLabel = `${(feeBps / 100).toFixed(1)}%`;
   const methods = health?.payment_methods?.join(", ") || "none";
   const cap = health?.max_total_spend_cents;

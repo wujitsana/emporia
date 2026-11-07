@@ -111,8 +111,8 @@ place: edit it by hand, or let `emporia relay config` check values first (P199):
 ```bash
 emporia relay config                      # in a terminal: pick a setting, see it, change it
 emporia relay config show                 # every setting, its value, now or at restart
-emporia relay config set OPERATOR_FEE_BPS 300
-emporia relay config unset OPERATOR_FEE_BPS
+emporia relay config set EMPORIA_FEE_BPS 300
+emporia relay config unset EMPORIA_FEE_BPS
 emporia relay config --dir ~/emporia-relay   # a hosted relay's folder
 ```
 

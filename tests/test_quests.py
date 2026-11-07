@@ -168,11 +168,10 @@ def _topic(slug, creator="q_someone"):
 
 
 def _agora_post(topic_id, author, title, content, at):
-    pid = f"p_{uuid.uuid4().hex[:8]}"
+    from tests.topic_posts import seed_post_row
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, created_at) "
-                     "VALUES (?, ?, ?, ?, ?, ?)", (pid, topic_id, author, title, content, at))
-    return pid
+        slug = conn.execute("SELECT slug FROM agora_topics WHERE topic_id = ?", (topic_id,)).fetchone()[0]
+    return seed_post_row(author, slug, f"{title}\n{content}", at)
 
 
 def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypatch):

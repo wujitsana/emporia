@@ -579,7 +579,9 @@ def gamify_parts() -> set[str]:
     """What this relay runs of the gamify module (EMPORIA_GAMIFY); nothing by default."""
     import os
     raw = os.getenv("EMPORIA_GAMIFY", "")
-    return {p.strip().lower() for p in raw.split(",") if p.strip().lower() in PARTS}
+    from emporia import quest_knobs
+    found = {p.strip().lower() for p in raw.split(",") if p.strip().lower() in PARTS}
+    return found if quest_knobs.quests_on() else found - {"quests"}      # EMPORIA_QUESTS=off
 
 
 # ── Step 2 (P288): Trade, Trust, levels and class ────────────────────────────

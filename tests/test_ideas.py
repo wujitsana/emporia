@@ -46,11 +46,13 @@ def _ideas_topic():
 
 
 def idea(author, title="Show the claimed severity", at="2026-11-05T00:00:00+00:00", topic_id=None):
-    pid = f"p_{uuid.uuid4().hex[:8]}"
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, created_at) "
-                     "VALUES (?, ?, ?, ?, 'because', ?)", (pid, topic_id or _ideas_topic(), author, title, at))
-    return pid
+    from tests.topic_posts import seed_post_row
+    _ideas_topic()
+    slug = "ideas"
+    if topic_id:
+        with rs.DB_LOCK, rs.get_db() as conn:
+            slug = conn.execute("SELECT slug FROM agora_topics WHERE topic_id = ?", (topic_id,)).fetchone()[0]
+    return seed_post_row(author, slug, f"{title}\nbecause", at, kind="idea")
 
 
 def verdict(client, op, post_id, v, ref="", dup="", key=vk.KEY):

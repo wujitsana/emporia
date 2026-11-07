@@ -121,8 +121,8 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
     rs._enforce_agent_rate_limit(caller)
     from emporia import levels
     from emporia.routes import standing as ST
-    if (lv := ST.limit_level(caller)) is not None and lv < levels.TOPIC_LEVEL:
-        raise HTTPException(403, ST.limit_refusal(caller, lv, f"creating an Agora topic needs level {levels.TOPIC_LEVEL}"))
+    if (lv := ST.limit_level(caller)) is not None and lv < levels.topic_level():
+        raise HTTPException(403, ST.limit_refusal(caller, lv, f"creating an Agora topic needs level {levels.topic_level()}"))
     # P21-5 (B5): name/description bounded automatically — see
     # _require_payload_content_within_limit.
     try:
@@ -522,7 +522,7 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
             creator_id=creator_id,
             destination_account=dest,
             application_fee_cents=fee,
-            card_unavailable=card_off,
+            card_unavailable=card_off, x402_split=True,
         )
         if isinstance(result, JSONResponse):
             return result
@@ -615,6 +615,7 @@ async def list_agora_posts(
     flair: str | None = None,
     limit: int = 50,
 ):
+    """A topic's posts (post:v2), in the shape the dashboard's topic page reads."""
     viewer_id = rs._dashboard_agent_id(request)
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute("SELECT * FROM agora_topics WHERE slug=? AND is_deleted=0", (slug,)).fetchone()
@@ -624,133 +625,49 @@ async def list_agora_posts(
             row["visibility"], row["gate_type"], row["entry_fee_cents"], viewer_id, row["topic_id"], conn,
         ):
             raise HTTPException(403, "Private topic — subscribe to access")
-        order = "vote_score DESC, created_at DESC" if sort == "top" else "is_pinned DESC, created_at DESC"
-        flair_clause = "AND flair=?" if flair else ""
-        params: list[Any] = [row["topic_id"]]
-        if flair:
-            params.append(flair)
-        params.append(rs._clamp_limit(limit))
-        posts = conn.execute(
-            f"SELECT * FROM agora_posts WHERE topic_id=? AND is_deleted=0 "
-            f"{flair_clause} ORDER BY {order} LIMIT ?",
-            params,
-        ).fetchall()
         cap = rs._clamp_limit(limit)
-        v2 = [pv.legacy_view(i, row) for i in pv.topic_posts(conn, viewer_id, slug, cap, flair or "")]
-    old = [
-        {
-            "post_id": p["post_id"], "topic_id": p["topic_id"], "author_id": p["author_id"],
-            "title": p["title"], "content": p["content"], "post_type": p["post_type"],
-            "flair": p["flair"], "vote_score": p["vote_score"],
-            "comment_count": p["comment_count"], "is_pinned": bool(p["is_pinned"]),
-            "is_locked": bool(p["is_locked"]), "created_at": p["created_at"],
-            "nonce": p["nonce"], "signature": p["signature"], "source": "legacy",
-        }
-        for p in posts
-    ]
-    # One list, old rows and post:v2 posts together: pinned old rows first, then by score or time.
-    if sort == "top":
-        merged = sorted(old + v2, key=lambda x: (x["vote_score"], x["created_at"]), reverse=True)
-    else:
-        merged = sorted([x for x in old if x["is_pinned"]], key=lambda x: x["created_at"], reverse=True) + sorted(
-            [x for x in old if not x["is_pinned"]] + v2, key=lambda x: x["created_at"], reverse=True)
-    merged = merged[:cap]
+        posts = [pv.topic_post_view(i, row) for i in pv.topic_posts(conn, viewer_id, slug, cap, flair or "")]
+    key = (lambda x: (x["vote_score"], x["created_at"])) if sort == "top" else (lambda x: x["created_at"])
+    posts = sorted(posts, key=key, reverse=True)[:cap]
     return {
-        "posts": merged,
-        "count": len(merged),
+        "posts": posts,
+        "count": len(posts),
         "topic": {"slug": row["slug"], "name": row["name"], "encrypted": bool(row["encrypted"])},
         "untrusted": pv.UNTRUSTED,
     }
 
 
-def _get_v2_post(conn, post_id: str, viewer_id: str | None) -> dict[str, Any]:
-    """A post:v2 in a topic, in the legacy post's shape, with its replies as `comments`."""
-    r = conn.execute("SELECT * FROM posts WHERE post_id = ? AND topic IS NOT NULL AND is_deleted = 0",
-                     (post_id,)).fetchone()
-    if not r:
-        raise HTTPException(404, "Post not found")
-    topic = conn.execute("SELECT * FROM agora_topics WHERE slug = ?", (r["topic"],)).fetchone()
-    if not topic or not rs._topic_can_read(topic["visibility"], topic["gate_type"], topic["entry_fee_cents"],
-                                           viewer_id, topic["topic_id"], conn):
-        raise HTTPException(403, "Private topic")
-    host = rs._own_host()
-    kids = pv._thread_rows(conn, viewer_id, f"post:{post_id}", pv.MAX_FEED)
-    item = pv._decorate(conn, [r], host)[0]
-    item["replies"] = len(kids)
-    replies = pv._decorate(conn, kids, host)
-    return {**pv.legacy_view(item, topic),
-            "comments": [pv.legacy_comment(c, post_id) for c in replies], "untrusted": pv.UNTRUSTED}
-
-
 @router.get("/agoras/posts/{post_id}")
 async def get_agora_post(post_id: str, request: Request):
+    """A post in a topic, with its replies as `comments`."""
     viewer_id = rs._dashboard_agent_id(request)
     with rs.DB_LOCK, rs.get_db() as conn:
-        p = conn.execute(
-            "SELECT p.*, t.slug, t.name AS topic_name, t.visibility, "
-            "t.gate_type, t.entry_fee_cents "
-            "FROM agora_posts p JOIN agora_topics t ON p.topic_id=t.topic_id "
-            "WHERE p.post_id=? AND p.is_deleted=0",
-            (post_id,),
-        ).fetchone()
-        if not p:
-            return _get_v2_post(conn, post_id, viewer_id)
-        if not rs._topic_can_read(
-            p["visibility"], p["gate_type"], p["entry_fee_cents"], viewer_id, p["topic_id"], conn,
-        ):
+        r = conn.execute("SELECT * FROM posts WHERE post_id = ? AND topic IS NOT NULL AND is_deleted = 0",
+                         (post_id,)).fetchone()
+        if not r:
+            raise HTTPException(404, "Post not found")
+        topic = conn.execute("SELECT * FROM agora_topics WHERE slug = ?", (r["topic"],)).fetchone()
+        if not topic or not rs._topic_can_read(topic["visibility"], topic["gate_type"], topic["entry_fee_cents"],
+                                               viewer_id, topic["topic_id"], conn):
             raise HTTPException(403, "Private topic")
-        comments = conn.execute(
-            "SELECT * FROM agora_comments WHERE post_id=? AND is_deleted=0 ORDER BY created_at ASC",
-            (post_id,),
-        ).fetchall()
-    return {
-        "post_id": p["post_id"], "topic_id": p["topic_id"],
-        "topic_slug": p["slug"], "topic_name": p["topic_name"],
-        "author_id": p["author_id"], "title": p["title"], "content": p["content"],
-        "post_type": p["post_type"], "flair": p["flair"],
-        "vote_score": p["vote_score"], "comment_count": p["comment_count"],
-        "is_pinned": bool(p["is_pinned"]), "is_locked": bool(p["is_locked"]),
-        "created_at": p["created_at"], "nonce": p["nonce"], "signature": p["signature"],
-        "comments": [
-            {
-                "comment_id": c["comment_id"], "post_id": c["post_id"],
-                "parent_comment_id": c["parent_comment_id"], "author_id": c["author_id"],
-                "content": c["content"], "vote_score": c["vote_score"],
-                "created_at": c["created_at"], "nonce": c["nonce"], "signature": c["signature"],
-            }
-            for c in comments
-        ],
-    }
+        host = rs._own_host()
+        kids = pv._thread_rows(conn, viewer_id, f"post:{post_id}", pv.MAX_FEED)
+        item = pv._decorate(conn, [r], host)[0]
+        item["replies"] = len(kids)
+        replies = pv._decorate(conn, kids, host)
+        return {**pv.topic_post_view(item, topic),
+                "comments": [pv.topic_comment_view(c, post_id) for c in replies], "untrusted": pv.UNTRUSTED}
 
 
 @router.get("/agoras/feed")
 async def agora_feed(agent_id: str, request: Request, sort: str = "new", limit: int = 50):
-    """Posts from topics the agent subscribes to: old rows and post:v2 posts together."""
+    """Posts from topics the agent subscribes to."""
     rs._require_caller_is(agent_id, request)
-    order = "p.vote_score DESC, p.created_at DESC" if sort == "top" else "p.created_at DESC"
     cap = rs._clamp_limit(limit)
     with rs.DB_LOCK, rs.get_db() as conn:
-        posts = conn.execute(
-            f"SELECT p.*, t.slug, t.name AS topic_name FROM agora_posts p "
-            f"JOIN agora_topics t ON p.topic_id=t.topic_id "
-            f"JOIN agora_members m ON m.topic_id=t.topic_id "
-            f"WHERE m.agent_id=? AND p.is_deleted=0 "
-            f"ORDER BY {order} LIMIT ?",
-            (agent_id, cap),
-        ).fetchall()
         topics = conn.execute("SELECT t.* FROM agora_topics t JOIN agora_members m ON m.topic_id = t.topic_id "
                               "WHERE m.agent_id = ? AND t.is_deleted = 0", (agent_id,)).fetchall()
-        v2 = [pv.legacy_view(i, t) for t in topics for i in pv.topic_posts(conn, agent_id, t["slug"], cap)]
-    old = [
-        {
-            "post_id": p["post_id"], "topic_slug": p["slug"], "topic_name": p["topic_name"],
-            "author_id": p["author_id"], "title": p["title"], "post_type": p["post_type"],
-            "flair": p["flair"], "vote_score": p["vote_score"],
-            "comment_count": p["comment_count"], "is_pinned": bool(p["is_pinned"]),
-            "created_at": p["created_at"], "source": "legacy",
-        }
-        for p in posts
-    ]
+        posts = [pv.topic_post_view(i, t) for t in topics for i in pv.topic_posts(conn, agent_id, t["slug"], cap)]
     key = (lambda x: (x["vote_score"], x["created_at"])) if sort == "top" else (lambda x: x["created_at"])
-    merged = sorted(old + v2, key=key, reverse=True)[:cap]
+    merged = sorted(posts, key=key, reverse=True)[:cap]
     return {"posts": merged, "count": len(merged), "untrusted": pv.UNTRUSTED}

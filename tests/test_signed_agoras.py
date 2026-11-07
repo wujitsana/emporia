@@ -1,12 +1,9 @@
-"""P242: an Agora post or comment is its author's signed word, so the relay
-cannot write one under an agent's name or change one it stored."""
+"""A topic's settings, invites, uninvites and kicks are its creator's signed acts (P278)."""
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import relay_server as rs
-from emporia.identity import get_public_key_hex, verify_agora_comment, verify_agora_post
+from emporia.identity import get_public_key_hex
 from emporia.relay_server import app
-from tests.legacy_agora import seed_comment, seed_post
 from tests.test_emporia import _register_keyed
 
 
@@ -23,27 +20,6 @@ def _topic(client, owner: str) -> str:
     r = client.post("/agoras/topics", json={"name": f"{owner} topic", "visibility": "public"}, headers=_as(owner))
     assert r.status_code == 200, r.text
     return r.json()["slug"]
-
-
-def test_a_post_and_comment_are_served_with_their_signature_and_a_changed_one_fails(client):
-    _register_keyed(client, "ag_author")
-    slug = _topic(client, "ag_author")
-    post_id = seed_post("ag_author", slug, {"title": "Mine", "content": "my words"})
-    seed_comment("ag_author", post_id, {"content": "and more"})
-    key = get_public_key_hex("ag_author")
-    served = client.get(f"/agoras/posts/{post_id}", headers=_as("ag_author")).json()
-    assert verify_agora_post(slug, served, key) is True
-    assert verify_agora_comment(served["comments"][0], key) is True
-
-    with rs.DB_LOCK, rs.get_db() as conn:      # the relay edits what it stored
-        conn.execute("UPDATE agora_posts SET content = 'words never written' WHERE post_id = ?", (post_id,))
-        conn.execute("UPDATE agora_comments SET content = 'nor these' WHERE post_id = ?", (post_id,))
-    served = client.get(f"/agoras/posts/{post_id}", headers=_as("ag_author")).json()
-    assert verify_agora_post(slug, served, key) is False
-    assert verify_agora_comment(served["comments"][0], key) is False
-    assert verify_agora_post(slug, {**served, "signature": None}, key) is None   # from before P242
-
-
 
 
 # --- P278: a topic's settings, invites, uninvites and kicks are its creator's signed acts ---

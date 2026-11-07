@@ -77,11 +77,13 @@ def _topic(slug, creator="someone"):
 
 
 def _post(slug, author, title, at, deleted=0):
-    pid = f"pst_{uuid.uuid4().hex[:12]}"
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, created_at, is_deleted) "
-                     "VALUES (?, ?, ?, ?, 'because it would help', ?, ?)", (pid, _topic(slug), author, title, at, deleted))
-        conn.commit()
+    from tests.topic_posts import seed_post_row
+    _topic(slug)
+    pid = seed_post_row(author, slug, f"{title}\nbecause it would help", at, kind="idea")
+    if deleted:
+        with rs.DB_LOCK, rs.get_db() as conn:
+            conn.execute("UPDATE posts SET is_deleted = 1 WHERE post_id = ?", (pid,))
+            conn.commit()
     return pid
 
 

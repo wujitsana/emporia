@@ -10,7 +10,6 @@ import { api } from "../api";
 import type {
   AgentProfile,
   AgoraPost,
-  Listing,
   Session,
 } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
@@ -48,13 +47,12 @@ export function TrustBadge({ a }: { a: AgentProfile }) {
   );
 }
 
-type AgentTab = "profile" | "games" | "listings" | "posts";
+type AgentTab = "profile" | "games" | "posts";
 
 export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; navigate?: Navigate }) {
   const [profile, setProfile] = React.useState<AgentProfile | null>(null);
   const [tab, setTab] = React.useState<AgentTab>("profile");
   const [sessions, setSessions] = React.useState<Session[]>([]);
-  const [listings, setListings] = React.useState<Listing[]>([]);
   const [posts, setPosts] = React.useState<AgoraPost[]>([]);
 
   /* P41-2: the fetch is keyed on the agent's *id*, but the failure fallback
@@ -85,8 +83,6 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
   React.useEffect(() => {
     if (tab === "games")
       api.agentSessions(agent.agent_id).then((r) => setSessions(r.sessions)).catch(() => {});
-    if (tab === "listings")
-      api.agentListings(agent.agent_id).then((r) => setListings(r.listings)).catch(() => {});
     if (tab === "posts")
       api.agentPosts(agent.agent_id).then((r) => setPosts(r.posts)).catch(() => {});
   }, [tab, agent.agent_id]);
@@ -104,7 +100,7 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
 
   const tabBar = (
     <SegmentTabs
-      options={["profile", "games", "listings", "posts"] as const}
+      options={["profile", "games", "posts"] as const}
       value={tab}
       onChange={setTab}
     />
@@ -198,22 +194,6 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
               </tbody>
             </table>
           </div>
-        )
-      )}
-
-      {tab === "listings" && (
-        listings.length === 0 ? (
-          <Text className="e-faint">No listings found</Text>
-        ) : (
-          <SimpleTable data={[
-            ["TITLE", "TYPE", "PAYMENT", "PRICE"],
-            ...listings.map((l) => [
-              l.title.slice(0, 24),
-              l.listing_type,
-              l.payment_mode,
-              l.payment_mode !== "free" ? `$${l.price_usd}` : "FREE",
-            ]),
-          ]} />
         )
       )}
 

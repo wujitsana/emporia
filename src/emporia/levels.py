@@ -32,7 +32,34 @@ TOPIC_LEVEL = 2            # to create an Agora topic
 
 
 def starter_limits_on() -> bool:
-    return os.getenv("EMPORIA_STARTER_LIMITS", "1").strip().lower() not in ("0", "false", "no", "off")
+    from emporia import quest_knobs as K
+    return (os.getenv("EMPORIA_STARTER_LIMITS", "1").strip().lower() not in ("0", "false", "no", "off")
+            and K.quests_on())    # no quests, no XP: no ladder to hold anyone on
+
+
+def challenges() -> tuple[int, ...]:
+    from emporia import quest_knobs as K
+    return K.table("EMPORIA_STARTER_CHALLENGES", CHALLENGES)
+
+
+def posts_per_day_table() -> tuple[int, ...]:
+    from emporia import quest_knobs as K
+    return K.table("EMPORIA_STARTER_POSTS_PER_DAY", POSTS_PER_DAY)
+
+
+def pointer_level() -> int:
+    from emporia import quest_knobs as K
+    return K.level_setting("EMPORIA_STARTER_POINTER_LEVEL", POINTER_LEVEL)
+
+
+def pointer_shared_level() -> int:
+    from emporia import quest_knobs as K
+    return K.level_setting("EMPORIA_STARTER_POINTER_SHARED_LEVEL", POINTER_SHARED_LEVEL)
+
+
+def topic_level() -> int:
+    from emporia import quest_knobs as K
+    return K.level_setting("EMPORIA_STARTER_TOPIC_LEVEL", TOPIC_LEVEL)
 
 
 def level_of(xp: int, crossed: bool) -> int:
@@ -43,11 +70,12 @@ def level_of(xp: int, crossed: bool) -> int:
 
 
 def describe(xp: int, crossed: bool) -> dict:
-    """The level line: {formula, level, xp, next_at (None at the top), crossed}."""
+    """The level line: {formula, level, xp, next_at (None at the top), crossed, table, scope}. A level is one
+    relay's word about its own records ("level 3 on relay R"), never carried."""
     lv = level_of(xp, crossed)
     nxt = LEVELS[lv] if lv < len(LEVELS) else None
     return {"formula": FORMULA, "level": lv, "xp": xp, "next_at": nxt, "crossed": crossed,
-            "table": list(LEVELS)}
+            "table": list(LEVELS), "scope": "this relay"}
 
 
 def raises(level: int) -> str:
@@ -63,8 +91,8 @@ def _tier(table: tuple[int, ...], level: int) -> int:
 
 
 def challenge_cap(level: int) -> int:
-    return _tier(CHALLENGES, level)
+    return _tier(challenges(), level)
 
 
 def posts_per_day(level: int) -> int:
-    return _tier(POSTS_PER_DAY, level)
+    return _tier(posts_per_day_table(), level)

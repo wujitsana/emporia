@@ -489,7 +489,7 @@ def cmd_relay(args: argparse.Namespace) -> int:
             return 1
         print(f"relay: up at {relay_url()} — v{h.get('version')}, Stripe {h.get('stripe_mode') or 'off'}, "
               f"x402 {'on ' + ','.join(h.get('x402_networks') or []) if h.get('x402_enabled') else 'off'}, "
-              f"fee {h.get('operator_fee_bps', 0) / 100:.1f}%")
+              f"fee {h.get('fee_bps', 0) / 100:.1f}%")
         return 0
     if args.action == "logs":
         lines = log.read_text(errors="replace").splitlines() if log.exists() else []
@@ -644,7 +644,7 @@ def _relay_brief(h: dict) -> str:
              f"pays on {', '.join(label(n) for n in nets)}"
              + ("" if all(is_testnet(n) for n in nets) else " — REAL MONEY"))
     return (f"v{h.get('version', '?')}, {money}, cards {h.get('stripe_mode') or 'off'}, "
-            f"fee {h.get('operator_fee_bps', 0) / 100:.1f}%")
+            f"fee {h.get('fee_bps', 0) / 100:.1f}%")
 
 
 def _relays_in_use() -> dict[str, list[str]]:
@@ -4557,7 +4557,7 @@ def doctor_relay(rep: Report) -> dict | None:
     if not h:
         rep.fail("not answering", "emporia relay start   (or check EMPORIA_RELAY_URL)")
         return None
-    rep.ok(f"answering — v{h.get('version')}, fee {h.get('operator_fee_bps', 0) / 100:.1f}%")
+    rep.ok(f"answering — v{h.get('version')}, fee {h.get('fee_bps', 0) / 100:.1f}%")
     stale = _relay_code_behind(h)
     if stale:
         rep.fail(f"the relay runs older code than this checkout ({stale})",
@@ -6379,7 +6379,7 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
             return 1
     fee = args.fee_receiver or os.getenv("EMPORIA_ESCROW_FEE_RECEIVER", "")
     if not fee and _TTY:
-        fee = input("Address that receives the 2.5% fee (a wallet you control, ideally a Safe): ").strip()
+        fee = input("Address that receives the 1% fee (a wallet you control, ideally a Safe): ").strip()
     if not re.fullmatch(r"0x[0-9a-fA-F]{40}", fee or ""):
         print("setup relay: a fee-receiver address (0x… 40 hex) is required — --fee-receiver")
         return 1
@@ -8150,9 +8150,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     de = sub.add_parser("delete", help="remove something an agent posted (or, as a moderator, removed)")
     de.add_argument("name")
-    de.add_argument("kind", choices=["post", "agora_post", "agora_comment", "agora_topic", "listing", "room_message",
-                                     "dm_message", "game_chat"])
-    de.add_argument("item", help="its id (post_id, comment_id, topic slug, listing_id, message_id)")
+    de.add_argument("kind", choices=["post", "agora_topic", "room_message", "dm_message", "game_chat"])
+    de.add_argument("item", help="its id (post_id, topic slug, message_id)")
     de.add_argument("--thread", default="", help="for a dm_message: its thread id")
     de.set_defaults(func=cmd_delete)
 

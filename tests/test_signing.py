@@ -47,7 +47,7 @@ def test_who_the_agent_is_stays_its_persons(kind):
 
 
 def test_routine_kinds_sign_at_once_with_no_one_asked():
-    for kind in ("move", "room-message", "dm", "agora-post", "listing", "session-join", "room-leave", "removal"):
+    for kind in ("move", "room-message", "dm", "session-join", "room-leave", "removal"):
         signing.check(kind, {}, ctx())
 
 
@@ -126,7 +126,7 @@ def test_the_agent_signs_only_through_signing(module):
 
 
 def test_every_id_emporia_derives_is_sha256(tmp_path):
-    """P294: agent ids, recovery commitments and listing ids are SHA-256 with v2 labels — one hash for
+    """P294: agent ids and recovery commitments are SHA-256 with v2 labels — one hash for
     everything Emporia chooses — and a relay holding agents from before refuses to start."""
     import hashlib
 
@@ -134,6 +134,5 @@ def test_every_id_emporia_derives_is_sha256(tmp_path):
     assert wire.stable_id_for(key) == hashlib.sha256(b"emporia:agent:v2:" + bytes.fromhex(key)).hexdigest()
     assert wire.recovery_commitment_for(key) == hashlib.sha256(
         b"emporia:recovery:v2:" + bytes.fromhex(key)).hexdigest()
-    assert wire.listing_id_for("sid", "n1") == "lst_" + hashlib.sha256(b"emporia:listing:v2:sid:n1").hexdigest()[:32]
     for name in ("wire.py", "identity.py", "relay_server.py"):
         assert "sha3_256(" not in (SRC / name).read_text(), name

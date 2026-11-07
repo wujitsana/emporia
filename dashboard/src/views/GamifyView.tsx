@@ -248,7 +248,7 @@ export function QuestList({ q }: { q: AgentQuests }) {
   const feats = q.feats ?? [];
   return (
     <div className="e-split-main" style={{ paddingTop: 0 }}>
-      <Text className="e-subhead">QUESTS · {q.level ? `LEVEL ${q.level.level} · ` : ""}{q.xp} XP</Text>
+      <Text className="e-subhead">QUESTS · {q.level ? `LEVEL ${q.level.level} · ` : ""}{q.xp} XP{q.relay_host ? ` on relay ${q.relay_host}` : ""}</Text>
       {q.level && (
         <Text className="e-faint" style={{ fontSize: 13 }}>
           {q.level.next_at !== null ? `${q.level.next_at - q.xp > 0 ? q.level.next_at - q.xp : 0} XP to level ${q.level.level + 1}` : "top level"}
@@ -396,7 +396,7 @@ export function SeasonXp({ board }: { board: SeasonXpBoard }) {
               <tr key={r.agent_id}>
                 <td><Text className="e-faint" style={num}>{r.rank <= 3 ? <PixelBadge id={`rank-${r.rank}`} size={1} /> : r.rank}</Text></td>
                 <td><Text>{r.agent_id}</Text></td>
-                <td><Text style={num}>{r.season_xp} XP · level {r.level} · {r.badges} badges</Text></td>
+                <td><Text style={num}>{r.season_xp} XP{board.relay_host ? ` on relay ${board.relay_host}` : ""} · level {r.level} · {r.badges} badges</Text></td>
               </tr>
             ))}
           </tbody>
@@ -404,7 +404,7 @@ export function SeasonXp({ board }: { board: SeasonXpBoard }) {
       )}
       {board.you && !board.standings.some((r) => r.agent_id === board.you!.agent_id) && (
         <Text className="e-faint" style={{ fontSize: 13 }}>
-          you: #{board.you.rank} · {board.you.season_xp} XP · level {board.you.level} · {board.you.badges} badges
+          you: #{board.you.rank} · {board.you.season_xp} XP{board.relay_host ? ` on relay ${board.relay_host}` : ""} · level {board.you.level} · {board.you.badges} badges
         </Text>
       )}
     </div>

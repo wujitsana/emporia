@@ -166,9 +166,10 @@ def test_posts_listings_moves_and_removals_are_folded_in_once(client):
                        headers={"x-emporia-agent-id": "tl-gamma"}).json()["slug"]
     now = "2026-10-31T00:00:00+00:00"
     with rs.DB_LOCK, rs.get_db() as conn:
-        topic_id = conn.execute("SELECT topic_id FROM agora_topics WHERE slug = ?", (slug,)).fetchone()[0]
-        conn.execute("INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, created_at) "
-                     "VALUES ('post_tl', ?, 'tl-gamma', 'hello', 'world', ?)", (topic_id, now))
+        conn.execute("INSERT INTO posts (post_id, author_id, author_stable_id, author_public_key_hex, origin_relay, "
+                     "nonce, kind, label, text, tags_json, topic, at, signature, recorded_at) "
+                     "VALUES ('post_tl', 'tl-gamma', 'sid', '', 'o', 'n', 'note', 'hello', 'world', '[]', ?, ?, 'sig', ?)",
+                     (slug, now, now))
         conn.execute("INSERT INTO actions (action_id, session_id, agent_id, action_type, payload_json, created_at) "
                      "VALUES ('act_tl', 'sess_tl', 'tl-gamma', 'move', '{\"bid\": 3}', ?)", (now,))
         conn.execute("INSERT INTO deletions (kind, item, deleted_by, role, deleted_at, signature) "
@@ -184,9 +185,9 @@ def test_posts_listings_moves_and_removals_are_folded_in_once(client):
             "action_id": "act_tl", "session_id": "sess_tl", "agent_id": "tl-gamma", "action_type": "move",
             "payload_hash": translog.content_hash('{"bid": 3}'), "created_at": now})
     refs = {e["record"].get("commitment") or e["record"].get("item_hash") or e["record"]["kind"] for e in added}
-    assert {"agora_topic", "agora_post"} <= refs
+    assert {"agora_topic", "post"} <= refs
     [post] = [e for e in added if e["record"].get("post_id") == "post_tl"]
-    assert post["record"]["content_hash"] == translog.content_hash("hello", "world")
+    assert post["record"]["content_hash"] == translog.content_hash("hello", "world", "[]")
     assert "world" not in str(post)
     assert move in refs and "sess_tl" not in str(added)
     assert translog.content_hash("post", "post_tl_old") in refs and "post_tl_old" not in str(added)
@@ -232,18 +233,15 @@ def test_a_relay_used_without_a_log_starts_one_with_everything_it_holds(tmp_path
     conn.row_factory = sqlite3.Row
     conn.executescript("""
         CREATE TABLE agora_topics (topic_id, slug, name, description, visibility, creator_id, created_at);
-        CREATE TABLE agora_posts (post_id, topic_id, author_id, title, content, signature, created_at);
         CREATE TABLE payments (payment_id, agent_id, amount_cents, currency, payment_type, session_id, room_id,
                                rail, created_at);""")
     conn.execute("INSERT INTO agora_topics VALUES ('t1', 'old', 'Old', '', 'public', 'a', '2026-01-01')")
-    for i in range(3):
-        conn.execute("INSERT INTO agora_posts VALUES (?, 't1', 'a', 'hi', 'there', '', '2026-01-02')", (f"p{i}",))
     conn.execute("INSERT INTO payments VALUES ('pay1', 'a', 5, 'usd', 'room_entry', NULL, 'r', 'stripe', '2026-01-03')")
     translog.init_schema(conn)                          # the log arrives on a relay months old
     state = translog.sign_state(conn, lambda b: "sig", "ab" * 32)
     kinds = sorted(e["record"]["kind"] for e in translog.entries(conn, 0, limit=1000))
-    assert kinds == ["agora_post"] * 3 + ["agora_topic", "payment"]
-    assert state["size"] == 5
+    assert kinds == ["agora_topic", "payment"]
+    assert state["size"] == 2
     assert translog.sign_state(conn, lambda b: "sig", "ab" * 32) is None      # and only once
 
 

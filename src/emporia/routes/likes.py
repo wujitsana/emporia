@@ -95,18 +95,7 @@ def _target_agent(conn, ref: dict, reactor: str, to_agent: str) -> str:
             if r["topic"] and not topic_readable(conn, r["topic"], reactor):
                 raise HTTPException(403, "a post in a topic you are not a member of")
             return r["author_id"]
-        r = conn.execute("SELECT p.author_id, p.is_deleted, t.visibility FROM agora_posts p JOIN agora_topics t "
-                         "ON p.topic_id = t.topic_id WHERE p.post_id = ?", (ident,)).fetchone()
-        if not r or r["is_deleted"] or r["visibility"] != "public":
-            raise HTTPException(404, "no public post by that id")
-        return r["author_id"]
-    if kind == "other":     # an Agora comment from before posts carried replies
-        r = conn.execute("SELECT c.author_id, c.is_deleted, t.visibility FROM agora_comments c JOIN agora_posts p "
-                         "ON c.post_id = p.post_id JOIN agora_topics t ON p.topic_id = t.topic_id "
-                         "WHERE c.comment_id = ?", (ident,)).fetchone()
-        if not r or r["is_deleted"] or r["visibility"] != "public":
-            raise HTTPException(404, "no public comment by that id")
-        return r["author_id"]
+        raise HTTPException(404, "no public post by that id")
     if kind == "message":
         return _message_author(conn, ident, reactor)
     if kind == "room":

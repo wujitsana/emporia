@@ -143,23 +143,16 @@ def idea_queue(conn) -> dict[str, Any]:
     takes = judged and not relay_modules.off_because("gamify", "bugs")
     if not exists:
         return {"topic": topic, "topic_exists": False, "verdicts": takes, "open": 0, "items": []}
-    where = ("FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id WHERE t.slug = ? "
-             "AND t.visibility = 'public' AND p.is_deleted = 0"
-             + (" AND p.post_id NOT IN (SELECT post_id FROM idea_verdicts)" if judged else ""))
-    total = conn.execute(f"SELECT COUNT(*) {where}", (topic,)).fetchone()[0]  # noqa: S608
-    rows = conn.execute(f"SELECT p.post_id, p.author_id, p.title, p.content, p.created_at, p.vote_score {where} "  # noqa: S608
-                        "ORDER BY p.created_at, p.post_id LIMIT ?", (topic, QUEUE_LIMIT)).fetchall()
-    items = [{"post_id": r["post_id"], "author_id": r["author_id"], "title": r["title"],
-              "excerpt": (r["content"] or "")[:_TEXT_CHARS], "truncated": len(r["content"] or "") > _TEXT_CHARS,
-              "votes": r["vote_score"], "created_at": r["created_at"]} for r in rows]
-    # Feed v2: ideas posted as post:v2 in the topic (a top-level post; its text is the whole of it)
+    items: list[dict[str, Any]] = []
+    total = 0
+    # ideas are post:v2 posts in the topic (a top-level post; its text is the whole of it)
     v2 = ("FROM posts p JOIN agora_topics t ON p.topic = t.slug WHERE t.slug = ? AND t.visibility = 'public' "
           "AND p.is_deleted = 0 AND p.reply_to IS NULL AND p.kind = 'idea'"
           + (" AND p.post_id NOT IN (SELECT post_id FROM idea_verdicts)" if judged else ""))
     total += conn.execute(f"SELECT COUNT(*) {v2}", (topic,)).fetchone()[0]  # noqa: S608
     for r in conn.execute(f"SELECT p.post_id, p.author_id, p.text, p.at {v2} ORDER BY p.at LIMIT ?",  # noqa: S608
                           (topic, QUEUE_LIMIT)).fetchall():
-        items.append({"post_id": r["post_id"], "author_id": r["author_id"], "title": r["text"][:80],
+        items.append({"post_id": r["post_id"], "author_id": r["author_id"], "title": r["text"].split("\n", 1)[0][:80],
                       "excerpt": r["text"][:_TEXT_CHARS], "truncated": len(r["text"]) > _TEXT_CHARS,
                       "votes": 0, "created_at": r["at"]})
     items.sort(key=lambda i: (i["created_at"], i["post_id"]))
@@ -214,22 +207,15 @@ def expedition(conn) -> dict[str, Any]:
     if not exists or not by:
         return out
     marks = ",".join("?" * len(by))
-    r = conn.execute("SELECT p.post_id, p.author_id, p.title, p.content, p.created_at FROM agora_posts p "
-                     "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE t.slug = ? AND t.visibility = 'public' "
-                     f"AND p.is_deleted = 0 AND p.author_id IN ({marks}) ORDER BY p.created_at DESC LIMIT 1",  # noqa: S608
-                     (topic, *by)).fetchone()
     v2 = conn.execute("SELECT p.post_id, p.author_id, p.text, p.at FROM posts p JOIN agora_topics t "
                       "ON p.topic = t.slug WHERE t.slug = ? AND t.visibility = 'public' AND p.is_deleted = 0 "
                       f"AND p.reply_to IS NULL AND p.author_id IN ({marks}) ORDER BY p.at DESC LIMIT 1",  # noqa: S608
                       (topic, *by)).fetchone()
-    if v2 is not None and (r is None or v2["at"] > r["created_at"]):
-        out["current"] = {"post_id": v2["post_id"], "author_id": v2["author_id"], "title": v2["text"][:80],
+    if v2 is not None:
+        out["current"] = {"post_id": v2["post_id"], "author_id": v2["author_id"],
+                          "title": v2["text"].split("\n", 1)[0][:80],
                           "excerpt": v2["text"][:_TEXT_CHARS], "posted_at": v2["at"],
                           "age_days": _age_days(v2["at"])}
-    elif r is not None:
-        out["current"] = {"post_id": r["post_id"], "author_id": r["author_id"], "title": r["title"],
-                          "excerpt": (r["content"] or "")[:_TEXT_CHARS], "posted_at": r["created_at"],
-                          "age_days": _age_days(r["created_at"])}
     return out
 
 

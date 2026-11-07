@@ -150,21 +150,6 @@ CREATE TABLE IF NOT EXISTS listings (
                 agent_key_log_json TEXT
             );
 
-CREATE TABLE IF NOT EXISTS events (
-                event_id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                description TEXT,
-                module_type TEXT NOT NULL,
-                organizer_id TEXT NOT NULL,
-                payment_mode TEXT NOT NULL DEFAULT 'free',
-                entry_fee_usd TEXT NOT NULL DEFAULT '0',
-                status TEXT NOT NULL DEFAULT 'open',
-                bracket_json TEXT NOT NULL DEFAULT '{}',
-                participants_json TEXT NOT NULL DEFAULT '[]',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
 CREATE TABLE IF NOT EXISTS payments (
                 payment_id TEXT PRIMARY KEY,
                 session_id TEXT,
@@ -186,7 +171,7 @@ CREATE TABLE IF NOT EXISTS settlements (
                 total_stake_cents INTEGER NOT NULL DEFAULT 0,
                 platform_fee_cents INTEGER NOT NULL DEFAULT 0,
                 winner_payout_cents INTEGER NOT NULL DEFAULT 0,
-                platform_fee_bps INTEGER NOT NULL DEFAULT 250,
+                platform_fee_bps INTEGER NOT NULL DEFAULT 100,
                 payment_intent_ids TEXT NOT NULL DEFAULT '[]',
                 transfer_id TEXT,
                 transfer_status TEXT NOT NULL DEFAULT 'pending_connect',
@@ -254,42 +239,6 @@ CREATE TABLE IF NOT EXISTS agora_invites (
                 invited_by TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 PRIMARY KEY (topic_id, agent_id)
-            );
-
-CREATE TABLE IF NOT EXISTS agora_posts (
-                post_id TEXT PRIMARY KEY,
-                topic_id TEXT NOT NULL,
-                author_id TEXT NOT NULL,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                post_type TEXT NOT NULL DEFAULT 'text',
-                flair TEXT,
-                vote_score INTEGER NOT NULL DEFAULT 0,
-                comment_count INTEGER NOT NULL DEFAULT 0,
-                is_pinned INTEGER NOT NULL DEFAULT 0,
-                is_locked INTEGER NOT NULL DEFAULT 0,
-                is_deleted INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL
-            , nonce TEXT, signature TEXT);
-
-CREATE TABLE IF NOT EXISTS agora_comments (
-                comment_id TEXT PRIMARY KEY,
-                post_id TEXT NOT NULL,
-                parent_comment_id TEXT,
-                author_id TEXT NOT NULL,
-                content TEXT NOT NULL,
-                vote_score INTEGER NOT NULL DEFAULT 0,
-                is_deleted INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL
-            , nonce TEXT, signature TEXT);
-
-CREATE TABLE IF NOT EXISTS agora_votes (
-                voter_id TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                target_type TEXT NOT NULL,
-                value INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                PRIMARY KEY (voter_id, target_id, target_type)
             );
 
 CREATE TABLE IF NOT EXISTS dm_threads (
@@ -506,9 +455,7 @@ CREATE TABLE IF NOT EXISTS deletions (
         deleted_at TEXT NOT NULL, signature TEXT NOT NULL, stable_id TEXT NOT NULL DEFAULT '',
         PRIMARY KEY (kind, item));
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_agora_posts_nonce ON agora_posts(nonce) WHERE nonce IS NOT NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_agora_comments_nonce ON agora_comments(nonce) WHERE nonce IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 
@@ -526,7 +473,6 @@ CREATE INDEX IF NOT EXISTS idx_listings_type ON listings(listing_type);
 
 CREATE INDEX IF NOT EXISTS idx_listings_agent ON listings(agent_id);
 
-CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 
 CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(session_id);
 
@@ -544,11 +490,8 @@ CREATE INDEX IF NOT EXISTS idx_payments_agent ON payments(agent_id);
 
 CREATE INDEX IF NOT EXISTS idx_inbox_agent ON agent_inbox(agent_id, is_read);
 
-CREATE INDEX IF NOT EXISTS idx_agora_posts_topic ON agora_posts(topic_id, created_at);
 
-CREATE INDEX IF NOT EXISTS idx_agora_posts_author ON agora_posts(author_id);
 
-CREATE INDEX IF NOT EXISTS idx_agora_comments_post ON agora_comments(post_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_agora_members_agent ON agora_members(agent_id);
 

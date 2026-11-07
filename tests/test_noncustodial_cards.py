@@ -98,10 +98,10 @@ def test_a_card_entry_pays_the_creator_directly(client, stripe_entries):
     assert r.status_code == 200, r.text
     [pi] = stripe_entries.pis.values()
     assert pi["transfer_data"] == {"destination": "acct_owner"}, "charged to the creator, not the platform"
-    assert pi["application_fee_amount"] == 2, "the fee is the only part the platform receives"
+    assert pi["application_fee_amount"] == 1, "the fee is the only part the platform receives"
     assert stripe_entries.transfers == [], "no transfer: nothing sat on the platform's balance"
     [row] = _settlement_rows(room)
-    assert (row["transfer_status"], row["platform_fee_cents"], row["winner_payout_cents"]) == ("destination", 2, 98)
+    assert (row["transfer_status"], row["platform_fee_cents"], row["winner_payout_cents"]) == ("destination", 1, 99)
 
 
 def test_no_card_is_offered_for_a_creator_stripe_cannot_pay(client, stripe_entries):
@@ -189,7 +189,7 @@ def test_each_card_stake_is_a_hold_paid_to_the_opponent(client, stripe):
         assert holds[a][1]["transfer_data"] == {"destination": "acct_b"}, "a's stake pays b if a loses"
         assert holds[b][1]["transfer_data"] == {"destination": "acct_a"}
         assert holds[a][1]["capture_method"] == "manual"
-        assert holds[a][1]["application_fee_amount"] == 25, "2.5% of the $10 pot, on the one captured"
+        assert holds[a][1]["application_fee_amount"] == 10, "1% of the $10 pot, on the one captured"
         r = _play(client, sid, a, b, [30, 30, 30, 5, 5], [20] * 5)
     assert r.json()["outcome"]["winner"] == a
     assert stripe.captured == [holds[b][0]], "b's hold, paid to a by Stripe"
@@ -197,7 +197,7 @@ def test_each_card_stake_is_a_hold_paid_to_the_opponent(client, stripe):
     assert stripe.transfers == [], "the relay moved nothing itself"
     [row] = _settlement_rows(sid)
     assert (row["rail"], row["winner_id"], row["transfer_status"]) == ("stripe", a, "destination")
-    assert (row["total_stake_cents"], row["platform_fee_cents"], row["winner_payout_cents"]) == (1000, 25, 975)
+    assert (row["total_stake_cents"], row["platform_fee_cents"], row["winner_payout_cents"]) == (1000, 10, 990)
 
 
 def test_a_card_wager_draw_cancels_both(client, stripe):
@@ -247,7 +247,7 @@ def test_a_card_intent_for_a_wager_names_the_opponent(client, stripe):
                         json={"session_id": sid, "amount_cents": 500, "seller_id": "relay"}, headers=_hdr(a))
     assert r.status_code == 200, r.text
     pi = stripe.pis[r.json()["payment_intent_id"]]
-    assert pi["transfer_data"] == {"destination": "acct_b"} and pi["application_fee_amount"] == 25
+    assert pi["transfer_data"] == {"destination": "acct_b"} and pi["application_fee_amount"] == 10
 
 
 # -- bounties -----------------------------------------------------------------
@@ -308,3 +308,9 @@ def test_by_default_games_are_staked_in_usdc_not_on_cards(client, stripe, monkey
                            headers=_hdr(a))
     assert free.status_code == 200, "free play is untouched"
     assert stripe.pis == {}
+
+
+@pytest.fixture(autouse=True)
+def _relay_fee_address(monkeypatch):
+    """The relay's fee exists once it has a fee address (fees.py): these tests are about where the 1% goes."""
+    monkeypatch.setenv("EMPORIA_FEE_ADDRESS", "0x" + "fe" * 20)
