@@ -647,3 +647,15 @@ def _never_write_this_machines_hermes(monkeypatch):
         if hasattr(inst, name):
             monkeypatch.setattr(inst, name, guarded(name, getattr(inst, name)))
 
+
+
+@pytest.fixture(autouse=True)
+def _scratch_hermes_home(monkeypatch, tmp_path):
+    """The plugin's hooks and the runtime's autonomy checks keep state in <HERMES_HOME>/plugin-data/emporia.
+    A test must never write into a real Hermes profile (the environment's HERMES_HOME is one), so every
+    test gets its own. Tests of the autonomy checks themselves set EMPORIA_UNTRACKED_TURNS="" to opt in."""
+    home = tmp_path / "hermes-home"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.delenv("EMPORIA_DOTENV", raising=False)
+    monkeypatch.setenv("EMPORIA_UNTRACKED_TURNS", "person")

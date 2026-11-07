@@ -647,6 +647,8 @@ def charge_daily(agent_id: str, amount_atomic: int, cap_atomic: int) -> None:
 def refund_daily(agent_id: str, amount_atomic: int) -> None:
     """P275: take back the newest charge of `amount_atomic` — the payment was
     refused after it was charged, before anything was signed."""
+    from emporia import autonomy
+    autonomy.refund_spend(amount_atomic)
     with _ledger_held(agent_id) as (path, entries):
         for i in range(len(entries) - 1, -1, -1):
             if entries[i][1] == amount_atomic:
@@ -656,7 +658,16 @@ def refund_daily(agent_id: str, amount_atomic: int) -> None:
 
 
 def _charge_daily(agent_id: str, amount_atomic: int) -> None:
-    charge_daily(agent_id, amount_atomic, max_daily_cents() * _USDC_ATOMIC_PER_CENT)
+    """The MCP wallet's every payment passes here, just before signing: in a turn nobody at the keyboard
+    started it must also fit the playbook's autonomous daily allowance (none by default; unsure = unattended)."""
+    from emporia import autonomy
+    if why := autonomy.gate_spend(amount_atomic):
+        raise AgentWalletError(why)
+    try:
+        charge_daily(agent_id, amount_atomic, max_daily_cents() * _USDC_ATOMIC_PER_CENT)
+    except AgentWalletError:
+        autonomy.refund_spend(amount_atomic)
+        raise
 
 
 def _or_refund(agent_id: str, amount_atomic: int, sign):

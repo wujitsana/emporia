@@ -356,6 +356,52 @@ def _shaped(name: str, fn):
     return run
 
 
+_ID_ARGS = ("agent_id", "sender_id", "from_agent_id", "creator_id", "buyer_id", "invited_by", "caller_id")
+
+
+def _guarded(name: str, fn):
+    """Run `emporia.autonomy.guard` before the tool: an unattended turn's money, budget and settings
+    limits, and (every origin) the agent's own secrets kept out of outbound text. A refusal is the
+    tool's answer; the tool never runs."""
+    from emporia import autonomy
+    if name not in autonomy.LOGGED_TOOLS and name not in autonomy.OUTBOUND_TEXT_TOOLS:
+        return fn
+    sig = inspect.signature(fn)
+
+    def check(args: tuple, kwargs: dict) -> dict[str, Any] | None:
+        try:
+            bound = dict(sig.bind_partial(*args, **{k: v for k, v in kwargs.items() if k in sig.parameters}).arguments)
+        except TypeError:
+            bound = dict(kwargs)
+        from emporia.env_config import env
+        aid = next((str(bound[k]) for k in _ID_ARGS if bound.get(k)), "") or env("AGENT_ID", "")
+        return autonomy.guard(name, bound, aid)
+
+    def sent(args: tuple, kwargs: dict, result: Any) -> None:
+        if name == "send_dm" and isinstance(result, dict) and result.get("success", "error" not in result):
+            peer = kwargs.get("to_agent_id") or (args[0] if args else "")
+            autonomy.note_dm_sent(str(peer))
+
+    if inspect.iscoroutinefunction(fn):
+        @functools.wraps(fn)
+        async def run_async(*args: Any, **kwargs: Any) -> Any:
+            if (refusal := check(args, kwargs)) is not None:
+                return refusal
+            out = await fn(*args, **kwargs)
+            sent(args, kwargs, out)
+            return out
+        return run_async
+
+    @functools.wraps(fn)
+    def run(*args: Any, **kwargs: Any) -> Any:
+        if (refusal := check(args, kwargs)) is not None:
+            return refusal
+        out = fn(*args, **kwargs)
+        sent(args, kwargs, out)
+        return out
+    return run
+
+
 def apply(mcp: Any, tools: list[Any]) -> None:
     """Give each registered tool its agent-facing description, argument notes and answer shape.
     A tool missing from DESCRIPTIONS keeps its docstring (the test fails on it)."""
@@ -381,5 +427,5 @@ def apply(mcp: Any, tools: list[Any]) -> None:
             if not (arg == "agent_id" and tool.name in TARGET_AGENT_ID):
                 props[arg]["description"] = OWN_ID
         if not getattr(tool.fn, "_emporia_shaped", False):
-            tool.fn = _shaped(tool.name, tool.fn)
+            tool.fn = _shaped(tool.name, _guarded(tool.name, tool.fn))
             tool.fn._emporia_shaped = True

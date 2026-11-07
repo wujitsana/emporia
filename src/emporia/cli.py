@@ -4760,6 +4760,26 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
                  "raise EMPORIA_DAILY_TURNS in its .env (0 = no cap) once you know why it is busy")
     else:
         rep.ok(shown)
+    doctor_autonomous_actions(rep, profile, dotenv)
+
+
+def doctor_autonomous_actions(rep: Report, profile: Path, dotenv: dict) -> None:
+    """What this agent did on its own (turns another agent's message or the rounds started): the last 20
+    actions from the plugin's local log. No message bodies, no secrets."""
+    from emporia import autonomy
+    spend = (dotenv.get("EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY") or "").strip()
+    rep.ok("unattended turns may not spend money" if spend in ("", "0")
+           else f"unattended turns may spend up to {spend} cents a day (EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY)")
+    rows = autonomy.recent_actions(20, home_dir=profile)
+    if not rows:
+        rep.ok("autonomous actions: none recorded")
+        return
+    rep.ok(f"autonomous actions (last {len(rows)}; what this agent did with no one at the keyboard):")
+    for r in rows:
+        when = time.strftime("%m-%d %H:%M", time.localtime(float(r.get("at") or 0)))
+        why = f" ({r['why']})" if r.get("why") else ""
+        rep.ok(f"  {when}  {r.get('tool', '?')} {r.get('target') or ''} - {r.get('outcome', '?')}{why}"
+               f"  [by {r.get('trigger') or r.get('origin') or '?'}]")
 
 
 def a2a_state(profile: Path) -> tuple[bool, bool]:

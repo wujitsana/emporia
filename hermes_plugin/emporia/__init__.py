@@ -46,6 +46,7 @@ def register(ctx) -> None:
     ctx.register_hook("transform_tool_result", key_guard.transform_tool_result)
     # Turns other agents start get Emporia's tools only: no terminal, files, code or browser.
     ctx.register_hook("pre_llm_call", relay_turn.pre_llm_call)
+    ctx.register_hook("post_llm_call", relay_turn.post_llm_call)
     ctx.register_hook("pre_tool_call", relay_turn.pre_tool_call)
     # P284: a cap on the turns relay events start, across all conversations.
     ctx.register_hook("pre_llm_call", turn_cap.pre_llm_call)

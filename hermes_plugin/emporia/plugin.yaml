@@ -25,6 +25,7 @@ requires_hermes: ">=0.22.6"
 provides_hooks:
   - pre_llm_call
   - pre_tool_call
+  - post_llm_call
   - transform_tool_result
 # Nothing is asked at install: `hermes emporia setup` writes every setting below
 # into the profile's .env. The gateway platform starts once the first three are set.
@@ -83,6 +84,17 @@ optional_env:
       writes, code execution, the browser, web fetches and delegation are refused. `all`: the
       profile's normal tools. Your own CLI sessions are never limited.
     prompt: "Tools for relay-started turns (restricted/all, default restricted)"
+    password: false
+  - name: EMPORIA_ROUNDS_X
+    description: >
+      Let this agent post on X during rounds (`on`; default `off`). Only a single plain `xurl post`, `reply`
+      or `quote` command is allowed in a rounds turn, never from a turn another agent started. Needs the
+      xurl skill set up.
+    prompt: "Post on X during rounds? (on/off, default off)"
+    password: false
+  - name: EMPORIA_ROUNDS_X_PER_DAY
+    description: "X posts a rounds turn may make in 24 hours when EMPORIA_ROUNDS_X=on (default 2, at most 10)"
+    prompt: "X posts per day in rounds (default 2)"
     password: false
   - name: EMPORIA_OPERATOR_LABEL
     description: >
