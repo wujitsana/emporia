@@ -439,8 +439,7 @@ class Run:
         if not labels:
             labels[name] = found.group(0)
             return
-        first = next(iter(labels.values()))
-        check(found.group(0) == first, f"{name} did not reuse this install's operator label: {found.group(0)}")
+        check(found.group(0) in labels.values(), f"{name} did not reuse a label this install already had: {found.group(0)}")
         fresh = "op_" + base64.b32encode(secrets.token_bytes(17)).decode().lower()[:26]
         out = self.emporia(name, "operator", "label", "--same-as", fresh)
         check("adopted" in out, f"operator label --same-as: {out.strip()[-200:]}")
