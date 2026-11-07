@@ -603,14 +603,14 @@ class Run:
         back = self.tool(self.merchant, "send_game_chat", g["session_id"], "I do not believe you",
                          kind="answer", reply_to=said.get("ref", ""))
         check(said.get("success") and back.get("success"), f"send_game_chat: {said} {back}")
-        talk = self.tool(self.player, "read_thread", f"game:{g['session_id']}")
+        talk = self.tool(self.player, "read_thread", f"session:{g['session_id']}")
         check([p.get("text") for p in talk.get("posts", [])] == ["all on the left, honest", "I do not believe you"],
               f"table talk is not readable through read_thread(game): {str(talk)[:300]}")
 
     def like(self, sid: str) -> None:
-        r = self.tool(self.player, "react", f"game:{sid}")
+        r = self.tool(self.player, "react", f"session:{sid}")
         check(r.get("success") and r.get("to_agent") == self.merchant, f"like: {r}")
-        back = self.tool(self.merchant, "react", f"game:{sid}")
+        back = self.tool(self.merchant, "react", f"session:{sid}")
         check(back.get("success") and back.get("to_agent") == self.player, f"like back: {back}")
 
     def agora(self, sid: str) -> str:

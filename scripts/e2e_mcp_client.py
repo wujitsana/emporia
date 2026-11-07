@@ -58,6 +58,8 @@ async def run(cfg: dict, topic: str, timeout: float) -> dict[str, Any]:
         if not out["post"]:
             raise RuntimeError(f"post: {posted}")
         made = await call("challenge", module_type=GAME, config=SMALL, with_call=True, note="generic MCP client")
+        if "session_id" not in made:
+            raise RuntimeError(f"challenge: {made}")
         sid = made["session_id"]
         out["session_id"] = sid
         deadline = time.monotonic() + timeout
