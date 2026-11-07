@@ -2868,15 +2868,19 @@ class EmporiaAgent:
                 "claim": claim}
 
     async def lab_report(self, lab: str, ref: str, event: str, author_claim: str, commit: str = "",
-                         credited_reviews: list[str] | None = None, note: str = "") -> dict[str, Any]:
+                         credited_reviews: list[str] | None = None, note: str = "",
+                         ideas: list[str] | None = None) -> dict[str, Any]:
         """For a lab's maintainers: report a PR or issue of the lab's repo as merged, closed, confirmed or fixed.
         `ref`: `gh_pr:owner/repo#N` or `gh_issue:owner/repo#N`; `author_claim`: the `Emporia: name@relay ...`
         line read in the PR or issue body; `credited_reviews`: claim lines of reviews relied on (merged PRs
-        only). The relay checks the maintainer and every claim's signature; it never fetches GitHub."""
+        only); `ideas`: idea posts (`post:pst_...`, up to 5) the merged PR or fixed issue implemented, each credited
+        once to its author across operators. The relay checks the maintainer and every claim's signature; it never
+        fetches GitHub."""
         from datetime import UTC, datetime
 
         from emporia import labs, refs
         ref = refs.text(ref)
+        idea_refs = [refs.text(i if ":" in i else f"post:{i}") for i in (ideas or [])]
         blobs = []
         for line in [author_claim, *(credited_reviews or [])]:
             _claim, _sig, why = labs.decode_claim(line)
@@ -2884,12 +2888,13 @@ class EmporiaAgent:
                 raise ValueError(why)
             blobs.append(line if not line.strip().startswith("Emporia:") else line.strip().split()[-1])
         at = datetime.now(UTC).isoformat()
-        sig = self._sign("lab-report", lab, ref, event, commit, blobs[0], blobs[1:], note,
-                         await self._signing_identity(), at)
+        sig = self._sign("lab-report", lab, ref, event, commit, blobs[0], blobs[1:], idea_refs,
+                         note, await self._signing_identity(), at)
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/labs/{_seg(lab)}/reports",
             json={"ref": ref, "event": event, "commit": commit, "author_claim": blobs[0],
-                  "credited_reviews": blobs[1:], "note": note, "at": at, "signature": sig})
+                  "credited_reviews": blobs[1:], "ideas": idea_refs, "note": note, "at": at,
+                  "signature": sig})
         resp.raise_for_status()
         return resp.json()
 

@@ -5,9 +5,8 @@ builds the same command strings in TypeScript (`dashboard/src/operatorCommands.t
 are held to one table, `dashboard/src/operatorCommands.vectors.json`, by their tests.
 
 Every action is a command a person runs in their own terminal, never a button: the
-dashboard only watches. An idea's verdict is the person's signed decision,
-and the key guard refuses them from an agent's tools outright; the relay controls (an
-expedition, the house agent, a snapshot) wait for the person's yes when an agent asks.
+dashboard only watches. The relay controls (an expedition, the house agent, a snapshot) wait for the
+person's yes when an agent asks.
 
 A command only ever carries an id the relay generated, checked against a strict pattern;
 anything else in it is a placeholder in capitals for the person to fill in. Text from the
@@ -42,16 +41,6 @@ def _cmd(*words: str) -> str:
 
 def _one(label: str, command: str, gate: str) -> dict[str, str]:
     return {"label": label, "command": command, "gate": gate}
-
-
-def idea_commands(name: str, item: dict[str, Any], verdicts: bool) -> list[dict[str, str]]:
-    """Adopt (with what it led to), noted, duplicate — when the relay takes idea verdicts."""
-    pid = item.get("post_id")
-    if not verdicts or not safe_name(name) or not safe_id(pid):
-        return []
-    return [_one("adopt", _cmd("ideas", name, "adopt", pid, "--ref", "COMMIT_OR_ROADMAP_ITEM"), PERSON),
-            _one("noted", _cmd("ideas", name, "noted", pid), PERSON),
-            _one("a duplicate", _cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), PERSON)]
 
 
 def lab_commands(name: str, lab: str) -> list[dict[str, str]]:
@@ -123,17 +112,6 @@ def render(status: dict[str, Any], name: str) -> list[str]:
                f"{(h.get('rate_limit_hits') or {}).get('agent', 0)} by agent · last backup "
                + (f"{last['at']} ({last['kind']})" if last else "none"))
     cmds(snapshot_command(name))
-
-    i = status.get("ideas") or {}
-    out.append("")
-    if not i.get("topic_exists"):
-        out.append(f"Ideas: no `{i.get('topic')}` topic on this relay yet")
-    else:
-        out.append(f"Ideas in `{i.get('topic')}` not yet judged: {i.get('open', 0)}"
-                   + ("" if i.get("verdicts") else " (this relay takes no idea verdicts)"))
-        for it in i.get("items") or []:
-            out.append(f"  {it['post_id']}  by {it['author_id']:<14} {it.get('title') or ''}")
-            cmds(idea_commands(name, it, bool(i.get("verdicts"))))
 
     p = status.get("labs") or {}
     out.append("")

@@ -572,7 +572,7 @@ def insight_board(by_agent: Mapping[str, list[Call]], min_calls: int | None = No
     return rows[:limit]
 
 
-PARTS = ("sheets", "ideas", "quests", "pledges")  # the gamify parts built so far (§1.1; quests P297; pledges)
+PARTS = ("sheets", "quests", "pledges")  # the gamify parts built so far (§1.1; quests P297; pledges)
 
 
 def gamify_parts() -> set[str]:
@@ -775,8 +775,8 @@ def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mappi
                   now: float, s: Mapping, house: frozenset[str] = frozenset(), limit: int = 25,
                   ideas: Iterable[Mapping] | None = None) -> dict:
     """The season's ladders, the main game first (the person, 11-05: games matter least):
-    `ideas` — improvement points from ideas the operator adopted in the season, when the relay
-    runs the `ideas` part;
+    `ideas` — improvement points from the ideas the labs' reports adopted in the season
+    (`ideas.adopted` rows: `author_id`, `points`, `at`), when the relay runs the labs module;
     `renown` — from the season's likes (swaps and rings judged on all likes); then Craft per
     set play. The same formulas as the sheet, over the season's window only."""
     games = [g for g in games if in_season(g["ended_at"], s)]
@@ -789,7 +789,7 @@ def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mappi
         def row_of(agent: str) -> dict:
             return pts.setdefault(agent, {"agent_id": agent, "points": 0, "adopted": 0})
         for i in ideas:
-            if i.get("verdict") != "adopted" or i.get("author_id") in house or not in_season(i.get("decided_at"), s):
+            if i.get("author_id") in house or not in_season(i.get("at"), s):
                 continue
             row = row_of(i["author_id"])
             row["points"] += int(i.get("points") or 0)

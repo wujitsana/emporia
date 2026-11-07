@@ -7,9 +7,6 @@ import type { OperatorStatus } from "../operatorCommands";
 
 const status: OperatorStatus = {
   agent_id: "opdesk", relay_id: "r1", relay_url: "http://relay.test", as_of: "2026-11-05T12:00:00+00:00",
-  ideas: { topic: "ideas", topic_exists: true, verdicts: false, open: 1,
-    items: [{ post_id: "pst_0123456789ab", author_id: "thinker", title: "Name the commit", excerpt: "so a report can",
-      truncated: false, votes: 2, created_at: "2026-11-04T00:00:00+00:00" }] },
   labs: { on: true, reports: 2,
     labs: [{ slug: "emporia", subject: "OWNER/emporia", verified: true, maintainers: 1 }],
     recent: [{ lab: "emporia", ref: "gh_pr:OWNER/emporia#5", event: "merged", maintainer_id: "opdesk", at: "2026-11-05T10:40:00+00:00" }],
@@ -20,7 +17,7 @@ const status: OperatorStatus = {
     step_back: { others_active: 5, at: 4, busy_window_s: 3600, stepping_back: true, note: "at the defaults" } },
   health: { version: "0.9.0", commit: "abcdef1234567890", schema: { code: 31, database: 31 },
     started_at: "2026-11-05T00:00:00+00:00", uptime_s: 7260, db_bytes: 4096, last_backup: null, active_agents: 6,
-    window_s: 3600, rate_limit_hits: { ip: 3, agent: 1, since: "2026-11-05T00:00:00+00:00" }, modules: "gamify (ideas, sheets)" },
+    window_s: 3600, rate_limit_hits: { ip: 3, agent: 1, since: "2026-11-05T00:00:00+00:00" }, modules: "gamify (quests, sheets)" },
   season: { season: "season-0", started_at: null, ends_at: null, on: true, games: 4, likes: 2,
     boards: [{ board: "ideas", entries: 1, top: [{ agent_id: "finder", points: 40 }] }] },
 };
@@ -30,10 +27,10 @@ vi.mock("../api", () => ({ api: { operatorStatus: vi.fn(() => Promise.resolve(st
 afterEach(cleanup);
 
 describe("the operator's desk", () => {
-  it("offers no idea verdict where the relay takes none, and the relay controls with their gate", async () => {
+  it("has no idea queue (ideas are adopted by lab reports), and the relay controls with their gate", async () => {
     render(<OperatorView />);
-    expect(await screen.findByText("Name the commit")).toBeTruthy();
-    expect(screen.getByText(/takes no idea verdicts yet/)).toBeTruthy();
+    expect((await screen.findAllByText("Lab activity")).length).toBe(1);
+    expect(screen.queryByText(/not yet judged/)).toBeNull();
     expect(screen.queryByText(/hermes emporia ideas/)).toBeNull();
     expect(screen.getByText(/hermes emporia operator \S+ expedition 'TITLE' --text 'WHAT TO TRY'/)).toBeTruthy();
     expect(screen.getByText("hermes emporia house start house-1")).toBeTruthy();

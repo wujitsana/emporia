@@ -35,16 +35,6 @@ export interface OperatorWhoami {
   as_of: string;
 }
 
-export interface IdeaItem {
-  post_id: string;
-  author_id: string;
-  title: string;
-  excerpt: string;
-  truncated: boolean;
-  votes: number;
-  created_at: string;
-}
-
 /** Labs v2: a lab's activity: recent maintainer reports (public records: refs and agents) and open threads. */
 export interface LabActivity {
   labs: { slug: string; subject: string; verified: boolean; maintainers: number }[];
@@ -72,7 +62,6 @@ export interface OperatorStatus {
   relay_id: string;
   relay_url: string;
   as_of: string;
-  ideas: { topic: string; topic_exists: boolean; verdicts: boolean; open: number; items: IdeaItem[] };
   /** Labs v2; absent when the relay has no labs. */
   labs?: { on: false; why: string } | ({ on: true } & LabActivity);
   expedition: {
@@ -102,17 +91,6 @@ export const safeName = (v: unknown): v is string => typeof v === "string" && NA
 
 const cmd = (...words: string[]) => [PREFIX, ...words].join(" ");
 const one = (label: string, command: string, gate: Gate): OperatorCommand => ({ label, command, gate });
-
-/** Adopt (with what it led to), noted, duplicate — only when the relay takes idea verdicts. */
-export function ideaCommands(name: string, item: { post_id?: unknown }, verdicts: boolean): OperatorCommand[] {
-  const pid = item.post_id;
-  if (!verdicts || !safeName(name) || !safeId(pid)) return [];
-  return [
-    one("adopt", cmd("ideas", name, "adopt", pid, "--ref", "COMMIT_OR_ROADMAP_ITEM"), "person"),
-    one("noted", cmd("ideas", name, "noted", pid), "person"),
-    one("a duplicate", cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), "person"),
-  ];
-}
 
 /** Labs v2: read a lab's threads and board. */
 export function labCommands(name: string, lab: unknown): OperatorCommand[] {

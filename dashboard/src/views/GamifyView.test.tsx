@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CharacterSheet } from "../api";
-import { GamifyView, IdeaList, QuestList, Sheet } from "./GamifyView";
+import { GamifyView, QuestList, Sheet } from "./GamifyView";
 
 // P288: the gamify tab says when a relay does not run the module, and shows a sheet as signed.
 const card = { current: cardOf([]) };
@@ -15,11 +15,6 @@ vi.mock("../hooks", () => ({
   useInterval: (fn: () => unknown) => {
     const src = String(fn);
     if (src.includes("relayCard")) return [card.current, false, null];
-    if (src.includes("api.ideas")) return [{ topic: "ideas", points_per_idea: 10, verdicts: [
-      { post_id: "p_1", author_id: "gamma", verdict: "adopted", ref: "roadmap: called it", duplicate_of: null, points: 10,
-        decided_by: "op", decided_at: "", signature: "s", title: "Show the claimed severity", posted_at: "" },
-      { post_id: "p_2", author_id: "delta", verdict: "duplicate", ref: null, duplicate_of: "p_1", points: 0,
-        decided_by: "op", decided_at: "", signature: "s", title: "Show claimed severities", posted_at: "" }] }, false, null];
     if (src.includes("ratings")) return [{ module_type: "emporia:blotto:v1", ratings: [] }, false, null];
     if (src.includes("api.pledges")) return [[{ pledges: [{ pledge_id: "pl_1", maker_id: "alpha", to_agent: "bob",
       kind: "deliver_by", public: true, made_at: "2026-11-05T10:00:00Z", status: "kept", resolved_by: "evidence",
@@ -67,18 +62,13 @@ describe("gamify tab", () => {
 });
 
 describe("gamify tab, ideas", () => {
-  it("adds ideas to the rail when the relay runs them", () => {
-    card.current = cardOf(["sheets", "ideas"]);
-    render(<GamifyView />);
-    expect(screen.getByText("Ideas")).toBeTruthy();
-    expect(screen.queryByText("Bug reports")).toBeNull();
-    expect(screen.queryByText("Security incidents")).toBeNull();
-  });
-
-  it("is not in the rail without them", () => {
-    card.current = cardOf(["sheets"]);
+  it("has no ideas page in the rail: adopted ideas are on the season board, from the labs' reports", () => {
+    card.current = cardOf(["sheets", "quests"]);
     render(<GamifyView />);
     expect(screen.queryByText("Ideas")).toBeNull();
+    expect(screen.getByText("Season")).toBeTruthy();
+    expect(screen.queryByText("Bug reports")).toBeNull();
+    expect(screen.queryByText("Security incidents")).toBeNull();
   });
 });
 
@@ -108,7 +98,7 @@ describe("P297: the season and Renown", () => {
       order: ["ideas"], games: 0, likes: 0,
       boards: { ideas: [{ agent_id: "beta", points: 10, adopted: 1 }] },
     }} />);
-    expect(screen.getByText("IMPROVEMENT POINTS — adopted ideas")).toBeTruthy();
+    expect(screen.getByText("IMPROVEMENT POINTS — adopted ideas, named in a lab report")).toBeTruthy();
     expect(screen.getByText("10 pts · 1 idea")).toBeTruthy();
   });
 
@@ -121,14 +111,6 @@ describe("P297: the season and Renown", () => {
 });
 
 describe("launch additions: ideas, feats, the expedition", () => {
-  it("lists the operator's verdicts on ideas", () => {
-    render(<IdeaList />);
-    expect(screen.getByText("Show the claimed severity")).toBeTruthy();
-    expect(screen.getByText("roadmap: called it")).toBeTruthy();
-    expect(screen.getByText("duplicate of p_1")).toBeTruthy();
-    expect(screen.getByText(/earns 10 points/)).toBeTruthy();
-  });
-
   it("shows improvements on a sheet", () => {
     render(<Sheet sheet={{ ...sheet, improvements: { agent_id: "alpha", points: 10, adopted: 1, badges: ["Idea adopted"] } }} />);
     expect(screen.getByText("IMPROVEMENTS · 10 points")).toBeTruthy();
@@ -223,11 +205,11 @@ describe("calls and pledges: Insight and the Word line", () => {
 
 describe("P1: Season on a phone", () => {
   it("opens on the detail (the season's boards), the rail one back away", () => {
-    card.current = cardOf(["sheets", "ideas"]);
+    card.current = cardOf(["sheets", "quests"]);
     const { container } = render(<GamifyView />);
     const layout = container.querySelector("[data-pane-shown]") as HTMLElement;
     expect(layout.dataset.paneShown).toBe("detail");
-    expect(screen.getByRole("button", { name: /quests, ideas, sheets/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /quests, sheets/ })).toBeTruthy();
   });
 });
 

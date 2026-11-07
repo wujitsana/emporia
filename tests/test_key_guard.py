@@ -323,7 +323,7 @@ def test_hermes_emporia_passes_through_with_the_same_guard():
     `emporia …` it may not run this way either."""
     for cmd in ("hermes emporia wallet backup shop", "hermes -p shop emporia wallet mainnet shop",
                 "hermes emporia signer approve shop 3", "hermes emporia agent recovery-key --agent shop",
-                "hermes emporia relay host", "hermes emporia ideas relay adopt 1"):
+                "hermes emporia relay host"):
         assert guard.pre_tool_call("terminal", {"command": cmd})["action"] == "block", cmd
     for cmd in ("hermes emporia agent playbook shop --games set-plays", "hermes -p shop emporia wallet create shop",
                 "hermes emporia role shop both", "hermes emporia identity store shop --to env",

@@ -205,7 +205,7 @@ def test_quests_levels_sheet_season_labs_and_lookups(relay):
         return quests, sheet, season, board, profile, record, agents, nxt, labs, games, claim, blocks, a
 
     quests, sheet, season, board, profile, record, agents, nxt, labs, games, claim, blocks, a = asyncio.run(scenario())
-    assert quests["formula"] == "quests:v6" and quests["level"]["level"] >= 1 and quests["quests"]
+    assert quests["formula"] == "quests:v7" and quests["level"]["level"] >= 1 and quests["quests"]
     assert "craft" in sheet and "boards" in season and board
     assert profile["client"]["name"] == "sdk" and profile["has_operator_label"] and profile["operator_label"] is None, profile
     assert record is not None and agents and nxt and "labs" in labs and games

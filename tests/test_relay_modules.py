@@ -27,26 +27,26 @@ def test_the_core_alone_runs_no_module(core):
 
 def test_each_module_is_on_when_its_settings_say_so(core):
     core.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
-    core.setenv("EMPORIA_GAMIFY", "sheets,ideas")
+    core.setenv("EMPORIA_GAMIFY", "sheets,quests")
     core.setenv("STRIPE_SECRET_KEY", "sk_test_x")
     ads = rm.advertise(["https://peer.example"])
     assert ads["log"] == {"v": 1, "parts": []}
-    assert ads["gamify"]["parts"] == ["ideas", "sheets"] and ads["gamify"]["formulas"]
+    assert ads["gamify"]["parts"] == ["quests", "sheets"] and ads["gamify"]["formulas"]
     assert ads["money"]["parts"] == ["cards"] and ads["money"]["cards"] == "test"
     assert ads["federation"] == {"v": 1, "parts": [], "links": ["https://peer.example"]}
-    assert rm.describe(ads) == "money (cards) · log · federation · gamify (ideas, sheets)"
+    assert rm.describe(ads) == "money (cards) · log · federation · gamify (quests, sheets)"
 
 
 def test_a_part_without_its_dependency_is_off_and_the_relay_refuses_to_start(core):
-    core.setenv("EMPORIA_GAMIFY", "ideas")
-    assert "gamify" not in rm.running()                 # its only part is off, so the module is
-    assert rm.off_because("gamify", "ideas") == "the gamify module's ideas part needs the log module, which this relay does not run"
+    core.setenv("EMPORIA_LABS", "1")
+    assert "labs" not in rm.running()                   # its only part is off, so the module is
+    assert rm.off_because("labs", "reports") == "the labs module's reports part needs the log module, which this relay does not run"
     [why] = rm.problems()
-    assert why.startswith("gamify: ideas needs the log module") and "emporia setup log" in why
-    with pytest.raises(rs.RelayModulesWrong, match="ideas needs the log"):
+    assert why.startswith("labs: reports needs the log module") and "emporia setup log" in why
+    with pytest.raises(rs.RelayModulesWrong, match="reports needs the log"):
         rs._check_relay_modules()
     core.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
-    assert rm.on("gamify", "ideas") and rm.problems() == []
+    assert rm.on("labs", "reports") and rm.problems() == []
     rs._check_relay_modules()
 
 
@@ -139,18 +139,6 @@ def test_relay_modules_command_writes_only_what_changes(tmp_path, monkeypatch):
     assert cli.main(["relay", "modules", "--modules", "log", "--yes"]) == 0
     text = (op / ".env").read_text()
     assert "EMPORIA_GAMIFY=\n" in text and "EMPORIA_TRANSPARENCY_LOG=on" in text
-
-
-def test_adopted_ideas_bring_the_log_or_stay_off(tmp_path, monkeypatch):
-    op = tmp_path / "op"
-    op.mkdir()
-    (op / ".env").write_text("EMPORIA_GAMIFY=sheets,ideas\n")
-    monkeypatch.setattr(cli, "this_profile", lambda: op)
-    monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
-    monkeypatch.setattr(cli, "_TTY", True)
-    monkeypatch.setattr(cli, "ask", lambda q, default: False)                # "no, not the log"
-    assert cli.main(["relay", "modules", "--modules", "gamify", "--yes"]) == 0
-    assert "EMPORIA_GAMIFY=sheets\n" in (op / ".env").read_text()
 
 
 # ── P291: linked relays take each other's modules into account ──────────────
@@ -253,10 +241,10 @@ def test_add_and_remove_modules_by_name(tmp_path, monkeypatch):
 
     def env():
         return dict(line.split("=", 1) for line in (op / ".env").read_text().splitlines() if "=" in line)
-    assert cli.main(["relay", "modules", "add", "log", "gamify:sheets,ideas", "--yes"]) == 0
-    assert env()["EMPORIA_TRANSPARENCY_LOG"] == "on" and env()["EMPORIA_GAMIFY"] == "sheets,ideas"
+    assert cli.main(["relay", "modules", "add", "log", "gamify:sheets,quests", "--yes"]) == 0
+    assert env()["EMPORIA_TRANSPARENCY_LOG"] == "on" and env()["EMPORIA_GAMIFY"] == "sheets,quests"
     assert env()["FEDERATED_RELAYS"] == "https://peer.example", "what was not named is kept"
-    assert cli.main(["relay", "modules", "remove", "gamify:ideas", "--yes"]) == 0
+    assert cli.main(["relay", "modules", "remove", "gamify:quests", "--yes"]) == 0
     assert env()["EMPORIA_GAMIFY"] == "sheets" and env()["EMPORIA_TRANSPARENCY_LOG"] == "on"
     assert cli.main(["relay", "modules", "add", "federation:dms", "--yes"]) == 0
     assert env()["EMPORIA_FEDERATED_DMS"] == "1"
@@ -264,12 +252,10 @@ def test_add_and_remove_modules_by_name(tmp_path, monkeypatch):
     assert env()["EMPORIA_FEDERATED_DMS"] == "0" and env()["FEDERATED_RELAYS"] == "https://peer.example"
     assert cli.main(["relay", "modules", "remove", "gamify", "--yes"]) == 0
     assert env()["EMPORIA_GAMIFY"] == ""
-    # refused, nothing written: a missing dependency, a module or part that does not exist, money's parts
+    # refused, nothing written: a module or part that does not exist (`ideas` is no gamify part any more), money's parts
     before = (op / ".env").read_text()
     assert cli.main(["relay", "modules", "remove", "log", "--yes"]) == 0          # nothing needs it now
     (op / ".env").write_text(before)
-    assert cli.main(["relay", "modules", "add", "gamify:ideas", "--yes"]) == 0    # the log is on
-    assert cli.main(["relay", "modules", "remove", "log", "--yes"]) == 1         # adopted ideas need it
-    for bad in (["add", "chat"], ["add", "gamify:raids"], ["add", "money:cards"], ["add"], ["drop", "log"]):
+    for bad in (["add", "chat"], ["add", "gamify:raids"], ["add", "gamify:ideas"], ["add", "money:cards"], ["add"], ["drop", "log"]):
         assert cli.main(["relay", "modules", *bad, "--yes"]) == 1, bad
     assert "EMPORIA_TRANSPARENCY_LOG=on" in (op / ".env").read_text()

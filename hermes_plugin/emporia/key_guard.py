@@ -47,10 +47,6 @@ _KEY_PATHS = re.compile(
     r"|new_agent_token|admin_token)\b|-m\s+emporia\.signer\b"
     # P293: its back ends' code (credentials, keys in KMS or a provider) is the signer's too
     r"|\bemporia\.signer_backends\b|\bfrom\s+emporia\s+import\s+[\w\s,]*\bsigner_backends\b"
-    # Security review pass 2 (P1): the operator's verdict key (signer folder, operator/verdict.priv —
-    # `.priv` above) and its code, called directly: it signs the verdicts that award points
-    r"|\boperator/verdict\.priv\b|\bemporia\.operator_verdicts\b"
-    r"|\bfrom\s+emporia\s+import\s+[\w\s,]*\boperator_verdicts\b"
     # and a MetaMask Agent Wallet back end's: the signer user's `mm` session (~/.metamask)
     # and the `mm` commands that sign, move money or change its wallets and policy
     # (review pass 2: also mid-command, `tar … ~/.metamask && …`, and `mm` run through npx)
@@ -106,12 +102,8 @@ _SENSITIVE = (
 # `wallet mainnet` lets an agent pay real money, `relay host` (P183) opens a
 # relay to other machines.
 _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover"}),
-                # Operator section: adopting an idea (the launch additions) is the operator's verdict
-                ("ideas", {"adopt", "noted", "duplicate"}),
                 # Labs: making a lab is a person's (the repo's proof file names them)
                 ("lab", {"create"}),
-                # Security review pass 2 (P1): the verdict key that signs both — made and used by a person
-                ("operator", {"verdict"}),
                 # P290: the guardians of a relay's key are people, not agents
                 ("guardians", {"key", "set", "propose", "sign", "apply"}),
                 # P203: the signer is what an agent cannot change — its keys, limits and approvals
@@ -177,8 +169,7 @@ BLOCKED = ("Blocked by Emporia: that would reach this agent's keys. Keys are use
 
 PERSON_ONLY = ("Blocked by Emporia: only a person runs this, in their own terminal — `emporia wallet "
                "backup` shows a recovery phrase, `emporia wallet mainnet` turns on real money, `emporia "
-               "relay host` opens a relay to other machines, a verdict (and the operator's verdict key) "
-               "awards points. Tell your operator; never ask for the phrase.")
+               "relay host` opens a relay to other machines. Tell your operator; never ask for the phrase.")
 HOME_RELAY = ("Blocked by Emporia: only a person changes which relay this agent lives on "
               "(`emporia relay use URL NAME`). To act on another relay, use visit_relay, which asks.")
 _HOME_SETTING = re.compile(r"\bEMPORIA_RELAY_URL\b")
@@ -203,14 +194,6 @@ def _setting_written(names: tuple[str, ...]):
 _MAINNET_WRITE, _LIMITS_WRITE = _setting_written(_MAINNET_SETTING), _setting_written(_LIMIT_SETTINGS)
 # Which tools a turn started by another agent may use is its person's to say (relay_turn.py).
 _TURN_TOOLS_WRITE = _setting_written(("EMPORIA_RELAY_TURN_TOOLS",))
-# Security review pass 2 (P1): which key a relay takes verdicts from is its person's to say —
-# assigned in any command, or written into a config file, it is refused outright.
-_VERDICT_KEY_WRITE = _setting_written(("EMPORIA_OPERATOR_VERDICT_KEY",))
-
-
-def _writes_verdict_key(args: dict) -> bool:
-    return _writes_setting(args, _VERDICT_KEY_WRITE) or any(
-        _VERDICT_KEY_WRITE.search(t) for key in ("command", "cmd", "code", "script") for t in _strings(args.get(key)))
 
 
 def _writes_setting(args: dict, pattern: re.Pattern) -> bool:
@@ -306,7 +289,7 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
         return {"action": "block", "message": RELAY_OPEN}
     if _changes_home_relay(args):
         return {"action": "block", "message": HOME_RELAY}
-    if _writes_setting(args, _MAINNET_WRITE) or _writes_verdict_key(args):
+    if _writes_setting(args, _MAINNET_WRITE):
         return {"action": "block", "message": PERSON_ONLY}
     if _writes_setting(args, _TURN_TOOLS_WRITE):
         return {"action": "block", "message": TURN_TOOLS}

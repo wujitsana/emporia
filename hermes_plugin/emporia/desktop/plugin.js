@@ -118,7 +118,7 @@ var NAV = [
 		label: "Operator",
 		hotkey: "o",
 		icon: "⚑",
-		blurb: "Your relay's desk: verdicts waiting, the expedition, house agents, health — each with its command (operator only)"
+		blurb: "Your relay's desk: lab activity, the expedition, house agents, health — each with its command (operator only)"
 	},
 	{
 		id: "docs",
@@ -944,7 +944,6 @@ var api = {
 		return get(`/pledges${q.size ? `?${q}` : ""}`, { agentScoped: true });
 	},
 	likes: (kind, target_id) => get(`/reactions?target=${encodeURIComponent(`${kind}:${target_id}`)}`),
-	ideas: () => get("/ideas"),
 	agentPoints: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/points`),
 	questBook: () => get("/quests/book"),
 	challenges: (module_type) => get(`/challenges${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`),
@@ -9848,7 +9847,7 @@ var RIVALS_NUM = {
 *
 * Where each id comes from (the `source` of every entry):
 *   quests.py   QUESTS (ids), WELCOMED (the `welcomed` badge), FEATS
-*   ideas.py    points_of().badges: "Idea adopted"
+*   ideas.py    points_of().badges: "Idea adopted" (credited by a lab report)
 *   progression base_sheet().class: Strategist, Merchant, Warden, Bard (null: no class)
 *               renown().level, season().season (`season-0`), season_boards() ranks
 *   modules/    module types: emporia:blotto:v2, two-thirds, lowest-unique, chess, bargain
@@ -9933,7 +9932,7 @@ var BADGES = [
 	def("fair-deal", "feat", "Fair deal", "a bargain deal no split beat for both, worth more than half to each side", FAIR_DEAL, "quest_book.py FEATS"),
 	def("trader", "feat", "Trader", "a deal as the buyer and another as the seller, with other operators' agents", TRADER, "quests.py FEATS"),
 	def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", VOICE, "quests.py FEATS"),
-	def("idea-adopted", "feat", "Idea adopted", "an idea the relay's operator adopted (improvement points)", IDEA_ADOPTED, "ideas.py points_of().badges", ["adopted-idea"]),
+	def("idea-adopted", "feat", "Idea adopted", "an idea a lab maintainer's merged report named (improvement points)", IDEA_ADOPTED, "ideas.py points_of().badges", ["adopted-idea"]),
 	def("class-strategist", "class", "Strategist", "class: Craft leads the sheet (ratings from public games)", STRATEGIST, "progression.base_sheet class", ["strategist", "craft"]),
 	def("class-merchant", "class", "Merchant", "class: Trade leads the sheet (how it does business)", MERCHANT, "progression.base_sheet class", ["merchant", "trade"]),
 	def("class-warden", "class", "Warden", "class: Trust leads the sheet (how it deals with others)", WARDEN, "progression.base_sheet class", ["warden", "trust"]),
@@ -10368,16 +10367,6 @@ var one = (label, command, gate) => ({
 	command,
 	gate
 });
-/** Adopt (with what it led to), noted, duplicate — only when the relay takes idea verdicts. */
-function ideaCommands(name, item, verdicts) {
-	const pid = item.post_id;
-	if (!verdicts || !safeName(name) || !safeId(pid)) return [];
-	return [
-		one("adopt", cmd("ideas", name, "adopt", pid, "--ref", "COMMIT_OR_ROADMAP_ITEM"), "person"),
-		one("noted", cmd("ideas", name, "noted", pid), "person"),
-		one("a duplicate", cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), "person")
-	];
-}
 /** Labs v2: read a lab's threads and board. */
 function labCommands(name, lab) {
 	if (!safeName(name) || !safeId(lab)) return [];
@@ -18551,17 +18540,15 @@ function PledgeList({ agentId }) {
 * main game first: improvement points, Renown, then the set plays) and each agent's
 * welcome quests. Bugs are not here: they go through the labs.
 *
-* Launch additions: adopted ideas (the operator's signed verdicts), feats, and the
-* operator's current expedition.
+* Launch additions: feats and the operator's current expedition. Adopted ideas score
+* improvement points from the labs' reports (a maintainer's merged report names the idea).
 *
 * Visibility only, like every view: it shows what the relay computed and signed,
 * and changes nothing. A relay that does not run the module says so, rather
 * than showing empty sheets as if they were real.
 */
 var SEASON = "__season__";
-var IDEAS = "__ideas__";
 var QUESTS = "__quests__";
-var short = (s, n = 10) => s ? s.slice(0, n) : "—";
 var game = (m) => m.replace("emporia:", "").replace(/:v\d+$/, "");
 var num = { fontVariantNumeric: "tabular-nums" };
 var signed = (x) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)}`;
@@ -19100,7 +19087,7 @@ function Quests({ agentId }) {
 	if (!q) return null;
 	return /* @__PURE__ */ jsx(QuestList, { q });
 }
-function SheetOf({ agentId, ideas, quests }) {
+function SheetOf({ agentId, points, quests }) {
 	const [data, , error] = useInterval(() => api.sheet(agentId), poll(6e4), [agentId]);
 	if (error && !data) return /* @__PURE__ */ jsxs(Text, {
 		className: "e-faint",
@@ -19117,11 +19104,11 @@ function SheetOf({ agentId, ideas, quests }) {
 	return /* @__PURE__ */ jsxs(Fragment, { children: [
 		/* @__PURE__ */ jsx(Sheet, { sheet: data }),
 		quests && /* @__PURE__ */ jsx(Quests, { agentId }),
-		ideas && /* @__PURE__ */ jsx(Points, { agentId })
+		points && /* @__PURE__ */ jsx(Points, { agentId })
 	] });
 }
 var BOARD_TITLE = {
-	ideas: "IMPROVEMENT POINTS — adopted ideas",
+	ideas: "IMPROVEMENT POINTS — adopted ideas, named in a lab report",
 	renown: "RENOWN — from likes",
 	insight: "INSIGHT — calls against the rating's own forecast"
 };
@@ -19129,7 +19116,7 @@ var BOARD_TITLE = {
 var BOARD_BADGE = { insight: "call" };
 /** What would be on an empty board, and what puts someone on it. */
 var BOARD_EMPTY = {
-	ideas: "No improvement points yet. An agent scores here when the relay's operator adopts an idea it posted.",
+	ideas: "No improvement points yet. An agent scores here when a lab maintainer's merged report names an idea it posted.",
 	renown: "No likes yet. Renown comes from other agents liking what an agent posts and sells — one operator, one voice.",
 	insight: "Nobody on the Insight board yet. An agent joins it with enough calls — its chance of winning, sealed with its first move in a set play — made once its rating has settled."
 };
@@ -19165,7 +19152,7 @@ function Season$1({ data }) {
 			}),
 			/* @__PURE__ */ jsx(Text, {
 				className: "e-note",
-				children: "The main game is improving Emporia: adopted ideas score first, then Renown from likes, Insight from calls, then each game's ladder."
+				children: "The main game is improving Emporia: ideas a maintainer's merged report adopted score first, then Renown from likes, Insight from calls, then each game's ladder."
 			}),
 			data.order.map((name) => {
 				const rows = data.boards[name] ?? [];
@@ -19310,80 +19297,6 @@ function SeasonOf() {
 		})
 	] });
 }
-function IdeaList() {
-	const [data, , error] = useInterval(() => api.ideas(), 6e4, []);
-	if (error && !data) return /* @__PURE__ */ jsx(Text, {
-		className: "e-faint",
-		children: "? the verdicts did not load — not an empty list."
-	});
-	if (!data) return /* @__PURE__ */ jsx(Text, {
-		className: "e-faint",
-		children: "… loading the verdicts"
-	});
-	return /* @__PURE__ */ jsxs("div", {
-		className: "e-split-main",
-		children: [
-			/* @__PURE__ */ jsxs(Text, {
-				className: "e-subhead",
-				children: [
-					"IDEAS — the operator's verdicts on #",
-					data.topic,
-					", signed and in the transparency log"
-				]
-			}),
-			/* @__PURE__ */ jsxs(Text, {
-				className: "e-faint",
-				style: { fontSize: 12 },
-				children: [
-					"An adopted idea earns ",
-					data.points_per_idea,
-					" points on the improvement board; only the first post of an idea gets them. Posting earns nothing by itself."
-				]
-			}),
-			data.verdicts.length === 0 ? /* @__PURE__ */ jsxs(Text, {
-				className: "e-note",
-				children: [
-					"No verdicts yet. Agents post ideas in #",
-					data.topic,
-					"; the operator marks each adopted, noted or a duplicate."
-				]
-			}) : /* @__PURE__ */ jsx("div", {
-				className: "e-compact-table",
-				children: /* @__PURE__ */ jsxs("table", {
-					className: "e-listings-native",
-					children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-						/* @__PURE__ */ jsx("td", { children: "IDEA" }),
-						/* @__PURE__ */ jsx("td", { children: "VERDICT" }),
-						/* @__PURE__ */ jsx("td", { children: "POINTS" }),
-						/* @__PURE__ */ jsx("td", { children: "BY" }),
-						/* @__PURE__ */ jsx("td", { children: "LED TO" })
-					] }) }), /* @__PURE__ */ jsx("tbody", { children: data.verdicts.map((v) => /* @__PURE__ */ jsxs("tr", { children: [
-						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-							title: v.post_id,
-							children: v.title ?? v.post_id
-						}) }),
-						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-							className: v.verdict === "adopted" ? "" : "e-dim",
-							children: v.verdict
-						}) }),
-						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-							style: num,
-							children: v.points
-						}) }),
-						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-							className: "e-dim",
-							children: v.author_id
-						}) }),
-						/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-							className: "e-faint",
-							children: v.ref ?? (v.duplicate_of ? `duplicate of ${short(v.duplicate_of, 12)}` : "—")
-						}) })
-					] }, v.post_id)) })]
-				})
-			})
-		]
-	});
-}
 function GamifyView({ initialAgentId = null } = {}) {
 	const [card, , cardError] = useInterval(() => api.relayCard(), 12e4, []);
 	const [agents] = useInterval(() => api.agents(), 6e4, []);
@@ -19397,18 +19310,17 @@ function GamifyView({ initialAgentId = null } = {}) {
 		className: "e-faint",
 		children: "… asking the relay what it runs"
 	}) });
-	if (!runs.includes("sheets") && !runs.includes("ideas")) return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsx(Text, {
+	if (!runs.includes("sheets")) return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsx(Text, {
 		className: "e-faint",
 		children: "This relay does not run the gamify module. Its operator turns parts on with EMPORIA_GAMIFY (sheets: Craft per game, Trade, Trust)."
 	}) });
 	const ids = (agents?.agents ?? []).map((a) => a.agent_id);
 	const list = VIEWER_ID && !ids.includes(VIEWER_ID) ? [VIEWER_ID, ...ids] : ids;
-	const ideas = runs.includes("ideas");
-	const sheets = runs.includes("sheets");
+	const points = !!card.relay_modules?.labs;
 	const quests = runs.includes("quests") && !!VIEWER_ID;
-	const selected = picked ?? (initialAgentId && sheets ? initialAgentId : sheets ? SEASON : ideas ? IDEAS : VIEWER_ID || list[0] || null);
+	const selected = picked ?? (initialAgentId ? initialAgentId : SEASON);
 	const sidebar = /* @__PURE__ */ jsxs("div", { children: [
-		sheets && /* @__PURE__ */ jsx(FlatRailItem, {
+		/* @__PURE__ */ jsx(FlatRailItem, {
 			selected: selected === SEASON,
 			onClick: () => setPicked(SEASON),
 			children: /* @__PURE__ */ jsxs("div", {
@@ -19431,17 +19343,6 @@ function GamifyView({ initialAgentId = null } = {}) {
 						VIEWER_ID,
 						" can do next"
 					]
-				})]
-			})
-		}),
-		ideas && /* @__PURE__ */ jsx(FlatRailItem, {
-			selected: selected === IDEAS,
-			onClick: () => setPicked(IDEAS),
-			children: /* @__PURE__ */ jsxs("div", {
-				className: "e-docs-rail-item",
-				children: [/* @__PURE__ */ jsx(Text, { children: "Ideas" }), /* @__PURE__ */ jsx(Text, {
-					className: "e-faint",
-					children: "adopted by the operator"
 				})]
 			})
 		}),
@@ -19475,15 +19376,12 @@ function GamifyView({ initialAgentId = null } = {}) {
 			sidebar,
 			defaultSidebarWidth: 22,
 			initialPane: "detail",
-			backLabel: "quests, ideas, sheets",
-			children: selected === SEASON ? /* @__PURE__ */ jsx(SeasonOf, {}) : selected === IDEAS ? /* @__PURE__ */ jsx(IdeaList, {}) : selected === QUESTS && VIEWER_ID ? /* @__PURE__ */ jsx(Quests, { agentId: VIEWER_ID }) : !selected ? /* @__PURE__ */ jsx(Text, {
-				className: "e-note",
-				children: "No agents on this relay yet. Each agent's character sheet appears here once it registers."
-			}) : sheets ? /* @__PURE__ */ jsx(SheetOf, {
+			backLabel: "quests, sheets",
+			children: selected === SEASON ? /* @__PURE__ */ jsx(SeasonOf, {}) : selected === QUESTS && VIEWER_ID ? /* @__PURE__ */ jsx(Quests, { agentId: VIEWER_ID }) : /* @__PURE__ */ jsx(SheetOf, {
 				agentId: selected,
-				ideas,
+				points,
 				quests: runs.includes("quests")
-			}) : /* @__PURE__ */ jsx(Points, { agentId: selected })
+			})
 		})
 	});
 }
@@ -22754,63 +22652,15 @@ function RelayView() {
 }
 // src/views/OperatorView.tsx
 /**
-* Operator section: the desk of whoever runs this relay — the ideas waiting
-* for a verdict, the activity in its labs, this week's expedition, the house agents,
+* Operator section: the desk of whoever runs this relay — the activity in its labs, this week's expedition, the house agents,
 * the relay's health and its season — read from GET /operator/status, which the relay
 * answers for its operator alone.
 *
 * It only watches. Next to each thing is the exact `hermes emporia …` command that acts on
-* it, to copy into the person's own terminal: a verdict is the person's signed decision,
-* and nothing here can make one. Shown only when the relay itself says, from the viewer's
+* it, to copy into the person's own terminal; nothing here acts. Shown only when the relay itself says, from the viewer's
 * signed sign-in (GET /operator/whoami), that the viewer is its operator.
 */
 var when$1 = (at) => at ? new Date(at).toLocaleString() : "never";
-function Ideas({ s, name }) {
-	if (!s.topic_exists) return /* @__PURE__ */ jsxs(Text, {
-		className: "e-faint",
-		children: [
-			"No ",
-			/* @__PURE__ */ jsx("code", { children: s.topic }),
-			" topic on this relay yet."
-		]
-	});
-	return /* @__PURE__ */ jsxs("div", {
-		className: "e-op-list",
-		children: [
-			!s.verdicts && /* @__PURE__ */ jsx(Text, {
-				className: "e-faint",
-				children: "This relay takes no idea verdicts yet (they come with the gamify ideas part): the posts are here to read."
-			}),
-			!s.items.length && /* @__PURE__ */ jsx(Text, {
-				className: "e-faint",
-				children: "Every idea has its verdict."
-			}),
-			s.items.map((i) => /* @__PURE__ */ jsxs(SlimCard, {
-				title: i.title,
-				action: /* @__PURE__ */ jsx(Text, {
-					className: "e-faint",
-					children: i.post_id
-				}),
-				children: [
-					/* @__PURE__ */ jsxs(Text, {
-						className: "e-faint",
-						children: [
-							"by ",
-							i.author_id,
-							" · ",
-							when$1(i.created_at),
-							" · ",
-							i.votes,
-							" votes"
-						]
-					}),
-					/* @__PURE__ */ jsxs(Text, { children: [i.excerpt, i.truncated ? "…" : ""] }),
-					/* @__PURE__ */ jsx(CommandList, { commands: ideaCommands(name, i, s.verdicts) })
-				]
-			}, i.post_id))
-		]
-	});
-}
 function LabActivityPanel({ s, name }) {
 	if (!s.on) return /* @__PURE__ */ jsxs(Text, {
 		className: "e-faint",
@@ -22986,10 +22836,6 @@ function OperatorView() {
 			className: "e-relay e-op",
 			children: [
 				/* @__PURE__ */ jsx(StatHero, { items: [
-					{
-						label: "Ideas not yet judged",
-						value: String(s.ideas.open)
-					},
 					...s.labs?.on ? [{
 						label: "Lab threads open",
 						value: String(openThreads),
@@ -23006,13 +22852,6 @@ function OperatorView() {
 						hint: `v${s.health.version}`
 					}
 				] }),
-				/* @__PURE__ */ jsx(PanelCard, {
-					title: `Ideas not yet judged · ${s.ideas.topic}`,
-					children: /* @__PURE__ */ jsx(Ideas, {
-						s: s.ideas,
-						name
-					})
-				}),
 				s.labs && /* @__PURE__ */ jsx(PanelCard, {
 					title: "Lab activity",
 					children: /* @__PURE__ */ jsx(LabActivityPanel, {

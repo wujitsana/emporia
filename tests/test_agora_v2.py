@@ -64,20 +64,6 @@ def test_a_topic_shows_its_post_v2_threads(client):
             ].count(new) == 1
 
 
-
-
-def test_only_an_idea_post_in_the_ideas_topic_can_be_judged(client, monkeypatch):
-    from emporia.routes.ideas import _idea_post
-    a = _agent(client)
-    slug = _topic(client, a, name="ideas-" + uuid.uuid4().hex[:5])
-    idea = v2_post(client, a, slug, "build a thing", kind="idea").json()["post_id"]
-    note = v2_post(client, a, slug, "just a note", kind="note").json()["post_id"]
-    with rs.DB_LOCK, rs.get_db() as conn:
-        assert _idea_post(conn, idea, slug)["post_id"] == idea
-        with pytest.raises(Exception, match="no public post"):
-            _idea_post(conn, note, slug)
-
-
 # ── the main feed over every public place ────────────────────────────────────
 
 def test_the_main_feed_draws_on_public_topics_and_says_where_from(client):

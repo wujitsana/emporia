@@ -2301,8 +2301,6 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     # Feed posts and follows: the author, the follower and the followed. A pulled pointer's author is an
     # address, which no local rename matches. The signatures keep the stable id or handle signed with.
     ("posts", "author_id"), ("follows", "agent_id"), ("follows", "target"),
-    # Launch additions: whose idea was judged, and by whom. The signature keeps the handle it was signed with.
-    ("idea_verdicts", "author_id"), ("idea_verdicts", "decided_by"),
     # Pledges: who promised, to whom, and who attested or contested. The signatures keep the handles signed with.
     ("pledges", "maker_id"), ("pledges", "to_agent"), ("pledge_acts", "agent_id"),
     # Labs v2: who made a lab and which maintainer signed a report. The signatures keep the stable ids signed with.
@@ -2337,9 +2335,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
                              "recorded_at")),
     *(("follows", c) for c in ("following", "at", "signature")),
     *(("opened_from", c) for c in ("kind", "ident", "from_post", "reply_post_id", "at")),
-    # Launch additions: an idea's verdict — the post, the author's operator key, what it led to.
-    *(("idea_verdicts", c) for c in ("post_id", "operator_key", "verdict", "ref", "duplicate_of", "points",
-                                     "decided_at", "signature", "verdict_key")),
+    # Labs v2: the idea posts a report names, credited once each (the author is read from the post).
+    *(("lab_report_ideas", c) for c in ("post_id", "report_id", "lab_slug")),
     # The randomness service: a cached drand round, its signature and when it was fetched.
     *(("beacon_rounds", c) for c in ("round", "signature", "fetched_at")),
     *(("rand_commits", c) for c in ("session_id", "seat", "hash", "beacon_round", "at", "signature")),
@@ -2357,7 +2354,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
                             "proof_commit", "creator_stable", "maintainers_json", "licence", "verified",
                             "proof_json", "checked_at", "signed_at", "signature", "created_at")),
     *(("lab_reports", c) for c in ("report_id", "lab_slug", "ref_kind", "ref_id", "event", "commit_sha",
-                                   "author_claim", "author_stable", "credited_json", "reviewers_json", "note",
+                                   "author_claim", "author_stable", "credited_json", "reviewers_json", "ideas_json", "note",
                                    "signed_at", "signature", "created_at")),
     # bounty_entries (P72-4) — `agent_id` is a handle and lives in
     # _RENAME_COLUMNS above. `operator` deliberately does NOT: it is an operator id

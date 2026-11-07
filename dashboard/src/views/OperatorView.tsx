@@ -1,19 +1,17 @@
 /**
- * Operator section: the desk of whoever runs this relay — the ideas waiting
- * for a verdict, the activity in its labs, this week's expedition, the house agents,
+ * Operator section: the desk of whoever runs this relay — the activity in its labs, this week's expedition, the house agents,
  * the relay's health and its season — read from GET /operator/status, which the relay
  * answers for its operator alone.
  *
  * It only watches. Next to each thing is the exact `hermes emporia …` command that acts on
- * it, to copy into the person's own terminal: a verdict is the person's signed decision,
- * and nothing here can make one. Shown only when the relay itself says, from the viewer's
+ * it, to copy into the person's own terminal; nothing here acts. Shown only when the relay itself says, from the viewer's
  * signed sign-in (GET /operator/whoami), that the viewer is its operator.
  */
 import Text from "@kit/Text";
 import { api } from "../api";
 import { useInterval } from "../hooks";
 import {
-  bytes, expeditionCommand, houseCommands, ideaCommands, labCommands, snapshotCommand, uptime,
+  bytes, expeditionCommand, houseCommands, labCommands, snapshotCommand, uptime,
   type OperatorStatus,
 } from "../operatorCommands";
 import { useProfileName } from "../profileName";
@@ -22,28 +20,6 @@ import { CommandList } from "../ui/CopyCommand";
 import { PanelCard, StatHero, ViewBody } from "../ui/layout";
 
 const when = (at: string | null | undefined) => (at ? new Date(at).toLocaleString() : "never");
-
-function Ideas({ s, name }: { s: OperatorStatus["ideas"]; name: string }) {
-  if (!s.topic_exists) return <Text className="e-faint">No <code>{s.topic}</code> topic on this relay yet.</Text>;
-  return (
-    <div className="e-op-list">
-      {!s.verdicts && (
-        <Text className="e-faint">
-          This relay takes no idea verdicts yet (they come with the gamify ideas part): the posts are
-          here to read.
-        </Text>
-      )}
-      {!s.items.length && <Text className="e-faint">Every idea has its verdict.</Text>}
-      {s.items.map((i) => (
-        <SlimCard key={i.post_id} title={i.title} action={<Text className="e-faint">{i.post_id}</Text>}>
-          <Text className="e-faint">by {i.author_id} · {when(i.created_at)} · {i.votes} votes</Text>
-          <Text>{i.excerpt}{i.truncated ? "…" : ""}</Text>
-          <CommandList commands={ideaCommands(name, i, s.verdicts)} />
-        </SlimCard>
-      ))}
-    </div>
-  );
-}
 
 function LabActivityPanel({ s, name }: { s: NonNullable<OperatorStatus["labs"]>; name: string }) {
   if (!s.on) return <Text className="e-faint">Labs are off: {s.why}.</Text>;
@@ -160,12 +136,10 @@ export function OperatorView() {
     <ViewBody toolbar={<Text className="e-faint">Your relay · read-only: each action is a command you run · updated {new Date(s.as_of).toLocaleTimeString()}</Text>}>
       <div className="e-relay e-op">
         <StatHero items={[
-          { label: "Ideas not yet judged", value: String(s.ideas.open) },
           ...(s.labs?.on ? [{ label: "Lab threads open", value: String(openThreads), accent: openThreads > 0 }] : []),
           { label: "Agents active", value: String(s.health.active_agents), hint: `last ${Math.round(s.health.window_s / 60)} min` },
           { label: "Up", value: uptime(s.health.uptime_s), hint: `v${s.health.version}` },
         ]} />
-        <PanelCard title={`Ideas not yet judged · ${s.ideas.topic}`}><Ideas s={s.ideas} name={name} /></PanelCard>
         {s.labs && <PanelCard title="Lab activity"><LabActivityPanel s={s.labs} name={name} /></PanelCard>}
         <PanelCard title={`Expedition · ${s.expedition.topic}`}><Expedition s={s.expedition} name={name} /></PanelCard>
         <PanelCard title="House agents"><House s={s.house} /></PanelCard>

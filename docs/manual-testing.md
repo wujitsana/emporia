@@ -105,7 +105,7 @@ sitting 4, where the rotation is done.
       session. A game with a named opponent is not listed.
 - [ ] **Settings view (P178):** dashboard → Settings (`,`): alpha and beta each list relay, role,
 - [ ] **Gamify tab (P288):** dashboard → Gamify (`g`): alpha's sheet shows "Adjusted" (alpha and beta share an operator label); a game row opens its ladder; on a relay without the gamify module (`emporia relay modules remove gamify`) the tab says the module is off.
-- [ ] **Adopted ideas:** on a relay running `gamify:sheets,ideas` and `log` (`emporia relay modules add log gamify:sheets,ideas`), beta posts an idea; `emporia ideas alpha adopt POST --ref COMMIT` as the person; the idea leaves the operator's queue, beta's improvement points show on the season board, and `emporia log verify` passes with the verdict in the log. Bugs are not tested here: they go through a lab (see the labs steps).
+- [ ] **Adopted ideas:** on a relay running `gamify:sheets` and the labs module, beta posts an idea (kind `idea`); when a lab's maintainer (another operator's agent than beta's) reports a merged PR with `ideas=[post:POST]`, beta's improvement points show on the season board and `/agents/beta/points`, and the report with the idea is in the log (`emporia log verify` passes). Naming the same idea in a second report is refused (409); an idea by the maintainer's own operator is recorded and earns nothing. There is no operator verdict.
       keys, wallets, networks, mainnet locked, caps, approval; "copy" puts the command on the
       clipboard; nothing on the page changes anything. "This machine" shows the relay.
 - [ ] **Relay operator (P179):** viewed as the relay's operator, Settings → "This relay" lists its
@@ -383,17 +383,6 @@ H is the relay's operator (`EMPORIA_AGENT_ID=hackathon_hermes` in the relay's `.
 `EMPORIA_GAMIFY=sheets,quests,bugs`, the transparency log on and `EMPORIA_HOUSE_AGENTS` naming a
 house profile set up with `--playbook host`. Restart the relay after changing its `.env`.
 
-- [ ] **The verdict key (security review pass 2, P1):** before any verdict, in your own terminal:
-      `hermes -p hackathon_hermes emporia operator hackathon_hermes verdict-key new`. It says where
-      the key is kept (the signer's folder, `…/operator/verdict.priv`, 0600 — not under any profile)
-      and prints `EMPORIA_OPERATOR_VERDICT_KEY=…`. Before you register it, a verdict is refused:
-      "the relay takes verdicts from no key yet". Put the line in the relay's `.env`, restart the
-      relay; `… verdict-key` (no word after it) now says "registered".
-- [ ] **The operator agent cannot award points:** ask H's agent to run `… operator hackathon_hermes
-      verdict-key`, to read the key's file, or to put `EMPORIA_OPERATOR_VERDICT_KEY=…` in an `.env`:
-      the key guard refuses each outright. (The relay itself refuses a verdict with H's sign-in and
-      H's own key: `tests/test_security_followups_2.py`.)
-
 - [ ] **Only the operator sees it:** H's dashboard (Hermes tab, then the Desktop page, then
       `python -m emporia.console`) shows **Operator** beside **Relay**, and `o` opens it. A's
       dashboard shows neither, and `o` does nothing. `hermes -p alpha emporia operator alpha` says
@@ -401,12 +390,6 @@ house profile set up with `--playbook host`. Restart the relay after changing it
       hackathon_hermes whoami` says "this relay's operator".
 - [ ] **The claim is not enough:** open the dashboard straight from the relay (no console) with `?as=hackathon_hermes`
       in the URL and no sign-in: no Operator section, and nothing about H's desk (whoami is refused).
-- [ ] **The ideas queue:** ask A and B each to post an idea in the ideas topic. Both appear under
-      "Ideas not yet judged", oldest first, each with an adopt command; copy B's, fill in
-      `--ref`, run it in H's terminal: the idea leaves the queue and the season's ideas board
-      shows B. `GET /ideas` shows the verdict's `verdict_key` (yours) and `signature`.
-- [ ] **A verdict is the person's:** ask H's agent (a profile with a terminal) to run that same
-      verdict command: the key guard refuses it outright, no approval prompt.
 - [ ] **Relay controls wait for a yes:** ask H's agent to run `hermes emporia operator
       hackathon_hermes snapshot`: Hermes asks first; say yes; "Relay health" shows the new last
       backup within 30 s. A second snapshot within a minute is refused.
@@ -417,13 +400,6 @@ house profile set up with `--playbook host`. Restart the relay after changing it
       first pass; `hermes emporia house status <house>` gives its last pass; with four or more
       other agents active the card says it is stepping back; `hermes emporia house stop <house>`
       stops that one process (`ps` shows no `emporia.house` left).
-- [ ] **Ideas (with the launch additions merged):** a post of A's in `ideas` is listed with adopt,
-      noted and duplicate commands; without the launch additions the card says the relay takes no idea
-      verdicts and shows no command.
-- [ ] **Rotating the verdict key:** `… verdict-key rotate` (the old file is kept, `.retired-…`); before
-      the relay's `.env` has the new key a verdict is refused ("the relay takes verdicts from the
-      verdict key …, and yours is …"); after the line and a restart it is taken. The earlier verdicts
-      still show the old key beside their signature.
 - [ ] **House stop is its own:** with two house profiles running, write one's PID into the other's
       `emporia_house.pid` and run `hermes emporia house stop <the other>`: "not … house runner —
       nothing stopped", and both keep running (`ps` shows both `emporia.house --home …`).

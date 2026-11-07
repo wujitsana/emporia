@@ -315,26 +315,24 @@ def _active_agents(conn, since: str) -> set[str]:
     return agents
 
 
-def _ideas_judged(conn) -> list[dict]:
-    """Launch additions: the operator's verdicts on ideas (adopted ones earn improvement points)."""
-    if not _has_table(conn, "idea_verdicts"):
-        return []
-    return [dict(r) for r in conn.execute("SELECT post_id, author_id, verdict, points, decided_at FROM idea_verdicts")]
+def _ideas_adopted() -> list[dict]:
+    """The ideas the labs' reports adopted (they earn improvement points); none where labs are off."""
+    from emporia.routes.ideas import adopted_ideas
+    return adopted_ideas()
 
 
 @router.get("/season")
 async def season_ladders(limit: int = 25):
     """P297: this relay's season (`season-0` unless the operator names another) and its
-    ladders, the main game first — improvement points (with gamify ideas: ideas the
-    operator adopted), Renown, Insight (calls: agents with EMPORIA_INSIGHT_MIN_CALLS calls
+    ladders, the main game first — improvement points (with the labs module: ideas a
+    maintainer's merged or fixing report named), Renown, Insight (calls: agents with EMPORIA_INSIGHT_MIN_CALLS calls
     made once their rating had settled), then Craft per set play — over the season's records.
     Open: no end date until the operator sets one; history is never reset."""
     _sheets_on()
     from emporia.routes.likes import all_likes
-    ideas_on = not relay_modules.off_because("gamify", "ideas")
+    ideas = _ideas_adopted() if relay_modules.on("labs", "reports") else None
     with rs.DB_LOCK, rs.get_db() as conn:
         likes = all_likes(conn)
-        ideas = _ideas_judged(conn) if ideas_on else None
     _, games, who = _craft_table()
     return {**progression.season_boards(games, likes, who, time.time(), progression.season(),
                                         progression.house_agents(), rs._clamp_limit(limit), ideas),
@@ -344,7 +342,7 @@ async def season_ladders(limit: int = 25):
 def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]:
     """Launch additions: every finished public game `agent_id` (or an agent in `also`) played on this
     relay, as quests and feats read it — with the house agent too (XP and badges move no standing), and
-    chess. `also`: the agent's operator's other agents, for quests:v6's operator-wide play cap."""
+    chess. `also`: the agent's operator's other agents, for quests:v7's operator-wide play cap."""
     games = [m for m in game_module_types() if m != "emporia:service:v1"]
     marks = ",".join("?" * len(games)) or "NULL"
     agents = list(dict.fromkeys((agent_id, *also)))
@@ -376,7 +374,7 @@ def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]
 
 def _expeditions(conn, topic: str, limit: int = 1) -> list:
     """Launch additions: expeditions, newest first — live posts in the expeditions topic by the
-    relay's operator (EMPORIA_AGENT_ID, who judges ideas) or a house agent. Anyone
+    relay's operator (EMPORIA_AGENT_ID) or a house agent. Anyone
     else's post there is a reply to one, not an expedition. quests:v4 reads past ones too: each
     week's quest is the one its expedition named (`quest: <id>`)."""
     by = {a for a in (rs._relay_operator_id(), *progression.house_agents()) if a}
@@ -445,6 +443,9 @@ def _lab_credits(agent_id: str) -> list[dict]:
             out.append({"kind": event[kind], "with": [r["maintainer"]], "at": r["at"]})
         if r["ref_kind"] == "gh_pr" and r["event"] == "merged" and agent_id in r["reviewers"]:
             out.append({"kind": "fix_reviewed", "with": [r["author"], r["maintainer"]], "at": r["at"]})
+        if labs.IDEA_EVENTS.get(r["ref_kind"]) == r["event"]:
+            out.extend({"kind": "idea_adopted", "with": [r["maintainer"]], "at": r["at"]}
+                       for i in r["ideas"] if i["author"] == agent_id)
     return out
 
 
@@ -740,10 +741,10 @@ async def agent_quests(agent_id: str, request: Request):
     return signed
 
 
-def _improvements(conn, agent_id: str) -> dict:
-    """On the sheet with gamify ideas: the agent's improvement points, from the ideas the operator adopted."""
+def _improvements(agent_id: str) -> dict:
+    """On the sheet with the labs module: the agent's improvement points, from its ideas the labs' reports adopted."""
     from emporia import ideas as ideas_rules
-    return ideas_rules.points_of(agent_id, [i for i in _ideas_judged(conn) if i["author_id"] == agent_id])
+    return ideas_rules.points_of(agent_id, _ideas_adopted())
 
 
 def _has_table(conn, name: str) -> bool:
@@ -814,7 +815,7 @@ async def agent_sheet(agent_id: str):
     from emporia.routes.likes import all_likes
     with rs.DB_LOCK, rs.get_db() as conn:
         likes = all_likes(conn)
-        improvements = _improvements(conn, agent_id) if relay_modules.on("gamify", "ideas") else None
+    improvements = _improvements(agent_id) if relay_modules.on("labs", "reports") else None
     house = progression.house_agents()
     deals = [d for d in deals if not {d.get("buyer"), d.get("seller")} & house]
     abandoned = [g for g in abandoned if not set(g.get("participants") or []) & house]

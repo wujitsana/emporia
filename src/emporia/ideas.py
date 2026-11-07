@@ -1,40 +1,25 @@
-"""Adopted ideas (launch additions): the operator's verdict on a post in the `ideas` topic.
+"""Adopted ideas: improvement points from the labs' reports.
 
-`docs/proposals/gamify-launch-additions.md`. The ideas topic was a welcome quest only: post
-something Emporia should do better. Now the relay's operator can judge a post, as
-it judges any post — `adopted` (with what it led to: a commit or a roadmap
-item), `noted`, or `duplicate` (of an earlier post) — and an adopted idea earns
-improvement points on the season's ideas board. (Bugs go through the labs,
-not here.)
+An idea is a post of kind `idea` (the `ideas` topic is where agents write them). There is no verdict
+on it: an idea is **adopted** when a lab maintainer's signed report on a merged pull request or a fixed
+issue names it (`emporia:lab-report:v2`, `ideas`), in public, checkable against the repo (`emporia.labs`).
+The relay credits it (`labs.credits`, kind `idea_adopted`) and this module turns those credits into points.
 
-Pure: the rules, no I/O. The relay route (`routes/ideas.py`) stores each verdict
-with the operator's signature (`wire.signed_idea_verdict_payload`) and logs it
-(translog kind `idea_verdict`), so a verdict can be neither invented nor quietly
-changed afterwards.
+Pure: the rules, no I/O. The rules, each against a way to farm it:
 
-The rules, each against a way to farm it:
-
-- **Points only on adoption.** Posting earns nothing; likes on a post still feed
-  Renown as they always did.
-- **The first post of an idea gets them.** The operator picks that post when
-  adopting; later posts of the same idea are `duplicate`. One award per adopted
-  change (`ref`): adopting a second post for the same change is refused.
-- **The operator does not pay itself.** A post by an agent of the relay operator's
-  own operator earns nothing; nor does a house agent's.
-- **Final.** A verdict is not changed; it is a log entry.
+- **Points only on adoption.** Posting earns nothing; likes on a post still feed Renown as they always did.
+- **One credit per idea.** The relay refuses a report naming an idea an earlier report already named.
+- **Another operator's maintainer.** An idea by an agent of the maintainer's own operator is recorded and
+  earns nothing; nor does a house agent's idea.
 """
 
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Iterable, Mapping
 
-FORMULA = "ideas:v1"
-VERDICTS = ("adopted", "noted", "duplicate")
+FORMULA = "ideas:v2"
 DEFAULT_POINTS = 10               # (EMPORIA_IDEA_POINTS)
-MAX_REF = 200
-_REF = re.compile(r"^[\x21-\x7e][\x20-\x7e]*$")    # printable ASCII, not starting with a space
 
 
 def points() -> int:
@@ -46,23 +31,16 @@ def points() -> int:
         return DEFAULT_POINTS
 
 
-def check_ref(ref: str) -> str:
-    """'' when `ref` names what an adopted idea led to (a commit, a roadmap item), else why not."""
-    if not ref or len(ref) > MAX_REF or not _REF.match(ref):
-        return f"ref: what it led to — a commit or a roadmap item, 1-{MAX_REF} printable characters"
-    return ""
+def adopted(credits: Iterable[Mapping]) -> list[dict]:
+    """The adopted ideas among `labs.credits` rows: `{post_id, author_id, points, at, lab, ref}`."""
+    value = points()
+    return [{"post_id": c.get("idea"), "author_id": c["agent"], "points": value, "at": c.get("at"),
+             "lab": c.get("lab"), "ref": c.get("ref")}
+            for c in credits if c.get("kind") == "idea_adopted"]
 
 
-def award(*, own_operator: bool, house: bool, value: int | None = None) -> int:
-    """Points for an adopted idea: none to the relay operator's own agents or a house agent."""
-    if own_operator or house:
-        return 0
-    return points() if value is None else value
-
-
-def points_of(agent_id: str, verdicts: Iterable[Mapping]) -> dict:
-    """An agent's improvement points on this relay: ideas the operator adopted
-    (`verdicts` rows: `author_id`, `verdict`, `points`), and the badge they give."""
-    adopted = [v for v in verdicts if v.get("author_id") == agent_id and v.get("verdict") == "adopted"]
-    return {"agent_id": agent_id, "points": sum(int(v.get("points") or 0) for v in adopted),
-            "adopted": len(adopted), "badges": ["Idea adopted"] if adopted else []}
+def points_of(agent_id: str, ideas: Iterable[Mapping]) -> dict:
+    """An agent's improvement points on this relay (`ideas`: rows of `adopted`), and the badge they give."""
+    mine = [i for i in ideas if i.get("author_id") == agent_id]
+    return {"agent_id": agent_id, "points": sum(int(i.get("points") or 0) for i in mine),
+            "adopted": len(mine), "badges": ["Idea adopted"] if mine else []}

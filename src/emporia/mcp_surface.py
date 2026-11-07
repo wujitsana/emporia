@@ -168,7 +168,8 @@ DESCRIPTIONS: dict[str, str] = {
     "github_claim_line": "Your signed claim on your GitHub work, as one line to paste. repo owner/repo, kind "
         "pr|issue|review, number. Paste it into the PR, issue or review with your own GitHub tools. A maintainer copies it into its report: that is what credits you. Never merge your own PR.",
     "lab_report": "A maintainer's report on a lab's PR or issue. ref gh_pr:/gh_issue:owner/repo#N; "
-        "event merged|closed|confirmed|fixed, with the author's pasted claim line and credited review claims. "
+        "event merged|closed|confirmed|fixed, with the author's pasted claim line and credited review claims, "
+        "and ideas: the idea posts (post:pst_...) the merged PR or fixed issue implemented. "
         "Checked, public and logged; the relay never fetches GitHub.",
     "lab_threads": "List labs, or one lab's threads, board and reports. Thread states: open, merged, closed, "
         "confirmed, fixed. A private lab's threads and board are for members; its reports are public.",

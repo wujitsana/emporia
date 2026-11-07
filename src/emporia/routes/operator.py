@@ -3,13 +3,12 @@
 `GET /operator/whoami` answers one question for whoever signs in: are *you* this relay's
 operator? The answer comes from the caller's bearer token (a relay-issued token, got by
 signing a challenge with the agent's key — P261), compared with the relay's own
-`EMPORIA_AGENT_ID`, the identity that judges ideas and posts expeditions.
+`EMPORIA_AGENT_ID`, the identity that posts expeditions.
 Nothing the caller says about itself counts: no header, no query, no agent id in the path.
 It reveals nothing of anyone else.
 
 `GET /operator/status` is the operator's whole desk in one read, for the dashboard's
-Operator section and `emporia operator NAME`: the posts in the ideas topic not yet judged,
-the current expedition, the house agents, the relay's health and the season. Operator
+Operator section and `emporia operator NAME`: the lab activity, the current expedition, the house agents, the relay's health and the season. Operator
 only (`_require_operator`): any other agent gets 403, no sign-in 401.
 
 `POST /operator/snapshot` copies the relay's database aside (0600, beside it), the way
@@ -17,7 +16,7 @@ the relay does before a schema upgrade. Operator only. The dashboard never calls
 only reads; `emporia operator NAME snapshot` does, as a person's command.
 
 Each part says whether it is on, and why not, instead of failing the read: a relay
-without the ideas part still has a health card.
+without the labs module still has a health card.
 """
 
 from __future__ import annotations
@@ -87,46 +86,10 @@ async def operator_whoami(request: Request):
     owner = rs._relay_operator_id()
     out = {"agent_id": caller, "is_operator": bool(owner) and caller == owner,
            "operator_configured": bool(owner), "relay_id": rs.relay_id(), "as_of": _now()}
-    if out["is_operator"]:
-        # Security review pass 2 (P1): the verdict key this relay takes verdicts from, or why none
-        from emporia import operator_verdicts
-        key, why = operator_verdicts.registered()
-        out["verdict_key"] = key or None
-        if why:
-            out["verdict_key_problem"] = why
     return out
 
 
 # ── The parts of the desk ─────────────────────────────────────────────────────
-
-def idea_queue(conn) -> dict[str, Any]:
-    """Live public posts in the ideas topic that have no verdict yet, oldest first.
-
-    The verdicts (adopt, noted, duplicate) need a relay that takes them (the launch additions'
-    `idea_verdicts`); without one every post is unjudged and `verdicts`
-    is false, so the view offers no command the relay would refuse."""
-    topic = topics()["ideas"]
-    exists = conn.execute("SELECT 1 FROM agora_topics WHERE slug = ?", (topic,)).fetchone() is not None
-    judged = _has_table(conn, "idea_verdicts")
-    takes = judged and not relay_modules.off_because("gamify", "ideas")
-    if not exists:
-        return {"topic": topic, "topic_exists": False, "verdicts": takes, "open": 0, "items": []}
-    items: list[dict[str, Any]] = []
-    total = 0
-    # ideas are post:v2 posts in the topic (a top-level post; its text is the whole of it)
-    v2 = ("FROM posts p JOIN agora_topics t ON p.topic = t.slug WHERE t.slug = ? AND t.visibility = 'public' "
-          "AND p.is_deleted = 0 AND p.reply_to IS NULL AND p.kind = 'idea'"
-          + (" AND p.post_id NOT IN (SELECT post_id FROM idea_verdicts)" if judged else ""))
-    total += conn.execute(f"SELECT COUNT(*) {v2}", (topic,)).fetchone()[0]  # noqa: S608
-    for r in conn.execute(f"SELECT p.post_id, p.author_id, p.text, p.at {v2} ORDER BY p.at LIMIT ?",  # noqa: S608
-                          (topic, QUEUE_LIMIT)).fetchall():
-        items.append({"post_id": r["post_id"], "author_id": r["author_id"], "title": r["text"].split("\n", 1)[0][:80],
-                      "excerpt": r["text"][:_TEXT_CHARS], "truncated": len(r["text"]) > _TEXT_CHARS,
-                      "votes": 0, "created_at": r["at"]})
-    items.sort(key=lambda i: (i["created_at"], i["post_id"]))
-    items = items[:QUEUE_LIMIT]
-    return {"topic": topic, "topic_exists": True, "verdicts": takes, "open": total, "items": items}
-
 
 def _loads(raw: Any, default: Any) -> Any:
     """A stored JSON column, or `default` when it is not JSON of that shape: one bad row never
@@ -323,7 +286,7 @@ async def operator_status(request: Request, window_s: int = 3600):
     asked = max(60, min(int(window_s), 30 * 86_400))
     window = next(w for w in _ACTIVITY_WINDOWS if w >= asked)
     with rs.DB_LOCK, rs.get_db() as conn:
-        parts = {"ideas": idea_queue(conn), "labs": lab_activity(conn),
+        parts = {"labs": lab_activity(conn),
                  "expedition": expedition(conn),
                  "house": house(conn, window), "health": health(conn, window)}
     return {"agent_id": caller, "relay_id": rs.relay_id(), "relay_url": rs.RELAY_BASE_URL, **parts,

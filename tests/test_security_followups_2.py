@@ -1,189 +1,20 @@
 """Security review pass 2, its proposals built (branch security-followups-2).
 
-P1: idea verdicts are signed by the operator's verdict key, a person's key no agent
-holds — the operator agent's own token or key no longer awards points. P2: `house stop` stops
-only its own profile's runner. P6: the key guard matches paths as they resolve. P7: MetaMask's
-Guard Mode check is remembered across requests. Each test fails without its fix."""
-from tests.ids import stable_of  # noqa: E402
+P2: `house stop` stops only its own profile's runner. P6: the key guard matches paths as they
+resolve. P7: MetaMask's Guard Mode check is remembered across requests. (P1, the operator's
+verdict key, is gone with the verdicts: adopted ideas are credited by lab reports.)
+Each test fails without its fix."""
 import subprocess
 import sys
 import time
-import uuid
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric import ed25519
-from fastapi.testclient import TestClient
 
-from emporia import identity, operator_verdicts, signer, signing, wire
-from emporia import relay_server as rs
+from emporia import signer
 from emporia import signer_backends as sb
-from tests import verdict_key as vk
-from tests.test_emporia import _register_keyed
-from tests.test_ideas import idea
 from tests.test_key_guard import guard
 from tests.test_signer_backends import AGENT, _hold_like, mm, setup  # noqa: F401  (fixtures)
-
-
-@pytest.fixture
-def client(monkeypatch):
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,ideas")
-    monkeypatch.delenv("EMPORIA_IDEA_POINTS", raising=False)
-    monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
-    monkeypatch.delenv(operator_verdicts.ENV, raising=False)
-    return TestClient(rs.app, client=("127.0.0.1", 51331))
-
-
-def as_(agent):
-    return {"x-emporia-agent-id": agent}
-
-
-def _setup(client, monkeypatch, *tags):
-    agents = [f"sf2_{t}_{uuid.uuid4().hex[:6]}" for t in ("op", *tags)]
-    for a in agents:
-        _register_keyed(client, a)
-    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(agents[0]))
-    return agents
-
-
-def _points(client, agent):
-    return client.get(f"/agents/{agent}/points").json()["points"]
-
-
-# ── P1: the operator's verdict key ───────────────────────────────────────────
-
-def test_without_a_registered_verdict_key_the_relay_takes_no_verdict(client, monkeypatch):
-    op, finder = _setup(client, monkeypatch, "finder")
-    pid = idea(finder)
-    r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json=vk.idea(pid, "adopted", "abc1234"))
-    assert r.status_code == 403 and operator_verdicts.ENV in r.json()["detail"] and "verdict-key new" in r.json()["detail"]
-    monkeypatch.setenv(operator_verdicts.ENV, "not-a-key")
-    r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json=vk.idea(pid, "adopted", "abc1234"))
-    assert r.status_code == 403 and "64 hex" in r.json()["detail"]
-    assert _points(client, finder) == 0
-    who = client.get("/operator/whoami", headers=as_(op)).json()
-    assert who["verdict_key"] is None and "64 hex" in who["verdict_key_problem"]
-
-
-def test_the_operator_agents_own_token_and_key_award_no_points(client, monkeypatch):
-    """The takeover P1 is about: everything the operator agent's process holds — its bearer
-    token, its identity key, its signer's kinds — and no points come of it."""
-    vk.register(monkeypatch)
-    op, finder = _setup(client, monkeypatch, "finder")
-    pid = idea(finder)
-    ref = uuid.uuid4().hex[:12]
-    # its token alone (the old, unsigned verdict)
-    r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json={"verdict": "adopted", "ref": ref})
-    assert r.status_code == 403 and "unsigned" in r.json()["detail"]
-    # its own identity key over the payload, naming itself as the verdict key or not
-    at = datetime.now(UTC).isoformat()
-    own = identity.generate_or_load_keypair(op)[0].public_key().public_bytes_raw().hex()
-    for named, why in ((vk.PUB, "does not verify"), (own, "after a rotation")):
-        p = wire.signed_idea_verdict_payload(pid, "adopted", ref, "", rs.relay_id(), named, at)
-        r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json={
-            "verdict": "adopted", "ref": ref, "at": at, "verdict_key": named, "signature": identity.sign(p, op)})
-        assert r.status_code == 403 and why in r.json()["detail"], r.json()
-    # an idea verdict as v1 had it: an agent kind no more
-    with pytest.raises(signing.Refused, match="no rule"):
-        signing.sign(op, "idea-verdict", pid, "adopted", "abc1234", "", op, at)
-    p = wire.signed_idea_verdict_payload(pid, "adopted", "abc1234", "", rs.relay_id(), vk.PUB, at)
-    r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json={
-        "verdict": "adopted", "ref": "abc1234", "at": at, "signature": identity.sign(p, op)})
-    assert r.status_code == 403
-    assert _points(client, finder) == 0
-    # the person's verdict key, with the operator's sign-in: awarded
-    assert client.post(f"/ideas/{pid}/verdict", headers=as_(op), json=vk.idea(pid, "adopted", ref)).status_code == 200
-    assert _points(client, finder) == 10
-
-
-def test_the_verdict_key_alone_is_not_enough_either(client, monkeypatch):
-    """The operator's sign-in still comes first: a verdict key signature sent by anyone else is 403."""
-    vk.register(monkeypatch)
-    op, finder = _setup(client, monkeypatch, "finder")
-    pid = idea(finder)
-    assert client.post(f"/ideas/{pid}/verdict", json=vk.idea(pid, "noted")).status_code == 401
-    assert client.post(f"/ideas/{pid}/verdict", headers=as_(finder), json=vk.idea(pid, "noted")).status_code == 403
-
-
-def test_a_verdict_is_bound_to_its_fields_its_relay_and_its_time(client, monkeypatch):
-    vk.register(monkeypatch)
-    op, finder = _setup(client, monkeypatch, "finder")
-    pid, other = idea(finder), idea(finder)
-    ref = uuid.uuid4().hex[:12]
-    adopt = vk.idea(pid, "adopted", ref)
-    r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json={**adopt, "ref": uuid.uuid4().hex[:12]})
-    assert r.status_code == 403, "a signed ref is not another ref"
-    assert client.post(f"/ideas/{other}/verdict", headers=as_(op), json=adopt).status_code == 403, "another post"
-    r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json=vk.idea(pid, "adopted", ref, relay="another-relay"))
-    assert r.status_code == 403 and rs.relay_id() in r.json()["detail"], "another relay's verdict"
-    r = client.post(f"/ideas/{pid}/verdict", headers=as_(op),
-                    json=vk.idea(pid, "noted", at="2020-01-01T00:00:00+00:00"))
-    assert r.status_code == 400, "an old signature"
-    assert client.post(f"/ideas/{pid}/verdict", headers=as_(op), json=adopt).status_code == 200
-
-
-def test_rotation_the_old_key_stops_and_each_verdict_keeps_the_key_that_signed_it(client, monkeypatch):
-    vk.register(monkeypatch)
-    op, finder = _setup(client, monkeypatch, "finder")
-    first, second = idea(finder), idea(finder)
-    out1 = client.post(f"/ideas/{first}/verdict", headers=as_(op), json=vk.idea(first, "noted"))
-    assert out1.status_code == 200
-    new = ed25519.Ed25519PrivateKey.from_private_bytes(bytes(range(1, 33)))
-    new_pub = vk.register(monkeypatch, new.public_key().public_bytes_raw().hex())    # rotated, relay restarted
-    r = client.post(f"/ideas/{second}/verdict", headers=as_(op), json=vk.idea(second, "noted"))
-    assert r.status_code == 403 and "after a rotation" in r.json()["detail"]
-    out2 = client.post(f"/ideas/{second}/verdict", headers=as_(op), json=vk.idea(second, "noted", key=new))
-    assert out2.status_code == 200
-    for pid, out, key in ((first, out1.json(), vk.PUB), (second, out2.json(), new_pub)):
-        assert out["verdict_key"] == key
-        p = wire.signed_idea_verdict_payload(pid, "noted", "", "", rs.relay_id(), key, out["decided_at"])
-        assert identity.verify(p, out["signature"], key), "anyone rechecks it from what the relay serves"
-    assert client.get("/ideas").json()["verdict_key"] == new_pub
-
-
-def test_the_verdict_key_is_made_and_kept_on_the_persons_side(tmp_path, monkeypatch):
-    monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(tmp_path / "signer"))
-    pub, retired = operator_verdicts.new()
-    path = operator_verdicts.key_path()
-    assert retired is None and path == tmp_path / "signer" / "operator" / "verdict.priv"
-    assert oct(path.stat().st_mode & 0o777) == "0o600" and oct(path.parent.stat().st_mode & 0o777) == "0o700"
-    with pytest.raises(operator_verdicts.VerdictKeyError, match="rotate"):
-        operator_verdicts.new()
-    newer, retired = operator_verdicts.new(rotate=True)
-    assert newer != pub and retired.name.startswith("verdict.priv.retired-") and operator_verdicts.public_hex() == newer
-    p = wire.signed_idea_verdict_payload("pst_1", "noted", "", "", "r", pub, "t")
-    with pytest.raises(operator_verdicts.VerdictKeyError, match="another verdict key"):
-        operator_verdicts.sign(p)
-    path.parent.chmod(0o755)
-    with pytest.raises(operator_verdicts.VerdictKeyError, match="open to other users"):
-        operator_verdicts.public_hex()
-
-
-def test_the_verdict_key_and_its_setting_are_a_persons(tmp_path, monkeypatch, capsys):
-    from emporia import cli
-    monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(tmp_path / "signer"))
-    monkeypatch.setattr(cli, "_agent", lambda n: (tmp_path / "op", "op", {"EMPORIA_AGENT_ID": "op"}))
-    monkeypatch.setattr(cli, "_TTY", True)
-    monkeypatch.setenv("HERMES_SESSION_ID", "an-agent's-terminal")
-    assert cli.main(["operator", "op", "verdict-key", "new"]) == 1
-    assert "only a person" in capsys.readouterr().out and not operator_verdicts.key_path().exists()
-    env = tmp_path / "relay" / ".env"
-    env.parent.mkdir()
-    env.write_text("EMPORIA_AGENT_ID=op\n")
-    monkeypatch.setattr(cli, "_relay_env_path", lambda args: env)
-    assert cli.main(["relay", "config", "set", operator_verdicts.ENV, "ab" * 32]) == 1
-    assert "only a person" in capsys.readouterr().out and operator_verdicts.ENV not in env.read_text()
-    for cmd in ("emporia operator op verdict-key new", "hermes emporia operator op verdict-key rotate",
-                f"emporia relay config set {operator_verdicts.ENV} {'ab' * 32}",
-                f"echo {operator_verdicts.ENV}={'ab' * 32} >> /srv/relay/.env",
-                "cat ~/.emporia-signer/operator/verdict.priv", "cat /srv/s/operator/verdict.priv.retired-1",
-                "python -c 'from emporia import operator_verdicts as o; print(o.public_hex())'",
-                "python -c 'import emporia.operator_verdicts'"):
-        r = guard.pre_tool_call("terminal", {"command": cmd})
-        assert r and r["action"] == "block", cmd
-    for ok in ("emporia operator op", "emporia operator op whoami", "cat src/emporia/operator_verdicts.py"):
-        assert guard.pre_tool_call("terminal", {"command": ok}) is None, ok
 
 
 # ── P2: `house stop` stops only its own profile's runner ─────────────────────
