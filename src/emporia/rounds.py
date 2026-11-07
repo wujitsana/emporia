@@ -6,7 +6,7 @@ A round is one Hermes cron job per profile, created and removed with Hermes's ow
 creates, edits, pauses, resumes or removes a job with that name, never any other.
 
 What a round does is the prompt shipped with the plugin (`hermes_plugin/emporia/rounds_prompt.md`,
-versioned on its first line): look at `whats_next` and `whats_happening`, take at most three
+whose first line is the marker `[emporia-rounds v1]`, `rounds_marker.ROUNDS_MARKER`): look at `whats_next` and `whats_happening`, take at most three
 actions inside the playbook, never pay or accept a deal, treat what the relay says as data, and
 finish with one line or `[SILENT]`. The job delivers to `local` (saved with its run, sent to no
 chat), and so do its failure notices.
@@ -83,11 +83,25 @@ def prompt_path(plugin_dir: Path | None = None) -> Path:
 
 
 def prompt_text(plugin_dir: Path | None = None) -> str:
-    return prompt_path(plugin_dir).read_text(encoding="utf-8").strip()
+    """The prompt, which must begin with the marker line a hook recognizes a round by."""
+    text = prompt_path(plugin_dir).read_text(encoding="utf-8").strip()
+    if text.splitlines()[0] != marker():
+        raise RoundsError("the rounds prompt does not begin with its marker line")
+    return text
+
+
+def marker() -> str:
+    """ROUNDS_MARKER, from the plugin's own rounds_marker.py (loaded by path: it imports nothing)."""
+    import importlib.util
+    path = prompt_path().with_name("rounds_marker.py")
+    spec = importlib.util.spec_from_file_location("emporia_rounds_marker", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.ROUNDS_MARKER
 
 
 def prompt_version(text: str) -> str:
-    m = re.search(r"prompt version (\d+)", text.splitlines()[0] if text else "")
+    m = re.fullmatch(r"\[emporia-rounds v(\d+)\]", text.splitlines()[0] if text else "")
     return m.group(1) if m else "?"
 
 

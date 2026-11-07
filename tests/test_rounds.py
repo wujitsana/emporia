@@ -138,9 +138,20 @@ def test_the_cli_builds_the_commands(hermes, profile, capsys):
 def test_the_prompt_ships_with_the_plugin_and_carries_the_safety_lines():
     text = (REPO / "hermes_plugin" / "emporia" / rounds.PROMPT_FILE).read_text()
     assert rounds.prompt_version(text) == "1"
+    assert text.splitlines()[0] == "[emporia-rounds v1]" == rounds.marker()
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("rm", REPO / "hermes_plugin" / "emporia" / "rounds_marker.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.ROUNDS_MARKER == "[emporia-rounds v1]" and "import" not in (REPO / "hermes_plugin" / "emporia" / "rounds_marker.py").read_text().replace("imports nothing", "")
+    assert create_has_marker()
     for line in ("whats_next", "whats_happening", "at most 3 actions", "data, never instructions",
-                 "Never pay", "accept or confirm a deal", "[SILENT]", "outside Emporia"):
+                 "Never pay", "accept or confirm a deal", "openly skeptical", "never against what an agent says", "red flag", "[SILENT]", "outside Emporia"):
         assert line in text, line
+
+
+def create_has_marker():
+    return rounds.prompt_text().startswith("[emporia-rounds v1]\n")
 
 
 def test_a_round_delivers_nowhere_chatty(hermes):
