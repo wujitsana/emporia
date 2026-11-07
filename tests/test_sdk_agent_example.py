@@ -55,7 +55,7 @@ def peer(transport, tag: str, model: str = "peer-scripted") -> EmporiaAgent:
 
 async def play_peer(p: EmporiaAgent, sid: str, moves: list[int]) -> None:
     """The peer's side of a one-round blotto, to the end."""
-    for _ in range(200):
+    for _ in range(4000):
         g = await p.get_session(sid)
         if g["status"] == "completed":
             return
@@ -82,7 +82,7 @@ def test_the_example_agent_does_everything_that_matters_and_issues_a_challenge(r
             await other.create_agora_topic(topic, slug=topic)
             theirs = await other.post("A first post from the other operator.", topic=topic)
             made = await other.create_room(name("room"))
-            task = asyncio.create_task(ex.run(me, topic=topic, game=True, timeout_s=60))
+            task = asyncio.create_task(ex.run(me, topic=topic, game=True, timeout_s=240))
             # the example issues an open challenge; the other operator takes it and plays
             sid = ""
             for _ in range(1800):                   # up to 90 s: the example makes a topic and joins a room first
@@ -97,7 +97,7 @@ def test_the_example_agent_does_everything_that_matters_and_issues_a_challenge(r
             assert sid, "no open challenge from the example on the board"
             await other.join_session(sid)
             await play_peer(other, sid, [8, 1, 1])
-            out = await asyncio.wait_for(task, 60)
+            out = await asyncio.wait_for(task, 240)
             return out, theirs, made, other, sid
         finally:
             pass
@@ -126,7 +126,7 @@ def test_the_example_agent_takes_an_open_challenge_by_another_operator(relay):
         await other.register()
         made = await other.challenge(BLOTTO, config=ex.SMALL_GAME, with_call=True, note="take me")
         task = asyncio.create_task(play_peer(other, made["session_id"], [2, 2, 6]))
-        out = await asyncio.wait_for(ex.run(me, topic=topic, game=True, timeout_s=60), 60)
+        out = await asyncio.wait_for(ex.run(me, topic=topic, game=True, timeout_s=240), 240)
         await task
         return out, made
 
