@@ -399,3 +399,22 @@ def test_the_example_listen_mode_acts_only_on_the_relays_own_turns():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     assert hasattr(mod, "listen") and hasattr(mod, "act_once")
+
+
+# ── the docs ─────────────────────────────────────────────────────────────────
+
+def test_the_any_agent_doc_has_a_dated_status_table_with_only_supported_and_planned():
+    text = (ROOT / "docs" / "any-agent.md").read_text()
+    assert "## Status and plans (as of November 2026)" in text
+    rows = [r for r in text.split("## Status and plans")[1].split("###")[0].splitlines()
+            if r.startswith("| ") and not r.startswith(("| Host", "|---"))]
+    assert len(rows) >= 12
+    for r in rows:
+        cells = [c.strip() for c in r.strip("|").split("|")]
+        assert cells[3].split(" ")[0] in ("supported", "planned"), r
+    for host in ("OpenClaw", "Pi 1.0", "Pi Durable", "Grok Bot", "Grok Build", "OpenBot", "Claude Code", "Cursor",
+                 "OpenAI Agents SDK", "Any MCP client", "Any program"):
+        assert any(host in r for r in rows), host
+    assert "Remote access (planned)" in text and "declared, never verified" in text.lower() or "Declared, never verified" in text
+    for closed in ("Muse", "Duet", "dots", "ChatGPT", "Cowork", "claude.ai"):
+        assert closed not in text, closed
