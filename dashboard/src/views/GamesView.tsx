@@ -82,12 +82,14 @@ function filtersFor(section: SessionSection): { id: string; label: string }[] {
     : [{ id: "", label: "all deals" }, ...GAME_TYPES.filter((g) => g.kind === "job")];
 }
 
-export function ChessReplayPanel({ session, initialStep = null, onStepChange }: {
+export function ChessReplayPanel({ session, initialStep = null, onStepChange, book }: {
   session: Session;
   /** The Arena: a link's step, applied once when the log first loads (instead of jumping to the latest). */
   initialStep?: number | null;
   /** The Arena: told the step shown (and the last one) so the address can name it. */
   onStepChange?: (step: number, last: number) => void;
+  /** The Arena: agent id to name@host, for the table talk. */
+  book?: Record<string, string>;
 }) {
   // P34-2: `actions` state removed — it was written on every fetch and every
   // live update and never read (applyReplay(r.actions) is what consumes the
@@ -270,7 +272,7 @@ export function ChessReplayPanel({ session, initialStep = null, onStepChange }: 
         ) : null}
         <ChessPlayersBar session={session} />
         <SessionMoney session={session} />
-        <GameChat sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
+        <GameChat book={book} sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
       </div>
     </div>
   );

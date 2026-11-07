@@ -28307,7 +28307,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	* shown to exactly who may see the game, and stays in its record afterwards.
 	* Says nothing for a game created without chat.
 	*/
-	function GameChat({ sessionId, live }) {
+	function GameChat({ sessionId, live, book }) {
 		const [data, , error] = useInterval(() => api.gameChat(sessionId), live ? 1e4 : 6e5, [sessionId]);
 		const [opened, setOpened] = (0, import_react$18.useState)({});
 		(0, import_react$18.useEffect)(() => {
@@ -28354,7 +28354,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					" ",
 					/* @__PURE__ */ (0, import_jsx_runtime$29.jsx)("span", {
 						className: "e-dim",
-						children: shortAgent(m.agent_id, 12)
+						children: book?.[m.agent_id] ?? shortAgent(m.agent_id, 12)
 					}),
 					" ",
 					looksLikeEncryptedEnvelope(m.content) ? opened[m.message_id] !== void 0 ? `${OPENED_TAG} ${opened[m.message_id]}` : `${SEALED_TAG} sealed to the players` : m.content
@@ -31453,7 +31453,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			label: "all deals"
 		}, ...GAME_TYPES.filter((g) => g.kind === "job")];
 	}
-	function ChessReplayPanel({ session, initialStep = null, onStepChange }) {
+	function ChessReplayPanel({ session, initialStep = null, onStepChange, book }) {
 		const [fens, setFens] = import_react$14.useState([STARTING_FEN]);
 		const [sans, setSans] = import_react$14.useState([]);
 		const [idx, setIdx] = import_react$14.useState(0);
@@ -31652,6 +31652,7 @@ var EmporiaHermesPlugin = (function(exports) {
 					/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(ChessPlayersBar, { session }),
 					/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(SessionMoney, { session }),
 					/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(GameChat, {
+						book,
 						sessionId: session.session_id,
 						live: session.status === "active" || session.status === "waiting"
 					})
@@ -32620,11 +32621,11 @@ var EmporiaHermesPlugin = (function(exports) {
 			}, s.agent))
 		});
 	}
-	function Result({ r }) {
+	function Result({ r, book }) {
 		return null === r ? null : /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("p", {
 			className: "e-arena-verdict",
 			role: "status",
-			children: [r.winner ? `Winner: ${r.winner}` : `No winner${r.termination ? ` (${r.termination.replace(/_/g, " ")})` : ""}`, r.reason ? ` — ${r.reason}` : ""]
+			children: [r.winner ? `Winner: ${playerName(r.winner, book, 22)}` : `No winner${r.termination ? ` (${r.termination.replace(/_/g, " ")})` : ""}`, r.reason ? ` — ${r.reason}` : ""]
 		});
 	}
 	/** The state of the match at one step, whatever the game. */
@@ -32738,7 +32739,10 @@ var EmporiaHermesPlugin = (function(exports) {
 					style: { fontSize: 12 },
 					children: "dice stay hidden until the record reveals them"
 				}) : null,
-				/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Result, { r: frame.result })
+				/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Result, {
+					r: frame.result,
+					book
+				})
 			]
 		});
 		if (frame.kind === "auction") return /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("div", {
@@ -32767,7 +32771,10 @@ var EmporiaHermesPlugin = (function(exports) {
 					style: { fontSize: 12 },
 					children: "V stays unknown until the secrets are revealed"
 				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Result, { r: frame.result })
+				/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Result, {
+					r: frame.result,
+					book
+				})
 			]
 		});
 		if (frame.kind === "bargain") return /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)("div", {
@@ -32813,7 +32820,10 @@ var EmporiaHermesPlugin = (function(exports) {
 					},
 					children: ["hands: ", Object.entries(frame.hands).map(([p, g]) => `${playerName(p, book, 10)} ${goods(g)}`).join("  |  ")]
 				}) : null,
-				/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Result, { r: frame.result })
+				/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(Result, {
+					r: frame.result,
+					book
+				})
 			]
 		});
 		if (frame.kind === "log") return /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)("div", {
@@ -33067,7 +33077,8 @@ var EmporiaHermesPlugin = (function(exports) {
 				/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(ChessReplayPanel, {
 					session,
 					initialStep: step,
-					onStepChange: report
+					onStepChange: report,
+					book
 				}, session.session_id),
 				/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(ModelReveal, {
 					session,
@@ -33225,7 +33236,8 @@ var EmporiaHermesPlugin = (function(exports) {
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(GameChat, {
 							sessionId: session.session_id,
-							live
+							live,
+							book
 						}),
 						!(timeline.finished && at === last) ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(ModelReveal, {
 							session,
@@ -33389,12 +33401,18 @@ var EmporiaHermesPlugin = (function(exports) {
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime$14.jsx)("span", {
 							className: "e-arena-card__result",
-							children: verdict$1(r)
+							children: resultLine(r, book)
 						})
 					]
 				}) }, r.session_id))
 			})]
 		});
+	}
+	/** How a finished match ended, naming the winner as the rest of the Arena does. */
+	function resultLine(r, book) {
+		const line = verdict$1(r);
+		if (!r.winner) return line;
+		return line.replace(shortAgent(r.winner, 16), playerName(r.winner, book, 22));
 	}
 	function Boards() {
 		const [game, setGame] = (0, import_react$12.useState)(BOARD_GAMES[0].id);
@@ -33550,6 +33568,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_hooks();
 		init_setPlay();
 		init_resultsFormat();
+		init_chessReplay();
 		init_paymentFormat();
 		init_relayFormat();
 		init_chance();

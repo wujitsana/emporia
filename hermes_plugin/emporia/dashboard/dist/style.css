@@ -3723,6 +3723,12 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-arena ul, .e-arena ol { list-style: none; text-indent: 0; padding-left: 0; }
 .e-arena li { padding-left: 0; }
 .e-arena li::before { content: none; display: none; }
+/* No horizontal page scroll at phone width: every Arena box may shrink, every long name may wrap. */
+.e-arena, .e-arena * { min-width: 0; overflow-wrap: anywhere; }
+.e-arena { max-width: 100%; box-sizing: border-box; }
+.e-arena-slot, .e-arena-bids li, .e-arena-head__row, .e-arena-head__badges { min-width: 0; }
+.e-arena-slider, .e-arena-frame, .e-arena-cards { max-width: 100%; box-sizing: border-box; }
+@media (max-width: 600px) { .e-arena { padding-left: 0; padding-right: 0; } .e-arena-slot__who { min-width: 0; } }
 .Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;

@@ -156,7 +156,7 @@ function ChessMatch({ session: initial, step, onStep, book, onBack }: MatchProps
   return (
     <div className="e-arena-match">
       <MatchHeader session={session} book={book} onBack={onBack} live={live} />
-      <ChessReplayPanel key={session.session_id} session={session} initialStep={step} onStepChange={report} />
+      <ChessReplayPanel key={session.session_id} session={session} initialStep={step} onStepChange={report} book={book} />
       <ModelReveal session={session} book={book} />
     </div>
   );
@@ -245,7 +245,7 @@ function GenericMatch({ session: initial, step, onStep, book, onBack }: MatchPro
               </li>
             ))}
           </ol>
-          <GameChat sessionId={session.session_id} live={live} />
+          <GameChat sessionId={session.session_id} live={live} book={book} />
           {!(timeline.finished && at === last) ? <ModelReveal session={session} book={book} /> : null}
         </aside>
       </div>

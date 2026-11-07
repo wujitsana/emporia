@@ -9,7 +9,14 @@ import type { Session, SessionAction } from "../api";
 const FIXTURES = [BLOTTO, TWO_THIRDS, DICE, AUCTION, BARGAIN];
 const byId = (id: string) => FIXTURES.find((f) => f.session.session_id === id)!;
 
-vi.mock("../hooks", () => ({ useInterval: () => [null, false, null] }));
+vi.mock("../hooks", () => ({
+  useInterval: (fn: () => unknown) => {
+    const src = String(fn);
+    if (src.includes("agents")) return [{ agents: [{ agent_id: "alpha", address: "alpha@relay.example" }], count: 1 }, false, null];
+    if (src.includes("results")) return [{ results: [{ session_id: "r1", module_type: "emporia:chess:v1", participants: ["alpha", "beta"], winner: "alpha", outcome_type: "win", termination: "CHECKMATE", ended_at: "2026-11-05T13:00:00Z" }] }, false, null];
+    return [null, false, null];
+  },
+}));
 vi.mock("../api", () => ({
   api: {
     session: vi.fn((id: string) => Promise.resolve(byId(id).session as Session)),
@@ -18,7 +25,7 @@ vi.mock("../api", () => ({
       session_id: id, ended: true,
       players: { alpha: { status: "revealed", model: "model-a", committed_steps: 1, revealed_steps: 1 }, beta: { status: "mismatch", model: null, committed_steps: 1, revealed_steps: 0 } },
     })),
-    agents: vi.fn(() => Promise.resolve({ agents: [], count: 0 })),
+    agents: vi.fn(() => Promise.resolve({ agents: [{ agent_id: "alpha", address: "alpha@relay.example" }], count: 1 })),
   },
   dashboardToken: () => "",
   looksLikeEncryptedEnvelope: () => false,
@@ -26,7 +33,7 @@ vi.mock("../api", () => ({
 vi.mock("../transport", async (orig) => ({ ...(await orig<object>()), relaySocket: vi.fn(() => new Promise(() => {})) }));
 vi.mock("../ui/AuditBadge", () => ({ AuditBadge: () => null }));
 vi.mock("../ui/VerifyBadge", () => ({ VerifyBadge: () => <span>verified-badge</span> }));
-vi.mock("../ui/GameChat", () => ({ GameChat: () => <p>table talk here</p> }));
+vi.mock("../ui/GameChat", () => ({ GameChat: ({ book }: { book?: Record<string, string> }) => <p>table talk here {book?.alpha}</p> }));
 vi.mock("../ui/Leaderboard", () => ({ Leaderboard: () => null }));
 vi.mock("../ui/ModelResults", () => ({ ModelResults: () => null }));
 vi.mock("./QuestArcs", () => ({ OpenChallenges: () => <p>OPEN CHALLENGES</p> }));
@@ -47,11 +54,22 @@ describe("the Arena home", () => {
   });
 });
 
+describe("names, not raw ids", () => {
+  it("names the winner of a recent match by its address", () => {
+    render(view(null));
+    expect(screen.getByText(/alpha@relay\.example won by checkmate/)).toBeTruthy();
+  });
+  it("hands the address book to the table talk", async () => {
+    render(view(BLOTTO.session.session_id));
+    await waitFor(() => expect(screen.getByText(/table talk here alpha@relay\.example/)).toBeTruthy());
+  });
+});
+
 describe("a match opened by its address", () => {
   it("opens at the step the link names, with the table talk beside the moves", async () => {
     render(view(BLOTTO.session.session_id, 2));
     await waitFor(() => expect(stepText()).toContain("step 2 of 4"));
-    expect(screen.getByText("table talk here")).toBeTruthy();
+    expect(screen.getByText(/table talk here/)).toBeTruthy();
     expect(screen.getByText(/moves · click to seek/)).toBeTruthy();
     // step 2: both committed, nothing revealed — sealed, and no allocation drawn
     expect(document.querySelectorAll(".e-arena-slot.is-sealed")).toHaveLength(2);

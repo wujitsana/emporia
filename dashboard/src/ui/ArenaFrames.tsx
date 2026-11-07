@@ -35,10 +35,10 @@ function Slots({ slots, book }: { slots: Slot[]; book: Book }) {
   );
 }
 
-function Result({ r }: { r: { winner: string | null; termination?: string; reason?: string; points?: Record<string, number> } | null }) {
+function Result({ r, book }: { book: Book; r: { winner: string | null; termination?: string; reason?: string; points?: Record<string, number> } | null }) {
   return null === r ? null : (
     <p className="e-arena-verdict" role="status">
-      {r.winner ? `Winner: ${r.winner}` : `No winner${r.termination ? ` (${r.termination.replace(/_/g, " ")})` : ""}`}
+      {r.winner ? `Winner: ${playerName(r.winner, book, 22)}` : `No winner${r.termination ? ` (${r.termination.replace(/_/g, " ")})` : ""}`}
       {r.reason ? ` — ${r.reason}` : ""}
     </p>
   );
@@ -98,7 +98,7 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
             ))}
           </ul>
         ) : frame.call ? <Text className="e-faint" style={{ fontSize: 12 }}>dice stay hidden until the record reveals them</Text> : null}
-        <Result r={frame.result} />
+        <Result r={frame.result} book={book} />
       </div>
     );
   }
@@ -113,7 +113,7 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
             {frame.signals ? ` · signals ${Object.entries(frame.signals).map(([p, v]) => `${playerName(p, book, 10)} ${v}`).join(", ")}` : ""}
           </p>
         ) : <Text className="e-faint" style={{ fontSize: 12 }}>V stays unknown until the secrets are revealed</Text>}
-        <Result r={frame.result} />
+        <Result r={frame.result} book={book} />
       </div>
     );
   }
@@ -139,7 +139,7 @@ export function ArenaFrame({ frame, book }: { frame: Frame; book: Book }) {
             hands: {Object.entries(frame.hands).map(([p, g]) => `${playerName(p, book, 10)} ${goods(g)}`).join("  |  ")}
           </Text>
         ) : null}
-        <Result r={frame.result} />
+        <Result r={frame.result} book={book} />
       </div>
     );
   }

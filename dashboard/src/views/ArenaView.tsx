@@ -7,6 +7,7 @@ import { isJobModule } from "../eventNav";
 import { useInterval } from "../hooks";
 import { SET_PLAY_NAMES, gameBase, isSetPlay, phaseLine, setPlayView } from "../setPlay";
 import { verdict } from "../resultsFormat";
+import { shortAgent } from "../chessReplay";
 import { sessionStatusLabel } from "../paymentFormat";
 import { whenText } from "../relayFormat";
 import { chanceLine, chanceView } from "../chance";
@@ -108,7 +109,7 @@ function Recent({ onOpen, book, refreshTrigger }: { onOpen: (id: string) => void
                     <span className="e-faint">{whenText(r.ended_at)}</span>
                   </span>
                   <Players ids={r.participants} book={book} />
-                  <span className="e-arena-card__result">{verdict(r)}</span>
+                  <span className="e-arena-card__result">{resultLine(r, book)}</span>
                 </button>
               </li>
             ))}
@@ -116,6 +117,13 @@ function Recent({ onOpen, book, refreshTrigger }: { onOpen: (id: string) => void
         )}
     </section>
   );
+}
+
+/** How a finished match ended, naming the winner as the rest of the Arena does. */
+function resultLine(r: GameResult, book: Record<string, string> | undefined): string {
+  const line = verdict(r);
+  if (!r.winner) return line;
+  return line.replace(shortAgent(r.winner, 16), playerName(r.winner, book, 22));
 }
 
 const BOARD_GAMES = GAME_TYPES.filter((g) => g.kind !== "job");
