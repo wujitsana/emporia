@@ -12,10 +12,9 @@ Terminology:
 from __future__ import annotations
 
 import importlib
-import json
 import re
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -74,13 +73,13 @@ class SessionResult:
     artifacts: dict[str, Any] | None = None
 
 
-STAKE_PURCHASE = "purchase"
+PRICE_PURCHASE = "purchase"
 
 
 class PaymentRules(BaseModel):
     """Declarative payment configuration. No blockchain/wallet fields."""
     mode: str = "free"  # "free", "stripe_link", "mpp"
-    stake_per_participant: str = "0"
+    price: str = "0"
     currency: str = "USD"
     platform_fee_bps: int = 100  # 1%
     payout_distribution: dict[str, float] = Field(default_factory=dict)
@@ -130,12 +129,12 @@ class InteractionModule(ABC):
     # Who pays, and who can be paid. Games take no stakes of any kind (no money,
     # no XP, no Nerve): only a purchase carries money between participants.
     #
-    #   STAKE_PURCHASE  participants[0] (the buyer) pays participants[1] (the
+    #   PRICE_PURCHASE  participants[0] (the buyer) pays participants[1] (the
     #                   seller). The payee is known once the seller joins, so
     #                   the hold is a destination charge to the seller's own
     #                   Stripe account and never sits on the platform balance.
     #   None            takes no money; a session that asks for any is refused.
-    STAKE_MODEL: str | None = None
+    PRICE_MODEL: str | None = None
 
     #: P149: payload fields holding free text that, in a private session whose
     #: players all publish encryption keys, must arrive sealed to the players
@@ -213,14 +212,6 @@ class InteractionModule(ABC):
         waits for all of them."""
         return len(participants) >= self.MIN_PARTICIPANTS
 
-    def validate_participants(self, participants: list[str]) -> tuple[bool, str]:
-        n = len(participants)
-        if n < self.MIN_PARTICIPANTS:
-            return False, f"Need at least {self.MIN_PARTICIPANTS} participants, got {n}"
-        if n > self.MAX_PARTICIPANTS:
-            return False, f"Max {self.MAX_PARTICIPANTS} participants, got {n}"
-        return True, ""
-
     @abstractmethod
     def initial_state(self, participants: list[str], config: dict[str, Any]) -> SessionState:
         """Create the initial collaboration state."""
@@ -236,12 +227,6 @@ class InteractionModule(ABC):
     @abstractmethod
     def is_terminal(self, state: SessionState) -> tuple[bool, dict[str, Any]]:
         """Return (is_over, outcome_dict)."""
-
-    def serialize_state(self, state: SessionState) -> str:
-        return json.dumps(state.to_dict(), sort_keys=True)
-
-    def deserialize_state(self, data: str) -> SessionState:
-        return SessionState.from_dict(json.loads(data))
 
 
 # ============================================================================
@@ -326,26 +311,6 @@ def get_interaction_module(module_type: str) -> InteractionModule:
     return cls()
 
 
-# ============================================================================
-# Session outcome
-# ============================================================================
-
-@dataclass(frozen=True)
-class SessionOutcome:
-    """Final outcome when collaboration terminates."""
-    is_over: bool
-    winner: str | None = None
-    payouts: dict[str, str] | None = None
-    artifacts: dict[str, Any] | None = None
-    summary: str | None = None
-
-    def to_json(self) -> str:
-        return json.dumps(
-            {k: v for k, v in asdict(self).items() if v is not None},
-            sort_keys=True, separators=(",", ":")
-        )
-
-
 #: The most a play guide may run to (a guide rides on join and get_session responses).
 HOW_TO_PLAY_MAX = 1200
 
@@ -367,7 +332,7 @@ def list_available_modules() -> list[dict[str, Any]]:
             "max_participants": cls.MAX_PARTICIPANTS,
             "payment_mode": cls.PAYMENT_RULES.mode,
             # P133: what an agent needs to choose and play a game it has never seen.
-            "stake_model": cls.STAKE_MODEL,
+            "price_model": cls.PRICE_MODEL,
             "declares_winner": cls.DECLARES_WINNER,
             "timed": cls.TIMED,
             "engine_decidable": cls.ENGINE_DECIDABLE,

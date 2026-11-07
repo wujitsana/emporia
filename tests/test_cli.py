@@ -22,25 +22,6 @@ def test_merge_env_file_changes_only_what_it_sets_and_keeps_a_backup(tmp_path):
     assert cli.merge_env_file(env, {"NEW": "x"}) == [], "no change, no new backup"
 
 
-@pytest.fixture
-def profiles(tmp_path, monkeypatch):
-    """A relay profile (`op`) holding the checkout, under a temporary profiles root."""
-    root = tmp_path / "profiles"
-    op = root / "op"
-    op.mkdir(parents=True)
-    (op / "config.yaml").write_text(yaml.dump(
-        {"model": {"provider": "openrouter", "default": "deepseek/deepseek-v4-flash-0731"}}))
-    (op / ".env").write_text("OPENROUTER_API_KEY=sk-or-x\nSTRIPE_SECRET_KEY=sk_test_relay\n")
-    monkeypatch.setattr(cli, "this_profile", lambda: op)
-    monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
-    inst = cli.installer()
-    monkeypatch.setattr(inst, "_hermes_profile_create", lambda name: (root / name).mkdir())
-    monkeypatch.setattr(inst, "install_platform_plugin", lambda *a, **k: None)
-    monkeypatch.setattr(inst, "_install_skill_link", lambda *a, **k: None)
-    monkeypatch.setattr(inst, "_TOUCHED_PROFILES", [])
-    return root, op
-
-
 def test_setup_agent_makes_a_slim_profile_with_its_own_wallet(profiles, capsys):
     root, _ = profiles
     with patch.dict(os.environ):

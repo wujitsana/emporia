@@ -27,7 +27,7 @@ from emporia import wire as _wire
 from emporia.routes import beacon as beacon_route
 from emporia.module_sdk import (
     how_to_play_for,
-    STAKE_PURCHASE,
+    PRICE_PURCHASE,
     MODULE_REGISTRY,
     SessionAction,
     SessionState,
@@ -40,16 +40,16 @@ from emporia.session_audit import (
     open_dual_session,
     verify_chain_entries,
 )
-from emporia.wire import ERR_DUPLICATE_NONCE, session_id_for, signed_session_create_payload, stake_terms
+from emporia.wire import ERR_DUPLICATE_NONCE, session_id_for, signed_session_create_payload, price_terms
 
 router = APIRouter()
 
-def _stake(payment_rules: dict[str, Any]) -> tuple[int, str]:
-    """(stake in cents, currency) for a session's rules; 0 when it is free."""
-    stake = payment_rules.get("stake_per_participant", "0")
-    if payment_rules.get("mode", "free") == "free" or stake in ("0", "0.00", "", None):
+def _price(payment_rules: dict[str, Any]) -> tuple[int, str]:
+    """(price in cents, currency) for a session's rules; 0 when it is free."""
+    price = payment_rules.get("price", "0")
+    if payment_rules.get("mode", "free") == "free" or price in ("0", "0.00", "", None):
         return 0, "usd"
-    return int(float(stake) * 100), (payment_rules.get("currency") or "usd").lower()
+    return int(float(price) * 100), (payment_rules.get("currency") or "usd").lower()
 
 
 GAME_STAKES_REFUSAL = (
@@ -184,7 +184,7 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
                                  "wire.signed_session_create_payload(wire.session_id_for(nonce), ...))")
     session_id = session_id_for(req.nonce)
     from emporia.routes.rooms import _require_signed_by
-    terms = stake_terms(req.payment_rules)   # P280: the money terms it asked for, signed with it
+    terms = price_terms(req.payment_rules)   # P280: the money terms it asked for, signed with it
     _require_signed_by(caller, signed_session_create_payload(session_id, rs.AGENT_REGISTRY.get_stable_id(caller) or "",
                                                              req.module_type, req.at, terms),
                        req.at, req.signature, "the creating agent's")
@@ -203,8 +203,8 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
 
     # Games carry no stakes of any kind. Money is for deals (a purchase's buyer funds
     # it after a seller joins, through /fund) and paid entry — never a game.
-    amount_cents, currency = _stake(payment_rules)
-    if module.STAKE_MODEL is None and (amount_cents or (req.payment_rules or {}).get("mode", "free") != "free"):
+    amount_cents, currency = _price(payment_rules)
+    if module.PRICE_MODEL is None and (amount_cents or (req.payment_rules or {}).get("mode", "free") != "free"):
         raise HTTPException(400, GAME_STAKES_REFUSAL.format(mt=req.module_type))
     rs.save_session(
         session_id=session_id,
@@ -467,7 +467,7 @@ async def get_session_encryption_keys(session_id: str, request: Request):
     return {"session_id": session_id, "sealed": rs.session_sealed(s), "module_type": s["module_type"],
             # P280: the terms its creator signed, and the ones the relay keeps, for a player to compare.
             "terms": rules.get("signed_terms"),
-            "payment_rules": {k: rules.get(k) for k in ("mode", "stake_per_participant", "currency")},
+            "payment_rules": {k: rules.get(k) for k in ("mode", "price", "currency")},
             "keys": rs._room_member_encryption_keys(SimpleNamespace(members=list(s["participants"]))),
             "creator": s["participants"][0] if s["participants"] else "",
             "joins": {r["agent_id"]: {"at": r["join_at"], "signature": r["join_signature"],
@@ -747,7 +747,7 @@ ESCROW_HEADER = "PAYMENT-ESCROW"
 
 
 def _escrow_hold_for(payment: dict[str, Any]):
-    """(config, signer, PaymentInfo, hold) for an x402 escrow stake row."""
+    """(config, signer, PaymentInfo, hold) for an x402 escrow price row."""
     from emporia import escrow, escrow_chain
     from emporia.operator_signer import load_operator_signer
 
@@ -781,7 +781,7 @@ _RELEASED = frozenset({"canceled", "voided", "already voided", "already reclaime
 
 
 async def _release_hold(payment: dict[str, Any]) -> dict[str, Any]:
-    """Give a stake back, on whichever rail holds it, and record it on the
+    """Give a price back, on whichever rail holds it, and record it on the
     payment row. P130: the row said `confirmed` after every release — abandon,
     dispute, draw, the idle sweep — so the ledger showed stakes as taken that
     Stripe had cancelled or the contract had voided."""
@@ -868,7 +868,7 @@ async def _settle_escrow_purchase(session_id: str, seller: str, total_cents: int
         captures.append({"payment_intent_id": ref, "status": "captured", "transaction": tx})
     fee = platform_fee(total_cents)
     return {
-        "session_id": session_id, "winner_id": seller, "total_stake_cents": total_cents,
+        "session_id": session_id, "winner_id": seller, "total_price_cents": total_cents,
         "platform_fee_cents": fee, "winner_payout_cents": total_cents - fee,
         "platform_fee_bps": relay_fee_bps(),
         "platform_fee_atomic": fee_atomic, "winner_payout_atomic": payout_atomic,
@@ -1081,7 +1081,7 @@ async def _fund_with_escrow(request: Request, s: dict[str, Any], session_id: str
     })
     rs.record_payment(
         payment_intent_id=hold_hash, agent_id=caller, amount_cents=amount_cents,
-        payment_type="session_stake", session_id=session_id, currency="usd", rail=RAIL_X402,
+        payment_type="session_price", session_id=session_id, currency="usd", rail=RAIL_X402,
     )
     await _start(session_id, s, s["participants"], s["payment_rules"])
     return rs.load_session(session_id)
@@ -1119,7 +1119,7 @@ async def fund_session(session_id: str, request: Request):
         raise HTTPException(403, "Only the buyer funds a purchase.")
     rs._enforce_agent_rate_limit(caller)
 
-    amount_cents, currency = _stake(s["payment_rules"])
+    amount_cents, currency = _price(s["payment_rules"])
     escrow_rail = _escrow_rail(seller) if currency == "usd" else None
     account = rs.AGENT_REGISTRY.get_stripe_account(seller)
     stripe_ok = bool(
@@ -1188,9 +1188,9 @@ async def fund_session(session_id: str, request: Request):
     try:
         rs.record_payment(
             payment_intent_id=paid.reference, agent_id=caller, amount_cents=amount_cents,
-            # The session's stake, like any other: settlement and abandon read
-            # stake rows, and STAKE_MODEL decides how this one settles.
-            payment_type="session_stake", session_id=session_id, currency=currency,
+            # The session's price, like any other: settlement and abandon read
+            # price rows, and PRICE_MODEL decides how this one settles.
+            payment_type="session_price", session_id=session_id, currency=currency,
             rail=paid.rail,
         )
     except ValueError as e:
@@ -1344,8 +1344,8 @@ async def join_session(session_id: str, req: rs.JoinSessionRequest, request: Req
     # Payment gate. Games take no stakes: nobody pays to join one. A purchase's
     # joiner is the seller; the buyer funds it after this join, through /fund.
     payment_rules = s["payment_rules"]
-    amount_cents, currency = _stake(payment_rules)
-    purchase = module.STAKE_MODEL == STAKE_PURCHASE and bool(amount_cents)
+    amount_cents, currency = _price(payment_rules)
+    purchase = module.PRICE_MODEL == PRICE_PURCHASE and bool(amount_cents)
 
     participants = s["participants"] + [req.agent_id]
     rs.add_participant(session_id, req.agent_id, join_at=req.at,
@@ -1761,8 +1761,8 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
     total_cents = sum(p["amount_cents"] for p in payments)
 
     module_purchase = (
-        module.STAKE_MODEL == STAKE_PURCHASE
-        and bool(_stake(s["payment_rules"])[0])
+        module.PRICE_MODEL == PRICE_PURCHASE
+        and bool(_price(s["payment_rules"])[0])
     )
     if module_purchase and winner_id and winner_id != s["participants"][1]:
         # A purchase pays only its seller. Any other winner is the buyer
@@ -1780,7 +1780,7 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
             "outcome_type": outcome_type,
             "status": "refunded",
             "cancel_results": cancel_results,
-            "total_stake_cents": total_cents,
+            "total_price_cents": total_cents,
             "platform_fee_cents": 0,
             "winner_payout_cents": 0,
             "payment_intent_ids": pi_ids,
@@ -1817,7 +1817,7 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
                 "session_id": session_id,
                 "winner_id": winner_id,
                 "outcome_type": outcome_type,
-                "total_stake_cents": 0,
+                "total_price_cents": 0,
                 "platform_fee_cents": 0,
                 "winner_payout_cents": 0,
                 "platform_fee_bps": __import__("emporia.fees", fromlist=["x"]).fee_bps(),

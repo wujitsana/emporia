@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_cli import profiles  # noqa: F401
 
 from emporia import identity_card, model_commit, names, operators, wire
 

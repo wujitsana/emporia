@@ -136,7 +136,7 @@ STRIPE_API_BASE = os.getenv("STRIPE_API_BASE", "https://api.stripe.com/v1")
 STRIPE_API_VERSION = os.getenv("STRIPE_API_VERSION", "2026-04-22.preview")
 
 # P74: the constant `settle()`'s docstring has always cited and that never
-# existed. It claimed "Requires total_stake_cents >= STRIPE_MIN_CHARGE_CENTS
+# existed. It claimed "Requires total_price_cents >= STRIPE_MIN_CHARGE_CENTS
 # (50c) - enforced upstream"; nothing upstream enforced anything, and the only
 # amount guard in this module was `amount_cents <= 0`. So a resource priced at
 # a penny passed every check here and was rejected by Stripe, and the agent saw
@@ -855,10 +855,6 @@ async def confirm_spt(
         "metadata[resource_type]": resource_type,
         "metadata[resource_id]": session_id,
     }
-    if resource_type == "room":
-        metadata["metadata[room_id]"] = session_id
-    elif resource_type == "agora":
-        metadata["metadata[topic_id]"] = session_id
 
     # P88: an SPT is consumed by the first PaymentIntent that uses it. Without a
     # key, a request that timed out *after* Stripe charged the card left the
@@ -949,7 +945,7 @@ def _stripe_key() -> str:
     return key
 
 
-async def create_stake_intent(
+async def create_price_intent(
     session_id: str,
     amount_cents: int,
     buyer_id: str,
@@ -963,7 +959,7 @@ async def create_stake_intent(
     destination_account: str | None = None,
     application_fee_cents: int | None = None,
 ) -> dict[str, Any]:
-    """Create a Stripe PaymentIntent for a session stake using manual capture (escrow).
+    """Create a Stripe PaymentIntent for a deal price using manual capture (escrow).
 
     `destination_account` (P157): a destination charge to that connected account,
     less `application_fee_cents` — the intent the relay will accept when it does
@@ -996,10 +992,6 @@ async def create_stake_intent(
             "metadata[resource_type]": resource_type,
             "metadata[resource_id]": session_id,
         }
-        if resource_type == "room":
-            metadata["metadata[room_id]"] = session_id
-        elif resource_type == "agora":
-            metadata["metadata[topic_id]"] = session_id
         resp = await client.post(
             f"{STRIPE_API_BASE}/payment_intents",
             auth=(key, ""),
@@ -1178,7 +1170,7 @@ async def cancel_payment_hold(payment_intent_id: str) -> dict[str, Any]:
 async def settle(
     session_id: str,
     winner_id: str,
-    total_stake_cents: int,
+    total_price_cents: int,
     payment_intent_ids: list[str],
     winner_stripe_account: str | None = None,
     *,
@@ -1194,7 +1186,7 @@ async def settle(
     4. If game was never played / abandoned, call cancel_payment_hold() instead.
 
     Platform fee: `fees.fee_bps()` basis points (default 100 = 1%, 0 with no fee address), minimum 1¢.
-    Requires total_stake_cents ≥ STRIPE_MIN_CHARGE_CENTS (50¢). P74: that was
+    Requires total_price_cents ≥ STRIPE_MIN_CHARGE_CENTS (50¢). P74: that was
     a claim about a constant this module did not define and nobody enforced —
     it is now real, checked where the PaymentIntent is created, before Stripe
     is asked.
@@ -1218,9 +1210,9 @@ async def settle(
     caller that genuinely doesn't know shouldn't have its previously-working
     payout broken by this check.
     """
-    fee = platform_fee(total_stake_cents)
+    fee = platform_fee(total_price_cents)
     platform_fee_cents = fee
-    winner_payout_cents = total_stake_cents - platform_fee_cents
+    winner_payout_cents = total_price_cents - platform_fee_cents
 
     # Step 1: Capture all authorized holds → platform balance
     capture_results = []
@@ -1303,7 +1295,7 @@ async def settle(
     return {
         "session_id": session_id,
         "winner_id": winner_id,
-        "total_stake_cents": total_stake_cents,
+        "total_price_cents": total_price_cents,
         "platform_fee_cents": platform_fee_cents,
         "winner_payout_cents": winner_payout_cents,
         "platform_fee_bps": __import__("emporia.fees", fromlist=["x"]).fee_bps(),
@@ -1343,7 +1335,7 @@ async def settle_destination_charges(
     return {
         "session_id": session_id,
         "winner_id": payee_id,
-        "total_stake_cents": total_cents,
+        "total_price_cents": total_cents,
         "platform_fee_cents": fee,
         "winner_payout_cents": total_cents - fee,
         "platform_fee_bps": __import__("emporia.fees", fromlist=["x"]).fee_bps(),

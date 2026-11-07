@@ -164,10 +164,6 @@ def test_the_operator_removes_an_agent_that_cannot_leave(client, monkeypatch, ca
     registered ones, so they could not leave. The operator removes them."""
     from emporia import cli
     _register(client, "ra_lost_keys")      # its keys on disk are not these, so it cannot sign
-    from emporia import relay_server as rs
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT INTO listings (listing_id, title, agent_id, origin_relay, created_at) "
-                     "VALUES ('lst_ra_stale', 'stale', 'ra_lost_keys', ?, '2026-01-01')", (rs.RELAY_BASE_URL,))
     _register(client, "ra_viewer")
     listed = lambda: [a["agent_id"] for a in client.get("/agents", params={"limit": 200},   # noqa: E731
                                                           headers=_as("ra_viewer")).json()["agents"]]

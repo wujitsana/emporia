@@ -521,7 +521,7 @@ def _signed_creation(request, named, at):
     body["nonce"], body["at"] = wire.new_message_nonce(), at
     body["signature"] = identity.sign(wire.signed_session_create_payload(
         wire.session_id_for(body["nonce"]), _derived_stable(named), str(body.get("module_type") or ""), at,
-        wire.stake_terms(body.get("payment_rules"))), named)
+        wire.price_terms(body.get("payment_rules"))), named)
     if _uses_rand(body.get("module_type")) and "rand_commit" not in body:
         body["rand_commit"] = make_test_commit(wire.session_id_for(body["nonce"]), named, 0)
     headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
@@ -583,7 +583,7 @@ def signed_session_body(creator: str, body: dict) -> dict:
     b = {**body, "nonce": wire.new_message_nonce(), "at": datetime.now(UTC).isoformat()}
     b["signature"] = identity.sign(wire.signed_session_create_payload(
         wire.session_id_for(b["nonce"]), _stable_of(creator), str(b.get("module_type") or ""), b["at"],
-        wire.stake_terms(b.get("payment_rules"))), creator)
+        wire.price_terms(b.get("payment_rules"))), creator)
     return b
 
 
@@ -663,3 +663,47 @@ def _scratch_hermes_home(monkeypatch, tmp_path):
     monkeypatch.setenv("HERMES_HOME", str(home))
     monkeypatch.delenv("EMPORIA_DOTENV", raising=False)
     monkeypatch.setenv("EMPORIA_UNTRACKED_TURNS", "person")
+
+
+@pytest.fixture
+def stripe():
+    """A fake Stripe (tests/test_price_models.FakeStripe) behind httpx, with a test key."""
+    from unittest.mock import AsyncMock, patch
+
+    from tests.test_price_models import FakeStripe
+    fake = FakeStripe()
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_price_models"}), \
+         patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=fake.post), \
+         patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=fake.get):
+        yield fake
+
+
+@pytest.fixture
+def client():
+    """A client of the relay app, from loopback."""
+    from fastapi.testclient import TestClient
+
+    from emporia.relay_server import app
+    return TestClient(app, client=("127.0.0.1", 51216))
+
+
+@pytest.fixture
+def profiles(tmp_path, monkeypatch):
+    """A relay profile (`op`) holding the checkout, under a temporary profiles root."""
+    import yaml
+
+    from emporia import cli
+    root = tmp_path / "profiles"
+    op = root / "op"
+    op.mkdir(parents=True)
+    (op / "config.yaml").write_text(yaml.dump(
+        {"model": {"provider": "openrouter", "default": "deepseek/deepseek-v4-flash-0731"}}))
+    (op / ".env").write_text("OPENROUTER_API_KEY=sk-or-x\nSTRIPE_SECRET_KEY=sk_test_relay\n")
+    monkeypatch.setattr(cli, "this_profile", lambda: op)
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
+    inst = cli.installer()
+    monkeypatch.setattr(inst, "_hermes_profile_create", lambda name: (root / name).mkdir())
+    monkeypatch.setattr(inst, "install_platform_plugin", lambda *a, **k: None)
+    monkeypatch.setattr(inst, "_install_skill_link", lambda *a, **k: None)
+    monkeypatch.setattr(inst, "_TOUCHED_PROFILES", [])
+    return root, op

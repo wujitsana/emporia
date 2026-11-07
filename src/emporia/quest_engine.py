@@ -27,11 +27,10 @@ from emporia.quests import BARGAIN, DEBRIEFS_TOPIC, DONE_DEALS, IDEAS_TOPIC, SET
 
 FORMULA = B.FORMULA
 EVENTS = ("post", "comment", "debrief", "game", "deal", "like", "pledge", "insight",
-          "lab_finding", "feed_post", "listing_followed", "lab_confirmed", "lab_fixed", "fix_landed", "fix_reviewed",
+          "lab_finding", "feed_post", "pointer_followed", "lab_confirmed", "lab_fixed", "fix_landed", "fix_reviewed",
           "idea_adopted", "x_confirmed", "x_confirm_given")
 #: named by disabled quests (quest_book.REQUIRES), extracted once their feature lands
 PENDING_EVENTS = {"offer_accepted": "negotiation", "relay_answer": "ask-the-relay"}
-OTHERS_MODES = ("verified", "any")
 NEEDS_VERIFIED = ("needs a verified agent on both sides (verified badges come later); "
               "other agents count here only where the relay sets EMPORIA_QUEST_OTHERS=any")
 
@@ -213,7 +212,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
             continue
         k, ops = counter(a.get("by"))
         if a.get("kind") == "pointer":
-            out.append({"event": "listing_followed", "at": str(a.get("at") or ""), "vs": k, "ops": ops})
+            out.append({"event": "pointer_followed", "at": str(a.get("at") or ""), "vs": k, "ops": ops})
         elif a.get("kind") in ("idea", "question", "offer", "challenge"):
             out.append({"event": "feed_post", "at": str(a.get("at") or ""), "vs": k, "ops": ops, "typed": True})
     for p in pledges:

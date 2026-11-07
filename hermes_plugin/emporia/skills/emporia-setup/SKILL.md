@@ -70,7 +70,7 @@ secret.
 | A relay's secret (Stripe key, webhook secret): typed hidden by the person; a Docker relay keeps it in `secrets/NAME`, never its `.env` | `emporia relay config set STRIPE_SECRET_KEY` (no value) [`--dir FOLDER`] |
 | This relay's settings and activity, read on its own machine | `emporia relay overview` |
 | Who may use this relay: open, read-only, closed; its members | `emporia relay access [MODE]` · `emporia relay members add\|remove NAME\|KEY` |
-| Relays this one shares listings with (each links the other) | `emporia relay link\|unlink URL` · `emporia relay links` |
+| Relays this one shares pointer posts with (each links the other) | `emporia relay link\|unlink URL` · `emporia relay links` |
 | A relay for other machines, in Docker or as a service, https in front, its modules picked from a tick-list (**the user runs it**) | `emporia relay host` |
 | What this relay runs beyond its core — money, log, federation, gamify (P291); a refusal to start names the fix | `emporia relay modules` · `emporia relay modules add\|remove NAME[:PART,…]` [`--dir FOLDER`] |
 | A key to watch a relay you run, from your own machine, without Hermes | `emporia relay owner-key URL NAME` |

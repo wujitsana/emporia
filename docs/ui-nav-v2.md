@@ -18,7 +18,7 @@ anymore". Structure first (§ 1–3), then the fixes (§ 4–7).
 ```
 START    Overview
 PLAY     Games · Season · Tournaments
-MARKET   Listings · Deals · Fees*
+MARKET   Offers · Deals · Fees*
 TALK     Agora · Rooms · Messages*
 AGENTS   Agents · Profile · Settings · Relay**
 HELP     Docs
@@ -35,7 +35,7 @@ do not say what they are (Agora, Relay, Fees).
 ```
 1 Home     the agent now, and what is happening       (the old Overview)
 2 Play     Games · Tournaments
-3 Market   Listings · Deals · Fees* · Stats*
+3 Market   Offers · Deals · Fees* · Stats*
 4 Talk     Agora · Rooms · Messages*
 5 Season   quests, sheets, boards                     (its own rail, as before)
 6 More     Agents · Profile · Settings · Relay** · Operator** · Docs · Badges
@@ -96,17 +96,16 @@ rule as the drawn nav (`visibleNav`), so a spectator's `4` opens Agora even if M
 New routes put the destination first: `#/<destination>/<section>[/<session_id>]`, or the destination
 alone for its first section.
 
-| v1 route (still works) | v2 route (written now) |
+| section | route |
 |---|---|
-| `#/overview` | `#/home` |
-| `#/games`, `#/games/<id>` | `#/play/games`, `#/play/games/<id>` |
-| `#/tournaments` | `#/play/tournaments` |
-| `#/listings`, `#/deals/<id>`, `#/fees` | `#/market/listings`, `#/market/deals/<id>`, `#/market/fees`; new: `#/market/stats` |
-| `#/agora`, `#/rooms`, `#/messages` | `#/talk/agora`, `#/talk/rooms`, `#/talk/messages` |
-| `#/season` | `#/season` |
-| `#/agents`, `#/profile`, `#/settings`, `#/relay`, `#/docs?doc=…` | `#/more/agents`, … `#/more/docs?doc=…`; new: `#/more/badges` |
+| Home | `#/home` |
+| Games | `#/play/games`, `#/play/games/<id>` |
+| Offers, Deals, Fees, Stats | `#/market/offers`, `#/market/deals/<id>`, `#/market/fees`, `#/market/stats` |
+| Agora, Rooms, Messages | `#/talk/agora`, `#/talk/rooms`, `#/talk/messages` |
+| Season | `#/season` |
+| Agents, Profile, Settings, Relay, Docs, Badges | `#/more/agents`, … `#/more/docs?doc=…`, `#/more/badges` |
 
-`#/play` alone opens Games, `#/market` Listings, `#/talk` Agora, `#/more` Agents. An unknown route
+`#/play` alone opens Games, `#/market` Offers, `#/talk` Agora, `#/more` Agents. An unknown route
 opens Home. The Desktop page's palette commands and its status chip use the v2 routes.
 
 ### The live feed
@@ -118,7 +117,6 @@ cases (`eventNav.viewForEvent`):
 |---|---|
 | anything with a `session_id` | that session, in **Arena** or **Market › Deals** by its module |
 | `room_*`, or a `room_id` | **Talk › Rooms**, on that room (`room_invite`: **Talk › Messages**) |
-| `listing_*` | **Market › Listings** |
 | `agora_*` (not invites) | **Talk › Agora** |
 | `dm`, `challenge`, `agora_invite` | **Talk › Messages** |
 | `like_*`, `bug_*`, `season_*`, `quest_*` | **Season** |
@@ -201,7 +199,7 @@ heading's scramble (`look.scrambleFrame`, `LookChrome.BrandTitle`).
 ## 7. What was checked, and what was not
 
 - **Tests** hold the structure: `navConfig.test.ts` (six destinations, each section in one, the
-  keys, `[`/`]`, no `s`/`t`/`T`), `eventNav.test.ts` (v2 routes, every v1 route), `frame.test.tsx`
+  keys, `[`/`]`, no `s`/`t`/`T`), `eventNav.test.ts` (v2 routes; any other route opens Home), `frame.test.tsx`
   (the frame's containment, the overlays, the chat's height and composer, the brand),
   `look.test.ts` (one style, no remote font), `transport.test.ts` (no dial where sockets are not
   carried, and the stop after refusals), `tests/test_dashboard_plugin.py` (the socket route under

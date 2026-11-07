@@ -26,7 +26,7 @@ def _h(a):
     return {"x-emporia-agent-id": a}
 
 
-def test_archive_keeps_dms_rooms_posts_listings_and_sessions_and_only_fetches_whats_new(client, monkeypatch,
+def test_archive_keeps_dms_rooms_posts_and_sessions_and_only_fetches_whats_new(client, monkeypatch,
                                                                                          tmp_path):
     from emporia import identity, mcp_server
     for a in ("ar_me", "ar_friend"):
@@ -71,7 +71,7 @@ def test_an_agent_leaves_a_relay_only_once_nothing_is_open_there(client):
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("UPDATE sessions SET status = 'abandoned' WHERE session_id = ?", (sess,))
     r = client.post("/agents/lv_agent/leave", headers=_h("lv_agent"))
-    assert r.status_code == 200 and r.json()["listings_removed"] == 0
+    assert r.status_code == 200
     assert client.post("/posts", json=_body("lv_agent"), headers=_h("lv_agent")).status_code in (401, 403)
     assert client.get("/agents/lv_agent/card").status_code == 404
 

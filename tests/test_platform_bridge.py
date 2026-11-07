@@ -437,7 +437,7 @@ def test_a_cancelled_card_hold_is_recorded_as_released(client, monkeypatch):
             conn.execute(
                 "INSERT INTO payments (payment_id, session_id, agent_id, amount_cents, currency, "
                 "payment_intent_id, payment_type, status, created_at, rail) "
-                "VALUES (?, ?, ?, 100, 'usd', ?, 'session_stake', 'confirmed', ?, 'stripe')",
+                "VALUES (?, ?, ?, 100, 'usd', ?, 'session_price', 'confirmed', ?, 'stripe')",
                 (uuid.uuid4().hex, sid, who, pi, datetime.now(UTC).isoformat()))
 
     async def cancel(pi):

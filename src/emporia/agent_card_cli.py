@@ -14,7 +14,6 @@ Works for a Hermes agent profile and for an agent made with `emporia agent init`
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import subprocess
@@ -171,6 +170,3 @@ def x_link(name: str, handle: str, post: str) -> int:
           f"(confirmed by {link.get('confirmed_by', 0)} other operators).")
     return 0
 
-
-def namespace_args(a: argparse.Namespace) -> dict[str, Any]:
-    return {"handle": a.handle, "style": a.style or "plain", "text": a.text, "post": a.post}

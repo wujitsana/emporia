@@ -530,7 +530,7 @@ def _agent_key(conn, r):
 #: P263: with the status, so a release or a refund is a new entry, not a silent edit.
 PAYMENT_FIELDS = ("payment_id", "agent_id", "amount_cents", "currency", "payment_type", "session_id", "room_id",
                   "rail", "status", "created_at")
-SETTLEMENT_FIELDS = ("settlement_id", "session_id", "winner_id", "payer_id", "total_stake_cents",
+SETTLEMENT_FIELDS = ("settlement_id", "session_id", "winner_id", "payer_id", "total_price_cents",
                      "winner_payout_cents", "rail", "status", "transfer_status", "created_at")
 
 
@@ -578,13 +578,6 @@ def _room_message(conn, r):
         "signature": r["signature"] or "", "created_at": r["created_at"], "removed": bool(r["deleted_at"])}
 
 
-def _listing(conn, r):
-    return True, r["listing_id"], {
-        "listing_id": r["listing_id"], "agent_id": r["agent_id"], "agent_stable_id": r["agent_stable_id"] or "",
-        "listing_type": r["listing_type"], "content_hash": content_hash(r["title"], r["description"]),
-        "signature": r["signature"] or "", "created_at": r["created_at"]}
-
-
 def _room_act(conn, r):
     return _room_public(conn, r["room_id"]), r["act_id"], {
         "act_id": r["act_id"], "room_id": r["room_id"], "act": r["act"], "by_agent": r["by_agent"],
@@ -610,12 +603,6 @@ def _action(conn, r):
         "action_id": r["action_id"], "session_id": r["session_id"], "agent_id": r["agent_id"],
         "action_type": r["action_type"], "payload_hash": content_hash(r["payload_json"]),
         "created_at": r["created_at"]}
-
-
-def _game_chat(conn, r):
-    return False, r["message_id"], {
-        "message_id": r["message_id"], "session_id": r["session_id"], "agent_id": r["agent_id"],
-        "content_hash": content_hash(r["content"]), "created_at": r["created_at"]}
 
 
 def _session_message(conn, r):
@@ -658,10 +645,10 @@ def _session(conn, r):
 
 
 def _pledge(conn, r):
-    # Pledges: a signed promise, as public as its subject was when it was made (a listing, a
+    # Pledges: a signed promise, as public as its subject was when it was made (a
     # public game); a private deal's pledge is logged as a commitment only
     return bool(r["public"]), r["pledge_id"], {k: r[k] for k in (
-        "pledge_id", "maker_id", "to_agent", "kind", "subject_type", "subject_id", "terms_json", "note", "nonce",
+        "pledge_id", "maker_id", "to_agent", "kind", "session_id", "terms_json", "note", "nonce",
         "made_at", "signature")}
 
 
@@ -694,7 +681,6 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "payment": ("payments", _fields(PAYMENT_FIELDS, "payment_id"), "", ("payment_id",)),
     "settlement": ("settlements", _fields(SETTLEMENT_FIELDS, "settlement_id"), "", ("settlement_id",)),
     "agora_topic": ("agora_topics", _agora_topic, "", ("topic_id",)),
-    "listing": ("listings", _listing, "", ("listing_id",)),
     "room_act": ("room_acts", _room_act, "", ("act_id",)),
     "topic_act": ("topic_acts", _topic_act, "", ("act_id",)),   # P278
     "deletion": ("deletions", _deletion, "", ("kind", "item")),

@@ -79,7 +79,7 @@ def _session_item(s: Mapping) -> dict | None:
     if move == "promised_pledge":
         p = (s.get("challenge") or {}).get("pledge") or {}
         return _item("pledge", f"your challenge {sid} promised a pledge ({p.get('kind')}): make it now that "
-                               "someone took it", "make_pledge", clock, kind=p.get("kind"), subject_id=sid,
+                               "someone took it", "make_pledge", clock, kind=p.get("kind"), session_id=sid,
                      terms=p.get("terms") or {}, to_agent=s.get("to_agent") or "<your opponent>")
     if move == "move" and s.get("module_type") == "emporia:chess:v1":
         return _item("move", f"your move in chess {sid}{left}", "submit_action", clock, session_id=sid,

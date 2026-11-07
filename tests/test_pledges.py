@@ -26,9 +26,9 @@ def ts(seconds: float) -> float:
     return (T0 + timedelta(seconds=seconds)).timestamp()
 
 
-def pledge(kind, terms=None, made=0, maker="m", to="c", subject_type="session"):
+def pledge(kind, terms=None, made=0, maker="m", to="c"):
     return {"pledge_id": f"plg_{uuid.uuid4().hex[:8]}", "maker_id": maker, "to_agent": to, "kind": kind,
-            "subject_type": subject_type, "subject_id": "sess_x", "terms": terms or {}, "made_at": at(made)}
+            "session_id": "sess_x", "terms": terms or {}, "made_at": at(made)}
 
 
 def deal(status="active", deal_status="accepted", delivered=None, updated=0, seller="m", buyer="c"):
@@ -45,8 +45,8 @@ def act(agent, kind, t, move=None):
 # ── the payloads ────────────────────────────────────────────────────────────
 
 def test_the_pledge_and_its_acts_are_their_own_signed_kinds():
-    p = wire.signed_pledge_payload("m", "c", "tell", "session", "sess_x", {"tell": "even_split"}, "", "n" * 16, "t")
-    assert p["type"] == "emporia:pledge:v2" and p["terms"] == {"tell": "even_split"}
+    p = wire.signed_pledge_payload("m", "c", "tell", "sess_x", {"tell": "even_split"}, "", "n" * 16, "t")
+    assert p["type"] == "emporia:pledge:v3" and p["terms"] == {"tell": "even_split"}
     a = wire.signed_pledge_act_payload("plg_1", "attest", "kept", "c", "t")
     assert a["type"] == "emporia:pledge-act:v2"
     assert signing.KINDS["pledge"].builder == "signed_pledge_payload"
@@ -57,11 +57,11 @@ def test_the_pledge_and_its_acts_are_their_own_signed_kinds():
 
 def test_a_pledge_signature_verifies_and_a_changed_term_does_not():
     agent = f"pl_sig_{uuid.uuid4().hex[:6]}"
-    args = (agent, "c", "deliver_by", "session", "sess_x", {"by": at(3600)}, "on time", "n" * 16, at(0))
+    args = (agent, "c", "deliver_by", "sess_x", {"by": at(3600)}, "on time", "n" * 16, at(0))
     sig = signing.sign(agent, "pledge", *args)
     pub = identity.get_public_key_hex(agent)
     assert identity.verify(wire.signed_pledge_payload(*args), sig, pub)
-    changed = (*args[:5], {"by": at(7200)}, *args[6:])
+    changed = (*args[:4], {"by": at(7200)}, *args[5:])
     assert not identity.verify(wire.signed_pledge_payload(*changed), sig, pub)
 
 
@@ -159,11 +159,9 @@ def test_a_tell_is_held_against_the_revealed_move():
     assert PL.tell_holds({"tell": "move", "value": [1, 2]}, [1, 2])
 
 
-def test_a_listing_pledge_waits_for_a_deal_with_the_counterparty():
-    p = pledge("deliver_by", {"by": at(3600)}, subject_type="listing")
-    assert PL.resolve(p, {"listing_expires_at": at(7200)}, [], {}, ts(100))["waiting_on"] == \
-        "a deal with the counterparty"
-    assert PL.resolve(p, {"listing_expires_at": at(7200)}, [], {}, ts(4000))["status"] == "void"
+def test_a_pledge_on_a_session_that_is_gone_is_void():
+    p = pledge("deliver_by", {"by": at(3600)})
+    assert PL.resolve(p, None, [], {}, ts(100))["status"] == "void"
     assert PL.resolve(p, deal(deal_status="delivered", delivered=1000), [], {}, ts(1200))["status"] == "kept"
 
 
@@ -198,7 +196,7 @@ OPS = {"m": "op1", "m2": "op1", "c": "op2", "c2": "op3", "h": "op9"}
 
 def resolved(maker, to, status, by="evidence", t=100, **extra):
     return {"pledge_id": f"plg_{uuid.uuid4().hex[:8]}", "maker_id": maker, "to_agent": to, "kind": "deliver_by",
-            "subject_type": "session", "subject_id": "sess_y", "status": status, "resolved_by": by,
+            "session_id": "sess_y", "status": status, "resolved_by": by,
             "resolved_at": at(t), "made_at": at(0), **extra}
 
 
@@ -216,7 +214,7 @@ def test_a_private_deals_pledge_is_counted_without_its_counterparty():
     rows = [resolved("m", "c", "kept", public=False), resolved("m", "c2", "kept", public=True)]
     rec = PL.record("m", rows, operator=OPS.get, now=ts(200), public=lambda p: p["public"])
     private = [r for r in rec["recent"] if r.get("private")]
-    assert len(private) == 1 and "to_agent" not in private[0] and "subject_id" not in private[0]
+    assert len(private) == 1 and "to_agent" not in private[0] and "session_id" not in private[0]
     assert rec["kept"] == 2
 
 
@@ -267,8 +265,8 @@ def test_keep_your_word_needs_evidence_and_a_real_counterparty():
 
 
 def test_the_due_list_says_what_each_pledge_asks_soonest_first():
-    rows = [{**pledge("deliver_by"), "status": "open", "do": "deliver", "due_at": at(900), "subject_id": "s1"},
-            {**pledge("reveal_within"), "status": "open", "do": "reveal", "due_at": at(100), "subject_id": "s2"},
+    rows = [{**pledge("deliver_by"), "status": "open", "do": "deliver", "due_at": at(900), "session_id": "s1"},
+            {**pledge("reveal_within"), "status": "open", "do": "reveal", "due_at": at(100), "session_id": "s2"},
             {**pledge("refund", maker="x", to="m"), "status": "open", "waiting_on": "counterparty",
              "attest_by": at(5000)},
             {**pledge("tell"), "status": "kept"}]
@@ -384,12 +382,12 @@ def _sid(agent):
     return rs.AGENT_REGISTRY.get_stable_id(agent) or ""
 
 
-def make(client, maker, to, kind, subject_id, terms=None, subject_type="session", sign_as=None, note=""):
+def make(client, maker, to, kind, session_id, terms=None, sign_as=None, note=""):
     nonce, when = uuid.uuid4().hex, datetime.now(UTC).isoformat()
     terms = terms or {}
-    sig = signing.sign(sign_as or maker, "pledge", _sid(maker), _sid(to), kind, subject_type, subject_id, terms, note, nonce, when)
+    sig = signing.sign(sign_as or maker, "pledge", _sid(maker), _sid(to), kind, session_id, terms, note, nonce, when)
     return client.post("/pledges", headers=as_(maker), json={
-        "kind": kind, "subject_type": subject_type, "subject_id": subject_id, "to_agent": to, "terms": terms,
+        "kind": kind, "session_id": session_id, "to_agent": to, "terms": terms,
         "note": note, "nonce": nonce, "at": when, "signature": sig})
 
 

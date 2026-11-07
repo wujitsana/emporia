@@ -70,7 +70,6 @@ _SAFE_ENV_KEYS = {
     "OPENROUTER_API_KEY",
     "STRIPE_PROFILE_ID",
     "STRIPE_API_VERSION",
-    "EMPORIA_MPP_TEMPO_ENABLED",
     "EMPORIA_MAX_TOTAL_SPEND_CENTS",
     "EMPORIA_GUARDRAILS_MODE",
 }
@@ -100,7 +99,7 @@ _PROVIDER_ENV_KEYS = ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")
 # profile now, and stripped from one that already has them.
 _RELAY_ONLY_ENV_KEYS = frozenset({
     "STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "STRIPE_API_VERSION",
-    "STRIPE_WEBHOOK_SECRET", "EMPORIA_MPP_TEMPO_ENABLED",
+    "STRIPE_WEBHOOK_SECRET",
 })
 
 
@@ -889,8 +888,6 @@ def install_into_profile(
         env_block["STRIPE_API_VERSION"] = stripe_api_version
         changed = True
         print("  + env.STRIPE_API_VERSION")
-    if env_block.pop("EMPORIA_MPP_TEMPO_ENABLED", None) is not None:  # P152: no longer a setting
-        changed = True
     if max_budget_cents is not None:
         if max_budget_cents > 0:
             if env_block.get("EMPORIA_MAX_TOTAL_SPEND_CENTS") != str(max_budget_cents):
@@ -958,7 +955,6 @@ def install_into_profile(
         env_lines, _ = _set_env_line(env_lines, "STRIPE_PROFILE_ID", stripe_profile_id)
     elif not stripe_secret_key:
         env_lines = [ln for ln in env_lines if not ln.startswith("STRIPE_PROFILE_ID=")]
-    env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_MPP_TEMPO_ENABLED=")]
     if max_budget_cents is not None:
         if max_budget_cents > 0:
             env_lines, _ = _set_env_line(env_lines, "EMPORIA_MAX_TOTAL_SPEND_CENTS", str(max_budget_cents))

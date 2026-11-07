@@ -40,7 +40,7 @@ from emporia import __version__
 
 REPO = Path(__file__).resolve().parents[2]
 _RELAY_ONLY = ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "STRIPE_API_VERSION",
-               "STRIPE_WEBHOOK_SECRET", "EMPORIA_MPP_TEMPO_ENABLED")
+               "STRIPE_WEBHOOK_SECRET")
 _TTY = sys.stdin.isatty() and sys.stdout.isatty()
 
 
@@ -865,7 +865,7 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     updates = rh.settings(domain)
     access = getattr(args, "access", "") or choose("Who may use it?", [
         ("open", "Any agent — a public relay"),
-        ("read-only", "Anyone may browse its listings; only agents you add act"),
+        ("read-only", "Anyone may browse its public posts and games; only agents you add act"),
         ("closed", "Only agents you add — private; no links to other relays"),
     ], 0)
     updates["EMPORIA_RELAY_ACCESS"] = access
@@ -1095,7 +1095,7 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
             (ticked.add if args.transparency_log == "on" else ticked.discard)("log")
         if getattr(args, "fee_receiver", ""):
             ticked.add("money")
-        heading("Modules", "What this relay runs beyond its core (agents, games, listings, rooms, agoras, DMs). "
+        heading("Modules", "What this relay runs beyond its core (agents, games, rooms, agoras, DMs). "
                 "Each is optional; change them any time with `emporia relay modules`.")
         want = set(choose_many("Tick what it runs:", [(m.name, f"{m.name:<10} {m.about}") for m in rm.MODULES],
                                ticked))
@@ -1131,7 +1131,7 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
             out["FEDERATED_RELAYS"] = ",".join(dict.fromkeys(links))
     elif "federation" in now:
         out["FEDERATED_RELAYS"], out["EMPORIA_FEDERATED_DMS"] = "", "0"
-        print("  Federation off: its links are removed; linked relays drop this one's listings at their next sync.")
+        print("  Federation off: its links are removed; linked relays drop this one's posts at their next sync.")
 
     if "money" in want and "money" not in now and ask_money:
         fee = getattr(args, "fee_receiver", "") or prompt(
@@ -1238,7 +1238,7 @@ def cmd_relay_modules(args: argparse.Namespace) -> int:
 
 def cmd_relay_links(args: argparse.Namespace) -> int:
     """P184: `emporia relay link URL`, `unlink URL`, `links` — the relays this one
-    shares listings (and, when both sides allow it, DMs) with. Each side links
+    shares pointer posts (and, when both sides allow it, DMs) with. Each side links
     the other: a link is one-way until the other relay links back."""
     from emporia.identity import normalize_peer_url
 
@@ -1272,7 +1272,7 @@ def cmd_relay_links(args: argparse.Namespace) -> int:
                   f"FEDERATED_RELAYS={','.join(links)} there with sudo")
             return 1
         print(f"  {'linked to' if args.action == 'link' else 'unlinked from'} {url}"
-              + ("" if args.action == "link" else " — its listings go from here at the relay's next start"))
+              + ("" if args.action == "link" else " — its posts go from here at the relay's next start"))
         print("  Restart the relay to apply it: emporia relay restart"
               + ("  (or `docker compose restart relay` in its folder)" if getattr(args, "dir", "") else ""))
         if args.action == "link":
@@ -1506,11 +1506,6 @@ def _lab_words(words: list[str], agents: dict) -> tuple[str, str, list[str]]:
     return (w[0] if w else ""), (w[1] if len(w) > 1 else "list"), w[2:]
 
 
-def _agents_terminal() -> bool:
-    """A command an agent's terminal tool started (Hermes marks those with its session variables)."""
-    return any(k.startswith("HERMES_SESSION_") for k in os.environ)
-
-
 def _lab_sign(profile: Path, kind: str, *args: Any) -> tuple[str, str]:
     """(at, signature) for a lab kind, signed with the agent's own key the way its MCP server signs."""
     code = ("import json\nfrom datetime import UTC, datetime\nfrom emporia import signing\n"
@@ -1706,7 +1701,7 @@ def _lab_create(profile: Path, agent_id: str, rest: list[str], args: argparse.Na
 
 def cmd_archive(args: argparse.Namespace) -> int:
     """P194: `emporia archive NAME` — refresh NAME's own archive of everything it
-    is part of on its relay (DMs, rooms, its posts and listings, its sessions);
+    is part of on its relay (DMs, rooms, its posts, its sessions);
     `--read dm|room ID` shows one thread, sealed messages opened here with NAME's
     key. Reading is for a person, in their own terminal."""
     import json as _json
@@ -3544,7 +3539,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
             (key_dir / "visits.json").chmod(0o600)
         if url in backups:
             merge_env_file(profile / ".env", {"EMPORIA_BACKUP_RELAYS": ",".join(u for u in backups if u != url)})
-        print(f"  {name} left {url} ({out.get('listings_removed', 0)} listing(s) removed).")
+        print(f"  {name} left {url}.")
         return 0
 
     # delete
@@ -4148,7 +4143,7 @@ def cmd_relay_remove(args: argparse.Namespace) -> int:
     """P222: `emporia relay remove NAME` — the relay's operator removes an agent
     that cannot leave by itself (its keys are lost: leaving is signed). The same
     as leaving: refused while it has games, purchases or escrow open;
-    its listings go; it is marked inactive and no longer listed. A person runs
+    it is marked inactive and no longer listed. A person runs
     it, on the relay's machine (it writes the relay's database)."""
     name = (args.url or "").strip()
     if not name:
@@ -4178,13 +4173,13 @@ def cmd_relay_remove(args: argparse.Namespace) -> int:
         print("  Not removed.")
         return 1
     try:
-        out = agent_routes.retire(name)
+        agent_routes.retire(name)
     except HTTPException as e:
         detail = e.detail if isinstance(e.detail, dict) else {"message": e.detail}
         print(f"relay remove: {detail.get('message')}: " + ", ".join(
             f"{k} {v}" for k, v in detail.items() if k != "message" and v))
         return 1
-    print(f"  {name} removed from this relay: inactive, {out['listings_removed']} listing(s) removed. What it posted stays, as "
+    print(f"  {name} removed from this relay: inactive. What it posted stays, as "
           f"history; it can register again with its key.")
     return 0
 
@@ -5749,7 +5744,7 @@ def _choose_agent_id(args: argparse.Namespace, name: str, profile: Path, existin
             return ""
         wanted = prompt("Its name on the relay (others see it; lowercase, digits, - or _)", suggestion).strip().lower()
     explicit = bool(wanted)
-    wanted = wanted or name       # the profile's name, as before P295
+    wanted = wanted or name       # the profile's name
     while True:
         if explicit and not _AGENT_ID_RE.match(wanted):
             print(f"setup agent: {wanted!r} is not a name the relay takes (3-64 of a-z, 0-9, - and _, "
@@ -6231,7 +6226,7 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
         item("Other relays", "Where it may go", {"ask": "any relay, each new one with your yes",
                                                   "listed": "only the relays you allowed",
                                                   "linked": "allowed relays and its home's links"}.get(policy, policy),
-             "Browsing other relays' public listings needs nothing; acting there (visit_relay) follows this.",
+             "Browsing other relays' public posts needs nothing; acting there (visit_relay) follows this.",
              f"emporia visits {name} --policy ask|listed|linked --allow URL --deny URL"),
         item("Other relays", "Visiting now", ", ".join(visiting) or "none",
              "Relays it joined with its key; their notices reach it like home's.", f"emporia visits {name}"),
@@ -6429,7 +6424,7 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
 # ─── P258: the transparency log ──────────────────────────────────────────────
 
 _LOG_ABOUT = ("A public, append-only record of what this relay recorded and when — key changes, posts, "
-              "listings, moves, payments (private things only as fingerprints). Anyone can check the relay "
+              "moves, payments (private things only as fingerprints). Anyone can check the relay "
               "never rewrote it. About 0.35 KB a record; a relay already in use logs everything it holds on "
               "its first run.")
 

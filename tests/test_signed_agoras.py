@@ -83,7 +83,7 @@ def test_invites_uninvites_and_kicks_are_signed_and_an_invitee_sees_the_terms(cl
                        headers=_as("sti_owner")).status_code == 200
 
     card = client.get(f"/agoras/topics/{slug}", headers=_as("sti_guest")).json()   # invited, not yet paid
-    assert card["listing_only"] and [a["act"] for a in card["signed_acts"]] == ["create"]
+    assert card["card_only"] and [a["act"] for a in card["signed_acts"]] == ["create"]
     assert "post_count" not in card
     assert identity.verify_topic_acts(card, get_public_key_hex("sti_owner"))["settings"] is True
     assert client.get(f"/agoras/topics/{slug}", headers=_as("sti_late")).status_code == 403    # invite taken back

@@ -14,7 +14,6 @@ from emporia import cli
 from emporia.key_source import unset_env_lines
 from conftest import payee_for
 from tests.live.harness import free_port
-from tests.test_cli import profiles  # noqa: F401  (fixture)
 
 #: Taken before conftest's _no_real_signer swaps it out: this test does start one, in its own
 #: temporary folder, and stops it (by the pid it recorded) whatever happens.

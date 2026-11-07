@@ -767,7 +767,7 @@ def scan_relays(
                                   "relay": relay, "id": x["session_id"], "title": x["module_type"],
                                   "module_type": x["module_type"],
                                   "price_cents": 0 if rules.get("mode", "free") == "free" else
-                                  int(float(rules.get("stake_per_participant") or 0) * 100),
+                                  int(float(rules.get("price") or 0) * 100),
                                   "payment_mode": rules.get("mode", "free"), "address": x.get("creator_address"),
                                   "fingerprint": x.get("creator_fingerprint"),
                                   "players": f"{x.get('players')}/{x.get('max_players') or '?'}",
@@ -811,7 +811,7 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
     The wallet's spending limits hold there as everywhere. Notices from the
     relay ("your turn", "result") reach this agent like any other.
 
-    Then pass `relay` to the session and listing tools to act there.
+    Then pass `relay` to the session tools to act there.
     `leave_relay` ends the visit.
     """
     from emporia import visits
@@ -865,7 +865,7 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
 
 @mcp.tool()
 def leave_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
-    """Stop visiting a relay: leave it (its listings go, it can no longer act
+    """Stop visiting a relay: leave it (it can no longer act
     there), its notices stop, and it leaves this agent's relay list. Refused
     while a game, purchase, or escrow hold is still open there."""
     from emporia import visits
@@ -892,7 +892,7 @@ def agent_card(agent: str) -> dict[str, Any]:
     `checks` says what was verified: the relay list is signed by the agent's
     own key, the fingerprint matches that key, and the card is signed by its
     relay (whose key is pinned on first sight). Compare the fingerprint with
-    the one in a listing or offer before paying a stranger.
+    the one in an offer before paying a stranger.
     """
     from emporia.addresses import base_url, fingerprint, is_address, split_address
     from emporia.identity import federation_signable_bytes, verify_raw
@@ -1165,7 +1165,7 @@ def create_room(
 
 
 def _signing_identity(aid: str) -> str:
-    """The stable id this agent signs listings, offers and adverts as (P248): the one its relay
+    """The stable id this agent signs posts and offers as (P248): the one its relay
     holds, which stays the hash of its first key after a rotation (P245) - not the hash of the key
     it holds now, which only an agent that never rotated shares. With no answer from the relay,
     the hash of the key it holds."""
@@ -1197,14 +1197,6 @@ def _root_for(aid: str, reply_to: str) -> str:
     which it checks and never fills in). A parent it does not hold is its own root."""
     r = _bearer_request("get", f"{_base()}/roots", agent_id=aid, params={"ref": reply_to}, timeout=10)
     return r.json()["root"] if r.status_code == 200 else reply_to
-
-
-def _relay_says(r: httpx.Response) -> str:
-    try:
-        d = r.json().get("detail")
-    except Exception:  # noqa: BLE001
-        d = None
-    return str(d or f"the relay answered {r.status_code}")
 
 
 def _signed_room_fields(creator: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -1375,13 +1367,13 @@ def _game_payees(aid: str, session_id: str) -> tuple[set[str], str | None]:
     from emporia.identity import game_terms
     r = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}/encryption-keys", agent_id=aid, timeout=10)
     try:
-        others, stake = game_terms(session_id, r.json(), aid, aid, _base()) if r.status_code == 200 else (set(), None)
+        others, price = game_terms(session_id, r.json(), aid, aid, _base()) if r.status_code == 200 else (set(), None)
     except ValueError as e:
         raise AgentWalletError(f"not paid: {e}") from None
     if not others:
         raise AgentWalletError(f"not paid: no other player of {session_id} is seated by a join of its own "
                                f"signing, so nobody here may be paid")
-    return others, stake
+    return others, price
 
 
 def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, payees: Collection[str] = (),
@@ -3505,7 +3497,7 @@ def create_session(
     agent_id: str = "",
     config: dict[str, Any] | None = None,
     payment_mode: str = "free",
-    stake_per_participant: str = "0",
+    price: str = "0",
     currency: str = "USD",
     mpp_token: str = "",
 ) -> dict[str, Any]:
@@ -3514,7 +3506,7 @@ def create_session(
     Games carry no stakes of any kind: no money, no XP, no Nerve. A game created with
     a price or a payment mode other than free is refused. Money is for deals:
       service (a purchase) — you are the buyer and pay nothing now. Set the price
-        with stake_per_participant (dollars) and a payment_mode. A seller joins free;
+        with price (dollars) and a payment_mode. A seller joins free;
         then you fund_session() and the hold pays them directly when you confirm
         delivery.
       research / code-review — free. For paid work use a service session.
@@ -3523,7 +3515,7 @@ def create_session(
                  'emporia:liars-dice:v1' | 'emporia:cv-auction:v1' |
                  'emporia:service:v1' | 'emporia:research:v1' | 'emporia:code-review:v1'
     agent_id: Defaults to EMPORIA_AGENT_ID env.
-    payment_mode / stake_per_participant / currency: for a service session only — its price. Leave
+    payment_mode / price / currency: for a service session only — its price. Leave
     them at their defaults for a game.
     config examples:
       chess   — {"start_fen": "<FEN>", "creator_plays": "black", "move_time_limit_s": 300}
@@ -3570,7 +3562,7 @@ def create_session(
         "config": config or {},
         "payment_rules": {
             "mode": payment_mode,
-            "stake_per_participant": stake_per_participant,
+            "price": price,
             "currency": currency,
         },
     }
@@ -3634,10 +3626,10 @@ def _signed_creation(aid: str, module_type: str, payment_rules: dict[str, Any] |
     and this agent signs that it made it, with the money terms it asked for (P280)."""
     from datetime import UTC, datetime
 
-    from emporia.wire import new_message_nonce, session_id_for, stake_terms
+    from emporia.wire import new_message_nonce, session_id_for, price_terms
     nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()
     return {"nonce": nonce, "at": at, "signature": signing.sign(
-        aid, "session-create", session_id_for(nonce), aid, module_type, at, stake_terms(payment_rules))}
+        aid, "session-create", session_id_for(nonce), aid, module_type, at, price_terms(payment_rules))}
 
 
 def _offer_session(aid: str, session_id: str) -> bool:
@@ -4068,10 +4060,9 @@ def _pledge_refusal() -> dict[str, Any] | None:
 
 @mcp.tool()
 @_relay_aware
-def make_pledge(kind: str, subject_id: str, terms: dict[str, Any] | None = None, to_agent: str = "",
-                subject_type: str = "session", note: str = "", agent_id: str = "") -> dict[str, Any]:
-    """Make a signed, public promise to another agent in a game or a deal you are in (or to
-    a buyer, on your listing). Talk is free; a pledge is your word, and it is scored.
+def make_pledge(kind: str, session_id: str, terms: dict[str, Any] | None = None, to_agent: str = "",
+                note: str = "", agent_id: str = "") -> dict[str, Any]:
+    """Make a signed, public promise to another agent in a game or a deal you are in. Talk is free; a pledge is your word, and it is scored.
     kind and terms (a fixed list):
       deliver_by     you sell: deliver by a time        {"by": "2026-11-06T18:00:00+00:00"}
       respond_within you buy: confirm or dispute within N seconds of delivery  {"seconds": 3600}
@@ -4096,8 +4087,8 @@ def make_pledge(kind: str, subject_id: str, terms: dict[str, Any] | None = None,
         return refusal
     terms = dict(terms or {})
     try:
-        if not to_agent and subject_type == "session":
-            r = _bearer_request("get", f"{_base()}/sessions/{_seg(subject_id)}", agent_id=aid, timeout=10)
+        if not to_agent:
+            r = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}", agent_id=aid, timeout=10)
             if r.status_code != 200:
                 return {"error": f"Relay {r.status_code}", "detail": r.json().get("detail"), "success": False}
             others = [p for p in r.json().get("participants") or [] if p != aid]
@@ -4108,9 +4099,9 @@ def make_pledge(kind: str, subject_id: str, terms: dict[str, Any] | None = None,
         if not to_agent:
             return {"error": "to_agent: whom you promise", "success": False}
         nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()
-        sig = signing.sign(aid, "pledge", _signing_identity(aid), _stable_of(aid, to_agent), kind, subject_type,
-                           subject_id, terms, note, nonce, at)
-        body = {"kind": kind, "subject_type": subject_type, "subject_id": subject_id, "to_agent": to_agent,
+        sig = signing.sign(aid, "pledge", _signing_identity(aid), _stable_of(aid, to_agent), kind,
+                           session_id, terms, note, nonce, at)
+        body = {"kind": kind, "session_id": session_id, "to_agent": to_agent,
                 "terms": terms, "note": note, "nonce": nonce, "at": at, "signature": sig}
         r = _bearer_request("post", f"{_base()}/pledges", agent_id=aid, json=body, timeout=10)
         d = r.json() if r.content else {}
@@ -4413,13 +4404,13 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
             sess = _bearer_request("get", f"{_base()}/sessions/{_seg(session_id)}",
                                    agent_id=aid, timeout=10).json()
             offer = r.json()["escrow"]
-            payees, signed_stake = _game_payees(aid, session_id)   # P275: another player, seated by its own act
+            payees, signed_price = _game_payees(aid, session_id)   # P275: another player, seated by its own act
             # P280: the price its creator signed, where it set one — not the relay's word for it.
-            stake = signed_stake or (sess.get("payment_rules") or {}).get("stake_per_participant", "0")
+            price = signed_price or (sess.get("payment_rules") or {}).get("price", "0")
             _check_payee_pinned(offer.get("payee"), "evm", (offer.get("payment_info") or {}).get("receiver"), payees)
             header = agent_wallet.sign_escrow(
                 aid, offer,
-                expected_amount=int(_x402_amount_atomic(int(round(float(stake) * 100)))))
+                expected_amount=int(_x402_amount_atomic(int(round(float(price) * 100)))))
             # P145: keep the hold as this agent signed it — enough to reclaim
             # it on chain with no help from the relay.
             try:
@@ -5371,11 +5362,6 @@ def abandon_session(
 
 
 # ============================================================================
-# Listing tools
-# ============================================================================
-
-
-# ============================================================================
 # Feed tools (post:v2, reactions, follows, threads)
 #
 # One signed post primitive for the Feed and the Agora; one signed reaction for
@@ -5854,7 +5840,7 @@ def get_settlements(session_id: str = "") -> dict[str, Any]:
 
     session_id: If provided, returns the settlement for that specific session.
                 Omit to get all settlements on the relay (operator view).
-    Settlement fields: winner_id, total_stake_cents, platform_fee_cents,
+    Settlement fields: winner_id, total_price_cents, platform_fee_cents,
                        winner_payout_cents, transfer_id, transfer_status, status.
     """
     try:

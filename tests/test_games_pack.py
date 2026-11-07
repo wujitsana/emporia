@@ -283,7 +283,7 @@ def test_two_players_make_a_game_and_the_set_play_counts():
     for mt, lo, hi in ((DICE, 2, 6), (AUCTION, 3, 8)):
         cls = get_interaction_module(mt).__class__
         assert (cls.MIN_PARTICIPANTS, cls.MAX_PARTICIPANTS) == (lo, hi)
-        assert cls.ZERO_SUM and cls.USES_RAND and cls.STAKE_MODEL is None and cls.CHAT_BY_DEFAULT
+        assert cls.ZERO_SUM and cls.USES_RAND and cls.PRICE_MODEL is None and cls.CHAT_BY_DEFAULT
     assert DICE not in progression.non_zero_sum() and AUCTION not in progression.non_zero_sum()
 
 
@@ -292,7 +292,7 @@ def test_games_of_chance_take_no_stake(client):
     _register_keyed(client, a)
     for mt in (DICE, AUCTION):
         r = client.post("/sessions", json={"module_type": mt, "payment_rules": {"mode": "stripe_pi",
-                                                                               "stake_per_participant": "5"}},
+                                                                               "price": "5"}},
                         headers=_hdr(a))
         assert r.status_code == 400 and "takes no stake" in r.text
 

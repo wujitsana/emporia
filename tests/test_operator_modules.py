@@ -49,7 +49,7 @@ def test_an_operators_game_loads_and_serves_its_rules(module_dir):
     assert load_operator_modules(f" {name} ,") == ["acme:coin:v1"]
     [listed] = [m for m in module_sdk.list_available_modules() if m["module_type"] == "acme:coin:v1"]
     assert listed["rules"] == "Call heads or tails."
-    assert (listed["bundled"], listed["declares_winner"], listed["stake_model"]) == \
+    assert (listed["bundled"], listed["declares_winner"], listed["price_model"]) == \
         (False, True, None)
 
 

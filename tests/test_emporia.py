@@ -197,7 +197,7 @@ def test_payment_rails_helper_pins_health_and_agent_variants_across_flag_combina
 def test_tempo_is_not_advertised_until_something_settles_it(monkeypatch):
     """P152: EMPORIA_MPP_TEMPO_ENABLED added "tempo" to payment_methods while no
     code could settle a Tempo payment — a relay claiming a method it cannot
-    take. The setting is gone; the relay warns if an operator still has it."""
+    take. The setting is gone, and the setting does nothing."""
     from emporia.relay_server import _payment_rails
     monkeypatch.setenv("EMPORIA_MPP_TEMPO_ENABLED", "1")
     with patch("emporia.relay_server._stripe_profile_ready", return_value=True), \
@@ -2788,7 +2788,7 @@ def test_delete_session_operator_deletes_terminal_session_retains_money_rows(cli
     )
     record_settlement({
         "session_id": session_id, "winner_id": "p4_5_full_seller", "outcome_type": "won",
-        "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+        "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
         "winner_payout_cents": 100, "platform_fee_bps": 0,
         "payment_intent_ids": [f"pi_{session_id}"], "transfer_id": None,
         "transfer_status": "no_stripe_account",
@@ -3345,7 +3345,7 @@ def test_audit_chain_detects_tampering():
 
 @pytest.mark.asyncio
 async def test_create_stake_intent_mocked():
-    from emporia.payments import create_stake_intent
+    from emporia.payments import create_price_intent
     mock_response = {
         "id": "pi_test_123",
         "client_secret": "pi_test_123_secret",
@@ -3357,7 +3357,7 @@ async def test_create_stake_intent_mocked():
             mock_resp.json.return_value = mock_response
             mock_resp.raise_for_status = MagicMock()
             mock_post.return_value = mock_resp
-            result = await create_stake_intent("sess_001", 1000, "alpha", "beta", "chess")
+            result = await create_price_intent("sess_001", 1000, "alpha", "beta", "chess")
     assert result["payment_intent_id"] == "pi_test_123"
     assert result["amount_cents"] == 1000
 
@@ -3562,7 +3562,7 @@ def test_all_three_win_counters_agree_that_a_refund_is_not_a_win(client):
             "winner_id": agent,
             "status": status,
             "outcome_type": "won" if status == "settled" else "refund",
-            "total_stake_cents": payout,
+            "total_price_cents": payout,
             "platform_fee_cents": 0,
             "winner_payout_cents": payout,
             "platform_fee_bps": 100,
@@ -3595,7 +3595,7 @@ def test_all_three_win_counters_agree_that_a_refund_is_not_a_win(client):
 
 
 def test_a_price_the_rail_cannot_charge_is_refused_by_the_relay(client):
-    """P74: `settle()` claimed "Requires total_stake_cents >=
+    """P74: `settle()` claimed "Requires total_price_cents >=
     STRIPE_MIN_CHARGE_CENTS (50c) — enforced upstream" and cited a constant
     this codebase never defined. Nothing upstream enforced anything; the only
     amount guard was `amount_cents <= 0`.
@@ -3812,7 +3812,7 @@ def test_create_payment_intent_rejects_amount_mismatch(client):
         "module_type": "emporia:service:v1",
         "creator_agent_id": "pi_creator",
         "config": {"description": "Amount mismatch test"},
-        "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+        "payment_rules": {"mode": "stripe_link", "price": "1.00", "currency": "usd"},
     },
         headers={"x-emporia-agent-id": "pi_creator"})
     session_id = r.json()["session_id"]
@@ -4036,7 +4036,7 @@ def test_record_payment_is_idempotent_and_rejects_reuse():
         payment_intent_id="pi_idempotent_test",
         agent_id="agent_payee",
         amount_cents=100,
-        payment_type="session_stake",
+        payment_type="session_price",
         session_id="sess_idempotent",
         currency="usd",
         rail="stripe",
@@ -4045,7 +4045,7 @@ def test_record_payment_is_idempotent_and_rejects_reuse():
         payment_intent_id="pi_idempotent_test",
         agent_id="agent_payee",
         amount_cents=100,
-        payment_type="session_stake",
+        payment_type="session_price",
         session_id="sess_idempotent",
         currency="usd",
         rail="stripe",
@@ -4057,7 +4057,7 @@ def test_record_payment_is_idempotent_and_rejects_reuse():
             payment_intent_id="pi_idempotent_test",
             agent_id="agent_payee",
             amount_cents=100,
-            payment_type="session_stake",
+            payment_type="session_price",
             session_id="sess_other",
             currency="usd",
             rail="stripe",
@@ -5581,7 +5581,7 @@ def test_kick_refund_ids_redacted_for_a_co_payer(client):
     for payer, pi in ((payer_a, "pi_p2r3_redact_a"), (payer_b, "pi_p2r3_redact_b")):
         record_settlement({
             "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
-            "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+            "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [pi], "transfer_id": f"tr_{pi}",
             "transfer_status": "transferred", "payer_id": payer,
@@ -5800,7 +5800,7 @@ def _settlement_matrix_session(client, module_type, payment_mode):
     session_id = r.json()["session_id"]
     record_settlement({
         "session_id": session_id, "winner_id": creator, "outcome_type": "won",
-        "status": "settled", "total_stake_cents": 0, "platform_fee_cents": 0,
+        "status": "settled", "total_price_cents": 0, "platform_fee_cents": 0,
         "winner_payout_cents": 0, "platform_fee_bps": 0,
         "payment_intent_ids": [f"pi_{session_id}"], "transfer_id": None,
         "transfer_status": "no_stripe_account",
@@ -5859,7 +5859,7 @@ def _settlement_matrix_agora(client, visibility, gate_type):
         assert sub.status_code == 200, sub.text
     record_settlement({
         "session_id": topic_id, "winner_id": owner, "outcome_type": "agora_subscribe",
-        "status": "settled", "total_stake_cents": entry_fee, "platform_fee_cents": 0,
+        "status": "settled", "total_price_cents": entry_fee, "platform_fee_cents": 0,
         "winner_payout_cents": entry_fee, "platform_fee_bps": 0,
         "payment_intent_ids": [f"pi_{topic_id}"], "transfer_id": None,
         "transfer_status": "no_stripe_account", "payer_id": payer,
@@ -5904,7 +5904,7 @@ def _settlement_matrix_room(client, room_type, gate_type):
         rooms_db.add_member(room_id, payer, db_path=DATABASE_PATH)
     record_settlement({
         "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
-        "status": "settled", "total_stake_cents": entry_fee, "platform_fee_cents": 0,
+        "status": "settled", "total_price_cents": entry_fee, "platform_fee_cents": 0,
         "winner_payout_cents": entry_fee, "platform_fee_bps": 0,
         "payment_intent_ids": [f"pi_{room_id}"], "transfer_id": None,
         "transfer_status": "no_stripe_account", "payer_id": payer,
@@ -6160,7 +6160,7 @@ def test_settlement_co_payer_cannot_see_others_payment_intent_ids_room(client):
     for payer, pi, tr in ((payer_a, pi_a, tr_a), (payer_b, pi_b, tr_b)):
         record_settlement({
             "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
-            "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+            "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [pi], "transfer_id": tr,
             "transfer_status": "transferred", "payer_id": payer,
@@ -6231,7 +6231,7 @@ def test_settlement_payer_id_redacted_for_non_owned_rows(client):
     for payer, pi in ((payer_a, "pi_n8pid_a"), (payer_b, "pi_n8pid_b")):
         record_settlement({
             "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
-            "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+            "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [pi], "transfer_id": None,
             "transfer_status": "no_stripe_account", "payer_id": payer,
@@ -6430,7 +6430,7 @@ def test_settlement_row_dict_never_leaks_internal_columns_to_a_co_payer(client):
     for payer, pi in ((payer_a, "pi_p1r3_leak_a"), (payer_b, "pi_p1r3_leak_b")):
         record_settlement({
             "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
-            "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+            "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [pi], "transfer_id": None,
             "transfer_status": "no_stripe_account", "payer_id": payer,
@@ -6481,7 +6481,7 @@ def test_settlements_agent_id_and_unfiltered_branches_never_return_internal_colu
     rooms_db.add_member(room_id, payer, db_path=DATABASE_PATH)
     record_settlement({
         "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
-        "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+        "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
         "winner_payout_cents": 100, "platform_fee_bps": 0,
         "payment_intent_ids": ["pi_p2_2_leak"], "transfer_id": None,
         "transfer_status": "no_stripe_account", "payer_id": payer,
@@ -6540,7 +6540,7 @@ def test_settlements_agent_id_and_unfiltered_branches_return_refund_ids_in_plain
     rooms_db.add_member(room_id, payer, db_path=DATABASE_PATH)
     record_settlement({
         "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
-        "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+        "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
         "winner_payout_cents": 100, "platform_fee_bps": 0,
         "payment_intent_ids": ["pi_s2_pub"], "transfer_id": "tr_s2_pub",
         "transfer_status": "transferred", "payer_id": payer,
@@ -6611,7 +6611,7 @@ def test_settlement_payer_id_null_stays_null_for_session_rows(client):
     session_id = r.json()["session_id"]
     record_settlement({
         "session_id": session_id, "winner_id": creator, "outcome_type": "won",
-        "status": "settled", "total_stake_cents": 0, "platform_fee_cents": 0,
+        "status": "settled", "total_price_cents": 0, "platform_fee_cents": 0,
         "winner_payout_cents": 0, "platform_fee_bps": 0,
         "payment_intent_ids": [f"pi_{session_id}"], "transfer_id": None,
         "transfer_status": "no_stripe_account",
@@ -6689,7 +6689,7 @@ def test_settlement_ownership_matrix(client, shape, payer_kind, session_particip
     payer_id = {"caller": caller, "other": other_payer, "none": None}[payer_kind]
     record_settlement({
         "session_id": session_id, "winner_id": other_payer, "outcome_type": "room_entry",
-        "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+        "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
         "winner_payout_cents": 100, "platform_fee_bps": 0,
         "payment_intent_ids": [f"pi_{session_id}"], "transfer_id": f"tr_{session_id}",
         "transfer_status": "transferred", "payer_id": payer_id,
@@ -6762,7 +6762,7 @@ def test_settlement_agent_id_query_does_not_drop_owned_rows_past_candidate_limit
         # a direct INSERT bypassing record_settlement() must still set it, or this
         # fixture no longer represents a real write.
         conn.execute(
-            "INSERT INTO settlements (settlement_id, session_id, winner_id, total_stake_cents, "
+            "INSERT INTO settlements (settlement_id, session_id, winner_id, total_price_cents, "
             "platform_fee_cents, winner_payout_cents, platform_fee_bps, payment_intent_ids, "
             "transfer_id, transfer_status, status, created_at, payer_id) "
             "VALUES (?, ?, ?, 100, 0, 100, 0, ?, NULL, 'no_stripe_account', 'settled', ?, ?)",
@@ -6873,7 +6873,7 @@ def test_record_settlement_is_idempotent():
 
     payload = {
         "session_id": "room_p1a2_dedupe_test", "payer_id": "p1a2_dedupe_payer",
-        "winner_id": None, "total_stake_cents": 100, "platform_fee_cents": 5,
+        "winner_id": None, "total_price_cents": 100, "platform_fee_cents": 5,
         "winner_payout_cents": 95, "platform_fee_bps": 500,
         "payment_intent_ids": ["pi_p1a2_dedupe_test"], "transfer_id": "tr_p1a2_dedupe_test",
         "transfer_status": "transferred", "status": "settled",
@@ -6902,7 +6902,7 @@ def test_record_settlement_records_second_genuine_payment_from_same_payer():
 
     base = {
         "session_id": "room_p1r1_rejoin_test", "payer_id": "p1r1_rejoin_payer",
-        "winner_id": None, "total_stake_cents": 100, "platform_fee_cents": 5,
+        "winner_id": None, "total_price_cents": 100, "platform_fee_cents": 5,
         "winner_payout_cents": 95, "platform_fee_bps": 500,
         "transfer_status": "transferred", "status": "settled",
     }
@@ -6932,7 +6932,7 @@ def test_record_settlement_session_escrow_dedupes_regardless_of_pi_order():
 
     payload = {
         "session_id": "sess_p1r1_order_test", "payer_id": None,
-        "winner_id": "p1r1_winner", "total_stake_cents": 200, "platform_fee_cents": 10,
+        "winner_id": "p1r1_winner", "total_price_cents": 200, "platform_fee_cents": 10,
         "winner_payout_cents": 190, "platform_fee_bps": 500,
         "payment_intent_ids": ["pi_alpha", "pi_beta"], "transfer_id": "tr_order_test",
         "transfer_status": "transferred", "status": "settled",
@@ -6974,7 +6974,7 @@ def test_settlement_reads_report_has_more(client):
     for i in range(3):
         record_settlement({
             "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
-            "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+            "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [f"pi_n7page_{i}"], "transfer_id": None,
             "transfer_status": "no_stripe_account", "payer_id": f"n7page_payer_{i}",
@@ -7023,7 +7023,7 @@ def test_settlement_agent_id_and_global_reads_report_has_more(client):
         record_settlement({
             "session_id": f"n8hm_room_{i}", "winner_id": "n8hm_owner",
             "outcome_type": "room_entry", "status": "settled",
-            "total_stake_cents": 100, "platform_fee_cents": 0,
+            "total_price_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [f"pi_n8hm_{i}"], "transfer_id": None,
             "transfer_status": "no_stripe_account", "payer_id": payer,
@@ -7169,7 +7169,7 @@ def test_settlement_redaction_does_not_blind_the_operator(client):
     for payer, pi in ((payer_a, pi_a), (payer_b, pi_b)):
         record_settlement({
             "session_id": room_id, "winner_id": owner, "outcome_type": "room_entry",
-            "status": "settled", "total_stake_cents": 100, "platform_fee_cents": 0,
+            "status": "settled", "total_price_cents": 100, "platform_fee_cents": 0,
             "winner_payout_cents": 100, "platform_fee_bps": 0,
             "payment_intent_ids": [pi], "transfer_id": None,
             "transfer_status": "no_stripe_account", "payer_id": payer,
@@ -8685,7 +8685,7 @@ def test_create_payment_intent_requires_authentication(prod_client):
         "/sessions",
         json=__import__("conftest").signed_session_body("pi_auth_creator", {
             "module_type": "emporia:service:v1", "config": {},
-            "payment_rules": {"mode": "stripe_link", "stake_per_participant": "1.00", "currency": "usd"},
+            "payment_rules": {"mode": "stripe_link", "price": "1.00", "currency": "usd"},
         }),
         headers=bearer_for(prod_client, "pi_auth_creator"),
     )
@@ -10808,7 +10808,7 @@ def test_mcp_get_settlements_authenticates_under_prod_auth(prod_client):
     session_id = r.json()["session_id"]
     record_settlement({
         "session_id": session_id, "winner_id": "mcpsettle_buyer", "outcome_type": "won",
-        "status": "settled", "total_stake_cents": 0, "platform_fee_cents": 0,
+        "status": "settled", "total_price_cents": 0, "platform_fee_cents": 0,
         "winner_payout_cents": 0, "platform_fee_bps": 0,
         "payment_intent_ids": [], "transfer_id": None, "transfer_status": "no_stripe_account",
     })
@@ -12669,7 +12669,7 @@ async def test_escrow_capture_and_transfer_mocked():
             result = await settle(
                 session_id="sess_escrow_test",
                 winner_id="seller_agent",
-                total_stake_cents=1000,
+                total_price_cents=1000,
                 payment_intent_ids=["pi_buyer_hold", "pi_seller_hold"],
                 winner_stripe_account="acct_seller_001",
                 winner_stripe_account_status="active",  # P26-9: now required
@@ -13243,7 +13243,7 @@ def test_agents_list_session_and_win_counts_correct(prod_client):
     record_settlement({
         "session_id": session_id,
         "winner_id": "agents_count_winner",
-        "total_stake_cents": 0,
+        "total_price_cents": 0,
         "platform_fee_cents": 0,
         "winner_payout_cents": 0,
     })
@@ -17861,7 +17861,7 @@ async def test_p26_settle_refuses_to_pay_an_account_from_the_other_stripe_mode()
     with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_live_mock"}):
         with patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=mock_post) as mp:
             result = await settle(
-                session_id="sess_p26_mode", winner_id="w", total_stake_cents=1000,
+                session_id="sess_p26_mode", winner_id="w", total_price_cents=1000,
                 payment_intent_ids=["pi_p26_mode"],
                 winner_stripe_account="acct_test_leftover",
                 winner_stripe_account_status="active",
@@ -18090,7 +18090,7 @@ async def test_settle_skips_transfer_when_winner_stripe_account_status_not_activ
             result = await settle(
                 session_id="sess_p25_pending",
                 winner_id="p25_settle_pending_winner",
-                total_stake_cents=1000,
+                total_price_cents=1000,
                 payment_intent_ids=["pi_p25_pending_hold"],
                 winner_stripe_account="acct_p25_pending",
                 winner_stripe_account_status="pending",
@@ -24841,7 +24841,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. The relay starts fresh, so there is no upgrade history to
 # record: change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "2dd5d5f80302eb9c44ecb1598b4ab84357765540b68b44a685ad19a7230baadf"
+_SCHEMA_FINGERPRINT = "b3a67125350d286608c658acab807ba00058ba6247bf3187920b75a14ff0b381"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -24881,7 +24881,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (48, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (49, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"

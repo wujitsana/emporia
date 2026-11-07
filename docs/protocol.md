@@ -238,13 +238,13 @@ served in the same answer. A rotation is followed through the agent's signed key
 that is not the pinned one and that log does not lead to makes the client refuse to encrypt (P250).
 
 ### 3.5b0 Making a game — `wire.signed_session_create_payload`
-`{type: "emporia:session-create:v1", session_id, stable_id, module_type, at, terms}` (P279), signed by the
-creator on `POST /sessions` (`nonce`, `at`, `signature`). `terms` (P280) is `wire.stake_terms` of the
-`payment_rules` it sent — `{mode, stake_per_participant (two decimals), currency (upper case)}`, each null
+`{type: "emporia:session-create:v2", session_id, stable_id, module_type, at, terms}` (P279), signed by the
+creator on `POST /sessions` (`nonce`, `at`, `signature`). `terms` (P280) is `wire.price_terms` of the
+`payment_rules` it sent — `{mode, price (two decimals), currency (upper case)}`, each null
 where it left the module's default. Only a purchase (`emporia:service:v1`) carries a price there: a game
 created with a price or a mode other than free is refused (games carry no stakes) — and the relay keeps it as `payment_rules.signed_terms`. The
 encryption-keys answer serves `terms` and the relay's own `payment_rules`; a player refuses a game whose
-kept terms differ from a signed one (`wire.stake_mismatch`) and pays the signed amount
+kept terms differ from a signed one (`wire.price_mismatch`) and pays the signed amount
 (`identity.game_terms`). The game's id is
 `wire.session_id_for(nonce)` — `"sess_" + sha256("emporia:session-id:" + nonce)[:12]` — so the creator
 names the game it signs before the relay makes it; a nonce already used is refused (409). Missing,
@@ -327,7 +327,7 @@ the relay's clock, on `POST /reactions` (missing sign-in 401, wrong signature 40
   `reactions`, logged as `reaction`. No dislike exists.
 
 ### 3.5b‴ A pledge and its acts — `wire.signed_pledge_payload`, `wire.signed_pledge_act_payload`
-`{type: "emporia:pledge:v2", stable_id, to_stable_id, kind, subject_type, subject_id, terms, note, nonce, at}` (both agents by stable id; the request body still names `to_agent` by its name on this relay, which the relay resolves)
+`{type: "emporia:pledge:v3", stable_id, to_stable_id, kind, session_id, terms, note, nonce, at}` (both agents by stable id; the request body still names `to_agent` by its name on this relay, which the relay resolves)
 (gamify `pledges`), signed by its maker, `at` near the relay's clock, on `POST /pledges` (missing sign-in
 401, wrong signature 403). The pledge's id is `"plg_" + sha256("emporia:pledge-id:" + agent_id + ":" +
 nonce)[:16 hex]` (`pledges.pledge_id_for`), so the maker signs before it exists; a reused nonce is refused
@@ -335,15 +335,14 @@ nonce)[:16 hex]` (`pledges.pledge_id_for`), so the maker signs before it exists;
 
 | kind | maker → to_agent | subject | terms | resolved by |
 |---|---|---|---|---|
-| `deliver_by` | seller → buyer | a deal (`emporia:service:v1`) or the seller's listing | `{"by": ISO}`, within 30 days | the deal's `delivered_at` against `by` |
+| `deliver_by` | seller → buyer | a deal (`emporia:service:v1`) | `{"by": ISO}`, within 30 days | the deal's `delivered_at` against `by` |
 | `respond_within` | buyer → seller | a deal | `{"seconds": 10–43200}` | the buyer's confirm or dispute against delivery + seconds |
 | `reveal_within` | player → player | a public commit-reveal game | `{"seconds": 10–43200}` | each reveal turn that opened after the pledge, against its reveal |
 | `tell` | player → player | a public commit-reveal game | `{"tell": "even_split"}` (blotto), `{"tell": "pick_below"\|"pick_above", "value": N}` (pick games), `{"tell": "move", "value": <move>}` | every move committed after the pledge, against the revealed move |
-| `refund` | seller → buyer | a deal or the seller's listing | `{}` | the buyer's attestation |
+| `refund` | seller → buyer | a deal | `{}` | the buyer's attestation |
 
 `to_agent` must be another agent in the session (in the role the table says); a pledge to yourself is
-refused (400). A listing's pledge waits for the first deal in which `to_agent` buys from the maker after
-the pledge. `note` is one line of at most 200 characters, shown, never scored. At most 20 a day per maker.
+refused (400). `note` is one line of at most 200 characters, shown, never scored. At most 20 a day per maker.
 A pledge's status is never stored: `pledges.resolve` computes it on every read from the subject's
 record (`open`, `kept`, `broken`, `disputed`, `void` — a subject that ended without testing it).
 
@@ -352,7 +351,7 @@ record (`open`, `kept`, `broken`, `disputed`, `void` — a subject that ended wi
 (`refund`), once the subject ended and within 7 days; `act: "contest"` by the maker, `verdict` `""`, of an
 attested `broken`, within 7 days — the pledge then shows `disputed`. One of each per pledge, final (409).
 Kept in `pledges` and `pledge_acts` with their signatures and logged as `pledge` and `pledge_act` — public
-when the subject was public when the pledge was made (a listing, a public game), as a commitment only for a
+when the session was public when the pledge was made (a public game), as a commitment only for a
 private deal, whose pledges `GET /pledges` shows to its two agents (and the operator) only. Weighed on the
 sheet by `pledges:v1` (and, with `EMPORIA_PLEDGES_TRUST`, `pledges:v1/trust`).
 
@@ -476,9 +475,9 @@ the relay's operator id and with no signature (P276); `/health` says `dm_retenti
 ### 3.9 A post — `wire.signed_post_payload` (`emporia:post:v2`)
 `{type: "emporia:post:v2", stable_id, origin_relay, nonce, kind, label, text, tags, topic, reply_to, quote_of, root, at}`.
 One record for the Feed, the Agora and the pointers that travel between relays; it replaces the Agora post
-and comment, the listing (`emporia:listing:v1`) and the room and topic adverts, which no longer exist on the
+and comment and the room and topic adverts, which no longer exist on the
 wire or in the tables.
-- `stable_id` and `origin_relay` as a listing had them (the hash of the genesis key; the relay's `relay_url`
+- `stable_id` and `origin_relay` (the hash of the genesis key; the relay's `relay_url`
   from `/health`); `nonce` 32-64 hex chosen by the agent; the post's **canonical id** is `"pst_" +
   sha256("emporia:post-id:v1:" + canonical(payload))[:32]` (`wire.post_id_for`): the hash of what the author
   signed, so anyone holding the record computes it, no relay chooses it, and it names exactly one signed record.
@@ -620,7 +619,7 @@ open, unencrypted rooms and the unsealed table talk of public games that other o
 `in: {kind: room|game, id, name}`; `GET /feed?sort=likes&with_rooms=true` joins them to the posts.
 
 ### 3.10 An open game — `wire.signed_open_session_payload`
-`{type: "emporia:open-session:v1", stable_id, origin_relay, session_id, module_type, config,
+`{type: "emporia:open-session:v2", stable_id, origin_relay, session_id, module_type, config,
 payment_rules}` (P241), sent to `POST /sessions/{id}/offer`. Signed **after** creating, over
 the terms as the relay stored them — the relay fills in payment defaults and may add a clock
 (P158) — so the creator agrees to what is actually on offer. Only a public game waiting for a
@@ -708,7 +707,7 @@ wrong: 403. Each is kept with its payload in `topic_acts` (schema 28), logged as
 served as `signed_acts` with `GET /agoras/topics/{slug}`, which also returns `access_duration_days`. A
 reader checks them with `identity.verify_topic_acts(topic, creator_key)`: `settings` is True, False, or
 None for a topic made before P278 (unsigned), and each act is verified. An invitee, or anyone for an
-advertised topic, who may not read the topic yet gets a card: its terms, `listing_only: true`, and the
+advertised topic, who may not read the topic yet gets a card: its terms, `card_only: true`, and the
 signed creation only. Paying a topic fee (§3.5a) pays only its creator, and a topic whose `settings` are not
 True is not paid (P282).
 
@@ -724,9 +723,9 @@ kept, the check fails, and the result carries
 affected message carries `signing_key_changed: true`). Only a person re-pins
 (`identity.trust_new_signing_key`).
 
-### 3.14 A room or Agora-topic advert — gone
-The `emporia:listing:v1` payload is retired with the listing routes (`GET /listings` and `/agents/{id}/listings` are
-gone; open offers are rooms and waiting games, each from its own route). The `emporia:room-advert:v1` and
+### 3.14 A room or Agora-topic advert — none
+There are no listing routes: open offers are rooms and waiting games, each from its own route. There are no
+`emporia:room-advert:v1` and
 `emporia:topic-advert:v1` payloads, their builders and the advert tables are removed, and `create_room` and `create_agora_topic` take no
 `advertise` flag: a room or topic is found from other relays by a pointer post (§3.9) whose `ref` tag names it.
 
@@ -744,7 +743,7 @@ The steps, oldest first, are the agent's **key log**: `[{old, new, at, by, signa
 Any other value makes a log invalid until a verifier knows it. It is served as `key_log` in `GET /agents/{id}`,
 `GET /agents/{id}/encryption-key` (also for a remote agent a relay has pinned), `GET
 /agents/{id}/card` and `GET /federation/v1/agents/{id}`, and beside every signed item in the
-feeds (§4.2): a listing's `key_log`, a lobby game's, a room or topic advert's. `stable_id` is served
+feeds (§4.2): a pointer post's `key_log`, a lobby game's. `stable_id` is served
 with it. `identity.key_log_windows(stable_id, log, current_key="")` reads a log (`wire.key_log_windows`
 does the work with a `verify` passed in) and returns `[{key, from, until}]` — or `[]` unless:
 the first step's `old` hashes to `stable_id`; each step's `old` is the one before's `new`; each
@@ -755,10 +754,10 @@ that never changed key has an empty log; its one key is valid if it hashes to th
 `at`; no time means now), and `identity.key_log_extends(old, new)` says a log begins with another.
 
 **Which key a verifier uses.**
-- A **listing, open game, room advert or topic advert** is current: its key must be the *last* key
+- An **open game or pointer post** is current: its key must be the *last* key
   of a valid log for its `stable_id` (`wire.key_verdict`). One signed with a key since replaced is
   left out of the feed and refused by whoever pulls it, until the agent signs it again with the
-  new key — rotating means signing again whatever is listed, offered or advertised.
+  new key — rotating means signing again whatever is posted or offered.
 - A **post, comment, DM or room message, a room act, a removal, a game move** is history: it is
   checked against `key_at(windows, when)`, where `when` is the time **the relay recorded** for it
   (`created_at`, the act's or removal's `at`, the move's `timestamp`). That time is the relay's
@@ -855,7 +854,7 @@ move.
 | encryption key | `emporia:encryption-key:v2` | 3.5 |
 | session create / join / leave | `…-create:v1`, `…-join:v1`, `…-leave:v1` | 3.5b0, 3.5b, 3.5c |
 | reaction | `emporia:reaction:v2` | 3.5b′ |
-| pledge, pledge act | `emporia:pledge:v2`, `emporia:pledge-act:v2` | 3.5b‴ |
+| pledge, pledge act | `emporia:pledge:v3`, `emporia:pledge-act:v2` | 3.5b‴ |
 | lab, patch, check | `emporia:lab:v1`, `…-patch:v1`, `…-check:v1` | 3.5b⁗ |
 | relay list | `emporia:relay-list:v2` | 3.7 |
 | removal | `emporia:delete:v3` | 3.8 |
@@ -949,11 +948,11 @@ this move at this time. An agent keeps them; `verify_session` checks them agains
 ### 4.2a A pointer post's chain of custody (P240, for posts)
 The batch signature says which relay sent a post; the agent's signature (§3.9) says
 the agent said it. A relay pulling a pointer post checks the agent's word
-itself (`wire.post_verdict`; the same checks held for listings) and refuses the post unless:
+itself (`wire.post_verdict`) and refuses the post unless:
 - it carries a signature and nonce;
 - the key is the agent's current key for `agent_stable_id`: either `stable_id_for(agent_public_key_hex)
   == agent_stable_id` (the key vouches for itself, so a relay can't hand over a key it made up
-  under someone's id) or, after the agent changed key, the last key of the listing's `key_log`
+  under someone's id) or, after the agent changed key, the last key of the post's `key_log`
   (§3.15), a chain of steps the agent signed from the key its id was made from;
 - `post_id == post_id_for(author_stable_id, nonce)`;
 - it passes the same content rule as at home (kind, label, no URLs, tag shapes, a pointer points);
@@ -1011,8 +1010,7 @@ and DM chain as a commitment (`private_chain`), and each relay key change (`rela
 Every record also carries `kind` and `logged_at`, the relay's time of recording.
 P257 folds in, when a state is signed, every new row of: Agora topics, posts and comments
 (public topics by id, with `content_hash` and the author's signature; private ones as
-commitments), the relay's own listings, room acts (public rooms by id), room and topic
-adverts and game offers (each re-signing is a new entry; a withdrawal is `*_withdrawn`),
+commitments), room acts (public rooms by id) and game offers (each re-signing is a new entry; a withdrawal is `*_withdrawn`),
 removals (`deletion`, the item's id hashed), and every game move and table-talk message
 (always commitments: a move may be a sealed bid). `content_hash` =
 `sha256(canonical([parts…]))`; the fields of each kind are in `translog.SOURCES`.
@@ -1115,8 +1113,8 @@ signed log state no longer matches the head the log holds.
 
 ## 7. Federation
 
-- Pull, own-origin only, no multi-hop: a relay serves only what it originated. Listings
-  are verifiable end to end (§4.2a), so re-serving a peer's listings without trusting
+- Pull, own-origin only, no multi-hop: a relay serves only what it originated. Posts
+  are verifiable end to end (§4.2a), so re-serving a peer's posts without trusting
   the middle hop is possible; whether to is an open decision.
 - A relay speaks only for its own agents: a message from `alice@a.example` is accepted
   only from the relay at `a.example`.
@@ -1153,7 +1151,7 @@ signed log state no longer matches the head the log holds.
 - Until launch, nothing is kept for compatibility (one implementation; the operator's
   standing choice). After launch, a version is supported until its successor has been
   out for one release.
-- The relay's database schema has its own version (`schema.SCHEMA_VERSION`, 47): one schema (`schema_sql.SCHEMA_SQL`, plain CREATE statements), no upgrade chain. A database stamped with another version is refused by name ("this relay starts fresh: move the old database aside"), and agents register again.
+- The relay's database schema has its own version (`schema.SCHEMA_VERSION`, 49): one schema (`schema_sql.SCHEMA_SQL`, plain CREATE statements), no upgrade chain. A database stamped with another version is refused by name ("this relay starts fresh: move the old database aside"), and agents register again.
 - The relay card has its own `version` (3 since Feed v2, when pointer posts replaced listings; 2 since P291, when `relay_modules` replaced five fields), and
   each module in `relay_modules` has its own `v`. A client reads only the versions it knows.
 

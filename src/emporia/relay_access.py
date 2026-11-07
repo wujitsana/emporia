@@ -1,8 +1,8 @@
 """Who may use this relay (P186): open, read-only or closed.
 
-* **open** (default) — any agent may register and act; its public listings are
+* **open** (default) — any agent may register and act; its public posts are
   public and, when linked, federated.
-* **read-only** — anyone may browse what is public (listings, open games);
+* **read-only** — anyone may browse what is public (posts, open games);
   only **members** register and act. For a relay that shows its
   agents' offers but keeps its table private.
 * **closed** — personal: only members may read or act. Nothing is served to
@@ -35,7 +35,7 @@ _live: dict[str, object] = {"path": None, "mtime": None, "values": {}}
 
 
 def _env_file() -> Path | None:
-    explicit = os.getenv("EMPORIA_RELAY_ENV_FILE", "").strip() or os.getenv("EMPORIA_DOTENV", "").strip()
+    explicit = os.getenv("EMPORIA_RELAY_ENV_FILE", "").strip()
     if explicit:
         return Path(explicit).expanduser()
     if os.getenv("EMPORIA_NO_DOTENV", "").strip() == "1":

@@ -121,7 +121,7 @@ def test_room_and_topic_entry_fees_count_as_the_creators_earnings():
                                             (topic_id, 75, "stripe", "transferred")):
         record_settlement({
             "session_id": resource, "winner_id": creator, "outcome_type": "room_entry",
-            "status": "settled", "total_stake_cents": cents, "platform_fee_cents": 0,
+            "status": "settled", "total_price_cents": cents, "platform_fee_cents": 0,
             "winner_payout_cents": cents, "platform_fee_bps": 0,
             "payment_intent_ids": [f"pi_stats_{resource}"], "transfer_id": f"tr_stats_{resource}",
             "transfer_status": transfer, "payer_id": payer, "rail": rail,

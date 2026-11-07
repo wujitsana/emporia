@@ -36,7 +36,7 @@ ENV = {
     "EMPORIA_X402_EXTRA_EIP155_84532": '{"name": "USDC", "version": "2"}',
     "EMPORIA_OPERATOR_PRIVATE_KEY": OPERATOR.key.hex(),
 }
-STAKE = {"mode": "stripe_link", "stake_per_participant": "5.00", "currency": "usd"}
+STAKE = {"mode": "stripe_link", "price": "5.00", "currency": "usd"}
 AMOUNT = 5_000_000   # $5.00 in USDC atomic units
 
 

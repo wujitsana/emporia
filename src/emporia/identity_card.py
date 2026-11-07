@@ -34,12 +34,8 @@ from pathlib import Path
 from emporia import operators, wire
 
 LABEL_SETTING = "EMPORIA_OPERATOR_LABEL"
-DECLARE_SETTING = "EMPORIA_DECLARE_MODEL"
-CLIENT_SETTING = "EMPORIA_CLIENT"
-CLIENT_NAMES = wire.CLIENT_HOSTS     # plus `custom:<name>` (wire.normalize_client)
 CLIENT_VERSION_SETTING = "EMPORIA_CLIENT_VERSION"
 MODEL_TAG = "model"
-MODEL_MAX = 80
 _MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,79}")
 _FRESH_S = 24 * 3600          # a recorded model older than this is not "the model this turn used"
 
@@ -117,15 +113,6 @@ def suggest_about(soul_text: str) -> str:
             continue
         return line if not wire.about_problem(line) else ""
     return ""
-
-
-def about_of_profile(profile: Path) -> str:
-    """The bio a Hermes profile's settings hold, read through Hermes (`profile_env`)."""
-    from emporia import profile_env
-    try:
-        return profile_env.read(Path(profile) / ".env").get(ABOUT_SETTING, "").strip()
-    except Exception:
-        return ""
 
 
 def suggestion_for_profile(profile: Path) -> str:

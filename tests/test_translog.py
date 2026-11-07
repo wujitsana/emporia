@@ -293,24 +293,32 @@ def _fresh_log(tmp_path, ddl: str):
     return conn
 
 
+_POSTS = ("CREATE TABLE posts (post_id TEXT PRIMARY KEY, author_id, author_stable_id, kind, label, text, tags_json, "
+          "topic, reply_to, quote_of, root, nonce, signature, at, is_deleted, federated_from);")
+_SESSIONS = "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, module_type, status, participants_json, created_at);"
+
+
+def _add_post(conn, post_id, text="t"):
+    """A public post: the simplest row the log follows."""
+    conn.execute("INSERT OR REPLACE INTO posts VALUES (?, 'a', 's', 'note', 'l', ?, '[]', NULL, NULL, NULL, NULL, 'n', "
+                 "'sig', 'now', 0, NULL)", (post_id, text))
+
+
 def _kinds(conn, start=0):
     return [e["record"]["kind"] for e in translog.entries(conn, start, limit=1000)]
 
 
 def test_a_row_taking_a_removed_rows_rowid_is_still_logged(tmp_path):
-    """The audit's case: delete the newest listing, add one, fold. Before P263 the
+    """The audit's case: delete the newest post, add one, fold. Before P263 the
     new one took the old rowid and was never logged."""
-    conn = _fresh_log(tmp_path, "CREATE TABLE listings (listing_id TEXT PRIMARY KEY, agent_id, agent_stable_id, "
-                                "listing_type, title, description, signature, created_at, federated_from);")
-    def add(i):
-        conn.execute("INSERT INTO listings VALUES (?, 'a', 's', 'service', ?, 'd', 'sig', 'now', NULL)", (i, i))
-    add("L1"); add("L2")
+    conn = _fresh_log(tmp_path, _POSTS)
+    _add_post(conn, "L1"); _add_post(conn, "L2")
     translog.fold_all(conn)
-    conn.execute("DELETE FROM listings WHERE listing_id = 'L2'")
-    add("L3")
+    conn.execute("DELETE FROM posts WHERE post_id = 'L2'")
+    _add_post(conn, "L3")
     translog.fold_all(conn)
-    logged = [e["record"].get("listing_id") for e in translog.entries(conn, 0) if e["record"]["kind"] == "listing"]
-    assert logged == ["L1", "L2", "L3"] and _kinds(conn).count("listing_gone") == 1
+    logged = [e["record"].get("post_id") for e in translog.entries(conn, 0) if e["record"]["kind"] == "post"]
+    assert logged == ["L1", "L2", "L3"] and _kinds(conn).count("post_gone") == 1
 
 
 def test_a_refund_is_a_new_entry_not_a_silent_edit(tmp_path):
@@ -380,26 +388,25 @@ def test_a_backfilled_entry_says_so(tmp_path):
     assert entry["record"]["backfilled"] is True
 
 
-def test_a_row_saved_again_by_replace_is_one_record_that_changed_or_did_not():
+def test_a_row_saved_again_by_replace_is_one_record_that_changed_or_did_not(tmp_path):
     """P268: a session is saved with INSERT OR REPLACE on every move, which gives
     the row a new rowid each time. Followed by its key, an unchanged record adds
     nothing and a changed one is one new entry — never a "gone" and a "new"."""
-    with rs.DB_LOCK, rs.get_db() as conn:
-        def save(title):
-            conn.execute("INSERT OR REPLACE INTO listings (listing_id, title, description, listing_type, agent_id, "
-                         "payment_mode, price_usd, created_at) VALUES ('lst_tl_replaced', ?, '', 'service', 'x', "
-                         "'free', '0', '2026-11-02')", (title,))
-            translog.fold_all(conn)
-        save("First")
-        n = translog.size(conn)
-        for _ in range(5):
-            save("First")                                   # a move that changed nothing logged
-        assert translog.size(conn) == n
-        save("Second")
-        assert [e["record"]["kind"] for e in translog.entries(conn, n)] == ["listing"]
-        conn.execute("DELETE FROM listings WHERE listing_id = 'lst_tl_replaced'")
+    conn = _fresh_log(tmp_path, _POSTS)
+
+    def save(text):
+        _add_post(conn, "p_replaced", text)
         translog.fold_all(conn)
-        assert [e["record"]["kind"] for e in translog.entries(conn, n)] == ["listing", "listing_gone"]
+    save("First")
+    n = translog.size(conn)
+    for _ in range(5):
+        save("First")                                   # a move that changed nothing logged
+    assert translog.size(conn) == n
+    save("Second")
+    assert [e["record"]["kind"] for e in translog.entries(conn, n)] == ["post"]
+    conn.execute("DELETE FROM posts WHERE post_id = 'p_replaced'")
+    translog.fold_all(conn)
+    assert [e["record"]["kind"] for e in translog.entries(conn, n)] == ["post", "post_gone"]
 
 
 def test_a_renamed_agent_is_the_old_record_gone_and_a_new_one(tmp_path):
@@ -414,11 +421,6 @@ def test_a_renamed_agent_is_the_old_record_gone_and_a_new_one(tmp_path):
     assert sorted(e["record"]["kind"] for e in translog.entries(conn, n)) == ["agent", "agent_gone"]
 
 
-_LISTINGS = ("CREATE TABLE listings (listing_id TEXT PRIMARY KEY, agent_id, agent_stable_id, listing_type, title, "
-             "description, signature, created_at, federated_from);")
-_SESSIONS = "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, module_type, status, participants_json, created_at);"
-
-
 def test_a_rebuild_is_a_new_epoch_handed_over_and_signed_with_the_same_secret(tmp_path):
     """P269: a rebuild (a new ingest) used to wipe the log, its signed states and the
     commit secret. Now the secret is kept (a private record's salt never changes),
@@ -428,8 +430,8 @@ def test_a_rebuild_is_a_new_epoch_handed_over_and_signed_with_the_same_secret(tm
     key = ed25519.Ed25519PrivateKey.generate()
     pub = key.public_key().public_bytes_raw().hex()
     sign = lambda b: key.sign(b).hex()                                   # noqa: E731
-    conn = _fresh_log(tmp_path, _LISTINGS + _SESSIONS)
-    conn.execute("INSERT INTO listings VALUES ('l1', 'a', 's', 'service', 't', 'd', 'sig', 'now', NULL)")
+    conn = _fresh_log(tmp_path, _POSTS + _SESSIONS)
+    _add_post(conn, "l1")
     conn.execute("INSERT INTO sessions VALUES ('s1', 'chess', 'active', '[]', 'now')")
     first = translog.sign_state(conn, sign, pub)
     assert first["epoch"] == 1 and identity.verify_raw(translog.state_bytes(first), first["signature"], pub)
@@ -450,8 +452,8 @@ def test_a_rebuild_is_a_new_epoch_handed_over_and_signed_with_the_same_secret(tm
 
 
 def test_a_log_kept_from_before_epochs_keeps_its_states_as_signed(tmp_path):
-    conn = _fresh_log(tmp_path, _LISTINGS)
-    conn.execute("INSERT INTO listings VALUES ('l1', 'a', 's', 'service', 't', 'd', 'sig', 'now', NULL)")
+    conn = _fresh_log(tmp_path, _POSTS)
+    _add_post(conn, "l1")
     state = translog.sign_state(conn, lambda b: "sig", "ab" * 32)
     conn.execute("UPDATE translog_states SET epoch = NULL")             # signed before P269
     conn.execute("DELETE FROM translog_epochs")
@@ -462,27 +464,27 @@ def test_a_log_kept_from_before_epochs_keeps_its_states_as_signed(tmp_path):
 
 
 def test_a_row_removed_while_the_log_was_off_is_logged_gone_when_it_is_on_again(tmp_path, monkeypatch):
-    conn = _fresh_log(tmp_path, _LISTINGS)
-    conn.execute("INSERT INTO listings VALUES ('l1', 'a', 's', 'service', 't', 'd', 'sig', 'now', NULL)")
-    conn.execute("INSERT INTO listings VALUES ('l2', 'a', 's', 'service', 't', 'd', 'sig', 'now', NULL)")
+    conn = _fresh_log(tmp_path, _POSTS)
+    _add_post(conn, "l1")
+    _add_post(conn, "l2")
     translog.fold_all(conn)
     n = translog.size(conn)
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "off")
     translog.init_schema(conn)
-    conn.execute("DELETE FROM listings WHERE listing_id = 'l1'")         # no trigger saw this
+    conn.execute("DELETE FROM posts WHERE post_id = 'l1'")         # no trigger saw this
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
     translog.init_schema(conn)
     translog.fold_all(conn)
-    assert _kinds(conn, n) == ["listing_gone"]                         # l2, unchanged, adds nothing
+    assert _kinds(conn, n) == ["post_gone"]                         # l2, unchanged, adds nothing
 
 
 def test_a_row_with_no_key_is_refused_not_silently_left_out(tmp_path):
     """P269: SQLite lets a TEXT PRIMARY KEY hold NULL, and NULL || anything is NULL,
     so such a row would never reach the log. The log's trigger refuses it."""
     import sqlite3
-    conn = _fresh_log(tmp_path, _LISTINGS)
+    conn = _fresh_log(tmp_path, _POSTS)
     with pytest.raises(sqlite3.IntegrityError, match="no key"):
-        conn.execute("INSERT INTO listings VALUES (NULL, 'a', 's', 'service', 't', 'd', 'sig', 'now', NULL)")
+        _add_post(conn, None)
 
 
 def test_every_logged_key_column_is_guarded_on_the_relays_own_schema():
@@ -500,16 +502,16 @@ def test_every_logged_key_column_is_guarded_on_the_relays_own_schema():
 
 
 def test_a_private_records_removal_is_salted_a_public_ones_is_not(tmp_path):
-    conn = _fresh_log(tmp_path, _LISTINGS + _SESSIONS)
-    conn.execute("INSERT INTO listings VALUES ('l1', 'a', 's', 'service', 't', 'd', 'sig', 'now', NULL)")
+    conn = _fresh_log(tmp_path, _POSTS + _SESSIONS)
+    _add_post(conn, "l1")
     conn.execute("INSERT INTO sessions VALUES ('s1', 'chess', 'active', '[]', 'now')")
     translog.fold_all(conn)
     n = translog.size(conn)
-    conn.execute("DELETE FROM listings")
+    conn.execute("DELETE FROM posts")
     conn.execute("DELETE FROM sessions")
     translog.fold_all(conn)
     gone = {e["record"]["kind"]: e["record"]["id_hash"] for e in translog.entries(conn, n)}
-    assert gone["listing_gone"] == translog.content_hash("listing", "l1")        # public: anyone can check
+    assert gone["post_gone"] == translog.content_hash("post", "l1")        # public: anyone can check
     assert gone["session_gone"] != translog.content_hash("session", "s1")        # private: not from a guess
     assert gone["session_gone"] == translog.content_hash("session", "s1", translog.record_salt(conn, "session", "s1"))
 

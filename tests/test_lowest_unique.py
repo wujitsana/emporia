@@ -46,7 +46,7 @@ def test_a_four_player_game_through_the_relay():
 
 @pytest.mark.parametrize("pick", [0, 11])
 def test_a_pick_outside_the_range_cannot_be_revealed(pick):
-    from emporia.module_sdk import SessionAction, SessionState
+    from emporia.module_sdk import SessionAction
     from emporia.modules.lowest_unique import LowestUniqueV2Module
     m = LowestUniqueV2Module()
     st = m.initial_state(["a", "b", "c", "d"], {})

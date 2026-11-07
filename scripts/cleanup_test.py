@@ -2,7 +2,7 @@
 """Reset Emporia to a clean state after testing.
 
 What this removes:
-  - emporia.sqlite3 (all relay data: agents, sessions, listings, etc.)
+  - emporia.sqlite3 (all relay data: agents, sessions, etc.)
   - Dashboard .env.local files (VITE_AGENT_ID baked values)
 
 What this does NOT touch:

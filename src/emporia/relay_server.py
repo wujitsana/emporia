@@ -2,9 +2,7 @@
 
 Provides:
   - Session management (create, join, action, state)
-  - Listings directory ("Craigslist for agents")
-  - Events/tournaments (brackets, standings, entry terms)
-  - Federated listings gossip (pull from peer relays)
+  - Federated pointer-post gossip (pull from peer relays)
   - Relay descriptor (not an A2A Agent Card) at /relay-card
   - WebSocket real-time updates (per-session + per-agent)
   - Guardrails on all inbound (deterministic regex firewall)
@@ -92,7 +90,6 @@ from emporia.identity import (
     build_relay_descriptor,
     federation_signable_bytes,
     normalize_peer_url,
-    normalize_peer_pubkey_keys,
 )
 from emporia.module_sdk import (
     MODULE_REGISTRY,
@@ -238,13 +235,6 @@ def relay_id() -> str:
 # unconditionally, so this only weakens a direct REST caller's requirements; not recommended).
 REQUIRE_CHALLENGE = os.getenv("EMPORIA_REQUIRE_CHALLENGE", "1").strip() == "1"
 MAX_TOTAL_SPEND_CENTS = int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0"))
-# P152: EMPORIA_MPP_TEMPO_ENABLED used to advertise "tempo" as an MPP method
-# with nothing able to settle it. Gone until Tempo settlement exists; an
-# operator who still sets it is told rather than silently ignored.
-if os.getenv("EMPORIA_MPP_TEMPO_ENABLED", "").strip() == "1":
-    logging.getLogger("emporia.relay").warning(
-        "EMPORIA_MPP_TEMPO_ENABLED is ignored: Tempo settlement is not implemented, so the relay "
-        "no longer advertises it (P152)")
 LOG_DIR = Path(os.getenv("EMPORIA_LOG_DIR", "./.local/logs")).expanduser()
 # P55: resolved through emporia.config, the package's only reader of
 # EMPORIA_DB_PATH. Still captured once here — 111 call sites in the suite treat
@@ -252,8 +242,8 @@ LOG_DIR = Path(os.getenv("EMPORIA_LOG_DIR", "./.local/logs")).expanduser()
 DATABASE_PATH = _database_path()
 
 # Federated peers (comma-separated relay URLs; empty = standalone). Normalized
-# (N13-2, R2) so these entries agree with the keys _pull_federated_listings/
-# _pull_federated_lobby actually store under — see identity.normalize_peer_url().
+# (N13-2, R2) so these entries agree with the keys _pull_federated_posts
+# actually stores under — see identity.normalize_peer_url().
 FEDERATED_RELAYS: list[str] = [
     normalize_peer_url(u) for u in os.getenv("FEDERATED_RELAYS", "").split(",") if u.strip()
 ]
@@ -275,9 +265,6 @@ def peer_runs(peer_url: str, module: str, part: str = "") -> bool | None:
     entry = mods.get(module)
     return isinstance(entry, dict) and (not part or part in (entry.get("parts") or []))
 
-# Same shape, for lobby-challenge gossip (N11-5) — kept separate from the listings
-# sync record above since the two feeds are pulled and can fail independently.
-
 # Trust-on-first-use pin of each peer's Ed25519 public key, keyed by peer_url. The first
 # successfully signature-verified pull from a peer pins its key; a later pull presenting a
 # different key for the same peer_url is rejected rather than silently trusted (guards
@@ -295,13 +282,7 @@ _FEDERATION_PEER_PUBKEYS_LOADED = False
 def _ensure_federation_pins_loaded() -> None:
     global _FEDERATION_PEER_PUBKEYS_LOADED
     if not _FEDERATION_PEER_PUBKEYS_LOADED:
-        # N13-2 (R2): migrate any pin written under a pre-fix, un-normalized key (e.g.
-        # a trailing slash) so it's reachable under the same key _pull_federated_*
-        # now always look up.
-        migrated, changed = normalize_peer_pubkey_keys(load_federation_peer_pubkeys())
-        _FEDERATION_PEER_PUBKEYS.update(migrated)
-        if changed:
-            save_federation_peer_pubkeys(_FEDERATION_PEER_PUBKEYS)
+        _FEDERATION_PEER_PUBKEYS.update(load_federation_peer_pubkeys())
         _FEDERATION_PEER_PUBKEYS_LOADED = True
 
 
@@ -771,7 +752,7 @@ _MAX_LIMIT = 200
 # P21-1 (B1): a federation peer's response is streamed and capped at this many bytes
 # *before* being buffered for signature verification or JSON parsing — see
 # _fetch_federation_batch(). Default generous enough for a full _MAX_LIMIT-sized batch
-# of listings/challenges with room to spare, small enough that a malicious or hijacked
+# of posts with room to spare, small enough that a malicious or hijacked
 # peer can't OOM the relay by returning an arbitrarily large body.
 MAX_FEDERATION_RESPONSE_BYTES = env_int("MAX_FEDERATION_RESPONSE_BYTES", 8 * 1024 * 1024)
 
@@ -786,7 +767,7 @@ def _clamp_limit(limit: int, max_limit: int = _MAX_LIMIT) -> int:
     LIMIT-bearing endpoints already did this inline as `min(limit, 200)`; the N3 review
     (O2) named 8 more that took `limit: int` with no cap at all, and applying this
     uniformly turned up 4 further uncapped sites the review's own count had missed
-    (GET /listings, GET /rooms, GET /rooms/{id}/messages, GET /dm/{id}/messages) — an
+    (GET /rooms, GET /rooms/{id}/messages, GET /dm/{id}/messages) — an
     uncapped limit is both a DoS lever (unbounded result set / row-scan) and, on
     GET /agents specifically, the mechanism that turned an N+1 per-row query loop into
     an unbounded one (O1). Also floors at 1 so a caller can't pass 0 or a negative number
@@ -851,7 +832,7 @@ def session_paid_by(session_id: str) -> list[str]:
     "x402") — what a page shows as "paid by" once money has moved."""
     with DB_LOCK, get_db() as conn:
         rows = conn.execute("SELECT DISTINCT rail FROM payments WHERE session_id = ? "
-                            "AND payment_type = 'session_stake'", (session_id,)).fetchall()
+                            "AND payment_type = 'session_price'", (session_id,)).fetchall()
     return sorted(r[0] for r in rows if r[0])
 
 
@@ -986,21 +967,7 @@ def _payment_metadata_matches(
     resource_type: str,
     resource_id: str,
 ) -> bool:
-    if metadata.get("resource_type") == resource_type and metadata.get("resource_id") == resource_id:
-        return True
-    legacy_key = {
-        "session": "session_id",
-        "room": "room_id",
-        "agora": "topic_id",
-    }.get(resource_type)
-    if legacy_key and metadata.get(legacy_key) == resource_id:
-        return True
-    service_type = metadata.get("service_type")
-    if resource_type == "room" and metadata.get("session_id") == resource_id:
-        return service_type == "emporia:room_entry"
-    if resource_type == "agora" and metadata.get("session_id") == resource_id:
-        return service_type == "emporia:agora_subscribe"
-    return False
+    return metadata.get("resource_type") == resource_type and metadata.get("resource_id") == resource_id
 
 
 def _assert_payment_intent_matches(
@@ -1022,7 +989,7 @@ def _assert_payment_intent_matches(
     `expected_payer_agent_id` (P1a-1, R1): a PaymentIntent used to be verified as
     bound to a *resource* but never to a *payer* — any registered agent presenting a
     valid, correctly-bound PI id passed every check here, including one they didn't
-    pay for. Both PI-minting paths (`create_stake_intent`, `confirm_spt`) already stamp
+    pay for. Both PI-minting paths (`create_price_intent`, `confirm_spt`) already stamp
     `metadata[buyer_agent_id]`; this was simply never read. Only
     `_verify_and_confirm_payment()`'s direct-`payment_intent_id` branch passes this —
     the caller is authenticated there, so the check is real. The SPT branch mints the
@@ -2002,19 +1969,6 @@ def get_escrow_hold(hold_hash: str) -> dict[str, Any] | None:
     return hold
 
 
-def escrow_holds_for_session(session_id: str) -> list[dict[str, Any]]:
-    """Every hold placed for one session, oldest first."""
-    with DB_LOCK, get_db() as conn:
-        rows = conn.execute("SELECT * FROM escrow_holds WHERE session_id = ? ORDER BY created_at",
-                            (session_id,)).fetchall()
-    holds = []
-    for row in rows:
-        hold = dict(row)
-        hold["payment_info"] = json.loads(hold.pop("payment_info_json"))
-        holds.append(hold)
-    return holds
-
-
 def escrow_holds_in_states(states: tuple[str, ...], limit: int = 100) -> list[dict[str, Any]]:
     """Holds in any of `states`, oldest first — the reconciler's queue (P111)."""
     marks = ",".join("?" * len(states))
@@ -2091,7 +2045,7 @@ def update_escrow_hold(hold_hash: str, *, state: str, **tx: str) -> None:
 
 
 def mark_payment_released(payment_intent_id: str) -> None:
-    """A held stake went back to its payer (P130). Only from `confirmed`, so a
+    """A held price went back to its payer (P130). Only from `confirmed`, so a
     payment already refunded or captured keeps what it says."""
     with DB_LOCK, get_db() as conn:
         conn.execute("UPDATE payments SET status = 'released' WHERE payment_intent_id = ? "
@@ -2101,7 +2055,7 @@ def mark_payment_released(payment_intent_id: str) -> None:
 def get_session_payments(session_id: str) -> list[dict[str, Any]]:
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM payments WHERE session_id = ? AND payment_type = 'session_stake'",
+            "SELECT * FROM payments WHERE session_id = ? AND payment_type = 'session_price'",
             (session_id,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -2144,7 +2098,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
     with DB_LOCK, get_db() as conn:
         cur = conn.execute(
             "INSERT INTO settlements "
-            "(settlement_id, session_id, winner_id, total_stake_cents, platform_fee_cents, "
+            "(settlement_id, session_id, winner_id, total_price_cents, platform_fee_cents, "
             "winner_payout_cents, platform_fee_bps, payment_intent_ids, "
             "transfer_id, transfer_status, status, created_at, payer_id, dedupe_key, rail, "
             "platform_fee_atomic, winner_payout_atomic) "
@@ -2154,7 +2108,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
                 settlement_id,
                 session_id,
                 settlement.get("winner_id"),
-                settlement.get("total_stake_cents", 0),
+                settlement.get("total_price_cents", 0),
                 settlement.get("platform_fee_cents", 0),
                 settlement.get("winner_payout_cents", 0),
                 settlement.get("platform_fee_bps", _fee_bps_now()),
@@ -2251,7 +2205,6 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("dm_messages", "sender_id"),
     ("dm_threads", "agent_a"), ("dm_threads", "agent_b"), ("dm_threads", "local_agent"),
     ("deletions", "deleted_by"),
-    ("listings", "agent_id"),
     ("messages", "from_agent"), ("messages", "to_agent"),
     ("participants", "agent_id"), ("payments", "agent_id"),
     ("session_leaves", "agent_id"), ("dm_blocks", "agent_id"), ("dm_blocks", "blocked"),   # P273
@@ -2328,8 +2281,8 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
                                     "outcome_hash", "recorded_at")),
     # Season board: a season's frozen final standing and the relay's signature over it.
     *(("season_finals", c) for c in ("season", "body_json", "signature", "frozen_at")),
-    # Pledges: what was promised on which session or listing, its terms and note, and the signed acts on it.
-    *(("pledges", c) for c in ("pledge_id", "kind", "subject_type", "subject_id", "terms_json", "note", "nonce",
+    # Pledges: what was promised on which session, its terms and note, and the signed acts on it.
+    *(("pledges", c) for c in ("pledge_id", "kind", "session_id", "terms_json", "note", "nonce",
                                "made_at", "signature", "public", "recorded_at")),
     *(("pledge_acts", c) for c in ("pledge_id", "act", "verdict", "at", "signature", "recorded_at")),
     # Labs v2: a lab's terms (stable ids are what is signed) and a maintainer's report with the claims it
@@ -2420,18 +2373,12 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("remote_agents", "address"), ("remote_agents", "peer_url"), ("remote_agents", "public_key_hex"),
     ("remote_agents", "encryption_public_key"), ("remote_agents", "encryption_key_signature"),
     ("remote_agents", "updated_at"), ("authorized_agents", "accepts_remote_dms"),
-    # listings
-    ("listings", "listing_id"), ("listings", "title"), ("listings", "description"),
-    ("listings", "listing_type"), ("listings", "payment_mode"), ("listings", "price_usd"),
-    ("listings", "origin_relay"), ("listings", "expires_at"),
-    ("listings", "federated_from"), ("listings", "agent_public_key_hex"),
-    ("listings", "agent_stable_id"), ("listings", "listing_nonce"), ("listings", "signature"),
     ("session_offers", "session_id"), ("session_offers", "stable_id"),
     ("session_offers", "public_key_hex"), ("session_offers", "signature"),
     ("session_offers", "offered_at"),
     ("agent_key_log", "stable_id"), ("agent_key_log", "step_no"), ("agent_key_log", "old_key"),
     ("agent_key_log", "new_key"), ("agent_key_log", "at"), ("agent_key_log", "signed_by"),
-    ("agent_key_log", "signature"), ("listings", "agent_key_log_json"),
+    ("agent_key_log", "signature"),
     ("agent_key_log", "commitment"), ("agent_key_log", "recovery_public_key"),
     ("agent_key_log", "compromised_since"), ("agent_key_log", "recorded_at"),
     ("agent_key_log_superseded", "stable_id"), ("agent_key_log_superseded", "seq"),
@@ -2465,7 +2412,6 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("dm_messages", "deleted_at"), ("game_chat", "deleted_at"),
     ("room_messages", "reply_to"), ("room_messages", "root"), ("game_chat", "kind"), ("game_chat", "tags_json"),
     ("game_chat", "reply_to"), ("game_chat", "quote_of"), ("game_chat", "root"), ("game_chat", "step"),
-    ("listings", "metadata_json"), ("listings", "created_at"),
     # messages
     ("messages", "message_id"), ("messages", "session_id"), ("messages", "type"),
     ("messages", "payload_json"), ("messages", "signature"), ("messages", "created_at"),
@@ -2500,7 +2446,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("sessions", "status"), ("sessions", "created_at"), ("sessions", "updated_at"),
     # settlements
     ("settlements", "settlement_id"), ("settlements", "session_id"),
-    ("settlements", "total_stake_cents"), ("settlements", "platform_fee_cents"),
+    ("settlements", "total_price_cents"), ("settlements", "platform_fee_cents"),
     ("settlements", "winner_payout_cents"), ("settlements", "platform_fee_bps"),
     ("settlements", "payment_intent_ids"), ("settlements", "transfer_id"),
     ("settlements", "transfer_status"), ("settlements", "status"),
@@ -3822,9 +3768,8 @@ def _require_payload_content_within_limit(payload: dict[str, Any]) -> None:
     exactly matching what each of the ~17 enumerated call sites this replaces
     did by hand for one named field at a time. Called from
     `_assert_payload_safe_counted` itself (below), so every route that already
-    unconditionally scans its whole payload gets this for free — including the
-    three that had no enumerated call at all (both federation imports,
-    `import_challenge`) and were wholly unbounded until now.
+    unconditionally scans its whole payload gets this for free — including
+    the federation import.
 
     Deliberately does **not** replace every enumerated call: a route that scans
     a *sub*-value directly rather than a dict containing it under that field's
@@ -4624,7 +4569,7 @@ def _payment_rails(*, has_stripe: bool | None = None) -> tuple[list[str], list[s
     byte-for-byte, because "no wire change" was that pass's contract — which
     left one flag combination answering differently depending on which
     endpoint you asked. With a Stripe key set, the MPP profile not ready and
-    `EMPORIA_MPP_TEMPO_ENABLED=1`, `/health` advertised `"mpp"` (its
+    Tempo switched on, `/health` advertised `"mpp"` (its
     `if payment_methods:` test is truthy on `["tempo"]`) while
     `GET /agents/{id}` omitted it: an `elif` chain resolved `stripe_enabled`
     first and never reached the tempo branch. Same relay, same config, two
@@ -4678,17 +4623,11 @@ async def health(request: Request):
     access = relay_access.mode()
     if access == "closed" and (request.client.host if request.client else "") not in ("127.0.0.1", "::1"):
         # P186: a closed relay says only that it is up — not what it runs or takes.
-        # P240: and its own URL, which its members sign their listings for.
+        # P240: and its own URL, which its members sign their posts for.
         return {"status": "ok", "service": BRAND, "access": access, "relay_url": RELAY_BASE_URL}
-    listing_count = 0
     session_count = 0
     try:
         with DB_LOCK, get_db() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) AS c FROM listings WHERE expires_at IS NULL OR expires_at > ?",
-                (datetime.now(UTC).isoformat(),),
-            ).fetchone()
-            listing_count = row["c"] if row else 0
             # P5-1: was `NOT IN ('complete','cancelled')` — neither literal is
             # ever written to sessions.status, so this counted completed and
             # abandoned sessions as active. Built from _SESSION_TERMINAL_STATUSES
@@ -4711,7 +4650,7 @@ async def health(request: Request):
         "access": access,
         # P187: the host in this relay's agents' addresses (alpha@host).
         "host": _own_host(),
-        # P240: this relay's own URL — what an agent signs as a listing's origin.
+        # P240: this relay's own URL — what an agent signs as a post's origin.
         "relay_url": RELAY_BASE_URL,
         "relay_id": relay_id(),
         "version": __version__,
@@ -4734,7 +4673,6 @@ async def health(request: Request):
         # P156: where entries can be paid in Tempo stablecoin, straight to the creator.
         "tempo_network": (_tempo_cfg() or {}).get("network"),
         "modules": list(MODULE_REGISTRY.keys()),
-        "listing_count": listing_count,
         "session_count": session_count,
         "guardrails_mode": guardrails.DEFAULT_MODE,
         # First run: what a new agent's `emporia doctor` explains — the season this relay runs and
@@ -5464,7 +5402,7 @@ class CreatePaymentIntentRequest(BaseModel):
 async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, request: Request):
     """Create a Stripe PaymentIntent for a specific paid session or room.
     Returns payment_intent_id to pass to /sessions/{id}/join or /rooms/{id}/join."""
-    from emporia.payments import create_stake_intent
+    from emporia.payments import create_price_intent
 
     caller = _dashboard_agent_id(request)
     if not caller:
@@ -5487,8 +5425,8 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
         if not session:
             raise HTTPException(404, "Session not found")
         payment_rules = session.get("payment_rules", {})
-        stake = payment_rules.get("stake_per_participant", "0")
-        expected_amount = int(float(stake) * 100) if stake else 0
+        price = payment_rules.get("price", "0")
+        expected_amount = int(float(price) * 100) if price else 0
         currency = (payment_rules.get("currency") or "usd").lower()
         service_type = service_type or session.get("module_type") or "emporia:session"
         if payment_rules.get("mode", "free") == "free" or expected_amount <= 0:
@@ -5549,7 +5487,7 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
         fee = platform_fee(expected_amount)
 
     try:
-        result = await create_stake_intent(
+        result = await create_price_intent(
             session_id=target_id,
             amount_cents=expected_amount,
             buyer_id=caller,
@@ -5688,7 +5626,7 @@ def _caller_owns_settlement_row(
 # suite the moment PRAGMA table_info(settlements) gains a column not listed in
 # either set — turns "did I remember to redact this" from a habit into a check.
 _SETTLEMENT_PUBLIC_COLUMNS = frozenset({
-    "settlement_id", "session_id", "winner_id", "total_stake_cents",
+    "settlement_id", "session_id", "winner_id", "total_price_cents",
     "platform_fee_cents", "winner_payout_cents", "platform_fee_bps",
     "payment_intent_ids", "transfer_id", "transfer_status", "status",
     "created_at", "payer_id", "refund_id", "reversal_id", "rail",
@@ -5716,12 +5654,6 @@ def _settlement_public_dict(row: Any) -> dict[str, Any]:
     d = {k: v for k, v in dict(row).items() if k in _SETTLEMENT_PUBLIC_COLUMNS}
     d["payment_intent_ids"] = json.loads(row["payment_intent_ids"])
     return d
-
-
-#: What a settlement paid for, as the ?agent_id= branch names it (`kind`), worked out from
-#: the row and the tables it points into — no schema change (ROADMAP "Settlements by
-#: resource" plans a stored resource_type). `session_id` holds a session, a room or a topic.
-SETTLEMENT_KINDS = ("game", "service", "room", "topic", "access", "session")
 
 
 def _settlement_kinds(conn: Any, rows: list[Any]) -> dict[str, str]:
@@ -5772,7 +5704,7 @@ def _settlement_row_dict(
     transfer_id — the Stripe transfer object id for that specific payer's payout,
     1:1 with their payment — so a co-payer still got a per-transaction Stripe
     identifier out of the same response N6-2 was written to lock down.
-    `total_stake_cents`/`winner_payout_cents` are left alone: room/topic entry
+    `total_price_cents`/`winner_payout_cents` are left alone: room/topic entry
     fees are uniform, so a co-payer's amount is already public from the resource's
     own fee — only the opaque identifiers need covering.
 
@@ -6088,9 +6020,6 @@ async def list_escrow_holds(request: Request):
     return {"holds": [dict(r) for r in rows]}
 
 
-# Listings and Events moved to emporia/routes/{listings,events}.py (P56).
-# The routers are included at the bottom of this file.
-
 
 
 # ============================================================================
@@ -6304,12 +6233,10 @@ async def _pull_federated_posts(peer_url: str) -> int:
 
 
 async def _sync_all_federated_peers() -> dict[str, int]:
-    """Pull listings from every configured peer, concurrently. (P188: the
-    challenge lobby, which this also pulled, is retired.)
+    """Pull pointer posts from every configured peer, concurrently.
 
-    P23-3: used to be a `for peer in FEDERATED_RELAYS: await ...` loop -- both
-    `_pull_federated_listings`/`_pull_federated_lobby` already catch and record
-    per-peer failures into `_FEDERATION_LAST_SYNC`/`_FEDERATION_LOBBY_LAST_SYNC`
+    P23-3: used to be a `for peer in FEDERATED_RELAYS: await ...` loop -- the pullers
+    already catch and record per-peer failures into `_FEDERATION_LAST_SYNC`
     rather than raising, so a bad peer never crashed the loop, it just serialized
     everyone behind its own `_fetch_federation_batch` timeout (15s) needlessly.
     `asyncio.gather` here cuts worst-case wall time from O(peers) to
@@ -6333,7 +6260,7 @@ async def _sync_all_federated_peers() -> dict[str, int]:
     drop_unlinked_federated_rows()
     async def _pull_peer(peer: str) -> int:
         imported = await _pull_federated_posts(peer)
-        # P291: then what it runs, from its card signed by the key the listings pinned —
+        # P291: then what it runs, from its card signed by the key the posts pinned —
         # what is kept from it below, and what is offered to it, follows that
         try:
             await _pull_peer_modules(normalize_peer_url(peer))
@@ -6348,7 +6275,7 @@ async def _sync_all_federated_peers() -> dict[str, int]:
             logger.exception("federation_log_check_raised_unexpectedly", extra={"peer_url": peer})
         return imported
 
-    listing_results = await asyncio.gather(*(_pull_peer(p) for p in peers), return_exceptions=True)
+    pull_results = await asyncio.gather(*(_pull_peer(p) for p in peers), return_exceptions=True)
 
     def _coerce(results: list) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -6363,7 +6290,7 @@ async def _sync_all_federated_peers() -> dict[str, int]:
                 counts[peer] = result
         return counts
 
-    return _coerce(listing_results)
+    return _coerce(pull_results)
 
 
 async def _pull_peer_modules(peer_url: str) -> dict[str, Any] | None:
@@ -6371,7 +6298,6 @@ async def _pull_peer_modules(peer_url: str) -> dict[str, Any] | None:
     when signed by the key this relay pinned for it; otherwise nothing is kept
     and the peer is treated as before (`peer_runs` → None). Then:
 
-    * paid listings from a relay that takes no payments go — nobody could buy them;
     * whether it links back (federation, both ways) goes in its sync record,
       since sealed DMs need both ways.
     """
@@ -6461,7 +6387,7 @@ async def _federation_sync_loop() -> None:
 
     P23-3: before this, `POST /gaming/v1/federate/sync` was the *only* sync
     path -- operator-triggered only, no periodic retry. Per-peer failures were
-    already recorded and non-fatal (see _pull_federated_listings), so a
+    already recorded and non-fatal (see _pull_federated_posts), so a
     transient failure just sat there until a human re-triggered. This periodic
     loop is itself the retry mechanism -- no separate backoff needed, the same
     reasoning _sweep_loop() already applies to its own failures.
@@ -6757,9 +6683,7 @@ async def send_message(req: SendMessageRequest, request: Request):
 
 @app.get("/messages")
 async def get_messages(agent_id: str, request: Request, session_id: str | None = None, limit: int = 50):
-    """Deprecated history view — use GET /inbox for live events, GET /dm for peer chat.
-    Still returns the raw messages audit table for back-compat.
-    """
+    """The raw messages audit table: this agent's messages, newest first."""
     _require_caller_is(agent_id, request)
     limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
@@ -6776,7 +6700,6 @@ async def get_messages(agent_id: str, request: Request, session_id: str | None =
                 (agent_id, agent_id, limit),
             ).fetchall()
     return {
-        "deprecated": "Use GET /inbox (events) or GET /dm (peer chat). This endpoint reads the raw audit table.",
         "messages": [
             {**dict(r), "payload": json.loads(r["payload_json"])}
             for r in rows
@@ -6800,10 +6723,8 @@ async def ws_global_events(ws: WebSocket):
     Clients receive a JSON frame for every relay-side event:
       {"type": "session_created", ...}
       {"type": "session_action",  ...}
-      {"type": "listing_created", ...}
       {"type": "room_created",    ...}
       {"type": "room_message",    ...}
-      {"type": "event_created",   ...}
     Send {"type": "ping"} to keep alive; relay responds {"type": "pong"}.
     """
     if await _ws_refused(ws):
@@ -6818,14 +6739,11 @@ async def ws_global_events(ws: WebSocket):
             "status": "ok",
             "service": BRAND,
             "version": __version__,
-            "listing_count": 0,
             "session_count": 0,
             "modules": list(MODULE_REGISTRY.keys()),
         }
         try:
             with DB_LOCK, get_db() as conn:
-                row = conn.execute("SELECT COUNT(*) AS c FROM listings WHERE status='open'").fetchone()
-                health_data["listing_count"] = row["c"] if row else 0
                 # P5-1: same fix as /health's REST handler above — see that
                 # comment for why the old literals were wrong.
                 row2 = conn.execute(
@@ -7111,7 +7029,7 @@ async def _settle_access_payment(
         "winner_id": creator_id,
         "outcome_type": outcome_type,
         "status": "settled",
-        "total_stake_cents": amount_cents,
+        "total_price_cents": amount_cents,
         "platform_fee_cents": platform_fee,
         "winner_payout_cents": creator_payout,
         "platform_fee_bps": platform_fee_bps,
@@ -7473,25 +7391,6 @@ class CreateAgoraTopicRequest(BaseModel):
     nonce: str = ""
     signature: str = ""
 
-class CreateAgoraPostRequest(BaseModel):
-    title: str
-    content: str
-    post_type: str = "text"  # "text" | "link" | "code" | "data"
-    flair: str | None = None
-    # P242: signed by its author (wire.signed_agora_post_payload).
-    nonce: str
-    signature: str
-
-class AddAgoraCommentRequest(BaseModel):
-    content: str
-    parent_comment_id: str | None = None
-    # P242: signed by its author (wire.signed_agora_comment_payload).
-    nonce: str
-    signature: str
-
-class AgoraVoteRequest(BaseModel):
-    value: int  # 1 or -1
-
 class AgoraSubscribeRequest(BaseModel):
     agent_id: str
     payment_intent_id: str | None = None
@@ -7576,12 +7475,6 @@ def _topic_can_read(
     if not agent_id:
         return False
     return _agora_is_member(conn, topic_id, agent_id, gate_type=gate_type)
-
-
-def _slugify(name: str) -> str:
-    import re
-    s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return s[:64] or "topic"
 
 
 

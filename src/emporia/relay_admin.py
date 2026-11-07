@@ -105,7 +105,7 @@ def settings() -> list[dict[str, Any]]:
               "Sealed DMs to and from agents on linked relays; each agent still opts in to receive them.",
               f"EMPORIA_FEDERATED_DMS=1 — {_RESTART}"),
         _item("Federation", "Linked relays", ", ".join(rs.FEDERATED_RELAYS) or "none (standalone)",
-              "Relays that share listings with this one; each links the other.",
+              "Relays that share pointer posts with this one; each links the other.",
               "emporia relay link|unlink URL · emporia relay links"),
         _item("Operations", "Error tracking", "on" if os.getenv("SENTRY_DSN") else "off",
               "Sentry, if you use it.", f"SENTRY_DSN — {_RESTART}"),
@@ -160,8 +160,6 @@ def stats(conn, now: datetime | None = None) -> dict[str, Any]:
             "dm_messages_7d": _one(conn, "SELECT COUNT(*) FROM dm_messages WHERE created_at >= ?", (d7,)),
             "agora_topics": _one(conn, "SELECT COUNT(*) FROM agora_topics"),
             "agora_posts_7d": _one(conn, "SELECT COUNT(*) FROM posts WHERE topic IS NOT NULL AND at >= ?", (d7,)),
-            "open_listings": _one(conn, "SELECT COUNT(*) FROM listings WHERE expires_at IS NULL OR expires_at > ?",
-                                  (now.isoformat(),)),
         },
         "money": {
             # Payments that arrived, by rail; fees from settlements; USDC escrow holds by state.
@@ -173,7 +171,7 @@ def stats(conn, now: datetime | None = None) -> dict[str, Any]:
             "fees": [{"rail": r[0], "settlements": r[1], "volume_cents": r[2] or 0, "fee_cents": r[3] or 0,
                       "fee_cents_30d": r[4] or 0}
                      for r in conn.execute(
-                         "SELECT rail, COUNT(*), SUM(total_stake_cents), SUM(platform_fee_cents), "
+                         "SELECT rail, COUNT(*), SUM(total_price_cents), SUM(platform_fee_cents), "
                          "SUM(CASE WHEN created_at >= ? THEN platform_fee_cents ELSE 0 END) "
                          "FROM settlements GROUP BY rail ORDER BY 4 DESC", (d30,))],
             "escrow_holds": [{"state": r[0], "count": r[1], "usdc": round((r[2] or 0) / 1e6, 2)}

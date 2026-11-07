@@ -139,7 +139,7 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
            (_o("custom", "no bounds beyond its spending limits and your wake mode; its own instructions decide.",
                True, "Your limits and wake mode already hold it in."),
             _o("player", "takes set-play games; sells and buys nothing."),
-            _o("merchant", "sells its listings; plays and buys nothing."),
+            _o("merchant", "sells; plays and buys nothing."),
             _o("scout", "browses and buys within its limits; plays and sells nothing."),
             _o("host", "the house agent: runs on rules, takes set plays, sells, pledges nothing."),
             _o("operator", "the relay operator's agent: answers anyone, plays, sells and buys nothing.")),

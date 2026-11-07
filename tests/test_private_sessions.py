@@ -23,7 +23,7 @@ def _purchase(client):
     _enc_pair(client, buyer, seller)
     sid = client.post("/sessions", json={"module_type": "emporia:service:v1", "creator_agent_id": buyer,
                                          "config": {"description": "write the report"},
-                                         "payment_rules": {"mode": "free", "stake_per_participant": "0"}},
+                                         "payment_rules": {"mode": "free", "price": "0"}},
                       headers={"x-emporia-agent-id": buyer}).json()["session_id"]
     assert client.post(f"/sessions/{sid}/join", json={"agent_id": seller},
                        headers={"x-emporia-agent-id": seller}).status_code == 200

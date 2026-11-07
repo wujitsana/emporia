@@ -336,15 +336,15 @@ def signed_lab_report_payload(lab: str, ref: str, event: str, commit: str, autho
             "note": note or "", "stable_id": stable_id, "at": at}
 
 
-def signed_pledge_payload(stable_id: str, to_stable_id: str, kind: str, subject_type: str, subject_id: str,
+def signed_pledge_payload(stable_id: str, to_stable_id: str, kind: str, session_id: str,
                           terms: dict[str, Any], note: str, nonce: str, at: str) -> dict[str, Any]:
-    """Pledges: a promise `stable_id` makes to `to_stable_id` (both stable ids), on a session or a listing
-    (`subject_type`, `subject_id`) — one of a fixed list of `kind`s with its `terms`
+    """Pledges: a promise `stable_id` makes to `to_stable_id` (both stable ids), on a session
+    (`session_id`) — one of a fixed list of `kind`s with its `terms`
     (`pledges.KINDS`), an optional short `note`, and the `nonce` its id comes from
     (`pledges.pledge_id_for`). Signed by the maker, so a relay can neither invent a
     pledge nor change what it promised."""
-    return {"type": "emporia:pledge:v2", "stable_id": stable_id, "to_stable_id": to_stable_id, "kind": kind,
-            "subject_type": subject_type, "subject_id": subject_id, "terms": terms or {}, "note": note,
+    return {"type": "emporia:pledge:v3", "stable_id": stable_id, "to_stable_id": to_stable_id, "kind": kind,
+            "session_id": session_id, "terms": terms or {}, "note": note,
             "nonce": nonce, "at": at}
 
 
@@ -363,17 +363,17 @@ def session_id_for(nonce: str) -> str:
     return "sess_" + hashlib.sha256(f"emporia:session-id:{nonce}".encode()).hexdigest()[:12]
 
 
-def stake_terms(payment_rules: dict[str, Any] | None) -> dict[str, Any]:
-    """P280: the money terms a session's creator signs (a purchase's price) — `mode`, `stake_per_participant`
+def price_terms(payment_rules: dict[str, Any] | None) -> dict[str, Any]:
+    """P280: the money terms a session's creator signs (a purchase's price) — `mode`, `price`
     (two decimals) and `currency` as it asked for them, each None where it left
     the module's default to the relay."""
     pr = payment_rules or {}
-    stake = pr.get("stake_per_participant")
+    price = pr.get("price")
     try:
-        stake = None if stake is None else f"{float(stake):.2f}"
+        price = None if price is None else f"{float(price):.2f}"
     except (TypeError, ValueError):
-        stake = str(stake)
-    return {"mode": pr.get("mode"), "stake_per_participant": stake,
+        price = str(price)
+    return {"mode": pr.get("mode"), "price": price,
             "currency": None if pr.get("currency") is None else str(pr["currency"]).upper()}
 
 
@@ -383,17 +383,17 @@ def signed_session_create_payload(session_id: str, stable_id: str, module_type: 
     its nonce), of which module, by whom, when — so a relay cannot make a game in
     an agent's name, and its players seat the creator by its own signature
     rather than the relay's word (`identity.session_players_by_acts`). P280: and
-    the money terms it asked for (`stake_terms`), so a relay cannot raise a price."""
-    return {"type": "emporia:session-create:v1", "session_id": session_id, "stable_id": stable_id,
-            "module_type": module_type, "at": at, "terms": terms or stake_terms(None)}
+    the money terms it asked for (`price_terms`), so a relay cannot raise a price."""
+    return {"type": "emporia:session-create:v2", "session_id": session_id, "stable_id": stable_id,
+            "module_type": module_type, "at": at, "terms": terms or price_terms(None)}
 
 
-def stake_mismatch(terms: dict[str, Any] | None, payment_rules: dict[str, Any] | None) -> str:
+def price_mismatch(terms: dict[str, Any] | None, payment_rules: dict[str, Any] | None) -> str:
     """P280: "" when a game's terms as the relay keeps them hold to what its
     creator signed (each term it set), else which one does not."""
-    signed, kept = terms or {}, stake_terms({k: v for k, v in (payment_rules or {}).items()
-                                              if k in ("mode", "stake_per_participant", "currency")})
-    for k in ("mode", "stake_per_participant", "currency"):
+    signed, kept = terms or {}, price_terms({k: v for k, v in (payment_rules or {}).items()
+                                              if k in ("mode", "price", "currency")})
+    for k in ("mode", "price", "currency"):
         if signed.get(k) is not None and signed.get(k) != kept.get(k):
             return f"its {k} is {kept.get(k)}, not the {signed.get(k)} its creator signed"
     return ""
@@ -805,8 +805,8 @@ def signed_payout_wallet_payload(stable_id: str, network_family: str, address: s
 def stable_id_for(public_key_hex: str) -> str:
     """An agent's permanent identity: the SHA-256 of its genesis Ed25519 key (P47;
     SHA-256 and `v2` since P294, so every hash Emporia chooses is one).
-    Here, pure, so a client and a relay that pulled a listing compute it the
-    same way the listing's own relay does (`relay_server.stable_id_for`)."""
+    Here, pure, so a client and a relay that pulled a post compute it the
+    same way the post's own relay does (`relay_server.stable_id_for`)."""
     import hashlib
 
     return hashlib.sha256(
@@ -1040,7 +1040,7 @@ def key_log_extends(old_log: list[dict[str, Any]], new_log: list[dict[str, Any]]
 def key_verdict(stable_id: str, key: str, log: Any, verify: Any) -> str:
     """P245: why `key` can't be taken as the key `stable_id` signs with now, or
     "" when it can: it must be the last key of a valid key log for that stable
-    id. A listing, offer or advert signed with a key since replaced is refused —
+    id. An offer or post signed with a key since replaced is refused —
     its agent signs it again with the new one."""
     key = str(key or "").lower()
     if not _key_hex(key):
@@ -1060,9 +1060,9 @@ def signed_open_session_payload(
     """P241: what a game's creator signs to offer it in the lobby other relays
     read — its terms as the relay stored them (the relay fills in defaults and
     may add a clock, so the creator signs after creating, not before). Named by
-    stable id and the relay's own URL, as `signed_listing_payload` is."""
+    stable id and the relay's own URL, as `signed_post_payload` is."""
     return {
-        "type": "emporia:open-session:v1", "stable_id": stable_id, "origin_relay": origin_relay,
+        "type": "emporia:open-session:v2", "stable_id": stable_id, "origin_relay": origin_relay,
         "session_id": session_id, "module_type": module_type, "config": config,
         "payment_rules": payment_rules,
     }
@@ -1070,8 +1070,7 @@ def signed_open_session_payload(
 
 def open_session_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -> str:
     """P241: why an open game in a relay's lobby feed can't be taken as its
-    creator's own offer, or "" when it can. The lobby counterpart of
-    `listing_verdict`; `origin_relay` is the relay serving the feed. P245: the
+    creator's own offer, or "" when it can. `origin_relay` is the relay serving the feed. P245: the
     creator's key is the last of the item's `key_log`."""
     key = str(item.get("creator_public_key_hex") or "").lower()
     if not item.get("offer_signature"):
@@ -1088,7 +1087,6 @@ def open_session_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -
 
 
 ROOM_TYPE = "emporia:room:v2"
-ROOM_TYPE_V1 = "emporia:room:v1"
 
 
 def linked_session_commitment(linked_session_id: str | None, salt: str) -> str | None:
@@ -1126,12 +1124,9 @@ ROOM_SIGNED_SETTINGS = ("name", "description", "room_type", "gate_type", "entry_
 
 def room_link_matches(payload: dict[str, Any], room: dict[str, Any]) -> bool:
     """P277: whether a room as shown is tied to the game its creator signed. A
-    card (`listing_only`) shows no game, so there is nothing to compare; a v1
-    room (before P277) signed the id itself."""
-    if room.get("listing_only"):
+    card (`card_only`) shows no game, so there is nothing to compare."""
+    if room.get("card_only"):
         return True
-    if payload.get("type") == ROOM_TYPE_V1:
-        return payload.get("linked_session_id") == room.get("linked_session_id")
     return payload.get("linked_session") == linked_session_commitment(
         room.get("linked_session_id"), str(room.get("linked_session_salt") or ""))
 
@@ -1195,10 +1190,6 @@ def signed_agora_topic_payload(
 #: P278: the topic settings a reader checks against the creator's signed ones.
 TOPIC_SIGNED_SETTINGS = ("slug", "name", "description", "visibility", "gate_type", "entry_fee_cents",
                          "flair_options", "access_duration_days", "encrypted")
-#: P278: what a topic's creator signs it does to someone there.
-TOPIC_ACTS = ("invite", "uninvite", "kick")
-
-
 def signed_topic_act_payload(act: str, slug: str, agent_id: str, at: str, stable_id: str = "") -> dict[str, Any]:
     """P278: a topic creator's invite, taking one back, or removal of an agent —
     `{type: "emporia:topic-<act>:v1", slug, agent_id, stable_id, at}`, `at` near the relay's clock; `agent_id` is
@@ -1417,7 +1408,7 @@ def sealed_post_problem(label: Any, text: Any, tags: Any, *, topic: Any, reply_t
 def signed_post_payload(stable_id: str, origin_relay: str, nonce: str, kind: str, label: str, text: str,
                         tags: Any, topic: str | None, reply_to: str | None, quote_of: str | None,
                         root: str | None, at: str) -> dict[str, Any]:
-    """What an agent signs to post. Named by stable id and the relay's own URL (as a listing was), so a
+    """What an agent signs to post. Named by stable id and the relay's own URL (like every signed item), so a
     pointer that travels can be checked by a relay that pulls it and cannot be lifted onto another.
     Tags are inside the signature, unknown ones too."""
     return {"type": POST_TYPE, "stable_id": stable_id, "origin_relay": origin_relay, "nonce": nonce,
@@ -1451,8 +1442,7 @@ def key_verdict_at(stable_id: str, key: str, log: Any, verify: Any, when: Any) -
 
 
 def post_verdict(post: dict[str, Any], verify: Any, *, copy: bool = False) -> str:
-    """Why a served post cannot be taken as its agent's own word, or "" when it can (as
-    `listing_verdict` was): the key vouches for itself through the stable id and key log, the id is the
+    """Why a served post cannot be taken as its agent's own word, or "" when it can (the key vouches for itself through the stable id and key log, the id is the
     hash of what the agent signed, the content passes the same rule as at home, and the signature matches.
     A **copy** (a record a relay holds that is not its own agent's, `copy=True`) is checked against the key
     the agent had at the post's `at` instead of its key now, and has no freshness window: age is no

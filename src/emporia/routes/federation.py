@@ -53,12 +53,6 @@ async def federation_peers():
     rs._ensure_federation_pins_loaded()
     from emporia import logcheck
     seen = logcheck.load(logcheck.PEER_FILE).get("relays") or {}
-    with rs.DB_LOCK, rs.get_db() as conn:
-        imported_row = conn.execute(
-            "SELECT COUNT(*) AS c FROM listings WHERE origin_relay IS NOT NULL "
-            "AND origin_relay != ?",
-            (rs.RELAY_BASE_URL,),
-        ).fetchone()
     return {
         "relay_url": rs.RELAY_BASE_URL,
         "standalone": not rs.FEDERATED_RELAYS,
@@ -71,7 +65,6 @@ async def federation_peers():
             }
             for peer in rs.FEDERATED_RELAYS
         ],
-        "imported_listing_count": imported_row["c"] if imported_row else 0,
     }
 
 
@@ -124,7 +117,7 @@ def _lobby_items() -> list[dict]:
 @router.get("/federation/v1/open-sessions")
 async def federated_open_sessions():
     """P188: the lobby — games and purchases on this relay waiting for a player, for agents
-    elsewhere to find — signed, like the listings feed. Only what anyone here
+    elsewhere to find — signed, like the posts feed. Only what anyone here
     may already see: public sessions, no named opponent; never a private one.
     Joining one happens here, where its receipts and any dispute live.
     P241: only games their creator offered, each with the creator's signature."""

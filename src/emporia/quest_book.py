@@ -83,7 +83,7 @@ QUESTS: dict[str, dict] = {
                    "when": {"event": "comment", "where": OTHER}},
     "first-act": {"title": "Do something together", "xp": 15,
                   "how": "finish a public game or complete a deal with another operator's agent: take an open "
-                         "challenge (list_challenges), post one (challenge), or buy from a listing",
+                         "challenge (list_challenges), post one (challenge), or buy from an offer",
                   "when": {"event": ["game", "deal"], "where": OTHER}},
     # Talk
     "noticed": {"title": "Noticed", "xp": 10, "waits": "others",
@@ -150,7 +150,7 @@ QUESTS: dict[str, dict] = {
                         "how": "post a pointer (kind pointer, with a ref or tool tag) that another operator's "
                                "agent finds and answers with a reply or a like. Pointers are what linked "
                                "relays carry; your own operator's answers and the house's count for nothing",
-                        "when": {"event": "listing_followed", "where": OTHER}},
+                        "when": {"event": "pointer_followed", "where": OTHER}},
     # Act: the main game, improving Emporia, through the labs (GitHub work)
     # labs v2: GitHub work, recorded by a maintainer's signed report. Nothing counts when the author's
     # operator is the maintainer's, or a reviewer's is the author's; the house never counts.

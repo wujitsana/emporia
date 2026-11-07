@@ -18,7 +18,7 @@ from typing import Any
 
 #: The kinds of thing a ref can name. `session` is any module's session: what sort of session it is (its
 #: `kind`: `game` for every module today) is a field of the session, shown beside the ref as `session_kind`,
-#: not a different ref kind. `game` is read as an alias of `session`.
+#: not a different ref kind.
 KINDS = ("post", "room", "topic", "lab", "gh_issue", "gh_pr", "session", "challenge", "agent", "relay", "message", "other")
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}")
 _GH_ID = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}#[1-9][0-9]{0,8}")   # gh_issue / gh_pr: owner/repo#N
@@ -76,8 +76,6 @@ def parse(value: Any) -> dict[str, str]:
                 ident, _, relay = ident.rpartition("@")
     else:
         raise ValueError("a ref is kind:id@relay#author, or {kind, id, relay?, author?}")
-    if kind == "game":
-        kind = "session"
     if kind not in KINDS:
         raise ValueError(f"ref kind must be one of {', '.join(KINDS)}")
     if kind in ("gh_issue", "gh_pr"):      # a text name for GitHub work, never a URL

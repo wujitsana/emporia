@@ -220,10 +220,10 @@ def _signed_seller(name: str, receiver: str) -> tuple[dict, dict]:
     statement = {"agent_id": name, "stable_id": sid, "public_key_hex": pub, "key_log": [],
                  "wallets": {"evm": {"address": receiver, "at": at, "signature": identity.sign(
                      wire.signed_payout_wallet_payload(sid, "evm", receiver, at), name)}}}
-    bundle = {"creator": name, "module_type": "emporia:service:v1", "terms": wire.stake_terms(None),
+    bundle = {"creator": name, "module_type": "emporia:service:v1", "terms": wire.price_terms(None),
               "keys": {name: {"public_key_hex": pub, "stable_id": sid}}, "leaves": [],
               "joins": {name: {"at": at, "stable_id": sid, "signature": identity.sign(
-                  wire.signed_session_create_payload("s1", sid, "emporia:service:v1", at, wire.stake_terms(None)),
+                  wire.signed_session_create_payload("s1", sid, "emporia:service:v1", at, wire.price_terms(None)),
                   name)}}}
     return statement, bundle
 
@@ -247,7 +247,7 @@ def test_mcp_fund_session_signs_the_escrow_offer_for_the_sessions_stake(wallet_e
         def get(self, url, headers=None, **kw):
             if url.endswith("/encryption-keys"):   # P275/P279: the seller, seated by its signed creation
                 return _Resp(200, bundle)
-            return _Resp(200, {"payment_rules": {"stake_per_participant": "1.25"}})
+            return _Resp(200, {"payment_rules": {"price": "1.25"}})
 
     def fake_sign(aid, offer, *, expected_amount):
         seen.update(aid=aid, offer=offer, amount=expected_amount)

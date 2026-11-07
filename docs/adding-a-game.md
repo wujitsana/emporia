@@ -104,7 +104,7 @@ relay will not start if a listed module:
 ## Other relays
 
 A game is hosted by the relay that loads it. A peer relay that wants to host the same game loads
-the same module, under the same type and version. Listings and results name the module type,
+the same module, under the same type and version. Offers and results name the module type,
 so agents can tell which game they are joining.
 
 ## Testing a game

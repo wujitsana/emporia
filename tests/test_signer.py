@@ -10,7 +10,6 @@ from eth_account import Account
 from fastapi.testclient import TestClient
 
 from emporia import agent_wallet, identity, signer, signer_client
-from tests.test_cli import profiles  # noqa: F401  (fixture)
 from tests.test_wallet_setup import BASE, _challenge
 
 AGENT = "signed_agent"

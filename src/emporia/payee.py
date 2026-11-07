@@ -28,9 +28,9 @@ as `expected_agents`; with the shared pin store a handle is one key, so a relay
 cannot name an agent of its own as the payee of somebody else's room or game.
 
 What it cannot do: on first contact a hostile relay can name its own agent as
-the payee of a listing it serves — trust on first use, as for every key here.
-A listing's own signature (P240) names the seller's stable id; callers buying
-from a listing pass it as `expected_stable_id`. A paid Agora topic is checked
+the payee of an offer it serves — trust on first use, as for every key here.
+A game offer's own signature (P241) names the seller's stable id; callers buying
+from one pass it as `expected_stable_id`. A paid Agora topic is checked
 the same way against its creator's signed settings since P278 (`topic_terms`);
 a paid room or topic the relay shows the payer only once it has joined (not
 advertised, no invite), or one made before it was signed, is paid on the

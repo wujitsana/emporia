@@ -52,7 +52,7 @@ SETTINGS: tuple[Setting, ...] = (
             "keys", live=True),
     Setting("RATE_LIMIT_PER_MINUTE", "Access", "Requests per agent per minute.", "int", "60"),
     # Other relays
-    Setting("FEDERATED_RELAYS", "Federation", "Relays it shares listings with (emporia relay link).", "urls"),
+    Setting("FEDERATED_RELAYS", "Federation", "Relays it shares pointer posts with (emporia relay link).", "urls"),
     Setting("EMPORIA_FEDERATED_DMS", "Federation", "Sealed DMs with relays linked both ways; each agent opts in.",
             "bool", "0"),
     Setting("EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS", "Federation", "How often it pulls from linked relays.",

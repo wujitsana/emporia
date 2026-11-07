@@ -689,7 +689,7 @@ class EmporiaAgent:
         buyer and pays later, via `fund_session()`, once a seller has joined."""
         from datetime import UTC, datetime
 
-        from emporia.wire import new_message_nonce, session_id_for, stake_terms
+        from emporia.wire import new_message_nonce, session_id_for, price_terms
         nonce, at = new_message_nonce(), datetime.now(UTC).isoformat()   # P279: made in this agent's name
         resp = await self._bearer_request(
             "post", f"{self.relay_url}/sessions",
@@ -699,7 +699,7 @@ class EmporiaAgent:
                 "payment_rules": payment_rules,
                 "creator_gateway_url": gateway_url,
                 "nonce": nonce, "at": at, "signature": self._sign(
-                    "session-create", session_id_for(nonce), self.agent_id, module_type, at, stake_terms(payment_rules)),
+                    "session-create", session_id_for(nonce), self.agent_id, module_type, at, price_terms(payment_rules)),
             },
         )
         _raise_for_status_or_payment(resp)
@@ -710,7 +710,7 @@ class EmporiaAgent:
         return made
 
     async def _signing_identity(self) -> str:
-        """The stable id this agent signs listings, offers and adverts as (P248): the one its
+        """The stable id this agent signs posts and offers as (P248): the one its
         relay holds, which stays the hash of its first key after a rotation (P245). With no
         answer from the relay, the hash of the key it holds."""
         from emporia.identity import get_public_key_hex
@@ -770,10 +770,10 @@ class EmporiaAgent:
 
             session = (await self._bearer_request(
                 "get", f"{self.relay_url}/sessions/{_seg(session_id)}")).json()
-            payees, signed_stake = await self._game_payees(session_id)   # P275
+            payees, signed_price = await self._game_payees(session_id)   # P275
             # P280: the price its creator signed, where it set one — not the relay's word for it.
-            stake = signed_stake or (session.get("payment_rules") or {}).get("stake_per_participant", "0")
-            expected = int(_x402_amount_atomic(int(round(float(stake) * 100))))
+            price = signed_price or (session.get("payment_rules") or {}).get("price", "0")
+            expected = int(_x402_amount_atomic(int(round(float(price) * 100))))
             from emporia import payee   # P262: the hold's receiver is a wallet its payee signed
             label = payee.check_pinned(offer.get("payee"), "evm",
                                        str((offer.get("payment_info") or {}).get("receiver") or ""), self.relay_url,
@@ -1520,14 +1520,14 @@ class EmporiaAgent:
         from emporia.identity import game_terms
         resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{_seg(session_id)}/encryption-keys")
         try:
-            others, stake = game_terms(session_id, resp.json(), self.agent_id, self.profile_id,
+            others, price = game_terms(session_id, resp.json(), self.agent_id, self.profile_id,
                                        self.relay_url) if resp.status_code == 200 else (set(), None)
         except ValueError as e:
             raise payee.PayeeError(str(e)) from None
         if not others:
             raise payee.PayeeError(f"no other player of {session_id} is seated by a join of its own signing, "
                                    f"so nobody here may be paid")
-        return others, stake
+        return others, price
 
     async def _room_recipients(self, room_id: str) -> dict[str, str]:
         """`{agent_id: encryption_public_key_hex}` for every member of an encrypted
@@ -2566,7 +2566,7 @@ class EmporiaAgent:
         return resp.json()
 
     # ------------------------------------------------------------------ #
-    # Games: listing, challenges, set plays (commit / reveal), table talk, declared models
+    # Games: challenges, set plays (commit / reveal), table talk, declared models
     # ------------------------------------------------------------------ #
 
     async def supported_games(self) -> dict[str, Any]:

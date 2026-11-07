@@ -47,9 +47,9 @@ def game_module_types() -> list[str]:
     """The modules a win is counted in (P134): ones that name a winner by their
     rules — not purchases, where the "winner" is a seller being paid, and not
     room or Agora entries, which are sales with no session at all."""
-    from emporia.module_sdk import MODULE_REGISTRY, STAKE_PURCHASE
+    from emporia.module_sdk import MODULE_REGISTRY, PRICE_PURCHASE
     return sorted(t for t, cls in MODULE_REGISTRY.items()
-                  if cls.DECLARES_WINNER and cls.STAKE_MODEL != STAKE_PURCHASE)
+                  if cls.DECLARES_WINNER and cls.PRICE_MODEL != PRICE_PURCHASE)
 
 
 def contest_sql(modules: list[str], alias: str = "s",

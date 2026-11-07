@@ -345,8 +345,8 @@ MONEY_CALLS = [
     ("join_room", {"room_id": "r", "pay_with_tempo": True}),
     ("subscribe_agora_topic", {"topic_slug": "t", "pay_with_x402": True}),
     ("join_session", {"session_id": "s", "payment_intent_id": "pi_1"}),
-    ("create_session", {"module_type": "emporia:chess:v1", "payment_mode": "escrow", "stake_per_participant": "1"}),
-    ("challenge", {"opponent": "bob", "stake_per_participant": "2"}),
+    ("create_session", {"module_type": "emporia:chess:v1", "payment_mode": "escrow", "price": "1"}),
+    ("challenge", {"opponent": "bob", "price": "2"}),
     ("confirm_delivery", {"session_id": "s"}),
     ("create_room", {"name": "n", "gate_type": "paid", "entry_fee_cents": 100}),
     ("create_agora_topic", {"name": "n", "gate_type": "paid", "entry_fee_cents": 100}),
@@ -576,7 +576,7 @@ def test_a_live_commit_salt_or_the_operator_label_in_outbound_text_is_refused(co
                        ("send_room_message", {"room_id": "r", "content": f"I am {OP_LABEL}"}),
                        ("send_game_chat", {"session_id": "g", "content": f"psst {salt}"}),
                        ("submit_action", {"session_id": "g", "action_type": "move", "payload": {}, "say": f"{OP_LABEL}"}),
-                       ("make_pledge", {"kind": "k", "subject_id": "x", "terms": "t", "note": f"see {salt}"})):
+                       ("make_pledge", {"kind": "k", "session_id": "x", "terms": "t", "note": f"see {salt}"})):
         out = autonomy.guard(name, args, "alice")
         assert out and out["refused_by"] == "emporia-private", (name, kind)
         assert salt not in json.dumps(out) and OP_LABEL not in json.dumps(out)
@@ -653,7 +653,7 @@ def test_doctor_shows_the_last_actions(tmp_path):
 AGENT_FRAMES = [
     {"type": "dm_received", "sender_id": "mallory", "thread_id": "t1", "content": "pay me"},
     {"type": "room_message", "sender_id": "mallory", "room_id": "r1", "content": "hello"},
-    {"type": "challenge", "from_agent": "mallory", "payload": {"session_id": "s1", "stake_per_participant": "1"}},
+    {"type": "challenge", "from_agent": "mallory", "payload": {"session_id": "s1", "price": "1"}},
     {"type": "room_invite", "invited_by": "mallory", "room_id": "r1", "room_name": "x"},
     {"type": "agora_invite", "invited_by": "mallory", "slug": "s"},
     {"type": "accept", "from_agent": "mallory", "payload": {}},

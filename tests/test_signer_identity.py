@@ -8,7 +8,6 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from fastapi.testclient import TestClient
 
 from emporia import identity, signer, signer_client, signing, wire
-from tests.test_cli import profiles  # noqa: F401  (fixture)
 
 AGENT = "p293_agent"
 

@@ -69,7 +69,7 @@ def _post(client, agent, **kw):
 
 
 def test_refs_parse_validate_and_render():
-    assert refs.text({"kind": "game", "id": "abc", "relay": "r.example:8088"}) == "session:abc@r.example:8088"
+    assert refs.text({"kind": "session", "id": "abc", "relay": "r.example:8088"}) == "session:abc@r.example:8088"
     assert refs.parse("gh_pr:acme/widgets#12") == {"kind": "gh_pr", "id": "acme/widgets#12"}
     assert refs.tag("post:p1") == ["ref", "post", "p1"]
     for bad in ("nope:x", "post:", "post", "post:x@https://r.example", {"kind": "post"}):

@@ -26,11 +26,6 @@ def aad(slug: str, author_id: str, nonce: str) -> bytes:
     return crypto_box.message_aad("topic", slug, author_id, MSG_TYPE, nonce)
 
 
-def inner_problem(kind: Any, label: Any, text: Any, tags: Any, quote_of: Any, slug: str) -> str:
-    """The rule for what goes inside: the same as for a public post."""
-    return wire.post_problem(kind, label, text, tags, topic=slug, quote_of=quote_of or None)
-
-
 def seal(recipients: dict[str, str], slug: str, author_id: str, nonce: str, kind: str, label: str, text: str,
          tags: list[list[str]], quote_of: str | None) -> str:
     """The envelope, as the `text` of the post to send."""

@@ -21,8 +21,8 @@ from writing it) and its calls count as a person's.
 
 **What an autonomous turn may not do** (`guard`, applied to every tool in mcp_surface.apply):
 
-* *Money stays with the person.* Paying, funding, settling, buying, priced deals, paid rooms, topics
-  and bounties, wallets: refused unless the playbook sets ``autonomous_spend_cents_per_day`` above 0
+* *Money stays with the person.* Paying, funding, settling, buying, priced deals, paid rooms and topics,
+  wallets: refused unless the playbook sets ``autonomous_spend_cents_per_day`` above 0
   (``EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY``), and then every payment is also counted against
   that per-day total where it is signed (agent_wallet._charge_daily), on top of the per-payment cap.
   Card payments (an SPT or payment intent the agent supplies) cannot be capped here and stay refused.
@@ -51,7 +51,6 @@ from pathlib import Path
 from typing import Any
 
 STATE_FILE, LOG_FILE, DAY_FILE, DMED_FILE = "autonomy.json", "autonomous-actions.jsonl", "autonomy-day.json", "autonomy-dmed.json"
-UNTRACKED_SETTING = "EMPORIA_UNTRACKED_TURNS"
 TURN_TTL, PERSON_TTL, DAY = 20 * 60, 6 * 3600, 24 * 3600
 MAX_WRITES_PER_TURN, MAX_NEW_DMS_PER_TURN, MAX_NEW_ROOMS_PER_DAY = 5, 2, 1
 #: Untracked origins (no hook tells the server which turn a call is in): a rolling window instead of a turn.
@@ -285,14 +284,14 @@ def money_reason(tool: str, args: dict[str, Any]) -> str:
     def has(*names: str) -> bool:
         return any(args.get(n) not in (None, "", False, 0) for n in names)
 
-    def staked() -> bool:
-        for n in ("stake_per_participant", "prize_cents", "entry_fee_cents"):
+    def priced() -> bool:
+        for n in ("price", "prize_cents", "entry_fee_cents"):
             try:
                 if float(args.get(n) or 0) > 0:
                     return True
             except (TypeError, ValueError):
                 return True
-        return (str(args.get("payment_mode") or "").lower() not in ("", "free", "none", "unstaked")
+        return (str(args.get("payment_mode") or "").lower() not in ("", "free", "none")
                 or str(args.get("gate_type") or "").lower() == "paid")
 
     if tool in ("fund_session", "create_payment_intent", "register_x402_wallet",
@@ -303,7 +302,7 @@ def money_reason(tool: str, args: dict[str, Any]) -> str:
                 "confirm_delivery": "releases a payment"}[tool]
     if tool in ("join_room", "subscribe_agora_topic", "join_session") and has(*_PAYMENT_ARGS):
         return "pays an entry"
-    if tool in ("challenge", "create_session", "create_room", "create_agora_topic") and staked():
+    if tool in ("challenge", "create_session", "create_room", "create_agora_topic") and priced():
         return "makes a deal with a price"
     return ""
 
@@ -377,7 +376,7 @@ def refund_spend(amount_atomic: int) -> None:
 # ── the guard ────────────────────────────────────────────────────────────────────────
 
 def _target(args: dict[str, Any]) -> str:
-    for k in ("to_agent_id", "room_id", "session_id", "topic_slug", "target", "thread_id", "listing_id", "item",
+    for k in ("to_agent_id", "room_id", "session_id", "topic_slug", "target", "thread_id", "item",
               "post_id", "reply_to", "opponent", "agent_id"):
         v = args.get(k)
         if isinstance(v, str) and v:
@@ -423,7 +422,7 @@ def guard(tool: str, args: dict[str, Any], agent_id: str = "") -> dict[str, Any]
                 f"Blocked by Emporia: this {why}, in a turn nobody at the keyboard started. Money stays with "
                 f"the person: {_allow_hint()}. Decline in one line and carry on."))
         if tool in ("join_session", "challenge", "create_session"):
-            pass          # a priced game is bounded by the playbook's stake and the daily total at signing
+            pass          # a priced game is bounded by the playbook's limits and the daily total at signing
     if tool in GAME_MOVE_TOOLS:
         log_action(turn, tool, _target(args), "allowed")
         return None

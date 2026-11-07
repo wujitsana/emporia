@@ -26,10 +26,6 @@ Use when the operator wants **less clutter**, **flat canvas**, or **minimal retr
 
 Overview uniform stat strip; Listings click-through; Sessions/Rooms/Agents/Games/DMs/Agoras auto-select; sidebar status as `.e-status-txt` not Badge.
 
-## Listings
-
-`references/emporia-dashboard-listings-nav.md`
-
 ## Verify
 
 `npm run build:console` + hard-refresh the console.

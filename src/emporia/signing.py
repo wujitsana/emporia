@@ -140,7 +140,7 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("model-reveal", "signed_model_reveal_payload", "join",
        "the models an agent committed with its moves, revealed once the game is over; declared, never verified",
        check=lambda p, ctx: model_commit.reveals_problem(p.get("reveals"))),
-    _k("open-session", "signed_open_session_payload", "listing", "an offer of a game; the payer checks terms"),
+    _k("open-session", "signed_open_session_payload", "offer", "an offer of a game; the payer checks terms"),
     # talking
     _k("room-message", "signed_room_message_payload", "message", "routine"),
     _k("dm", "signed_dm_thread_payload", "message", "routine"),
@@ -193,7 +193,7 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
 # group → (count, window seconds). Generous: they stop a flood under the agent's name.
 DEFAULT_LIMITS: dict[str, tuple[int, float]] = {
     "sign-in": (60, 3600), "move": (120, 60), "message": (60, 60), "post": (20, 3600),
-    "join": (30, 3600), "listing": (20, 86400), "removal": (10, 86400), "relay-list": (20, 86400),
+    "join": (30, 3600), "offer": (20, 86400), "removal": (10, 86400), "relay-list": (20, 86400),
     "payout": (5, 86400), "encryption-key": (1, 86400), "like": (120, 3600), "pledge": (30, 3600),
     "lab": (40, 86400), "x": (20, 3600),
 }

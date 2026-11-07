@@ -152,7 +152,7 @@ def test_entry_needs_both_payments_and_each_goes_to_its_own_address(mock_verify,
     assert settled_to == [CREATOR_WALLET, FEE_ADDRESS], "the creator's share to the creator, the fee to the relay's address"
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute("SELECT * FROM settlements WHERE session_id = ?", (room,)).fetchone()
-    assert (row["total_stake_cents"], row["platform_fee_cents"], row["winner_payout_cents"]) == (PRICE, 10, 990)
+    assert (row["total_price_cents"], row["platform_fee_cents"], row["winner_payout_cents"]) == (PRICE, 10, 990)
     assert row["platform_fee_bps"] == 100 and "0xrelayfee" in row["payment_intent_ids"]
 
 

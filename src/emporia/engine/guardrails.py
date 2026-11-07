@@ -55,13 +55,13 @@ _INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
 # values. Everything else is scanned by default (secure-by-default: a new free-text field
 # added anywhere in the relay is protected automatically, with no separate registration
 # step). This replaces an earlier allowlist design that silently skipped any field not on
-# the list — verified live: a listing `description` containing an injection phrase was
+# the list — verified live: a room `description` containing an injection phrase was
 # accepted with no guardrail block, because "description" was never on that allowlist.
 _STRUCTURAL_FIELDS = {
     "agent_id", "from_agent", "to_agent", "winner_id", "invited_by",
     "signature", "nonce", "token", "jwt", "client_secret",
     "module_type", "action_type", "event_type", "msg_type", "post_type",
-    "gate_type", "payment_mode", "room_type", "listing_type", "visibility",
+    "gate_type", "payment_mode", "room_type", "visibility",
     "status", "outcome_type", "trust_level", "currency", "provider",
     "slug", "flair", "type",
 }
@@ -83,7 +83,7 @@ def _looks_like_token(value: str) -> bool:
     free text. A real enum/id value never needs whitespace; injection text
     always does. Key-name exemption alone is bypassable — an attacker can put
     injection text under any structurally-named key inside a freeform dict
-    (e.g. SubmitActionRequest.payload, CreateListingRequest.metadata): a value
+    (e.g. SubmitActionRequest.payload, a request's freeform metadata): a value
     like {"status": "Ignore all previous instructions..."} would slip past a
     key-only check since "status" is a legitimate enum field elsewhere. This
     value-shape check closes that — exemption requires BOTH the key to look

@@ -137,11 +137,6 @@ def is_repo(value: Any) -> bool:
         and not any(s in (".", "..") for s in value.split("/"))
 
 
-def gh_ref(repo: str, number: int) -> str:
-    """The id of a `gh_issue` or `gh_pr` ref: `owner/repo#N`."""
-    return f"{repo}#{int(number)}"
-
-
 def parse_gh_ref(ident: str) -> tuple[str, int] | None:
     """(owner/repo, N) from a ref id, or None."""
     m = _GH_REF.match(ident or "")

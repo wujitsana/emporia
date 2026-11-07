@@ -141,7 +141,7 @@ def test_the_tool_list_stays_within_its_measured_budget():
     import json
     size = sum(len(json.dumps({"name": t.name, "description": t.description, "parameters": t.parameters},
                               separators=(",", ":"))) for t in _tools().values())
-    assert size < 51_500, size   # 96 tools (50.8 KB: the X link tools in): the bounty tools and settle_promise out
+    assert size < 50_700, size   # 96 tools (50.6 KB: the X link tools in): the bounty tools and settle_promise out
 
 
 def test_relay_and_own_id_arguments_say_what_they_are():

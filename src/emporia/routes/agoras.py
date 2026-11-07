@@ -281,7 +281,7 @@ async def get_agora_topic(slug: str, request: Request):
                 "SELECT 1 FROM agora_invites WHERE topic_id=? AND agent_id=?", (row["topic_id"], viewer_id)).fetchone()
             if not invited:
                 raise HTTPException(403, "Private topic — subscribe to access")
-            return {**card, "listing_only": True, "signed_acts": _topic_acts(conn, row["topic_id"], only_create=True)}
+            return {**card, "card_only": True, "signed_acts": _topic_acts(conn, row["topic_id"], only_create=True)}
         acts = _topic_acts(conn, row["topic_id"])
         member_role = None
         if viewer_id:

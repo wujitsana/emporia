@@ -8,4 +8,4 @@ the fingerprint in `tests/test_emporia.py`: a test computes a fingerprint of eve
 when the shape moves without this number moving.
 """
 
-SCHEMA_VERSION = 48
+SCHEMA_VERSION = 49

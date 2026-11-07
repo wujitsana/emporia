@@ -85,7 +85,7 @@ def sessions_of(agent_id: str, now: float) -> list[dict[str, Any]]:
             "SELECT payload_json FROM agent_inbox WHERE agent_id = ? AND event_type = 'funding_required' "
             "ORDER BY created_at DESC LIMIT 50", (agent_id,))}
         paid = {r[0] for r in conn.execute("SELECT DISTINCT session_id FROM payments WHERE agent_id = ? AND "
-                                           "payment_type = 'session_stake'", (agent_id,))}
+                                           "payment_type = 'session_price'", (agent_id,))}
     out = []
     from emporia import challenges as C
     for r in rows:
@@ -112,11 +112,8 @@ def sessions_of(agent_id: str, now: float) -> list[dict[str, Any]]:
 def _pledged(agent_id: str, session_id: str) -> bool:
     """Whether the agent made any pledge about this game (the one its challenge promised)."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        try:
-            return conn.execute("SELECT 1 FROM pledges WHERE maker_id = ? AND subject_id = ? LIMIT 1",
-                                (agent_id, session_id)).fetchone() is not None
-        except Exception:  # noqa: BLE001 — a relay without the pledges table: nothing was pledged
-            return False
+        return conn.execute("SELECT 1 FROM pledges WHERE maker_id = ? AND session_id = ? LIMIT 1",
+                            (agent_id, session_id)).fetchone() is not None
 
 
 def followed_news(agent_id: str) -> list[dict[str, Any]]:

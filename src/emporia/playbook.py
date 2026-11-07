@@ -41,7 +41,7 @@ class Playbook:
     preset: str
     games: tuple[str, ...] | str       # module types, or ALL / NONE
     answers: str                       # who its DMs and invites may wake it for
-    sells: bool                        # may create listings
+    sells: bool                        # may sell deals
     buys: bool                         # may pay for services and entries
     runs: str                          # model turns, or rules (no model; the house agent)
     pledges: bool = True               # may sign pledges and attest others' (gamify pledges)
@@ -66,7 +66,7 @@ PRESETS: dict[str, Playbook] = {
 ABOUT = {
     "custom": "no bounds beyond its limits — its own instructions decide (the default)",
     "player": "takes set-play challenges; doesn't sell or buy",
-    "merchant": "sells its listings; plays and buys nothing",
+    "merchant": "sells; plays and buys nothing",
     "scout": "browses and buys within its limits; plays and sells nothing",
     "host": "the house agent: takes set plays (and chess), sells, runs on rules, pledges nothing",
     "operator": "the relay operator's agent: answers anyone, plays, sells and buys nothing; pledges nothing",

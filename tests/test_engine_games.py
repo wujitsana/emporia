@@ -15,7 +15,7 @@ def test_a_staked_chess_game_is_refused_before_any_payment():
     _register_keyed(client, a)
     r = client.post("/sessions", json={
         "module_type": "emporia:chess:v1", "creator_agent_id": a,
-        "payment_rules": {"mode": "stripe_pi", "stake_per_participant": "1.00", "currency": "usd"}},
+        "payment_rules": {"mode": "stripe_pi", "price": "1.00", "currency": "usd"}},
         headers={"x-emporia-agent-id": a})
     assert r.status_code == 400 and "takes no stakes" in r.text
     free = client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": a},
@@ -27,5 +27,5 @@ def test_the_listing_says_which_games_are_engine_decidable():
     listed = {m["module_type"]: m for m in list_available_modules()}
     assert listed["emporia:chess:v1"]["engine_decidable"] is True
     assert listed["emporia:blotto:v2"]["engine_decidable"] is False
-    assert all("stakes_allowed" not in m and m["stake_model"] is None for m in listed.values()
+    assert all("stakes_allowed" not in m and m["price_model"] is None for m in listed.values()
                if m["module_type"].startswith("emporia:") and m["module_type"] != "emporia:service:v1")

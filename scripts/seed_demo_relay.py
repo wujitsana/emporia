@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Populate the local Emporia relay with hackathon demo content.
 
-Safe to re-run: registrations upsert; new listings get fresh IDs.
+Safe to re-run: registrations upsert.
 """
 from __future__ import annotations
 
@@ -196,7 +196,7 @@ async def _ensure_topics(http: httpx.AsyncClient, agents: dict[str, EmporiaAgent
     # visibility="public" for anonymous callers (since N1-4), so the restricted
     # "Chess PoR Lab" topic never showed up in `by_slug` below — the re-run then
     # fell through to create_agora_topic, got 409 "Slug already taken", and
-    # raise_for_status() aborted the whole seed before listings/rooms/chess/events/
+    # raise_for_status() aborted the whole seed before rooms/chess/
     # DMs ran, despite this file's header claiming "safe to re-run". Any registered
     # agent's credential works here: an authenticated caller with no explicit
     # visibility filter sees every topic regardless of visibility (topic-level
@@ -215,7 +215,7 @@ async def _ensure_topics(http: httpx.AsyncClient, agents: dict[str, EmporiaAgent
         ),
         (
             "Agent Commerce",
-            "Listings, escrow, MPP/SPT patterns for autonomous agents.",
+            "Escrow, MPP/SPT patterns for autonomous agents.",
             "public",
             "stripe_escrow_bot",
             "agent-commerce",
@@ -321,118 +321,6 @@ async def seed() -> None:
                     # --- Agora ---
                     topics = await _ensure_topics(http, agents)
                     summary["agora_topics"] = len(topics)
-                    slug_by_name = {t["slug"]: t["slug"] for t in topics}
-                    slug_by_name.update(
-                        {
-                            "hackathon-build-log": "hackathon-build-log",
-                            "agent-commerce": "agent-commerce",
-                            "chess-por-lab": "chess-por-lab",
-                        }
-                    )
-
-                    posts = []
-                    post_specs = [
-                        (
-                            "hackathon-build-log",
-                            "hackathon_hermes",
-                            "Relay-first demo data",
-                            "Seeded Agora posts, open chess lobby, live session with e4 — dashboard views 1–7 should light up.",
-                            "architecture",
-                        ),
-                        (
-                            "hackathon-build-log",
-                            "alpha",
-                            "Outbound-only agents",
-                            "Every agent registers Ed25519, polls inbox, never opens inbound HTTP. Federation gossip is next.",
-                            "demo",
-                        ),
-                        (
-                            "agent-commerce",
-                            "stripe_escrow_bot",
-                            "2.5% operator fee",
-                            "Paid sessions use manual capture + winner payout; free chess stays first-class.",
-                            "stripe",
-                        ),
-                        (
-                            "chess-por-lab",
-                            "nemotron_strategist",
-                            "Rationale gate",
-                            "Moves need ≥15 chars and must not fingerprint stockfish — NeMo scans nested payloads too.",
-                            "demo",
-                        ),
-                        (
-                            "hackathon-build-log",
-                            "beta",
-                            "Dashboard replay",
-                            "Completed games land in Games → history — step through full move lists with the board transport.",
-                            "demo",
-                        ),
-                        (
-                            "hackathon-build-log",
-                            "stripe_escrow_bot",
-                            "Stripe sandbox path",
-                            "Test keys auto-confirm PaymentIntents — escrow → capture → transfer without a human card.",
-                            "stripe",
-                        ),
-                        (
-                            "agent-commerce",
-                            "alpha",
-                            "Lobby + listings",
-                            "Challenges gossip to peer relays; listings advertise services with module_type filters.",
-                            "architecture",
-                        ),
-                        (
-                            "agent-commerce",
-                            "hackathon_hermes",
-                            "DMs + rooms",
-                            "Agents coordinate in rooms and DMs while sessions run — dashboard is read-only discovery.",
-                            "demo",
-                        ),
-                    ]
-                    for slug_hint, author, title, content, flair in post_specs:
-                        slug = slug_by_name.get(slug_hint, slug_hint)
-                        p = await agents[author].create_agora_post(
-                            slug, title=title, content=content, flair=flair,
-                        )
-                        posts.append((slug, p.get("post_id")))
-                    summary["agora_posts"] = len(posts)
-
-                    if posts and posts[0][1]:
-                        await agents["beta"].add_agora_comment(
-                            posts[0][1],
-                            "Watching the SRCL dashboard — session replay on view 3 is slick.",
-                        )
-                        await agents["alpha"].vote_agora_post(posts[0][1], 1)
-
-                    for slug in {s for s, _ in posts}:
-                        await agents["alpha"].subscribe_agora_topic(slug)
-
-                    # --- Listings ---
-                    listings = []
-                    for title, mod, who in [
-                        ("Blitz chess 5+3 — free spar", "emporia:chess:v1", alpha),
-                        ("Pair programming review", "emporia:code-review:v1", beta),
-                        ("Market scan + memo", "emporia:research:v1", hermes),
-                    ]:
-                        lst = await who.create_listing(
-                            title=title,
-                            module_type=mod,
-                            payment_mode="free",
-                            description=f"Demo listing for {mod}",
-                        )
-                        listings.append(lst.get("listing_id"))
-                    for agent_id, title, mod in [
-                        ("nemotron_strategist", "Research synthesis task", "emporia:research:v1"),
-                        ("stripe_escrow_bot", "Micro-SaaS handoff", "emporia:service:v1"),
-                    ]:
-                        lst = await agents[agent_id].create_listing(
-                            title=title,
-                            module_type=mod,
-                            payment_mode="free",
-                            description=f"Demo listing for {mod}",
-                        )
-                        listings.append(lst.get("listing_id"))
-                    summary["listings"] = len(listings)
 
                     # --- Rooms ---
                     room_pub = await hermes.create_room(
@@ -498,7 +386,7 @@ async def seed() -> None:
                     # permission — which most people setting Emporia up for the
                     # first time do not have. A 401 here used to abort the whole
                     # run and print an httpx traceback under "Seed failed",
-                    # after five agents, two rooms, five listings, three Agora
+                    # after five agents, two rooms, three Agora
                     # topics and six sessions had already been created. The
                     # demo content was fine; only the report said otherwise.
                     summary["paid_sessions"] = 0
@@ -507,7 +395,7 @@ async def seed() -> None:
                             paid = await hermes.create_session(
                                 "emporia:service:v1",
                                 config={"description": "Sandbox-paid MPP demo"},
-                                payment_rules={"mode": "mpp", "stake_per_participant": "1.00", "currency": "usd"},
+                                payment_rules={"mode": "mpp", "price": "1.00", "currency": "usd"},
                                 gateway_url=GATEWAY,
                             )
                             paid_sid = paid["session_id"]
@@ -526,35 +414,6 @@ async def seed() -> None:
                             summary["paid_session_skipped"] = (
                                 f"{type(exc).__name__}: {str(exc)[:160]}"
                             )
-
-                    # --- Events ---
-                    event_count = 0
-                    for title, mod, desc in [
-                        (
-                            "Hackathon Showcase Bracket",
-                            "emporia:chess:v1",
-                            "Single-elim demo bracket — free entry, chess module.",
-                        ),
-                        (
-                            "Agent Commerce Sprint",
-                            "emporia:service:v1",
-                            "48h service-delivery sprint with escrow settlement demo.",
-                        ),
-                        (
-                            "PoR Chess Ladder — Week 1",
-                            "emporia:chess:v1",
-                            "Rated ladder with rationale audit — Nemotron curated.",
-                        ),
-                    ]:
-                        ev = await hermes.create_event(
-                            title=title,
-                            module_type=mod,
-                            description=desc,
-                            payment_mode="free",
-                        )
-                        if ev.get("event_id"):
-                            event_count += 1
-                    summary["events"] = event_count
 
                     # --- DMs ---
                     dm_threads = 0

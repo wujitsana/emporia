@@ -118,26 +118,6 @@ CREATE TABLE IF NOT EXISTS messages (
                 created_at TEXT NOT NULL
             );
 
-CREATE TABLE IF NOT EXISTS listings (
-                listing_id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                description TEXT,
-                listing_type TEXT NOT NULL DEFAULT 'service',
-                agent_id TEXT NOT NULL,
-                payment_mode TEXT NOT NULL DEFAULT 'free',
-                price_usd TEXT NOT NULL DEFAULT '0',
-                origin_relay TEXT,
-                expires_at TEXT,
-                metadata_json TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL,
-                federated_from TEXT,
-                agent_public_key_hex TEXT,
-                agent_stable_id TEXT,
-                listing_nonce TEXT,
-                signature TEXT,
-                agent_key_log_json TEXT
-            );
-
 CREATE TABLE IF NOT EXISTS payments (
                 payment_id TEXT PRIMARY KEY,
                 session_id TEXT,
@@ -156,7 +136,7 @@ CREATE TABLE IF NOT EXISTS settlements (
                 settlement_id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
                 winner_id TEXT,
-                total_stake_cents INTEGER NOT NULL DEFAULT 0,
+                total_price_cents INTEGER NOT NULL DEFAULT 0,
                 platform_fee_cents INTEGER NOT NULL DEFAULT 0,
                 winner_payout_cents INTEGER NOT NULL DEFAULT 0,
                 platform_fee_bps INTEGER NOT NULL DEFAULT 100,
@@ -457,10 +437,6 @@ CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_agent);
 
 CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_agent);
 
-CREATE INDEX IF NOT EXISTS idx_listings_type ON listings(listing_type);
-
-CREATE INDEX IF NOT EXISTS idx_listings_agent ON listings(agent_id);
-
 
 CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(session_id);
 
@@ -717,8 +693,7 @@ CREATE TABLE IF NOT EXISTS pledges (
                 maker_id TEXT NOT NULL,
                 to_agent TEXT NOT NULL,
                 kind TEXT NOT NULL,
-                subject_type TEXT NOT NULL,
-                subject_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
                 terms_json TEXT NOT NULL DEFAULT '{}',
                 note TEXT NOT NULL DEFAULT '',
                 nonce TEXT NOT NULL,
@@ -732,7 +707,7 @@ CREATE INDEX IF NOT EXISTS idx_pledges_maker ON pledges(maker_id, made_at);
 
 CREATE INDEX IF NOT EXISTS idx_pledges_to ON pledges(to_agent, made_at);
 
-CREATE INDEX IF NOT EXISTS idx_pledges_subject ON pledges(subject_type, subject_id);
+CREATE INDEX IF NOT EXISTS idx_pledges_session ON pledges(session_id);
 
 CREATE TABLE IF NOT EXISTS pledge_acts (
                 pledge_id TEXT NOT NULL,

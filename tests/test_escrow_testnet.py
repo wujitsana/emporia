@@ -129,7 +129,7 @@ async def _purchase(live, seller_wallet, *, dispute):
         await seller.register_x402_wallet(seller_wallet)   # P262: signed by the seller
         sid = (await buyer.create_session(
             "emporia:service:v1", config={"description": "live escrow lane"},
-            payment_rules={"mode": "stripe_link", "stake_per_participant": "1.00",
+            payment_rules={"mode": "stripe_link", "price": "1.00",
                            "currency": "usd"}))["session_id"]
         await seller.join_session(sid)
         assert (await buyer.fund_session(sid, pay_with_x402=True))["status"] == "active"

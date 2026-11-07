@@ -24,7 +24,6 @@ from emporia import rooms as rooms_db
 from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
 from emporia.wire import (
     ERR_DUPLICATE_NONCE,
-    ROOM_TYPE_V1,
     signed_room_invite_payload,
     signed_room_join_payload,
     signed_room_kick_payload,
@@ -201,7 +200,7 @@ def _card(room: rooms_db.Room) -> dict[str, Any]:
         "currency": room.currency, "access_duration_days": room.access_duration_days,
         "max_members": room.max_members, "member_count": len(room.members), "encrypted": room.encrypted,
         "creator_id": room.creator_id, "created_at": room.created_at,
-        "listing_only": True, "host": rs._own_host(),
+        "card_only": True, "host": rs._own_host(),
     }
 
 
@@ -235,10 +234,7 @@ async def get_room_endpoint(room_id: str, request: Request):
         # would pay is checked against the creator's signed room.
         if not (viewer_id and rooms_db.has_invite(room_id, viewer_id, db_path=rs.DATABASE_PATH)):
             raise HTTPException(403, "Private room — not a member")
-        # P277: a room signed before then names its game in its signed settings: not shown.
-        return {**_card(room),
-                "signed_acts": [a for a in _acts(room_id) if a["act"] == "create" and not (
-                    room.linked_session_id and a["payload"].get("type") == ROOM_TYPE_V1)]}
+        return {**_card(room), "signed_acts": [a for a in _acts(room_id) if a["act"] == "create"]}
     # P243: the creator's signed acts, for a member to check the room against.
     return {**room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), "signed_acts": _acts(room_id),
             "host": rs._own_host()}
@@ -848,7 +844,7 @@ async def get_room_chain(room_id: str, request: Request):
     has recorded since P19: "the relay signs each chain head with its
     federation keypair, a route serves it, and clients recompute and verify on
     read." Mirrors GET /sessions/{id}/audit (session_audit.verify_chain(),
-    signed the same way GET /gaming/v1/federate/listings signs a batch —
+    signed the same way GET /federation/v1/posts signs a batch —
     federation_signable_bytes() already invites a third `key`, see its
     docstring) — same gate as GET /rooms/{id}/messages (private rooms require
     membership; public rooms are open to any connection).

@@ -1,8 +1,6 @@
 """P166: above a threshold the operator approves a payment, asked through the
 agent's own app (an MCP elicitation, which Hermes routes to its approvals)."""
 import asyncio
-import os
-from unittest.mock import patch
 
 import pytest
 from fastmcp import Client, FastMCP

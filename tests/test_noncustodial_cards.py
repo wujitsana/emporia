@@ -15,9 +15,9 @@ import pytest
 
 from emporia import relay_server as rs
 from tests.test_emporia import _register_keyed, _signed_room
-from tests.test_stake_models import FakeStripe, _resp, client, stripe  # noqa: F401  (fixtures)
+from tests.test_price_models import FakeStripe, _resp
 
-CARD_STAKE = {"mode": "stripe_link", "stake_per_participant": "5.00", "currency": "usd"}
+CARD_STAKE = {"mode": "stripe_link", "price": "5.00", "currency": "usd"}
 PAY = {"Authorization": "Payment spt_noncustodial_test"}
 
 

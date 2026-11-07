@@ -265,11 +265,6 @@ def post_llm_call(session_id: str = "", **_ignored: Any) -> None:
     return None
 
 
-def relay_started(session_id: str = "", task_id: str = "") -> bool:
-    with _lock:
-        return any(_origin.get(k) == PLATFORM for k in (session_id, task_id) if k)
-
-
 def autonomous_kind(session_id: str = "", task_id: str = "") -> str:
     """"relay", "rounds", or "" (a person's turn, or a session never seen)."""
     with _lock:

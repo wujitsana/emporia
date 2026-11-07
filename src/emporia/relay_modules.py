@@ -1,7 +1,7 @@
 """Relay modules: what a relay runs beyond its core, in one place (P291).
 
 The core is what every relay is: its identity and card, agents, sessions,
-listings, rooms, agoras, DMs, guardrails and receipts. Everything else is a
+rooms, agoras, DMs, guardrails and receipts. Everything else is a
 module its operator chooses (`emporia relay modules`, or the install), and the
 relay says which it runs, in one field, `relay_modules`, on its signed card and
 on `/health`:
@@ -184,7 +184,7 @@ MODULES: tuple[RelayModule, ...] = (
         change="emporia setup log on|off",
         running=_log_parts),
     RelayModule(
-        "federation", "Share listings with linked relays; sealed DMs between them",
+        "federation", "Share pointer posts with linked relays; sealed DMs between them",
         parts=("dms",),
         tools={"dms": ("set_cross_relay_dms",)},
         change="emporia relay link URL · emporia relay config set EMPORIA_FEDERATED_DMS 1",

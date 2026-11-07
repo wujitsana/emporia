@@ -39,7 +39,7 @@ def test_a_room_fee_pays_its_creator_at_most_the_fee_it_signed(client):
         payee.room_terms(room, identity.get_public_key_hex("someone_else_pb"))
     assert payee.room_terms(None, "") == (set(), None)                   # not shown to this payer: as before
     # A paid room's card, shown before joining, leaves out the game it is tied to — still its creator's.
-    card = {k: v for k, v in room.items() if k != "linked_session_id"} | {"listing_only": True}
+    card = {k: v for k, v in room.items() if k != "linked_session_id"} | {"card_only": True}
     assert payee.room_terms(card, key) == ({"pb_owner"}, 150)
 
 
@@ -52,7 +52,7 @@ def test_an_invitee_may_read_the_signed_terms_of_the_room_it_is_asked_into(clien
     assert client.post(f"/rooms/{room_id}/invite", json=_signed_invite("pb_host", room_id, {
         "invitee_id": "pb_invitee", "invited_by": "pb_host"}), headers=_as("pb_host")).status_code == 200
     seen = client.get(f"/rooms/{room_id}", headers=_as("pb_invitee")).json()
-    assert seen["listing_only"] and [a["act"] for a in seen["signed_acts"]] == ["create"]
+    assert seen["card_only"] and [a["act"] for a in seen["signed_acts"]] == ["create"]
     assert "members" not in seen
     assert payee.room_terms(seen, identity.get_public_key_hex("pb_host"))[0] == {"pb_host"}
     assert client.get(f"/rooms/{room_id}", headers=_as("pb_stranger")).status_code == 403
@@ -147,7 +147,7 @@ def test_mcp_stakes_only_toward_another_player_seated_by_its_own_join(wallet_env
         def get(self, url, headers=None, **kw):
             if url.endswith("/encryption-keys"):   # the relay names nobody but the buyer as seated
                 return _Resp(200, {"creator": "pb_buyer", "keys": {}, "joins": {}, "leaves": []})
-            return _Resp(200, {"payment_rules": {"stake_per_participant": "1.00"}})
+            return _Resp(200, {"payment_rules": {"price": "1.00"}})
 
     with patch.object(mcp_server, "httpx", Relay()), \
          patch.object(mcp_server, "_dashboard_bearer_headers", return_value={}), \
@@ -166,7 +166,7 @@ def test_mcp_pays_a_topic_fee_only_to_its_creator_within_the_signed_fee(wallet_e
         signed = wire.signed_agora_topic_payload(nonce, "club", "Club", "", "private", "paid_invite", fee, [], None)
         topic = {"slug": "club", "name": "Club", "description": "", "visibility": "private",
                  "gate_type": "paid_invite", "entry_fee_cents": fee, "flair_options": [], "access_duration_days": None,
-                 "encrypted": False, "creator_id": creator, "listing_only": True, "signed_acts": [
+                 "encrypted": False, "creator_id": creator, "card_only": True, "signed_acts": [
                      {"act": "create", "at": datetime.now(UTC).isoformat(), "payload": signed,
                       "signature": identity.sign(signed, creator)}]}
         rooms_get = base.get

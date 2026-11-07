@@ -17,7 +17,7 @@ from tests.test_emporia import _register_keyed
 
 load_bundled_modules()
 GAMES = sorted(mt for mt, cls in MODULE_REGISTRY.items()
-               if mt.startswith("emporia:") and cls.STAKE_MODEL is None
+               if mt.startswith("emporia:") and cls.PRICE_MODEL is None
                and mt not in ("emporia:research:v1", "emporia:code-review:v1", "emporia:rand:v1"))
 
 
@@ -28,10 +28,10 @@ def _creator(client):
 
 
 @pytest.mark.parametrize("rules", [
-    {"mode": "x402", "stake_per_participant": "1.00", "currency": "usd"},
-    {"mode": "stripe_pi", "stake_per_participant": "1.00", "currency": "usd"},
-    {"mode": "mpp", "stake_per_participant": "0.50", "currency": "usd"},
-    {"mode": "x402", "stake_per_participant": "0"},
+    {"mode": "x402", "price": "1.00", "currency": "usd"},
+    {"mode": "stripe_pi", "price": "1.00", "currency": "usd"},
+    {"mode": "mpp", "price": "0.50", "currency": "usd"},
+    {"mode": "x402", "price": "0"},
 ])
 def test_creating_a_game_with_a_stake_is_refused(rules):
     client = TestClient(app, client=("127.0.0.1", 51230))
@@ -60,7 +60,7 @@ def test_the_listing_carries_no_stake_model_for_a_game():
     listed = {m["module_type"]: m for m in list_available_modules()}
     assert "stakes_allowed" not in listed["emporia:blotto:v2"]
     for game in GAMES:
-        assert listed[game]["stake_model"] is None, game
+        assert listed[game]["price_model"] is None, game
 
 
 def test_the_operator_settings_that_allowed_game_stakes_are_gone():

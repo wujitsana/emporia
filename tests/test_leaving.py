@@ -283,7 +283,7 @@ def _private_purchase(client, buyer: str, seller: str) -> str:
     _enc_pair(client, buyer, seller)
     sid = client.post("/sessions", json={"module_type": "emporia:service:v1", "creator_agent_id": buyer,
                                          "config": {"description": "write the report"},
-                                         "payment_rules": {"mode": "free", "stake_per_participant": "0"}},
+                                         "payment_rules": {"mode": "free", "price": "0"}},
                       headers=_as(buyer)).json()["session_id"]
     assert client.post(f"/sessions/{sid}/join", json={"agent_id": seller}, headers=_as(seller)).status_code == 200
     return sid

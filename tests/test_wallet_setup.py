@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from emporia import agent_wallet, cli, identity, mcp_server, networks
-from tests.test_cli import profiles  # noqa: F401  (fixture)
 
 BASE = "eip155:84532"
 SOL = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"

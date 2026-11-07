@@ -4,16 +4,15 @@ The session routes applied one rule to every module: the creator joins free and
 the joiner pays. That was wrong both ways it could be. A wager's creator risked
 nothing. A service session's joiner is the *seller*, so the seller was charged
 while the buyer paid nothing — and "dispute → buyer refunded" refunded money
-the buyer never put up. Each module now declares its STAKE_MODEL. Games
+the buyer never put up. Each module now declares its PRICE_MODEL. Games
 declare none: they take no stakes of any kind.
 
 The fake Stripe below records what the relay asked Stripe to do, including a
 charge's destination, so the tests can say where money would actually go.
 """
-import os
 import uuid
 from contextlib import contextmanager
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -85,20 +84,6 @@ def _resp(body):
     return r
 
 
-@pytest.fixture
-def stripe():
-    fake = FakeStripe()
-    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_stake_models"}), \
-         patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=fake.post), \
-         patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=fake.get):
-        yield fake
-
-
-@pytest.fixture
-def client():
-    return TestClient(app, client=("127.0.0.1", 51216))
-
-
 def _hdr(agent):
     return {"x-emporia-agent-id": agent}
 
@@ -133,7 +118,7 @@ def _act(client, sid, who, action, payload=None):
     return r.json()
 
 
-STAKE = {"mode": "stripe_link", "stake_per_participant": "10.00", "currency": "usd"}
+STAKE = {"mode": "stripe_link", "price": "10.00", "currency": "usd"}
 
 
 # -- games take no stakes ------------------------------------------------------

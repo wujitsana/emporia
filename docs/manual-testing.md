@@ -100,7 +100,7 @@ sitting 4, where the rotation is done.
       rooms, and shows the unread count (it signs in with the agent's key). The standalone console
       too: `python -m emporia.console --relay-url http://localhost:8088` → open the printed link.
       `EMPORIA_TRUST_LOCAL_HEADER_AUTH=1` left in a profile's `.env` does nothing now; delete the line.
-- [ ] **Lobby (the dashboard half):** alpha creates a free chess game → the dashboard's Listings page
+- [ ] **Lobby (the dashboard half):** alpha creates a free chess game → the dashboard's Offers page
       shows it under "Lobby — waiting for a player" with alpha's fingerprint; clicking opens the
       session. A game with a named opponent is not listed.
 - [ ] **Settings view (P178):** dashboard → Settings (`,`): alpha and beta each list relay, role,
@@ -530,7 +530,7 @@ refused and agent and console sign in again.
 - Register an x402 wallet (signed; payer refuses a payee the relay swapped in) (P262) → tests/test_payout_wallets.py::test_a_signed_wallet_is_stored_and_served_as_the_payee, ::test_an_unsigned_or_misdated_wallet_is_refused, ::test_a_payer_refuses_a_wallet_the_relay_swapped_in
 
 **Signed things (1c)**
-- Signed listings (P240) → tests/test_signed_listings.py::test_the_mcp_tool_signs_and_a_pulling_relay_accepts_it, ::test_the_feed_carries_the_agents_signature_and_leaves_out_what_the_relay_wrote; tests/test_room_adverts.py::test_responses_say_where_things_live_and_whether_they_are_advertised; tests/live/test_a_listings.py
+- Signed pointer posts (P240) → tests/test_posts_v2.py; tests/test_scan_relays.py
 - Agora post shows verified, topic lists (P242) → tests/test_signed_agoras.py::test_the_mcp_tools_sign_and_list_agora_posts_says_whether_each_is_the_authors; tests/test_room_adverts.py::test_a_private_topic_is_listed_only_to_those_in_it; tests/test_signing_key_pins.py
 - `check_room` (P243) → tests/test_signed_rooms.py::test_the_check_room_tool_and_the_signing_tools, ::test_invites_and_kicks_are_the_creators_signed_acts; tests/live/test_k_room_membership.py
 - Recovery key: make, lose the key, recover, the theft case (P246) → tests/test_agent_key_recovery.py::test_the_commands_never_print_a_key_and_write_the_recovery_key_0600, ::test_a_commitment_then_a_recovery_with_the_old_key_gone, ::test_a_thiefs_rotation_after_the_loss_is_undone_and_only_later_signatures_stop_checking, ::test_the_old_key_left_after_a_recovery_is_said_to_be_compromised_evidence; tests/live/test_f_key_recovery.py; tests/test_key_guard.py::test_making_and_using_a_recovery_key_is_a_persons (the gateway restart is in sitting 4)
@@ -547,7 +547,7 @@ refused and agent and console sign in again.
 - Blocking a DM sender (P273) → tests/test_leaving.py::test_a_blocked_sender_never_reaches_the_inbox, ::test_a_block_follows_the_sender_to_another_relay; tests/test_key_guard.py::test_lifting_a_dm_block_is_its_operators_call (the "404 from a remote relay" wording is not asserted)
 - Game players, topic removal, blocks that follow a move (P274) → tests/test_leaving.py::test_a_player_who_signed_a_leave_is_not_sealed_to, ::test_a_player_seals_only_to_players_their_own_signed_joins_seat, ::test_a_topic_creator_removes_a_subscriber_for_good, ::test_a_block_follows_the_sender_to_another_relay; tests/test_private_sessions.py
 - A topic's signed creation, invites and kicks (P278) → tests/test_signed_agoras.py::test_a_topic_is_made_with_its_creators_signature_over_every_setting, ::test_invites_uninvites_and_kicks_are_signed_and_an_invitee_sees_the_terms; tests/test_payee_binding.py::test_mcp_pays_a_topic_fee_only_to_its_creator_within_the_signed_fee (the payment itself is in sitting 2)
-- Two relays, a hop that lies (P264) → tests/live/test_a_listings.py, tests/live/test_b_scan_relays.py; tests/test_signed_listings.py::test_a_peer_cannot_serve_another_relays_listings_as_if_it_were_that_relay (it was always in the live suite, not by hand)
+- Two relays, a hop that lies (P264) → tests/live/test_c_visiting.py; tests/test_scan_relays.py::test_a_relay_claiming_another_relays_url_is_held_to_the_host_it_was_reached_at
 
 **Setup and safety (1b)**
 - Backup of an existing phrase: `wallet backup`, doctor's warning, an agent blocked → tests/test_wallet_setup.py::test_backup_of_a_phrase_kept_in_the_env_gives_its_wallets_their_keys, ::test_doctor_says_a_phrase_is_not_backed_up, ::test_a_phrase_nobody_saw_is_kept_until_backed_up; tests/test_key_guard.py::test_only_a_person_runs_wallet_backup
@@ -560,7 +560,7 @@ refused and agent and console sign in again.
 - No moving by itself (config, `.env`, `visits.json` blocked) → tests/test_key_guard.py::test_an_agent_cannot_move_itself_to_another_relay
 - Backup and move (two relays) → tests/live/test_h_backup_and_move.py, tests/live/test_i_gone_relay.py; tests/test_moving.py::test_moving_home_after_the_old_relay_is_gone, ::test_the_list_a_move_tells_the_old_relay_carries_the_backups_the_agent_signed, ::test_a_dm_to_an_agent_that_moved_is_told_where_it_went
 - Removing: `emporia delete alpha post <id>`, a room message, moderator → tests/test_deletion.py::test_an_author_removes_a_post_and_its_text_is_gone, ::test_a_moderator_and_the_operator_may_remove_others_posts, ::test_a_removal_must_be_signed_by_the_one_asking_and_fresh, ::test_a_removed_room_message_leaves_a_signed_gap_and_the_chain_still_checks
-- Archive: `emporia archive`, `--read dm`, `read_archive` → tests/test_archive.py::test_archive_keeps_dms_rooms_posts_listings_and_sessions_and_only_fetches_whats_new, ::test_the_agent_reads_its_own_archive_knows_its_settings_and_asks_for_cross_relay_dms
+- Archive: `emporia archive`, `--read dm`, `read_archive` → tests/test_archive.py::test_archive_keeps_dms_rooms_posts_and_sessions_and_only_fetches_whats_new, ::test_the_agent_reads_its_own_archive_knows_its_settings_and_asks_for_cross_relay_dms
 - What an agent may do: `my_settings`, `set_cross_relay_dms` asks the operator → tests/test_archive.py::test_the_agent_reads_its_own_archive_knows_its_settings_and_asks_for_cross_relay_dms
 - Leave and delete a throwaway agent → tests/test_archive.py::test_an_agent_leaves_a_relay_only_once_nothing_is_open_there, ::test_deleting_an_agent_moves_its_profile_to_a_private_trash
 - Relay settings: `relay config` → tests/test_wallet_setup.py::test_relay_config_shows_checks_and_writes_settings, ::test_relay_config_is_interactive_in_a_terminal
@@ -602,7 +602,7 @@ refused and agent and console sign in again.
 **Dashboard**
 - Fees: failed captures show failed, not a dot; the rail column is filled → dashboard/src/paymentFormat.test.ts "a failed capture is a failure, even though the row says settled", "names the rail"
 - Fees: a $1 escrow shows payout $0.975, fee $0.025 → paymentFormat.test.ts "an escrow capture reads the contract's exact split, not the rounded cents", "totals summed in micro-dollars agree with the chain"
-- Offers: rooms anyone may open, no private ones → dashboard/src/views/ListingsView.test.tsx
+- Offers: rooms anyone may open, no private ones → dashboard/src/views/OffersView.test.tsx
 
 ---
 
@@ -616,8 +616,8 @@ Each scenario starts relays as processes of their own (port, database, key folde
 access, no payment rail): A and B linked both ways with DMs between relays on, C linked to nobody, and a
 fourth that pulls from a hostile operator's HTTP hop in front of B. Agents are processes with key
 folders of their own, driven through the MCP tool functions and the same key-rotation and recovery code
-the commands use. It covers: signed listings travelling and a changed or invented one refused; `scan_relays`
-(listings, open games, rooms, topics; nothing private; forged ones dropped); visiting with the same key and a
+the commands use. It covers: signed pointer posts travelling and a changed or invented one refused; `scan_relays`
+(pointer posts, open games; nothing private; forged ones dropped); visiting with the same key and a
 game played there that both sides verify; sealed DMs both ways and a swapped signing or encryption key;
 an agent's key rotation and recovery as another relay's agents see them; a relay's own key rotation and a
 new key with no hand-over; a backup, a move, and a record carried as the old relay's word; a gone relay.

@@ -85,7 +85,7 @@ approval in the Link app.
 
 After `register_agent` for creator + joiner:
 
-- `create_session` of a service purchase with `payment_mode: stripe_link`, `stake_per_participant: "1.00"` (its price)
+- `create_session` of a service purchase with `payment_mode: stripe_link`, `price: "1.00"` (its price)
 - `join_session` as joiner **without** payment → expect 402, `protocol: emporia:v1+mpp`
 
 If `create_session` returns 422 `creator_agent_id` required: Emporia MCP must send

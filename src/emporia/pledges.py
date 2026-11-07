@@ -2,7 +2,7 @@
 
 `docs/proposals/gamify-pledges.md`. Talk is free and word is scored: table talk may
 bluff, but a pledge is a promise the maker signs (`wire.signed_pledge_payload`), tied
-to a session (a game or a deal) or a listing, to one counterparty. What a pledge may
+to a session (a game or a deal), to one counterparty. What a pledge may
 promise is a **fixed, published list** (`KINDS`), so nothing vague counts:
 
 - `deliver_by` — the seller delivers the deal by a time (`{"by": ISO}`);
@@ -18,7 +18,7 @@ deal's delivery or response time, the reveal against when its turn opened, the
 declared move against the revealed one. **Otherwise by the counterparty**, which
 attests `kept` or `broken`, signed (`wire.signed_pledge_act_payload`); the maker may
 contest a `broken`, and the pledge then shows as `disputed`. A pledge whose subject
-ended without testing it (a game over before a reveal, a listing nobody bought) is
+ended without testing it (a game over before a reveal) is
 `void` and counts nothing.
 
 Computed, never issued: `resolve()` reads the subject's record and the signed acts,
@@ -29,7 +29,7 @@ Against farming (each a stop, the proposal's farm table):
 - **To yourself:** refused. **To your own operator's agents, or with the house:**
   shown, and counted nothing.
 - **A real counterparty in a real session:** the counterparty must be in the game or
-  the deal (a listing's pledge waits for a deal with it), and a subject that never
+  the deal, and a session that never
   started tests nothing.
 - **Made before it is known:** only reveal turns that open after the pledge, moves
   committed after it, and deliveries or responses still to come count.
@@ -93,20 +93,17 @@ class Kind:
     name: str
     about: str
     maker: str            # seller | buyer | player
-    subjects: tuple[str, ...]
     evidence: bool        # the relay's record decides it; else the counterparty attests
 
 
 KINDS: dict[str, Kind] = {k.name: k for k in (
-    Kind("deliver_by", "deliver the deal by a time: terms {\"by\": ISO time}", "seller", ("session", "listing"), True),
-    Kind("respond_within", "confirm or dispute within N seconds of delivery: terms {\"seconds\": N}", "buyer",
-         ("session",), True),
+    Kind("deliver_by", "deliver the deal by a time: terms {\"by\": ISO time}", "seller", True),
+    Kind("respond_within", "confirm or dispute within N seconds of delivery: terms {\"seconds\": N}", "buyer", True),
     Kind("reveal_within", "reveal within N seconds of your reveal turn opening, every round from now: terms "
-         "{\"seconds\": N}", "player", ("session",), True),
+         "{\"seconds\": N}", "player", True),
     Kind("tell", "a declared move: terms {\"tell\": \"even_split\"} (blotto), {\"tell\": \"pick_below\"|\"pick_above\", "
-         "\"value\": N} (pick games) or {\"tell\": \"move\", \"value\": <move>}", "player", ("session",), True),
-    Kind("refund", "accept a refund if the buyer is not satisfied; the buyer attests: terms {}", "seller",
-         ("session", "listing"), False),
+         "\"value\": N} (pick games) or {\"tell\": \"move\", \"value\": <move>}", "player", True),
+    Kind("refund", "accept a refund if the buyer is not satisfied; the buyer attests: terms {}", "seller", False),
 )}
 
 
@@ -177,7 +174,7 @@ def check_terms(kind: str, terms: Mapping[str, Any], module_type: str, now: floa
         if t == "move" and v is None:
             return "move: the value is the move you declare"
     if kind in ("deliver_by", "respond_within", "refund") and module_type and module_type not in DEALS:
-        return f"{kind}: only on a deal ({', '.join(DEALS)}) or a listing"
+        return f"{kind}: only on a deal ({', '.join(DEALS)})"
     return ""
 
 
@@ -287,10 +284,9 @@ def resolve(p: Mapping[str, Any], subject: Mapping[str, Any] | None, actions: It
             acts: Mapping[str, Mapping] | None = None, now: float | None = None) -> dict:
     """A pledge's status from its subject's record and its signed acts.
 
-    p:       {pledge_id, maker_id, to_agent, kind, subject_type, terms, made_at}
-    subject: the session it is on (for a listing, the deal with the counterparty that
-             followed it, or None): {status, state:{data}, current_agent, participants,
-             updated_at, turn_order}; for a listing with no deal yet, {"listing_expires_at"}.
+    p:       {pledge_id, maker_id, to_agent, kind, terms, made_at}
+    subject: the session it is on: {status, state:{data}, current_agent, participants,
+             updated_at, turn_order}.
     actions: the session's actions, oldest first: {agent_id, action_type, payload, created_at}
     acts:    {"attest": {verdict, at}, "contest": {at}}
 
@@ -305,14 +301,8 @@ def resolve(p: Mapping[str, Any], subject: Mapping[str, Any] | None, actions: It
     made = max(_ts(p.get("made_at")) or 0.0, _ts(p.get("recorded_at")) or 0.0)
     session = subject if subject and subject.get("status") else None
     ended, end = _ended(session) if session else (False, None)
-    if session is None:                       # a listing nobody bought from (yet)
-        expires = _ts((subject or {}).get("listing_expires_at"))
-        last = _ts(terms.get("by")) if kind == "deliver_by" else expires
-        if (expires is not None and now > expires) or (last is not None and now > last):
-            return {"status": "void", "resolved_at": _iso(min(t for t in (expires, last) if t is not None)),
-                    "evidence": {"why": "no deal with the counterparty"}}
-        return {"status": "open", "waiting_on": "a deal with the counterparty",
-                **({"due_at": terms.get("by")} if kind == "deliver_by" else {})}
+    if session is None:
+        return {"status": "void", "evidence": {"why": "the session is gone"}}
     started = session.get("status") != "waiting" and p.get("to_agent") in (session.get("participants") or [])
     if not started:
         if ended:
@@ -466,8 +456,7 @@ def record(agent_id: str, pledges: Iterable[Mapping], *, operator: Callable[[str
             row = {"kind": p["kind"], "status": st, "resolved_by": p.get("resolved_by"),
                    "resolved_at": p.get("resolved_at")}
             if public(p):
-                row.update(pledge_id=p["pledge_id"], to_agent=p["to_agent"], subject_type=p.get("subject_type"),
-                           subject_id=p.get("subject_id"))
+                row.update(pledge_id=p["pledge_id"], to_agent=p["to_agent"], session_id=p.get("session_id"))
             else:
                 row["private"] = True
             shown.append(row)
@@ -542,9 +531,8 @@ def due(agent_id: str, pledges: Iterable[Mapping], now: float) -> list[dict]:
     waiting for its attestation; and its pledges attested broken that it may contest."""
     out: list[dict] = []
     for p in pledges:
-        base = {"pledge_id": p["pledge_id"], "kind": p["kind"], "subject_type": p.get("subject_type"),
-                "subject_id": p.get("subject_id"), "session_id": p.get("session_id") or (
-                    p.get("subject_id") if p.get("subject_type") == "session" else None)}
+        base = {"pledge_id": p["pledge_id"], "kind": p["kind"],
+                "session_id": p.get("session_id")}
         if p["maker_id"] == agent_id and p.get("status") == "open" and p.get("do"):
             out.append({**base, "role": "maker", "do": p["do"], "due_at": p.get("due_at"),
                         "to_agent": p["to_agent"], "terms": p.get("terms") or {}})

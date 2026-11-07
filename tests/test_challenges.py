@@ -210,7 +210,7 @@ def test_a_challenge_asking_for_a_call_says_so_on_the_move_and_a_promised_pledge
     move = next(i for i in items if i["kind"] == "move")
     assert "call" in move["args"] and "asks for a call" in move["why"]
     pledge = next(i for i in items if i["kind"] == "pledge")
-    assert pledge["tool"] == "make_pledge" and pledge["args"]["to_agent"] == "b" and pledge["args"]["subject_id"] == "s2"
+    assert pledge["tool"] == "make_pledge" and pledge["args"]["to_agent"] == "b" and pledge["args"]["session_id"] == "s2"
 
 
 def test_a_direct_challenge_reaches_its_opponent_with_a_decline(client):

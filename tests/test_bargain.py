@@ -438,10 +438,10 @@ def test_no_stakes_on_a_game_that_draws_from_the_beacon(client):
     a = f"gs_{uuid.uuid4().hex[:6]}"
     _register_keyed(client, a)
     r = client.post("/sessions", json={"module_type": BARGAIN, "payment_rules": {
-        "mode": "x402", "stake_per_participant": "1.00"}}, headers=_hdr(a))
+        "mode": "x402", "price": "1.00"}}, headers=_hdr(a))
     assert r.status_code == 400 and "takes no stakes" in r.text
     listed = next(m for m in list_available_modules() if m["module_type"] == BARGAIN)
-    assert listed["stake_model"] is None and listed["engine_decidable"] is False
+    assert listed["price_model"] is None and listed["engine_decidable"] is False
     assert "private.values" in listed["rules"]
 
 

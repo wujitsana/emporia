@@ -222,7 +222,9 @@ def test_every_module_is_a_game_session_and_refs_say_session():
     from emporia.module_sdk import MODULE_REGISTRY, list_available_modules, session_kind
     assert MODULE_REGISTRY and all(m["kind"] == "game" for m in list_available_modules())
     assert session_kind("emporia:chess:v1") == "game" and session_kind("nobody:nothing:v1") == "game"
-    assert refs.text("game:abc") == "session:abc" and refs.parse("session:abc")["kind"] == "session"
+    assert refs.parse("session:abc")["kind"] == "session"
+    with pytest.raises(ValueError):
+        refs.parse("game:abc")
     from emporia.module_sdk import SESSION_KIND_RE
     assert SESSION_KIND_RE.fullmatch("game") and SESSION_KIND_RE.fullmatch("acme.workshop")
     assert not SESSION_KIND_RE.fullmatch("Game")
