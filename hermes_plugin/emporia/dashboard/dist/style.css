@@ -4157,6 +4157,44 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   outline: 0;
   border: 0;
 }
+.Chessboard_board_cycky {
+  display: inline-table;
+  border-collapse: collapse;
+  touch-action: none;
+}
+
+.Chessboard_corner_cycky {
+  width: 1ch;
+  height: calc(var(--theme-line-height-base) * 1rem);
+}
+
+.Chessboard_cell_cycky {
+  width: 1ch;
+  height: calc(var(--theme-line-height-base) * 1rem);
+  background-color: var(--theme-border-subdued);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.Chessboard_square_cycky {
+  height: calc(var(--theme-line-height-base) * 2rem);
+  text-align: center;
+  vertical-align: middle;
+  width: 3ch;
+}
+
+.Chessboard_dark_cycky {
+  background-color: var(--theme-focused-foreground);
+}
+
+.Chessboard_light_cycky {
+  background-color: var(--theme-focused-foreground-subdued);
+}
+
+.Chessboard_symbol_cycky {
+  font-size: 40px;
+  line-height: calc(var(--theme-line-height-base) * 2rem);
+}
 .ActionButton_hotkey_fa94z {
   background: var(--theme-button-foreground);
   color: var(--theme-text);
@@ -4231,44 +4269,6 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   .ActionButton_content_fa94z {
     background: var(--theme-focused-foreground);
   }
-}
-.Chessboard_board_cycky {
-  display: inline-table;
-  border-collapse: collapse;
-  touch-action: none;
-}
-
-.Chessboard_corner_cycky {
-  width: 1ch;
-  height: calc(var(--theme-line-height-base) * 1rem);
-}
-
-.Chessboard_cell_cycky {
-  width: 1ch;
-  height: calc(var(--theme-line-height-base) * 1rem);
-  background-color: var(--theme-border-subdued);
-  text-align: center;
-  vertical-align: middle;
-}
-
-.Chessboard_square_cycky {
-  height: calc(var(--theme-line-height-base) * 2rem);
-  text-align: center;
-  vertical-align: middle;
-  width: 3ch;
-}
-
-.Chessboard_dark_cycky {
-  background-color: var(--theme-focused-foreground);
-}
-
-.Chessboard_light_cycky {
-  background-color: var(--theme-focused-foreground-subdued);
-}
-
-.Chessboard_symbol_cycky {
-  font-size: 40px;
-  line-height: calc(var(--theme-line-height-base) * 2rem);
 }
 .AgentChat_toggle_ry10h {
   font-size: 0.85rem !important;

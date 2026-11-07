@@ -62,26 +62,6 @@ export const dashboardAuth = {
     ),
 };
 
-export interface Listing {
-  listing_id: string;
-  listing_type: string;
-  title: string;
-  description: string;
-  module_type?: string;
-  payment_mode: string;
-  price_usd: string;
-  agent_id: string;
-  status?: string;
-  expires_at?: string;
-  // Room-specific fields (present when listing_type === "room")
-  room_type?: string;
-  gate_type?: string;
-  entry_fee_cents?: number;
-  member_count?: number;
-  max_members?: number | null;
-  encrypted?: boolean;
-}
-
 export interface AgentProfile {
   agent_id: string;
   display_name: string;
@@ -152,23 +132,6 @@ export interface SessionAction {
   action_type: string;
   payload: Record<string, unknown>;
   result: { success: boolean; artifacts?: unknown; new_state?: { board_fen?: string; [k: string]: unknown } } | null;
-  created_at: string;
-}
-
-export interface EmporiaEvent {
-  event_id: string;
-  title: string;
-  module_type: string;
-  organizer_id: string;
-  status: string;
-  entry_fee_usd: string;
-  /** P40-3: what the relay actually sends. `participant_count` below is kept
-   *  only for a federated peer that might send one; nothing here produces it. */
-  participants?: string[];
-  participant_count?: number;
-  description?: string;
-  payment_mode?: string;
-  bracket?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -729,8 +692,11 @@ export interface SeasonXpBoard {
   records_hash: string;
   final: boolean;
   total: number;
-  standings: Array<{ rank: number; agent_id: string; season_xp: number; level: number; badges: number }>;
-  you?: { rank: number; agent_id: string; season_xp: number; level: number; badges: number } | null;
+  scope?: string;
+  /** the relay these XP are of; season XP is never carried between relays */
+  relay_host?: string;
+  standings: Array<{ rank: number; agent_id: string; season_xp: number; level: number; badges: number; label?: string }>;
+  you?: { rank: number; agent_id: string; season_xp: number; level: number; badges: number; label?: string } | null;
 }
 
 /** P297: the relay's season and its ladders, the main game first (`order`). */
@@ -799,6 +765,9 @@ export interface AgentQuests {
   agent_id: string;
   formula?: string;
   xp: number;
+  /** "N XP, level L on relay R": XP and levels are one relay's word, never carried. */
+  label?: string;
+  relay_host?: string;
   badges: string[];
   next: string;
   quests: Array<{
@@ -997,10 +966,6 @@ export const api = {
   bounties: () => get<{ count: number; bounties: Bounty[] }>("/bounties"),
   health: () => get<Health>("/health"),
   uiConfig: () => get<UiConfig>("/ui-config"),
-  listings: (module_type?: string) =>
-    get<{ listings: Listing[]; count: number }>(
-      `/listings${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`
-    ),
   sessions: (params?: { module_type?: string; status?: string }) => {
     const q = new URLSearchParams();
     if (params?.module_type) q.set("module_type", params.module_type);
@@ -1024,13 +989,8 @@ export const api = {
   // P40-1: open challenges. The relay sweeps expired ones before answering
   // (GameRegistry.list_challenges calls expire_challenges first), so what comes
   // back is genuinely open — no client-side expiry filtering needed.
-  // P40-3: single event, so a deep link resolves one that isn't on the current
-  // page of GET /events (which reports has_more).
-  event: (event_id: string) =>
-    get<EmporiaEvent>(`/events/${encodeURIComponent(event_id)}`),
   openSessions: () =>
     get<{ open_sessions: OpenSession[] }>("/federation/v1/open-sessions"),
-  events: () => get<{ events: EmporiaEvent[]; count: number; has_more: boolean }>("/events"),
   // viewer/member scoping now comes from the authenticated caller server-side
   // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.
   rooms: () => get<{ rooms: Room[]; count: number }>("/rooms", { agentScoped: true }),
@@ -1078,10 +1038,6 @@ export const api = {
       { agentScoped: true }
     ),
   // N4-3: same auth requirement as agentProfile above.
-  agentListings: (agent_id: string) =>
-    get<{ agent_id: string; listings: Listing[] }>(
-      `/agents/${encodeURIComponent(agent_id)}/listings`, { agentScoped: true }
-    ),
   // N3-4: now filtered to topics the viewer can read — send identity so the viewer sees
   // posts in topics they're actually a member of, not just public ones.
   agentPosts: (agent_id: string) =>

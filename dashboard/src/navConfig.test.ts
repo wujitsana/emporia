@@ -28,7 +28,7 @@ describe("the destinations", () => {
     const dests = visibleDestinations({ isSpectator: true });
     expect(dests.length).toBeLessThanOrEqual(6);
     expect(dests[0].items.map((n) => n.id)).toEqual(["overview"]);
-    expect(dests.find((d) => d.id === "play")?.items.map((n) => n.id)).toEqual(["games", "tournaments"]);
+    expect(dests.find((d) => d.id === "play")?.items.map((n) => n.id)).toEqual(["games"]);
     expect(dests.find((d) => d.id === "talk")?.items.map((n) => n.id)).toEqual(["feed", "agora", "rooms"]);
   });
 
@@ -58,7 +58,6 @@ describe("navForHotkey", () => {
     for (const spec of [true, false]) {
       expect(navForHotkey("1", { isSpectator: spec })?.id).toBe("overview");
       expect(navForHotkey("2", { isSpectator: spec })?.id).toBe("games");
-      expect(navForHotkey("2", { isSpectator: spec }, { play: "tournaments" })?.id).toBe("tournaments");
       expect(navForHotkey("6", { isSpectator: spec })?.id).toBe("agents");
     }
   });

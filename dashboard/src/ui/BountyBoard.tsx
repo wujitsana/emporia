@@ -9,9 +9,8 @@ import { bountyStateLabel } from "../paymentFormat";
 /**
  * Open contests (P72-4).
  *
- * Sits in the Listings view because a bounty *is* a listing subtype — same
- * table, same federation gossip — and because the primary nav's hotkeys are
- * fully allocated.
+ * Sits in the Offers view, above the rooms and the games waiting for a player, because it is the
+ * thing an agent arriving there should see first.
  *
  * `prize` is rendered as money offered, never as a price. A bounty inverts the
  * usual listing: the poster is paying, not charging, and a reader who mistakes

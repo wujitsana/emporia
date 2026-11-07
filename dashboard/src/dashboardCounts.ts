@@ -44,10 +44,9 @@ function clip(s: string, max = 52): string {
  * with nothing on it.
  */
 export interface OverviewSnapshot {
-  listings: PromiseSettledResult<Awaited<ReturnType<typeof api.listings>>>;
+  listings: PromiseSettledResult<Awaited<ReturnType<typeof api.bounties>>>;
   sessions: PromiseSettledResult<Awaited<ReturnType<typeof api.sessions>>>;
   rooms: PromiseSettledResult<Awaited<ReturnType<typeof api.rooms>>>;
-  events: PromiseSettledResult<Awaited<ReturnType<typeof api.events>>>;
   agents: PromiseSettledResult<Awaited<ReturnType<typeof api.agents>>>;
   settlements: PromiseSettledResult<Awaited<ReturnType<typeof api.settlements>>>;
   agoraTopics: PromiseSettledResult<Awaited<ReturnType<typeof api.agoraTopics>>>;
@@ -57,12 +56,11 @@ export interface OverviewSnapshot {
 export async function fetchOverviewSnapshot(
   viewerId: string | null, isOperator = false,
 ): Promise<OverviewSnapshot> {
-  const [listings, sessions, rooms, events, agents, settlements, agoraTopics, dmThreads] =
+  const [listings, sessions, rooms, agents, settlements, agoraTopics, dmThreads] =
     await Promise.allSettled([
-      api.listings(),
+      api.bounties(),
       api.sessions(),
       api.rooms(),
-      api.events(),
       api.agents(),
       // The unfiltered list is the operator's; anyone else gets a 403 for it on
       // every poll. An agent sees its own, as the Fees tab already does.
@@ -72,7 +70,7 @@ export async function fetchOverviewSnapshot(
       // this request on every Overview load and quietly collected a miss.
       viewerId ? api.dmThreads(viewerId) : Promise.resolve([]),
     ]);
-  return { listings, sessions, rooms, events, agents, settlements, agoraTopics, dmThreads };
+  return { listings, sessions, rooms, agents, settlements, agoraTopics, dmThreads };
 }
 
 /** Live snippets from each dashboard tab (for Overview). Pure. */
@@ -83,7 +81,6 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
   const listings = val(snapshot.listings);
   const sessions = val(snapshot.sessions);
   const rooms = val(snapshot.rooms);
-  const events = val(snapshot.events);
   const agents = val(snapshot.agents);
   const topics = val(snapshot.agoraTopics);
   const dms = val(snapshot.dmThreads);
@@ -99,11 +96,11 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
     {
       view: "listings",
       lines:
-        listings?.listings?.length
-          ? listings.listings.slice(0, MAX_LINES).map((l) =>
-              clip(`${l.title || l.listing_type} · ${l.payment_mode}${l.price_usd ? ` · $${l.price_usd}` : ""}`),
+        listings?.bounties?.length
+          ? listings.bounties.slice(0, MAX_LINES).map((b) =>
+              clip(`${b.title} · bounty${b.prize_cents ? ` · $${(b.prize_cents / 100).toFixed(2)}` : ""}`),
             )
-          : ["No open listings"],
+          : ["No open offers"],
     },
     {
       view: "rooms",
@@ -113,13 +110,6 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
               clip(`${r.name} · ${r.gate_type} · ${r.members?.length ?? r.member_count ?? 0} members`),
             )
           : ["No rooms visible to viewer"],
-    },
-    {
-      view: "tournaments",
-      lines:
-        events?.events?.length
-          ? events.events.slice(0, MAX_LINES).map((e) => clip(`${e.title} · ${e.status} · $${e.entry_fee_usd}`))
-          : ["No tournaments scheduled"],
     },
     {
       view: "games",
@@ -185,14 +175,13 @@ export interface DashboardCounts {
   /** "N+" (string) when the relay's has_more flag indicates more rows exist beyond
    * its page cap — N6 review R2: `count` alone can never signal this, since it's
    * always the returned page size. All eight fields below share the same `len()`
-   * helper and so carry the same type, but only /events, /agents, and (since N8-3)
+   * helper and so carry the same type, but only /agents, and (since N8-3)
    * /payments/settlements actually report `has_more` today — the rest merge
    * multiple sources or post-filter in Python and always resolve to a plain
    * number (see the Deferred section of the N8/N9 review notes). */
   listings: number | string | null;
   sessions: number | string | null;
   rooms: number | string | null;
-  events: number | string | null;
   agents: number | string | null;
   settlements: number | string | null;
   agoraTopics: number | string | null;
@@ -228,7 +217,6 @@ export function failedFromSnapshot(snapshot: OverviewSnapshot): Set<OverviewTabI
     ["games", snapshot.sessions],
     ["deals", snapshot.sessions],
     ["rooms", snapshot.rooms],
-    ["tournaments", snapshot.events],
     ["agents", snapshot.agents],
     ["agora", snapshot.agoraTopics],
     ["messages", snapshot.dmThreads],
@@ -242,15 +230,13 @@ export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts 
   const listingsR = snapshot.listings;
   const sessionsR = snapshot.sessions;
   const roomsR = snapshot.rooms;
-  const eventsR = snapshot.events;
   const agentsR = snapshot.agents;
   const settlementsR = snapshot.settlements;
   const topicsR = snapshot.agoraTopics;
   const dmsR = snapshot.dmThreads;
 
   // N6 review R2: `count` is always the returned page size (never a total), so it
-  // can never signal truncation by itself. `has_more` (so far only on /events and
-  // /agents) is the real signal — when present, render "N+" instead of a flat
+  // can never signal truncation by itself. `has_more` (so far only on /agents) is the real signal — when present, render "N+" instead of a flat
   // number that silently under-reports past the relay's page cap.
   const len = (r: PromiseSettledResult<unknown>): number | string | null => {
     if (r.status !== "fulfilled") return null;
@@ -262,7 +248,7 @@ export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts 
       if (Array.isArray(o.listings)) return o.listings.length;
       if (Array.isArray(o.sessions)) return o.sessions.length;
       if (Array.isArray(o.rooms)) return o.rooms.length;
-      if (Array.isArray(o.events)) return o.events.length;
+      if (Array.isArray(o.bounties)) return o.bounties.length;
       if (Array.isArray(o.agents)) return o.agents.length;
       if (Array.isArray(o.settlements)) return o.settlements.length;
       if (Array.isArray(o.topics)) return o.topics.length;
@@ -280,7 +266,6 @@ export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts 
     listings: len(listingsR),
     sessions: len(sessionsR),
     rooms: len(roomsR),
-    events: len(eventsR),
     agents: len(agentsR),
     settlements: len(settlementsR),
     agoraTopics: len(topicsR),
@@ -307,8 +292,6 @@ export function metricForNav(
       return String(counts?.dealSessions ?? "—");
     case "rooms":
       return String(counts?.rooms ?? "—");
-    case "tournaments":
-      return String(counts?.events ?? "—");
     case "agents":
       return String(counts?.agents ?? "—");
     case "agora":
@@ -347,7 +330,7 @@ export function countCaptionForNav(
       return online ? "Relay connected" : health ? "Relay unreachable" : null;
     case "listings": {
       const c = n(counts?.listings) ?? n(health?.listing_count as number | undefined);
-      return c != null ? `${c} listing${c === 1 ? "" : "s"}` : null;
+      return c != null ? `${c} offer${c === 1 ? "" : "s"}` : null;
     }
     case "deals": {
       const c = n(counts?.dealSessions);
@@ -356,10 +339,6 @@ export function countCaptionForNav(
     case "rooms": {
       const c = n(counts?.rooms);
       return c != null ? `${c} room${c === 1 ? "" : "s"}` : null;
-    }
-    case "tournaments": {
-      const c = n(counts?.events);
-      return c != null ? `${c} tournament${c === 1 ? "" : "s"}` : null;
     }
     case "agents": {
       const c = n(counts?.agents);

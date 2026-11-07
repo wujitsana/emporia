@@ -19,10 +19,9 @@ const failed = <T,>(): PromiseSettledResult<T> => ({
 
 function snapshot(over: Partial<OverviewSnapshot> = {}): OverviewSnapshot {
   return {
-    listings: ok({ listings: [], count: 0, has_more: false }),
+    listings: ok({ bounties: [], count: 0 }),
     sessions: ok({ sessions: [], count: 0, has_more: false }),
     rooms: ok({ rooms: [], count: 0, has_more: false }),
-    events: ok({ events: [], count: 0, has_more: false }),
     agents: ok({ agents: [], count: 0, has_more: false }),
     settlements: ok({ settlements: [], count: 0, has_more: false }),
     agoraTopics: ok({ topics: [], count: 0, has_more: false }),
@@ -71,7 +70,7 @@ describe("countsFromSnapshot", () => {
 describe("sectionsFromSnapshot", () => {
   it("says so in words when a collection is empty", () => {
     const byView = new Map(sectionsFromSnapshot(snapshot()).map((r) => [r.view, r]));
-    expect(byView.get("listings")?.lines).toEqual(["No open listings"]);
+    expect(byView.get("listings")?.lines).toEqual(["No open offers"]);
     expect(byView.get("messages")?.lines).toEqual(["No DM threads"]);
   });
 
@@ -79,13 +78,11 @@ describe("sectionsFromSnapshot", () => {
     const rows = sectionsFromSnapshot(
       snapshot({
         listings: ok({
-          listings: Array.from({ length: 9 }, (_, i) => ({
-            title: `listing ${i}`,
-            listing_type: "service",
-            payment_mode: "free",
+          bounties: Array.from({ length: 9 }, (_, i) => ({
+            title: `bounty ${i}`,
+            prize_cents: 500,
           })),
           count: 9,
-          has_more: false,
         }),
       } as unknown as Partial<OverviewSnapshot>)
     );
@@ -107,7 +104,6 @@ describe("failedFromSnapshot — rejected is not empty (P69)", () => {
     listings: ok([]),
     sessions: ok({ sessions: [] }),
     rooms: ok({ rooms: [] }),
-    events: ok({ events: [] }),
     agents: ok({ agents: [] }),
     settlements: ok({ settlements: [] }),
     agoraTopics: ok({ topics: [] }),

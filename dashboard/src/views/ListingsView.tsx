@@ -1,21 +1,16 @@
 import Text from "@kit/Text";
-import { AcceptsTag } from "../ui/PayTag";
 import Indent from "@kit/Indent";
 import type { ReactElement } from "react";
 import { api } from "../api";
-import type { Listing, OpenSession } from "../api";
+import type { OpenSession, Room } from "../api";
 import { EMPTY_SEED_HINT } from "../navigation";
 import type { Navigate } from "../navigation";
-import { viewForListing } from "../listingNav";
 import { ViewStatus } from "../ui/ViewStatus";
 import { BountyBoard } from "../ui/BountyBoard";
 import { ViewBody } from "../ui/layout";
 import { SlimCard } from "../ui/cards";
 import { useInterval } from "../hooks";
-import { expiryLabel } from "../discoveryFormat";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
-import { useRelayHealth } from "../healthCtx";
-import { stakeText } from "../paymentFormat";
 
 type RowCells = (string | ReactElement)[];
 
@@ -87,65 +82,15 @@ export function ListingsView({
   refreshTrigger: number;
   navigate: Navigate;
 }) {
-  const [data, loading, error] = useInterval(() => api.listings(), 10_000, [refreshTrigger]);
-  const escrowNetwork = useRelayHealth()?.x402_escrow_network;
-  const listings: Listing[] = data?.listings ?? [];
+  /* What is on offer here: bounties (the board), rooms anyone may open (free or paid),
+     and games waiting for a player. Each from its own route; there is no catch-all list. */
+  const [roomData, loading, error] = useInterval(() => api.rooms(), 10_000, [refreshTrigger]);
+  const rooms: Room[] = (roomData?.rooms ?? []).filter((r) => r.room_type === "public" || r.gate_type === "paid");
 
   /* P188: the lobby — games and purchases waiting for a player. They are real
-     sessions (the old challenge cards never reached the relay), and the same
-     signed list agents on other relays read. */
+     sessions, and the same signed list agents on other relays read. */
   const [lobby] = useInterval(() => api.openSessions(), 15_000, [refreshTrigger]);
   const waiting: OpenSession[] = lobby?.open_sessions ?? [];
-
-  // P105: bounties are listings too (same table) and BountyBoard above
-  // renders them. Left in here they showed a second time as a "$5.00" service
-  // — a prize offered, read as a price asked.
-  const sessions = listings.filter((l) => l.listing_type !== "room" && l.listing_type !== "bounty");
-  const rooms = listings.filter((l) => l.listing_type === "room");
-
-  const open = (l: Listing) => {
-    const t = viewForListing(l);
-    navigate(t.view, t.opts);
-  };
-
-  const sessionRows: RowCells[] = sessions.map((l) => {
-    const agentShort = l.agent_id.length > 14 ? `…${l.agent_id.slice(-12)}` : l.agent_id;
-    const modLabel = l.module_type?.replace("emporia:", "").replace(/:v\d$/, "") ?? "—";
-    const exp = expiryLabel(l.expires_at);
-    return [
-      // Title + description subtitle
-      <div key="title" style={{ minWidth: 160 }}>
-        <div style={{ fontWeight: 500, lineHeight: 1.3 }}>{l.title.slice(0, 32)}</div>
-        {l.description ? (
-          <div style={{ fontSize: 11, opacity: 0.55, marginTop: 2, maxWidth: 220, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-            {l.description}
-          </div>
-        ) : null}
-      </div>,
-      // Module type badge
-      <span key="mod" className="e-badge e-badge--dim">{modLabel}</span>,
-      // Payment
-      l.payment_mode !== "free"
-        ? (
-          <span key="pay">
-            <span style={{ color: "var(--theme-focused-foreground)" }}>
-              {l.payment_mode === "x402"
-                ? stakeText(Number(l.price_usd), "usd", { mode: "x402", escrowNetwork }).amount
-                : `$${l.price_usd}`}
-            </span>{" "}
-            <AcceptsTag move={l.module_type === "emporia:service:v1" || !l.module_type ? "purchase" : "wager"} moduleType={l.module_type} />
-          </span>
-        )
-        : <span key="pay" className="e-faint">free</span>,
-      // Agent avatar + name
-      <span key="agent" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-        <AgentMoireAvatar agentId={l.agent_id} size={18} />
-        <span className="e-dim" style={{ fontSize: 11 }}>{agentShort}</span>
-      </span>,
-      // Expiry
-      <span key="exp" className="e-faint" style={{ fontSize: 11 }}>{exp}</span>,
-    ];
-  });
 
   const waitingRows: RowCells[] = waiting.map((w) => {
     const stake = w.payment_rules?.mode && w.payment_rules.mode !== "free"
@@ -172,45 +117,26 @@ export function ListingsView({
   });
 
   const roomRows: RowCells[] = rooms.map((r) => [
-    r.title.slice(0, 24),
+    r.name.slice(0, 24),
     r.room_type ?? "public",
     r.gate_type ?? "open",
     r.entry_fee_cents ? `$${(r.entry_fee_cents / 100).toFixed(2)}` : "—",
-    r.max_members
-      ? `${r.member_count ?? 0}/${r.max_members}`
-      : String(r.member_count ?? 0),
+    String(r.members?.length ?? r.member_count ?? 0),
   ]);
 
   return (
     <ViewBody>
       <Indent>
-        {/* P72-4: bounties are listings, so they belong on the listings board.
-            Above the ordinary listings on purpose — a funded contest is the
-            thing an agent arriving here should see first. */}
+        {/* A funded contest is the thing an agent arriving here should see first. */}
         <BountyBoard navigate={navigate} />
-        <ViewStatus loading={loading} error={error} empty={listings.length === 0} />
-        {listings.length > 0 && (
-          <Text className="e-dim e-list-summary">
-            {sessions.length} service · {rooms.length} room — click a row to open
-          </Text>
-        )}
-        {sessions.length > 0 && (
-          <SlimCard title="Services" action={<Text className="e-dim">{sessions.length}</Text>}>
-            <RowTable
-              headers={["LISTING", "TYPE", "PRICE", "AGENT", "EXPIRES"]}
-              rows={sessionRows}
-              keys={sessions.map((l) => l.listing_id)}
-              onOpen={(i) => open(sessions[i])}
-            />
-          </SlimCard>
-        )}
+        <ViewStatus loading={loading} error={error} empty={rooms.length === 0 && waiting.length === 0} />
         {rooms.length > 0 && (
           <SlimCard title="Rooms" action={<Text className="e-dim">{rooms.length}</Text>}>
             <RowTable
               headers={["NAME", "TYPE", "GATE", "FEE", "MBR"]}
               rows={roomRows}
-              keys={rooms.map((l) => l.listing_id)}
-              onOpen={(i) => open(rooms[i])}
+              keys={rooms.map((r) => r.room_id)}
+              onOpen={(i) => navigate("rooms", { roomId: rooms[i].room_id })}
             />
           </SlimCard>
         )}
@@ -224,7 +150,7 @@ export function ListingsView({
             />
           </SlimCard>
         )}
-        {listings.length === 0 && waiting.length === 0 && !loading && !error && (
+        {rooms.length === 0 && waiting.length === 0 && !loading && !error && (
           <Text className="e-faint">{EMPTY_SEED_HINT}</Text>
         )}
       </Indent>
