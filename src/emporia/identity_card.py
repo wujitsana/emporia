@@ -27,12 +27,13 @@ import re
 import time
 from pathlib import Path
 
-from emporia import operators
+from emporia import operators, wire
 
 LABEL_SETTING = "EMPORIA_OPERATOR_LABEL"
 DECLARE_SETTING = "EMPORIA_DECLARE_MODEL"
 CLIENT_SETTING = "EMPORIA_CLIENT"
-CLIENT_NAMES = ("hermes-plugin", "sdk", "custom")
+CLIENT_NAMES = wire.CLIENT_HOSTS     # plus `custom:<name>` (wire.normalize_client)
+CLIENT_VERSION_SETTING = "EMPORIA_CLIENT_VERSION"
 MODEL_TAG = "model"
 MODEL_MAX = 80
 _MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,79}")
@@ -97,7 +98,8 @@ def client(default: str = "custom") -> tuple[str, str]:
     """(name, version) of the client this process is: EMPORIA_CLIENT if it names one, else `default`."""
     from emporia import __version__
     named = os.environ.get("EMPORIA_CLIENT", "").strip().lower()
-    return (named if named in CLIENT_NAMES else default, __version__)
+    name = wire.normalize_client(named or default) or "custom"
+    return (name, wire.clean_client_version(os.environ.get(CLIENT_VERSION_SETTING, "")) or __version__)
 
 
 def mcp_client() -> tuple[str, str]:

@@ -7728,19 +7728,19 @@ def build_parser() -> argparse.ArgumentParser:
                         "without it, a tick-list asks")
     r.set_defaults(func=cmd_relay)
 
-    ag2 = sub.add_parser("agent", help="an agent leaves a relay, is deleted from this machine, has its "
+    ag2 = sub.add_parser("agent", help="set up an agent that is not Hermes's (init, mcp-config HOST); an agent leaves a relay, is deleted from this machine, has its "
                                        "secrets moved out of config.yaml (secure), its plugin updated (refresh) "
                                        "or its identity key changed (rotate-key), given a recovery key "
                                        "(recovery-key) or replaced with it when lost (recover)")
     ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear", "rotate-key",
-                                        "rotate-encryption-key", "recovery-key", "recover", "playbook"])
+                                        "rotate-encryption-key", "recovery-key", "recover", "playbook", "init", "mcp-config"])
     ag2.add_argument("url_or_name", nargs="?", default="",
                      help="leave: the relay's URL; delete, secure, refresh, inbox-clear, rotate-key: "
                           "the agent (secure, refresh, inbox-clear: or all)")
     ag2.add_argument("name", nargs="?", default="", help="leave: the agent")
     ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
     ag2.add_argument("--yes", action="store_true", help="rotate-key, rotate-encryption-key, recover: do not ask first")
-    ag2.add_argument("--agent", default="", help="recovery-key, recover: the agent (default: this profile's)")
+    ag2.add_argument("--agent", default="", help="recovery-key, recover: the agent (default: this profile's); init, mcp-config grok-bot: its name")
     ag2.add_argument("--out", default="", help="recovery-key: the file to write the recovery key to (0600)")
     ag2.add_argument("--recovery-key-file", default="", help="recover: a file holding the recovery key")
     ag2.add_argument("--recovery-key-source", default="",
@@ -7758,7 +7758,11 @@ def build_parser() -> argparse.ArgumentParser:
                      help="playbook: may it sign pledges and attest others' (gamify pledges)")
     ag2.add_argument("--compromised-since", default="",
                      help="recover: when the old key stopped being only yours (ISO time; default now)")
-    ag2.set_defaults(func=lambda a: cmd_agent_secure(a.url_or_name) if a.action == "secure" else
+    from emporia import agent_init as _agent_init     # init / mcp-config: an agent that Hermes does not run
+    _agent_init.add_arguments(ag2)
+    ag2.set_defaults(func=lambda a: _agent_init.run(_agent_init.namespace_from_cli(a)) if a.action == "init" else
+                     _agent_init.mcp_config(a) if a.action == "mcp-config" else
+                     cmd_agent_secure(a.url_or_name) if a.action == "secure" else
                      cmd_agent_refresh(a.url_or_name) if a.action == "refresh" else
                      cmd_agent_rotate_key(a.url_or_name, a.yes) if a.action == "rotate-key" else
                      cmd_agent_rotate_encryption_key(a.url_or_name, a.yes) if a.action == "rotate-encryption-key" else

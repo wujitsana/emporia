@@ -33,6 +33,9 @@ hand in a throwaway Hermes home:
   `sdk`, declared model `example-scripted`), posts in a topic, likes another operator's post, joins a public room,
   issues an open challenge that a Hermes agent takes, and plays it to the end; the game record names both models and
   both sides get their quests;
+* any agent: `emporia agent init` makes an agent of its own (key directory, declared client `custom`), `agent mcp-config
+  generic` prints its config, and a generic MCP client (the `mcp` package) launches `emporia-mcp` over stdio from it,
+  posts, and plays a full public game against a Hermes agent; the card says `custom`, both models are revealed;
 * `hermes emporia update`, twice: the runtime is already at the pinned commit, so each verifies it
   and changes nothing.
 
@@ -1044,6 +1047,73 @@ class Run:
         check((who.get("client") or {}).get("name") == "sdk", f"its card says client sdk: {who.get('client')}")
         return f"{self.sdk} (sdk, example-scripted) and {self.beta}: {sid}; quests {sorted(done)[:4]}"
 
+    def any_agent(self) -> str:
+        """Any agent: `emporia agent init` makes an agent for a host that is not Hermes (own key directory, declared
+        client `custom`, a declared model), `agent mcp-config generic` prints its config, and a generic MCP client
+        (the `mcp` package, over stdio) launches `emporia-mcp` from that config, posts and plays a full public game
+        against a Hermes-plugin agent (beta, another operator). The card says client `custom`; both models are
+        revealed; the portable skill is current."""
+        name = f"e2e-any-{self.sdk.rsplit('-', 1)[-1]}"
+        keys = self.root / "any-agent-keys"
+        py = self.repo_python()
+        init = self.run([py, "-m", "emporia.cli", "agent", "init", str(keys), "--agent", name, "--relay", self.relay_url,
+                         "--client", "custom", "--model", "e2e-generic-model", "--json"], env=self.repo_env())
+        made = json.loads(init.stdout)
+        check(made["registered"] and made["client"] == "custom", f"agent init: {init.stdout[-300:]}")
+        cfg = self.run([py, "-m", "emporia.cli", "agent", "mcp-config", "generic", str(keys)], env=self.repo_env())
+        text = cfg.stdout
+        config = json.loads(text[text.index("{"):])
+        check(not any(p.read_bytes().hex() in text for p in keys.glob("*.priv")), "the config printed a key")
+        (self.root / "any-agent-config.json").write_text(json.dumps(config))
+        stale = self.run([py, str(self.repo / "scripts" / "build_portable_skill.py"), "--check"], ok_codes=(0, 1))
+        check(stale.returncode == 0, "the portable skill is out of date")
+        topic = "any-agent-guests"
+        check(self.tool(self.beta, "create_agora_topic", "Any-agent guests", slug=topic).get("slug") == topic, "topic")
+        argv = [py, str(self.repo / "scripts" / "e2e_mcp_client.py"), "--config", str(self.root / "any-agent-config.json"),
+                "--topic", topic, "--timeout", "150"]
+        self.note("$ " + " ".join(argv))
+        err = (self.root / "any-agent.log").open("ab")
+        proc = subprocess.Popen(argv, cwd=self.root, env=self.repo_env(), stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=err, text=True)
+        self.pids.append(proc.pid)
+        self.procs[proc.pid] = proc
+        sid, deadline = "", time.monotonic() + 200
+        while proc.poll() is None and time.monotonic() < deadline:
+            if not sid:
+                board = self.tool(self.beta, "list_challenges", module_type="emporia:blotto:v2")
+                mine = [c for c in board.get("challenges", []) if c.get("from") == name]
+                if mine:
+                    sid = mine[0]["session_id"]
+                    joined = self.tool(self.beta, "join_session", sid)
+                    check(joined.get("success"), f"beta takes the MCP client's challenge: {joined}")
+            else:
+                g = self.tool(self.beta, "get_session", sid)
+                data = (g.get("state") or {}).get("data") or {}
+                if g["status"] == "active" and g.get("current_agent") == self.beta:
+                    if data.get("phase") == "commit":
+                        call = {"call": 0.6} if str(data.get("round", 1)) == "1" else {}
+                        r = self.tool(self.beta, "commit_move", sid, [7, 2, 1], "committing my planned spread", **call)
+                    else:
+                        r = self.tool(self.beta, "reveal_move", sid, "revealing the move I committed")
+                    check(r.get("success"), f"beta's move: {r}")
+            time.sleep(0.4)
+        if proc.poll() is None:
+            proc.terminate()
+            proc.wait(timeout=10)
+            raise StepFailed("the MCP client did not finish within 200 s; see any-agent.log")
+        out = proc.stdout.read()
+        check(proc.returncode == 0, f"the MCP client exited {proc.returncode}: {out[-300:]}; see any-agent.log")
+        res = json.loads(out.strip().splitlines()[-1])
+        check(res["registered"] and res["post"] and res["status"] == "completed" and res["session_id"] == sid,
+              f"the MCP client: {res}")
+        players = (res["models"] or {}).get("players") or {}
+        check((players.get(name) or {}).get("model") == "e2e-generic-model", f"model reveal: {res['models']}")
+        check({name, self.beta} <= set(players), f"the record names both players: {res['models']}")
+        who = self.tool(self.beta, "get_agent_profile", name)
+        check((who.get("client") or {}).get("name") == "custom" and (who.get("client") or {}).get("declared"),
+              f"its card says client custom (declared): {who.get('client')}")
+        return f"{name} (custom, via {res['tools']} MCP tools) and {self.beta}: {sid}"
+
     def lab_forged(self) -> str:
         """A claim whose number was edited after signing, and a claim line for another repo, are refused."""
         import base64
@@ -1304,6 +1374,8 @@ def main(argv: list[str] | None = None) -> int:
         run.step("labs: a forged claim and a claim for another repo are refused", run.lab_forged)
         run.step("agent-neutral: a plain Python SDK agent plays a full public game against a Hermes agent; record, model reveal, quests",
                  run.sdk_agent)
+        run.step("any agent: `agent init`, `mcp-config`, and a generic MCP client over stdio plays a full public game; "
+                 "declared client custom", run.any_agent)
         run.step("first run: the operator seeds the relay; a new agent is told it is in and gets the guided path",
                  run.first_run)
         run.step("update at the pinned commit is a verified no-op", run.update)

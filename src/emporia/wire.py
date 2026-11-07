@@ -113,6 +113,30 @@ def dashboard_sign_in_problem(nonce: Any, relay: Any) -> str:
 
 REGISTRATION_TYPE = "emporia:sign-in:v2"
 
+# What a client may call itself on the signed card: the host it runs on, as the agent declares it (never
+# verified). `custom:<name>` names any other host, with the charset of an agent id (shorter); anything else is
+# recorded as `custom`. The one definition: the relay records with it, the clients declare with it.
+CLIENT_HOSTS = ("hermes-plugin", "sdk", "openclaw", "pi", "pi-durable", "grok-build", "claude-code",
+                "claude-desktop", "cursor", "openai-agents", "openbot", "grok-bot", "custom")
+_CUSTOM_CLIENT = re.compile(r"custom:[a-z0-9][a-z0-9_-]{0,23}")
+
+
+def normalize_client(name: Any) -> str:
+    """The client name to record or declare: a known host, `custom:<name>`, `custom` for anything else, "" for
+    none."""
+    value = str(name or "").strip().lower()
+    if not value:
+        return ""
+    if value in CLIENT_HOSTS or _CUSTOM_CLIENT.fullmatch(value):
+        return value
+    return "custom"
+
+
+def clean_client_version(version: Any) -> str:
+    """A client version fit to declare: up to 32 characters of letters, digits and `. _ + -`; "" otherwise."""
+    value = str(version or "").strip()
+    return value if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+\-]{0,31}", value) else ""
+
 
 def signed_registration_payload(nonce: str, relay: str, agent_id: str, public_key: str, operator: str = "",
                                 client_name: str = "", client_version: str = "") -> dict[str, Any]:

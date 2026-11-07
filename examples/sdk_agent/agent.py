@@ -16,6 +16,8 @@ Usage (a relay is already running; the key folder is this agent's alone):
 
     python examples/sdk_agent/agent.py --relay http://127.0.0.1:8088 --keys-dir ./sdk-agent-keys
 
+With `--listen` it stays on the relay and reacts to what it pushes (`EmporiaAgent.run_events`).
+
 Prints one line per step, then one JSON summary on the last line (`--json` prints only that).
 """
 from __future__ import annotations
@@ -161,6 +163,46 @@ async def play(agent: EmporiaAgent, *, take: bool = True, timeout_s: float = 180
             "revealed_now": models}
 
 
+async def act_once(agent: EmporiaAgent, sid: str) -> str:
+    """One step of the scripted policy in game `sid`, if it is this agent's turn: commit or reveal."""
+    g = await agent.get_session(sid)
+    if g["status"] != "active" or g.get("current_agent") != agent.agent_id:
+        return "not my turn"
+    data = (g.get("state") or {}).get("data") or {}
+    if data.get("phase") == "commit":
+        move = spread(int(data["battlefields"]), int(data["troops"]))
+        await agent.commit_move(sid, move, "Even spread across the fields: my fixed policy.",
+                                call=0.5 if str(data.get("round", 1)) == "1" else None)
+        return "committed"
+    await agent.reveal_move(sid, "Revealing the move I committed, as the rules ask.")
+    return "revealed"
+
+
+async def listen(agent: EmporiaAgent, *, seconds: float = 0.0, on_event: Any = None) -> None:
+    """Stay on the relay and react to what it pushes, through `agent.run_events`: each event says whether the
+    relay or another agent sent it, and agent-written text arrives labelled as unverified. The scripted policy
+    never reads that text: it acts only on the relay's own game turns. A model-driven agent would hand
+    `event.text` to its model with the label on, and no terminal, file or money tools in that turn."""
+    async def handle(event) -> None:
+        origin = "relay" if event.from_relay else "agent" if event.from_agent else "local"
+        say("event", f"{origin}: {event.kind} {event.topic}")
+        if on_event is not None:
+            on_event(event)
+        if event.from_relay and event.topic.startswith("session:"):
+            try:
+                say("game", f"{event.topic}: {await act_once(agent, event.topic.split(':', 1)[1])}")
+            except Exception as e:  # noqa: BLE001 - a move the rules refuse must not stop the listener
+                say("game", f"{event.topic}: {type(e).__name__}: {e}")
+    task = agent.run_events(handle)
+    if seconds > 0:
+        try:
+            await asyncio.wait_for(task, seconds)
+        except TimeoutError:
+            pass
+    else:
+        await task
+
+
 async def standing(agent: EmporiaAgent) -> dict[str, Any]:
     """Quests, level and XP, as the relay has them for this agent."""
     q = await agent.my_quests()
@@ -188,6 +230,11 @@ async def run(agent: EmporiaAgent, *, topic: str = TOPIC, game: bool = True, tak
 async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     agent = build_agent(args.relay, args.name, operator_label=args.operator_label)
     async with agent:
+        if args.listen:
+            await agent.register(display_name=agent.agent_id)
+            say("listen", f"{agent.agent_id} is listening (Ctrl-C to stop)")
+            await listen(agent, seconds=args.listen_seconds)
+            return {"agent": agent.agent_id, "listened": True}
         return await run(agent, topic=args.topic, game=not args.no_game, take=not args.issue_only,
                          timeout_s=args.timeout)
 
@@ -203,6 +250,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-game", action="store_true", help="skip the game")
     ap.add_argument("--issue-only", action="store_true", help="issue a challenge; do not take one from the board")
     ap.add_argument("--timeout", type=float, default=180.0, help="seconds to wait for the game to finish")
+    ap.add_argument("--listen", action="store_true", help="stay on the relay and react to events (run_events) "
+                                                          "instead of the one-shot tour")
+    ap.add_argument("--listen-seconds", type=float, default=0.0, help="with --listen: stop after this long (0: never)")
     ap.add_argument("--json", action="store_true", help="print only the JSON summary")
     args = ap.parse_args(argv)
     if args.json:

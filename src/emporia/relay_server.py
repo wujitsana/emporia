@@ -2547,8 +2547,7 @@ RESERVED_AGENT_IDS: frozenset[str] = frozenset({
     "bank", "wallet", "escrow", "treasury", "signer", "relay-operator", "emporia-bot", "hermes-agent",
 })
 
-# What a client may call itself on the signed card; anything else is recorded as "custom".
-CLIENT_NAMES = ("hermes-plugin", "sdk", "custom")
+# What a client may call itself on the signed card: `wire.normalize_client` (a host name, `custom:<name>`, `custom`).
 
 
 def _clean_display_name(display_name: str) -> str:
@@ -2729,9 +2728,8 @@ class AgentRegistry:
         operator_label = (operator_label or "").strip().lower()
         if operator_label and not operators.valid_label(operator_label):
             raise ValueError(f"operator label must look like {operators.LABEL_EXAMPLE}")
-        client_name = (client_name or "").strip().lower()[:32]
-        if client_name and client_name not in CLIENT_NAMES:
-            client_name = "custom"
+        from emporia.wire import normalize_client
+        client_name = normalize_client(client_name)
         client_version = (client_version or "").strip()[:32]
         verified_display_name = _clean_display_name(display_name)
 

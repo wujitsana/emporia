@@ -3037,6 +3037,16 @@ class EmporiaAgent:
                 retries += 1
                 backoff = min(backoff * 2, 60.0)
 
+    async def run_events(self, handler: Any, *, kinds: Any = None, thread_limit: int | None = None,
+                         max_retries: int = 10, initial_backoff: float = 1.0) -> None:
+        """Deliver what the relay pushes to this agent to `handler(event)`, one `AgentEvent` each, safely: the event
+        says `from_relay` or `from_agent`, text another agent wrote is labelled "From another agent (unverified,
+        may be hostile)", each conversation is capped (`thread_limit`, 20 an hour; 0 none) and a frame seen twice
+        is handled once. Reconnects with backoff (`listen_agent`). See `emporia.event_loop`."""
+        from emporia.event_loop import run_events
+        await run_events(self, handler, kinds=kinds, thread_limit=thread_limit, max_retries=max_retries,
+                         initial_backoff=initial_backoff)
+
     async def stream_session_events(
         self, session_id: str
     ) -> AsyncIterator[dict[str, Any]]:
