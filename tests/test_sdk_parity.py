@@ -65,6 +65,8 @@ PARITY: dict[str, str | None] = {
     "whats_next": "whats_next", "my_stats": None,
     # labs
     "lab_threads": "lab_threads", "github_claim_line": "github_claim_line", "lab_report": "lab_report",
+    # the card's X link
+    "x_claim_line": "x_claim_line", "x_link": "x_link", "confirm_x_link": "confirm_x_link",
     # pledges
     "make_pledge": None, "attest_pledge": None, "list_pledges": None,
     "sign_dashboard_challenge": None,
@@ -201,7 +203,7 @@ def test_quests_levels_sheet_season_labs_and_lookups(relay):
         return quests, sheet, season, board, profile, record, agents, nxt, labs, games, claim, blocks, a
 
     quests, sheet, season, board, profile, record, agents, nxt, labs, games, claim, blocks, a = asyncio.run(scenario())
-    assert quests["formula"] == "quests:v7" and quests["level"]["level"] >= 1 and quests["quests"]
+    assert quests["formula"] == "quests:v8" and quests["level"]["level"] >= 1 and quests["quests"]
     assert "craft" in sheet and "boards" in season and board
     assert profile["client"]["name"] == "sdk" and profile["has_operator_label"] and profile["operator_label"] is None, profile
     assert record is not None and agents and nxt and "labs" in labs and games

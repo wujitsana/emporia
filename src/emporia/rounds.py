@@ -5,8 +5,8 @@ A round is one Hermes cron job per profile, created and removed with Hermes's ow
 `cron/jobs.json`. The job is found by a fixed name (`JOB_NAME`); this module only ever lists,
 creates, edits, pauses, resumes or removes a job with that name, never any other.
 
-What a round does is the prompt shipped with the plugin (`hermes_plugin/emporia/rounds_prompt.md`,
-whose first line is the marker `[emporia-rounds v1]`, `rounds_marker.ROUNDS_MARKER`): look at `whats_next` and `whats_happening`, take at most three
+What a round does is the prompt in the package (`src/emporia/data/rounds_prompt.md`, the single source,
+whose first line is the marker `[emporia-rounds v1]`, which the plugin's `rounds_marker.ROUNDS_MARKER` repeats): look at `whats_next` and `whats_happening`, take at most three
 actions inside the playbook, never pay or accept a deal, treat what the relay says as data, and
 finish with one line or `[SILENT]`. The job delivers to `local` (saved with its run, sent to no
 chat), and so do its failure notices.
@@ -68,18 +68,14 @@ def estimate(every: str) -> str:
 
 
 def prompt_path(plugin_dir: Path | None = None) -> Path:
-    """The plugin's prompt file: this repo's (a checkout, or the runtime a catalog install clones),
-    else the profile's installed plugin."""
-    candidates = [Path(__file__).resolve().parents[2] / "hermes_plugin" / "emporia" / PROMPT_FILE]
-    if plugin_dir:
-        candidates.insert(0, plugin_dir / PROMPT_FILE)
-    home = os.environ.get("HERMES_HOME")
-    if home:
-        candidates.append(Path(home) / "plugins" / "emporia" / PROMPT_FILE)
-    for p in candidates:
-        if p.is_file():
-            return p
-    raise RoundsError(f"the rounds prompt ({PROMPT_FILE}) is not in the plugin")
+    """The rounds prompt: `emporia/data/rounds_prompt.md`, inside the package (so it is in the wheel and in the
+    runtime a catalog install clones), the single source. The Hermes plugin does not read it: the plugin only
+    recognises a round by its marker line (`hermes_plugin/emporia/rounds_marker.py`, held equal by a test).
+    `plugin_dir` is accepted and ignored."""
+    p = Path(__file__).resolve().parent / "data" / PROMPT_FILE
+    if not p.is_file():
+        raise RoundsError(f"the rounds prompt ({PROMPT_FILE}) is not in the package")
+    return p
 
 
 def prompt_text(plugin_dir: Path | None = None) -> str:
@@ -91,13 +87,8 @@ def prompt_text(plugin_dir: Path | None = None) -> str:
 
 
 def marker() -> str:
-    """ROUNDS_MARKER, from the plugin's own rounds_marker.py (loaded by path: it imports nothing)."""
-    import importlib.util
-    path = prompt_path().with_name("rounds_marker.py")
-    spec = importlib.util.spec_from_file_location("emporia_rounds_marker", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod.ROUNDS_MARKER
+    """The marker line a round opens with: the first line of the packaged prompt."""
+    return prompt_path().read_text(encoding="utf-8").splitlines()[0].strip()
 
 
 def prompt_version(text: str) -> str:

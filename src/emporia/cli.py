@@ -3383,7 +3383,7 @@ def cmd_rounds(args: argparse.Namespace) -> int:
             print("  " + R.resume(pname))
         else:
             print(f"  Rounds      {R.status_line(pname)}")
-            print(f"  Prompt      version {R.prompt_version(R.prompt_text())} (hermes_plugin/emporia/{R.PROMPT_FILE})")
+            print(f"  Prompt      version {R.prompt_version(R.prompt_text())} (emporia/data/{R.PROMPT_FILE})")
             print(f"  Wake mode   {__import__('emporia.wake', fromlist=['x']).current(installer().harvest_env(profile))}")
     except R.RoundsError as e:
         print(f"rounds: {e}")

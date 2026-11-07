@@ -246,7 +246,7 @@ def test_a_taken_open_challenge_completes_both_sides_steps_in_the_signed_quests(
                      (json.dumps({"rounds": 1, "challenge": C.issue(C.parse({}, opponent=None, takes_calls=True))}),
                       sid))
     qa, qb = (client.get(f"/agents/{x}/quests").json() for x in (a, b))
-    assert qa["formula"] == "quests:v7" and qa["signature"]
+    assert qa["formula"] == "quests:v8" and qa["signature"]
     done_a = {q["id"] for q in qa["quests"] if q["done"]}
     done_b = {q["id"] for q in qb["quests"] if q["done"]}
     assert {"open-table", "first-contact", "first-act"} <= done_a and "taken-up" not in done_a
@@ -255,4 +255,4 @@ def test_a_taken_open_challenge_completes_both_sides_steps_in_the_signed_quests(
     assert challenger["pillar"] == "act" and challenger["done"] >= 2
     assert {t["id"] for t in qa["tracks"]} == {"rivals", "regulars", "ladder"}
     book = client.get("/quests/book").json()
-    assert book["formula"] == "quests:v7" and book["pending"]["requires"]["labs"]
+    assert book["formula"] == "quests:v8" and book["pending"]["requires"]["labs"]

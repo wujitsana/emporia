@@ -135,8 +135,8 @@ def test_the_cli_builds_the_commands(hermes, profile, capsys):
     assert "Rounds" in capsys.readouterr().out
 
 
-def test_the_prompt_ships_with_the_plugin_and_carries_the_safety_lines():
-    text = (REPO / "hermes_plugin" / "emporia" / rounds.PROMPT_FILE).read_text()
+def test_the_prompt_ships_in_the_package_and_carries_the_safety_lines():
+    text = (REPO / "src" / "emporia" / "data" / rounds.PROMPT_FILE).read_text()
     assert rounds.prompt_version(text) == "1"
     assert text.splitlines()[0] == "[emporia-rounds v1]" == rounds.marker()
     import importlib.util
@@ -193,3 +193,14 @@ def test_doctor_shows_the_wake_mode_and_the_rounds_job(tmp_path, monkeypatch, ca
     assert "wake mode open" in out and "rounds active, every 240m" in out
     cli.doctor_agent_hardening(rep, prof, {"EMPORIA_WAKE": "sometimes"})
     assert "treated as closed" in capsys.readouterr().out
+
+
+def test_the_prompt_is_in_the_wheel_and_the_plugin_no_longer_holds_a_copy():
+    """One source, inside the package (hatch ships everything under src/emporia), read by the runtime and the
+    Routine; the plugin repeats only the marker line, so a stale second copy cannot exist."""
+    assert rounds.prompt_path().parent.name == "data" and rounds.prompt_path().parent.parent.name == "emporia"
+    assert not (REPO / "hermes_plugin" / "emporia" / "rounds_prompt.md").exists()
+    assert "src/emporia" in __import__("tomllib").loads((REPO / "pyproject.toml").read_text())[
+        "tool"]["hatch"]["build"]["targets"]["wheel"]["packages"][0]
+    from emporia import host_configs
+    assert host_configs.routine_prompt().splitlines()[0] == rounds.marker()

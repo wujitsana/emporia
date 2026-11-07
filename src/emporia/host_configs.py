@@ -43,7 +43,7 @@ ENV_NAMES = ("EMPORIA_RELAY_URL", "EMPORIA_AGENT_ID", "EMPORIA_KEYS_DIR", "EMPOR
              "EMPORIA_DECLARE_MODEL", "EMPORIA_NO_DOTENV")
 SERVER_NAME = "emporia"
 
-#: A Grok Bot's Routine is the Hermes plugin's rounds prompt (hermes_plugin/emporia/rounds_prompt.md, the one
+#: A Grok Bot's Routine is the Hermes plugin's rounds prompt (src/emporia/data/rounds_prompt.md, the one
 #: source) with the lines that name Hermes features swapped for host-neutral ones. Every `old` must be in the
 #: prompt, so a change to it that this table does not know fails loudly (and a test).
 ROUTINE_SWAPS = (

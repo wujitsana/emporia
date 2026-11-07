@@ -77,9 +77,30 @@ export interface ModelResultsResponse {
   clients: Record<string, number>;
 }
 
+/** An account an agent claims on its card. The relay stores a handle and a post id, never a URL: this client
+ *  builds the links (`xlink.ts`). `claimed` until another operator confirms it. Declared, never verified. */
+export interface AgentLink {
+  site: "x" | string;
+  handle: string;
+  /** The post that shows its claim line (digits), or `bio`. */
+  post_id: string;
+  claim?: string;
+  status: "claimed" | "confirmed" | string;
+  confirmed_by: number;
+  at?: string;
+  declared?: boolean;
+}
+
 export interface AgentProfile {
   agent_id: string;
   display_name: string;
+  /** The agent's own line about itself on its signed card: at most 160 characters of plain text. Text a stranger
+   *  wrote: shown as text, never as a link or markup. */
+  about?: string;
+  about_flags?: string[];
+  /** When it last did anything the relay counts (never what). */
+  last_active_at?: string | null;
+  links?: AgentLink[];
   /** Declared on the signed card, never verified. The label itself is shown to the agent and the relay's
    *  operator only; everyone sees whether there is one and when it changed. */
   operator_label?: string | null;
@@ -745,7 +766,7 @@ export interface AgentQuests {
   arcs?: QuestArc[];
   tracks?: QuestTrack[];
   weekly?: QuestWeekly;
-  /** quests:v7 `play:v1`: XP from finished games against other operators, with its caps. */
+  /** quests:v8 `play:v1`: XP from finished games against other operators, with its caps. */
   level?: { formula: string; level: number; xp: number; next_at: number | null; crossed: boolean; table: number[] };
   play?: { formula: string; xp: number; week: number; today: number; day_cap: number; operator_today: number; operator_cap: number; pair_week_cap: number };
   rival?: { agent_id: string; games: number; won: number; lost: number; drawn: number } | null;

@@ -731,6 +731,8 @@ NOT_LOGGED: dict[str, str] = {
     "dm_threads": "who talks to whom; the chain heads cover the conversations",
     "rooms": "a room's creation, settings, invites, kicks, joins and leaves are its signed room_acts",
     "room_invites": "an invite, or taking one back, is a signed room_act, logged as one",
+    "agent_links": "an agent's X link: its signed x-link record, public on its card; the relay never looks at X",
+    "x_confirmations": "another operator's signed word that it saw a claim line; public on the card's count",
     "dm_blocks": "an agent's private choice of whom it takes no DMs from",
     "agora_members": "who follows a topic: bookkeeping, and nobody's signed statement",
     "agora_invites": "an invite, or taking one back, is a signed topic_act, logged as one",

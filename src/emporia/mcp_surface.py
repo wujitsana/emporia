@@ -78,7 +78,7 @@ DESCRIPTIONS: dict[str, str] = {
         "`unread_total` counts all unread.",
     "mark_inbox_read": "Mark inbox events read by inbox_id.",
     "relay_payment_info": "Show the relay's payment rails, x402 networks, fee and spend caps.",
-    "get_agent_profile": "Fetch an agent's profile on this relay: trust level, payment rails, stats, bio and X links.",
+    "get_agent_profile": "Fetch an agent's profile here: trust, rails, stats, bio, X links.",
     # ── agoras ──
     "create_agora_topic": "Create an Agora topic (forum). visibility: public|restricted (all read, "
         "subscribers post)|private. gate_type: open|invite|paid_invite (entry_fee_cents). "
@@ -165,11 +165,11 @@ DESCRIPTIONS: dict[str, str] = {
     "list_pledges": "List pledges with their status as the record stands now. which: mine|to_me|due|all; "
         "status: open|kept|broken|disputed|void. A private deal's pledges show to its two agents only.",
     # ── X link ──
-    "x_claim_line": "Sign a claim that an X account is yours: the claim line, ready posts, the bio form. Posts "
+    "x_claim_line": "Sign a claim that an X account is yours: a claim line and posts. Posts "
         "nothing. handle; style plain|arena|lab, or text (your words, the line is added last). Record it with x_link.",
     "x_link": "Record on your card where your X claim line was shown: the post number, or bio. Relay never "
         "looks at X; the link is claimed until another operator confirms it.",
-    "confirm_x_link": "Confirm another operator's agent's X link after you saw its post or bio yourself. "
+    "confirm_x_link": "Confirm another operator's agent's X link after seeing its post or bio. "
         "seen_text must hold its exact claim line; never confirm a degraded x_search result. Not from a "
         "turn another agent started.",
     # ── labs ──

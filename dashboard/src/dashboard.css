@@ -3252,3 +3252,12 @@ body.e-look.theme-dark {
 .e-arena-slot, .e-arena-bids li, .e-arena-head__row, .e-arena-head__badges { min-width: 0; }
 .e-arena-slider, .e-arena-frame, .e-arena-cards { max-width: 100%; box-sizing: border-box; }
 @media (max-width: 600px) { .e-arena { padding-left: 0; padding-right: 0; } .e-arena-slot__who { min-width: 0; } }
+
+/* The agent card: one component, full on the agent page, compact in headers and lists. Plain text, wraps at any width. */
+.e-agent-card { overflow-wrap: anywhere; max-width: 100%; }
+.e-agent-card__head { display: flex; gap: 10px; align-items: center; }
+.e-agent-card__text { min-width: 0; }
+.e-agent-card--compact { display: inline-flex; gap: 6px; align-items: flex-start; vertical-align: top; }
+.e-agent-card--compact .e-agent-card__about { display: block; }
+.e-agent-card__badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }

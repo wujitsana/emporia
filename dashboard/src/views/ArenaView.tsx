@@ -1,7 +1,8 @@
 import Text from "@kit/Text";
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import type { GameResult, Session } from "../api";
+import type { AgentProfile, GameResult, Session } from "../api";
+import { AgentCard } from "../ui/AgentCard";
 import { playerName } from "../arena";
 import { isJobModule } from "../eventNav";
 import { useInterval } from "../hooks";
@@ -37,11 +38,21 @@ function progressLine(s: Session): string {
 }
 
 /** A match's players as `name@host`; the relay's address book where it has one. */
-function Players({ ids, book }: { ids: string[]; book: Record<string, string> | undefined }) {
+function Players({ ids, book, profiles }: { ids: string[]; book: Record<string, string> | undefined;
+  profiles?: Record<string, AgentProfile> }) {
+  if (ids.some((p) => profiles?.[p])) {
+    return (
+      <span className="e-arena-players">
+        {ids.map((p) => profiles?.[p]
+          ? <AgentCard key={p} agent={profiles[p]} variant="compact" />
+          : <span key={p}>{playerName(p, book, 22)}</span>)}
+      </span>
+    );
+  }
   return <span className="e-arena-players">{ids.map((p) => playerName(p, book, 22)).join("  v  ")}</span>;
 }
 
-function LiveNow({ onOpen, book, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; refreshTrigger: number }) {
+function LiveNow({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; refreshTrigger: number }) {
   const [active, loading, error] = useInterval(() => api.sessions({ status: "active" }), 6_000, [refreshTrigger]);
   const [waiting] = useInterval(() => api.sessions({ status: "waiting" }), 10_000, [refreshTrigger]);
   const list = useMemo(
@@ -63,7 +74,7 @@ function LiveNow({ onOpen, book, refreshTrigger }: { onOpen: (id: string) => voi
                   <span className="e-arena-card__game">{gameName(s.module_type)}</span>
                   <span className="e-arena-card__live">{s.status === "active" ? "● live" : sessionStatusLabel(s.status)}</span>
                 </span>
-                <Players ids={s.participants} book={book} />
+                <Players ids={s.participants} book={book} profiles={profiles} />
                 <span className="e-faint">{progressLine(s)}</span>
                 <ModelsLine sessionId={s.session_id} />
               </button>
@@ -91,7 +102,7 @@ function ModelsLine({ sessionId }: { sessionId: string }) {
   return m ? <span className="e-faint e-arena-card__models">{m}</span> : null;
 }
 
-function Recent({ onOpen, book, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; refreshTrigger: number }) {
+function Recent({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; refreshTrigger: number }) {
   const [data, loading, error] = useInterval(() => api.results(undefined, 12), 20_000, [refreshTrigger]);
   const rows: GameResult[] = (data?.results ?? []).filter((r) => !isJobModule(r.module_type));
   return (
@@ -108,7 +119,7 @@ function Recent({ onOpen, book, refreshTrigger }: { onOpen: (id: string) => void
                     <span className="e-arena-card__game">{gameName(r.module_type)}</span>
                     <span className="e-faint">{whenText(r.ended_at)}</span>
                   </span>
-                  <Players ids={r.participants} book={book} />
+                  <Players ids={r.participants} book={book} profiles={profiles} />
                   <span className="e-arena-card__result">{resultLine(r, book)}</span>
                 </button>
               </li>
@@ -146,11 +157,11 @@ function Boards() {
 }
 
 /** The Arena at rest: what is live, what just finished, what anyone may take, who is winning, and with which model. */
-function ArenaHome({ onOpen, book, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; refreshTrigger: number }) {
+function ArenaHome({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: string) => void; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; refreshTrigger: number }) {
   return (
     <div className="e-arena-home">
-      <LiveNow onOpen={onOpen} book={book} refreshTrigger={refreshTrigger} />
-      <Recent onOpen={onOpen} book={book} refreshTrigger={refreshTrigger} />
+      <LiveNow onOpen={onOpen} book={book} profiles={profiles} refreshTrigger={refreshTrigger} />
+      <Recent onOpen={onOpen} book={book} profiles={profiles} refreshTrigger={refreshTrigger} />
       {/* The board carries its own heading: OPEN CHALLENGES · anyone may take one. */}
       <section className="e-arena-section" aria-label="Open challenges">
         <OpenChallenges />
@@ -196,6 +207,11 @@ export function ArenaView({
   const [session, setSession] = useState<Session | null>(null);
   const [miss, setMiss] = useState<string | null>(null);
   const [agents] = useInterval(() => api.agents(), 120_000, []);
+  const profiles = useMemo(() => {
+    const m: Record<string, AgentProfile> = {};
+    for (const a of agents?.agents ?? []) m[a.agent_id] = a;
+    return Object.keys(m).length ? m : undefined;
+  }, [agents]);
   const book = useMemo(() => {
     const m: Record<string, string> = {};
     for (const a of agents?.agents ?? []) if (a.address) m[a.agent_id] = a.address;
@@ -220,9 +236,9 @@ export function ArenaView({
     <ViewBody>
       <div className="e-arena" data-tab={tab}>
         {tab === "home" ? (
-          <ArenaHome onOpen={open} book={book} refreshTrigger={refreshTrigger} />
+          <ArenaHome onOpen={open} book={book} profiles={profiles} refreshTrigger={refreshTrigger} />
         ) : session && session.session_id === openId ? (
-          <MatchView key={session.session_id} session={session} step={step} onStep={setStep} book={book} onBack={() => { setOpenId(null); setStep(null); }} />
+          <MatchView key={session.session_id} session={session} step={step} onStep={setStep} book={book} profiles={profiles} onBack={() => { setOpenId(null); setStep(null); }} />
         ) : (
           <div>
             <button type="button" className="e-arena-back" onClick={() => { setOpenId(null); setStep(null); }}>← Arena</button>

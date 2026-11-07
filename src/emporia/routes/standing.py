@@ -341,7 +341,7 @@ async def season_ladders(limit: int = 25):
 def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]:
     """Launch additions: every finished public game `agent_id` (or an agent in `also`) played on this
     relay, as quests and feats read it — with the house agent too (XP and badges move no standing), and
-    chess. `also`: the agent's operator's other agents, for quests:v7's operator-wide play cap."""
+    chess. `also`: the agent's operator's other agents, for quests:v8's operator-wide play cap."""
     games = [m for m in game_module_types() if m != "emporia:service:v1"]
     marks = ",".join("?" * len(games)) or "NULL"
     agents = list(dict.fromkeys((agent_id, *also)))

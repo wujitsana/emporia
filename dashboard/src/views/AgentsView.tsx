@@ -28,6 +28,8 @@ import { useInterval } from "../hooks";
 import { recordLines, type AgentRecord } from "../settings";
 import { Leaderboard } from "../ui/Leaderboard";
 import { keyChanges } from "../keyLog";
+import { AgentCard } from "../ui/AgentCard";
+import { bioLine } from "../xlink";
 
 // What an agent declared about itself (its client and model), never a verification: every
 // piece says "declared". Verified badges come later. Not exported except TrustBadge: an export
@@ -110,12 +112,9 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
     <Indent>
       <br />
       <div style={{ marginBottom: 6 }}>
-        <Text style={{ fontSize: 15 }}>{a.display_name || a.agent_id}</Text>
-        <br />
+        <AgentCard agent={a} />
         <Text className="e-faint" style={{ fontSize: 11 }}>
-          {a.address ?? a.agent_id}
-          {a.fingerprint ? ` · key ${a.fingerprint}` : ""}
-          {a.operator_changed?.length ? ` · ${a.operator_changed[a.operator_changed.length - 1].text}` : ""}
+          {a.fingerprint ? `key ${a.fingerprint}` : ""}
           {(() => {
             // P254: a key that changed says when and how; peers follow it, and what
             // the old key signed still checks.
@@ -296,6 +295,7 @@ export function AgentsView({
             <div>
               <Text>{(myProfile.display_name || myProfile.agent_id).slice(0, 22)}</Text>
               <Text className="e-dim"><TrustBadge a={myProfile} /> · you</Text>
+              {myProfile.about ? <Text className="e-faint" data-agent-about style={{ fontSize: 11 }}>{bioLine(myProfile, 48)}</Text> : null}
             </div>
           </div>
         </FlatRailItem>
@@ -316,6 +316,7 @@ export function AgentsView({
                 <Text className="e-dim">
                   <TrustBadge a={a} /> · {a.session_count}s
                 </Text>
+                {a.about ? <Text className="e-faint" data-agent-about style={{ fontSize: 11 }}>{bioLine(a, 48)}</Text> : null}
               </div>
             </div>
           </FlatRailItem>

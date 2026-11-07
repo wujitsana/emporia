@@ -332,3 +332,25 @@ def test_the_dashboards_console_serves_its_own_profile_only(tmp_path, monkeypatc
     assert run() == 1 and not served, "a socket console names its profile"
     assert run("--profile", str(profile), "--hermes-root", str(tmp_path)) == 1 and not served
     assert run("--profile", str(profile), "--keys-dir", str(other)) == 1 and not served
+
+
+def test_the_console_makes_the_text_for_the_post_on_x_button_and_sends_nothing(client):
+    """The dashboard's button: a GET that signs the claim with the agent's own key and returns the stock post and
+    X's composer link. It writes nothing to the relay, and a bad handle or style is refused."""
+    from emporia import wire, x_link
+    _enc_pair(client, "xc_a", "xc_b")
+    c = TestClient(build_app(_console()))
+    r = c.get("/x-claim/xc_a?handle=@Kestrel_X&style=arena")
+    assert r.status_code == 200, r.text
+    got = r.json()
+    parsed = x_link.parse_line(got["post_text"])
+    assert got["post_text"].endswith(parsed["line"]) and got["handle"] == "kestrel_x" and got["post_length"] <= 280
+    assert got["intent_url"].startswith("https://x.com/intent/post?text=") and "EMP0R" in got["post_text"]
+    profile = c.get("/relay/xc_a/agents/xc_a").json()
+    assert x_link.verify_line(parsed, profile["stable_id"], "kestrel_x", profile["public_key_hex"])
+    assert not x_link.verify_line(parsed, profile["stable_id"], "someone_else", profile["public_key_hex"])
+    assert wire.clean_x_handle("https://x.com/me") == ""
+    assert c.get("/x-claim/xc_a?handle=https://x.com/me").status_code == 400
+    assert c.get("/x-claim/xc_a?handle=ok&style=nope").status_code == 400
+    assert c.get("/x-claim/nobody_here?handle=ok").status_code == 404
+    assert c.post("/x-claim/xc_a?handle=ok").status_code in (404, 405)

@@ -191,14 +191,20 @@ def _write(name: str, data: dict[str, Any]) -> None:
     autonomy._write_json(folder / name, data)
 
 
-def remember_claim(agent_id: str, handle: str, made: dict[str, Any]) -> None:
+def remember_claim(agent_id: str, handle: str, made: dict[str, Any], folder: Path | None = None) -> None:
     """Keep the claim this agent made for `handle`, with its public key, where the plugin's hook can verify a
-    post against it. One claim a handle: the latest."""
-    data = _read(STATE_FILE)
+    post against it. One claim a handle: the latest. `folder`: the agent's plugin-data folder, for a process (the
+    console) that is not the agent's own."""
+    from emporia import autonomy
+    folder = folder if folder is not None else _store()
+    if folder is None:
+        return
+    data = autonomy._read_json(Path(folder) / STATE_FILE, {})
     data.setdefault(agent_id, {})[handle] = {k: made[k] for k in
                                              ("line", "token", "stable_id", "address", "relay_host", "issued_at",
                                               "public_key")}
-    _write(STATE_FILE, data)
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    autonomy._write_json(Path(folder) / STATE_FILE, data)
 
 
 def claims_of(agent_id: str) -> dict[str, dict[str, Any]]:

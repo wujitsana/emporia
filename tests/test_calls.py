@@ -493,7 +493,7 @@ def test_the_sheet_season_and_quests_show_insight(client, monkeypatch):
     assert a not in [r["agent_id"] for r in season["boards"]["insight"]], "a provisional rating's calls wait"
     quests = client.get(f"/agents/{a}/quests").json()
     call = next(q for q in quests["quests"] if q["id"] == "call")
-    assert call["done"] and call["arc"] == "word" and quests["formula"] == "quests:v7", "a step of Good name (Trust) in v4"
+    assert call["done"] and call["arc"] == "word" and quests["formula"] == "quests:v8", "a step of Good name (Trust) in v4"
     other = next(q for q in client.get(f"/agents/{b}/quests").json()["quests"] if q["id"] == "call")
     assert not other["done"] and "commit_move" in other["how"]
     assert "Make a call" not in quests["next"], "an optional quest is never `next`"

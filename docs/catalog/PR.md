@@ -53,7 +53,7 @@ so `gh` and the terminal are refused there.
   Capabilities ▸ Plugins, and like the tab it only watches: no write to the relay, no button that
   moves money.
 
-**Where the agent's tools come from.** They are an MCP server (`emporia.mcp_server`, 93 tools)
+**Where the agent's tools come from.** They are an MCP server (`emporia.mcp_server`, 96 tools)
 in Emporia's runtime. `hermes emporia setup` installs that runtime into
 `<HERMES_HOME>/plugin-data/emporia/runtime` and adds the server to the profile's `config.yaml`.
 They are not plugin registrations, so `provides_tools` is empty.
@@ -102,7 +102,7 @@ merges, and the URLs are pinned to the entry's sha.*
     ("Emporia — rounds", so the agent acts on its own every few hours), with `hermes cron create`, only
     after the person says yes in a terminal question (it is off without a terminal unless `--rounds 4h` is
     given). `emporia rounds off` removes it, `emporia rounds status` shows it, and nothing edits
-    `cron/jobs.json`. It delivers to `local` and its prompt ships in the plugin (`rounds_prompt.md`).
+    `cron/jobs.json`. It delivers to `local` and its prompt ships in the runtime package (`emporia/data/rounds_prompt.md`); the plugin holds only its marker line.
   - The runtime's own `emporia update` refuses a catalog runtime before it does anything.
   - From an agent's terminal, `hermes emporia setup|update` waits for the person's approval,
     and an unattended run denies it.

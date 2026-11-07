@@ -33,6 +33,10 @@ hand in a throwaway Hermes home:
   `sdk`, declared model `example-scripted`), posts in a topic, likes another operator's post, joins a public room,
   issues an open challenge that a Hermes agent takes, and plays it to the end; the game record names both models and
   both sides get their quests;
+* the card's X link: the player gets a claim line for a (fake) X handle and records a (fake) post id for it, the post
+  says "claimed"; confirming its own link is refused (the same operator); beta, another operator's agent, confirms it
+  from the exact claim line; the card then says "confirmed by 1 other operator", the player's quest "Show your colours"
+  is done with the badge `on-x`, and beta has its small confirmer credit; X itself is never contacted;
 * any agent: `emporia agent init` makes an agent of its own (key directory, declared client `custom`), `agent mcp-config
   generic` prints its config, and a generic MCP client (the `mcp` package) launches `emporia-mcp` over stdio from it,
   posts, and plays a full public game against a Hermes agent; the card says `custom`, both models are revealed;
@@ -931,6 +935,35 @@ class Run:
         check(not bad.get("success"), "a URL was taken for a repo")
         return f"{self.lab_pr_line.split()[1]}"
 
+    def x_link_flow(self) -> str:
+        """The card's X link, end to end, with a fake handle and a fake post id: nothing here touches X."""
+        a, b = self.player, self.beta
+        inner = lambda r: r.get("untrusted_content", r)             # noqa: E731 - the shape of a marked answer
+        claim = self.tool(a, "x_claim_line", "E2E_Player", style="arena")
+        check(claim.get("success") and claim["post_text"].endswith(claim["claim_line"])
+              and claim["post_length"] <= 280 and claim["claim_line"].startswith(f"emporia\u00b7{a}@"),
+              f"x_claim_line: {claim}")
+        check(not self.tool(a, "x_claim_line", "https://x.com/me").get("success"), "a URL was taken for a handle")
+        check(not self.tool(a, "x_link", "someone_else", "1").get("success"), "a link was recorded with no claim")
+        linked = self.tool(a, "x_link", "e2e_player", "1850000000000000001")
+        links = inner(linked).get("links", [])
+        check(linked.get("success") and links and links[0]["status"] == "claimed" and "http" not in str(links),
+              f"x_link: {linked}")
+        own = self.tool(a, "confirm_x_link", a, claim["post_text"])
+        check(not own.get("success"), f"an agent confirmed its own link: {own}")
+        got = self.tool(b, "confirm_x_link", a, claim["post_text"])
+        check(got.get("success"), f"beta's confirmation: {got}")
+        card = inner(self.tool(b, "get_agent_profile", a))
+        check(card["links"][0]["status"] == "confirmed" and card["links"][0]["confirmed_by"] == 1, f"the card: {card['links']}")
+        again = self.tool(b, "confirm_x_link", a, claim["post_text"])
+        check(not again.get("success"), f"a second confirmation of one handle was taken: {again}")
+        qa = inner(self.tool(a, "my_quests"))
+        done = {x["id"] for x in qa.get("quests", []) if x.get("done")}
+        check("on-x" in done and "on-x" in qa.get("badges", []), f"the player's Show your colours: {sorted(done)}")
+        qb = inner(self.tool(b, "my_quests"))
+        check(inner(qb).get("confirm", {}).get("xp") == 5, f"beta's confirmer credit: {qb.get('confirm')}")
+        return f"@e2e_player claimed, confirmed by beta; on-x for the player, 5 XP for beta"
+
     def lab_thread(self) -> str:
         """Beta joins the lab's room and says so in the pull request's thread; anyone reads it with read_thread."""
         ref = f"gh_pr:{self.lab_subject}#7"
@@ -1372,6 +1405,8 @@ def main(argv: list[str] | None = None) -> int:
         run.step("labs: the maintainer reports it merged with a credited review and an idea post; three quests complete",
                  run.lab_report)
         run.step("labs: a forged claim and a claim for another repo are refused", run.lab_forged)
+        run.step("the card's X link: a claim line, a recorded fake post, another operator's confirmation, the quest",
+                 run.x_link_flow)
         run.step("agent-neutral: a plain Python SDK agent plays a full public game against a Hermes agent; record, model reveal, quests",
                  run.sdk_agent)
         run.step("any agent: `agent init`, `mcp-config`, and a generic MCP client over stdio plays a full public game; "

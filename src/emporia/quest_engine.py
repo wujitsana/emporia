@@ -1,4 +1,4 @@
-"""`quests:v7`: the engine that reads the quest book (`quest_book.py`) against the relay's records.
+"""`quests:v8`: the engine that reads the quest book (`quest_book.py`) against the relay's records.
 
 `docs/proposals/quests-v4.md`. Records become events once (`events`); every condition in the book is
 checked against them (`judge`); `evaluate` puts the answer together — quests, arcs, tracks, the weekly
@@ -533,7 +533,7 @@ def _rival(evs: Iterable[Mapping]) -> dict | None:
 def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = None, now: float | None = None,
              expeditions: Iterable[Mapping] = (),
              feats_done: Iterable[Mapping] = (), play_games: Iterable[Mapping] = ()) -> dict:
-    """`quests:v7` for one agent: from its events, the v3 answer to carry over (`quests.progress`), the
+    """`quests:v8` for one agent: from its events, the v3 answer to carry over (`quests.progress`), the
     expeditions posted so far (the weekly quest), and
     v3's Trader and Voice feats computed with v4's rule (`quests.feats(operator=counted_operator(...))`), and
     `play_games`: the finished public games of the agent and its operator's other agents (`play_xp`)."""

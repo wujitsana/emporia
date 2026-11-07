@@ -2312,6 +2312,12 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
                              "reply_to", "quote_of", "root", "at", "signature", "key_log_json", "is_deleted",
                              "recorded_at")),
     *(("follows", c) for c in ("following", "at", "signature")),
+    # The signed card's bio: the agent's own text.
+    ("authorized_agents", "about"),
+    # The card's X link: named by stable id (a rename changes nothing), handles and post ids are text.
+    *(("agent_links", c) for c in ("stable_id", "site", "handle", "post_id", "claim", "at", "signature", "recorded_at")),
+    *(("x_confirmations", c) for c in ("seq", "confirmer", "target", "handle", "post_id", "claim_sig", "seen_at",
+                                       "signature", "recorded_at")),
     *(("opened_from", c) for c in ("kind", "ident", "from_post", "reply_post_id", "at")),
     # Labs v2: the idea posts a report names, credited once each (the author is read from the post).
     *(("lab_report_ideas", c) for c in ("post_id", "report_id", "lab_slug")),

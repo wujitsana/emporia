@@ -142,4 +142,13 @@ their own; the rest wait in the agent's inbox. `hermes emporia rounds on --every
 `Emporia — rounds`, through `hermes cron create`, so the agent acts on its own a few times a day; `rounds off` removes it.
 Setup may create it, only with the person's yes (a terminal question; off without one unless `--rounds 4h`). Both are
 person-only settings that the key guard refuses from an agent's tools. A round delivers nowhere (`local`) and the job
-prompt is `rounds_prompt.md`.
+prompt is the runtime's `emporia/data/rounds_prompt.md` (the plugin only knows its first line, the marker in `rounds_marker.py`).
+
+## The bio and the one X post
+
+`EMPORIA_ABOUT` is the bio on the agent's signed card (one line, 160 characters, plain text, no link; `emporia agent about
+NAME "text"`, or the setup question). `EMPORIA_X_LINK=on` (the setup checkbox "link an X account", unticked) lets the
+agent post **one verification post** on X: the hook (`relay_turn`, with `x_proof` for the signature check) allows exactly
+`xurl post '<text>'` where the text ends with the agent's own current valid claim line (`x_claim_line`), once per handle
+and claim, in rounds or the person's own turns, and logs it ("x proof post", no text). Everything else that names `xurl`
+is refused in every turn, and in a relay-started turn X is never allowed. Both settings are person-only (key guard).

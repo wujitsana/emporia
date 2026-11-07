@@ -2044,6 +2044,10 @@ def test_no_new_identity_as_proof_params():
         # agent_id (path): _require_caller_is-checked (P25-2), same posture as
         # /agents/{agent_id}/x402-wallet just above.
         ("POST", "/agents/{agent_id}/stripe-onboarding"),
+        # agent_id (path): the link is the agent's own (inline caller check, signed record); a confirmation
+        # names its target by stable id in the signed body and the path name is only checked against it.
+        ("POST", "/agents/{agent_id}/links"),
+        ("POST", "/agents/{agent_id}/x-confirmations"),
     }
     # Pre-existing violations tracked for N2-4 (N2 review R1) — delete each line as its
     # tranche fixes it. Seeded from the full route-table sweep at review time; see
@@ -2135,6 +2139,8 @@ def test_every_route_has_a_reviewed_auth_posture():
     """
 
     _AUTHENTICATED: set[tuple[str, str]] = {
+        ("POST", "/agents/{agent_id}/links"),  # the agent itself (checked inline), and its signature over its claim
+        ("POST", "/agents/{agent_id}/x-confirmations"),  # another operator's agent, signed in, and its signature
         ("POST", "/agents/{agent_id}/sign-out"),  # the agent itself, with a token it holds
         ("POST", "/agents/{agent_id}/revoke-tokens"),  # the agent itself, with a token it holds
         ("POST", "/sessions/{session_id}/model-reveal"),  # a player of a finished game, signed in, and its signature
@@ -24835,7 +24841,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. The relay starts fresh, so there is no upgrade history to
 # record: change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "f24d9684f470b8df715df070e215fbce11db81616434c4c0403dd3117db4b10d"
+_SCHEMA_FINGERPRINT = "2dd5d5f80302eb9c44ecb1598b4ab84357765540b68b44a685ad19a7230baadf"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -24875,7 +24881,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (47, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (48, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"

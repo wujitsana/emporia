@@ -1,7 +1,8 @@
 import Text from "@kit/Text";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, dashboardToken } from "../api";
-import type { Session, SessionAction, SessionModels } from "../api";
+import type { AgentProfile, Session, SessionAction, SessionModels } from "../api";
+import { AgentCard } from "./AgentCard";
 import { buildTimeline, clampStep, modelStanding, playerName } from "../arena";
 import { VIEWER_ID } from "../relayEnv";
 import { relaySocket } from "../transport";
@@ -116,17 +117,20 @@ export interface MatchProps {
   step: number | null;
   onStep: (step: number | null) => void;
   book?: Record<string, string>;
+  /** The relay's cards for the players (compact AgentCards in the header). */
+  profiles?: Record<string, AgentProfile>;
   onBack?: () => void;
 }
 
 /** One match: header, the step-through stage, the moves list, and the table talk beside them. */
-export function MatchView({ session: initial, step, onStep, book, onBack }: MatchProps) {
-  if (initial.module_type.includes("chess")) return <ChessMatch session={initial} step={step} onStep={onStep} book={book} onBack={onBack} />;
-  return <GenericMatch session={initial} step={step} onStep={onStep} book={book} onBack={onBack} />;
+export function MatchView({ session: initial, step, onStep, book, profiles, onBack }: MatchProps) {
+  if (initial.module_type.includes("chess")) return <ChessMatch session={initial} step={step} onStep={onStep} book={book} profiles={profiles} onBack={onBack} />;
+  return <GenericMatch session={initial} step={step} onStep={onStep} book={book} profiles={profiles} onBack={onBack} />;
 }
 
-function MatchHeader({ session, book, onBack, live, children }: {
-  session: Session; book?: Record<string, string>; onBack?: () => void; live: boolean; children?: React.ReactNode;
+function MatchHeader({ session, book, profiles, onBack, live, children }: {
+  session: Session; book?: Record<string, string>; profiles?: Record<string, AgentProfile>; onBack?: () => void; live: boolean;
+  children?: React.ReactNode;
 }) {
   const name = SET_PLAY_NAMES[session.module_type] ?? session.module_type.replace("emporia:", "").replace(/:v\d+$/, "");
   return (
@@ -140,6 +144,13 @@ function MatchHeader({ session, book, onBack, live, children }: {
       <Text className="e-arena-head__players">
         {session.participants.map((p) => playerName(p, book, 24)).join("  v  ")}
       </Text>
+      {session.participants.some((p) => profiles?.[p]) ? (
+        <div className="e-arena-head__abouts" data-testid="arena-abouts">
+          {session.participants.filter((p) => profiles?.[p]).map((p) => (
+            <AgentCard key={p} agent={profiles![p]} variant="compact" level />
+          ))}
+        </div>
+      ) : null}
       <div className="e-arena-head__badges">
         <AuditBadge sessionId={session.session_id} />
         <VerifyBadge sessionId={session.session_id} live={live} />
@@ -149,20 +160,20 @@ function MatchHeader({ session, book, onBack, live, children }: {
   );
 }
 
-function ChessMatch({ session: initial, step, onStep, book, onBack }: MatchProps) {
+function ChessMatch({ session: initial, step, onStep, book, profiles, onBack }: MatchProps) {
   const { session } = useLiveMatch(initial);
   const live = session.status === "active";
   const report = useCallback((n: number, last: number) => onStep(n >= last && live ? null : n), [onStep, live]);
   return (
     <div className="e-arena-match">
-      <MatchHeader session={session} book={book} onBack={onBack} live={live} />
+      <MatchHeader session={session} book={book} profiles={profiles} onBack={onBack} live={live} />
       <ChessReplayPanel key={session.session_id} session={session} initialStep={step} onStepChange={report} book={book} />
       <ModelReveal session={session} book={book} />
     </div>
   );
 }
 
-function GenericMatch({ session: initial, step, onStep, book, onBack }: MatchProps) {
+function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }: MatchProps) {
   const { session, actions, loaded, failed, wsLive } = useLiveMatch(initial);
   const live = session.status === "active" || session.status === "waiting";
   const timeline = useMemo(() => buildTimeline(session, actions), [session, actions]);
@@ -190,7 +201,7 @@ function GenericMatch({ session: initial, step, onStep, book, onBack }: MatchPro
 
   return (
     <div className="e-arena-match" data-kind={timeline.kind}>
-      <MatchHeader session={session} book={book} onBack={onBack} live={live} />
+      <MatchHeader session={session} book={book} profiles={profiles} onBack={onBack} live={live} />
       <div className="e-arena-cols">
         <section className="e-arena-stage" aria-label="Match replay">
           {!loaded ? <Text className="e-faint">Loading the match…</Text> : failed && actions.length === 0 ? (

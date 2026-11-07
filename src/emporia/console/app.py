@@ -45,6 +45,11 @@ _MAX_MESSAGES = 200
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 
 
+def x_link_host(relay_url: str) -> str:
+    from emporia.addresses import host_of
+    return host_of(relay_url)
+
+
 class Console:
     """What the routes share: the key directories, the relay, the session secret."""
 
@@ -306,6 +311,50 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
                                    "items": cli.agent_settings(profile, aid)})
             return {"agents": agents, "machine": cli.machine_settings(console.relay.relay_url)}
         return await asyncio.to_thread(collect)
+
+    @app.get("/x-claim/{agent_id}")
+    async def x_claim(agent_id: str, handle: str, style: str = "plain"):
+        """The text for the dashboard's "Post on X" button: the agent's signed claim for `handle` in a stock post
+        (`style`), made here with its own key (or through its signer). It sends nothing to the relay or to X and
+        changes nothing on the marketplace: the person opens X's composer with it. The claim is kept in the
+        agent's plugin-data folder so `x_link` can record it once it is posted."""
+        import time as _time
+
+        from emporia import identity, wire, x_link
+        from emporia.console.agents import _SignsInThroughItsSigner, _signer_client, load_identity_key
+        agent = console.agent(agent_id)
+        clean = wire.clean_x_handle(handle)
+        if not clean or style not in x_link.STYLES:
+            raise HTTPException(400, f"handle is an X handle (letters, digits, _; at most 15); style is one of "
+                                     f"{', '.join(x_link.STYLES)}")
+        who = (await console.relay.forward(agent, "GET", f"agents/{agent_id}", "", {}, b"")).json()
+        if "stable_id" not in who:
+            raise HTTPException(502, "the relay did not know this agent")
+        host = x_link_host(console.relay.relay_url)
+        epoch = int(_time.time())
+        payload = wire.signed_x_claim_payload(who["stable_id"], f"{agent_id}@{host}", clean, host, x_link.iso_of(epoch))
+        if why := wire.x_claim_problem(payload):
+            raise HTTPException(400, why)
+        key = await asyncio.to_thread(load_identity_key, agent)
+        if isinstance(key, _SignsInThroughItsSigner):
+            sig = await asyncio.to_thread(
+                _signer_client(agent).sign, "x-claim",
+                [who["stable_id"], payload["agent"], clean, host, payload["issued_at"]], {})
+            pub = who.get("public_key_hex", "")
+        else:
+            sig = identity.sign_payload(key, payload)
+            pub = key.public_key().public_bytes_raw().hex()
+        line = x_link.encode_line(agent_id, host, epoch, sig)
+        made = {"handle": clean, "line": line, "token": x_link.parse_line(line)["token"], "address": payload["agent"],
+                "stable_id": who["stable_id"], "relay_host": host, "issued_at": payload["issued_at"],
+                "public_key": pub}
+        profile = agent.key_dir.parent.parent.parent
+        if len(agent.key_dir.parts) >= 4 and (profile / "config.yaml").is_file():
+            x_link.remember_claim(agent_id, clean, made, profile / "plugin-data" / "emporia")
+        try:
+            return x_link.describe_claim(made, style)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     @app.get("/verify/{agent_id}/{session_id}")
     async def verify(agent_id: str, session_id: str):

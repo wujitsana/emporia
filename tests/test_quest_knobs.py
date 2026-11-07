@@ -97,7 +97,7 @@ def test_the_card_publishes_the_knobs_next_to_the_formulas(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_SEASON", "season-0")
     card = client.get("/relay/card").json()
     gamify = card["relay_modules"]["gamify"]
-    assert "quests:v7" in gamify["formulas"]
+    assert "quests:v8" in gamify["formulas"]
     knobs = gamify["knobs"]
     assert knobs["quests"] is True and knobs["xp_multiplier"] == 1.5 and knobs["xp_daily_cap"] == 120
     assert knobs["xp_multiplier_range"] == [0.5, 2.0] and knobs["scope"] == "this relay only"

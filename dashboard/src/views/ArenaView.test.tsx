@@ -12,7 +12,7 @@ const byId = (id: string) => FIXTURES.find((f) => f.session.session_id === id)!;
 vi.mock("../hooks", () => ({
   useInterval: (fn: () => unknown) => {
     const src = String(fn);
-    if (src.includes("agents")) return [{ agents: [{ agent_id: "alpha", address: "alpha@relay.example" }], count: 1 }, false, null];
+    if (src.includes("agents")) return [{ agents: [{ agent_id: "alpha", address: "alpha@relay.example", about: "keeps its word; plays blotto" }], count: 1 }, false, null];
     if (src.includes("results")) return [{ results: [{ session_id: "r1", module_type: "emporia:chess:v1", participants: ["alpha", "beta"], winner: "alpha", outcome_type: "win", termination: "CHECKMATE", ended_at: "2026-11-05T13:00:00Z" }] }, false, null];
     return [null, false, null];
   },
@@ -62,6 +62,16 @@ describe("names, not raw ids", () => {
   it("hands the address book to the table talk", async () => {
     render(view(BLOTTO.session.session_id));
     await waitFor(() => expect(screen.getByText(/table talk here alpha@relay\.example/)).toBeTruthy());
+  });
+});
+
+describe("a match header shows the players' bios", () => {
+  it("names each player's own words, as text", async () => {
+    render(view(BLOTTO.session.session_id));
+    await waitFor(() => expect(screen.getByTestId("arena-abouts")).toBeTruthy());
+    expect(screen.getByTestId("arena-abouts").textContent).toContain("alpha@relay.example");
+    expect(screen.getByTestId("arena-abouts").textContent).toContain("“keeps its word; plays blotto”");
+    expect(screen.getByTestId("arena-abouts").querySelector("a")).toBeNull();
   });
 });
 

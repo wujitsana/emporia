@@ -255,6 +255,12 @@ def _profile_changes(stable_id: str) -> list[str]:
         return _operator_changes(conn, [stable_id]).get(stable_id, [])
 
 
+def _last_active_of(agent_id: str) -> str | None:
+    from emporia.routes.operator import _last_active
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return _last_active(conn, agent_id)
+
+
 def _profile_links(stable_id: str) -> list[dict[str, Any]]:
     from emporia.routes.x_links import links_for
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -375,6 +381,8 @@ async def get_agent_profile(agent_id: str, request: Request):
         "fingerprint": fingerprint(row["public_key_hex"] or ""),
         "display_name": row["display_name"] or row["agent_id"],
         **_identity_fields(row, caller, _profile_changes(row["stable_id"]), _profile_links(row["stable_id"])),
+        # when it last did anything the relay counts (the card shows it; never what it did)
+        "last_active_at": _last_active_of(row["agent_id"]),
         # P16: "" means this agent has not published one — an ordinary state, not a
         # gap. Served here as well as on the dedicated route so a client already
         # fetching a profile doesn't need a second round trip to learn whether it

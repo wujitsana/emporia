@@ -194,7 +194,7 @@ def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypa
     body = client.get(f"/agents/{me}/quests").json()
     done = {q["id"] for q in body["quests"] if q["done"]}
     assert {"first-set-play", "debrief"} <= done, "a game against the house counts for quests: XP moves nothing"
-    assert body["formula"] == Q.FORMULA == "quests:v7" and body["topics"]["debriefs"] == f"debriefs-{tag}"
+    assert body["formula"] == Q.FORMULA == "quests:v8" and body["topics"]["debriefs"] == f"debriefs-{tag}"
     assert body["expedition"]["title"] == "Week 1: blotto with 7 fields" and body["expedition"]["author_id"] == op
     assert {f["id"] for f in body["feats"]} == set(Q.ALL_FEAT_IDS) - {"well-travelled"} and body["signature"], \
         "v4: Well travelled is the Rivals track's tier I"
