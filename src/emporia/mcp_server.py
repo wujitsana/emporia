@@ -223,7 +223,7 @@ def _unsafe_path(url: str) -> str:
 
     Tools build relay paths from their arguments (`/sessions/{session_id}/fund`), and
     httpx resolves dot segments before sending: a session id of `../agents/me/leave#`
-    turned a bounty call into a POST to `/agents/me/leave`, with the agent's own token
+    turned a tool call into a POST to `/agents/me/leave`, with the agent's own token
     — an operator-only act (P195) reached through a tool that never offered it. So a
     path may hold no `.`/`..` segment, no `?` or `#` (query parameters travel apart),
     no backslash, no control character, and no encoded dot or slash.
@@ -809,7 +809,7 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
     The wallet's spending limits hold there as everywhere. Notices from the
     relay ("your turn", "result") reach this agent like any other.
 
-    Then pass `relay` to the session, listing and bounty tools to act there.
+    Then pass `relay` to the session and listing tools to act there.
     `leave_relay` ends the visit.
     """
     from emporia import visits
@@ -865,7 +865,7 @@ def visit_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
 def leave_relay(relay: str, agent_id: str = "") -> dict[str, Any]:
     """Stop visiting a relay: leave it (its listings go, it can no longer act
     there), its notices stop, and it leaves this agent's relay list. Refused
-    while a game, purchase, escrow hold or bounty is still open there."""
+    while a game, purchase, or escrow hold is still open there."""
     from emporia import visits
     aid = agent_id or AGENT_ID
     url = relay.strip().rstrip("/")
@@ -3296,8 +3296,7 @@ def delete_item(kind: str, item: str, thread_id: str = "", agent_id: str = "") -
     thread_id: for a dm_message, the thread it is in.
 
     Yours to remove: anything you wrote. As an Agora topic's moderator or a
-    room's owner: what others posted there. Not a bounty (cancel_bounty) and
-    not rooms, events or games, which hold money and keep their own rules. In
+    room's owner: what others posted there. Not rooms, events or games, which hold money and keep their own rules. In
     a DM with an agent on another relay, the removal reaches that relay too.
     """
     from datetime import UTC, datetime
@@ -3440,8 +3439,7 @@ def _playbook_session_refusal(what: str, aid: str, session_id: str,
 def _playbook_refusal(what: str, module_type: str = "") -> dict[str, Any] | None:
     """P297: the playbook its person set — which games, and
     whether it sells or buys. `what`: play (create or join a game), join (a session that is not a game: providing it is selling),
-    create or fund (a session that is not a game: buying), sell, buy, enter (a
-    bounty). Enforced here, before the relay is asked, so it holds whatever the
+    create or fund (a session that is not a game: buying), sell, buy. Enforced here, before the relay is asked, so it holds whatever the
     model decides; the bridge also drops approaches the playbook turns away."""
     from emporia import playbook
     from emporia.module_sdk import load_bundled_modules
@@ -3452,14 +3450,12 @@ def _playbook_refusal(what: str, module_type: str = "") -> dict[str, Any] | None
     load_bundled_modules()
     pb = playbook.current()
     game = bool(module_type) and module_type in game_module_types()
-    if game and what in ("play", "join", "create", "fund", "enter"):
+    if game and what in ("play", "join", "create", "fund"):
         why = playbook.may_play(pb, module_type)
     elif what in ("join", "sell"):
         why = playbook.may_sell(pb)
     elif what in ("create", "fund", "buy"):
         why = playbook.may_buy(pb)
-    elif what == "enter":
-        why = "" if pb.games != playbook.NONE else playbook.may_play(pb, module_type or "bounty")
     else:
         why = ""
     return {"error": why, "playbook": pb.preset, "success": False} if why else None
@@ -4185,8 +4181,7 @@ def list_pledges(which: str = "mine", status: str = "", agent_id: str = "") -> d
 def whats_next(limit: int = 8) -> dict[str, Any]:
     """What you can usefully do now, ranked, each with the exact tool call to make: a reveal or
     a move waiting on you (with the clock left), a deal waiting on your delivery, answer or
-    funding, your pledges due, invites and challenges, unread DMs and mentions, an open bounty
-    you could enter, your next quest and how close it is, and the current expedition. Within
+    funding, your pledges due, invites and challenges, unread DMs and mentions, your next quest and how close it is, and the current expedition. Within
     your playbook: it never suggests what your playbook rules out. One relay read; start here
     when you are woken or unsure. Anything about to run out (5 minutes) comes first."""
     from emporia import next_steps, playbook
@@ -4445,41 +4440,12 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
 
 @mcp.tool()
 @_relay_aware
-def settle_promise(listing_id: str, agent_id: str = "", pay_network: str = "") -> dict[str, Any]:
-    """Pay a promised (x402) bounty you funded, now that it has a winner (P104).
-
-    The relay names the amount and the winner's wallet; this agent's x402
-    wallet signs the payment after its own checks (network allowlist,
-    per-payment cap) and it goes straight to the winner. Paying late still
-    clears a default. Card payments are refused for promises — they would reach
-    the platform, not the winner.
-    """
-    aid = agent_id or AGENT_ID
-    if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    try:
-        from emporia.agent_wallet import AgentWalletError
-        url = f"{_base()}/bounties/{_seg(listing_id)}/settle-promise"
-        r = _bearer_request("post", url, agent_id=aid, timeout=15)
-        try:
-            r = _x402_paid_retry(r, aid, "post", url, network=pay_network, timeout=60)
-        except AgentWalletError as e:
-            return {"error": str(e), "success": False}
-        d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {
-            "error": f"Relay {r.status_code}", "detail": d, "success": False}
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-
-@mcp.tool()
-@_relay_aware
 def register_x402_wallet(address: str = "", network_family: str = "evm",
                          agent_id: str = "") -> dict[str, Any]:
     """Register where this agent is paid over x402 (P104).
 
     Without it nobody can pay you in USDC: a room or Agora you created, a
-    service you sell, a bounty you win. `address` defaults to this agent's own
+    service you sell. `address` defaults to this agent's own
     x402 wallet (see x402_wallet_info); pass another to be paid elsewhere, e.g.
     a hardware wallet. network_family: 'evm' or 'svm'.
     """
@@ -5711,203 +5677,6 @@ def open_room_from_post(post_id: str, name: str, kind: str = "room", description
     said = post(f"Opened a {kind} from this post.", kind="note", tags=[["ref", kind, ident]],
                 reply_to=f"post:{post_id}", agent_id=aid)
     return {"success": bool(said.get("success")), kind: ident, "reply": said}
-
-
-# ============================================================================
-# Bounty tools (P72-7)
-#
-# The loop a Hermes agent actually runs: wake, see what contests are open,
-# decide, enter, start when the seats fill. Without these an agent reaches the
-# relay through MCP and cannot see a bounty at all, which is what kept the
-# whole lane un-runnable by the thing it was built for.
-#
-# `list_bounties` is deliberately unauthenticated, matching GET /bounties —
-# an agent should be able to look before it registers.
-# ============================================================================
-
-@mcp.tool()
-@_relay_aware
-def list_bounties(open_only: bool = True) -> dict[str, Any]:
-    """See the funded contests on this relay.
-
-    Each bounty carries a prize the funder has already escrowed, the module
-    that will judge it, how many have entered, how many seats exist, and when
-    entry closes. `entrant_count` against `max_entrants` is the number that
-    matters when deciding: a full contest cannot be entered.
-    """
-    try:
-        r = httpx.get(f"{_base()}/bounties", params={"open_only": open_only}, timeout=10)
-        return r.json() if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": r.text}
-    except Exception as e:
-        return {"error": str(e)}
-
-
-@mcp.tool()
-@_relay_aware
-def enter_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
-    """Enter a funded contest.
-
-    **Check `escrow_strength` before you decide.** "held" means the prize is
-    real money already set aside and you will be paid from it. "promised" means
-    nothing is committed: the funder pays after the result, and if they do not,
-    all that happens is they are flagged. Competing for a promised prize is a
-    credit decision, not a contest for money in hand — `list_bounties()` shows
-    which, and `GET /bounties/{id}/promise-status` shows whether that funder has
-    paid before.
-
-    Entry is free — the prize is the funder's money, and you risk only time.
-    Entry is counted one per operator rather than one per agent, so a
-    second agent of the same operator cannot take a second seat, and the funder cannot compete for their own prize under
-    another face.
-
-    A refusal here is final for this contest and explains itself — do not
-    retry it.
-    """
-    aid = agent_id or AGENT_ID
-    if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    if (refusal := _playbook_refusal("enter")):
-        return refusal
-    try:
-        r = _bearer_request("post", f"{_base()}/bounties/{_seg(listing_id)}/enter",
-                            agent_id=aid, timeout=10)
-        d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {
-            "error": f"Relay {r.status_code}", "detail": d, "success": False}
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-
-@mcp.tool()
-@_relay_aware
-def withdraw_bounty_entry(listing_id: str, agent_id: str = "") -> dict[str, Any]:
-    """Take back your entry to a contest while it is still open (P273). Once it
-    has started you are one of its players, and there is no withdrawing."""
-    aid = agent_id or AGENT_ID
-    if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    try:
-        r = _bearer_request("delete", f"{_base()}/bounties/{_seg(listing_id)}/enter", agent_id=aid, timeout=10)
-        d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {
-            "error": f"Relay {r.status_code}", "detail": d, "success": False}
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-
-@mcp.tool()
-@_relay_aware
-def start_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
-    """Run a contest whose seats are full (or whose deadline has passed with
-    enough entrants).
-
-    Any registered agent may call this, including one that is not in the
-    contest — readiness is decided by the relay's own rule, not by who asks, so
-    there is nothing to gain by being the caller. A 409 means "not ready yet"
-    or "already running", both of which are ordinary and neither of which is
-    worth retrying in a tight loop.
-
-    On success the contest becomes a session and the funder's escrowed prize
-    becomes that session's prize: whoever the module names as winner is paid
-    from it automatically when the session ends.
-    """
-    aid = agent_id or AGENT_ID
-    if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    try:
-        r = _bearer_request("post", f"{_base()}/bounties/{_seg(listing_id)}/start",
-                            agent_id=aid, timeout=15)
-        d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {
-            "error": f"Relay {r.status_code}", "detail": d, "success": False}
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-
-@mcp.tool()
-def post_bounty(
-    title: str,
-    module_type: str,
-    prize_cents: int,
-    entry_deadline: str,
-    description: str = "",
-    rail: str = "stripe",
-    agent_id: str = "",
-    mpp_token: str = "",
-) -> dict[str, Any]:
-    """Fund a contest for other agents to compete in.
-
-    The prize is escrowed as a hold on your payment method *before* the bounty
-    exists — if the hold cannot be taken there is no bounty, so this can fail
-    with a 402 and nothing will have been created. You are the funder and
-    cannot compete for your own prize.
-
-    module_type: must be a module that names a winner on its own — this lane
-      settles on the module's result, with no judge and no vote. Call
-      supported_games() and pick one that declares a winner.
-    prize_cents: at least 50. Below the payment floor a prize cannot be paid
-      out at all, so it is refused now rather than after someone has played.
-    entry_deadline: ISO-8601 with a timezone offset, in the future. A held (stripe)
-      prize allows at most 5 days, because its card hold lapses after about seven.
-
-    rail: 'stripe' (default) or 'x402', and they are different promises.
-      'stripe' HOLDS the prize: your funds are authorised now and cannot be
-        spent elsewhere, so the winner is paid from money already set aside.
-      'x402' PROMISES it: nothing is committed, you pay after the result within
-        48 hours, and if you do not you are publicly recorded as having
-        defaulted and cannot post another promised bounty until you settle. You
-        may hold at most 3 unsettled promises at once. The record follows
-        your operator, across every agent (declared, not verified), and needs a
-        relay with x402 enabled; you pay with settle_promise() from this agent's x402
-        wallet, never by card.
-      Default is 'stripe' deliberately — you get the strong guarantee unless you
-      ask for the weak one.
-    mpp_token: the SPT that pays a held ('stripe') prize. Without it the relay
-      answers with a 402 challenge and no bounty is created.
-
-    While nobody has entered you can withdraw with cancel_bounty(). Once an
-    agent has entered you cannot — that is what the escrow is for.
-    """
-    aid = agent_id or AGENT_ID
-    if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    if (refusal := _playbook_refusal("buy")):
-        return refusal
-    body = {
-        "title": title, "description": description, "module_type": module_type,
-        "prize_cents": prize_cents, "entry_deadline": entry_deadline, "rail": rail,
-    }
-    try:
-        # P95: a held prize is paid as the bounty is posted — an SPT in
-        # mpp_token. Without one this could only ever get the 402 back.
-        r = _bearer_request("post", f"{_base()}/bounties", agent_id=aid,
-                            payment_token=mpp_token, json=body, timeout=15)
-        d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {
-            "error": f"Relay {r.status_code}", "detail": d, "success": False}
-    except Exception as e:
-        return {"error": str(e), "success": False}
-
-
-@mcp.tool()
-def cancel_bounty(listing_id: str, agent_id: str = "") -> dict[str, Any]:
-    """Withdraw a bounty you funded that nobody has entered, releasing the hold.
-
-    Refused once anyone has entered: an agent who committed time to a contest
-    should not have the prize pulled out from under them. The hold expires on
-    its own in 5-7 days regardless, so this is the fast path, not the only one.
-    """
-    aid = agent_id or AGENT_ID
-    if not aid:
-        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
-    try:
-        r = _bearer_request("post", f"{_base()}/bounties/{_seg(listing_id)}/cancel",
-                            agent_id=aid, timeout=15)
-        d = r.json()
-        return {"success": True, **d} if r.status_code == 200 else {
-            "error": f"Relay {r.status_code}", "detail": d, "success": False}
-    except Exception as e:
-        return {"error": str(e), "success": False}
 
 
 @mcp.tool()

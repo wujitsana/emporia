@@ -3451,7 +3451,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
     """P195: `emporia agent leave URL NAME` and `emporia agent delete NAME`.
 
     leave: NAME leaves one relay — a visit, a backup, or (with --home) its home.
-    Refused while a game, purchase, escrow hold or bounty is open there.
+    Refused while a game, purchase, or escrow hold is open there.
     delete: NAME leaves every relay it is on, then its profile — keys, wallets,
     archive — is moved to a private trash folder this command names, to purge by
     hand once its wallets are empty. Only a person runs it."""
@@ -4098,7 +4098,7 @@ def cmd_relay_overview(args: argparse.Namespace) -> int:
 def cmd_relay_remove(args: argparse.Namespace) -> int:
     """P222: `emporia relay remove NAME` — the relay's operator removes an agent
     that cannot leave by itself (its keys are lost: leaving is signed). The same
-    as leaving: refused while it has games, purchases, escrow or a bounty open;
+    as leaving: refused while it has games, purchases or escrow open;
     its listings go; it is marked inactive and no longer listed. A person runs
     it, on the relay's machine (it writes the relay's database)."""
     name = (args.url or "").strip()
@@ -6485,8 +6485,8 @@ def _stripe_relay_settings(me: Path, args: argparse.Namespace) -> dict[str, str]
     if profile_id:
         updates["STRIPE_PROFILE_ID"] = profile_id
     print(f"  {_STRIPE_DASHBOARD_STEP}")
-    print("  Card money behind bounty prizes and custodial card flows stay off (EMPORIA_CARD_BOUNTY_PRIZES, "
-          "EMPORIA_CUSTODIAL_CARDS) — see docs/payments.md before turning either on.")
+    print("  Custodial card flows stay off (EMPORIA_CUSTODIAL_CARDS) — see docs/payments.md before turning "
+          "them on.")
     return updates
 
 
@@ -7458,7 +7458,7 @@ def _set_mainnet(profile: Path, agent_id: str, name: str, dotenv: dict[str, str]
     print(f"""
   Mainnet means real money. Before {name} may pay with it:
     · Test on testnets first. Emporia is young and has not been audited.
-    · A payment cannot be taken back. Deals and bounties with money are
+    · A payment cannot be taken back. Deals with money are
       regulated in many places — check yours.
     · Its caps still apply: ${cap / 100:.2f} a payment, ${day / 100:.2f} a day. Keep them small.
     · {'It asks you before any payment above $' + format(int(approve) / 100, '.2f') if approve
@@ -7854,7 +7854,7 @@ def setup_overview() -> None:
     mods = relay_env.get("EMPORIA_MODULES", "")
     line("✓" if mods else "·", "Extra games", mods or "bundled games only (optional)",
          "" if mods else "docs/adding-a-game.md (optional)")
-    risky = [k for k in ("EMPORIA_CARD_BOUNTY_PRIZES", "EMPORIA_CUSTODIAL_CARDS")
+    risky = [k for k in ("EMPORIA_CUSTODIAL_CARDS",)
              if relay_env.get(k, "").lower() in ("1", "true", "yes", "on")]
     line("!" if risky else "✓", "Risky switches", ", ".join(risky) + " ON" if risky else "all off (recommended)")
 

@@ -77,7 +77,7 @@ def craft_modules() -> list[str]:
 def _craft_games() -> list[dict]:
     """P288: every finished public game on this relay, as progression reads it.
     Public only: a base sheet must be checkable by anyone, and a private game is
-    not. Bounty contests on the service module are not a game's Craft.
+    not.
 
     P297: nor are games an engine decides (chess). Nothing the relay sees tells
     an agent's own play from an engine's, so a rating there would rank engines,
@@ -86,7 +86,7 @@ def _craft_games() -> list[dict]:
     Calls: a retired set play's games count under its successor (`calls.current`: the
     same game, so the same Craft), `played_as` keeps the type they were played under, and
     each game carries what Insight reads — the calls revealed, who declared one, who was
-    out, and whether it was a bounty contest."""
+    out."""
     from emporia import calls
     games = set(craft_modules())
     marks = ",".join("?" * len(games)) or "NULL"
@@ -151,7 +151,7 @@ def _call_fields(sess: dict) -> dict:
     """Calls: what Insight reads of a finished game, all of it public in the game's record."""
     data = (sess.get("state") or {}).get("data") or {}
     return {"played_as": sess["module_type"], "calls": dict(data.get("calls") or {}),
-            "called": list(data.get("called") or []), "bounty": bool((sess.get("config") or {}).get("bounty_id"))}
+            "called": list(data.get("called") or [])}
 
 
 def _who() -> dict[str, progression.Who]:

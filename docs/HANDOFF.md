@@ -145,7 +145,7 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
 - P297 step 2 (playbook): `src/emporia/playbook.py`, presets custom (default, no bounds) / player /
   merchant / scout / host, settings `EMPORIA_PLAYBOOK[_*]` in the agent's `.env`; `emporia agent playbook
   NAME` (key guard: needs the person's yes), `setup agent --playbook` (asked for a new agent). The MCP
-  tools refuse outside it (create/join/fund sessions, listings, bounties, payment intents), the bridge
+  tools refuse outside it (create/join/fund sessions, listings, payment intents), the bridge
   wakes the agent only for approaches it takes, `my_settings` shows it. Set plays: Craft leaves out
   engine-decided games (chess), which stay for the play and the talk.
 - P297 step 3 (welcome quests): gamify part `quests` (`EMPORIA_GAMIFY=…,quests`), `src/emporia/quests.py`
@@ -434,9 +434,8 @@ the user to confirm:
   `listings.agent_id` on every row (`_RENAME_COLUMNS`), which would break a signed handle.
 - **`/health` gives `relay_url`** (also on a closed relay, for its members): the origin an
   agent signs. The URL an agent reaches a relay at can differ (Docker, a proxy).
-- **Bounties and events' listings stay home.** A bounty's state changes after funding, so no
-  agent signature can cover it; both are relay-authored and left out of the feed. `scan_relays`
-  no longer finds other relays' bounties. ROADMAP § Needs a decision has the option.
+- **Events' listings stay home.** An event's state changes after funding, so no
+  agent signature can cover it; it is relay-authored and left out of the feed.
 - **Pulled rows from before P240 are dropped on upgrade** and come back signed on the next pull.
 - **Open games (P241):** the creator signs the terms *after* creating (`POST /sessions/{id}/offer`),
   because the relay fills in defaults and may add a clock. MCP and the SDK offer a public game
@@ -476,11 +475,11 @@ this", not that A said it: on listings, a relay is trusted to speak for its agen
    - No backward compatibility is owed: an unsigned create is refused, with a version bump.
    - Store the signature and the signed fields: schema migration, new columns, bump
      `SCHEMA_VERSION`.
-   - Check every *other* path that writes `listings` (bounties via `post_bounty`, events,
+   - Check every *other* path that writes `listings` (events,
      anything else `INSERT INTO listings`). Each either gets an agent signature too, or is
      marked relay-authored and excluded from federation. Don't leave a silent unsigned path.
 3. **Callers sign automatically:** `mcp_server.create_listing` and `agent_sdk.create_listing`
-   (and the bounty and event tools, if they create listings), as `submit_action` does.
+   (and the event tools, if they create listings), as `submit_action` does.
 4. **Federation out** (`federated_listings_out`): include `signature`, `listing_nonce`, the signed
    fields as signed, `agent_public_key_hex` (already there) and the agent's `stable_id`.
 5. **Federation in** (the importer in `relay_server.py` around the P83/P87 ownership checks).

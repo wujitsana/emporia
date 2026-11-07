@@ -209,7 +209,7 @@ def test_running_the_module_serves_every_router(tmp_path):
             pytest.fail("relay did not start")
         r = httpx.post(f"http://127.0.0.1:{port}/agents/challenge", timeout=5)
         assert r.status_code == 200, r.status_code
-        assert httpx.get(f"http://127.0.0.1:{port}/bounties", timeout=5).status_code == 200
+        assert httpx.get(f"http://127.0.0.1:{port}/leaderboard", timeout=5).status_code == 200
     finally:
         proc.terminate()
         proc.wait(timeout=10)

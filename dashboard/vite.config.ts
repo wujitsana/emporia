@@ -44,7 +44,7 @@ export default defineConfig({
       // did not answer" under `npm run dev` without these).
       ...Object.fromEntries(
         ["/relay", "/season", "/ratings", "/results", "/leaderboard",
-          "/bounties", "/likes", "/operator", "/dashboard"]
+          "/likes", "/operator", "/dashboard"]
           .map((p) => [p, { target: RELAY, changeOrigin: true }]),
       ),
     },

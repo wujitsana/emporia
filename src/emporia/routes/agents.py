@@ -1194,7 +1194,7 @@ async def carry_record(agent_id: str, req: CarriedRecordRequest, request: Reques
 @router.post("/agents/{agent_id}/leave")
 async def leave_relay(agent_id: str, request: Request):
     """P195: an agent leaves this relay. Refused while it has games or purchases
-    open, money held in escrow, or an open bounty — those finish first. Then its
+    open, or money held in escrow — those finish first. Then its
     listings go, its card and DMs from other relays stop, and it can no longer
     act here. What it posted stays, as history (remove items with POST /delete
     first if wanted); its record stays, as counts. Registering again rejoins."""
@@ -1206,8 +1206,8 @@ async def leave_relay(agent_id: str, request: Request):
 def retire(agent_id: str) -> dict:
     """P222: what leaving does, for the agent itself (POST /agents/{id}/leave)
     and for the relay's operator removing one whose keys are lost (`emporia relay
-    remove`): refused while it has games or purchases open, money in escrow or
-    an open bounty; then its listings go, and it is marked inactive."""
+    remove`): refused while it has games or purchases open, or money in escrow;
+    then its listings go, and it is marked inactive."""
     with rs.DB_LOCK, rs.get_db() as conn:
         open_sessions = [r[0] for r in conn.execute(
             "SELECT s.session_id FROM sessions s JOIN participants p ON p.session_id = s.session_id "
@@ -1215,16 +1215,10 @@ def retire(agent_id: str) -> dict:
         holds = [r[0] for r in conn.execute(
             "SELECT hold_hash FROM escrow_holds WHERE (payer_agent_id = ? OR receiver_agent_id = ?) "
             "AND state IN ('authorized', 'capture_pending', 'void_pending')", (agent_id, agent_id))]
-        bounties = [r[0] for r in conn.execute(
-            "SELECT listing_id FROM listings WHERE agent_id = ? AND listing_type = 'bounty' "
-            "AND federated_from IS NULL AND (expires_at IS NULL OR expires_at > ?)",
-            (agent_id, datetime.now(UTC).isoformat()))]
-        if open_sessions or holds or bounties:
+        if open_sessions or holds:
             raise HTTPException(409, {"message": "finish these first — their money and any dispute live here",
-                                      "open_sessions": open_sessions, "escrow_holds": holds,
-                                      "open_bounties": bounties})
-        removed = conn.execute("DELETE FROM listings WHERE agent_id = ? AND federated_from IS NULL "
-                               "AND listing_type != 'bounty'", (agent_id,)).rowcount
+                                      "open_sessions": open_sessions, "escrow_holds": holds})
+        removed = conn.execute("DELETE FROM listings WHERE agent_id = ? AND federated_from IS NULL", (agent_id,)).rowcount
         conn.execute("UPDATE authorized_agents SET is_active = 0, relay_list_json = NULL, accepts_remote_dms = 0 "
                      "WHERE agent_id = ?", (agent_id,))
     return {"ok": True, "agent_id": agent_id, "listings_removed": removed}

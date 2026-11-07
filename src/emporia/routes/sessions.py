@@ -54,14 +54,8 @@ def _stake(payment_rules: dict[str, Any]) -> tuple[int, str]:
 
 GAME_STAKES_REFUSAL = (
     "{mt} takes no stakes: games on Emporia carry none (no money, no XP, no Nerve). "
-    "Play it for the result. For paid work, create an emporia:service:v1 deal; for a prize, "
-    "post a bounty."
+    "Play it for the result. No prizes or bounties either: for paid work, create an emporia:service:v1 deal."
 )
-
-
-def _is_bounty(s: dict[str, Any]) -> bool:
-    """A bounty contest's stake is the funder's ordinary hold, whatever the module."""
-    return bool((s.get("config") or {}).get("bounty_id"))
 
 
 def _challenge_config(caller: str, module_type: str, module, config: dict[str, Any]) -> dict[str, Any]:
@@ -137,6 +131,16 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
     return config
 
 
+NO_GAME_BOUNTIES = ("games carry nothing of value: no stakes, no prizes. Bounties are for work "
+                    "(labs, services, collaboration), not games.")
+
+
+@router.post("/bounties")
+async def refuse_game_bounty():
+    """A prize on a game is gone for good; a client that still posts one is told why."""
+    raise HTTPException(410, NO_GAME_BOUNTIES)
+
+
 @router.post("/sessions")
 async def create_session(req: rs.CreateSessionRequest, request: Request):
     caller = rs._dashboard_agent_id(request)
@@ -208,7 +212,7 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     state = module.initial_state([caller], req.config)
 
     # Games carry no stakes of any kind. Money is for deals (a purchase's buyer funds
-    # it after a seller joins, through /fund), bounties and paid entry — never a game.
+    # it after a seller joins, through /fund) and paid entry — never a game.
     amount_cents, currency = _stake(payment_rules)
     if module.STAKE_MODEL is None and (amount_cents or (req.payment_rules or {}).get("mode", "free") != "free"):
         raise HTTPException(400, GAME_STAKES_REFUSAL.format(mt=req.module_type))
@@ -1698,7 +1702,7 @@ async def sweep_idle_sessions(limit: int = 200) -> dict[str, int]:
     budget ran out mid-game) stayed `active` for good, and the one who could
     still move could not end it. Abandoned, not forfeited: an idle player may
     be a broken one. Service sessions keep their own
-    deadlines (sweep_service_deadlines) and bounty contests their own rules.
+    deadlines (sweep_service_deadlines).
     """
     counts = {"idle_abandoned": 0}
     hours = _idle_hours()
@@ -1706,8 +1710,6 @@ async def sweep_idle_sessions(limit: int = 200) -> dict[str, int]:
         return counts
     before = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
     for s in rs.idle_sessions(before, SERVICE_MODULE, limit):
-        if _is_bounty(s):
-            continue
         if await _abandon(s, reason=f"no action for {hours:g}h") is not None:
             counts["idle_abandoned"] += 1
     return counts
@@ -1769,7 +1771,7 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
     total_cents = sum(p["amount_cents"] for p in payments)
 
     module_purchase = (
-        module.STAKE_MODEL == STAKE_PURCHASE and not _is_bounty(s)
+        module.STAKE_MODEL == STAKE_PURCHASE
         and bool(_stake(s["payment_rules"])[0])
     )
     if module_purchase and winner_id and winner_id != s["participants"][1]:
@@ -1780,7 +1782,7 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
         # Dispute, timeout, or a draw: cancel all authorized holds — no one
         # is charged. A draw used to reach neither branch (no winner, not a
         # "refund"), so it wrote no settlement row: holds sat until they
-        # expired and a bounty on it stayed `running` forever.
+        # expired.
         cancel_results = [await _release_hold(p) for p in payments if p.get("payment_intent_id")]
         settlement_record = {
             "session_id": session_id,
@@ -1849,7 +1851,7 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
     # P92: and to each participant's own channel. The session channel only
     # reaches an agent that subscribed to this session's socket; an agent
     # listening on its own channel (the Hermes platform adapter, or a later
-    # inbox poll) never heard that its game, or its bounty contest, ended.
+    # inbox poll) never heard that its game ended.
     for p in s["participants"]:
         await rs.broadcast_to_agent(p, terminal_event)
     return settlement_record
@@ -1950,7 +1952,7 @@ async def leave_session(session_id: str, req: LeaveSessionRequest, request: Requ
 
 @router.post("/sessions/{session_id}/abandon")
 async def abandon_session(session_id: str, request: Request, req: dict = None):
-    """Mark a session abandoned and release any escrowed holds (a purchase's, a bounty's).
+    """Mark a session abandoned and release any escrowed holds (a purchase's).
 
     Call this when a session cannot complete (both agents disconnected, timeout,
     mutual agreement). The relay cancels all authorized PaymentIntent holds so

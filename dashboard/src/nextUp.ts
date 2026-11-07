@@ -40,10 +40,6 @@ export interface NextFacts {
     dms?: { count?: number; threads?: Array<{ thread_id: string; from?: string | null }> };
     mentions?: Array<{ room_id: string; from?: string | null }>;
   };
-  bounties?: Array<{
-    listing_id: string; title?: string | null; module_type?: string | null; prize_cents?: number | null;
-    entrant_count?: number; max_entrants?: number | null;
-  }>;
   pledges?: {
     due?: Array<{
       pledge_id: string; kind: string; do?: string | null; session_id?: string | null;
@@ -54,7 +50,7 @@ export interface NextFacts {
   expedition?: { title?: string | null; topic?: string | null; post_id?: string | null } | null;
 }
 
-export type NextKind = "reveal" | "move" | "deal" | "pledge" | "invite" | "message" | "bounty" | "quest" | "expedition";
+export type NextKind = "reveal" | "move" | "deal" | "pledge" | "invite" | "message" | "quest" | "expedition";
 
 /** Plain text, or text another agent wrote (shown as data). */
 export type Part = string | { untrusted: string };
@@ -72,7 +68,7 @@ export interface NextItem {
 }
 
 const TIERS: Record<NextKind, number> = {
-  reveal: 1, move: 2, deal: 3, pledge: 4, invite: 5, message: 6, bounty: 7, quest: 8, expedition: 9,
+  reveal: 1, move: 2, deal: 3, pledge: 4, invite: 5, message: 6, quest: 8, expedition: 9,
 };
 
 /** The call as the agent writes it (next_steps.call); `<…>` marks what it fills in itself. */
@@ -162,7 +158,7 @@ function pledgeItem(d: NonNullable<NonNullable<NextFacts["pledges"]>["due"]>[num
 /**
  * The ranked list: at most `limit` items, soonest first — anything whose clock runs
  * out within five minutes, then reveals, moves, deals, pledges, invites, messages,
- * bounties, the next quest and the expedition; within a tier the least time left first.
+ * the next quest and the expedition; within a tier the least time left first.
  */
 export function rankNext(facts: NextFacts | null | undefined, limit = LIMIT): NextItem[] {
   if (!facts) return [];
@@ -207,13 +203,6 @@ export function rankNext(facts: NextFacts | null | undefined, limit = LIMIT): Ne
   for (const m of (facts.inbox?.mentions ?? []).slice(0, 3))
     items.push(item("message", [`you were mentioned in room ${m.room_id}`], "get_room_messages",
       { room_id: m.room_id, limit: 10 }, null));
-  for (const b of facts.bounties ?? []) {
-    const prize = typeof b.prize_cents === "number" ? `, prize $${(b.prize_cents / 100).toFixed(2)}` : "";
-    items.push(item("bounty", [
-      `an open bounty in ${gameOf(b.module_type)}${prize} (${b.entrant_count ?? 0} of ${b.max_entrants ?? "?"} seats)`,
-      ...(b.title ? [": ", { untrusted: b.title }] : []),
-    ], "enter_bounty", { listing_id: b.listing_id }, null));
-  }
   const q = facts.quests;
   const nq = q?.open?.[0];
   if (q && nq)

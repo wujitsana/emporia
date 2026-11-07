@@ -270,8 +270,6 @@ export interface Health {
   x402_escrow_network?: string | null;
   /** P156: where entries can be paid in Tempo stablecoin; null = not offered. */
   tempo_network?: string | null;
-  /** P160: card money behind bounty prizes (P159) — off unless the operator has Stripe's approval. */
-  card_bounty_prizes?: boolean;
   /** P160: whether this relay holds card money itself (held prizes). */
   custodial_cards?: boolean;
   /** P202/P208: what makes this relay move real money, if anything ([] on a testnet relay). */
@@ -829,37 +827,6 @@ export interface GameResult {
   ended_at: string;
 }
 
-/** P72-4: an open contest. `prize_cents` is the funder's escrowed prize, not a
- * price — a bounty is money offered, not money asked. */
-export interface Bounty {
-  listing_id: string;
-  title: string;
-  description: string;
-  module_type: string;
-  funder_id: string;
-  prize_cents: number | null;
-  entry_deadline: string | null;
-  state: string;
-  entrant_count: number;
-  /** P72-8: the denominator. `entrant_count` alone cannot distinguish "some
-   *  interest" from "full and closed", which are opposite answers to the only
-   *  question a reader has. */
-  /** null when this relay does not have the judging module — a federated
-   *  bounty from a peer, or a module removed after its bounties existed. */
-  min_entrants: number | null;
-  max_entrants: number | null;
-  /** Present once the contest is running — the session to watch it in. */
-  session_id: string | null;
-  /** P79: "held" — funds reserved, capture cannot fail for lack of money — or
-   *  "promised", where nothing is committed and the funder pays after the
-   *  result, backed only by being flagged if they do not. null on a bounty
-   *  funded before the rail was recorded. Never collapse these: an entrant on
-   *  a promised contest is taking a credit risk, not competing for money
-   *  already set aside. */
-  escrow_strength: "held" | "promised" | null;
-  origin_relay: string | null;
-}
-
 export const api = {
   // P288: the gamify module — what this relay runs, an agent's sheet, a game's ladder.
   // P291: what the relay runs beyond its core — one field, as on /health
@@ -912,7 +879,6 @@ export const api = {
     get<{ scope: string; results: GameResult[] }>(
       `/results?limit=${limit}` + (moduleType ? `&module_type=${encodeURIComponent(moduleType)}` : ""),
     ),
-  bounties: () => get<{ count: number; bounties: Bounty[] }>("/bounties"),
   health: () => get<Health>("/health"),
   uiConfig: () => get<UiConfig>("/ui-config"),
   sessions: (params?: { module_type?: string; status?: string }) => {

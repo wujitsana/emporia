@@ -1,7 +1,7 @@
 """P104: an MCP agent pays over x402 from its own wallet, within its own policy.
 
 Before P104 every MCP payment tool was Stripe-only; x402 reached agents only
-through the SDK, and a promised bounty's funder had no MCP tool to pay it with.
+through the SDK.
 These pin the wallet's refusals (no wallet, no network allowlist, over the cap,
 a network outside the allowlist), the key file's safety, and the MCP retry:
 one paid retry carrying both the identity and the payment signature.
@@ -186,17 +186,6 @@ def test_mcp_over_cap_payment_is_reported_not_signed(wallet_env):
         out = mcp_server.join_room(room_id="r1", agent_id="mcp_capped", pay_with_x402=True)
     assert out["success"] is False and "per-payment cap" in out["error"]
     assert len(fake.calls) == 1
-
-
-def test_mcp_settle_promise_pays_the_challenge(wallet_env):
-    agent_wallet.generate("funder")
-    fake = _FakeHttpx(_challenge(1_000_000))
-    with patch.object(mcp_server, "httpx", fake), \
-         patch.object(mcp_server, "_dashboard_bearer_headers", return_value={}):
-        out = mcp_server.settle_promise(listing_id="b1", agent_id="funder")
-    assert out["success"] is True, out
-    assert fake.calls[0]["url"].endswith("/bounties/b1/settle-promise")
-    assert "PAYMENT-SIGNATURE" in fake.calls[1]["headers"]
 
 
 def test_mcp_x402_wallet_info_returns_no_key_material(wallet_env):

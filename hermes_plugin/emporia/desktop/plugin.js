@@ -35,7 +35,7 @@ var NAV = [
 		id: "listings",
 		label: "Offers",
 		icon: "≡",
-		blurb: "What is on offer: bounties, rooms to join, games waiting for a player"
+		blurb: "What is on offer: rooms to join, games waiting for a player"
 	},
 	{
 		id: "deals",
@@ -637,7 +637,7 @@ var COMMANDS = [
 		keywords: [
 			"emporia",
 			"offers",
-			"bounties",
+			"rooms",
 			"market"
 		]
 	},
@@ -965,7 +965,6 @@ var api = {
 	/** P143: a game's table talk — the game's own visibility. */
 	gameChat: (sessionId) => get(`/sessions/${encodeURIComponent(sessionId)}/chat`, { agentScoped: true }),
 	results: (moduleType, limit = 15) => get(`/results?limit=${limit}` + (moduleType ? `&module_type=${encodeURIComponent(moduleType)}` : "")),
-	bounties: () => get("/bounties"),
 	health: () => get("/health"),
 	uiConfig: () => get("/ui-config"),
 	sessions: (params) => {
@@ -1486,56 +1485,6 @@ function holdStateTitle(state) {
 		default: return state;
 	}
 }
-/** A bounty state, for the board: a short label and what it means. */
-function bountyStateLabel(state, full) {
-	switch (state) {
-		case "open": return full ? {
-			label: "ready",
-			title: "Seats are full; waiting to be started."
-		} : {
-			label: "open",
-			title: "Open for entry."
-		};
-		case "running": return {
-			label: "running",
-			title: "Being played now."
-		};
-		case "awaiting_payment": return {
-			label: "awaiting payment",
-			title: "A winner is named; the funder owes the promised prize."
-		};
-		case "defaulted": return {
-			label: "defaulted",
-			title: "The funder did not pay the promised prize in time.",
-			failed: true
-		};
-		case "unfunded": return {
-			label: "unfunded",
-			title: "The held prize could not be captured, so the winner was not paid.",
-			failed: true
-		};
-		case "settled": return {
-			label: "paid",
-			title: "The prize was paid to the winner."
-		};
-		case "refunded": return {
-			label: "refunded",
-			title: "No winner; the prize went back to the funder."
-		};
-		case "cancelling": return {
-			label: "cancelling",
-			title: "Being withdrawn; the hold is being released."
-		};
-		case "cancelled": return {
-			label: "cancelled",
-			title: "Withdrawn by the funder before anyone entered."
-		};
-		default: return {
-			label: state,
-			title: `This bounty is ${state}.`
-		};
-	}
-}
 /** A session status, for the session lists. */
 function sessionStatusLabel(status) {
 	if (status === "awaiting_funding") return "awaiting funding";
@@ -1559,11 +1508,6 @@ function acceptsLabel(move, h) {
 		case "purchase":
 			if (card) ways.push("card");
 			if (h?.x402_escrow_network) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
-			break;
-		case "bounty_held":
-			if (card && h?.card_bounty_prizes && h?.custodial_cards) ways.push("card");
-			break;
-		case "bounty_promised": if (usdc) ways.push("USDC, paid after the result");
 	}
 	return ways.length ? `accepts ${ways.join(" · ")}` : "no payment rail on this relay";
 }
@@ -8152,8 +8096,7 @@ function clip$1(s, max = 52) {
 	return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
 }
 async function fetchOverviewSnapshot(viewerId, isOperator = false) {
-	const [listings, sessions, rooms, agents, settlements, agoraTopics, dmThreads] = await Promise.allSettled([
-		api.bounties(),
+	const [sessions, rooms, agents, settlements, agoraTopics, dmThreads] = await Promise.allSettled([
 		api.sessions(),
 		api.rooms(),
 		api.agents(),
@@ -8162,7 +8105,6 @@ async function fetchOverviewSnapshot(viewerId, isOperator = false) {
 		viewerId ? api.dmThreads(viewerId) : Promise.resolve([])
 	]);
 	return {
-		listings,
 		sessions,
 		rooms,
 		agents,
@@ -8171,10 +8113,13 @@ async function fetchOverviewSnapshot(viewerId, isOperator = false) {
 		dmThreads
 	};
 }
+/** An offer is a room anyone may open: public, or paid. A private room is not one. */
+function offeredRooms(r) {
+	return (r?.rooms ?? []).filter((x) => x.room_type === "public" || x.gate_type === "paid");
+}
 /** Live snippets from each dashboard tab (for Overview). Pure. */
 function sectionsFromSnapshot(snapshot) {
 	const val = (r) => r.status === "fulfilled" ? r.value : null;
-	const listings = val(snapshot.listings);
 	const sessions = val(snapshot.sessions);
 	const rooms = val(snapshot.rooms);
 	const agents = val(snapshot.agents);
@@ -8187,7 +8132,7 @@ function sectionsFromSnapshot(snapshot) {
 	return [
 		{
 			view: "listings",
-			lines: listings?.bounties?.length ? listings.bounties.slice(0, MAX_LINES).map((b) => clip$1(`${b.title} · bounty${b.prize_cents ? ` · $${(b.prize_cents / 100).toFixed(2)}` : ""}`)) : ["No open offers"]
+			lines: offeredRooms(rooms).length ? offeredRooms(rooms).slice(0, MAX_LINES).map((r) => clip$1(`${r.name} · ${r.gate_type}`)) : ["No open offers"]
 		},
 		{
 			view: "rooms",
@@ -8243,7 +8188,7 @@ function sectionsFromSnapshot(snapshot) {
 */
 function failedFromSnapshot(snapshot) {
 	const pairs = [
-		["listings", snapshot.listings],
+		["listings", snapshot.rooms],
 		["games", snapshot.sessions],
 		["deals", snapshot.sessions],
 		["rooms", snapshot.rooms],
@@ -8255,7 +8200,6 @@ function failedFromSnapshot(snapshot) {
 	return new Set(pairs.filter(([, r]) => r.status === "rejected").map(([id]) => id));
 }
 function countsFromSnapshot(snapshot) {
-	const listingsR = snapshot.listings;
 	const sessionsR = snapshot.sessions;
 	const roomsR = snapshot.rooms;
 	const agentsR = snapshot.agents;
@@ -8272,7 +8216,6 @@ function countsFromSnapshot(snapshot) {
 			if (Array.isArray(o.listings)) return o.listings.length;
 			if (Array.isArray(o.sessions)) return o.sessions.length;
 			if (Array.isArray(o.rooms)) return o.rooms.length;
-			if (Array.isArray(o.bounties)) return o.bounties.length;
 			if (Array.isArray(o.agents)) return o.agents.length;
 			if (Array.isArray(o.settlements)) return o.settlements.length;
 			if (Array.isArray(o.topics)) return o.topics.length;
@@ -8283,7 +8226,7 @@ function countsFromSnapshot(snapshot) {
 	const gameSessions = emporia ? emporia.filter((s) => !isJobModule(s.module_type)).length : null;
 	const dealSessions = emporia ? emporia.filter((s) => isJobModule(s.module_type)).length : null;
 	return {
-		listings: len(listingsR),
+		listings: roomsR.status === "fulfilled" ? offeredRooms(roomsR.value).length : null,
 		sessions: len(sessionsR),
 		rooms: len(roomsR),
 		agents: len(agentsR),
@@ -10182,7 +10125,6 @@ var TIERS = {
 	pledge: 4,
 	invite: 5,
 	message: 6,
-	bounty: 7,
 	quest: 8,
 	expedition: 9
 };
@@ -10280,7 +10222,7 @@ function pledgeItem(d) {
 /**
 * The ranked list: at most `limit` items, soonest first — anything whose clock runs
 * out within five minutes, then reveals, moves, deals, pledges, invites, messages,
-* bounties, the next quest and the expedition; within a tier the least time left first.
+* the next quest and the expedition; within a tier the least time left first.
 */
 function rankNext(facts, limit = 6) {
 	if (!facts) return [];
@@ -10324,10 +10266,6 @@ function rankNext(facts, limit = 6) {
 		room_id: m.room_id,
 		limit: 10
 	}, null));
-	for (const b of facts.bounties ?? []) {
-		const prize = typeof b.prize_cents === "number" ? `, prize $${(b.prize_cents / 100).toFixed(2)}` : "";
-		items.push(item("bounty", [`an open bounty in ${gameOf(b.module_type)}${prize} (${b.entrant_count ?? 0} of ${b.max_entrants ?? "?"} seats)`, ...b.title ? [": ", { untrusted: b.title }] : []], "enter_bounty", { listing_id: b.listing_id }, null));
-	}
 	const q = facts.quests;
 	const nq = q?.open?.[0];
 	if (q && nq) items.push(item("quest", [`quest "${nq.title}" (+${nq.xp} XP; ${q.done ?? 0} of ${q.total ?? 0} done)${nq.how ? `: ${nq.how}` : ""}`], "my_quests", {}, null));
@@ -10477,7 +10415,6 @@ var KIND_LABEL$1 = {
 	pledge: "pledge",
 	invite: "invite",
 	message: "unread",
-	bounty: "bounty",
 	quest: "quest",
 	expedition: "theme"
 };
@@ -11252,136 +11189,6 @@ function OverviewIntro({ go, realMoney = false }) {
 }
 // src/navigation.ts
 var EMPTY_SEED_HINT = "No data yet. Seed the relay: emporia/scripts/seed_demo_relay.py (EMPORIA_GAMES_DB must match relay HOME).";
-// src/ui/BountyBoard.tsx
-/**
-* Open contests (P72-4).
-*
-* Sits in the Offers view, above the rooms and the games waiting for a player, because it is the
-* thing an agent arriving there should see first.
-*
-* `prize` is rendered as money offered, never as a price. A bounty inverts the
-* usual listing: the poster is paying, not charging, and a reader who mistakes
-* one for the other has misread the whole board.
-*
-* P72-8: seats and state are shown because the first version showed neither,
-* and both omissions made the board say the opposite of the truth. "2 entrants"
-* with no denominator reads as some interest when it means full and closed; a
-* running or cancelled bounty rendered identically to one still open for entry.
-* Same failure as a rejected fetch rendering as an empty list (P68/P69) — the
-* reassuring reading, chosen by omission.
-*/
-function BountyBoard({ navigate } = {}) {
-	const [data, , error] = useInterval(() => api.bounties(), 2e4, []);
-	if (error && !data) return /* @__PURE__ */ jsx(Text, {
-		className: "e-faint",
-		style: { fontSize: 12 },
-		title: error,
-		children: "? bounties unavailable — the relay did not answer. This is not \"no open contests\"."
-	});
-	if (!data) return /* @__PURE__ */ jsx(Text, {
-		className: "e-faint",
-		style: { fontSize: 12 },
-		children: "… loading bounties"
-	});
-	if (data.bounties.length === 0) return /* @__PURE__ */ jsx(Text, {
-		className: "e-faint",
-		style: { fontSize: 12 },
-		children: "No open bounties on this relay."
-	});
-	return /* @__PURE__ */ jsxs("div", {
-		style: { marginTop: 10 },
-		children: [/* @__PURE__ */ jsx(Text, {
-			className: "e-dim",
-			style: { fontSize: "0.68rem" },
-			children: "Open bounties — a held prize is reserved by the funder; a promised one is not"
-		}), /* @__PURE__ */ jsx("div", {
-			className: "e-compact-table",
-			style: {
-				overflowX: "auto",
-				marginTop: 6
-			},
-			children: /* @__PURE__ */ jsxs("table", {
-				className: "e-listings-native",
-				children: [/* @__PURE__ */ jsx("thead", { children: /* @__PURE__ */ jsxs("tr", { children: [
-					/* @__PURE__ */ jsx("td", { children: "TITLE" }),
-					/* @__PURE__ */ jsx("td", { children: "PRIZE" }),
-					/* @__PURE__ */ jsx("td", { children: "MODULE" }),
-					/* @__PURE__ */ jsx("td", { children: "SEATS" }),
-					/* @__PURE__ */ jsx("td", { children: "STATE" }),
-					/* @__PURE__ */ jsx("td", { children: "CLOSES" }),
-					/* @__PURE__ */ jsx("td", { children: "FUNDER" })
-				] }) }), /* @__PURE__ */ jsx("tbody", { children: data.bounties.map((b) => /* @__PURE__ */ jsxs("tr", { children: [
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-cell-wrap",
-						children: b.title
-					}) }),
-					/* @__PURE__ */ jsxs("td", { children: [
-						/* @__PURE__ */ jsxs(Badge$1, {
-							style: { fontVariantNumeric: "tabular-nums" },
-							title: b.escrow_strength === "held" ? "Held — the funder's money is reserved and cannot be spent elsewhere." : b.escrow_strength === "promised" ? "Promised — nothing is set aside. The funder pays after the result, and is flagged if they do not. Competing here is a credit risk." : "This bounty predates escrow-strength recording.",
-							children: [b.prize_cents === null ? "—" : `$${(b.prize_cents / 100).toFixed(2)}`, b.escrow_strength === "promised" ? " ⚠" : ""]
-						}),
-						" ",
-						/* @__PURE__ */ jsx("span", {
-							className: "e-faint",
-							style: { fontSize: 11 },
-							children: b.escrow_strength === "held" ? "card, held" : b.escrow_strength === "promised" ? "USDC, after the result" : ""
-						})
-					] }),
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-dim",
-						style: { fontSize: 11 },
-						children: b.module_type.replace("emporia:", "").replace(/:v\d+$/, "")
-					}) }),
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsxs(Text, {
-						style: { fontVariantNumeric: "tabular-nums" },
-						className: b.max_entrants !== null && b.entrant_count >= b.max_entrants ? void 0 : "e-dim",
-						title: b.max_entrants === null ? "This relay does not have this bounty's judging module, so its seat count is unknown." : b.entrant_count >= b.max_entrants ? "Full — entry is closed." : `Needs ${b.min_entrants} to run; ${b.max_entrants - b.entrant_count} seat(s) left.`,
-						children: [
-							b.entrant_count,
-							"/",
-							b.max_entrants ?? "?"
-						]
-					}) }),
-					/* @__PURE__ */ jsx("td", { children: b.state === "running" && b.session_id ? /* @__PURE__ */ jsxs("span", {
-						title: `Playing now in session ${b.session_id}`,
-						children: [/* @__PURE__ */ jsx(Text, {
-							style: {
-								fontSize: 11,
-								color: "var(--theme-focused-foreground)"
-							},
-							children: "running "
-						}), /* @__PURE__ */ jsx(SessionLink, {
-							session_id: b.session_id,
-							navigate
-						})]
-					}) : (() => {
-						const st = bountyStateLabel(b.state, b.max_entrants !== null && b.entrant_count >= b.max_entrants);
-						return /* @__PURE__ */ jsx(Text, {
-							className: st.failed ? void 0 : "e-faint",
-							style: {
-								fontSize: 11,
-								...st.failed ? { color: "var(--theme-warning, #c33)" } : {}
-							},
-							title: st.title,
-							children: st.label
-						});
-					})() }),
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-faint",
-						style: { fontSize: 11 },
-						children: b.entry_deadline ? new Date(b.entry_deadline).toLocaleString() : "—"
-					}) }),
-					/* @__PURE__ */ jsx("td", { children: /* @__PURE__ */ jsx(Text, {
-						className: "e-faint",
-						style: { fontSize: 11 },
-						children: b.funder_id
-					}) })
-				] }, b.listing_id)) })]
-			})
-		})]
-	});
-}
 // src/views/ListingsView.tsx
 /**
 * P40-1: was `ListingTable`, hardwired to `Listing[]` for its row keys and its
@@ -11478,7 +11285,6 @@ function ListingsView({ refreshTrigger, navigate }) {
 		String(r.members?.length ?? r.member_count ?? 0)
 	]);
 	return /* @__PURE__ */ jsx(ViewBody, { children: /* @__PURE__ */ jsxs(Indent, { children: [
-		/* @__PURE__ */ jsx(BountyBoard, { navigate }),
 		/* @__PURE__ */ jsx(ViewStatus, {
 			loading,
 			error,
@@ -22325,14 +22131,12 @@ var SOURCES = [
 	"services",
 	"games",
 	"rooms_topics",
-	"bounties",
 	"other"
 ];
 var SOURCE_LABELS = {
 	services: "Services sold",
 	games: "Games won",
 	rooms_topics: "Room and topic entry fees",
-	bounties: "Bounties won",
 	other: "Other sessions"
 };
 /** A settlement's source. A relay that names no kind: a row with a payer is an access sale. */
@@ -22340,7 +22144,6 @@ function earningSource(s) {
 	switch (s.kind ?? (s.payer_id ? "access" : "session")) {
 		case "service": return "services";
 		case "game": return "games";
-		case "bounty": return "bounties";
 		case "room":
 		case "topic":
 		case "access": return "rooms_topics";
@@ -22368,14 +22171,13 @@ function rate(num, den) {
 	return den > 0 ? Math.round(num / den * 1e3) / 1e3 : null;
 }
 var PAYMENT_LABELS = {
-	session_stake: "purchase or bounty prize",
+	session_stake: "purchase",
 	room_entry: "room entry",
 	agora_subscribe: "topic entry"
 };
 var KIND_LABELS = {
 	game: "game won",
 	service: "service sold",
-	bounty: "bounty won",
 	room: "room entry fee",
 	topic: "topic entry fee",
 	access: "entry fee",
@@ -22825,7 +22627,7 @@ function StatsView() {
 						]
 					}), /* @__PURE__ */ jsxs("div", {
 						className: "e-empty-pane__hint",
-						children: ["Your agent earns by selling a service, winning a bounty, or charging an entry fee for a room or topic it created. ", days === 7 ? "Try 30 days." : ""]
+						children: ["Your agent earns by selling a service or charging an entry fee for a room or topic it created. ", days === 7 ? "Try 30 days." : ""]
 					})]
 				}),
 				/* @__PURE__ */ jsxs(PanelCard, {

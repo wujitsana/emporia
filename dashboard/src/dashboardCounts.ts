@@ -1,4 +1,4 @@
-import { api, dmThreadPreview } from "./api";
+import { api, dmThreadPreview, type Room } from "./api";
 import type { RelayHealth } from "./hooks";
 import { isJobModule, type DashboardView } from "./eventNav";
 import type { NavItem } from "./navConfig";
@@ -44,7 +44,6 @@ function clip(s: string, max = 52): string {
  * with nothing on it.
  */
 export interface OverviewSnapshot {
-  listings: PromiseSettledResult<Awaited<ReturnType<typeof api.bounties>>>;
   sessions: PromiseSettledResult<Awaited<ReturnType<typeof api.sessions>>>;
   rooms: PromiseSettledResult<Awaited<ReturnType<typeof api.rooms>>>;
   agents: PromiseSettledResult<Awaited<ReturnType<typeof api.agents>>>;
@@ -56,9 +55,8 @@ export interface OverviewSnapshot {
 export async function fetchOverviewSnapshot(
   viewerId: string | null, isOperator = false,
 ): Promise<OverviewSnapshot> {
-  const [listings, sessions, rooms, agents, settlements, agoraTopics, dmThreads] =
+  const [sessions, rooms, agents, settlements, agoraTopics, dmThreads] =
     await Promise.allSettled([
-      api.bounties(),
       api.sessions(),
       api.rooms(),
       api.agents(),
@@ -70,7 +68,12 @@ export async function fetchOverviewSnapshot(
       // this request on every Overview load and quietly collected a miss.
       viewerId ? api.dmThreads(viewerId) : Promise.resolve([]),
     ]);
-  return { listings, sessions, rooms, agents, settlements, agoraTopics, dmThreads };
+  return { sessions, rooms, agents, settlements, agoraTopics, dmThreads };
+}
+
+/** An offer is a room anyone may open: public, or paid. A private room is not one. */
+function offeredRooms(r: { rooms?: Room[] } | null): Room[] {
+  return (r?.rooms ?? []).filter((x) => x.room_type === "public" || x.gate_type === "paid");
 }
 
 /** Live snippets from each dashboard tab (for Overview). Pure. */
@@ -78,7 +81,6 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
   const val = <T>(r: PromiseSettledResult<T>): T | null =>
     r.status === "fulfilled" ? r.value : null;
 
-  const listings = val(snapshot.listings);
   const sessions = val(snapshot.sessions);
   const rooms = val(snapshot.rooms);
   const agents = val(snapshot.agents);
@@ -96,10 +98,8 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
     {
       view: "listings",
       lines:
-        listings?.bounties?.length
-          ? listings.bounties.slice(0, MAX_LINES).map((b) =>
-              clip(`${b.title} · bounty${b.prize_cents ? ` · $${(b.prize_cents / 100).toFixed(2)}` : ""}`),
-            )
+        offeredRooms(rooms).length
+          ? offeredRooms(rooms).slice(0, MAX_LINES).map((r) => clip(`${r.name} · ${r.gate_type}`))
           : ["No open offers"],
     },
     {
@@ -213,7 +213,7 @@ export interface DashboardCounts {
  */
 export function failedFromSnapshot(snapshot: OverviewSnapshot): Set<OverviewTabId> {
   const pairs: [OverviewTabId, PromiseSettledResult<unknown>][] = [
-    ["listings", snapshot.listings],
+    ["listings", snapshot.rooms],
     ["games", snapshot.sessions],
     ["deals", snapshot.sessions],
     ["rooms", snapshot.rooms],
@@ -227,7 +227,6 @@ export function failedFromSnapshot(snapshot: OverviewSnapshot): Set<OverviewTabI
 
 
 export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts {
-  const listingsR = snapshot.listings;
   const sessionsR = snapshot.sessions;
   const roomsR = snapshot.rooms;
   const agentsR = snapshot.agents;
@@ -248,7 +247,6 @@ export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts 
       if (Array.isArray(o.listings)) return o.listings.length;
       if (Array.isArray(o.sessions)) return o.sessions.length;
       if (Array.isArray(o.rooms)) return o.rooms.length;
-      if (Array.isArray(o.bounties)) return o.bounties.length;
       if (Array.isArray(o.agents)) return o.agents.length;
       if (Array.isArray(o.settlements)) return o.settlements.length;
       if (Array.isArray(o.topics)) return o.topics.length;
@@ -263,7 +261,7 @@ export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts 
   const dealSessions = emporia ? emporia.filter((s) => isJobModule(s.module_type)).length : null;
 
   return {
-    listings: len(listingsR),
+    listings: roomsR.status === "fulfilled" ? offeredRooms(roomsR.value).length : null,
     sessions: len(sessionsR),
     rooms: len(roomsR),
     agents: len(agentsR),

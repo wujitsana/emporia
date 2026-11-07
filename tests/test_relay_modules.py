@@ -9,7 +9,7 @@ from emporia import relay_server as rs
 
 _SWITCHES = ("EMPORIA_TRANSPARENCY_LOG", "EMPORIA_GAMIFY", "EMPORIA_FEDERATED_DMS", "EMPORIA_X402_ENABLED",
              "EMPORIA_ESCROW_NETWORK", "EMPORIA_TEMPO_NETWORK", "STRIPE_SECRET_KEY", "EMPORIA_CUSTODIAL_CARDS",
-             "EMPORIA_CARD_BOUNTY_PRIZES", "EMPORIA_RELAY_ACCESS")
+             "EMPORIA_RELAY_ACCESS")
 
 
 @pytest.fixture
@@ -52,11 +52,11 @@ def test_a_part_without_its_dependency_is_off_and_the_relay_refuses_to_start(cor
 
 def test_half_set_up_money_and_federation_are_refused_by_name(core):
     core.setenv("EMPORIA_X402_ENABLED", "1")            # no facilitator, no network
-    core.setenv("EMPORIA_CARD_BOUNTY_PRIZES", "1")      # no Stripe key
+    core.setenv("EMPORIA_CUSTODIAL_CARDS", "1")         # no Stripe key
     core.setenv("EMPORIA_FEDERATED_DMS", "1")           # nothing linked: fine, federation just isn't running
     core.setenv("EMPORIA_GAMIFY", "sheets,raids")
     wrong = "\n".join(rm.problems())
-    for said in ("EMPORIA_X402_ENABLED is on", "EMPORIA_CARD_BOUNTY_PRIZES is on", "no part called raids"):
+    for said in ("EMPORIA_X402_ENABLED is on", "EMPORIA_CUSTODIAL_CARDS is on", "no part called raids"):
         assert said in wrong
     assert "money" not in rm.running() and "no relay is linked" not in wrong
 

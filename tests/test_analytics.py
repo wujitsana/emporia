@@ -154,41 +154,39 @@ def test_room_and_topic_entry_fees_count_as_the_creators_earnings():
     assert "from   rooms $1.50, topics $0.75" in analytics.render(st)
 
 
-def test_a_sessions_settlement_kind_is_its_module_or_its_bounty():
+def test_a_sessions_settlement_kind_is_its_module():
     from datetime import UTC, datetime
 
     from emporia import relay_server as rs
     now = datetime.now(UTC).isoformat()
     with rs.DB_LOCK, rs.get_db() as conn:
         for sid, module, config in (("kind_game", "emporia:chess:v1", "{}"),
-                                    ("kind_service", "emporia:service:v1", "{}"),
-                                    ("kind_bounty", "emporia:service:v1", '{"bounty_id": "b1"}')):
+                                    ("kind_service", "emporia:service:v1", "{}")):
             conn.execute("INSERT OR REPLACE INTO sessions (session_id, module_type, config_json, payment_rules_json, "
                          "state_json, current_agent, participants_json, created_at, updated_at) "
                          "VALUES (?, ?, ?, '{}', '{}', '', '[]', ?, ?)", (sid, module, config, now, now))
         rows = [{"settlement_id": f"stl_{sid}", "session_id": sid, "payer_id": None}
-                for sid in ("kind_game", "kind_service", "kind_bounty", "kind_gone")]
+                for sid in ("kind_game", "kind_service", "kind_gone")]
         rows.append({"settlement_id": "stl_access_gone", "session_id": "room_gone", "payer_id": "p"})
         kinds = rs._settlement_kinds(conn, rows)
-    assert kinds == {"stl_kind_game": "game", "stl_kind_service": "service", "stl_kind_bounty": "bounty",
+    assert kinds == {"stl_kind_game": "game", "stl_kind_service": "service",
                      "stl_kind_gone": "session", "stl_access_gone": "access"}
 
 
 def test_earnings_by_source_and_payout_states_from_settlement_kinds():
-    """Games, services and bounties apart; a payout the relay still holds is owed, and a failed
+    """Games and services apart; a payout the relay still holds is owed, and a failed
     transfer is not earned. A relay that names no kind still counts an access sale."""
     t = _iso(NOW - DAY)
     rows = [
         {"winner_id": "a", "winner_payout_cents": 100, "kind": "game", "transfer_status": "escrow_captured", "created_at": t},
         {"winner_id": "a", "winner_payout_cents": 200, "kind": "service", "transfer_status": "destination", "created_at": t},
-        {"winner_id": "a", "winner_payout_cents": 300, "kind": "bounty", "transfer_status": "transferred", "created_at": t},
         {"winner_id": "a", "winner_payout_cents": 40, "payer_id": "[redacted]", "transfer_status": "direct", "created_at": t},
         {"winner_id": "a", "winner_payout_cents": 50, "kind": "room", "transfer_status": "no_stripe_account", "created_at": t},
         {"winner_id": "a", "winner_payout_cents": 60, "kind": "topic", "transfer_status": "transfer_failed: x", "created_at": t},
     ]
     st = analytics.agent_stats("a", {"settlements": rows}, now=NOW)
-    assert st["earned_by_source"] == {"games": 100, "services": 200, "bounties": 300, "rooms_topics": 40}
-    assert st["earned_cents"] == 640 and st["owed_cents"] == 50 and st["failed_payout_cents"] == 60
+    assert st["earned_by_source"] == {"games": 100, "services": 200, "rooms_topics": 40}
+    assert st["earned_cents"] == 340 and st["owed_cents"] == 50 and st["failed_payout_cents"] == 60
     assert st["access_sales"] == {"rooms_topics": 1, "rooms": 1, "topics": 1}
 
 

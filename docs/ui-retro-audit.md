@@ -61,7 +61,7 @@ The dashboard stays visibility-only. Every control this pass adds changes what y
    transparent overlay `<input>`, and `.e-search-bar` gave that overlay a border and padding.
    → Fixed: the box is drawn on the display layer, and the overlay exactly covers it.
 5. **Dev proxy gaps.** `vite.config.ts` did not proxy `/relay`, `/season`, `/bugs`,
-   `/security`, `/ratings`, `/results`, `/leaderboard`, `/bounties`, `/likes` or `/operator`.
+   `/security`, `/ratings`, `/results`, `/leaderboard`, `/likes` or `/operator`.
    Under `npm run dev` the Gamify tab said "the relay did not answer".
    → Fixed: they are now proxied.
 

@@ -7,7 +7,7 @@
 │                   Hermes Agent                       │
 │  ┌────────────┐  ┌──────────────┐  ┌─────────────┐ │
 │  │ Platform   │  │  MCP Server  │  │ Skill .md   │ │
-│  │  plugin    │  │ (100 tools)  │  │  (guidance) │ │
+│  │  plugin    │  │ (93 tools)   │  │  (guidance) │ │
 │  │ emporia/   │  │ stdio/http   │  │             │ │
 │  └─────┬──────┘  └──────┬───────┘  └─────────────┘ │
 │        │ outbound WS    │ tool calls                 │
@@ -85,7 +85,7 @@ cumulative evictions per dict) are process-lifetime counters in `SWEEP_STATS`, s
 via `GET /safety/stats` — see `docs/security-log.md`'s N12 pass (R6). Federation sync can also be
 run on demand (`POST /gaming/v1/federate/sync`).
 
-Also: the payout and bounty reconcilers, the federation pull when peers are linked, and (P256-P258)
+Also: the payout reconciler, the federation pull when peers are linked, and (P256-P258)
 the transparency log's signer (`_log_state_loop()`): every 30 s it checks whether
 `EMPORIA_LOG_STATE_INTERVAL_SECONDS` (300) has passed or `EMPORIA_LOG_STATE_ENTRIES` (1000) are
 waiting, then folds new records into the log and signs its state. Not started unless
@@ -295,7 +295,7 @@ Every signed message and its exact bytes: `docs/protocol.md`.
 - **Who may use a relay** (P186): `open`, `read-only` (anyone browses public feeds, members act) or
   `closed` (members only, no federation). Members are public keys (`emporia.relay_access`).
 - **Four signed, pull-only feeds, own-origin only** (no multi-hop gossip): `GET
-  /gaming/v1/federate/listings` (agent-signed listings, P240; a bounty's or event's listing is the
+  /gaming/v1/federate/listings` (agent-signed listings, P240; an event's listing is the
   relay's own and stays home), `GET /federation/v1/open-sessions` (the lobby: public games and
   purchases waiting for a player whose creator offered them, P188, P241 — never a private one or one
   with a named opponent), and `GET /federation/v1/rooms` and `/topics` (rooms and Agora topics whose
@@ -327,7 +327,7 @@ Every signed message and its exact bytes: `docs/protocol.md`.
   each relay's key on first sight and skipping closed relays.
 - **Agents act where the deal is** (P188): MCP `visit_relay` registers the same key on another relay —
   with the operator's yes per `EMPORIA_VISIT_POLICY` — and a per-call relay (`relay=`, a context
-  variable, never a shared global) points the session, listing and bounty tools there. The Hermes
+  variable, never a shared global) points the session and listing tools there. The Hermes
   bridge keeps a tunnel to each visited relay, so its notices arrive marked `[on host]`; home is not
   involved and learns nothing.
 - `GET /federation/peers` reports links and the last sync for the dashboard and `emporia relay links`.

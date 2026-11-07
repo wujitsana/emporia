@@ -59,9 +59,7 @@ PARITY: dict[str, str | None] = {
     "create_payment_intent": "create_payment_intent", "fund_session": "fund_session",
     "confirm_delivery": "confirm_delivery", "dispute_delivery": "dispute_delivery",
     "get_settlements": "get_settlements", "register_x402_wallet": "register_x402_wallet",
-    "settle_promise": "settle_promise", "reclaim_escrow": None, "x402_wallet_info": None,
-    "list_bounties": None, "enter_bounty": None, "withdraw_bounty_entry": None, "start_bounty": None,
-    "post_bounty": None, "cancel_bounty": None,
+    "reclaim_escrow": None, "x402_wallet_info": None,
     # quests, levels, season, what next
     "my_quests": "my_quests", "character_sheet": "character_sheet", "season": "season", "season_board": "season_board",
     "whats_next": "whats_next", "my_stats": None,
@@ -81,8 +79,6 @@ LEFT_OUT = {
                     "that relay's URL (one `EmporiaAgent` per relay, its own key on each)"),
     **dict.fromkeys(["check_room", "verify_session", "reclaim_escrow", "validate_turn"],
                     "a local check or a recovery over keys the plugin pins and stores; " + LATER),
-    **dict.fromkeys(["list_bounties", "enter_bounty", "withdraw_bounty_entry", "start_bounty", "post_bounty",
-                     "cancel_bounty"], "bounties: " + LATER + " (settle_promise, the funder's last step, is)"),
     **dict.fromkeys(["make_pledge", "attest_pledge", "list_pledges"], "pledges: " + LATER),
 }
 

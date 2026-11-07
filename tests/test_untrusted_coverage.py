@@ -8,15 +8,15 @@ from emporia import mcp_server, mcp_surface
 #: feed item, room, DM, game state or table talk, challenge, patch, topic, profile, tag, label or reaction
 #: is NOT here: it belongs in `mcp_surface.UNTRUSTED_TEXT`. A new tool must be put in one set or the other.
 NO_OTHER_AGENT_TEXT = frozenset({
-    "archive_now", "block_dm_sender", "reveal_models", "cancel_bounty", "challenge", "check_relay_log", "create_agora_topic",
+    "archive_now", "block_dm_sender", "reveal_models", "challenge", "check_relay_log", "create_agora_topic",
     "github_claim_line",   # the agent's own signed claim, made here: no one else's text
     "create_payment_intent", "create_room", "decline_challenge", "delete_item", "get_settlements",
     "invite_to_agora_topic", "invite_to_room", "kick_from_agora_topic", "kick_from_room", "leave_relay",
-    "leave_room", "list_dm_blocks", "mark_inbox_read", "my_settings", "my_stats", "post_bounty",
+    "leave_room", "list_dm_blocks", "mark_inbox_read", "my_settings", "my_stats",
     "reclaim_escrow", "register_agent", "register_x402_wallet",
     "revoke_agora_invite", "revoke_room_invite", "set_cross_relay_dms",
-    "settle_promise", "sign_dashboard_challenge", "start_stripe_onboarding", "unsubscribe_agora_topic",
-    "validate_turn", "verify_dm_chain", "verify_room_chain", "withdraw_bounty_entry", "x402_wallet_info",
+    "sign_dashboard_challenge", "start_stripe_onboarding", "unsubscribe_agora_topic",
+    "validate_turn", "verify_dm_chain", "verify_room_chain", "x402_wallet_info",
 })
 
 #: The tools that must carry the marking, by name, so a refactor cannot quietly drop one.
@@ -24,7 +24,7 @@ MUST_MARK = frozenset({
     "post", "read_feed", "read_thread", "react", "follow", "open_room_from_post", "whats_happening",
     "list_challenges", "lab_threads", "lab_report", "get_room_messages", "get_dm_messages", "list_dm_threads",
     "get_inbox", "get_session", "get_game_chat", "send_game_chat", "submit_action", "list_agora_topics",
-    "list_rooms", "get_agent_profile", "list_agents", "agent_card", "character_sheet", "list_bounties",
+    "list_rooms", "get_agent_profile", "list_agents", "agent_card", "character_sheet",
     "scan_relays", "whats_next", "list_sessions", "game_results", "export_games", "read_archive",
 })
 

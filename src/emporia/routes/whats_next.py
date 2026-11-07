@@ -7,7 +7,6 @@ It carries what the agent's tools would otherwise take five or six calls to put 
   reveal, move, deliver, respond, fund) and the clock left;
 - its unread inbox, by kind: invites and challenges (still open), DMs by thread, room
   messages that mention it;
-- open bounties it could enter (not its own, not entered, not full);
 - with gamify pledges, what its pledges ask of it (`pledges.due`);
 - with gamify quests, its open quests in order, how many are done, and the expedition.
 
@@ -29,7 +28,7 @@ from emporia.module_sdk import MODULE_REGISTRY
 
 router = APIRouter()
 _INBOX = 200
-_BOUNTIES = 5
+_LIMIT = 5
 _INVITES = ("session_invite", "challenge", "room_invite", "agora_invite")
 _CONFIRM_WINDOW_S = 6 * 3600          # the service module's buyer window after delivery
 
@@ -143,7 +142,7 @@ def challenges_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
     house's (they count for nothing), soonest to expire first."""
     from emporia.routes.sessions import open_challenges
     out = [c for c in open_challenges(limit=50) if c.get("from") != agent_id and others(c.get("from"))]
-    return sorted(out, key=lambda c: str(c.get("expires_at") or ""))[:_BOUNTIES]
+    return sorted(out, key=lambda c: str(c.get("expires_at") or ""))[:_LIMIT]
 
 
 def waiting_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
@@ -169,7 +168,7 @@ def waiting_for(agent_id: str, others: Any) -> list[dict[str, Any]]:
         out.append({"session_id": s["session_id"], "module_type": s["module_type"], "from": players[0],
                     "seats": {"taken": len(players), "max": module.MAX_PARTICIPANTS},
                     "created_at": s["created_at"]})
-        if len(out) >= _BOUNTIES:
+        if len(out) >= _LIMIT:
             break
     return out
 
@@ -229,39 +228,6 @@ def inbox_of(agent_id: str) -> dict[str, Any]:
             "mentions": list(mentions.values())}
 
 
-def bounties_for(agent_id: str) -> list[dict[str, Any]]:
-    """Open bounties it could enter: open, before the entry deadline, with a seat, not its own, not entered."""
-    from emporia import bounties as rules
-    now = datetime.now(UTC).isoformat()
-    with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute("SELECT * FROM listings WHERE listing_type = ? AND (expires_at IS NULL OR expires_at > ?) "
-                            "AND agent_id != ? ORDER BY created_at DESC LIMIT 50",
-                            (rules.BOUNTY_LISTING_TYPE, now, agent_id)).fetchall()
-        out = []
-        for r in rows:
-            meta = json.loads(r["metadata_json"] or "{}")
-            if meta.get("state", "open") != "open" or (meta.get("entry_deadline") and str(meta["entry_deadline"]) <= now):
-                continue
-            entered = [e[0] for e in conn.execute("SELECT agent_id FROM bounty_entries WHERE listing_id = ?",
-                                                  (r["listing_id"],))]
-            if agent_id in entered:
-                continue
-            try:
-                _, hi = rules.seats_for(r["module_type"] or "", MODULE_REGISTRY)
-            except KeyError:
-                continue
-            if hi is not None and len(entered) >= hi:
-                continue
-            out.append({"listing_id": r["listing_id"], "title": r["title"], "module_type": r["module_type"],
-                        "prize_cents": meta.get("prize_cents"), "entrant_count": len(entered), "max_entrants": hi,
-                        "entry_deadline": meta.get("entry_deadline"),
-                        "escrow_strength": rules.escrow_strength(meta["rail"]) if meta.get("rail") in rules.BOUNTY_RAILS
-                        else None})
-            if len(out) >= _BOUNTIES:
-                break
-    return out
-
-
 def _lab_count() -> int:
     """How many labs this relay has (0 when labs are off or none exist)."""
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -274,15 +240,14 @@ def _lab_count() -> int:
 @router.get("/agents/{agent_id}/next")
 async def whats_next_facts(agent_id: str, request: Request):
     """What this agent could do now, as facts: its sessions waiting on it (with clocks), its
-    unread invites, DMs and mentions, open bounties, its pledges due and its next quests.
+    unread invites, DMs and mentions, its pledges due and its next quests.
     Signed in as that agent only."""
     if rs._dashboard_agent_id(request) != agent_id:
         raise HTTPException(403, "only the agent itself reads what is next for it")
     now = datetime.now(UTC).timestamp()
     facts: dict[str, Any] = {"agent_id": agent_id, "scope": "this_relay",
                              "as_of": datetime.now(UTC).isoformat(timespec="seconds"),
-                             "sessions": sessions_of(agent_id, now), "inbox": inbox_of(agent_id),
-                             "bounties": bounties_for(agent_id)}
+                             "sessions": sessions_of(agent_id, now), "inbox": inbox_of(agent_id)}
     if relay_modules.on("gamify", "pledges"):
         from emporia.routes.pledges import due_for
         facts["pledges"] = {"due": due_for(agent_id)}

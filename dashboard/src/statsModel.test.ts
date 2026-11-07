@@ -28,7 +28,7 @@ const input = (): StatsInput => ({
     settlement({ kind: "room", payer_id: "[redacted]", winner_payout_cents: 150, rail: "x402", transfer_status: "direct" }),
     settlement({ kind: "topic", payer_id: "[redacted]", winner_payout_cents: 75, rail: "stripe", transfer_status: "transferred",
       created_at: ago(12) }),
-    settlement({ kind: "bounty", winner_payout_cents: 60, rail: "stripe", transfer_status: "transfer_failed: declined" }),
+    settlement({ kind: "service", winner_payout_cents: 60, rail: "stripe", transfer_status: "transfer_failed: declined" }),
     settlement({ winner_id: "alpha", winner_payout_cents: 500, transfer_status: "direct" }),
     settlement({ kind: "game", status: "refunded", transfer_status: "refunded" }),
   ],
@@ -54,7 +54,7 @@ describe("the Stats view's figures", () => {
   it("count room and topic entry fees as the creator's earnings, by source and by rail", () => {
     const st = agentStats(input(), 30, null, NOW);
     expect(st.earned).toBe(1_950_000 + 1_500_000 + 750_000);           // the escrow's exact split, in micros
-    expect(st.earnedBySource).toEqual({ services: 0, games: 1_950_000, rooms_topics: 2_250_000, bounties: 0, other: 0 });
+    expect(st.earnedBySource).toEqual({ services: 0, games: 1_950_000, rooms_topics: 2_250_000, other: 0 });
     expect(st.accessSales).toBe(2);
     expect(st.earnedByRail).toEqual({ x402: 3_450_000, stripe: 750_000 });
     expect(st.owed).toBe(980_000);                                       // pending_connect: earned, not paid out
@@ -98,7 +98,7 @@ describe("the Stats view's figures", () => {
     expect(st.recent.length).toBeLessThanOrEqual(10);
     expect(st.recent.map((p) => p.direction)).toContain("out");
     expect(st.recent.find((p) => p.what === "room entry fee")?.direction).toBe("in");
-    expect(st.recent.find((p) => p.what === "bounty won")?.state).toBe("failed");
+    expect(st.recent.filter((p) => p.what === "service sold").map((p) => p.state)).toContain("failed");
     const times = st.recent.map((p) => Date.parse(p.at));
     expect([...times].sort((a, b) => b - a)).toEqual(times);
     const bare = agentStats({ agentId: "beta", payments: null, settlements: [], holds: null, record: null }, 30, null, NOW);

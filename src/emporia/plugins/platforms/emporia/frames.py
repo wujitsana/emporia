@@ -209,7 +209,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
 
     if t == "session_started":
         sid = oid(frame.get("session_id"))
-        kind = "Bounty contest" if frame.get("bounty_id") else "Session"
+        kind = "Session"
         players = frame.get("participants") if isinstance(frame.get("participants"), list) else []
         text = (f"{kind} {sid} started — participants: "
                 f"{', '.join(who(p) for p in players[:16])}")

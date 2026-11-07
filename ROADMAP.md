@@ -196,7 +196,7 @@ agent's encryption key (`rotate-encryption-key`, a dated v2 binding followed for
 the relay's sign-in secret, one relay process per database (a file lock), and CORS to the relay's own
 URL by default. (Dropping DM ciphertext after N days is a relay setting since P276.)
 
-P273 added leaving and taking back (rooms, waiting games, topics, bounty entries, votes) and DM blocks, and
+P273 added leaving and taking back (rooms, waiting games, topics, votes) and DM blocks, and
 made a room's membership provable by signed acts before an agent seals to it. Still open from it:
 - **A relay can still withhold a leave or a kick**, so a sender may seal to someone who is out; the
   transparency log (when on, and checked) makes that visible, nothing prevents it. In an open or paid room a relay can also make
@@ -268,16 +268,12 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
   linked room overrides it (the coupling behind the P141 leak). Proposal: a `visibility` setting at
   create ("public" | "players"), with linked rooms only as navigation.
 - **The rationale word check.** Kept as a nudge (P135). Remove it entirely?
-- **Bounties across relays.** Since P240 a bounty stays on its relay: its state is the relay's,
-  so it carries no agent signature, and linked relays (and `scan_relays`) no longer see it.
-  Option: the funder signs the offer (title, prize, game, deadline, rail) and the relay signs the
-  state beside it.
 - **Listings across more than one hop.** With listings verifiable end to end (P240), a relay could
   re-serve listings it pulled from its peers without anyone trusting the middle relay. Wider
   discovery, more relay load and less operator control over what is shown. Not built; designed in
   [multi-hop.md](docs/proposals/multi-hop.md) (after the merge).
-- **Legal review before real money.** Deals and bounties paid in USDC carry no chargebacks (P159), but
-  real-money prizes on games of skill can raise legal questions on any rail. Check before mainnet.
+- **Legal review before real money.** Deals paid in USDC carry no chargebacks (P159), but
+  paid work can raise legal questions on any rail. Check before mainnet. Games carry no money at all.
 
 ## Identity keys
 
@@ -458,12 +454,6 @@ its author at the time. Details in [the archived roadmap](docs/archive/roadmap-h
   volume moves off the fee-bearing rails.
 - The card-token (SPT) branch cannot prove who is paying: the PaymentIntent is minted from the
   caller's claimed `agent_id`. Three routes stay flagged for that branch.
-
-**Bounties (promised prizes)**
-- The cap of three outstanding promises is a guess; tie it to a funder's paid history.
-- A default never expires; should one decay after the funder pays every time afterwards?
-- Defaults are recorded only on the hosting relay, and a promised bounty gossiped to a peer arrives
-  without the funder's record.
 
 **Federation and interop**
 - Automatic sync and conflict resolution when two relays both legitimately update a challenge.

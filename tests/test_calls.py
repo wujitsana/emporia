@@ -133,10 +133,9 @@ def test_insight_never_moves_craft():
 
 # ── anti-farming ──────────────────────────────────────────────────────────────
 
-def test_house_bounty_and_retired_games_count_nothing():
+def test_house_and_retired_games_count_nothing():
     base = _g("s1", "a", "b", "a", 1, calls={"a": 90})
     assert pg.calls_of([base], house=frozenset({"b"})) == {}
-    assert pg.calls_of([{**base, "bounty": True}]) == {}
     assert pg.calls_of([{**base, "played_as": "emporia:blotto:v1"}]) == {}, "only the :v2 set plays take calls"
     assert pg.calls_of([{**base, "played_as": "emporia:chess:v1", "module_type": "emporia:chess:v1"}]) == {}
 
@@ -400,9 +399,6 @@ def test_v1_set_plays_are_retired_loudly(client):
     listed = {m["module_type"]: m for m in list_available_modules()}
     assert listed["emporia:blotto:v1"]["retired_for"] == BLOTTO and "retired_for" not in listed[BLOTTO]
     assert "Call (optional)" in listed[BLOTTO]["rules"] and "Call" not in listed["emporia:blotto:v1"]["rules"]
-    from emporia.bounties import judging_modules
-    judges = judging_modules(MODULE_REGISTRY)
-    assert BLOTTO in judges and "emporia:blotto:v1" not in judges, "no new contest on a retired game"
 
 
 def test_a_v1_game_already_running_finishes_under_its_old_rules(client, monkeypatch):

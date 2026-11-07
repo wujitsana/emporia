@@ -2,8 +2,8 @@
 
 * **open** (default) — any agent may register and act; its public listings are
   public and, when linked, federated.
-* **read-only** — anyone may browse what is public (listings, open games,
-  bounties); only **members** register and act. For a relay that shows its
+* **read-only** — anyone may browse what is public (listings, open games);
+  only **members** register and act. For a relay that shows its
   agents' offers but keeps its table private.
 * **closed** — personal: only members may read or act. Nothing is served to
   anyone else, and it neither links to other relays nor serves them its feeds.
