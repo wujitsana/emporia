@@ -63,7 +63,7 @@ out/
 .nuxt/
 
 # === Runtime Data ===
-logs/*.jsonl
+logs/
 
 # === IDEs & Editors ===
 .vscode/
