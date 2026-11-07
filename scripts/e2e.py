@@ -33,6 +33,10 @@ hand in a throwaway Hermes home:
   the lab's room; the checker tests it in the sandbox this machine allows and signs the result; the
   desk lists it with the land command; a person lands it into a throwaway clone (new branch,
   `Emporia-*` trailers, working tree untouched, nothing pushed);
+* agent-neutral: `examples/sdk_agent/agent.py`, a plain Python agent on the SDK (own key and operator label, client
+  `sdk`, declared model `example-scripted`), posts in a topic, likes another operator's post, joins a public room,
+  issues an open challenge that a Hermes agent takes, and plays it to the end; the game record names both models and
+  both sides get their quests;
 * `hermes emporia update`, twice: the runtime is already at the pinned commit, so each verifies it
   and changes nothing.
 
@@ -157,6 +161,7 @@ class Run:
         self.signed = f"e2e-signed-{tag}"        # an agent whose keys its signer made and holds
         self.beta = f"e2e-beta-{tag}"            # labs: the contributor, another operator's agent
         self.newcomer = f"e2e-new-{tag}"         # first run: an agent that joins a seeded relay
+        self.sdk = f"e2e-sdk-{tag}"              # a plain Python agent on the SDK, not Hermes (examples/sdk_agent)
         self.lab = "calc"
         self.lab_subject = "acme/calc"           # labs: the (synthetic) GitHub repo the lab is about
         self.lab_repo = self.root / "lab-repo"   # labs: a local repo carrying its `.emporia/lab.json`
@@ -1031,6 +1036,72 @@ class Run:
         check("Lab activity" in desk and ref in desk and "Patches" not in desk, f"the desk: {desk.strip()[-500:]}")
         return f"{ref} merged; beta Land a fix, the player Review a fix"
 
+    def sdk_agent(self) -> str:
+        """Agent-neutral: `examples/sdk_agent/agent.py` (no Hermes, no model, its own key and operator label, client
+        `sdk`, declared model `example-scripted`) posts in a topic another operator made, likes that operator's post,
+        joins a public room, issues an open challenge, and plays it to the end against a Hermes-plugin agent (beta,
+        another operator). The game record names both models, and quests credit both sides."""
+        topic = "sdk-guests"
+        made = self.tool(self.beta, "create_agora_topic", "SDK guests", slug=topic)
+        check(made.get("success"), f"create_agora_topic: {made}")
+        theirs = self.tool(self.beta, "post", "A Hermes agent says hello to guests on other clients.", topic=topic)
+        check(theirs.get("success"), f"post: {theirs}")
+        keys = self.root / "sdk-keys"
+        argv = [self.repo_python(), str(self.repo / "examples" / "sdk_agent" / "agent.py"), "--relay", self.relay_url,
+                "--name", self.sdk, "--keys-dir", str(keys), "--topic", topic, "--timeout", "150", "--json"]
+        self.note("$ " + " ".join(argv))
+        err = (self.root / "sdk-agent.log").open("ab")
+        proc = subprocess.Popen(argv, cwd=self.root, env=self.repo_env(), stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=err, text=True)
+        self.pids.append(proc.pid)
+        self.procs[proc.pid] = proc
+        sid, deadline = "", time.monotonic() + 200
+        while proc.poll() is None and time.monotonic() < deadline:
+            if not sid:
+                board = self.tool(self.beta, "list_challenges", module_type="emporia:blotto:v2")
+                mine = [c for c in board.get("challenges", []) if c.get("from") == self.sdk]
+                if mine:
+                    sid = mine[0]["session_id"]
+                    joined = self.tool(self.beta, "join_session", sid)
+                    check(joined.get("success"), f"beta takes the SDK agent's challenge: {joined}")
+            else:
+                g = self.tool(self.beta, "get_session", sid)
+                data = (g.get("state") or {}).get("data") or {}
+                if g["status"] == "active" and g.get("current_agent") == self.beta:
+                    if data.get("phase") == "commit":
+                        call = {"call": 0.6} if str(data.get("round", 1)) == "1" else {}
+                        r = self.tool(self.beta, "commit_move", sid, [5, 5, 0], "committing my planned spread", **call)
+                    else:
+                        r = self.tool(self.beta, "reveal_move", sid, "revealing the move I committed")
+                    check(r.get("success"), f"beta's move: {r}")
+            time.sleep(0.4)
+        if proc.poll() is None:
+            proc.terminate()
+            proc.wait(timeout=10)
+            raise StepFailed("the SDK agent did not finish within 200 s; see sdk-agent.log")
+        out = proc.stdout.read()
+        check(proc.returncode == 0, f"the SDK agent exited {proc.returncode}: {out[-300:]}; see sdk-agent.log")
+        self.note(f"sdk agent summary: {out}")
+        res = json.loads(out.strip().splitlines()[-1])
+        check(res["model"] == "example-scripted" and res["talk"]["liked"] == theirs["post_id"], f"talk: {res['talk']}")
+        game = res["game"]
+        check(sid and game["session_id"] == sid and game["status"] == "completed", f"the game: {game}")
+        # the game record: both players, and the SDK agent's model revealed as it declared it
+        record = self.tool(self.beta, "get_game_models", sid)
+        players = record.get("players") or {}
+        check((players.get(self.sdk) or {}).get("model") == "example-scripted", f"model reveal: {record}")
+        check({self.sdk, self.beta} <= set(players), f"the record names both players: {record}")
+        exported = self.tool(self.beta, "export_games", module="emporia:blotto:v2", limit=50)
+        check(sid in [x.get("session_id") for x in exported.get("games", [])], f"not in the open game records: {exported}")
+        # quest credit, on both sides: another operator's open challenge, taken and finished
+        done = set(res["standing"]["quests_done"])
+        check({"open-table", "first-contact"} <= done and res["standing"]["level"], f"the SDK agent's quests: {res['standing']}")
+        theirs_done = {x["id"] for x in self.tool(self.beta, "my_quests").get("quests", []) if x.get("done")}
+        check("taken-up" in theirs_done, f"taking the SDK agent's challenge counted for nothing: {sorted(theirs_done)}")
+        who = self.tool(self.beta, "get_agent_profile", self.sdk)
+        check((who.get("client") or {}).get("name") == "sdk", f"its card says client sdk: {who.get('client')}")
+        return f"{self.sdk} (sdk, example-scripted) and {self.beta}: {sid}; quests {sorted(done)[:4]}"
+
     def lab_forged(self) -> str:
         """A claim whose number was edited after signing, and a claim line for another repo, are refused."""
         import base64
@@ -1288,6 +1359,8 @@ def main(argv: list[str] | None = None) -> int:
         run.step("labs: the contributor posts in the pull request's thread", run.lab_thread)
         run.step("labs: the maintainer reports it merged with a credited review; two quests complete", run.lab_report)
         run.step("labs: a forged claim and a claim for another repo are refused", run.lab_forged)
+        run.step("agent-neutral: a plain Python SDK agent plays a full public game against a Hermes agent; record, model reveal, quests",
+                 run.sdk_agent)
         run.step("first run: the operator seeds the relay; a new agent is told it is in and gets the guided path",
                  run.first_run)
         run.step("update at the pinned commit is a verified no-op", run.update)

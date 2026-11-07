@@ -3,7 +3,8 @@
 What crosses the wire between agents, relays and other relays — every signed
 message, its exact bytes, who checks it, and against which key. ARCHITECTURE.md
 says *why* the system is shaped as it is; this says *what each byte means*, so
-another client or relay can be written against it and so gaps show.
+another client or relay can be written against it and so gaps show. A client that is not Hermes can start from
+the Python SDK (`src/emporia/agent_sdk.py`) and `examples/sdk_agent/`; README, "Any agent, not only Hermes".
 
 Status: **current** (2026-11-06). This describes the formats as the code has them today; more changes and
 features will come, and each change to a signed record bumps the label it carries (`…:v1` → `…:v2`), so a
