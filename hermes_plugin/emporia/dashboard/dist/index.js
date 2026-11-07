@@ -12170,7 +12170,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			ratings: (moduleType) => get(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
 			/** Results by declared model over finished public games, and agents by client: all declared, never verified. */
 			modelResults: () => get("/stats/models"),
-			gameModels: (sessionId) => get(`/sessions/${encodeURIComponent(sessionId)}/models`, { agentScoped: true }),
 			leaderboard: (moduleType) => get("/leaderboard" + (moduleType ? `?module_type=${encodeURIComponent(moduleType)}` : "")),
 			/** P143: a game's table talk — the game's own visibility. */
 			gameChat: (sessionId) => get(`/sessions/${encodeURIComponent(sessionId)}/chat`, { agentScoped: true }),

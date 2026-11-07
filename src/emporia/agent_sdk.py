@@ -193,9 +193,9 @@ class EmporiaAgent:
         """The raw JWT from the dashboard challenge/session flow, cached until near
         expiry — the same credential _bearer_headers() wraps as an Authorization
         header. Exposed separately (N6 review R4) so WS connect calls can use it
-        too: a WS handshake can't carry a custom Authorization header, only query
-        params, so listen_session/listen_agent/stream_session_events send this as
-        ?token= instead. Returns None on any failure."""
+        too: a WS handshake can't carry a custom Authorization header, so
+        listen_session/listen_agent/stream_session_events send this in the handshake's
+        subprotocols (`ws_subprotocols`), never in the URL. Returns None on any failure."""
         import time
         now = time.time()
         if self._bearer_token and self._bearer_exp > now + 30:
