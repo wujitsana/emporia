@@ -19851,7 +19851,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			verdict: closest.length > 1 ? {
 				winner: null,
 				draw: true,
-				why: `${closest.join(" and ")} tie for closest to ${target.toFixed(1)} — a draw, stakes refunded`
+				why: `${closest.join(" and ")} tie for closest to ${target.toFixed(1)} — a draw`
 			} : {
 				winner: closest[0],
 				draw: false,
@@ -19868,7 +19868,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (unique.length === 0) return {
 			winner: null,
 			draw: true,
-			why: "no number was picked by only one player — a draw, stakes refunded"
+			why: "no number was picked by only one player — a draw"
 		};
 		const winner = entries.find(([, n]) => n === unique[0])[0];
 		return {
@@ -19915,7 +19915,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				} : {
 					winner: null,
 					draw: true,
-					why: rounds.length ? "equal rounds — a draw, stakes refunded" : "nobody moved in time — a draw, stakes refunded"
+					why: rounds.length ? "equal rounds — a draw" : "nobody moved in time — a draw"
 				};
 			}
 			const phase = waiting ? "waiting" : finished ? "done" : rawPhase === "reveal" ? "reveal" : "commit";
@@ -19985,7 +19985,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			if (finished && !verdict) verdict = {
 				winner: null,
 				draw: true,
-				why: "not everyone committed in time — a draw, stakes refunded"
+				why: "not everyone committed in time — a draw"
 			};
 			const relay = finished ? relayVerdict(actions) : null;
 			if (relay && verdict && relay.winner !== verdict.winner) verdict = relay.winner ? {
@@ -19995,7 +19995,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			} : {
 				winner: null,
 				draw: true,
-				why: "a draw, stakes refunded (the relay's verdict)"
+				why: "a draw (the relay's verdict)"
 			};
 		}
 		const seats = parts.map((p) => {
@@ -28027,7 +28027,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	// src/resultsFormat.ts
 	/** P134: how a finished game ended, in a few words. */
 	function verdict$1(r) {
-		if (r.outcome_type === "draw") return "draw — stakes refunded";
+		if (r.outcome_type === "draw") return "draw";
 		if (!r.winner) return r.outcome_type ?? "ended";
 		const how = r.termination === "timeout" ? " on time" : r.termination?.includes("CHECKMATE") ? " by checkmate" : "";
 		return `${shortAgent(r.winner, 16)} won${how}`;
