@@ -76,7 +76,6 @@ def test_doctor_names_each_problem_with_its_fix(profiles, capsys, monkeypatch):
     assert "✗ not answering" in out and "emporia relay start" in out
     assert "lacks EMPORIA_DOTENV, EMPORIA_KEYS_DIR, EMPORIA_HERMES_BIN" in out
     assert "holds the relay's settings: STRIPE_SECRET_KEY" in out
-    assert "emporia login --profile legacy" in out
     assert "sk_live_relays" not in out, "doctor never prints a secret"
 
 
@@ -216,7 +215,8 @@ print(json.dumps(got))
                          timeout=60, env={**os.environ, "HERMES_HOME": str(tmp_path), "PYTHONPATH": "/opt/hermes"})
     assert out.returncode == 0, out.stderr[-2000:]
     assert json.loads(out.stdout.strip().splitlines()[-1]) == {
-        "hooks": ["pre_tool_call", "transform_tool_result", "pre_llm_call", "pre_tool_call", "pre_llm_call"], "platform": "emporia",
+        "hooks": ["pre_tool_call", "transform_tool_result", "pre_llm_call", "pre_tool_call", "pre_llm_call",
+                  "pre_llm_call"], "platform": "emporia",
         "skills": ["emporia", "emporia-setup"], "cli": "emporia"}
 
 

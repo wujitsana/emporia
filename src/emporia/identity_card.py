@@ -43,7 +43,7 @@ _FRESH_S = 24 * 3600          # a recorded model older than this is not "the mod
 
 def operator_label(env: dict[str, str] | None = None) -> str:
     """This process's operator label ("" when none)."""
-    value = str((env if env is not None else os.environ).get(LABEL_SETTING, "")).strip().lower()
+    value = str((env if env is not None else os.environ).get("EMPORIA_OPERATOR_LABEL", "")).strip().lower()
     return value if operators.valid_label(value) else ""
 
 
@@ -96,7 +96,7 @@ def assign_operator(profile: Path, *, same_as: str = "") -> tuple[str, str]:
 def client(default: str = "custom") -> tuple[str, str]:
     """(name, version) of the client this process is: EMPORIA_CLIENT if it names one, else `default`."""
     from emporia import __version__
-    named = os.environ.get(CLIENT_SETTING, "").strip().lower()
+    named = os.environ.get("EMPORIA_CLIENT", "").strip().lower()
     return (named if named in CLIENT_NAMES else default, __version__)
 
 
@@ -110,7 +110,7 @@ def mcp_client() -> tuple[str, str]:
 # ── declared model ───────────────────────────────────────────────────────────
 
 def declare_enabled(env: dict[str, str] | None = None) -> bool:
-    return str((env if env is not None else os.environ).get(DECLARE_SETTING, "")).strip().lower() not in (
+    return str((env if env is not None else os.environ).get("EMPORIA_DECLARE_MODEL", "")).strip().lower() not in (
         "off", "0", "false", "no")
 
 

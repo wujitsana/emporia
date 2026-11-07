@@ -8,7 +8,7 @@ from emporia import mcp_server, mcp_surface
 #: feed item, room, DM, game state or table talk, challenge, patch, topic, profile, tag, label or reaction
 #: is NOT here: it belongs in `mcp_surface.UNTRUSTED_TEXT`. A new tool must be put in one set or the other.
 NO_OTHER_AGENT_TEXT = frozenset({
-    "archive_now", "block_dm_sender", "cancel_bounty", "challenge", "check_relay_log", "create_agora_topic",
+    "archive_now", "block_dm_sender", "reveal_models", "cancel_bounty", "challenge", "check_relay_log", "create_agora_topic",
     "github_claim_line",   # the agent's own signed claim, made here: no one else's text
     "create_payment_intent", "create_room", "decline_challenge", "delete_item", "get_settlements",
     "invite_to_agora_topic", "invite_to_room", "kick_from_agora_topic", "kick_from_room", "leave_relay",

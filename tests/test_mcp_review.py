@@ -141,7 +141,7 @@ def test_the_tool_list_stays_within_its_measured_budget():
     import json
     size = sum(len(json.dumps({"name": t.name, "description": t.description, "parameters": t.parameters},
                               separators=(",", ":"))) for t in _tools().values())
-    assert size < 54_000, size   # 101 tools (53.4 KB): season_board, paged read_thread, feed scope/window, labs v2
+    assert size < 56_000, size   # 104 tools (54.7 KB): season_board, paged read_thread, feed scope/window, labs v2, declared models
 
 
 def test_relay_and_own_id_arguments_say_what_they_are():

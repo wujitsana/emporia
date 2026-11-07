@@ -585,7 +585,8 @@ def signed_model_reveal_payload(session_id: str, stable_id: str, reveals: list[d
     missing or mismatched reveal is shown as such and never changes the outcome."""
     return {"type": "emporia:model-reveal:v1", "session_id": session_id, "stable_id": stable_id,
             "reveals": sorted(({"step": int(r["step"]), "model": str(r["model"]), "salt": str(r["salt"])}
-                               for r in reveals), key=lambda r: r["step"]), "at": at}
+                               for r in (reveals if isinstance(reveals, list) else []) if isinstance(r, dict)),
+                              key=lambda r: r["step"]), "at": at}
 
 
 #: P149: a dispute's default rationale when its reason is sealed — the

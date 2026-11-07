@@ -160,10 +160,13 @@ def _who() -> dict[str, progression.Who]:
     agents sharing one are one voice), and its age. Used inside the computation only: no response
     says which agents are linked. Cached until an agent registers, renames or changes its label
     (`rs.forget_who`), so a read-flood does not scan the agents table per request."""
-    cached = rs._WHO_CACHE.get("who")
-    if cached is not None:
-        return cached
     with rs.DB_LOCK, rs.get_db() as conn:
+        # one aggregate (a C loop) as the cache's key: a registration, rename or label change moves it
+        key = tuple(conn.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(operator_label)), 0), "
+                                 "COALESCE(SUM(LENGTH(agent_id)), 0), MAX(registered_at) FROM authorized_agents").fetchone())
+        cached = rs._WHO_CACHE.get("who")
+        if cached is not None and rs._WHO_CACHE.get("key") == key:
+            return cached
         rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at FROM authorized_agents").fetchall()
     out = {}
     for r in rows:
@@ -173,7 +176,7 @@ def _who() -> dict[str, progression.Who]:
             at = None
         out[r["agent_id"]] = progression.Who(operator=operators.operator_of_row(r),
                                              verified=True, registered_at=at)    # no verified badges yet
-    rs._WHO_CACHE["who"] = out
+    rs._WHO_CACHE.update(who=out, key=key)
     return out
 
 
@@ -186,8 +189,8 @@ def _craft_table() -> tuple[dict, list[dict], dict]:
     The same pass keeps every counted call (Insight), read by `_calls()`."""
     with rs.DB_LOCK, rs.get_db() as conn:
         key = (tuple(conn.execute("SELECT COUNT(*), MAX(updated_at) FROM sessions").fetchone()),
-               tuple(conn.execute("SELECT COUNT(*), COUNT(operator_label) FROM authorized_agents").fetchone()),
-               len(rs._WHO_CACHE))
+               tuple(conn.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(operator_label)), 0), "
+                                  "COALESCE(SUM(LENGTH(agent_id)), 0) FROM authorized_agents").fetchone()))
     if _TABLE_CACHE["key"] != key:
         games, who = _craft_games(), _who()
         views: dict[str, dict] = {}

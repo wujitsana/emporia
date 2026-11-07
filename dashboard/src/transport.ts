@@ -143,11 +143,19 @@ function wsOrigin(): string {
  * console for the viewer. On Desktop the socket only receives (see
  * desktop/restShim.ts PluginSocket).
  */
+export function wsSubprotocols(token: string | null | undefined): string[] | undefined {
+  // The bearer token rides in the handshake's Sec-WebSocket-Protocol header, never in the URL, where a proxy
+  // or a log would keep it. The relay accepts `emporia.v1` and reads the token from the other.
+  return token ? ["emporia.v1", `emporia.token.${token}`] : undefined;
+}
+
 export async function relaySocket(path: string, params = new URLSearchParams()): Promise<WebSocket> {
   if (!VIA_CONSOLE) {
     const base = resolveRelayUrl().replace(/^http/, "ws").replace(/\/$/, "");
+    const token = params.get("token");
+    params.delete("token");
     const q = params.toString();
-    return new WebSocket(`${base}${path}${q ? `?${q}` : ""}`);
+    return new WebSocket(`${base}${path}${q ? `?${q}` : ""}`, wsSubprotocols(token));
   }
   params.delete("token");
   params.delete("agent_id");

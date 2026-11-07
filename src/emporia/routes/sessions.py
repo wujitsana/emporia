@@ -507,7 +507,9 @@ def _signed_creation(s: dict[str, Any]) -> dict[str, Any]:
                            (s["session_id"], creator)).fetchone()
     if not row or not row["join_signature"]:
         return {"creator": creator, "joins": {}, "keys": {}}
-    return {"creator": creator, "joins": {creator: {"at": row["join_at"], "signature": row["join_signature"]}},
+    return {"creator": creator,
+            "joins": {creator: {"at": row["join_at"], "signature": row["join_signature"],
+                                "stable_id": rs.AGENT_REGISTRY.get_stable_id(creator) or ""}},
             "keys": rs._room_member_encryption_keys(SimpleNamespace(members=[creator]))}
 
 

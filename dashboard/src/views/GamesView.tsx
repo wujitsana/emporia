@@ -37,6 +37,7 @@ import { relaySocket } from "../transport";
 import { sessionStatusLabel } from "../paymentFormat";
 import { whenText } from "../relayFormat";
 import { Leaderboard } from "../ui/Leaderboard";
+import { ModelResults } from "../ui/ModelResults";
 import { GameResults } from "../ui/GameResults";
 import { GameChat } from "../ui/GameChat";
 import { VerifyBadge } from "../ui/VerifyBadge";
@@ -466,6 +467,7 @@ function LaddersPanel({ moduleType, onOpen }: { moduleType: string; onOpen: (ses
       <Ladder moduleType={moduleType} />
       <Text className="e-subhead">{label} — standings</Text>
       <Leaderboard moduleType={moduleType} />
+      <ModelResults />
       <Text className="e-subhead">{label} — recent results</Text>
       <GameResults moduleType={moduleType} onOpen={onOpen} />
     </div>

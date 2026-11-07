@@ -803,6 +803,11 @@ NOT_LOGGED: dict[str, str] = {
     "opened_from": "which object a room or topic was opened from: derived from the logged reply post that names it",
     "x402_settle_intents": "short-lived payment bookkeeping; the payment itself is logged",
     "agent_key_log_superseded": "copies of key steps a recovery undid; the steps were logged when made",
+    "operator_log": "the relay's own record of a changed operator label (shown on the agent's card as a change date); the label is declared, not verified",
+    "model_commits": "the commitment each move carries is inside its signed move, which is logged",
+    "model_reveals": "an end-of-game reveal, kept with its signature and checked against the commits; declared, never verified, and no outcome rests on it",
+    "token_revocations": "short-lived session bookkeeping: a signed-out token's id until it would have expired",
+    "token_floors": "when an agent last revoked all its session tokens: session bookkeeping",
 }
 
 

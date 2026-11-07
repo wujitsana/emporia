@@ -306,13 +306,14 @@ def test_the_operator_label_is_given_reused_or_minted(tmp_path, monkeypatch):
     """The installer resolves one operator label per agent profile: the one given; else the profile's own;
     else one an Emporia profile under the same Hermes root holds (one person's agents share it); else a new
     random one. auth.json is never opened."""
+    import pytest
+
     from emporia import operators
     root = tmp_path / "hermes"
     first, second = root / "profiles" / "first", root / "profiles" / "second"
     for p in (first, second):
         p.mkdir(parents=True)
         (p / "config.yaml").write_text("{}\n")
-    monkeypatch.setenv("EMPORIA_HERMES_BIN", "")           # a plain file: no Hermes to ask
     minted = installer.resolve_operator_label(None, profile_dir=first)
     assert operators.valid_label(minted)
     (first / ".env").write_text(f"EMPORIA_OPERATOR_LABEL={minted}\n")

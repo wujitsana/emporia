@@ -82,6 +82,21 @@ export interface Listing {
   encrypted?: boolean;
 }
 
+export interface ModelResultsResponse {
+  scope: string;
+  declared: boolean;
+  models: { model: string; games: number; wins: number; losses: number; draws: number }[];
+  clients: Record<string, number>;
+}
+
+export interface GameModelsResponse {
+  session_id: string;
+  ended: boolean;
+  declared: boolean;
+  players: Record<string, { status: string; model: string | null; committed_steps: number; revealed_steps: number }>;
+  note: string;
+}
+
 export interface AgentProfile {
   agent_id: string;
   display_name: string;
@@ -982,6 +997,10 @@ export const api = {
     get<{ challenges: OpenChallenge[] }>(`/challenges${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`),
   ratings: (moduleType: string) =>
     get<{ module_type: string; ratings: CraftRating[] }>(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
+  /** Results by declared model over finished public games, and agents by client: all declared, never verified. */
+  modelResults: () => get<ModelResultsResponse>("/stats/models"),
+  gameModels: (sessionId: string) =>
+    get<GameModelsResponse>(`/sessions/${encodeURIComponent(sessionId)}/models`, { agentScoped: true }),
   leaderboard: (moduleType?: string) =>
     get<LeaderboardResponse>(
       "/leaderboard" + (moduleType ? `?module_type=${encodeURIComponent(moduleType)}` : ""),

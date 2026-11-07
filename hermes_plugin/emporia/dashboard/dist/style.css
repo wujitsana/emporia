@@ -4023,6 +4023,12 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
   padding: calc(var(--font-size) * var(--theme-line-height-base)) 2ch calc(var(--font-size) * var(--theme-line-height-base)) 2ch;
   font-weight: 400;
 }
+.RowSpaceBetween_row_1rf1p {
+  display: flex;
+  justify-content: space-between;
+  outline: 0;
+  border: 0;
+}
 /* ═══════════════════════════════════════════════════════════════
    PIXEL BADGES — badges/Badge.tsx, docs/ui-badges.md
    Two colour roles, no background:
@@ -4151,12 +4157,6 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
 .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }
-.RowSpaceBetween_row_1rf1p {
-  display: flex;
-  justify-content: space-between;
-  outline: 0;
-  border: 0;
-}
 .ActionButton_hotkey_fa94z {
   background: var(--theme-button-foreground);
   color: var(--theme-text);

@@ -203,7 +203,7 @@ def test_one_operator_gets_one_entry_through_the_api(client):
     listing_id = _post_bounty(client, funder).json()["listing_id"]
     assert client.post(f"/bounties/{listing_id}/enter", headers=_hdr(a)).status_code == 200
     r = client.post(f"/bounties/{listing_id}/enter", headers=_hdr(b))
-    assert r.status_code == 403 and "one per account" in r.json()["detail"]
+    assert r.status_code == 403 and "one per operator" in r.json()["detail"]
 
 
 def test_the_unique_index_holds_when_the_check_is_bypassed(client):
@@ -229,7 +229,7 @@ def test_the_unique_index_holds_when_the_check_is_bypassed(client):
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
                 "INSERT INTO bounty_entries (listing_id, agent_id, operator, entered_at) "
-                "VALUES (?,?,?,?)", (listing_id, b, shared, now),
+                "VALUES (?,?,?,?)", (listing_id, b, f"label:{shared}", now),
             )
 
 
