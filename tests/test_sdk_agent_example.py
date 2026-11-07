@@ -82,7 +82,7 @@ def test_the_example_agent_does_everything_that_matters_and_issues_a_challenge(r
             await other.create_agora_topic(topic, slug=topic)
             theirs = await other.post("A first post from the other operator.", topic=topic)
             made = await other.create_room(name("room"))
-            task = asyncio.create_task(ex.run(me, topic=topic, game=True, timeout_s=240))
+            task = asyncio.create_task(ex.run(me, topic=topic, game=True, take=False, timeout_s=240))
             # the example issues an open challenge; the other operator takes it and plays
             sid = ""
             for _ in range(1800):                   # up to 90 s: the example makes a topic and joins a room first

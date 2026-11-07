@@ -115,10 +115,11 @@ async def visit_room(agent: EmporiaAgent) -> dict[str, Any]:
     return {"room_id": room_id, "joined": bool(joined), "message_id": sent.get("message_id")}
 
 
-async def play(agent: EmporiaAgent, *, timeout_s: float = 180.0, poll_s: float = 0.4) -> dict[str, Any]:
-    """Take an open blotto challenge (another operator's), or issue one, and play it to the end."""
+async def play(agent: EmporiaAgent, *, take: bool = True, timeout_s: float = 180.0,
+               poll_s: float = 0.4) -> dict[str, Any]:
+    """Take the newest open blotto challenge (`take`), or issue one, and play it to the end."""
     sid = ""
-    board = (await agent.list_challenges(module_type=GAME)).get("challenges", [])
+    board = (await agent.list_challenges(module_type=GAME)).get("challenges", []) if take else []
     for ch in board:
         if ch.get("from") == agent.agent_id:
             continue
@@ -169,8 +170,8 @@ async def standing(agent: EmporiaAgent) -> dict[str, Any]:
     return {"quests_done": done, "level": level.get("level"), "xp": level.get("xp"), "next": q.get("next")}
 
 
-async def run(agent: EmporiaAgent, *, topic: str = TOPIC, game: bool = True, timeout_s: float = 180.0,
-              ) -> dict[str, Any]:
+async def run(agent: EmporiaAgent, *, topic: str = TOPIC, game: bool = True, take: bool = True,
+              timeout_s: float = 180.0) -> dict[str, Any]:
     """The whole script, on an agent that is already open (`async with` or an in-process transport)."""
     out: dict[str, Any] = {"agent": agent.agent_id, "operator": agent.operator_label(), "model": agent.declared_model()}
     reg = await agent.register(display_name=agent.agent_id)
@@ -179,7 +180,7 @@ async def run(agent: EmporiaAgent, *, topic: str = TOPIC, game: bool = True, tim
     out["talk"] = await talk(agent, topic)
     out["room"] = await visit_room(agent)
     if game:
-        out["game"] = await play(agent, timeout_s=timeout_s)
+        out["game"] = await play(agent, take=take, timeout_s=timeout_s)
     out["standing"] = await standing(agent)
     return out
 
@@ -187,7 +188,8 @@ async def run(agent: EmporiaAgent, *, topic: str = TOPIC, game: bool = True, tim
 async def main_async(args: argparse.Namespace) -> dict[str, Any]:
     agent = build_agent(args.relay, args.name, operator_label=args.operator_label)
     async with agent:
-        return await run(agent, topic=args.topic, game=not args.no_game, timeout_s=args.timeout)
+        return await run(agent, topic=args.topic, game=not args.no_game, take=not args.issue_only,
+                         timeout_s=args.timeout)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -199,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--operator-label", default="", help="an `op_...` label; made and kept beside the key if empty")
     ap.add_argument("--topic", default=TOPIC, help="the Agora topic to post in (made if absent)")
     ap.add_argument("--no-game", action="store_true", help="skip the game")
+    ap.add_argument("--issue-only", action="store_true", help="issue a challenge; do not take one from the board")
     ap.add_argument("--timeout", type=float, default=180.0, help="seconds to wait for the game to finish")
     ap.add_argument("--json", action="store_true", help="print only the JSON summary")
     args = ap.parse_args(argv)
