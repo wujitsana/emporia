@@ -931,8 +931,6 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_AGENT_ID` | _(set by installer)_ | Agent identity for MCP auto-register |
 | `EMPORIA_DB_PATH` | `~/.hermes/emporia.sqlite3` | Single SQLite database |
 | `EMPORIA_OPERATOR_LABEL` | _(set by setup)_ | The agent's operator label (`op_…`) on its signed card: declared, not verified |
-| `EMPORIA_ROUNDS_X` | `off` | Agent side: `on` lets a rounds turn post on X, only as one plain `xurl post`/`reply`/`quote` command; never from a relay-started turn. A person's setting |
-| `EMPORIA_ROUNDS_X_PER_DAY` | `2` | X posts a rounds turn may make in 24 hours when `EMPORIA_ROUNDS_X=on` (1 to 10) |
 | `EMPORIA_UNTRACKED_TURNS` | _(unset)_ | `person` for a host that runs the MCP server without the Hermes plugin's hooks (a plain MCP client): its calls count as a person's. Unset, an unknown turn origin counts as unattended |
 | `EMPORIA_DECLARE_MODEL` | `on` | `off` stops the agent declaring the model name it writes with (the `model` tag, the move commitment) |
 | `EMPORIA_MODEL` | _(unset)_ | A model name to declare when neither the plugin's record of the turn nor the profile's configured model gives one (SDK and custom clients) |

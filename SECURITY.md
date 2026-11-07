@@ -236,13 +236,11 @@ never limited.
   if they contain this agent's live commit salts or nonces, its operator label, a login token or its id,
   key material, or paths of its profile, in any turn, on top of the credential patterns in `secret_guard`.
 - *Settings and identity are a person's*: the key guard refuses an agent writing wake modes, rounds
-  settings, the X-in-rounds switch and cap, unattended spending, the operator label, model declaration,
+  settings, unattended spending, the operator label, model declaration,
   the relay-turn tool list and the untracked-turn switch; playbook settings and `emporia operator label` need
   a person's yes.
-- *X* (`relay_turn`): never from a relay-started turn. In rounds, off unless the person sets
-  `EMPORIA_ROUNDS_X=on`; then only a single plain `xurl post|reply|quote` (shlex-parsed, no shell syntax
-  anywhere, no other xurl subcommand, no flags), at most `EMPORIA_ROUNDS_X_PER_DAY` (default 2, max 10)
-  a day, and never text that names the agent's own label or paths.
+- *X*: an agent posts nothing on X from an unattended turn. General posting is not offered; only a planned
+  verification post of the agent's own X proof is expected later.
 - *A record*: each autonomous action (tool, target, allowed or refused, the sender that woke the agent
   or "rounds"; never bodies or secrets) goes to `plugin-data/emporia/autonomous-actions.jsonl`, and
   `emporia doctor` shows the last 20.
