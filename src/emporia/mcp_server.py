@@ -4887,7 +4887,14 @@ def submit_action(
                 if isinstance(v, str) and v and not crypto_box.looks_like_envelope(v):
                     action_payload[f] = _seal_text(v, recipients, session_id, f, aid)
             if say:
+                if identity_card.model_tags():     # the declared model goes inside the seal, as a post body
+                    from emporia import room_post
+                    try:
+                        _, say = room_post.prepare("note", say, identity_card.model_tags(), None, None, sealed=False)
+                    except ValueError:
+                        pass                        # text a post would refuse (a link): sent as it was
                 say = _seal_text(say, recipients, session_id, "chat", aid)
+        say_tags = [] if (sess.get("sealed") or not say) else identity_card.model_tags()
         # A declared model is committed with the move (sha256(model || salt)) and revealed when the game ends.
         commit, salt, model = "", "", ""
         if identity_card.declare_enabled() and (model := identity_card.current_model()):
@@ -4897,8 +4904,8 @@ def submit_action(
         body = action_envelope(
             aid, action_type, action_payload, rationale,
             signing.sign(aid, "move", aid, action_type, action_payload, rationale, session_id, step_number, say=say,
-                         model_commit=commit),
-            say=say, model_commit=commit,
+                         model_commit=commit, say_tags=say_tags),
+            say=say, model_commit=commit, say_tags=say_tags,
         )
         # P110: a final move or a service's terminal action settles too.
         r = _bearer_request("post", f"{_base()}/sessions/{_seg(session_id)}/action", agent_id=aid, json=body, timeout=_CHAIN_TIMEOUT_S)

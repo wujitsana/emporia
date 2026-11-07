@@ -137,7 +137,8 @@ The verdicts themselves (`POST /bugs/{id}/verdict`, and on a relay with the laun
 (§3.5b″); the dashboard never sends them — it shows the command a person runs.
 
 ### 3.2 A move — `wire.signed_action_payload` — JSON, base64url
-`{stable_id, action_type, payload, peer_text_rationale, session_id, step_number, [say], [model_commit]}`.
+`{stable_id, action_type, payload, peer_text_rationale, session_id, step_number, [say], [model_commit], [say_tags]}`.
+`say_tags` are the tags of the table-talk line sent with the move (the declared model, `[["model", name]]`), signed with it; a sealed table's line carries the tag inside its seal instead.
 Bound to the session and the turn. The mover is named by **stable id**. `model_commit` is
 `sha256("emporia:model:v1" 0x00 model 0x00 salt)` (hex), the player's commitment to the model it declares for
 this move (`emporia.model_commit`), present only when it declares one; it is revealed at the game's end by a

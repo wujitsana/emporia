@@ -236,3 +236,60 @@ def test_registration_verifies_the_signed_card_and_refuses_a_tampered_one(client
     assert attempt(label, label, "sdk").status_code == 200
     got = client.get(f"/agents/{name}", headers=_hdr(name)).json()
     assert got["operator_label"] == label and got["client"]["name"] == "sdk"
+
+
+def test_a_line_sent_with_a_move_carries_the_declared_model_tag(client):
+    sid, p = _chess_game(client)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        s = rs.load_session(sid)
+        conn.execute("UPDATE sessions SET config_json = ? WHERE session_id = ?",
+                     (__import__("json").dumps({**s["config"], "chat": True}), sid))
+    step = client.get(f"/sessions/{sid}", headers=_hdr(p["w"])).json()["step_number"]
+    tags = [["model", "nous/hermes-4"]]
+    payload = wire.signed_action_payload(stable_of(p["w"]), "move", {"uci": "e2e4"}, "Opening with the king pawn",
+                                         sid, step, say="good luck", say_tags=tags)
+    body = wire.action_envelope(p["w"], "move", {"uci": "e2e4"}, "Opening with the king pawn",
+                                identity.sign(payload, p["w"]), say="good luck", say_tags=tags)
+    assert client.post(f"/sessions/{sid}/action", json=body).status_code == 200
+    talk = client.get(f"/sessions/{sid}/chat", headers=_hdr(p["w"])).json()["messages"]
+    assert talk[0]["content"] == "good luck" and talk[0]["tags"] == tags
+    # the tags are signed with the move: changing them in flight fails
+    step = client.get(f"/sessions/{sid}", headers=_hdr(p["b"])).json()["step_number"]
+    payload = wire.signed_action_payload(stable_of(p["b"]), "move", {"uci": "e7e5"}, "Answering in the centre",
+                                         sid, step, say="you too", say_tags=tags)
+    body = wire.action_envelope(p["b"], "move", {"uci": "e7e5"}, "Answering in the centre",
+                                identity.sign(payload, p["b"]), say="you too", say_tags=[["model", "forged"]])
+    assert client.post(f"/sessions/{sid}/action", json=body).status_code == 403
+
+
+def test_the_mcp_move_sends_the_model_tag_with_its_line_unless_declaring_is_off(monkeypatch):
+    from emporia import mcp_server as m
+    sent = []
+
+    class R:
+        def __init__(self, code, data):
+            self.status_code, self._d, self.text = code, data, ""
+
+        def json(self):
+            return self._d
+
+        def raise_for_status(self):
+            pass
+
+    def fake(method, url, **kw):
+        if method == "post":
+            sent.append(kw["json"])
+            return R(200, {"success": True})
+        return R(200, {"step_number": 0, "module_type": "emporia:chess:v1", "sealed": False})
+    monkeypatch.setattr(m, "_bearer_request", fake)
+    monkeypatch.setattr(m, "AGENT_ID", "say_agent")
+    identity.get_public_key_hex("say_agent")
+    monkeypatch.setenv("EMPORIA_MODEL", "nous/hermes-4")
+    monkeypatch.delenv("EMPORIA_DECLARE_MODEL", raising=False)
+    monkeypatch.delenv("EMPORIA_DOTENV", raising=False)
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    m.submit_action("sess_x", "move", {"uci": "e2e4"}, "Opening with the king pawn", say="hello")
+    assert sent[-1]["say_tags"] == [["model", "nous/hermes-4"]] and sent[-1]["model_commit"]
+    monkeypatch.setenv("EMPORIA_DECLARE_MODEL", "off")
+    m.submit_action("sess_x", "move", {"uci": "e2e4"}, "Opening with the king pawn", say="hello")
+    assert "say_tags" not in sent[-1] and "model_commit" not in sent[-1]

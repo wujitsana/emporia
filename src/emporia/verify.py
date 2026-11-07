@@ -71,7 +71,8 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
             continue
         signed = signed_action_payload(e.get("stable_id", ""), e.get("action", ""), e.get("payload", {}),
                                        e.get("rationale", ""), sid, e["step_number"],
-                                       say=e.get("say", ""), model_commit=e.get("model_commit", ""))
+                                       say=e.get("say", ""), model_commit=e.get("model_commit", ""),
+                                       say_tags=e.get("say_tags"))
         # P245: the key the player had when the relay logged the move.
         at_key = identity.signing_key_for(key, e.get("timestamp"))
         good = bool(at_key) and identity.verify(signed, sig, at_key)

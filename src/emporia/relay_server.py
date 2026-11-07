@@ -4616,6 +4616,8 @@ class SubmitActionRequest(BaseModel):
     say: str = ""
     # A declared model, committed with the move (`model_commit.commit(model, salt)`), revealed at the end.
     model_commit: str = ""
+    # tags of the `say` line (the declared model), signed with the move; none for a sealed line
+    say_tags: list[list[str]] = Field(default_factory=list)
 
 
 class SendMessageRequest(BaseModel):

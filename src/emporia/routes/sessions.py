@@ -24,6 +24,7 @@ from emporia import relay_server as rs
 from emporia import rand as rand_module
 from emporia import model_commit as model_commit_rules
 from emporia import translog
+from emporia import wire as _wire
 from emporia.routes import beacon as beacon_route
 from emporia.module_sdk import (
     ENGINE_GAME_REFUSAL,
@@ -1715,8 +1716,10 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
         raise HTTPException(400, why)
     full_payload = signed_action_payload(
         mover, req.action_type, req.payload, req.peer_text_rationale,
-        session_id, s["step_number"], say=req.say, model_commit=req.model_commit,
+        session_id, s["step_number"], say=req.say, model_commit=req.model_commit, say_tags=req.say_tags,
     )
+    if req.say_tags and req.say and (why := _wire.tags_problem(req.say_tags)):
+        raise HTTPException(400, why)
     # P148: a line of table talk with the move — the table's rules, checked
     # before the move is applied so a refused line does not half-happen.
     if req.say:
@@ -1814,10 +1817,11 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     block_hash = (log_public_receipt(session_id, req.agent_id, req.action_type, req.payload,
                                      req.signature, step_number=s["step_number"],
                                      rationale=req.peer_text_rationale, say=req.say,
-                                     stable_id=mover, model_commit=req.model_commit)
+                                     stable_id=mover, model_commit=req.model_commit, say_tags=req.say_tags)
                   if req.signature else None)
     # Rooms v2: the line sent with a move is a post replying to the game, tied to the move's number
     said = (_store_chat(s, req.agent_id, req.say.strip(), kind=None if rs.session_sealed(s) else "note",
+                        tags=None if rs.session_sealed(s) else (req.say_tags or None),
                         reply_to=f"session:{session_id}", step=s["step_number"] + 1)[0] if req.say else None)
     receipt = action_receipt(session_id, s["step_number"] + 1, req.agent_id, req.action_type,
                              req.payload, block_hash)

@@ -555,6 +555,7 @@ def signed_action_payload(
     step_number: int,
     say: str = "",
     model_commit: str = "",
+    say_tags: Any = None,
 ) -> dict[str, Any]:
     """The dict `POST /sessions/{id}/action` callers sign before sending —
     binds the signature to `session_id`/`step_number` so it can't be
@@ -574,6 +575,8 @@ def signed_action_payload(
         # only present when said, so every signature from before stays valid.
         **({"say": say} if say else {}),
         **({"model_commit": model_commit} if model_commit else {}),
+        # the tags of the table-talk line sent with the move (the declared model): signed with it
+        **({"say_tags": [list(t) for t in say_tags]} if say and say_tags else {}),
     }
 
 
@@ -602,6 +605,7 @@ def action_envelope(
     signature: str,
     say: str = "",
     model_commit: str = "",
+    say_tags: Any = None,
 ) -> dict[str, Any]:
     """The actual `POST /sessions/{id}/action` body — `signed_action_payload()`'s
     fields minus `session_id`/`step_number` (both already in the URL/relay
@@ -614,6 +618,7 @@ def action_envelope(
         "signature": signature,
         **({"say": say} if say else {}),
         **({"model_commit": model_commit} if model_commit else {}),
+        **({"say_tags": [list(t) for t in say_tags]} if say and say_tags else {}),
     }
 
 

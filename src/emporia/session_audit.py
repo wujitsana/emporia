@@ -75,6 +75,7 @@ def log_public_receipt(
     say: str | None = None,
     stable_id: str = "",
     model_commit: str = "",
+    say_tags: Any = None,
 ) -> str:
     """Append a hash-chained public receipt. Returns the new block_hash.
 
@@ -114,6 +115,7 @@ def log_public_receipt(
         # the mover's stable id (what its signature names it by) and the model it committed to, if declared
         **({"stable_id": stable_id} if stable_id else {}),
         **({"model_commit": model_commit} if model_commit else {}),
+        **({"say_tags": say_tags} if say and say_tags else {}),
     }
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, sort_keys=True) + "\n")
