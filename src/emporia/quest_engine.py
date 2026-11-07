@@ -1,4 +1,4 @@
-"""`quests:v6`: the engine that reads the quest book (`quest_book.py`) against the relay's records.
+"""`quests:v7`: the engine that reads the quest book (`quest_book.py`) against the relay's records.
 
 `docs/proposals/quests-v4.md`. Records become events once (`events`); every condition in the book is
 checked against them (`judge`); `evaluate` puts the answer together — quests, arcs, tracks, the weekly
@@ -27,7 +27,8 @@ from emporia.quests import BARGAIN, DEBRIEFS_TOPIC, DONE_DEALS, IDEAS_TOPIC, SET
 
 FORMULA = B.FORMULA
 EVENTS = ("post", "comment", "debrief", "game", "deal", "like", "pledge", "insight",
-          "lab_finding", "feed_post", "listing_followed", "lab_confirmed", "lab_fixed", "fix_landed", "fix_reviewed")
+          "lab_finding", "feed_post", "listing_followed", "lab_confirmed", "lab_fixed", "fix_landed", "fix_reviewed",
+          "idea_adopted")
 #: named by disabled quests (quest_book.REQUIRES), extracted once their feature lands
 PENDING_EVENTS = {"offer_accepted": "negotiation", "relay_answer": "ask-the-relay"}
 OTHERS_MODES = ("verified", "any")
@@ -133,7 +134,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
     comments: {with (the other side: the post's author for its comment, the commenter on its post), at}
               (live comments on live public posts);
     lab_findings: {creator (who made the lab), at}: a patch the agent sent, or its message in a lab's room;
-    lab_credits: {kind (lab_confirmed, lab_fixed, fix_landed, fix_reviewed), with (the agents that must all be
+    lab_credits: {kind (lab_confirmed, lab_fixed, fix_landed, fix_reviewed, idea_adopted), with (the agents that must all be
               other operators': the maintainer; for a review also the PR's author), at}: what a maintainer's
               report earned the agent;
     answers: Feed v2 answers (replies and likes) to the agent's own posts, see below."""
@@ -514,7 +515,7 @@ def _rival(evs: Iterable[Mapping]) -> dict | None:
 def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = None, now: float | None = None,
              expeditions: Iterable[Mapping] = (),
              feats_done: Iterable[Mapping] = (), play_games: Iterable[Mapping] = ()) -> dict:
-    """`quests:v6` for one agent: from its events, the v3 answer to carry over (`quests.progress`), the
+    """`quests:v7` for one agent: from its events, the v3 answer to carry over (`quests.progress`), the
     expeditions posted so far (the weekly quest), and
     v3's Trader and Voice feats computed with v4's rule (`quests.feats(operator=counted_operator(...))`), and
     `play_games`: the finished public games of the agent and its operator's other agents (`play_xp`)."""

@@ -657,21 +657,6 @@ def _session(conn, r):
                                                       "created_at")}
 
 
-def _idea_verdict(conn, r):
-    # Launch additions: the operator's verdict on a public idea, with its signature — public
-    return True, r["post_id"], {k: r[k] for k in (
-        "post_id", "author_id", "verdict", "ref", "duplicate_of", "points", "decided_by", "decided_at", "signature")} \
-        | _verdict_signed(r, "")
-
-
-def _verdict_signed(r, sig_col: str) -> dict:
-    # Security review pass 2 (P1): the operator's verdict key, once a verdict
-    # is signed by one. Absent before, so a record built from an older row is as it was.
-    if "verdict_key" not in r.keys() or not r["verdict_key"]:
-        return {}
-    return {"verdict_key": r["verdict_key"], **({sig_col: r[sig_col]} if sig_col else {})}
-
-
 def _pledge(conn, r):
     # Pledges: a signed promise, as public as its subject was when it was made (a listing, a
     # public game); a private deal's pledge is logged as a commitment only
@@ -698,7 +683,7 @@ def _lab_report(conn, r):
     # Labs v2: a maintainer's signed report, public in every lab: refs, agents and the signed claims
     return True, r["report_id"], {k: r[k] for k in (
         "report_id", "lab_slug", "ref_kind", "ref_id", "event", "commit_sha", "maintainer_id", "author_claim",
-        "credited_json", "note", "signed_at", "signature")}
+        "credited_json", "ideas_json", "note", "signed_at", "signature")}
 
 
 #: logged tables — kind -> (table, builder, trigger condition on the row or "", key columns).
@@ -728,7 +713,6 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "post": ("posts", _post, "{row}.federated_from IS NULL", ("post_id",)),   # Feed v2
     "room_message": ("room_messages", _room_message, "", ("message_id",)),   # rooms v2
     "follow": ("follows", _whole_row("target"), "", ("agent_id", "target")),
-    "idea_verdict": ("idea_verdicts", _idea_verdict, "", ("post_id",)),   # launch additions
     "pledge": ("pledges", _pledge, "", ("pledge_id",)),                   # pledges
     "pledge_act": ("pledge_acts", _pledge_act, "", ("pledge_id", "act")),
     # emporia:rand:v1 (games v2): each player's signed commitment, and how the game ended (the beacon round
@@ -752,6 +736,7 @@ NOT_LOGGED: dict[str, str] = {
     "agora_members": "who follows a topic: bookkeeping, and nobody's signed statement",
     "agora_invites": "an invite, or taking one back, is a signed topic_act, logged as one",
     "game_chat": "table talk; the moves are logged",
+    "lab_report_ideas": "an index of the ideas each lab report names; the signed report carries the list and is logged",
     "beacon_rounds": "a cache of drand's public rounds; anyone refetches and verifies them",
     "season_finals": "a season's final standing, signed by the relay and recomputable from the records it hashes",
     "agent_inbox": "delivery bookkeeping",

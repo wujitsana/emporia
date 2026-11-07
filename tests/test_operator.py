@@ -19,7 +19,6 @@ from emporia import operator_desk, playbook
 from emporia import relay_server as rs
 from emporia.routes import operator as op_routes
 from conftest import header_shim_off
-from tests import verdict_key as vk
 from tests.test_emporia import _register, _register_keyed
 
 REPO = Path(__file__).resolve().parent.parent
@@ -43,11 +42,9 @@ setup_cli = _load("emporia_setup_cli_op", REPO / "hermes_plugin" / "emporia" / "
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,ideas")
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
     monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
-    monkeypatch.delenv("EMPORIA_QUEST_IDEAS_TOPIC", raising=False)
     monkeypatch.delenv("EMPORIA_EXPEDITIONS_TOPIC", raising=False)
-    vk.register(monkeypatch)
     return TestClient(rs.app, client=("127.0.0.1", 51301))
 
 
@@ -144,42 +141,12 @@ def test_every_other_agent_is_refused_the_desk_and_the_snapshot(client, monkeypa
 
 # ── the desk ──────────────────────────────────────────────────────────────────
 
-def test_without_the_ideas_part_the_desk_still_answers(client, monkeypatch):
+def test_without_the_labs_module_the_desk_still_answers(client, monkeypatch):
     op, = setup(client, monkeypatch)
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
+    monkeypatch.setenv("EMPORIA_LABS", "0")
     d = client.get("/operator/status", headers=as_(op)).json()
-    assert d["ideas"]["verdicts"] is False and "bugs" not in d
+    assert d["labs"]["on"] is False and "bugs" not in d and "ideas" not in d, "no idea queue: there is no verdict"
     assert d["health"]["version"]
-
-
-def test_the_ideas_queue_is_the_unjudged_posts_in_the_ideas_topic(client, monkeypatch):
-    op, author = setup(client, monkeypatch, "author")
-    monkeypatch.setenv("EMPORIA_QUEST_IDEAS_TOPIC", f"ideas-{uuid.uuid4().hex[:6]}")
-    topic = os.environ["EMPORIA_QUEST_IDEAS_TOPIC"]
-    first = _post(topic, author, "Show the claimed severity", "2026-11-05T01:00:00+00:00")
-    second = _post(topic, author, "Name the commit", "2026-11-05T02:00:00+00:00")
-    _post(topic, author, "gone", "2026-11-05T03:00:00+00:00", deleted=1)
-    _post("elsewhere", author, "not an idea", "2026-11-05T01:00:00+00:00")
-    q = client.get("/operator/status", headers=as_(op)).json()["ideas"]
-    assert q["topic"] == topic and q["topic_exists"]
-    assert [i["post_id"] for i in q["items"]] == [first, second], "oldest first, live posts in the topic only"
-    # The relay takes idea verdicts (the launch additions' `idea_verdicts`, with gamify ideas):
-    # a judged post leaves the queue.
-    assert q["verdicts"] is True
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT INTO idea_verdicts (post_id, author_id, operator_key, verdict, decided_by, decided_at, "
-                     "signature) VALUES (?, ?, 'k', 'noted', ?, '2026-11-05T04:00:00+00:00', 's')", (first, author, op))
-        conn.commit()
-    try:
-        q = client.get("/operator/status", headers=as_(op)).json()["ideas"]
-        assert [i["post_id"] for i in q["items"]] == [second] and q["verdicts"] is True
-    finally:
-        with rs.DB_LOCK, rs.get_db() as conn:
-            conn.execute("DELETE FROM idea_verdicts WHERE post_id = ?", (first,))
-            conn.commit()
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
-    q = client.get("/operator/status", headers=as_(op)).json()["ideas"]
-    assert q["verdicts"] is False, "no ideas part, no idea verdicts: the view offers no command for one"
 
 
 def test_the_expedition_is_the_operators_newest_post_there(client, monkeypatch):
@@ -245,8 +212,6 @@ def test_a_rate_limit_hit_is_counted(client, monkeypatch):
 
 def _built(case):
     k = case["kind"]
-    if k == "idea":
-        return operator_desk.idea_commands(case["name"], case["item"], case["verdicts"])
     if k == "expedition":
         return operator_desk.expedition_command(case["name"])
     if k == "house":
@@ -258,29 +223,26 @@ def _built(case):
 
 def test_the_commands_match_the_table_the_dashboard_is_held_to():
     cases = json.loads(VECTORS.read_text())["cases"]
-    assert len(cases) >= 10
+    assert len(cases) >= 8
     for case in cases:
         assert _built(case) == case["expect"], case
 
 
 def test_a_command_carries_only_checked_ids_and_placeholders():
-    assert operator_desk.idea_commands("op", {"post_id": "$(id)"}, True) == []
-    assert operator_desk.idea_commands("Op Name", {"post_id": "pst_1"}, True) == []
-    adopt = operator_desk.idea_commands("op", {"post_id": "pst_1"}, True)[0]
-    assert adopt["command"] == "hermes emporia ideas op adopt pst_1 --ref COMMIT_OR_ROADMAP_ITEM"
-    assert adopt["gate"] == operator_desk.PERSON
+    assert operator_desk.lab_commands("op", "$(id)") == []
+    assert operator_desk.lab_commands("Op Name", "calc") == []
+    assert not hasattr(operator_desk, "idea_commands"), "an idea is adopted by a lab report, not by a command"
 
 
 def test_every_suggested_command_is_a_real_command_under_the_key_guard():
     """Each command the desk suggests parses as `emporia …` (minus the `hermes` prefix, which
-    the plugin passes through) — except idea verdicts, which arrive with the launch additions —
-    and an agent's terminal cannot run any of them silently."""
+    the plugin passes through) and an agent's terminal cannot run any of them silently."""
     from emporia import cli
     parser = cli.build_parser()
     for case in json.loads(VECTORS.read_text())["cases"]:
         for c in case["expect"]:
             words = shlex.split(c["command"])
-            assert words[:2] == ["hermes", "emporia"] and words[2] in setup_cli.PASSTHROUGH + ("ideas",), c
+            assert words[:2] == ["hermes", "emporia"] and words[2] in setup_cli.PASSTHROUGH, c
             verdict = guard.pre_tool_call("terminal", {"command": c["command"]})
             if c["gate"] == operator_desk.PERSON:
                 assert verdict and verdict["action"] == "block", c
@@ -288,8 +250,6 @@ def test_every_suggested_command_is_a_real_command_under_the_key_guard():
                 assert verdict and verdict["action"] == "approve", c
             else:
                 assert verdict is None, c
-            if words[2] == "ideas":
-                continue
             parser.parse_args(words[2:])
 
 
@@ -303,24 +263,20 @@ def test_the_desk_prints_with_its_commands(client, monkeypatch):
 
 # ── the key guard ─────────────────────────────────────────────────────────────
 
-def test_verdicts_are_a_persons_and_relay_controls_wait_for_a_yes():
-    for cmd in ("emporia ideas alpha adopt pst_1 --ref abc1234", "hermes emporia ideas alpha noted pst_1",
-                "emporia ideas alpha duplicate pst_2 --of pst_1"):
-        r = guard.pre_tool_call("terminal", {"command": cmd})
-        assert r and r["action"] == "block", cmd
+def test_relay_controls_wait_for_a_yes():
     for cmd in ("emporia house start h", "hermes emporia house stop h", "emporia house run h --once",
                 "emporia operator alpha snapshot", "hermes emporia operator alpha expedition 'W' --text 't'"):
         r = guard.pre_tool_call("terminal", {"command": cmd})
         assert r and r["action"] == "approve" and "relay operator" in r["message"], cmd
     for cmd in ("emporia operator alpha", "emporia operator alpha whoami", "emporia house status h",
-                "emporia ideas alpha", "hermes emporia operator alpha status --json"):
+                "hermes emporia operator alpha status --json"):
         assert guard.pre_tool_call("terminal", {"command": cmd}) is None, cmd
 
 
-def test_no_agent_tool_reaches_a_verdict_or_the_operators_write():
-    """Verdicts are the person's signed decisions: no MCP tool posts one, nor a snapshot."""
+def test_no_agent_tool_reaches_the_operators_write():
+    """A snapshot is the person's command: no MCP tool posts one."""
     src = (REPO / "src" / "emporia" / "mcp_server.py").read_text()
-    assert "/verdict" not in src and "/operator/snapshot" not in src
+    assert "/operator/snapshot" not in src
 
 
 # ── the CLI ───────────────────────────────────────────────────────────────────
@@ -329,8 +285,7 @@ def test_operator_command_prints_the_desk_or_the_refusal(monkeypatch, capsys, tm
     from emporia import cli
     monkeypatch.setattr(cli, "_agent", lambda n: (tmp_path, n, {"EMPORIA_AGENT_ID": n}))
     status = {"relay_url": "http://127.0.0.1:1", "health": {"version": "0", "schema": {"code": 1, "database": 1}},
-              "ideas": {"topic": "ideas", "topic_exists": True, "open": 1, "verdicts": True,
-                        "items": [{"post_id": "pst_ab", "author_id": "r", "title": "t"}]}, "expedition": {"topic": "expeditions"},
+              "expedition": {"topic": "expeditions"},
               "house": {"agents": []}, "season": {"season": "season-0", "boards": []}}
     calls = []
 
@@ -344,7 +299,7 @@ def test_operator_command_prints_the_desk_or_the_refusal(monkeypatch, capsys, tm
     monkeypatch.setattr(cli, "_operator_call", call)
     assert cli.main(["operator", "opdesk"]) == 0
     out = capsys.readouterr().out
-    assert "hermes emporia ideas opdesk adopt pst_ab --ref COMMIT_OR_ROADMAP_ITEM" in out
+    assert "hermes emporia operator opdesk snapshot" in out and "ideas" not in out.lower()
     assert cli.main(["operator", "opdesk", "whoami"]) == 1
     assert "relay operator access required" in capsys.readouterr().out
     assert calls[0] == ("GET", "/operator/status", {"window_s": 3600})
@@ -392,7 +347,7 @@ def test_the_operator_preset_plays_sells_and_buys_nothing():
     assert pb.preset == "operator" and pb.games == playbook.NONE and not pb.sells and not pb.buys
     assert pb.answers == "anyone" and pb.runs == "model"
     assert playbook.may_play(pb, "emporia:blotto:v1") and playbook.may_sell(pb) and playbook.may_buy(pb)
-    assert "verdicts" in playbook.ABOUT["operator"]
+    assert "verdict" not in playbook.ABOUT["operator"]
 
 
 def test_the_console_names_each_agents_profile(tmp_path):

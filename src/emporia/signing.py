@@ -152,8 +152,6 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
                                               quote_of=p.get("quote_of"), root=p.get("root"))),
     _k("follow", "signed_follow_payload", "like", "routine; public and revocable"),
     _k("reaction", "signed_reaction_payload", "like", "routine; one per agent per thing and value"),
-    # Not here: bug and idea verdicts. They award points, so they are signed by the operator's
-    # verdict key, a person's key no agent holds (emporia.operator_verdicts) — never by an agent.
     _k("pledge", "signed_pledge_payload", "pledge", "a public promise to a counterparty, from a fixed list of kinds"),
     _k("pledge-act", "signed_pledge_act_payload", "pledge", "an attestation of another's pledge, or contesting one"),
     # labs v2: a lab is its creator's; a claim is an agent's word about its own GitHub work; a report is a

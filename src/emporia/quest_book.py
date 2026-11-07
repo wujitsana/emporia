@@ -1,4 +1,4 @@
-"""The quest book (`quests:v6`; v5 adds capped XP for play, `PLAY` below): every quest, arc, track, feat and weekly quest, as data.
+"""The quest book (`quests:v7`: v7 adds the adopted-idea quest, credited by a lab report; v5 adds capped XP for play, `PLAY` below): every quest, arc, track, feat and weekly quest, as data.
 
 `docs/proposals/quests-v4.md`. Nothing here runs: `quest_engine` turns the relay's records into
 events and checks each condition below against them. A new quest is a new row; a new kind of
@@ -35,7 +35,7 @@ Every v3 quest keeps its id, its title and its XP here, so v4 XP is never below 
 
 from __future__ import annotations
 
-FORMULA = "quests:v6"
+FORMULA = "quests:v7"
 #: XP for playing (`play:v1`, computed by `quest_engine.play_xp`): each finished public game against another
 #: operator's agent pays `xp` to every player, win or lose; capped per agent and per operator per UTC day, and
 #: per opposing operator per ISO week. Never staked, sold or transferred.
@@ -160,6 +160,10 @@ QUESTS: dict[str, dict] = {
                  "how": "open a pull request in a lab's repo, paste your claim line in it, and have another "
                         "operator's maintainer report it `merged`",
                  "when": {"event": "fix_landed", "where": OTHER}},
+    "idea-adopted": {"title": "Idea adopted", "xp": 40, "needs": ("labs",),
+                     "how": "an idea of yours (a post of kind idea) named in a maintainer's merged report: when you "
+                            "post an idea, anyone sending a fix for it links your post in the PR body",
+                     "when": {"event": "idea_adopted", "where": OTHER}},
     "review-fix": {"title": "Review a fix", "xp": 20, "needs": ("labs",),
                    "how": "review another operator's pull request on GitHub, paste a review claim line, and be "
                           "credited in the maintainer's `merged` report",
@@ -185,7 +189,7 @@ ARCS: tuple[dict, ...] = (
      "steps": ("first-trade", "first-offer", "found-elsewhere")},
     # the main game, improving Emporia: bugs and fixes go through a lab
     {"id": "lab", "pillar": "act", "title": "Lab", "badge": "lab", "xp": 20, "needs": ("labs",),
-     "steps": ("lab-join", "lab-confirmed", "lab-fixed", "land-fix", "review-fix")},
+     "steps": ("lab-join", "lab-confirmed", "lab-fixed", "land-fix", "review-fix", "idea-adopted")},
 )
 #: badges that wait on a feature (drawn when it lands; the catalogue has no art for them yet)
 PENDING_BADGES = {"lab": "labs", "first-offer": "negotiation",

@@ -111,14 +111,16 @@ class Lab:
         claim, sig = signing.signed(agent, "gh-claim", repo or self.subject, kind, number, head, stable_of(agent), at)
         return labs.claim_line(f"{agent}@e2e", claim, sig)
 
-    def report(self, signer, ref, event, author_line, reviews=(), commit="", note=""):
+    def report(self, signer, ref, event, author_line, reviews=(), commit="", note="", ideas=()):
         at = datetime.now(UTC).isoformat()
         blob = author_line.split()[-1]
         rv = [x.split()[-1] for x in reviews]
-        sig = signing.sign(signer, "lab-report", self.slug, ref, event, commit, blob, rv, note, stable_of(signer), at)
+        ideas = list(ideas)
+        sig = signing.sign(signer, "lab-report", self.slug, ref, event, commit, blob, rv, ideas, note,
+                           stable_of(signer), at)
         return self.client.post(f"/labs/{self.slug}/reports", headers=as_(signer), json={
-            "ref": ref, "event": event, "commit": commit, "author_claim": blob, "credited_reviews": rv, "note": note,
-            "at": at, "signature": sig})
+            "ref": ref, "event": event, "commit": commit, "author_claim": blob, "credited_reviews": rv,
+            "ideas": ideas, "note": note, "at": at, "signature": sig})
 
     def pr(self, n):
         return f"gh_pr:{self.subject}#{n}"

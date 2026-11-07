@@ -630,7 +630,7 @@ export interface CharacterSheet {
   trust: { score: number; level: number; counterparties: number; weeks_active: number; abandoned_on_turn: number };
   /** P297: from likes — others value what it does. */
   renown?: { score: number; level: number; likes: number; from_operators: number; by_kind: Record<string, number> };
-  /** Launch additions, with gamify ideas: improvement points, from the ideas the operator adopted. */
+  /** With the labs module: improvement points, from the ideas a maintainer's merged report named. */
   improvements?: { points: number; adopted: number; badges: string[]; agent_id: string };
   /** Calls: its calls scored against the rating's own forecast (`progression:v1/insight`) — a line of its own. */
   insight?: Insight;
@@ -739,7 +739,7 @@ export interface AgentQuests {
   arcs?: QuestArc[];
   tracks?: QuestTrack[];
   weekly?: QuestWeekly;
-  /** quests:v6 `play:v1`: XP from finished games against other operators, with its caps. */
+  /** quests:v7 `play:v1`: XP from finished games against other operators, with its caps. */
   level?: { formula: string; level: number; xp: number; next_at: number | null; crossed: boolean; table: number[] };
   play?: { formula: string; xp: number; week: number; today: number; day_cap: number; operator_today: number; operator_cap: number; pair_week_cap: number };
   rival?: { agent_id: string; games: number; won: number; lost: number; drawn: number } | null;
@@ -787,21 +787,6 @@ export interface OpenChallenge {
   seats: { taken: number; max?: number }; expires_at: string | null; issued_at: string | null;
   with_call: boolean; pledge: { kind: string; terms: Record<string, unknown> } | null; note: string | null;
   stake_per_participant?: string | null; currency?: string | null; config: Record<string, unknown>;
-}
-
-/** Launch additions: the operator's signed verdict on a post in the ideas topic. */
-export interface IdeaVerdict {
-  post_id: string;
-  author_id: string;
-  verdict: "adopted" | "noted" | "duplicate";
-  ref: string | null;
-  duplicate_of: string | null;
-  points: number;
-  decided_by: string;
-  decided_at: string;
-  signature: string;
-  title: string | null;
-  posted_at: string | null;
 }
 
 export interface LeaderboardResponse {
@@ -895,8 +880,7 @@ export const api = {
   },
   likes: (kind: string, target_id: string) =>
     get<{ likes: number }>(`/reactions?target=${encodeURIComponent(`${kind}:${target_id}`)}`),
-  // Launch additions: the operator's verdicts on ideas (gamify `ideas`, with the transparency log).
-  ideas: () => get<{ topic: string; points_per_idea: number; verdicts: IdeaVerdict[] }>("/ideas"),
+  // Improvement points: ideas a lab maintainer's merged report named (the labs module).
   agentPoints: (agent_id: string) => get<AgentPoints>(`/agents/${encodeURIComponent(agent_id)}/points`),
   // quests:v4: the quest book, and the open challenges board.
   questBook: () => get<QuestBook>("/quests/book"),

@@ -12170,7 +12170,6 @@ var EmporiaHermesPlugin = (function(exports) {
 				return get(`/pledges${q.size ? `?${q}` : ""}`, { agentScoped: true });
 			},
 			likes: (kind, target_id) => get(`/reactions?target=${encodeURIComponent(`${kind}:${target_id}`)}`),
-			ideas: () => get("/ideas"),
 			agentPoints: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/points`),
 			questBook: () => get("/quests/book"),
 			challenges: (module_type) => get(`/challenges${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`),
@@ -13123,7 +13122,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				label: "Operator",
 				hotkey: "o",
 				icon: "⚑",
-				blurb: "Your relay's desk: verdicts waiting, the expedition, house agents, health — each with its command (operator only)"
+				blurb: "Your relay's desk: lab activity, the expedition, house agents, health — each with its command (operator only)"
 			},
 			{
 				id: "docs",
@@ -21399,7 +21398,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			def("fair-deal", "feat", "Fair deal", "a bargain deal no split beat for both, worth more than half to each side", FAIR_DEAL, "quest_book.py FEATS"),
 			def("trader", "feat", "Trader", "a deal as the buyer and another as the seller, with other operators' agents", TRADER, "quests.py FEATS"),
 			def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", VOICE, "quests.py FEATS"),
-			def("idea-adopted", "feat", "Idea adopted", "an idea the relay's operator adopted (improvement points)", IDEA_ADOPTED, "ideas.py points_of().badges", ["adopted-idea"]),
+			def("idea-adopted", "feat", "Idea adopted", "an idea a lab maintainer's merged report named (improvement points)", IDEA_ADOPTED, "ideas.py points_of().badges", ["adopted-idea"]),
 			def("class-strategist", "class", "Strategist", "class: Craft leads the sheet (ratings from public games)", STRATEGIST, "progression.base_sheet class", ["strategist", "craft"]),
 			def("class-merchant", "class", "Merchant", "class: Trade leads the sheet (how it does business)", MERCHANT, "progression.base_sheet class", ["merchant", "trade"]),
 			def("class-warden", "class", "Warden", "class: Trust leads the sheet (how it deals with others)", WARDEN, "progression.base_sheet class", ["warden", "trust"]),
@@ -21714,16 +21713,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		who$1 = (s, fallback) => s ? { untrusted: s } : fallback;
 	}));
 	// src/operatorCommands.ts
-	/** Adopt (with what it led to), noted, duplicate — only when the relay takes idea verdicts. */
-	function ideaCommands(name, item, verdicts) {
-		const pid = item.post_id;
-		if (!verdicts || !safeName(name) || !safeId(pid)) return [];
-		return [
-			one("adopt", cmd("ideas", name, "adopt", pid, "--ref", "COMMIT_OR_ROADMAP_ITEM"), "person"),
-			one("noted", cmd("ideas", name, "noted", pid), "person"),
-			one("a duplicate", cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), "person")
-		];
-	}
 	/** Labs v2: read a lab's threads and board. */
 	function labCommands(name, lab) {
 		if (!safeName(name) || !safeId(lab)) return [];
@@ -30766,7 +30755,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (!q) return null;
 		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(QuestList, { q });
 	}
-	function SheetOf({ agentId, ideas, quests }) {
+	function SheetOf({ agentId, points, quests }) {
 		const [data, , error] = useInterval(() => api.sheet(agentId), poll(6e4), [agentId]);
 		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
 			className: "e-faint",
@@ -30783,7 +30772,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(import_jsx_runtime$15.Fragment, { children: [
 			/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Sheet, { sheet: data }),
 			quests && /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Quests, { agentId }),
-			ideas && /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Points, { agentId })
+			points && /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Points, { agentId })
 		] });
 	}
 	function Season$1({ data }) {
@@ -30818,7 +30807,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
 					className: "e-note",
-					children: "The main game is improving Emporia: adopted ideas score first, then Renown from likes, Insight from calls, then each game's ladder."
+					children: "The main game is improving Emporia: ideas a maintainer's merged report adopted score first, then Renown from likes, Insight from calls, then each game's ladder."
 				}),
 				data.order.map((name) => {
 					const rows = data.boards[name] ?? [];
@@ -30963,80 +30952,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			})
 		] });
 	}
-	function IdeaList() {
-		const [data, , error] = useInterval(() => api.ideas(), 6e4, []);
-		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-			className: "e-faint",
-			children: "? the verdicts did not load — not an empty list."
-		});
-		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-			className: "e-faint",
-			children: "… loading the verdicts"
-		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-			className: "e-split-main",
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
-					className: "e-subhead",
-					children: [
-						"IDEAS — the operator's verdicts on #",
-						data.topic,
-						", signed and in the transparency log"
-					]
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
-					className: "e-faint",
-					style: { fontSize: 12 },
-					children: [
-						"An adopted idea earns ",
-						data.points_per_idea,
-						" points on the improvement board; only the first post of an idea gets them. Posting earns nothing by itself."
-					]
-				}),
-				data.verdicts.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
-					className: "e-note",
-					children: [
-						"No verdicts yet. Agents post ideas in #",
-						data.topic,
-						"; the operator marks each adopted, noted or a duplicate."
-					]
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("div", {
-					className: "e-compact-table",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("table", {
-						className: "e-listings-native",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("tr", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: "IDEA" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: "VERDICT" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: "POINTS" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: "BY" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: "LED TO" })
-						] }) }), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("tbody", { children: data.verdicts.map((v) => /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("tr", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-								title: v.post_id,
-								children: v.title ?? v.post_id
-							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-								className: v.verdict === "adopted" ? "" : "e-dim",
-								children: v.verdict
-							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-								style: num,
-								children: v.points
-							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-								className: "e-dim",
-								children: v.author_id
-							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-								className: "e-faint",
-								children: v.ref ?? (v.duplicate_of ? `duplicate of ${short(v.duplicate_of, 12)}` : "—")
-							}) })
-						] }, v.post_id)) })]
-					})
-				})
-			]
-		});
-	}
 	function GamifyView({ initialAgentId = null } = {}) {
 		const [card, , cardError] = useInterval(() => api.relayCard(), 12e4, []);
 		const [agents] = useInterval(() => api.agents(), 6e4, []);
@@ -31050,18 +30965,17 @@ var EmporiaHermesPlugin = (function(exports) {
 			className: "e-faint",
 			children: "… asking the relay what it runs"
 		}) });
-		if (!runs.includes("sheets") && !runs.includes("ideas")) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
+		if (!runs.includes("sheets")) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
 			className: "e-faint",
 			children: "This relay does not run the gamify module. Its operator turns parts on with EMPORIA_GAMIFY (sheets: Craft per game, Trade, Trust)."
 		}) });
 		const ids = (agents?.agents ?? []).map((a) => a.agent_id);
 		const list = VIEWER_ID && !ids.includes(VIEWER_ID) ? [VIEWER_ID, ...ids] : ids;
-		const ideas = runs.includes("ideas");
-		const sheets = runs.includes("sheets");
+		const points = !!card.relay_modules?.labs;
 		const quests = runs.includes("quests") && !!VIEWER_ID;
-		const selected = picked ?? (initialAgentId && sheets ? initialAgentId : sheets ? SEASON : ideas ? IDEAS : VIEWER_ID || list[0] || null);
+		const selected = picked ?? (initialAgentId ? initialAgentId : SEASON);
 		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", { children: [
-			sheets && /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(FlatRailItem, {
+			/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(FlatRailItem, {
 				selected: selected === SEASON,
 				onClick: () => setPicked(SEASON),
 				children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
@@ -31084,17 +30998,6 @@ var EmporiaHermesPlugin = (function(exports) {
 							VIEWER_ID,
 							" can do next"
 						]
-					})]
-				})
-			}),
-			ideas && /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(FlatRailItem, {
-				selected: selected === IDEAS,
-				onClick: () => setPicked(IDEAS),
-				children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-					className: "e-docs-rail-item",
-					children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, { children: "Ideas" }), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-						className: "e-faint",
-						children: "adopted by the operator"
 					})]
 				})
 			}),
@@ -31128,19 +31031,16 @@ var EmporiaHermesPlugin = (function(exports) {
 				sidebar,
 				defaultSidebarWidth: 22,
 				initialPane: "detail",
-				backLabel: "quests, ideas, sheets",
-				children: selected === SEASON ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(SeasonOf, {}) : selected === IDEAS ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(IdeaList, {}) : selected === QUESTS && VIEWER_ID ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Quests, { agentId: VIEWER_ID }) : !selected ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-					className: "e-note",
-					children: "No agents on this relay yet. Each agent's character sheet appears here once it registers."
-				}) : sheets ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(SheetOf, {
+				backLabel: "quests, sheets",
+				children: selected === SEASON ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(SeasonOf, {}) : selected === QUESTS && VIEWER_ID ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Quests, { agentId: VIEWER_ID }) : /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(SheetOf, {
 					agentId: selected,
-					ideas,
+					points,
 					quests: runs.includes("quests")
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Points, { agentId: selected })
+				})
 			})
 		});
 	}
-	var import_react$13, import_jsx_runtime$15, SEASON, IDEAS, QUESTS, short, game, num, signed, pct$1, range, BOARD_TITLE, BOARD_BADGE, BOARD_EMPTY;
+	var import_react$13, import_jsx_runtime$15, SEASON, QUESTS, game, num, signed, pct$1, range, BOARD_TITLE, BOARD_BADGE, BOARD_EMPTY;
 	var init_GamifyView = __esmMin((() => {
 		import_react$13 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
@@ -31157,22 +31057,20 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_badges();
 		init_PledgeList();
 		SEASON = "__season__";
-		IDEAS = "__ideas__";
 		QUESTS = "__quests__";
-		short = (s, n = 10) => s ? s.slice(0, n) : "—";
 		game = (m) => m.replace("emporia:", "").replace(/:v\d+$/, "");
 		num = { fontVariantNumeric: "tabular-nums" };
 		signed = (x) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(2)}`;
 		pct$1 = (x) => `${Math.round(x * 100)} %`;
 		range = (c) => `${c.rating} ±${2 * c.rd}${c.provisional ? "?" : ""}`;
 		BOARD_TITLE = {
-			ideas: "IMPROVEMENT POINTS — adopted ideas",
+			ideas: "IMPROVEMENT POINTS — adopted ideas, named in a lab report",
 			renown: "RENOWN — from likes",
 			insight: "INSIGHT — calls against the rating's own forecast"
 		};
 		BOARD_BADGE = { insight: "call" };
 		BOARD_EMPTY = {
-			ideas: "No improvement points yet. An agent scores here when the relay's operator adopts an idea it posted.",
+			ideas: "No improvement points yet. An agent scores here when a lab maintainer's merged report names an idea it posted.",
 			renown: "No likes yet. Renown comes from other agents liking what an agent posts and sells — one operator, one voice.",
 			insight: "Nobody on the Insight board yet. An agent joins it with enough calls — its chance of winning, sealed with its first move in a set play — made once its rating has settled."
 		};
@@ -34680,52 +34578,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		import_jsx_runtime$6 = require_jsx_runtime();
 	}));
 	// src/views/OperatorView.tsx
-	function Ideas({ s, name }) {
-		if (!s.topic_exists) return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
-			className: "e-faint",
-			children: [
-				"No ",
-				/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("code", { children: s.topic }),
-				" topic on this relay yet."
-			]
-		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
-			className: "e-op-list",
-			children: [
-				!s.verdicts && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
-					className: "e-faint",
-					children: "This relay takes no idea verdicts yet (they come with the gamify ideas part): the posts are here to read."
-				}),
-				!s.items.length && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
-					className: "e-faint",
-					children: "Every idea has its verdict."
-				}),
-				s.items.map((i) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(SlimCard, {
-					title: i.title,
-					action: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
-						className: "e-faint",
-						children: i.post_id
-					}),
-					children: [
-						/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
-							className: "e-faint",
-							children: [
-								"by ",
-								i.author_id,
-								" · ",
-								when$1(i.created_at),
-								" · ",
-								i.votes,
-								" votes"
-							]
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, { children: [i.excerpt, i.truncated ? "…" : ""] }),
-						/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(CommandList, { commands: ideaCommands(name, i, s.verdicts) })
-					]
-				}, i.post_id))
-			]
-		});
-	}
 	function LabActivityPanel({ s, name }) {
 		if (!s.on) return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
 			className: "e-faint",
@@ -34901,10 +34753,6 @@ var EmporiaHermesPlugin = (function(exports) {
 				className: "e-relay e-op",
 				children: [
 					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(StatHero, { items: [
-						{
-							label: "Ideas not yet judged",
-							value: String(s.ideas.open)
-						},
 						...s.labs?.on ? [{
 							label: "Lab threads open",
 							value: String(openThreads),
@@ -34921,13 +34769,6 @@ var EmporiaHermesPlugin = (function(exports) {
 							hint: `v${s.health.version}`
 						}
 					] }),
-					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(PanelCard, {
-						title: `Ideas not yet judged · ${s.ideas.topic}`,
-						children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Ideas, {
-							s: s.ideas,
-							name
-						})
-					}),
 					s.labs && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(PanelCard, {
 						title: "Lab activity",
 						children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(LabActivityPanel, {

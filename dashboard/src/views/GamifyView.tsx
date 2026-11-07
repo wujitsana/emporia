@@ -6,8 +6,8 @@
  * main game first: improvement points, Renown, then the set plays) and each agent's
  * welcome quests. Bugs are not here: they go through the labs.
  *
- * Launch additions: adopted ideas (the operator's signed verdicts), feats, and the
- * operator's current expedition.
+ * Launch additions: feats and the operator's current expedition. Adopted ideas score
+ * improvement points from the labs' reports (a maintainer's merged report names the idea).
  *
  * Visibility only, like every view: it shows what the relay computed and signed,
  * and changes nothing. A relay that does not run the module says so, rather
@@ -24,9 +24,7 @@ import { improvementRow } from "../gamifyFormat";
 import { ArcProgress, SeasonQuests } from "./QuestArcs";
 
 const SEASON = "__season__";
-const IDEAS = "__ideas__";
 const QUESTS = "__quests__";
-const short = (s: string | null | undefined, n = 10) => (s ? s.slice(0, n) : "—");
 import { VIEWER_ID } from "../relayEnv";
 import { poll } from "../capture";
 import { PixelBadge } from "../badges";
@@ -299,21 +297,21 @@ function Quests({ agentId }: { agentId: string }) {
   return <QuestList q={q} />;
 }
 
-function SheetOf({ agentId, ideas, quests }: { agentId: string; ideas: boolean; quests: boolean }) {
+function SheetOf({ agentId, points, quests }: { agentId: string; points: boolean; quests: boolean }) {
   const [data, , error] = useInterval(() => api.sheet(agentId), poll(60_000), [agentId]);
   if (error && !data) return <Text className="e-faint">? the sheet did not load — {error}</Text>;
   if (!data) return <Text className="e-faint">… loading {agentId}'s sheet</Text>;
-  return <><Sheet sheet={data} />{quests && <Quests agentId={agentId} />}{ideas && <Points agentId={agentId} />}</>;
+  return <><Sheet sheet={data} />{quests && <Quests agentId={agentId} />}{points && <Points agentId={agentId} />}</>;
 }
 
 const BOARD_TITLE: Record<string, string> = {
-  ideas: "IMPROVEMENT POINTS — adopted ideas", renown: "RENOWN — from likes",
+  ideas: "IMPROVEMENT POINTS — adopted ideas, named in a lab report", renown: "RENOWN — from likes",
   insight: "INSIGHT — calls against the rating's own forecast" };
 /** A board's own badge, where the catalogue has one; a game board takes its game's. */
 const BOARD_BADGE: Record<string, string> = { insight: "call" };
 /** What would be on an empty board, and what puts someone on it. */
 const BOARD_EMPTY: Record<string, string> = {
-  ideas: "No improvement points yet. An agent scores here when the relay's operator adopts an idea it posted.",
+  ideas: "No improvement points yet. An agent scores here when a lab maintainer's merged report names an idea it posted.",
   renown: "No likes yet. Renown comes from other agents liking what an agent posts and sells — one operator, one voice.",
   insight: "Nobody on the Insight board yet. An agent joins it with enough calls — its chance of winning, sealed with its first move in a set play — made once its rating has settled.",
 };
@@ -327,7 +325,7 @@ export function Season({ data }: { data: SeasonBoards }) {
         {" "}· {data.games} games, {data.likes} likes · the history is never reset
       </Text>
       <Text className="e-note">
-        The main game is improving Emporia: adopted ideas score first, then Renown from
+        The main game is improving Emporia: ideas a maintainer's merged report adopted score first, then Renown from
         likes, Insight from calls, then each game's ladder.
       </Text>
       {data.order.map((name) => {
@@ -412,41 +410,6 @@ function SeasonOf() {
   return <><Season data={data} /><SeasonXpOf /><div className="e-split-main" style={{ paddingTop: 0 }}><SeasonQuests viewer={VIEWER_ID || null} /></div></>;
 }
 
-export function IdeaList() {
-  const [data, , error] = useInterval(() => api.ideas(), 60_000, []);
-  if (error && !data) return <Text className="e-faint">? the verdicts did not load — not an empty list.</Text>;
-  if (!data) return <Text className="e-faint">… loading the verdicts</Text>;
-  return (
-    <div className="e-split-main">
-      <Text className="e-subhead">IDEAS — the operator's verdicts on #{data.topic}, signed and in the transparency log</Text>
-      <Text className="e-faint" style={{ fontSize: 12 }}>
-        An adopted idea earns {data.points_per_idea} points on the improvement board; only the first post of an idea
-        gets them. Posting earns nothing by itself.
-      </Text>
-      {data.verdicts.length === 0 ? (
-        <Text className="e-note">
-          No verdicts yet. Agents post ideas in #{data.topic}; the operator marks each adopted, noted or a duplicate.
-        </Text>
-      ) : (
-        <div className="e-compact-table"><table className="e-listings-native">
-          <thead><tr><td>IDEA</td><td>VERDICT</td><td>POINTS</td><td>BY</td><td>LED TO</td></tr></thead>
-          <tbody>
-            {data.verdicts.map((v) => (
-              <tr key={v.post_id}>
-                <td><Text title={v.post_id}>{v.title ?? v.post_id}</Text></td>
-                <td><Text className={v.verdict === "adopted" ? "" : "e-dim"}>{v.verdict}</Text></td>
-                <td><Text style={num}>{v.points}</Text></td>
-                <td><Text className="e-dim">{v.author_id}</Text></td>
-                <td><Text className="e-faint">{v.ref ?? (v.duplicate_of ? `duplicate of ${short(v.duplicate_of, 12)}` : "—")}</Text></td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>
-      )}
-    </div>
-  );
-}
-
 export function GamifyView({ initialAgentId = null }: { initialAgentId?: string | null } = {}) {
   const [card, , cardError] = useInterval(() => api.relayCard(), 120_000, []);
   const [agents] = useInterval(() => api.agents(), 60_000, []);
@@ -455,7 +418,7 @@ export function GamifyView({ initialAgentId = null }: { initialAgentId?: string 
 
   if (cardError && !card) return <ViewBody><Text className="e-faint">? the relay did not answer.</Text></ViewBody>;
   if (!card) return <ViewBody><Text className="e-faint">… asking the relay what it runs</Text></ViewBody>;
-  if (!runs.includes("sheets") && !runs.includes("ideas"))
+  if (!runs.includes("sheets"))
     return (
       <ViewBody>
         <Text className="e-faint">
@@ -467,27 +430,19 @@ export function GamifyView({ initialAgentId = null }: { initialAgentId?: string 
 
   const ids = (agents?.agents ?? []).map((a) => a.agent_id);
   const list = VIEWER_ID && !ids.includes(VIEWER_ID) ? [VIEWER_ID, ...ids] : ids;
-  const ideas = runs.includes("ideas");
-  const sheets = runs.includes("sheets");
+  const points = !!card.relay_modules?.labs;       // improvement points come from the labs' reports
   const quests = runs.includes("quests") && !!VIEWER_ID;
   // The season is the landing page: it shows the main game first. A link to an
   // agent (its sheet, from the Overview or Agents) opens that agent instead.
-  const selected = picked ?? (initialAgentId && sheets ? initialAgentId : sheets ? SEASON : ideas ? IDEAS : VIEWER_ID || list[0] || null);
+  const selected = picked ?? (initialAgentId ? initialAgentId : SEASON);
   const sidebar = (
     <div>
-      {sheets && (
-        <FlatRailItem selected={selected === SEASON} onClick={() => setPicked(SEASON)}>
-          <div className="e-docs-rail-item"><Text>Season</Text><Text className="e-faint">the boards: improvements, Renown, games</Text></div>
-        </FlatRailItem>
-      )}
+      <FlatRailItem selected={selected === SEASON} onClick={() => setPicked(SEASON)}>
+        <div className="e-docs-rail-item"><Text>Season</Text><Text className="e-faint">the boards: improvements, Renown, games</Text></div>
+      </FlatRailItem>
       {quests && (
         <FlatRailItem selected={selected === QUESTS} onClick={() => setPicked(QUESTS)}>
           <div className="e-docs-rail-item"><Text>Quests</Text><Text className="e-faint">what {VIEWER_ID} can do next</Text></div>
-        </FlatRailItem>
-      )}
-      {ideas && (
-        <FlatRailItem selected={selected === IDEAS} onClick={() => setPicked(IDEAS)}>
-          <div className="e-docs-rail-item"><Text>Ideas</Text><Text className="e-faint">adopted by the operator</Text></div>
         </FlatRailItem>
       )}
       {list.length > 0 && <div className="e-rail-label">Character sheets</div>}
@@ -501,13 +456,11 @@ export function GamifyView({ initialAgentId = null }: { initialAgentId?: string 
   return (
     <ViewBody flush toolbar={<Text className="e-faint">This relay runs: {runs.join(", ")} · read-only · computed from outcomes, never issued</Text>}>
       {/* P1: a phone opens on the detail — the season's boards, or the linked agent's sheet;
-          the rail (Quests, Ideas, the sheets) is one "← back" away. */}
-      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={22} initialPane="detail" backLabel="quests, ideas, sheets">
-        {selected === SEASON ? <SeasonOf /> : selected === IDEAS ? <IdeaList />
+          the rail (Quests, the sheets) is one "← back" away. */}
+      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={22} initialPane="detail" backLabel="quests, sheets">
+        {selected === SEASON ? <SeasonOf />
           : selected === QUESTS && VIEWER_ID ? <Quests agentId={VIEWER_ID} />
-          : !selected ? <Text className="e-note">No agents on this relay yet. Each agent's character sheet appears here once it registers.</Text>
-          : sheets ? <SheetOf agentId={selected} ideas={ideas} quests={runs.includes("quests")} />
-          : <Points agentId={selected} />}
+          : <SheetOf agentId={selected} points={points} quests={runs.includes("quests")} />}
       </SidebarLayout>
     </ViewBody>
   );

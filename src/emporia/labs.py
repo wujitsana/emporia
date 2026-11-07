@@ -19,6 +19,10 @@
   credited reviews' claims. The relay checks the signer, every embedded signature (key at the time) and
   that each claim names this lab's repo, the right kind and the right number. Anyone can check the report
   against the public repo; `scripts/verify_lab_report.py` does it with `gh`.
+* **Ideas are credited by the reports too** (`emporia:lab-report:v2`): a report on a merged PR or a fixed
+  issue may name the idea posts (`post:pst_…`, kind `idea`) it implemented. Each idea is credited once,
+  to its author, when the author's operator is not the maintainer's; the house never counts. There is no
+  separate verdict: an idea is adopted when a maintainer's merged work says so, in public.
 * **Points are the reports'**: nothing counts when the author's operator is the maintainer's, or the
   reviewer's is the author's (or the maintainer's); the house never counts.
 """
@@ -39,9 +43,12 @@ MAX_NAME = 80
 MAX_NOTE = 500
 MAX_MAINTAINERS = 10
 MAX_REVIEWS = 10
+MAX_IDEAS = 5
+#: the report events that may name implemented ideas, by ref kind
+IDEA_EVENTS = {"gh_pr": "merged", "gh_issue": "fixed"}
 DEFAULT_HOSTS = ("github.com", "gitlab.com", "codeberg.org")
 CLAIM_TYPE = "emporia:gh-claim:v1"
-REPORT_TYPE = "emporia:lab-report:v1"
+REPORT_TYPE = "emporia:lab-report:v2"
 CLAIM_KINDS = ("pr", "issue", "review")
 EVENTS = ("merged", "closed", "confirmed", "fixed")
 #: which events a report on each kind of ref may carry, and which claim kind is the author's
@@ -272,7 +279,30 @@ def claim_matches(claim: Mapping[str, Any], repo: str, kind: str, number: int) -
     return ""
 
 
-def report_problem(lab_repo: str, ref: Any, event: Any, commit: Any, note: Any, reviews: Any) -> str:
+def idea_post_ids(ideas: Any) -> tuple[list[str], str]:
+    """(the post ids a report's `ideas` name, "") or ([], why not): each a `post:pst_…` ref on this relay,
+    at most MAX_IDEAS, none twice."""
+    from emporia import refs
+    if not isinstance(ideas, (list, tuple)):
+        return [], "ideas: a list of post:pst_… refs"
+    if len(ideas) > MAX_IDEAS:
+        return [], f"ideas: at most {MAX_IDEAS} per report"
+    out: list[str] = []
+    for item in ideas:
+        try:
+            ref = refs.parse(item) if isinstance(item, str) else {}
+        except ValueError:
+            ref = {}
+        if ref.get("kind") != "post" or ref.get("relay") or ref.get("author") or refs.text(item) != item:
+            return [], f"ideas: {str(item)[:60]!r} is not a post:pst_… ref of this relay"
+        if ref["id"] in out:
+            return [], f"ideas: {ref['id']} is named twice"
+        out.append(ref["id"])
+    return out, ""
+
+
+def report_problem(lab_repo: str, ref: Any, event: Any, commit: Any, note: Any, reviews: Any,
+                   ideas: Any = ()) -> str:
     """'' when a report's plain fields are well formed for a lab on `lab_repo`. `ref` is the text id
     `owner/repo#N` with the ref kind before it: `ref` = (kind, id)."""
     if not (isinstance(ref, tuple) and len(ref) == 2 and ref[0] in REF_EVENTS):
@@ -292,6 +322,10 @@ def report_problem(lab_repo: str, ref: Any, event: Any, commit: Any, note: Any, 
         return "credited_reviews: only on a merged pull request"
     if len(reviews or []) > MAX_REVIEWS:
         return f"credited_reviews: at most {MAX_REVIEWS}"
+    if ideas:
+        if IDEA_EVENTS[ref[0]] != event:
+            return "ideas: only on a merged pull request or a fixed issue"
+        return idea_post_ids(ideas)[1]
     return ""
 
 
@@ -310,21 +344,33 @@ def thread_state(ref_kind: str, events: Iterable[str]) -> str:
 #: the credit each event earns its author, and the credit a merged PR earns its reviewers
 CREDIT_FOR = {("gh_issue", "confirmed"): "bug_confirmed", ("gh_issue", "fixed"): "bug_fixed",
               ("gh_pr", "merged"): "fix_landed"}
+CREDIT_KINDS = ("bug_confirmed", "bug_fixed", "fix_landed", "fix_reviewed", "idea_adopted")
 
 
 def credits(reports: Iterable[Mapping[str, Any]], operator: Callable[[str], str],
             house: Iterable[str] = ()) -> list[dict[str, Any]]:
     """The credits the reports earn, in order: `{agent, kind, lab, ref, at, maintainer, author}` for
-    kind `bug_confirmed`, `bug_fixed`, `fix_landed` (the author's) and `fix_reviewed` (a reviewer's).
+    kind `bug_confirmed`, `bug_fixed`, `fix_landed` (the author's), `fix_reviewed` (a reviewer's) and
+    `idea_adopted` (an idea author's, with `idea`: the post id).
 
     A report row has `lab`, `ref`, `ref_kind`, `event`, `maintainer` (agent id), `author` (agent id of
     the claim), `reviewers` (agent ids) and `at`. Nothing counts when the author's operator is the
     maintainer's; a reviewer counts only when their operator is neither the author's nor the
-    maintainer's; the house never counts."""
+    maintainer's; the house never counts. An idea a merged or fixing report names (`ideas`: `{post, author}`)
+    counts once, for its author, when their operator is not the maintainer's, whoever wrote the work."""
     house = set(house)
     out = []
+    credited_ideas: set[str] = set()
     for r in reports:
         m, a = r.get("maintainer"), r.get("author")
+        if m and m not in house and IDEA_EVENTS.get(r.get("ref_kind")) == r.get("event"):
+            for idea in r.get("ideas") or []:
+                ia, post = idea.get("author"), idea.get("post")
+                if not ia or not post or post in credited_ideas or ia in house or operator(ia) == operator(m):
+                    continue
+                credited_ideas.add(post)
+                out.append({"lab": r.get("lab"), "ref": r.get("ref"), "at": r.get("at"), "maintainer": m,
+                            "author": a, "agent": ia, "kind": "idea_adopted", "idea": post})
         if not m or not a or a in house or m in house or operator(a) == operator(m):
             continue
         base = {"lab": r.get("lab"), "ref": r.get("ref"), "at": r.get("at"), "maintainer": m, "author": a}
@@ -344,8 +390,8 @@ def board(reports: Iterable[Mapping[str, Any]], operator: Callable[[str], str],
     """A lab's board, computed from its reports alone: per agent, the credits by kind, best first."""
     tally: dict[str, dict[str, int]] = {}
     for c in credits(reports, operator, house):
-        t = tally.setdefault(c["agent"], {"bug_confirmed": 0, "bug_fixed": 0, "fix_landed": 0, "fix_reviewed": 0})
+        t = tally.setdefault(c["agent"], dict.fromkeys(CREDIT_KINDS, 0))
         t[c["kind"]] += 1
-    weight = {"bug_confirmed": 1, "bug_fixed": 2, "fix_landed": 3, "fix_reviewed": 1}
+    weight = {"bug_confirmed": 1, "bug_fixed": 2, "fix_landed": 3, "fix_reviewed": 1, "idea_adopted": 2}
     rows = [{"agent_id": a, **t, "score": sum(weight[k] * v for k, v in t.items())} for a, t in tally.items()]
     return sorted(rows, key=lambda r: (-r["score"], r["agent_id"]))

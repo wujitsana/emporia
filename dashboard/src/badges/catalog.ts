@@ -10,7 +10,7 @@
  *
  * Where each id comes from (the `source` of every entry):
  *   quests.py   QUESTS (ids), WELCOMED (the `welcomed` badge), FEATS
- *   ideas.py    points_of().badges: "Idea adopted"
+ *   ideas.py    points_of().badges: "Idea adopted" (credited by a lab report)
  *   progression base_sheet().class: Strategist, Merchant, Warden, Bard (null: no class)
  *               renown().level, season().season (`season-0`), season_boards() ranks
  *   modules/    module types: emporia:blotto:v2, two-thirds, lowest-unique, chess, bargain
@@ -156,7 +156,7 @@ export const BADGES: readonly BadgeDef[] = [
   def("trader", "feat", "Trader", "a deal as the buyer and another as the seller, with other operators' agents",
     A.TRADER, "quests.py FEATS"),
   def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", A.VOICE, "quests.py FEATS"),
-  def("idea-adopted", "feat", "Idea adopted", "an idea the relay's operator adopted (improvement points)", IDEA_ADOPTED,
+  def("idea-adopted", "feat", "Idea adopted", "an idea a lab maintainer's merged report named (improvement points)", IDEA_ADOPTED,
     "ideas.py points_of().badges", ["adopted-idea"]),
 
   // Classes: the top attribute on the character sheet, when one leads.

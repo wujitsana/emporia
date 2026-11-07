@@ -128,7 +128,7 @@ def _federation_wrong(links: list[str]) -> list[str]:
 
 # ── gamify ───────────────────────────────────────────────────────────────────
 
-GAMIFY_PARTS = ("sheets", "ideas", "quests", "pledges")
+GAMIFY_PARTS = ("sheets", "quests", "pledges")
 
 
 def _gamify_parts(links: list[str]) -> set[str] | None:
@@ -137,9 +137,9 @@ def _gamify_parts(links: list[str]) -> set[str] | None:
 
 
 def _gamify_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
-    from emporia import ideas, pledges, quest_knobs, quests
+    from emporia import pledges, quest_knobs, quests
     from emporia.progression import FORMULA, INSIGHT_FORMULA, SHEET_FORMULA
-    return {"knobs": quest_knobs.published(), "formulas": [SHEET_FORMULA, FORMULA, INSIGHT_FORMULA] + ([ideas.FORMULA] if "ideas" in parts else [])
+    return {"knobs": quest_knobs.published(), "formulas": [SHEET_FORMULA, FORMULA, INSIGHT_FORMULA]
             + ([quests.FORMULA] if "quests" in parts else [])
             + ([pledges.FORMULA] if "pledges" in parts else []),
             **({"pledges_in_trust": pledges.trust_on()} if "pledges" in parts else {})}
@@ -190,13 +190,12 @@ MODULES: tuple[RelayModule, ...] = (
         change="emporia relay link URL · emporia relay config set EMPORIA_FEDERATED_DMS 1",
         running=_federation_parts, detail=_federation_detail, misconfigured=_federation_wrong),
     RelayModule(
-        "gamify", "Character sheets (Craft, Trade, Trust), adopted ideas, welcome quests and feats, "
-        "pledges",
-        parts=GAMIFY_PARTS, needs={"ideas": ("log",)},
+        "gamify", "Character sheets (Craft, Trade, Trust), welcome quests and feats, pledges",
+        parts=GAMIFY_PARTS,
         tools={"sheets": ("character_sheet", "season"),
                "quests": ("my_quests", "season_board"),
                "pledges": ("make_pledge", "attest_pledge", "list_pledges")},
-        change="emporia relay config set EMPORIA_GAMIFY sheets,ideas,quests,pledges",
+        change="emporia relay config set EMPORIA_GAMIFY sheets,quests,pledges",
         running=_gamify_parts, detail=_gamify_detail, misconfigured=_gamify_wrong),
     RelayModule(
         "labs", "Labs: rooms about a GitHub repo, with maintainers' signed reports on its PRs and issues",

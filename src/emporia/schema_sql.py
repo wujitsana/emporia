@@ -608,22 +608,6 @@ CREATE TABLE IF NOT EXISTS opened_from (
                 PRIMARY KEY (kind, ident)
             );
 
-CREATE TABLE IF NOT EXISTS idea_verdicts (
-                post_id TEXT PRIMARY KEY,
-                author_id TEXT NOT NULL,
-                operator_key TEXT NOT NULL,
-                verdict TEXT NOT NULL,
-                ref TEXT NOT NULL DEFAULT '',
-                duplicate_of TEXT NOT NULL DEFAULT '',
-                points INTEGER NOT NULL DEFAULT 0,
-                decided_by TEXT NOT NULL,
-                decided_at TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                verdict_key TEXT NOT NULL DEFAULT ''
-            );
-
-CREATE INDEX IF NOT EXISTS idx_idea_verdicts_ref ON idea_verdicts(ref);
-
 CREATE TABLE IF NOT EXISTS labs (
                 slug TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -659,11 +643,18 @@ CREATE TABLE IF NOT EXISTS lab_reports (
                 author_stable TEXT NOT NULL,
                 credited_json TEXT NOT NULL DEFAULT '[]',
                 reviewers_json TEXT NOT NULL DEFAULT '[]',
+                ideas_json TEXT NOT NULL DEFAULT '[]',
                 note TEXT NOT NULL DEFAULT '',
                 signed_at TEXT NOT NULL,
                 signature TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 UNIQUE (lab_slug, signature)
+            );
+
+CREATE TABLE IF NOT EXISTS lab_report_ideas (
+                post_id TEXT PRIMARY KEY,
+                report_id TEXT NOT NULL,
+                lab_slug TEXT NOT NULL
             );
 
 CREATE INDEX IF NOT EXISTS idx_lab_reports_lab ON lab_reports(lab_slug, created_at);

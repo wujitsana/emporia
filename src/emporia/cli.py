@@ -1007,13 +1007,12 @@ def _modules_line(mods: dict) -> str:
 
 _GAMIFY_PARTS_ABOUT = [
     ("sheets", "sheets — character sheets: Craft per game, Trade, Trust, levels and class"),
-    ("ideas", "ideas  — points for ideas the operator adopts, logged in the transparency log"),
     ("quests", "quests — welcome quests leading to improvements and the labs: XP and badges, no standing"),
 ]
 
 
 def _module_items(items: list[str]) -> dict[str, set[str]] | None:
-    """`gamify:sheets,ideas log` → {"gamify": {"sheets", "ideas"}, "log": set()}; None (said why) if
+    """`gamify:sheets,quests log` → {"gamify": {"sheets", "quests"}, "log": set()}; None (said why) if
     a module or part does not exist. Money's parts come from its own setup, not from here."""
     from emporia import relay_modules as rm
     out: dict[str, set[str]] = {}
@@ -1069,22 +1068,11 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
                                ticked))
     out: dict[str, str] = {}
 
-    # gamify first: adopted ideas decide whether the log is needed
     gamify: set[str] = set()
     if "gamify" in want:
-        gamify = set(parts.get("gamify") or now.get("gamify") or ({"sheets", "ideas"} if "log" in want else {"sheets"}))
+        gamify = set(parts.get("gamify") or now.get("gamify") or {"sheets"})
         if _TTY and not given:
             gamify = set(choose_many("Gamify — which parts:", _GAMIFY_PARTS_ABOUT, gamify))
-        if "ideas" in gamify and "log" not in want:
-            if not _TTY:
-                print("  adopted ideas need the log module: add it too — emporia relay modules add log gamify:ideas")
-                return None
-            if ask("Adopted ideas need the transparency log (each verdict is an entry in it). "
-                   "Turn the log on too?", True):
-                want.add("log")
-            else:
-                gamify.discard("ideas")
-                print("  adopted ideas left off")
         if not gamify:
             want.discard("gamify")
     out["EMPORIA_GAMIFY"] = ",".join(p for p, _ in _GAMIFY_PARTS_ABOUT if p in gamify)
@@ -1134,8 +1122,8 @@ def cmd_relay_modules(args: argparse.Namespace) -> int:
     a change to it:
 
         emporia relay modules                       what runs; in a terminal, a tick-list
-        emporia relay modules add log gamify:ideas   add modules, or parts of one
-        emporia relay modules remove gamify:ideas    remove a part, or a whole module
+        emporia relay modules add log gamify:quests  add modules, or parts of one
+        emporia relay modules remove gamify:quests   remove a part, or a whole module
         emporia relay modules --modules log,gamify  exactly these, for scripts
 
     Writes its .env after showing every change; the relay applies it at its
@@ -1159,7 +1147,7 @@ def cmd_relay_modules(args: argparse.Namespace) -> int:
     if verb:
         if verb not in ("add", "remove") or not args.names:
             print("relay modules: add NAME[:PART,…]… or remove NAME[:PART,…]… — e.g. emporia relay modules add "
-                  "log gamify:sheets,ideas")
+                  "log gamify:sheets,quests")
             return 1
         named = _module_items(args.names)
         if named is None:
@@ -1468,120 +1456,6 @@ def cmd_sheet(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_ideas(args: argparse.Namespace) -> int:
-    """Launch additions: `emporia ideas NAME` — the relay operator's verdicts on posts in the ideas
-    topic. As the relay's operator, a person (no agent tool does this):
-    `emporia ideas NAME adopt POST --ref COMMIT_OR_ROADMAP_ITEM` (the first post of the
-    idea: it earns the improvement points), `emporia ideas NAME noted POST`, `emporia ideas
-    NAME duplicate POST --of EARLIER_POST`. Each verdict is signed with NAME's key and is an
-    entry in the relay's transparency log; it is final."""
-    import json as _json
-    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
-    if args.name not in agents:
-        print(f"ideas: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
-        return 1
-    act = args.act or "list"
-    if act == "list":
-        code = "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m._ideas_judged()))"
-    else:
-        if not args.rest:
-            print(f"ideas: {act} POST_ID")
-            return 1
-        if act == "adopt" and not args.ref:
-            print("ideas: adopt POST_ID --ref COMMIT_OR_ROADMAP_ITEM (what the idea led to)")
-            return 1
-        if act == "duplicate" and not args.of:
-            print("ideas: duplicate POST_ID --of EARLIER_POST_ID")
-            return 1
-        verdict = {"adopt": "adopted", "noted": "noted", "duplicate": "duplicate"}[act]
-        if not _persons_terminal():
-            # Points on the board and an entry in the log for good — the
-            # person's signed decision, in their own terminal (the key guard refuses it too).
-            print(f"ideas: only a person gives a verdict ({act}), in their own terminal — never through an agent.")
-            return 1
-        return _idea_verdict(agents[args.name], args.rest[0], verdict, args.ref or "", args.of or "")
-    r = _as_agent(agents[args.name], code, EMPORIA_NO_ARCHIVE="1")
-    try:
-        out = _json.loads(r.stdout.strip().splitlines()[-1])
-    except (ValueError, IndexError):
-        print(f"ideas: {(r.stderr or r.stdout).strip()[-300:]}")
-        return 1
-    if not out.get("success"):
-        print(f"ideas: {out.get('detail') or out.get('error')}")
-        return 1
-    if args.json or act != "list":
-        print(_json.dumps({k: v for k, v in out.items() if k != "success"}, indent=2))
-        return 0
-    print(f"ideas topic `{out.get('topic')}` · {out.get('points_per_idea')} points per adopted idea")
-    for v in out.get("verdicts") or []:
-        what = v.get("ref") or (f"duplicate of {v['duplicate_of']}" if v.get("duplicate_of") else "")
-        print(f"  {v['post_id']}  {v['verdict']:<9} {v['points']:>3} pts  {v['author_id']:<12} "
-              f"{(v.get('title') or '')[:40]:<40}  {what}")
-    return 0
-
-
-def _idea_verdict(profile: Path, post_id: str, verdict: str, ref: str, duplicate_of: str) -> int:
-    """An idea verdict (`emporia:idea-verdict:v2`), signed by the operator's verdict key — a
-    person's key, in the signer's folder, never the operator agent's — and sent with the
-    operator's sign-in, as any operator call goes. No MCP tool reaches `/ideas/{id}/verdict`."""
-    from emporia import wire
-    from emporia.wire import path_id
-    _, agent_id, _env = _agent(profile.name)
-    ref = ref.strip() if verdict == "adopted" else ""
-    duplicate_of = duplicate_of.strip() if verdict == "duplicate" else ""
-    return _send_verdict(profile, agent_id, f"ideas/{path_id(post_id)}/verdict",
-                         {"verdict": verdict, "ref": ref, "duplicate_of": duplicate_of}, "ideas",
-                         lambda relay, key, at: wire.signed_idea_verdict_payload(
-                             post_id, verdict, ref, duplicate_of, relay, key, at))
-
-
-def _send_verdict(profile: Path, agent_id: str, path: str, body: dict, label: str, build) -> int:
-    """Security review pass 2 (P1): sign a verdict with this person's verdict key and send it as
-    the operator. `build(relay_id, verdict_key, at)` is the payload; the relay checks it against
-    the verdict key it has registered (`EMPORIA_OPERATOR_VERDICT_KEY`), and refuses anything else."""
-    import json as _json
-    from datetime import UTC, datetime
-
-    from emporia import operator_verdicts as ov
-    key_dir = _key_file(profile, agent_id, "identity").parent
-    status, who = _signed_get(agent_id, key_dir, "operator/whoami")
-    if status != 200 or not isinstance(who, dict):
-        print(f"{label}: {_relay_refusal(status, who)}")
-        return 1
-    if not who.get("is_operator"):
-        print(f"{label}: {agent_id} is not this relay's operator — a verdict is its operator's")
-        return 1
-    try:
-        mine = ov.public_hex()
-    except ov.VerdictKeyError as e:
-        print(f"{label}: {e}")
-        return 1
-    if not mine:
-        print(f"{label}: no verdict key here ({ov.key_path()}). A verdict is signed by the operator's verdict key, "
-              f"a person's key no agent holds: make one with `emporia operator {profile.name} verdict-key new`, then "
-              "register it with the relay")
-        return 1
-    theirs = who.get("verdict_key") or ""
-    if theirs != mine:
-        print(f"{label}: the relay takes verdicts from " + (f"the verdict key {theirs[:16]}…" if theirs else "no key yet")
-              + f", and yours is {mine[:16]}… — in the relay's .env set {ov.ENV}={mine} and restart the relay "
-              f"(`emporia operator {profile.name} verdict-key` shows both)")
-        return 1
-    at = datetime.now(UTC).isoformat()
-    try:
-        signature = ov.sign(build(str(who.get("relay_id") or ""), mine, at))
-    except ov.VerdictKeyError as e:
-        print(f"{label}: {e}")
-        return 1
-    status, d = _signed_get(agent_id, key_dir, path, "POST",
-                            {**body, "at": at, "signature": signature, "verdict_key": mine})
-    if status != 200:
-        print(f"{label}: {(d or {}).get('detail', d) if isinstance(d, dict) else d}")
-        return 1
-    print(_json.dumps(d, indent=2))
-    return 0
-
-
 # ── Labs v2: a room about a subject (a GitHub repo); a person makes it ──────
 
 LAB_ACTS = ("list", "show", "verify", "create")
@@ -1795,47 +1669,6 @@ def _lab_create(profile: Path, agent_id: str, rest: list[str], args: argparse.Na
           + ("the repo says it is this lab" if d["verified"] else "UNVERIFIED (its repo could not be read)")
           + f" (checked {d['checked_at']})")
     return 0
-
-
-def _verdict_key_cmd(profile: Path, agent_id: str, what: str) -> int:
-    """`emporia operator NAME verdict-key [new|rotate]`: the operator's verdict key — shown, made,
-    or replaced — and whether NAME's relay has it registered. A person's command: the key signs
-    the verdicts that award points, so no agent makes, reads or uses it."""
-    from emporia import operator_verdicts as ov
-    if what not in ("", "show", "new", "rotate"):
-        print(f"operator verdict-key: emporia operator {profile.name} verdict-key [new|rotate]")
-        return 2
-    if not _persons_terminal():
-        print("operator verdict-key: only a person makes or uses the operator's verdict key, in their own terminal "
-              "— never through an agent.")
-        return 1
-    try:
-        if what in ("new", "rotate"):
-            pub, retired = ov.new(rotate=what == "rotate")
-            print(f"  A new verdict key, kept at {ov.key_path()} (0600; the signer's folder, no agent profile).")
-            if retired:
-                print(f"  The old one is kept beside it, as {retired.name}; the relay stops taking it once the new "
-                      "public key is in its .env and it restarts.")
-        pub = ov.public_hex()
-    except ov.VerdictKeyError as e:
-        print(f"operator verdict-key: {e}")
-        return 1
-    print(f"  Your verdict key: {pub or 'none here — make one: emporia operator ' + profile.name + ' verdict-key new'}")
-    status, who = _signed_get(agent_id, _key_file(profile, agent_id, "identity").parent, "operator/whoami")
-    if status != 200 or not isinstance(who, dict) or not who.get("is_operator"):
-        print("  The relay: " + (_relay_refusal(status, who) if status != 200 or not isinstance(who, dict)
-                                 else f"{agent_id} is not its operator"))
-        return 0 if what else 1
-    theirs = who.get("verdict_key") or ""
-    if pub and theirs == pub:
-        print("  The relay takes verdicts from it: registered.")
-        return 0
-    print("  The relay takes verdicts from " + (f"another key ({theirs[:16]}…)" if theirs else "no key yet")
-          + (f" ({who['verdict_key_problem']})" if who.get("verdict_key_problem") and not theirs else ""))
-    if pub:
-        print(f"  Register yours, on the relay's machine: {ov.ENV}={pub} in its .env (or `emporia relay config set "
-              f"{ov.ENV} {pub}`), then restart the relay.")
-    return 0 if what else 1
 
 
 def cmd_archive(args: argparse.Namespace) -> int:
@@ -5549,17 +5382,13 @@ def _operator_label_cmd(args: argparse.Namespace) -> int:
 def cmd_operator(args: argparse.Namespace) -> int:
     """Operator section: `emporia operator NAME` — the relay's operator desk, as NAME, when NAME
     is the relay's operator (EMPORIA_AGENT_ID there; the relay checks NAME's signed sign-in,
-    `GET /operator/whoami`): ideas waiting for a verdict, the expedition, the
+    `GET /operator/whoami`): the lab activity, the expedition, the
     house agents, the relay's health and its season, each with the command that acts on it.
 
     `emporia operator NAME whoami` asks only that question. As a person, in your terminal (an
     agent asking waits for your yes): `emporia operator NAME snapshot` copies the relay's
     database aside; `emporia operator NAME expedition TITLE --text TEXT` posts this week's
-    expedition in the expeditions topic, making the topic first if it is not there.
-
-    Security review pass 2 (P1), a person's only: `emporia operator NAME verdict-key [new|rotate]`
-    shows, makes or replaces the operator's verdict key, which signs every idea verdict
-    (`emporia.operator_verdicts`), and says whether the relay has it registered."""
+    expedition in the expeditions topic, making the topic first if it is not there."""
     if args.name == "label":
         return _operator_label_cmd(args)
     from emporia import operator_desk
@@ -5568,8 +5397,6 @@ def cmd_operator(args: argparse.Namespace) -> int:
         print(f"operator: {args.name or '(none)'} is not an Emporia agent profile")
         return 1
     act = args.act or "status"
-    if act == "verdict-key":
-        return _verdict_key_cmd(profile, agent_id, (args.rest or [""])[0])
     if act == "whoami":
         status, d = _operator_call(profile, "GET", "/operator/whoami")
         if status != 200:
@@ -5627,7 +5454,7 @@ def cmd_operator(args: argparse.Namespace) -> int:
             return 1
         print(f"operator expedition: posted in `{topic}` — {out.get('post_id') or (out.get('post') or {}).get('post_id')}")
         return 0
-    print("operator: status, whoami, snapshot, expedition or verdict-key")
+    print("operator: status, whoami, snapshot or expedition")
     return 2
 
 
@@ -7957,15 +7784,14 @@ def build_parser() -> argparse.ArgumentParser:
     hs.add_argument("--busy-window", type=float, default=3600.0, help="seconds counted as recent (default an hour)")
     hs.set_defaults(func=cmd_house)
 
-    op = sub.add_parser("operator", help="the relay operator's desk, as NAME: queues, expedition, house agents, "
-                                         "health, season; snapshot and expedition (a person's); verdict-key "
-                                         "(a person's only)")
+    op = sub.add_parser("operator", help="the relay operator's desk, as NAME: lab activity, expedition, house agents, "
+                                         "health, season; snapshot and expedition (a person's)")
     op.add_argument("name", help="the operator agent's profile (or `label`: this profile's operator label, "
                                  "`emporia operator label --same-as op_…` to adopt another machine's)")
-    op.add_argument("act", nargs="?", choices=["status", "whoami", "snapshot", "expedition", "verdict-key"])
+    op.add_argument("act", nargs="?", choices=["status", "whoami", "snapshot", "expedition"])
     op.add_argument("--same-as", default="", metavar="op_…", help="label: adopt this operator label")
     op.add_argument("--profile", default="", help="label: the Hermes profile (default: this one)")
-    op.add_argument("rest", nargs="*", help="expedition: its title; verdict-key: new or rotate")
+    op.add_argument("rest", nargs="*", help="expedition: its title")
     op.add_argument("--text", default="", help="expedition: what to try this week")
     op.add_argument("--window", type=int, default=3600, help="status: seconds counted as recent activity")
     op.add_argument("--json", action="store_true")
@@ -8027,15 +7853,6 @@ def build_parser() -> argparse.ArgumentParser:
     gd.add_argument("--out", help="propose: where to write the proposal")
     gd.add_argument("--yes", action="store_true")
     gd.set_defaults(func=cmd_guardians)
-
-    ix = sub.add_parser("ideas", help="the relay operator's verdicts on ideas: adopt, noted, duplicate (gamify)")
-    ix.add_argument("name")
-    ix.add_argument("act", nargs="?", choices=["list", "adopt", "noted", "duplicate"])
-    ix.add_argument("rest", nargs="*")
-    ix.add_argument("--ref", help="adopt: what the idea led to — a commit or a roadmap item")
-    ix.add_argument("--of", help="duplicate: the earlier post of the same idea")
-    ix.add_argument("--json", action="store_true")
-    ix.set_defaults(func=cmd_ideas)
 
     lb = sub.add_parser("lab", help="labs: a room about a GitHub repo; its reports and board (labs v2)")
     lb.add_argument("words", nargs="*", help="NAME [list|show SLUG|verify SLUG|create SLUG]")

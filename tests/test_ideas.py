@@ -1,228 +1,224 @@
-"""Launch additions: adopted ideas and the improvement board.
+"""Adopted ideas: improvement points, credited by the labs' reports.
 
-The operator's signed verdict on a post in the ideas topic (operator only, final, logged);
-adopted ideas' points on the season's ideas board and the sheet. Since the
-security review's pass 2 (P1) a verdict is signed by the operator's verdict key, never the
-operator agent's own."""
-import os
-import uuid
-
+There is no operator verdict. A lab maintainer's signed report on a merged PR or a fixed issue names the
+idea posts it implemented (`emporia:lab-report:v2`, `ideas`); the relay credits each idea once, to its author,
+when the author's operator is not the maintainer's and never to the house. Points, the sheet, the season's
+`ideas` board and the quest all read those reports."""
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import ideas, progression, signing, translog, wire
+from emporia import ideas, labs, progression, signing, translog, wire
 from emporia import relay_server as rs
-from tests import verdict_key as vk
 from tests.test_emporia import _register_keyed
-
-
-from tests.ids import stable_of  # noqa: E402
+from tests.test_labs import Lab, as_, done, name, same_operator
+from tests.topic_posts import seed_post_row
 
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,ideas")
-    monkeypatch.delenv("EMPORIA_IDEA_POINTS", raising=False)
+    monkeypatch.setenv("EMPORIA_LABS", "1")
+    monkeypatch.setenv("EMPORIA_LAB_HOSTS", "file")
+    monkeypatch.setenv("EMPORIA_QUEST_OTHERS", "any")
+    monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
     monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
-    vk.register(monkeypatch)
-    return TestClient(rs.app, client=("127.0.0.1", 51297))
+    return TestClient(rs.app, client=("127.0.0.1", 51312))
 
 
-def as_(agent):
-    return {"x-emporia-agent-id": agent}
+@pytest.fixture
+def lab(client, tmp_path, monkeypatch):
+    """A lab on a relay with sheets on, for the ideas' points, board and quest."""
+    monkeypatch.delenv("EMPORIA_IDEA_POINTS", raising=False)
+    lb = Lab(client, tmp_path, monkeypatch)
+    assert lb.create().status_code == 200
+    return lb
 
 
-def name(tag):
-    return f"id_{tag}_{uuid.uuid4().hex[:6]}"
-
-
-def _ideas_topic():
+def _topic(slug="ideas", visibility="public"):
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("INSERT OR IGNORE INTO agora_topics (topic_id, slug, name, visibility, creator_id, created_at) "
-                     "VALUES ('t_ideas', 'ideas', 'ideas', 'public', 'op', '2026-11-01T00:00:00+00:00')")
-        return conn.execute("SELECT topic_id FROM agora_topics WHERE slug = 'ideas'").fetchone()[0]
+                     "VALUES (?, ?, ?, ?, 'op', '2026-11-01T00:00:00+00:00')", (f"t_{slug}", slug, slug, visibility))
+    return slug
 
 
-def idea(author, title="Show the claimed severity", at="2026-11-05T00:00:00+00:00", topic_id=None):
-    from tests.topic_posts import seed_post_row
-    _ideas_topic()
-    slug = "ideas"
-    if topic_id:
-        with rs.DB_LOCK, rs.get_db() as conn:
-            slug = conn.execute("SELECT slug FROM agora_topics WHERE topic_id = ?", (topic_id,)).fetchone()[0]
-    return seed_post_row(author, slug, f"{title}\nbecause", at, kind="idea")
+def idea(author, kind="idea", topic="ideas", visibility="public", at="2026-11-05T00:00:00+00:00"):
+    """A post row; returns its ref text, `post:pst_…`."""
+    text = "Show the claimed severity\nbecause"
+    return "post:" + seed_post_row(author, _topic(topic, visibility), text, at, kind=kind)
 
 
-def verdict(client, op, post_id, v, ref="", dup="", key=vk.KEY):
-    return client.post(f"/ideas/{post_id}/verdict", headers=as_(op), json=vk.idea(post_id, v, ref, dup, key=key))
+def merged(lb, n, *named, author=None):
+    """The maintainer reports PR #n merged, naming these ideas."""
+    return lb.report(lb.maint, lb.pr(n), "merged", lb.line(author or lb.author, "pr", n), ideas=named)
 
 
-def setup(client, monkeypatch, *tags):
-    agents = [name(t) for t in ("op", *tags)]
-    for a in agents:
-        _register_keyed(client, a)
-    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(agents[0]))
-    return agents
+def points(client, agent):
+    return client.get(f"/agents/{agent}/points").json()
 
 
 # ── the rules ──────────────────────────────────────────────────────────────
 
-def test_points_are_configurable_and_never_to_the_operator_or_the_house(monkeypatch):
+def test_points_are_configurable_and_rows_come_from_the_credits(monkeypatch):
     monkeypatch.delenv("EMPORIA_IDEA_POINTS", raising=False)
     assert ideas.points() == 10 == ideas.DEFAULT_POINTS
     monkeypatch.setenv("EMPORIA_IDEA_POINTS", "25")
-    assert ideas.award(own_operator=False, house=False) == 25
+    credits = [{"kind": "idea_adopted", "agent": "a", "idea": "pst_1", "at": "t", "lab": "l", "ref": "gh_pr:a/b#1"},
+               {"kind": "fix_landed", "agent": "b"}]
+    rows = ideas.adopted(credits)
+    assert rows == [{"post_id": "pst_1", "author_id": "a", "points": 25, "at": "t", "lab": "l", "ref": "gh_pr:a/b#1"}]
+    assert ideas.points_of("a", rows)["points"] == 25 and ideas.points_of("a", rows)["badges"] == ["Idea adopted"]
+    assert ideas.points_of("b", rows) == {"agent_id": "b", "points": 0, "adopted": 0, "badges": []}
     monkeypatch.setenv("EMPORIA_IDEA_POINTS", "lots")
     assert ideas.points() == 10, "a value that is not a number is the default, not zero"
-    assert ideas.award(own_operator=True, house=False) == 0 and ideas.award(own_operator=False, house=True) == 0
-    assert ideas.check_ref("a1b2c3d") == "" and ideas.check_ref("ROADMAP: called it") == ""
-    assert ideas.check_ref("") and ideas.check_ref(" x") and ideas.check_ref("x" * 201)
 
 
-def test_the_verdict_payload_is_its_own_kind_and_no_agents():
-    p = wire.signed_idea_verdict_payload("p", "adopted", "abc1234", "", "relay", "k", "t")
-    assert p["type"] == "emporia:idea-verdict:v2" and "idea-verdict" not in signing.KINDS
-    assert (p["relay"], p["verdict_key"]) == ("relay", "k")
+def test_the_report_names_its_ideas_in_what_is_signed_and_there_is_no_verdict_kind():
+    p = wire.signed_lab_report_payload("lab", "gh_pr:a/b#1", "merged", "", "blob", [], ["post:pst_1"], "", "sid", "t")
+    assert p["type"] == "emporia:lab-report:v2" and p["ideas"] == ["post:pst_1"]
+    assert "idea-verdict" not in signing.KINDS and not hasattr(wire, "signed_idea_verdict_payload")
+    assert labs.REPORT_TYPE == "emporia:lab-report:v2"
 
 
-# ── the relay ──────────────────────────────────────────────────────────────
-
-def test_off_without_the_ideas_part(client, monkeypatch):
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
-    assert client.get("/ideas").status_code == 404
-
-
-def test_only_the_operator_judges_signed_and_final(client, monkeypatch):
-    op, author, other = setup(client, monkeypatch, "a", "o")
-    pid = idea(author)
-    assert verdict(client, other, pid, "adopted", ref="a1b2c3d").status_code == 403, "not the operator"
-    stranger = vk.ed25519.Ed25519PrivateKey.generate()
-    assert verdict(client, op, pid, "adopted", ref="a1b2c3d", key=stranger).status_code == 403, "not its key"
-    assert verdict(client, op, pid, "adopted").status_code == 422, "an adopted idea names what it led to"
-    assert verdict(client, op, pid, "maybe").status_code == 422
-    ref = uuid.uuid4().hex[:10]
-    r = verdict(client, op, pid, "adopted", ref=ref)
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert (body["verdict"], body["points"], body["author_id"], body["ref"]) == ("adopted", 10, author, ref)
-    assert verdict(client, op, pid, "noted").status_code == 409, "final"
-    listed = client.get("/ideas").json()
-    assert listed["points_per_idea"] == 10 and any(v["post_id"] == pid and v["signature"] for v in listed["verdicts"])
-
-
-def test_the_first_post_of_an_idea_gets_the_points_one_award_per_change(client, monkeypatch):
-    op, a, b = setup(client, monkeypatch, "a", "b")
-    first, later = idea(a, at="2026-11-05T00:00:00+00:00"), idea(b, at="2026-11-05T01:00:00+00:00")
-    ref = f"roadmap-{uuid.uuid4().hex[:6]}"
-    assert verdict(client, op, first, "adopted", ref=ref).json()["points"] == 10
-    again = verdict(client, op, later, "adopted", ref=ref)
-    assert again.status_code == 409 and "duplicate" in again.json()["detail"]
-    assert verdict(client, op, first, "duplicate", dup=later).status_code == 409, "already decided"
-    other_first = idea(a, at="2026-11-06T00:00:00+00:00")
-    assert verdict(client, op, later, "duplicate", dup=other_first).status_code == 422, "the earlier post only"
-    dup = verdict(client, op, later, "duplicate", dup=first).json()
-    assert dup["verdict"] == "duplicate" and dup["points"] == 0 and dup["duplicate_of"] == first
-
-
-def test_only_posts_in_the_ideas_topic(client, monkeypatch):
-    op, a = setup(client, monkeypatch, "a")
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT OR IGNORE INTO agora_topics (topic_id, slug, name, visibility, creator_id, created_at) "
-                     "VALUES ('t_gen_ideas', 'general-ideas-test', 'g', 'public', 'op', '2026-11-01T00:00:00+00:00')")
-    elsewhere = idea(a, topic_id="t_gen_ideas")
-    assert verdict(client, op, elsewhere, "adopted", ref="a1b2c3d").status_code == 404
-
-
-def test_the_operators_own_agents_and_the_house_earn_nothing(client, monkeypatch):
-    op, own, house = setup(client, monkeypatch, "own", "house")
-    nous = f"nous_{uuid.uuid4().hex[:6]}"
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id IN (?, ?)", (nous, op, own))
-        conn.commit()
-    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", house)
-    assert verdict(client, op, idea(own), "adopted", ref=uuid.uuid4().hex[:8]).json()["points"] == 0
-    assert verdict(client, op, idea(house), "adopted", ref=uuid.uuid4().hex[:8]).json()["points"] == 0
-
-
-def test_a_verdict_is_an_entry_in_the_log(client, monkeypatch):
-    op, a = setup(client, monkeypatch, "a")
-    pid = idea(a)
-    verdict(client, op, pid, "noted")
-    with rs.DB_LOCK, rs.get_db() as conn:
-        translog.fold_all(conn)
-        records = [e["record"] for e in translog.entries(conn, 0, ref=f"idea_verdict:{pid}", limit=10)]
-    assert records, "logged"
-
-
-def test_adopted_ideas_reach_the_board_the_points_and_the_sheet(client, monkeypatch):
-    op, thinker = setup(client, monkeypatch, "t")
-    monkeypatch.setenv("EMPORIA_IDEA_POINTS", "12")
-    verdict(client, op, idea(thinker), "adopted", ref=uuid.uuid4().hex[:8])
-    board = {r["agent_id"]: r for r in client.get("/season").json()["boards"]["ideas"]}
-    assert board[thinker] == {"agent_id": thinker, "points": 12, "adopted": 1}
-    pts = client.get(f"/agents/{thinker}/points").json()
-    assert (pts["points"], pts["adopted"]) == (12, 1) and "Idea adopted" in pts["badges"]
-    sheet = client.get(f"/agents/{thinker}/sheet").json()
-    assert sheet["improvements"]["points"] == 12 and sheet["improvements"]["adopted"] == 1
-    assert "Improve  12 points" in progression.render(sheet)
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
-    assert "improvements" not in client.get(f"/agents/{thinker}/sheet").json(), "with the ideas part only"
-
-
-def test_the_operators_command_signs_with_the_verdict_key_and_sends_the_verdict(client, monkeypatch, capsys,
-                                                                                 tmp_path):
-    """`emporia ideas NAME adopt POST --ref X`: signed with the operator's verdict key — a
-    person's key in the signer's folder, made by `emporia operator NAME verdict-key new` —
-    and sent with the operator's sign-in. A person's command, never an MCP tool."""
-    import json
-    from pathlib import Path
-
-    from emporia import cli, operator_verdicts
-    op, a = setup(client, monkeypatch, "a")
-    pid = idea(a)
-    profile = tmp_path / "alpha"
-    monkeypatch.setenv("EMPORIA_SIGNER_DIR", str(tmp_path / "signer"))
-    monkeypatch.setattr(cli, "_agent_profiles", lambda root: [(profile, {})])
-    monkeypatch.setattr(cli, "_agent", lambda n: (profile, op, {"EMPORIA_AGENT_ID": op}))
-    monkeypatch.setattr(cli, "_key_file", lambda p, aid, which: Path(tmp_path / "keys" / "k"))
-    sent = []
-
-    def signed(agent_id, key_dir, path, method="GET", body=None):
-        sent.append((path, body))
-        r = client.request(method, "/" + path, json=body, headers=as_(agent_id))
-        return r.status_code, r.json()
-    monkeypatch.setattr(cli, "_signed_get", signed)
-    ref = uuid.uuid4().hex[:10]
-    args = cli.build_parser().parse_args(["ideas", "alpha", "adopt", pid, "--ref", ref])
-    assert args.func is cli.cmd_ideas and args.rest == [pid] and args.ref == ref
-    monkeypatch.setattr(cli, "_TTY", False)
-    assert cli.cmd_ideas(args) == 1 and "only a person" in capsys.readouterr().out and not sent
-    monkeypatch.setattr(cli, "_TTY", True)
-    for k in [k for k in os.environ if k.startswith("HERMES_SESSION_")]:
-        monkeypatch.delenv(k)
-    assert cli.cmd_ideas(args) == 1 and "no verdict key here" in capsys.readouterr().out
-    keygen = cli.build_parser().parse_args(["operator", "alpha", "verdict-key", "new"])
-    assert cli.cmd_operator(keygen) == 0
-    shown = capsys.readouterr().out
-    pub = operator_verdicts.public_hex()
-    assert pub in shown and f"{operator_verdicts.ENV}={pub}" in shown, shown
-    assert oct(operator_verdicts.key_path().stat().st_mode & 0o777) == "0o600"
-    assert cli.cmd_ideas(args) == 1 and "the relay takes verdicts from the verdict key" in capsys.readouterr().out
-    monkeypatch.setenv(operator_verdicts.ENV, pub)            # the person registers it on the relay
-    sent.clear()
-    assert cli.cmd_ideas(args) == 0, capsys.readouterr().out
-    out = json.loads(capsys.readouterr().out)
-    assert out["points"] == 10 and out["verdict_key"] == pub
-    assert sent[-1][0] == f"ideas/{pid}/verdict" and sent[-1][1]["duplicate_of"] == ""
-    src = (Path(__file__).parent.parent / "src" / "emporia" / "mcp_server.py").read_text()
-    assert "/verdict" not in src and "operator_verdicts" not in src, "no MCP tool reaches a verdict"
+def test_credits_name_an_idea_once_for_its_author_across_operators_only():
+    op = {"m": "om", "a": "oa", "i": "oi", "mine": "om"}.get
+    row = {"lab": "l", "ref": "gh_pr:a/b#1", "ref_kind": "gh_pr", "event": "merged", "maintainer": "m",
+           "author": "a", "reviewers": [], "at": "t",
+           "ideas": [{"post": "p1", "author": "i"}, {"post": "p2", "author": "mine"}, {"post": "p3", "author": "h"},
+                     {"post": "p4", "author": ""}]}
+    got = [(c["agent"], c["idea"]) for c in labs.credits([row], lambda x: op(x, x), house={"h"}) if c["kind"] == "idea_adopted"]
+    assert got == [("i", "p1")], "not the maintainer's own operator, not the house, not a post that is gone"
+    again = dict(row, ref="gh_pr:a/b#2")
+    assert len([c for c in labs.credits([row, again], lambda x: op(x, x)) if c["agent"] == "i"]) == 1, "once"
+    closed = dict(row, event="closed")
+    assert not [c for c in labs.credits([closed], lambda x: op(x, x)) if c["kind"] == "idea_adopted"]
+    fixed = {**row, "ref_kind": "gh_issue", "event": "fixed"}
+    assert [c["agent"] for c in labs.credits([fixed], lambda x: op(x, x), house={"h"}) if c["kind"] == "idea_adopted"] == ["i"]
+    assert labs.credits([row], lambda x: "same") == [], "one operator throughout: nothing"
+    # the idea's credit does not depend on who wrote the work (here the PR's author shares the maintainer's operator)
+    own_work = dict(row, author="mine")
+    assert [c["agent"] for c in labs.credits([own_work], lambda x: op(x, x), house={"h"})] == ["i"]
 
 
 def test_the_board_counts_ideas_in_the_season_and_never_the_house():
     s = {"season": "s", "started_at": "2026-11-01T00:00:00+00:00", "ends_at": None}
     out = progression.season_boards([], [], None, 0.0, s, frozenset({"house"}), 25, ideas=[
-        {"author_id": "a", "verdict": "adopted", "points": 10, "decided_at": "2026-11-05T00:00:00+00:00"},
-        {"author_id": "a", "verdict": "adopted", "points": 10, "decided_at": "2026-10-05T00:00:00+00:00"},
-        {"author_id": "b", "verdict": "noted", "points": 0, "decided_at": "2026-11-05T00:00:00+00:00"},
-        {"author_id": "house", "verdict": "adopted", "points": 10, "decided_at": "2026-11-05T00:00:00+00:00"}])
+        {"author_id": "a", "points": 10, "at": "2026-11-05T00:00:00+00:00"},
+        {"author_id": "a", "points": 10, "at": "2026-10-05T00:00:00+00:00"},
+        {"author_id": "house", "points": 10, "at": "2026-11-05T00:00:00+00:00"}])
     assert out["boards"]["ideas"] == [{"agent_id": "a", "points": 10, "adopted": 1}]
+
+
+# ── the relay ──────────────────────────────────────────────────────────────
+
+def test_a_cross_operator_idea_in_a_merged_report_credits_its_author(client, lab, monkeypatch):
+    monkeypatch.setenv("EMPORIA_IDEA_POINTS", "12")
+    thinker = lab.other
+    ref = idea(thinker)
+    r = merged(lab, 5, ref)
+    assert r.status_code == 200, r.text
+    assert r.json()["ideas"] == [ref]
+    pts = points(client, thinker)
+    assert (pts["points"], pts["adopted"]) == (12, 1) and "Idea adopted" in pts["badges"]
+    assert points(client, lab.author)["points"] == 0, "the PR's author earns the fix, not the idea"
+    board = {r["agent_id"]: r for r in client.get("/season").json()["boards"]["ideas"]}
+    assert board[thinker] == {"agent_id": thinker, "points": 12, "adopted": 1}
+    sheet = client.get(f"/agents/{thinker}/sheet").json()
+    assert sheet["improvements"]["points"] == 12 and "Improve  12 points" in progression.render(sheet)
+    assert "idea-adopted" in done(thinker) and "land-fix" in done(lab.author)
+    labboard = {b["agent_id"]: b for b in client.get(f"/labs/{lab.slug}/board", headers=as_(lab.reviewer)).json()["board"]}
+    assert labboard[thinker]["idea_adopted"] == 1
+    listed = client.get(f"/labs/{lab.slug}/reports").json()["reports"]
+    assert listed[0]["ideas"] == [ref], "public with the report"
+    with rs.DB_LOCK, rs.get_db() as conn:
+        translog.fold_all(conn)
+        rec = [e["record"] for e in translog.entries(conn, 0, ref=f"lab_report:{r.json()['report_id']}", limit=10)]
+    assert rec and "ideas_json" in str(rec), "the log carries the ideas"
+
+
+def test_a_fixed_issue_may_name_ideas_too_and_a_closed_one_may_not(client, lab):
+    ref = idea(lab.other)
+    bad = lab.report(lab.maint, lab.issue(3), "confirmed", lab.line(lab.author, "issue", 3), ideas=[ref])
+    assert bad.status_code == 422 and "merged pull request or a fixed issue" in bad.json()["detail"]
+    shut = lab.report(lab.maint, lab.pr(4), "closed", lab.line(lab.author, "pr", 4), ideas=[ref])
+    assert shut.status_code == 422
+    ok = lab.report(lab.maint, lab.issue(3), "fixed", lab.line(lab.author, "issue", 3), ideas=[ref])
+    assert ok.status_code == 200, ok.text
+    assert points(client=lab.client, agent=lab.other)["points"] == 10
+
+
+def test_same_operator_and_house_ideas_are_recorded_and_earn_nothing(client, lab, monkeypatch):
+    mine, house = name("mine"), name("house")
+    for a in (mine, house):
+        _register_keyed(client, a)
+    same_operator(lab.maint, mine)
+    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", house)
+    own, hs = idea(mine), idea(house)
+    r = merged(lab, 6, own, hs)
+    assert r.status_code == 200, r.text
+    assert r.json()["ideas"] == [own, hs], "recorded in the report"
+    assert points(client, mine)["points"] == 0 and points(client, house)["points"] == 0
+    on_board = {r["agent_id"] for r in client.get("/season").json()["boards"]["ideas"]}
+    assert not on_board & {mine, house}
+    assert "idea-adopted" not in done(mine)
+    # recorded means spent: naming the same idea in another report is refused
+    again = merged(lab, 7, own)
+    assert again.status_code == 409
+
+
+def test_only_a_live_public_idea_of_this_relay_is_named(client, lab):
+    note = idea(lab.other, kind="note")
+    r = merged(lab, 8, note)
+    assert r.status_code == 422 and "not an idea" in r.json()["detail"]
+    private = idea(lab.other, topic="inner-circle", visibility="private")
+    r = merged(lab, 8, private)
+    assert r.status_code == 422 and "not a public post" in r.json()["detail"]
+    r = merged(lab, 8, "post:pst_" + "0" * 28)
+    assert r.status_code == 422 and "no post" in r.json()["detail"]
+    gone = idea(lab.other)
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE posts SET is_deleted = 1 WHERE post_id = ?", (gone.split(":")[1],))
+        conn.commit()
+    assert merged(lab, 8, gone).status_code == 422
+    for bad in ("pst_x", "post:pst_x@other.example", "gh_pr:a/b#1", "not a ref"):
+        assert merged(lab, 8, bad).status_code == 422, bad
+    reply = seed_post_row(lab.other, _topic(), "a reply", "2026-11-05T00:00:00+00:00", kind="idea", reply_to="pst_x")
+    assert merged(lab, 8, f"post:{reply}").status_code == 422, "a top-level post only"
+    assert points(client, lab.other)["points"] == 0
+    # none of those refused reports was recorded: PR 8 is still open
+    assert client.get(f"/labs/{lab.slug}/reports", params={"ref": lab.pr(8)}).json()["reports"] == []
+
+
+def test_an_idea_is_credited_once_and_at_most_five_per_report(client, lab):
+    ref = idea(lab.other)
+    assert merged(lab, 9, ref).status_code == 200
+    dup = merged(lab, 10, ref)
+    assert dup.status_code == 409 and "adopted once" in dup.json()["detail"]
+    assert client.get(f"/labs/{lab.slug}/reports", params={"ref": lab.pr(10)}).json()["reports"] == []
+    assert points(client, lab.other) ["points"] == 10, "still one credit"
+    six = [idea(lab.other) for _ in range(6)]
+    assert merged(lab, 11, *six).status_code == 422
+    twice = idea(lab.other)
+    assert merged(lab, 11, twice, twice).status_code == 422
+    assert merged(lab, 11, *six[:5]).status_code == 200
+    assert points(client, lab.other)["points"] == 60
+
+
+def test_the_operators_verdict_is_gone(client, lab):
+    pid = idea(lab.other).split(":")[1]
+    assert client.post(f"/ideas/{pid}/verdict", headers=as_(lab.creator), json={"verdict": "adopted"}).status_code in (404, 405)
+    assert client.get("/ideas").status_code == 404
+    status = client.get("/operator/status", headers=as_(lab.creator))
+    assert status.status_code == 200 and "ideas" not in status.json()
+    from emporia import cli, operator_desk, relay_modules
+    assert not hasattr(cli, "cmd_ideas") and not hasattr(operator_desk, "idea_commands")
+    assert "ideas" not in relay_modules.GAMIFY_PARTS
+
+
+def test_points_follow_the_labs_module(client, lab, monkeypatch):
+    monkeypatch.setenv("EMPORIA_LABS", "0")
+    assert client.get(f"/agents/{lab.other}/points").status_code == 404
+    monkeypatch.setenv("EMPORIA_LABS", "1")
+    assert client.get(f"/agents/{lab.other}/points").status_code == 200
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,ideas")
+    from emporia import relay_modules
+    assert "no part called ideas" in " ".join(relay_modules.problems()), "an old setting is refused loudly"

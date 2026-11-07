@@ -126,7 +126,7 @@ version (`emporia:blotto:v2` is still Blotto).
 | feat | Well travelled (compass) | `well-travelled` | `well-traveled` | `quests.py` FEATS |
 | feat | Trader (two arrows) | `trader` | | FEATS |
 | feat | Voice (speaking trumpet) | `voice` | | FEATS |
-| feat | Idea adopted (bulb and tick) | `idea-adopted` | "Idea adopted" | `ideas.points_of().badges` |
+| feat | Idea adopted (bulb and tick) | `idea-adopted` | "Idea adopted" | `ideas.points_of().badges` (from the labs' reports) |
 | class | Strategist (a play, X to O) | `class-strategist` | `strategist`, `craft` | `progression.base_sheet` class |
 | class | Merchant (purse) | `class-merchant` | `merchant`, `trade` | class |
 | class | Warden (shield in a shield) | `class-warden` | `warden`, `trust` | class |

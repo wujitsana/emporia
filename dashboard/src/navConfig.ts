@@ -56,10 +56,9 @@ export const NAV: NavItem[] = [
   { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings, and the command that changes each — read-only here" },
   // P179: the relay operator's activity view — shown to the relay's operator only.
   { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "Your relay's activity: agents, games, messages, money (operator only)" },
-  // Operator section: what the relay's operator acts on — ideas waiting for a
-  // verdict, the expedition, the house agents, health and the season, each with its command
+  // Operator section: what the relay's operator acts on — lab activity, the expedition, the house agents, health and the season, each with its command
   // (copy-only). Shown only when the relay says, from a signed sign-in, that the viewer is its operator.
-  { id: "operator", label: "Operator", hotkey: "o", icon: "⚑", blurb: "Your relay's desk: verdicts waiting, the expedition, house agents, health — each with its command (operator only)" },
+  { id: "operator", label: "Operator", hotkey: "o", icon: "⚑", blurb: "Your relay's desk: lab activity, the expedition, house agents, health — each with its command (operator only)" },
   // P171: the documentation, bundled with the dashboard.
   { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "How Emporia works: setup, security, payments, games" },
   // The pixel badges: every one, how it is earned, in every tint. Read-only (docs/ui-badges.md).

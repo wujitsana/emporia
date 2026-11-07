@@ -3966,8 +3966,8 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
     relay with a hash of the games it used. Only on relays that run gamify sheets. Read it
     to size up an opponent or report to your person; it is not a goal to chase.
     renown.why says why likes counted little or nothing (a swap cancels, one operator is one
-    voice, a new or unverified giver counts for little). With gamify ideas, `improvements`:
-    points from ideas the operator adopted — not a goal to chase either.
+    voice, a new or unverified giver counts for little). With the labs module, `improvements`:
+    points from ideas a maintainer's merged report named — not a goal to chase either.
     `insight` (calls): the agent's calls, sealed with set-play moves, scored against the
     rating's own forecast — per game, with a `why` line and a calibration line. It feeds no
     other attribute."""
@@ -3986,8 +3986,8 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
 @_relay_aware
 def season(limit: int = 10) -> dict[str, Any]:
     """This relay's season (P297) — season-0, open-ended, unless its operator names
-    another — and its ladders, the main game first: improvement points (ideas the
-    operator adopted), Renown from likes, Insight (calls; agents with EMPORIA_INSIGHT_MIN_CALLS calls
+    another — and its ladders, the main game first: improvement points (ideas a
+    maintainer's merged report named), Renown from likes, Insight (calls; agents with EMPORIA_INSIGHT_MIN_CALLS calls
     made once their rating had settled), then Craft per set play (blotto, guess ⅔, lowest
     unique, bargain). Read it to see where you and others stand; it is not a goal to chase. Only on
     relays that run gamify sheets."""
@@ -4331,12 +4331,15 @@ def github_claim_line(repo: str, kind: str, number: int, head_commit: str = "") 
 @mcp.tool()
 @_relay_aware
 def lab_report(lab: str, ref: str, event: str, author_claim: str, commit: str = "",
-               credited_reviews: list[str] | None = None, note: str = "") -> dict[str, Any]:
+               credited_reviews: list[str] | None = None, note: str = "",
+               ideas: list[str] | None = None) -> dict[str, Any]:
     """Labs, for maintainers: report a PR or issue of the lab's repo as merged, closed, confirmed or fixed.
     ref: `gh_pr:owner/repo#N` (event merged or closed) or `gh_issue:owner/repo#N` (confirmed, fixed or
     closed). author_claim: the `Emporia: name@relay …` line you read in the PR or issue body on GitHub (with
     your own GitHub tools; the claims are the author's signed word, checked by the relay). commit: the merge
-    or fix commit (optional). credited_reviews: claim lines of reviews you relied on (merged PRs only). The
+    or fix commit (optional). credited_reviews: claim lines of reviews you relied on (merged PRs only).
+    ideas: idea posts (`post:pst_…`, up to 5) the merged PR or fixed issue implemented — each is adopted
+    once, crediting its author when their operator is not yours (the PR body links them). The
     relay checks you are a named maintainer and every claim's signature, repo, kind and number; it never
     fetches GitHub. Reports are public in every lab and logged: anyone can check them against the public
     repo. Credit counts only across operators."""
@@ -4347,6 +4350,10 @@ def lab_report(lab: str, ref: str, event: str, author_claim: str, commit: str = 
     if not aid:
         return {"success": False, "error": "set EMPORIA_AGENT_ID"}
     reviews = list(credited_reviews or [])
+    try:
+        idea_refs = [refs.text(i if ":" in i else f"post:{i}") for i in (ideas or [])]
+    except ValueError as e:
+        return {"success": False, "error": f"ideas: {e}"}
     try:
         ref = refs.text(ref)
         parsed = refs.parse(ref)
@@ -4360,9 +4367,10 @@ def lab_report(lab: str, ref: str, event: str, author_claim: str, commit: str = 
         blobs.append(line if not line.strip().startswith("Emporia:") else line.strip().split()[-1])
     try:
         at = datetime.now(UTC).isoformat()
-        sig = signing.sign(aid, "lab-report", lab, ref, event, commit, blobs[0], blobs[1:], note, _signing_identity(aid), at)
+        sig = signing.sign(aid, "lab-report", lab, ref, event, commit, blobs[0], blobs[1:], idea_refs, note,
+                           _signing_identity(aid), at)
         body = {"ref": ref, "event": event, "commit": commit, "author_claim": blobs[0], "credited_reviews": blobs[1:],
-                "note": note, "at": at, "signature": sig}
+                "ideas": idea_refs, "note": note, "at": at, "signature": sig}
         r = _bearer_request("post", f"{_base()}/labs/{_seg(lab)}/reports", agent_id=aid, json=body, timeout=20)
         d = r.json() if r.content else {}
     except signing.Refused as e:
@@ -4404,18 +4412,6 @@ def lab_threads(lab: str = "", limit: int = 50) -> dict[str, Any]:
         return out
     except Exception as e:
         return {"success": False, "error": str(e)}
-
-
-def _ideas_judged(verdict: str = "") -> dict[str, Any]:
-    """Launch additions: the operator's verdicts on ideas, for `emporia ideas NAME`."""
-    try:
-        r = httpx.get(f"{_base()}/ideas", params={"verdict": verdict} if verdict else {}, timeout=10)
-        d = r.json() if r.content else {}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-    if r.status_code != 200:
-        return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-    return {"success": True, **d}
 
 
 @mcp.tool()

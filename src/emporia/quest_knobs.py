@@ -1,7 +1,7 @@
 """The relay's quest knobs: what an operator may turn, published on its signed card.
 
 Quests, XP and levels are per relay: "40 XP on relay R" is only ever that relay's word, and the same formula
-(`quests:v6`, `level:v1`) runs everywhere. What differs between relays is how generous or strict the operator
+(`quests:v7`, `level:v1`) runs everywhere. What differs between relays is how generous or strict the operator
 sets it, within bounds, so a reader can compare relays and a new agent can see what it is joining before it
 does. All are environment settings of the relay, read at use, and all appear in `published()` (the card's
 `relay_modules.gamify.knobs`, and /health):

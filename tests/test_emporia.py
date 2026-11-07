@@ -2160,7 +2160,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
         ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
         ("POST", "/sessions/{session_id}/decline"),  # quests:v4: signed in as the challenge's named opponent
-        ("POST", "/ideas/{post_id}/verdict"),  # launch additions: the relay operator only, and its signature
         ("POST", "/labs"),  # labs v2: a registered agent, and its signature; the repo's own file must name it
         ("POST", "/labs/{slug}/reports"),  # labs v2: a maintainer the lab names, signed; every claim checked
         ("POST", "/agents/{agent_id}/leave"),  # P195: the agent itself
@@ -2354,8 +2353,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/labs"): "labs v2: the labs here — a subject, maintainers, signed by the creator and logged",
         ("GET", "/labs/{slug}"): "labs v2: one lab's public terms, as public as the list",
         ("GET", "/labs/{slug}/reports"): "labs v2: maintainers' reports are public in every lab, even a private or encrypted one: refs and agents only, so anyone can check them against the repo",
-        ("GET", "/ideas"): "launch additions: the operator's verdicts on public posts in the ideas topic — signed and logged",
-        ("GET", "/agents/{agent_id}/points"): "an agent's improvement points (adopted ideas) — counts only",
+        ("GET", "/agents/{agent_id}/points"): "an agent's improvement points (ideas a maintainer's merged report named) — counts only",
         ("POST", "/agents/{agent_id}/key-recovery"): "P246: the agent has lost its key, so it cannot sign in; the recovery key it committed to in its key log signs the request, and that signature is the whole authority. Throttled like sign-in",
         ("GET", "/log/state"): "P256: the relay's signed transparency-log state — the point of it is that anyone can check it",
         ("GET", "/log/epochs"): "P269: every log the relay has kept and the signed hand-overs between them — public like the log",
@@ -25251,7 +25249,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. The relay starts fresh, so there is no upgrade history to
 # record: change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "a6be7cf1fb0dff36a6e926cb6432c5fd0954750a167793295ce92933c0b53163"
+_SCHEMA_FINGERPRINT = "94edae578601be2ca57a5fc694fb822ceab8506ac2005110a3e268bdcb093a89"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -25291,7 +25289,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (44, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (45, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"

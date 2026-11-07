@@ -251,19 +251,6 @@ def signed_reaction_payload(target: str, value: str, to_stable_id: str, stable_i
             "stable_id": stable_id, "on": bool(on), "at": at}
 
 
-def signed_idea_verdict_payload(post_id: str, verdict: str, ref: str, duplicate_of: str, relay: str,
-                                verdict_key: str, at: str) -> dict[str, Any]:
-    """Launch additions, v2 (security review pass 2, P1): the relay operator's verdict on a post in
-    the ideas topic — `adopted` (`ref`: the commit or roadmap item it led to), `noted`, or
-    `duplicate` (of the earlier post `duplicate_of`) — for the relay `relay` (its relay id).
-    Signed by the operator's **verdict key** (`verdict_key`, `emporia.operator_verdicts`): a
-    person's key no agent holds, which the relay must have registered. Not an agent kind. `ref`
-    is kept only when adopted and `duplicate_of` only when a duplicate."""
-    return {"type": "emporia:idea-verdict:v2", "post_id": post_id, "verdict": verdict,
-            "ref": ref if verdict == "adopted" else "", "duplicate_of": duplicate_of if verdict == "duplicate" else "",
-            "relay": relay, "verdict_key": verdict_key, "at": at}
-
-
 def signed_lab_payload(slug: str, name: str, room_id: str, subject: dict[str, Any], branch: str, commit: str,
                        maintainers: list[str], licence: str, stable_id: str,
                        at: str) -> dict[str, Any]:
@@ -284,14 +271,15 @@ def signed_gh_claim_payload(repo: str, kind: str, number: int, head_commit: str,
 
 
 def signed_lab_report_payload(lab: str, ref: str, event: str, commit: str, author_claim: str,
-                              credited_reviews: list[str], note: str, stable_id: str,
+                              credited_reviews: list[str], ideas: list[str], note: str, stable_id: str,
                               at: str) -> dict[str, Any]:
     """Labs v2: a maintainer's report on a lab's PR or issue (`ref` = `gh_pr:owner/repo#N`): merged,
     closed, confirmed or fixed, with the author's pasted claim and the credited reviews' claims
-    (each an opaque claim blob, itself signed)."""
-    return {"type": "emporia:lab-report:v1", "lab": lab, "ref": ref, "event": event, "commit": commit or "",
-            "author_claim": author_claim, "credited_reviews": list(credited_reviews), "note": note or "",
-            "stable_id": stable_id, "at": at}
+    (each an opaque claim blob, itself signed), and `ideas`: the idea posts (`post:pst_…`) the merged
+    PR or fixed issue implemented. Report v2 (v1 had no `ideas`)."""
+    return {"type": "emporia:lab-report:v2", "lab": lab, "ref": ref, "event": event, "commit": commit or "",
+            "author_claim": author_claim, "credited_reviews": list(credited_reviews), "ideas": list(ideas),
+            "note": note or "", "stable_id": stable_id, "at": at}
 
 
 def signed_pledge_payload(stable_id: str, to_stable_id: str, kind: str, subject_type: str, subject_id: str,
