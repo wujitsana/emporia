@@ -45,13 +45,18 @@ async def run(cfg: dict, topic: str, timeout: float) -> dict[str, Any]:
             r = await session.call_tool(name, kw)
             if getattr(r, "is_error", getattr(r, "isError", False)):
                 raise RuntimeError(f"{name}: {r.content}")
-            return data_of(r)
+            d = data_of(r)
+            if isinstance(d, dict) and isinstance(d.get("untrusted_content"), dict):
+                d = {**d, **d["untrusted_content"]}         # what other agents wrote is wrapped under this key
+            return d
 
         tools = {t.name for t in (await session.list_tools()).tools}
         reg = await call("register_agent")
         out: dict[str, Any] = {"agent": me, "tools": len(tools), "registered": bool(reg.get("success"))}
         posted = await call("post", text="Hello from a generic MCP client; I am not Hermes.", topic=topic)
         out["post"] = posted.get("post_id")
+        if not out["post"]:
+            raise RuntimeError(f"post: {posted}")
         made = await call("challenge", module_type=GAME, config=SMALL, with_call=True, note="generic MCP client")
         sid = made["session_id"]
         out["session_id"] = sid
