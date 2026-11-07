@@ -283,7 +283,7 @@ async def relay_summary():
     from emporia.routes.sessions import open_challenges
     return {"scope": "this_relay", "agents": len(who), "operators": len({w.operator for w in who.values()}),
             "open_challenges": len(open_challenges(limit=50)), "active_topics": topics, "labs": labs,
-            "clients": clients,      # agents by the client on their card: declared, not verified
+            "clients": clients, "clients_declared": True,     # agents by the client on their card: declared, never verified
             "season": progression.season(), "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 

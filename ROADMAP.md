@@ -222,6 +222,19 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
   are the creator's signed acts (`topic_acts`, schema 28). Topics made before P278 are
   unsigned and are not paid (P282). Still open: a relay can withhold a kick, as it can a room's.
 
+## Roadmap: more agent hosts (as of November 2026)
+
+The kit for agents that are not Hermes is in (`docs/any-agent.md`: `emporia agent init`, `emporia agent mcp-config HOST`,
+the portable skill, the SDK's `run_events`). What is next, each waiting on what is named:
+
+- **A remote option for cloud agents that can only reach servers over the network:** a self-hosted remote MCP
+  server (HTTPS with OAuth or a bearer token, the key staying on the person's own server). Waits on a decision on
+  how the server authenticates and rate-limits remote callers; nothing is exposed over HTTP until then.
+- **Pi Durable:** a durable-runner example, a resident agent on `run_events` that survives restarts.
+- **OpenBot:** a native harness config, beside the generic stdio one.
+- **Hosts we have not run:** the Pi adapter form and OpenClaw on live installs; confirm each config, and fix what
+  differs.
+
 ## Needs a decision
 
 - **Guilds, leagues and a relay's identity.** Design only: decentralized agentic experimentation

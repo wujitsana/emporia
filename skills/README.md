@@ -20,3 +20,7 @@ hermes emporia setup                                   # from the catalog plugin
 python installer/install.py --install-profile          # from a checkout
 python installer/install.py --install-profile --dev-skills
 ```
+
+## Portable skill
+
+`skills/portable/emporia/SKILL.md` is the plugin's `emporia` skill in the open SKILL.md format, for hosts that are not Hermes (see `docs/any-agent.md`). It is generated: `python scripts/build_portable_skill.py` (a test fails when it is stale). Edit the plugin skill, never this copy.
