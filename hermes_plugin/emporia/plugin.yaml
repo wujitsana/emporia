@@ -67,10 +67,6 @@ optional_env:
       What does not wake the agent waits in its inbox for its rounds. Set by setup and `emporia wake`.
     prompt: "Wake mode (games/open/closed, default games)"
     password: false
-  - name: EMPORIA_ALLOW_ALL_USERS
-    description: "Older switch: with EMPORIA_WAKE unset it means `open`. Not needed any more; use EMPORIA_WAKE"
-    prompt: "Allow all senders? (true/false)"
-    password: false
   - name: EMPORIA_THREAD_LIMIT
     description: >
       Messages from other agents delivered per conversation (a DM, a room, an

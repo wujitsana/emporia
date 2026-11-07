@@ -61,53 +61,8 @@ class InitError(Exception):
     """Something the person can fix; the message says what."""
 
 
-# ── a small prompt helper (numbered; no terminal needed) ─────────────────────
-
 def _tty() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
-
-
-def _dim(text: str) -> str:
-    if os.environ.get("NO_COLOR") or not sys.stdout.isatty():
-        return text
-    return f"\033[2m{text}\033[0m"
-
-
-class Prompter:
-    """Questions that explain themselves. `input_fn` and `out` are replaceable for tests."""
-
-    def __init__(self, input_fn: Callable[[str], str] = input, out: Any = None) -> None:
-        self._in = input_fn
-        self._out = out or sys.stdout
-
-    def say(self, text: str = "") -> None:
-        print(text, file=self._out, flush=True)
-
-    def choose(self, question: str, why: str, options: list[tuple[str, str, str]], default: int = 0) -> str:
-        """`options`: (value, label, one-line explanation). The default is marked `(recommended)` by the caller."""
-        self.say(f"\n{question}")
-        self.say(_dim(f"  {why}"))
-        for i, (_, label, note) in enumerate(options, 1):
-            self.say(f"  {i}) {label}")
-            if note:
-                self.say(_dim(f"       {note}"))
-        while True:
-            raw = self._in(f"Choose 1-{len(options)} [{default + 1}]: ").strip()
-            if not raw:
-                return options[default][0]
-            if raw.isdigit() and 1 <= int(raw) <= len(options):
-                return options[int(raw) - 1][0]
-            self.say(f"  Enter a number from 1 to {len(options)}, or press Enter for {default + 1}.")
-
-    def text(self, question: str, why: str, default: str = "", *, check: Callable[[str], str] | None = None) -> str:
-        self.say(f"\n{question}")
-        self.say(_dim(f"  {why}"))
-        while True:
-            raw = self._in(f"{'[' + default + '] ' if default else ''}> ").strip() or default
-            problem = check(raw) if check else ""
-            if not problem:
-                return raw
-            self.say(f"  {problem}")
 
 
 # ── paths and identity ───────────────────────────────────────────────────────
@@ -384,50 +339,54 @@ def _others(root: Path) -> list[tuple[str, str]]:
     return found
 
 
-def ask_missing(args: argparse.Namespace, pr: Prompter) -> argparse.Namespace:
-    """Fill what the flags left out, by asking. Only called with a terminal (or a test)."""
-    pr.say("Emporia agent setup. This makes the keys and settings for an agent that Hermes does not run.")
-    fast = args.recommended or pr.choose(
-        "How much do you want to decide?", "Everything can be changed later by running this again.",
-        [("rec", "Use the recommended settings (recommended)",
-          "asks only for the relay, a name and the host; a new operator label; the model, if you say it"),
-         ("all", "Decide each setting", "also the key directory, operator label and declared model")]) == "rec"
+def ask_missing(args: argparse.Namespace) -> argparse.Namespace:
+    """Fill what the flags left out, by asking, with the setup menus (`emporia.cli`) and the questions in
+    `emporia.setup_choices`; Enter takes the recommended answer. Only called with a terminal (or a test)."""
+    from emporia import cli, setup_choices as sc
+    print("Emporia agent setup. This makes the keys and settings for an agent that Hermes does not run.")
+    fast = args.recommended or cli.choose_setting("init_style") == "recommended"
     if not args.relay:
-        args.relay = pr.text("Which relay?", "The relay's URL, e.g. http://127.0.0.1:8088 (EMPORIA_RELAY_URL).",
-                             os.environ.get("EMPORIA_RELAY_URL", ""),
-                             check=lambda v: "" if v.startswith(("http://", "https://")) else "Start with http:// or https://")
+        print(sc.dim("  The relay's URL, e.g. http://127.0.0.1:8088 (EMPORIA_RELAY_URL)."))
+        while True:
+            args.relay = cli.prompt("Which relay?", os.environ.get("EMPORIA_RELAY_URL", ""))
+            if args.relay.startswith(("http://", "https://")):
+                break
+            print("  Start with http:// or https://")
     if not args.name:
-        args.name = pr.text("What is this agent called?", "Its name on the relay: a-z, 0-9, _ and -.", "",
-                            check=agent_problem)
+        print(sc.dim("  Its name on the relay: a-z, 0-9, _ and -."))
+        while True:
+            args.name = cli.prompt("What is this agent called?")
+            problem = agent_problem(args.name)
+            if not problem:
+                break
+            print(f"  {problem}")
     if not args.client:
-        args.client = pr.choose(
-            "Which host does it run on?",
-            "Declared on its signed card for stats and to see who is around. A claim, never verified.",
-            [(h, f"{h} (recommended)" if h == "custom" else h, note) for h, note in HOSTS])
+        c = sc.CHOICES["init_host"]
+        options = [(h, f"{h}  (recommended)\n{note}" if h == sc.default("init_host") else f"{h}\n{note}")
+                   for h, note in HOSTS]
+        args.client = cli.choose_setting("init_host", options, [h for h, _ in options].index(c.default))
     if not fast:
         if not args.path:
-            args.path = pr.text("Where are its keys kept?", "A directory of its own, outside any Hermes profile; "
-                                "one directory per agent.", str(default_dir(args.name)))
+            print(sc.dim("  A directory of its own, outside any Hermes profile; one directory per agent."))
+            args.path = cli.prompt("Where are its keys kept?", str(default_dir(args.name)))
         if not (args.operator_label or args.same_as):
-            others = _others(default_root())
-            options = [("new", "A new operator (recommended)", "a fresh random label: your first agent, or a separate one")]
-            options += [(f"same:{lab}", f"The same operator as {n}", "your agents share a label; games between "
-                         "them count for nothing, as they are one operator") for n, lab in others]
-            pick = pr.choose("Whose agent is this?", "Standing counts a person once, by operator label.", options)
+            options = [("new", sc.CHOICES["init_operator"].labels()[0][1])]
+            options += [(f"same:{lab}", f"The same operator as {n}\nYour agents share a label; games between them "
+                         "count for nothing, as they are one operator.") for n, lab in _others(default_root())]
+            pick = cli.choose_setting("init_operator", options, 0)
             if pick.startswith("same:"):
                 args.operator_label = pick[5:]
         if not args.model and not args.no_declare_model:
-            args.model = pr.text("Which model does it run on? (Enter to declare none)",
-                                 "Declared on what it writes, never verified. Only the model's name.", "")
+            print(sc.dim("  Declared on what it writes, never verified. Only the model's name."))
+            args.model = cli.prompt("Which model does it run on? (Enter to declare none)")
     return args
 
 
-def run(args: argparse.Namespace, prompter: Prompter | None = None) -> int:
-    interactive = _tty() or prompter is not None
-    pr = prompter or Prompter()
+def run(args: argparse.Namespace) -> int:
+    interactive = _tty()
     if interactive and not (args.name and (args.relay or args.no_register) and args.client):
         try:
-            args = ask_missing(args, pr)
+            args = ask_missing(args)
         except (EOFError, KeyboardInterrupt):
             print("Cancelled.")
             return 130

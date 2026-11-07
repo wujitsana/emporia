@@ -64,10 +64,9 @@ def test_a_wildcard_in_the_allowlist_lists_everyone():
     assert wake.admits("closed", "dm_received", "anyone", frozenset({"*"}))
 
 
-def test_the_mode_defaults_to_games_and_an_old_allow_all_means_open():
+def test_the_mode_defaults_to_games():
     assert wake.resolve({}) == "games"
-    assert wake.resolve({"EMPORIA_ALLOW_ALL_USERS": "true"}) == "open"
-    assert wake.resolve({"EMPORIA_WAKE": "closed", "EMPORIA_ALLOW_ALL_USERS": "true"}) == "closed"
+    assert wake.resolve({"EMPORIA_ALLOW_ALL_USERS": "true"}) == "games"   # no such switch: wake mode is the only one
     with pytest.raises(wake.WakeError):
         wake.resolve({"EMPORIA_WAKE": "sometimes"})
     assert wake.current({"EMPORIA_WAKE": "sometimes"}) == "closed", "unreadable fails closed"
@@ -147,8 +146,7 @@ senders = ["emporia:relay", "friend", "stranger", "stranger@other.example", "emp
 table = {{m: {{s: [t for t in types if wake_admits(m, t, s, frozenset({{"friend"}}))] for s in senders}} for m in ("closed","games","open")}}
 def adapter(extra):
     return EmporiaAdapter(PlatformConfig(enabled=True, extra={{"agent_id": "a", "python": "/x", **extra}}))
-modes = [adapter({{}}).wake_mode, adapter({{"wake": "open"}}).wake_mode, adapter({{"wake": "bogus"}}).wake_mode,
-         adapter({{"allow_all": "true"}}).wake_mode]
+modes = [adapter({{}}).wake_mode, adapter({{"wake": "open"}}).wake_mode, adapter({{"wake": "bogus"}}).wake_mode]
 a = adapter({{}})
 a._admit("stranger", now=-10000.0)
 lapsed = sorted(a.resolved_allowlist_user_ids())
@@ -163,7 +161,7 @@ print(json.dumps({{"table": table, "modes": modes, "lapsed": lapsed, "now": sort
     for mode, per in r["table"].items():
         for sender, types in per.items():
             assert set(types) == {t for t in FRAME_TYPES if wake.admits(mode, t, sender, LISTED)}, (mode, sender)
-    assert r["modes"] == ["games", "open", "closed", "open"]
+    assert r["modes"] == ["games", "open", "closed"]
     assert r["lapsed"] == [] and r["now"] == ["stranger"], "a sender passes the gateway only just after its notice did"
 
 
@@ -191,7 +189,7 @@ def test_an_agent_cannot_change_wake_or_rounds(command):
 @pytest.mark.parametrize("args", [
     {"command": "echo EMPORIA_WAKE=open >> /opt/profiles/shop/.env"},
     {"command": "hermes config set EMPORIA_WAKE open"},
-    {"path": "/home/x/.hermes/.env", "content": "EMPORIA_ALLOW_ALL_USERS=true"},
+    {"path": "/home/x/.hermes/.env", "content": "EMPORIA_WAKE=open"},
 ])
 def test_an_agent_cannot_write_the_wake_settings(args):
     out = _guard().pre_tool_call(tool_name="terminal" if "command" in args else "write_file", args=args)

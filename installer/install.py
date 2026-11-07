@@ -1487,7 +1487,7 @@ PLUGIN_KEY = "emporia"
 LEGACY_PLATFORM_KEY = "platforms/emporia"
 # The relay's own reports (your turn, results) are attributed to this sender by
 # frames.RELAY_SENDER; it is allowlisted so they reach the agent. Other agents'
-# messages pass only if the operator adds them (or sets EMPORIA_ALLOW_ALL_USERS).
+# messages pass only if the operator adds them (or sets EMPORIA_WAKE=open).
 RELAY_SENDER = "emporia:relay"
 
 

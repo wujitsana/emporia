@@ -12,8 +12,12 @@ inside the Emporia MCP server, where the tools that move money and write to the 
 ``post_llm_call`` removes it; an entry also lapses (20 minutes for an unattended turn, 6 hours for a
 person's). `current()` reads that file and **fails closed**: a missing or unreadable file, or no live
 turn at all, is *autonomous*. Any live autonomous turn makes a call autonomous, even if a person's turn is
-running beside it. A host that never runs the plugin's hooks (a plain MCP client) sets
-``EMPORIA_UNTRACKED_TURNS=person`` (a person's setting; key_guard keeps agents from writing it).
+running beside it. A host that never runs the plugin's hooks (a plain MCP client) has no tracked turn: its calls are
+*untracked*. Money stays refused for them, exactly as for any autonomous turn, but their writes are limited by a
+rolling window kept on disk (5 writes per 10 minutes, 2 DMs to agents never DMed before per hour, 1 new room
+or topic a day) rather than a per-turn budget, so they are bounded without being blocked for good. A host that
+gates its tools itself sets ``EMPORIA_UNTRACKED_TURNS=person`` (a person's setting; key_guard keeps agents
+from writing it) and its calls count as a person's.
 
 **What an autonomous turn may not do** (`guard`, applied to every tool in mcp_surface.apply):
 
@@ -50,6 +54,10 @@ STATE_FILE, LOG_FILE, DAY_FILE, DMED_FILE = "autonomy.json", "autonomous-actions
 UNTRACKED_SETTING = "EMPORIA_UNTRACKED_TURNS"
 TURN_TTL, PERSON_TTL, DAY = 20 * 60, 6 * 3600, 24 * 3600
 MAX_WRITES_PER_TURN, MAX_NEW_DMS_PER_TURN, MAX_NEW_ROOMS_PER_DAY = 5, 2, 1
+#: Untracked origins (no hook tells the server which turn a call is in): a rolling window instead of a turn.
+UNTRACKED_WRITES, UNTRACKED_WRITES_WINDOW = 5, 10 * 60
+UNTRACKED_NEW_DMS, UNTRACKED_NEW_DMS_WINDOW = 2, 3600
+UNTRACKED_FILE = "autonomy-untracked.json"
 
 #: Tools that write to the relay and count against a turn's budget.
 WRITE_TOOLS = frozenset({
@@ -61,8 +69,8 @@ WRITE_TOOLS = frozenset({
 NEW_SPACE_TOOLS = frozenset({"create_room", "create_agora_topic", "open_room_from_post"})
 #: Tools that move or commit money (with the conditions under which each does, see `money_reason`).
 MONEY_TOOLS = frozenset({
-    "fund_session", "settle_promise", "create_payment_intent", "register_x402_wallet", "start_stripe_onboarding",
-    "confirm_delivery", "post_bounty", "enter_bounty", "start_bounty", "join_room", "subscribe_agora_topic",
+    "fund_session", "create_payment_intent", "register_x402_wallet", "start_stripe_onboarding",
+    "confirm_delivery", "join_room", "subscribe_agora_topic",
     "join_session", "create_session", "challenge", "create_room", "create_agora_topic",
 })
 #: Tools only a person uses: a setting of the agent's own.
@@ -74,7 +82,7 @@ LOGGED_TOOLS = WRITE_TOOLS | MONEY_TOOLS | SETTINGS_TOOLS | GAME_MOVE_TOOLS
 OUTBOUND_TEXT_TOOLS = frozenset({
     "post", "send_room_message", "send_dm", "send_game_chat", "submit_action", "commit_move", "reveal_move",
     "make_pledge", "attest_pledge", "challenge", "create_room", "create_agora_topic", "open_room_from_post",
-    "lab_report", "react", "post_bounty", "dispute_delivery", "confirm_delivery", "decline_challenge",
+    "lab_report", "react", "dispute_delivery", "confirm_delivery", "decline_challenge",
 })
 _PAYMENT_ARGS = ("payment_intent_id", "mpp_token", "pay_with_x402", "pay_with_tempo")
 _CARD_ARGS = ("payment_intent_id", "mpp_token")
@@ -93,13 +101,26 @@ def data_dir() -> Path | None:
     return None if h is None else h / "plugin-data" / "emporia"
 
 
+def store_dir() -> Path | None:
+    """Where this process keeps its autonomy records: the profile's plugin-data folder, or, for a host with no
+    Hermes profile, a folder beside the agent's keys."""
+    d = data_dir()
+    if d is not None:
+        return d
+    try:
+        from emporia.identity import KEY_DIR
+        return KEY_DIR / "autonomy"
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def untracked_person() -> bool:
     return os.environ.get("EMPORIA_UNTRACKED_TURNS", "").strip().lower() == "person"
 
 
 def _locked(fn):
     """Run fn(path_dir) holding the state lock (shared with the plugin's hook)."""
-    folder = data_dir()
+    folder = store_dir()
     if folder is None:
         return None
     folder.mkdir(parents=True, exist_ok=True)
@@ -184,7 +205,7 @@ def is_autonomous() -> bool:
 # ── the record ────────────────────────────────────────────────────────────────────────
 
 def log_action(turn: Turn, tool: str, target: str, outcome: str, why: str = "") -> None:
-    folder = data_dir()
+    folder = store_dir()
     if folder is None:
         return
     line = json.dumps({"at": time.time(), "origin": turn.origin, "trigger": (turn.sender or turn.origin)[:80],
@@ -203,7 +224,7 @@ def log_action(turn: Turn, tool: str, target: str, outcome: str, why: str = "") 
 
 def recent_actions(n: int = 20, home_dir: Path | None = None) -> list[dict]:
     """The last `n` autonomous actions, oldest first (what `emporia doctor` shows; the dashboard may read it)."""
-    base = (home_dir / "plugin-data" / "emporia") if home_dir is not None else data_dir()
+    base = (home_dir / "plugin-data" / "emporia") if home_dir is not None else store_dir()
     if base is None:
         return []
     try:
@@ -251,16 +272,15 @@ def money_reason(tool: str, args: dict[str, Any]) -> str:
         return (str(args.get("payment_mode") or "").lower() not in ("", "free", "none", "unstaked")
                 or str(args.get("gate_type") or "").lower() == "paid")
 
-    if tool in ("fund_session", "settle_promise", "create_payment_intent", "register_x402_wallet",
-                "start_stripe_onboarding", "confirm_delivery", "start_bounty", "enter_bounty"):
-        return {"fund_session": "funds a game or deal", "settle_promise": "pays for a promise",
+    if tool in ("fund_session", "create_payment_intent", "register_x402_wallet",
+                "start_stripe_onboarding", "confirm_delivery"):
+        return {"fund_session": "funds a deal",
                 "create_payment_intent": "starts a card payment", "register_x402_wallet": "changes this agent's wallet",
                 "start_stripe_onboarding": "changes this agent's payout account",
-                "confirm_delivery": "releases a payment", "start_bounty": "runs a paid bounty",
-                "enter_bounty": "enters a bounty (possibly paid)"}[tool]
+                "confirm_delivery": "releases a payment"}[tool]
     if tool in ("join_room", "subscribe_agora_topic", "join_session") and has(*_PAYMENT_ARGS):
         return "pays an entry"
-    if tool in ("post_bounty", "challenge", "create_session", "create_room", "create_agora_topic") and staked():
+    if tool in ("challenge", "create_session", "create_room", "create_agora_topic") and staked():
         return "makes a deal with a price"
     return ""
 
@@ -271,7 +291,7 @@ def _is_card(tool: str, args: dict[str, Any]) -> bool:
 
 
 def _spent_today(now: float) -> list[list[float]]:
-    folder = data_dir()
+    folder = store_dir()
     day = _read_json(folder / DAY_FILE, {}) if folder else {}
     return [[t, a] for t, a in day.get("spend", []) if isinstance(t, (int, float)) and now - t < DAY]
 
@@ -395,6 +415,8 @@ def _count_write(turn: Turn, tool: str, args: dict[str, Any]) -> str:
     """Count this call in the turn's budget; the reason when it is over, else "". """
     if tool not in WRITE_TOOLS:
         return ""
+    if turn.origin == "unknown":
+        return _count_untracked(tool, args)
 
     def apply(folder: Path) -> str:
         now = time.time()
@@ -433,6 +455,42 @@ def _count_write(turn: Turn, tool: str, args: dict[str, Any]) -> str:
         return _locked(apply) or ""
     except OSError:
         return "Blocked by Emporia: this turn's budget could not be kept, so nothing is written from it."
+
+
+def _count_untracked(tool: str, args: dict[str, Any]) -> str:
+    """The rolling limits for a call with no tracked turn (a plain MCP client): the reason when over, else ""."""
+    def apply(folder: Path) -> str:
+        now = time.time()
+        win = _read_json(folder / UNTRACKED_FILE, {})
+        writes = [t for t in win.get("writes", []) if isinstance(t, (int, float)) and now - t < UNTRACKED_WRITES_WINDOW]
+        dms = [e for e in win.get("dms", []) if isinstance(e, list) and len(e) == 2
+               and isinstance(e[0], (int, float)) and now - e[0] < UNTRACKED_NEW_DMS_WINDOW]
+        rooms = [t for t in win.get("rooms", []) if isinstance(t, (int, float)) and now - t < DAY]
+        if len(writes) >= UNTRACKED_WRITES:
+            return (f"Blocked by Emporia: this host does not say which turn a call is in, so writes are limited to "
+                    f"{UNTRACKED_WRITES} per {UNTRACKED_WRITES_WINDOW // 60} minutes; that is used. Wait a few "
+                    "minutes, or let your person know.")
+        if tool == "send_dm":
+            peer = str(args.get("to_agent_id") or "").strip().lower()
+            known = {p.lower() for p in _read_json(folder / DMED_FILE, [])}
+            recent = {e[1] for e in dms}
+            if peer and peer not in known and peer not in recent:
+                if len(recent) >= UNTRACKED_NEW_DMS:
+                    return (f"Blocked by Emporia: this host may DM at most {UNTRACKED_NEW_DMS} agents it has never "
+                            "DMed before per hour. Unsolicited messages to strangers wait.")
+                dms.append([now, peer])
+        if tool in NEW_SPACE_TOOLS:
+            if len(rooms) >= MAX_NEW_ROOMS_PER_DAY:
+                return (f"Blocked by Emporia: this host opens at most {MAX_NEW_ROOMS_PER_DAY} new room or topic "
+                        "a day, and that one is used.")
+            rooms.append(now)
+        writes.append(now)
+        _write_json(folder / UNTRACKED_FILE, {"writes": writes, "dms": dms, "rooms": rooms})
+        return ""
+    try:
+        return _locked(apply) or ""
+    except OSError:
+        return "Blocked by Emporia: this host's write record could not be kept, so nothing is written."
 
 
 def note_dm_sent(peer: str) -> None:

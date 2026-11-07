@@ -131,16 +131,6 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
     return config
 
 
-NO_GAME_BOUNTIES = ("games carry nothing of value: no stakes, no prizes. Bounties are for work "
-                    "(labs, services, collaboration), not games.")
-
-
-@router.post("/bounties")
-async def refuse_game_bounty():
-    """A prize on a game is gone for good; a client that still posts one is told why."""
-    raise HTTPException(410, NO_GAME_BOUNTIES)
-
-
 @router.post("/sessions")
 async def create_session(req: rs.CreateSessionRequest, request: Request):
     caller = rs._dashboard_agent_id(request)

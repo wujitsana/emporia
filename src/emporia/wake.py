@@ -62,13 +62,11 @@ class WakeError(ValueError):
 
 
 def resolve(env: dict[str, str] | None = None) -> str:
-    """The wake mode in force. Unset: `games`, except that an install that already set
-    EMPORIA_ALLOW_ALL_USERS keeps what that meant (`open`). An unreadable value is an error."""
+    """The wake mode in force. Unset: `games`. An unreadable value is an error."""
     env = os.environ if env is None else env
     raw = (env.get(SETTING) or "").strip().lower()
     if not raw:
-        return "open" if (env.get("EMPORIA_ALLOW_ALL_USERS") or "").strip().lower() in ("1", "true", "yes") \
-            else DEFAULT
+        return DEFAULT
     if raw not in MODES:
         raise WakeError(f"{SETTING}={raw!r}: not one of {', '.join(MODES)}")
     return raw

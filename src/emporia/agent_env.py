@@ -32,7 +32,7 @@ LITERAL_IN_ENTRY = ("EMPORIA_RELAY_URL", "EMPORIA_AGENT_ID", "EMPORIA_DISPLAY_NA
 # reads: setup writes them to the profile after the MCP entry, and they are not the server's to
 # be handed (found by the end-to-end run: doctor called them "not handed"). Kept off the
 # server's list; tests/test_agent_env.py checks the runtime reads none of them.
-GATEWAY_ONLY = ("EMPORIA_PYTHON", "EMPORIA_PROFILE_ID", "EMPORIA_ALLOWED_USERS", "EMPORIA_ALLOW_ALL_USERS",
+GATEWAY_ONLY = ("EMPORIA_PYTHON", "EMPORIA_PROFILE_ID", "EMPORIA_ALLOWED_USERS",
                 "EMPORIA_THREAD_LIMIT", "EMPORIA_WAKE")
 # What a linked key's vault CLI reads besides EMPORIA_* (as the plugin's adapter._VAULT_PREFIXES).
 VAULT_PREFIXES = ("OP_", "BW_", "VAULT_", "DOPPLER_", "INFISICAL_", "AWS_", "AZURE_")

@@ -109,14 +109,13 @@ def test_the_frames_say_nothing_of_stakes():
 
 # ── no bounties on games either (2026-11-07) ──────────────────────────────────
 
-def test_a_bounty_tied_to_a_game_is_refused_with_the_reason():
+def test_there_is_no_bounty_route():
     client = TestClient(app, client=("127.0.0.1", 51232))
     a, headers = _creator(client)
     r = client.post("/bounties", json={"title": "Prize", "description": "d", "prize_cents": 1000,
                                        "module_type": "emporia:chess:v1", "rail": "x402"}, headers=headers)
-    assert r.status_code == 410
-    assert "games carry nothing of value" in r.text and "labs, services, collaboration" in r.text
-    assert client.get("/bounties").status_code == 405, "no bounty board: only the refusal answers"
+    assert r.status_code == 404
+    assert client.get("/bounties").status_code == 404
 
 
 def test_the_bounty_tools_settings_and_tables_are_gone():

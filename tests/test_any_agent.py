@@ -143,19 +143,24 @@ def test_the_cli_runs_init_without_asking_anything(tmp_path):
     assert bad.returncode == 2 and "client" in bad.stderr
 
 
-def test_the_questions_explain_themselves_and_the_recommended_path_asks_little(tmp_path, monkeypatch):
+def test_the_questions_explain_themselves_and_the_recommended_path_asks_little(tmp_path, monkeypatch, capsys):
+    from emporia import cli, setup_choices
     answers = iter(["", "http://relay.example", "quiet-one", ""])        # recommended, relay, name, host=default
-    seen: list[str] = []
-    pr = agent_init.Prompter(input_fn=lambda q: next(answers), out=type("O", (), {"write": lambda s, t: seen.append(t),
-                                                                                    "flush": lambda s: None})())
+    monkeypatch.setattr(cli, "_TTY", True)
+    monkeypatch.setattr(cli, "_menus", lambda: None)                      # the numbered fallback, as in a pipe
+    monkeypatch.setattr("builtins.input", lambda q="": next(answers))
+    monkeypatch.delenv("EMPORIA_RELAY_URL", raising=False)
     import argparse
     args = argparse.Namespace(path="", name="", relay="", client="", client_version="", model="",
                               no_declare_model=False, operator_label="", same_as="", display_name="",
                               no_register=True, recommended=False, json=False)
-    out = agent_init.ask_missing(args, pr)
-    text = "".join(seen)
+    out = agent_init.ask_missing(args)
+    text = capsys.readouterr().out
     assert out.relay == "http://relay.example" and out.name == "quiet-one" and out.client == "custom"
     assert "(recommended)" in text and "Declared on its signed card" in text and out.path == ""
+    for key in ("init_style", "init_host", "init_operator"):                # init's questions are in the registry
+        assert setup_choices.CHOICES[key].default and setup_choices.default(key)
+    assert not hasattr(agent_init, "Prompter")
 
 
 # ── the declared client ──────────────────────────────────────────────────────
@@ -430,3 +435,39 @@ def test_the_init_command_in_the_grok_bot_message_parses_with_the_real_cli():
     ns = cli.build_parser().parse_args(argv)
     assert (ns.action, ns.url_or_name, ns.agent, ns.client, ns.model) == (
         "init", "~/.emporia/agents/scout-1", "scout-1", "grok-bot", "grok-4")
+
+
+# ── one rounds prompt, and the safe default for hosts that do not report turns ──────────
+
+def test_the_routine_prompt_is_the_plugins_rounds_prompt_adapted():
+    from emporia import rounds
+    source = rounds.prompt_text()
+    routine = host_configs.routine_prompt()
+    assert routine.splitlines()[0] == source.splitlines()[0] == rounds.marker()
+    assert not hasattr(host_configs, "ROUTINE_PROMPT")
+    for old, new in host_configs.ROUTINE_SWAPS:          # every swap applies, and nothing Hermes-only is left
+        assert old in source and old not in routine
+    for hermes_only in ("playbook", "emporia rounds", "wake mode", "emporia skill", "other jobs"):
+        assert hermes_only not in routine.lower(), hermes_only
+    # the rules that matter are shared, word for word
+    for line in source.splitlines():
+        if line.startswith("- Be friendly and openly skeptical") or line.startswith("- Never post outside Emporia"):
+            assert line in routine
+
+
+@pytest.mark.parametrize("host", ["claude-code", "claude-desktop", "cursor", "generic", "openai-agents", "grok-build"])
+def test_mcp_config_never_sets_the_untracked_person_switch(host, tmp_path):
+    key_dir = tmp_path / "k"
+    agent_init.init_agent(name="cfg-agent", key_dir=key_dir, relay="http://relay.example", client=host if host != "generic" else "custom",
+                          register=False)
+    text, _ = host_configs.render(host, host_configs.settings_for(host, key_dir), "emporia-mcp")
+    assert "EMPORIA_UNTRACKED_TURNS" not in text
+    assert "EMPORIA_UNTRACKED_TURNS" not in host_configs.ENV_NAMES
+
+
+def test_the_portable_skill_carries_open_skepticism_and_the_autonomous_limits():
+    text = (ROOT / "skills" / "portable" / "emporia" / "SKILL.md").read_text()
+    assert "openly skeptical" in text and "may be hostile" in text
+    for phrase in ("5 writes", "2 agents you never messaged", "one new\n>   room or topic a day", "no money at all"):
+        assert phrase in text, phrase
+    assert "Hermes" not in text.split("## Connecting")[0].replace("Hermes's", "")

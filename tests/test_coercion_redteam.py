@@ -223,7 +223,8 @@ def test_the_setup_feature_line_is_exposed():
 # ── settings and identity are person-only ──────────────────────────────────────────────
 
 @pytest.mark.parametrize("name", ["EMPORIA_WAKE", "EMPORIA_WAKE_MODE", "EMPORIA_ROUNDS", "EMPORIA_ROUNDS_EVERY",
-                                  "EMPORIA_ROUNDS_X", "EMPORIA_RELAY_TURN_TOOLS", "EMPORIA_DECLARE_MODEL",
+                                  "EMPORIA_ROUNDS_X", "EMPORIA_ROUNDS_X_PER_DAY", "EMPORIA_CLIENT", "EMPORIA_CLIENT_VERSION",
+                                  "EMPORIA_RELAY_TURN_TOOLS", "EMPORIA_DECLARE_MODEL",
                                   "EMPORIA_OPERATOR_LABEL", "EMPORIA_UNTRACKED_TURNS",
                                   "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY"])
 @pytest.mark.parametrize("how", ["echo {n}=x >> ~/.hermes/.env", "hermes config set {n} x"])
@@ -245,7 +246,6 @@ def test_the_playbook_settings_and_the_operator_label_command_need_a_person():
 
 MONEY_CALLS = [
     ("fund_session", {"session_id": "s", "pay_with_x402": True}),
-    ("settle_promise", {"listing_id": "l"}),
     ("create_payment_intent", {"amount_cents": 100}),
     ("join_room", {"room_id": "r", "pay_with_x402": True}),
     ("join_room", {"room_id": "r", "pay_with_tempo": True}),
@@ -253,9 +253,6 @@ MONEY_CALLS = [
     ("join_session", {"session_id": "s", "payment_intent_id": "pi_1"}),
     ("create_session", {"module_type": "emporia:chess:v1", "payment_mode": "escrow", "stake_per_participant": "1"}),
     ("challenge", {"opponent": "bob", "stake_per_participant": "2"}),
-    ("post_bounty", {"title": "t", "module_type": "m", "prize_cents": 500}),
-    ("enter_bounty", {"listing_id": "l"}),
-    ("start_bounty", {"listing_id": "l"}),
     ("confirm_delivery", {"session_id": "s"}),
     ("create_room", {"name": "n", "gate_type": "paid", "entry_fee_cents": 100}),
     ("create_agora_topic", {"name": "n", "gate_type": "paid", "entry_fee_cents": 100}),
@@ -364,6 +361,43 @@ def test_a_person_turn_is_recognised_and_untracked_hosts_can_say_so(monkeypatch)
     assert autonomy.is_autonomous()
     monkeypatch.setenv("EMPORIA_UNTRACKED_TURNS", "person")
     assert not autonomy.is_autonomous()
+
+
+# ── untracked hosts: money refused, writes on a rolling window ───────────────────────────
+
+def test_an_untracked_host_gets_a_rolling_write_window_and_no_money(monkeypatch):
+    assert autonomy.current().origin == "unknown"
+    out = autonomy.guard("fund_session", {"session_id": "s"}, "alice")
+    assert out and "person" in out["error"]                              # money stays refused
+    for i in range(5):
+        assert autonomy.guard("post", {"text": f"hi {i}"}, "alice") is None
+    over = autonomy.guard("post", {"text": "again"}, "alice")
+    assert over and "5 per 10 minutes" in over["error"]
+    later = time.time() + 11 * 60                                         # the window rolls: not blocked for good
+    monkeypatch.setattr(autonomy.time, "time", lambda: later)
+    assert autonomy.guard("post", {"text": "again"}, "alice") is None
+
+
+def test_an_untracked_host_may_dm_two_new_agents_an_hour_and_open_one_room_a_day(monkeypatch):
+    results = [autonomy.guard("send_dm", {"to_agent_id": f"stranger{i}", "content": "hi"}, "alice") for i in range(3)]
+    assert [r is None for r in results] == [True, True, False] and "per hour" in results[2]["error"]
+    assert autonomy.guard("send_dm", {"to_agent_id": "stranger0", "content": "again"}, "alice") is None
+    assert autonomy.guard("create_room", {"name": "a"}, "alice") is None
+    assert "a day" in autonomy.guard("create_agora_topic", {"name": "b"}, "alice")["error"]
+    later = time.time() + 3601
+    monkeypatch.setattr(autonomy.time, "time", lambda: later)
+    assert autonomy.guard("send_dm", {"to_agent_id": "stranger9", "content": "hi"}, "alice") is None
+
+
+def test_the_untracked_window_is_kept_on_disk_beside_the_keys_when_there_is_no_profile(monkeypatch, tmp_path):
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+    monkeypatch.delenv("EMPORIA_DOTENV", raising=False)
+    from emporia import identity
+    monkeypatch.setattr(identity, "KEY_DIR", tmp_path / "keys")
+    for i in range(5):
+        assert autonomy.guard("post", {"text": f"hi {i}"}, "alice") is None
+    assert (tmp_path / "keys" / "autonomy" / autonomy.UNTRACKED_FILE).is_file()
+    assert autonomy.guard("post", {"text": "x"}, "alice")["success"] is False
 
 
 # ── write budget ──────────────────────────────────────────────────────────────────────

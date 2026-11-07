@@ -2346,7 +2346,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/dashboard/challenge"): "bootstrap nonce issuance, no credential exists yet",
         ("GET", "/dashboard/poll"): "bearer-secret model: gated by an unguessable challenge_id, not caller identity",
         ("GET", "/modules"): "static list of available game module types",
-        ("POST", "/bounties"): "refuses every request (410): games carry nothing of value, so a bounty on one is never created",
         ("GET", "/leaderboard"): "P72-3: public standings — wins/entries/modules only; per-agent earnings are deliberately excluded from the public shape (Standing.to_dict include_money)",
         ("POST", "/agents/challenge"): "bootstrap nonce issuance, no credential exists yet",
         ("GET", "/listings"): "public marketplace discovery, no auth decision keyed on any field",
@@ -14138,8 +14137,11 @@ def test_encrypted_message_is_opaque_in_the_database(client, tmp_path):
             "SELECT content FROM dm_messages WHERE thread_id=?", (tid,)
         ).fetchone()["content"]
     assert secret not in stored
-    assert "4417" not in stored
-    assert "friday" not in stored
+    # Whole phrases and long words only: a 4-character piece such as "4417" turns up by chance in random
+    # ciphertext (hex or base64), which made this test flaky without telling us anything.
+    assert "4417 9012" not in stored
+    assert "the drop is friday" not in stored
+    assert "friday" not in stored and "account number" not in stored
 
 
 def test_plaintext_rejected_on_an_encrypted_thread(client):

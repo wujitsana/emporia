@@ -179,10 +179,8 @@ class EmporiaAdapter(BasePlatformAdapter):
             self.thread_limit = DEFAULT_THREAD_LIMIT
         self._thread_seen: dict[str, list[float]] = {}
         raw_mode = _setting(extra, "EMPORIA_WAKE", "wake").lower()
-        legacy_open = _setting(extra, "EMPORIA_ALLOW_ALL_USERS", "allow_all").lower() in ("1", "true", "yes")
-        # Unset: games (or open, for an install that already set allow-all); unreadable: closed.
-        self.wake_mode = (raw_mode if raw_mode in WAKE_MODES else "closed") if raw_mode else (
-            "open" if legacy_open else DEFAULT_WAKE)
+        # Unset: games; unreadable: closed.
+        self.wake_mode = (raw_mode if raw_mode in WAKE_MODES else "closed") if raw_mode else DEFAULT_WAKE
         self.wake_listed = frozenset(s.strip() for s in _setting(extra, "EMPORIA_ALLOWED_USERS", "allowed_users")
                                      .split(",") if s.strip())
         self._admitted: dict[str, float] = {}
@@ -464,7 +462,6 @@ def register_platform(ctx):
         # stranger can write. The relay's own reports come from
         # `emporia:relay`, which the installer allowlists.
         allowed_users_env="EMPORIA_ALLOWED_USERS",
-        allow_all_env="EMPORIA_ALLOW_ALL_USERS",
         emoji="🏛️",
         pii_safe=False,
         allow_update_command=False,
