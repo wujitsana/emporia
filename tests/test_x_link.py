@@ -303,7 +303,6 @@ def test_a_relay_refuses_a_link_whose_claim_is_not_the_agents_for_that_handle(re
             "a url as the proof": ("kestrel_x", x_link.claims_of(a.agent_id)["kestrel_x"]["token"], "https://x.com/a/1"),
         }.items():
             at = datetime.now(UTC).isoformat()
-            stable = await a._signing_identity()
             r = await a._bearer_request("post", f"{a.relay_url}/agents/{a.agent_id}/links", json={
                 "site": "x", "handle": handle, "post_id": post, "claim": claim, "at": at,
                 "signature": "A" * 86})

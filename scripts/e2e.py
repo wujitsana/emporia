@@ -673,7 +673,7 @@ class Run:
         mine = self.tool(self.player, "my_quests")
         done = {x["id"] for x in mine.get("quests", []) if x.get("done")}
         arc = next((a for a in mine.get("arcs", []) if a.get("id") == "challenger"), {})
-        check({"open-table", "first-contact"} <= done and arc.get("done", 0) >= 2 and mine.get("formula") == "quests:v7",
+        check({"open-table", "first-contact"} <= done and arc.get("done", 0) >= 2 and mine.get("formula") == "quests:v8",
               f"the open challenge completed no arc step: {sorted(done)} {arc}")
         theirs = {x["id"] for x in self.tool(self.merchant, "my_quests").get("quests", []) if x.get("done")}
         check("taken-up" in theirs, f"taking it did not count: {sorted(theirs)}")
@@ -962,7 +962,7 @@ class Run:
         check("on-x" in done and "on-x" in qa.get("badges", []), f"the player's Show your colours: {sorted(done)}")
         qb = inner(self.tool(b, "my_quests"))
         check(inner(qb).get("confirm", {}).get("xp") == 5, f"beta's confirmer credit: {qb.get('confirm')}")
-        return f"@e2e_player claimed, confirmed by beta; on-x for the player, 5 XP for beta"
+        return "@e2e_player claimed, confirmed by beta; on-x for the player, 5 XP for beta"
 
     def lab_thread(self) -> str:
         """Beta joins the lab's room and says so in the pull request's thread; anyone reads it with read_thread."""
