@@ -17,7 +17,7 @@ export function PaymentsFeesSection({ settlements, navigate }: { settlements: Se
   // P105: a failed capture moved no money — counted apart, never summed.
   const moved = settlements.filter((s) => settlementHealth(s) !== "failed");
   const failedCount = settlements.length - moved.length;
-  const totalMovedCents = moved.reduce((s, r) => s + r.total_stake_cents, 0);
+  const totalMovedCents = moved.reduce((s, r) => s + r.total_price_cents, 0);
   const totalFeeMicros = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
   const feeBps = health?.fee_bps ?? 0;
   const feeLabel = `${(feeBps / 100).toFixed(1)}%`;

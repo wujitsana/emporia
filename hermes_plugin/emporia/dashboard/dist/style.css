@@ -531,16 +531,10 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 
 .e-dim   { opacity: 0.5; }
 .e-faint { opacity: 0.35; }
-
-.e-trust-verified {
-  background: var(--theme-focused-foreground);
-  color: var(--theme-background);
-}
 .e-trust-key { opacity: 0.55; }
 
 /* Master-detail selection indicator */
 .e-sel   { border-left: 2px solid var(--theme-focused-foreground); padding-left: 8px; }
-.e-unsel { border-left: 2px solid transparent; padding-left: 8px; }
 
 .e-status-txt {
   font-size: 0.682rem;
@@ -568,52 +562,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   overflow: hidden;
   contain: layout paint;
 }
-
-/* Old left-sidebar layout — kept for non-header-nav mode */
-.e-app-sidebar {
-  flex-shrink: 0;
-  width: clamp(12rem, 22ch, 100%);
-  max-width: 20rem;
-  border-right: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-  height: 100%;
-  min-height: 0;
-  position: sticky;
-  top: 0;
-  align-self: stretch;
-  background: var(--theme-background);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.e-app-shell--header-nav .e-app-sidebar { display: none; }
-
-.e-sidebar-inner {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-  overflow: hidden;
-}
-.e-sidebar-head { flex-shrink: 0; }
-
-.e-sidebar-nav {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px 0 8px;
-  overflow-y: auto;
-}
-
-.e-nav-row-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
-}
 .e-nav-row-hotkey { font-size: 0.715rem; opacity: 0.5; font-variant-numeric: tabular-nums; }
 
 .e-sidebar-group { display: flex; flex-direction: column; gap: 0; }
@@ -624,24 +572,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   opacity: 0.45;
   padding: 6px 10px 4px;
   user-select: none;
-}
-
-.e-sidebar-fill {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 8px 8px 10px;
-  overflow-y: auto;
-  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-}
-
-.e-sidebar-keys { display: flex; flex-direction: column; gap: 6px; }
-.e-sidebar-keys__grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
 }
 .e-sidebar-key {
   display: flex;
@@ -659,44 +589,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-sidebar-key:hover,
 .e-sidebar-key:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
 .e-sidebar-key__k { opacity: 0.55; font-variant-numeric: tabular-nums; }
-
-.e-sidebar-foot {
-  flex-shrink: 0;
-  position: relative;
-  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-}
-.e-sidebar-foot--minimal { padding: 10px 12px; }
-
-.e-theme-panel {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  right: 0;
-  z-index: 5;
-  background: var(--theme-background);
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));
-  border-bottom: none;
-  padding: 14px 12px 16px;
-  box-shadow: 0 -12px 28px rgba(0,0,0,0.25);
-}
-.e-theme-panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.e-theme-panel__title  { font-size: 0.715rem; letter-spacing: 0.08em; }
-.e-theme-panel__label  { font-size: 0.66rem; letter-spacing: 0.1em; margin-bottom: 8px; display: block; }
-.e-theme-panel__modes  { display: flex; gap: 10px; }
-.e-theme-panel__rule   { height: 1px; margin: 14px 0 12px; background: var(--theme-border-subdued, rgba(255,255,255,0.1)); }
-.e-theme-panel__tints  {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 14px;
-  justify-content: flex-start;
-  padding-top: 2px;
-}
 
 .e-app-main {
   flex: 1;
@@ -752,15 +644,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-brand-title { font-size: 1.155rem !important; letter-spacing: 0.06em; }
 .e-brand-title--header { font-size: 1.1rem; font-weight: 600; }
 
-.e-topbar-title {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  min-width: 0;
-}
-.e-topbar-icon { font-size: 1.485rem; line-height: 1; color: var(--theme-focused-foreground); margin-top: 2px; }
-.e-topbar-blurb { font-size: 0.748rem !important; max-width: 42ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
 /* Destinations (nav v2): six tabs in the header row, beside the brand. */
 .e-section-tabs {
   display: none;
@@ -770,8 +653,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   box-sizing: border-box;
 }
 @media (min-width: 901px) {
-  .e-section-tabs--horizontal { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; }
-}
+  .e-section-tabs--horizontal { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; }}
 
 .e-section-tab {
   display: inline-flex;
@@ -848,10 +730,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   flex-direction: column;
   height: 100%;
   padding: 16px 12px;
-}
-.e-mobile-drawer__theme {
-  padding-top: 12px;
-  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
 }
 
 /* ─── 6. VIEW BODY ───────────────────────────────────────────────────────── */
@@ -1009,11 +887,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   font-family: var(--font-family-mono, ui-monospace, monospace);
 }
 .e-meta-grid dd { margin: 0; font-size: 0.858rem; word-break: break-word; }
-.e-meta-grid--inline {
-  margin-top: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-}
-.e-meta-grid--inline .e-meta-grid__row { grid-template-columns: 1fr; gap: 2px; }
 
 /* Empty pane */
 .e-empty-pane {
@@ -1068,10 +941,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   display: block;
   font-size: 0.7rem;
   margin-bottom: 6px;
-}
-.e-chess-meta {
-  width: 100%;
-  margin-top: 4px;
 }
 
 .e-chess-players {
@@ -1242,7 +1111,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   gap: 12px;
   margin-bottom: 24px;
 }
-@media (min-width: 720px) { .e-hero-stats { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 720px) { .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}
 
 .e-hero-stat {
   padding: 16px 18px;
@@ -1267,15 +1136,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-hero-stat--accent .e-hero-stat__value { color: var(--theme-focused-foreground); }
 .e-hero-stat__label { font-size: 0.715rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; }
 .e-hero-stat__hint  { font-size: 0.748rem; opacity: 0.4; }
-.e-hero-stats--clickable .e-hero-stat {
-  cursor: pointer;
-  border: 1px solid transparent;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-}
-.e-hero-stats--clickable .e-hero-stat:hover { border-color: var(--theme-focused-foreground); }
-.e-hero-stat--status { cursor: default; }
 
 /* MCP command hint — "show the tool call" write-action affordance */
 .e-mcp-hint {
@@ -1321,7 +1181,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   background: transparent !important;
   white-space: nowrap;
 }
-.e-status-pill--on { color: var(--theme-focused-foreground); border-color: var(--theme-focused-foreground); }
 .e-status-pill--off { opacity: 0.45; }
 
 /* ─── 9. OVERVIEW ────────────────────────────────────────────────────────── */
@@ -1351,9 +1210,9 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   margin-bottom: 20px;
   min-width: 0;
 }
-@media (min-width: 560px)  { .e-overview-hub { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (min-width: 900px)  { .e-overview-hub { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-@media (min-width: 1300px) { .e-overview-hub { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@media (min-width: 560px)  { .e-overview-hub { grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+@media (min-width: 900px)  { .e-overview-hub { grid-template-columns: repeat(4, minmax(0, 1fr)); }}
+@media (min-width: 1300px) { .e-overview-hub { grid-template-columns: repeat(5, minmax(0, 1fr)); }}
 
 .e-overview-card {
   display: flex;
@@ -1429,33 +1288,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   white-space: nowrap;
 }
 
-.e-dashboard-layout {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 1rem;
-  align-items: start;
-}
-@media (min-width: 1100px) { .e-dashboard-layout { grid-template-columns: 1.35fr 1fr; } }
-
-.e-grid-stats {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1px;
-  background: var(--theme-border-subdued, rgba(255,255,255,0.06));
-}
-@media (min-width: 600px) { .e-grid-stats { grid-template-columns: repeat(3, 1fr); } }
-
-/* Nav card grid (classic layout, still rendered in overview) */
-.e-grid-nav-cards {
-  display: grid;
-  grid-template-columns: repeat(1, 1fr);
-  gap: 10px;
-}
-@media (min-width: 480px)  { .e-grid-nav-cards { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 768px)  { .e-grid-nav-cards { grid-template-columns: repeat(3, 1fr); } }
-@media (min-width: 1200px) { .e-grid-nav-cards { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1400px) { .e-grid-nav-cards { grid-template-columns: repeat(3, 1fr); } }
-
 .e-nav-card {
   display: flex;
   flex-direction: column;
@@ -1474,10 +1306,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-nav-card:hover,
 .e-nav-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
 .e-nav-card[data-active="true"] { border-color: var(--theme-focused-foreground); box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }
-.e-nav-card__head { display: flex; width: 100%; align-items: center; gap: 10px; }
-.e-nav-card__icon { font-size: 1.375rem; line-height: 1; flex-shrink: 0; }
-.e-nav-card__caption { font-size: 0.792rem; line-height: 1.3; }
-.e-nav-card__blurb  { font-size: 0.792rem; line-height: 1.35; }
 .e-nav-card__hotkey {
   position: absolute;
   top: 10px; right: 10px;
@@ -1487,47 +1315,9 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   padding: 2px 5px;
 }
 
-.e-stat-tile {
-  padding: 16px 20px 14px;
-  background: var(--theme-background);
-  border: none;
-  cursor: default;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  text-align: left;
-  color: inherit;
-  font: inherit;
-}
-.e-stat-tile[data-clickable] { cursor: pointer; }
-.e-stat-tile[data-clickable]:hover { outline: 1px solid var(--theme-focused-foreground); outline-offset: -1px; }
-
 /* Stat strip */
 .e-stat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-.e-stat-strip__item {
-  padding: 8px 14px;
-  border-radius: 0;
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-  background: transparent !important;
-}
-.e-stat-strip__item--link { cursor: pointer; font: inherit; color: inherit; }
-.e-stat-strip__item--link:hover { border-color: var(--theme-focused-foreground); }
-.e-stat-strip__item--link:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: 2px; }
-.e-stat-strip__val { font-size: 1.1rem; font-weight: 600; display: block; }
 .e-stat-strip__lbl { font-size: 0.682rem; opacity: 0.55; }
-
-.e-nav-row-meta { display: inline-flex; align-items: center; gap: 6px; }
-.e-nav-metric {
-  font-size: 0.682rem;
-  font-variant-numeric: tabular-nums;
-  padding: 1px 6px;
-  background: transparent;
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));
-  color: var(--theme-focused-foreground);
-  max-width: 5ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* Live event feed */
 .e-feed-panel { max-height: min(70vh, 520px); overflow-y: auto; }
@@ -1563,60 +1353,13 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-feed-detail  { font-size: 0.902rem !important; }
 .e-feed-time    { font-size: 0.748rem !important; font-variant-numeric: tabular-nums; }
 .e-feed-jump    { font-size: 0.715rem !important; opacity: 0.45; margin-top: 4px; }
-.e-feed-count   { font-variant-numeric: tabular-nums; }
-
-/* Shortcut list (overview shortcuts panel) */
-.e-shortcut-list { list-style: none; margin: 0; padding: 0; }
-.e-shortcut-row {
-  display: grid;
-  grid-template-columns: 28px 1fr auto 28px;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border: none;
-  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.e-shortcut-row:hover { background: transparent; }
-.e-shortcut-row__icon    { opacity: 0.9; }
-.e-shortcut-row__label   { font-weight: 500; font-size: 0.902rem; }
-.e-shortcut-row__metric  { font-size: 0.748rem; color: var(--theme-text-subdued, #888); text-align: right; }
-.e-nav-kbd {
-  font-family: inherit;
-  font-size: 0.682rem;
-  padding: 2px 5px;
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.15));
-  opacity: 0.7;
-  text-align: center;
-}
-.e-panel-hint     { font-size: 0.682rem !important; }
-.e-panel-footnote { display: block; font-size: 0.748rem; margin-top: 12px; }
 
 /* ─── 10. THEME PICKER ───────────────────────────────────────────────────── */
 
 .e-theme-compact { position: relative; }
 .e-theme-compact--inline { display: flex; align-items: center; }
-.e-theme-compact__btn { padding: 4px; border: none; background: transparent; cursor: pointer; }
 /* Fixed, but inside the frame's `contain: layout paint`: it covers the frame, never the page around it. */
 .e-theme-compact__backdrop { position: fixed; inset: 0; z-index: 200; border: 0; background: transparent; }
-.e-theme-compact__pop {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 210;
-  padding: 10px 12px;
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));
-  background: var(--theme-background);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  width: max-content;
-}
-
-.e-theme-picker--mini { flex-direction: row; align-items: center; gap: 8px; }
 
 .e-theme-duo {
   display: inline-flex;
@@ -1658,55 +1401,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-theme-circle--mode[data-mode="theme-light"] { background: #f2f2f2; }
 .e-theme-circle--mode[data-mode="theme-dark"]  { background: #121212; }
 .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
-
-.e-accent-row   { display: flex; flex-wrap: wrap; gap: 4px; }
-.e-accent-dot {
-  width: 22px; height: 22px;
-  padding: 0;
-  border: 2px solid transparent;
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.e-accent-dot span { width: 12px; height: 12px; border-radius: 50%; display: block; flex-shrink: 0; }
-.e-accent-dot.is-active { border-color: var(--theme-focused-foreground); }
-.e-accent-dot--inline span { width: 10px; height: 10px; }
-
-.e-accent-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-.e-accent-swatch {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 4px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.638rem;
-  color: inherit;
-}
-.e-accent-swatch.is-active { border-color: var(--theme-focused-foreground); }
-.e-accent-swatch__dot { width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2); }
-.e-accent-swatch__dot--sm { width: 12px; height: 12px; }
-.e-accent-swatch__name { opacity: 0.75; }
-
-/* Dark/light pill toggle */
-.e-mode-toggles {
-  display: flex;
-  background: var(--theme-border-subdued, rgba(255,255,255,0.08));
-  border-radius: 20px;
-  padding: 2px;
-  gap: 2px;
-}
 .e-mode-toggle {
   width: 26px; height: 26px;
   padding: 0;
@@ -1730,111 +1424,8 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   color: var(--theme-focused-foreground);
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
-
-.e-tint-swatch {
-  width: 14px; height: 14px;
-  border-radius: 50%;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  flex-shrink: 0;
-  outline: 2px solid transparent;
-  outline-offset: 2px;
-}
-.e-tint-swatch:hover,
-.e-tint-swatch:focus-visible { outline-color: var(--theme-text, #fff); }
-.e-tint-swatch[aria-pressed="true"] { outline-color: var(--theme-focused-foreground); }
-.e-tint-swatch--inline { width: 10px; height: 10px; pointer-events: none; vertical-align: middle; }
-
-.e-theme-tints--footer { padding: 0; margin: 0; }
-.e-theme-picker { display: flex; flex-direction: column; gap: 10px; }
-.e-theme-picker--mini { flex-direction: row; align-items: center; gap: 10px; }
-.e-theme-picker__label { display: block; font-size: 0.682rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.6; margin-bottom: 6px; }
-.e-theme-tints--profile {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 8px;
-}
-.e-tint-swatch--labeled { position: relative; height: 36px; border-radius: 4px; border: 2px solid transparent; }
-.e-tint-swatch--labeled[aria-pressed="true"] { border-color: var(--theme-focused-foreground); }
-.e-tint-swatch__label {
-  position: absolute;
-  inset: auto 4px 3px 4px;
-  font-size: 0.605rem;
-  text-align: center;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
-  pointer-events: none;
-}
-
-.e-sidebar-theme-trigger {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border: none;
-  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-.e-sidebar-theme-trigger__right { display: flex; align-items: center; gap: 8px; }
-.e-sidebar-theme-trigger:hover { background: transparent; }
-.e-sidebar-theme-row { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; margin: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
-.e-sidebar-theme-row:hover,
-.e-sidebar-theme-row:focus-visible { outline: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.15)); outline-offset: -1px; }
-.e-sidebar-theme-simple  { display: flex; flex-direction: column; gap: 4px; }
-.e-sidebar-theme-label   { flex: 1; min-width: 0; white-space: nowrap; }
-.e-sidebar-theme-value   { display: inline-flex; align-items: center; gap: 8px; margin-left: 6px; opacity: 0.85; }
-.e-sidebar-theme-summary { display: inline-flex; align-items: center; gap: 6px; }
-
 /* ─── 11. RELAY STRIP ────────────────────────────────────────────────────── */
 
-.e-relay-strip {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
-  max-width: 100%;
-  justify-content: flex-end;
-}
-.e-relay-strip--compact { gap: 6px; }
-.e-relay-strip__host {
-  font-size: 0.792rem;
-  max-width: 22ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.e-relay-strip__meta {
-  font-size: 0.682rem;
-  max-width: 22ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.e-relay-strip__ws {
-  font-family: var(--font-family-mono, ui-monospace, monospace);
-  font-size: 0.792rem;
-  color: var(--theme-focused-foreground);
-  max-width: min(42vw, 520px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.e-relay-strip--with-ws { flex-wrap: wrap; row-gap: 4px; }
-.e-relay-ws-line {
-  display: block;
-  font-family: var(--font-family-mono, ui-monospace, monospace);
-  font-size: 0.88rem;
-  color: var(--theme-focused-foreground);
-  word-break: break-all;
-  margin-top: 6px;
-}
 .e-relay-status {
   display: inline-flex;
   align-items: center;
@@ -1880,8 +1471,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   color: var(--theme-focused-foreground);
 }
 .e-status-chip:not(.is-ok) {
-  opacity: 0.7;
-}
+  opacity: 0.7;}
 .e-status-chip__label {
   letter-spacing: 0.02em;
 }
@@ -1901,10 +1491,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   display: inline-block;
   width: 1ch;
   text-align: center;
-}
-.e-status-chip__dot--pulse {
-  color: var(--theme-focused-foreground);
-  animation: e-status-pulse 1.2s ease-in-out infinite;
 }
 @keyframes e-status-pulse {
   0%, 100% { opacity: 1; }
@@ -1991,16 +1577,13 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   white-space: pre-wrap;
 }
 
-.e-dm-scroll { max-height: min(55vh, 480px); overflow-y: auto; padding-top: 8px; }
-
 /* Agora detail pane (also used for events detail) */
 .e-split-main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 8px 0 16px 0; }
 .e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main {
   padding-left: 4px;
 }
 .e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main:has(.e-chess-main) {
-  padding-left: 0;
-}
+  padding-left: 0;}
 .e-agora-detail { overflow: hidden; }
 .e-agora-detail__scroll { flex: 1; overflow-y: auto; padding: 16px; }
 .e-agora-detail__title { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; display: block; }
@@ -2023,8 +1606,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 
 .e-post-row { display: flex; gap: 10px; align-items: flex-start; flex: 1; }
 .e-post-title { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-
-.e-vote-row { display: flex; align-items: center; gap: 6px; }
 .e-vote-btn {
   background: none;
   border: none;
@@ -2036,15 +1617,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   transition: opacity 0.15s, color 0.15s;
 }
 .e-vote-btn:hover { opacity: 1; }
-.e-vote-btn--up:hover,
-.e-vote-btn--up.is-voted   { color: var(--theme-focused-foreground); opacity: 1; }
-.e-vote-btn--down:hover,
-.e-vote-btn--down.is-voted { color: #a0a0a0; opacity: 1; }
 .e-vote-score { font-size: 13px; min-width: 20px; text-align: center; }
-.e-vote-inline { display: flex; flex-direction: row; align-items: center; gap: 4px; flex-shrink: 0; }
-
-.e-compose-inline { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; }
-.e-agent-chips    { padding-top: 0; border-bottom: none; }
 
 /* ─── 15. SEGMENT TABS ───────────────────────────────────────────────────── */
 
@@ -2094,12 +1667,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-gate-badge--invite { background: rgba(128,128,255,0.15); color: #8888ff; }
 .e-gate-badge--paid   { background: rgba(80,200,120,0.15);  color: #4caf7a; }
 .e-gate-badge--advert { background: rgba(255,190,80,0.15);  color: #d9a441; }
-
-/* P249: rooms and topics advertised by relays this one links to — read-only. */
-.e-elsewhere { margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1)); }
-.e-elsewhere__title { padding: 0 10px 4px; }
-.e-elsewhere__row { padding: 6px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05)); }
-.e-elsewhere__head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 
 .e-outcome-pill {
   display: inline-block;
@@ -2161,7 +1728,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-compact-table { overflow-x: auto; }
 
 .e-compact-table table,
-.e-listings-native {
+.e-table {
   width: 100%;
   border-collapse: collapse;
   font-family: var(--font-family-mono, ui-monospace, monospace);
@@ -2171,7 +1738,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 /* Header row — keep the SRCL gray bar */
 .e-dashboard-shell .e-compact-table thead td,
 .e-dashboard-shell table thead td,
-.e-listings-native thead td {
+.e-table thead td {
   background: var(--ansi-240-gray-35, #585858) !important;
   color: var(--color-white, #fff);
   padding: 4px 8px;
@@ -2179,16 +1746,16 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   letter-spacing: 0.06em;
 }
 
-.e-listings-native tbody td {
+.e-table tbody td {
   padding: 5px 8px;
   border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
 }
 .e-dashboard-shell table tbody tr { background: transparent !important; }
 .e-dashboard-shell table tbody tr:hover { background: transparent !important; }
 
-.e-listings-row { cursor: pointer; }
-.e-listings-row:hover td { border-left: 2px solid var(--theme-focused-foreground); padding-left: 6px; }
-.e-listings-row:focus-visible { outline: 1px solid var(--theme-focused-foreground); }
+.e-table-row { cursor: pointer; }
+.e-table-row:hover td { border-left: 2px solid var(--theme-focused-foreground); padding-left: 6px; }
+.e-table-row:focus-visible { outline: 1px solid var(--theme-focused-foreground); }
 
 /* ─── 18. TOOLBAR & SEARCH ───────────────────────────────────────────────── */
 
@@ -2253,21 +1820,8 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-session-status-dot--active    { background: var(--theme-focused-foreground); }
 .e-session-status-dot--completed { background: rgba(128,128,128,0.6); }
 .e-session-status-dot--abandoned { background: rgba(180,80,80,0.5); }
-
 /* ─── 21. MESSAGES / INBOX ───────────────────────────────────────────────── */
 
-.e-messages-subnav {
-  padding: 10px 16px 0;
-  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-  flex-shrink: 0;
-}
-.e-messages-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 .e-messages-pane {
   display: flex;
   flex-direction: column;
@@ -2326,9 +1880,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 
 /* Kill all surfaces from panels and stat blocks */
 .e-dashboard-shell .e-app-top,
-.e-dashboard-shell .e-app-header,
 .e-dashboard-shell .e-mobile-top { background: var(--theme-background) !important; }
-.e-dashboard-shell .e-app-sidebar,
 .e-dashboard-shell .e-app-drawer,
 .e-dashboard-shell .e-mobile-drawer { background: var(--theme-background) !important; box-shadow: none; }
 .e-dashboard-shell .e-panel-card,
@@ -2336,7 +1888,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-dashboard-shell .e-panel-card__body,
 .e-dashboard-shell .e-slim-card,
 .e-dashboard-shell .e-hero-stat,
-.e-dashboard-shell .e-stat-strip__item,
 .e-dashboard-shell .e-kpi,
 .e-dashboard-shell .e-empty-pane { background: transparent !important; }
 
@@ -2345,9 +1896,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 @media (max-width: 900px) {
   .e-app-top { display: none; }
   .e-mobile-top { display: flex; }
-  .e-app-relay-bar { display: none; }
   .e-mobile-top { flex-wrap: wrap; }
-  .e-topbar-blurb { display: none; }
   .e-view-body { padding: 14px 12px 24px; }
   .e-app-drawer {
     display: flex;
@@ -2373,15 +1922,13 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
     border: 0;
     padding: 0;
     cursor: pointer;
-  }
-}
+  }}
 
 /* Narrow screens: SidebarLayout itself (kit module CSS) turns rail-beside-detail
    into list-then-detail with a back control — see ui/kit/SidebarLayout.tsx. */
 
 @media (min-width: 901px) {
-  .e-hero-stats { grid-template-columns: repeat(4, 1fr); }
-}
+  .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}
 
 /* P121: unread count on a conversation or on Activity. */
 .e-unread-count {
@@ -2402,8 +1949,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 }
 /* A phone (the switcher sits in the menu): under 16px, iOS zooms the page when the select takes focus. */
 @media (max-width: 900px) {
-  .e-viewer-switch select { font-size: 16px; min-height: 40px; }
-}
+  .e-viewer-switch select { font-size: 16px; min-height: 40px; }}
 
 /* P124: inbox / sent / all above the conversation list. */
 .e-messages-boxes { padding: 8px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12)); }
@@ -2415,9 +1961,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-docs-rail-item { display: flex; flex-direction: column; gap: 2px; text-align: left; }
 .e-doc { overflow-y: auto; max-width: 92ch; padding: 8px 20px 40px 20px; line-height: 1.55; }
 .e-doc .e-doc-h { margin: 1.4em 0 0.5em 0; line-height: 1.25; scroll-margin-top: 8px; }
-.e-doc .e-doc-h1 { font-size: 1.5em; margin-top: 0.4em; }
-.e-doc .e-doc-h2 { font-size: 1.25em; }
-.e-doc .e-doc-h3 { font-size: 1.08em; }
 .e-doc p, .e-doc .e-doc-list, .e-doc .e-doc-quote { margin: 0.6em 0; }
 .e-doc .e-doc-list { padding-left: 1.6em; }
 .e-doc code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 0 0.25em;
@@ -2443,8 +1986,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-setting-mark { width: 1.2em; text-align: center; }
 .e-setting-label { font-weight: 600; }
 .e-setting-value { font-family: var(--font-family-mono, monospace); overflow-wrap: anywhere; }
-.e-setting-warn .e-setting-mark { color: #c8901a; }
-.e-setting-danger .e-setting-mark, .e-setting-danger .e-setting-value { color: #d9534f; }
 .e-setting-about, .e-setting-cmd, .e-setting-note { padding-left: calc(1.2em + 8px); }
 .e-setting-cmd { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .e-setting-cmd code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 1px 6px;
@@ -2486,8 +2027,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-stats-table td { white-space: nowrap; }
 @media (max-width: 700px) {
   .e-stats-bars__row { grid-template-columns: 1fr auto; }
-  .e-stats-bars__track { grid-column: 1 / -1; grid-row: 2; }
-}
+  .e-stats-bars__track { grid-column: 1 / -1; grid-row: 2; }}
 
 /* ─── 24. RETROMOD ───────────────────────────────────────────────────────────
    The terminal look, kept and made consistent: monospace, hairline boxes, the
@@ -2533,7 +2073,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   text-transform: uppercase;
   line-height: 1.3;
 }
-.e-page-head__icon { color: var(--theme-focused-foreground); }
 .e-page-head__blurb {
   margin: 4px 0 0;
   font-size: 0.82rem;
@@ -2638,8 +2177,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 @media (max-width: 900px) {
   .e-subnav { padding: 0 8px; }
   .e-subnav__dest, .e-subnav__keys { display: none; }
-  .e-subnav__tab { min-height: 44px; padding: 0 14px; }
-}
+  .e-subnav__tab { min-height: 44px; padding: 0 14px; }}
 /* The whole menu scrolls as one, so the foot never covers the last sections. */
 .e-section-tabs--drawer { flex: none; overflow: visible; }
 .e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }
@@ -2728,7 +2266,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   box-sizing: border-box;
 }
 .e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main { padding: 12px 16px 24px 20px; }
-.e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main:has(.e-chess-main) { padding-left: 8px; }
+.e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main:has(.e-chess-main) { padding-left: 8px;}
 
 /* What-you-are-looking-at box on the Overview. */
 .e-intro {
@@ -2772,7 +2310,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 
 /* Leaderboard-style tables size to their content instead of spreading three
    short columns across a wide screen. */
-.e-listings-native.e-board { width: auto; min-width: min(100%, 34rem); }
+.e-table.e-board { width: auto; min-width: min(100%, 34rem); }
 
 /* Replay status line (ply, started, audit, verify) wraps instead of running off the edge. */
 .e-chess-replay-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
@@ -2788,7 +2326,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   .e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main { padding: 12px 16px 24px; }
 
   /* Tables scroll inside their own box; short cells stay on one line. */
-  .e-listings-native,
+  .e-table,
   .e-relay-table,
   .e-compact-table table {
     display: block;
@@ -2796,11 +2334,9 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
-  .e-listings-native td,
+  .e-table td,
   .e-relay-table td,
   .e-relay-table th { white-space: nowrap; }
-  .e-listings-native td.e-cell-wrap,
-  .e-listings-native td:has(> .e-cell-wrap) { white-space: normal; min-width: 18ch; }
 
   /* Comfortable targets. */
   .e-rail-item { min-height: 48px; padding: 10px 16px; }
@@ -2822,14 +2358,12 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   .e-theme-circle { width: 20px; height: 20px; }
   .e-theme-duo__rule { margin: 0 12px; }
   .e-viewer-switch select { min-height: 40px; font-size: 14px; }
-  .e-meta-grid__row { grid-template-columns: 6rem 1fr; }
-}
+  .e-meta-grid__row { grid-template-columns: 6rem 1fr; }}
 
 @media (pointer: coarse) {
   .e-section-tab { min-height: 44px; }
   .e-rail-item { min-height: 48px; }
-  .e-segment-tab { min-height: 40px; }
-}
+  .e-segment-tab { min-height: 40px; }}
 
 /* ─── 26. SET PLAYS (blotto, ⅔, lowest unique) ─────────────────────────── */
 
@@ -3057,8 +2591,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
     transition-duration: 0.35s !important;
     transition-timing-function: ease-out !important;
     transition-delay: 0s !important;
-  }
-}
+  }}
 
 /* ─── 29. CAPTURE MODE (?capture=1, src/capture.ts) ────────────────────── */
 /* For filming: nothing moves between frames, so a tint switched on the beat
@@ -3074,8 +2607,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 /* The capture frame (540 × 540 CSS px) is the phone layout; scale it so the
    smallest text on screen (0.65rem / 11px labels) is at least 13 CSS px. */
 @media (max-width: 700px) {
-  .e-capture .e-app-shell { zoom: 1.25; height: calc(var(--e-frame-h, 100dvh) / 1.25); }
-}
+  .e-capture .e-app-shell { zoom: 1.25; height: calc(var(--e-frame-h, 100dvh) / 1.25); }}
 
 .e-quest-next { margin: 4px 0 10px; font-size: 0.85rem; line-height: 1.5; }
 .e-quest-next code { font-size: 0.78rem; overflow-wrap: anywhere; opacity: 0.8; }
@@ -3092,13 +2624,11 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   .e-phase-strip__who { display: none; }
   .e-setplay { padding: 12px 16px 24px; }
   .e-blotto__grid th, .e-blotto__grid td { padding: 8px 6px; }
-  .e-blotto__grid tbody th { min-width: 9ch; }
-}
+  .e-blotto__grid tbody th { min-width: 9ch; }}
 
 @media (prefers-reduced-motion: reduce) {
   .e-dashboard-shell *,
-  .e-app-drawer { transition: none !important; animation: none !important; }
-}
+  .e-app-drawer { transition: none !important; animation: none !important; }}
 
 /* Calls (:v2 set plays): a forecast sealed with the first move — "called · sealed", then its percent. */
 .e-call-tag { margin-left: 8px; padding: 0 6px; font-size: 0.72rem; letter-spacing: 0.04em; white-space: nowrap;
@@ -3267,8 +2797,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   background: currentColor;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .e-look .e-anim-cursor { animation: e-anim-blink 1.06s steps(1, end) infinite; }
-}
+  .e-look .e-anim-cursor { animation: e-anim-blink 1.06s steps(1, end) infinite; }}
 @keyframes e-anim-blink { 50% { opacity: 0; } }
 
 /* Status lines: `emporia ~ hermes plugin · [1] · 01 / 14 · overview` above,
@@ -3312,8 +2841,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 }
 .e-look.theme-dark .e-anim-flash { background: var(--anim-fill); }
 @media (prefers-reduced-motion: no-preference) {
-  .e-look .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }
-}
+  .e-look .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }}
 @keyframes e-anim-flash {
   0% { opacity: 1; transform: scaleX(0.2); transform-origin: left; }
   45% { opacity: 1; transform: scaleX(1); transform-origin: left; }
@@ -3356,8 +2884,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   color: var(--anim-ink);
   font-weight: 700;
 }
-.e-look .e-status-chip.is-ok .e-status-chip__loader,
-.e-look .e-status-chip.is-ok .e-status-chip__dot--pulse { color: var(--anim-ink); }
+.e-look .e-status-chip.is-ok .e-status-chip__loader{ color: var(--anim-ink); }
 
 /* ─── 5. CAPTION BARS AND CHIPS ─────────────────────────────────────────
    The animatic's two text-on-fill shapes: a small bold chip (its
@@ -3404,7 +2931,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 /* Quests read like the animatic's QUESTS card: `>` lines, the done ones ticked. */
 .e-look .e-quest-row { font-size: 0.95rem !important; line-height: 1.7; opacity: 1; }
 .e-look .e-quest-row::before { content: "> "; color: var(--theme-focused-foreground); font-weight: 700; }
-.e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) 74%, var(--theme-background)); }
+.e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) 74%, var(--theme-background));}
 .e-look .e-quest-next .e-now__label { margin-right: 4px; }
 
 /* ─── 6. SET PLAYS ───────────────────────────────────────────────────── */
@@ -3534,8 +3061,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
     animation: e-anim-rise 0.38s var(--anim-ease) both;
   }
   .e-look .e-now { animation-delay: 0.05s; }
-  .e-look .e-setplay { animation-delay: 0.04s; }
-}
+  .e-look .e-setplay { animation-delay: 0.04s; }}
 @keyframes e-anim-rise {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
@@ -3549,8 +3075,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   .e-look .e-anim-hud { font-size: 0.7rem; }
   .e-look .e-anim-hud--top .e-anim-hud__where { flex-basis: 100%; }
   .e-look .e-anim-hud--foot { padding: 8px 16px 0; max-width: calc(100% - 16px); }
-  .e-look .e-setplay__game { font-size: 1.4rem; }
-}
+  .e-look .e-setplay__game { font-size: 1.4rem; }}
 
 /* ─── 11. HOME'S FIRST FRAME, THE MONEY CHIP, PLEDGES (review pass 2: P2, P3, P5, P6) ── */
 
@@ -3664,8 +3189,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   .e-app-shell.has-chat .e-relay-status { gap: 8px; flex-wrap: nowrap; }
   .e-app-shell.has-chat .e-relay-status__chips { gap: 6px; }
   .e-app-shell.has-chat .e-relay-status__host,
-  .e-app-shell.has-chat .e-relay-status__meta { display: none; }
-}
+  .e-app-shell.has-chat .e-relay-status__meta { display: none; }}
 .e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }
 
 /* The Arena: home (live, recent, boards) and a match with its step-through replay. Tokens only. */
@@ -3694,7 +3218,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-arena-head__players { overflow-wrap: anywhere; }
 .e-arena-head__badges { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .e-arena-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
-@media (min-width: 900px) { .e-arena-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
+@media (min-width: 900px) { .e-arena-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }}
 .e-arena-stage { min-width: 0; }
 .e-arena-slider { width: 100%; margin: 8px 0; accent-color: var(--theme-focused-foreground); }
 .e-arena-stepline { display: block; margin: 4px 0 10px; overflow-wrap: anywhere; }
@@ -3715,7 +3239,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-arena-step { display: block; width: 100%; text-align: left; font: inherit; font-size: 0.8rem; color: inherit; background: transparent; border: 0; border-left: 2px solid transparent; padding: 3px 6px; cursor: pointer; overflow-wrap: anywhere; }
 .e-arena-step.is-now { border-left-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
 .e-arena-step:hover, .e-arena-step:focus-visible { background: var(--theme-border-subdued); outline: none; }
-@media (max-width: 600px) { .e-arena { padding: 0 8px 20px; } .e-arena-steps { max-height: 12rem; } }
+@media (max-width: 600px) { .e-arena { padding: 0 8px 20px; } .e-arena-steps { max-height: 12rem; }}
 /* The kit's list markers (ul ▪, ol counters) are not wanted in the Arena's lists. */
 .e-arena ul, .e-arena ol { list-style: none; text-indent: 0; padding-left: 0; }
 .e-arena li { padding-left: 0; }
@@ -3725,7 +3249,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-arena { max-width: 100%; box-sizing: border-box; }
 .e-arena-slot, .e-arena-bids li, .e-arena-head__row, .e-arena-head__badges { min-width: 0; }
 .e-arena-slider, .e-arena-frame, .e-arena-cards { max-width: 100%; box-sizing: border-box; }
-@media (max-width: 600px) { .e-arena { padding-left: 0; padding-right: 0; } .e-arena-slot__who { min-width: 0; } }
+@media (max-width: 600px) { .e-arena { padding-left: 0; padding-right: 0; } .e-arena-slot__who { min-width: 0; }}
 
 /* The agent card: one component, full on the agent page, compact in headers and lists. Plain text, wraps at any width. */
 .e-agent-card { overflow-wrap: anywhere; max-width: 100%; }
@@ -3734,8 +3258,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-agent-card--compact { display: inline-flex; gap: 6px; align-items: flex-start; vertical-align: top; }
 .e-agent-card--compact .e-agent-card__about { display: block; }
 .e-agent-card__badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }
-.Text_text_1shpo {
+.e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }.Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
@@ -4044,43 +3567,6 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 .SimpleTable_statusOff_x98rn {
   color: var(--ansi-248-gray-66);
 }
-.AskAgent_root_n8p84 {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6ch;
-  min-height: 32px;
-  padding: 2px 10px;
-  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.AskAgent_root_n8p84:hover {
-  border-color: var(--theme-focused-foreground);
-  color: var(--theme-focused-foreground);
-}
-
-.AskAgent_row_n8p84 {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 0 8px;
-}
-
-.AskAgent_glyph_n8p84 {
-  color: var(--theme-focused-foreground);
-}
-
-@media (max-width: 700px) {
-  .AskAgent_root_n8p84 {
-    min-height: 40px;
-    padding: 4px 12px;
-  }
-}
 .AlertBanner_root_l7zgu {
   display: block;
   background: var(--theme-border);
@@ -4222,6 +3708,43 @@ scripts/cli/colors.json (#585858 / #00ff00 / #a8a8a8).
 .e-badge-panel__head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.8rem; margin-bottom: 8px; }
 .e-badge-panel__grid { display: flex; flex-wrap: wrap; gap: 6px; }
 .e-badge-panel__grid--panel { background: var(--p-panel); padding: 6px; margin-top: 8px; }
+.AskAgent_root_n8p84 {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6ch;
+  min-height: 32px;
+  padding: 2px 10px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.AskAgent_root_n8p84:hover {
+  border-color: var(--theme-focused-foreground);
+  color: var(--theme-focused-foreground);
+}
+
+.AskAgent_row_n8p84 {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 8px;
+}
+
+.AskAgent_glyph_n8p84 {
+  color: var(--theme-focused-foreground);
+}
+
+@media (max-width: 700px) {
+  .AskAgent_root_n8p84 {
+    min-height: 40px;
+    padding: 4px 12px;
+  }
+}
 .Chessboard_board_cycky {
   display: inline-table;
   border-collapse: collapse;

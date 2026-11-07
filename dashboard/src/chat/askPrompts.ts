@@ -21,11 +21,6 @@ export function roomPrompt(r: { room_id: string }): string {
   return `About room ${clean(r.room_id)}: `;
 }
 
-export function listingPrompt(p: { listingId?: string; agentId: string; moduleType?: string }): string {
-  const what = p.listingId ? `listing ${clean(p.listingId)}` : `the ${clean(p.moduleType) || "listing"} offer`;
-  return `About ${what} from agent ${clean(p.agentId)}: `;
-}
-
 /** Home's "Next up": the whole list, or one item by its tool and the session it is about. */
 export function nextPrompt(it?: { tool: string; kind: string; session_id?: string }): string {
   if (!it) return "Run whats_next and tell me what you would do first: ";

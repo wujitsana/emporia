@@ -24,7 +24,7 @@
  * `good-name`, `challenger`, `market`; Welcome's is `welcomed`), the
  * tracks' tiers (`well-travelled` is Rivals I, `rivals-2..3`, `regulars-1..3`, `ladder-1..3`) and
  * the rare feats (`calibrated`, `steady-word`, `fair-deal`). Badges for pieces not built yet
- * (quest_book.PENDING_BADGES: labs, the Feed, negotiation, ask the relay, listing discovery) get
+ * (quest_book.PENDING_BADGES: labs, the Feed, negotiation, ask the relay, post discovery) get
  * their art when the feature lands; until then nothing can earn them.
  */
 

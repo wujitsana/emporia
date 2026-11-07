@@ -25,11 +25,11 @@ import { GatedNote } from "./ui/GatedNote";
 import { isNarrow, useNarrow, useOverlayFocus } from "./ui/overlayFocus";
 import { PageHeading, ViewBoundary } from "./ui/layout";
 import { isTyping } from "./keyTarget";
-import { sessionSection, type NavOpts } from "./eventNav";
+import { sessionSection } from "./eventNav";
 import type { Navigate } from "./navigation";
 import {
   OverviewView,
-  ListingsView,
+  OffersView,
   RoomsView,
   AgentsView,
   AgorasView,
@@ -104,10 +104,8 @@ function AppInner() {
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [gameModuleType, setGameModuleType] = useState<string | null>(null);
-  const [listingPeek, setListingPeek] = useState<NavOpts["listingPeek"] | null>(null);
 
   const [sessionsRefresh, setSessionsRefresh] = useState(0);
-  const [listingsRefresh, setListingsRefresh] = useState(0);
   const [inboxUnread, setInboxUnread] = useState(0);
 
   const { events, seed, wsConnected } = useGlobalEvents();
@@ -152,7 +150,6 @@ function AppInner() {
       if (latestEvent.type === "session_created" || latestEvent.type === "session_completed"
         || latestEvent.type === "action_result")
         setSessionsRefresh((n) => n + 1);
-      if (latestEvent.type === "listing_created") setListingsRefresh((n) => n + 1);
     }
   }
 
@@ -177,7 +174,7 @@ function AppInner() {
     syncHash(id, sessionId);
   }, []);
 
-  // A route that names a session (`#/games/<id>`) opens it — on load and on a
+  // A route that names a session (`#/play/games/<id>`) opens it — on load and on a
   // route change (a hash change; on the Desktop page, a palette command).
   useEffect(() => {
     const onHash = () => {
@@ -199,7 +196,6 @@ function AppInner() {
       setNavOpen(false);
       // A section picked from the menu over full-page chat is shown; beside the drawer it stays open.
       if (isNarrow()) setChatOpen(false);
-      setListingPeek(null);
       setGameModuleType(null);
       setSelectedSessionId(null);
       setSelectedStep(null);
@@ -207,7 +203,7 @@ function AppInner() {
     [applyView],
   );
 
-  // Each destination reopens on the section last seen in it (Play → Tournaments, if that was last).
+  // Each destination reopens on the section last seen in it (Play → Games, if that was last).
   const lastInDest = useRef<Partial<Record<Destination, View>>>({});
   useEffect(() => {
     lastInDest.current[destinationOf(view).id] = view;
@@ -228,7 +224,6 @@ function AppInner() {
         if (!id) return;
         setSelectedSessionId(id);
         setSelectedStep(null);
-        setListingPeek(null);
         if (opts?.gameModuleType) applyView(sessionSection(opts.gameModuleType), id);
         else api.session(id)
           .then((s) => applyView(sessionSection(s.module_type), id))
@@ -240,7 +235,6 @@ function AppInner() {
       if (opts?.roomId !== undefined) setSelectedRoomId(opts.roomId);
       if (opts?.agentId !== undefined) setSelectedAgentId(opts.agentId);
       if (opts?.gameModuleType !== undefined) setGameModuleType(opts.gameModuleType || null);
-      if (opts?.listingPeek !== undefined) setListingPeek(opts.listingPeek ?? null);
     },
     [applyView],
   );
@@ -272,7 +266,7 @@ function AppInner() {
         });
         return;
       }
-      // `[` / `]`: the previous / next section in this destination (Games ↔ Tournaments).
+      // `[` / `]`: the previous / next section in this destination (Games ↔ Deals).
       if (e.key === "[" || e.key === "]") {
         const next = siblingView(view, e.key === "]" ? 1 : -1, { isSpectator, isOperator: isRelayOperator });
         if (next !== view) goToView(next);
@@ -370,7 +364,7 @@ function AppInner() {
               compact
             />
           </div>
-          {/* The sections inside this destination (Games · Tournaments), on every width. */}
+          {/* The sections inside this destination (Games · Deals), on every width. */}
           <SubNav view={view} onGo={goToView} badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined} />
           <div className="e-view">
             <NotAnAgentNote />
@@ -387,9 +381,7 @@ function AppInner() {
                 onAfterNavigate={() => setNavOpen(false)}
               />
             )}
-            {view === "listings" && (
-              <ListingsView refreshTrigger={listingsRefresh} navigate={navigate} />
-            )}
+            {view === "offers" && <OffersView navigate={navigate} />}
             {view === "games" && (
               <ArenaView
                 initialSessionId={selectedSessionId}
@@ -403,14 +395,13 @@ function AppInner() {
                 section={view}
                 initialSessionId={selectedSessionId}
                 initialGameModule={gameModuleType}
-                listingPeek={listingPeek}
                 refreshTrigger={sessionsRefresh}
                 onSessionShown={onSessionShown}
               />
             )}
             {view === "rooms" && <RoomsView initialRoomId={selectedRoomId} navigate={navigate} />}
             {view === "agents" && (
-              <AgentsView initialAgentId={selectedAgentId} listingPeek={listingPeek} navigate={navigate} />
+              <AgentsView initialAgentId={selectedAgentId} navigate={navigate} />
             )}
             {view === "feed" && <FeedView />}
             {view === "agora" && <AgorasView navigate={navigate} />}

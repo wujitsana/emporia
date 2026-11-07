@@ -27,8 +27,7 @@ import { ChessMoveLine, ChessPlayersBar } from "../ui/chessMatch";
 import { resolveDeepLinkedSession, shouldShowDeliveryActions } from "../sessionSelect";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
-import { isJobModule, type NavOpts } from "../eventNav";
-import { ListingPeekBanner } from "../ui/ListingPeekBanner";
+import { isJobModule } from "../eventNav";
 import { AuditBadge } from "../ui/AuditBadge";
 import { McpCommandHint } from "../ui/McpCommandHint";
 import { useInterval } from "../hooks";
@@ -543,14 +542,12 @@ export function GamesView({
   section = "games",
   initialSessionId,
   initialGameModule,
-  listingPeek,
   refreshTrigger,
   onSessionShown,
 }: {
   section?: SessionSection;
   initialSessionId: string | null;
   initialGameModule: string | null;
-  listingPeek: NavOpts["listingPeek"] | null;
   /** P34-1: bumped by App.tsx on a session event, so a new or finished game
    *  appears immediately rather than on the next poll tick. */
   refreshTrigger: number;
@@ -647,20 +644,9 @@ export function GamesView({
     return () => lifetime.abort();
   }, [initialSessionId, live, history, liveLoading, histLoading, deepLinkDone]);
 
-  // Likewise a listing peek picks its session once, not again on every poll.
-  const [peekDone, setPeekDone] = React.useState<typeof listingPeek | null>(null);
-  if (listingPeek && peekDone !== listingPeek && shown.length > 0) {
-    const agent = listingPeek.agentId;
-    const match =
-      shown.find((s) => s.participants.some((p) => p === agent || p.includes(agent.slice(-8)))) ??
-      shown.find((s) => listingPeek.moduleType && s.module_type === listingPeek.moduleType);
-    if (match) setSelected(match);
-    setPeekDone(listingPeek);
-  }
-
   // Default: the first live table (or result). Kept while it stays in the list.
-  if (useChanged([shown, liveTab, gameType, initialSessionId, listingPeek])
-    && !listingPeek && !ladders && (!initialSessionId || deepLinkDone === initialSessionId)) {
+  if (useChanged([shown, liveTab, gameType, initialSessionId])
+    && !ladders && (!initialSessionId || deepLinkDone === initialSessionId)) {
     setSelected((cur) => {
       if (cur && shown.some((s) => s.session_id === cur.session_id)) return cur;
       if (cur && cur.session_id === deepLinkDone) return cur;
@@ -753,7 +739,7 @@ export function GamesView({
   return (
     <ViewBody flush>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={30}
-        initialPane={initialSessionId || listingPeek ? "detail" : "list"}
+        initialPane={initialSessionId ? "detail" : "list"}
         backLabel={games ? (ladders ? "back to games" : "back to tables") : "back to deals"}>
         {ladders ? (
           <LaddersPanel moduleType={ladderGame} onOpen={openResult} />
@@ -772,13 +758,7 @@ export function GamesView({
               </Text>
             </Indent>
           ) : null}
-          {listingPeek && !selected ? <ListingPeekBanner peek={listingPeek} /> : null}
-          {!selected && listingPeek ? (
-            <Indent>
-              <Text className="e-faint">Pick a live or finished one in the list.</Text>
-            </Indent>
-          ) : null}
-          {!selected && !listingPeek && !deepLinkMiss && games ? (
+          {!selected && !deepLinkMiss && games ? (
             <Indent>
               {/* quests:v4: the open challenges anyone may take, then the recent results. */}
               <OpenChallenges moduleType={gameType || undefined} />
@@ -799,10 +779,7 @@ export function GamesView({
           ) : selected && isChessSelected ? (
             <ChessReplayPanel key={selected.session_id} session={selected} />
           ) : selected ? (
-            <>
-              {listingPeek ? <ListingPeekBanner peek={listingPeek} /> : null}
-              <NonChessSessionPanel key={selected.session_id} session={selected} />
-            </>
+            <NonChessSessionPanel key={selected.session_id} session={selected} />
           ) : null}
         </div>
         )}

@@ -74,7 +74,7 @@ export function SectionTabs({
 }
 
 /**
- * The sections inside the current destination — `Games · Tournaments`, `Agora ·
+ * The sections inside the current destination — `Games · Deals`, `Agora ·
  * Rooms · Messages` — one strip under the header, on every width. Not drawn for a
  * destination with a single section (Home, Season).
  */

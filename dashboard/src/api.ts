@@ -145,7 +145,7 @@ export interface OpenSession {
   players: number;
   min_players: number | null;
   max_players: number | null;
-  payment_rules: { mode?: string; stake_per_participant?: string; currency?: string };
+  payment_rules: { mode?: string; price?: string; currency?: string };
   created_at: string;
 }
 
@@ -159,7 +159,7 @@ export interface Session {
   created_at: string;
   state?: { board_fen?: string; [k: string]: unknown };
   /** A purchase's price rule; a list read may omit it. */
-  payment_rules?: { mode?: string; stake_per_participant?: string; currency?: string };
+  payment_rules?: { mode?: string; price?: string; currency?: string };
   /** P153 (single-session read only): rails its payments were made on. */
   paid_by?: string[];
   /** P149 (single-session read only): its private text is sealed to its players. */
@@ -193,7 +193,7 @@ export interface Room {
   host?: string;
   advertised?: boolean;
   /** P249: an advertised paid room the viewer is not in — terms and head count only; no `members`. */
-  listing_only?: boolean;
+  card_only?: boolean;
 }
 
 /** P23-4: GET /rooms/{id}/chain's response shape -- a relay-signed attestation
@@ -268,7 +268,6 @@ export interface Health {
   service: string;
   version: string;
   modules: string[];
-  listing_count: number;
   session_count: number;
   guardrails_mode?: string;
   stripe_enabled?: boolean;
@@ -320,7 +319,6 @@ export interface FederationStatus {
   relay_url: string;
   standalone: boolean;
   peers: FederationPeer[];
-  imported_listing_count: number;
 }
 
 export interface SessionAuditEntry {
@@ -368,7 +366,7 @@ export interface Settlement {
   settlement_id: string;
   session_id: string;
   winner_id: string | null;
-  total_stake_cents: number;
+  total_price_cents: number;
   platform_fee_cents: number;
   winner_payout_cents: number;
   /** P129: an escrow capture's split in USDC atomic units (decimal strings) —

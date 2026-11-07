@@ -27,7 +27,6 @@ describe("live feed event → where it opens", () => {
   it("maps the rest to the new sections", () => {
     expect(viewForEvent(ev("room_message", { room_id: "r1" }))).toEqual({ view: "rooms", opts: { roomId: "r1" } });
     expect(viewForEvent(ev("room_invite", { room_id: "r1" }))?.view).toBe("messages");
-    expect(viewForEvent(ev("listing_created", { listing_id: "l1" }))?.view).toBe("listings");
     expect(viewForEvent(ev("agora_post_created"))?.view).toBe("agora");
     expect(viewForEvent(ev("agora_invite"))?.view).toBe("messages");
     expect(viewForEvent(ev("dm_received"))?.view).toBe("messages");
@@ -41,9 +40,9 @@ describe("live feed event → where it opens", () => {
 
 describe("routes", () => {
   it("parses a section, and a session inside Games or Deals", () => {
-    expect(routeFromHash("#/games")).toEqual({ view: "games", sessionId: null });
-    expect(routeFromHash("#/games/s-blotto-7f21c")).toEqual({ view: "games", sessionId: "s-blotto-7f21c" });
-    expect(routeFromHash("#/deals/s-svc-1")).toEqual({ view: "deals", sessionId: "s-svc-1" });
+    expect(routeFromHash("#/play/games")).toEqual({ view: "games", sessionId: null });
+    expect(routeFromHash("#/play/games/s-blotto-7f21c")).toEqual({ view: "games", sessionId: "s-blotto-7f21c" });
+    expect(routeFromHash("#/market/deals/s-svc-1")).toEqual({ view: "deals", sessionId: "s-svc-1" });
     expect(routeFromHash("#/season/alpha")).toEqual({ view: "season", sessionId: null });
   });
 
@@ -53,7 +52,7 @@ describe("routes", () => {
   });
 
   it("refuses a session id that is not an id", () => {
-    expect(routeFromHash("#/games/<script>").sessionId).toBeNull();
+    expect(routeFromHash("#/play/games/<script>").sessionId).toBeNull();
   });
 
   it("round-trips", () => {
@@ -74,7 +73,7 @@ describe("routes v2: #/<destination>/<section>[/<session>]", () => {
   it("parses them, and a bare destination opens its first section", () => {
     expect(routeFromHash("#/play/games/s-1")).toEqual({ view: "games", sessionId: "s-1" });
     expect(routeFromHash("#/play")).toEqual({ view: "games", sessionId: null });
-    expect(routeFromHash("#/market")).toEqual({ view: "listings", sessionId: null });
+    expect(routeFromHash("#/market")).toEqual({ view: "offers", sessionId: null });
     expect(routeFromHash("#/talk/messages")).toEqual({ view: "messages", sessionId: null });
     expect(routeFromHash("#/more")).toEqual({ view: "agents", sessionId: null });
     expect(routeFromHash("#/home")).toEqual({ view: "overview", sessionId: null });
@@ -82,14 +81,8 @@ describe("routes v2: #/<destination>/<section>[/<session>]", () => {
     expect(routeFromHash("#/play/nope")).toEqual({ view: "games", sessionId: null });
   });
 
-  it("keeps every v1 route opening what it opened", () => {
-    const v1: [string, string, string | null][] = [
-      ["#/overview", "overview", null], ["#/games/s-9", "games", "s-9"], ["#/deals/s-8", "deals", "s-8"],
-      ["#/season", "season", null], ["#/listings", "listings", null],
-      ["#/fees", "fees", null], ["#/agora", "agora", null], ["#/rooms", "rooms", null],
-      ["#/messages", "messages", null], ["#/agents", "agents", null], ["#/profile", "profile", null],
-      ["#/settings", "settings", null], ["#/relay", "relay", null], ["#/docs?doc=games", "docs", null],
-    ];
-    for (const [h, view, sessionId] of v1) expect(routeFromHash(h)).toEqual({ view, sessionId });
+  it("opens Home for a route that names no destination", () => {
+    for (const h of ["#/overview", "#/games/s-9", "#/listings", "#/nope"])
+      expect(routeFromHash(h)).toEqual({ view: "overview", sessionId: null });
   });
 });

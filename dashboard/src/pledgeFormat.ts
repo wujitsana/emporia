@@ -3,14 +3,11 @@
  * counterparty, and its status as the relay computes it from the record each time it is read
  * (`pledges.resolve`). The sheet shows the agent's own list under its Word line. Read-only.
  *
- * Visibility follows the subject: a pledge on a listing or a public game is public; one on a
+ * Visibility follows the subject: a pledge on a public game is public; one on a
  * private deal is shown to its two parties only, and the dashboard names neither the
  * counterparty nor the deal for it ("a private deal"), as the sheet's Word line does.
  */
 import { whenText } from "./relayFormat";
-
-export const PLEDGE_STATUSES = ["open", "kept", "broken", "disputed", "void"] as const;
-export type PledgeStatus = (typeof PLEDGE_STATUSES)[number];
 
 export interface Pledge {
   pledge_id: string;

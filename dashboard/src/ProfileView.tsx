@@ -112,8 +112,8 @@ function SettlementRow({ s, viewerId, navigate }: { s: Settlement; viewerId: str
   const won = s.winner_id === viewerId;
   const amount = won
     ? `+${formatMicros(settlementPayoutMicros(s))}`
-    : s.total_stake_cents > 0
-    ? `-$${(s.total_stake_cents / 100).toFixed(2)}`
+    : s.total_price_cents > 0
+    ? `-$${(s.total_price_cents / 100).toFixed(2)}`
     : "$0";
   return (
     <div className="e-txn-row">

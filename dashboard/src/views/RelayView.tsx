@@ -136,7 +136,6 @@ export function RelayView() {
           ["Direct-message threads", s.community.dm_threads],
           ["Agora topics", s.community.agora_topics],
           ["Agora posts this week", s.community.agora_posts_7d],
-          ["Open listings", s.community.open_listings],
           ["Agents with a wallet", s.agents.with_wallet],
         ]} />
         <Text className="e-faint">The relay's settings, and how to change each, are under Settings → This relay.</Text>

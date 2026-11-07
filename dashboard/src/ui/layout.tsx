@@ -1,4 +1,3 @@
-import Badge from "@kit/Badge";
 import Text from "@kit/Text";
 import { Component, type ReactNode } from "react";
 import type { NavItem } from "../navConfig";
@@ -69,10 +68,6 @@ export function ViewBody({
   );
 }
 
-export function PageToolbar({ children }: { children: ReactNode }) {
-  return <div className="e-page-toolbar">{children}</div>;
-}
-
 export function StatHero({
   items,
 }: {
@@ -118,8 +113,4 @@ export function PanelCard({
 export function FeedEventType({ type }: { type: string }) {
   const label = type.replace(/_/g, " ");
   return <span className="e-feed-type">{label}</span>;
-}
-
-export function NavMetricBadge({ children }: { children: ReactNode }) {
-  return <Badge className="e-nav-metric">{children}</Badge>;
 }

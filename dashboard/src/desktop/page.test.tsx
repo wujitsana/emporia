@@ -51,7 +51,7 @@ describe("routing on the Desktop page", () => {
     expect(route.routeFromHash().view).toBe("overview");
     const heard = vi.fn();
     const off = route.onRouteChange(heard);
-    route.goToHash("#/games/s-1");
+    route.goToHash("#/play/games/s-1");
     expect(heard).toHaveBeenCalledTimes(1);
     expect(route.routeFromHash()).toEqual({ view: "games", sessionId: "s-1" });
     route.syncHash("season");                      // the app recording where it is: silent
@@ -91,7 +91,7 @@ describe("the profile on the Desktop page", () => {
     const sheet = document.querySelector(".e-desktop-root > style")!.textContent!;
     expect(sheet.indexOf("all: revert")).toBeGreaterThan(-1);
     expect(sheet.indexOf("all: revert")).toBeLessThan(sheet.indexOf("__EMPORIA_DESKTOP_CSS__"));
-    goToHash("#/messages");
+    goToHash("#/talk/messages");
 
     view.rerender(page("beta"));
     // Between the switch and the console's answer, nobody: alpha's thread is gone at once.

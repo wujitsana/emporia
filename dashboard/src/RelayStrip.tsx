@@ -64,7 +64,7 @@ function StatusChip({
 /**
  * Relay connectivity in the header.
  * - REST / “API”: HTTP GET /health (relay up, version, guardrails).
- * - events: WebSocket /ws/events (live session/listing/event pushes to the dashboard).
+ * - events: WebSocket /ws/events (live session pushes to the dashboard).
  */
 export function RelayStrip({
   relayUrl,
@@ -96,7 +96,7 @@ export function RelayStrip({
       : `Checking relay health…`;
 
   const wsTitle = wsConnected
-    ? `Live updates on: new games, listings and events appear as they happen (${wsEvents})`
+    ? `Live updates on: new games and deals appear as they happen (${wsEvents})`
     : !socketsCarried()
       ? "Live updates off: this Hermes profile runs the plugin in its plugin host, which carries no websockets yet. The dashboard refreshes on a timer."
       : `Live updates off — the dashboard still refreshes on a timer (${wsEvents})`;

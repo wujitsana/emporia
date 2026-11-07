@@ -7,7 +7,6 @@ import {
   settlementHealth,
   usdcAtomicToUsd,
   acceptsLabel,
-  paidByLabel,
   priceText,
   formatMicros,
   settlementFeeMicros,
@@ -95,11 +94,6 @@ describe("what pays for what (P153)", () => {
   it("names the networks USDC is taken on (P160)", () => {
     const nets = { ...both, x402_networks: ["eip155:84532", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"] };
     expect(acceptsLabel("entry", nets)).toBe("accepts card · USDC (Base Sepolia testnet, Solana devnet)");
-  });
-  it("says after paying how", () => {
-    expect(paidByLabel(["stripe"])).toBe("paid by card");
-    expect(paidByLabel(["x402"])).toBe("paid by USDC escrow");
-    expect(paidByLabel([])).toBeNull();
   });
 });
 

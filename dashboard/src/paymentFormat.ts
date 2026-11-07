@@ -169,15 +169,6 @@ export function acceptsLabel(
   return ways.length ? `accepts ${ways.join(" · ")}` : "no payment rail on this relay";
 }
 
-/** P153: how a session's payments were actually made. USDC on a session is
- *  always held in escrow (a direct x402 payment is for entries, which are not
- *  sessions). */
-export function paidByLabel(rails: string[] | undefined): string | null {
-  if (!rails || rails.length === 0) return null;
-  return "paid by " + rails.map((r) =>
-    r === "stripe" ? "card" : r === "x402" ? "USDC escrow" : r === "tempo" ? "Tempo" : r).join(" + ");
-}
-
 /** The test networks (src/emporia/networks.py marks the same ones). */
 const TESTNETS = new Set(["eip155:84532", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "eip155:42431"]);
 

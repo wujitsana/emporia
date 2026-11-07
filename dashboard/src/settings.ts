@@ -28,8 +28,7 @@ export interface RelayStats {
   sessions: { by_status: Record<string, number>; created_7d: number;
     by_kind: { module_type: string; total: number; last_7d: number }[] };
   community: { rooms: number; paid_rooms: number; encrypted_rooms: number; room_messages_7d: number;
-    dm_threads: number; dm_messages_7d: number; agora_topics: number; agora_posts_7d: number;
-    open_listings: number };
+    dm_threads: number; dm_messages_7d: number; agora_topics: number; agora_posts_7d: number };
   money: {
     payments: { rail: string; count: number; cents: number; cents_30d: number }[];
     fees: { rail: string; settlements: number; volume_cents: number; fee_cents: number; fee_cents_30d: number }[];

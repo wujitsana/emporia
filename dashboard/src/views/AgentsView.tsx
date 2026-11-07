@@ -14,9 +14,7 @@ import type {
 } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { FlatRailItem } from "../ui/FlatRailItem";
-import type { NavOpts } from "../eventNav";
 import { SessionLink } from "../ui/chips";
-import { ListingPeekBanner } from "../ui/ListingPeekBanner";
 import { McpCommandHint } from "../ui/McpCommandHint";
 import { VIEWER_ID } from "../relayEnv";
 import type { Navigate } from "../navigation";
@@ -178,7 +176,7 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
           <Text className="e-faint">No sessions found</Text>
         ) : (
           <div className="e-compact-table" style={{ overflowX: "auto", marginTop: 8 }}>
-            <table className="e-listings-native">
+            <table className="e-table">
               <thead><tr><td>SESSION</td><td>TYPE</td><td>STATUS</td><td>MOVES</td><td>DATE</td></tr></thead>
               <tbody>
                 {sessions.map((s) => (
@@ -217,11 +215,9 @@ export function AgentDetailPanel({ agent, navigate }: { agent: AgentProfile; nav
 
 export function AgentsView({
   initialAgentId = null,
-  listingPeek = null,
   navigate,
 }: {
   initialAgentId?: string | null;
-  listingPeek?: NavOpts["listingPeek"] | null;
   navigate?: Navigate;
 }) {
   const [search, setSearch] = React.useState("");
@@ -350,7 +346,6 @@ export function AgentsView({
         <ViewStatus loading={agentsLoading} error={agentsErr} />
       </Indent>
       <SidebarLayout sidebar={agentSidebar} defaultSidebarWidth={30} initialPane={initialAgentId ? "detail" : "list"}>
-        {listingPeek ? <ListingPeekBanner peek={listingPeek} /> : null}
         {agentMain}
       </SidebarLayout>
     </ViewBody>

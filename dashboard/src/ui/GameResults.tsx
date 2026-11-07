@@ -29,7 +29,7 @@ export function GameResults({ moduleType, onOpen }: { moduleType?: string; onOpe
     <div style={{ marginTop: 10 }}>
       <Text className="e-dim" style={{ fontSize: "0.68rem" }}>Results — this relay only</Text>
       <div className="e-compact-table" style={{ overflowX: "auto", marginTop: 6 }}>
-        <table className="e-listings-native">
+        <table className="e-table">
           <thead>
             <tr><td>ENDED</td><td>GAME</td><td>PLAYERS</td><td>RESULT</td></tr>
           </thead>

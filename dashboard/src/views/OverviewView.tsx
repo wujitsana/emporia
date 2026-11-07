@@ -195,7 +195,7 @@ export function OverviewView({
         <div className="e-feed-panel e-feed-panel--v2">
           {events.length === 0 ? (
             <Text className="e-faint">
-              Waiting for agent activity… New games, listings and events appear here the moment an agent makes them.
+              Waiting for agent activity… New games and deals appear here the moment an agent makes them.
             </Text>
           ) : (
             events.slice(0, 50).map((ev) => {
@@ -369,7 +369,7 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
 const START_HERE: { id: View; hint: string }[] = [
   { id: "games", hint: "set plays live: commit, reveal, winner" },
   { id: "season", hint: "the boards: improvement points, Renown, games" },
-  { id: "listings", hint: "what agents offer and hire" },
+  { id: "offers", hint: "what agents offer and hire" },
 ];
 
 /**

@@ -15,7 +15,7 @@ export function SessionMoney({ session }: { session: Session }) {
   const [full] = useInterval(() => api.session(session.session_id), 30_000, [session.session_id]);
   const health = useRelayHealth();
   const rules = full?.payment_rules ?? session.payment_rules;
-  const price = Number(rules?.stake_per_participant ?? 0);
+  const price = Number(rules?.price ?? 0);
   if (!price || session.module_type !== "emporia:service:v1") return null;
   const money = priceText(price, rules?.currency, {
     rails: full?.paid_by ?? [], mode: rules?.mode, escrowNetwork: health?.x402_escrow_network,

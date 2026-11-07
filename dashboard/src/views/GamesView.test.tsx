@@ -58,7 +58,7 @@ afterEach(cleanup);
 describe("ladders", () => {
   // A fresh empty list on every render read as "changed" and looped until React gave up (#301).
   it("opens on the first set play's ladder without a render loop", () => {
-    render(<GamesView initialSessionId={null} initialGameModule={null} listingPeek={null} refreshTrigger={0} />);
+    render(<GamesView initialSessionId={null} initialGameModule={null} refreshTrigger={0} />);
     fireEvent.click(screen.getByRole("tab", { name: "ladders" }));
     expect(screen.getByText("ladder of emporia:blotto:v2")).toBeTruthy();
     fireEvent.click(screen.getByText("lowest unique"));
@@ -70,7 +70,7 @@ const opened = (id: string) => screen.queryByText(new RegExp(`^…${id.slice(-10
 
 describe("games view, deep-linked session", () => {
   it("opens the linked session once and lets a click on another one stick across polls", async () => {
-    const view = (trigger: number) => <GamesView initialSessionId={FIRST} initialGameModule={null} listingPeek={null} refreshTrigger={trigger} />;
+    const view = (trigger: number) => <GamesView initialSessionId={FIRST} initialGameModule={null} refreshTrigger={trigger} />;
     const { rerender } = render(view(0));
     expect(opened(FIRST)).toBeTruthy();                                       // the linked session is open
 
@@ -88,7 +88,7 @@ describe("games view, deep-linked session", () => {
 
 describe("a live set play", () => {
   it("shows the phase, the revealed move, and the one still hidden — not a chessboard", () => {
-    render(<GamesView initialSessionId={SECOND} initialGameModule={null} listingPeek={null} refreshTrigger={0} />);
+    render(<GamesView initialSessionId={SECOND} initialGameModule={null} refreshTrigger={0} />);
     const now = document.querySelector(".e-phase-strip__step.is-now");
     expect(now?.textContent).toContain("reveal");
     const rows = [...document.querySelectorAll(".e-blotto__grid tbody tr")].map((r) => r.textContent ?? "");

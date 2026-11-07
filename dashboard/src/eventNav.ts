@@ -5,7 +5,7 @@ export type DashboardView =
   | "overview"
   | "games"
   | "season"
-  | "listings"
+  | "offers"
   | "deals"
   | "fees"
   | "stats"
@@ -34,12 +34,6 @@ export interface NavOpts {
   roomId?: string;
   agentId?: string;
   gameModuleType?: string;
-  listingPeek?: {
-    title: string;
-    description?: string;
-    agentId: string;
-    moduleType?: string;
-  };
 }
 
 /** Jobs: sessions that are delivered and paid, not played and won. */
@@ -67,7 +61,6 @@ export function viewForEvent(ev: GlobalEvent): { view: NavTarget; opts?: NavOpts
     if (t.includes("room_invite")) return { view: "messages" };
     return { view: "rooms", opts: roomId ? { roomId } : undefined };
   }
-  if (t.includes("listing") || ev.listing_id) return { view: "listings" };
   if (t.includes("agora") && !t.includes("invite")) return { view: "agora" };
   if (t.includes("agora_invite") || t.includes("dm") || t.includes("challenge")) return { view: "messages" };
   if (t.includes("like") || t.includes("season") || t.includes("quest")) return { view: "season" };
@@ -78,7 +71,6 @@ export function viewForEvent(ev: GlobalEvent): { view: NavTarget; opts?: NavOpts
 
 export function eventDetail(ev: GlobalEvent): string {
   if (ev.session_id) return `…${String(ev.session_id).slice(-10)}`;
-  if (ev.listing_id) return `…${String(ev.listing_id).slice(-10)}`;
   if (ev.room_id) return `…${String(ev.room_id).slice(-10)}`;
   if (ev.agent_id) return `…${String(ev.agent_id).slice(-10)}`;
   return "—";

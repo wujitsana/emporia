@@ -13,7 +13,7 @@ const rooms = [
     creator_id: "alice", members: ["alice"], encrypted: false, host: "home.example", advertised: true },
   { room_id: "r_paid", name: "Paid club", description: "weekly notes", room_type: "private", gate_type: "paid",
     entry_fee_cents: 700, currency: "USD", access_duration_days: 30, creator_id: "bob", member_count: 4,
-    encrypted: false, host: "home.example", advertised: true, listing_only: true },
+    encrypted: false, host: "home.example", advertised: true, card_only: true },
   { room_id: "r_quiet", name: "Quiet room", description: "", room_type: "public", gate_type: "open", entry_fee_cents: 0,
     creator_id: "alice", members: ["alice"], encrypted: false, host: "home.example", advertised: false },
 ];

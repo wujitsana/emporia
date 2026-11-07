@@ -33,10 +33,10 @@ function RowTable({
 }) {
   return (
     <div
-      className={`e-compact-table${onOpen ? " e-listings-click" : ""}`}
+      className={`e-compact-table${onOpen ? " e-table-click" : ""}`}
       style={{ overflowX: "auto" }}
     >
-      <table className="e-listings-native">
+      <table className="e-table">
         <thead>
           <tr>
             {headers.map((h) => (
@@ -48,7 +48,7 @@ function RowTable({
           {keys.map((k, i) => (
             <tr
               key={k}
-              className={onOpen ? "e-listings-row" : undefined}
+              className={onOpen ? "e-table-row" : undefined}
               role={onOpen ? "button" : undefined}
               tabIndex={onOpen ? 0 : undefined}
               onClick={onOpen ? () => onOpen(i) : undefined}
@@ -74,26 +74,20 @@ function RowTable({
   );
 }
 
-export function ListingsView({
-  refreshTrigger,
-  navigate,
-}: {
-  refreshTrigger: number;
-  navigate: Navigate;
-}) {
+export function OffersView({ navigate }: { navigate: Navigate }) {
   /* What is on offer here: rooms anyone may open (free or paid),
      and games waiting for a player. Each from its own route; there is no catch-all list. */
-  const [roomData, loading, error] = useInterval(() => api.rooms(), 10_000, [refreshTrigger]);
+  const [roomData, loading, error] = useInterval(() => api.rooms(), 10_000, []);
   const rooms: Room[] = (roomData?.rooms ?? []).filter((r) => r.room_type === "public" || r.gate_type === "paid");
 
   /* P188: the lobby — games and purchases waiting for a player. They are real
      sessions, and the same signed list agents on other relays read. */
-  const [lobby] = useInterval(() => api.openSessions(), 15_000, [refreshTrigger]);
+  const [lobby] = useInterval(() => api.openSessions(), 15_000, []);
   const waiting: OpenSession[] = lobby?.open_sessions ?? [];
 
   const waitingRows: RowCells[] = waiting.map((w) => {
     const price = w.payment_rules?.mode && w.payment_rules.mode !== "free"
-      ? `$${w.payment_rules.stake_per_participant ?? "?"}` : "";
+      ? `$${w.payment_rules.price ?? "?"}` : "";
     return [
       <span key="game" className="e-badge e-badge--dim">
         {w.module_type.replace("emporia:", "").replace(/:v\d$/, "")}

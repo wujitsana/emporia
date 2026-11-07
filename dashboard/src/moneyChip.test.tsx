@@ -7,7 +7,7 @@ import { moneyChip } from "./moneyChip";
 import { RelayStrip } from "./RelayStrip";
 
 // P6: the header says what kind of money the amounts are, from /health.
-const base: Health = { status: "ok", service: "emporia", version: "0.2.0", modules: [], listing_count: 0, session_count: 0 };
+const base: Health = { status: "ok", service: "emporia", version: "0.2.0", modules: [], session_count: 0 };
 
 afterEach(cleanup);
 

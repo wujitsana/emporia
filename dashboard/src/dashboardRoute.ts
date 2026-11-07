@@ -1,7 +1,6 @@
-import { destById, destinationOf, NAV, type View } from "./navConfig";
+import { destById, destinationOf, type View } from "./navConfig";
 import { MODE } from "./transport";
 
-const VIEW_IDS = new Set<View>(NAV.map((n) => n.id));
 /** Sections whose route can name one session: `#/play/games/<session_id>`, `#/market/deals/<session_id>`. */
 const SESSION_ROUTES = new Set<View>(["games", "deals"]);
 
@@ -12,7 +11,7 @@ export interface Route {
 }
 
 /*
- * Where the route lives. In a browser it is the page's hash (`#/games/<id>`), so
+ * Where the route lives. In a browser it is the page's hash (`#/play/games/<id>`), so
  * a link opens a section. On the Hermes Desktop page the hash is the app's own
  * router (Desktop matches a plugin page by its exact path, `/emporia`), so the
  * same route strings live in memory instead: the page's palette commands set
@@ -68,8 +67,7 @@ export function onRouteChange(fn: () => void): () => void {
  * `#/<destination>` alone for its first section — `#/home`, `#/play/games/<id>`,
  * `#/market/deals/<id>`, `#/talk/rooms`, `#/season`, `#/more/docs`.
  *
- * The v1 routes still open what they opened (`#/overview`, `#/games/<id>`, `#/deals/<id>`,
- * `#/rooms`, …): a bookmark or a link in a doc keeps working. Anything else opens Home.
+ * Anything else opens Home.
  */
 export function routeFromHash(hash: string = currentHash()): Route {
   const parts = hash.replace(/^#\/?/, "").split("?")[0].trim().split("/");
@@ -86,9 +84,6 @@ export function routeFromHash(hash: string = currentHash()): Route {
       view = dest.views[0];
       rawId = undefined;
     }
-  } else if (VIEW_IDS.has(first as View)) {
-    view = first as View;            // a v1 route
-    rawId = parts[1];
   }
   if (!view) return { view: "overview", sessionId: null };
   const id = rawId ? safeDecode(rawId) : "";
@@ -101,10 +96,6 @@ function safeDecode(s: string): string {
   } catch {
     return "";
   }
-}
-
-export function viewFromHash(hash: string = currentHash()): View {
-  return routeFromHash(hash).view;
 }
 
 /** The step a match link names: `#/play/games/<id>?step=3` → 3; absent or not a whole number → null. */

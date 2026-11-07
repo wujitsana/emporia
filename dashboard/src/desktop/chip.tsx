@@ -15,7 +15,7 @@ import { CHIP_POLL_MS, fetchAttention, type Attention } from "./attentionFetch";
 
 export interface ChipProps {
   profile: string;
-  /** Open the page on a route (`#/messages`, `#/games/<id>`). */
+  /** Open the page on a route (`#/talk/messages`, `#/play/games/<id>`). */
   open: (hash: string) => void;
   /** Called with each game that became the agent's turn since the last poll. */
   onNewTurn?: (s: Session) => void;

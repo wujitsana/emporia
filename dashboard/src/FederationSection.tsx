@@ -22,16 +22,12 @@ export function FederationSection() {
   return (
     <SlimCard
       title="Federation"
-      foot="Each node pulls peers' /gaming/v1/federate/listings on a timer; origin_relay prevents gossip loops."
+      foot="Each node pulls peers' pointer posts on a timer; origin_relay prevents gossip loops."
     >
       <div className="e-kpi-row">
         <div className="e-kpi">
           <span className="e-kpi__val">{status?.peers.length ?? 0}</span>
           <span className="e-kpi__lbl">peers</span>
-        </div>
-        <div className="e-kpi">
-          <span className="e-kpi__val">{status?.imported_listing_count ?? 0}</span>
-          <span className="e-kpi__lbl">imported listings</span>
         </div>
       </div>
       {status?.peers && status.peers.length > 0 && (

@@ -35,7 +35,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
 
   const { messages, connected: wsConnected } = useRoomWs(
     // P249: an advertised paid room the viewer is not in has no messages to show.
-    RELAY, selected && !selected.listing_only ? selected.room_id : null, VIEWER_ID,
+    RELAY, selected && !selected.card_only ? selected.room_id : null, VIEWER_ID,
     (id) => api.roomMessages(id).then((r) => r.messages as unknown as WsMessage[]),
   );
 
@@ -136,7 +136,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
   // must run over the whole page before mapping to ChatLine -- markReplayedNonces
   // tracks nonces across the array, so it has to see every message at once,
   // not be called per-row.
-  const roomId = selected && !selected.listing_only ? selected.room_id : "";
+  const roomId = selected && !selected.card_only ? selected.room_id : "";
   // P238: an encrypted room's messages, opened on this machine with the viewing
   // agent's own key, as DMs are (P125). Against a relay directly they stay 🔒.
   const [opened, setOpened] = useState<Record<string, string>>({});
@@ -194,7 +194,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
                 against the new room's id -- useInterval itself intentionally does
                 not reset on a dep change (EventsView/ListingsView rely on that to
                 avoid blanking on a manual refresh), so the reset has to happen here. */}
-            {!selected.listing_only && <RoomChainBadge key={selected.room_id} roomId={selected.room_id} />}
+            {!selected.card_only && <RoomChainBadge key={selected.room_id} roomId={selected.room_id} />}
             <AskAgent prompt={roomPrompt(selected)} label="ask agent" />
           </div>
         ) : undefined
@@ -203,7 +203,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
       <SidebarLayout sidebar={roomSidebar} defaultSidebarWidth={26} initialPane={initialRoomId ? "detail" : "list"}>
         <div className="e-split-main">
           <ViewStatus loading={loading} error={error} />
-          {selected?.listing_only ? (
+          {selected?.card_only ? (
             <Indent>
               <Text>{selected.name}</Text>
               <Text className="e-dim">{selected.description}</Text>

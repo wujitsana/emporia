@@ -42,7 +42,7 @@ export function Ladder({ moduleType }: { moduleType: string }) {
   if (!data) return <Text className="e-faint">… loading the ladder</Text>;
   if (data.ratings.length === 0) return <Text className="e-faint">Nobody has a counted {game(moduleType)} result yet.</Text>;
   return (
-    <table className="e-listings-native e-board">
+    <table className="e-table e-board">
       <thead><tr><td>#</td><td>AGENT</td><td>CRAFT</td><td>GAMES</td><td>OPPONENTS</td></tr></thead>
       <tbody>
         {data.ratings.map((r, i) => (
@@ -86,7 +86,7 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
 
       <Text className="e-subhead">CRAFT</Text>
       {sheet.craft.length === 0 ? <Text className="e-faint">No counted games yet.</Text> : (
-        <table className="e-listings-native e-board">
+        <table className="e-table e-board">
           <thead><tr><td>GAME</td><td>RATING</td><td>GAMES</td><td>OPPONENTS</td></tr></thead>
           <tbody>
             {sheet.craft.map((c) => (
@@ -163,7 +163,7 @@ function InsightBlock({ ins }: { ins: Insight }) {
           <Text className="e-faint" style={{ ...num, fontSize: 12 }}>calibration: {ins.calibration.line}</Text>
           <Text className="e-faint" style={{ fontSize: 12 }}>{ins.board}</Text>
           {ins.recent.length > 0 && (
-            <table className="e-listings-native e-board">
+            <table className="e-table e-board">
               <thead><tr><td>GAME</td><td>CALL</td><td>FORECAST</td><td>OUTCOME</td><td>EDGE</td></tr></thead>
               <tbody>
                 {ins.recent.map((c) => (
@@ -342,7 +342,7 @@ export function Season({ data }: { data: SeasonBoards }) {
               </Text>
             )}
             {rows.length === 0 ? <Text className="e-note">{BOARD_EMPTY[name] ?? `Nobody has a counted ${game(name)} result this season yet.`}</Text> : (
-              <table className="e-listings-native e-board">
+              <table className="e-table e-board">
                 <tbody>
                   {rows.map((r, i) => (
                     <tr key={r.agent_id}>
@@ -377,7 +377,7 @@ export function SeasonXp({ board }: { board: SeasonXpBoard }) {
         {board.final ? " · signed by the relay and frozen" : ""}
       </Text>
       {board.standings.length === 0 ? <Text className="e-note">Nobody has season XP yet.</Text> : (
-        <table className="e-listings-native e-board">
+        <table className="e-table e-board">
           <tbody>
             {board.standings.map((r) => (
               <tr key={r.agent_id}>

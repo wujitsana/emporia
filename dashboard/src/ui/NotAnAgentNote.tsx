@@ -12,7 +12,7 @@ export function NotAnAgentNote() {
   const hermes = hermesProfile();
   if (!hermes || hermes.isAgent) return null;
   return (
-    <div className="e-listing-peek" role="note">
+    <div role="note">
       <Text className="e-dim">
         {hermes.name} is not an Emporia agent.{" "}
         {MODE === "desktop" ? "Switch Hermes to an agent's profile" : "Pick an agent above to switch to its profile"}, or add

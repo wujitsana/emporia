@@ -15,14 +15,6 @@ export interface OverviewSectionRow {
 /** Tabs omitted from Overview hub. */
 export const OVERVIEW_SKIP_VIEWS: DashboardView[] = ["overview", "season", "fees", "stats", "profile", "docs", "settings", "relay", "badges"];
 
-/** Grid slots per row (≥ card count) so few cards don't stretch to half-screen squares. */
-export function overviewGridCols(cardCount: number): number {
-  if (cardCount <= 1) return 1;
-  if (cardCount === 2) return 5;
-  if (cardCount === 3) return 5;
-  return Math.min(5, cardCount);
-}
-
 const MAX_LINES = 3;
 
 function clip(s: string, max = 52): string {
@@ -96,7 +88,7 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
 
   const rows: OverviewSectionRow[] = [
     {
-      view: "listings",
+      view: "offers",
       lines:
         offeredRooms(rooms).length
           ? offeredRooms(rooms).slice(0, MAX_LINES).map((r) => clip(`${r.name} · ${r.gate_type}`))
@@ -179,7 +171,7 @@ export interface DashboardCounts {
    * /payments/settlements actually report `has_more` today — the rest merge
    * multiple sources or post-filter in Python and always resolve to a plain
    * number (see the Deferred section of the N8/N9 review notes). */
-  listings: number | string | null;
+  offers: number | string | null;
   sessions: number | string | null;
   rooms: number | string | null;
   agents: number | string | null;
@@ -213,7 +205,7 @@ export interface DashboardCounts {
  */
 export function failedFromSnapshot(snapshot: OverviewSnapshot): Set<OverviewTabId> {
   const pairs: [OverviewTabId, PromiseSettledResult<unknown>][] = [
-    ["listings", snapshot.rooms],
+    ["offers", snapshot.rooms],
     ["games", snapshot.sessions],
     ["deals", snapshot.sessions],
     ["rooms", snapshot.rooms],
@@ -244,7 +236,6 @@ export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts 
     if (v && typeof v === "object") {
       const o = v as Record<string, unknown>;
       if (typeof o.count === "number") return o.has_more === true ? `${o.count}+` : o.count;
-      if (Array.isArray(o.listings)) return o.listings.length;
       if (Array.isArray(o.sessions)) return o.sessions.length;
       if (Array.isArray(o.rooms)) return o.rooms.length;
       if (Array.isArray(o.agents)) return o.agents.length;
@@ -261,7 +252,7 @@ export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts 
   const dealSessions = emporia ? emporia.filter((s) => isJobModule(s.module_type)).length : null;
 
   return {
-    listings: roomsR.status === "fulfilled" ? offeredRooms(roomsR.value).length : null,
+    offers: roomsR.status === "fulfilled" ? offeredRooms(roomsR.value).length : null,
     sessions: len(sessionsR),
     rooms: len(roomsR),
     agents: len(agentsR),
@@ -284,8 +275,8 @@ export function metricForNav(
   switch (item.id) {
     case "overview":
       return online ? "● LIVE" : health ? "OFFLINE" : "…";
-    case "listings":
-      return String(counts?.listings ?? health?.listing_count ?? "—");
+    case "offers":
+      return String(counts?.offers ?? "—");
     case "deals":
       return String(counts?.dealSessions ?? "—");
     case "rooms":
@@ -307,13 +298,6 @@ export function metricForNav(
   }
 }
 
-export function subForNav(item: NavItem, feedLen: number, wsConnected: boolean): string {
-  if (item.id === "overview") {
-    return wsConnected ? `${feedLen} events on feed` : "WS reconnecting…";
-  }
-  return item.blurb;
-}
-
 /** Optional count caption for overview cards (words, not bare digits) */
 export function countCaptionForNav(
   item: NavItem,
@@ -326,8 +310,8 @@ export function countCaptionForNav(
   switch (item.id) {
     case "overview":
       return online ? "Relay connected" : health ? "Relay unreachable" : null;
-    case "listings": {
-      const c = n(counts?.listings) ?? n(health?.listing_count as number | undefined);
+    case "offers": {
+      const c = n(counts?.offers);
       return c != null ? `${c} offer${c === 1 ? "" : "s"}` : null;
     }
     case "deals": {

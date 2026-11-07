@@ -2,7 +2,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ListingsView } from "./ListingsView";
+import { OffersView } from "./OffersView";
 
 // What is on offer comes from the routes that hold it: rooms from /rooms, games waiting from the lobby. A private room is not an offer.
 
@@ -26,7 +26,7 @@ afterEach(cleanup);
 
 describe("offers view", () => {
   it("shows the rooms anyone may open, free or paid, never a private one", async () => {
-    render(<ListingsView refreshTrigger={0} navigate={vi.fn()} />);
+    render(<OffersView navigate={vi.fn()} />);
     expect(await screen.findByText("Club room")).toBeTruthy();
     expect(screen.getByText("Paid studio")).toBeTruthy();
     expect(screen.getByText("$5.00")).toBeTruthy();

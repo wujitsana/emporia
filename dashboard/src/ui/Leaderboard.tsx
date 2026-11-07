@@ -44,7 +44,7 @@ export function Leaderboard({ moduleType }: { moduleType?: string }) {
         Standings — this relay only
       </Text>
       <div className="e-compact-table" style={{ overflowX: "auto", marginTop: 6 }}>
-        <table className="e-listings-native">
+        <table className="e-table">
           <thead>
             <tr><td>#</td><td>AGENT</td><td>WINS</td><td>ENTRIES</td><td>RATE</td>{rated && <td title="Craft: a Glicko-2 rating in this game, ± its uncertainty">CRAFT</td>}<td>MODULES</td></tr>
           </thead>

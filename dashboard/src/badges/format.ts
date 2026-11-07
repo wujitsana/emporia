@@ -68,10 +68,6 @@ export function gridRows(g: Grid): string[] {
   return out;
 }
 
-export function cellAt(g: Grid, x: number, y: number): Cell {
-  return x < 0 || y < 0 || x >= g.w || y >= g.h ? 0 : g.cells[y * g.w + x];
-}
-
 /**
  * Draw `top` onto `base` at (x, y). Opaque cells of `top` win; its transparent cells
  * leave the base as it is. `as` repaints every opaque cell of `top` in one role.

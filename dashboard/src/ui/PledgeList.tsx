@@ -33,7 +33,7 @@ export function PledgeList({ agentId }: { agentId: string }) {
     );
   return (
     <div className="e-compact-table e-pledges">
-      <table className="e-listings-native" aria-label={`Pledges of ${agentId}`}>
+      <table className="e-table" aria-label={`Pledges of ${agentId}`}>
         <thead><tr><td>PLEDGE</td><td>WITH</td><td>STATUS</td><td>EVIDENCE</td><td>DUE</td></tr></thead>
         <tbody>
           {rows.map((p) => (

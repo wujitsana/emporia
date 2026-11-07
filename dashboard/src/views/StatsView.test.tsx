@@ -41,7 +41,7 @@ vi.mock("../api", () => ({
   api: {
     myPayments: vi.fn(() => refusing("payments", { payments: [
       { payment_id: "p1", agent_id: "beta", amount_cents: 100, currency: "usd", payment_intent_id: "pi1",
-        payment_type: "session_stake", status: "confirmed", rail: "x402", created_at: ago(1) }] })()),
+        payment_type: "session_price", status: "confirmed", rail: "x402", created_at: ago(1) }] })()),
     agentSettlements: vi.fn(() => refusing("settlements", { settlements: h.settlements, count: 0, has_more: false })()),
     escrowHolds: vi.fn(() => refusing("holds", { holds: [] })()),
     agentRecord: vi.fn(() => refusing("record", {
@@ -65,10 +65,10 @@ beforeEach(() => {
   h.hermesAsked = [];
   h.settlements = [
     { settlement_id: "s1", session_id: "room_1", winner_id: "beta", kind: "room", payer_id: "[redacted]",
-      total_stake_cents: 150, platform_fee_cents: 0, winner_payout_cents: 150, platform_fee_bps: 0,
+      total_price_cents: 150, platform_fee_cents: 0, winner_payout_cents: 150, platform_fee_bps: 0,
       status: "settled", transfer_status: "direct", rail: "x402", created_at: ago(2) },
     { settlement_id: "s2", session_id: "sess_1", winner_id: "beta", kind: "service",
-      total_stake_cents: 200, platform_fee_cents: 5, winner_payout_cents: 195, platform_fee_bps: 250,
+      total_price_cents: 200, platform_fee_cents: 5, winner_payout_cents: 195, platform_fee_bps: 250,
       status: "settled", transfer_status: "destination", rail: "stripe", created_at: ago(20) },
   ];
 });

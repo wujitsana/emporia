@@ -6,7 +6,7 @@ const NOW = Date.parse("2026-11-06T12:00:00Z");
 const ago = (days: number) => new Date(NOW - days * 86_400_000).toISOString();
 
 const settlement = (over: Record<string, unknown>) => ({
-  settlement_id: `stl_${Math.random()}`, session_id: "x", winner_id: "beta", total_stake_cents: 0,
+  settlement_id: `stl_${Math.random()}`, session_id: "x", winner_id: "beta", total_price_cents: 0,
   platform_fee_cents: 0, winner_payout_cents: 0, platform_fee_bps: 0, status: "settled", created_at: ago(1), ...over,
 });
 
@@ -14,7 +14,7 @@ const input = (): StatsInput => ({
   agentId: "beta",
   payments: [
     { payment_id: "p1", agent_id: "beta", amount_cents: 100, currency: "usd", payment_intent_id: "pi1",
-      payment_type: "session_stake", status: "confirmed", rail: "x402", created_at: ago(1) },
+      payment_type: "session_price", status: "confirmed", rail: "x402", created_at: ago(1) },
     { payment_id: "p2", agent_id: "beta", amount_cents: 25, currency: "usd", payment_intent_id: "pi2",
       payment_type: "room_entry", status: "confirmed", rail: "stripe", created_at: ago(10) },
     { payment_id: "p3", agent_id: "beta", amount_cents: 50, currency: "usd", payment_intent_id: "pi3",

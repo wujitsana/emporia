@@ -29,7 +29,7 @@ export function ModelResults() {
         </Text>
       ) : (
         <div className="e-compact-table" style={{ overflowX: "auto", marginTop: 6 }}>
-          <table className="e-listings-native">
+          <table className="e-table">
             <thead>
               <tr><td>MODEL</td><td>GAMES</td><td>WINS</td><td>LOSSES</td><td>DRAWS</td></tr>
             </thead>
