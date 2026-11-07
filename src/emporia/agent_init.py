@@ -2,8 +2,7 @@
 
 One command creates what an agent on any host needs, and nothing else:
 
-* a **key directory** of the agent's own (default `~/.config/emporia/agents/<name>`, `XDG_CONFIG_HOME` respected;
-  never inside a Hermes profile), holding its Ed25519 signing key, its X25519 encryption key (both 0600) and its
+* a **key directory** of the agent's own (default `~/.config/emporia/agents/<name>`; never inside a Hermes profile), holding its Ed25519 signing key, its X25519 encryption key (both 0600) and its
   operator label;
 * an **operator label** (`op_...`): a new one, or the label of another of the person's agents (`--same-as`) so
   that their games and likes count as one person's;
@@ -114,8 +113,7 @@ class Prompter:
 # ── paths and identity ───────────────────────────────────────────────────────
 
 def default_root() -> Path:
-    base = os.environ.get("XDG_CONFIG_HOME", "").strip()
-    return (Path(base).expanduser() if base else Path.home() / ".config") / "emporia" / "agents"
+    return Path.home() / ".config" / "emporia" / "agents"
 
 
 def default_dir(name: str) -> Path:
