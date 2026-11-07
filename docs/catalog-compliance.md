@@ -8,8 +8,6 @@ machine runs 0.22.6), for `preview-2`; see `docs/review-pass-2026-11-06-release.
 
 - The draft entry is in [`docs/catalog/emporia.yaml`](catalog/emporia.yaml).
 - The draft PR text is in [`docs/catalog/PR.md`](catalog/PR.md).
-- The draft Hermes issue for a public WebSocket check is in
-  [`docs/catalog/hermes-issue-ws-auth.md`](catalog/hermes-issue-ws-auth.md).
 
 **What the plugin is.** A `kind: platform` plugin. It registers:
 - three hooks;
@@ -39,7 +37,7 @@ runtime it installs.
 | 6 | Capabilities match | pass | Generated from Hermes's own probe, and kept in step with the manifest by a test. |
 | 7 | Install scanner | pass | `security scan — safe`, with no findings. |
 | 8 | Desktop SDK surface | pass | `desktop/plugin.js` imports only `@hermes/plugin-sdk`, `react` and `react/jsx-runtime`; no `eval`, `new Function`, dynamic `import()`, script tags, prototype patching (the one `.prototype.` write is the bundled PEG parser's own class) or reads of Desktop's markup; `desktop surface` passes. |
-| 9 | No core overrides | pass | No rebinds. One reviewer warning (a private import): no public route exists, the bundled kanban plugin is precedent, it fails closed, and an issue is drafted. |
+| 9 | No core overrides | pass | No rebinds and no private Hermes imports. The tab's WebSocket is authenticated with the plugin's own single-use ticket, minted by an authenticated route. |
 | 10 | Dependency policy | pass | The plugin declares no Python dependencies. The runtime's are bounded and locked (`uv lock --check` passes). |
 | 11 | Credentials through Hermes | pass | Every profile setting and key is read and written through Hermes. The MCP server gets them as `${NAME}`. Nothing opens a profile's `.env` or `auth.json`. No Nous token is read or sent. |
 | 12 | Approvals, unattended runs | pass | No child inherits an approval bypass. Nothing waits on a terminal that is not there. |
@@ -73,15 +71,12 @@ throwaway `HERMES_HOME` and `HOME`. It gave the same output before this work
 ✓ security scan — safe
 ✓ no core override — no runtime rebinds of Hermes core
 ✓ desktop surface — stays inside the plugin SDK surface
-⚠ private core imports (catalog rule 9 ...): dashboard/plugin_api.py:245 hermes_cli.web_server_chat.
 ◇ Isolation — in-process only: kind 'platform' ...
 Validation passed.
 ```
 
-- **No failures.** Two lines remain, both explained in the PR text:
-  - the rule 9 warning (below);
-  - the isolation note, which every platform adapter gets (platform adapters run in the gateway
-    process).
+- **No failures, no warnings.** One note remains: the isolation note, which every platform
+  adapter gets (platform adapters run in the gateway process).
 - **`--install-deps`** (what the catalog CI runs) has nothing to install. Hermes's own reader
   (`pm.plugin_declarations.read_python_declaration`) reports no `pyproject.toml` and no
   requirements for the plugin dir. It was not run here: it syncs the Hermes install's own
@@ -137,18 +132,19 @@ tools, no middleware, and the `emporia` command. The entry lists exactly those h
 `requires_env` the three settings the platform requires (`adapter.py`, `required_env`).
 `tests/test_catalog_entry.py` keeps the entry, the manifest and `register()` in step.
 
-### 9. No core overrides — pass, one reviewer warning
-- `no core override` passes.
-- The warning is `dashboard/plugin_api.py:245`, an import of
-  `hermes_cli.web_server_chat._ws_auth_ok`, used to authenticate the tab's WebSocket.
-- Hermes offers no public way to check a socket's credential:
-  - `hermes_cli.dashboard_auth` has ticket helpers, not the full check;
-  - `PluginApiWebSocketGate` refuses disabled plugins but leaves the credential to the route.
-- The bundled kanban plugin imports the same function.
-- If the import fails, the tab refuses the socket (fail closed).
-- `docs/catalog/hermes-issue-ws-auth.md` drafts the issue asking for a public helper.
-- Re-implementing the check from the ticket helpers would risk drifting from core's own rules,
-  which is worse.
+### 9. No core overrides — pass
+- `no core override` passes, and the validator reports no private core import: the plugin
+  imports nothing from `hermes_cli`.
+- Hermes gates every plugin HTTP route, but for a WebSocket it only checks that the plugin is
+  enabled (`PluginApiWebSocketGate`) and leaves the credential to the route. It documents no
+  public helper for that check (the bundled kanban plugin calls a private one).
+- So the tab's WebSocket (live updates; visibility only) uses a ticket of the plugin's own:
+  - the tab asks `POST /_ws_ticket`, an ordinary route Hermes has already authenticated;
+  - the ticket is random, single-use, valid for 30 seconds, and bound to the profile;
+  - the tab offers it in `Sec-WebSocket-Protocol`, never the URL, and the socket also needs an
+    Origin equal to the host it dialled;
+  - any other socket is refused before the handshake (fail closed). Tests cover no ticket, a
+    forged, replayed, expired or other-profile ticket, and a foreign Origin.
 
 ### 10. Dependency policy — pass
 - The plugin declares no Python dependencies.

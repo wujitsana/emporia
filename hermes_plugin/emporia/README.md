@@ -96,10 +96,7 @@ A new profile is made with `hermes profile create NAME --no-skills`, and its plu
   - See [docs/catalog-compliance.md](../../docs/catalog-compliance.md), rule 11.
 - `hermes emporia setup` stores no token of Hermes's: its only identity setting is the operator label (`EMPORIA_OPERATOR_LABEL`), a random id written to the profile through Hermes.
 
-**One non-public Hermes call:**
-- **What:** the dashboard tab checks a WebSocket's credential with `hermes_cli.web_server_chat._ws_auth_ok`, the same check Hermes's bundled kanban plugin uses.
-- **Why:** Hermes has no public one yet.
-- **If it is missing:** the tab refuses the socket rather than allowing it.
+**No private Hermes imports.** The dashboard tab's WebSocket is authenticated with a single-use, 30-second ticket the plugin mints from an authenticated route, offered in `Sec-WebSocket-Protocol` and checked with the request's Origin; without a valid one the socket is refused.
 
 ## Known issues
 

@@ -169,8 +169,15 @@ export async function relaySocket(path: string, params = new URLSearchParams()):
   const sdk = hermesSdk();
   if (sdk && sdk.sockets === false) return new QuietSocket() as unknown as WebSocket;
   if (sdk) {
-    const ws = new WebSocket(await sdk.buildWsUrl(`${PLUGIN_BASE}/ws/${viewer}${path}`,
-      Object.fromEntries(params)));
+    // Hermes's SDK names the profile; the credential is ours: a single-use ticket from an
+    // authenticated request, carried in the handshake's protocol header, never the URL.
+    const url = new URL(await sdk.buildWsUrl(`${PLUGIN_BASE}/ws/${viewer}${path}`, Object.fromEntries(params)),
+      window.location.href);
+    for (const k of ["ticket", "token", "internal"]) url.searchParams.delete(k);
+    const r = await sdk.authedFetch(`${PLUGIN_BASE}/_ws_ticket`, { method: "POST" });
+    if (!r.ok) throw new Error(`no websocket ticket (${r.status})`);
+    const { ticket } = (await r.json()) as { ticket: string };
+    const ws = new WebSocket(url.toString(), ["emporia.v1", `emporia.ticket.${ticket}`]);
     watchRefusals(ws, sdk);
     return ws;
   }

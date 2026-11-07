@@ -11,10 +11,14 @@ Console scope: one console per Hermes profile — the one Hermes scoped the requ
 only, and each start gets a secret on stdin that every request here presents.
 
 Hermes authenticates every HTTP request here (its /api/ gate). WebSocket
-upgrades it leaves to the route, so ``ws`` below checks the credential with
-Hermes's own ``_ws_auth_ok`` and refuses when it cannot (fail closed): before the
-handshake (a 403, the same for every refusal) when the credential fails, and with a
-close code and a reason once it passed. It never returns without one or the other.
+upgrades it does not: it only checks the plugin is enabled, and leaves the credential to the
+route, with no public helper for it. So the tab first asks ``POST /_ws_ticket`` (an ordinary
+authenticated request) for a ticket: random, single-use, 30 s, bound to this profile. ``ws``
+below accepts a socket only with such a ticket, offered in ``Sec-WebSocket-Protocol`` (never
+the URL), and an Origin that is the dashboard's own, and refuses otherwise (fail closed):
+before the handshake (a 403, the same for every refusal), and with a close code and a
+reason once it passed. It never returns without one or the other. Nothing from Hermes's
+private modules is imported.
 
 Websockets reach this router only when it runs in the dashboard's own process. A
 profile's plugin host (``plugins.isolation: host``, and every profile but the one the
@@ -46,8 +50,9 @@ import secrets
 import stat
 import subprocess
 import tempfile
+import time
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 from fastapi import APIRouter, Request, WebSocket
@@ -61,6 +66,49 @@ _CONSOLE_START_S = 25.0
 _DROP_HEADERS = {"host", "cookie", "authorization", "connection", "content-length",
                  "accept-encoding", "transfer-encoding", "upgrade", "te", "keep-alive"}
 _WS_AUTH_PARAMS = {"ticket", "token", "internal", "profile"}
+
+#: The socket's ticket: minted by an authenticated request, redeemed once by the upgrade.
+WS_PROTOCOL = "emporia.v1"
+WS_TICKET_PREFIX = "emporia.ticket."
+WS_TICKET_TTL_S = 30.0
+_WS_TICKETS_MAX = 256
+_ws_tickets: dict[str, tuple[float, str]] = {}      # ticket -> (expires, profile home)
+
+
+def _mint_ws_ticket(home: Path) -> str:
+    now = time.monotonic()
+    for t in [t for t, (exp, _) in _ws_tickets.items() if exp <= now]:
+        del _ws_tickets[t]
+    while len(_ws_tickets) >= _WS_TICKETS_MAX:      # a flood costs the oldest, never memory
+        del _ws_tickets[next(iter(_ws_tickets))]
+    ticket = secrets.token_urlsafe(32)
+    _ws_tickets[ticket] = (now + WS_TICKET_TTL_S, str(home))
+    return ticket
+
+
+def _redeem_ws_ticket(ticket: str, home: Path) -> bool:
+    """True once for a live ticket minted for this profile; a used, expired or foreign one is gone."""
+    entry = _ws_tickets.pop(ticket, None)
+    return entry is not None and entry[0] > time.monotonic() and entry[1] == str(home)
+
+
+def _ws_origin_ok(socket: WebSocket) -> bool:
+    """A browser names where the page came from; it must be the host it dialled (the dashboard's
+    own). No Origin is not a browser, and the ticket is the credential there."""
+    origin = socket.headers.get("origin")
+    if origin is None:
+        return True
+    host = socket.headers.get("host", "")
+    return bool(host) and urlsplit(origin).netloc.lower() == host.lower()
+
+
+def _ws_authorized(socket: WebSocket) -> bool:
+    # Some servers hand the offer over as one comma-joined string, so split each entry.
+    offered = [p.strip() for entry in socket.scope.get("subprotocols") or [] for p in entry.split(",")]
+    tickets = [p[len(WS_TICKET_PREFIX):] for p in offered if p.startswith(WS_TICKET_PREFIX)]
+    if WS_PROTOCOL not in offered or len(tickets) != 1 or not _ws_origin_ok(socket):
+        return False
+    return _redeem_ws_ticket(tickets[0], _home())
 
 #: Console scope: the header carrying a console's per-start secret (console.app.SECRET_HEADER).
 SECRET_HEADER = "x-emporia-console-secret"
@@ -247,8 +295,7 @@ async def _close(socket: WebSocket, code: int, reason: str = "") -> None:
 @router.websocket("/ws/{path:path}")
 async def ws(socket: WebSocket, path: str):
     try:
-        from hermes_cli import web_server_chat
-        authorized = bool(web_server_chat._ws_auth_ok(socket))
+        authorized = _ws_authorized(socket)
     except Exception:
         authorized = False                                    # fail closed
     if not authorized:
@@ -259,13 +306,13 @@ async def ws(socket: WebSocket, path: str):
         sock, secret = await _ensure_console()
     except Exception as e:                                    # not set up, no console, no folder
         # The credential passed: accept, then say why, with a close code the tab can read.
-        await socket.accept()
+        await socket.accept(subprotocol=WS_PROTOCOL)
         await _close(socket, 1011, f"the Emporia console is not running: {e}")
         return
     query = urlencode([(k, v) for k, v in socket.query_params.multi_items()
                        if k not in _WS_AUTH_PARAMS])
     uri = f"ws://console/ws/{path}" + (f"?{query}" if query else "")
-    await socket.accept()
+    await socket.accept(subprotocol=WS_PROTOCOL)
     code, reason = 1000, ""
     try:
         import websockets
@@ -292,6 +339,12 @@ async def ws(socket: WebSocket, path: str):
         if code in (1005, 1006, 1015):                        # codes no endpoint may send
             code = 1000
         await _close(socket, code, reason)
+
+
+@router.post("/_ws_ticket")
+async def ws_ticket():
+    """A ticket for one socket in this profile. Hermes's gate has already authenticated the call."""
+    return JSONResponse({"ticket": _mint_ws_ticket(_home())}, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/_hermes_profile")

@@ -11986,7 +11986,16 @@ var EmporiaHermesPlugin = (function(exports) {
 		const sdk = hermesSdk();
 		if (sdk && sdk.sockets === false) return new QuietSocket();
 		if (sdk) {
-			const ws = new WebSocket(await sdk.buildWsUrl(`${PLUGIN_BASE}/ws/${viewer}${path}`, Object.fromEntries(params)));
+			const url = new URL(await sdk.buildWsUrl(`${PLUGIN_BASE}/ws/${viewer}${path}`, Object.fromEntries(params)), window.location.href);
+			for (const k of [
+				"ticket",
+				"token",
+				"internal"
+			]) url.searchParams.delete(k);
+			const r = await sdk.authedFetch(`${PLUGIN_BASE}/_ws_ticket`, { method: "POST" });
+			if (!r.ok) throw new Error(`no websocket ticket (${r.status})`);
+			const { ticket } = await r.json();
+			const ws = new WebSocket(url.toString(), ["emporia.v1", `emporia.ticket.${ticket}`]);
 			watchRefusals(ws, sdk);
 			return ws;
 		}

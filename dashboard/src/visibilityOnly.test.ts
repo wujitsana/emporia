@@ -8,6 +8,8 @@
  * - the local console opening sealed text with the viewer's own key (`…/open`), on this machine;
  * - the dashboard sign-in challenge (`/dashboard/challenge`, `/dashboard/session`), which
  *   asks for a read token and changes nothing on the marketplace.
+ * - the tab's socket ticket (`/_ws_ticket`, transport.ts), a POST because it mints a 30-second
+ *   in-memory credential in the plugin's own process: nothing is stored or changed anywhere.
  * The chat drawer's socket is Hermes's own chat (/api/ws), not the relay's.
  */
 import { describe, expect, it } from "vitest";
@@ -27,7 +29,8 @@ describe("the dashboard only reads", () => {
       for (const m of text.matchAll(/method:\s*["'`](POST|PUT|PATCH|DELETE)["'`]/g)) {
         const around = text.slice(Math.max(0, m.index! - 400), m.index! + 200);
         const ok = (/consoleUrl\(`\/(dm|room|session)\/[^`]*\/open`\)/.test(around))
-          || (file === "api.ts" && /async function post</.test(around));
+          || (file === "api.ts" && /async function post</.test(around))
+          || (file === "transport.ts" && /_ws_ticket/.test(around));
         if (!ok) found.push(`${file}: ${m[0]}`);
       }
     }

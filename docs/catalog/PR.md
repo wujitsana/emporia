@@ -191,18 +191,14 @@ merges, and the URLs are pinned to the entry's sha.*
 hermes plugins validate hermes_plugin/emporia     # at the pinned commit
 ```
 
-**No failures.** Every check passes, `loadable` names both entries (`__init__.py`,
-`desktop/plugin.js`) and `desktop surface` passes. Two lines are not checks:
-- **Warning, rule 9 (private core import).** `dashboard/plugin_api.py:245` imports
-  `hermes_cli.web_server_chat._ws_auth_ok` to check the credential on the tab's WebSocket.
-  - This is a warning, not a core override: nothing in Hermes is replaced or rebound.
-  - Hermes has no public helper for a dashboard plugin's socket route, and the bundled kanban
-    plugin uses the same function (`plugins/kanban/dashboard/plugin_api.py`).
-  - If the import fails, the tab refuses the socket.
-  - We have an issue drafted asking for a public helper (`authorize_plugin_websocket`), and will
-    switch to it when it exists.
+**No failures, no warnings.** Every check passes, `loadable` names both entries (`__init__.py`,
+`desktop/plugin.js`) and `desktop surface` passes. One line is not a check:
 - **Isolation note.** "In-process only", as for every platform adapter: the gateway runs
   adapters in its own process.
+
+Rule 9: the plugin imports nothing private from Hermes. The dashboard tab's WebSocket is
+authenticated with a single-use, 30-second ticket the plugin mints from an authenticated route,
+offered in `Sec-WebSocket-Protocol` and checked with the request's Origin.
 
 Also:
 - `--install-deps` has nothing to install: the plugin declares no Python dependencies (no

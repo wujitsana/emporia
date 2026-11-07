@@ -43,11 +43,13 @@ class FakeWs {
   }
 }
 
+const ticketFetch = () => vi.fn(async () => new Response(JSON.stringify({ ticket: "tk1" })));
+
 describe("a plugin that does not say (older, or refusing for another reason)", () => {
   it("stops dialling after a few refusals with none ever open", async () => {
     FakeWs.made = [];
     vi.stubGlobal("WebSocket", FakeWs);
-    const t = await loadWith({ authedFetch: vi.fn(), buildWsUrl: async () => "ws://x/" });
+    const t = await loadWith({ authedFetch: ticketFetch(), buildWsUrl: async () => "ws://x/" });
     t._resetSocketRefusals();
     for (let i = 0; i < t.REFUSALS_BEFORE_QUIET; i++) {
       const s = (await t.relaySocket("/ws/events")) as unknown as FakeWs;
@@ -60,7 +62,7 @@ describe("a plugin that does not say (older, or refusing for another reason)", (
   it("keeps dialling once a socket has opened (a dropped one is not a refusal)", async () => {
     FakeWs.made = [];
     vi.stubGlobal("WebSocket", FakeWs);
-    const t = await loadWith({ authedFetch: vi.fn(), buildWsUrl: async () => "ws://x/" });
+    const t = await loadWith({ authedFetch: ticketFetch(), buildWsUrl: async () => "ws://x/" });
     t._resetSocketRefusals();
     const first = (await t.relaySocket("/ws/events")) as unknown as FakeWs;
     first.fire("open");
@@ -91,16 +93,19 @@ describe("relay sockets in the Hermes tab", () => {
     expect(s.readyState).toBe(3);
   });
 
-  it("dials through Hermes's ticketed URL where sockets are carried (and when the plugin does not say)", async () => {
+  it("dials with a ticket from an authenticated request where sockets are carried (and when the plugin does not say)", async () => {
     for (const sockets of [true, undefined]) {
       const buildWsUrl = vi.fn(async () => "ws://host/api/plugins/emporia/ws/x?ticket=t");
       const Ws = vi.fn();
+      const authedFetch = ticketFetch();
       vi.stubGlobal("WebSocket", Ws);
-      const t = await loadWith({ authedFetch: vi.fn(), buildWsUrl, sockets });
+      const t = await loadWith({ authedFetch, buildWsUrl, sockets });
       expect(t.socketsCarried()).toBe(true);
       await t.relaySocket("/ws/events");
       expect(buildWsUrl).toHaveBeenCalledOnce();
-      expect(Ws).toHaveBeenCalledWith("ws://host/api/plugins/emporia/ws/x?ticket=t");
+      expect(authedFetch).toHaveBeenCalledWith("/api/plugins/emporia/_ws_ticket", { method: "POST" });
+      // Hermes's own ticket is dropped from the URL; ours rides in the protocol header.
+      expect(Ws).toHaveBeenCalledWith("ws://host/api/plugins/emporia/ws/x", ["emporia.v1", "emporia.ticket.tk1"]);
     }
   });
 });

@@ -79,13 +79,15 @@ try:
         pass
 except Exception:
     refused = True
-from hermes_cli import web_server_chat               # past Hermes's own websocket check:
-web_server_chat._ws_auth_ok = lambda socket: True    # the console still needs its secret
-with c.websocket_connect("/api/plugins/emporia/ws/alpha/ws/agent/alpha") as s:
+import sys
+private = [k for k in sys.modules if k.startswith("hermes_cli")]
+t = c.post("/api/plugins/emporia/_ws_ticket").json()["ticket"]     # the console still needs its secret
+with c.websocket_connect("/api/plugins/emporia/ws/alpha/ws/agent/alpha",
+                         subprotocols=["emporia.v1", "emporia.ticket." + t]) as s:
     relayed = s.receive_text()
 here = c.get("/api/plugins/emporia/_hermes_profile?profile=beta").json()
 print(json.dumps({{"status": r.status_code, "echo": r.json(), "here": here, "relayed": relayed,
-                  "cache": r.headers.get("cache-control"), "ws_refused": refused}}))
+                  "cache": r.headers.get("cache-control"), "ws_refused": refused, "private": private}}))
 m._stop_console()
 ''')
     out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
@@ -104,7 +106,8 @@ m._stop_console()
     assert echo["headers"]["x-emporia-console-secret"] != "forged", "the plugin's secret, not the browser's"
     argv = echo["argv"]
     assert argv[argv.index("--profile") + 1] == str(tmp_path / "home") and "--hermes-root" not in argv
-    assert result["ws_refused"], "a websocket without Hermes's credential is refused"
+    assert result["ws_refused"], "a websocket without a ticket is refused"
+    assert not result["private"], "no hermes_cli module is imported"
     assert result["relayed"] == "as the console: alpha/ws/agent/alpha", "the websocket carries the secret"
     assert oct(runtime.stat().st_mode)[-3:] == "700"
     assert result["here"] == {"profile": "beta", "sockets": True}, "P227: the tab learns which profile it is open in"
@@ -393,8 +396,8 @@ def test_a_refused_socket_closes_cleanly_never_with_an_incomplete_handshake(monk
     an HTTP denial answer (what Hermes sends for a plugin host's socket) does, so the check bites."""
     import asyncio
     import logging
-    import sys
-    import types
+    import time
+    from pathlib import Path
 
     import uvicorn
     import websockets
@@ -403,13 +406,7 @@ def test_a_refused_socket_closes_cleanly_never_with_an_incomplete_handshake(monk
 
     m = _plugin_module()
     monkeypatch.setattr(m, "_config", lambda: {})                 # no settings: not set up here
-    allow = {"ok": False}
-    pkg = types.ModuleType("hermes_cli")
-    fake = types.ModuleType("hermes_cli.web_server_chat")
-    fake._ws_auth_ok = lambda socket: allow["ok"]
-    pkg.web_server_chat = fake
-    monkeypatch.setitem(sys.modules, "hermes_cli", pkg)
-    monkeypatch.setitem(sys.modules, "hermes_cli.web_server_chat", fake)
+    monkeypatch.setattr(m, "_ws_tickets", {})
 
     app = FastAPI()
     app.include_router(m.router, prefix="/api/plugins/emporia")
@@ -443,14 +440,36 @@ def test_a_refused_socket_closes_cleanly_never_with_an_incomplete_handshake(monk
             out["unauth"] = e.response.status_code
         await asyncio.sleep(0.1)
         out["unauth_logs"] = list(records)
-        allow["ok"] = True
-        async with websockets.connect(f"{base}/api/plugins/emporia/ws/alpha/ws/events") as s:
+        url = f"{base}/api/plugins/emporia/ws/alpha/ws/events"
+
+        def offer(t):
+            return [websockets.Subprotocol("emporia.v1"), websockets.Subprotocol(f"emporia.ticket.{t}")]
+
+        async def refused(**kw):
+            try:
+                async with websockets.connect(url, **kw):
+                    return "accepted"
+            except websockets.InvalidStatus as e:
+                return e.response.status_code
+
+        out["no_ticket"] = await refused(subprotocols=[websockets.Subprotocol("emporia.v1")])
+        out["forged"] = await refused(subprotocols=offer("nope"))
+        t = m._mint_ws_ticket(m._home())
+        out["bad_origin"] = await refused(subprotocols=offer(t), origin="http://evil.example")
+        t = m._mint_ws_ticket(m._home())
+        out["foreign_profile"] = await refused(subprotocols=offer(m._mint_ws_ticket(Path("/elsewhere"))))
+        m._ws_tickets[t] = (time.monotonic() - 1, str(m._home()))
+        out["expired"] = await refused(subprotocols=offer(t))
+        t = m._mint_ws_ticket(m._home())
+        async with websockets.connect(url, subprotocols=offer(t), origin=f"http://127.0.0.1:{port}") as s:
+            out["subprotocol"] = s.subprotocol
             try:
                 await s.recv()
             except websockets.ConnectionClosed as e:
                 out["auth"] = (e.rcvd.code, e.rcvd.reason)
         await asyncio.sleep(0.1)
         out["auth_logs"] = list(records)
+        out["replayed"] = await refused(subprotocols=offer(t))
         try:
             async with websockets.connect(f"{base}/denied"):
                 pass
@@ -470,6 +489,9 @@ def test_a_refused_socket_closes_cleanly_never_with_an_incomplete_handshake(monk
         logging.getLogger("uvicorn.error").removeHandler(grab)
     bad = "ASGI callable returned without completing handshake."
     assert out["unauth"] == 403
+    for k in ("no_ticket", "forged", "bad_origin", "foreign_profile", "expired", "replayed"):
+        assert out[k] == 403, (k, out[k])
+    assert out["subprotocol"] == "emporia.v1", "the ticket-bearing protocol is never echoed"
     assert out["auth"][0] == 1011 and "not running" in out["auth"][1], out["auth"]
     assert bad not in out["unauth_logs"] and bad not in out["auth_logs"], out["auth_logs"]
     assert out["denied"] in (501, "refused") and bad in out["denied_logs"], "the check sees the error when it happens"
