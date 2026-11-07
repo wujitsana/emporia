@@ -8,7 +8,7 @@ from emporia import mcp_server
 from emporia.module_sdk import HOW_TO_PLAY_MAX, MODULE_REGISTRY, list_available_modules
 from emporia.modules.chess import ChessModule
 from emporia.relay_server import app
-from tests.test_chess_settings import _agents, _create, _join
+from tests.test_chess_settings import _agents, _create
 
 #: Each guide's worked move, and the game data its module checks it against.
 BLOTTO_DATA = {"battlefields": 5, "troops": 100}
