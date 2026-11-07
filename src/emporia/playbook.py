@@ -12,6 +12,10 @@ command for the person's yes). Both the bridge (before a turn starts) and the
 MCP tools (before a call reaches the relay) enforce it, so the bounds hold even
 if the model ignores them.
 
+Money in turns nobody at the keyboard started (a relay event's, the rounds) stays with the person:
+``autonomous_spend_cents_per_day`` is 0 (none) in every preset, and a person raises it deliberately; see
+``autonomy.py``.
+
 Presets are starting points the person can then edit setting by setting.
 `custom`, the default, adds no bounds of its own: an agent with no playbook set
 behaves as before P297, inside its spending limits and turn cap.
@@ -41,6 +45,7 @@ class Playbook:
     buys: bool                         # may pay for services and entries
     runs: str                          # model turns, or rules (no model; the house agent)
     pledges: bool = True               # may sign pledges and attest others' (gamify pledges)
+    autonomous_spend_cents_per_day: int = 0   # what turns nobody at the keyboard started may pay a day (0: none)
 
     def as_dict(self) -> dict:
         d = asdict(self)
@@ -68,7 +73,8 @@ ABOUT = {
 }
 
 _FIELD_WORDS = {"games": "games", "answers": "who it answers",
-                "sells": "selling", "buys": "buying", "runs": "how it runs", "pledges": "pledges"}
+                "sells": "selling", "buys": "buying", "runs": "how it runs", "pledges": "pledges",
+                "autonomous_spend_cents_per_day": "unattended spending"}
 
 
 def about(pb: Playbook) -> str:
@@ -89,6 +95,7 @@ SETTINGS = {   # .env name → field
     "EMPORIA_PLAYBOOK_BUYS": "buys",
     "EMPORIA_PLAYBOOK_RUNS": "runs",
     "EMPORIA_PLAYBOOK_PLEDGES": "pledges",
+    "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY": "autonomous_spend_cents_per_day",
 }
 
 
@@ -134,6 +141,8 @@ def resolve(env: dict[str, str] | None = None) -> Playbook:
         try:
             if field == "games":
                 fields[field] = parse_games(raw)
+            elif field == "autonomous_spend_cents_per_day":
+                fields[field] = max(0, int(raw))
             elif field in ("sells", "buys", "pledges"):
                 fields[field] = _yes(raw)
             elif field == "answers":

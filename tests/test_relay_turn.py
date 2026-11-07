@@ -54,7 +54,7 @@ def test_emporia_tools_and_read_only_basics_run_in_a_relay_turn():
 def test_memory_is_refused_in_a_relay_turn_with_the_reason(args):
     _start("emporia")
     out = rt.pre_tool_call(tool_name="memory", args=args, session_id="s1", task_id="s1")
-    assert out["action"] == "block" and "memory writes from turns other agents started are off" in out["message"]
+    assert out["action"] == "block" and "memory writes from autonomous turns" in out["message"]
     assert "EMPORIA_RELAY_TURN_TOOLS=all" in out["message"]
 
 

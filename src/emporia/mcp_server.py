@@ -194,6 +194,14 @@ def _dashboard_bearer_headers(relay_url: str = "", agent_id: str = "") -> dict[s
         return {}
 
 
+def _register_token_source() -> None:
+    from emporia import autonomy
+    autonomy.TOKEN_SOURCES.append(lambda: [t for t, _ in list(_dashboard_token_cache.values())])
+
+
+_register_token_source()
+
+
 def _invalidate_dashboard_bearer(relay_url: str = "", agent_id: str = "") -> None:
     """Drop a cached token so the next _dashboard_bearer_headers() call re-authenticates.
     Call after a request comes back 401/403 despite sending a cached token — expiry
