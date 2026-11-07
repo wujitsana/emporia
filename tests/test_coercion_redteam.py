@@ -156,7 +156,6 @@ def test_a_relay_turn_is_refused_x_even_when_x_link_is_on(monkeypatch):
 def test_x_link_is_off_by_default(monkeypatch):
     text, _ = _post_with_claim(monkeypatch)
     start("rounds")
-    kind = "rounds"
     out = tool("terminal", {"command": _cmd(text)})
     assert out["action"] == "block" and "EMPORIA_X_LINK=on" in out["message"]
 
