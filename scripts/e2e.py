@@ -438,6 +438,9 @@ class Run:
         out = self.emporia(name, "operator", "label", "--same-as", fresh)
         check("adopted" in out, f"operator label --same-as: {out.strip()[-200:]}")
         labels[name] = fresh
+        # its tools register again on their next start; do it now, so the relay has the new label before play
+        reg = self.tool(name, "register_agent")
+        check(reg.get("success") and reg.get("operator_label") == fresh, f"re-registering with the new label: {reg}")
 
     def emporia(self, profile: str, *args: str, ok_codes=(0,), timeout: float = 120, **env: str) -> str:
         """`hermes -p PROFILE emporia …`: the plugin's own commands, and the runtime's CLI
