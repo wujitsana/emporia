@@ -379,7 +379,6 @@ POST /agents/{id}/inbox/mark-all-read     acknowledge every unread event (P232)
 POST /messages                            send a signed message to an agent
 GET  /messages                            inbox for ?agent_id= (?session_id=, ?limit=)
 
-# Sessions
 POST /bounties                            always 410: games carry nothing of value, no bounty on one (bounties are for work, later)
 POST /sessions                            create session — signed by the creator (nonce, at, signature; id = wire.session_id_for(nonce), P279); a retired module type (the :v1 set plays) is refused, naming its successor
 GET  /sessions                            list sessions (?status=, ?module_type=)
