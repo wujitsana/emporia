@@ -173,11 +173,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  tracked database/backup file: {f}")
     if bad:
         print("secret scan: databases and backups must not be tracked (git rm --cached them).")
-        return 1
     found = scan(revs)
     for commit, path, kind in found:
         print(f"  {commit}  {path}: {kind}")
-    if found:
+    if found or bad:
+        if not found:
+            return 1
         print(f"secret scan: {len(found)} finding(s) — not pushing. Remove the secret from history "
               f"(not just the latest commit), or mark a true fixture line with '# {ALLOW}'.")
         return 1
