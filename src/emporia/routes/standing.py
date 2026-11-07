@@ -117,7 +117,6 @@ def _craft_games() -> list[dict]:
                     "termination": outcome.get("termination"), "tied": outcome.get("tied"),
                     "out": outcome.get("out"),
                     "rating_scores": outcome.get("rating_scores"),     # Bargain: graded, not won
-                    "stake_per_participant": (sess.get("payment_rules") or {}).get("stake_per_participant"),
                     "ended_at": sess["updated_at"], **_call_fields(sess)})
     return out
 
@@ -835,14 +834,13 @@ async def agent_sheet(agent_id: str):
 
 def _result_of(s: dict) -> dict:
     """One finished game, as a reader (or an opponent studying a player) needs
-    it: who played, who won and how, the stake, and the game's final record —
+    it: who played, who won and how, and the game's final record —
     for Blotto every round's allocations, for chess the position and moves."""
     try:
         module = get_interaction_module(s["module_type"])
         _, outcome = module.is_terminal(SessionState.from_dict(s["state"]))
     except ValueError:
         outcome = {}  # a module this relay no longer loads: list the game, not its verdict
-    rules = s.get("payment_rules") or {}
     return {
         "session_id": s["session_id"],
         "module_type": s["module_type"],
@@ -851,8 +849,6 @@ def _result_of(s: dict) -> dict:
         "outcome_type": outcome.get("outcome_type"),
         "termination": outcome.get("termination"),
         **({"points": outcome["points"]} if outcome.get("points") else {}),   # Bargain: each side's own score
-        "stake_per_participant": rules.get("stake_per_participant"),
-        "currency": rules.get("currency"),
         "config": s.get("config") or {},
         "paid_by": rs.session_paid_by(s["session_id"]),  # P153
         "record": (s.get("state") or {}).get("data") or {},

@@ -172,17 +172,13 @@ export function sessionStatusLabel(status: string): string {
 }
 
 /** P153: what can pay for something, before anyone does. */
-export type MoneyMove = "entry" | "purchase" | "wager" | "bounty_held" | "bounty_promised";
-
-/** P154: two-player games — an x402 wager needs the payee known when signed. */
-export const TWO_PLAYER_GAMES = new Set(["emporia:blotto:v2", "emporia:chess:v1"]);
+export type MoneyMove = "entry" | "purchase" | "bounty_held" | "bounty_promised";
 
 export function acceptsLabel(
   move: MoneyMove,
   h: { stripe_enabled?: boolean; x402_enabled?: boolean; x402_networks?: string[];
        x402_escrow_network?: string | null; tempo_network?: string | null;
-       card_game_stakes?: boolean; custodial_cards?: boolean } | null,
-  moduleType?: string,
+       card_bounty_prizes?: boolean; custodial_cards?: boolean } | null,
 ): string {
   const card = !!h?.stripe_enabled;
   const usdc = !!h?.x402_enabled;
@@ -202,13 +198,8 @@ export function acceptsLabel(
       if (card) ways.push("card");
       if (h?.x402_escrow_network) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
       break;
-    case "wager":            // (P154) USDC escrow, each stake held for the opponent; cards only by opt-in (P159)
-      if (card && h?.card_game_stakes) ways.push("card");
-      if (h?.x402_escrow_network && moduleType && TWO_PLAYER_GAMES.has(moduleType))
-        ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
-      break;
     case "bounty_held":      // a held card prize needs both opt-ins (P157, P159)
-      if (card && h?.card_game_stakes && h?.custodial_cards) ways.push("card");
+      if (card && h?.card_bounty_prizes && h?.custodial_cards) ways.push("card");
       break;
     case "bounty_promised":
       if (usdc) ways.push("USDC, paid after the result");
@@ -217,7 +208,7 @@ export function acceptsLabel(
   return ways.length ? `accepts ${ways.join(" · ")}` : "no payment rail on this relay";
 }
 
-/** P153: how a session's stakes were actually paid. USDC on a session is
+/** P153: how a session's payments were actually made. USDC on a session is
  *  always held in escrow (a direct x402 payment is for entries, which are not
  *  sessions). */
 export function paidByLabel(rails: string[] | undefined): string | null {
@@ -230,7 +221,7 @@ export function paidByLabel(rails: string[] | undefined): string | null {
 const TESTNETS = new Set(["eip155:84532", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "eip155:42431"]);
 
 /**
- * Whether stakes on this escrow network are test money. A relay that does not
+ * Whether payments on this escrow network are test money. A relay that does not
  * name its escrow network is holding test funds: agents pay on testnets unless
  * a person unlocks a real-money network for that agent in their own terminal.
  */
@@ -251,11 +242,11 @@ export function networkWithKind(network: string): string {
 }
 
 /**
- * The money line under a game or a deal, in two parts: what is staked or paid
+ * The money line under a deal, in two parts: what is paid
  * ("1.00 USDC (testnet)") and how it is held ("escrow", "card"), or null when
  * nobody has paid yet. USDC on a session is always held in escrow.
  */
-export function stakeText(amount: number, currency: string | undefined, opts: {
+export function priceText(amount: number, currency: string | undefined, opts: {
   rails?: string[]; mode?: string; escrowNetwork?: string | null;
 }): { amount: string; via: string | null } {
   const rails = opts.rails ?? [];

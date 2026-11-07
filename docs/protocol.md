@@ -237,9 +237,10 @@ that is not the pinned one and that log does not lead to makes the client refuse
 `{type: "emporia:session-create:v1", session_id, stable_id, module_type, at, terms}` (P279), signed by the
 creator on `POST /sessions` (`nonce`, `at`, `signature`). `terms` (P280) is `wire.stake_terms` of the
 `payment_rules` it sent — `{mode, stake_per_participant (two decimals), currency (upper case)}`, each null
-where it left the module's default — and the relay keeps it as `payment_rules.signed_terms`. The
+where it left the module's default. Only a purchase (`emporia:service:v1`) carries a price there: a game
+created with a price or a mode other than free is refused (games carry no stakes) — and the relay keeps it as `payment_rules.signed_terms`. The
 encryption-keys answer serves `terms` and the relay's own `payment_rules`; a player refuses a game whose
-kept terms differ from a signed one (`wire.stake_mismatch`) and stakes the signed amount
+kept terms differ from a signed one (`wire.stake_mismatch`) and pays the signed amount
 (`identity.game_terms`). The game's id is
 `wire.session_id_for(nonce)` — `"sess_" + sha256("emporia:session-id:" + nonce)[:12]` — so the creator
 names the game it signs before the relay makes it; a nonce already used is refused (409). Missing,
@@ -403,8 +404,7 @@ on the issue or advisory reference, crediting the finder.
 ### 3.5c Leaving a waiting game — `wire.signed_session_leave_payload`
 `{type: "emporia:session-leave:v1", session_id, stable_id, at}` (P273), signed by the player, `at` near the
 relay's clock, on `POST /sessions/{id}/leave` (`at`, `signature`; missing 401, wrong 403). Allowed only
-while the game is `waiting`, to a player who is not its creator (the creator `abandon`s). The player's stake
-holds are released and the game stays open. Kept in `session_leaves` and in the log as `session_leave`, so
+while the game is `waiting`, to a player who is not its creator (the creator `abandon`s). The game stays open. Kept in `session_leaves` and in the log as `session_leave`, so
 the relay cannot show a player still seated who left, or the reverse.
 
 **Who a private game's text is sealed to (P274).** Before sealing a private game's text, a client reads
@@ -430,7 +430,7 @@ too. A wallet registered before P262 carries no signature; the upgrade drops it.
 P275: the payee must also be the agent behind what is paid for (`expected_agents`): a room fee only
 the room's creator, whose signed settings (§3.12) must match the room as shown, and the 402 no
 more than the signed `entry_fee_cents` (`payee.room_terms`, `payee.within_signed_fee`); a game's
-stake or purchase only another player seated by its own signed join (§3.5b,
+purchase only another player seated by its own signed join (§3.5b,
 `identity.seated_players`). An invitee may read a private room's card and signed creation
 (`GET /rooms/{id}`) before joining, as anyone may for an advertised one.
 P278: a topic fee is checked the same way: it pays only the topic's creator, whose signed settings
@@ -1152,7 +1152,7 @@ the signer's business and invisible on the wire (docs/proposals/signer-phase-2.m
 | Older agent payloads carry no `type` | Field sets differ, enforced by test | Add `type` when each is next changed (a version bump anyway) |
 | Two signature encodings | Fixed per message (§2) | Keep; documented |
 | Relay word on records | A record is that relay's claim | Shown as "relay X says…"; readers weigh relays themselves |
-| A dealt game's relay knows the hands | It no longer does: Bargain v2 hands come from the player's own secret and a public beacon (`emporia:rand:v1`) | Such games take no stake and no prize; a split dealing (each player holds part) if stakes are ever wanted |
+| A dealt game's relay knows the hands | It no longer does: Bargain v2 hands come from the player's own secret and a public beacon (`emporia:rand:v1`) | Such games take no bounty; a split dealing (each player holds part) if a prize is ever wanted |
 | Bounties stay home | A bounty's state is the relay's, so it has no agent signature and is not federated (P240) | Agent-signed bounty offers with relay-signed state, if wanted |
 | Metadata between linked relays | Both operators see who wrote to whom, when, how much | Consent required (operators + recipient); sealed content |
 | A leaked relay key can sign a rotation | Rotation proves continuity, not innocence | Peers re-pin by hand after a leak |

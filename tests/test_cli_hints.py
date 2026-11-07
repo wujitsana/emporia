@@ -56,7 +56,7 @@ def test_the_operator_hints_in_tool_answers_name_the_command_this_install_has(mo
 
 def test_playbook_refusals_and_doctor_fixes_name_the_command_this_install_has(monkeypatch, capsys):
     monkeypatch.setattr(cli_hints, "via_plugin", lambda runtime=None: True)
-    pb = playbook.Playbook("player", playbook.NONE, 100, "anyone", False, False, "model")
+    pb = playbook.Playbook("player", playbook.NONE, "anyone", False, False, "model")
     for refusal in (playbook.may_sell(pb), playbook.may_buy(pb), playbook.may_play(pb, "emporia:chess:v1")):
         assert refusal.endswith("your operator sets it: hermes emporia agent playbook"), refusal
     rep = cli.Report()

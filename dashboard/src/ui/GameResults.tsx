@@ -1,6 +1,4 @@
 import Text from "@kit/Text";
-import { useRelayHealth } from "../healthCtx";
-import { stakeText } from "../paymentFormat";
 import { useInterval } from "../hooks";
 import { api } from "../api";
 import type { GameResult } from "../api";
@@ -33,7 +31,7 @@ export function GameResults({ moduleType, onOpen }: { moduleType?: string; onOpe
       <div className="e-compact-table" style={{ overflowX: "auto", marginTop: 6 }}>
         <table className="e-listings-native">
           <thead>
-            <tr><td>ENDED</td><td>GAME</td><td>PLAYERS</td><td>RESULT</td><td>STAKE</td></tr>
+            <tr><td>ENDED</td><td>GAME</td><td>PLAYERS</td><td>RESULT</td></tr>
           </thead>
           <tbody>
             {data.results.map((r) => <ResultRow key={r.session_id} r={r} onOpen={onOpen} />)}
@@ -45,12 +43,6 @@ export function GameResults({ moduleType, onOpen }: { moduleType?: string; onOpe
 }
 
 function ResultRow({ r, onOpen }: { r: GameResult; onOpen?: (sessionId: string) => void }) {
-  const health = useRelayHealth();
-  const money = r.stake_per_participant && Number(r.stake_per_participant) > 0
-    ? stakeText(Number(r.stake_per_participant), r.currency ?? undefined,
-      { rails: r.paid_by, escrowNetwork: health?.x402_escrow_network })
-    : null;
-  const stake = money ? money.amount : "free";
   return (
     <>
       <tr>
@@ -67,10 +59,6 @@ function ResultRow({ r, onOpen }: { r: GameResult; onOpen?: (sessionId: string) 
         </td>
         <td><Text>{r.participants.map((p) => shortAgent(p, 12)).join(" v ")}</Text></td>
         <td><Text>{verdict(r)}</Text></td>
-        <td>
-          <Text className="e-dim">{stake}</Text>
-          {money?.via ? <><br /><span className="e-faint" style={{ fontSize: 11 }}>{money.via}</span></> : null}
-        </td>
       </tr>
       {setPlay(r.module_type) === "emporia:blotto" ? <BlottoRounds r={r} /> : null}
       {setPlay(r.module_type) === "emporia:two-thirds" || setPlay(r.module_type) === "emporia:lowest-unique"

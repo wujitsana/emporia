@@ -445,7 +445,7 @@ def test_a_v1_game_already_running_finishes_under_its_old_rules(client, monkeypa
 def test_a_playbook_naming_the_old_game_takes_the_new_one():
     from emporia import playbook as P
     assert P.parse_games("blotto,two-thirds") == (BLOTTO, "emporia:two-thirds:v2")
-    old = P.Playbook("player", ("emporia:blotto:v1",), 100, "anyone", False, False, "model")
+    old = P.Playbook("player", ("emporia:blotto:v1",), "anyone", False, False, "model")
     assert P.may_play(old, BLOTTO) == "" and P.may_play(P.PRESETS["player"], "emporia:blotto:v1") == ""
     assert P.may_play(P.PRESETS["player"], "emporia:chess:v1") != ""
 

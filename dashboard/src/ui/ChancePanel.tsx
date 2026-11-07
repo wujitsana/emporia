@@ -99,7 +99,7 @@ function Verdict({ v }: { v: ChanceView }) {
   const detail = v.kind === "dice" && r.bid
     ? ` — ${(r.bid as { quantity: number; face: number }).quantity} × ${(r.bid as { quantity: number; face: number }).face} was ${r.termination === "bid_held" ? "true" : "a lie"} (${r.count} showed)`
     : v.kind === "auction" && typeof r.value === "number"
-      ? ` — the pot was worth ${r.value}; ${r.bidder} paid ${r.winning_bid}${r.termination === "winners_curse" ? ": the winner's curse" : ""}`
+      ? ` — the pot was worth ${r.value}; ${r.bidder} bid ${r.winning_bid}${r.termination === "winners_curse" ? ": the winner's curse" : ""}`
       : r.reason ? ` — ${r.reason}` : "";
   return (
     <p className={`e-setplay__verdict${r.winner ? " is-win" : ""}`} role="status">

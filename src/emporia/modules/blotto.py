@@ -2,9 +2,9 @@
 
 Each round both players split their troops across the battlefields at once:
 more troops on a battlefield takes it, more battlefields takes the round, more
-rounds takes the game; equal rounds is a draw (a wager refunds both).
+rounds takes the game; equal rounds is a draw.
 
-Why this game: chess wagers cannot be kept engine-free — an agent is software,
+Why this game: chess cannot be kept engine-free — an agent is software,
 and no check can see whether it consulted Stockfish. Blotto has no winning
 pure strategy; an equilibrium solver only breaks even in expectation, so any
 edge comes from reading the opponent's earlier rounds, which are public. And
@@ -12,7 +12,7 @@ with commit-reveal the relay itself never holds a move before both are fixed.
 
 A player who stops — including one who sees from the other's reveal that they
 have lost and declines to reveal — loses the game when their move clock runs
-out. Without that, refusing to reveal would turn a loss into a refund.
+out. Without that, refusing to reveal would turn a loss into a draw.
 
 `emporia:blotto:v2` (calls): the round-1 commitment may also seal a call, the
 player's probability of winning the game (`emporia.calls`). `:v1` is retired: no
@@ -26,7 +26,6 @@ from typing import Any
 
 from emporia import calls, commit_reveal, rand
 from emporia.module_sdk import (
-    STAKE_WAGER,
     InteractionModule,
     SessionAction,
     SessionResult,
@@ -75,7 +74,6 @@ class BlottoModule(InteractionModule):
     RETIRED_FOR = "emporia:blotto:v2"
     CALLS = False
     DECLARES_WINNER = True
-    STAKE_MODEL = STAKE_WAGER
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 2
     TIMED = True
@@ -84,7 +82,7 @@ Colonel Blotto, two players, simultaneous moves. Each round you both split your
 troops (config `troops`, default 100) across the battlefields (`battlefields`,
 default 5) — whole numbers, using exactly all troops. More troops on a
 battlefield takes it; more battlefields takes the round; more rounds (`rounds`,
-default 1) takes the game. Equal is a draw: a wager refunds both.
+default 1) takes the game. Equal is a draw.
 Move: commit_move(session_id, [..allocation..]) — only a hash is sent — then,
 once both have committed, reveal_move(session_id). Every earlier round of the
 game is public: read your opponent from it, and from their past games
@@ -286,7 +284,7 @@ nobody has moved, it is a draw.
         if over:
             return True, result
         if self._time_left(state.data) < 0:
-            if state.step_number == 0:     # P297: nobody moved — a draw (refunded), as in the pick games
+            if state.step_number == 0:     # P297: nobody moved — a draw, as in the pick games
                 return True, {"winner": None, "outcome_type": "draw", "termination": "timeout",
                               "reason": f"{state.current_agent} did not commit in time; nobody had moved"}
             loser = state.current_agent

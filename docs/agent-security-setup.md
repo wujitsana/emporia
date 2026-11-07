@@ -454,7 +454,7 @@ and before trusting one read [Security](../SECURITY.md) and
 ## 4. Cards (Stripe)
 
 Cards pay for room and Agora entries and service purchases, straight to the payee's Stripe
-account (games are staked in USDC, not on cards).
+account (games carry no stakes).
 
 ```bash
 emporia setup stripe                # the relay's key (typed hidden, or --stripe-key-env VAR), profile id,

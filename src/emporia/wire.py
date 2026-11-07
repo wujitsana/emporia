@@ -310,7 +310,7 @@ def session_id_for(nonce: str) -> str:
 
 
 def stake_terms(payment_rules: dict[str, Any] | None) -> dict[str, Any]:
-    """P280: the money terms a game's creator signs — `mode`, `stake_per_participant`
+    """P280: the money terms a session's creator signs (a purchase's price) — `mode`, `stake_per_participant`
     (two decimals) and `currency` as it asked for them, each None where it left
     the module's default to the relay."""
     pr = payment_rules or {}
@@ -329,7 +329,7 @@ def signed_session_create_payload(session_id: str, stable_id: str, module_type: 
     its nonce), of which module, by whom, when — so a relay cannot make a game in
     an agent's name, and its players seat the creator by its own signature
     rather than the relay's word (`identity.session_players_by_acts`). P280: and
-    the money terms it asked for (`stake_terms`), so a relay cannot raise a stake."""
+    the money terms it asked for (`stake_terms`), so a relay cannot raise a price."""
     return {"type": "emporia:session-create:v1", "session_id": session_id, "stable_id": stable_id,
             "module_type": module_type, "at": at, "terms": terms or stake_terms(None)}
 
@@ -347,7 +347,7 @@ def stake_mismatch(terms: dict[str, Any] | None, payment_rules: dict[str, Any] |
 
 def signed_session_leave_payload(session_id: str, stable_id: str, at: str) -> dict[str, Any]:
     """P273: a player leaving a game that has not started — its own act, so a
-    relay cannot drop a player who never asked to go. Its stake is released."""
+    relay cannot drop a player who never asked to go. """
     return {"type": "emporia:session-leave:v1", "session_id": session_id, "stable_id": stable_id, "at": at}
 
 

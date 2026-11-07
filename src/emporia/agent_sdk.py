@@ -324,8 +324,8 @@ class EmporiaAgent:
         and the bearer moves to `X-Emporia-Authorization`, so the relay learns
         both who is paying and with what. The MPP path used to bypass this
         method and send the payment alone, leaving the relay unable to tell who
-        paid — fatal on any route that must know (a wager's creator, a
-        purchase's buyer, a bounty's funder).
+        paid — fatal on any route that must know (a purchase's
+        buyer, a bounty's funder).
         """
         # P172: the same rule as the MCP tools — nothing sent may carry a secret.
         if method in ("post", "put", "patch"):
@@ -621,12 +621,10 @@ class EmporiaAgent:
         config: dict[str, Any] | None = None,
         payment_rules: dict[str, Any] | None = None,
         gateway_url: str = "",
-        mpp_spt: str | None = None,
     ) -> dict[str, Any]:
-        """Create a session. A staked chess wager needs the creator's stake too
-        (`mpp_spt`, P95) — omit it and this raises PaymentRequiredError. A
-        service session's creator is the buyer and pays later, via
-        `fund_session()`, once a seller has joined."""
+        """Create a session. Games carry no stakes: a game created with a price or a
+        payment mode other than free is refused. A service session's creator is the
+        buyer and pays later, via `fund_session()`, once a seller has joined."""
         from datetime import UTC, datetime
 
         from emporia.wire import new_message_nonce, session_id_for, stake_terms
@@ -641,7 +639,6 @@ class EmporiaAgent:
                 "nonce": nonce, "at": at, "signature": self._sign(
                     "session-create", session_id_for(nonce), self.agent_id, module_type, at, stake_terms(payment_rules)),
             },
-            payment_token=mpp_spt,
         )
         _raise_for_status_or_payment(resp)
         made = resp.json()
@@ -712,7 +709,7 @@ class EmporiaAgent:
             session = (await self._bearer_request(
                 "get", f"{self.relay_url}/sessions/{_seg(session_id)}")).json()
             payees, signed_stake = await self._game_payees(session_id)   # P275
-            # P280: the stake its creator signed, where it set one — not the relay's word for it.
+            # P280: the price its creator signed, where it set one — not the relay's word for it.
             stake = signed_stake or (session.get("payment_rules") or {}).get("stake_per_participant", "0")
             expected = int(_x402_amount_atomic(int(round(float(stake) * 100))))
             from emporia import payee   # P262: the hold's receiver is a wallet its payee signed
@@ -847,7 +844,7 @@ class EmporiaAgent:
 
     async def leave_session(self, session_id: str) -> dict[str, Any]:
         """Leave a game this agent joined that has not started (P273), by its
-        own signed act; a stake it paid is released. A game it created, or one
+        own signed act. A game it created, or one
         under way, is ended by abandoning it instead."""
         from datetime import UTC, datetime
 
@@ -859,46 +856,20 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
-    async def join_session(
-        self,
-        session_id: str,
-        gateway_url: str = "",
-        payment_intent_id: str | None = None,
-        mpp_spt: str | None = None,
-        pay_with_x402: bool = False,
-    ) -> dict[str, Any]:
-        """Join a session. For paid sessions, provide either:
-        - mpp_spt: a Shared Payment Token from link-cli/mppx (MPP 402 path)
-        - payment_intent_id: a pre-created PaymentIntent ID (legacy path)
-        - pay_with_x402=True: sign the relay's x402 challenge with this agent's
-          `x402_private_key` and retry once (P45)
-        Omit all three and, if payment is required, this raises
-        PaymentRequiredError (`.detail` the parsed challenge body,
-        `.www_authenticate` the header).
-
-        `pay_with_x402` is per-call and defaults False even when the agent holds
-        a spending key: an autonomous agent should have to say, at each site,
-        that this particular request is worth money.
-        """
+    async def join_session(self, session_id: str, gateway_url: str = "") -> dict[str, Any]:
+        """Join a session. Joining a game costs nothing: games carry no stakes."""
         from datetime import UTC, datetime
 
         at = datetime.now(UTC).isoformat()       # P272: the join, signed by this agent
         body = {
             "agent_id": self.agent_id,
             "agent_gateway_url": gateway_url,
-            "payment_intent_id": payment_intent_id,
             "at": at,
             "signature": self._sign("session-join", session_id, self.agent_id, at),
         }
-        # P95: the payment and the payer's identity travel together.
         resp = await self._bearer_request(
-            "post", f"{self.relay_url}/sessions/{_seg(session_id)}/join", json=body, payment_token=mpp_spt,
+            "post", f"{self.relay_url}/sessions/{_seg(session_id)}/join", json=body,
         )
-        if pay_with_x402:
-            resp = await self._pay_and_retry_x402(resp, lambda headers: self._bearer_request(
-                "post", f"{self.relay_url}/sessions/{_seg(session_id)}/join", json=body,
-                headers=headers,
-            ))
         _raise_for_status_or_payment(resp)
         return resp.json()
 
@@ -1496,7 +1467,7 @@ class EmporiaAgent:
 
     async def _game_payees(self, session_id: str) -> tuple[set[str], str | None]:
         """P275: the other players of a game, each seated by its own signed act;
-        P280: and the stake its creator signed, if it set one (`identity.game_terms`)."""
+        P280: and the price its creator signed, if it set one (`identity.game_terms`)."""
         from emporia import payee
         from emporia.identity import game_terms
         resp = await self._bearer_request("get", f"{self.relay_url}/sessions/{_seg(session_id)}/encryption-keys")

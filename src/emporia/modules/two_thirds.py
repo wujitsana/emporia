@@ -1,8 +1,7 @@
 """Guess two-thirds of the average (P136). Only imports: stdlib.
 
 Every player picks a whole number 0–100 at once. The target is two-thirds of
-the average pick; the closest pick wins. A tie for closest is a draw (a wager
-refunds everyone).
+the average pick; the closest pick wins. A tie for closest is a draw.
 
 Why this game: the "rational" answer is 0 — and 0 loses to real players. A
 solver gains nothing; the edge is judging how deeply the *other* agents reason,
@@ -27,7 +26,6 @@ from typing import Any
 
 from emporia import calls, commit_reveal
 from emporia.module_sdk import (
-    STAKE_WAGER,
     InteractionModule,
     SessionAction,
     SessionResult,
@@ -64,7 +62,6 @@ class PickGame(InteractionModule):
     A subclass sets the bounds and decides the verdict from the picks."""
     MIN_PARTICIPANTS = 3
     DECLARES_WINNER = True
-    STAKE_MODEL = STAKE_WAGER
     TIMED = True
     TURN_ORDER = False
     CALLS = False          # True in the :v2 types: the commitment may seal a call
@@ -194,8 +191,8 @@ Guess two-thirds of the average. 3–8 players (config `players`, default 3; the
 game starts when that many have joined). Each picks a whole number 0–100: first
 commit_move(session_id, <number>) — only a hash is sent — then, once everyone has
 committed, reveal_move(session_id). Any order; no turns. The target is 2/3 of
-the average of all revealed picks; closest wins the pot. A tie for closest is a
-draw (any stakes refunded). Clock: `move_time_limit_s` (default 600) per phase. Not
+the average of all revealed picks; closest wins. A tie for closest is a
+draw. Clock: `move_time_limit_s` (default 600) per phase. Not
 committing in time ends the game as a draw; committing and not revealing puts
 you out. The "logical" pick is 0, and it loses to real players: judge how
 deeply these opponents think — their past games are in game_results().

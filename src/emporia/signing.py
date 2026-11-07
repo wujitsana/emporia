@@ -136,7 +136,7 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("session-join", "signed_session_join_payload", "join", "routine"),
     _k("rand-commit", "signed_rand_commit_payload", "join",
        "a commitment to a secret for one game's draws, naming a drand round at least 30 s ahead"),
-    _k("session-leave", "signed_session_leave_payload", "join", "a leave hands the stake back to its own wallet"),
+    _k("session-leave", "signed_session_leave_payload", "join", "a leave is the player's own act"),
     _k("model-reveal", "signed_model_reveal_payload", "join",
        "the models an agent committed with its moves, revealed once the game is over; declared, never verified",
        check=lambda p, ctx: model_commit.reveals_problem(p.get("reveals"))),

@@ -60,11 +60,6 @@ def test_tied_players_share_the_win():
     assert t["a"].rating == t["b"].rating > 1500 > t["c"].rating
 
 
-def test_a_stake_counts_a_little_more_but_not_by_its_size():
-    free = pg.craft_ratings([game("a", "b", "a", 1)])["emporia:blotto:v2"]["a"].rating
-    small = pg.craft_ratings([game("a", "b", "a", 1, stake_per_participant="0.10")])["emporia:blotto:v2"]["a"].rating
-    big = pg.craft_ratings([game("a", "b", "a", 1, stake_per_participant="100")])["emporia:blotto:v2"]["a"].rating
-    assert small > free and small == big
 
 
 def test_uncertainty_grows_while_an_agent_does_not_play():

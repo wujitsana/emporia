@@ -4,7 +4,8 @@ The session routes applied one rule to every module: the creator joins free and
 the joiner pays. That was wrong both ways it could be. A wager's creator risked
 nothing. A service session's joiner is the *seller*, so the seller was charged
 while the buyer paid nothing — and "dispute → buyer refunded" refunded money
-the buyer never put up. Each module now declares its STAKE_MODEL.
+the buyer never put up. Each module now declares its STAKE_MODEL. Games
+declare none: they take no stakes of any kind.
 
 The fake Stripe below records what the relay asked Stripe to do, including a
 charge's destination, so the tests can say where money would actually go.
@@ -29,7 +30,6 @@ def _custodial_cards(monkeypatch):
     balance (platform charges, transfer-to-winner, held prizes) — the opt-in
     path. The default, non-custodial one: tests/test_noncustodial_cards.py."""
     monkeypatch.setenv("EMPORIA_CUSTODIAL_CARDS", "1")
-    monkeypatch.setenv("EMPORIA_CARD_GAME_STAKES", "1")   # P159: and card money on games
 
 
 
@@ -136,46 +136,20 @@ def _act(client, sid, who, action, payload=None):
 STAKE = {"mode": "stripe_link", "stake_per_participant": "10.00", "currency": "usd"}
 
 
-# -- wagers: every participant stakes -----------------------------------------
+# -- games take no stakes ------------------------------------------------------
 
-def test_a_wagers_creator_stakes_or_no_session_exists(client, stripe):
+def test_a_game_with_a_stake_is_refused_and_leaves_no_session(client, stripe):
     creator = "w_" + uuid.uuid4().hex[:8]
     _register(client, creator)
     r = client.post("/sessions", json={"module_type": "emporia:chess:v1",
                                        "creator_agent_id": creator, "payment_rules": STAKE},
-                    headers=_hdr(creator))
-    assert r.status_code == 402, "the creator of a wager used to risk nothing"
+                    headers={**_hdr(creator), **PAY})
+    assert r.status_code == 400 and "takes no stakes" in r.json()["detail"]
     from emporia import relay_server as rs
     with rs.DB_LOCK, rs.get_db() as conn:
         joined = conn.execute("SELECT COUNT(*) FROM participants WHERE agent_id = ?",
                               (creator,)).fetchone()[0]
-    assert joined == 0, "a refused wager must leave no session behind"
-
-
-def test_both_sides_of_a_wager_are_held_and_the_winner_takes_both(client, stripe):
-    white, black = "ww_" + uuid.uuid4().hex[:8], "wb_" + uuid.uuid4().hex[:8]
-    _register_keyed(client, white)
-    _register_keyed(client, black)
-    r = client.post("/sessions", json={"module_type": "emporia:chess:v1",
-                                       "creator_agent_id": white, "payment_rules": STAKE},
-                    headers={**_hdr(white), **PAY})
-    assert r.status_code == 200, r.text
-    sid = r.json()["session_id"]
-    assert client.post(f"/sessions/{sid}/join", json={"agent_id": black},
-                       headers={**_hdr(black), **PAY}).status_code == 200
-    assert len(stripe.pis) == 2
-
-    from emporia import relay_server as rs
-    with patch.object(rs.AGENT_REGISTRY, "get_stripe_account", return_value="acct_black"), \
-         patch.object(rs.AGENT_REGISTRY, "get_stripe_account_status", return_value="active"), \
-         patch.object(rs.AGENT_REGISTRY, "get_stripe_account_mode", return_value="test"):
-        for who, uci in (("w", "f2f3"), ("b", "e7e5"), ("w", "g2g4"), ("b", "d8h4")):
-            _act(client, sid, white if who == "w" else black, "move", {"uci": uci})
-
-    assert sorted(stripe.captured) == sorted(stripe.pis)
-    [transfer] = stripe.transfers
-    assert transfer["destination"] == "acct_black"
-    assert int(transfer["amount"]) == 2000 - 20, "both stakes, less the 1% fee"
+    assert joined == 0 and not stripe.pis, "a refused game leaves no session and no hold"
 
 
 def test_a_module_with_no_payee_takes_no_stake(client, stripe):
@@ -280,7 +254,6 @@ def test_funding_without_a_credential_is_a_402(client, stripe):
 
 @pytest.fixture
 def prod():
-    from emporia import relay_server
     with __import__("conftest").header_shim_off():
         yield TestClient(app, client=("127.0.0.1", 51216))
 
@@ -290,38 +263,38 @@ def _jwt(client, agent):
     return bearer_for(client, agent)["Authorization"]
 
 
+def _signed_join_body(client, sid, agent):
+    from datetime import UTC, datetime
+
+    import conftest
+    from emporia import identity, wire
+    at = datetime.now(UTC).isoformat()
+    return {"agent_id": agent, "at": at, "signature": identity.sign(
+        wire.signed_session_join_payload(sid, conftest._derived_stable(agent), at), agent)}
+
+
 def test_a_payment_no_longer_hides_who_paid(prod, stripe):
     """`Authorization: Payment <spt>` displaced the identity bearer, so a remote
     agent paying with an SPT could not say who it was. Every route that must
     know the payer 401'd for any agent not co-located with the relay."""
-    creator = "pp_" + uuid.uuid4().hex[:8]
-    _register_keyed(prod, creator)
-    body = {"module_type": "emporia:chess:v1", "creator_agent_id": creator,
-            "payment_rules": STAKE}
+    buyer, seller = "pp_" + uuid.uuid4().hex[:8], "pq_" + uuid.uuid4().hex[:8]
+    _register_keyed(prod, buyer)
+    _register_keyed(prod, seller)
+    body = {"module_type": "emporia:service:v1", "creator_agent_id": buyer,
+            "config": {"description": "A haiku"}, "payment_rules": STAKE}
+    sid = prod.post("/sessions", json=__import__("conftest").signed_session_body(buyer, body),
+                    headers={"X-Emporia-Authorization": _jwt(prod, buyer)}).json()["session_id"]
+    assert prod.post(f"/sessions/{sid}/join", json=_signed_join_body(prod, sid, seller),
+                     headers={"X-Emporia-Authorization": _jwt(prod, seller)}).status_code == 200
 
-    alone = prod.post("/sessions", json=body, headers=PAY)
-    assert alone.status_code == 401, "a payment alone must still not name a caller"
-
-    both = prod.post("/sessions", json=__import__("conftest").signed_session_body(creator, body),
-                     headers={**PAY, "X-Emporia-Authorization": _jwt(prod, creator)})
+    with _connect_account(seller):
+        alone = prod.post(f"/sessions/{sid}/fund", headers=PAY)
+        assert alone.status_code == 401, "a payment alone must still not name a caller"
+        both = prod.post(f"/sessions/{sid}/fund",
+                         headers={**PAY, "X-Emporia-Authorization": _jwt(prod, buyer)})
     assert both.status_code == 200, both.text
     [pi] = stripe.pis.values()
-    assert pi["metadata"]["buyer_agent_id"] == creator
-
-
-def test_a_paying_joiner_is_held_to_the_identity_it_proves(prod, stripe):
-    """With the second header the join is authenticated: naming someone else as
-    the joiner is refused, where before the name was simply taken on trust."""
-    creator, joiner, victim = ("pj_" + uuid.uuid4().hex[:8] for _ in range(3))
-    for a in (creator, joiner, victim):
-        _register_keyed(prod, a)
-    sid = prod.post("/sessions", json=__import__("conftest").signed_session_body(creator, {"module_type": "emporia:chess:v1",
-                                       "creator_agent_id": creator, "payment_rules": STAKE}),
-                    headers={**PAY, "X-Emporia-Authorization": _jwt(prod, creator)}
-                    ).json()["session_id"]
-    r = prod.post(f"/sessions/{sid}/join", json={"agent_id": victim},
-                  headers={**PAY, "X-Emporia-Authorization": _jwt(prod, joiner)})
-    assert r.status_code == 403
+    assert pi["metadata"]["buyer_agent_id"] == buyer
 
 
 @pytest.fixture(autouse=True)

@@ -245,23 +245,6 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         return relay_notice(f"Session {sid} complete — {result}{paid}\n"
                             f"  → get_settlements(session_id=\"{sid}\")")
 
-    if t == "funding_required" and frame.get("kind") == "wager":
-        # P154/P157: both players stake a wager once both have joined — in USDC
-        # escrow, or on a card held as a payment to the opponent.
-        sid = oid(frame.get("session_id"))
-        card = frame.get("rail") == "card"
-        opponent = who(frame.get("opponent")) if frame.get("opponent") else "Your opponent"
-        return relay_notice(
-            f"{opponent} joined your {_module_label(module)} "
-            f"wager {sid}. Stake {_usd(frame.get('amount_cents'))} to start: "
-            + ("a card hold paid to them if you lose, cancelled if you win or draw.\n"
-               f"  → fund_session(session_id=\"{sid}\", mpp_token=...)  or payment_intent_id from "
-               f"create_payment_intent(session_id=\"{sid}\")"
-               if card else
-               "a USDC escrow hold paid to them if you lose, returned to you if you win or draw.\n"
-               f"  → fund_session(session_id=\"{sid}\", pay_with_x402=True)")
-        )
-
     if t == "funding_required":
         sid = oid(frame.get("session_id"))
         seller = who(frame.get("seller_id")) if frame.get("seller_id") else "A seller"
@@ -283,12 +266,12 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         elif not idle:
             reason = oid(reason)
         why = f" ({reason})" if reason else ""
-        return relay_notice(f"Session {oid(frame.get('session_id'))} abandoned{why} — stakes released.")
+        return relay_notice(f"Session {oid(frame.get('session_id'))} abandoned{why}.")
 
     if t in ("challenge", "counter_offer", "accept", "reject"):
         from_agent = who(frame.get("from_agent"))
         payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
-        price = payload.get("price_usd") or payload.get("stake_per_participant") or ""
+        price = payload.get("price_usd") or ""
         price_str = f" — ${price}" if price else ""
         sid = oid(payload.get("session_id") or frame.get("session_id"))
         if t == "challenge":

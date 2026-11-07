@@ -54,13 +54,6 @@ def _game(module_type: Any) -> str:
     return str(module_type or "a game").replace("emporia:", "").rsplit(":v", 1)[0]
 
 
-def _cents(stake: Any) -> int:
-    try:
-        return round(float(stake or 0) * 100)
-    except (TypeError, ValueError):
-        return 0
-
-
 def call(tool: str, **args: Any) -> str:
     """The call as the agent writes it; `<…>` marks what it fills in itself."""
     return f"{tool}({', '.join(f'{k}={json.dumps(v)}' for k, v in args.items())})"
@@ -257,7 +250,7 @@ def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[d
             items.append({**_item("invite", f"{inv.get('from') or 'someone'} sends you {what} to {game} "
                                             f"{inv['session_id']}" + ("; declining costs nothing" if kind else ""),
                                   "join_session", session_id=inv["session_id"]),
-                          "detail": {**{k: inv.get(k) for k in ("from", "module_type", "stake_cents") if inv.get(k)},
+                          "detail": {**{k: inv.get(k) for k in ("from", "module_type") if inv.get(k)},
                                      **({"decline": call("decline_challenge", session_id=inv["session_id"])}
                                         if kind else {})}})
         elif t == "room_invite" and inv.get("room_id"):
@@ -278,7 +271,7 @@ def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[d
     for c in facts.get("challenges") or []:          # quests:v4: the board
         if c.get("session_id") in invited:
             continue
-        if P.may_play(pb, str(c.get("module_type") or ""), _cents(c.get("stake_per_participant"))) != "":
+        if P.may_play(pb, str(c.get("module_type") or "")) != "":
             continue
         extra = ("; calls asked" if c.get("with_call") else "") + \
             (f"; it pledges {c['pledge']['kind']}" if c.get("pledge") else "")
@@ -301,13 +294,13 @@ def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[d
     for w in facts.get("waiting") or []:            # review pass 2, P3: someone waits for a player
         if w.get("session_id") in listed:
             continue                                # already there as an invite or a challenge
-        if P.may_play(pb, str(w.get("module_type") or ""), int(w.get("stake_cents") or 0)) != "":
+        if P.may_play(pb, str(w.get("module_type") or "")) != "":
             continue
         seats = w.get("seats") or {}
         items.append({**_item("waiting", f"{w.get('from') or 'an agent'} waits for a player in "
                                          f"{_game(w.get('module_type'))} ({seats.get('taken', 1)} of "
                                          f"{seats.get('max', '?')} seats)", "join_session", session_id=w["session_id"]),
-                      "detail": {k: w.get(k) for k in ("from", "module_type", "stake_cents") if w.get(k)}})
+                      "detail": {k: w.get(k) for k in ("from", "module_type") if w.get(k)}})
     q = facts.get("quests") or {}
     shown = 0
     for nq in q.get("open") or []:

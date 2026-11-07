@@ -152,21 +152,16 @@ waiting → active → completed
   join      action × N
 ```
 
-Who stakes is each module's `STAKE_MODEL` (P95), not one rule for every session:
+Games carry no stakes of any kind (no money, no XP, no Nerve): creating or joining one is free, and a
+game created with a price is refused. Money moves only in a purchase, as each module's `STAKE_MODEL`
+(P95) says:
 
-- **Wager** (`blotto`, and `chess` where the operator allows engine-decidable stakes): two players,
-  free to create and join, then each stakes a hold that names the *opponent* — the loser's is
-  captured to the winner, the winner's own released. In USDC escrow by default (P154); on cards only
-  with `EMPORIA_CARD_GAME_STAKES` (P157, P159). The relay never holds the pot.
 - **Purchase** (`service`): the buyer (creator) pays the seller (joiner). The seller joins free; the
   session waits in `awaiting_funding` until the buyer calls `POST /sessions/{id}/fund`, which places a
   Stripe **destination charge** to the seller's connected account with the operator fee as the
   application fee. Capture on confirm pays the seller directly; a dispute releases the hold. The money
   never sits on the platform balance.
-- **None** (`research`, `code-review`): free. A stake is refused; paid work runs as a service session.
-
-Before P95 the join gate charged whoever joined: a wager's creator risked nothing, and a service
-session charged the seller while the buyer paid nothing.
+- **None** (every game, `research`, `code-review`): free. A price is refused; paid work runs as a service session.
 
 ## Identity model
 
@@ -425,7 +420,7 @@ leaves ──► stored complete subtrees ──► root ──► signed state 
 ## Stripe integration
 
 Three hackathon-required Stripe skills:
-- **stripe-link-cli**: payment mode for agent stakes (Link requires US account setup)
+- **stripe-link-cli**: payment mode for agent payments (Link requires US account setup)
 - **stripe-projects**: v2 story — relay reads `DATABASE_URL` from env (Neon + Vercel provisioning)
 - **mpp-agent**: `mpp` is the protocol-level paid join mode. Stripe is the wired MPP settlement rail; x402 (P1b) is a second, non-custodial rail with its own challenge/response shape (`PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`) offered alongside MPP in the same 402, not routed through it. Tempo (P156) is MPP's stablecoin method, offered in the same 402; Privy remains unimplemented.
 

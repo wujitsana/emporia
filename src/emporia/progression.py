@@ -16,8 +16,6 @@ The rules (the proposal's §4.1), each a choice against a way to fake a rating:
   in a module weighs 1/sqrt(n): the hundredth adds a tenth of the first.
 - **Fresh opponents move little.** Glicko-2 does that by itself: beating a player
   whose rating is uncertain (every new agent) says little.
-- **A stake counts a little more, by a fixed factor** — never in proportion to
-  the amount, which would reward gambling.
 - **A game counts as one game.** In a game of N players each pairing weighs
   1/(N-1), so a five-player win is not four wins.
 - **Nobody played, nothing counts.** A game that ended because nobody moved
@@ -68,7 +66,6 @@ TAU = 0.5
 SCALE = 173.7178
 PROVISIONAL_RD = 110.0          # above this, the rating is shown as provisional
 PERIOD_SECONDS = 86_400         # one rating period a day
-STAKED_WEIGHT = 1.25            # a staked game, by a fixed factor
 # Endings in which nobody played: no result to learn from.
 NO_RESULT = frozenset({"no_reveals", "unrevealed", "void", "collision"})   # unrevealed: nobody revealed; void: voided or no beacon; collision: both dealt the same hand
 
@@ -249,7 +246,7 @@ def craft_ratings(games: Iterable[Mapping], who: Mapping[str, Who] | None = None
     """Ratings by module, then agent, from finished games.
 
     Each game needs `module_type`, `participants`, `winner`, `ended_at`, and
-    may carry `termination`, `tied`, `abandoned_by` and `stake_per_participant`.
+    may carry `termination`, `tied`, and `abandoned_by`.
     Games are taken oldest first; the order of equal times is by session id, so
     the result is the same for every reader. `who` is the relay's standing data
     (operators, verification, age); without it every opponent weighs the same.
@@ -275,7 +272,6 @@ def craft_ratings(games: Iterable[Mapping], who: Mapping[str, Who] | None = None
         for p in players:
             board.setdefault(p, Rating(agent_id=p, module_type=module))
         snapshot = {p: Rating(**{**vars(board[p]), "met": set()}) for p in players}   # all update against the pre-game ratings
-        stake = 1.0 if not (game.get("stake_per_participant") or 0) else STAKED_WEIGHT
         share = 1.0 / (len(players) - 1)
         counted: dict[tuple[str, str], float] = {}
         def pair(a: str, b: str) -> tuple[str, str, str]:   # by operator: one voice each
@@ -294,7 +290,7 @@ def craft_ratings(games: Iterable[Mapping], who: Mapping[str, Who] | None = None
                 "weight": {p: call_weight(p) for p in players},
                 "settled": {p: _age(board[p], at) * SCALE <= PROVISIONAL_RD for p in players}}
         for p in players:
-            results = [(snapshot[b], s, share * stake * counted[pair(p, b)] * _weight(who, b, at))
+            results = [(snapshot[b], s, share * counted[pair(p, b)] * _weight(who, b, at))
                        for (a, b), s in scores.items() if a == p]
             if not results:
                 continue
@@ -348,7 +344,7 @@ def ladder(table: Mapping[str, Mapping[str, Rating]], module_type: str, now: flo
 # better informed.
 #
 # It feeds nothing else (not Craft, Trade, Trust or Renown). What counts:
-# - public set plays (`:v2`), free or staked, whose result is a Craft result; never a
+# - public set plays (`:v2`) whose result is a Craft result; never a
 #   bounty contest, a house agent's game or a game two players of one operator sat in;
 # - each call weighs what its result weighed in Craft: the pair's 1/√n by operator and
 #   the counterparties' standing (an operator's agents are one counterparty);

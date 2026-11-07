@@ -35,7 +35,7 @@ export interface NextFacts {
     unread_total?: number;
     invites?: Array<{
       type?: string; session_id?: string | null; room_id?: string | null; topic_slug?: string | null;
-      from?: string | null; module_type?: string | null; stake_cents?: number;
+      from?: string | null; module_type?: string | null;
     }>;
     dms?: { count?: number; threads?: Array<{ thread_id: string; from?: string | null }> };
     mentions?: Array<{ room_id: string; from?: string | null }>;

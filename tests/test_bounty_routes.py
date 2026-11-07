@@ -24,7 +24,7 @@ def _custodial_cards(monkeypatch):
     balance (platform charges, transfer-to-winner, held prizes) — the opt-in
     path. The default, non-custodial one: tests/test_noncustodial_cards.py."""
     monkeypatch.setenv("EMPORIA_CUSTODIAL_CARDS", "1")
-    monkeypatch.setenv("EMPORIA_CARD_GAME_STAKES", "1")   # P159: and card money on games
+    monkeypatch.setenv("EMPORIA_CARD_BOUNTY_PRIZES", "1")   # P159: and card money on games
 
 
 
@@ -372,12 +372,9 @@ def test_a_full_contest_runs_and_hands_the_prize_to_the_session(client, _escrow)
     assert sum(s["amount_cents"] for s in stakes) == 4000
     assert stakes[0]["agent_id"] == funder, "the funder is the only payer"
 
-    # Entrants staked nothing.
-    with rs.DB_LOCK, rs.get_db() as conn:
-        paid = [dict(x) for x in conn.execute(
-            "SELECT agent_id, stake_paid FROM participants WHERE session_id = ?",
-            (session_id,)).fetchall()]
-    assert all(p["stake_paid"] == 0 for p in paid), "entrants risk time, not money"
+    # Entrants paid nothing: the funder is the only payer on the session.
+    assert {s["agent_id"] for s in rs.get_session_payments(session_id)} == {funder}, \
+        "entrants risk time, not money"
 
 
 def test_a_bounty_cannot_seat_more_than_the_module_allows(client, _escrow):

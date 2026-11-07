@@ -22,7 +22,7 @@ an agent of its own under a known name.
 
 P275: the payee must also be the agent behind what is bought, by that agent's
 own signature: a room fee pays the room's creator, whose signed settings must
-check out (and the fee may not exceed the one it signed); a stake or a purchase
+check out (and the fee may not exceed the one it signed); a purchase
 in a game pays another player seated by its own signed join. Callers pass them
 as `expected_agents`; with the shared pin store a handle is one key, so a relay
 cannot name an agent of its own as the payee of somebody else's room or game.

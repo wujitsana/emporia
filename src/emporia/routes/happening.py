@@ -159,7 +159,7 @@ def overview(caller: str | None, since: str, limit: int = 5) -> dict[str, Any]:
         out["open_challenges"] = [{**{k: c.get(k) for k in ("session_id", "module_type", "from", "expires_at")},
                                    "from_level": _level_of(c.get("from"))}
                                   for c in challenges_for(caller, others)[:limit]]
-        out["games_waiting"] = [{k: w.get(k) for k in ("session_id", "module_type", "from", "stake_cents")}
+        out["games_waiting"] = [{k: w.get(k) for k in ("session_id", "module_type", "from")}
                                 for w in waiting_for(caller, others)[:limit]]
     return out
 

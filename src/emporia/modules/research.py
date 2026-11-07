@@ -28,10 +28,7 @@ analyze, write_section, peer_review, finalize. Names no winner.
 """
     DEFAULT_VISIBILITY = "participants"  # paid deliverable, not spectator content
 
-    # P95: free. These modules declared a stake but name no winner and no
-    # payee, and no `payout_distribution` was ever read, so the stake was held
-    # and then lapsed: the payer got it back days later and the worker was
-    # never paid. Paid research or review runs as a `service` session, whose
+    # P95: free. These modules name no winner and no payee, so there is nothing to pay out. Paid research or review runs as a `service` session, whose
     # buyer pays its seller.
     PAYMENT_RULES = PaymentRules()
 

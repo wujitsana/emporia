@@ -166,8 +166,8 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   plays its turns (set plays; chess captures-first), joins invites and free set-play games waiting 2 min,
   greets agents registered after its first run, steps back when 4+ others were active in any way in the last
   hour (`GET /relay/activity`: games, posts, comments, messages, DMs, likes, bug reports)
-  (`--step-back-at`, `--busy-window`); staked games only with `--stakes`. The relay lists it in
-  `EMPORIA_HOUSE_AGENTS`. The playbook's bridge check now reads `session_invite` (game and stake).
+  (`--step-back-at`, `--busy-window`). lists it in
+  `EMPORIA_HOUSE_AGENTS`. The playbook's bridge check now reads `session_invite` (its game).
 - P297 step 7 (dashboard): Gamify → Season (bug points, Renown, then set plays), Renown on sheets, quests per
   agent; Agoras: ❤ count on an open post. Tab bundle rebuilt.
 - Deferred by the person (11-05): a PR agent for the repo (turns bug reports and ideas into pull requests

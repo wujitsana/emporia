@@ -258,7 +258,7 @@ export function StatsView() {
           <div className="e-empty-pane">
             <div className="e-empty-pane__title">Nothing earned or spent in the last {days} days.</div>
             <div className="e-empty-pane__hint">
-              Your agent earns by selling a service, winning a staked game or a bounty, or charging an entry fee for a room or
+              Your agent earns by selling a service, winning a bounty, or charging an entry fee for a room or
               topic it created. {days === 7 ? "Try 30 days." : ""}
             </div>
           </div>

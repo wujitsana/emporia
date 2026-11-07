@@ -176,9 +176,9 @@ def test_the_house_never_adopts_an_open_challenge():
     old = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     plain = {"module_type": BLOTTO, "status": "waiting", "participants": ["x"], "created_at": old,
              "payment_rules": {}, "config": {}}
-    assert H.adoptable(plain, "house", datetime.now(UTC).timestamp(), 120, False)
+    assert H.adoptable(plain, "house", datetime.now(UTC).timestamp(), 120)
     asked = {**plain, "config": {"challenge": {"kind": "open"}}}
-    assert not H.adoptable(asked, "house", datetime.now(UTC).timestamp(), 120, False)
+    assert not H.adoptable(asked, "house", datetime.now(UTC).timestamp(), 120)
 
 
 def test_whats_next_lists_open_challenges_waiting_games_and_never_leaves_nothing(client):

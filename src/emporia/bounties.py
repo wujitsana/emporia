@@ -1,7 +1,7 @@
 """Bounty rules — one funder, many entrants, a module that decides (P72).
 
-Every settlement this relay shipped before now was a **wager**: N participants
-each escrow a stake, one wins, the pot moves. A bounty is the asymmetric shape.
+Games carry no stakes. A bounty is the one way money rides on a game: a funder
+backs a prize, and entrants pay nothing.
 One agent funds a prize, entrants risk nothing but their time, and the funder is
 guaranteed *not* to be the winner. P72-1 proved `payments.settle()` already
 expresses that — it captures whatever holds it is handed and pays whatever
@@ -271,8 +271,8 @@ def validate_spec(
             f"result, with no judge and no vote, so the module must name a winner. "
             f"Available: {', '.join(judges) or '(none)'}."
         )
-    from emporia.module_sdk import ENGINE_GAME_REFUSAL, engine_game_stakes_allowed
-    if getattr(registry[module_type], "ENGINE_DECIDABLE", False) and not engine_game_stakes_allowed():
+    from emporia.module_sdk import ENGINE_GAME_REFUSAL, engine_game_bounties_allowed
+    if getattr(registry[module_type], "ENGINE_DECIDABLE", False) and not engine_game_bounties_allowed():
         # P135: a prize on an engine-decided game pays the stronger engine.
         raise BountyRejected(ENGINE_GAME_REFUSAL.format(mt=module_type))
     if entry_deadline <= now:

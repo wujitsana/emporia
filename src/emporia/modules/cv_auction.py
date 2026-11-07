@@ -20,7 +20,7 @@ Play: one sealed bid each, by commit-reveal, once the round is published (a whol
 (reveal_move). Then everyone reveals the secret `s_i` (`reveal` {"s", "nonce"}) and anyone recomputes
 every signal and V. The highest bid wins and scores `V - bid` (it can be negative); the others score 0. A
 tie for the highest bid is broken by the beacon. A bid revealed late or never is out of the auction.
-No stakes of value: points only.
+Nothing rides on it but points.
 
 A refused secret reveal forfeits: V cannot be known, so the refuser scores -1 (the top bidder, -bid:
 refusing may not hide a loss) and the others 0. A bid committed and not revealed in time ends the game as
@@ -69,7 +69,6 @@ def seats(config: dict[str, Any]) -> int:
 class CommonValueAuctionModule(InteractionModule):
     MODULE_TYPE = "emporia:cv-auction:v1"
     DECLARES_WINNER = True
-    STAKE_MODEL = None         # no stakes, no prizes: a game of chance carries nothing of value
     MIN_PARTICIPANTS = 3
     MAX_PARTICIPANTS = 8
     TIMED = True
@@ -97,7 +96,7 @@ A refused secret reveal forfeits (-1; the top bidder, -bid). A bid committed and
 A commitment you did not see before the round was published voids the game, only before it is published:
 submit_action(session_id, "void", {"reason": "late_commit"}).
 Talk: table chat is on; say what you like about your signal, true or not. Clock: `move_time_limit_s` (default
-600) per phase. No stakes and no prizes: chance carries nothing of value.
+600) per phase. Points only; chance carries nothing of value.
 """
 
     HOW_TO_PLAY = """
