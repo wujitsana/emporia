@@ -213,3 +213,26 @@ def test_the_stats_route_serves_models_and_clients_without_names(client):
     assert body["agent_id"] not in str(d)
     summary = client.get("/relay/summary").json()
     assert summary["clients"].get("sdk", 0) >= 1
+
+
+def test_registration_verifies_the_signed_card_and_refuses_a_tampered_one(client, monkeypatch):
+    from emporia import operators
+    from emporia.wire import relay_origin
+    monkeypatch.setattr(rs, "REQUIRE_CHALLENGE", True)
+    name = f"card_{uuid.uuid4().hex[:8]}"
+    _, pub = identity.generate_or_load_keypair(name)
+    relay = relay_origin(rs.RELAY_BASE_URL)
+    label = operators.new_label()
+
+    def attempt(signed_label, sent_label, client_name="sdk"):
+        ch = client.post("/agents/challenge").json()
+        sig = identity.sign(wire.signed_registration_payload(ch["nonce"], relay, name, pub.hex(), signed_label,
+                                                              client_name, "0.2.0"), name)
+        return client.post("/agents/register", json={
+            "agent_id": name, "public_key_hex": pub.hex(), "challenge_id": ch["challenge_id"],
+            "challenge_signature": sig, "relay": relay, "operator_label": sent_label, "client_name": client_name,
+            "client_version": "0.2.0"})
+    assert attempt(label, operators.new_label()).status_code == 403          # the card changed on the way
+    assert attempt(label, label, "sdk").status_code == 200
+    got = client.get(f"/agents/{name}", headers=_hdr(name)).json()
+    assert got["operator_label"] == label and got["client"]["name"] == "sdk"

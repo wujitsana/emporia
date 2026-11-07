@@ -571,24 +571,39 @@ def _jwt_decode(token: str) -> dict | None:
     return payload
 
 
+# Revoked tokens, kept in memory (loaded at start from `token_revocations` and `token_floors`, and written through
+# on every revocation) so that checking a token costs no database read.
+_REVOKED: dict[str, float] = {}           # a signed-out token's id -> when it would have expired
+_TOKEN_FLOORS: dict[str, float] = {}      # stable id -> tokens issued before this time are revoked
+
+
+def _load_revocations(conn: Any) -> None:
+    _REVOKED.clear()
+    _TOKEN_FLOORS.clear()
+    for r in conn.execute("SELECT jti, expires_at FROM token_revocations WHERE expires_at >= ?", (time.time(),)):
+        _REVOKED[r["jti"]] = r["expires_at"]
+    for r in conn.execute("SELECT stable_id, valid_after FROM token_floors"):
+        _TOKEN_FLOORS[r["stable_id"]] = r["valid_after"]
+
+
 def _token_revoked(payload: dict) -> bool:
     jti, stable = str(payload.get("jti") or ""), str(payload.get("stable_id") or "")
-    if not jti:
-        return True          # a token with no id cannot be revoked, so none is accepted
-    with DB_LOCK, get_db() as conn:
-        if conn.execute("SELECT 1 FROM token_revocations WHERE jti = ?", (jti,)).fetchone():
-            return True
-        row = conn.execute("SELECT valid_after FROM token_floors WHERE stable_id = ?", (stable,)).fetchone()
-    return bool(row and float(payload.get("issued", 0)) < row["valid_after"])
+    if not jti or jti in _REVOKED:       # a token with no id cannot be revoked, so none is accepted
+        return True
+    floor = _TOKEN_FLOORS.get(stable)
+    return floor is not None and float(payload.get("issued", 0)) < floor
 
 
 def revoke_token(payload: dict) -> None:
     """Sign out: this token (by its id) stops working, whoever holds a copy."""
+    jti, expires = str(payload.get("jti") or ""), float(payload.get("exp", 0))
     with DB_LOCK, get_db() as conn:
         conn.execute("INSERT OR IGNORE INTO token_revocations (jti, stable_id, revoked_at, expires_at) VALUES (?,?,?,?)",
-                     (str(payload.get("jti") or ""), str(payload.get("stable_id") or ""),
-                      datetime.now(UTC).isoformat(), float(payload.get("exp", 0))))
+                     (jti, str(payload.get("stable_id") or ""), datetime.now(UTC).isoformat(), expires))
         conn.execute("DELETE FROM token_revocations WHERE expires_at < ?", (time.time(),))
+    _REVOKED[jti] = expires
+    for old in [j for j, exp in _REVOKED.items() if exp < time.time()]:
+        _REVOKED.pop(old, None)
 
 
 def revoke_all_tokens(stable_id: str) -> float:
@@ -597,6 +612,7 @@ def revoke_all_tokens(stable_id: str) -> float:
     with DB_LOCK, get_db() as conn:
         conn.execute("INSERT INTO token_floors (stable_id, valid_after) VALUES (?, ?) "
                      "ON CONFLICT(stable_id) DO UPDATE SET valid_after = excluded.valid_after", (stable_id, now))
+    _TOKEN_FLOORS[stable_id] = now
     return now
 
 
@@ -1015,6 +1031,7 @@ def init_db() -> None:
         conn.execute("PRAGMA journal_mode=WAL")      # once; it stays with the file
         conn.executescript(SCHEMA_SQL)
         _load_session_floors(conn)      # P246
+        _load_revocations(conn)
         translog.init_schema(conn)      # the log's own tables and triggers (P256)
         _stamp_schema_version(conn)
 

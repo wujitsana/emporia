@@ -443,6 +443,8 @@ def register_agent(
         r = httpx.post(f"{_base()}/agents/register", json=payload, timeout=5)
         data = r.json()
         if r.status_code in (200, 201):
+            # what its signed acts name it by from now on: the stable id its relay holds (a rotated key keeps it)
+            signing.remember_stable(agent_id, data.get("stable_id", ""))
             published = _publish_relay_list(data.get("agent_id") or agent_id)
             _keep_own_record(data.get("agent_id") or agent_id)
             _archive_in_background(data.get("agent_id") or agent_id)
@@ -1163,18 +1165,6 @@ def _signing_identity(aid: str) -> str:
     except Exception:  # noqa: BLE001
         logger.info("could not ask the relay for this agent's stable id", exc_info=True)
     return stable_id_for(get_public_key_hex(aid))
-
-
-def _stable_from_relay(aid: str) -> str:
-    """What the signing door asks, once per agent, to name it in the acts it signs (it keeps the answer): the
-    stable id its relay holds. Raises when the relay does not say; the door then uses the key's own hash."""
-    r = _bearer_request("get", f"{_base()}/agents/{_seg(aid)}", agent_id=aid, timeout=10)
-    if r.status_code == 200 and r.json().get("stable_id"):
-        return r.json()["stable_id"]
-    raise LookupError(f"{aid} has no stable id on this relay")
-
-
-signing.stable_resolver = _stable_from_relay
 
 
 def _stable_of(aid: str, who: str) -> str:

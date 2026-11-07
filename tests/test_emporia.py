@@ -1972,10 +1972,10 @@ def test_ws_session_requires_participant_under_prod_auth(prod_client):
             pass
     stranger_token = _dashboard_jwt(prod_client, "prodws_stranger")
     with pytest.raises(WebSocketDisconnect):
-        with prod_client.websocket_connect(f"/ws/{session_id}?token={stranger_token}"):
+        with prod_client.websocket_connect(f"/ws/{session_id}", subprotocols=["emporia.v1", f"emporia.token.{stranger_token}"]):
             pass
     buyer_token = _dashboard_jwt(prod_client, "prodws_buyer")
-    with prod_client.websocket_connect(f"/ws/{session_id}?token={buyer_token}") as ws:
+    with prod_client.websocket_connect(f"/ws/{session_id}", subprotocols=["emporia.v1", f"emporia.token.{buyer_token}"]) as ws:
         frame = ws.receive_json()
         assert frame["type"] == "init"
 
@@ -2089,6 +2089,8 @@ def test_no_new_identity_as_proof_params():
         ("GET", "/agents/{agent_id}/record"),  # P182: whose record to read; counts only, no auth decision
         ("GET", "/agents/{agent_id}/card"),  # P187: whose card; public once the agent published a relay list
         ("POST", "/agents/{agent_id}/relay-list"),  # P187: _require_caller_is-checked, and signed by the agent
+        ("POST", "/agents/{agent_id}/sign-out"),  # the agent's own token, checked inline: revokes that token
+        ("POST", "/agents/{agent_id}/revoke-tokens"),  # the agent's own token, checked inline: revokes all of its tokens
         ("POST", "/agents/{agent_id}/dm-policy"),  # P185: _require_caller_is-checked
         ("POST", "/agents/{agent_id}/dm-blocks"),  # P273: _require_caller_is-checked
         ("DELETE", "/agents/{agent_id}/dm-blocks/{blocked}"),  # P273: _require_caller_is-checked
@@ -2266,6 +2268,9 @@ def test_every_route_has_a_reviewed_auth_posture():
     """
 
     _AUTHENTICATED: set[tuple[str, str]] = {
+        ("POST", "/agents/{agent_id}/sign-out"),  # the agent itself, with a token it holds
+        ("POST", "/agents/{agent_id}/revoke-tokens"),  # the agent itself, with a token it holds
+        ("POST", "/sessions/{session_id}/model-reveal"),  # a player of a finished game, signed in, and its signature
         ("POST", "/reactions"),  # the reactor, signed in, and its signature
         ("GET", "/reactions/whose"),  # signed in; a game's or deal's other side only to who was in it
         ("GET", "/roots"),  # signed in; the root a reply would sign, for an object the caller may read
@@ -2402,6 +2407,7 @@ def test_every_route_has_a_reviewed_auth_posture():
     }
     _VISIBILITY_FILTERED: set[tuple[str, str]] = {
         ("GET", "/agents/{agent_id}/sessions"),
+        ("GET", "/sessions/{session_id}/models"),  # the session's own viewer rule (_session_viewer_allowed)
         # Pledges: public ones (a listing, a public game) to anyone; a private deal's to its
         # maker, its counterparty and the operator; `due` only to the signed-in agent.
         ("GET", "/pledges"),
@@ -2452,6 +2458,7 @@ def test_every_route_has_a_reviewed_auth_posture():
     _DELIBERATELY_PUBLIC: dict[tuple[str, str], str] = {
         ("GET", "/relay/activity"): "P297: how many agents were active lately — a count only, no names",
         ("GET", "/relay/summary"): "first run: counts of what is on this relay, no names",
+        ("GET", "/stats/models"): "results by declared model over finished public games, and agents by client: counts only, no names",
         ("GET", "/season"): "P297: the season's ladders — computed from public games and likes, like /ratings",
         ("GET", "/season/board"): "season XP standings: computed from the public records quests read; the final one is signed and frozen",
         ("GET", "/reactions"): "how many agents gave each value to a public thing — counts only; a post in a closed topic answers its members only",
@@ -9795,7 +9802,7 @@ def test_mcp_confirm_and_dispute_delivery_use_shared_wire_contract(prod_client):
     assert confirm_spy.call_count == 2
     for call in confirm_spy.call_args_list:
         assert call.args == (
-            "p10_1_buyer", "confirm", {}, "Confirming — P10-1 wire contract test.", session_id, 2,
+            _stable_of("p10_1_buyer"), "confirm", {}, "Confirming — P10-1 wire contract test.", session_id, 2,
         )
 
     # dispute_delivery — a second session, since the first is now terminal
@@ -9830,7 +9837,7 @@ def test_mcp_confirm_and_dispute_delivery_use_shared_wire_contract(prod_client):
     assert dispute_spy.call_count == 2
     for call in dispute_spy.call_args_list:
         assert call.args == (
-            "p10_1_buyer", "dispute", {"reason": "not as described"},
+            _stable_of("p10_1_buyer"), "dispute", {"reason": "not as described"},
             "Dispute: not as described", session_id2, 2,
         )
 
@@ -10195,7 +10202,7 @@ def test_mcp_submit_action_uses_shared_wire_contract_and_relay_accepts_it(prod_c
     assert payload_spy.call_count == 2
     for call in payload_spy.call_args_list:
         assert call.args == (
-            "p6_4_mcp_seller", "accept", {},
+            _stable_of("p6_4_mcp_seller"), "accept", {},
             "Accepting — real end-to-end wire-contract round trip test.",
             session_id, 0,
         )
@@ -10260,7 +10267,7 @@ def test_agent_sdk_submit_action_uses_shared_wire_contract_and_relay_accepts_it(
             assert payload_spy.call_count == 2
             for call in payload_spy.call_args_list:
                 assert call.args == (
-                    seller.agent_id, "accept", {},
+                    _stable_of(seller.agent_id), "accept", {},
                     "Accepting — real end-to-end wire-contract round trip test.",
                     session_id, 0,
                 )
@@ -11618,6 +11625,7 @@ def test_listen_session_sends_bearer_token_when_available():
 
     def _capture(url, *a, **kw):
         captured_url["url"] = url
+        captured_url["subprotocols"] = kw.get("subprotocols")
         from websockets.exceptions import ConnectionClosedError
         raise ConnectionClosedError(None, None)
 
@@ -11629,7 +11637,8 @@ def test_listen_session_sends_bearer_token_when_available():
 
     asyncio.run(_run())
     assert "agent_id=" not in captured_url["url"], captured_url
-    assert "token=jwt.fake.token" in captured_url["url"], captured_url
+    assert "token" not in captured_url["url"], "the token is never in the URL"
+    assert captured_url["subprotocols"] == ["emporia.v1", "emporia.token.jwt.fake.token"], captured_url
 
 
 def test_listen_session_refreshes_token_on_each_reconnect():
@@ -11649,9 +11658,11 @@ def test_listen_session_refreshes_token_on_each_reconnect():
     agent = EmporiaAgent(relay_url="http://fake.invalid", agent_id="sdk_ws_refresh", public_key_hex="ab" * 32)
     agent._bearer_token_value = AsyncMock(side_effect=["jwt.attempt.1", "jwt.attempt.2"])
     captured_urls = []
+    captured_protocols = []
 
     def _capture(url, *a, **kw):
         captured_urls.append(url)
+        captured_protocols.append(kw.get("subprotocols"))
         raise ConnectionClosedError(None, None)
 
     async def _run():
@@ -11662,10 +11673,11 @@ def test_listen_session_refreshes_token_on_each_reconnect():
 
     asyncio.run(_run())
     assert len(captured_urls) == 2, captured_urls
-    assert "token=jwt.attempt.1" in captured_urls[0], captured_urls
-    assert "token=jwt.attempt.2" in captured_urls[1], captured_urls
-    assert captured_urls[0] != captured_urls[1], \
-        "each reconnect attempt must rebuild the URL, not replay the first one's"
+    assert captured_protocols[0] == ["emporia.v1", "emporia.token.jwt.attempt.1"], captured_protocols
+    assert captured_protocols[1] == ["emporia.v1", "emporia.token.jwt.attempt.2"], captured_protocols
+    assert captured_protocols[0] != captured_protocols[1], \
+        "each reconnect attempt must mint its credential again, not replay the first one's"
+    assert not any("token" in u for u in captured_urls), "the token is never in the URL"
 
 
 def test_listen_session_invalidates_bearer_token_on_rejected_handshake():
@@ -12506,9 +12518,11 @@ def test_x402_offer_skips_wallet_lookup_when_disabled(client):
     # are not wallet lookups: the joiner's key, to check its signed join, and
     # its last own act in the room, so an old join cannot be replayed.
     # (a bearer token is now checked against the agent's stable id: reads at the door; still no wallet resolution)
-    assert call_count["n"] == 5, (
-        "expected exactly five get_db() calls (the token's stable id, registration, the join's signature, "
-        f"the replay check, one more door read — no wallet resolution) on a disabled relay, got {call_count['n']}"
+    # (the join is signed over the joiner's stable id: one more read, and still no wallet resolution)
+    assert call_count["n"] == 6, (
+        "expected exactly six get_db() calls (the token's stable id, registration, the joiner's stable id, the "
+        f"join's signature, the replay check, one more door read — no wallet resolution) on a disabled relay, "
+        f"got {call_count['n']}"
     )
 
 
@@ -20078,11 +20092,13 @@ async def test_p28_tunnel_authenticates_and_refreshes_per_attempt():
     from emporia.plugins.platforms.emporia.tunnel import maintain_relay_tunnel
 
     urls: list[str] = []
+    protocols: list = []
     minted = iter([f"tok_{i}" for i in range(1, 20)])
 
     class _FailingConnect:
         def __init__(self, url, **kw):
             urls.append(url)
+            protocols.append(kw.get("subprotocols"))
 
         async def __aenter__(self):
             raise OSError("relay unreachable")
@@ -20108,13 +20124,14 @@ async def test_p28_tunnel_authenticates_and_refreshes_per_attempt():
             await task
 
     assert len(urls) >= 2, f"expected repeated reconnect attempts, got {urls}"
-    assert "token=tok_1" in urls[0], (
-        f"the tunnel must present a bearer credential, not just agent_id: {urls[0]}"
+    assert protocols[0] == ["emporia.v1", "emporia.token.tok_1"], (
+        f"the tunnel must present a bearer credential, in the handshake and not the URL: {protocols[0]}"
     )
-    assert "token=tok_2" in urls[1], (
-        "the URL is rebuilt per attempt, so a reconnect uses a freshly minted "
-        f"token rather than replaying the first one: {urls[1]}"
+    assert protocols[1] == ["emporia.v1", "emporia.token.tok_2"], (
+        "the credential is minted per attempt, so a reconnect uses a freshly minted "
+        f"token rather than replaying the first one: {protocols[1]}"
     )
+    assert not any("token" in u for u in urls[:2]), urls
     assert "/ws/agent/p28_tunnel_agent" in urls[0], urls[0]
 
 

@@ -110,8 +110,9 @@ def mcp_client() -> tuple[str, str]:
 # ── declared model ───────────────────────────────────────────────────────────
 
 def declare_enabled(env: dict[str, str] | None = None) -> bool:
-    return str((env if env is not None else os.environ).get("EMPORIA_DECLARE_MODEL", "")).strip().lower() not in (
-        "off", "0", "false", "no")
+    """Whether this process declares its model: on unless `EMPORIA_DECLARE_MODEL` is off, 0, false or no."""
+    value = env.get("EMPORIA_DECLARE_MODEL", "") if env is not None else os.getenv("EMPORIA_DECLARE_MODEL", "")
+    return str(value).strip().lower() not in ("off", "0", "false", "no")
 
 
 def clean_model(name: object) -> str:

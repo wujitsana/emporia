@@ -307,8 +307,9 @@ def _shim_request(request):
         request.headers["x-emporia-authorization"] = f"Bearer {_token_for(named)}"
     query = dict(parse_qsl(request.url.query.decode() if isinstance(request.url.query, bytes)
                            else str(request.url.query), keep_blank_values=True))
-    if request.url.scheme in ("ws", "wss") and query.get("agent_id") and "token" not in query:
-        query["token"] = _token_for(query["agent_id"])
+    if request.url.scheme in ("ws", "wss") and query.get("agent_id") and "sec-websocket-protocol" not in request.headers:
+        # the relay takes a websocket's token in the handshake's subprotocol header, never in the URL
+        request.headers["sec-websocket-protocol"] = f"emporia.v1, emporia.token.{_token_for(query.pop('agent_id'))}"
         request.url = request.url.copy_with(query=urlencode(query).encode())
     return _signed_topic(_signed_join(request), named)
 
@@ -336,9 +337,8 @@ def _signed_topic(request, named):
         query = dict(parse_qsl(request.url.query.decode() if isinstance(request.url.query, bytes)
                                else str(request.url.query), keep_blank_values=True))
         if "signature" not in query:
-            from tests.ids import stable_of
             query.update(at=at, signature=identity.sign(wire.signed_topic_act_payload(
-                "uninvite", m.group(1), m.group(2), at, stable_of(named)), named))
+                "uninvite", m.group(1), m.group(2), at, _derived_stable(named)), named))
             request.url = request.url.copy_with(query=urlencode(query).encode())
         return request
     if method == "POST" and path == "/sessions":
@@ -363,9 +363,8 @@ def _signed_topic(request, named):
     else:
         target = body.get("invitee_id") if act.group(2) == "invite" else body.get("target_agent_id")
         body["at"] = at
-        from tests.ids import stable_of
         body["signature"] = identity.sign(wire.signed_topic_act_payload(act.group(2), act.group(1), target or "", at,
-                                                                        stable_of(named)), named)
+                                                                        _derived_stable(named)), named)
     headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
     return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
                          extensions=request.extensions)
@@ -392,8 +391,7 @@ def _signed_join(request):
     sid = request.url.path.split("/")[2]
     body["at"] = datetime.now(UTC).isoformat()
     make = wire.signed_session_join_payload if kind.group(1) == "sessions" else wire.signed_room_join_payload
-    from tests.ids import stable_of
-    body["signature"] = identity.sign(make(sid, stable_of(body["agent_id"]), body["at"]), body["agent_id"])
+    body["signature"] = identity.sign(make(sid, _derived_stable(body["agent_id"]), body["at"]), body["agent_id"])
     if kind.group(1) == "sessions" and "rand_commit" not in body:
         # emporia:rand:v1: a game that draws from the beacon takes the joiner's commitment, as the tools add it.
         rs = sys.modules.get("emporia.relay_server")
@@ -475,6 +473,13 @@ def _stable_of(agent: str) -> str:
     return stable_of(agent)
 
 
+def _derived_stable(agent: str) -> str:
+    """The hash of the agent's key: what a test shim signs as, with no relay read (the shim must not change how many
+    reads a request makes). Rotation tests use `_stable_of`, the relay's own."""
+    from emporia import identity, wire
+    return wire.stable_id_for(identity.get_public_key_hex(agent))
+
+
 def signed_join_body(session_id: str, agent_id: str, **extra) -> dict:
     """P272: a join body the agent signed, for tests with no shim (prod_client)."""
     from datetime import UTC, datetime
@@ -511,7 +516,7 @@ def _signed_creation(request, named, at):
         return request
     body["nonce"], body["at"] = wire.new_message_nonce(), at
     body["signature"] = identity.sign(wire.signed_session_create_payload(
-        wire.session_id_for(body["nonce"]), _stable_of(named), str(body.get("module_type") or ""), at,
+        wire.session_id_for(body["nonce"]), _derived_stable(named), str(body.get("module_type") or ""), at,
         wire.stake_terms(body.get("payment_rules"))), named)
     if _uses_rand(body.get("module_type")) and "rand_commit" not in body:
         body["rand_commit"] = make_test_commit(wire.session_id_for(body["nonce"]), named, 0)

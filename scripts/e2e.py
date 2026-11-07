@@ -256,7 +256,7 @@ class Run:
             # the transparency log they need) give its desk a queue.
             EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1", **(pins or {}),
             EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent,
-            # quests:v4: the run's agents carry no operator label, so each counts as its own operator.
+            # quests:v4: each agent after the first adopts a label of its own (own_operator), so each plays as its own operator.
             EMPORIA_QUEST_OTHERS="any", EMPORIA_STARTER_LIMITS="0",
             # Labs: on, with local file:// repositories allowed (a test relay's only)
             EMPORIA_LABS="1", EMPORIA_LAB_HOSTS="file",
@@ -416,6 +416,28 @@ class Run:
             origin = self.run(["git", "-C", str(rt), "remote", "get-url", "origin"]).stdout.strip()
             check((head, origin) == (self.sha, self.https_repo), f"the runtime is {head[:12]} from {origin}")
             check(self.runtime_python().is_file(), "setup installed no packages into the runtime")
+        self.own_operator(name)
+
+    def own_operator(self, name: str) -> None:
+        """Setup gave the agent an operator label. The first agent on this Hermes install minted it and every
+        next one reused it (one person's agents are one operator): checked here. The run's agents play as
+        different people, so each agent after the first adopts a label of its own, through the product's own
+        command, `emporia operator label --same-as`."""
+        import base64
+        import re
+        shown = self.emporia(name, "operator", "label")
+        found = re.search(r"op_[a-z2-7]{26}", shown)
+        check(found, f"{name} has no operator label: {shown.strip()[-200:]}")
+        labels = self.__dict__.setdefault("labels", {})
+        if not labels:
+            labels[name] = found.group(0)
+            return
+        first = next(iter(labels.values()))
+        check(found.group(0) == first, f"{name} did not reuse this install's operator label: {found.group(0)}")
+        fresh = "op_" + base64.b32encode(secrets.token_bytes(17)).decode().lower()[:26]
+        out = self.emporia(name, "operator", "label", "--same-as", fresh)
+        check("adopted" in out, f"operator label --same-as: {out.strip()[-200:]}")
+        labels[name] = fresh
 
     def emporia(self, profile: str, *args: str, ok_codes=(0,), timeout: float = 120, **env: str) -> str:
         """`hermes -p PROFILE emporia …`: the plugin's own commands, and the runtime's CLI

@@ -281,8 +281,9 @@ _SELF_ARG = {"move": 0, "session-create": 1, "session-join": 1, "session-leave":
              "room-join": 1, "room-leave": 1, "removal": 2, "model-reveal": 1}
 _SELF_KW = frozenset({"room-invite", "room-uninvite", "room-kick", "topic-act"})
 _STABLE: dict[str, str] = {}
-#: How a handle's stable id is found when this process has not been told it (set by the MCP server, which
-#: asks its relay): by default the hash of the agent's own key, right for any agent that never rotated it.
+#: How a handle's stable id is found when this process has not been told it (`remember_stable`, from a register
+#: or sign-in answer): the hash of the agent's own key, right for any agent that never rotated it. A hook for a host
+#: that can ask its relay instead.
 stable_resolver: Callable[[str], str] | None = None
 
 

@@ -5599,7 +5599,7 @@ def _operator_label_cmd(args: argparse.Namespace) -> int:
     """`emporia operator label [--same-as op_…] [--profile NAME]`: show this agent profile's operator label, or
     adopt another machine's (so the agents of one person on two machines count as one operator). The label
     is automatic and unproven: it merges your interactions with whoever holds it, and proves nothing."""
-    from emporia import identity_card, operators
+    from emporia import identity_card
     name = args.profile or _calling_profile() or (this_profile().name if this_profile() else "")
     profile = profile_dir(name) if name else None
     if profile is None or not (profile / "config.yaml").exists():
