@@ -4901,7 +4901,7 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
                          "in the Stripe Dashboard (test mode) enable Accounts v1 support "
                          "(Developers → API policies) or complete Connect → Platform profile; "
                          f"then restart its gateway so {agent_id} re-registers")
-            rep.ok(f"registered, {profile_json.get('trust_level')}"
+            rep.ok(f"registered as {profile_json.get('address') or agent_id}"
                    + (f", paid at {pay_to[:10]}…" if pay_to else ""))
             # P150: without a published key, its DMs and private sessions
             # cannot be sealed to it — they fall back to plaintext.
@@ -5961,7 +5961,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
             r = _as_agent(profile, (
                 "from emporia import mcp_server as m\n"
                 f"r = m.register_agent(agent_id={agent_id!r})\n"
-                "print('registered', r.get('trust_level') if r.get('success') else r.get('error'))\n"
+                "print('registered', r.get('address') or r.get('agent_id') if r.get('success') else r.get('error'))\n"
                 + "".join(f"w = m.register_x402_wallet(agent_id={agent_id!r}, network_family={f!r})\n"
                           f"print({f!r} + ' wallet', 'registered' if w.get('success') else "
                           f"w.get('error') or w.get('detail'))\n" for f in families)))
