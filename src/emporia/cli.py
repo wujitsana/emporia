@@ -3246,13 +3246,55 @@ def _setup_wake(profile: Path, name: str, chosen: str, existing: bool) -> None:
         merge_env_file(profile / ".env", {W.SETTING: chosen})
 
 
+def _setup_about(profile: Path, name: str, about: str | None, existing: bool) -> None:
+    """setup's bio question, asked before the agent registers so its first card carries it. `about` is
+    `--about` (a text, "" for none) or None. An agent that already has a bio keeps it; without a terminal a new
+    agent gets the recommended default (the first line of its SOUL.md when it fits the rules, else none)."""
+    from emporia import identity_card as ic, setup_choices as sc, wire as W
+    current = (installer().harvest_env(profile).get("EMPORIA_ABOUT") or "").strip()
+    suggestion = ic.suggestion_for_profile(profile)
+    if about is not None:
+        text = about.strip()
+        if why := W.about_problem(text):
+            print(f"  The bio was not set: {why}")
+            return
+    elif current:
+        return
+    elif not _TTY:
+        text = suggestion
+    else:
+        heading("Bio", "One line about this agent, on its card.")
+        options = []
+        for value, label in sc.CHOICES["about"].labels():
+            if value == "suggestion":
+                label = label.replace("\n", f"\n{suggestion!r}: " if suggestion else "\n(nothing in its SOUL.md fits) ",
+                                      1)
+            options.append((value, label))
+        picked = choose_setting("about", options)
+        text = ""
+        if picked == "suggestion":
+            text = suggestion
+        elif picked == "write":
+            while True:
+                text = prompt(f"Bio (at most {W.ABOUT_MAX} characters, plain text, no link)", "").strip()
+                if not (why := W.about_problem(text)):
+                    break
+                print(f"  {why}")
+    if text != current:
+        merge_env_file(profile / ".env", {"EMPORIA_ABOUT": text})
+        if text:
+            print(f"  Bio: {text!r}  (change it: emporia agent about {name} \"text\")")
+
+
 def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing: bool) -> str:
     """The optional pieces setup installs, as one checkbox list (recommended ones ticked): rounds
-    (then its interval as a menu) and the declared model. Without a terminal: the flags, else
-    nothing is installed (the declared model stays at its default, on). Returns the rounds interval ("" = off)."""
+    (then its interval as a menu), the declared model, and linking an X account (unticked). Without a terminal:
+    the flags, else nothing is installed (the declared model stays at its default, on; X stays off).
+    Returns the rounds interval ("" = off)."""
     from emporia import rounds as R, setup_choices as sc
     every = "" if args.rounds in ("", "off") else args.rounds
     declare = ""
+    x_link = args.x_link if getattr(args, "x_link", "") else ""
     if _TTY and not args.rounds:
         heading("Optional features", "Each is a choice you can undo later; Space ticks, Enter confirms.")
         print(sc.dim("  " + R.estimate(R.DEFAULT_EVERY)))
@@ -3260,12 +3302,18 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
         picked = choose_many(sc.CHOICES["optional"].question, list(labels.items()),
                              set(sc.CHOICES["optional"].recommended()))
         declare = "on" if "declare_model" in picked else "off"
+        x_link = x_link or ("on" if "x_link" in picked else "off")
         if "rounds" in picked:
             every = choose_setting("rounds")
     elif _TTY:
         declare = ""
     if declare and (declare == "off" or installer().harvest_env(profile).get("EMPORIA_DECLARE_MODEL", "").lower() == "off"):
         merge_env_file(profile / ".env", {"EMPORIA_DECLARE_MODEL": declare})
+    if x_link and (x_link == "on" or installer().harvest_env(profile).get("EMPORIA_X_LINK", "").lower() == "on"):
+        merge_env_file(profile / ".env", {"EMPORIA_X_LINK": x_link})
+        if x_link == "on":
+            print(localize("  X: the agent may post one verification post (its claim line) once you make it "
+                           "(emporia agent x-claim); it needs the xurl skill. Turn off: EMPORIA_X_LINK=off in its .env."))
     if not every:
         return ""
     try:
@@ -3302,7 +3350,8 @@ def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace
     _, agent_id, _ = _agent(name)
     wallets = [w for w, solana in (("EVM", False), ("Solana", True)) if _wallet_address(profile, agent_id, solana)]
     flags = {"role": args.role, "keys": args.keys, "wake": args.wake, "playbook": args.playbook,
-             "rounds": args.rounds, "wallet": "x" if (args.wallet or args.solana) else ""}
+             "rounds": args.rounds, "wallet": "x" if (args.wallet or args.solana) else "",
+             "about": "x" if args.about is not None else ""}
     chosen = set(sc.CHOICES) if chosen_all else {k for k, v in flags.items() if v}
     heading(f"Settings installed for {name}", "Each line: the value, why, and how to change or undo it.")
     keys = "env" if dotenv.get("EMPORIA_KEY_STORAGE") == "env" else "files"
@@ -3458,7 +3507,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
     import json as _json
     import shutil
     agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
-    name = args.name
+    name = args.name or ""
     if name not in agents:
         print(f"agent: no agent {name!r} ({', '.join(agents) or 'none set up'})")
         return 1
@@ -5918,6 +5967,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
             if n in NETWORKS and NETWORKS[n].faucet:
                 print(f"  Fund it on {label(n)}: {NETWORKS[n].faucet}")
     _ensure_member(name, chosen_relay or relay_url())
+    _setup_about(profile, name, args.about, existing)
     if _TTY or args.register:
         heading("On the relay")
     if not args.register and _TTY and health():
@@ -7971,11 +8021,12 @@ def build_parser() -> argparse.ArgumentParser:
                                        "or its identity key changed (rotate-key), given a recovery key "
                                        "(recovery-key) or replaced with it when lost (recover)")
     ag2.add_argument("action", choices=["leave", "delete", "secure", "refresh", "inbox-clear", "rotate-key",
-                                        "rotate-encryption-key", "recovery-key", "recover", "playbook", "init", "mcp-config"])
+                                        "rotate-encryption-key", "recovery-key", "recover", "playbook", "init", "mcp-config",
+                                        "about", "x-claim", "x-link"])
     ag2.add_argument("url_or_name", nargs="?", default="",
                      help="leave: the relay's URL; delete, secure, refresh, inbox-clear, rotate-key: "
                           "the agent (secure, refresh, inbox-clear: or all)")
-    ag2.add_argument("name", nargs="?", default="", help="leave: the agent")
+    ag2.add_argument("name", nargs="?", default=None, help="leave: the agent; about: the bio, in quotes (\"\" clears it)")
     ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
     ag2.add_argument("--yes", action="store_true", help="rotate-key, rotate-encryption-key, recover: do not ask first")
     ag2.add_argument("--agent", default="", help="recovery-key, recover: the agent (default: this profile's); init, mcp-config grok-bot: its name")
@@ -7993,11 +8044,22 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("--runs", default=None, choices=["model", "rules"], help="playbook: model turns or rules")
     ag2.add_argument("--pledges", default=None, choices=["yes", "no"],
                      help="playbook: may it sign pledges and attest others' (gamify pledges)")
+    ag2.add_argument("--handle", default="", help="x-claim, x-link: the X handle (letters, digits, _; at most 15)")
+    ag2.add_argument("--style", default="", choices=["", "plain", "arena", "lab"],
+                     help="x-claim: which stock post (default plain)")
+    ag2.add_argument("--text", default="", help="x-claim: your own words for the post; the claim line is added, "
+                                               "intact, as its last line")
+    ag2.add_argument("--bio", action="store_true", help="x-claim: print only the claim line, to put in the X bio")
+    ag2.add_argument("--post", default="", help="x-link: the post's number, or bio")
     ag2.add_argument("--compromised-since", default="",
                      help="recover: when the old key stopped being only yours (ISO time; default now)")
     from emporia import agent_init as _agent_init     # init / mcp-config: an agent that Hermes does not run
     _agent_init.add_arguments(ag2)
-    ag2.set_defaults(func=lambda a: _agent_init.run(_agent_init.namespace_from_cli(a)) if a.action == "init" else
+    from emporia import agent_card_cli as _card
+    ag2.set_defaults(func=lambda a: _card.about(a.url_or_name, a.name) if a.action == "about" else
+                     _card.x_claim(a.url_or_name, a.handle, a.style, a.text, a.bio) if a.action == "x-claim" else
+                     _card.x_link(a.url_or_name, a.handle, a.post) if a.action == "x-link" else
+                     _agent_init.run(_agent_init.namespace_from_cli(a)) if a.action == "init" else
                      _agent_init.mcp_config(a) if a.action == "mcp-config" else
                      cmd_agent_secure(a.url_or_name) if a.action == "secure" else
                      cmd_agent_refresh(a.url_or_name) if a.action == "refresh" else
@@ -8009,7 +8071,7 @@ def build_parser() -> argparse.ArgumentParser:
                      cmd_agent_inbox_clear(a.url_or_name) if a.action == "inbox-clear" else
                      cmd_agent_playbook(a.url_or_name, a) if a.action == "playbook" else cmd_agent(
         argparse.Namespace(action=a.action, url=a.url_or_name if a.action == "leave" else "",
-                           name=a.name if a.action == "leave" else a.url_or_name, home=a.home)))
+                           name=(a.name or "") if a.action == "leave" else a.url_or_name, home=a.home)))
 
     hs = sub.add_parser("house", help="the house agent's rules runner: run NAME (P297); start, stop or "
                                       "status NAME in the background (the operator's)")
@@ -8171,6 +8233,12 @@ def build_parser() -> argparse.ArgumentParser:
                          "Change it later with `emporia agent playbook NAME`")
     ag.add_argument("--wake", choices=["closed", "games", "open"], default="",
                     help="which relay events start its turns (default games; change later with `emporia wake`)")
+    ag.add_argument("--about", default=None, help="the agent's bio on its card: at most 160 characters, plain text, "
+                                                 "no link (\"\" for none; default: the first line of its SOUL.md "
+                                                 "when it fits). Change later with `emporia agent about NAME`")
+    ag.add_argument("--x-link", choices=["on", "off"], default="",
+                    help="let the agent post one verification post on X to prove an account is its own (default off; "
+                         "needs the xurl skill)")
     ag.add_argument("--rounds", choices=["2h", "4h", "8h", "12h", "24h", "off"], default="",
                     help="let it act on its own every N hours, as one Hermes cron job (default: asked in a terminal; "
                          "off without one). Change later with `emporia rounds`")

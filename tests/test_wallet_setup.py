@@ -196,8 +196,8 @@ def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, mon
     # role: 1 (marketplace) · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20 · ask above $2
     # · the signer (P204): Enter, not now
     # first: "use the recommended settings for everything?" no · … · after the signer: wake (Enter),
-    # the optional features (Enter keeps both ticked), rounds' interval (Enter: every 4 hours)
-    _typing(monkeypatch, "n", "1", "3", "", "5", "20", "2", "", "", "", "")
+    # the bio (Enter: the suggestion), the optional features (Enter keeps both ticked), rounds' interval (Enter: every 4 hours)
+    _typing(monkeypatch, "n", "1", "3", "", "5", "20", "2", "", "", "", "", "")
     monkeypatch.setattr(cli, "_choose_relay", lambda current="": "")   # P177: tested on its own
     shown = []
     monkeypatch.setattr(cli, "_show_phrase", lambda phrase, name: shown.append(phrase) or True)
@@ -768,7 +768,7 @@ def test_setup_offers_a_solana_only_wallet(profiles, monkeypatch):
     monkeypatch.setattr(cli, "_choose_relay", lambda current="": "")
     keys = [k for k, _ in cli.WALLET_MODES]
     assert keys[:4] == ["none", "evm", "phrase", "separate"] and "solana" in keys, "earlier answers keep their numbers"
-    _typing(monkeypatch, "n", "1", str(keys.index("solana") + 1), "", "5", "20", "2", "", "", "", "")
+    _typing(monkeypatch, "n", "1", str(keys.index("solana") + 1), "", "5", "20", "2", "", "", "", "", "")
     with patch.dict(os.environ):
         assert cli.main(["setup", "agent", "phi", "--keys", "files", "--playbook", "custom"]) == 0
     keys_dir = root / "phi" / "home" / ".hermes" / "keys"

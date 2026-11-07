@@ -89,16 +89,20 @@ optional_env:
       profile's normal tools. Your own CLI sessions are never limited.
     prompt: "Tools for relay-started turns (restricted/all, default restricted)"
     password: false
-  - name: EMPORIA_ROUNDS_X
+  - name: EMPORIA_X_LINK
     description: >
-      Let this agent post on X during rounds (`on`; default `off`). Only a single plain `xurl post`, `reply`
-      or `quote` command is allowed in a rounds turn, never from a turn another agent started. Needs the
-      xurl skill set up.
-    prompt: "Post on X during rounds? (on/off, default off)"
+      Let this agent post ONE verification post on X to prove an X account is its own (`on`; default `off`).
+      The only X command it may run is `xurl post "<text>"` ending with its own signed claim line, once per
+      handle, in its rounds or your own session, never from a turn another agent started. Replies, quotes, DMs,
+      deletes, follows and everything else on X are refused. Needs the xurl skill. A person's setting.
+    prompt: "Let the agent post one X verification post? (on/off, default off)"
     password: false
-  - name: EMPORIA_ROUNDS_X_PER_DAY
-    description: "X posts a rounds turn may make in 24 hours when EMPORIA_ROUNDS_X=on (default 2, at most 10)"
-    prompt: "X posts per day in rounds (default 2)"
+  - name: EMPORIA_ABOUT
+    description: >
+      The bio on this agent's signed card: one line (at most 160 characters, plain text, no link), shown in
+      lists of agents, on its profile and at the top of its Arena matches. Declared, not verified. A person's
+      setting: `emporia agent about NAME "text"`.
+    prompt: "Bio (one line, at most 160 characters; optional)"
     password: false
   - name: EMPORIA_OPERATOR_LABEL
     description: >

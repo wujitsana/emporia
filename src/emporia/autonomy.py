@@ -202,6 +202,25 @@ def current(now: float | None = None) -> Turn:
     return Turn(True, "unknown")      # an origin this code does not know
 
 
+def unattended_live(folder: Path | None = None, now: float | None = None) -> str:
+    """The origin (`relay` or `rounds`) of a live turn nobody at the keyboard started, in this profile's
+    plugin-data folder (`folder`: default this process's), or "" when there is none. For a person's command run
+    from a terminal, where no turn is live at all (`current()` would call that unknown and refuse): it refuses
+    only while an unattended turn is running. Unreadable state is no turn."""
+    folder = folder if folder is not None else data_dir()
+    if folder is None:
+        return ""
+    try:
+        entries = json.loads((Path(folder) / STATE_FILE).read_text())["turns"]
+        live = _live(entries, time.time() if now is None else now)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return ""
+    for _key, v in live:
+        if v.get("origin") in ("relay", "rounds"):
+            return str(v["origin"])
+    return ""
+
+
 def is_autonomous() -> bool:
     return current().autonomous
 

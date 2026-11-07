@@ -34,7 +34,7 @@ def fresh(monkeypatch):
     rt._origin.clear()
     rt._kind.clear()
     monkeypatch.setenv("EMPORIA_UNTRACKED_TURNS", "")        # these tests use the real turn tracking
-    for name in ("EMPORIA_RELAY_TURN_TOOLS", "EMPORIA_ROUNDS_X", "EMPORIA_ROUNDS_X_PER_DAY",
+    for name in ("EMPORIA_RELAY_TURN_TOOLS", "EMPORIA_X_LINK", "EMPORIA_AGENT_ID", "EMPORIA_ABOUT",
                  "EMPORIA_PLAYBOOK", "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("EMPORIA_OPERATOR_LABEL", OP_LABEL)
@@ -124,42 +124,94 @@ def test_a_session_started_as_a_person_turn_after_an_autonomous_one_is_a_new_tur
     assert tool("terminal", {"command": "ls"}) is None
 
 
-# ── X posting ─────────────────────────────────────────────────────────────────────────
+# ── X: the verification post is the one action ─────────────────────────────────────────
 
-CLEAN = 'xurl post "gm from a small agent that likes chess"'
+from emporia import x_link as xl  # noqa: E402
+
+AGENT = "redteam_a"
 
 
-def test_a_relay_turn_is_refused_x_even_when_rounds_x_is_on(monkeypatch):
-    monkeypatch.setenv("EMPORIA_ROUNDS_X", "on")
+def _post_with_claim(monkeypatch, handle="kestrel_x", style="plain", prefix=""):
+    """A real claim by a real key, remembered where the hook reads it, and the post text that ends with it."""
+    monkeypatch.setenv("EMPORIA_AGENT_ID", AGENT)
+    made = xl.make_claim(AGENT, handle, "http://testserver")
+    xl.remember_claim(AGENT, made["handle"], made)
+    return xl.compose(AGENT, made["line"], style, prefix), made
+
+
+def _cmd(text):
+    return xl.xurl_command(text)
+
+
+def test_a_relay_turn_is_refused_x_even_when_x_link_is_on(monkeypatch):
+    monkeypatch.setenv("EMPORIA_X_LINK", "on")
+    text, _ = _post_with_claim(monkeypatch)
     start("relay")
-    out = tool("terminal", {"command": CLEAN})
+    out = tool("terminal", {"command": _cmd(text)})
     assert out["action"] == "block" and "never" in out["message"]
+    monkeypatch.setenv("EMPORIA_RELAY_TURN_TOOLS", "all")        # not even with every tool allowed
+    assert tool("terminal", {"command": _cmd(text)})["action"] == "block"
 
 
-def test_rounds_x_is_off_by_default():
+@pytest.mark.parametrize("kind", ["rounds", "cli"])
+def test_x_link_is_off_by_default(monkeypatch, kind):
+    text, _ = _post_with_claim(monkeypatch)
+    start(kind)
+    out = tool("terminal", {"command": _cmd(text)})
+    assert out["action"] == "block" and "EMPORIA_X_LINK=on" in out["message"]
+
+
+@pytest.mark.parametrize("kind", ["rounds", "cli"])
+@pytest.mark.parametrize("style", ["plain", "arena", "lab"])
+def test_the_verification_post_runs_in_rounds_and_in_a_persons_turn_when_on(monkeypatch, kind, style):
+    monkeypatch.setenv("EMPORIA_X_LINK", "on")
+    text, made = _post_with_claim(monkeypatch, style=style)
+    start(kind)
+    assert tool("terminal", {"command": _cmd(text)}) is None
+    again = tool("terminal", {"command": _cmd(text)})                 # once per handle and claim
+    assert again["action"] == "block" and "already posted" in again["message"]
+
+
+def test_a_changed_claim_may_be_posted_again_but_not_the_same_one(monkeypatch):
+    monkeypatch.setenv("EMPORIA_X_LINK", "on")
+    first, _ = _post_with_claim(monkeypatch)
     start("rounds")
-    assert tool("terminal", {"command": CLEAN})["action"] == "block"
+    assert tool("terminal", {"command": _cmd(first)}) is None
+    time.sleep(1.1)                                                   # a new claim (a key change would do this)
+    second, _ = _post_with_claim(monkeypatch)
+    assert second != first
+    assert tool("terminal", {"command": _cmd(second)}) is None
+    assert tool("terminal", {"command": _cmd(first)})["action"] == "block"      # the old claim is not current
 
 
-def test_rounds_may_post_a_clean_xurl_post_reply_or_quote_only_when_on_and_under_the_cap(monkeypatch):
-    monkeypatch.setenv("EMPORIA_ROUNDS_X", "on")
+def test_the_text_must_end_with_this_agents_own_valid_claim_line(monkeypatch):
+    monkeypatch.setenv("EMPORIA_X_LINK", "on")
+    text, made = _post_with_claim(monkeypatch)
     start("rounds")
-    assert tool("terminal", {"command": CLEAN}) is None
-    assert tool("terminal", {"command": "xurl reply 1234567890 'nice game'"}) is None
-    over = tool("terminal", {"command": 'xurl quote 99 "third today"'})        # the default cap is 2
-    assert over["action"] == "block" and "EMPORIA_ROUNDS_X_PER_DAY" in over["message"]
+    line = made["line"]
+    forged_sig = line[:-6] + ("AAAAAA" if not line.endswith("AAAAAA") else "BBBBBB")
+    for bad in (
+        "gm from a small agent",                                       # no line at all
+        text + "\nsee you there",                                      # the line is not last
+        text.replace(AGENT, "somebody_else"),                          # another agent's name
+        text.replace(line, forged_sig),                                # a forged signature
+        line.replace("\u00b7", ".") ,                                  # a mangled separator
+        "x" * 300 + "\n" + line,                                       # over X's limit
+    ):
+        out = tool("terminal", {"command": _cmd(bad) or f"xurl post {bad!r}"})
+        assert out["action"] == "block", bad
 
 
-def test_the_x_cap_is_settable_and_never_above_ten(monkeypatch):
-    monkeypatch.setenv("EMPORIA_ROUNDS_X", "on")
-    monkeypatch.setenv("EMPORIA_ROUNDS_X_PER_DAY", "500")
-    assert rt.rounds_x_cap() == 10
-    monkeypatch.setenv("EMPORIA_ROUNDS_X_PER_DAY", "1")
+def test_a_claim_of_another_key_does_not_pass_even_with_the_right_shape(monkeypatch):
+    monkeypatch.setenv("EMPORIA_X_LINK", "on")
+    text, made = _post_with_claim(monkeypatch)
+    # an attacker's own claim line, signed by a key that is not this agent's, for the same handle
+    other = xl.make_claim("redteam_other", "kestrel_x", "http://testserver")
     start("rounds")
-    assert tool("terminal", {"command": CLEAN}) is None
-    assert tool("terminal", {"command": CLEAN})["action"] == "block"
-    monkeypatch.setenv("EMPORIA_ROUNDS_X_PER_DAY", "oops")
-    assert rt.rounds_x_cap() == 2
+    assert tool("terminal", {"command": _cmd(xl.compose("redteam_other", other["line"]))})["action"] == "block"
+    monkeypatch.setenv("EMPORIA_AGENT_ID", "redteam_other")
+    assert tool("terminal", {"command": _cmd(xl.compose("redteam_other", other["line"]))})["action"] == "block", \
+        "its claim was never made by this profile's runtime"
 
 
 @pytest.mark.parametrize("command", [
@@ -174,56 +226,91 @@ def test_the_x_cap_is_settable_and_never_above_ten(monkeypatch):
     'xurl post "hi"\nrm -rf x',
     'xurl post hi*',
     'xurl post "hi" "extra"',
+    'xurl reply 1234567890 "nice game"',
+    'xurl quote 99 "third today"',
     'xurl dm @bob "hi"',
     'xurl delete 123',
     'xurl follow @bob',
+    'xurl unfollow @bob',
+    'xurl like 12',
     'xurl auth status',
+    'xurl whoami',
     'xurl /2/tweets',
     'xurl -X POST /2/tweets -d "{}"',
     'xurl post --app other "hi"',
-    'xurl reply notanumber "hi"',
+    'xurl --app other post "hi"',
     'xurl post "unterminated',
-    'python -c "print(1)"',
     'echo xurl post "hi"',
-    '',
+    'cd /tmp && xurl post "hi"',
+    'env X=1 xurl post "hi"',
+    'xurl',
 ])
-def test_rounds_x_refuses_anything_but_one_clean_post(monkeypatch, command):
-    monkeypatch.setenv("EMPORIA_ROUNDS_X", "on")
-    start("rounds")
+@pytest.mark.parametrize("kind", ["rounds", "cli", "relay"])
+def test_everything_on_x_but_the_one_post_is_refused_in_every_turn(monkeypatch, command, kind):
+    monkeypatch.setenv("EMPORIA_X_LINK", "on")
+    start(kind)
     assert tool("terminal", {"command": command})["action"] == "block"
 
 
-def test_x_text_naming_the_agents_own_label_is_refused(monkeypatch):
-    monkeypatch.setenv("EMPORIA_ROUNDS_X", "on")
+def test_a_clean_post_with_shell_syntax_smuggled_in_the_text_is_refused(monkeypatch):
+    monkeypatch.setenv("EMPORIA_X_LINK", "on")
+    text, made = _post_with_claim(monkeypatch, prefix="a $(id) b")
     start("rounds")
-    assert tool("terminal", {"command": f'xurl post "I am {OP_LABEL}"'})["action"] == "block"
+    assert tool("terminal", {"command": f'xurl post "{text}"'})["action"] == "block"      # double quotes: refused
+    # single quotes make the text inert: the claim and the prefix are what is posted (the prefix is allowed text)
+    assert tool("terminal", {"command": _cmd(text)}) is None
 
 
-def test_x_posts_and_refusals_land_in_the_log_without_the_text(monkeypatch):
-    monkeypatch.setenv("EMPORIA_ROUNDS_X", "on")
+def test_the_text_may_not_name_the_agents_own_label(monkeypatch):
+    monkeypatch.setenv("EMPORIA_X_LINK", "on")
+    text, _ = _post_with_claim(monkeypatch, prefix=f"I am {OP_LABEL}")
     start("rounds")
-    tool("terminal", {"command": CLEAN})
+    assert tool("terminal", {"command": _cmd(text)})["action"] == "block"
+
+
+def test_a_post_with_an_apostrophe_has_no_command_form():
+    assert xl.xurl_command("strangers' agents") == ""
+
+
+def test_proof_posts_and_refusals_land_in_the_log_without_the_text(monkeypatch):
+    monkeypatch.setenv("EMPORIA_X_LINK", "on")
+    text, _ = _post_with_claim(monkeypatch, prefix="a distinctive prefix")
+    start("rounds")
+    tool("terminal", {"command": _cmd(text)})
     tool("terminal", {"command": 'xurl dm @bob "secret plan"'})
-    text = (rt.data_dir() / rt.LOG_FILE).read_text()
-    assert "x post" in text and "allowed" in text and "refused" in text
-    assert "gm from a small agent" not in text and "secret plan" not in text
+    log = (rt.data_dir() / rt.LOG_FILE).read_text()
+    assert "x proof post" in log and "allowed" in log and "refused" in log
+    assert "distinctive prefix" not in log and "secret plan" not in log
 
 
 def test_the_x_setting_names_are_person_only():
-    for line in ("echo EMPORIA_ROUNDS_X=on >> ~/.hermes/.env", "hermes config set EMPORIA_ROUNDS_X_PER_DAY 10"):
+    for line in ("echo EMPORIA_X_LINK=on >> ~/.hermes/.env", "hermes config set EMPORIA_X_LINK on",
+                 "echo EMPORIA_ABOUT=hi >> ~/.hermes/.env", "hermes config set EMPORIA_ABOUT hi"):
         out = guard.pre_tool_call(tool_name="terminal", args={"command": line})
         assert out["action"] == "block", line
 
 
+def test_the_bio_command_is_a_persons_only(monkeypatch):
+    for line in ('emporia agent about kestrel "plays blotto"', 'hermes emporia agent about kestrel "x"'):
+        out = guard.pre_tool_call(tool_name="terminal", args={"command": line})
+        assert out and out["action"] == "block", line
+
+
 def test_the_setup_feature_line_is_exposed():
-    assert "{n}" in rt.X_FEATURE_DESCRIPTION and "Off by default" in rt.X_FEATURE_DESCRIPTION
-    assert rt.X_DEFAULT_CAP == 2 and rt.X_MAX_CAP == 10
+    assert rt.X_FEATURE_DESCRIPTION == ("Your agent may post one verification post on X to prove the account is its "
+                                        "own. Needs the xurl skill. Nothing else is ever posted.")
+    assert rt.X_FEATURE_NAME == "Link an X account" and rt.X_SETTING == "EMPORIA_X_LINK"
+    from emporia import setup_choices as sc
+    opt = {o.value: o for o in sc.CHOICES["optional"].options}["x_link"]
+    assert not opt.recommended and opt.title == "link an X account"
+    assert opt.effect.lower() == rt.X_FEATURE_DESCRIPTION.lower().replace("your agent", "your agent")
+    assert "x_link" not in sc.CHOICES["optional"].recommended()
 
 
 # ── settings and identity are person-only ──────────────────────────────────────────────
 
 @pytest.mark.parametrize("name", ["EMPORIA_WAKE", "EMPORIA_WAKE_MODE", "EMPORIA_ROUNDS", "EMPORIA_ROUNDS_EVERY",
-                                  "EMPORIA_ROUNDS_X", "EMPORIA_ROUNDS_X_PER_DAY", "EMPORIA_CLIENT", "EMPORIA_CLIENT_VERSION",
+                                  "EMPORIA_X_LINK", "EMPORIA_ABOUT", "EMPORIA_CLIENT", "EMPORIA_CLIENT_VERSION",
                                   "EMPORIA_RELAY_TURN_TOOLS", "EMPORIA_DECLARE_MODEL",
                                   "EMPORIA_OPERATOR_LABEL", "EMPORIA_UNTRACKED_TURNS",
                                   "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY"])

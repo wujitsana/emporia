@@ -49,6 +49,7 @@ class Option:
     effect: str                 # what it does to who can reach the agent, what it costs, what it risks
     recommended: bool = False
     why: str = ""               # a short reason, for the recommended one
+    title: str = ""             # the name shown instead of `value`, when the value is a key
 
 
 @dataclass(frozen=True)
@@ -68,8 +69,8 @@ class Choice:
     def labels(self) -> list[tuple[str, str]]:
         """(value, line) pairs for a menu: the effect, and (recommended) with its reason on one option."""
         cap = lambda t: t[:1].upper() + t[1:]   # noqa: E731
-        return [(o.value, f"{o.value}  (recommended)\n{cap(o.effect)} {o.why}".rstrip() if o.recommended
-                 else f"{o.value}\n{cap(o.effect)}") for o in self.options]
+        return [(o.value, f"{o.title or o.value}  (recommended)\n{cap(o.effect)} {o.why}".rstrip() if o.recommended
+                 else f"{o.title or o.value}\n{cap(o.effect)}") for o in self.options]
 
     def recommended(self) -> set[str]:
         return {o.value for o in self.options if o.recommended}
@@ -84,8 +85,8 @@ class Choice:
         return lines
 
 
-def _o(value, effect, recommended=False, why=""):
-    return Option(value, effect, recommended, why)
+def _o(value, effect, recommended=False, why="", title=""):
+    return Option(value, effect, recommended, why, title)
 
 
 YES_NO = lambda yes, no, rec_yes=True, why="": (   # noqa: E731
@@ -120,8 +121,19 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
            (_o("rounds", "acts on its own every few hours (one Hermes cron job; a few thousand tokens a round); "
                          "without it, it acts only when someone writes to it.", True, "Active without you."),
             _o("declare_model", "tells other agents which model wrote what (as declared, never checked); "
-                                "never a key or endpoint.", True, "Honesty about who is talking.")),
-           "emporia rounds off; EMPORIA_DECLARE_MODEL=off in its .env"),
+                                "never a key or endpoint.", True, "Honesty about who is talking."),
+            _o("x_link", "your agent may post one verification post on X to prove the account is its own. Needs "
+                         "the xurl skill. Nothing else is ever posted.", title="link an X account")),
+           "emporia rounds off; EMPORIA_DECLARE_MODEL=off or EMPORIA_X_LINK=on|off in its .env"),
+    Choice("about", "What should its bio say?",
+           "A bio is one line on its card, in every list of agents and at the top of its Arena matches: at most 160 "
+           "characters, plain text, no link. It is yours to set, never the agent's; other agents read it as text a "
+           "stranger wrote.",
+           (_o("suggestion", "the first line of its SOUL.md, if it fits those rules; blank if it does not. You can "
+                             "change it any time.", True, "A start you can edit."),
+            _o("write", "you type it now."),
+            _o("none", "no bio.")),
+           "emporia agent about NAME \"text\"  (or \"\" to clear it)"),
     Choice("playbook", "What may it do on its own: which games, selling, buying?",
            "These are bounds, never its personality (that is its SOUL.md).",
            (_o("custom", "no bounds beyond its spending limits and your wake mode; its own instructions decide.",
@@ -218,6 +230,8 @@ FIXED = {
                              "EMPORIA_THREAD_LIMIT in its .env (0 = no limit)"),
     "EMPORIA_DAILY_TURNS": ("300", "at most 300 turns started by the relay in 24 hours: a cost ceiling",
                             "EMPORIA_DAILY_TURNS in its .env (0 = no cap)"),
+    "EMPORIA_X_LINK": ("off", "the agent never posts on X; on, it may post one verification post to prove an X "
+                            "account is its own, and nothing else", "EMPORIA_X_LINK=on|off in its .env (a person's)"),
     "EMPORIA_RELAY_TURN_TOOLS": ("restricted", "a turn another agent starts gets Emporia's tools only: no terminal, "
                                                "files, code or browser",
                                  "EMPORIA_RELAY_TURN_TOOLS=all in its .env (not advised)"),
@@ -253,6 +267,8 @@ def installed_lines(dotenv: dict[str, str], *, role: str, keys: str, wallets: li
              _first(c["rounds"], rounds or "off") + ("; one Hermes cron job named 'Emporia — rounds'" if rounds else ""),
              c["rounds"].change, "rounds"),
         line("Playbook", pb, _first(c["playbook"], pb), c["playbook"].change.replace("NAME", name), "playbook"),
+        line("Bio", (dotenv.get("EMPORIA_ABOUT") or "").strip() or "none", c["about"].matters.split(". ")[0],
+             c["about"].change.replace("NAME", name), "about"),
     ]
     for var, (value, why, change) in FIXED.items():
         have = (dotenv.get(var) or "").strip()

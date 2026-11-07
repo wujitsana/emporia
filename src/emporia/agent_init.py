@@ -315,7 +315,7 @@ def mcp_config(a: argparse.Namespace) -> int:
     """`emporia agent mcp-config HOST [KEY_DIR]`: the config on stdout, the notes on stderr."""
     from emporia import host_configs
     try:
-        text, notes = host_configs.build(a.url_or_name, a.name, name=a.agent, relay=a.relay, model=a.model,
+        text, notes = host_configs.build(a.url_or_name, a.name or "", name=a.agent, relay=a.relay, model=a.model,
                                          routine=a.routine)
     except host_configs.ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
