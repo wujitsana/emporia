@@ -77,3 +77,15 @@ logs/*.jsonl
 
 # Personal Claude Code permissions — never committed
 .claude/settings.local.json
+
+# Databases and backups — never committed
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+*.bundle
+backups/
+*.tar.gz
+*.tgz

@@ -143,3 +143,13 @@ def test_the_hook_uses_the_checkouts_scanner_when_there_is_one(tmp_path, monkeyp
     assert secret_scan.install_hook() == 0
     r = _push(tmp_path, "main", bad)
     assert r.returncode == 1 and "relay.db: secret-like file" in r.stdout and "using the one" not in r.stderr
+
+
+def test_no_database_or_backup_is_tracked():
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("secret_scan_tracked", Path(__file__).parent.parent / "scripts" / "secret_scan.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.tracked_forbidden() == []
+    assert mod.TRACKED_FORBIDDEN.search("x/emporia.db") and mod.TRACKED_FORBIDDEN.search("backups/a.txt")
