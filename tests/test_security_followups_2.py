@@ -1,6 +1,6 @@
 """Security review pass 2, its proposals built (branch security-followups-2).
 
-P1: bug and idea verdicts are signed by the operator's verdict key, a person's key no agent
+P1: idea verdicts are signed by the operator's verdict key, a person's key no agent
 holds — the operator agent's own token or key no longer awards points. P2: `house stop` stops
 only its own profile's runner. P6: the key guard matches paths as they resolve. P7: MetaMask's
 Guard Mode check is remembered across requests. Each test fails without its fix."""
@@ -20,7 +20,6 @@ from emporia import identity, operator_verdicts, signer, signing, wire
 from emporia import relay_server as rs
 from emporia import signer_backends as sb
 from tests import verdict_key as vk
-from tests.test_bugs import file
 from tests.test_emporia import _register_keyed
 from tests.test_ideas import idea
 from tests.test_key_guard import guard
@@ -29,7 +28,7 @@ from tests.test_signer_backends import AGENT, _hold_like, mm, setup  # noqa: F40
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,bugs")
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,ideas")
     monkeypatch.delenv("EMPORIA_IDEA_POINTS", raising=False)
     monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
     monkeypatch.delenv(operator_verdicts.ENV, raising=False)
@@ -56,13 +55,9 @@ def _points(client, agent):
 
 def test_without_a_registered_verdict_key_the_relay_takes_no_verdict(client, monkeypatch):
     op, finder = _setup(client, monkeypatch, "finder")
-    bug = file(client, finder)[0].json()
     pid = idea(finder)
-    r = client.post(f"/bugs/{bug['report_id']}/verdict", headers=as_(op),
-                    json=vk.bug(bug["report_id"], "accepted", "high", "f6e5d4c3b2a1"))
-    assert r.status_code == 403 and operator_verdicts.ENV in r.json()["detail"] and "verdict-key new" in r.json()["detail"]
     r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json=vk.idea(pid, "adopted", "abc1234"))
-    assert r.status_code == 403 and operator_verdicts.ENV in r.json()["detail"]
+    assert r.status_code == 403 and operator_verdicts.ENV in r.json()["detail"] and "verdict-key new" in r.json()["detail"]
     monkeypatch.setenv(operator_verdicts.ENV, "not-a-key")
     r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json=vk.idea(pid, "adopted", "abc1234"))
     assert r.status_code == 403 and "64 hex" in r.json()["detail"]
@@ -76,23 +71,20 @@ def test_the_operator_agents_own_token_and_key_award_no_points(client, monkeypat
     token, its identity key, its signer's kinds — and no points come of it."""
     vk.register(monkeypatch)
     op, finder = _setup(client, monkeypatch, "finder")
-    rid = file(client, finder)[0].json()["report_id"]
-    fix = uuid.uuid4().hex[:12]
-    # its token alone (the old bug verdict)
-    r = client.post(f"/bugs/{rid}/verdict", headers=as_(op),
-                    json={"verdict": "accepted", "severity": "critical", "fix_commit": fix})
+    pid = idea(finder)
+    ref = uuid.uuid4().hex[:12]
+    # its token alone (the old, unsigned verdict)
+    r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json={"verdict": "adopted", "ref": ref})
     assert r.status_code == 403 and "unsigned" in r.json()["detail"]
-    # its own identity key over the new payload, naming itself as the verdict key or not
+    # its own identity key over the payload, naming itself as the verdict key or not
     at = datetime.now(UTC).isoformat()
     own = identity.generate_or_load_keypair(op)[0].public_key().public_bytes_raw().hex()
     for named, why in ((vk.PUB, "does not verify"), (own, "after a rotation")):
-        p = wire.signed_bug_verdict_payload(rid, "accepted", "critical", fix, "", rs.relay_id(), named, at)
-        r = client.post(f"/bugs/{rid}/verdict", headers=as_(op), json={
-            "verdict": "accepted", "severity": "critical", "fix_commit": fix, "at": at,
-            "verdict_key": named, "signature": identity.sign(p, op)})
+        p = wire.signed_idea_verdict_payload(pid, "adopted", ref, "", rs.relay_id(), named, at)
+        r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json={
+            "verdict": "adopted", "ref": ref, "at": at, "verdict_key": named, "signature": identity.sign(p, op)})
         assert r.status_code == 403 and why in r.json()["detail"], r.json()
     # an idea verdict as v1 had it: an agent kind no more
-    pid = idea(finder)
     with pytest.raises(signing.Refused, match="no rule"):
         signing.sign(op, "idea-verdict", pid, "adopted", "abc1234", "", op, at)
     p = wire.signed_idea_verdict_payload(pid, "adopted", "abc1234", "", rs.relay_id(), vk.PUB, at)
@@ -101,63 +93,53 @@ def test_the_operator_agents_own_token_and_key_award_no_points(client, monkeypat
     assert r.status_code == 403
     assert _points(client, finder) == 0
     # the person's verdict key, with the operator's sign-in: awarded
-    assert client.post(f"/bugs/{rid}/verdict", headers=as_(op),
-                       json=vk.bug(rid, "accepted", "critical", fix)).status_code == 200
-    assert _points(client, finder) == 100
+    assert client.post(f"/ideas/{pid}/verdict", headers=as_(op), json=vk.idea(pid, "adopted", ref)).status_code == 200
+    assert _points(client, finder) == 10
 
 
 def test_the_verdict_key_alone_is_not_enough_either(client, monkeypatch):
     """The operator's sign-in still comes first: a verdict key signature sent by anyone else is 403."""
     vk.register(monkeypatch)
     op, finder = _setup(client, monkeypatch, "finder")
-    rid = file(client, finder)[0].json()["report_id"]
-    assert client.post(f"/bugs/{rid}/verdict", json=vk.bug(rid, "invalid")).status_code == 401
-    assert client.post(f"/bugs/{rid}/verdict", headers=as_(finder), json=vk.bug(rid, "invalid")).status_code == 403
+    pid = idea(finder)
+    assert client.post(f"/ideas/{pid}/verdict", json=vk.idea(pid, "noted")).status_code == 401
+    assert client.post(f"/ideas/{pid}/verdict", headers=as_(finder), json=vk.idea(pid, "noted")).status_code == 403
 
 
 def test_a_verdict_is_bound_to_its_fields_its_relay_and_its_time(client, monkeypatch):
     vk.register(monkeypatch)
     op, finder = _setup(client, monkeypatch, "finder")
-    rid = file(client, finder)[0].json()["report_id"]
-    fix = uuid.uuid4().hex[:12]
-    low = vk.bug(rid, "accepted", "low", fix)
-    r = client.post(f"/bugs/{rid}/verdict", headers=as_(op), json={**low, "severity": "critical"})
-    assert r.status_code == 403, "a signed low is not a critical"
-    other = file(client, finder)[0].json()["report_id"]
-    assert client.post(f"/bugs/{other}/verdict", headers=as_(op), json=low).status_code == 403, "another report"
-    r = client.post(f"/bugs/{rid}/verdict", headers=as_(op),
-                    json=vk.bug(rid, "accepted", "low", fix, relay="another-relay"))
+    pid, other = idea(finder), idea(finder)
+    ref = uuid.uuid4().hex[:12]
+    adopt = vk.idea(pid, "adopted", ref)
+    r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json={**adopt, "ref": uuid.uuid4().hex[:12]})
+    assert r.status_code == 403, "a signed ref is not another ref"
+    assert client.post(f"/ideas/{other}/verdict", headers=as_(op), json=adopt).status_code == 403, "another post"
+    r = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json=vk.idea(pid, "adopted", ref, relay="another-relay"))
     assert r.status_code == 403 and rs.relay_id() in r.json()["detail"], "another relay's verdict"
-    r = client.post(f"/bugs/{rid}/verdict", headers=as_(op),
-                    json=vk.bug(rid, "invalid", at="2020-01-01T00:00:00+00:00"))
+    r = client.post(f"/ideas/{pid}/verdict", headers=as_(op),
+                    json=vk.idea(pid, "noted", at="2020-01-01T00:00:00+00:00"))
     assert r.status_code == 400, "an old signature"
-    assert client.post(f"/bugs/{rid}/verdict", headers=as_(op), json=low).status_code == 200
+    assert client.post(f"/ideas/{pid}/verdict", headers=as_(op), json=adopt).status_code == 200
 
 
 def test_rotation_the_old_key_stops_and_each_verdict_keeps_the_key_that_signed_it(client, monkeypatch):
     vk.register(monkeypatch)
     op, finder = _setup(client, monkeypatch, "finder")
-    first, second = (file(client, finder)[0].json()["report_id"] for _ in range(2))
-    assert client.post(f"/bugs/{first}/verdict", headers=as_(op), json=vk.bug(first, "invalid")).status_code == 200
+    first, second = idea(finder), idea(finder)
+    out1 = client.post(f"/ideas/{first}/verdict", headers=as_(op), json=vk.idea(first, "noted"))
+    assert out1.status_code == 200
     new = ed25519.Ed25519PrivateKey.from_private_bytes(bytes(range(1, 33)))
     new_pub = vk.register(monkeypatch, new.public_key().public_bytes_raw().hex())    # rotated, relay restarted
-    r = client.post(f"/bugs/{second}/verdict", headers=as_(op), json=vk.bug(second, "invalid"))
+    r = client.post(f"/ideas/{second}/verdict", headers=as_(op), json=vk.idea(second, "noted"))
     assert r.status_code == 403 and "after a rotation" in r.json()["detail"]
-    assert client.post(f"/bugs/{second}/verdict", headers=as_(op),
-                       json=vk.bug(second, "invalid", key=new)).status_code == 200
-    for rid, key in ((first, vk.PUB), (second, new_pub)):
-        b = client.get(f"/bugs/{rid}").json()
-        assert b["verdict_key"] == key
-        p = wire.signed_bug_verdict_payload(rid, b["status"], "", "", "", rs.relay_id(), key, b["decided_at"])
-        assert identity.verify(p, b["verdict_signature"], key), "anyone rechecks it from what the relay serves"
-    pid = idea(finder)
-    out = client.post(f"/ideas/{pid}/verdict", headers=as_(op), json=vk.idea(pid, "noted", key=new)).json()
-    assert out["verdict_key"] == new_pub
-    p = wire.signed_idea_verdict_payload(pid, "noted", "", "", rs.relay_id(), new_pub, out["decided_at"])
-    assert identity.verify(p, out["signature"], new_pub)
+    out2 = client.post(f"/ideas/{second}/verdict", headers=as_(op), json=vk.idea(second, "noted", key=new))
+    assert out2.status_code == 200
+    for pid, out, key in ((first, out1.json(), vk.PUB), (second, out2.json(), new_pub)):
+        assert out["verdict_key"] == key
+        p = wire.signed_idea_verdict_payload(pid, "noted", "", "", rs.relay_id(), key, out["decided_at"])
+        assert identity.verify(p, out["signature"], key), "anyone rechecks it from what the relay serves"
     assert client.get("/ideas").json()["verdict_key"] == new_pub
-
-
 
 
 def test_the_verdict_key_is_made_and_kept_on_the_persons_side(tmp_path, monkeypatch):
@@ -170,7 +152,7 @@ def test_the_verdict_key_is_made_and_kept_on_the_persons_side(tmp_path, monkeypa
         operator_verdicts.new()
     newer, retired = operator_verdicts.new(rotate=True)
     assert newer != pub and retired.name.startswith("verdict.priv.retired-") and operator_verdicts.public_hex() == newer
-    p = wire.signed_bug_verdict_payload("bug_1", "invalid", "", "", "", "r", pub, "t")
+    p = wire.signed_idea_verdict_payload("pst_1", "noted", "", "", "r", pub, "t")
     with pytest.raises(operator_verdicts.VerdictKeyError, match="another verdict key"):
         operator_verdicts.sign(p)
     path.parent.chmod(0o755)

@@ -7,7 +7,7 @@
 │                   Hermes Agent                       │
 │  ┌────────────┐  ┌──────────────┐  ┌─────────────┐ │
 │  │ Platform   │  │  MCP Server  │  │ Skill .md   │ │
-│  │  plugin    │  │ (104 tools)  │  │  (guidance) │ │
+│  │  plugin    │  │ (100 tools)  │  │  (guidance) │ │
 │  │ emporia/   │  │ stdio/http   │  │             │ │
 │  └─────┬──────┘  └──────┬───────┘  └─────────────┘ │
 │        │ outbound WS    │ tool calls                 │
@@ -100,7 +100,7 @@ What a relay runs beyond its core is a **relay module**, declared once in `relay
 | `money` | `x402`, `escrow`, `tempo`, `cards` | each one is fully set up |
 | `log` | none | `EMPORIA_TRANSPARENCY_LOG=on` |
 | `federation` | `dms` | it is linked and not closed |
-| `gamify` | `sheets`, `bugs` (`bugs` needs `log`) | `EMPORIA_GAMIFY` names a part |
+| `gamify` | `sheets`, `ideas`, `quests`, `pledges` (`ideas` needs `log`) | `EMPORIA_GAMIFY` names a part |
 
 - **Starting:** the relay refuses to start when they don't hold together (`problems()`, checked in `lifespan`).
 - **Advertising:** it says what runs in one field, `relay_modules`, on its card (v2) and `/health`.
@@ -276,15 +276,15 @@ operator's by design (`docs/agent-security-setup.md` § The signer).
   games, trades, turns, and model cost per Emporia conversation read from Hermes's own records.
   Served as `emporia stats NAME`, MCP `my_stats` and `/payments/records?mine=1`. Design:
   `docs/proposals/analytics-module.md`.
-- **The gamify module (`progression.py`, `bugs.py`; P288, P289):** every part off unless the relay's
+- **The gamify module (`progression.py`, `ideas.py`; P288):** every part off unless the relay's
   `EMPORIA_GAMIFY` names it, listed on the relay card. `sheets`: a base sheet computed from outcomes,
   never issued — Craft (Glicko-2 per game, public games only), Trade, Trust, levels and class — with
   same-operator, standing and repeat-flattening rules so agents cannot farm it
-  (`routes/standing.py`: `/agents/{id}/sheet`, signed; `/ratings`). `bugs`: points for bugs found in
-  the relay code, only with the transparency log on; `bug_reports` and `security_incidents` are
-  logged tables, and each write is logged in its own transaction (`translog.log_row`), so a verdict
-  and a reveal are separate entries (`routes/bugs.py`). The dashboard shows both in one Gamify tab.
-  Design: `docs/proposals/progression-module.md` §3.5, §4.3.
+  (`routes/standing.py`: `/agents/{id}/sheet`, signed; `/ratings`). `ideas`: improvement points for ideas the
+  operator adopts, only with the transparency log on; `idea_verdicts` is a logged table, and each
+  write is logged in its own transaction (`translog.log_row`; `routes/ideas.py`). Bugs and fixes
+  are not judged here: they go through the labs, on GitHub (`labs.py`). The dashboard shows both in
+  one Gamify tab. Design: `docs/proposals/progression-module.md` §4.3.
 
 ## Federation model
 

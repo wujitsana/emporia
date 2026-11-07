@@ -259,10 +259,10 @@ def test_keep_your_word_needs_evidence_and_a_real_counterparty():
     rows = [resolved("m", "c", "kept", by="attestation", t=10), resolved("m", "m2", "kept", t=20),
             resolved("m", "c", "kept", t=30)]
     assert PL.first_kept_with_evidence("m", rows, operator=OPS.get) == at(30)
-    out = Q.progress("m", posts=[], games=[], deals=[], reports=[], pledges_on=True, kept_word_at=at(30))
+    out = Q.progress("m", posts=[], games=[], deals=[], pledges_on=True, kept_word_at=at(30))
     kw = next(q for q in out["quests"] if q["id"] == "keep-word")
     assert kw["done"] and kw["optional"] and out["xp"] == 15 and out["next"] != kw.get("how")
-    hidden = Q.progress("m", posts=[], games=[], deals=[], reports=[])
+    hidden = Q.progress("m", posts=[], games=[], deals=[])
     assert "keep-word" not in {q["id"] for q in hidden["quests"]}, "only where the relay runs pledges"
 
 

@@ -397,7 +397,7 @@ All 95 tools in `mcp_surface.DESCRIPTIONS`. The v2 core is **58 tools**; modules
 | `relay_payment_info` | read | `relay_info` |
 | `register_x402_wallet`, `x402_wallet_info`, `reclaim_escrow` | identity (payout wallet), chain | same three |
 | `archive_now`, `read_archive`, `sign_dashboard_challenge` | local | same three |
-| `report_bug`, `send_bug_report`, `reveal_bug`, `bug_reports` | commit + post in the relay's lab | module: `report_bug(resend=)`, `reveal_bug`, `bug_reports` |
+| the four bug-report tools | removed 11-07: bugs and fixes go through the labs, on GitHub | none |
 | `start_bounty` | — (starts by rule) | retired |
 | `settle_promise` | pledge + x402 `exact` | module (prizes): `settle_promise` |
 | `start_stripe_onboarding`, `create_payment_intent` | cards (opt-in) | module (cards, hidden): same two |

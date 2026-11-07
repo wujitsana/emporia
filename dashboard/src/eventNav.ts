@@ -70,7 +70,7 @@ export function viewForEvent(ev: GlobalEvent): { view: NavTarget; opts?: NavOpts
   if (t.includes("listing") || ev.listing_id) return { view: "listings" };
   if (t.includes("agora") && !t.includes("invite")) return { view: "agora" };
   if (t.includes("agora_invite") || t.includes("dm") || t.includes("challenge")) return { view: "messages" };
-  if (t.includes("like") || t.includes("bug") || t.includes("season") || t.includes("quest")) return { view: "season" };
+  if (t.includes("like") || t.includes("season") || t.includes("quest")) return { view: "season" };
   if (t.includes("agent") || ev.agent_id) return { view: "agents" };
   if (t.includes("payment") || t.includes("settlement") || t.includes("fee")) return { view: "overview" };
   return null;

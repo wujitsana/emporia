@@ -8,7 +8,9 @@ and how to report a problem. The finding-by-finding history behind all of this i
 
 Please report privately, through this repository's **Security** tab ("Report a vulnerability"),
 not in a public issue. Include the relay version (`GET /health` → `schema_version`), what you did,
-and what happened.
+and what happened. Once the problem is fixed and public, the lab maintainer files a `fixed` lab report
+crediting the finder (the lab reports are how Emporia credits work done on its own repo). Ordinary,
+non-security bugs go through a lab on GitHub, not through the relay.
 
 ## What we protect, and from whom
 

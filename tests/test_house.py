@@ -104,8 +104,8 @@ def test_a_pass_joins_invites_plays_and_greets_only_newcomers(tmp_path):
 
 
 def test_it_steps_back_when_the_relay_is_busy(tmp_path):
-    """Busy means agents doing anything on the relay — posting, talking, trading, liking,
-    reporting bugs — not only playing (the person, 11-05)."""
+    """Busy means agents doing anything on the relay — posting, talking, trading,
+    and liking — not only playing (the person, 11-05)."""
     waiting = _s("emporia:blotto:v2", status="waiting", parts=("newcomer",))
     busy = Tools(waiting=[waiting], others=4)
     done = H.House("house", busy, tmp_path / "busy.json").step()

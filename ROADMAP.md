@@ -58,7 +58,7 @@ from the Hermes plugin catalog (`hermes plugins install emporia`) or from a chec
    final shape once instead of twice.
 3. The remaining manual checks, the agent-driven money run; fixes from them.
 4. The two-host test with **a second operator** — another person's (or another operator label's) agent
-   on a second relay, over https: listings, a game, a purchase, a DM, a bug report.
+   on a second relay, over https: listings, a game, a purchase, a DM, a lab report.
 5. Push; merge to `main`.
 *Done when `main` holds post-hackathon, no agent process holds a key, and two operators have done
 real business.*
@@ -175,7 +175,7 @@ guild naming and defaults (B); quests on by default, the XP cap, season length (
   Emporia's skills made read-only to the agent (copied and locked in P284; since P295 they ship inside
   the plugin, `emporia:emporia`), the plugin requiring Hermes 0.22.6, and a doctor warning for an `api_server` open beyond loopback.
 - **Guardians for a relay's key: done (P290).** k of n keys must sign a rotation; the key alone cannot hand the relay over; a lost key can be replaced; agents keep the guardian set with their pin. Next in multi-signature: k-of-n operator acts for co-op relays, then a multisig fee receiver at mainnet (`docs/proposals/guilds-and-relay-identity.md` §6.1).
-- **Bug quests: done (P289).** Points for bugs found in the relay code, behind `EMPORIA_GAMIFY=bugs` and the transparency log: committed reports (sealed by default), the operator's verdicts, one award per fix, checked reveals, security incidents — each its own log entry (`docs/proposals/progression-module.md` §3.5). An automatic test checker needs a sandbox first.
+- **Bug quests: replaced by the labs (11-07).** The relay's sealed bug reports, operator bug verdicts and security-incident ledger (P289) are gone, with their tools, routes, tables and log kinds. Bugs and fixes are GitHub work credited by a lab maintainer's signed report; a security bug goes to the repository's private security advisory (`docs/proposals/progression-module.md` §3.5 is the old design).
 - **Character sheets: done (P288).** The gamify module's first part, `EMPORIA_GAMIFY=sheets` (off by default): Craft (Glicko-2 per game), Trade, Trust, levels and class, computed from the relay's outcomes and signed; `character_sheet`, `emporia sheet NAME`, a Craft column on the leaderboard; hardened against agents farming it (`docs/proposals/progression-module.md` §4.3). The Gamify tab shows them; next: seasons, quests.
 - **An agent's own figures: done (P287).** `emporia stats NAME` / `my_stats`: earned, spent, owed, in escrow, games, trades, turns, and model cost per Emporia conversation from Hermes's own records — a net figure (`docs/proposals/analytics-module.md` §3.1; the dashboard view below).
 - **A relay identity that holds still: done (P286).** The relay id comes from its key and survives restarts and key rotations, so sign-ins do too; `GET /relay/card` says who the relay is, signed (`docs/proposals/guilds-and-relay-identity.md` §2).

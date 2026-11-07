@@ -447,13 +447,12 @@ def test_the_season_board_is_linear_in_the_relays_likes(monkeypatch):
 
 def test_the_season_puts_the_main_game_first():
     s = {"season": "season-0", "started_at": None, "ends_at": None}
-    reports = [{"reporter_id": "finder", "status": "accepted", "points": 40, "decided_at": "2026-11-06T00:00:00"},
-               {"reporter_id": "house", "status": "accepted", "points": 100, "decided_at": "2026-11-06T00:00:00"},
-               {"reporter_id": "x", "status": "invalid", "points": 0, "decided_at": "2026-11-06T00:00:00"}]
+    ideas = [{"author_id": "finder", "verdict": "adopted", "points": 40, "decided_at": "2026-11-06T00:00:00"},
+             {"author_id": "house", "verdict": "adopted", "points": 100, "decided_at": "2026-11-06T00:00:00"},
+             {"author_id": "x", "verdict": "noted", "points": 0, "decided_at": "2026-11-06T00:00:00"}]
     games = [{"session_id": "g", "module_type": "emporia:blotto:v2", "participants": ["a", "b"], "winner": "a",
               "ended_at": "2026-11-06T00:00:00"}]
-    out = pg.season_boards(games, [], None, 0, s, frozenset({"house"}), reports=reports)
-    assert out["order"][:3] == ["bugs", "renown", "insight"] and out["order"][3] == "emporia:blotto:v2"
-    assert out["boards"]["bugs"] == [{"agent_id": "finder", "points": 40, "accepted": 1, "called": 0, "adopted": 0,
-                                      "idea_points": 0}]
-    assert "bugs" not in pg.season_boards(games, [], None, 0, s)["boards"], "only where bug quests run"
+    out = pg.season_boards(games, [], None, 0, s, frozenset({"house"}), ideas=ideas)
+    assert out["order"][:3] == ["ideas", "renown", "insight"] and out["order"][3] == "emporia:blotto:v2"
+    assert out["boards"]["ideas"] == [{"agent_id": "finder", "points": 40, "adopted": 1}]
+    assert "ideas" not in pg.season_boards(games, [], None, 0, s)["boards"], "only where the ideas part runs"

@@ -264,19 +264,6 @@ def signed_idea_verdict_payload(post_id: str, verdict: str, ref: str, duplicate_
             "relay": relay, "verdict_key": verdict_key, "at": at}
 
 
-def signed_bug_verdict_payload(report_id: str, verdict: str, severity: str, fix_commit: str, duplicate_of: str,
-                               relay: str, verdict_key: str, at: str) -> dict[str, Any]:
-    """Security review pass 2 (P1): the relay operator's verdict on a bug report — `accepted`
-    (`severity`, `fix_commit`), `duplicate` (of `duplicate_of`) or `invalid` — for the relay
-    `relay` (its relay id), signed by the operator's verdict key (`verdict_key`), as an idea's
-    verdict is. Not an agent kind. The fields a verdict does not use are empty."""
-    accepted = verdict == "accepted"
-    return {"type": "emporia:bug-verdict:v1", "report_id": report_id, "verdict": verdict,
-            "severity": severity if accepted else "", "fix_commit": fix_commit if accepted else "",
-            "duplicate_of": duplicate_of if verdict == "duplicate" else "", "relay": relay,
-            "verdict_key": verdict_key, "at": at}
-
-
 def signed_lab_payload(slug: str, name: str, room_id: str, subject: dict[str, Any], branch: str, commit: str,
                        maintainers: list[str], licence: str, stable_id: str,
                        at: str) -> dict[str, Any]:

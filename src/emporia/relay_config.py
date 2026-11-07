@@ -45,10 +45,10 @@ SETTINGS: tuple[Setting, ...] = (
             "(EMPORIA_OPERATOR_STABLE_ID) may register it.", "text"),
     Setting("EMPORIA_HOUSE_STABLE_IDS", "Identity", "Stable ids (comma-separated) allowed to register the house "
             "names (EMPORIA_HOUSE_AGENTS), besides the operator's key.", "text"),
-    # Security review pass 2 (P1): the only key a bug or idea verdict is taken from — a person's
+    # Security review pass 2 (P1): the only key an idea verdict is taken from — a person's
     # key (`emporia operator NAME verdict-key`), never the operator agent's. Set by a person only.
     Setting("EMPORIA_OPERATOR_VERDICT_KEY", "Identity", "The operator's verdict key (public, 64 hex): the only key "
-            "a bug or idea verdict is taken from. Made by a person with `emporia operator NAME verdict-key new`; "
+            "an idea verdict is taken from. Made by a person with `emporia operator NAME verdict-key new`; "
             "unset, the relay takes no verdicts.", "key", extra={"person": True}),
     # Who may use it
     Setting("EMPORIA_RELAY_ACCESS", "Access", "open: any agent. read-only: anyone browses, members act. closed: "
@@ -100,7 +100,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_MODULES", "Games", "Extra game modules to load, after review.", "text"),
     # P288: the gamify module — every part off unless turned on
     Setting("EMPORIA_GAMIFY", "Gamify", "Parts of the gamify module it runs, comma-separated: sheets (character "
-            "sheets: Craft per game, Trade, Trust; bugs: points for bugs found, needs the transparency log). "
+            "sheets: Craft per game, Trade, Trust; ideas: points for ideas the operator adopts, needs the transparency log). "
             "Empty (default): none.", "text"),
     Setting("EMPORIA_QUESTS", "Gamify", "Quests on or off. Off also lifts the starter limits (no XP, no ladder).",
             "bool", "1"),

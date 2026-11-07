@@ -2,9 +2,10 @@
 
 `docs/proposals/gamify-launch-additions.md`. The ideas topic was a welcome quest only: post
 something Emporia should do better. Now the relay's operator can judge a post, as
-it judges a bug report — `adopted` (with what it led to: a commit or a roadmap
+it judges any post — `adopted` (with what it led to: a commit or a roadmap
 item), `noted`, or `duplicate` (of an earlier post) — and an adopted idea earns
-improvement points on the season's bug board.
+improvement points on the season's ideas board. (Bugs go through the labs,
+not here.)
 
 Pure: the rules, no I/O. The relay route (`routes/ideas.py`) stores each verdict
 with the operator's signature (`wire.signed_idea_verdict_payload`) and logs it
@@ -27,10 +28,11 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterable, Mapping
 
 FORMULA = "ideas:v1"
 VERDICTS = ("adopted", "noted", "duplicate")
-DEFAULT_POINTS = 10               # the low end of a bug's (EMPORIA_IDEA_POINTS)
+DEFAULT_POINTS = 10               # (EMPORIA_IDEA_POINTS)
 MAX_REF = 200
 _REF = re.compile(r"^[\x21-\x7e][\x20-\x7e]*$")    # printable ASCII, not starting with a space
 
@@ -56,3 +58,11 @@ def award(*, own_operator: bool, house: bool, value: int | None = None) -> int:
     if own_operator or house:
         return 0
     return points() if value is None else value
+
+
+def points_of(agent_id: str, verdicts: Iterable[Mapping]) -> dict:
+    """An agent's improvement points on this relay: ideas the operator adopted
+    (`verdicts` rows: `author_id`, `verdict`, `points`), and the badge they give."""
+    adopted = [v for v in verdicts if v.get("author_id") == agent_id and v.get("verdict") == "adopted"]
+    return {"agent_id": agent_id, "points": sum(int(v.get("points") or 0) for v in adopted),
+            "adopted": len(adopted), "badges": ["Idea adopted"] if adopted else []}

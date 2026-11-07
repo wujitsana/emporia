@@ -18,19 +18,18 @@ def test_the_quests_come_from_the_records():
                      games=[{"module_type": "emporia:blotto:v2", "participants": [me, "house"],
                              "ended_at": "2026-11-05T02:00:00"},
                             {"module_type": "emporia:chess:v1", "participants": [me, "x"], "ended_at": "2026-11-05"}],
-                     deals=[], reports=[{"reporter_id": me, "status": "invalid", "created_at": "2026-11-05"}])
+                     deals=[])
     done = {q["id"] for q in out["quests"] if q["done"]}
-    assert done == {"hello", "first-set-play"}, "chess is no set play; an invalid report is no quest"
+    assert done == {"hello", "first-set-play"}, "chess is no set play"
     assert out["xp"] == 20 and "welcomed" not in out["badges"]
     assert out["next"] == Q.BY_ID["first-deal"].how
 
 
-def test_all_four_welcome_quests_give_the_badge_and_reports_lead_on():
+def test_all_four_welcome_quests_give_the_badge():
     me = "q_me"
     out = Q.progress(me, posts=[{"author_id": me, "topic_slug": "ideas", "visibility": "public", "created_at": "t1"}],
                      games=[{"module_type": "emporia:two-thirds:v2", "participants": [me], "ended_at": "t2"}],
-                     deals=[{"buyer": me, "seller": "house", "status": "confirmed", "ended_at": "t3"}],
-                     reports=[{"reporter_id": me, "status": "accepted", "created_at": "t4", "decided_at": "t5"}])
+                     deals=[{"buyer": me, "seller": "house", "status": "confirmed", "ended_at": "t3"}])
     assert all(q["done"] for q in out["quests"] if not q.get("optional")) and "welcomed" in out["badges"]
     assert out["xp"] == sum(q.xp for q in Q.QUESTS if not q.optional)
     assert out["next"] == "", "the optional debrief is never offered as next"
@@ -43,7 +42,7 @@ def test_private_or_deleted_posts_and_others_records_count_for_nothing():
                                  "created_at": "t"},
                                 {"author_id": "someone", "topic_slug": "ideas", "visibility": "public",
                                  "created_at": "t"}],
-                     games=[], deals=[{"buyer": me, "seller": "s", "status": "disputed", "ended_at": "t"}], reports=[])
+                     games=[], deals=[{"buyer": me, "seller": "s", "status": "disputed", "ended_at": "t"}])
     assert out["xp"] == 0
 
 
@@ -78,7 +77,7 @@ GAME = {"session_id": "sess_abc123def456", "module_type": "emporia:blotto:v2", "
 def test_explain_a_game_needs_the_session_id_of_a_game_it_played_after_it_ended():
     me = "q_me"
     ok = Q.progress(me, posts=[_debrief(me, "I planned to win three fields; sess_abc123def456 went 2-1.")],
-                    games=[GAME], deals=[], reports=[])
+                    games=[GAME], deals=[])
     deb = next(q for q in ok["quests"] if q["id"] == "debrief")
     assert deb["done"] and deb["optional"] and "debrief" in ok["badges"] and ok["xp"] == 15 + 10 + 10
     for posts, games, why in (
@@ -88,12 +87,12 @@ def test_explain_a_game_needs_the_session_id_of_a_game_it_played_after_it_ended(
             ([_debrief(me, "sess_abc123def456", topic="general")], [GAME], "not the debriefs topic"),
             ([_debrief(me, "sess_abc123def456", deleted=True)], [GAME], "deleted"),
             ([_debrief(me, "sess_abc123def456", visibility="private")], [GAME], "private")):
-        out = Q.progress(me, posts=posts, games=games, deals=[], reports=[])
+        out = Q.progress(me, posts=posts, games=games, deals=[])
         assert not next(q for q in out["quests"] if q["id"] == "debrief")["done"], why
     renamed = Q.progress(me, posts=[_debrief(me, "sess_abc123def456", topic="war-stories")], games=[GAME],
-                         deals=[], reports=[], debriefs_topic="war-stories")
+                         deals=[], debriefs_topic="war-stories")
     assert next(q for q in renamed["quests"] if q["id"] == "debrief")["done"]
-    left = next(q for q in Q.progress(me, posts=[], games=[], deals=[], reports=[], debriefs_topic="war-stories")
+    left = next(q for q in Q.progress(me, posts=[], games=[], deals=[], debriefs_topic="war-stories")
                 ["quests"] if q["id"] == "debrief")
     assert "`war-stories`" in left["how"], "the quest names the topic as this relay calls it"
 
@@ -111,7 +110,7 @@ def test_feats_need_breadth_by_operator_and_give_no_xp():
     games.append({"participants": [me, "mine2", "c1"], "ended_at": "2026-11-09"})
     f = {x["id"]: x for x in Q.feats(me, games=games, deals=[], likes=[], posts=[], operator=operator, house=house)}
     assert f["well-travelled"]["done"] and f["well-travelled"]["at"] == "2026-11-09"
-    out = Q.progress(me, posts=[], games=[], deals=[], reports=[], feats_done=list(f.values()))
+    out = Q.progress(me, posts=[], games=[], deals=[], feats_done=list(f.values()))
     assert "well-travelled" in out["badges"] and out["xp"] == 0
 
 
@@ -195,7 +194,7 @@ def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypa
     body = client.get(f"/agents/{me}/quests").json()
     done = {q["id"] for q in body["quests"] if q["done"]}
     assert {"first-set-play", "debrief"} <= done, "a game against the house counts for quests: XP moves nothing"
-    assert body["formula"] == Q.FORMULA == "quests:v5" and body["topics"]["debriefs"] == f"debriefs-{tag}"
+    assert body["formula"] == Q.FORMULA == "quests:v6" and body["topics"]["debriefs"] == f"debriefs-{tag}"
     assert body["expedition"]["title"] == "Week 1: blotto with 7 fields" and body["expedition"]["author_id"] == op
     assert {f["id"] for f in body["feats"]} == set(Q.ALL_FEAT_IDS) - {"well-travelled"} and body["signature"], \
         "v4: Well travelled is the Rivals track's tier I"

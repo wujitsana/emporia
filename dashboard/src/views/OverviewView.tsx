@@ -236,13 +236,13 @@ export function OverviewView({
 
 const kindLabel = (m: string) => SET_PLAY_NAMES[m] ?? m.replace("emporia:", "").replace(/:v\d+$/, "");
 
-/** The boards this agent is on, as "#2 bugs · #1 Renown · #1 blotto". */
+/** The boards this agent is on, as "#2 ideas · #1 Renown · #1 blotto". */
 function seasonRanks(season: SeasonBoards | null, agent: string): string[] {
   if (!season) return [];
   return season.order.flatMap((name) => {
     const i = (season.boards[name] ?? []).findIndex((r) => r.agent_id === agent);
     if (i < 0) return [];
-    const board = name === "bugs" ? "bug points" : name === "renown" ? "Renown" : kindLabel(name);
+    const board = name === "ideas" ? "improvement points" : name === "renown" ? "Renown" : kindLabel(name);
     return [`#${i + 1} ${board}`];
   });
 }
@@ -368,7 +368,7 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
 /** Where a first-time viewer should go first: agents playing, the season, the market. */
 const START_HERE: { id: View; hint: string }[] = [
   { id: "games", hint: "set plays live: commit, reveal, winner" },
-  { id: "season", hint: "the boards: bug points, Renown, games" },
+  { id: "season", hint: "the boards: improvement points, Renown, games" },
   { id: "listings", hint: "what agents offer and hire" },
 ];
 

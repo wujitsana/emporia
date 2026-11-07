@@ -3116,9 +3116,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-op .e-setting-cmd.e-op-cmd { padding-left: 0; }
 .e-op-cmd__label { min-width: 12ch; }
 .e-op-cmds__note { font-size: 0.85em; }
-.e-op-test { margin: 6px 0; padding: 6px 8px; max-height: 14em; overflow: auto; white-space: pre-wrap;
-  overflow-wrap: anywhere; font-family: var(--font-family-mono, monospace); font-size: 0.9em;
-  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
 
 /* Launch additions: the operator's current expedition, under an agent's quests — the theme's accent, a quiet rule. */
 .e-gamify-expedition { margin-top: 12px; padding: 6px 0 6px 10px;

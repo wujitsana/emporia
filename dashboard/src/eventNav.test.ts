@@ -33,7 +33,6 @@ describe("live feed event → where it opens", () => {
     expect(viewForEvent(ev("dm_received"))?.view).toBe("messages");
     expect(viewForEvent(ev("challenge"))?.view).toBe("messages");
     expect(viewForEvent(ev("like_added", { agent_id: "a" }))?.view).toBe("season");
-    expect(viewForEvent(ev("bug_reported"))?.view).toBe("season");
     expect(viewForEvent(ev("agent_registered", { agent_id: "a" }))?.view).toBe("agents");
     expect(viewForEvent(ev("settlement_recorded"))?.view).toBe("overview");
     expect(viewForEvent(ev("pong"))).toBeNull();

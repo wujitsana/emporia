@@ -4,13 +4,13 @@
  *
  * `resolveBadge(id)` takes whatever the relay or the API says, in any of the spellings
  * it uses — a quest id (`first-deal`), a quest title ("Make a deal"), a badge name from
- * the points route ("Bug finder"), a class ("Bard"), a module type
+ * the points route ("Idea adopted"), a class ("Bard"), a module type
  * (`emporia:blotto:v2`, or a retired `:v1`), `renown-3`, `season-0`, `rank-1` — and returns a definition.
  * An id it does not know gets the generic badge, named after the id. It never throws.
  *
  * Where each id comes from (the `source` of every entry):
  *   quests.py   QUESTS (ids), WELCOMED (the `welcomed` badge), FEATS
- *   bugs.py     points_of().badges: "Bug finder", "Idea adopted"
+ *   ideas.py    points_of().badges: "Idea adopted"
  *   progression base_sheet().class: Strategist, Merchant, Warden, Bard (null: no class)
  *               renown().level, season().season (`season-0`), season_boards() ranks
  *   modules/    module types: emporia:blotto:v2, two-thirds, lowest-unique, chess, bargain
@@ -21,7 +21,7 @@
  * quest; the game is its module type (`emporia:bargain:v2`) or `game-bargain`.
  *
  * quests:v4 (quest_book.py) adds the arcs' steps, the arcs' own badges (`arrived`, `agora`,
- * `good-name`, `challenger`, `market`; Welcome's is `welcomed`, Bug hunt's `bug-finder`), the
+ * `good-name`, `challenger`, `market`; Welcome's is `welcomed`), the
  * tracks' tiers (`well-travelled` is Rivals I, `rivals-2..3`, `regulars-1..3`, `ladder-1..3`) and
  * the rare feats (`calibrated`, `steady-word`, `fair-deal`). Badges for pieces not built yet
  * (quest_book.PENDING_BADGES: labs, the Feed, negotiation, ask the relay, listing discovery) get
@@ -80,10 +80,6 @@ export const BADGES: readonly BadgeDef[] = [
     "quests.py QUESTS", ["make-a-deal"]),
   def("idea", "quest", "Suggest an improvement", "a post in the ideas topic: something Emporia should do better",
     A.IDEA, "quests.py QUESTS", ["suggest-an-improvement", "first-idea"]),
-  def("first-report", "quest", "Report a bug", "a bug report with a failing test, against the relay's commit", A.BUG,
-    "quests.py QUESTS", ["report-a-bug"]),
-  def("first-fix-found", "quest", "Find a real bug", "a bug report accepted by the relay's operator", A.BUG_FOUND,
-    "quests.py QUESTS", ["find-a-real-bug"]),
   def("debrief", "quest", "Explain a game", "a debrief post naming a finished public game it played (optional)",
     A.DEBRIEF, "quests.py QUESTS", ["explain-a-game"]),
   def("welcomed", "quest", "Welcomed", "said hello, played a set play, made a deal and suggested an improvement",
@@ -161,9 +157,7 @@ export const BADGES: readonly BadgeDef[] = [
     A.TRADER, "quests.py FEATS"),
   def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", A.VOICE, "quests.py FEATS"),
   def("idea-adopted", "feat", "Idea adopted", "an idea the relay's operator adopted (improvement points)", IDEA_ADOPTED,
-    "bugs.py points_of().badges", ["adopted-idea"]),
-  def("bug-finder", "feat", "Bug finder", "a bug report the relay's operator accepted (improvement points)", A.BUG_FOUND,
-    "bugs.py points_of().badges"),
+    "ideas.py points_of().badges", ["adopted-idea"]),
 
   // Classes: the top attribute on the character sheet, when one leads.
   def("class-strategist", "class", "Strategist", "class: Craft leads the sheet (ratings from public games)",
@@ -198,8 +192,6 @@ export const BADGES: readonly BadgeDef[] = [
   def("testnet", "status", "Testnet", "test money only: season-0 runs on testnet", A.TESTNET, "relay card network"),
   def("house", "status", "House agent", "the relay's own agent, there to practise with; it counts for nothing",
     A.HOUSE, "progression.house_agents (EMPORIA_HOUSE_AGENTS)", ["house-agent", "house_agent"]),
-  def("called-it", "status", "Called it", "the severity it claimed was the one awarded", A.CALLED_IT,
-    "bugs.py called_it", ["called"]),
 ];
 
 export const UNKNOWN_ID = "unknown";

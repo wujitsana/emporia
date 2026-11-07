@@ -22,8 +22,7 @@ hand in a throwaway Hermes home:
   appear only on the players' side, an illegal offer is refused before it is sent, both reveal, and
   the published hands are the ones each computed itself; this step waits about 90 s for the round);
 * the operator section: the relay names the merchant its operator; its desk shows a player's
-  open bug report with the verdict command and a post in the ideas topic with the adopt command,
-  and the player is refused the desk; the operator's verdict key (security review pass 2, P1), made
+  post in the ideas topic with the adopt command, and the player is refused the desk; the operator's verdict key (security review pass 2, P1), made
   by the run as a person would, in a person's folder, is the relay's: a verdict sent without a
   terminal is refused, one given in a terminal (a pseudo-terminal here) is signed with that key
   and awards the player its points;
@@ -257,10 +256,10 @@ class Run:
             EMPORIA_RELAY_ID="e2e", EMPORIA_RELAY_ACCESS="open", EMPORIA_DB_PATH=str(r / "relay.sqlite3"),
             EMPORIA_KEYS_DIR=str(r / "keys"), EMPORIA_LOG_DIR=str(r / "logs"), EMPORIA_AUDIT_DIR=str(r / "audit"),
             EMPORIA_X402_ENABLED="0", RATE_LIMIT_PER_MINUTE="5000",
-            # The operator section: the merchant is this relay's operator; bug quests (with
+            # The operator section: the merchant is this relay's operator; adopted ideas (with
             # the transparency log they need) give its desk a queue.
             EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1", **(pins or {}),
-            EMPORIA_GAMIFY="sheets,quests,bugs,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent,
+            EMPORIA_GAMIFY="sheets,quests,ideas,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent,
             # quests:v4: each agent after the first adopts a label of its own (own_operator), so each plays as its own operator.
             EMPORIA_QUEST_OTHERS="any", EMPORIA_STARTER_LIMITS="0",
             # Labs: on, with local file:// repositories allowed (a test relay's only)
@@ -719,7 +718,7 @@ class Run:
         mine = self.tool(self.player, "my_quests")
         done = {x["id"] for x in mine.get("quests", []) if x.get("done")}
         arc = next((a for a in mine.get("arcs", []) if a.get("id") == "challenger"), {})
-        check({"open-table", "first-contact"} <= done and arc.get("done", 0) >= 2 and mine.get("formula") == "quests:v5",
+        check({"open-table", "first-contact"} <= done and arc.get("done", 0) >= 2 and mine.get("formula") == "quests:v6",
               f"the open challenge completed no arc step: {sorted(done)} {arc}")
         theirs = {x["id"] for x in self.tool(self.merchant, "my_quests").get("quests", []) if x.get("done")}
         check("taken-up" in theirs, f"taking it did not count: {sorted(theirs)}")
@@ -876,12 +875,8 @@ class Run:
         check("1 game(s) checked, 0 failed" in v.stdout, f"verify_export: {v.stdout.strip()[-300:]}")
 
     def operator(self) -> None:
-        """The relay's operator (the merchant) sees its desk — a player's open bug report waiting,
-        with the claimed severity, its test and the verdict command — and the player is refused."""
-        r = self.tool(self.player, "report_bug", self.sha[:12], "e2e: a waiting report",
-                      "def test_it():\n    assert 1 + 1 == 2", "filed by the end-to-end run", "high", False)
-        check(r.get("success") and r.get("report_id"), f"report_bug: {r}")
-        rid = r["report_id"]
+        """The relay's operator (the merchant) sees its desk — a player's idea waiting, with the adopt
+        command — and the player is refused."""
         topic = self.tool(self.merchant, "create_agora_topic", "ideas", "what would make Emporia better",
                           slug="ideas")
         check(topic.get("slug") == "ideas" or "exists" in str(topic), f"create_agora_topic ideas: {topic}")
@@ -899,30 +894,27 @@ class Run:
         me = self.emporia(self.merchant, "operator", self.merchant, "whoami")
         check("this relay's operator" in me, f"whoami as the operator: {me.strip()[-200:]}")
         desk = self.emporia(self.merchant, "operator", self.merchant)
-        check(rid in desk and "claimed high" in desk and "assert 1 + 1 == 2" in desk,
-              f"the operator's desk does not show the report: {desk.strip()[-400:]}")
-        check(f"hermes emporia bugs {self.merchant} verdict {rid} accepted --severity high --fix FIX_COMMIT" in desk,
-              "the desk names no verdict command")
         check(f"hermes emporia ideas {self.merchant} adopt {pid} --ref COMMIT_OR_ROADMAP_ITEM" in desk,
               f"the desk names no adopt command for the idea: {desk.strip()[-400:]}")
         check(f"hermes emporia house start {self.house_agent}" in desk, "the desk names no house command")
         them = self.emporia(self.player, "operator", self.player, "whoami", ok_codes=(1,))
         check("not this relay's operator" in them, f"whoami as a player: {them.strip()[-200:]}")
         refused = self.emporia(self.player, "operator", self.player, ok_codes=(1,))
-        check("relay operator access required" in refused and rid not in refused,
+        check("relay operator access required" in refused and pid not in refused,
               f"a player reached the operator's desk: {refused.strip()[-200:]}")
         # Security review pass 2 (P1): a verdict is the person's, signed by the verdict key
-        verdict = ("bugs", self.merchant, "verdict", rid, "accepted", "--severity", "high", "--fix", self.sha[:12])
+        verdict = ("ideas", self.merchant, "adopt", pid, "--ref", self.sha[:12])
         piped = self.emporia(self.merchant, *verdict, ok_codes=(1,))
         check("only a person" in piped, f"a verdict without a terminal was not refused: {piped.strip()[-200:]}")
         code, shown = self.as_person(self.merchant, "operator", self.merchant, "verdict-key")
         check(code == 0 and self.verdict_key in shown and "registered" in shown,
               f"verdict-key does not show the relay's key as registered: {shown.strip()[-300:]}")
         code, given = self.as_person(self.merchant, *verdict)
-        check(code == 0 and '"status": "accepted"' in given and self.verdict_key in given,
+        check(code == 0 and '"verdict": "adopted"' in given and self.verdict_key in given,
               f"the person's verdict: {given.strip()[-400:]}")
-        pts = (self.tool(self.player, "bug_reports").get("points") or {})
-        check(pts.get("points") == 40 and pts.get("accepted") == 1, f"the player's points: {pts}")
+        with urllib.request.urlopen(f"{self.relay_url}/agents/{self.player}/points", timeout=10) as resp:
+            pts = json.loads(resp.read())
+        check(pts.get("points") == 10 and pts.get("adopted") == 1, f"the player's points: {pts}")
 
     # ── labs ────────────────────────────────────────────────────────────────
     def git(self, *args: str, cwd: Path) -> str:

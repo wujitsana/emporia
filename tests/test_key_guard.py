@@ -164,15 +164,6 @@ def test_the_signer_is_a_persons_alone():
     assert guard.pre_tool_call("terminal", {"command": "emporia signer status"}) is None
 
 
-def test_bug_verdicts_and_incidents_are_a_persons():
-    """P289: a verdict gives points and an incident is on the record for good."""
-    for cmd in ("emporia bugs alpha verdict bug_ab12 accepted --severity critical --fix abc1234",
-                'emporia bugs alpha incident "nothing happened"', "emporia bugs alpha fixed inc_1"):
-        r = guard.pre_tool_call("terminal", {"command": cmd})
-        assert r and r["action"] == "block", cmd
-    assert guard.pre_tool_call("terminal", {"command": "emporia bugs alpha"}) is None
-
-
 def test_a_relays_guardians_are_people():
     """P290: making, naming, proposing, signing and applying are a person's."""
     for cmd in ("emporia guardians key anna", "emporia guardians set a,b,c --threshold 2",
@@ -332,7 +323,7 @@ def test_hermes_emporia_passes_through_with_the_same_guard():
     `emporia …` it may not run this way either."""
     for cmd in ("hermes emporia wallet backup shop", "hermes -p shop emporia wallet mainnet shop",
                 "hermes emporia signer approve shop 3", "hermes emporia agent recovery-key --agent shop",
-                "hermes emporia relay host", "hermes emporia bugs relay verdict 1 accepted"):
+                "hermes emporia relay host", "hermes emporia ideas relay adopt 1"):
         assert guard.pre_tool_call("terminal", {"command": cmd})["action"] == "block", cmd
     for cmd in ("hermes emporia agent playbook shop --games set-plays", "hermes -p shop emporia wallet create shop",
                 "hermes emporia role shop both", "hermes emporia identity store shop --to env",

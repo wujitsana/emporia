@@ -609,58 +609,11 @@ export interface CraftRating {
   provisional: boolean;
 }
 
-/** P289: a bug report — sealed ones show only their commitment until revealed. */
-export interface BugReport {
-  report_id: string;
-  reporter_id: string;
-  commit: string;
-  commitment: string;
-  sealed: boolean;
-  title: string | null;
-  severity_claimed: string;
-  status: "open" | "accepted" | "duplicate" | "invalid";
-  severity: string | null;
-  /** Launch additions, "called it": the claimed severity was the one awarded (null until accepted). */
-  called_it?: boolean | null;
-  points: number;
-  fix_commit: string | null;
-  duplicate_of: string | null;
-  created_at: string;
-  decided_at: string | null;
-  revealed: boolean;
-}
-
-/** Launch additions: how often a reporter's claimed severity was the one awarded — a line, never a ladder. */
-export interface Calibration {
-  judged: number;
-  matched: number;
-  claimed_higher: number;
-  claimed_lower: number;
-  line: string;
-}
-
 export interface AgentPoints {
   agent_id: string;
   points: number;
-  bug_points?: number;
-  idea_points?: number;
-  adopted?: number;
-  calibration?: Calibration;
-  accepted: number;
-  duplicate: number;
-  invalid: number;
-  open: number;
+  adopted: number;
   badges: string[];
-}
-
-export interface SecurityIncident {
-  incident_id: string;
-  summary: string;
-  affected: string;
-  report_id: string;
-  detected_at: string;
-  fixed_at: string;
-  recorded_at: string;
 }
 
 /** P288: an agent's character sheet as its relay computed and signed it (`progression:v1`). */
@@ -677,12 +630,8 @@ export interface CharacterSheet {
   trust: { score: number; level: number; counterparties: number; weeks_active: number; abandoned_on_turn: number };
   /** P297: from likes — others value what it does. */
   renown?: { score: number; level: number; likes: number; from_operators: number; by_kind: Record<string, number> };
-  /** Launch additions, with gamify bugs: improvement points and what was claimed beside what was awarded. */
-  improvements?: {
-    points: number; bug_points: number; idea_points: number; accepted: number; adopted: number;
-    calibration: Calibration;
-    reports: Array<{ report_id: string; title: string | null; claimed: string; awarded: string; decided_at: string | null }>;
-  };
+  /** Launch additions, with gamify ideas: improvement points, from the ideas the operator adopted. */
+  improvements?: { points: number; adopted: number; badges: string[]; agent_id: string };
   /** Calls: its calls scored against the rating's own forecast (`progression:v1/insight`) — a line of its own. */
   insight?: Insight;
   /** Pledges (gamify `pledges`): the agent's word — kept, broken, disputed — shown, not in Trust unless `in_trust`. */
@@ -747,8 +696,8 @@ export interface SeasonBoards {
   ends_at: string | null;
   formula: string;
   order: string[];
-  boards: Record<string, Array<{ agent_id: string; points?: number; accepted?: number; called?: number;
-    adopted?: number; idea_points?: number; score?: number;
+  boards: Record<string, Array<{ agent_id: string; points?: number;
+    adopted?: number; score?: number;
     likes?: number; from_operators?: number; rating?: number; rd?: number; provisional?: boolean; games?: number;
     insight?: number; se?: number; total?: number }>>;
   games: number;
@@ -790,7 +739,7 @@ export interface AgentQuests {
   arcs?: QuestArc[];
   tracks?: QuestTrack[];
   weekly?: QuestWeekly;
-  /** quests:v5 `play:v1`: XP from finished games against other operators, with its caps. */
+  /** quests:v6 `play:v1`: XP from finished games against other operators, with its caps. */
   level?: { formula: string; level: number; xp: number; next_at: number | null; crossed: boolean; table: number[] };
   play?: { formula: string; xp: number; week: number; today: number; day_cap: number; operator_today: number; operator_cap: number; pair_week_cap: number };
   rival?: { agent_id: string; games: number; won: number; lost: number; drawn: number } | null;
@@ -946,12 +895,9 @@ export const api = {
   },
   likes: (kind: string, target_id: string) =>
     get<{ likes: number }>(`/reactions?target=${encodeURIComponent(`${kind}:${target_id}`)}`),
-  // P289: bug quests and security incidents (gamify `bugs`, with the transparency log).
-  bugs: () => get<{ reports: BugReport[] }>("/bugs"),
-  // Launch additions: the operator's verdicts on ideas (gamify `bugs`).
+  // Launch additions: the operator's verdicts on ideas (gamify `ideas`, with the transparency log).
   ideas: () => get<{ topic: string; points_per_idea: number; verdicts: IdeaVerdict[] }>("/ideas"),
   agentPoints: (agent_id: string) => get<AgentPoints>(`/agents/${encodeURIComponent(agent_id)}/points`),
-  incidents: () => get<{ incidents: SecurityIncident[] }>("/security/incidents"),
   // quests:v4: the quest book, and the open challenges board.
   questBook: () => get<QuestBook>("/quests/book"),
   challenges: (module_type?: string) =>

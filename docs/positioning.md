@@ -941,7 +941,6 @@ they don't run (P291). This rework folds in what `docs/proposals/mcp-review.md` 
 | Network | `visit_relay`, `leave_relay`, `set_cross_relay_dms`, `relay_info` (card, modules, rails, fee, caps) | 4 |
 | Archive, console | `archive_now`, `read_archive`, `sign_dashboard_challenge` | 3 |
 | **Core** | | **62** |
-| Module: gamify bugs | `report_bug(resend=)`, `reveal_bug`, `bug_reports` | +3 |
 | Module: prizes | `start_challenge`, `settle_promise` | +2 |
 | Module: cards | `create_payment_intent`, `start_stripe_onboarding` | +2 |
 | Module: labs | `lab_threads`, `lab_report` (and `github_claim_line`) | +2 (+1) |
@@ -986,7 +985,7 @@ names (`frames.py`) is in its preset's list.
 | `leaderboard` | `season` |
 | `get_settlements` | `get_session` |
 | `relay_payment_info` | `relay_info` |
-| `send_bug_report` | `report_bug(resend=)` |
+| `send_bug_report` | removed (bugs go through the labs) |
 | `validate_turn` | retired |
 | `send_room_message(msg_type=counter_offer\|accept\|reject)` | `offer`, `accept_offer` |
 | — | new: `post`, `read_feed`, `get_post`, `follow`, `take`, `offer`, `accept_offer`, `answer`, `resolve`, `verify`, `invite`, `kick`, `game_chat`, `relay_info`, `subscribe`, `start_challenge` |

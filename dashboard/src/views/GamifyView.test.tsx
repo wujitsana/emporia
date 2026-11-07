@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { CharacterSheet } from "../api";
-import { BugList, GamifyView, IdeaList, QuestList, Sheet } from "./GamifyView";
+import { GamifyView, IdeaList, QuestList, Sheet } from "./GamifyView";
 
 // P288: the gamify tab says when a relay does not run the module, and shows a sheet as signed.
 const card = { current: cardOf([]) };
@@ -15,14 +15,6 @@ vi.mock("../hooks", () => ({
   useInterval: (fn: () => unknown) => {
     const src = String(fn);
     if (src.includes("relayCard")) return [card.current, false, null];
-    if (src.includes("api.bugs")) return [{ reports: [
-      { report_id: "bug_1", reporter_id: "beta", commit: "a1b2c3d4e5f6", commitment: "c0ffee".repeat(10) + "abcd",
-        sealed: true, title: null, severity_claimed: "high", status: "open", severity: null, points: 0,
-        fix_commit: null, duplicate_of: null, created_at: "", decided_at: null, revealed: false },
-      { report_id: "bug_2", reporter_id: "alpha", commit: "a1b2c3d4e5f6", commitment: "ab".repeat(32),
-        sealed: false, title: "parse crashes on empty input", severity_claimed: "low", status: "accepted",
-        severity: "medium", points: 15, fix_commit: "f6e5d4c3b2a1", duplicate_of: null, created_at: "",
-        decided_at: "", revealed: false }] }, false, null];
     if (src.includes("api.ideas")) return [{ topic: "ideas", points_per_idea: 10, verdicts: [
       { post_id: "p_1", author_id: "gamma", verdict: "adopted", ref: "roadmap: called it", duplicate_of: null, points: 10,
         decided_by: "op", decided_at: "", signature: "s", title: "Show the claimed severity", posted_at: "" },
@@ -74,30 +66,19 @@ describe("gamify tab", () => {
   });
 });
 
-describe("gamify tab, bug quests", () => {
-  it("adds bug reports and incidents to the rail when the relay runs them", () => {
-    card.current = cardOf(["sheets", "bugs"]);
+describe("gamify tab, ideas", () => {
+  it("adds ideas to the rail when the relay runs them", () => {
+    card.current = cardOf(["sheets", "ideas"]);
     render(<GamifyView />);
-    expect(screen.getByText("Bug reports")).toBeTruthy();
     expect(screen.getByText("Ideas")).toBeTruthy();
-    expect(screen.getByText("Security incidents")).toBeTruthy();
+    expect(screen.queryByText("Bug reports")).toBeNull();
+    expect(screen.queryByText("Security incidents")).toBeNull();
   });
 
   it("is not in the rail without them", () => {
     card.current = cardOf(["sheets"]);
     render(<GamifyView />);
-    expect(screen.queryByText("Bug reports")).toBeNull();
-  });
-});
-
-describe("bug reports list", () => {
-  it("shows a sealed report by its commitment only, an open one by its title", () => {
-    render(<BugList />);
-    expect(screen.getByText(/^sealed · c0ffeec0ffee…$/)).toBeTruthy();
-    expect(screen.getByText("parse crashes on empty input")).toBeTruthy();
-    expect(screen.getByText("high (claimed)")).toBeTruthy();
-    expect(screen.getByText("claimed low · awarded medium")).toBeTruthy();
-    expect(screen.getByText("15")).toBeTruthy();
+    expect(screen.queryByText("Ideas")).toBeNull();
   });
 });
 
@@ -106,9 +87,9 @@ describe("P297: the season and Renown", () => {
     const { Season } = await import("./GamifyView");
     render(<Season data={{
       season: "season-0", started_at: null, ends_at: null, formula: "progression:v1/season",
-      order: ["bugs", "renown", "emporia:blotto:v1"], games: 3, likes: 2,
+      order: ["ideas", "renown", "emporia:blotto:v1"], games: 3, likes: 2,
       boards: {
-        bugs: [{ agent_id: "beta", points: 40, accepted: 1 }],
+        ideas: [{ agent_id: "beta", points: 40, adopted: 4 }],
         renown: [{ agent_id: "alpha", score: 1.5, likes: 2 }],
         "emporia:blotto:v1": [{ agent_id: "gamma", rating: 1580, rd: 90, provisional: true, games: 3 }],
       },
@@ -116,19 +97,19 @@ describe("P297: the season and Renown", () => {
     const text = document.body.textContent ?? "";
     expect(text.indexOf("IMPROVEMENT POINTS")).toBeLessThan(text.indexOf("RENOWN"));
     expect(text.indexOf("RENOWN")).toBeLessThan(text.indexOf("BLOTTO"));
-    expect(screen.getByText("40 pts · 1 bug · called 0/1")).toBeTruthy();
+    expect(screen.getByText("40 pts · 4 ideas")).toBeTruthy();
     expect(screen.getByText(/open — no end date/)).toBeTruthy();
   });
 
-  it("shows the improvement board with ideas and called-it counts", async () => {
+  it("shows the improvement board with adopted ideas", async () => {
     const { Season } = await import("./GamifyView");
     render(<Season data={{
       season: "season-0", started_at: null, ends_at: null, formula: "progression:v1/season",
-      order: ["bugs"], games: 0, likes: 0,
-      boards: { bugs: [{ agent_id: "beta", points: 50, accepted: 2, called: 1, adopted: 1, idea_points: 10 }] },
+      order: ["ideas"], games: 0, likes: 0,
+      boards: { ideas: [{ agent_id: "beta", points: 10, adopted: 1 }] },
     }} />);
-    expect(screen.getByText("IMPROVEMENT POINTS — accepted bugs, adopted ideas")).toBeTruthy();
-    expect(screen.getByText("50 pts · 2 bugs · 1 idea · called 1/2")).toBeTruthy();
+    expect(screen.getByText("IMPROVEMENT POINTS — adopted ideas")).toBeTruthy();
+    expect(screen.getByText("10 pts · 1 idea")).toBeTruthy();
   });
 
   it("shows Renown on a sheet when the relay computes it", () => {
@@ -139,7 +120,7 @@ describe("P297: the season and Renown", () => {
   });
 });
 
-describe("launch additions: ideas, called it, feats, the expedition", () => {
+describe("launch additions: ideas, feats, the expedition", () => {
   it("lists the operator's verdicts on ideas", () => {
     render(<IdeaList />);
     expect(screen.getByText("Show the claimed severity")).toBeTruthy();
@@ -148,15 +129,10 @@ describe("launch additions: ideas, called it, feats, the expedition", () => {
     expect(screen.getByText(/earns 10 points/)).toBeTruthy();
   });
 
-  it("shows improvements and the calibration line on a sheet — a line, not a ladder", () => {
-    render(<Sheet sheet={{ ...sheet, improvements: {
-      points: 25, bug_points: 15, idea_points: 10, accepted: 1, adopted: 1,
-      calibration: { judged: 1, matched: 0, claimed_higher: 1, claimed_lower: 0,
-        line: "claimed severity matched the awarded one in 0 of 1 accepted reports (1 claimed higher, 0 lower)" },
-      reports: [{ report_id: "bug_2", title: "parse crashes", claimed: "high", awarded: "medium", decided_at: null }] } }} />);
-    expect(screen.getByText("IMPROVEMENTS · 25 points")).toBeTruthy();
-    expect(screen.getByText(/Calibration: claimed severity matched the awarded one in 0 of 1/)).toBeTruthy();
-    expect(screen.getByText(/parse crashes — claimed high · awarded medium/)).toBeTruthy();
+  it("shows improvements on a sheet", () => {
+    render(<Sheet sheet={{ ...sheet, improvements: { agent_id: "alpha", points: 10, adopted: 1, badges: ["Idea adopted"] } }} />);
+    expect(screen.getByText("IMPROVEMENTS · 10 points")).toBeTruthy();
+    expect(screen.getByText(/1 ideas adopted/)).toBeTruthy();
   });
 
   it("marks the optional quest, lists feats and shows the expedition", () => {
@@ -190,8 +166,8 @@ describe("calls and pledges: Insight and the Word line", () => {
     const { Season } = await import("./GamifyView");
     render(<Season data={{
       season: "season-0", started_at: null, ends_at: null, formula: "progression:v1/season",
-      order: ["bugs", "renown", "insight", "emporia:blotto:v2"], games: 3, likes: 2, insight_min_calls: 10,
-      boards: { bugs: [], renown: [], insight: [{ agent_id: "gamma", insight: 0.214, se: 0.05, total: 2.6, games: 12 }],
+      order: ["ideas", "renown", "insight", "emporia:blotto:v2"], games: 3, likes: 2, insight_min_calls: 10,
+      boards: { ideas: [], renown: [], insight: [{ agent_id: "gamma", insight: 0.214, se: 0.05, total: 2.6, games: 12 }],
         "emporia:blotto:v2": [] },
     }} />);
     const text = document.body.textContent ?? "";
@@ -247,11 +223,11 @@ describe("calls and pledges: Insight and the Word line", () => {
 
 describe("P1: Season on a phone", () => {
   it("opens on the detail (the season's boards), the rail one back away", () => {
-    card.current = cardOf(["sheets", "bugs"]);
+    card.current = cardOf(["sheets", "ideas"]);
     const { container } = render(<GamifyView />);
     const layout = container.querySelector("[data-pane-shown]") as HTMLElement;
     expect(layout.dataset.paneShown).toBe("detail");
-    expect(screen.getByRole("button", { name: /quests, reports, sheets/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /quests, ideas, sheets/ })).toBeTruthy();
   });
 });
 

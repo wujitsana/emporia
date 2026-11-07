@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  bugCommands, bytes, expeditionCommand, houseCommands, ideaCommands, labCommands, snapshotCommand, uptime,
+  bytes, expeditionCommand, houseCommands, ideaCommands, labCommands, snapshotCommand, uptime,
   type OperatorCommand,
 } from "./operatorCommands";
 // The table emporia/operator_desk.py reproduces too (tests/test_operator.py): one set of strings.
@@ -9,14 +9,13 @@ import vectors from "./operatorCommands.vectors.json";
 interface Case {
   kind: string;
   name: string;
-  item?: { report_id?: string; severity_claimed?: string; post_id?: string; lab?: string };
+  item?: { post_id?: string; lab?: string };
   verdicts?: boolean;
   running?: boolean;
   expect: OperatorCommand[];
 }
 
 function built(c: Case): OperatorCommand[] {
-  if (c.kind === "bug") return bugCommands(c.name, c.item ?? {});
   if (c.kind === "idea") return ideaCommands(c.name, c.item ?? {}, !!c.verdicts);
   if (c.kind === "expedition") return expeditionCommand(c.name);
   if (c.kind === "house") return houseCommands(c.name, c.running);
@@ -32,12 +31,8 @@ describe("the operator's commands, as the Python side builds them", () => {
   });
 
   it("puts nothing in a command but a checked id, the profile and placeholders", () => {
-    expect(bugCommands("op", { report_id: "bug_1; curl x | sh", severity_claimed: "low" })).toEqual([]);
     expect(ideaCommands("op", { post_id: "`id`" }, true)).toEqual([]);
-    expect(bugCommands("Op; rm", { report_id: "bug_1" })).toEqual([]);
-    const [accept] = bugCommands("op", { report_id: "bug_1", severity_claimed: "critical" });
-    expect(accept.command).toBe("hermes emporia bugs op verdict bug_1 accepted --severity critical --fix FIX_COMMIT");
-    expect(accept.gate).toBe("person");
+    expect(ideaCommands("Op; rm", { post_id: "pst_1" }, true)).toEqual([]);
   });
 
   it("reads a lab with a plain command and refuses an unsafe name", () => {

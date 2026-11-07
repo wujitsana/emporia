@@ -8,14 +8,14 @@ import pytest
 from emporia import identity, signing, wire
 
 SRC = Path(signing.__file__).parent
-PERSON_SIGNED = ("signed_key_recovery_payload", "signed_bug_verdict_payload", "signed_idea_verdict_payload")
+PERSON_SIGNED = ("signed_key_recovery_payload", "signed_idea_verdict_payload")
 
 
 def test_no_verdict_is_an_agent_kind():
     """Security review pass 2 (P1): a verdict awards points, so it is never signed for an agent."""
     built = {k.builder for k in signing.KINDS.values()}
-    assert not {"signed_bug_verdict_payload", "signed_idea_verdict_payload"} & built
-    assert "idea-verdict" not in signing.KINDS and "bug-verdict" not in signing.KINDS
+    assert not {"signed_idea_verdict_payload"} & built
+    assert "idea-verdict" not in signing.KINDS
     with pytest.raises(signing.Refused, match="no rule"):
         signing.sign("p293-agent", "idea-verdict", "pst_1", "adopted", "abc1234", "", "e2e", "k", "t")
 

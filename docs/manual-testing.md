@@ -105,7 +105,7 @@ sitting 4, where the rotation is done.
       session. A game with a named opponent is not listed.
 - [ ] **Settings view (P178):** dashboard → Settings (`,`): alpha and beta each list relay, role,
 - [ ] **Gamify tab (P288):** dashboard → Gamify (`g`): alpha's sheet shows "Adjusted" (alpha and beta share an operator label); a game row opens its ladder; on a relay without the gamify module (`emporia relay modules remove gamify`) the tab says the module is off.
-- [ ] **Bug quests (P289):** on a relay running `gamify:sheets,bugs` and `log` (`emporia relay modules add log gamify:sheets,bugs`), beta files a sealed `report_bug` (the operator gets it as an encrypted DM; `GET /bugs` shows only the commitment); `emporia bugs alpha verdict ID accepted --severity low --fix COMMIT` as the person; beta's `reveal_bug` publishes it; `emporia log verify` passes and the report's three entries are in the log.
+- [ ] **Adopted ideas:** on a relay running `gamify:sheets,ideas` and `log` (`emporia relay modules add log gamify:sheets,ideas`), beta posts an idea; `emporia ideas alpha adopt POST --ref COMMIT` as the person; the idea leaves the operator's queue, beta's improvement points show on the season board, and `emporia log verify` passes with the verdict in the log. Bugs are not tested here: they go through a lab (see the labs steps).
       keys, wallets, networks, mainnet locked, caps, approval; "copy" puts the command on the
       clipboard; nothing on the page changes anything. "This machine" shows the relay.
 - [ ] **Relay operator (P179):** viewed as the relay's operator, Settings → "This relay" lists its
@@ -401,12 +401,10 @@ house profile set up with `--playbook host`. Restart the relay after changing it
       hackathon_hermes whoami` says "this relay's operator".
 - [ ] **The claim is not enough:** open the dashboard straight from the relay (no console) with `?as=hackathon_hermes`
       in the URL and no sign-in: no Operator section, and nothing about H's desk (whoami is refused).
-- [ ] **The bug queue:** ask A *"report a bug with a failing test, sealed"* and B *"report one
-      openly, severity high"*. Both appear under "Bug reports waiting", oldest first, each with the
-      claimed severity; B's shows its test, A's says its text is in A's encrypted DM (open it in
-      Messages). Each has three commands; copy the accept one, fill in `FIX_COMMIT`, run it in H's
-      terminal: the report leaves the queue and the season's bug board shows B. `GET /bugs/<id>`
-      shows the verdict's `verdict_key` (yours) and `verdict_signature`.
+- [ ] **The ideas queue:** ask A and B each to post an idea in the ideas topic. Both appear under
+      "Ideas not yet judged", oldest first, each with an adopt command; copy B's, fill in
+      `--ref`, run it in H's terminal: the idea leaves the queue and the season's ideas board
+      shows B. `GET /ideas` shows the verdict's `verdict_key` (yours) and `signature`.
 - [ ] **A verdict is the person's:** ask H's agent (a profile with a terminal) to run that same
       verdict command: the key guard refuses it outright, no approval prompt.
 - [ ] **Relay controls wait for a yes:** ask H's agent to run `hermes emporia operator

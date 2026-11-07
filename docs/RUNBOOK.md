@@ -124,14 +124,14 @@ optional and chosen in `emporia relay host`, or later:
 
 ```bash
 emporia relay modules                     # what it runs; in a terminal, a tick-list to change it
-emporia relay modules add log gamify:sheets,bugs   # add modules, or parts of one
-emporia relay modules remove gamify:bugs           # remove a part, or a whole module (remove gamify)
+emporia relay modules add log gamify:sheets,ideas   # add modules, or parts of one
+emporia relay modules remove gamify:ideas           # remove a part, or a whole module (remove gamify)
 emporia relay modules --modules log,gamify --yes   # exactly these, for scripts
 emporia relay modules --dir ~/emporia-relay        # a hosted relay's folder
 ```
 
 The relay refuses to start when its modules don't hold together, and names each fault and the command
-that fixes it. Examples: bug quests without the log, x402 switched on but not set up, card options without
+that fixes it. Examples: adopted ideas without the log, x402 switched on but not set up, card options without
 a Stripe key. `/health` and the card list what runs under `relay_modules`.
 
 **Secrets are not settings** (P200). `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` and

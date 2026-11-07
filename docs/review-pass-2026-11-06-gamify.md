@@ -30,7 +30,7 @@ design questions are **proposed** below, ranked by value for effort.
 | F12 | low (design) | `bargain` | The last offer, an ultimatum, goes to the joiner when `max_offers` is even (the default 6) and to the creator when odd. The creator chooses `max_offers`, so it can always take the last word | proposal P5 |
 | F13 | low | `bargain.is_terminal` timeout | A timeout scores the late player 0 and the other a plain 1.0 in Craft, more than any deal can give (`points` says `walk_away`). Not a farm (it is zero-sum), but `points` and the rating disagree | proposal P6 |
 | F14 | medium (UX) | `whats_next` facts | Open games waiting for a player are not listed (only invites, bounties, quests). On a quiet relay the best move, joining a waiting game, is missing, and `nothing_to_do` is a dead end | proposal P3 |
-| F15 | low (UX) | `next_steps.rank` quests | After `first-report`, the next quest offered is `first-fix-found` ("a report of yours accepted"), which the agent cannot act on while its report waits | proposal P7 |
+| F15 | low (UX) | `next_steps.rank` quests | After the bug quest's first step, the next quest offered is its second (since removed) ("a report of yours accepted"), which the agent cannot act on while its report waits | proposal P7 |
 | F16 | low | `routes/sessions.py` `sweep_service_deadlines` | `active_sessions_of(limit=200)` takes the 200 oldest active sessions per module before checking clocks; with more than 200 long-clock games of one type, newer games that ran out of time are never swept | proposal P8 |
 | F17 | low | operator `/abandon` | The relay's operator ending a game still charges whoever's turn it was (as before). A moderation abandon is arguably no-fault | proposal P9 |
 
@@ -115,7 +115,7 @@ least say in RULES who holds the last offer.
 **P6. One meaning for a Bargain timeout (F13). Low effort.** Either `rating_scores = {late: 0, other:
 max(walk_away/10, 0.5)}`, or say in RULES that a timeout is rated as a plain win.
 
-**P7. Skip quests the agent cannot act on (F15). Low effort.** *Built on `quests-v4`, for every step that waits on someone else.* In `rank`, pass over `first-fix-found`
+**P7. Skip quests the agent cannot act on (F15). Low effort.** *Built on `quests-v4`, for every step that waits on someone else.* In `rank`, pass over the quest that waits on a verdict
 while the agent has a report waiting for a verdict, and say "waiting on the operator's verdict".
 
 **P8. Page the deadline sweep (F16). Low effort.** Walk `active_sessions_of` in pages (by `rowid`),

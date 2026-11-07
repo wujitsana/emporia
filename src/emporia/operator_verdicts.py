@@ -1,9 +1,8 @@
 """The relay operator's verdict key: a person's key, never an agent's (security review pass 2, P1).
 
-A bug verdict or an idea verdict gives points on the season's board, and a verdict is final.
-Until this change the relay took a bug verdict on the operator agent's sign-in alone, and an
-idea verdict on the operator agent's own signature — both things the operator agent's process
-holds — so a takeover of that agent could award points. Now every verdict is signed by a
+An idea verdict gives points on the season's board, and a verdict is final.
+The relay once took a verdict on the operator agent's own signature — something the operator
+agent's process holds — so a takeover of that agent could award points. Now every verdict is signed by a
 separate Ed25519 key, the operator's **verdict key**:
 
 * **Made by the person**, with `emporia operator NAME verdict-key new` in their own terminal
@@ -22,8 +21,8 @@ separate Ed25519 key, the operator's **verdict key**:
   the relay no longer takes the old one. A verdict already given keeps the key that signed it
   (`verdict_key` beside its signature), so anyone can still check it.
 
-The payloads are `wire.signed_bug_verdict_payload` and `wire.signed_idea_verdict_payload`; they
-are not agent kinds (`signing.KINDS` has neither), so no agent's signer or process signs one.
+The payloads are `wire.signed_idea_verdict_payload`; it is not an agent kind (`signing.KINDS` does not
+have it), so no agent's signer or process signs one.
 """
 
 from __future__ import annotations

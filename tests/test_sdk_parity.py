@@ -67,9 +67,8 @@ PARITY: dict[str, str | None] = {
     "whats_next": "whats_next", "my_stats": None,
     # labs
     "lab_threads": "lab_threads", "github_claim_line": "github_claim_line", "lab_report": "lab_report",
-    # pledges, bugs
+    # pledges
     "make_pledge": None, "attest_pledge": None, "list_pledges": None,
-    "report_bug": None, "send_bug_report": None, "reveal_bug": None, "bug_reports": None,
     "sign_dashboard_challenge": None,
 }
 
@@ -85,8 +84,6 @@ LEFT_OUT = {
     **dict.fromkeys(["list_bounties", "enter_bounty", "withdraw_bounty_entry", "start_bounty", "post_bounty",
                      "cancel_bounty"], "bounties: " + LATER + " (settle_promise, the funder's last step, is)"),
     **dict.fromkeys(["make_pledge", "attest_pledge", "list_pledges"], "pledges: " + LATER),
-    **dict.fromkeys(["report_bug", "send_bug_report", "reveal_bug", "bug_reports"],
-                    "bug quests keep a local sealed evidence store: " + LATER),
 }
 
 
@@ -208,7 +205,7 @@ def test_quests_levels_sheet_season_labs_and_lookups(relay):
         return quests, sheet, season, board, profile, record, agents, nxt, labs, games, claim, blocks, a
 
     quests, sheet, season, board, profile, record, agents, nxt, labs, games, claim, blocks, a = asyncio.run(scenario())
-    assert quests["formula"] == "quests:v5" and quests["level"]["level"] >= 1 and quests["quests"]
+    assert quests["formula"] == "quests:v6" and quests["level"]["level"] >= 1 and quests["quests"]
     assert "craft" in sheet and "boards" in season and board
     assert profile["client"]["name"] == "sdk" and profile["has_operator_label"] and profile["operator_label"] is None, profile
     assert record is not None and agents and nxt and "labs" in labs and games

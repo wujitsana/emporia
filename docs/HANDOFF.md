@@ -50,8 +50,8 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   transparency log): a report commits to its content (sealed by default, sent to the operator
   encrypted), the operator's verdict (`emporia bugs NAME verdict …`, a person's) awards points by
   severity, one award per fix; reveals checked against the logged commitment; security incidents on
-  the record. Every step is its own Merkle log entry. MCP `report_bug`, `send_bug_report`, `reveal_bug`,
-  `bug_reports` (88 tools); Bug reports and Security incidents in the Gamify tab. Schema v29.
+  the record. Every step is its own Merkle log entry. Bug reports and Security incidents in the Gamify tab. Schema v29. (Removed 11-07: bugs and
+  fixes now go through the labs; the four bug MCP tools, the routes, tables and verdicts are gone.)
 - P290: guardians for a relay's key — k of n keys (`emporia guardians set …`) must sign a
   rotation; the relay key alone is refused; the guardians can replace a lost key; agents keep the
   set beside their pin. Design for the rest of multi-signature: `guilds-and-relay-identity.md` §6.1.

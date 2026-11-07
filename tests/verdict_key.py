@@ -2,7 +2,7 @@
 
 A verdict is signed by the operator's verdict key — a person's key, never the operator agent's —
 and the relay takes it only when `EMPORIA_OPERATOR_VERDICT_KEY` names that key. Tests that judge
-reports or ideas register this key (`register(monkeypatch)`) and send bodies made here."""
+ideas register this key (`register(monkeypatch)`) and send bodies made here."""
 from datetime import UTC, datetime
 
 from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -21,16 +21,6 @@ def register(monkeypatch, pub: str = PUB) -> str:
 def _relay() -> str:
     from emporia import relay_server as rs
     return rs.relay_id()
-
-
-def bug(report_id, verdict, severity="", fix_commit="", duplicate_of="", *, key=KEY, at=None, relay=None) -> dict:
-    """The body of `POST /bugs/{id}/verdict`, signed by `key`."""
-    at = at or datetime.now(UTC).isoformat()
-    pub = key.public_key().public_bytes_raw().hex()
-    p = wire.signed_bug_verdict_payload(report_id, verdict, severity, fix_commit, duplicate_of,
-                                        relay or _relay(), pub, at)
-    return {"verdict": verdict, "severity": severity, "fix_commit": fix_commit, "duplicate_of": duplicate_of,
-            "verdict_key": pub, "at": at, "signature": identity.sign_payload(key, p)}
 
 
 def idea(post_id, verdict, ref="", duplicate_of="", *, key=KEY, at=None, relay=None) -> dict:

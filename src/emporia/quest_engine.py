@@ -1,4 +1,4 @@
-"""`quests:v5`: the engine that reads the quest book (`quest_book.py`) against the relay's records.
+"""`quests:v6`: the engine that reads the quest book (`quest_book.py`) against the relay's records.
 
 `docs/proposals/quests-v4.md`. Records become events once (`events`); every condition in the book is
 checked against them (`judge`); `evaluate` puts the answer together — quests, arcs, tracks, the weekly
@@ -26,7 +26,7 @@ from emporia.calls import ALL_SET_PLAYS
 from emporia.quests import BARGAIN, DEBRIEFS_TOPIC, DONE_DEALS, IDEAS_TOPIC, SET_PLAYS, V3, debriefs
 
 FORMULA = B.FORMULA
-EVENTS = ("post", "comment", "debrief", "game", "deal", "report", "report_accepted", "like", "pledge", "insight",
+EVENTS = ("post", "comment", "debrief", "game", "deal", "like", "pledge", "insight",
           "lab_finding", "feed_post", "listing_followed", "lab_confirmed", "lab_fixed", "fix_landed", "fix_reviewed")
 #: named by disabled quests (quest_book.REQUIRES), extracted once their feature lands
 PENDING_EVENTS = {"offer_accepted": "negotiation", "relay_answer": "ask-the-relay"}
@@ -118,7 +118,7 @@ def fair_split(pool: Mapping, values: Mapping[str, Mapping], allocation: Mapping
 
 
 def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapping] = (),
-           deals: Iterable[Mapping] = (), reports: Iterable[Mapping] = (), likes: Iterable[Mapping] = (),
+           deals: Iterable[Mapping] = (), likes: Iterable[Mapping] = (),
            pledges: Iterable[Mapping] = (), insight: Mapping | None = None, comments: Iterable[Mapping] = (),
            lab_findings: Iterable[Mapping] = (), answers: Iterable[Mapping] = (),
            lab_credits: Iterable[Mapping] = (), ctx: Ctx) -> list[dict]:
@@ -197,14 +197,6 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
             repeat = bought[ops[0]] >= 2
         out.append({"event": "deal", "at": str(d.get("ended_at") or ""), "side": side, "vs": k, "ops": ops,
                     "repeat": repeat})
-    for r in reports:
-        if r.get("reporter_id") != me:
-            continue
-        if r.get("status") != "invalid":
-            out.append({"event": "report", "at": str(r.get("created_at") or ""), "vs": "self", "ops": []})
-        if r.get("status") == "accepted":
-            out.append({"event": "report_accepted", "at": str(r.get("decided_at") or r.get("created_at") or ""),
-                        "vs": "self", "ops": []})
     for c in comments:
         k, ops = counter(c.get("with"))
         out.append({"event": "comment", "at": str(c.get("at") or ""), "vs": k, "ops": ops})
@@ -520,10 +512,10 @@ def _rival(evs: Iterable[Mapping]) -> dict | None:
 
 
 def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = None, now: float | None = None,
-             expeditions: Iterable[Mapping] = (), pending_report: bool = False,
+             expeditions: Iterable[Mapping] = (),
              feats_done: Iterable[Mapping] = (), play_games: Iterable[Mapping] = ()) -> dict:
-    """`quests:v5` for one agent: from its events, the v3 answer to carry over (`quests.progress`), the
-    expeditions posted so far (the weekly quest), whether a bug report of its waits on a verdict, and
+    """`quests:v6` for one agent: from its events, the v3 answer to carry over (`quests.progress`), the
+    expeditions posted so far (the weekly quest), and
     v3's Trader and Voice feats computed with v4's rule (`quests.feats(operator=counted_operator(...))`), and
     `play_games`: the finished public games of the agent and its operator's other agents (`play_xp`)."""
     me = agent_id
@@ -552,8 +544,6 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
                 row["blocked"] = NEEDS_VERIFIED
             elif d.get("waits") == "others":
                 row["waiting"] = "on another operator's agent"
-            elif d.get("waits") == "operator" and pending_report:
-                row["waiting"] = "on the operator's verdict on your report"
         else:
             done[qid] = row["at"]
         quests.append(row)

@@ -106,9 +106,7 @@ _SENSITIVE = (
 # `wallet mainnet` lets an agent pay real money, `relay host` (P183) opens a
 # relay to other machines.
 _PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover"}),
-                # P289: a bug verdict gives points, an incident is on the record for good — a person's
-                ("bugs", {"verdict", "incident", "fixed"}),
-                # Operator section: so does adopting an idea (the launch additions) — the operator's verdict
+                # Operator section: adopting an idea (the launch additions) is the operator's verdict
                 ("ideas", {"adopt", "noted", "duplicate"}),
                 # Labs: making a lab is a person's (the repo's proof file names them)
                 ("lab", {"create"}),

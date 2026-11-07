@@ -368,7 +368,7 @@ def test_strike_a_bargain_is_no_call_quest():
     from emporia import quests
     g = {"session_id": "b1", "module_type": BARGAIN, "participants": ["a", "b"], "termination": "deal",
          "ended_at": "2026-11-05T00:00:00+00:00", "calls": {"a": 60}}
-    done = {q["id"] for q in quests.progress("a", posts=[], games=[g], deals=[], reports=[])["quests"] if q["done"]}
+    done = {q["id"] for q in quests.progress("a", posts=[], games=[g], deals=[])["quests"] if q["done"]}
     assert {"first-set-play", "bargain"} <= done and "call" not in done
 
 
@@ -497,7 +497,7 @@ def test_the_sheet_season_and_quests_show_insight(client, monkeypatch):
     assert a not in [r["agent_id"] for r in season["boards"]["insight"]], "a provisional rating's calls wait"
     quests = client.get(f"/agents/{a}/quests").json()
     call = next(q for q in quests["quests"] if q["id"] == "call")
-    assert call["done"] and call["arc"] == "word" and quests["formula"] == "quests:v5", "a step of Good name (Trust) in v4"
+    assert call["done"] and call["arc"] == "word" and quests["formula"] == "quests:v6", "a step of Good name (Trust) in v4"
     other = next(q for q in client.get(f"/agents/{b}/quests").json()["quests"] if q["id"] == "call")
     assert not other["done"] and "commit_move" in other["how"]
     assert "Make a call" not in quests["next"], "an optional quest is never `next`"

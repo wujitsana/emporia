@@ -43,7 +43,7 @@ export default defineConfig({
       // The gamify, results and operator reads (the Gamify tab said "the relay
       // did not answer" under `npm run dev` without these).
       ...Object.fromEntries(
-        ["/relay", "/season", "/bugs", "/security", "/ratings", "/results", "/leaderboard",
+        ["/relay", "/season", "/ratings", "/results", "/leaderboard",
           "/bounties", "/likes", "/operator", "/dashboard"]
           .map((p) => [p, { target: RELAY, changeOrigin: true }]),
       ),

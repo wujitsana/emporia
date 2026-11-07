@@ -94,17 +94,17 @@ describe("the catalogue", () => {
   it("has every id the relay and the API use", () => {
     const want = [
       // quests.py QUESTS + WELCOMED, and the season-2 quests
-      "hello", "first-set-play", "first-deal", "idea", "first-report", "first-fix-found", "debrief", "welcomed",
+      "hello", "first-set-play", "first-deal", "idea", "debrief", "welcomed",
       "call", "bargain", "keep-word", "first-call", "first-bargain", "kept-word",
-      // feats, and bugs.py's badges by the names the points route sends
-      "well-travelled", "trader", "voice", "Idea adopted", "Bug finder",
+      // feats, and ideas.py's badge by the names the points route sends
+      "well-travelled", "trader", "voice", "Idea adopted",
       // progression classes, as base_sheet names them
       "Strategist", "Merchant", "Warden", "Bard",
       // module types
       "emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1", "emporia:chess:v1",
       "emporia:bargain:v2", "emporia:blotto:v2",
       // status
-      "live", "sealed", "verified", "testnet", "house", "called-it",
+      "live", "sealed", "verified", "testnet", "house",
       // numbered
       "season-0", "renown-1", "renown-12", "rank-1", "rank-2", "rank-3",
       // titles resolve too

@@ -3,13 +3,12 @@
 `GET /operator/whoami` answers one question for whoever signs in: are *you* this relay's
 operator? The answer comes from the caller's bearer token (a relay-issued token, got by
 signing a challenge with the agent's key — P261), compared with the relay's own
-`EMPORIA_AGENT_ID`, the identity that judges bug reports and ideas and posts expeditions.
+`EMPORIA_AGENT_ID`, the identity that judges ideas and posts expeditions.
 Nothing the caller says about itself counts: no header, no query, no agent id in the path.
 It reveals nothing of anyone else.
 
 `GET /operator/status` is the operator's whole desk in one read, for the dashboard's
-Operator section and `emporia operator NAME`: the bug reports waiting for a verdict
-(with the severity claimed and the test), the posts in the ideas topic not yet judged,
+Operator section and `emporia operator NAME`: the posts in the ideas topic not yet judged,
 the current expedition, the house agents, the relay's health and the season. Operator
 only (`_require_operator`): any other agent gets 403, no sign-in 401.
 
@@ -18,7 +17,7 @@ the relay does before a schema upgrade. Operator only. The dashboard never calls
 only reads; `emporia operator NAME snapshot` does, as a person's command.
 
 Each part says whether it is on, and why not, instead of failing the read: a relay
-without bug quests still has a health card.
+without the ideas part still has a health card.
 """
 
 from __future__ import annotations
@@ -43,7 +42,6 @@ router = APIRouter()
 STARTED_AT = time.time()
 #: How much of a queue one read carries; the rest is counted.
 QUEUE_LIMIT = 50
-_TEST_CHARS = 4000
 _TEXT_CHARS = 600
 #: The default names of the topics the operator reads (the launch additions name them too).
 IDEAS_TOPIC = "ideas"
@@ -101,46 +99,16 @@ async def operator_whoami(request: Request):
 
 # ── The parts of the desk ─────────────────────────────────────────────────────
 
-def bug_queue(conn) -> dict[str, Any]:
-    """Bug reports waiting for the operator's verdict, oldest first."""
-    from emporia import bugs
-    if why := relay_modules.off_because("gamify", "bugs"):
-        return {"on": False, "why": why}
-    if not _has_table(conn, "bug_reports"):
-        return {"on": False, "why": "this relay's database has no bug reports yet"}
-    import json
-    total = conn.execute("SELECT COUNT(*) FROM bug_reports WHERE status = 'open'").fetchone()[0]
-    rows = conn.execute("SELECT * FROM bug_reports WHERE status = 'open' ORDER BY created_at, report_id LIMIT ?",
-                        (QUEUE_LIMIT,)).fetchall()
-    items = []
-    for r in rows:
-        content = json.loads(r["content_json"]) if r["content_json"] else None
-        items.append({
-            "report_id": r["report_id"], "reporter_id": r["reporter_id"], "commit": r["code_commit"],
-            "severity_claimed": r["severity_claimed"], "sealed": bool(r["sealed"]) and not content,
-            "title": (content or {}).get("title"),
-            "test": ((content or {}).get("test") or "")[:_TEST_CHARS] or None,
-            "description": ((content or {}).get("description") or "")[:_TEXT_CHARS] or None,
-            "created_at": r["created_at"],
-            # A sealed report's text is in the DM its reporter sent the operator: opened on the
-            # operator's own machine (Messages), never here.
-            **({"where": f"sealed: the report and its test are in the encrypted DM from {r['reporter_id']}"}
-               if not content else {}),
-        })
-    return {"on": True, "open": total, "items": items, "severities": list(bugs.SEVERITIES),
-            "verdicts": list(bugs.VERDICTS)}
-
-
 def idea_queue(conn) -> dict[str, Any]:
     """Live public posts in the ideas topic that have no verdict yet, oldest first.
 
     The verdicts (adopt, noted, duplicate) need a relay that takes them (the launch additions'
-    `idea_verdicts`, beside bug quests); without one every post is unjudged and `verdicts`
+    `idea_verdicts`); without one every post is unjudged and `verdicts`
     is false, so the view offers no command the relay would refuse."""
     topic = topics()["ideas"]
     exists = conn.execute("SELECT 1 FROM agora_topics WHERE slug = ?", (topic,)).fetchone() is not None
     judged = _has_table(conn, "idea_verdicts")
-    takes = judged and not relay_modules.off_because("gamify", "bugs")
+    takes = judged and not relay_modules.off_because("gamify", "ideas")
     if not exists:
         return {"topic": topic, "topic_exists": False, "verdicts": takes, "open": 0, "items": []}
     items: list[dict[str, Any]] = []
@@ -355,7 +323,7 @@ async def operator_status(request: Request, window_s: int = 3600):
     asked = max(60, min(int(window_s), 30 * 86_400))
     window = next(w for w in _ACTIVITY_WINDOWS if w >= asked)
     with rs.DB_LOCK, rs.get_db() as conn:
-        parts = {"bugs": bug_queue(conn), "ideas": idea_queue(conn), "labs": lab_activity(conn),
+        parts = {"ideas": idea_queue(conn), "labs": lab_activity(conn),
                  "expedition": expedition(conn),
                  "house": house(conn, window), "health": health(conn, window)}
     return {"agent_id": caller, "relay_id": rs.relay_id(), "relay_url": rs.RELAY_BASE_URL, **parts,

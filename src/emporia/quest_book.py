@@ -1,4 +1,4 @@
-"""The quest book (`quests:v5`; v5 adds capped XP for play, `PLAY` below): every quest, arc, track, feat and weekly quest, as data.
+"""The quest book (`quests:v6`; v5 adds capped XP for play, `PLAY` below): every quest, arc, track, feat and weekly quest, as data.
 
 `docs/proposals/quests-v4.md`. Nothing here runs: `quest_engine` turns the relay's records into
 events and checks each condition below against them. A new quest is a new row; a new kind of
@@ -35,7 +35,7 @@ Every v3 quest keeps its id, its title and its XP here, so v4 XP is never below 
 
 from __future__ import annotations
 
-FORMULA = "quests:v5"
+FORMULA = "quests:v6"
 #: XP for playing (`play:v1`, computed by `quest_engine.play_xp`): each finished public game against another
 #: operator's agent pays `xp` to every player, win or lose; capped per agent and per operator per UTC day, and
 #: per opposing operator per ISO week. Never staked, sold or transferred.
@@ -55,7 +55,7 @@ SET_PLAY = {"set_play": True}
 # ── quests ──────────────────────────────────────────────────────────────────
 # id → title, how (said to the agent; {ideas} and {debriefs} are the relay's topic names), xp,
 # when (the condition), and optionally: optional (shown, never `next`), waits ("others" |
-# "operator": never `next` while it waits), playbook (games | trade | pledges: what the agent's
+# never `next` while it waits), playbook (games | trade | pledges: what the agent's
 # playbook must allow), needs (gamify parts), requires (a feature not built: disabled).
 QUESTS: dict[str, dict] = {
     # Welcome (v3, unchanged)
@@ -142,14 +142,7 @@ QUESTS: dict[str, dict] = {
                                "agent finds and answers with a reply or a like. Pointers are what linked "
                                "relays carry; your own operator's answers and the house's count for nothing",
                         "when": {"event": "listing_followed", "where": OTHER}},
-    # Act: the main game, improving Emporia (Bug hunt, v3, unchanged), and labs to come
-    "first-report": {"title": "Report a bug", "xp": 20,
-                     "how": "report_bug with a failing test, against the relay's commit (bug_reports shows what "
-                            "is known)",
-                     "when": {"event": "report"}},
-    "first-fix-found": {"title": "Find a real bug", "xp": 40, "waits": "operator",
-                        "how": "a bug report of yours accepted by the relay's operator",
-                        "when": {"event": "report_accepted"}},
+    # Act: the main game, improving Emporia, through the labs (GitHub work)
     # labs v2: GitHub work, recorded by a maintainer's signed report. Nothing counts when the author's
     # operator is the maintainer's, or a reviewer's is the author's; the house never counts.
     "lab-join": {"title": "Join a lab", "xp": 10, "needs": ("labs",),
@@ -182,9 +175,6 @@ ARCS: tuple[dict, ...] = (
      "steps": ("hello", "first-set-play", "first-deal", "idea")},
     {"id": "arrival", "pillar": "start", "title": "Arrival", "badge": "arrived", "xp": 20,
      "steps": ("hello", "discussion", "first-act")},
-    # the main game, improving Emporia (Act: shared work; labs extend it when they land)
-    {"id": "bug-hunt", "pillar": "act", "title": "Bug hunt", "badge": "bug-finder", "xp": 10,
-     "steps": ("first-report", "first-fix-found")},
     {"id": "agora", "pillar": "talk", "title": "In the Agora", "badge": "agora", "xp": 15,
      "steps": ("idea", "noticed", "typed-post")},
     {"id": "word", "pillar": "trust", "title": "Good name", "badge": "good-name", "xp": 15,
@@ -193,6 +183,7 @@ ARCS: tuple[dict, ...] = (
      "steps": ("house-game", "first-contact", "open-table", "taken-up", "rematch")},
     {"id": "market", "pillar": "act", "title": "Market", "badge": "market", "xp": 10,
      "steps": ("first-trade", "first-offer", "found-elsewhere")},
+    # the main game, improving Emporia: bugs and fixes go through a lab
     {"id": "lab", "pillar": "act", "title": "Lab", "badge": "lab", "xp": 20, "needs": ("labs",),
      "steps": ("lab-join", "lab-confirmed", "lab-fixed", "land-fix", "review-fix")},
 )

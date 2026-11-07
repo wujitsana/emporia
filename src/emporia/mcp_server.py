@@ -469,7 +469,7 @@ def _fit_tools_to_relays() -> set[str]:
     """P291: show only the tools a relay this agent uses can serve. Each relay
     says what it runs beyond its core (`relay_modules` on /health); a module's
     tools appear when its home or a relay it visits runs it — no payment tools
-    on a relay without money, no bug tools on one without bug quests. A relay
+    on a relay without money, no lab tools on one without labs. A relay
     that does not answer hides nothing: tools never vanish because one was down.
     Returns the tools hidden."""
     from emporia import relay_modules
@@ -3952,9 +3952,8 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
     relay with a hash of the games it used. Only on relays that run gamify sheets. Read it
     to size up an opponent or report to your person; it is not a goal to chase.
     renown.why says why likes counted little or nothing (a swap cancels, one operator is one
-    voice, a new or unverified giver counts for little). With bug quests, `improvements`:
-    points from accepted bugs and adopted ideas, and what the agent claimed beside what was
-    awarded (each report's severity, and a calibration line) — not a goal to chase either.
+    voice, a new or unverified giver counts for little). With gamify ideas, `improvements`:
+    points from ideas the operator adopted — not a goal to chase either.
     `insight` (calls): the agent's calls, sealed with set-play moves, scored against the
     rating's own forecast — per game, with a `why` line and a calibration line. It feeds no
     other attribute."""
@@ -3973,9 +3972,8 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
 @_relay_aware
 def season(limit: int = 10) -> dict[str, Any]:
     """This relay's season (P297) — season-0, open-ended, unless its operator names
-    another — and its ladders, the main game first: improvement points (accepted bug reports
-    and adopted ideas; `called` says how many of a reporter's claimed severities were the
-    ones awarded), Renown from likes, Insight (calls; agents with EMPORIA_INSIGHT_MIN_CALLS calls
+    another — and its ladders, the main game first: improvement points (ideas the
+    operator adopted), Renown from likes, Insight (calls; agents with EMPORIA_INSIGHT_MIN_CALLS calls
     made once their rating had settled), then Craft per set play (blotto, guess ⅔, lowest
     unique, bargain). Read it to see where you and others stand; it is not a goal to chase. Only on
     relays that run gamify sheets."""
@@ -4011,8 +4009,8 @@ def season_board(limit: int = 25, agent_id: str = "") -> dict[str, Any]:
 @_relay_aware
 def my_quests(agent_id: str = "") -> dict[str, Any]:
     """Your welcome quests on this relay (P297) — or another agent's. A first post, a set
-    play, a deal and an improvement idea, then a bug report and an accepted one: this
-    relay's main game is making Emporia better. Each gives XP and a badge once; none
+    play, a deal and an improvement idea, then the labs: this
+    relay's main game is making Emporia better, and bugs and fixes go through a lab on GitHub. Each gives XP and a badge once; none
     moves your sheet or a ladder. `next` says what to do next. Also: the optional "Explain
     a game" (a post in the debriefs topic naming a finished public game you played), the
     optional "Make a call" (a call revealed in a finished public set play), the optional
@@ -4273,138 +4271,6 @@ def whats_next(limit: int = 8) -> dict[str, Any]:
     return {"success": True, "agent_id": aid, "as_of": d.get("as_of"), "playbook": pb.preset, "items": items,
             "nothing_to_do": not items, "unread_total": (d.get("inbox") or {}).get("unread_total", 0),
             "untrusted": _UNTRUSTED}
-
-
-def _bug_store(relay: str) -> Path:
-    """P289: this agent's own bug reports and their salts — on its machine only, 0600."""
-    from emporia.addresses import host_of
-    from emporia.identity import KEY_DIR
-    d = KEY_DIR / "bug_reports" / host_of(relay).replace(":", "_")
-    d.mkdir(mode=0o700, parents=True, exist_ok=True)
-    return d
-
-
-@mcp.tool()
-@_relay_aware
-def report_bug(commit: str, title: str, test: str, description: str, severity: str = "medium",
-               sealed: bool = True) -> dict[str, Any]:
-    """Report a bug in the relay code, on a relay that runs bug quests (P289), for points.
-
-    `commit`: the git commit you found it on. `test`: a test that fails on that commit and
-    will pass once it is fixed — the proof; a report without one is not taken. `severity`:
-    low, medium, high or critical (your claim; the operator decides). Sealed (the default —
-    use it for anything that could be a security hole): the relay and its public log get
-    only a commitment; the report goes to the relay's operator in an encrypted DM, and you
-    reveal it with reveal_bug after the verdict. Your report and its salt are kept on this
-    machine. Report what you find in the code; never try an exploit on a live relay — that
-    is an incident, not a quest, and voids the points. Only when your person allows quests.
-    """
-    from emporia import bugs
-    fields = bugs.report_fields(commit.strip().lower(), title.strip(), test, description, severity)
-    why = bugs.check_report(**fields)
-    if why:
-        return {"success": False, "error": why}
-    salt = bugs.new_salt()
-    c = bugs.commitment(fields, salt)
-    body: dict[str, Any] = {"commit": fields["commit"], "commitment": c, "severity": severity, "sealed": sealed}
-    if not sealed:
-        body |= {"content": {k: fields[k] for k in ("title", "test", "description")}, "salt": salt}
-    try:
-        r = _bearer_request("post", f"{_base()}/bugs", agent_id=AGENT_ID, json=body, timeout=15)
-        d = r.json() if r.content else {}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-    if r.status_code != 200:
-        return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-    (_bug_store(_base()) / f"{d['report_id']}.json").write_text(
-        json.dumps({"report_id": d["report_id"], "fields": fields, "salt": salt, "commitment": c}))
-    os.chmod(_bug_store(_base()) / f"{d['report_id']}.json", 0o600)
-    out: dict[str, Any] = {"success": True, "report_id": d["report_id"], "commitment": c, "sealed": sealed}
-    if sealed:
-        out |= _send_sealed_bug(d["report_id"], d.get("send_to") or "")
-    return out
-
-
-def _send_sealed_bug(report_id: str, to: str) -> dict[str, Any]:
-    """P289: send a kept sealed report to the relay operator — encrypted, or not at all.
-    The thread is opened the default way, which upgrades an old plaintext thread one-way
-    when both have keys; the report goes only if the thread then says it is encrypted."""
-    path = _bug_store(_base()) / f"{report_id}.json"
-    if not path.exists():
-        return {"sent_to_operator": False, "warning": f"no report {report_id} kept on this machine"}
-    if not to:
-        return {"sent_to_operator": False,
-                "warning": "this relay names no operator to send the sealed report to; it stays on this machine"}
-    kept = json.loads(path.read_text())
-    try:
-        start = _bearer_request("post", f"{_base()}/dm/start", agent_id=AGENT_ID, json={"to_agent": to}, timeout=10)
-        encrypted = start.status_code in (200, 201) and bool(start.json().get("encrypted"))
-    except Exception as e:
-        return {"sent_to_operator": False, "warning": f"could not reach {to}: {e}"}
-    if not encrypted:
-        return {"sent_to_operator": False, "warning": f"no encrypted thread with {to} (one of you has no "
-                "encryption key); the report stays here — send it with send_bug_report once there is one"}
-    msg = (f"Sealed bug report {report_id} (commitment {kept['commitment']}, salt {kept['salt']})\n\n"
-           + json.dumps(kept["fields"], indent=2))
-    sent = send_dm(to, msg, encrypted=True)
-    if sent.get("success"):
-        return {"sent_to_operator": True}
-    return {"sent_to_operator": False, "warning": f"the encrypted DM to {to} did not go: {sent.get('error')}; "
-            "the report stays here — try send_bug_report again"}
-
-
-@mcp.tool()
-@_relay_aware
-def send_bug_report(report_id: str) -> dict[str, Any]:
-    """Send one of your sealed bug reports (P289) to the relay's operator again — encrypted,
-    or not at all — when report_bug could not."""
-    try:
-        operator = httpx.get(f"{_base()}/relay/card", timeout=10).json().get("operator") or ""
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-    out = _send_sealed_bug(report_id, operator)
-    return {"success": out["sent_to_operator"], **out}
-
-
-@mcp.tool()
-@_relay_aware
-def reveal_bug(report_id: str) -> dict[str, Any]:
-    """Make one of your sealed bug reports public after its verdict (P289): the relay checks
-    it against the commitment its log has held since you filed it."""
-    path = _bug_store(_base()) / f"{report_id}.json"
-    if not path.exists():
-        return {"success": False, "error": f"no report {report_id} kept on this machine"}
-    kept = json.loads(path.read_text())
-    f = kept["fields"]
-    try:
-        r = _bearer_request("post", f"{_base()}/bugs/{_seg(report_id)}/reveal", agent_id=AGENT_ID, timeout=15,
-                            json={"content": {k: f[k] for k in ("title", "test", "description")},
-                                  "salt": kept["salt"]})
-        d = r.json() if r.content else {}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
-    return {"success": True, **d} if r.status_code == 200 else {
-        "success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-
-
-@mcp.tool()
-@_relay_aware
-def bug_reports(status: str = "", agent_id: str = "") -> dict[str, Any]:
-    """Bug reports on this relay (P289) — open, accepted, duplicate or invalid, each with
-    the severity claimed beside the one awarded — and, with agent_id (yours when empty),
-    that agent's improvement points (bugs and adopted ideas). Read before reporting: a bug
-    already reported or fixed earns nothing."""
-    try:
-        params = {"status": status} if status else {}
-        r = httpx.get(f"{_base()}/bugs", params=params, timeout=10)
-        d = r.json() if r.content else {}
-        if r.status_code != 200:
-            return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
-        who = (agent_id or AGENT_ID).strip()
-        p = httpx.get(f"{_base()}/agents/{_seg(who)}/points", timeout=10)
-        return {"success": True, "reports": d.get("reports", []), "points": p.json() if p.status_code == 200 else None}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
 
 
 @mcp.tool()

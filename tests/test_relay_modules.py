@@ -27,26 +27,26 @@ def test_the_core_alone_runs_no_module(core):
 
 def test_each_module_is_on_when_its_settings_say_so(core):
     core.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
-    core.setenv("EMPORIA_GAMIFY", "sheets,bugs")
+    core.setenv("EMPORIA_GAMIFY", "sheets,ideas")
     core.setenv("STRIPE_SECRET_KEY", "sk_test_x")
     ads = rm.advertise(["https://peer.example"])
     assert ads["log"] == {"v": 1, "parts": []}
-    assert ads["gamify"]["parts"] == ["bugs", "sheets"] and ads["gamify"]["formulas"]
+    assert ads["gamify"]["parts"] == ["ideas", "sheets"] and ads["gamify"]["formulas"]
     assert ads["money"]["parts"] == ["cards"] and ads["money"]["cards"] == "test"
     assert ads["federation"] == {"v": 1, "parts": [], "links": ["https://peer.example"]}
-    assert rm.describe(ads) == "money (cards) · log · federation · gamify (bugs, sheets)"
+    assert rm.describe(ads) == "money (cards) · log · federation · gamify (ideas, sheets)"
 
 
 def test_a_part_without_its_dependency_is_off_and_the_relay_refuses_to_start(core):
-    core.setenv("EMPORIA_GAMIFY", "bugs")
+    core.setenv("EMPORIA_GAMIFY", "ideas")
     assert "gamify" not in rm.running()                 # its only part is off, so the module is
-    assert rm.off_because("gamify", "bugs") == "the gamify module's bugs part needs the log module, which this relay does not run"
+    assert rm.off_because("gamify", "ideas") == "the gamify module's ideas part needs the log module, which this relay does not run"
     [why] = rm.problems()
-    assert why.startswith("gamify: bugs needs the log module") and "emporia setup log" in why
-    with pytest.raises(rs.RelayModulesWrong, match="bugs needs the log"):
+    assert why.startswith("gamify: ideas needs the log module") and "emporia setup log" in why
+    with pytest.raises(rs.RelayModulesWrong, match="ideas needs the log"):
         rs._check_relay_modules()
     core.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
-    assert rm.on("gamify", "bugs") and rm.problems() == []
+    assert rm.on("gamify", "ideas") and rm.problems() == []
     rs._check_relay_modules()
 
 
@@ -84,11 +84,11 @@ def test_agents_see_only_the_tools_their_relays_serve():
     assert rm.tools_to_hide([{}, None]) == set()                            # one did not answer: hide nothing
     assert rm.tools_to_hide([]) == set()
     sheets = rm.tools_to_hide([{"gamify": {"parts": ["sheets"]}}])
-    assert "character_sheet" not in sheets and "report_bug" in sheets
+    assert "character_sheet" not in sheets and "my_quests" in sheets
     # a module's tools show when any relay it uses runs it — home or a visit
     both = rm.tools_to_hide([{"log": {"parts": []}}, {"money": {"parts": ["x402", "escrow"]}}])
     assert not both & {"check_relay_log", "register_x402_wallet", "reclaim_escrow"}
-    assert {"create_payment_intent", "report_bug"} <= both
+    assert {"create_payment_intent", "my_quests"} <= both
 
 
 def test_every_tool_a_module_names_is_a_real_tool():
@@ -116,11 +116,11 @@ def test_the_mcp_server_hides_and_shows_them(monkeypatch):
     monkeypatch.setattr(mcp_server.httpx, "get", lambda url, timeout=5: Answer({"gamify": {"parts": ["sheets"]}}))
     try:
         hidden = mcp_server._fit_tools_to_relays()
-        assert "report_bug" in hidden and "report_bug" not in names() and "character_sheet" in names()
+        assert "my_quests" in hidden and "my_quests" not in names() and "character_sheet" in names()
         monkeypatch.setattr(mcp_server, "_visits", lambda: ["https://other.example"])
-        monkeypatch.setattr(mcp_server.fetch, "get", lambda url, timeout=5: Answer({"gamify": {"parts": ["bugs"]}, "log": {}}))
+        monkeypatch.setattr(mcp_server.fetch, "get", lambda url, timeout=5: Answer({"gamify": {"parts": ["quests"]}, "log": {}}))
         mcp_server._fit_tools_to_relays()
-        assert "report_bug" in names()                                      # the visited relay runs bug quests
+        assert "my_quests" in names()                                       # the visited relay runs quests
     finally:
         mcp_server.mcp.enable(names=rm.all_tools())
 
@@ -141,10 +141,10 @@ def test_relay_modules_command_writes_only_what_changes(tmp_path, monkeypatch):
     assert "EMPORIA_GAMIFY=\n" in text and "EMPORIA_TRANSPARENCY_LOG=on" in text
 
 
-def test_bug_quests_bring_the_log_or_stay_off(tmp_path, monkeypatch):
+def test_adopted_ideas_bring_the_log_or_stay_off(tmp_path, monkeypatch):
     op = tmp_path / "op"
     op.mkdir()
-    (op / ".env").write_text("EMPORIA_GAMIFY=sheets,bugs\n")
+    (op / ".env").write_text("EMPORIA_GAMIFY=sheets,ideas\n")
     monkeypatch.setattr(cli, "this_profile", lambda: op)
     monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
     monkeypatch.setattr(cli, "_TTY", True)
@@ -253,10 +253,10 @@ def test_add_and_remove_modules_by_name(tmp_path, monkeypatch):
 
     def env():
         return dict(line.split("=", 1) for line in (op / ".env").read_text().splitlines() if "=" in line)
-    assert cli.main(["relay", "modules", "add", "log", "gamify:sheets,bugs", "--yes"]) == 0
-    assert env()["EMPORIA_TRANSPARENCY_LOG"] == "on" and env()["EMPORIA_GAMIFY"] == "sheets,bugs"
+    assert cli.main(["relay", "modules", "add", "log", "gamify:sheets,ideas", "--yes"]) == 0
+    assert env()["EMPORIA_TRANSPARENCY_LOG"] == "on" and env()["EMPORIA_GAMIFY"] == "sheets,ideas"
     assert env()["FEDERATED_RELAYS"] == "https://peer.example", "what was not named is kept"
-    assert cli.main(["relay", "modules", "remove", "gamify:bugs", "--yes"]) == 0
+    assert cli.main(["relay", "modules", "remove", "gamify:ideas", "--yes"]) == 0
     assert env()["EMPORIA_GAMIFY"] == "sheets" and env()["EMPORIA_TRANSPARENCY_LOG"] == "on"
     assert cli.main(["relay", "modules", "add", "federation:dms", "--yes"]) == 0
     assert env()["EMPORIA_FEDERATED_DMS"] == "1"
@@ -268,8 +268,8 @@ def test_add_and_remove_modules_by_name(tmp_path, monkeypatch):
     before = (op / ".env").read_text()
     assert cli.main(["relay", "modules", "remove", "log", "--yes"]) == 0          # nothing needs it now
     (op / ".env").write_text(before)
-    assert cli.main(["relay", "modules", "add", "gamify:bugs", "--yes"]) == 0    # the log is on
-    assert cli.main(["relay", "modules", "remove", "log", "--yes"]) == 1         # bug quests need it
+    assert cli.main(["relay", "modules", "add", "gamify:ideas", "--yes"]) == 0    # the log is on
+    assert cli.main(["relay", "modules", "remove", "log", "--yes"]) == 1         # adopted ideas need it
     for bad in (["add", "chat"], ["add", "gamify:raids"], ["add", "money:cards"], ["add"], ["drop", "log"]):
         assert cli.main(["relay", "modules", *bad, "--yes"]) == 1, bad
     assert "EMPORIA_TRANSPARENCY_LOG=on" in (op / ".env").read_text()

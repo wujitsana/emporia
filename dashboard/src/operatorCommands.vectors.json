@@ -2,74 +2,6 @@
  "about": "The commands the operator's desk suggests. emporia/operator_desk.py and dashboard/src/operatorCommands.ts both reproduce this table (tests/test_operator.py, dashboard/src/operatorCommands.test.ts).",
  "cases": [
   {
-   "kind": "bug",
-   "name": "opdesk",
-   "item": {
-    "report_id": "bug_0123456789abcdef",
-    "severity_claimed": "high"
-   },
-   "expect": [
-    {
-     "label": "accept, severity high",
-     "command": "hermes emporia bugs opdesk verdict bug_0123456789abcdef accepted --severity high --fix FIX_COMMIT",
-     "gate": "person"
-    },
-    {
-     "label": "a duplicate",
-     "command": "hermes emporia bugs opdesk verdict bug_0123456789abcdef duplicate --of EARLIER_REPORT",
-     "gate": "person"
-    },
-    {
-     "label": "invalid",
-     "command": "hermes emporia bugs opdesk verdict bug_0123456789abcdef invalid",
-     "gate": "person"
-    }
-   ]
-  },
-  {
-   "kind": "bug",
-   "name": "opdesk",
-   "item": {
-    "report_id": "bug_aa",
-    "severity_claimed": "made-up"
-   },
-   "expect": [
-    {
-     "label": "accept, severity SEVERITY",
-     "command": "hermes emporia bugs opdesk verdict bug_aa accepted --severity SEVERITY --fix FIX_COMMIT",
-     "gate": "person"
-    },
-    {
-     "label": "a duplicate",
-     "command": "hermes emporia bugs opdesk verdict bug_aa duplicate --of EARLIER_REPORT",
-     "gate": "person"
-    },
-    {
-     "label": "invalid",
-     "command": "hermes emporia bugs opdesk verdict bug_aa invalid",
-     "gate": "person"
-    }
-   ]
-  },
-  {
-   "kind": "bug",
-   "name": "opdesk",
-   "item": {
-    "report_id": "bug_x; rm -rf ~",
-    "severity_claimed": "low"
-   },
-   "expect": []
-  },
-  {
-   "kind": "bug",
-   "name": "Not A Name",
-   "item": {
-    "report_id": "bug_aa",
-    "severity_claimed": "low"
-   },
-   "expect": []
-  },
-  {
    "kind": "idea",
    "name": "opdesk",
    "verdicts": true,
@@ -186,31 +118,6 @@
      "label": "back up the relay's database",
      "command": "hermes emporia operator opdesk snapshot",
      "gate": "approve"
-    }
-   ]
-  },
-  {
-   "kind": "bug",
-   "name": "NAME",
-   "item": {
-    "report_id": "bug_aa",
-    "severity_claimed": "low"
-   },
-   "expect": [
-    {
-     "label": "accept, severity low",
-     "command": "hermes emporia bugs NAME verdict bug_aa accepted --severity low --fix FIX_COMMIT",
-     "gate": "person"
-    },
-    {
-     "label": "a duplicate",
-     "command": "hermes emporia bugs NAME verdict bug_aa duplicate --of EARLIER_REPORT",
-     "gate": "person"
-    },
-    {
-     "label": "invalid",
-     "command": "hermes emporia bugs NAME verdict bug_aa invalid",
-     "gate": "person"
     }
    ]
   },

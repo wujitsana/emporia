@@ -2296,8 +2296,6 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     # P278: the same for a topic's signed acts.
     ("topic_acts", "by_agent"), ("topic_acts", "target"),
     ("authorized_agents", "agent_id"),
-    # P289: who filed a bug report, who judged it, who recorded an incident.
-    ("bug_reports", "reporter_id"), ("bug_reports", "decided_by"), ("security_incidents", "recorded_by"),
     # P297: who liked, and whose thing it was. The signature beside them keeps the handle it was signed with.
     ("reactions", "agent_id"), ("reactions", "to_agent"),
     # Feed posts and follows: the author, the follower and the followed. A pulled pointer's author is an
@@ -2339,7 +2337,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
                              "recorded_at")),
     *(("follows", c) for c in ("following", "at", "signature")),
     *(("opened_from", c) for c in ("kind", "ident", "from_post", "reply_post_id", "at")),
-    # Launch additions: an idea's verdict — the post, the author's operator key (as bug_reports'), what it led to.
+    # Launch additions: an idea's verdict — the post, the author's operator key, what it led to.
     *(("idea_verdicts", c) for c in ("post_id", "operator_key", "verdict", "ref", "duplicate_of", "points",
                                      "decided_at", "signature", "verdict_key")),
     # The randomness service: a cached drand round, its signature and when it was fetched.
@@ -2361,14 +2359,6 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     *(("lab_reports", c) for c in ("report_id", "lab_slug", "ref_kind", "ref_id", "event", "commit_sha",
                                    "author_claim", "author_stable", "credited_json", "reviewers_json", "note",
                                    "signed_at", "signature", "created_at")),
-    # P289: bug reports and incidents. `operator_key` is an operator label or a stable id
-    # (the cap's key), never a handle — so a rename does not reset an operator's cap.
-    *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",
-                                   "severity_claimed", "content_json", "status", "severity", "points", "fix_commit",
-                                   "duplicate_of", "created_at", "decided_at", "revealed_at", "verdict_key",
-                                   "verdict_signature")),
-    *(("security_incidents", c) for c in ("incident_id", "summary", "affected", "report_id", "detected_at",
-                                          "fixed_at", "recorded_at")),
     # bounty_entries (P72-4) — `agent_id` is a handle and lives in
     # _RENAME_COLUMNS above. `operator` deliberately does NOT: it is an operator id
     # (`operator_of`), not an Emporia handle, and rewriting it on rename would break the
@@ -7812,7 +7802,6 @@ def main():
 from emporia.routes import agents as _agent_routes
 from emporia.routes import bounties as _bounty_routes
 from emporia.routes import standing as _standing_routes  # noqa: E402
-from emporia.routes import bugs as _bug_routes  # noqa: E402
 from emporia.routes import operator as _operator_routes  # noqa: E402
 from emporia.routes import ideas as _idea_routes  # noqa: E402
 from emporia.routes import labs as _lab_routes  # noqa: E402
@@ -7841,7 +7830,6 @@ app.include_router(_session_routes.router)
 app.include_router(_agent_routes.router)
 app.include_router(_bounty_routes.router)
 app.include_router(_standing_routes.router)
-app.include_router(_bug_routes.router)
 app.include_router(_operator_routes.router)
 app.include_router(_idea_routes.router)
 app.include_router(_lab_routes.router)

@@ -1,4 +1,4 @@
-"""quests:v5 play XP (`play:v1`): 2 XP each for a finished public game against another operator's agent,
+"""quests:v6 play XP (`play:v1`): 2 XP each for a finished public game against another operator's agent,
 capped, and the farms it must fail. Pure: records in, XP out."""
 import random
 
@@ -39,7 +39,7 @@ def test_it_adds_to_xp_and_never_lowers_it():
     games = [g("me", "b1")]
     base = E.evaluate("me", [], c, now=NOW)
     out = E.evaluate("me", [], c, now=NOW, play_games=games)
-    assert out["xp"] == base["xp"] + 2 and out["play"]["xp"] == 2 and out["formula"] == "quests:v5"
+    assert out["xp"] == base["xp"] + 2 and out["play"]["xp"] == 2 and out["formula"] == "quests:v6"
 
 
 def test_xp_with_play_is_never_below_xp_without_it_over_generated_records():

@@ -16,7 +16,6 @@ export const PREFIX = "hermes emporia";
 const ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/;
 // A profile name, or the placeholder NAME when the view cannot tell which profile holds the keys.
 const NAME = /^(?:[a-z0-9][a-z0-9_-]{0,63}|NAME)$/;
-export const SEVERITIES = ["low", "medium", "high", "critical"] as const;
 
 /** person: only a person runs it (the key guard refuses it from an agent's tools);
  *  approve: an agent asking to run it waits for the person's yes; read: changes nothing. */
@@ -34,19 +33,6 @@ export interface OperatorWhoami {
   operator_configured: boolean;
   relay_id: string;
   as_of: string;
-}
-
-export interface BugItem {
-  report_id: string;
-  reporter_id: string;
-  commit: string;
-  severity_claimed: string;
-  sealed: boolean;
-  title: string | null;
-  test: string | null;
-  description: string | null;
-  created_at: string;
-  where?: string;
 }
 
 export interface IdeaItem {
@@ -86,9 +72,6 @@ export interface OperatorStatus {
   relay_id: string;
   relay_url: string;
   as_of: string;
-  bugs: { on: false; why: string } | {
-    on: true; open: number; items: BugItem[]; severities: string[]; verdicts: string[];
-  };
   ideas: { topic: string; topic_exists: boolean; verdicts: boolean; open: number; items: IdeaItem[] };
   /** Labs v2; absent when the relay has no labs. */
   labs?: { on: false; why: string } | ({ on: true } & LabActivity);
@@ -119,18 +102,6 @@ export const safeName = (v: unknown): v is string => typeof v === "string" && NA
 
 const cmd = (...words: string[]) => [PREFIX, ...words].join(" ");
 const one = (label: string, command: string, gate: Gate): OperatorCommand => ({ label, command, gate });
-
-/** Accept (with the claimed severity, and the fix commit to fill in), duplicate, invalid. */
-export function bugCommands(name: string, item: { report_id?: unknown; severity_claimed?: unknown }): OperatorCommand[] {
-  const rid = item.report_id;
-  if (!safeName(name) || !safeId(rid)) return [];
-  const sev = (SEVERITIES as readonly unknown[]).includes(item.severity_claimed) ? String(item.severity_claimed) : "SEVERITY";
-  return [
-    one(`accept, severity ${sev}`, cmd("bugs", name, "verdict", rid, "accepted", "--severity", sev, "--fix", "FIX_COMMIT"), "person"),
-    one("a duplicate", cmd("bugs", name, "verdict", rid, "duplicate", "--of", "EARLIER_REPORT"), "person"),
-    one("invalid", cmd("bugs", name, "verdict", rid, "invalid"), "person"),
-  ];
-}
 
 /** Adopt (with what it led to), noted, duplicate — only when the relay takes idea verdicts. */
 export function ideaCommands(name: string, item: { post_id?: unknown }, verdicts: boolean): OperatorCommand[] {

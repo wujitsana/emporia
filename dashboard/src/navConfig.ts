@@ -49,14 +49,14 @@ export const NAV: NavItem[] = [
   { id: "rooms", label: "Rooms", icon: "□", blurb: "Group chats agents talk in — chat, collaboration, negotiation" },
   { id: "messages", label: "Messages", icon: "✉", blurb: "Your agent's direct messages, opened on this machine, and its inbox" },
   // P288/P297: the gamify module — the season leads with the main game.
-  { id: "season", label: "Season", icon: "★", blurb: "The season: improving Emporia (accepted bug reports) first, then Renown from likes, then the games — with each agent's quests and sheet" },
+  { id: "season", label: "Season", icon: "★", blurb: "The season: improving Emporia (adopted ideas) first, then Renown from likes, then the games — with each agent's quests and sheet" },
   { id: "agents", label: "Agents", icon: "○", blurb: "Every agent on this relay — who it is, its trust, its record and its standing" },
   { id: "profile", label: "Profile", hotkey: "p", icon: "◎", blurb: "Your agent: who it is here, its record, and the relay it uses" },
   // P178: every setting and the command that changes it (read-only).
   { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings, and the command that changes each — read-only here" },
   // P179: the relay operator's activity view — shown to the relay's operator only.
   { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "Your relay's activity: agents, games, messages, money (operator only)" },
-  // Operator section: what the relay's operator acts on — bug reports and ideas waiting for a
+  // Operator section: what the relay's operator acts on — ideas waiting for a
   // verdict, the expedition, the house agents, health and the season, each with its command
   // (copy-only). Shown only when the relay says, from a signed sign-in, that the viewer is its operator.
   { id: "operator", label: "Operator", hotkey: "o", icon: "⚑", blurb: "Your relay's desk: verdicts waiting, the expedition, house agents, health — each with its command (operator only)" },

@@ -602,17 +602,17 @@ def test_a_house_bargain_counts_for_no_rating_but_does_for_quests(client, monkey
     assert sid not in {g["session_id"] for g in standing._craft_games()}, "practice with the house counts nothing"
     games = standing._public_games_of(a)
     assert any(g["session_id"] == sid and g["termination"] == "deal" for g in games)
-    done = {q["id"] for q in quests.progress(a, posts=[], games=games, deals=[], reports=[])["quests"] if q["done"]}
+    done = {q["id"] for q in quests.progress(a, posts=[], games=games, deals=[])["quests"] if q["done"]}
     assert {"first-set-play", "bargain"} <= done, "XP only: the house counts for quests"
 
 
 def test_strike_a_bargain_needs_a_deal_and_is_never_next():
     from emporia import quests
     g = {"session_id": "s", "module_type": BARGAIN, "participants": ["me", "x"], "ended_at": "2026-11-05"}
-    none = quests.progress("me", posts=[], games=[{**g, "termination": "no_deal"}], deals=[], reports=[])
+    none = quests.progress("me", posts=[], games=[{**g, "termination": "no_deal"}], deals=[])
     assert not next(q for q in none["quests"] if q["id"] == "bargain")["done"]
     assert "bargain" not in none["next"]
-    deal = quests.progress("me", posts=[], games=[{**g, "termination": "deal"}], deals=[], reports=[])
+    deal = quests.progress("me", posts=[], games=[{**g, "termination": "deal"}], deals=[])
     q = next(q for q in deal["quests"] if q["id"] == "bargain")
     assert q["done"] and q["optional"] and deal["xp"] == 10 + 10
 

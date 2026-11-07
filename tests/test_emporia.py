@@ -2051,7 +2051,7 @@ def test_no_new_identity_as_proof_params():
         # agent_id (path): whose sheet to compute (P288) — a public read of outcomes the
         # relay already publishes in the agent's record, same posture as /record.
         ("GET", "/agents/{agent_id}/sheet"),
-        # agent_id (path): whose bug-quest points to count (P289) — a public read.
+        # agent_id (path): whose improvement points to count — a public read.
         ("GET", "/agents/{agent_id}/points"),
         # agent_id (path): _require_caller_is-checked (P25-2), same posture as
         # /agents/{agent_id}/x402-wallet just above.
@@ -2160,14 +2160,9 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/pledges/{pledge_id}/acts"),  # pledges: the counterparty attests, the maker contests; signed
         ("GET", "/agents/{agent_id}/next"),  # whats_next: that agent only, no operator override
         ("POST", "/sessions/{session_id}/decline"),  # quests:v4: signed in as the challenge's named opponent
-        ("POST", "/bugs"),  # P289: the reporter, signed in
-        ("POST", "/bugs/{report_id}/verdict"),  # P289: the relay operator only
         ("POST", "/ideas/{post_id}/verdict"),  # launch additions: the relay operator only, and its signature
-        ("POST", "/bugs/{report_id}/reveal"),  # P289: the reporter or the operator
         ("POST", "/labs"),  # labs v2: a registered agent, and its signature; the repo's own file must name it
         ("POST", "/labs/{slug}/reports"),  # labs v2: a maintainer the lab names, signed; every claim checked
-        ("POST", "/security/incidents"),  # P289: the relay operator only
-        ("POST", "/security/incidents/{incident_id}/fixed"),  # P289: the relay operator only
         ("POST", "/agents/{agent_id}/leave"),  # P195: the agent itself
         ("POST", "/delete"),  # P192: the caller, signing its removal
         ("POST", "/federation/v1/dm-delete"),  # P192: a linked relay, signed with its pinned key
@@ -2356,14 +2351,11 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("GET", "/agents/{agent_id}/record"): "P182: an agent's record — counts only, read before staking or buying",
         ("GET", "/agents/{agent_id}/sheet"): "P288: an agent's sheet — computed from outcomes the record already publishes, and public games",
         ("GET", "/ratings"): "P288: one game's Craft ladder from finished public games",
-        ("GET", "/bugs"): "P289: bug reports — a sealed one shows only its commitment until revealed",
-        ("GET", "/bugs/{report_id}"): "P289: one bug report, as public as the list",
         ("GET", "/labs"): "labs v2: the labs here — a subject, maintainers, signed by the creator and logged",
         ("GET", "/labs/{slug}"): "labs v2: one lab's public terms, as public as the list",
         ("GET", "/labs/{slug}/reports"): "labs v2: maintainers' reports are public in every lab, even a private or encrypted one: refs and agents only, so anyone can check them against the repo",
-        ("GET", "/ideas"): "launch additions: the operator's verdicts on public posts in the ideas topic — signed and logged, public like bug verdicts",
-        ("GET", "/agents/{agent_id}/points"): "P289: an agent's bug-quest points — counts only",
-        ("GET", "/security/incidents"): "P289: a relay's security incidents, public on purpose: on the record",
+        ("GET", "/ideas"): "launch additions: the operator's verdicts on public posts in the ideas topic — signed and logged",
+        ("GET", "/agents/{agent_id}/points"): "an agent's improvement points (adopted ideas) — counts only",
         ("POST", "/agents/{agent_id}/key-recovery"): "P246: the agent has lost its key, so it cannot sign in; the recovery key it committed to in its key log signs the request, and that signature is the whole authority. Throttled like sign-in",
         ("GET", "/log/state"): "P256: the relay's signed transparency-log state — the point of it is that anyone can check it",
         ("GET", "/log/epochs"): "P269: every log the relay has kept and the signed hand-overs between them — public like the log",
@@ -25259,7 +25251,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. The relay starts fresh, so there is no upgrade history to
 # record: change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "8d469338de0eb5ef01d7880c498d6a89e7299bf7d364951b007143e01a916237"
+_SCHEMA_FINGERPRINT = "a6be7cf1fb0dff36a6e926cb6432c5fd0954750a167793295ce92933c0b53163"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -25299,7 +25291,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (43, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (44, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"
@@ -25579,7 +25571,6 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/pledges/{}": "pledges: one pledge — the sheet's pledge list (GET /pledges) carries the same fields",
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
-    "/bugs/{}": "P289: one bug report — the Gamify tab lists them all, with the same fields",
     "/labs": "labs v2: the operator's desk shows lab activity; `emporia lab list` and the MCP tools read it",
     "/labs/{}": "labs v2: one lab, for `emporia lab NAME show` and `lab_threads`",
     "/labs/{}/reports": "labs v2: maintainers' public reports — the desk shows the recent ones (from /operator/status); `lab_threads` reads them",

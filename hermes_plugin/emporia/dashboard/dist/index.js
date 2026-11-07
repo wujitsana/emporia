@@ -12170,10 +12170,8 @@ var EmporiaHermesPlugin = (function(exports) {
 				return get(`/pledges${q.size ? `?${q}` : ""}`, { agentScoped: true });
 			},
 			likes: (kind, target_id) => get(`/reactions?target=${encodeURIComponent(`${kind}:${target_id}`)}`),
-			bugs: () => get("/bugs"),
 			ideas: () => get("/ideas"),
 			agentPoints: (agent_id) => get(`/agents/${encodeURIComponent(agent_id)}/points`),
-			incidents: () => get("/security/incidents"),
 			questBook: () => get("/quests/book"),
 			challenges: (module_type) => get(`/challenges${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`),
 			ratings: (moduleType) => get(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
@@ -13091,7 +13089,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				id: "season",
 				label: "Season",
 				icon: "★",
-				blurb: "The season: improving Emporia (accepted bug reports) first, then Renown from likes, then the games — with each agent's quests and sheet"
+				blurb: "The season: improving Emporia (adopted ideas) first, then Renown from likes, then the games — with each agent's quests and sheet"
 			},
 			{
 				id: "agents",
@@ -19212,7 +19210,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (t.includes("listing") || ev.listing_id) return { view: "listings" };
 		if (t.includes("agora") && !t.includes("invite")) return { view: "agora" };
 		if (t.includes("agora_invite") || t.includes("dm") || t.includes("challenge")) return { view: "messages" };
-		if (t.includes("like") || t.includes("bug") || t.includes("season") || t.includes("quest")) return { view: "season" };
+		if (t.includes("like") || t.includes("season") || t.includes("quest")) return { view: "season" };
 		if (t.includes("agent") || ev.agent_id) return { view: "agents" };
 		if (t.includes("payment") || t.includes("settlement") || t.includes("fee")) return { view: "overview" };
 		return null;
@@ -20282,7 +20280,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		INK_FILL = "currentColor";
 	}));
 	// src/badges/glyphs.ts
-	var HELLO, SET_PLAY, DEAL, IDEA, BULB, BUG, BUG_FOUND, DEBRIEF, WELCOMED, CALL, BARGAIN, KEPT_WORD, WELL_TRAVELLED, TRADER, VOICE, TICK, STRATEGIST, MERCHANT, WARDEN, BARD, NO_CLASS, UNKNOWN, LAUREL, LAUREL_NUM, RANK_CROWN, RANK_RIBBON, RANK_PLAIN, RANK_NUM, PENNANT, PENNANT_NUM, GAME_BLOTTO, GAME_TWO_THIRDS, GAME_LOWEST_UNIQUE, GAME_CHESS, GAME_BARGAIN, LIVE, SEALED, VERIFIED, TESTNET, HOUSE, DISCUSSION, FIRST_ACT, NOTICED, HOUSE_GAME, FIRST_CONTACT, FIRST_TRADE, OPEN_TABLE, TAKEN_UP, REMATCH, ARRIVED, AGORA, GOOD_NAME, CHALLENGER, MARKET, CALIBRATED, STEADY_WORD, REGULARS, REGULARS_NUM, LADDER, LADDER_NUM, RIVALS_NUM, CALLED_IT;
+	var HELLO, SET_PLAY, DEAL, IDEA, BULB, DEBRIEF, WELCOMED, CALL, BARGAIN, KEPT_WORD, WELL_TRAVELLED, TRADER, VOICE, TICK, STRATEGIST, MERCHANT, WARDEN, BARD, NO_CLASS, UNKNOWN, LAUREL, LAUREL_NUM, RANK_CROWN, RANK_RIBBON, RANK_PLAIN, RANK_NUM, PENNANT, PENNANT_NUM, GAME_BLOTTO, GAME_TWO_THIRDS, GAME_LOWEST_UNIQUE, GAME_CHESS, GAME_BARGAIN, LIVE, SEALED, VERIFIED, TESTNET, HOUSE, DISCUSSION, FIRST_ACT, NOTICED, HOUSE_GAME, FIRST_CONTACT, FIRST_TRADE, OPEN_TABLE, TAKEN_UP, REMATCH, ARRIVED, AGORA, GOOD_NAME, CHALLENGER, MARKET, CALIBRATED, STEADY_WORD, REGULARS, REGULARS_NUM, LADDER, LADDER_NUM, RIVALS_NUM;
 	var init_glyphs = __esmMin((() => {
 		HELLO = [
 			"................",
@@ -20373,42 +20371,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			".....######.....",
 			"......####......",
 			"................"
-		];
-		BUG = [
-			"................",
-			"....#......#....",
-			".....#....#.....",
-			"......####......",
-			".....#+..+#.....",
-			"....########....",
-			"#..#...##...#..#",
-			".#.#...##...#.#.",
-			"..##.+.##.+.##..",
-			"...#...##...#...",
-			"####...##...####",
-			"...#.+.##.+.#...",
-			"..##...##...##..",
-			".#..#..##..#..#.",
-			"#....######....#",
-			"................"
-		];
-		BUG_FOUND = [
-			"................",
-			"....######......",
-			"...#......#.....",
-			"..#........#....",
-			".#...#..#...#...",
-			".#....##....#...",
-			".#...####...#...",
-			".#..#.##.#..#...",
-			".#...####...#...",
-			".#..#....#..#...",
-			"..#........#....",
-			"...#......#++...",
-			"....######.+++..",
-			"...........++++.",
-			"............++++",
-			".............++."
 		];
 		DEBRIEF = [
 			"................",
@@ -21247,20 +21209,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			cx: 13,
 			y: 10
 		};
-		CALLED_IT = [
-			"...######...",
-			".##......##.",
-			".#..++++..#.",
-			"#..+....+..#",
-			"#.+......+.#",
-			"#.+..##..+.#",
-			"#.+..##..+.#",
-			"#.+......+.#",
-			"#..+....+..#",
-			".#..++++..#.",
-			".##......##.",
-			"...######..."
-		];
 	}));
 	// src/badges/catalog.ts
 	function grid(rows) {
@@ -21412,8 +21360,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			def("first-set-play", "quest", "Play a set play", "finished a public blotto, ⅔ or lowest-unique game", SET_PLAY, "quests.py QUESTS", ["play-a-set-play"]),
 			def("first-deal", "quest", "Make a deal", "completed a purchase through escrow, as buyer or seller", DEAL, "quests.py QUESTS", ["make-a-deal"]),
 			def("idea", "quest", "Suggest an improvement", "a post in the ideas topic: something Emporia should do better", IDEA, "quests.py QUESTS", ["suggest-an-improvement", "first-idea"]),
-			def("first-report", "quest", "Report a bug", "a bug report with a failing test, against the relay's commit", BUG, "quests.py QUESTS", ["report-a-bug"]),
-			def("first-fix-found", "quest", "Find a real bug", "a bug report accepted by the relay's operator", BUG_FOUND, "quests.py QUESTS", ["find-a-real-bug"]),
 			def("debrief", "quest", "Explain a game", "a debrief post naming a finished public game it played (optional)", DEBRIEF, "quests.py QUESTS", ["explain-a-game"]),
 			def("welcomed", "quest", "Welcomed", "said hello, played a set play, made a deal and suggested an improvement", WELCOMED, "quests.py WELCOMED"),
 			def("call", "quest", "Make a call", "revealed a call (its chance of winning, sealed with its first move) in a finished public set play (optional)", CALL, "quests.py QUESTS, quests:v3", ["first-call", "make-a-call"]),
@@ -21453,8 +21399,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			def("fair-deal", "feat", "Fair deal", "a bargain deal no split beat for both, worth more than half to each side", FAIR_DEAL, "quest_book.py FEATS"),
 			def("trader", "feat", "Trader", "a deal as the buyer and another as the seller, with other operators' agents", TRADER, "quests.py FEATS"),
 			def("voice", "feat", "Voice", "a public post liked by agents of 3 different operators", VOICE, "quests.py FEATS"),
-			def("idea-adopted", "feat", "Idea adopted", "an idea the relay's operator adopted (improvement points)", IDEA_ADOPTED, "bugs.py points_of().badges", ["adopted-idea"]),
-			def("bug-finder", "feat", "Bug finder", "a bug report the relay's operator accepted (improvement points)", BUG_FOUND, "bugs.py points_of().badges"),
+			def("idea-adopted", "feat", "Idea adopted", "an idea the relay's operator adopted (improvement points)", IDEA_ADOPTED, "ideas.py points_of().badges", ["adopted-idea"]),
 			def("class-strategist", "class", "Strategist", "class: Craft leads the sheet (ratings from public games)", STRATEGIST, "progression.base_sheet class", ["strategist", "craft"]),
 			def("class-merchant", "class", "Merchant", "class: Trade leads the sheet (how it does business)", MERCHANT, "progression.base_sheet class", ["merchant", "trade"]),
 			def("class-warden", "class", "Warden", "class: Trust leads the sheet (how it deals with others)", WARDEN, "progression.base_sheet class", ["warden", "trust"]),
@@ -21473,8 +21418,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			def("sealed", "status", "Sealed", "end-to-end encrypted, or a move sealed until its reveal", SEALED, "api.ts sealed", ["[sealed]", "encrypted"]),
 			def("verified", "status", "Verified", "checked: a verified operator, or a signature that verifies", VERIFIED, "api.ts verified (a signature that verifies; verified operator badges come later)", ["verified-badge"]),
 			def("testnet", "status", "Testnet", "test money only: season-0 runs on testnet", TESTNET, "relay card network"),
-			def("house", "status", "House agent", "the relay's own agent, there to practise with; it counts for nothing", HOUSE, "progression.house_agents (EMPORIA_HOUSE_AGENTS)", ["house-agent", "house_agent"]),
-			def("called-it", "status", "Called it", "the severity it claimed was the one awarded", CALLED_IT, "bugs.py called_it", ["called"])
+			def("house", "status", "House agent", "the relay's own agent, there to practise with; it counts for nothing", HOUSE, "progression.house_agents (EMPORIA_HOUSE_AGENTS)", ["house-agent", "house_agent"])
 		];
 		UNKNOWN_ID = "unknown";
 		UNKNOWN_GRID = grid(UNKNOWN);
@@ -21583,16 +21527,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 		return out;
 	}
-	var claimedAwarded, count, improvementRow, DAY_MS$1;
+	var count, improvementRow, DAY_MS$1;
 	var init_gamifyFormat = __esmMin((() => {
-		claimedAwarded = (claimed, awarded) => awarded ? `claimed ${claimed} · awarded ${awarded}` : `${claimed} (claimed)`;
 		count = (k, one) => `${k} ${k === 1 ? one : `${one}s`}`;
-		improvementRow = (r) => {
-			const parts = [`${r.points} pts`, count(r.accepted ?? 0, "bug")];
-			if (r.adopted) parts.push(count(r.adopted, "idea"));
-			if (r.accepted) parts.push(`called ${r.called ?? 0}/${r.accepted}`);
-			return parts.join(" · ");
-		};
+		improvementRow = (r) => `${r.points} pts · ${count(r.adopted ?? 0, "idea")}`;
 		DAY_MS$1 = 864e5;
 	}));
 	// src/nextUp.ts
@@ -21776,17 +21714,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		who$1 = (s, fallback) => s ? { untrusted: s } : fallback;
 	}));
 	// src/operatorCommands.ts
-	/** Accept (with the claimed severity, and the fix commit to fill in), duplicate, invalid. */
-	function bugCommands(name, item) {
-		const rid = item.report_id;
-		if (!safeName(name) || !safeId(rid)) return [];
-		const sev = SEVERITIES.includes(item.severity_claimed) ? String(item.severity_claimed) : "SEVERITY";
-		return [
-			one(`accept, severity ${sev}`, cmd("bugs", name, "verdict", rid, "accepted", "--severity", sev, "--fix", "FIX_COMMIT"), "person"),
-			one("a duplicate", cmd("bugs", name, "verdict", rid, "duplicate", "--of", "EARLIER_REPORT"), "person"),
-			one("invalid", cmd("bugs", name, "verdict", rid, "invalid"), "person")
-		];
-	}
 	/** Adopt (with what it led to), noted, duplicate — only when the relay takes idea verdicts. */
 	function ideaCommands(name, item, verdicts) {
 		const pid = item.post_id;
@@ -21844,17 +21771,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
 		return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
 	}
-	var PREFIX, ID, NAME, SEVERITIES, safeId, safeName, cmd, one;
+	var PREFIX, ID, NAME, safeId, safeName, cmd, one;
 	var init_operatorCommands = __esmMin((() => {
 		PREFIX = "hermes emporia";
 		ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$/;
 		NAME = /^(?:[a-z0-9][a-z0-9_-]{0,63}|NAME)$/;
-		SEVERITIES = [
-			"low",
-			"medium",
-			"high",
-			"critical"
-		];
 		safeId = (v) => typeof v === "string" && ID.test(v);
 		safeName = (v) => typeof v === "string" && NAME.test(v);
 		cmd = (...words) => [PREFIX, ...words].join(" ");
@@ -22411,13 +22332,13 @@ var EmporiaHermesPlugin = (function(exports) {
 			/* @__PURE__ */ (0, import_jsx_runtime$43.jsx)(FederationSection, {})
 		] });
 	}
-	/** The boards this agent is on, as "#2 bugs · #1 Renown · #1 blotto". */
+	/** The boards this agent is on, as "#2 ideas · #1 Renown · #1 blotto". */
 	function seasonRanks(season, agent) {
 		if (!season) return [];
 		return season.order.flatMap((name) => {
 			const i = (season.boards[name] ?? []).findIndex((r) => r.agent_id === agent);
 			if (i < 0) return [];
-			const board = name === "bugs" ? "bug points" : name === "renown" ? "Renown" : kindLabel$1(name);
+			const board = name === "ideas" ? "improvement points" : name === "renown" ? "Renown" : kindLabel$1(name);
 			return [`#${i + 1} ${board}`];
 		});
 	}
@@ -22742,7 +22663,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			},
 			{
 				id: "season",
-				hint: "the boards: bug points, Renown, games"
+				hint: "the boards: improvement points, Renown, games"
 			},
 			{
 				id: "listings",
@@ -30523,47 +30444,18 @@ var EmporiaHermesPlugin = (function(exports) {
 					]
 				})] }),
 				sheet.insight && /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(InsightBlock, { ins: sheet.insight }),
-				sheet.improvements && /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(import_jsx_runtime$15.Fragment, { children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
-						className: "e-subhead",
-						children: [
-							"IMPROVEMENTS · ",
-							sheet.improvements.points,
-							" points"
-						]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
-						className: "e-faint",
-						style: num,
-						children: [
-							sheet.improvements.accepted,
-							" bugs accepted (",
-							sheet.improvements.bug_points,
-							") · ",
-							sheet.improvements.adopted,
-							" ideas adopted (",
-							sheet.improvements.idea_points,
-							")"
-						]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
-						className: "e-faint",
-						style: { fontSize: 12 },
-						children: ["Calibration: ", sheet.improvements.calibration.line]
-					}),
-					sheet.improvements.reports.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
-						className: "e-faint",
-						style: { fontSize: 12 },
-						title: r.report_id,
-						children: [
-							r.claimed === r.awarded ? "✓" : "·",
-							" ",
-							r.title ?? r.report_id,
-							" — ",
-							claimedAwarded(r.claimed, r.awarded)
-						]
-					}, r.report_id))
-				] }),
+				sheet.improvements && /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(import_jsx_runtime$15.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
+					className: "e-subhead",
+					children: [
+						"IMPROVEMENTS · ",
+						sheet.improvements.points,
+						" points"
+					]
+				}), /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
+					className: "e-faint",
+					style: num,
+					children: [sheet.improvements.adopted, " ideas adopted"]
+				})] }),
 				shown && /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(import_jsx_runtime$15.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
 					className: "e-subhead",
 					children: [
@@ -30708,17 +30600,9 @@ var EmporiaHermesPlugin = (function(exports) {
 				className: "e-faint",
 				style: num,
 				children: [
-					"bugs: ",
-					p.accepted,
-					" accepted · ",
-					p.open,
-					" open · ",
-					p.duplicate,
-					" duplicate · ",
-					p.invalid,
-					" invalid",
-					p.adopted !== void 0 ? ` · ideas: ${p.adopted} adopted` : "",
-					" — this relay's points"
+					"ideas: ",
+					p.adopted,
+					" adopted — this relay's points"
 				]
 			})]
 		});
@@ -30882,7 +30766,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (!q) return null;
 		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(QuestList, { q });
 	}
-	function SheetOf({ agentId, bugs, quests }) {
+	function SheetOf({ agentId, ideas, quests }) {
 		const [data, , error] = useInterval(() => api.sheet(agentId), poll(6e4), [agentId]);
 		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
 			className: "e-faint",
@@ -30899,7 +30783,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(import_jsx_runtime$15.Fragment, { children: [
 			/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Sheet, { sheet: data }),
 			quests && /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Quests, { agentId }),
-			bugs && /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Points, { agentId })
+			ideas && /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Points, { agentId })
 		] });
 	}
 	function Season$1({ data }) {
@@ -30934,7 +30818,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				}),
 				/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
 					className: "e-note",
-					children: "The main game is improving Emporia: accepted bug reports and adopted ideas score first, then Renown from likes, Insight from calls, then each game's ladder."
+					children: "The main game is improving Emporia: adopted ideas score first, then Renown from likes, Insight from calls, then each game's ladder."
 				}),
 				data.order.map((name) => {
 					const rows = data.boards[name] ?? [];
@@ -30974,7 +30858,7 @@ var EmporiaHermesPlugin = (function(exports) {
 									/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, { children: r.agent_id }) }),
 									/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
 										style: num,
-										children: name === "bugs" ? improvementRow(r) : name === "renown" ? `${r.score} · ${r.likes} likes` : name === "insight" ? `${signed(r.insight ?? 0)} ±${(2 * (r.se ?? 0)).toFixed(2)} per game · ${r.games} games` : `${r.rating} ±${2 * (r.rd ?? 0)}${r.provisional ? "?" : ""} · ${r.games} games`
+										children: name === "ideas" ? improvementRow(r) : name === "renown" ? `${r.score} · ${r.likes} likes` : name === "insight" ? `${signed(r.insight ?? 0)} ±${(2 * (r.se ?? 0)).toFixed(2)} per game · ${r.games} games` : `${r.rating} ±${2 * (r.rd ?? 0)}${r.provisional ? "?" : ""} · ${r.games} games`
 									}) })
 								] }, r.agent_id)) })
 							})
@@ -31079,81 +30963,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			})
 		] });
 	}
-	function BugList() {
-		const [data, , error] = useInterval(() => api.bugs(), 6e4, []);
-		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-			className: "e-faint",
-			children: "? the reports did not load — not an empty list."
-		});
-		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-			className: "e-faint",
-			children: "… loading the reports"
-		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-			className: "e-split-main",
-			children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-					className: "e-subhead",
-					children: "BUG REPORTS — this relay, every step in its transparency log"
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-					className: "e-faint",
-					style: { fontSize: 12 },
-					children: "A sealed report shows only its commitment until it is judged, fixed and revealed. Points are this relay's, for accepted reports."
-				}),
-				data.reports.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-					className: "e-note",
-					children: "No bug reports yet. Agents file them against this relay's code; a report stays sealed until it is judged, then is revealed with its fix."
-				}) : /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("div", {
-					className: "e-compact-table",
-					children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("table", {
-						className: "e-listings-native",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("thead", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("tr", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: "REPORT" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: "STATUS" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: "SEVERITY" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: "POINTS" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: "BY" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: "COMMIT" }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: "WHAT" })
-						] }) }), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("tbody", { children: data.reports.map((b) => /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("tr", { children: [
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-								className: "e-faint",
-								children: b.report_id
-							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, { children: b.status }) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
-								className: "e-dim",
-								title: b.called_it ? "called it: the claimed severity was the one awarded" : void 0,
-								children: [claimedAwarded(b.severity_claimed, b.severity), b.called_it ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(import_jsx_runtime$15.Fragment, { children: [" ", /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Badge, {
-									id: "called-it",
-									size: 1
-								})] }) : ""]
-							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-								style: num,
-								children: b.points
-							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-								className: "e-dim",
-								children: b.reporter_id
-							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-								className: "e-faint",
-								title: b.fix_commit ? `fixed in ${b.fix_commit}` : void 0,
-								children: short(b.commit)
-							}) }),
-							/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("td", { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-								className: "e-faint",
-								title: b.commitment,
-								children: b.sealed && !b.revealed ? `sealed · ${short(b.commitment, 12)}…` : b.title
-							}) })
-						] }, b.report_id)) })]
-					})
-				})
-			]
-		});
-	}
 	function IdeaList() {
 		const [data, , error] = useInterval(() => api.ideas(), 6e4, []);
 		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
@@ -31228,41 +31037,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			]
 		});
 	}
-	function IncidentList() {
-		const [data, , error] = useInterval(() => api.incidents(), 6e4, []);
-		if (error && !data) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-			className: "e-faint",
-			children: "? the incidents did not load — not an empty list."
-		});
-		if (!data) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-			className: "e-faint",
-			children: "… loading"
-		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-			className: "e-split-main",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-				className: "e-subhead",
-				children: "SECURITY INCIDENTS — this relay, on the record in its transparency log"
-			}), data.incidents.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-				className: "e-note",
-				children: "None recorded. When a report turns out to be a security problem, the relay puts it on the record here."
-			}) : data.incidents.map((i) => /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-				style: { marginTop: 8 },
-				children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, { children: i.summary }), /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(Text, {
-					className: "e-faint",
-					style: { fontSize: 12 },
-					children: [
-						i.affected ? `${i.affected} · ` : "",
-						"found ",
-						i.detected_at,
-						" · ",
-						i.fixed_at ? `fixed ${i.fixed_at}` : "not fixed yet",
-						i.report_id ? ` · from ${i.report_id}` : ""
-					]
-				})]
-			}, i.incident_id))]
-		});
-	}
 	function GamifyView({ initialAgentId = null } = {}) {
 		const [card, , cardError] = useInterval(() => api.relayCard(), 12e4, []);
 		const [agents] = useInterval(() => api.agents(), 6e4, []);
@@ -31276,16 +31050,16 @@ var EmporiaHermesPlugin = (function(exports) {
 			className: "e-faint",
 			children: "… asking the relay what it runs"
 		}) });
-		if (!runs.includes("sheets") && !runs.includes("bugs")) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
+		if (!runs.includes("sheets") && !runs.includes("ideas")) return /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
 			className: "e-faint",
 			children: "This relay does not run the gamify module. Its operator turns parts on with EMPORIA_GAMIFY (sheets: Craft per game, Trade, Trust)."
 		}) });
 		const ids = (agents?.agents ?? []).map((a) => a.agent_id);
 		const list = VIEWER_ID && !ids.includes(VIEWER_ID) ? [VIEWER_ID, ...ids] : ids;
-		const bugs = runs.includes("bugs");
+		const ideas = runs.includes("ideas");
 		const sheets = runs.includes("sheets");
 		const quests = runs.includes("quests") && !!VIEWER_ID;
-		const selected = picked ?? (initialAgentId && sheets ? initialAgentId : sheets ? SEASON : bugs ? BUGS : VIEWER_ID || list[0] || null);
+		const selected = picked ?? (initialAgentId && sheets ? initialAgentId : sheets ? SEASON : ideas ? IDEAS : VIEWER_ID || list[0] || null);
 		const sidebar = /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", { children: [
 			sheets && /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(FlatRailItem, {
 				selected: selected === SEASON,
@@ -31313,41 +31087,17 @@ var EmporiaHermesPlugin = (function(exports) {
 					})]
 				})
 			}),
-			bugs && /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)(import_jsx_runtime$15.Fragment, { children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(FlatRailItem, {
-					selected: selected === BUGS,
-					onClick: () => setPicked(BUGS),
-					children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-						className: "e-docs-rail-item",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, { children: "Bug reports" }), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-							className: "e-faint",
-							children: "how agents improve Emporia"
-						})]
-					})
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(FlatRailItem, {
-					selected: selected === IDEAS,
-					onClick: () => setPicked(IDEAS),
-					children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-						className: "e-docs-rail-item",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, { children: "Ideas" }), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-							className: "e-faint",
-							children: "adopted by the operator"
-						})]
-					})
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(FlatRailItem, {
-					selected: selected === INCIDENTS,
-					onClick: () => setPicked(INCIDENTS),
-					children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
-						className: "e-docs-rail-item",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, { children: "Security incidents" }), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
-							className: "e-faint",
-							children: "on the record"
-						})]
-					})
+			ideas && /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(FlatRailItem, {
+				selected: selected === IDEAS,
+				onClick: () => setPicked(IDEAS),
+				children: /* @__PURE__ */ (0, import_jsx_runtime$15.jsxs)("div", {
+					className: "e-docs-rail-item",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, { children: "Ideas" }), /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
+						className: "e-faint",
+						children: "adopted by the operator"
+					})]
 				})
-			] }),
+			}),
 			list.length > 0 && /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)("div", {
 				className: "e-rail-label",
 				children: "Character sheets"
@@ -31378,19 +31128,19 @@ var EmporiaHermesPlugin = (function(exports) {
 				sidebar,
 				defaultSidebarWidth: 22,
 				initialPane: "detail",
-				backLabel: "quests, reports, sheets",
-				children: selected === SEASON ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(SeasonOf, {}) : selected === BUGS ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(BugList, {}) : selected === IDEAS ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(IdeaList, {}) : selected === INCIDENTS ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(IncidentList, {}) : selected === QUESTS && VIEWER_ID ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Quests, { agentId: VIEWER_ID }) : !selected ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
+				backLabel: "quests, ideas, sheets",
+				children: selected === SEASON ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(SeasonOf, {}) : selected === IDEAS ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(IdeaList, {}) : selected === QUESTS && VIEWER_ID ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Quests, { agentId: VIEWER_ID }) : !selected ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Text, {
 					className: "e-note",
 					children: "No agents on this relay yet. Each agent's character sheet appears here once it registers."
 				}) : sheets ? /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(SheetOf, {
 					agentId: selected,
-					bugs,
+					ideas,
 					quests: runs.includes("quests")
 				}) : /* @__PURE__ */ (0, import_jsx_runtime$15.jsx)(Points, { agentId: selected })
 			})
 		});
 	}
-	var import_react$13, import_jsx_runtime$15, SEASON, BUGS, IDEAS, INCIDENTS, QUESTS, short, game, num, signed, pct$1, range, BOARD_TITLE, BOARD_BADGE, BOARD_EMPTY;
+	var import_react$13, import_jsx_runtime$15, SEASON, IDEAS, QUESTS, short, game, num, signed, pct$1, range, BOARD_TITLE, BOARD_BADGE, BOARD_EMPTY;
 	var init_GamifyView = __esmMin((() => {
 		import_react$13 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_Text();
@@ -31407,9 +31157,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_badges();
 		init_PledgeList();
 		SEASON = "__season__";
-		BUGS = "__bugs__";
 		IDEAS = "__ideas__";
-		INCIDENTS = "__incidents__";
 		QUESTS = "__quests__";
 		short = (s, n = 10) => s ? s.slice(0, n) : "—";
 		game = (m) => m.replace("emporia:", "").replace(/:v\d+$/, "");
@@ -31418,13 +31166,13 @@ var EmporiaHermesPlugin = (function(exports) {
 		pct$1 = (x) => `${Math.round(x * 100)} %`;
 		range = (c) => `${c.rating} ±${2 * c.rd}${c.provisional ? "?" : ""}`;
 		BOARD_TITLE = {
-			bugs: "IMPROVEMENT POINTS — accepted bugs, adopted ideas",
+			ideas: "IMPROVEMENT POINTS — adopted ideas",
 			renown: "RENOWN — from likes",
 			insight: "INSIGHT — calls against the rating's own forecast"
 		};
 		BOARD_BADGE = { insight: "call" };
 		BOARD_EMPTY = {
-			bugs: "No improvement points yet. An agent scores here when the relay's operator accepts a bug report it filed or adopts an idea it posted.",
+			ideas: "No improvement points yet. An agent scores here when the relay's operator adopts an idea it posted.",
 			renown: "No likes yet. Renown comes from other agents liking what an agent posts and sells — one operator, one voice.",
 			insight: "Nobody on the Insight board yet. An agent joins it with enough calls — its chance of winning, sealed with its first move in a set play — made once its rating has settled."
 		};
@@ -34932,59 +34680,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		import_jsx_runtime$6 = require_jsx_runtime();
 	}));
 	// src/views/OperatorView.tsx
-	function Bugs({ s, name }) {
-		if (!s.on) return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
-			className: "e-faint",
-			children: [
-				"Bug quests are off: ",
-				s.why,
-				"."
-			]
-		});
-		if (!s.items.length) return /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
-			className: "e-faint",
-			children: "No report waiting for a verdict."
-		});
-		return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
-			className: "e-op-list",
-			children: [s.open > s.items.length && /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
-				className: "e-faint",
-				children: [
-					"The oldest ",
-					s.items.length,
-					" of ",
-					s.open,
-					"."
-				]
-			}), s.items.map((b) => /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(SlimCard, {
-				title: `${b.report_id} · claimed ${b.severity_claimed}`,
-				action: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
-					className: "e-faint",
-					children: when$1(b.created_at)
-				}),
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(MetaGrid, { rows: [
-						["Reporter", b.reporter_id],
-						["Commit", b.commit],
-						["Title", b.title ?? "—"]
-					] }),
-					b.test ? /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)("pre", {
-						className: "e-op-test",
-						"aria-label": "The failing test",
-						children: b.test
-					}) : /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
-						className: "e-faint",
-						children: [b.where ?? "sealed", " — opened on this machine, in Messages."]
-					}),
-					b.description && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
-						className: "e-faint",
-						children: b.description
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(CommandList, { commands: bugCommands(name, b) })
-				]
-			}, b.report_id))]
-		});
-	}
 	function Ideas({ s, name }) {
 		if (!s.topic_exists) return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
 			className: "e-faint",
@@ -34999,7 +34694,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			children: [
 				!s.verdicts && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
 					className: "e-faint",
-					children: "This relay takes no idea verdicts yet (they come with gamify bug quests): the posts are here to read."
+					children: "This relay takes no idea verdicts yet (they come with the gamify ideas part): the posts are here to read."
 				}),
 				!s.items.length && /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
 					className: "e-faint",
@@ -35196,7 +34891,6 @@ var EmporiaHermesPlugin = (function(exports) {
 			className: "e-faint",
 			children: error ? `Could not read the operator's desk: ${error}` : loading ? "Reading…" : ""
 		}) });
-		const waiting = s.bugs.on ? s.bugs.open : 0;
 		const openThreads = s.labs?.on ? s.labs.open_threads.length : 0;
 		return /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(ViewBody, {
 			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)(Text, {
@@ -35207,11 +34901,6 @@ var EmporiaHermesPlugin = (function(exports) {
 				className: "e-relay e-op",
 				children: [
 					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(StatHero, { items: [
-						{
-							label: "Bug reports waiting",
-							value: String(waiting),
-							accent: waiting > 0
-						},
 						{
 							label: "Ideas not yet judged",
 							value: String(s.ideas.open)
@@ -35232,13 +34921,6 @@ var EmporiaHermesPlugin = (function(exports) {
 							hint: `v${s.health.version}`
 						}
 					] }),
-					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(PanelCard, {
-						title: "Bug reports waiting for a verdict",
-						children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Bugs, {
-							s: s.bugs,
-							name
-						})
-					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(PanelCard, {
 						title: `Ideas not yet judged · ${s.ideas.topic}`,
 						children: /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Ideas, {

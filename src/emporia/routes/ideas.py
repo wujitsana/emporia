@@ -1,14 +1,13 @@
 """Adopted ideas (launch additions): the operator's signed verdict on a post in the ideas topic.
 
-The bug verdict's mechanism, reused: the relay operator only (`_require_operator`,
-its bearer token), final, and an entry in the transparency log the moment it is
-given. As a bug verdict (security review pass 2, P1), it is signed by the operator's
-verdict key (`wire.signed_idea_verdict_payload`, v2), a person's key no agent holds,
-kept beside it — so the record carries the person's own word, and neither the relay
+The relay operator only (`_require_operator`, its bearer token), final, and an entry
+in the transparency log the moment it is given. Security review pass 2 (P1): it is
+signed by the operator's verdict key (`wire.signed_idea_verdict_payload`, v2), a
+person's key no agent holds, kept beside it — so the record carries the person's own word, and neither the relay
 nor a takeover of the operator's agent can award the points.
 
-On with `bugs` in EMPORIA_GAMIFY (which needs the log): adopted ideas earn points on
-the same board as accepted bug reports. Rules in `emporia.ideas`.
+On with `ideas` in EMPORIA_GAMIFY (which needs the log): adopted ideas earn improvement
+points. Rules in `emporia.ideas`. Bugs are not judged here: they go through the labs.
 """
 
 from __future__ import annotations
@@ -16,11 +15,55 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from emporia import ideas, progression, quests, wire
+from emporia import identity, ideas, operator_verdicts, operators, progression, quests, translog, wire
 from emporia import relay_server as rs
-from emporia.routes.bugs import _log_now, _on, _operator_key, _verdict_key_signed
 
 router = APIRouter()
+
+
+def _on() -> None:
+    from emporia import relay_modules
+    if why := relay_modules.off_because("gamify", "ideas"):
+        raise HTTPException(404, why)
+
+
+def _operator_key(conn, agent_id: str) -> str:
+    """Who runs an agent, as the caps count it: its operator label, else its stable id —
+    never its name, which a rename would change and so reset the cap."""
+    row = conn.execute("SELECT agent_id, operator_label, stable_id FROM authorized_agents WHERE agent_id = ?",
+                       (agent_id,)).fetchone()
+    return operators.operator_of_row(row) if row else operators.operator_of(None, None, agent_id)
+
+
+def _verdict_key_signed(build, at: str, signature: str, sent_key: str) -> str:
+    """Security review pass 2 (P1): the verdict's signature by this relay's registered verdict
+    key, or a 403 saying why not. `build(key)` is the payload signed. Returns the key."""
+    key, why = operator_verdicts.registered()
+    if not key:
+        raise HTTPException(403, why)
+    sent = (sent_key or "").strip().lower()
+    if sent and sent != key:
+        raise HTTPException(403, f"signed with the verdict key {sent[:16]}…, but this relay's is {key[:16]}… "
+                                 f"({operator_verdicts.ENV}) — after a rotation the person running the relay "
+                                 "sets the new public key in its .env and restarts it")
+    if not signature or not at:
+        raise HTTPException(403, "unsigned: a verdict is signed by the operator's verdict key, a person's key — "
+                                 "the operator agent's sign-in alone awards nothing (the person runs `emporia ideas "
+                                 "NAME adopt …` in their own terminal)")
+    from emporia.routes.agents import _signed_at
+    _signed_at(at)
+    if not identity.verify(build(key), signature, key):
+        raise HTTPException(403, "the verdict's signature does not verify against this relay's verdict key "
+                                 f"({key[:16]}…): sign every field of the verdict, with relay = this relay's id "
+                                 f"({rs.relay_id()})")
+    return key
+
+
+def _log_now(conn, kind: str, table: str, id_col: str, ident: str) -> None:
+    """Log this row now, in this transaction — not at the next fold, where two verdicts
+    made between two folds would be one entry. Each step is its own."""
+    row = conn.execute(f"SELECT rowid FROM {table} WHERE {id_col} = ?", (ident,)).fetchone()  # noqa: S608
+    translog.log_row(conn, kind, row[0] if row else None)
 
 
 class IdeaVerdictIn(BaseModel):
@@ -119,7 +162,17 @@ async def list_ideas(verdict: str | None = None, limit: int = 50):
     params.append(rs._clamp_limit(limit))
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute(q, params).fetchall()
-    from emporia import operator_verdicts
     return {"scope": "this_relay", "formula": ideas.FORMULA, "topic": quests.topics()["ideas"],
             "points_per_idea": ideas.points(), "verdict_key": operator_verdicts.registered()[0] or None,
             "verdicts": [_public(r) for r in rows]}
+
+
+@router.get("/agents/{agent_id}/points")
+async def agent_points(agent_id: str):
+    """An agent's improvement points on this relay: this relay's points, from ideas the
+    operator adopted, and the badge they give."""
+    _on()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = [dict(r) for r in conn.execute("SELECT author_id, verdict, points FROM idea_verdicts "
+                                              "WHERE author_id = ?", (agent_id,)).fetchall()]
+    return {"scope": "this_relay", "issuer": rs.RELAY_BASE_URL, **ideas.points_of(agent_id, rows)}

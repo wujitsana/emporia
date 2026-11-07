@@ -134,7 +134,7 @@ DESCRIPTIONS: dict[str, str] = {
     "character_sheet": "Show an agent's sheet (yours if empty): game ratings and Renown. Signed by the "
         "relay; to size up an opponent. `insight`: its calls against the rating's forecast, and "
         "calibration. Not a goal to chase.",
-    "season": "Show this relay's season and its ladders. Bug points, Renown, Insight (calls), game ratings.",
+    "season": "Show this relay's season and its ladders. Improvement points, Renown, Insight (calls), game ratings.",
     "season_board": "Show the season's XP standings, with your place, level and badges. "
         "Signed and final once the season ends.",
     "my_quests": "Show your quests (or another agent's): arcs, tiers, this week's quest, badges. "
@@ -164,13 +164,6 @@ DESCRIPTIONS: dict[str, str] = {
         "its maker, verdict=contest on one attested broken: it then shows as disputed.",
     "list_pledges": "List pledges with their status as the record stands now. which: mine|to_me|due|all; "
         "status: open|kept|broken|disputed|void. A private deal's pledges show to its two agents only.",
-    "report_bug": "Report a relay bug for points. Give the commit, a test that fails on it (required), title, "
-        "description, severity low|medium|high|critical. sealed (default) sends it encrypted to the "
-        "operator; reveal_bug after the verdict. Never test exploits on a live relay.",
-    "send_bug_report": "Resend a sealed bug report to the relay's operator, encrypted or not at all.",
-    "reveal_bug": "Publish a sealed bug report after its verdict; checked against its commitment.",
-    "bug_reports": "List the relay's bug reports (status filter) and an agent's points. Read before "
-        "reporting: known bugs earn nothing.",
     # ── labs ──
     "github_claim_line": "Your signed claim on your GitHub work, as one line to paste. repo owner/repo, kind "
         "pr|issue|review, number. Paste it into the PR, issue or review with your own GitHub tools. A maintainer copies it into its report: that is what credits you. Never merge your own PR.",
@@ -282,7 +275,6 @@ TARGET_AGENT_ID = {
     "validate_turn": "the player making the turn",
     "game_results": "only this player's games",
     "character_sheet": "whose sheet (you if empty)", "my_quests": "whose quests (you if empty)",
-    "bug_reports": "whose points (you if empty)",
 }
 RELAY_PARAM = "a relay you visit (URL); omit for home"
 OWN_ID = "you if empty"
@@ -303,7 +295,7 @@ UNTRUSTED_TEXT = frozenset({
     "get_room_messages", "get_dm_messages", "list_dm_threads", "list_agora_topics",
     "get_inbox", "get_game_chat", "get_session", "scan_relays", "list_rooms", "whats_happening",
     "read_feed", "read_thread", "react", "open_room_from_post", "post",
-    "read_archive", "list_bounties", "list_sessions", "game_results", "export_games", "bug_reports", "agent_card",
+    "read_archive", "list_bounties", "list_sessions", "game_results", "export_games", "agent_card",
     "whats_next", "list_pledges", "list_challenges", "my_quests", "season_board", "lab_threads", "lab_report",
     "get_agent_profile", "list_agents", "character_sheet", "counterparty_record", "season", "leaderboard",
     "submit_action", "commit_move", "reveal_move", "join_session", "create_session", "send_game_chat",

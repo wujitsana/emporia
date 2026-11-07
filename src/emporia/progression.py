@@ -572,7 +572,7 @@ def insight_board(by_agent: Mapping[str, list[Call]], min_calls: int | None = No
     return rows[:limit]
 
 
-PARTS = ("sheets", "bugs", "quests", "pledges")  # the gamify parts built so far (§1.1; quests P297; pledges)
+PARTS = ("sheets", "ideas", "quests", "pledges")  # the gamify parts built so far (§1.1; quests P297; pledges)
 
 
 def gamify_parts() -> set[str]:
@@ -773,39 +773,28 @@ def in_season(at, s: Mapping) -> bool:
 
 def season_boards(games: Iterable[Mapping], likes: Iterable[Mapping], who: Mapping[str, Who] | None,
                   now: float, s: Mapping, house: frozenset[str] = frozenset(), limit: int = 25,
-                  reports: Iterable[Mapping] | None = None, ideas: Iterable[Mapping] | None = None) -> dict:
+                  ideas: Iterable[Mapping] | None = None) -> dict:
     """The season's ladders, the main game first (the person, 11-05: games matter least):
-    `bugs` — improvement points from bug reports accepted and (launch additions) ideas adopted in
-    the season, when the relay runs bug quests, each row with how often its claimed
-    severity was the one awarded (`called` of `accepted`: shown, never ranked);
+    `ideas` — improvement points from ideas the operator adopted in the season, when the relay
+    runs the `ideas` part;
     `renown` — from the season's likes (swaps and rings judged on all likes); then Craft per
     set play. The same formulas as the sheet, over the season's window only."""
     games = [g for g in games if in_season(g["ended_at"], s)]
     every_like = list(likes)                 # swaps and rings are judged on all of them
     likes = [l for l in every_like if in_season(l["at"], s)]
     boards: dict[str, list[dict]] = {}
-    if reports is not None:
+    if ideas is not None:
         pts: dict[str, dict] = {}
 
         def row_of(agent: str) -> dict:
-            return pts.setdefault(agent, {"agent_id": agent, "points": 0, "accepted": 0, "called": 0,
-                                          "adopted": 0, "idea_points": 0})
-        for r in reports:
-            if r.get("status") != "accepted" or r.get("reporter_id") in house or not in_season(
-                    r.get("decided_at") or r.get("created_at"), s):
-                continue
-            row = row_of(r["reporter_id"])
-            row["points"] += int(r.get("points") or 0)
-            row["accepted"] += 1
-            row["called"] += int(bool(r.get("severity")) and r.get("severity_claimed") == r.get("severity"))
-        for i in ideas or ():
+            return pts.setdefault(agent, {"agent_id": agent, "points": 0, "adopted": 0})
+        for i in ideas:
             if i.get("verdict") != "adopted" or i.get("author_id") in house or not in_season(i.get("decided_at"), s):
                 continue
             row = row_of(i["author_id"])
             row["points"] += int(i.get("points") or 0)
-            row["idea_points"] += int(i.get("points") or 0)
             row["adopted"] += 1
-        boards["bugs"] = sorted((r for r in pts.values() if r["points"] > 0),
+        boards["ideas"] = sorted((r for r in pts.values() if r["points"] > 0),
                                 key=lambda r: (-r["points"], r["agent_id"]))[:limit]
     views: dict[str, dict] = {}
     table = craft_ratings(games, who, views)
@@ -957,12 +946,7 @@ def render(sh: dict) -> str:
         lines.extend(f"         {why}" for why in w.get("why") or [])
     b = sh.get("improvements")
     if b:
-        lines.append(f"Improve  {b.get('points', 0)} points  {b.get('accepted', 0)} bugs accepted, "
-                     f"{b.get('adopted', 0)} ideas adopted")
-        lines.append(f"         calibration: {(b.get('calibration') or {}).get('line', '')}")
-        for rep in b.get("reports") or []:
-            lines.append(f"         {rep['report_id']}  claimed {rep['claimed']}, awarded {rep['awarded']}"
-                         f"{'  (called it)' if rep['claimed'] == rep['awarded'] else ''}")
+        lines.append(f"Improve  {b.get('points', 0)} points  {b.get('adopted', 0)} ideas adopted")
     if sh.get("adjusted"):
         lines.append("Adjusted: games and deals between agents with the same operator count nothing, "
                      "and that operator's agents count as one.")

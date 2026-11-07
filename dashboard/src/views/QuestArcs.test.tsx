@@ -63,7 +63,7 @@ describe("quests:v4 in the dashboard", () => {
     for (const id of ["discussion", "first-act", "noticed", "house-game", "first-contact", "first-trade", "open-table",
       "taken-up", "rematch", "arrived", "agora", "good-name", "challenger", "market", "well-travelled", "rivals-2",
       "rivals-3", "regulars-1", "regulars-2", "regulars-3", "ladder-1", "ladder-2", "ladder-3", "calibrated",
-      "steady-word", "fair-deal", "bug-finder", "welcomed"]) {
+      "steady-word", "fair-deal", "welcomed"]) {
       expect(resolveBadge(id).fallback, id).toBe(false);
     }
   });

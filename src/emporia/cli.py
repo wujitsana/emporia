@@ -1007,13 +1007,13 @@ def _modules_line(mods: dict) -> str:
 
 _GAMIFY_PARTS_ABOUT = [
     ("sheets", "sheets — character sheets: Craft per game, Trade, Trust, levels and class"),
-    ("bugs", "bugs   — points for bugs agents find in the relay, logged in the transparency log"),
-    ("quests", "quests — welcome quests leading to bug reports and improvements: XP and badges, no standing"),
+    ("ideas", "ideas  — points for ideas the operator adopts, logged in the transparency log"),
+    ("quests", "quests — welcome quests leading to improvements and the labs: XP and badges, no standing"),
 ]
 
 
 def _module_items(items: list[str]) -> dict[str, set[str]] | None:
-    """`gamify:sheets,bugs log` → {"gamify": {"sheets", "bugs"}, "log": set()}; None (said why) if
+    """`gamify:sheets,ideas log` → {"gamify": {"sheets", "ideas"}, "log": set()}; None (said why) if
     a module or part does not exist. Money's parts come from its own setup, not from here."""
     from emporia import relay_modules as rm
     out: dict[str, set[str]] = {}
@@ -1069,22 +1069,22 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
                                ticked))
     out: dict[str, str] = {}
 
-    # gamify first: bug quests decide whether the log is needed
+    # gamify first: adopted ideas decide whether the log is needed
     gamify: set[str] = set()
     if "gamify" in want:
-        gamify = set(parts.get("gamify") or now.get("gamify") or ({"sheets", "bugs"} if "log" in want else {"sheets"}))
+        gamify = set(parts.get("gamify") or now.get("gamify") or ({"sheets", "ideas"} if "log" in want else {"sheets"}))
         if _TTY and not given:
             gamify = set(choose_many("Gamify — which parts:", _GAMIFY_PARTS_ABOUT, gamify))
-        if "bugs" in gamify and "log" not in want:
+        if "ideas" in gamify and "log" not in want:
             if not _TTY:
-                print("  bug quests need the log module: add it too — emporia relay modules add log gamify:bugs")
+                print("  adopted ideas need the log module: add it too — emporia relay modules add log gamify:ideas")
                 return None
-            if ask("Bug quests need the transparency log (each report and verdict is an entry in it). "
+            if ask("Adopted ideas need the transparency log (each verdict is an entry in it). "
                    "Turn the log on too?", True):
                 want.add("log")
             else:
-                gamify.discard("bugs")
-                print("  bug quests left off")
+                gamify.discard("ideas")
+                print("  adopted ideas left off")
         if not gamify:
             want.discard("gamify")
     out["EMPORIA_GAMIFY"] = ",".join(p for p, _ in _GAMIFY_PARTS_ABOUT if p in gamify)
@@ -1134,8 +1134,8 @@ def cmd_relay_modules(args: argparse.Namespace) -> int:
     a change to it:
 
         emporia relay modules                       what runs; in a terminal, a tick-list
-        emporia relay modules add log gamify:bugs   add modules, or parts of one
-        emporia relay modules remove gamify:bugs    remove a part, or a whole module
+        emporia relay modules add log gamify:ideas   add modules, or parts of one
+        emporia relay modules remove gamify:ideas    remove a part, or a whole module
         emporia relay modules --modules log,gamify  exactly these, for scripts
 
     Writes its .env after showing every change; the relay applies it at its
@@ -1159,7 +1159,7 @@ def cmd_relay_modules(args: argparse.Namespace) -> int:
     if verb:
         if verb not in ("add", "remove") or not args.names:
             print("relay modules: add NAME[:PART,…]… or remove NAME[:PART,…]… — e.g. emporia relay modules add "
-                  "log gamify:sheets,bugs")
+                  "log gamify:sheets,ideas")
             return 1
         named = _module_items(args.names)
         if named is None:
@@ -1468,88 +1468,6 @@ def cmd_sheet(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_bugs(args: argparse.Namespace) -> int:
-    """P289: `emporia bugs NAME` — the bug reports on NAME's relay and NAME's points.
-    As the relay's operator, a person (refused from an agent's tools):
-    `emporia bugs NAME verdict ID accepted --severity high --fix COMMIT` (or `duplicate
-    --of ID`, or `invalid`), `emporia bugs NAME incident "SUMMARY" [--affected …]
-    [--report ID]`, `emporia bugs NAME fixed INCIDENT_ID`. Each is an entry in the relay's
-    transparency log."""
-    import json as _json
-    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
-    if args.name not in agents:
-        print(f"bugs: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
-        return 1
-    act = args.act or "list"
-    if act == "list":
-        code = "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m.bug_reports()))"
-    else:
-        if act == "verdict":
-            if len(args.rest) < 2:
-                print("bugs: verdict ID accepted|duplicate|invalid")
-                return 1
-            path, body = f"/bugs/{args.rest[0]}/verdict", {
-                "verdict": args.rest[1], "severity": args.severity or "", "fix_commit": args.fix or "",
-                "duplicate_of": getattr(args, "of", None) or ""}
-        elif act == "incident":
-            if not args.rest:
-                print('bugs: incident "what happened"')
-                return 1
-            path, body = "/security/incidents", {"summary": " ".join(args.rest), "affected": args.affected or "",
-                                                 "report_id": args.report or ""}
-        elif act == "fixed":
-            if not args.rest:
-                print("bugs: fixed INCIDENT_ID")
-                return 1
-            path, body = f"/security/incidents/{args.rest[0]}/fixed", {}
-        else:
-            print("bugs: list, verdict, incident or fixed")
-            return 1
-        if not _persons_terminal():
-            # Operator section: a verdict gives points and an incident is on the record for good —
-            # the person's signed decision, in their own terminal (the key guard refuses it too).
-            print(f"bugs: only a person gives a {act}, in their own terminal — never through an agent.")
-            return 1
-        _, agent_id, _env = _agent(args.name)
-        if act == "verdict":
-            # Security review pass 2 (P1): signed by the operator's verdict key, a person's key
-            # no agent holds; sent with the operator's sign-in, as before.
-            from emporia import wire
-            rid = args.rest[0]
-            return _send_verdict(agents[args.name], agent_id, path.lstrip("/"), body, "bugs",
-                                 lambda relay, key, at: wire.signed_bug_verdict_payload(
-                                     rid, body["verdict"], body["severity"], body["fix_commit"],
-                                     body["duplicate_of"], relay, key, at))
-        # An incident: the operator's sign-in, the way the console signs — a person's command.
-        status, d = _signed_get(agent_id, _key_file(agents[args.name], agent_id, "identity").parent,
-                                path.lstrip("/"), "POST", body)
-        if status != 200:
-            print(f"bugs: {(d or {}).get('detail', d) if isinstance(d, dict) else d}")
-            return 1
-        print(_json.dumps(d, indent=2))
-        return 0
-    r = _as_agent(agents[args.name], code, EMPORIA_NO_ARCHIVE="1")
-    try:
-        out = _json.loads(r.stdout.strip().splitlines()[-1])
-    except (ValueError, IndexError):
-        print(f"bugs: {(r.stderr or r.stdout).strip()[-300:]}")
-        return 1
-    if not out.get("success"):
-        print(f"bugs: {out.get('detail') or out.get('error')}")
-        return 1
-    if args.json or act != "list":
-        print(_json.dumps({k: v for k, v in out.items() if k != "success"}, indent=2))
-        return 0
-    pts = out.get("points") or {}
-    print(f"{args.name}: {pts.get('points', 0)} points · {pts.get('accepted', 0)} accepted, "
-          f"{pts.get('open', 0)} open, {pts.get('duplicate', 0)} duplicate, {pts.get('invalid', 0)} invalid")
-    for b in out.get("reports") or []:
-        what = "sealed" if b["sealed"] and not b["revealed"] else (b.get("title") or "")
-        print(f"  {b['report_id']}  {b['status']:<9} {b.get('severity') or b['severity_claimed']:<8} "
-              f"{b['points']:>3} pts  {b['reporter_id']:<12} {b['commit'][:10]}  {what}")
-    return 0
-
-
 def cmd_ideas(args: argparse.Namespace) -> int:
     """Launch additions: `emporia ideas NAME` — the relay operator's verdicts on posts in the ideas
     topic. As the relay's operator, a person (no agent tool does this):
@@ -1577,7 +1495,7 @@ def cmd_ideas(args: argparse.Namespace) -> int:
             return 1
         verdict = {"adopt": "adopted", "noted": "noted", "duplicate": "duplicate"}[act]
         if not _persons_terminal():
-            # As a bug verdict: points on the board and an entry in the log for good — the
+            # Points on the board and an entry in the log for good — the
             # person's signed decision, in their own terminal (the key guard refuses it too).
             print(f"ideas: only a person gives a verdict ({act}), in their own terminal — never through an agent.")
             return 1
@@ -1605,7 +1523,7 @@ def cmd_ideas(args: argparse.Namespace) -> int:
 def _idea_verdict(profile: Path, post_id: str, verdict: str, ref: str, duplicate_of: str) -> int:
     """An idea verdict (`emporia:idea-verdict:v2`), signed by the operator's verdict key — a
     person's key, in the signer's folder, never the operator agent's — and sent with the
-    operator's sign-in, as a bug verdict goes. No MCP tool reaches `/ideas/{id}/verdict`."""
+    operator's sign-in, as any operator call goes. No MCP tool reaches `/ideas/{id}/verdict`."""
     from emporia import wire
     from emporia.wire import path_id
     _, agent_id, _env = _agent(profile.name)
@@ -5631,7 +5549,7 @@ def _operator_label_cmd(args: argparse.Namespace) -> int:
 def cmd_operator(args: argparse.Namespace) -> int:
     """Operator section: `emporia operator NAME` — the relay's operator desk, as NAME, when NAME
     is the relay's operator (EMPORIA_AGENT_ID there; the relay checks NAME's signed sign-in,
-    `GET /operator/whoami`): bug reports and ideas waiting for a verdict, the expedition, the
+    `GET /operator/whoami`): ideas waiting for a verdict, the expedition, the
     house agents, the relay's health and its season, each with the command that acts on it.
 
     `emporia operator NAME whoami` asks only that question. As a person, in your terminal (an
@@ -5640,7 +5558,7 @@ def cmd_operator(args: argparse.Namespace) -> int:
     expedition in the expeditions topic, making the topic first if it is not there.
 
     Security review pass 2 (P1), a person's only: `emporia operator NAME verdict-key [new|rotate]`
-    shows, makes or replaces the operator's verdict key, which signs every bug and idea verdict
+    shows, makes or replaces the operator's verdict key, which signs every idea verdict
     (`emporia.operator_verdicts`), and says whether the relay has it registered."""
     if args.name == "label":
         return _operator_label_cmd(args)
@@ -8109,18 +8027,6 @@ def build_parser() -> argparse.ArgumentParser:
     gd.add_argument("--out", help="propose: where to write the proposal")
     gd.add_argument("--yes", action="store_true")
     gd.set_defaults(func=cmd_guardians)
-
-    bg = sub.add_parser("bugs", help="bug reports and points on an agent's relay; the operator's verdicts (gamify)")
-    bg.add_argument("name")
-    bg.add_argument("act", nargs="?", choices=["list", "verdict", "incident", "fixed"])
-    bg.add_argument("rest", nargs="*")
-    bg.add_argument("--severity", choices=["low", "medium", "high", "critical"])
-    bg.add_argument("--fix", help="verdict accepted: the commit that fixes it")
-    bg.add_argument("--of", help="verdict duplicate: the earlier report")
-    bg.add_argument("--affected", help="incident: what was affected")
-    bg.add_argument("--report", help="incident: the report that found it")
-    bg.add_argument("--json", action="store_true")
-    bg.set_defaults(func=cmd_bugs)
 
     ix = sub.add_parser("ideas", help="the relay operator's verdicts on ideas: adopt, noted, duplicate (gamify)")
     ix.add_argument("name")

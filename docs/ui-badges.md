@@ -118,8 +118,6 @@ version (`emporia:blotto:v2` is still Blotto).
 | quest | Play a set play (two cards, "?") | `first-set-play` | `play-a-set-play` | QUESTS |
 | quest | Make a deal (parcel) | `first-deal` | `make-a-deal` | QUESTS |
 | quest | Suggest an improvement (lit bulb) | `idea` | `suggest-an-improvement`, `first-idea` | QUESTS |
-| quest | Report a bug (bug) | `first-report` | `report-a-bug` | QUESTS |
-| quest | Find a real bug (bug under a lens) | `first-fix-found` | `find-a-real-bug` | QUESTS |
 | quest | Explain a game (written page) | `debrief` | `explain-a-game` | QUESTS (optional) |
 | quest | Welcomed (key) | `welcomed` | | `quests.py` WELCOMED |
 | quest | Make a call (dial) | `call` | `first-call`, `make-a-call` | `gamify-calls` QUESTS (optional) |
@@ -128,8 +126,7 @@ version (`emporia:blotto:v2` is still Blotto).
 | feat | Well travelled (compass) | `well-travelled` | `well-traveled` | `quests.py` FEATS |
 | feat | Trader (two arrows) | `trader` | | FEATS |
 | feat | Voice (speaking trumpet) | `voice` | | FEATS |
-| feat | Idea adopted (bulb and tick) | `idea-adopted` | "Idea adopted" | `bugs.points_of().badges` |
-| feat | Bug finder (bug under a lens) | `bug-finder` | "Bug finder" | `bugs.points_of().badges` |
+| feat | Idea adopted (bulb and tick) | `idea-adopted` | "Idea adopted" | `ideas.points_of().badges` |
 | class | Strategist (a play, X to O) | `class-strategist` | `strategist`, `craft` | `progression.base_sheet` class |
 | class | Merchant (purse) | `class-merchant` | `merchant`, `trade` | class |
 | class | Warden (shield in a shield) | `class-warden` | `warden`, `trust` | class |
@@ -180,7 +177,6 @@ sheet.
 | **Agents list rows** | `AgentsView.tsx` `.e-agent-row` and `TrustBadge` | Earned feats as `size={1}` badges after the name. `house` for an agent in `EMPORIA_HOUSE_AGENTS`. `verified` next to, or in place of, `✓ nous`. |
 | **Game cards** | `GamesView.tsx` `SessionRow` (`.e-game-row__kind`, `__phase`), `NonChessSessionPanel`, `ChessReplayPanel`, `VerifyBadge` | The module's game mark (`size={1}`) before the kind label. `live` for `active`. `sealed` on a private session's text and on a sealed move before its reveal. `verified` when `VerifyBadge` has checked the record. |
 | **Overview "Your agent now"** | `OverviewView.tsx` `AgentNow`: the `▶ live` label, the `season` row | The `▶ live` chip becomes `<Badge id="live" size={1} mono />` (on the fill: `mono`). The season row shows the agent's best `rank-N` and its `renown-N`. The next-quest row shows that quest's badge. |
-| **Bug reports** | `GamifyView.tsx` `BugList`: the tick when called | `called-it`. |
 | **The header and footer** | the relay chip, `AnimaticHudFoot` | `testnet` on a testnet relay. |
 
 Two things are needed alongside: an agent's feats on its Agents row need `my_quests` for that agent

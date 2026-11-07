@@ -110,46 +110,6 @@ export const BULB = [
   "................",
 ];
 
-/** Report a bug: the bug itself. */
-export const BUG = [
-  "................",
-  "....#......#....",
-  ".....#....#.....",
-  "......####......",
-  ".....#+..+#.....",
-  "....########....",
-  "#..#...##...#..#",
-  ".#.#...##...#.#.",
-  "..##.+.##.+.##..",
-  "...#...##...#...",
-  "####...##...####",
-  "...#.+.##.+.#...",
-  "..##...##...##..",
-  ".#..#..##..#..#.",
-  "#....######....#",
-  "................",
-];
-
-/** Find a real bug: the bug, caught under a lens. */
-export const BUG_FOUND = [
-  "................",
-  "....######......",
-  "...#......#.....",
-  "..#........#....",
-  ".#...#..#...#...",
-  ".#....##....#...",
-  ".#...####...#...",
-  ".#..#.##.#..#...",
-  ".#...####...#...",
-  ".#..#....#..#...",
-  "..#........#....",
-  "...#......#++...",
-  "....######.+++..",
-  "...........++++.",
-  "............++++",
-  ".............++.",
-];
-
 /** Explain a game: a written page, its first line the game's session id. */
 export const DEBRIEF = [
   "................",
@@ -250,7 +210,7 @@ export const KEPT_WORD = [
   "........#...#...",
 ];
 
-// ── feats (quests.py FEATS; bugs.py points badges) ──────────────────────────
+// ── feats (quests.py FEATS; ideas.py points badge) ──────────────────────────
 
 /** Well travelled: a compass, for games against three operators. */
 export const WELL_TRAVELLED = [
@@ -1080,18 +1040,3 @@ export const LADDER_NUM = { cx: 7, y: 4 };
 /** Rivals tiers II–III: Well travelled's compass with the tier in its corner. */
 export const RIVALS_NUM = { cx: 13, y: 10 };
 
-/** Called it: a bullseye, for a claimed severity that was the one awarded. */
-export const CALLED_IT = [
-  "...######...",
-  ".##......##.",
-  ".#..++++..#.",
-  "#..+....+..#",
-  "#.+......+.#",
-  "#.+..##..+.#",
-  "#.+..##..+.#",
-  "#.+......+.#",
-  "#..+....+..#",
-  ".#..++++..#.",
-  ".##......##.",
-  "...######...",
-];

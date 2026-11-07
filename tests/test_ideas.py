@@ -1,8 +1,7 @@
-"""Launch additions: adopted ideas, "called it", and the improvement board.
+"""Launch additions: adopted ideas and the improvement board.
 
-The operator's signed verdict on a post in the ideas topic, reusing the bug verdict's
-mechanism (operator only, final, logged); a reporter's claimed severity beside the
-awarded one; adopted ideas' points on the season's bug board and the sheet. Since the
+The operator's signed verdict on a post in the ideas topic (operator only, final, logged);
+adopted ideas' points on the season's ideas board and the sheet. Since the
 security review's pass 2 (P1) a verdict is signed by the operator's verdict key, never the
 operator agent's own."""
 import os
@@ -11,10 +10,9 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import bugs, ideas, progression, signing, translog, wire
+from emporia import ideas, progression, signing, translog, wire
 from emporia import relay_server as rs
 from tests import verdict_key as vk
-from tests.test_bugs import file
 from tests.test_emporia import _register_keyed
 
 
@@ -23,7 +21,7 @@ from tests.ids import stable_of  # noqa: E402
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,bugs")
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,ideas")
     monkeypatch.delenv("EMPORIA_IDEA_POINTS", raising=False)
     monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
     vk.register(monkeypatch)
@@ -81,19 +79,6 @@ def test_points_are_configurable_and_never_to_the_operator_or_the_house(monkeypa
     assert ideas.check_ref("") and ideas.check_ref(" x") and ideas.check_ref("x" * 201)
 
 
-def test_called_it_compares_the_claim_with_the_award_once_accepted():
-    rows = [{"status": "accepted", "severity_claimed": "high", "severity": "high"},
-            {"status": "accepted", "severity_claimed": "critical", "severity": "medium"},
-            {"status": "accepted", "severity_claimed": "low", "severity": "medium"},
-            {"status": "open", "severity_claimed": "critical", "severity": ""},
-            {"status": "invalid", "severity_claimed": "critical", "severity": ""}]
-    assert [bugs.called_it(r) for r in rows] == [True, False, False, None, None]
-    c = bugs.calibration(rows)
-    assert (c["judged"], c["matched"], c["claimed_higher"], c["claimed_lower"]) == (3, 1, 1, 1)
-    assert c["line"] == "claimed severity matched the awarded one in 1 of 3 accepted reports (1 claimed higher, 1 lower)"
-    assert "no accepted reports" in bugs.calibration(rows[3:])["line"]
-
-
 def test_the_verdict_payload_is_its_own_kind_and_no_agents():
     p = wire.signed_idea_verdict_payload("p", "adopted", "abc1234", "", "relay", "k", "t")
     assert p["type"] == "emporia:idea-verdict:v2" and "idea-verdict" not in signing.KINDS
@@ -102,7 +87,7 @@ def test_the_verdict_payload_is_its_own_kind_and_no_agents():
 
 # ── the relay ──────────────────────────────────────────────────────────────
 
-def test_off_without_bug_quests(client, monkeypatch):
+def test_off_without_the_ideas_part(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
     assert client.get("/ideas").status_code == 404
 
@@ -169,31 +154,19 @@ def test_a_verdict_is_an_entry_in_the_log(client, monkeypatch):
     assert records, "logged"
 
 
-def test_adopted_ideas_and_called_it_reach_the_board_the_points_and_the_sheet(client, monkeypatch):
-    op, finder, thinker = setup(client, monkeypatch, "f", "t")
-    bug = file(client, finder)[0].json()             # claimed medium (tests.test_bugs.report's default)
-    assert client.post(f"/bugs/{bug['report_id']}/verdict", headers=as_(op),
-                       json=vk.bug(bug["report_id"], "accepted", "medium",
-                                   uuid.uuid4().hex[:12])).json()["called_it"] is True
-    bug2 = file(client, finder)[0].json()
-    client.post(f"/bugs/{bug2['report_id']}/verdict", headers=as_(op),
-                json=vk.bug(bug2["report_id"], "accepted", "low", uuid.uuid4().hex[:12]))
-    listed = {b["report_id"]: b for b in client.get("/bugs").json()["reports"]}
-    assert listed[bug2["report_id"]]["called_it"] is False and listed[bug2["report_id"]]["severity_claimed"] == "medium"
+def test_adopted_ideas_reach_the_board_the_points_and_the_sheet(client, monkeypatch):
+    op, thinker = setup(client, monkeypatch, "t")
     monkeypatch.setenv("EMPORIA_IDEA_POINTS", "12")
     verdict(client, op, idea(thinker), "adopted", ref=uuid.uuid4().hex[:8])
-    board = {r["agent_id"]: r for r in client.get("/season").json()["boards"]["bugs"]}
-    assert board[thinker]["points"] == 12 and board[thinker]["adopted"] == 1
-    assert board[finder]["accepted"] == 2 and board[finder]["called"] == 1
+    board = {r["agent_id"]: r for r in client.get("/season").json()["boards"]["ideas"]}
+    assert board[thinker] == {"agent_id": thinker, "points": 12, "adopted": 1}
     pts = client.get(f"/agents/{thinker}/points").json()
-    assert (pts["points"], pts["idea_points"], pts["adopted"]) == (12, 12, 1) and "Idea adopted" in pts["badges"]
-    sheet = client.get(f"/agents/{finder}/sheet").json()
-    imp = sheet["improvements"]
-    assert imp["calibration"]["line"].startswith("claimed severity matched the awarded one in 1 of 2")
-    assert {(r["claimed"], r["awarded"]) for r in imp["reports"]} == {("medium", "medium"), ("medium", "low")}
-    assert "calibration:" in progression.render(sheet) and "(called it)" in progression.render(sheet)
+    assert (pts["points"], pts["adopted"]) == (12, 1) and "Idea adopted" in pts["badges"]
+    sheet = client.get(f"/agents/{thinker}/sheet").json()
+    assert sheet["improvements"]["points"] == 12 and sheet["improvements"]["adopted"] == 1
+    assert "Improve  12 points" in progression.render(sheet)
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
-    assert "improvements" not in client.get(f"/agents/{finder}/sheet").json(), "with bug quests only"
+    assert "improvements" not in client.get(f"/agents/{thinker}/sheet").json(), "with the ideas part only"
 
 
 def test_the_operators_command_signs_with_the_verdict_key_and_sends_the_verdict(client, monkeypatch, capsys,
@@ -245,16 +218,11 @@ def test_the_operators_command_signs_with_the_verdict_key_and_sends_the_verdict(
     assert "/verdict" not in src and "operator_verdicts" not in src, "no MCP tool reaches a verdict"
 
 
-
-
-
-
 def test_the_board_counts_ideas_in_the_season_and_never_the_house():
     s = {"season": "s", "started_at": "2026-11-01T00:00:00+00:00", "ends_at": None}
-    out = progression.season_boards([], [], None, 0.0, s, frozenset({"house"}), 25, reports=[], ideas=[
+    out = progression.season_boards([], [], None, 0.0, s, frozenset({"house"}), 25, ideas=[
         {"author_id": "a", "verdict": "adopted", "points": 10, "decided_at": "2026-11-05T00:00:00+00:00"},
         {"author_id": "a", "verdict": "adopted", "points": 10, "decided_at": "2026-10-05T00:00:00+00:00"},
         {"author_id": "b", "verdict": "noted", "points": 0, "decided_at": "2026-11-05T00:00:00+00:00"},
         {"author_id": "house", "verdict": "adopted", "points": 10, "decided_at": "2026-11-05T00:00:00+00:00"}])
-    assert out["boards"]["bugs"] == [{"agent_id": "a", "points": 10, "accepted": 0, "called": 0, "adopted": 1,
-                                      "idea_points": 10}]
+    assert out["boards"]["ideas"] == [{"agent_id": "a", "points": 10, "adopted": 1}]

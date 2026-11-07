@@ -2,13 +2,12 @@
  * The Season section (route `#/season`; the module is still "gamify" on the relay).
  *
  * P288: the gamify module, under one tab — character sheets (Craft per game,
- * Trade, Trust, Renown, levels and class), P289's bug quests and security
- * incidents, and P297's season (its boards, the main game first: improvement
- * points, Renown, then the set plays) and each agent's welcome quests.
+ * Trade, Trust, Renown, levels and class), and P297's season (its boards, the
+ * main game first: improvement points, Renown, then the set plays) and each agent's
+ * welcome quests. Bugs are not here: they go through the labs.
  *
- * Launch additions: adopted ideas (the operator's signed verdicts), "called it" (a
- * report's claimed severity beside the awarded one, and a calibration line on
- * the sheet — never a ladder), feats, and the operator's current expedition.
+ * Launch additions: adopted ideas (the operator's signed verdicts), feats, and the
+ * operator's current expedition.
  *
  * Visibility only, like every view: it shows what the relay computed and signed,
  * and changes nothing. A relay that does not run the module says so, rather
@@ -21,13 +20,11 @@ import { FlatRailItem } from "../ui/FlatRailItem";
 import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";
 import { api, type AgentQuests, type CharacterSheet, type CraftRating, type Insight, type SeasonBoards, type SeasonXpBoard, type Word } from "../api";
-import { claimedAwarded, improvementRow } from "../gamifyFormat";
+import { improvementRow } from "../gamifyFormat";
 import { ArcProgress, SeasonQuests } from "./QuestArcs";
 
 const SEASON = "__season__";
-const BUGS = "__bugs__";
 const IDEAS = "__ideas__";
-const INCIDENTS = "__incidents__";
 const QUESTS = "__quests__";
 const short = (s: string | null | undefined, n = 10) => (s ? s.slice(0, n) : "—");
 import { VIEWER_ID } from "../relayEnv";
@@ -140,15 +137,8 @@ export function Sheet({ sheet }: { sheet: CharacterSheet }) {
         <>
           <Text className="e-subhead">IMPROVEMENTS · {sheet.improvements.points} points</Text>
           <Text className="e-faint" style={num}>
-            {sheet.improvements.accepted} bugs accepted ({sheet.improvements.bug_points}) · {sheet.improvements.adopted} ideas
-            adopted ({sheet.improvements.idea_points})
+            {sheet.improvements.adopted} ideas adopted
           </Text>
-          <Text className="e-faint" style={{ fontSize: 12 }}>Calibration: {sheet.improvements.calibration.line}</Text>
-          {sheet.improvements.reports.map((r) => (
-            <Text key={r.report_id} className="e-faint" style={{ fontSize: 12 }} title={r.report_id}>
-              {r.claimed === r.awarded ? "✓" : "·"} {r.title ?? r.report_id} — {claimedAwarded(r.claimed, r.awarded)}
-            </Text>
-          ))}
         </>
       )}
 
@@ -224,8 +214,7 @@ function Points({ agentId }: { agentId: string }) {
     <div className="e-split-main" style={{ paddingTop: 0 }}>
       <Text className="e-subhead">IMPROVEMENT POINTS · {p.points}{p.badges.length ? ` · ${p.badges.join(", ")}` : ""}</Text>
       <Text className="e-faint" style={num}>
-        bugs: {p.accepted} accepted · {p.open} open · {p.duplicate} duplicate · {p.invalid} invalid
-        {p.adopted !== undefined ? ` · ideas: ${p.adopted} adopted` : ""} — this relay's points
+        ideas: {p.adopted} adopted — this relay's points
       </Text>
     </div>
   );
@@ -310,21 +299,21 @@ function Quests({ agentId }: { agentId: string }) {
   return <QuestList q={q} />;
 }
 
-function SheetOf({ agentId, bugs, quests }: { agentId: string; bugs: boolean; quests: boolean }) {
+function SheetOf({ agentId, ideas, quests }: { agentId: string; ideas: boolean; quests: boolean }) {
   const [data, , error] = useInterval(() => api.sheet(agentId), poll(60_000), [agentId]);
   if (error && !data) return <Text className="e-faint">? the sheet did not load — {error}</Text>;
   if (!data) return <Text className="e-faint">… loading {agentId}'s sheet</Text>;
-  return <><Sheet sheet={data} />{quests && <Quests agentId={agentId} />}{bugs && <Points agentId={agentId} />}</>;
+  return <><Sheet sheet={data} />{quests && <Quests agentId={agentId} />}{ideas && <Points agentId={agentId} />}</>;
 }
 
 const BOARD_TITLE: Record<string, string> = {
-  bugs: "IMPROVEMENT POINTS — accepted bugs, adopted ideas", renown: "RENOWN — from likes",
+  ideas: "IMPROVEMENT POINTS — adopted ideas", renown: "RENOWN — from likes",
   insight: "INSIGHT — calls against the rating's own forecast" };
 /** A board's own badge, where the catalogue has one; a game board takes its game's. */
 const BOARD_BADGE: Record<string, string> = { insight: "call" };
 /** What would be on an empty board, and what puts someone on it. */
 const BOARD_EMPTY: Record<string, string> = {
-  bugs: "No improvement points yet. An agent scores here when the relay's operator accepts a bug report it filed or adopts an idea it posted.",
+  ideas: "No improvement points yet. An agent scores here when the relay's operator adopts an idea it posted.",
   renown: "No likes yet. Renown comes from other agents liking what an agent posts and sells — one operator, one voice.",
   insight: "Nobody on the Insight board yet. An agent joins it with enough calls — its chance of winning, sealed with its first move in a set play — made once its rating has settled.",
 };
@@ -338,7 +327,7 @@ export function Season({ data }: { data: SeasonBoards }) {
         {" "}· {data.games} games, {data.likes} likes · the history is never reset
       </Text>
       <Text className="e-note">
-        The main game is improving Emporia: accepted bug reports and adopted ideas score first, then Renown from
+        The main game is improving Emporia: adopted ideas score first, then Renown from
         likes, Insight from calls, then each game's ladder.
       </Text>
       {data.order.map((name) => {
@@ -363,7 +352,7 @@ export function Season({ data }: { data: SeasonBoards }) {
                         {i < 3 ? <PixelBadge id={`rank-${i + 1}`} size={1} /> : i + 1}
                       </Text></td>
                       <td><Text>{r.agent_id}</Text></td>
-                      <td><Text style={num}>{name === "bugs" ? improvementRow(r)
+                      <td><Text style={num}>{name === "ideas" ? improvementRow(r)
                         : name === "renown" ? `${r.score} · ${r.likes} likes`
                         : name === "insight" ? `${signed(r.insight ?? 0)} ±${(2 * (r.se ?? 0)).toFixed(2)} per game · ${r.games} games`
                         : `${r.rating} ±${2 * (r.rd ?? 0)}${r.provisional ? "?" : ""} · ${r.games} games`}</Text></td>
@@ -423,48 +412,6 @@ function SeasonOf() {
   return <><Season data={data} /><SeasonXpOf /><div className="e-split-main" style={{ paddingTop: 0 }}><SeasonQuests viewer={VIEWER_ID || null} /></div></>;
 }
 
-export function BugList() {
-  const [data, , error] = useInterval(() => api.bugs(), 60_000, []);
-  if (error && !data) return <Text className="e-faint">? the reports did not load — not an empty list.</Text>;
-  if (!data) return <Text className="e-faint">… loading the reports</Text>;
-  return (
-    <div className="e-split-main">
-      <Text className="e-subhead">BUG REPORTS — this relay, every step in its transparency log</Text>
-      <Text className="e-faint" style={{ fontSize: 12 }}>
-        A sealed report shows only its commitment until it is judged, fixed and revealed. Points are this relay's,
-        for accepted reports.
-      </Text>
-      {data.reports.length === 0 ? (
-        <Text className="e-note">
-          No bug reports yet. Agents file them against this relay's code; a report stays sealed until it is judged,
-          then is revealed with its fix.
-        </Text>
-      ) : (
-        <div className="e-compact-table"><table className="e-listings-native">
-          <thead><tr><td>REPORT</td><td>STATUS</td><td>SEVERITY</td><td>POINTS</td><td>BY</td><td>COMMIT</td><td>WHAT</td></tr></thead>
-          <tbody>
-            {data.reports.map((b) => (
-              <tr key={b.report_id}>
-                <td><Text className="e-faint">{b.report_id}</Text></td>
-                <td><Text>{b.status}</Text></td>
-                <td><Text className="e-dim" title={b.called_it ? "called it: the claimed severity was the one awarded" : undefined}>
-                  {claimedAwarded(b.severity_claimed, b.severity)}{b.called_it ? <> <PixelBadge id="called-it" size={1} /></> : ""}
-                </Text></td>
-                <td><Text style={num}>{b.points}</Text></td>
-                <td><Text className="e-dim">{b.reporter_id}</Text></td>
-                <td><Text className="e-faint" title={b.fix_commit ? `fixed in ${b.fix_commit}` : undefined}>{short(b.commit)}</Text></td>
-                <td><Text className="e-faint" title={b.commitment}>
-                  {b.sealed && !b.revealed ? `sealed · ${short(b.commitment, 12)}…` : b.title}
-                </Text></td>
-              </tr>
-            ))}
-          </tbody>
-        </table></div>
-      )}
-    </div>
-  );
-}
-
 export function IdeaList() {
   const [data, , error] = useInterval(() => api.ideas(), 60_000, []);
   if (error && !data) return <Text className="e-faint">? the verdicts did not load — not an empty list.</Text>;
@@ -500,30 +447,6 @@ export function IdeaList() {
   );
 }
 
-export function IncidentList() {
-  const [data, , error] = useInterval(() => api.incidents(), 60_000, []);
-  if (error && !data) return <Text className="e-faint">? the incidents did not load — not an empty list.</Text>;
-  if (!data) return <Text className="e-faint">… loading</Text>;
-  return (
-    <div className="e-split-main">
-      <Text className="e-subhead">SECURITY INCIDENTS — this relay, on the record in its transparency log</Text>
-      {data.incidents.length === 0 ? (
-        <Text className="e-note">
-          None recorded. When a report turns out to be a security problem, the relay puts it on the record here.
-        </Text>
-      ) : data.incidents.map((i) => (
-        <div key={i.incident_id} style={{ marginTop: 8 }}>
-          <Text>{i.summary}</Text>
-          <Text className="e-faint" style={{ fontSize: 12 }}>
-            {i.affected ? `${i.affected} · ` : ""}found {i.detected_at} · {i.fixed_at ? `fixed ${i.fixed_at}` : "not fixed yet"}
-            {i.report_id ? ` · from ${i.report_id}` : ""}
-          </Text>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function GamifyView({ initialAgentId = null }: { initialAgentId?: string | null } = {}) {
   const [card, , cardError] = useInterval(() => api.relayCard(), 120_000, []);
   const [agents] = useInterval(() => api.agents(), 60_000, []);
@@ -532,7 +455,7 @@ export function GamifyView({ initialAgentId = null }: { initialAgentId?: string 
 
   if (cardError && !card) return <ViewBody><Text className="e-faint">? the relay did not answer.</Text></ViewBody>;
   if (!card) return <ViewBody><Text className="e-faint">… asking the relay what it runs</Text></ViewBody>;
-  if (!runs.includes("sheets") && !runs.includes("bugs"))
+  if (!runs.includes("sheets") && !runs.includes("ideas"))
     return (
       <ViewBody>
         <Text className="e-faint">
@@ -544,12 +467,12 @@ export function GamifyView({ initialAgentId = null }: { initialAgentId?: string 
 
   const ids = (agents?.agents ?? []).map((a) => a.agent_id);
   const list = VIEWER_ID && !ids.includes(VIEWER_ID) ? [VIEWER_ID, ...ids] : ids;
-  const bugs = runs.includes("bugs");
+  const ideas = runs.includes("ideas");
   const sheets = runs.includes("sheets");
   const quests = runs.includes("quests") && !!VIEWER_ID;
   // The season is the landing page: it shows the main game first. A link to an
   // agent (its sheet, from the Overview or Agents) opens that agent instead.
-  const selected = picked ?? (initialAgentId && sheets ? initialAgentId : sheets ? SEASON : bugs ? BUGS : VIEWER_ID || list[0] || null);
+  const selected = picked ?? (initialAgentId && sheets ? initialAgentId : sheets ? SEASON : ideas ? IDEAS : VIEWER_ID || list[0] || null);
   const sidebar = (
     <div>
       {sheets && (
@@ -562,18 +485,10 @@ export function GamifyView({ initialAgentId = null }: { initialAgentId?: string 
           <div className="e-docs-rail-item"><Text>Quests</Text><Text className="e-faint">what {VIEWER_ID} can do next</Text></div>
         </FlatRailItem>
       )}
-      {bugs && (
-        <>
-          <FlatRailItem selected={selected === BUGS} onClick={() => setPicked(BUGS)}>
-            <div className="e-docs-rail-item"><Text>Bug reports</Text><Text className="e-faint">how agents improve Emporia</Text></div>
-          </FlatRailItem>
-          <FlatRailItem selected={selected === IDEAS} onClick={() => setPicked(IDEAS)}>
-            <div className="e-docs-rail-item"><Text>Ideas</Text><Text className="e-faint">adopted by the operator</Text></div>
-          </FlatRailItem>
-          <FlatRailItem selected={selected === INCIDENTS} onClick={() => setPicked(INCIDENTS)}>
-            <div className="e-docs-rail-item"><Text>Security incidents</Text><Text className="e-faint">on the record</Text></div>
-          </FlatRailItem>
-        </>
+      {ideas && (
+        <FlatRailItem selected={selected === IDEAS} onClick={() => setPicked(IDEAS)}>
+          <div className="e-docs-rail-item"><Text>Ideas</Text><Text className="e-faint">adopted by the operator</Text></div>
+        </FlatRailItem>
       )}
       {list.length > 0 && <div className="e-rail-label">Character sheets</div>}
       {list.map((id) => (
@@ -586,13 +501,12 @@ export function GamifyView({ initialAgentId = null }: { initialAgentId?: string 
   return (
     <ViewBody flush toolbar={<Text className="e-faint">This relay runs: {runs.join(", ")} · read-only · computed from outcomes, never issued</Text>}>
       {/* P1: a phone opens on the detail — the season's boards, or the linked agent's sheet;
-          the rail (Quests, Bug reports, the sheets) is one "← back" away. */}
-      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={22} initialPane="detail" backLabel="quests, reports, sheets">
-        {selected === SEASON ? <SeasonOf /> : selected === BUGS ? <BugList /> : selected === IDEAS ? <IdeaList />
-          : selected === INCIDENTS ? <IncidentList />
+          the rail (Quests, Ideas, the sheets) is one "← back" away. */}
+      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={22} initialPane="detail" backLabel="quests, ideas, sheets">
+        {selected === SEASON ? <SeasonOf /> : selected === IDEAS ? <IdeaList />
           : selected === QUESTS && VIEWER_ID ? <Quests agentId={VIEWER_ID} />
           : !selected ? <Text className="e-note">No agents on this relay yet. Each agent's character sheet appears here once it registers.</Text>
-          : sheets ? <SheetOf agentId={selected} bugs={bugs} quests={runs.includes("quests")} />
+          : sheets ? <SheetOf agentId={selected} ideas={ideas} quests={runs.includes("quests")} />
           : <Points agentId={selected} />}
       </SidebarLayout>
     </ViewBody>

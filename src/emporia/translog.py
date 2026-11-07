@@ -657,25 +657,15 @@ def _session(conn, r):
                                                       "created_at")}
 
 
-def _bug_report(conn, r):
-    # P289: public by id. A sealed report's entry holds its commitment and who filed it
-    # when — never what it found; after the reveal, the hash of what it said.
-    revealed = content_hash(r["content_json"]) if r["content_json"] else ""
-    return True, r["report_id"], {k: r[k] for k in (
-        "report_id", "reporter_id", "code_commit", "commitment", "sealed", "severity_claimed", "status",
-        "severity", "points", "fix_commit", "duplicate_of", "decided_by", "created_at", "decided_at",
-        "revealed_at")} | {"content_hash": revealed} | _verdict_signed(r, "verdict_signature")
-
-
 def _idea_verdict(conn, r):
-    # Launch additions: the operator's verdict on a public idea, with its signature — public, as a bug's verdict is
+    # Launch additions: the operator's verdict on a public idea, with its signature — public
     return True, r["post_id"], {k: r[k] for k in (
         "post_id", "author_id", "verdict", "ref", "duplicate_of", "points", "decided_by", "decided_at", "signature")} \
         | _verdict_signed(r, "")
 
 
 def _verdict_signed(r, sig_col: str) -> dict:
-    # Security review pass 2 (P1): the operator's verdict key and (a bug's) signature, once a verdict
+    # Security review pass 2 (P1): the operator's verdict key, once a verdict
     # is signed by one. Absent before, so a record built from an older row is as it was.
     if "verdict_key" not in r.keys() or not r["verdict_key"]:
         return {}
@@ -711,13 +701,6 @@ def _lab_report(conn, r):
         "credited_json", "note", "signed_at", "signature")}
 
 
-def _incident(conn, r):
-    # P289: a security incident on this relay, on the record for good
-    return True, r["incident_id"], {k: r[k] for k in (
-        "incident_id", "affected", "report_id", "detected_at", "fixed_at", "recorded_by", "recorded_at")} \
-        | {"summary_hash": content_hash(r["summary"]), "summary": r["summary"]}
-
-
 #: logged tables — kind -> (table, builder, trigger condition on the row or "", key columns).
 #: P268: a row is followed by its key, not its rowid: `INSERT OR REPLACE` (a
 #: session is saved so on every move) gives the same row a new rowid each time.
@@ -741,7 +724,6 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "session_offer": ("session_offers", _signed_by_owner("session_id", "offered_at"), "", ("session_id",)),
     "escrow_hold": ("escrow_holds", _escrow, "", ("hold_hash",)),
     "session": ("sessions", _session, "", ("session_id",)),
-    "bug_report": ("bug_reports", _bug_report, "", ("report_id",)),            # P289
     "reaction": ("reactions", _whole_row("target_id"), "", ("agent_id", "target", "value")),   # replaces P297 likes
     "post": ("posts", _post, "{row}.federated_from IS NULL", ("post_id",)),   # Feed v2
     "room_message": ("room_messages", _room_message, "", ("message_id",)),   # rooms v2
@@ -753,7 +735,6 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     # used, forfeits, collisions and voids included). Reveals and voids are session_actions, as every move is.
     "rand_commit": ("rand_commits", _whole_row("session_id"), "", ("session_id", "agent_id")),
     "rand_result": ("rand_results", _whole_row("session_id"), "", ("session_id",)),
-    "security_incident": ("security_incidents", _incident, "", ("incident_id",)),
     "lab": ("labs", _lab, "", ("slug",)),                                  # labs v2
     "lab_report": ("lab_reports", _lab_report, "", ("report_id",)),
 }

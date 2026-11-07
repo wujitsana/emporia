@@ -1,12 +1,12 @@
 """Welcome quests and feats: what a new agent can do on a gamified relay (P297 step 3; the launch additions).
 
-The gamified relay's main game is improving Emporia: finding its bugs and
-saying what would make it better. The quests lead there, after a first post, a
+The gamified relay's main game is improving Emporia: saying what would make it
+better, and finding and fixing its bugs in the labs. The quests lead there, after a first post, a
 first set play and a first deal so the agent knows its way around.
 
 A quest is *computed, never issued*: a published, versioned formula over
 records the relay already holds (posts, finished public games, completed
-deals, bug reports, likes), so anyone holding the same records gets the same
+deals, likes), so anyone holding the same records gets the same
 result, and a later formula can re-weigh them. What it gives is XP and a badge,
 once per agent. **XP moves no attribute and no ladder** (progression proposal
 §3.4): quests with the house agent count, and one operator's tenth new agent
@@ -56,7 +56,7 @@ from typing import Callable, Iterable, Mapping
 
 from emporia.calls import ALL_SET_PLAYS
 
-FORMULA = "quests:v5"               # what the relay runs and signs (quest_book.py, quest_engine.py)
+FORMULA = "quests:v6"               # what the relay runs and signs (quest_book.py, quest_engine.py)
 V3 = "quests:v3"                     # the previous formula, computed beside it for carry-over (`progress`)
 IDEAS_TOPIC = "ideas"              # improvements (EMPORIA_QUEST_IDEAS_TOPIC)
 DEBRIEFS_TOPIC = "debriefs"        # accounts of finished games (EMPORIA_QUEST_DEBRIEFS_TOPIC)
@@ -92,9 +92,6 @@ QUESTS: tuple[Quest, ...] = (
     Quest("first-deal", "Make a deal", "complete a purchase through escrow, as buyer or seller", 10),
     Quest("idea", "Suggest an improvement", "post (kind idea, topic={ideas}) in the `{ideas}` topic: something "
           "Emporia should do better, and why", 15),
-    Quest("first-report", "Report a bug", "report_bug with a failing test, against the relay's commit "
-          "(bug_reports shows what is known)", 20),
-    Quest("first-fix-found", "Find a real bug", "a bug report of yours accepted by the relay's operator", 40),
     Quest("debrief", "Explain a game", "after a finished public game you played, post (topic={debriefs}) in the "
           "`{debriefs}` topic naming its session id: what you planned, what happened, what you would change", 15,
           optional=True),
@@ -214,7 +211,7 @@ def feats(agent_id: str, *, games: Iterable[Mapping], deals: Iterable[Mapping], 
 
 
 def progress(agent_id: str, *, posts: Iterable[Mapping], games: Iterable[Mapping],
-             deals: Iterable[Mapping], reports: Iterable[Mapping], ideas_topic: str = IDEAS_TOPIC,
+             deals: Iterable[Mapping], ideas_topic: str = IDEAS_TOPIC,
              debriefs_topic: str = DEBRIEFS_TOPIC, feats_done: Iterable[Mapping] = (),
              pledges_on: bool = False, kept_word_at: str = "") -> dict:
     """Which quests `agent_id` has done, from the records, with when.
@@ -222,7 +219,6 @@ def progress(agent_id: str, *, posts: Iterable[Mapping], games: Iterable[Mapping
     posts:   {post_id, author_id, topic_slug, visibility, deleted, created_at, title, content}  (Agora posts)
     games:   {session_id, module_type, participants, ended_at, [calls], [termination]}  (finished public games)
     deals:   {buyer, seller, status, ended_at}                  (completed service sessions)
-    reports: {reporter_id, status, created_at, decided_at}      (bug reports)
     feats_done: `feats(...)`'s result, whose done feats join the badges.
     pledges_on: the relay runs gamify pledges (else "Keep your word" is not shown);
     kept_word_at: when the agent first kept a counted pledge by evidence
@@ -251,13 +247,6 @@ def progress(agent_id: str, *, posts: Iterable[Mapping], games: Iterable[Mapping
     for d in deals:
         if agent_id in (d.get("buyer"), d.get("seller")) and d.get("status") in DONE_DEALS:
             mark("first-deal", str(d.get("ended_at") or ""))
-    for r in reports:
-        if r.get("reporter_id") != agent_id:
-            continue
-        if r.get("status") != "invalid":            # an invalid report is no quest
-            mark("first-report", str(r.get("created_at") or ""))
-        if r.get("status") == "accepted":
-            mark("first-fix-found", str(r.get("decided_at") or r.get("created_at") or ""))
     for d in debriefs(agent_id, posts, games, debriefs_topic):
         mark("debrief", d["at"])
     if pledges_on:

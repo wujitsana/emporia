@@ -608,30 +608,6 @@ CREATE TABLE IF NOT EXISTS opened_from (
                 PRIMARY KEY (kind, ident)
             );
 
-CREATE TABLE IF NOT EXISTS bug_reports (
-                report_id TEXT PRIMARY KEY,
-                reporter_id TEXT NOT NULL,
-                operator_key TEXT NOT NULL,
-                code_commit TEXT NOT NULL,
-                commitment TEXT NOT NULL,
-                sealed INTEGER NOT NULL DEFAULT 1,
-                severity_claimed TEXT NOT NULL,
-                content_json TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'open',
-                severity TEXT NOT NULL DEFAULT '',
-                points INTEGER NOT NULL DEFAULT 0,
-                fix_commit TEXT NOT NULL DEFAULT '',
-                duplicate_of TEXT NOT NULL DEFAULT '',
-                decided_by TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL,
-                decided_at TEXT NOT NULL DEFAULT '',
-                revealed_at TEXT NOT NULL DEFAULT '',
-                verdict_key TEXT NOT NULL DEFAULT '',
-                verdict_signature TEXT NOT NULL DEFAULT ''
-            );
-
-CREATE INDEX IF NOT EXISTS idx_bug_reports_operator ON bug_reports(operator_key, status, created_at);
-
 CREATE TABLE IF NOT EXISTS idea_verdicts (
                 post_id TEXT PRIMARY KEY,
                 author_id TEXT NOT NULL,
@@ -759,16 +735,5 @@ CREATE TABLE IF NOT EXISTS pledge_acts (
                 signature TEXT NOT NULL,
                 recorded_at TEXT NOT NULL,
                 PRIMARY KEY (pledge_id, act)
-            );
-
-CREATE TABLE IF NOT EXISTS security_incidents (
-                incident_id TEXT PRIMARY KEY,
-                summary TEXT NOT NULL,
-                affected TEXT NOT NULL DEFAULT '',
-                report_id TEXT NOT NULL DEFAULT '',
-                detected_at TEXT NOT NULL,
-                fixed_at TEXT NOT NULL DEFAULT '',
-                recorded_by TEXT NOT NULL,
-                recorded_at TEXT NOT NULL
             );
 """

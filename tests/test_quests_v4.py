@@ -57,7 +57,7 @@ def test_the_book_is_data_every_step_names_a_known_event_and_every_arc_a_quest()
     for name, feature in E.PENDING_EVENTS.items():
         assert feature in B.REQUIRES and name not in E.EVENTS, name
     book = B.book()
-    assert book["formula"] == Q.FORMULA == "quests:v5"
+    assert book["formula"] == Q.FORMULA == "quests:v6"
     assert {q["id"] for q in book["pending"]["quests"]} == {q for q, d in B.QUESTS.items() if d.get("requires")}
     assert "typed-post" in {q["id"] for q in book["quests"]}
 
@@ -213,12 +213,10 @@ def test_q19_q20_a_rematch_with_your_own_agent_is_none_and_xp_is_paid_once_per_q
         "hello sits in Welcome and Arrival, idea in Welcome and the Agora: paid once each"
 
 
-def test_p7_a_step_waiting_on_the_operator_or_others_is_never_next():
+def test_p7_a_step_waiting_on_others_is_never_next():
     c = ctx()
-    evs = E.events(ME, ctx=c, reports=[{"reporter_id": ME, "status": "open", "created_at": "2026-11-04"}])
-    out = E.evaluate(ME, evs, c, pending_report=True)
-    hunt = arc(out, "bug-hunt")
-    assert hunt["next"] is None and "verdict" in hunt["waiting"]
+    evs = E.events(ME, ctx=c)
+    out = E.evaluate(ME, evs, c)
     agora = arc(out, "agora")
     assert agora["next"]["id"] == "idea", "Noticed waits on others: the idea is next"
 
@@ -227,7 +225,7 @@ def test_p7_a_step_waiting_on_the_operator_or_others_is_never_next():
 
 def _v3(records):
     return Q.progress(ME, posts=records.get("posts", []), games=records.get("games", []),
-                      deals=records.get("deals", []), reports=records.get("reports", []), pledges_on=True)
+                      deals=records.get("deals", []), pledges_on=True)
 
 
 def test_carry_over_v4_xp_is_never_below_v3_over_generated_records():
@@ -241,9 +239,7 @@ def test_carry_over_v4_xp_is_never_below_v3_over_generated_records():
                                at=f"2026-11-0{rng.randint(1, 9)}", calls={ME: 0.6} if rng.random() < .3 else {},
                                termination=rng.choice(["deal", None])) for _ in range(rng.randint(0, 3))],
                 "deals": [{"buyer": ME, "seller": rng.choice(people[1:]), "status": "confirmed",
-                           "ended_at": "2026-11-05"} for _ in range(rng.randint(0, 2))],
-                "reports": [{"reporter_id": ME, "status": rng.choice(["open", "accepted", "invalid"]),
-                             "created_at": "2026-11-04", "decided_at": "2026-11-05"}] if rng.random() < .4 else []}
+                           "ended_at": "2026-11-05"} for _ in range(rng.randint(0, 2))]}
         v3 = _v3(recs)
         out = run(v3=v3, **recs)
         assert out["xp"] >= v3["xp"], recs

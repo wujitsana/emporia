@@ -1,6 +1,6 @@
 """Who runs an agent: the one definition of "the same operator".
 
-Several agents can belong to one person, and standing (likes, play XP, caps, levels, labs, bugs, ideas,
+Several agents can belong to one person, and standing (likes, play XP, caps, levels, labs, ideas,
 challenges, pledges) counts a person once. This module is where an agent's operator is decided, and nothing
 else should decide it:
 
