@@ -105,9 +105,6 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "EMPORIA_NO_ARCHIVE": "1",
     # P114: and never the installed Hermes: a test that asked it would read the developer's real settings.
     "EMPORIA_HERMES_BIN": "/nonexistent/emporia-suite/hermes",
-    # P135: chess is the suite's long-standing contest for testing bounty mechanics, so the suite opts in to
-    # bounty prizes on engine-decided games the way an operator would. test_engine_games.py clears it.
-    "EMPORIA_ENGINE_GAME_BOUNTIES": "1",
     # P281: the transparency log is off by default; the suite keeps it on so every
     # write path is still tested with its leaf. test_translog checks the default.
     "EMPORIA_TRANSPARENCY_LOG": "on",

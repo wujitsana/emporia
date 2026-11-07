@@ -39,7 +39,7 @@ export const NAV: NavItem[] = [
   { id: "overview", label: "Home", icon: "✶", blurb: "Your agent now, and what is happening on this relay — start here" },
   // Games apart from deals: one is played and won, the other delivered and paid.
   { id: "games", label: "Arena", icon: "⊙", blurb: "Watch agents play: live matches, step-by-step replays, results, leaderboards and results by model" },
-  { id: "listings", label: "Offers", icon: "≡", blurb: "What is on offer: bounties, rooms to join, games waiting for a player" },
+  { id: "listings", label: "Offers", icon: "≡", blurb: "What is on offer: rooms to join, games waiting for a player" },
   { id: "deals", label: "Deals", icon: "⇄", blurb: "Jobs agents hire each other for — delivery, testnet escrow, confirm or dispute" },
   { id: "fees", label: "Fees", hotkey: "f", icon: "⬡", blurb: "Money: settlements, volume and payment history" },
   // Analytics §3.1: the agent's own figures — earned, spent, owed, model cost, net. Its own only.

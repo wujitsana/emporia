@@ -4,10 +4,8 @@
  * The relay grew states the UI never learned: a settlement whose capture
  * failed is still written `status: "settled"` (its `transfer_status` says
  * `capture_failed`), x402 escrow holds and destination charges settle with no
- * transfer at all, and bounties gained `awaiting_payment`, `defaulted`,
- * `unfunded` and `cancelling`. Each fell through to the generic rendering — a
- * failed capture showed the same ● as money delivered. Same failure the
- * BountyBoard comment names: the reassuring reading, chosen by omission.
+ * transfer at all. Each fell through to the generic rendering — a
+ * failed capture showed the same ● as money delivered. The reassuring reading, chosen by omission.
  */
 import type { Settlement } from "./api";
 
@@ -133,37 +131,6 @@ export function holdStateTitle(state: string): string {
   }
 }
 
-/** A bounty state, for the board: a short label and what it means. */
-export function bountyStateLabel(
-  state: string,
-  full: boolean,
-): { label: string; title: string; failed?: boolean } {
-  switch (state) {
-    case "open":
-      return full
-        ? { label: "ready", title: "Seats are full; waiting to be started." }
-        : { label: "open", title: "Open for entry." };
-    case "running":
-      return { label: "running", title: "Being played now." };
-    case "awaiting_payment":
-      return { label: "awaiting payment", title: "A winner is named; the funder owes the promised prize." };
-    case "defaulted":
-      return { label: "defaulted", title: "The funder did not pay the promised prize in time.", failed: true };
-    case "unfunded":
-      return { label: "unfunded", title: "The held prize could not be captured, so the winner was not paid.", failed: true };
-    case "settled":
-      return { label: "paid", title: "The prize was paid to the winner." };
-    case "refunded":
-      return { label: "refunded", title: "No winner; the prize went back to the funder." };
-    case "cancelling":
-      return { label: "cancelling", title: "Being withdrawn; the hold is being released." };
-    case "cancelled":
-      return { label: "cancelled", title: "Withdrawn by the funder before anyone entered." };
-    default:
-      return { label: state, title: `This bounty is ${state}.` };
-  }
-}
-
 /** A session status, for the session lists. */
 export function sessionStatusLabel(status: string): string {
   if (status === "awaiting_funding") return "awaiting funding";
@@ -172,13 +139,13 @@ export function sessionStatusLabel(status: string): string {
 }
 
 /** P153: what can pay for something, before anyone does. */
-export type MoneyMove = "entry" | "purchase" | "bounty_held" | "bounty_promised";
+export type MoneyMove = "entry" | "purchase";
 
 export function acceptsLabel(
   move: MoneyMove,
   h: { stripe_enabled?: boolean; x402_enabled?: boolean; x402_networks?: string[];
        x402_escrow_network?: string | null; tempo_network?: string | null;
-       card_bounty_prizes?: boolean; custodial_cards?: boolean } | null,
+       custodial_cards?: boolean } | null,
 ): string {
   const card = !!h?.stripe_enabled;
   const usdc = !!h?.x402_enabled;
@@ -197,12 +164,6 @@ export function acceptsLabel(
     case "purchase":         // card held for the seller, or USDC held in escrow
       if (card) ways.push("card");
       if (h?.x402_escrow_network) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
-      break;
-    case "bounty_held":      // a held card prize needs both opt-ins (P157, P159)
-      if (card && h?.card_bounty_prizes && h?.custodial_cards) ways.push("card");
-      break;
-    case "bounty_promised":
-      if (usdc) ways.push("USDC, paid after the result");
       break;
   }
   return ways.length ? `accepts ${ways.join(" · ")}` : "no payment rail on this relay";

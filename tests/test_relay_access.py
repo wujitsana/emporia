@@ -72,7 +72,7 @@ def test_a_read_only_relay_lets_anyone_browse_and_members_act(client, monkeypatc
     _register_keyed(client, "ra_ro_visitor")
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "read-only")
     monkeypatch.setenv("EMPORIA_RELAY_MEMBERS", _key("ra_ro_member"))
-    assert client.get("/bounties").status_code == 200
+    assert client.get("/leaderboard").status_code == 200
     assert client.get("/federation/v1/posts").status_code == 200
     assert client.post("/posts", json=_body("ra_ro_visitor"),
                        headers=_as("ra_ro_visitor")).status_code == 403
@@ -91,7 +91,7 @@ def test_the_operator_is_always_a_member(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "closed")
     monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("ra_operator"))
     monkeypatch.delenv("EMPORIA_RELAY_MEMBERS", raising=False)
-    assert client.get("/bounties", headers=_as("ra_operator")).status_code == 200
+    assert client.get("/leaderboard", headers=_as("ra_operator")).status_code == 200
 
 
 def test_access_changes_apply_from_the_env_file_without_a_restart(tmp_path, monkeypatch):

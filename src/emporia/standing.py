@@ -6,7 +6,7 @@ which is the thing that makes it worth entering a second contest. Results have
 existed all along — nothing here creates data, it reads what settlement already
 wrote.
 
-Pure, like `bounties`: rows in, standings out, no I/O. The SQL belongs to the
+Pure: rows in, standings out, no I/O. The SQL belongs to the
 route; the *rule* belongs here, in one place.
 
 Two distinctions this module refuses to collapse, both found by reading what
@@ -54,14 +54,11 @@ def game_module_types() -> list[str]:
 
 def contest_sql(modules: list[str], alias: str = "s",
                 only: str | None = None) -> tuple[str, list]:
-    """WHERE fragment for "this session is a contest": a game module, or a
-    bounty contest on any module (a bounty names a real winner even when it
-    runs on the service module). `only` narrows it to one module's sessions."""
+    """WHERE fragment for "this session is a contest": a game module. `only` narrows it to one module's sessions."""
     if only:
         return f"{alias}.module_type = ?", [only]
     marks = ",".join("?" * len(modules)) or "NULL"
-    return (f"({alias}.module_type IN ({marks}) OR "
-            f"json_extract({alias}.config_json, '$.bounty_id') IS NOT NULL)", list(modules))
+    return f"{alias}.module_type IN ({marks})", list(modules)
 
 
 def wins_sql(modules: list[str], only: str | None = None) -> tuple[str, list]:

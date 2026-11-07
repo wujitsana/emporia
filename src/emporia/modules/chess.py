@@ -117,7 +117,7 @@ class ChessModule(InteractionModule):
     #: P131: is_terminal() can end a game by the clock alone (a per-move time
     #: limit), so the relay's sweep must ask it, not only submit_action.
     TIMED = True
-    ENGINE_DECIDABLE = True  # P135: no bounty prize; see ENGINE_GAME_REFUSAL
+    ENGINE_DECIDABLE = True  # P135: left out of the rated games (an engine decides)
     RULES = """
 Standard chess, two players. Move: submit_action(session_id, "move",
 {"move": "e4"}) — SAN or UCI. Settings the creator may set, shown before you

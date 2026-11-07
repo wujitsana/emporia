@@ -19,7 +19,6 @@ const failed = <T,>(): PromiseSettledResult<T> => ({
 
 function snapshot(over: Partial<OverviewSnapshot> = {}): OverviewSnapshot {
   return {
-    listings: ok({ bounties: [], count: 0 }),
     sessions: ok({ sessions: [], count: 0, has_more: false }),
     rooms: ok({ rooms: [], count: 0, has_more: false }),
     agents: ok({ agents: [], count: 0, has_more: false }),
@@ -45,7 +44,7 @@ describe("countsFromSnapshot", () => {
     // on it. This is the whole reason the snapshot holds settled results.
     const counts = countsFromSnapshot(snapshot({ rooms: failed() }));
     expect(counts.rooms).toBeNull();
-    expect(counts.listings).toBe(0);
+    expect(counts.listings).toBeNull();
   });
 
   it("counts only emporia: modules as game sessions", () => {
@@ -77,10 +76,9 @@ describe("sectionsFromSnapshot", () => {
   it("caps each card at three lines regardless of how much came back", () => {
     const rows = sectionsFromSnapshot(
       snapshot({
-        listings: ok({
-          bounties: Array.from({ length: 9 }, (_, i) => ({
-            title: `bounty ${i}`,
-            prize_cents: 500,
+        rooms: ok({
+          rooms: Array.from({ length: 9 }, (_, i) => ({
+            name: `room ${i}`, room_type: "public", gate_type: "open",
           })),
           count: 9,
         }),
@@ -101,7 +99,6 @@ describe("failedFromSnapshot — rejected is not empty (P69)", () => {
     ({ status: "rejected", reason: new Error(why) });
 
   const allOk = () => ({
-    listings: ok([]),
     sessions: ok({ sessions: [] }),
     rooms: ok({ rooms: [] }),
     agents: ok({ agents: [] }),
@@ -121,7 +118,8 @@ describe("failedFromSnapshot — rejected is not empty (P69)", () => {
       typeof failedFromSnapshot
     >[0];
     const failed = failedFromSnapshot(snap);
-    expect([...failed]).toEqual(["rooms"]);
+    // Offers are the rooms anyone may open, so a failed rooms read fails both cards.
+    expect([...failed].sort()).toEqual(["listings", "rooms"]);
   });
 
   it("names each of several independent failures", () => {

@@ -325,7 +325,7 @@ class EmporiaAgent:
         both who is paying and with what. The MPP path used to bypass this
         method and send the payment alone, leaving the relay unable to tell who
         paid — fatal on any route that must know (a purchase's
-        buyer, a bounty's funder).
+        buyer).
         """
         # P172: the same rule as the MCP tools — nothing sent may carry a secret.
         if method in ("post", "put", "patch"):
@@ -1412,7 +1412,7 @@ class EmporiaAgent:
 
     async def register_x402_wallet(self, address: str, network_family: str = "evm") -> dict[str, Any]:
         """Register where this agent is paid over x402 (P104): a room or Agora
-        it created, a service it sells, a bounty it wins. Without it nobody can
+        it created, a service it sells. Without it nobody can
         pay this agent in USDC. network_family: 'evm' or 'svm'."""
         from datetime import UTC, datetime
 
@@ -1423,20 +1423,6 @@ class EmporiaAgent:
             json={"network_family": network_family, "address": address, "at": at, "signature": signature},
         )
         resp.raise_for_status()
-        return resp.json()
-
-    async def settle_promise(self, listing_id: str, pay_with_x402: bool = True) -> dict[str, Any]:
-        """Pay a promised (x402) bounty this agent funded, once it has a winner
-        (P104). The relay challenges for the prize, payable to the winner's
-        wallet; this signs it with `x402_private_key` and retries once. Paying
-        late still clears a default. Pass pay_with_x402=False to get the
-        PaymentRequiredError (and its challenge) without paying."""
-        url = f"{self.relay_url}/bounties/{_seg(listing_id)}/settle-promise"
-        resp = await self._bearer_request("post", url)
-        if pay_with_x402:
-            resp = await self._pay_and_retry_x402(resp, lambda headers: self._bearer_request(
-                "post", url, headers=headers))
-        _raise_for_status_or_payment(resp)
         return resp.json()
 
     async def get_rooms(self) -> list[dict[str, Any]]:

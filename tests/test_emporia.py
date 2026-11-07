@@ -55,10 +55,9 @@ def _stable_of(agent: str) -> str:
 @pytest.fixture(autouse=True)
 def _custodial_cards(monkeypatch):
     """P157: this file tests the card flows that hold money on the operator's
-    balance (platform charges, transfer-to-winner, held prizes) — the opt-in
+    balance (platform charges, transfer-to-winner) — the opt-in
     path. The default, non-custodial one: tests/test_noncustodial_cards.py."""
     monkeypatch.setenv("EMPORIA_CUSTODIAL_CARDS", "1")
-    monkeypatch.setenv("EMPORIA_CARD_BOUNTY_PRIZES", "1")   # P159: and card money behind bounty prizes
 
 
 # _init_test_db moved to conftest.py (P72-4) — a session fixture in a test
@@ -2170,21 +2169,6 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/sessions/{session_id}/chat"),
         # P149: the players' encryption keys for sealing — players only.
         ("GET", "/sessions/{session_id}/encryption-keys"),
-        # P72-4: both resolve the caller and reject. /bounties binds the funder
-        # so a bounty cannot be posted in someone else's name; /enter is the
-        # Sybil gate itself and is meaningless without a caller identity.
-        ("POST", "/bounties"),
-        ("POST", "/bounties/{listing_id}/enter"),
-        # P72-5: releases the funder's escrowed hold — caller must be the funder,
-        # so identity is the whole gate.
-        ("POST", "/bounties/{listing_id}/cancel"),
-        # P72-6: any registered agent may trigger a start — readiness is decided
-        # by the rule, not the caller, so there is nothing to gain by asking. Still
-        # authenticated: an anonymous caller could otherwise seat a contest.
-        ("POST", "/bounties/{listing_id}/start"),
-        # P79: only the funder pays their own promised bounty, so identity
-        # is the gate.
-        ("POST", "/bounties/{listing_id}/settle-promise"),
         # Bootstrap: no credential can exist yet: identity is bound by a consumed
         # registration/login challenge-signature instead of a request-time caller.
         ("POST", "/dashboard/session"),
@@ -2239,7 +2223,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/rooms/{room_id}/leave"), ("POST", "/rooms/{room_id}/invite/revoke"),
         ("POST", "/sessions/{session_id}/leave"), ("DELETE", "/agoras/topics/{slug}/invite/{invitee_id}"),
         ("POST", "/agoras/topics/{slug}/kick"),   # P274: the topic's creator
-        ("DELETE", "/bounties/{listing_id}/enter"), ("POST", "/agents/{agent_id}/dm-blocks"),
+        ("POST", "/agents/{agent_id}/dm-blocks"),
         ("DELETE", "/agents/{agent_id}/dm-blocks/{blocked}"), ("GET", "/agents/{agent_id}/dm-blocks"),
         ("POST", "/rooms/{room_id}/message"),
         ("POST", "/agoras/topics"),
@@ -2362,8 +2346,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/dashboard/challenge"): "bootstrap nonce issuance, no credential exists yet",
         ("GET", "/dashboard/poll"): "bearer-secret model: gated by an unguessable challenge_id, not caller identity",
         ("GET", "/modules"): "static list of available game module types",
-        ("GET", "/bounties"): "P72-4: public contest discovery, same shape as GET /listings — a bounty nobody can find is not a contest",
-        ("GET", "/bounties/{listing_id}/promise-status"): "P79: whether a funder paid a prize backed only by their word. Public on purpose — a default only the operator can see is not a consequence, and this is the record an entrant needs before competing on credit",
+        ("POST", "/bounties"): "refuses every request (410): games carry nothing of value, so a bounty on one is never created",
         ("GET", "/leaderboard"): "P72-3: public standings — wins/entries/modules only; per-agent earnings are deliberately excluded from the public shape (Standing.to_dict include_money)",
         ("POST", "/agents/challenge"): "bootstrap nonce issuance, no credential exists yet",
         ("GET", "/listings"): "public marketplace discovery, no auth decision keyed on any field",
@@ -3473,21 +3456,20 @@ async def test_settle_derives_payout_idempotency_key_from_payment_intent_ids():
 @pytest.mark.asyncio
 async def test_settle_pays_a_winner_who_never_paid_in(monkeypatch):
     monkeypatch.setenv("EMPORIA_FEE_ADDRESS", "0x" + "fe" * 20)    # the relay has a fee once it has an address
-    """P72 phase 01: the bounty shape — one funder escrows, a different agent wins.
+    """P72 phase 01: the asymmetric shape — one funder escrows, a different agent is paid.
 
     Every settlement this codebase has shipped is a *wager*: N participants each
-    escrow a stake, one wins, the pot moves. A bounty is asymmetric — one funder
-    puts up the prize, entrants risk nothing but time, and the funder is
-    guaranteed *not* to be the winner. The spec called this the one structural
+    escrow a stake, one wins, the pot moves. A deal is asymmetric — one buyer
+    puts up the price and the seller is paid. The spec called this the one structural
     unknown, because if `settle()` requires the winner to be among the payers,
-    the bounty lane is a payments change rather than assembly.
+    it would be a payments change rather than assembly.
 
     It does not. `settle()` captures whatever PaymentIntents it is handed and
     transfers to whatever account it is handed; the two are independent
     arguments, and the session route derives payers from the session's payment
     rows while looking the winner's account up separately. This test pins that
     independence so a future "tighten settlement" pass cannot quietly close the
-    door on bounties without a failing test explaining what it broke.
+    door on deals without a failing test explaining what it broke.
 
     Asserted at the wire, not the return value: the funder's hold is the PI that
     gets captured, and the transfer is addressed to the winner's account.
@@ -3505,13 +3487,13 @@ async def test_settle_pays_a_winner_who_never_paid_in(monkeypatch):
                 elif url.endswith("/transfers"):
                     transfers.append(kw.get("data", {}))
                 resp = MagicMock()
-                resp.json.return_value = {"id": "tr_bounty", "status": "succeeded"}
+                resp.json.return_value = {"id": "tr_asym", "status": "succeeded"}
                 resp.raise_for_status = MagicMock()
                 return resp
             mock_post.side_effect = _record
 
             result = await settle(
-                "bounty_sess_1",
+                "asym_sess_1",
                 "entrant_who_paid_nothing",          # winner
                 5000,                                 # the funder's prize, in cents
                 ["pi_funder_hold"],                   # the ONLY payer is the funder
@@ -3528,7 +3510,7 @@ async def test_settle_pays_a_winner_who_never_paid_in(monkeypatch):
     # 1% of 5000 = 50; the winner nets the prize less the operator fee.
     assert result["platform_fee_cents"] == 50
     assert result["winner_payout_cents"] == 4950, \
-        "a bounty pays out the prize less EMPORIA_FEE_BPS, same as any settlement"
+        "a payout is the amount less EMPORIA_FEE_BPS, same as any settlement"
 
 
 def test_all_three_win_counters_agree_that_a_refund_is_not_a_win(client):
@@ -21734,7 +21716,7 @@ def test_sdk_x402_retry_without_a_key_still_reports_the_challenge(client):
     assert "no x402_private_key" in str(err.__cause__)
 
 
-def test_sdk_x402_retry_is_shared_by_all_three_paid_methods():
+def test_sdk_x402_retry_is_shared_by_the_exact_scheme_paid_methods():
     """P45: `_pay_and_retry_x402()` exists so the decision to spend money is
     written once. A source-shape check because the failure mode is one of three
     call sites being changed alone — the same reason P44 pinned the four
@@ -21745,9 +21727,7 @@ def test_sdk_x402_retry_is_shared_by_all_three_paid_methods():
     # payment -- so it is counted on its own path below.
     assert text.count("pay_with_x402: bool = False") == 3, \
         "join_room, subscribe_agora_topic and fund_session must each take the flag"
-    # P104: settle_promise is the fourth exact-scheme payer (its flag defaults
-    # to True — settling *is* paying — so it is not in the count above).
-    assert text.count("await self._pay_and_retry_x402(") == 3, \
+    assert text.count("await self._pay_and_retry_x402(") == 2, \
         "each exact-scheme paid method must route through the one shared retry, not its own copy"
     assert text.count("sign_offer(") == 1, \
         "escrow holds are signed in one place, escrow.sign_offer()"
@@ -24690,7 +24670,7 @@ def test_route_enumeration_sees_inside_included_routers():
         "if included routes ever appear directly in app.routes this guard is "
         "moot — but so is the traversal, and both should be simplified together"
     )
-    assert {"/rooms", "/agents", "/bounties"} <= deep, (
+    assert {"/rooms", "/agents", "/leaderboard"} <= deep, (
         f"routes inside included routers must be enumerable; got {sorted(deep - flat)}"
     )
     assert ("GET", "/rooms") in _registered_rest_routes(), (
@@ -24853,7 +24833,7 @@ def test_the_membership_rule_is_written_in_exactly_one_place():
 
 # One schema (`emporia.schema_sql`), one version. The relay starts fresh, so there is no upgrade history to
 # record: change a table, bump SCHEMA_VERSION, update this fingerprint (in that order, never the fingerprint alone).
-_SCHEMA_FINGERPRINT = "5f2a66323fcae2673b4c549c8608a7c01bd2a200aaf22798ceb0ab883d3d511e"
+_SCHEMA_FINGERPRINT = "f24d9684f470b8df715df070e215fbce11db81616434c4c0403dd3117db4b10d"
 
 
 def _schema_fingerprint(db_path) -> tuple[str, int, int]:
@@ -24893,7 +24873,7 @@ def test_a_schema_change_requires_a_version_bump():
     from emporia.relay_server import SCHEMA_VERSION
 
     fingerprint, tables, columns = _schema_fingerprint(_test_db)
-    assert (SCHEMA_VERSION, fingerprint) == (46, _SCHEMA_FINGERPRINT), (
+    assert (SCHEMA_VERSION, fingerprint) == (47, _SCHEMA_FINGERPRINT), (
         f"the schema changed ({tables} tables, {columns} columns) or the version "
         f"moved. Bump SCHEMA_VERSION *and* update _SCHEMA_FINGERPRINT — in "
         f"that order, and never the fingerprint alone.\n"
@@ -25177,7 +25157,6 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/labs/{}/reports": "labs v2: maintainers' public reports — the desk shows the recent ones (from /operator/status); `lab_threads` reads them",
     "/labs/{}/threads": "labs v2: a lab's threads — the desk shows the open ones; read in the room itself",
     "/labs/{}/board": "labs v2: a lab's board — computed from its reports, read by `lab_threads`",
-    "/bounties/{}/promise-status": "P79: per-bounty funder-payment record. The board already flags a promised prize; this is the detail behind one, reached from a bounty rather than browsed — surfacing it as its own page would be a view of one row.",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",
     "/federation/v1/agents/{}": "P185: relay to relay only — a linked relay looking up an agent that takes DMs from other relays",

@@ -123,22 +123,8 @@ class InteractionModule(ABC):
     #                     action payload/artifacts *are* the delivered product.
     DEFAULT_VISIBILITY: str = "public"
 
-    # P72-2: can this module decide a contest on its own?
-    #
-    # A bounty pays a winner out of escrow, so something has to name one. Only
-    # a module that reaches a terminal state with a `winner` can do that
-    # without a judge, which is the whole reason the first bounty lane ships
-    # before any voting exists.
-    #
-    # Declared here rather than kept as a list in the bounty code, because a
-    # list of module names in another file is a second copy of a rule that
-    # already lives in the module — and this codebase has now been bitten
-    # three times by exactly that (P55, P59, P70). A new module answers for
-    # itself; nothing needs updating elsewhere.
-    #
-    # False by default: a module that has not thought about it cannot judge
-    # money. `research` and `code_review` reach terminal states but name no
-    # winner, and so are correctly excluded without either file changing.
+    # Does this module reach a terminal state with a named `winner`? Declared by the module itself.
+    # False by default: `research` and `code_review` reach terminal states but name no winner.
     DECLARES_WINNER: bool = False
 
     # Who pays, and who can be paid. Games take no stakes of any kind (no money,
@@ -164,9 +150,9 @@ class InteractionModule(ABC):
     TURN_ORDER: bool = True
 
     #: P135: True when an engine decides the game (chess, Go): nothing the relay
-    #: sees can tell an agent's own play from an engine's, so money on it pays
-    #: whoever runs the stronger engine. Such a module takes no bounty prize
-    #: unless the operator opts in (EMPORIA_ENGINE_GAME_BOUNTIES=1).
+    #: sees can tell an agent's own play from an engine's, so a rating on it measures
+    #: whoever runs the stronger engine. Such a module is left out of the
+    #: rated games (standing).
     ENGINE_DECIDABLE: bool = False
 
     #: P131: True when is_terminal() can end a session by the clock alone, so
@@ -302,20 +288,6 @@ def load_bundled_modules() -> None:
     import emporia.modules
     for m in pkgutil.iter_modules(emporia.modules.__path__):
         importlib.import_module(f"emporia.modules.{m.name}")
-
-
-def engine_game_bounties_allowed() -> bool:
-    """P135: the operator's opt-in to a bounty prize on an ENGINE_DECIDABLE game. Games
-    themselves take no stakes; only a funder's prize can ride on one."""
-    import os
-    return os.environ.get("EMPORIA_ENGINE_GAME_BOUNTIES", "").strip().lower() in ("1", "true", "yes")
-
-
-ENGINE_GAME_REFUSAL = (
-    "{mt} is decided by engines: nothing the relay sees can tell an agent's own play "
-    "from an engine's, so a prize on it pays whoever runs the stronger engine. "
-    "This relay takes no bounty on it (an operator can allow one with EMPORIA_ENGINE_GAME_BOUNTIES=1)."
-)
 
 
 def load_operator_modules(spec: str) -> list[str]:

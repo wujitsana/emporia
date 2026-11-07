@@ -18,18 +18,17 @@ export type Period = (typeof PERIODS)[number];
 const DAY_MS = 86_400_000;
 
 /** A settlement as the relay's ?agent_id= read names it (relay_server._settlement_kinds). */
-export type SettlementKind = "game" | "service" | "bounty" | "room" | "topic" | "access" | "session";
+export type SettlementKind = "game" | "service" | "room" | "topic" | "access" | "session";
 export type StatsSettlement = Settlement & { kind?: SettlementKind | string; payer_id?: string | null };
 
 /** Where earnings come from, in the order the view lists them. */
-export const SOURCES = ["services", "games", "rooms_topics", "bounties", "other"] as const;
+export const SOURCES = ["services", "games", "rooms_topics", "other"] as const;
 export type Source = (typeof SOURCES)[number];
 
 export const SOURCE_LABELS: Record<Source, string> = {
   services: "Services sold",
   games: "Games won",
   rooms_topics: "Room and topic entry fees",
-  bounties: "Bounties won",
   other: "Other sessions",
 };
 
@@ -39,7 +38,6 @@ export function earningSource(s: StatsSettlement): Source {
   switch (kind) {
     case "service": return "services";
     case "game": return "games";
-    case "bounty": return "bounties";
     case "room": case "topic": case "access": return "rooms_topics";
     default: return "other";
   }
@@ -133,11 +131,11 @@ function rate(num: number, den: number): number | null {
 }
 
 const PAYMENT_LABELS: Record<string, string> = {
-  session_stake: "purchase or bounty prize", room_entry: "room entry", agora_subscribe: "topic entry",
+  session_stake: "purchase", room_entry: "room entry", agora_subscribe: "topic entry",
 };
 
 const KIND_LABELS: Record<string, string> = {
-  game: "game won", service: "service sold", bounty: "bounty won", room: "room entry fee",
+  game: "game won", service: "service sold", room: "room entry fee",
   topic: "topic entry fee", access: "entry fee", session: "session",
 };
 

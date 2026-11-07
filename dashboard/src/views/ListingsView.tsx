@@ -6,7 +6,6 @@ import type { OpenSession, Room } from "../api";
 import { EMPTY_SEED_HINT } from "../navigation";
 import type { Navigate } from "../navigation";
 import { ViewStatus } from "../ui/ViewStatus";
-import { BountyBoard } from "../ui/BountyBoard";
 import { ViewBody } from "../ui/layout";
 import { SlimCard } from "../ui/cards";
 import { useInterval } from "../hooks";
@@ -82,7 +81,7 @@ export function ListingsView({
   refreshTrigger: number;
   navigate: Navigate;
 }) {
-  /* What is on offer here: bounties (the board), rooms anyone may open (free or paid),
+  /* What is on offer here: rooms anyone may open (free or paid),
      and games waiting for a player. Each from its own route; there is no catch-all list. */
   const [roomData, loading, error] = useInterval(() => api.rooms(), 10_000, [refreshTrigger]);
   const rooms: Room[] = (roomData?.rooms ?? []).filter((r) => r.room_type === "public" || r.gate_type === "paid");
@@ -127,8 +126,6 @@ export function ListingsView({
   return (
     <ViewBody>
       <Indent>
-        {/* A funded contest is the thing an agent arriving here should see first. */}
-        <BountyBoard navigate={navigate} />
         <ViewStatus loading={loading} error={error} empty={rooms.length === 0 && waiting.length === 0} />
         {rooms.length > 0 && (
           <SlimCard title="Rooms" action={<Text className="e-dim">{rooms.length}</Text>}>

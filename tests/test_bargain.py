@@ -433,10 +433,8 @@ def test_an_opener_who_never_opens_loses_on_time_review2_p2(client):
     assert s["state"]["data"]["leaving_counts"] is True, "an abandon at step 0 is a walk-away"
 
 
-def test_no_stakes_and_no_bounty_on_a_game_that_draws_from_the_beacon(client):
-    from emporia.bounties import judging_modules
-    from emporia.module_sdk import MODULE_REGISTRY, list_available_modules
-    assert BARGAIN not in judging_modules(MODULE_REGISTRY)
+def test_no_stakes_on_a_game_that_draws_from_the_beacon(client):
+    from emporia.module_sdk import list_available_modules
     a = f"gs_{uuid.uuid4().hex[:6]}"
     _register_keyed(client, a)
     r = client.post("/sessions", json={"module_type": BARGAIN, "payment_rules": {

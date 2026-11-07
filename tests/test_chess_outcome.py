@@ -4,7 +4,7 @@
 that is the side *to move* — the player just checkmated — and settlement reads
 `is_terminal`, so every decided game paid the loser and every draw paid whoever
 was on move. Nothing caught it because no test played chess to a result through
-the payout path; the end-to-end bounty test uses the `service` module.
+the payout path; the end-to-end deal test uses the `service` module.
 """
 import uuid
 from unittest.mock import patch
@@ -103,8 +103,7 @@ def test_a_checkmate_through_the_relay_records_the_real_winner(client):
 
 def test_a_drawn_session_writes_a_refunded_settlement(client):
     """A terminal result with no winner used to reach neither settlement branch,
-    so it recorded nothing: holds sat until they expired, and a bounty on the
-    game stayed `running` forever."""
+    so it recorded nothing: holds sat until they expired."""
     session_id, players = _start_game(client)
     module_cls = type(get_interaction_module("emporia:chess:v1"))
     draw = (True, {"winner": None, "outcome_type": "draw", "termination": "STALEMATE"})

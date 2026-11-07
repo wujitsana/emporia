@@ -270,7 +270,7 @@ async def make_pledge(req: PledgeIn, request: Request):
                                (req.subject_id,)).fetchone()
             if not lst:
                 raise HTTPException(404, "no listing by that id")
-            if lst["agent_id"] != caller or lst["listing_type"] == "bounty":
+            if lst["agent_id"] != caller:
                 raise HTTPException(403, "a pledge on a listing is its seller's, on a listing it sells")
             if lst["expires_at"] and str(lst["expires_at"]) <= now.isoformat():
                 raise HTTPException(409, "that listing has expired")

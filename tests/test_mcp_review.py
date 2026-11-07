@@ -19,11 +19,11 @@ def _no_network(*_a, **_k):
     "a?b=1", "a#frag", "a\\b", "a b", "a%2F..%2Fb", "%2e%2e",
 ])
 def test_an_id_that_leaves_its_path_is_refused(bad):
-    assert mcp_server._unsafe_path(f"http://relay:8088/bounties/{bad}/enter")
+    assert mcp_server._unsafe_path(f"http://relay:8088/sessions/{bad}/join")
 
 
 @pytest.mark.parametrize("good", [
-    "http://relay:8088/bounties/lst_abc123/enter",
+    "http://relay:8088/sessions/ses_abc123/join",
     "http://relay:8088/agents/bob@relay.example/encryption-key",
     "http://relay:8088/agents/me/dm-blocks/bob%40relay.example%3A8088",
     "http://relay:8088",
@@ -32,26 +32,26 @@ def test_ordinary_ids_pass(good):
     assert mcp_server._unsafe_path(good) == ""
 
 
-def test_a_bounty_tool_cannot_be_turned_into_leaving_the_relay(monkeypatch):
-    """`withdraw_bounty_entry('../../agents/me/leave#')` resolved, in httpx, to
+def test_a_session_tool_cannot_be_turned_into_leaving_the_relay(monkeypatch):
+    """`leave_session('../../agents/me/leave#')` resolved, in httpx, to
     `DELETE /agents/me/leave` with the agent's own token — leaving is its operator's call."""
     for verb in ("get", "post", "delete"):
         monkeypatch.setattr(mcp_server.httpx, verb, _no_network)
-    out = mcp_server.withdraw_bounty_entry("../../agents/me/leave#", agent_id="mr_agent")
+    out = mcp_server.leave_session("../../agents/me/leave#", agent_id="mr_agent")
     assert out["success"] is False and "refused" in out["error"]
 
 
 @pytest.mark.parametrize("bad", ["me/leave", "x%00", "%252e%252e", "a%25b"])
 def test_an_id_cannot_add_a_segment_or_smuggle_an_encoding(monkeypatch, bad):
     """Review follow-up L4: `_unsafe_path` let a plain `/` through (`me/leave` sent
-    `/bounties/me/leave/enter`), and `%00` and double encodings. Every id is now quoted
+    `/sessions/me/leave/leave`), and `%00` and double encodings. Every id is now quoted
     as one segment where its URL is built, and what that leaves is refused."""
     sent = []
     for verb in ("get", "post", "delete"):
         monkeypatch.setattr(mcp_server.httpx, verb, lambda url, *a, **k: sent.append(url) or _no_network())
-    out = mcp_server.withdraw_bounty_entry(bad, agent_id="mr_agent")
+    out = mcp_server.leave_session(bad, agent_id="mr_agent")
     assert out["success"] is False and "refused" in out["error"], out
-    assert not [u for u in sent if "/bounties/" in u], sent
+    assert not [u for u in sent if "/sessions/" in u], sent
 
 
 def test_both_clients_quote_an_id_as_one_segment():
@@ -141,7 +141,7 @@ def test_the_tool_list_stays_within_its_measured_budget():
     import json
     size = sum(len(json.dumps({"name": t.name, "description": t.description, "parameters": t.parameters},
                               separators=(",", ":"))) for t in _tools().values())
-    assert size < 53_500, size   # 100 tools (52.8 KB): season_board, paged read_thread, feed scope/window, labs v2, declared models; the four bug tools out
+    assert size < 50_000, size   # 93 tools (49.3 KB): the bounty tools and settle_promise out
 
 
 def test_relay_and_own_id_arguments_say_what_they_are():

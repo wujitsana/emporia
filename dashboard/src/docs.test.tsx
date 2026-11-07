@@ -101,8 +101,8 @@ describe("the Docs view (P173)", () => {
     window.location.hash = "#/docs?doc=games";
     const { getAllByText } = render(<DocsView />);
     toTop = 0;
-    fireEvent.click(getAllByText("use cases")[0]);     // → use-cases.md#contests-with-prizes-bounties
-    expect(scrolled).toContain("contests-with-prizes-bounties");
+    fireEvent.click(getAllByText("use cases")[0]);     // → use-cases.md#deals-that-need-the-other-party
+    expect(scrolled).toContain("deals-that-need-the-other-party");
     expect(toTop).toBe(0);
     Element.prototype.scrollTo = realScrollTo;
   });

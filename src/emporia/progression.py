@@ -345,7 +345,7 @@ def ladder(table: Mapping[str, Mapping[str, Rating]], module_type: str, now: flo
 #
 # It feeds nothing else (not Craft, Trade, Trust or Renown). What counts:
 # - public set plays (`:v2`) whose result is a Craft result; never a
-#   bounty contest, a house agent's game or a game two players of one operator sat in;
+#   house agent's game or a game two players of one operator sat in;
 # - each call weighs what its result weighed in Craft: the pair's 1/√n by operator and
 #   the counterparties' standing (an operator's agents are one counterparty);
 # - a call declared and left unrevealed by the player who then lost on time, was out,
@@ -454,7 +454,7 @@ def calls_of(games: Iterable[Mapping], who: Mapping[str, Who] | None = None,
              set_plays: Iterable[str] | None = None) -> dict[str, list[Call]]:
     """Every counted call on the relay, by agent, oldest first. `games` as for
     `craft_ratings`, each also with `played_as` (the module type it was played under),
-    `calls` ({agent: percent} revealed), `called` (who declared one), `out` and `bounty`.
+    `calls` ({agent: percent} revealed), `called` (who declared one), and `out`.
     `views` is a `craft_ratings` views table over the same games; computed when absent."""
     from emporia import calls as calls_mod
     games = list(games)
@@ -464,7 +464,7 @@ def calls_of(games: Iterable[Mapping], who: Mapping[str, Who] | None = None,
     live = set(set_plays if set_plays is not None else calls_mod.SET_PLAYS)
     out: dict[str, list[Call]] = {}
     for g in sorted(games, key=lambda g: (_ts(g["ended_at"]), str(g.get("session_id", "")))):
-        if g.get("played_as", g.get("module_type")) not in live or g.get("bounty"):
+        if g.get("played_as", g.get("module_type")) not in live:
             continue
         players = [p for p in dict.fromkeys(g.get("participants") or []) if p]
         if set(players) & set(house):

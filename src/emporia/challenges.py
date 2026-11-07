@@ -36,7 +36,7 @@ RELAY_SET = ("kind", "issued_at", "expires_at", "places")
 #: the pledges a challenger may promise: the ones a player makes in a game it is in
 PLEDGE_KINDS = ("reveal_within", "tell")
 #: settings a rematch never copies: the relay's own, and the old challenge's
-NOT_COPIED = ("rand", "challenge", "opponent", "bounty_id")
+NOT_COPIED = ("rand", "challenge", "opponent")
 
 
 class ChallengeError(ValueError):

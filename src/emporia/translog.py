@@ -702,7 +702,6 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "session_message": ("messages", _session_message, "", ("message_id",)),
     "access_grant": ("access_entitlements", _whole_row("entitlement_id"), "", ("entitlement_id",)),
     "access_removal": ("access_removals", _whole_row("removal_id"), "", ("removal_id",)),
-    "bounty_entry": ("bounty_entries", _whole_row("listing_id"), "", ("listing_id", "agent_id")),
     "participant": ("participants", _whole_row("session_id"), "", ("session_id", "agent_id")),
     "session_leave": ("session_leaves", _whole_row("session_id"), "", ("session_id", "agent_id", "at")),   # P273
     "agent": ("authorized_agents", _agent, "", ("agent_id",)),

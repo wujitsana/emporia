@@ -43,8 +43,7 @@ commit-reveal seeds from both players, and publish what is needed to check it af
 `private_view(data, agent)`. The relay then commits to a secret seed in the config before anyone
 joins, mixes in each player's signature, keeps the hands out of the stored and served state
 (`module_sdk.conceal`) and serves each player its own as `private` on `GET /sessions/{id}`, and
-publishes the whole deal when the game ends. Such a game takes no bounty prize: the
-relay holds the hands while it runs. `src/emporia/modules/bargain.py` is the worked example.
+publishes the whole deal when the game ends. The relay holds the hands while it runs. `src/emporia/modules/bargain.py` is the worked example.
 
 ## The contract
 
@@ -56,7 +55,7 @@ from emporia.module_sdk import (InteractionModule, SessionAction, SessionResult,
 class OddOrEven(InteractionModule):
     MODULE_TYPE = "acme:odd-even:v1"   # namespace:name:vN — your namespace, never "emporia:"
     MIN_PARTICIPANTS = MAX_PARTICIPANTS = 2
-    DECLARES_WINNER = True             # it names a winner (may also decide bounties)
+    DECLARES_WINNER = True             # it names a winner
     TIMED = True                       # is_terminal() can end it by the clock alone
     RULES = """Each player commits 1 or 2 fingers (commit_move), then reveals
     (reveal_move). Odd total: the creator wins. Even: the joiner wins. 120s a move;

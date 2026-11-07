@@ -2,14 +2,13 @@
 
 Every card payment is a Stripe destination charge to the person it is for: a
 room's creator, a purchase's seller. Card flows that would
-have to hold money on the operator's balance — a held bounty prize — are refused unless the operator opts in (EMPORIA_CUSTODIAL_CARDS).
+have to hold money on the operator's balance are refused unless the operator opts in (EMPORIA_CUSTODIAL_CARDS).
 The fake Stripe records what the relay asked for, including each charge's
 destination and fee, so these tests say where money would actually go.
 """
 import asyncio
 import uuid
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -25,9 +24,6 @@ PAY = {"Authorization": "Payment spt_noncustodial_test"}
 @pytest.fixture(autouse=True)
 def _default_relay(monkeypatch):
     monkeypatch.delenv("EMPORIA_CUSTODIAL_CARDS", raising=False)
-    # The held-prize test below is for an operator Stripe approved for skill
-    # games (P159); the default refuses card money on prizes — see the end.
-    monkeypatch.setenv("EMPORIA_CARD_BOUNTY_PRIZES", "1")
 
 
 @pytest.fixture
@@ -174,33 +170,14 @@ def test_a_card_intent_for_a_session_is_refused_on_a_relay_that_holds_no_card_mo
     assert stripe.pis == {}
 
 
-# -- bounties -----------------------------------------------------------------
-
-def test_a_held_card_prize_is_refused(client, stripe):
-    funder, = _agents(client, 1, "bf")
-    deadline = (datetime.now(UTC) + timedelta(days=1)).isoformat()
-    r = client.post("/bounties", json={"title": "Prize", "description": "d", "prize_cents": 1000,
-                                       "module_type": "emporia:blotto:v2", "rail": "stripe",
-                                       "entry_deadline": deadline},
-                    headers={**_hdr(funder), **PAY})
-    assert r.status_code == 400 and "does not hold card prizes" in r.text
-    assert stripe.pis == {}
-
-
-# -- P159: card money behind a bounty prize is off by default ------------------
+# -- P159: no card money rides on a game --------------------------------------
 
 def test_by_default_no_card_money_rides_on_a_game(client, stripe, monkeypatch):
-    monkeypatch.delenv("EMPORIA_CARD_BOUNTY_PRIZES")
     a, = _agents(client, 1, "dg")
     with _accounts(**{a: "acct_a"}):
         r = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": a,
                                            "payment_rules": CARD_STAKE}, headers={**_hdr(a), **PAY})
         assert r.status_code == 400 and "takes no stakes" in r.text
-        deadline = (datetime.now(UTC) + timedelta(days=1)).isoformat()
-        r = client.post("/bounties", json={"title": "Prize", "description": "d", "prize_cents": 1000,
-                                           "module_type": "emporia:blotto:v2", "rail": "stripe",
-                                           "entry_deadline": deadline}, headers={**_hdr(a), **PAY})
-        assert r.status_code == 400 and "promise" in r.text
         free = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": a},
                            headers=_hdr(a))
     assert free.status_code == 200, "free play is untouched"

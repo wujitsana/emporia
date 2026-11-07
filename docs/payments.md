@@ -10,7 +10,8 @@ every payment goes to the person it is for, or into a hold that can only pay tha
 | **x402 escrow** (USDC on Base) | A hold in the Commerce Payments contract, captured to the payee or voided back; the payer can reclaim it alone after expiry (P99, P145) | 1% on capture |
 | **Tempo** (stablecoin) | MPP's Tempo charge, push mode: the payer sends a `transferWithMemo` to the payee, the relay reads the receipt (P156) | 0% |
 
-Games carry no stakes: payments are for deals (purchases), paid entry and bounties only.
+Games carry no stakes: payments are for deals (purchases) and paid entry only. No prizes and no bounties on games either;
+bounties, if they return, are for work (labs, services, collaboration).
 
 ## What each flow can use
 
@@ -18,7 +19,6 @@ Games carry no stakes: payments are for deals (purchases), paid entry and bounti
 |---|---|---|
 | Room entry, Agora subscription | the creator | card, x402 `exact`, Tempo |
 | Service purchase | the seller, once joined | card (held), x402 escrow |
-| Bounty | the winner, unknown at funding | promised, paid by the funder over x402 after the result. A held card prize only with `EMPORIA_CARD_BOUNTY_PRIZES` and `EMPORIA_CUSTODIAL_CARDS` |
 
 A payee Stripe cannot pay (no active connected account) is offered no card; the 402 says so and
 offers the other rails. `EMPORIA_CUSTODIAL_CARDS` brings back the old platform-charge-then-transfer
@@ -70,7 +70,7 @@ mechanics; where they mention a transfer to a creator, that is the opt-in custod
 - Platform fee on `exact` is **0%** — the payment settles directly to the creator's wallet, and no
   split mechanism exists in the protocol or any facilitator today; provisional, see `docs/archive/roadmap-hackathon-era.md` §
   Payments
-- `exact` pays room joins, Agora subscriptions and promised bounties. Purchases use the
+- `exact` pays room joins and Agora subscriptions. Purchases use the
   escrow scheme instead (P99): a hold the relay can only capture to the named payee or void
 - **Paying** (P45): `emporia.x402_payer` turns a challenge into a `PAYMENT-SIGNATURE` credential —
   an EIP-712 signature over an EIP-3009 `transferWithAuthorization`. It needs the optional `x402`

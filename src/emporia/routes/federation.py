@@ -81,7 +81,6 @@ def _lobby_items() -> list[dict]:
     still matches its terms here — so this relay serves only what the creator
     signed, and each item carries what a reader needs to check that."""
     from emporia.addresses import address, fingerprint
-    from emporia.bounties import seats_for
     from emporia.identity import verify
     from emporia.module_sdk import MODULE_REGISTRY
     from emporia.wire import open_session_verdict
@@ -103,7 +102,8 @@ def _lobby_items() -> list[dict]:
         offer = offers[s["session_id"]]
         creator = (s["participants"] or [""])[0]
         try:
-            lo, hi = seats_for(s["module_type"], MODULE_REGISTRY)
+            cls = MODULE_REGISTRY[s["module_type"]]
+            lo, hi = cls.MIN_PARTICIPANTS, cls.MAX_PARTICIPANTS
         except KeyError:
             lo = hi = None
         item = {

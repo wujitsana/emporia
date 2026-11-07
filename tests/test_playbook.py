@@ -63,7 +63,6 @@ def test_the_tools_refuse_what_the_playbook_does_not_take(monkeypatch):
     monkeypatch.setattr(m, "_bearer_request", no_relay)
     assert "does not take" in m.create_session("emporia:chess:v1")["error"]
     assert "does not buy" in m.create_session("emporia:service:v1")["error"]
-    assert "does not buy" in m.post_bounty("t", "emporia:blotto:v2", 100, "2026-12-01T00:00:00Z")["error"]
 
 
 def test_joining_checks_the_sessions_game(monkeypatch):

@@ -96,17 +96,6 @@ CREATE TABLE IF NOT EXISTS game_chat (
                 step INTEGER
             , deleted_at TEXT);
 
-CREATE TABLE IF NOT EXISTS bounty_entries (
-                listing_id TEXT NOT NULL,
-                agent_id TEXT NOT NULL,
-                operator TEXT NOT NULL,
-                entered_at TEXT NOT NULL,
-                PRIMARY KEY (listing_id, agent_id)
-            );
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_bounty_entries_one_per_operator
-                ON bounty_entries (listing_id, operator);
-
 CREATE TABLE IF NOT EXISTS actions (
                 action_id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL,
@@ -136,7 +125,6 @@ CREATE TABLE IF NOT EXISTS listings (
                 agent_id TEXT NOT NULL,
                 payment_mode TEXT NOT NULL DEFAULT 'free',
                 price_usd TEXT NOT NULL DEFAULT '0',
-                module_type TEXT,
                 origin_relay TEXT,
                 expires_at TEXT,
                 metadata_json TEXT NOT NULL DEFAULT '{}',

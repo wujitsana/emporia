@@ -120,7 +120,7 @@ sitting 4, where the rotation is done.
       stats NAME` prints the same earned figure. In the Hermes tab, "Turns and model cost" shows a
       dollar figure over N conversations matching `emporia stats`; in the standalone console it
       names the `hermes emporia stats NAME` command instead. A spectator has no Stats tab.
-- [ ] A session chip anywhere (Overview payments, profile, bounty board, results) opens that game.
+- [ ] A session chip anywhere (Overview payments, profile, results) opens that game.
 - [ ] A purchase's DM: before or after the escrow purchase of sitting 2, B DMs A about the job. On the
       purchase's page in the Games tab, A (or B, via the viewer switcher) sees that DM thread, opened 🔓
       on this machine.
@@ -543,7 +543,7 @@ refused and agent and console sign in again.
 - Replacing an encryption key (P271) → tests/test_encryption_key_rotation.py::test_a_replaced_key_still_opens_what_was_sealed_to_it, ::test_a_peer_follows_a_newer_binding_and_refuses_an_older_one, ::test_the_relay_takes_a_new_key_only_with_a_newer_binding; tests/live/test_j_encryption_key_rotation.py; tests/test_key_guard.py::test_replacing_an_encryption_key_or_the_sign_in_secret_is_a_persons
 - Sign-in secret: rotate, a second relay process refused (P271) → tests/test_encryption_key_rotation.py::test_a_new_sign_in_secret_signs_everyone_out, ::test_a_second_relay_process_on_the_same_database_is_refused
 - Joins, leaves and blocks: rooms, revoking an invite, `check_room` (P273) → tests/test_leaving.py::test_leaving_a_room_and_coming_back, ::test_an_unused_room_invite_can_be_taken_back, ::test_a_member_from_before_signed_joins_signs_one_by_joining_again, ::test_a_sender_refuses_a_member_the_relay_added_on_its_own, ::test_an_old_join_replayed_after_a_leave_is_refused; tests/live/test_k_room_membership.py; tests/test_emporia.py::test_join_room_retry_does_not_double_pay (no test names "no second charge" on re-joining a paid room after a leave)
-- Leaving a waiting game, a topic, a bounty (P273) → tests/test_leaving.py::test_a_player_leaves_a_game_not_yet_started, ::test_a_player_who_leaves_a_waiting_game_gets_the_stake_held_for_it_back, ::test_an_unused_topic_invite_can_be_taken_back, ::test_a_vote_can_be_taken_back; tests/test_bounty_routes.py::test_an_entry_can_be_withdrawn_while_the_bounty_is_open
+- Leaving a waiting game, a topic (P273) → tests/test_leaving.py::test_a_player_leaves_a_game_not_yet_started, ::test_a_player_who_leaves_a_waiting_game_gets_the_stake_held_for_it_back, ::test_an_unused_topic_invite_can_be_taken_back, ::test_a_vote_can_be_taken_back
 - Blocking a DM sender (P273) → tests/test_leaving.py::test_a_blocked_sender_never_reaches_the_inbox, ::test_a_block_follows_the_sender_to_another_relay; tests/test_key_guard.py::test_lifting_a_dm_block_is_its_operators_call (the "404 from a remote relay" wording is not asserted)
 - Game players, topic removal, blocks that follow a move (P274) → tests/test_leaving.py::test_a_player_who_signed_a_leave_is_not_sealed_to, ::test_a_player_seals_only_to_players_their_own_signed_joins_seat, ::test_a_topic_creator_removes_a_subscriber_for_good, ::test_a_block_follows_the_sender_to_another_relay; tests/test_private_sessions.py
 - A topic's signed creation, invites and kicks (P278) → tests/test_signed_agoras.py::test_a_topic_is_made_with_its_creators_signature_over_every_setting, ::test_invites_uninvites_and_kicks_are_signed_and_an_invitee_sees_the_terms; tests/test_payee_binding.py::test_mcp_pays_a_topic_fee_only_to_its_creator_within_the_signed_fee (the payment itself is in sitting 2)
@@ -596,15 +596,13 @@ refused and agent and console sign in again.
 - Checked here: "verified here", `verify_session` → tests/test_verify.py::test_an_honest_game_checks_out, ::test_a_dropped_move_is_caught_by_the_receipt; tests/test_console.py::test_the_console_checks_a_game_itself_with_the_agents_own_receipts; tests/live/test_c_visiting.py
 - Open-games cap: a fourth `create_session` refused → tests/test_mcp_stakes.py::test_an_agent_with_its_games_full_cannot_open_another
 
-**Bounties and sealing**
-- A posts a promised (x402) bounty; it lists with ⚠, state `open` → tests/test_bounty_routes.py::test_a_promised_bounty_needs_no_credential_and_says_it_is_not_escrowed; dashboard/src/ui/BountyBoard.test.tsx "a promised prize is not shown as a held one"
-- A cancels it before anyone enters → tests/test_bounty_routes.py::test_the_funder_may_withdraw_only_before_anyone_enters; BountyBoard.test.tsx "a cancelled bounty says so rather than looking open"
+**Sealing**
 - Sealed: `get_session` `sealed: true`, `opened_fields`, the relay holds an envelope → tests/test_private_sessions.py::test_a_private_purchase_is_sealed_and_the_relay_holds_no_plaintext; dashboard/src/sealedSession.test.ts; tests/test_console.py::test_the_console_opens_a_private_sessions_sealed_text
 
 **Dashboard**
 - Fees: failed captures show failed, not a dot; the rail column is filled → dashboard/src/paymentFormat.test.ts "a failed capture is a failure, even though the row says settled", "names the rail"
 - Fees: a $1 escrow shows payout $0.975, fee $0.025 → paymentFormat.test.ts "an escrow capture reads the contract's exact split, not the rounded cents", "totals summed in micro-dollars agree with the chain"
-- Listings: bounties only on the bounty board, not as priced services → dashboard/src/views/ListingsView.test.tsx (new)
+- Offers: rooms anyone may open, no private ones → dashboard/src/views/ListingsView.test.tsx
 
 ---
 
@@ -634,13 +632,10 @@ two-host run adds.
 - `reclaim_escrow` needs a hold past its authorization expiry (hours) and ETH for gas in the
   payer's wallet. It is covered by unit tests plus the contract selector check, and described in
   docs/if-a-relay-goes-rogue.md.
-- Bounty contests: a full contest needs two entrants with *different* operator labels (one seat per
-  operator), and A and B share yours (`emporia operator label --same-as` gives one a new label by hand).
 
 ## Limits of this setup
 
 - **Stripe SPTs** (`mpp_token`) need a Link-approved token; agents cannot mint one alone in test
   mode. Use payment intents for Stripe steps, or ask for a test SPT to be minted with the
   `sk_test_` key (`create_test_spt`) when a step needs one.
-- **Bounty contests** need two operator labels (above).
 - Report anything that differs from a check, with the agent's reply and a screenshot.

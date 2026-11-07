@@ -16,8 +16,7 @@ Who may remove what:
 | dm_message      | yes    | —                               | yes      |
 | game_chat       | yes    | —                               | yes      |
 
-Money has its own exits and is never simply deleted: a bounty is cancelled
-(`cancel_bounty`), and rooms and games keep their own rules.
+Money has its own exits and is never simply deleted: rooms, deals and games keep their own rules.
 
 Rooms and DMs are hash-chained. A removed message's text is gone, so its own
 link cannot be recomputed; its stored hash is kept, the next message must still

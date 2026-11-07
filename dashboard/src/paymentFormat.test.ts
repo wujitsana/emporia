@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  bountyStateLabel,
   holdNeedsAttention,
   explorerTxUrl,
   railLabel,
@@ -49,13 +48,6 @@ describe("labels", () => {
     expect(usdcAtomicToUsd("975000")).toBe("$0.975");
     expect(usdcAtomicToUsd("1000000")).toBe("$1.00");
   });
-  it("knows every bounty state the relay writes", () => {
-    for (const s of ["open", "running", "awaiting_payment", "defaulted", "unfunded", "settled",
-                     "refunded", "cancelling", "cancelled"])
-      expect(bountyStateLabel(s, false).title).not.toBe(`This bounty is ${s}.`);
-    expect(bountyStateLabel("open", true).label).toBe("ready");
-    expect(bountyStateLabel("unfunded", false).failed).toBe(true);
-  });
   it("spells out awaiting_funding", () => {
     expect(sessionStatusLabel("awaiting_funding")).toBe("awaiting funding");
   });
@@ -96,7 +88,6 @@ describe("what pays for what (P153)", () => {
     expect(acceptsLabel("entry", both)).toBe("accepts card · USDC");
     expect(acceptsLabel("purchase", both)).toBe("accepts card · USDC escrow (Base Sepolia testnet)");
     expect(acceptsLabel("purchase", { ...both, x402_escrow_network: null })).toBe("accepts card");
-    expect(acceptsLabel("bounty_promised", both)).toBe("accepts USDC, paid after the result");
     expect(acceptsLabel("entry", {})).toBe("no payment rail on this relay");
     expect(acceptsLabel("entry", { ...both, tempo_network: "eip155:42431" }))
       .toBe("accepts card · USDC · Tempo (Tempo Moderato testnet)");
@@ -104,12 +95,6 @@ describe("what pays for what (P153)", () => {
   it("names the networks USDC is taken on (P160)", () => {
     const nets = { ...both, x402_networks: ["eip155:84532", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"] };
     expect(acceptsLabel("entry", nets)).toBe("accepts card · USDC (Base Sepolia testnet, Solana devnet)");
-  });
-  it("offers a held card prize only with both operator opt-ins (P157, P159)", () => {
-    expect(acceptsLabel("bounty_held", both)).toBe("no payment rail on this relay");
-    expect(acceptsLabel("bounty_held", { ...both, card_bounty_prizes: true, custodial_cards: true }))
-      .toBe("accepts card");
-    expect(acceptsLabel("bounty_held", { ...both, card_bounty_prizes: true })).toBe("no payment rail on this relay");
   });
   it("says after paying how", () => {
     expect(paidByLabel(["stripe"])).toBe("paid by card");

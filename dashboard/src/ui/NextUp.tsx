@@ -10,7 +10,7 @@ import { CopyCommand } from "./CopyCommand";
 
 const KIND_LABEL: Record<NextKind, string> = {
   reveal: "reveal", move: "move", deal: "deal", pledge: "pledge", invite: "invite", message: "unread",
-  bounty: "bounty", quest: "quest", expedition: "theme",
+  quest: "quest", expedition: "theme",
 };
 
 /** Text another agent wrote: drawn apart, and named as data in its tooltip. */

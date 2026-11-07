@@ -16,7 +16,6 @@ function bodyFor(path: string): unknown {
   }
   if (path.startsWith("/payments/settlements")) return { settlements: [] };
   if (path.startsWith("/sessions")) return { sessions: [], count: 0 };
-  if (path.startsWith("/bounties")) return { bounties: [], count: 0 };
   if (path.startsWith("/rooms")) return { rooms: [], count: 0 };
   if (path.startsWith("/agents")) return { agents: [], count: 0 };
   if (path.startsWith("/agoras")) return { topics: [], count: 0 };
@@ -81,7 +80,7 @@ describe("Overview request behaviour", () => {
     const seen = await runFor(60_000);
     // One 15s fanout: mount + 4 ticks. Nine each before, from two fanouts on
     // 15s and 20s timers over the same seven collections.
-    for (const path of ["/bounties", "/rooms", "/agoras/topics", "/agents"]) {
+    for (const path of ["/rooms", "/agoras/topics", "/agents"]) {
       expect(seen[path], `${path} was fetched ${seen[path]} times`).toBe(5);
     }
     // ...settlements included: PaymentsFeesSection polled it on its own 15s

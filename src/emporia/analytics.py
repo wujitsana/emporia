@@ -113,12 +113,12 @@ _FAILED_PREFIXES = ("capture_failed", "transfer_failed", "failed")
 
 #: Where earnings came from, by the relay's settlement `kind` (relay_server._settlement_kinds).
 #: From a relay that names no kind: a row with a payer is an access sale, else a session's.
-SOURCES = {"service": "services", "game": "games", "bounty": "bounties", "room": "rooms",
+SOURCES = {"service": "services", "game": "games", "room": "rooms",
            "topic": "topics", "access": "rooms_topics", "session": "sessions"}
 
 
 def earning_source(s: dict[str, Any]) -> str:
-    """A settlement's source of earnings: services, games, bounties, rooms or topics. A room's
+    """A settlement's source of earnings: services, games, rooms or topics. A room's
     or topic's entry fee is its creator's sale (the relay's ?agent_id= rows include them)."""
     kind = s.get("kind") or ("access" if s.get("payer_id") else "session")
     return SOURCES.get(str(kind), "sessions")
