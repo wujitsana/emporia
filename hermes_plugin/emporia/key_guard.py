@@ -101,7 +101,10 @@ _SENSITIVE = (
 # approvable from an agent's tools: `wallet backup` shows the recovery phrase,
 # `wallet mainnet` lets an agent pay real money, `relay host` (P183) opens a
 # relay to other machines.
-_PERSON_ONLY = (("wallet", {"backup", "mainnet"}), ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover"}),
+_PERSON_ONLY = (("wallet", {"backup", "mainnet"}),
+                # Activation: who may wake the agent, and whether it acts on its own, are its person's
+                ("wake", {"closed", "games", "open"}), ("rounds", {"on", "off", "pause", "resume"}),
+                ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover"}),
                 # Labs: making a lab is a person's (the repo's proof file names them)
                 ("lab", {"create"}),
                 # P290: the guardians of a relay's key are people, not agents
@@ -194,6 +197,11 @@ def _setting_written(names: tuple[str, ...]):
 _MAINNET_WRITE, _LIMITS_WRITE = _setting_written(_MAINNET_SETTING), _setting_written(_LIMIT_SETTINGS)
 # Which tools a turn started by another agent may use is its person's to say (relay_turn.py).
 _TURN_TOOLS_WRITE = _setting_written(("EMPORIA_RELAY_TURN_TOOLS",))
+# Who may wake the agent (`emporia wake`) is its person's too, written to the .env or not.
+_WAKE_WRITE = _setting_written(("EMPORIA_WAKE", "EMPORIA_ALLOW_ALL_USERS", "EMPORIA_ALLOWED_USERS"))
+# The rounds job is changed with `emporia rounds` (above); an agent's terminal could also run Hermes's own
+# `hermes cron create|edit|remove|pause|resume` on it, so one that names Emporia or its rounds is held too.
+
 
 
 def _writes_setting(args: dict, pattern: re.Pattern) -> bool:
@@ -211,6 +219,10 @@ def _changes_home_relay(args: dict) -> bool:
     return bool(written) and any(_CONFIG_FILE.search(t) for t in named)
 
 
+WAKE_SETTING = ("Blocked by Emporia: only a person decides who may wake this agent (`emporia wake`, in their own "
+                "terminal). Tell your operator.")
+ROUNDS_SETTING = ("Blocked by Emporia: only a person turns this agent's rounds on or off or changes its schedule "
+                  "(`emporia rounds`, in their own terminal; or `hermes cron` in theirs). Tell your operator.")
 TURN_TOOLS = ("Blocked by Emporia: only a person decides which tools a turn started by another agent may use "
               "(EMPORIA_RELAY_TURN_TOOLS in this profile's .env). Tell your operator.")
 RELAY_OPEN = ("Blocked by Emporia: only a person opens a relay to other machines (`emporia relay host`, in "
@@ -293,6 +305,13 @@ def pre_tool_call(tool_name: str = "", args: dict | None = None, **_: Any) -> di
         return {"action": "block", "message": PERSON_ONLY}
     if _writes_setting(args, _TURN_TOOLS_WRITE):
         return {"action": "block", "message": TURN_TOOLS}
+    if _writes_setting(args, _WAKE_WRITE):
+        return {"action": "block", "message": WAKE_SETTING}
+    for key in ("command", "cmd", "code", "script"):
+        if any(re.search(r"\bhermes\b", t, re.I) and re.search(r"\bemporia\b", t, re.I)
+               and re.search(r"\bcron\b[^\n]*\b(?:create|add|edit|remove|rm|delete|pause|resume)\b", t, re.I)
+               for t in _strings(args.get(key))):
+            return {"action": "block", "message": ROUNDS_SETTING}
     if _writes_setting(args, _LIMITS_WRITE):
         import hashlib
         digest = hashlib.sha256(repr(sorted((k, repr(v)) for k, v in args.items())).encode()).hexdigest()[:16]

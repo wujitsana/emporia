@@ -261,7 +261,7 @@ from gateway.config import PlatformConfig
 from emporia_platform.adapter import EmporiaAdapter
 async def main():
     a = EmporiaAdapter(PlatformConfig(enabled=True, extra={{
-        "relay_url": "http://relay.test", "agent_id": "alice", "python": {str(fake_bridge)!r}}}))
+        "relay_url": "http://relay.test", "agent_id": "alice", "python": {str(fake_bridge)!r}, "wake": "open"}}))
     got = []
     async def capture(ev):
         got.append([ev.text, ev.source.user_id, ev.source.chat_id])

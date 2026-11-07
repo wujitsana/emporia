@@ -291,7 +291,7 @@ def choose(question: str, options: list[tuple[str, str]], default: int = 0) -> s
     keys = [k for k, _ in options]
     replayed, value = _wiz_replay()
     if replayed and value in keys:
-        _said(question, options[keys.index(value)][1])
+        _said(question, options[keys.index(value)][1].split("\n")[0])
         return _wiz_record(value)
     if replayed:            # the options changed since: stop replaying, ask from here, visibly
         _WIZARD["replay"].clear()
@@ -305,11 +305,15 @@ def choose(question: str, options: list[tuple[str, str]], default: int = 0) -> s
             if back is None:
                 _back()
             picked = keys.index(back)
-        _said(question, options[picked][1])
+        _said(question, options[picked][1].split("\n")[0])
         return _wiz_record(options[picked][0])
-    print(question)
+    from emporia import setup_choices as _sc
+    print(_sc.paint(question, "1") if "\n" in "".join(t for _, t in options) else question)
     for i, (_, text) in enumerate(options, 1):
-        print(f"  {i}) {text}")
+        if "\n" in text:
+            print("\n".join(_sc.render_option(i, text)))
+        else:
+            print(f"  {i}) {text}")
     while True:
         answer = input(f"Choose 1-{len(options)} [{default + 1}]: ").strip()
         if not answer:
@@ -324,13 +328,38 @@ def choose(question: str, options: list[tuple[str, str]], default: int = 0) -> s
         print("  Type a number from the list." + (" (b: back)" if back or _wiz_open() else ""))
 
 
+def choose_setting(key: str, options: list[tuple[str, str]] | None = None, default: int | None = None) -> str:
+    """A setup question from the registry (emporia.setup_choices): its plain note, then each option with its
+    effect indented below and the recommended one marked; Enter takes the recommended one."""
+    from emporia import setup_choices as sc
+    c = sc.CHOICES[key]
+    if _TTY:
+        print(sc.dim(f"  {c.matters}"))
+    return choose(c.question, options or c.labels(), c.index() if default is None else default)
+
+
+def ask_setting(key: str, question: str = "") -> bool:
+    """A yes/no setup question from the registry: what it does and what each answer means, then the question;
+    the default is the recommended answer."""
+    from emporia import setup_choices as sc
+    c = sc.CHOICES[key]
+    if _TTY:
+        sc.explain(key)
+    return ask(question or c.question, c.default == "yes")
+
+
+def _short(text: str) -> str:
+    """An option as the record says it: its name, not its explanation."""
+    return text.split("\n")[0].replace("(recommended)", "").strip().split(" — ")[0].strip()
+
+
 def choose_many(question: str, options: list[tuple[str, str]], ticked: set[str]) -> list[str]:
     """Any of `options`, by numbers; Enter keeps the ticked ones."""
     if not _TTY:
         return [k for k, _ in options if k in ticked]
     replayed, value = _wiz_replay()
     if replayed:
-        _said(question, ", ".join(t.split(" — ")[0] for k, t in options if k in value) or "none")
+        _said(question, ", ".join(_short(t) for k, t in options if k in value) or "none")
         return _wiz_record(value)
     ticked = set(_wiz_prefill(ticked))
     if m := _menus():
@@ -339,11 +368,15 @@ def choose_many(question: str, options: list[tuple[str, str]], ticked: set[str])
         if picked is m.BACK and _wiz_open():
             _back()
         chosen = [k for k, _ in options if k in ticked] if picked is m.BACK else [options[i][0] for i in picked]
-        _said(question, ", ".join(t.split(" — ")[0] for k, t in options if k in chosen) or "none")
+        _said(question, ", ".join(_short(t) for k, t in options if k in chosen) or "none")
         return _wiz_record(chosen)
-    print(question)
+    from emporia import setup_choices as _sc
+    print(_sc.paint(question, "1"))
     for i, (key, text) in enumerate(options, 1):
-        print(f"  {i}) [{'x' if key in ticked else ' '}] {text}")
+        first, *rest = text.split("\n")
+        print(f"  {i}) [{'x' if key in ticked else ' '}] {_sc.mark_recommended(first)}")
+        for r in rest:
+            print(_sc.dim("         " + r))
     while True:
         answer = input("Numbers separated by commas (Enter keeps the ticked ones): ").strip()
         if not answer:
@@ -3105,7 +3138,7 @@ def _setup_playbook(profile: Path, name: str, chosen: str, existing: bool) -> No
         return
     if not chosen:
         heading("Playbook", "What it may do on its own: games, stakes, selling, buying. Never its style.")
-        chosen = choose("What should it do?", [(k, P.ABOUT[k]) for k in P.PRESETS], 0)
+        chosen = choose_setting("playbook")
     merge_env_file(profile / ".env", {"EMPORIA_PLAYBOOK": chosen, **{var: "" for var in P.SETTINGS}})
 
 
@@ -3127,9 +3160,8 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
                                         "labs")):
         heading(f"Playbook: {name}", "What it may do on its own. Its style stays its own (SOUL.md).")
         _show_playbook(name, P.resolve(dotenv))
-        preset = choose("Start from", [(k, P.ABOUT[k]) for k in P.PRESETS],
-                        list(P.PRESETS).index(P.resolve(dotenv).preset)
-                        if P.resolve(dotenv).preset in P.PRESETS else 0)
+        preset = choose_setting("playbook", default=list(P.PRESETS).index(P.resolve(dotenv).preset)
+                                if P.resolve(dotenv).preset in P.PRESETS else None)
     if preset:
         if preset not in P.PRESETS:
             print(f"agent playbook: --preset is one of {', '.join(P.PRESETS)}")
@@ -3152,6 +3184,162 @@ def cmd_agent_playbook(name: str, args: argparse.Namespace) -> int:
         print(f"  Saved. {name}'s bridge and tools read it when they next start:")
         print(f"      hermes -p {profile.name} gateway restart")
     _show_playbook(name, pb)
+    return 0
+
+
+# ─── wake mode and rounds ────────────────────────────────────────────────────
+
+def this_profile_name(profile: Path) -> str:
+    """Hermes's name for a profile folder (`default` for the root)."""
+    return hermes_layout.name_of(profile)
+
+
+def _own_profile(args: argparse.Namespace) -> tuple[Path, str] | None:
+    """The profile `emporia wake` / `emporia rounds` is about: --agent NAME, else the Hermes profile this
+    command runs in (HERMES_HOME, which `hermes -p NAME emporia …` sets), else the one holding this checkout."""
+    name = getattr(args, "agent", "") or ""
+    if name:
+        folder = profile_dir(name)
+        return (folder, name) if (folder / "config.yaml").exists() else None
+    home = os.getenv("HERMES_HOME")
+    folder = Path(home) if home and (Path(home) / "config.yaml").exists() else this_profile()
+    return (folder, this_profile_name(folder)) if folder else None
+
+
+def cmd_wake(args: argparse.Namespace) -> int:
+    """`emporia wake [closed|games|open]`: which relay events start a turn without being asked (a person's
+    setting, in the profile's .env, held from the agent's tools by the key guard)."""
+    from emporia import wake as W
+    found = _own_profile(args)
+    if found is None:
+        print("wake: no Emporia agent profile here (run it as `hermes -p NAME emporia wake …`, or pass --agent NAME)")
+        return 1
+    profile, name = found
+    dotenv = installer().harvest_env(profile)
+    if args.mode:
+        merge_env_file(profile / ".env", {W.SETTING: args.mode})
+        dotenv = {**dotenv, W.SETTING: args.mode}
+        print(f"  Saved. {name}'s bridge reads it when it next starts:")
+        print(f"      hermes {'' if name == 'default' else f'-p {name} '}gateway restart")
+    try:
+        mode = W.resolve(dotenv)
+    except W.WakeError as e:
+        print(f"wake: {e}")
+        return 1
+    print(f"  Wake mode   {mode} — {W.ABOUT[mode]}")
+    print("  Others      " + " | ".join(f"{m}: {W.ABOUT[m]}" for m in W.MODES if m != mode))
+    return 0
+
+
+def _setup_wake(profile: Path, name: str, chosen: str, existing: bool) -> None:
+    """setup's wake question: a new agent is asked (games first); an existing one keeps its own
+    unless --wake says otherwise; without a terminal a new agent gets the default, written down."""
+    from emporia import wake as W
+    current = installer().harvest_env(profile).get(W.SETTING, "")
+    if not chosen and existing and current:
+        return
+    if not chosen and not _TTY:
+        chosen = "" if existing else W.DEFAULT
+    elif not chosen:
+        heading("Wake mode", "Which events start your agent's turns on their own (each one costs a model turn).")
+        chosen = choose_setting("wake")
+    if chosen:
+        merge_env_file(profile / ".env", {W.SETTING: chosen})
+
+
+def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing: bool) -> str:
+    """The optional pieces setup installs, as one checkbox list (recommended ones ticked): rounds
+    (then its interval as a menu) and the declared model. Without a terminal: the flags, else
+    nothing is installed (the declared model stays at its default, on). Returns the rounds interval ("" = off)."""
+    from emporia import rounds as R, setup_choices as sc
+    every = "" if args.rounds in ("", "off") else args.rounds
+    declare = ""
+    if _TTY and not args.rounds:
+        heading("Optional features", "Each is a choice you can undo later; Space ticks, Enter confirms.")
+        print(sc.dim("  " + R.estimate(R.DEFAULT_EVERY)))
+        labels = dict(sc.CHOICES["optional"].labels())
+        picked = choose_many(sc.CHOICES["optional"].question, list(labels.items()),
+                             set(sc.CHOICES["optional"].recommended()))
+        declare = "on" if "declare_model" in picked else "off"
+        if "rounds" in picked:
+            every = choose_setting("rounds")
+    elif _TTY:
+        declare = ""
+    if declare and (declare == "off" or installer().harvest_env(profile).get("EMPORIA_DECLARE_MODEL", "").lower() == "off"):
+        merge_env_file(profile / ".env", {"EMPORIA_DECLARE_MODEL": declare})
+    if not every:
+        return ""
+    try:
+        print("  " + R.turn_on(this_profile_name(profile), every))
+        print("  " + R.estimate(every))
+    except R.RoundsError as e:
+        print(f"  Rounds were not set up: {e}")
+        print(localize(f"  Later, once Hermes is there: emporia rounds on --every {every}"))
+        return ""
+    return every
+
+
+def _fast_path(args: argparse.Namespace) -> bool:
+    """The first question of setup: take every recommended setting without asking each one."""
+    from emporia import setup_choices as sc
+    print(sc.paint("Use the recommended settings for everything?", "1"))
+    print(sc.dim("  Yes: setup takes the recommended answer to each question below and then lists every "
+                 "setting, why it is set that way and how to change it. No: you are asked each one, with "
+                 "the recommended answer first."))
+    return ask("Use the recommended settings for everything?", True)
+
+
+def _recommend(args: argparse.Namespace, existing: bool) -> None:
+    """The fast path's answers, as the flags a person could have passed (never over one they did)."""
+    from emporia import setup_choices as sc
+    args.rounds = args.rounds or sc.default("rounds")
+    args.register = True if not args.register else args.register
+
+
+def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace, chosen_all: bool,
+                   rounds: str) -> None:
+    from emporia import setup_choices as sc
+    dotenv = installer().harvest_env(profile)
+    _, agent_id, _ = _agent(name)
+    wallets = [w for w, solana in (("EVM", False), ("Solana", True)) if _wallet_address(profile, agent_id, solana)]
+    flags = {"role": args.role, "keys": args.keys, "wake": args.wake, "playbook": args.playbook,
+             "rounds": args.rounds, "wallet": "x" if (args.wallet or args.solana) else ""}
+    chosen = set(sc.CHOICES) if chosen_all else {k for k, v in flags.items() if v}
+    heading(f"Settings installed for {name}", "Each line: the value, why, and how to change or undo it.")
+    keys = "env" if dotenv.get("EMPORIA_KEY_STORAGE") == "env" else "files"
+    for line in sc.installed_lines(dotenv, role=role, keys=keys, wallets=wallets, rounds=rounds, chosen=chosen,
+                                   name=name):
+        print(localize(line))
+
+
+def cmd_rounds(args: argparse.Namespace) -> int:
+    """`emporia rounds on [--every 4h] | off | status | pause | resume`: the one Hermes cron job
+    (`Emporia — rounds`) that lets the agent act on its own. A person's setting: the key guard holds it."""
+    from emporia import rounds as R
+    found = _own_profile(args)
+    if found is None:
+        print("rounds: no Emporia agent profile here (run it as `hermes -p NAME emporia rounds …`, or pass --agent NAME)")
+        return 1
+    profile, name = found
+    pname = this_profile_name(profile)
+    try:
+        if args.action == "on":
+            print("  " + R.estimate(args.every))
+            print("  " + R.turn_on(pname, args.every))
+            print("  Each round is the agent's own turn; it never pays or accepts a deal. `emporia rounds off` removes it.")
+        elif args.action == "off":
+            print("  " + R.turn_off(pname))
+        elif args.action == "pause":
+            print("  " + R.pause(pname))
+        elif args.action == "resume":
+            print("  " + R.resume(pname))
+        else:
+            print(f"  Rounds      {R.status_line(pname)}")
+            print(f"  Prompt      version {R.prompt_version(R.prompt_text())} (hermes_plugin/emporia/{R.PROMPT_FILE})")
+            print(f"  Wake mode   {__import__('emporia.wake', fromlist=['x']).current(installer().harvest_env(profile))}")
+    except R.RoundsError as e:
+        print(f"rounds: {e}")
+        return 1
     return 0
 
 
@@ -4747,6 +4935,13 @@ def doctor_agent_hardening(rep: Report, profile: Path, dotenv: dict[str, str]) -
                  "code and browser tools", "remove it from its .env to keep relay-started turns to Emporia's tools")
     else:
         rep.ok("turns started by other agents run Emporia's tools only (no terminal, file writes, code or browser)")
+    from emporia import rounds as _rounds, wake as _wake
+    try:
+        wake_mode = _wake.resolve(dotenv)
+        rep.ok(f"wake mode {wake_mode}: {_wake.ABOUT[wake_mode]}")
+    except _wake.WakeError as e:
+        rep.warn(f"{e}; treated as closed", f"emporia wake {_wake.DEFAULT}")
+    rep.ok("rounds " + _rounds.status_line(this_profile_name(profile)))
     cfg = installer().load_yaml(profile / "config.yaml") if (profile / "config.yaml").exists() else {}
     wide = sorted({t for t in (((cfg.get("platform_toolsets") or {}).get("emporia")) or []) if t in RISKY_TOOLSETS})
     if wide:
@@ -5538,6 +5733,14 @@ def _holds_an_agent(profile: Path) -> bool:
 
 @wizard
 def cmd_setup_agent(args: argparse.Namespace) -> int:
+    saved = _TTY
+    try:
+        return _setup_agent_body(args)
+    finally:
+        globals()["_TTY"] = saved           # the fast path turns questions off for the rest of setup only
+
+
+def _setup_agent_body(args: argparse.Namespace) -> int:
     inst = installer()
     me = this_profile()
     name = args.name or prompt("Agent name (its Hermes profile; lowercase, digits, - or _)")
@@ -5557,8 +5760,9 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     existing = (profile / "config.yaml").exists() and not getattr(args, "new_profile", False)
     heading(f"{'Update' if existing else 'New'} agent: {name}",
             "Its model and API key, and Emporia: its tools, skill, platform plugin and its own keys.")
-    sync_model = args.sync_model or (existing and me is not None and me != profile and ask(
-        f"Use the same model and API key as {me.name if me else 'this profile'}?", True))
+    fast = _TTY and _fast_path(args)
+    sync_model = args.sync_model or (existing and me is not None and me != profile and (fast or ask_setting(
+        "sync_model", f"Use the same model and API key as {me.name if me else 'this profile'}?")))
     # P177: which relay it joins — one found, one run here, or a remote one.
     current_relay = ((inst.load_yaml(profile / "config.yaml").get("mcp_servers") or {}).get("emporia") or {}) \
         .get("env", {}).get("EMPORIA_RELAY_URL", "") if existing else ""
@@ -5570,6 +5774,10 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     agent_id = _choose_agent_id(args, name, profile, existing, chosen_relay)
     if not agent_id:
         return 1
+    answered = _TTY and not fast          # the person answered the questions (else: recommended defaults)
+    if fast:
+        _recommend(args, existing)
+        globals()["_TTY"] = False         # from here every question takes its recommended answer
     heading("Role and keys", "Its role decides which of its own tools could ever reach its keys.")
     # An existing agent keeps its role unless told otherwise: re-running setup
     # (to update its plugin, say) must not quietly take a developer's terminal.
@@ -5578,8 +5786,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
         _, aid0, _ = _agent(name)
         current_role = profile_role(profile, _has_wallet(profile, aid0))
     keys = [k for k, _ in ROLES]
-    role = args.role or choose("What will this agent do?", ROLES,
-                               keys.index(current_role) if current_role in keys else 0)
+    role = args.role or choose_setting("role", default=keys.index(current_role) if current_role in keys else None)
     # P207: with the signer apart from the agents, a wallet is out of its tools'
     # reach whatever its role — so a developer may hold one, behind the signer.
     behind_signer = False
@@ -5600,10 +5807,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     if existing and not args.keys and not _TTY:
         # Without a terminal, an existing agent's key storage is left as it is.
         args.keys = "env" if inst.harvest_env(profile).get("EMPORIA_KEY_STORAGE") == "env" else "files"
-    storage = args.keys or choose("Where should its keys be kept?", [
-        ("env", "In its profile .env (recommended) — Hermes hides .env files from the agent's own tools"),
-        ("files", "In key files in its keys folder"),
-    ])
+    storage = args.keys or choose_setting("keys")
     # P169: wallet keys the operator already has come first.
     found = byo_candidates(profile) if role != "developer" or behind_signer else []
     if found and not (args.wallet or args.solana or args.use_found_keys):
@@ -5698,7 +5902,7 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
     if _TTY or args.register:
         heading("On the relay")
     if not args.register and _TTY and health():
-        args.register = ask(f"Register {name} on the relay now?", True)
+        args.register = ask_setting("register", f"Register {name} on the relay now?")
     if args.register:
         if not health():
             print(localize("  Not registered: the relay is not answering (emporia relay start, then re-run)."))
@@ -5722,19 +5926,22 @@ def cmd_setup_agent(args: argparse.Namespace) -> int:
                     "undo with `emporia signer remove`)?" if up else
                     "Keep this wallet behind the signer — its keys and limits apart from the agent? Optional on "
                     "testnet, needed for real money; this starts the signer (undo: emporia signer remove).")
-        if ask(localize(question), bool(up)) and (up or _signer_daemon(_signer_args("start"), surl) == 0):
+        if ask_setting("signer", localize(question)) and (up or _signer_daemon(_signer_args("start"), surl) == 0):
             _signer_add(_signer_args("add", name), surl)
     elif wallet and not _persons_terminal():
         # An agent setting this up for its operator: the signer is the operator's call.
         print(localize(f"  Optional: keep its wallet behind the signer — the operator runs `emporia signer add {name}`."))
     # P169: card payouts — only matters if the relay takes cards.
     if role != "developer" and (health() or {}).get("stripe_enabled") and (
-            args.stripe or (_TTY and ask("Should it be paid by card too (Stripe)?", False))):
+            args.stripe or (_TTY and ask_setting("stripe"))):
         _agent_stripe(profile, name)
     # P168: the role decides its tools; then say plainly what was set up.
     apply_role(profile, role)
     _setup_playbook(profile, name, args.playbook, existing)
+    _setup_wake(profile, name, args.wake, existing)
+    rounds_every = _setup_optional(profile, name, args, existing)
     _setup_summary(profile, name, role)
+    _closing_block(profile, name, role, args, answered, rounds_every)
     inst.print_restart_instructions(list(inst._TOUCHED_PROFILES))
     return 0
 
@@ -5753,6 +5960,11 @@ def _setup_summary(profile: Path, name: str, role: str) -> None:
     print(f"  Terminal    {backend}" + ("  (same disk as its keys)" if backend == "local" and role != "marketplace" else ""))
     print(f"  Keys        {'in its .env (hidden from its tools by Hermes)' if dotenv.get('EMPORIA_KEY_STORAGE') == 'env' else 'key files'}")
     from emporia import playbook as _pb
+    from emporia import wake as _wake
+    try:
+        print(f"  Wake mode   {_wake.resolve(dotenv)}  ({localize('emporia wake')} to change)")
+    except _wake.WakeError as e:
+        print(f"  Wake mode   ! {e}")
     try:
         print(f"  Playbook    {_pb.resolve(dotenv).preset}  ({localize(f'emporia agent playbook {name}')} to change)")
     except _pb.PlaybookError as e:
@@ -6511,10 +6723,17 @@ def _wallet_mode(args: argparse.Namespace, default: str = "none", found: bool = 
         return "solana"
     if args.wallet:
         return "evm"
-    kept = [("keep", "Keep its wallets — " + ", ".join(
+    kept = [("keep", "keep  (recommended)\nKeep its wallets: " + ", ".join(
         f"{'Solana' if f == 'svm' else 'EVM'} {a[:6]}…{a[-4:]}" for f, a in (have or {}).items()))] if have else []
-    modes = kept + ([("found", "Use the wallet keys found above (recommended — they are already yours)")]
-                    if found and not have else []) + WALLET_MODES
+    from emporia import setup_choices as sc
+    registry = sc.CHOICES["wallet"].labels()
+    if kept or (found and not have):      # another option is recommended here, not "none"
+        registry = [(k, t.replace("  (recommended)", "").split("\n")[0] + "\n" + t.split("\n", 1)[1].replace(
+            " Nothing to lose while you look around.", "")) for k, t in registry]
+    if _TTY:
+        print(sc.dim("  " + sc.CHOICES["wallet"].matters))
+    modes = kept + ([("found", "found  (recommended)\nUse the wallet keys found above: they are already yours.")]
+                    if found and not have else []) + registry
     default = "keep" if have else default
     keys = [k for k, _ in modes]
     return choose("Which wallets should it have?", modes, keys.index(default) if default in keys else 0)
@@ -7885,6 +8104,17 @@ def build_parser() -> argparse.ArgumentParser:
     dm.add_argument("--unblock", default=None, metavar="SENDER", help="lift a block on SENDER")
     dm.set_defaults(func=cmd_dms)
 
+    wk = sub.add_parser("wake", help="which relay events start a turn: closed, games or open (a person's setting)")
+    wk.add_argument("mode", nargs="?", choices=["closed", "games", "open"], default=None)
+    wk.add_argument("--agent", default="", help="the agent's profile (default: this one)")
+    wk.set_defaults(func=cmd_wake)
+
+    rd = sub.add_parser("rounds", help="let the agent act on its own, on a schedule (one Hermes cron job)")
+    rd.add_argument("action", choices=["on", "off", "status", "pause", "resume"], nargs="?", default="status")
+    rd.add_argument("--every", default="4h", choices=["2h", "4h", "8h", "12h", "24h"], help="how often (default 4h)")
+    rd.add_argument("--agent", default="", help="the agent's profile (default: this one)")
+    rd.set_defaults(func=cmd_rounds)
+
     vs = sub.add_parser("visits", help="where an agent may go beyond its home relay")
     vs.add_argument("name")
     vs.add_argument("--policy", choices=["ask", "listed", "linked"], default="",
@@ -7918,6 +8148,11 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("--playbook", choices=["custom", "player", "merchant", "scout", "host", "operator"], default="",
                     help="what it may do on its own (P297; default custom: no bounds beyond its limits). "
                          "Change it later with `emporia agent playbook NAME`")
+    ag.add_argument("--wake", choices=["closed", "games", "open"], default="",
+                    help="which relay events start its turns (default games; change later with `emporia wake`)")
+    ag.add_argument("--rounds", choices=["2h", "4h", "8h", "12h", "24h", "off"], default="",
+                    help="let it act on its own every N hours, as one Hermes cron job (default: asked in a terminal; "
+                         "off without one). Change later with `emporia rounds`")
     ag.add_argument("--keys", choices=["env", "files"], default="",
                     help="where its keys are kept: its profile .env (recommended) or key files")
     ag.add_argument("--separate-keys", action="store_true",

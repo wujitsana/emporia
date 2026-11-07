@@ -233,6 +233,14 @@ def _fetch_through_httpx_get(monkeypatch):
     monkeypatch.setattr(fetch, "_PASSTHROUGH", True)
 
 
+# Rounds are a Hermes cron job: no test may make or touch a real one. `hermes cron` is stubbed for every test
+# (a listing that shows no jobs); tests/test_rounds.py puts its own fake in place.
+@pytest.fixture(autouse=True)
+def _no_real_cron(monkeypatch):
+    from emporia import rounds
+    monkeypatch.setattr(rounds, "run_hermes", lambda argv: "")
+
+
 # P204: the signer. Its folder defaults to beside Hermes's profiles — a real
 # one on a developer machine — and `emporia signer start` spawns a process. A
 # test answering yes to "start the signer?" once left one running there.
