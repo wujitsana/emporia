@@ -416,9 +416,16 @@ class Run:
             origin = self.run(["git", "-C", str(rt), "remote", "get-url", "origin"]).stdout.strip()
             check((head, origin) == (self.sha, self.https_repo), f"the runtime is {head[:12]} from {origin}")
             check(self.runtime_python().is_file(), "setup installed no packages into the runtime")
-        self.own_operator(name)
+        self.own_operator(name, register=name != self.merchant)
 
-    def own_operator(self, name: str) -> None:
+    def register_label(self, name: str) -> None:
+        """Its tools register with the label it now holds, so the relay has it before play. (Not at setup for the
+        merchant: its tools must start after its playbook is set, which they read when they start.)"""
+        want = self.__dict__.setdefault("labels", {})[name]
+        reg = self.tool(name, "register_agent")
+        check(reg.get("success") and reg.get("operator_label") == want, f"re-registering with its label: {reg}")
+
+    def own_operator(self, name: str, register: bool = True) -> None:
         """Setup gave the agent an operator label. The first agent on this Hermes install minted it and every
         next one reused it (one person's agents are one operator): checked here. The run's agents play as
         different people, so each agent after the first adopts a label of its own, through the product's own
@@ -438,9 +445,8 @@ class Run:
         out = self.emporia(name, "operator", "label", "--same-as", fresh)
         check("adopted" in out, f"operator label --same-as: {out.strip()[-200:]}")
         labels[name] = fresh
-        # its tools register again on their next start; do it now, so the relay has the new label before play
-        reg = self.tool(name, "register_agent")
-        check(reg.get("success") and reg.get("operator_label") == fresh, f"re-registering with the new label: {reg}")
+        if register:
+            self.register_label(name)
 
     def emporia(self, profile: str, *args: str, ok_codes=(0,), timeout: float = 120, **env: str) -> str:
         """`hermes -p PROFILE emporia …`: the plugin's own commands, and the runtime's CLI
@@ -1255,6 +1261,7 @@ def main(argv: list[str] | None = None) -> int:
         run.step(f"setup {run.merchant} (merchant)", run.setup_agent, run.merchant, "--playbook", "merchant")
         run.step(f"{run.merchant} plays set plays", run.emporia, run.merchant, "agent", "playbook", run.merchant,
                  "--games", "set-plays")
+        run.step(f"{run.merchant} registers with the operator label of its own", run.register_label, run.merchant)
         for name in (run.player, run.merchant):
             run.step(f"{name}: role, keys, plugin, registered, doctor", run.check_agent, name)
         run.step("playbook refusals name their fix", run.refusals)
