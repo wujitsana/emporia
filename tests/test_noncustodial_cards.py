@@ -308,3 +308,9 @@ def test_by_default_games_are_staked_in_usdc_not_on_cards(client, stripe, monkey
                            headers=_hdr(a))
     assert free.status_code == 200, "free play is untouched"
     assert stripe.pis == {}
+
+
+@pytest.fixture(autouse=True)
+def _relay_fee_address(monkeypatch):
+    """The relay's fee exists once it has a fee address (fees.py): these tests are about where the 1% goes."""
+    monkeypatch.setenv("EMPORIA_FEE_ADDRESS", "0x" + "fe" * 20)

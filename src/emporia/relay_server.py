@@ -239,7 +239,6 @@ WRITE_REQUIRES_NOUS = os.getenv("EMPORIA_WRITE_REQUIRES_NOUS", "0").strip() == "
 # (default mandatory — every first-party client already completes the challenge round-trip
 # unconditionally, so this only weakens a direct REST caller's requirements; not recommended).
 REQUIRE_CHALLENGE = os.getenv("EMPORIA_REQUIRE_CHALLENGE", "1").strip() == "1"
-OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "100"))
 MAX_TOTAL_SPEND_CENTS = int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0"))
 # P152: EMPORIA_MPP_TEMPO_ENABLED used to advertise "tempo" as an MPP method
 # with nothing able to settle it. Gone until Tempo settlement exists; an
@@ -2100,7 +2099,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
                 settlement.get("total_stake_cents", 0),
                 settlement.get("platform_fee_cents", 0),
                 settlement.get("winner_payout_cents", 0),
-                settlement.get("platform_fee_bps", OPERATOR_FEE_BPS),
+                settlement.get("platform_fee_bps", _fee_bps_now()),
                 json.dumps(settlement.get("payment_intent_ids", [])),
                 settlement.get("transfer_id"),
                 settlement.get("transfer_status", "pending_connect"),
@@ -4732,7 +4731,6 @@ async def health(request: Request):
         # whether starter limits bind new agents (levels.py).
         "season": _season_public(),
         "starter_limits": _starter_limits_on(),
-        "operator_fee_bps": OPERATOR_FEE_BPS,
         **_fees_card(),
         "mpp_enabled": bool(payment_methods),
         "payment_methods": payment_methods,
@@ -4766,6 +4764,11 @@ async def health(request: Request):
         "card_game_stakes": card_game_stakes_allowed(),
         "custodial_cards": custodial_cards_allowed(),
     }
+
+
+def _fee_bps_now() -> int:
+    from emporia import fees
+    return fees.fee_bps()
 
 
 def _fees_card() -> dict:
@@ -4882,7 +4885,6 @@ async def relay_identity_card(request: Request):
         "relay_url": RELAY_BASE_URL, "host": _own_host(),
         "operator": _relay_operator_id() or None,
         "access": access,
-        "operator_fee_bps": OPERATOR_FEE_BPS,
         **_fees_card(),
         # P291 (card v2): what it runs beyond the core — money and its rails, the log,
         # federation and its links, gamify and its formulas — one field, as on /health
@@ -6140,23 +6142,6 @@ async def _fetch_federation_batch(url: str, *, client: httpx.AsyncClient | None 
             await client.aclose()
 
 
-def _peer_owns_listing(existing: Any, peer_url: str) -> bool:
-    """May the peer at `peer_url` replace this existing listing row? (P87)
-
-    Only the peer it was pulled from. A local row (`federated_from` NULL and
-    `origin_relay` this relay) is never peer-writable. A row pulled before P87
-    has no `federated_from`, so it is adopted by a peer whose URL is the row's
-    own origin — the ordinary case, where a relay is reached at the URL it
-    reports — and by no other.
-    """
-    if existing["federated_from"]:
-        return normalize_peer_url(existing["federated_from"]) == peer_url
-    origin = existing["origin_relay"] or ""
-    if not origin or normalize_peer_url(origin) == normalize_peer_url(RELAY_BASE_URL):
-        return False
-    return normalize_peer_url(origin) == peer_url
-
-
 async def _repin_if_rotated(peer_url: str, presented: str) -> bool:
     """P191: a peer presenting a new key keeps its pin only if its history shows
     the pinned key handing over to it, each step signed by the key before."""
@@ -6408,12 +6393,6 @@ async def _pull_peer_modules(peer_url: str) -> dict[str, Any] | None:
     sync["relay_modules"] = mods
     back = (mods.get("federation") or {}).get("links") or []
     sync["links_back"] = normalize_peer_url(RELAY_BASE_URL) in {normalize_peer_url(u) for u in back}
-    if "money" not in mods:
-        with DB_LOCK, get_db() as conn:
-            gone = conn.execute("DELETE FROM listings WHERE federated_from = ? AND payment_mode != 'free'",
-                                (peer_url,)).rowcount
-        if gone:
-            sync["listings_unpayable"] = gone
     return mods
 
 
@@ -6457,18 +6436,14 @@ def _check_peer_log(peer_url: str) -> dict[str, Any] | None:
 
 
 def drop_unlinked_federated_rows() -> int:
-    """P184: listings pulled from a relay no longer linked go — unlinking a
-    relay must not leave its listings shown here forever."""
+    """P184: pointer posts pulled from a relay no longer linked go — unlinking a
+    relay must not leave its posts shown here forever."""
     linked = [normalize_peer_url(u) for u in FEDERATED_RELAYS]
     with DB_LOCK, get_db() as conn:
-        q = "DELETE FROM listings WHERE federated_from IS NOT NULL"
-        post_q = "DELETE FROM posts WHERE federated_from IS NOT NULL"      # pointers follow the link too
+        post_q = "DELETE FROM posts WHERE federated_from IS NOT NULL"
         if linked:
-            marks = ",".join("?" * len(linked))
-            q += f" AND federated_from NOT IN ({marks})"
-            post_q += f" AND federated_from NOT IN ({marks})"
-        conn.execute(post_q, linked)
-        return conn.execute(q, linked).rowcount
+            post_q += f" AND federated_from NOT IN ({','.join('?' * len(linked))})"
+        return conn.execute(post_q, linked).rowcount
 
 
 _FEDERATION_SYNC_INTERVAL_SECONDS = float(os.getenv("EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS", "300"))
@@ -7082,12 +7057,12 @@ async def _settle_access_payment(
     elif payment_ref.destination:
         # P157: a destination charge — Stripe paid the creator, less the fee,
         # when it was captured. Nothing reached the platform but the fee.
-        platform_fee_bps = OPERATOR_FEE_BPS
+        platform_fee_bps = _fee_bps_now()
         platform_fee = _platform_fee(amount_cents)
         creator_payout = amount_cents - platform_fee
         transfer_id, transfer_status = None, "destination"
     else:
-        platform_fee_bps = OPERATOR_FEE_BPS
+        platform_fee_bps = _fee_bps_now()
         platform_fee = _platform_fee(amount_cents)
         creator_payout = amount_cents - platform_fee
         transfer_id = None

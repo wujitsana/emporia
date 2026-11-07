@@ -1027,9 +1027,9 @@ def test_relay_config_shows_checks_and_writes_settings(tmp_path, monkeypatch, ca
     folder.mkdir()
     monkeypatch.setattr(cli, "_TTY", False)
     run = lambda *a: cli.main(["relay", "config", *a, "--dir", str(folder)])   # noqa: E731
-    assert run("set", "OPERATOR_FEE_BPS", "300") == 0 and _env_of(folder)["OPERATOR_FEE_BPS"] == "300"
-    assert run("set", "OPERATOR_FEE_BPS", "lots") == 1
-    assert run("set", "OPERATOR_FEE_BPS", "5000") == 1                       # at most 20%
+    assert run("set", "EMPORIA_FEE_BPS", "300") == 0 and _env_of(folder)["EMPORIA_FEE_BPS"] == "300"
+    assert run("set", "EMPORIA_FEE_BPS", "lots") == 1
+    assert run("set", "EMPORIA_FEE_BPS", "5000") == 1                       # at most 10%
     assert run("set", "EMPORIA_RELAY_ACCESS", "closed") == 0
     assert "Applies within seconds" in capsys.readouterr().out
     assert run("set", "EMPORIA_RELAY_ACCESS", "wide-open") == 1
@@ -1038,7 +1038,7 @@ def test_relay_config_shows_checks_and_writes_settings(tmp_path, monkeypatch, ca
     assert run("set", "STRIPE_SECRET_KEY", "sk_live_x") == 1                  # never on the command line
     assert "type it hidden" in capsys.readouterr().out and "sk_live_x" not in _env_of(folder).values()
     assert run("set", "NOT_A_SETTING", "x") == 1
-    assert run("unset", "OPERATOR_FEE_BPS") == 0 and "OPERATOR_FEE_BPS" not in _env_of(folder)
+    assert run("unset", "EMPORIA_FEE_BPS") == 0 and "EMPORIA_FEE_BPS" not in _env_of(folder)
     assert run("show") == 0
     out = capsys.readouterr().out
     assert "EMPORIA_RELAY_ACCESS" in out and "closed" in out and "100 (default)" in out
@@ -1049,10 +1049,10 @@ def test_relay_config_is_interactive_in_a_terminal(tmp_path, monkeypatch):
     folder.mkdir()
     from emporia import relay_config as rc
     names = [s.name for s in rc.SETTINGS]
-    fee = names.index("OPERATOR_FEE_BPS") + 1
+    fee = names.index("EMPORIA_FEE_BPS") + 1
     _typing(monkeypatch, str(fee), "400", str(len(names) + 1))   # pick the fee · 400 · done
     assert cli.main(["relay", "config", "--dir", str(folder)]) == 0
-    assert _env_of(folder)["OPERATOR_FEE_BPS"] == "400"
+    assert _env_of(folder)["EMPORIA_FEE_BPS"] == "400"
 
 
 def test_a_docker_relays_secret_is_a_file_typed_hidden(tmp_path, monkeypatch, capsys):

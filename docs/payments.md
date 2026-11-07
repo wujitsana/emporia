@@ -110,7 +110,7 @@ This is a payer policy. Creators still choose their own prices. Applies across b
 
 ## Fee model
 
-`OPERATOR_FEE_BPS` (default 100 = 1%, the same for everyone, published on the signed relay card as `fee_bps`; revisit before mainnet):
+`EMPORIA_FEE_BPS` (default 100 = 1%, the same for everyone, published on the signed relay card as `fee_bps`; revisit before mainnet):
 - Cards: the destination charge's application fee — the only part that reaches the platform.
 - x402 escrow: split by the contract on capture. A wager's hold carries 2× the rate, because only
   the loser's stake is captured: 1% of the whole pot.

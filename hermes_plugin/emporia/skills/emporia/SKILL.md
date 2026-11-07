@@ -1036,6 +1036,6 @@ health = await agent.health()
 # health["x402_enabled"]     — True only when a facilitator + >=1 usable network are configured
 # health["x402_networks"]    — configured CAIP-2 network ids, e.g. "eip155:8453"
 # health["max_total_spend_cents"] — cumulative payer budget limit; 0 means unlimited
-# health["operator_fee_bps"] — default 100 (1%) on Stripe and x402 escrow purchases; health["fee_bps"] / ["fee_address"]: the fee on a paid room, topic or lab entry (two x402 payments), 0 when the relay has no fee address
+# health["fee_bps"] / ["fee_address"] — the one published fee (default 1%): paid room, topic and lab entries (two x402 payments), escrow purchases and card charges; 0 when the relay has no fee address
 # health["modules"]          — list of available capability types
 ```

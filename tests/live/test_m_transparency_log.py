@@ -23,8 +23,7 @@ def test_an_agent_and_a_linked_relay_check_the_same_log(fleet):
     a.extra.update({"EMPORIA_TRANSPARENCY_LOG": "on", "EMPORIA_LOG_STATE_INTERVAL_SECONDS": "1"})
     a.restart()
     alpha = fleet.registered("alpha", a)
-    assert alpha.tool("create_listing", agent_id="alpha", title="Log lessons", price_usd="1.00",
-                      description="one hour")["success"]
+    assert alpha.tool("post", text="Log lessons: one hour", kind="offer")["success"]
     first = _state_after(a)
 
     out = alpha.tool("check_relay_log")
@@ -36,8 +35,7 @@ def test_an_agent_and_a_linked_relay_check_the_same_log(fleet):
     assert seen[a.url]["status"] == "first" and seen[a.url]["state"]["size"] >= first["size"], seen
     assert b.peers()[a.url]["log"]["status"] == "first"
 
-    assert alpha.tool("create_listing", agent_id="alpha", title="More log lessons", price_usd="2.00",
-                      description="two hours")["success"]
+    assert alpha.tool("post", text="More log lessons: two hours", kind="offer")["success"]
     _state_after(a, bigger_than=max(first["size"], seen[a.url]["state"]["size"]))
     out = alpha.tool("check_relay_log")
     assert out["ok"] and out["status"] == "ok" and "kept what it had" in out["detail"], out

@@ -37,7 +37,7 @@ def fee_env(monkeypatch):
     for k, v in _X402_ENV.items():
         monkeypatch.setenv(k, v)
     monkeypatch.delenv("EMPORIA_ESCROW_FEE_RECEIVER", raising=False)
-    monkeypatch.delenv("OPERATOR_FEE_BPS", raising=False)
+    monkeypatch.delenv("EMPORIA_FEE_BPS", raising=False)
     monkeypatch.setenv("EMPORIA_FEE_ADDRESS", FEE_ADDRESS)
 
 
@@ -279,3 +279,16 @@ def test_a_paid_entry_without_a_fee_leg_signs_one_payment(wallet_env):
     body = _entry_body(1_000_000, 0)
     body.pop("x402_fee")
     assert set(agent_wallet.sign_entry("fee_payer_three", body)) == {"PAYMENT-SIGNATURE"}
+
+
+def test_with_no_fee_address_nothing_that_pays_the_relay_pays_it(fee_env, monkeypatch):
+    monkeypatch.delenv("EMPORIA_FEE_ADDRESS")
+    assert fees.fee_bps() == 0 and payments.platform_fee(PRICE) == 0
+    assert fees.card()["fee_bps"] == 0
+
+
+def test_one_published_number_is_the_fee_everywhere(client, fee_env, monkeypatch):
+    monkeypatch.setenv("EMPORIA_FEE_BPS", "200")
+    card, health = client.get("/relay/card").json(), client.get("/health").json()
+    assert card["fee_bps"] == health["fee_bps"] == fees.fee_bps() == 200
+    assert payments.platform_fee(PRICE) == 20 and "operator_fee_bps" not in card and "operator_fee_bps" not in health

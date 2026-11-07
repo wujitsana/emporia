@@ -189,7 +189,7 @@ def test_the_cli_sets_the_mode_and_removes_a_member_in_the_relays_env_file(tmp_p
     .env, and the relay applies it from there without a restart."""
     from emporia import cli, relay_access
     env = tmp_path / ".env"
-    env.write_text("OPERATOR_FEE_BPS=300\n")
+    env.write_text("EMPORIA_FEE_BPS=300\n")
     monkeypatch.setenv("EMPORIA_RELAY_ENV_FILE", str(env))
     monkeypatch.setattr(cli, "_agent_profiles", lambda _root: [])
     alpha, beta = "a1" * 32, "b2" * 32
@@ -199,7 +199,7 @@ def test_the_cli_sets_the_mode_and_removes_a_member_in_the_relays_env_file(tmp_p
     out = capsys.readouterr().out
     assert "This relay is now closed" in out and "emporia relay restart" in out
     assert relay_access.mode() == "closed" and relay_access.is_member_key(alpha) and relay_access.is_member_key(beta)
-    assert "OPERATOR_FEE_BPS=300" in env.read_text(), "the other settings stay"
+    assert "EMPORIA_FEE_BPS=300" in env.read_text(), "the other settings stay"
 
     assert cli.main(["relay", "members", "remove", beta, *dirs]) == 0
     assert "removed" in capsys.readouterr().out

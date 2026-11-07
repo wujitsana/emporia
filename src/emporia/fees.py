@@ -9,15 +9,15 @@ payments have settled. Free rooms stay free.
 
 Settings (environment of the relay):
 
-* `OPERATOR_FEE_BPS`: the fee in basis points; 100 (1%) by default, the same for everyone on the relay.
+* `EMPORIA_FEE_BPS`: the fee in basis points; 100 (1%) by default, the same for everyone on the relay.
 * `EMPORIA_FEE_ADDRESS`: where the fee is paid on EVM networks (a wallet the operator controls); falls back
   to `EMPORIA_ESCROW_FEE_RECEIVER`, the address `emporia setup relay` already asks for.
 * `EMPORIA_FEE_ADDRESS_SVM`: the same on Solana networks (optional).
 
-With no fee address the fee is skipped and the card says `fee_bps: 0`. A network whose family has no fee
+With no fee address the fee is skipped everywhere and the card says `fee_bps: 0`. A network whose family has no fee
 address is not offered for a paid entry while a fee applies, so the fee cannot be avoided by choosing it.
-(The card payment rail charges the same `OPERATOR_FEE_BPS` as the application fee of a destination
-charge, and deals use it too: one value.) Revisit before mainnet.
+One published number, `fee_bps`: the same value is the fee on paid entries, deals (escrow capture) and the
+application fee of a card charge, and it is 0 for all of them with no fee address. Revisit before mainnet.
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ PAYER_FEE_CAP_BPS = 300
 
 
 def configured_bps() -> int:
-    """`OPERATOR_FEE_BPS`, 100 by default; clamped to 0-1000."""
-    raw = os.getenv("OPERATOR_FEE_BPS", "").strip()
+    """`EMPORIA_FEE_BPS`, 100 by default; clamped to 0-1000."""
+    raw = os.getenv("EMPORIA_FEE_BPS", "").strip()
     try:
         bps = int(raw) if raw else DEFAULT_FEE_BPS
     except ValueError:

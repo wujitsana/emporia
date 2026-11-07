@@ -933,7 +933,8 @@ async def _settle_escrow_purchase(session_id: str, seller: str, total_cents: int
     and the fee receiver in the same transaction, so there is no transfer and
     no platform balance in between. A failed capture pays nobody and says so."""
     from emporia import escrow_chain
-    from emporia.payments import OPERATOR_FEE_BPS, RAIL_X402, platform_fee
+    from emporia.fees import fee_bps as relay_fee_bps
+    from emporia.payments import RAIL_X402, platform_fee
 
     from emporia.escrow import fee_amount
 
@@ -974,7 +975,7 @@ async def _settle_escrow_purchase(session_id: str, seller: str, total_cents: int
     return {
         "session_id": session_id, "winner_id": seller, "total_stake_cents": total_cents,
         "platform_fee_cents": fee, "winner_payout_cents": total_cents - fee,
-        "platform_fee_bps": OPERATOR_FEE_BPS,
+        "platform_fee_bps": relay_fee_bps(),
         "platform_fee_atomic": fee_atomic, "winner_payout_atomic": payout_atomic,
         "payment_intent_ids": [p["payment_intent_id"] for p in payments],
         "capture_results": captures, "transfer_id": None if failed else capture_tx,
@@ -1081,13 +1082,14 @@ def _escrow_offer(rail, amount_cents: int, fee_bps: int | None = None, *, payee:
     import time
 
     from emporia import escrow
-    from emporia.payments import OPERATOR_FEE_BPS, _x402_amount_atomic
+    from emporia.fees import fee_bps as relay_fee_bps
+    from emporia.payments import _x402_amount_atomic
 
     cfg, signer, wallet = rail
     info = escrow.build_payment_info(
         operator=signer.address, payer=escrow.ZERO_ADDRESS, receiver=wallet, token=cfg.token,
         amount=int(_x402_amount_atomic(amount_cents)),
-        fee_bps=OPERATOR_FEE_BPS if fee_bps is None else fee_bps,
+        fee_bps=relay_fee_bps() if fee_bps is None else fee_bps,
         fee_receiver=cfg.fee_receiver, now=int(time.time()),
         pre_approval_window=escrow.PRE_APPROVAL_WINDOW,
         authorization_window=escrow.AUTHORIZATION_WINDOW, refund_window=escrow.REFUND_WINDOW,
@@ -1115,7 +1117,8 @@ async def _fund_with_escrow(request: Request, s: dict[str, Any], session_id: str
     import time
 
     from emporia import escrow, escrow_chain
-    from emporia.payments import OPERATOR_FEE_BPS, RAIL_X402, _x402_amount_atomic
+    from emporia.fees import fee_bps as relay_fee_bps
+    from emporia.payments import RAIL_X402, _x402_amount_atomic
 
     cfg, signer, wallet = rail
     try:
@@ -1128,7 +1131,7 @@ async def _fund_with_escrow(request: Request, s: dict[str, Any], session_id: str
     try:
         escrow.check_submitted(info, operator=signer.address, receiver=wallet, token=cfg.token,
                                amount=amount,
-                               fee_bps=OPERATOR_FEE_BPS if fee_bps is None else fee_bps,
+                               fee_bps=relay_fee_bps() if fee_bps is None else fee_bps,
                                fee_receiver=cfg.fee_receiver, now=int(time.time()))
         signed_by = escrow.recover_payer(
             info, signature, chain_id=cfg.chain_id, escrow=cfg.contract,
@@ -1201,7 +1204,8 @@ async def _fund_wager(request: Request, s: dict[str, Any], session_id: str, call
     or a manual-capture card charge whose destination is the opponent's Stripe
     account. Only the loser's hold is ever captured, so its fee is 1% of the
     whole pot (2× the rate on one stake). The game starts when both are in."""
-    from emporia.payments import OPERATOR_FEE_BPS, platform_fee
+    from emporia.fees import fee_bps as relay_fee_bps
+    from emporia.payments import platform_fee
     if caller not in s["participants"]:
         raise HTTPException(403, "Only a player stakes this wager.")
     rs._enforce_agent_rate_limit(caller)
@@ -1232,11 +1236,11 @@ async def _fund_wager(request: Request, s: dict[str, Any], session_id: str, call
                     "resource": f"emporia:session:{session_id}",
                     "message": (f"Stake this wager: an x402 escrow hold paid to {opponent} if you "
                                 f"lose, voided back to you if you win or draw."),
-                    "escrow": _escrow_offer(escrow, amount_cents, fee_bps=2 * OPERATOR_FEE_BPS, payee=opponent),
+                    "escrow": _escrow_offer(escrow, amount_cents, fee_bps=2 * relay_fee_bps(), payee=opponent),
                 })
             await _fund_with_escrow(request, rs.load_session(session_id) or s, session_id, caller,
                                     escrow, amount_cents, receiver_agent=opponent,
-                                    fee_bps=2 * OPERATOR_FEE_BPS, wager=True)
+                                    fee_bps=2 * relay_fee_bps(), wager=True)
         else:
             paid = await rs._verify_and_confirm_payment(
                 request,
@@ -2089,7 +2093,7 @@ async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -
                 "total_stake_cents": 0,
                 "platform_fee_cents": 0,
                 "winner_payout_cents": 0,
-                "platform_fee_bps": rs.OPERATOR_FEE_BPS,
+                "platform_fee_bps": __import__("emporia.fees", fromlist=["x"]).fee_bps(),
                 "payment_intent_ids": [],
                 "capture_results": [],
                 "transfer_id": None,

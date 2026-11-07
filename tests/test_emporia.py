@@ -3485,6 +3485,7 @@ async def test_settle_derives_payout_idempotency_key_from_payment_intent_ids():
 
 @pytest.mark.asyncio
 async def test_settle_pays_a_winner_who_never_paid_in(monkeypatch):
+    monkeypatch.setenv("EMPORIA_FEE_ADDRESS", "0x" + "fe" * 20)    # the relay has a fee once it has an address
     """P72 phase 01: the bounty shape — one funder escrows, a different agent wins.
 
     Every settlement this codebase has shipped is a *wager*: N participants each
@@ -3540,7 +3541,7 @@ async def test_settle_pays_a_winner_who_never_paid_in(monkeypatch):
     # 1% of 5000 = 50; the winner nets the prize less the operator fee.
     assert result["platform_fee_cents"] == 50
     assert result["winner_payout_cents"] == 4950, \
-        "a bounty pays out the prize less OPERATOR_FEE_BPS, same as any settlement"
+        "a bounty pays out the prize less EMPORIA_FEE_BPS, same as any settlement"
 
 
 def test_all_three_win_counters_agree_that_a_refund_is_not_a_win(client):
@@ -3590,7 +3591,7 @@ def test_all_three_win_counters_agree_that_a_refund_is_not_a_win(client):
             "total_stake_cents": payout,
             "platform_fee_cents": 0,
             "winner_payout_cents": payout,
-            "platform_fee_bps": rs.OPERATOR_FEE_BPS,
+            "platform_fee_bps": 100,
             "payment_intent_ids": [],
             "transfer_id": None,
             "transfer_status": transfer,
@@ -13051,6 +13052,7 @@ def test_x402_room_join_settlement_is_non_custodial_direct_no_fee(mock_verify, m
 
 
 @pytest.mark.asyncio
+@patch.dict(os.environ, {"EMPORIA_FEE_ADDRESS": "0x" + "fe" * 20})
 async def test_escrow_capture_and_transfer_mocked():
     """settle() captures PI first (escrow → platform), then transfers to winner."""
     from emporia.payments import settle

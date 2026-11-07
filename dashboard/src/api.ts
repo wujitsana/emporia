@@ -240,7 +240,7 @@ export interface Health {
    *  each, so the dashboard must branch on this rather than on stripe_enabled. */
   stripe_mode?: string;
   mpp_enabled?: boolean;
-  operator_fee_bps?: number;
+  fee_bps?: number;
   stripe_profile_id?: string;
   stripe_profile_ready?: boolean;
   stripe_api_version?: string;

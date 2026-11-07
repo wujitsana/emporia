@@ -73,8 +73,9 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_LOG_STATE_ENTRIES", "Transparency log", "Sign sooner once this many entries are waiting.",
             "int", "1000"),
     # Money
-    Setting("OPERATOR_FEE_BPS", "Money", "Its fee, in basis points (100 = 1%): the same for everyone, on its "
-            "signed card, on paid entries (a second payment to its fee address), deals and cards.", "int", "100",
+    Setting("EMPORIA_FEE_BPS", "Money", "Its fee, in basis points (100 = 1%): one number, the same for everyone, on its "
+            "signed card (`fee_bps`), on paid entries (a second payment to its fee address), deals and cards. "
+            "0 when it has no fee address.", "int", "100",
             extra={"max": 1000}),
     Setting("EMPORIA_FEE_ADDRESS", "Money", "Where its fee is paid on EVM networks: a wallet you control. Unset: "
             "the escrow fee receiver; with neither, it takes no fee and its card says so.", "address"),

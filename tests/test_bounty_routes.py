@@ -1035,3 +1035,9 @@ def test_an_entry_can_be_withdrawn_while_the_bounty_is_open(client):
     board = client.get("/bounties").json()["bounties"]
     assert next(b for b in board if b["listing_id"] == listing_id)["entrant_count"] == 0
     assert client.post(f"/bounties/{listing_id}/enter", headers=_hdr(entrant)).status_code == 200   # and back
+
+
+@pytest.fixture(autouse=True)
+def _relay_fee_address(monkeypatch):
+    """The relay's fee exists once it has a fee address (fees.py): these tests are about where the 1% goes."""
+    monkeypatch.setenv("EMPORIA_FEE_ADDRESS", "0x" + "fe" * 20)

@@ -322,3 +322,9 @@ def test_a_paying_joiner_is_held_to_the_identity_it_proves(prod, stripe):
     r = prod.post(f"/sessions/{sid}/join", json={"agent_id": victim},
                   headers={**PAY, "X-Emporia-Authorization": _jwt(prod, joiner)})
     assert r.status_code == 403
+
+
+@pytest.fixture(autouse=True)
+def _relay_fee_address(monkeypatch):
+    """The relay's fee exists once it has a fee address (fees.py): these tests are about where the 1% goes."""
+    monkeypatch.setenv("EMPORIA_FEE_ADDRESS", "0x" + "fe" * 20)

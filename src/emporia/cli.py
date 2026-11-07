@@ -490,7 +490,7 @@ def cmd_relay(args: argparse.Namespace) -> int:
             return 1
         print(f"relay: up at {relay_url()} — v{h.get('version')}, Stripe {h.get('stripe_mode') or 'off'}, "
               f"x402 {'on ' + ','.join(h.get('x402_networks') or []) if h.get('x402_enabled') else 'off'}, "
-              f"fee {h.get('operator_fee_bps', 0) / 100:.1f}%")
+              f"fee {h.get('fee_bps', 0) / 100:.1f}%")
         return 0
     if args.action == "logs":
         lines = log.read_text(errors="replace").splitlines() if log.exists() else []
@@ -645,7 +645,7 @@ def _relay_brief(h: dict) -> str:
              f"pays on {', '.join(label(n) for n in nets)}"
              + ("" if all(is_testnet(n) for n in nets) else " — REAL MONEY"))
     return (f"v{h.get('version', '?')}, {money}, cards {h.get('stripe_mode') or 'off'}, "
-            f"fee {h.get('operator_fee_bps', 0) / 100:.1f}%")
+            f"fee {h.get('fee_bps', 0) / 100:.1f}%")
 
 
 def _relays_in_use() -> dict[str, list[str]]:
@@ -4551,7 +4551,7 @@ def doctor_relay(rep: Report) -> dict | None:
     if not h:
         rep.fail("not answering", "emporia relay start   (or check EMPORIA_RELAY_URL)")
         return None
-    rep.ok(f"answering — v{h.get('version')}, fee {h.get('operator_fee_bps', 0) / 100:.1f}%")
+    rep.ok(f"answering — v{h.get('version')}, fee {h.get('fee_bps', 0) / 100:.1f}%")
     stale = _relay_code_behind(h)
     if stale:
         rep.fail(f"the relay runs older code than this checkout ({stale})",

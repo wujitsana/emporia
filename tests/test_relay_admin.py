@@ -30,7 +30,7 @@ def test_only_the_operator_sees_the_overview(client):
     items = {i["label"]: i for i in body["settings"]}
     assert items["Operator agent"]["value"] == "ra_op"
     assert items["Stripe webhook secret"]["value"] == "set"
-    assert items["Your fee"]["command"].startswith("OPERATOR_FEE_BPS")
+    assert items["Your fee"]["command"].startswith("EMPORIA_FEE_BPS")
     stats = body["stats"]
     assert stats["agents"]["registered"] >= 2
     assert len(stats["daily"]) == 30 and set(stats["daily"][-1]) >= {"day", "agents", "sessions", "fees_cents"}

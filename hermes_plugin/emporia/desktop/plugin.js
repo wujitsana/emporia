@@ -9416,7 +9416,7 @@ function PaymentsFeesSection({ settlements, navigate }) {
 	const failedCount = settlements.length - moved.length;
 	const totalStakeCents = moved.reduce((s, r) => s + r.total_stake_cents, 0);
 	const totalFeeMicros = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
-	const feeLabel = `${((health?.operator_fee_bps ?? 250) / 100).toFixed(1)}%`;
+	const feeLabel = `${((health?.fee_bps ?? 0) / 100).toFixed(1)}%`;
 	const methods = health?.payment_methods?.join(", ") || "none";
 	const cap = health?.max_total_spend_cents;
 	const stripeState = health?.stripe_enabled ? health?.stripe_profile_ready ? "ready" : "key only" : "off";

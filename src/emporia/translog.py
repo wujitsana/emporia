@@ -726,8 +726,7 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "payment": ("payments", _fields(PAYMENT_FIELDS, "payment_id"), "", ("payment_id",)),
     "settlement": ("settlements", _fields(SETTLEMENT_FIELDS, "settlement_id"), "", ("settlement_id",)),
     "agora_topic": ("agora_topics", _agora_topic, "", ("topic_id",)),
-    # a peer's listings are in its own log
-    "listing": ("listings", _listing, "{row}.federated_from IS NULL", ("listing_id",)),
+    "listing": ("listings", _listing, "", ("listing_id",)),
     "room_act": ("room_acts", _room_act, "", ("act_id",)),
     "topic_act": ("topic_acts", _topic_act, "", ("act_id",)),   # P278
     "deletion": ("deletions", _deletion, "", ("kind", "item")),
@@ -860,8 +859,6 @@ def _ingest_row(conn: Any, kind: str, ref: str, backfilled: bool = False) -> Non
     values = ref.split(_SEP)
     r = (conn.execute(f"SELECT * FROM {table} WHERE " + " AND ".join(f"{c} = ?" for c in cols),  # noqa: S608
                       values).fetchone() if len(values) == len(cols) else None)
-    if r is not None and kind == "listing" and r["federated_from"] is not None:
-        r = None                                   # replaced by a peer's row: ours has gone
     if r is None:
         if held:
             # P269: a private record's removal is salted like the record was, so an

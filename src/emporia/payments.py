@@ -14,7 +14,7 @@ Payment modes supported:
                 WWW-Authenticate: Payment ... challenge; agent wallet retries.
                 Kept as enum value; full MPP server wiring is post-hackathon.
 
-Payment split: 99% winner / 1% platform (OPERATOR_FEE_BPS=100 default).
+Payment split: 99% winner / 1% platform (EMPORIA_FEE_BPS=100 default).
 STRIPE_SECRET_KEY must come from env — never hardcoded.
 
 Stripe does NOT provide agent identity. The SPT object exposes only:
@@ -74,7 +74,8 @@ def platform_fee(amount_cents: int) -> int:
     """
     if amount_cents <= 0:
         return 0
-    fee = round(amount_cents * OPERATOR_FEE_BPS / 10000)
+    from emporia import fees
+    fee = round(amount_cents * fees.fee_bps() / 10000)
     return fee if fee >= 1 else 0
 
 
@@ -133,7 +134,6 @@ class PaymentRef:
 
 STRIPE_API_BASE = os.getenv("STRIPE_API_BASE", "https://api.stripe.com/v1")
 STRIPE_API_VERSION = os.getenv("STRIPE_API_VERSION", "2026-04-22.preview")
-OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "100"))  # 1%
 
 # P74: the constant `settle()`'s docstring has always cited and that never
 # existed. It claimed "Requires total_stake_cents >= STRIPE_MIN_CHARGE_CENTS
@@ -1193,7 +1193,7 @@ async def settle(
     3. Relay transfers 99% to winner's connected account; platform keeps 1%.
     4. If game was never played / abandoned, call cancel_payment_hold() instead.
 
-    Platform fee: OPERATOR_FEE_BPS basis points (default 100 = 1%), minimum 1¢.
+    Platform fee: `fees.fee_bps()` basis points (default 100 = 1%, 0 with no fee address), minimum 1¢.
     Requires total_stake_cents ≥ STRIPE_MIN_CHARGE_CENTS (50¢). P74: that was
     a claim about a constant this module did not define and nobody enforced —
     it is now real, checked where the PaymentIntent is created, before Stripe
@@ -1306,7 +1306,7 @@ async def settle(
         "total_stake_cents": total_stake_cents,
         "platform_fee_cents": platform_fee_cents,
         "winner_payout_cents": winner_payout_cents,
-        "platform_fee_bps": OPERATOR_FEE_BPS,
+        "platform_fee_bps": __import__("emporia.fees", fromlist=["x"]).fee_bps(),
         "payment_intent_ids": payment_intent_ids,
         "capture_results": capture_results,
         "refund_results": refund_results,
@@ -1346,7 +1346,7 @@ async def settle_destination_charges(
         "total_stake_cents": total_cents,
         "platform_fee_cents": fee,
         "winner_payout_cents": total_cents - fee,
-        "platform_fee_bps": OPERATOR_FEE_BPS,
+        "platform_fee_bps": __import__("emporia.fees", fromlist=["x"]).fee_bps(),
         "payment_intent_ids": payment_intent_ids,
         "capture_results": capture_results,
         "transfer_id": None,
@@ -1546,7 +1546,7 @@ async def payout_winner(
 ) -> dict[str, Any]:
     """Transfer winner payout to their Stripe Connected Account.
 
-    Platform keeps OPERATOR_FEE_BPS; this function transfers only the winner's
+    Platform keeps the relay fee (`fees.fee_bps()`); this function transfers only the winner's
     net share. Requires the platform balance to have sufficient funds — in test mode
     the confirmed PaymentIntents fund the platform balance automatically.
 

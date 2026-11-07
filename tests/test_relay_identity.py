@@ -38,7 +38,7 @@ def test_the_relay_card_is_signed_and_checkable_by_anyone():
     assert card["relay_id"] == rs.relay_id() and card["relay_public_key"] == identity.get_relay_public_key_hex()
     import os
     assert identity.verify_relay_card(card) == {"ok": True, "id_from_key": not os.getenv("EMPORIA_RELAY_ID")}
-    forged = {**card, "operator_fee_bps": 1}                            # a directory that edits it
+    forged = {**card, "fee_bps": 1}                            # a directory that edits it
     assert identity.verify_relay_card(forged)["ok"] is False
     other = {**card, "relay_id": "aaaaaaaaaaaaaaaa"}                     # an id not from its key
     assert identity.verify_relay_card(other) == {"ok": False, "id_from_key": False}

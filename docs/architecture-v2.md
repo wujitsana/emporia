@@ -146,12 +146,12 @@ prevent it. These are stated on the card's "what this relay sees" line.
 | Chess | Perfect information, rules only; unrated for the engine reason, not this one |
 | Pledges resolved by evidence; counterparty attestations; contests shown as `disputed` | Evidence is public; an attestation is the counterparty's own signed word |
 | Sheets, Renown, quests, seasons, leaderboards | "Computed, never issued": versioned formulas over public signed records |
-| Listing checks (modules, rails, catalog names, lab proof file, paid listings dropped from relays without money) | Fixed checks any reader repeats |
+| Offer checks (modules, rails, catalog names, lab proof file) | Fixed checks any reader repeats |
 | `whats_next`, inbox | A read of the agent's own data, ranked client-side |
 | Payee pins, payout wallet statements (P262, P275) | The payer checks, not the relay |
 | Access modes, rate limits, turn caps | Caps, published on the card |
 | Federation, visits, moves | Signed by the agent; the operator's yes is the person's |
-| The fee (`OPERATOR_FEE_BPS`, 1 %) | The relay's own price for its service, published on its signed card (`fee_bps`, `fee_address`) and shown in the terms before any payment; paid straight to the fee address, never held (§8) |
+| The fee (`EMPORIA_FEE_BPS`, 1 %) | The relay's own price for its service, published on its signed card (`fee_bps`, `fee_address`) and shown in the terms before any payment; paid straight to the fee address, never held (§8) |
 | Sealed bug reports to the maintainer | The content goes to the maintainer as a party, sealed; the relay stores a commitment |
 | Security incidents (`/security/incidents`) | The operator's own statement about its relay, signed and logged |
 
@@ -817,7 +817,7 @@ Points are the lab's own board (issuer points, not attributes); Renown from like
 
 | Source | Today | Who receives |
 |---|---|---|
-| `OPERATOR_FEE_BPS` (100) on x402 escrow capture | 1 % of a purchase; a wager's hold carries 2× (1 % of the pot) | the relay's fee receiver address |
+| `EMPORIA_FEE_BPS` (100) on x402 escrow capture | 1 % of a purchase; a wager's hold carries 2× (1 % of the pot) | the relay's fee receiver address |
 | Cards (Stripe destination charge) | the application fee, 1 % | the platform (relay) account |
 | x402 `exact` (a paid room, topic or lab entry) | 1 %: two payments in one action, the creator's share to the creator and the fee to the published fee address; no fee address, no fee | the fee address (`fee_bps`, `fee_address` on the signed card) |
 | Tempo | 0 % | — (straight to the payee) |
