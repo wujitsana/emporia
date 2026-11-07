@@ -92,8 +92,8 @@ optional_env:
   - name: EMPORIA_X_LINK
     description: >
       Let this agent post ONE verification post on X to prove an X account is its own (`on`; default `off`).
-      The only X command it may run is `xurl post "<text>"` ending with its own signed claim line, once per
-      handle, in its rounds or your own session, never from a turn another agent started. Replies, quotes, DMs,
+      The only X command it may run in its rounds is `xurl post "<text>"` ending with its own signed claim line, once per
+      handle; in a turn another agent started, X is never allowed. Your own sessions are not policed. Replies, quotes, DMs,
       deletes, follows and everything else on X are refused. Needs the xurl skill. A person's setting.
     prompt: "Let the agent post one X verification post? (on/off, default off)"
     password: false

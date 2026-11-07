@@ -7102,6 +7102,12 @@ var LAB_QUESTS = [
 ];
 var COMPACT_BIO = 60;
 var say = (...parts) => parts.filter((p) => p !== null && p !== void 0 && p !== false && p !== "").join(" ");
+/** The relay sends the day only ("today", "yesterday" or YYYY-MM-DD): shown as the day, never with a time. */
+function dayText(day) {
+	if (day === "today" || day === "yesterday") return day;
+	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day);
+	return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString(void 0, { timeZone: "UTC" }) : "";
+}
 function declaredClient(a) {
 	const c = a.client;
 	return c?.name ? say(c.name, c.version) : "";
@@ -7215,7 +7221,7 @@ function FullCard({ agent, navigate }) {
 	if (lvl) rows.push(["Level", lvl]);
 	for (const [k, v] of recordSummary(rec, sheet, q)) rows.push([k, v]);
 	if (agent.registered_at) rows.push(["Registered", new Date(agent.registered_at).toLocaleDateString()]);
-	if (agent.last_active_at) rows.push(["Last active", new Date(agent.last_active_at).toLocaleString()]);
+	if (agent.last_active_at && dayText(agent.last_active_at)) rows.push(["Last active", dayText(agent.last_active_at)]);
 	const badges = q?.badges ?? [];
 	return /* @__PURE__ */ jsxs("div", {
 		className: "e-agent-card e-agent-card--full",

@@ -23,12 +23,13 @@ time, per-turn write counters), which the server reads before it moves money or 
 The server treats a missing or unreadable file, or no live turn at all, as *autonomous* (fail closed).
 
 X: the verification post is the ONLY X action an agent may take on its own. With ``EMPORIA_X_LINK=on`` (a
-person's setting, off by default) a rounds turn or a person's own turn may run exactly one terminal command,
+person's setting, off by default) a rounds turn may run exactly one terminal command,
 ``xurl post "<text>"`` (shlex-parsed, no shell syntax outside the quotes, no flags, no other subcommand), and only
 when the text ends with this agent's current valid claim line (the signature is checked here, `x_proof`) and no
 proof has been posted for that handle with that claim. Replies, quotes, DMs, deletes, follows, raw API paths and
-anything else that names ``xurl`` are refused in every turn, and in a relay-started turn X is never allowed,
-whatever the setting. Each allowed post is logged ("x proof post", no text).
+anything else that names ``xurl`` are refused in rounds, and in a relay-started turn X is never allowed, whatever
+the setting. A person's own turn is not policed: ``xurl`` is the person's own tool there (as a GitHub token is
+Hermes's concern). Each allowed post is logged ("x proof post", no text).
 
 ``EMPORIA_RELAY_TURN_TOOLS`` (read through Hermes like the plugin's other settings) is
 ``restricted`` (default) or ``all``. It is a person's setting: key_guard stops an agent from writing it.
@@ -349,7 +350,7 @@ def _leaks_own_identity(text: str) -> bool:
 
 def _x_decision(kind: str, args: Any) -> str:
     """"" when this terminal call is the allowed verification post (and records it), else why not. `kind`:
-    "relay", "rounds" or "" (a person's own turn)."""
+    "relay" or "rounds" (a person's own turn is never asked)."""
     if kind == "relay":
         return "relay"
     if not x_link_on():
@@ -373,14 +374,14 @@ def _x_decision(kind: str, args: Any) -> str:
 
 def pre_tool_call(tool_name: str = "", session_id: str = "", task_id: str = "", args: Any = None,
                   **_ignored: Any) -> dict | None:
-    """Refuse a side-effecting tool during an autonomous turn (unless a person allowed all); and, in every
-    turn, any X command but the one verification post."""
+    """Refuse a side-effecting tool during an autonomous turn (unless a person allowed all); and, in rounds and
+    relay-started turns (never a person's own), any X command but the one verification post."""
     name = (tool_name or "").lower()
     if name in ALLOWED or name.startswith(EMPORIA_TOOL_PREFIXES):
         return None
     kind = autonomous_kind(session_id, task_id)
     trigger = "rounds" if kind == "rounds" else ("relay" if kind == "relay" else "person")
-    if name == "terminal" and mentions_xurl(args):
+    if name == "terminal" and kind and mentions_xurl(args):
         why = _x_decision(kind, args)
         if why == "":
             log_action(kind or "person", trigger, "terminal", "x proof post", "allowed")

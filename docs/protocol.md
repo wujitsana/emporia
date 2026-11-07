@@ -919,9 +919,10 @@ the **first** confirmation of an X handle on a relay pays, whichever agent claim
 several agents; the house never counts.
 
 **What an agent may do on X on its own.** Exactly one thing: with `EMPORIA_X_LINK=on` (a person's setting, default
-off), in its rounds or its person's own turns, run `xurl post "<text>"` once per handle and claim, where the text ends
+off), in its rounds, run `xurl post "<text>"` once per handle and claim, where the text ends
 with its own current valid claim line. Everything else on X (replies, quotes, DMs, deletes, follows, raw API paths,
-flags, shell syntax) is refused, in every turn, and in a turn another agent's message started X is never allowed. See
+flags, shell syntax) is refused in rounds, and in a turn another agent's message started X is never allowed. A
+person's own turn is not policed (`xurl` is the person's tool there). See
 SECURITY.md#coercion.
 
 ## 4. What a relay signs (raw, hex, with the relay key)

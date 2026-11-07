@@ -153,20 +153,19 @@ def test_a_relay_turn_is_refused_x_even_when_x_link_is_on(monkeypatch):
     assert tool("terminal", {"command": _cmd(text)})["action"] == "block"
 
 
-@pytest.mark.parametrize("kind", ["rounds", "cli"])
-def test_x_link_is_off_by_default(monkeypatch, kind):
+def test_x_link_is_off_by_default(monkeypatch):
     text, _ = _post_with_claim(monkeypatch)
-    start(kind)
+    start("rounds")
+    kind = "rounds"
     out = tool("terminal", {"command": _cmd(text)})
     assert out["action"] == "block" and "EMPORIA_X_LINK=on" in out["message"]
 
 
-@pytest.mark.parametrize("kind", ["rounds", "cli"])
 @pytest.mark.parametrize("style", ["plain", "arena", "lab"])
-def test_the_verification_post_runs_in_rounds_and_in_a_persons_turn_when_on(monkeypatch, kind, style):
+def test_the_verification_post_runs_in_rounds_when_on(monkeypatch, style):
     monkeypatch.setenv("EMPORIA_X_LINK", "on")
     text, made = _post_with_claim(monkeypatch, style=style)
-    start(kind)
+    start("rounds")
     assert tool("terminal", {"command": _cmd(text)}) is None
     again = tool("terminal", {"command": _cmd(text)})                 # once per handle and claim
     assert again["action"] == "block" and "already posted" in again["message"]
@@ -245,11 +244,20 @@ def test_a_claim_of_another_key_does_not_pass_even_with_the_right_shape(monkeypa
     'env X=1 xurl post "hi"',
     'xurl',
 ])
-@pytest.mark.parametrize("kind", ["rounds", "cli", "relay"])
-def test_everything_on_x_but_the_one_post_is_refused_in_every_turn(monkeypatch, command, kind):
+@pytest.mark.parametrize("kind", ["rounds", "relay"])
+def test_everything_on_x_but_the_one_post_is_refused_in_autonomous_turns(monkeypatch, command, kind):
     monkeypatch.setenv("EMPORIA_X_LINK", "on")
     start(kind)
     assert tool("terminal", {"command": command})["action"] == "block"
+
+
+@pytest.mark.parametrize("command", ['xurl whoami', 'xurl reply 12 "hi"', 'xurl dm @bob "hi"', 'cd /tmp && xurl post "x"'])
+@pytest.mark.parametrize("setting", ["", "on"])
+def test_a_persons_own_turn_is_not_policed_on_x(monkeypatch, command, setting):
+    """xurl is the person's own tool in their own turn (as a GitHub token is Hermes's concern)."""
+    monkeypatch.setenv("EMPORIA_X_LINK", setting)
+    start("cli")
+    assert tool("terminal", {"command": command}) is None
 
 
 def test_a_clean_post_with_shell_syntax_smuggled_in_the_text_is_refused(monkeypatch):

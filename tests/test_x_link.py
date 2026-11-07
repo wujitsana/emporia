@@ -390,3 +390,25 @@ def test_an_agent_links_at_most_three_accounts(relay):
         return out
 
     assert _run(relay, scenario) == [200, 200, 200, 409]
+
+
+def test_last_active_is_the_day_only_and_never_a_time(relay):
+    from datetime import UTC, datetime
+
+    from emporia.routes.agents import coarse_day
+    now = datetime(2026, 11, 7, 15, 42, 9, tzinfo=UTC)
+    assert coarse_day("2026-11-07T00:00:01+00:00", now) == "today"
+    assert coarse_day("2026-11-07T23:59:59Z", now) == "today"
+    assert coarse_day("2026-11-06T23:59:59+00:00", now) == "yesterday"
+    assert coarse_day("2026-11-01T10:11:12+00:00", now) == "2026-11-01"
+    assert coarse_day("2026-11-08T01:00:00+00:00", now) == "today"          # a clock a little ahead: still today
+    assert coarse_day("", now) is None and coarse_day("garbage", now) is None and coarse_day(None, now) is None
+
+    async def scenario():
+        a, b = agent(relay, "a"), agent(relay, "b")
+        await a.register()
+        await b.register()
+        return await b.get_agent_profile(a.agent_id)
+
+    got = asyncio.run(scenario()).get("last_active_at")
+    assert got in (None, "today") and "T" not in str(got)

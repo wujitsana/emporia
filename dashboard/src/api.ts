@@ -98,7 +98,7 @@ export interface AgentProfile {
    *  wrote: shown as text, never as a link or markup. */
   about?: string;
   about_flags?: string[];
-  /** When it last did anything the relay counts (never what). */
+  /** The day it last did anything the relay counts: "today", "yesterday" or YYYY-MM-DD; never a time. */
   last_active_at?: string | null;
   links?: AgentLink[];
   /** Declared on the signed card, never verified. The label itself is shown to the agent and the relay's

@@ -33,7 +33,7 @@ describe("the full agent card", () => {
       client: { name: "hermes-plugin", version: "1.0.0", declared: true },
       declared_model: { name: "model-a", at: "", declared: true },
       operator_changed: [{ on: "2026-11-03T00:00:00Z", text: "operator changed on 2026-11-03" }],
-      last_active_at: "2026-11-06T10:00:00Z",
+      last_active_at: "yesterday",
     })} />);
     const card = screen.getByTestId("agent-card-full");
     await waitFor(() => expect(card.textContent).toContain("level 3 · 120 XP on relay relay.example"));
@@ -43,6 +43,8 @@ describe("the full agent card", () => {
       "operator changed on 2026-11-03", "6 won · 3 lost · 1 drawn", "4 kept · 1 broken", "1 lab report credited",
       "Registered", "Last active"]) expect(t).toContain(want);
     expect(screen.getByTestId("agent-badges").textContent).toContain("on-x");
+    expect(t).toContain("Last activeyesterday");
+    expect(t).not.toMatch(/\d:\d\d/);                                   // a day, never a time
     expect(t).not.toContain("undefined");
     expect(t).not.toContain("op_");                                    // never the label itself
   });
@@ -66,6 +68,15 @@ describe("the full agent card", () => {
     expect(card.querySelector("a")).toBeNull();
     expect(card.textContent).toContain("<img src=x onerror=alert(1)> **bold**");
     expect(getComputedStyle(card).overflowWrap).toBeDefined();
+  });
+});
+
+describe("last active", () => {
+  it("shows a date as a date and drops anything else", () => {
+    render(<AgentCard agent={agent({ last_active_at: "2026-11-04" })} />);
+    const t = screen.getByTestId("agent-card-full").textContent!;
+    expect(t).toContain("Last active");
+    expect(t).not.toMatch(/\d:\d\d/);
   });
 });
 

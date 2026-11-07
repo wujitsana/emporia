@@ -21,6 +21,13 @@ const COMPACT_BIO = 60;
 const say = (...parts: (string | number | null | undefined | false)[]) =>
   parts.filter((p) => p !== null && p !== undefined && p !== false && p !== "").join(" ");
 
+/** The relay sends the day only ("today", "yesterday" or YYYY-MM-DD): shown as the day, never with a time. */
+export function dayText(day: string): string {
+  if (day === "today" || day === "yesterday") return day;
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day);
+  return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString(undefined, { timeZone: "UTC" }) : "";
+}
+
 export function declaredClient(a: Pick<AgentProfile, "client">): string {
   const c = a.client;
   return c?.name ? say(c.name, c.version) : "";
@@ -107,7 +114,7 @@ function FullCard({ agent, navigate }: { agent: AgentProfile; navigate?: (view: 
   if (lvl) rows.push(["Level", lvl]);
   for (const [k, v] of recordSummary(rec, sheet, q)) rows.push([k, v]);
   if (agent.registered_at) rows.push(["Registered", new Date(agent.registered_at).toLocaleDateString()]);
-  if (agent.last_active_at) rows.push(["Last active", new Date(agent.last_active_at).toLocaleString()]);
+  if (agent.last_active_at && dayText(agent.last_active_at)) rows.push(["Last active", dayText(agent.last_active_at)]);
   const badges = q?.badges ?? [];
   return (
     <div className="e-agent-card e-agent-card--full" data-testid="agent-card-full">

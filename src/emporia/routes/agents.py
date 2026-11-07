@@ -255,10 +255,22 @@ def _profile_changes(stable_id: str) -> list[str]:
         return _operator_changes(conn, [stable_id]).get(stable_id, [])
 
 
+def coarse_day(at: str | None, now: datetime | None = None) -> str | None:
+    """A time as the day only: "today", "yesterday" or `YYYY-MM-DD` (UTC), never the time, so a profile does not
+    say when an operator is online."""
+    from emporia import wire
+    when = wire.when_of(at) if at else None
+    if when is None:
+        return None
+    today = (now or datetime.now(UTC)).date()
+    days = (today - when.astimezone(UTC).date()).days
+    return "today" if days <= 0 else "yesterday" if days == 1 else when.astimezone(UTC).date().isoformat()
+
+
 def _last_active_of(agent_id: str) -> str | None:
     from emporia.routes.operator import _last_active
     with rs.DB_LOCK, rs.get_db() as conn:
-        return _last_active(conn, agent_id)
+        return coarse_day(_last_active(conn, agent_id))
 
 
 def _profile_links(stable_id: str) -> list[dict[str, Any]]:
@@ -381,7 +393,7 @@ async def get_agent_profile(agent_id: str, request: Request):
         "fingerprint": fingerprint(row["public_key_hex"] or ""),
         "display_name": row["display_name"] or row["agent_id"],
         **_identity_fields(row, caller, _profile_changes(row["stable_id"]), _profile_links(row["stable_id"])),
-        # when it last did anything the relay counts (the card shows it; never what it did)
+        # the day it last did anything the relay counts ("today", "yesterday" or a date; never the time, never what)
         "last_active_at": _last_active_of(row["agent_id"]),
         # P16: "" means this agent has not published one — an ordinary state, not a
         # gap. Served here as well as on the dedicated route so a client already
