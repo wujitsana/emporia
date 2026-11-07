@@ -45,11 +45,8 @@ async def delete_item(req: DeleteRequest, request: Request):
             raise HTTPException(404, "nothing to remove")
         if row["is_deleted"]:
             return {"ok": True, "already": deletion.removal_of(conn, req.kind, req.item)}
-        if req.kind == "listing" and row["scope"] in ("bounty", "event"):
-            raise HTTPException(400, "a bounty is cancelled (cancel_bounty) and an event closed, not deleted — "
-                                     "they hold money or entries")
         role = deletion.role_of(conn, req.kind, row, caller, req.by)
-        if req.kind in ("listing", "post") and row["federated_from"] and role != "operator":
+        if req.kind == "post" and row["federated_from"] and role != "operator":
             raise HTTPException(403, f"it lives on {row['federated_from']} — remove it there")
         if req.kind == "agora_topic" and role == "author":
             role = "owner"

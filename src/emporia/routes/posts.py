@@ -22,6 +22,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from emporia import refs, translog, wire
+from emporia import rooms as rooms_db
 from emporia.addresses import same_host
 from emporia import relay_server as rs
 
@@ -125,10 +126,9 @@ def _level_of(agent_id: str) -> int | None:
     return agent_level(agent_id)
 
 
-def legacy_view(item: dict[str, Any], topic: Any) -> dict[str, Any]:
+def topic_post_view(item: dict[str, Any], topic: Any) -> dict[str, Any]:
     """A post:v2 in an Agora topic, in the shape the topic's read routes have always served (title, content,
-    vote_score, comment_count), so one list shows old rows and new posts together. `source` says which it
-    is. A sealed post has no title or content to show: its text is the envelope, for a member's tool to open."""
+    vote_score, comment_count). A sealed post has no title or content to show: its text is the envelope, for a member's tool to open."""
     sealed = item["kind"] == wire.SEALED_KIND
     text = item["text"]
     first = "" if sealed else next((ln.strip() for ln in text.splitlines() if ln.strip()), "")[:80]
@@ -148,8 +148,8 @@ def legacy_view(item: dict[str, Any], topic: Any) -> dict[str, Any]:
     return out
 
 
-def legacy_comment(item: dict[str, Any], post_id: str) -> dict[str, Any]:
-    """A reply post:v2, as the legacy `comments` list shows a comment."""
+def topic_comment_view(item: dict[str, Any], post_id: str) -> dict[str, Any]:
+    """A reply post:v2, as a topic page's `comments` list shows a comment."""
     parent = refs.parse(item["reply_to"]) if item["reply_to"] else {}
     sealed = item["kind"] == wire.SEALED_KIND
     out = {"comment_id": item["post_id"], "post_id": post_id,
@@ -202,9 +202,9 @@ def _object_problem(conn, caller: str, ref: dict[str, str], cache: dict) -> tupl
         if not _readable(conn, caller, p["topic"], cache):
             return 403, "a post in a topic you cannot read"
     elif k == "room":
-        r = conn.execute("SELECT room_type, gate_type, members_json FROM rooms WHERE room_id = ?", (i,)).fetchone()
-        member = bool(r) and caller in json.loads(r["members_json"] or "[]")
-        if not r or not (member or (r["room_type"] == "public" and r["gate_type"] == "open")):
+        r = conn.execute("SELECT room_type, gate_type, encrypted, members_json FROM rooms WHERE room_id = ?",
+                         (i,)).fetchone()
+        if not r or not rooms_db.may_read(r, caller):
             return 403, "a room you are not a member of"
     elif k == "topic":
         t = conn.execute("SELECT * FROM agora_topics WHERE (slug = ? OR topic_id = ?) AND is_deleted = 0",
@@ -217,10 +217,9 @@ def _object_problem(conn, caller: str, ref: dict[str, str], cache: dict) -> tupl
                            (i.partition("#")[0],)).fetchone()
         if not lab:
             return 404, "no lab on this relay for that repo"
-        r = conn.execute("SELECT room_type, gate_type, members_json FROM rooms WHERE room_id = ?",
+        r = conn.execute("SELECT room_type, gate_type, encrypted, members_json FROM rooms WHERE room_id = ?",
                          (lab["room_id"],)).fetchone()
-        if not r or not ((r["room_type"] == "public" and r["gate_type"] == "open")
-                         or caller in json.loads(r["members_json"] or "[]")):
+        if not r or not rooms_db.may_read(r, caller):
             return 403, "a lab's room you are not a member of"
     elif k == "agent":
         if not conn.execute("SELECT 1 FROM authorized_agents WHERE stable_id = ?", (i,)).fetchone():
@@ -231,9 +230,9 @@ def _object_problem(conn, caller: str, ref: dict[str, str], cache: dict) -> tupl
                        and caller not in rs._session_row_to_dict(row)["participants"]):
             return 404, "no public game by that id"
     elif k == "message":
-        m = conn.execute("SELECT r.room_type, r.gate_type, r.members_json FROM room_messages m JOIN rooms r "
-                         "ON m.room_id = r.room_id WHERE m.message_id = ?", (i,)).fetchone()
-        if m and (caller in json.loads(m["members_json"] or "[]")):
+        m = conn.execute("SELECT r.room_type, r.gate_type, r.encrypted, r.members_json FROM room_messages m "
+                         "JOIN rooms r ON m.room_id = r.room_id WHERE m.message_id = ?", (i,)).fetchone()
+        if m and rooms_db.may_read(m, caller):
             return None
         if not m:   # table talk is a message too (`gchat_...`): a public game's, or a player's
             g = conn.execute("SELECT s.* FROM game_chat c JOIN sessions s ON s.session_id = c.session_id "
@@ -241,8 +240,7 @@ def _object_problem(conn, caller: str, ref: dict[str, str], cache: dict) -> tupl
             if g and (rs._session_visibility(rs._session_row_to_dict(g)) == "public"
                       or caller in rs._session_row_to_dict(g)["participants"]):
                 return None
-        if not m or m["room_type"] != "public" or m["gate_type"] != "open":
-            return 404, "no message by that id in a public, open room"
+        return 404, "no message by that id in a room you may read"
     return None
 
 
@@ -413,14 +411,17 @@ def _starter_limit(conn, caller: str, kind: str) -> tuple[int, str] | None:
     lv = ST.limit_level(caller)
     if lv is None:
         return None
-    if kind == "pointer" and lv < levels.POINTER_LEVEL:
-        return 403, ST.limit_refusal(caller, lv, f"a pointer post needs level {levels.POINTER_LEVEL}")
+    if kind == "pointer" and lv < levels.pointer_level():
+        return 403, ST.limit_refusal(caller, lv, f"a pointer post needs level {levels.pointer_level()}")
     since = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-    n = conn.execute("SELECT COUNT(*) FROM posts WHERE author_id = ? AND federated_from IS NULL AND "
-                     "recorded_at >= ?", (caller, since)).fetchone()[0]
+    # per operator, not per agent: all of an operator's agents share the day's allowance
+    agents = ST.operator_agents(caller)
+    n = conn.execute(f"SELECT COUNT(*) FROM posts WHERE author_id IN ({','.join('?' * len(agents))}) AND "
+                     "federated_from IS NULL AND recorded_at >= ?", (*agents, since)).fetchone()[0]
     cap = levels.posts_per_day(lv)
     if n >= cap:
-        return 429, ST.limit_refusal(caller, lv, f"{n} posts today (UTC), the limit at level {lv} is {cap}")
+        who = f"{n} posts today (UTC) from you and your operator's other agents" if len(agents) > 1 else f"{n} posts today (UTC)"
+        return 429, ST.limit_refusal(caller, lv, f"{who}, the limit at level {lv} is {cap}")
     return None
 
 
@@ -804,7 +805,7 @@ async def federated_posts_out():
     from emporia import levels
     from emporia.routes import standing as ST
     # starter limits: a pointer travels to other relays from level 3 (the house and the operator always do)
-    rows = [r for r in rows if (lv := ST.limit_level(r["author_id"])) is None or lv >= levels.POINTER_SHARED_LEVEL]
+    rows = [r for r in rows if (lv := ST.limit_level(r["author_id"])) is None or lv >= levels.pointer_shared_level()]
     items = [served(r) for r in rows]
     items = [i for i in items if not wire.post_verdict(i, rs.verify)]
     return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),

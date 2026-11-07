@@ -682,16 +682,23 @@ def _payee_label(statement: Any, family: str, address: Any) -> str:
         raise AgentWalletError(f"not paid: {e}") from None
 
 
-def sign_exact(agent_id: str, body: dict, network: str = "") -> str:
+def sign_exact(agent_id: str, body: dict, network: str = "", *, fee_leg: bool = False,
+               creator_amount: int = 0) -> str:
     """A relay's x402 402 body in, the PAYMENT-SIGNATURE value out — after the
     network allowlist and the per-payment cap.
 
     P160: which network pays is the agent's choice, not the relay's listing
     order: `network` if given (it must be on the allowlist), else the first
     network in EMPORIA_X402_PAY_NETWORKS that the relay offers and this agent
-    has a wallet for."""
+    has a wallet for.
+
+    `fee_leg`: the second payment of a paid entry, to the relay's published fee address (fees.py): `body`
+    holds the fee requirement and `creator_amount` (atomic) the creator's share it goes with. It is paid
+    only on the network the creator's share was, never above `PAYER_FEE_CAP_BPS` of the whole price, and
+    under the same per-payment and daily caps and approval as any payment."""
     if (r := remote()) is not None:
-        return r.call("x402", {"body": body, "network": network})["header"]
+        return r.call("x402", {"body": body, "network": network, "fee_leg": fee_leg,
+                               "creator_amount": creator_amount})["header"]
     from emporia import x402_payer
 
     nets = allowed_networks()
@@ -718,9 +725,18 @@ def sign_exact(agent_id: str, body: dict, network: str = "") -> str:
             f"{cap / 1e6:.2f} USDC per-payment cap (EMPORIA_X402_MAX_PAYMENT_CENTS)")
     from emporia.networks import label
     from emporia.payments import x402_network_family
-    # P262: the address is the payee's own, signed by it — not just the relay's word.
-    payee = _payee_label(body.get("payee") if isinstance(body, dict) else None,
-                         x402_network_family(requirement.get("network") or "") or "evm", requirement.get("payTo"))
+    if fee_leg:
+        from emporia.fees import PAYER_FEE_CAP_BPS
+        if not creator_amount or amount * 10_000 > (amount + creator_amount) * PAYER_FEE_CAP_BPS:
+            raise AgentWalletError(
+                f"not paid: the relay's fee of {amount / 1e6:.4f} USDC is more than {PAYER_FEE_CAP_BPS / 100:g}% "
+                f"of the price ({(amount + creator_amount) / 1e6:.4f} USDC)")
+        payee = "the relay (its published fee address)"
+    else:
+        # P262: the address is the payee's own, signed by it — not just the relay's word.
+        payee = _payee_label(body.get("payee") if isinstance(body, dict) else None,
+                             x402_network_family(requirement.get("network") or "") or "evm",
+                             requirement.get("payTo"))
     # P206: the whole payee and what is bought — an approval (the signer's) is for exactly this payment.
     resource = (challenge.get("resource") or {}).get("url") or "a resource"
     require_approval(agent_id, amount, f"USDC on {label(requirement.get('network') or '')} to "
@@ -739,6 +755,28 @@ def sign_exact(agent_id: str, body: dict, network: str = "") -> str:
     _charge_daily(agent_id, amount)
     return _or_refund(agent_id, amount, lambda: x402_payer.payment_signature_header(
         x402_payer.build_payment_payload(requirement, key, resource=challenge.get("resource"))))
+
+
+def sign_entry(agent_id: str, body: dict, network: str = "") -> dict[str, str]:
+    """A relay's 402 body in, the payment headers out: PAYMENT-SIGNATURE, and for a paid entry that carries
+    the relay's fee (`x402_fee`, fees.py) also PAYMENT-SIGNATURE-FEE, signed on the same network. Both are
+    signed or neither is: a refused fee leg gives the creator's daily charge back."""
+    from emporia.payments import extract_x402_payload
+    header = sign_exact(agent_id, body, network)
+    headers = {"PAYMENT-SIGNATURE": header}
+    fee = body.get("x402_fee") if isinstance(body, dict) else None
+    if not fee:
+        return headers
+    payload = extract_x402_payload(header) or {}
+    accepted = payload.get("accepted") or {}
+    try:
+        headers["PAYMENT-SIGNATURE-FEE"] = sign_exact(
+            agent_id, {"x402": fee}, accepted.get("network") or "", fee_leg=True,
+            creator_amount=int(accepted.get("amount") or 0))
+    except BaseException:
+        refund_daily(agent_id, int(accepted.get("amount") or 0))
+        raise
+    return headers
 
 
 def pay_tempo(agent_id: str, offer: dict) -> str:

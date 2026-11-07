@@ -359,7 +359,7 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
                 creator_id=room.creator_id,
                 destination_account=dest,
                 application_fee_cents=fee,
-                card_unavailable=card_off,
+                card_unavailable=card_off, x402_split=True,
             )
             if isinstance(result, JSONResponse):
                 return result

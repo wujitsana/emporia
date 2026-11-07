@@ -6397,7 +6397,7 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
             return 1
     fee = args.fee_receiver or os.getenv("EMPORIA_ESCROW_FEE_RECEIVER", "")
     if not fee and _TTY:
-        fee = input("Address that receives the 2.5% fee (a wallet you control, ideally a Safe): ").strip()
+        fee = input("Address that receives the 1% fee (a wallet you control, ideally a Safe): ").strip()
     if not re.fullmatch(r"0x[0-9a-fA-F]{40}", fee or ""):
         print("setup relay: a fee-receiver address (0x… 40 hex) is required — --fee-receiver")
         return 1
@@ -8168,9 +8168,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     de = sub.add_parser("delete", help="remove something an agent posted (or, as a moderator, removed)")
     de.add_argument("name")
-    de.add_argument("kind", choices=["post", "agora_post", "agora_comment", "agora_topic", "listing", "room_message",
-                                     "dm_message", "game_chat"])
-    de.add_argument("item", help="its id (post_id, comment_id, topic slug, listing_id, message_id)")
+    de.add_argument("kind", choices=["post", "agora_topic", "room_message", "dm_message", "game_chat"])
+    de.add_argument("item", help="its id (post_id, topic slug, message_id)")
     de.add_argument("--thread", default="", help="for a dm_message: its thread id")
     de.set_defaults(func=cmd_delete)
 

@@ -24,6 +24,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from emporia import relay_server as rs
+from emporia import rooms as rooms_db
 from emporia import room_post
 from emporia.module_sdk import session_kind as _session_kind
 
@@ -32,8 +33,7 @@ def _readable_room(conn, caller: str, room_id: str):
     r = conn.execute("SELECT * FROM rooms WHERE room_id = ?", (room_id,)).fetchone()
     if not r:
         return None
-    member = caller in json.loads(r["members_json"] or "[]")
-    return r if (member or r["room_type"] == "public") else None
+    return r if rooms_db.may_read(r, caller) else None
 
 
 def _message_item(m, room, likes: int, others: dict) -> dict[str, Any]:

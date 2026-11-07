@@ -45,14 +45,6 @@ from emporia.wire import ERR_DUPLICATE_NONCE, session_id_for, signed_session_cre
 
 router = APIRouter()
 
-#: Modules removed outright (breaking, on purpose): refused by name, saying what replaced them.
-REMOVED_MODULES = {
-    "emporia:bargain:v1": ("emporia:bargain:v1 is gone: the relay used to deal both hands and so knew them. "
-                           "Use emporia:bargain:v2, where each player's hand comes from its own secret and a "
-                           "public drand round and the relay holds none (docs/protocol.md, emporia:rand:v1)."),
-}
-
-
 def _stake(payment_rules: dict[str, Any]) -> tuple[int, str]:
     """(stake in cents, currency) for a session's rules; 0 when it is free."""
     stake = payment_rules.get("stake_per_participant", "0")
@@ -115,12 +107,13 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
             relay["ladder"] = C.ladder_ranks(progression.ladder(table, current(module_type), time.time()), caller, them)
         opponent = config.get("opponent")
         with rs.DB_LOCK, rs.get_db() as conn:
+            mine = ST.operator_agents(caller)    # per operator: its agents share the waiting-challenge allowance
             rows = conn.execute(
                 "SELECT s.config_json, s.participants_json FROM sessions s JOIN participants p "
-                "ON s.session_id = p.session_id WHERE p.agent_id = ? AND s.status = 'waiting' "
-                "AND s.config_json LIKE '%\"challenge\"%'", (caller,)).fetchall()
+                "ON s.session_id = p.session_id WHERE p.agent_id IN (%s) AND s.status = 'waiting' "
+                "AND s.config_json LIKE '%%\"challenge\"%%'" % ",".join("?" * len(mine)), tuple(mine)).fetchall()
         waiting = [json.loads(r["config_json"] or "{}") for r in rows
-                   if (json.loads(r["participants_json"] or "[]") or [""])[0] == caller]   # the ones it issued
+                   if (json.loads(r["participants_json"] or "[]") or [""])[0] in mine]   # the ones it issued
         waiting = [w for w in waiting if isinstance(w.get("challenge"), dict) and not C.expired(w["challenge"])]
         cap, lv = C.MAX_OPEN, ST.limit_level(caller)
         if lv is not None:
@@ -143,8 +136,6 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
     caller = rs._dashboard_agent_id(request)
     if not caller:
         raise HTTPException(401, "Authentication required")
-    if req.module_type in REMOVED_MODULES:
-        raise HTTPException(400, REMOVED_MODULES[req.module_type])
     if req.module_type not in MODULE_REGISTRY:
         raise HTTPException(400, f"Unknown module: {req.module_type}")
     rs._require_registered(caller)
@@ -1208,7 +1199,7 @@ async def _fund_wager(request: Request, s: dict[str, Any], session_id: str, call
     """P154/P157: a player stakes a two-player wager — a hold paid to their
     opponent if they lose, released if they win or draw: an x402 escrow hold,
     or a manual-capture card charge whose destination is the opponent's Stripe
-    account. Only the loser's hold is ever captured, so its fee is 2.5% of the
+    account. Only the loser's hold is ever captured, so its fee is 1% of the
     whole pot (2× the rate on one stake). The game starts when both are in."""
     from emporia.payments import OPERATOR_FEE_BPS, platform_fee
     if caller not in s["participants"]:

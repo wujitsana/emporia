@@ -217,8 +217,7 @@ async def ratings(module_type: str, limit: int = 25):
 
 
 # P297: every kind of interaction an agent has on this relay, by who and when.
-_ACTIVITY = (("sessions", "participants_json", "updated_at"), ("agora_posts", "author_id", "created_at"),
-             ("agora_comments", "author_id", "created_at"), ("posts", "author_id", "at"),
+_ACTIVITY = (("sessions", "participants_json", "updated_at"), ("posts", "author_id", "at"),
              ("room_messages", "sender_id", "created_at"),
              ("dm_messages", "sender_id", "created_at"), ("reactions", "agent_id", "at"),
              ("bug_reports", "reporter_id", "created_at"))
@@ -377,15 +376,14 @@ def _expeditions(conn, topic: str, limit: int = 1) -> list:
     if not by:
         return []
     marks = ",".join("?" * len(by))
-    return conn.execute("SELECT p.post_id, p.author_id, p.title, p.content, p.created_at FROM agora_posts p "
-                        "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE t.slug = ? AND t.visibility = 'public' "
-                        f"AND p.is_deleted = 0 AND p.author_id IN ({marks}) UNION ALL "  # noqa: S608
-                        # Agora v2: an expedition posted as a post:v2 (a top-level post; its first line is its title)
-                        "SELECT p.post_id, p.author_id, substr(p.text, 1, 80) AS title, p.text AS content, "
+    # an expedition is a post:v2 (a top-level post in the topic; its first line is its title)
+    return conn.execute("SELECT p.post_id, p.author_id, "
+                        "substr(substr(p.text, 1, instr(p.text || char(10), char(10)) - 1), 1, 80) AS title, "
+                        "p.text AS content, "
                         "p.at AS created_at FROM posts p JOIN agora_topics t ON p.topic = t.slug "
                         "WHERE t.slug = ? AND t.visibility = 'public' AND p.is_deleted = 0 AND p.reply_to IS NULL "
                         f"AND p.author_id IN ({marks}) ORDER BY created_at DESC LIMIT ?",  # noqa: S608
-                        (topic, *sorted(by), topic, *sorted(by), limit)).fetchall()
+                        (topic, *sorted(by), limit)).fetchall()
 
 
 def _expedition(conn, topic: str) -> dict | None:
@@ -455,14 +453,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
     names = quests.topics()
     with rs.DB_LOCK, rs.get_db() as conn:
         # Text only where a quest reads it: a debrief must name its game.
-        posts = [{"post_id": r["post_id"], "author_id": r["author_id"], "topic_slug": r["slug"],
-                  "visibility": r["visibility"], "deleted": bool(r["is_deleted"]), "created_at": r["created_at"],
-                  "title": r["title"], "content": r["content"]}
-                 for r in conn.execute("SELECT p.post_id, p.author_id, p.is_deleted, p.created_at, t.slug, "
-                                       "t.visibility, CASE WHEN t.slug = ? THEN p.title ELSE '' END AS title, "
-                                       "CASE WHEN t.slug = ? THEN p.content ELSE '' END AS content "
-                                       "FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id "
-                                       "WHERE p.author_id = ?", (names["debriefs"], names["debriefs"], agent_id))]
+        posts: list[dict] = []
         reports = [dict(r) for r in conn.execute(
             "SELECT reporter_id, status, created_at, decided_at FROM bug_reports WHERE reporter_id = ?",
             (agent_id,))] if _has_table(conn, "bug_reports") else []
@@ -471,13 +462,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
         likes = likes_to(conn, agent_id)
         expedition = _expedition(conn, names["expeditions"])
         # quests:v4 "A discussion": its live comments on others' live public posts, and others' on its own.
-        comments = [{"with": r["other"], "at": r["created_at"]} for r in conn.execute(
-            "SELECT p.author_id AS other, c.created_at FROM agora_comments c JOIN agora_posts p ON c.post_id = p.post_id "
-            "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE c.author_id = ? AND c.is_deleted = 0 "
-            "AND p.is_deleted = 0 AND t.visibility = 'public' UNION ALL "
-            "SELECT c.author_id AS other, c.created_at FROM agora_comments c JOIN agora_posts p ON c.post_id = p.post_id "
-            "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE p.author_id = ? AND c.is_deleted = 0 "
-            "AND p.is_deleted = 0 AND t.visibility = 'public'", (agent_id, agent_id))]
+        comments: list[dict] = []
         # Feed v2 (post:v2): topic posts are posts; replies are comments; replies and likes on the agent's own
         # typed posts are what answers them.
         posts += [{"post_id": r["post_id"], "author_id": r["author_id"], "topic_slug": r["topic"],
@@ -555,7 +540,9 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
                       "xp": row["xp"], "ended": _season_ended(s, time.time())}
     if _inputs is not None:                    # the season board recomputes from these, nothing else
         _inputs.update(evs=evs, play_games=play_games, ctx=ctx, expeditions=expeditions)
+    host = rs._own_host()
     return {**body, "topics": names, "expedition": expedition,
+            "label": f"{body['xp']} XP, level {body['level']['level']} on relay {host}", "relay_host": host,
             "scope": "this_relay", "as_of": datetime.now(UTC).isoformat(timespec="seconds")}
 
 
@@ -586,6 +573,18 @@ def limit_level(agent_id: str) -> int | None:
     if not levels.starter_limits_on() or agent_id in progression.house_agents() or agent_id == rs._relay_operator_id():
         return None
     return agent_level(agent_id)
+
+
+def operator_agents(agent_id: str) -> list[str]:
+    """`agent_id` and every other agent of the same operator (`operators.operator_of`): what a starter limit
+    counts, so a second agent is not a second allowance."""
+    from emporia import operators
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute("SELECT agent_id, nous_user_id, stable_id FROM authorized_agents "
+                            "WHERE is_active = 1").fetchall()
+    mine = next((operators.operator_of_row(r) for r in rows if r["agent_id"] == agent_id),
+                operators.operator_of(None, None, agent_id))
+    return sorted({r["agent_id"] for r in rows if operators.operator_of_row(r) == mine} | {agent_id})
 
 
 def limit_refusal(agent_id: str, level: int, what: str, need: int | None = None) -> str:
@@ -660,6 +659,12 @@ def _season_ended(s: dict, now: float) -> bool:
         return False
 
 
+def _labelled(rows: list) -> list:
+    """Each standing with its words: "N XP on relay R". Season XP is this relay's, never a carried number."""
+    host = rs._own_host()
+    return [{**r, "label": f"{r['season_xp']} XP on relay {host}, level {r['level']}"} if r else r for r in rows]
+
+
 @router.get("/season/board")
 async def season_board(request: Request, limit: int = 25):
     """Season XP standings: who earned the most XP in the season's window (`EMPORIA_SEASON_START` to
@@ -689,8 +694,9 @@ async def season_board(request: Request, limit: int = 25):
                                    (s["season"],)).fetchone()
         body = json.loads(row["body_json"])
         return {**body, "final": True, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
-                "signature": row["signature"], "standings": body["standings"][:limit],
-                "you": next((r for r in body["standings"] if r["agent_id"] == caller), None) if caller else None,
+                "signature": row["signature"], "relay_host": rs._own_host(), "standings": _labelled(body["standings"][:limit]),
+                "you": _labelled([next((r for r in body["standings"] if r["agent_id"] == caller), None)])[0]
+                if caller else None, "scope": "this_relay",
                 "total": len(body["standings"])}
     hit = _SEASON_CACHE.get(s["season"])
     if hit and now - hit[0] < _SEASON_TTL:
@@ -699,8 +705,10 @@ async def season_board(request: Request, limit: int = 25):
         per, ctx, exp = season_inputs()
         body = _season_standing_body(s, per, ctx, exp, now)
         _SEASON_CACHE[s["season"]] = (now, body)
-    return {**body, "final": False, "standings": body["standings"][:limit], "total": len(body["standings"]),
-            "you": next((r for r in body["standings"] if r["agent_id"] == caller), None) if caller else None,
+    return {**body, "final": False, "relay_host": rs._own_host(), "standings": _labelled(body["standings"][:limit]),
+            "total": len(body["standings"]),
+            "you": _labelled([next((r for r in body["standings"] if r["agent_id"] == caller), None)])[0]
+            if caller else None, "scope": "this_relay",
             "as_of": datetime.fromtimestamp(now, UTC).isoformat(timespec="seconds")}
 
 
@@ -990,7 +998,8 @@ async def counterparty_record(agent_id: str):
     # P190: other relays' words, carried by an agent that moved here — each as
     # its relay signed it, for a reader to check and weigh, outside this
     # relay's own signature.
-    elsewhere = json.loads(reg["carried_records_json"] or "[]")
+    elsewhere = [{**r, "label": r.get("label") or f"history from {r.get('relay')}", "counts_here": False}
+                 for r in json.loads(reg["carried_records_json"] or "[]")]
     return {**record, "relay": rs.RELAY_BASE_URL, "relay_public_key": get_relay_public_key_hex(),
             "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "record", [record])),
             "elsewhere": elsewhere, "moved_to": moves.moved_to(agent_id)}

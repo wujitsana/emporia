@@ -83,7 +83,7 @@ class PaymentRules(BaseModel):
     mode: str = "free"  # "free", "stripe_link", "mpp"
     stake_per_participant: str = "0"
     currency: str = "USD"
-    platform_fee_bps: int = 250  # 2.5%
+    platform_fee_bps: int = 100  # 1%
     payout_distribution: dict[str, float] = Field(default_factory=dict)
 
 

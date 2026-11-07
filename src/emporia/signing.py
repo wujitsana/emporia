@@ -142,8 +142,6 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("dm", "signed_dm_thread_payload", "message", "routine"),
     _k("dm-envelope", "signed_dm_envelope", "message", "routine"),
     _k("agora-topic", "signed_agora_topic_payload", "post", "routine"),
-    _k("agora-post", "signed_agora_post_payload", "post", "routine"),
-    _k("agora-comment", "signed_agora_comment_payload", "post", "routine"),
     _k("post", "signed_post_payload", "post", "a public post; no links, capped, never binding",
        check=lambda p, ctx: wire.post_problem(p.get("kind"), p.get("label"), p.get("text"), p.get("tags"),
                                               topic=p.get("topic"), reply_to=p.get("reply_to"),
@@ -168,8 +166,6 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("room-kick", "signed_room_kick_payload", "join", "routine membership"),
     _k("room-join", "signed_room_join_payload", "join", "routine membership"),
     _k("room-leave", "signed_room_leave_payload", "join", "leaving a paid room is the agent's own money, already capped"),
-    # selling
-    _k("listing", "signed_listing_payload", "listing", "it advertises; payment terms are checked by the payer"),
     # who it is and where it is paid
     _k("removal", "signed_delete_payload", "removal", "destroys what it posted, so capped per day"),
     _k("relay-list", "signed_relay_list_payload", "relay-list",

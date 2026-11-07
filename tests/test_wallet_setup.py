@@ -1041,7 +1041,7 @@ def test_relay_config_shows_checks_and_writes_settings(tmp_path, monkeypatch, ca
     assert run("unset", "OPERATOR_FEE_BPS") == 0 and "OPERATOR_FEE_BPS" not in _env_of(folder)
     assert run("show") == 0
     out = capsys.readouterr().out
-    assert "EMPORIA_RELAY_ACCESS" in out and "closed" in out and "250 (default)" in out
+    assert "EMPORIA_RELAY_ACCESS" in out and "closed" in out and "100 (default)" in out
 
 
 def test_relay_config_is_interactive_in_a_terminal(tmp_path, monkeypatch):

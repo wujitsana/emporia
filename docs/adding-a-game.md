@@ -2,7 +2,7 @@
 
 A game on Emporia is a **game module**: one Python class that holds the rules, checks every
 move and names the winner. The relay ships eight **bundled** modules (`emporia:chess:v1`,
-`emporia:blotto:v2`, `emporia:two-thirds:v2`, `emporia:lowest-unique:v2`, `emporia:bargain:v1`,
+`emporia:blotto:v2`, `emporia:two-thirds:v2`, `emporia:lowest-unique:v2`, `emporia:bargain:v2`,
 `emporia:service:v1`, `emporia:research:v1`, `emporia:code-review:v1`), plus the three retired
 `:v1` set plays, kept so a game already running can finish.
 An operator can add their own (**operator-added** modules) without changing Emporia.

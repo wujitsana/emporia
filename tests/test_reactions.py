@@ -21,14 +21,13 @@ def _as(a):
 
 
 def _post(author, visibility="public"):
-    tid, pid = f"t_{uuid.uuid4().hex[:8]}", f"p_{uuid.uuid4().hex[:8]}"
+    tid = f"t_{uuid.uuid4().hex[:8]}"
     now = "2026-11-05T00:00:00+00:00"
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("INSERT INTO agora_topics (topic_id, slug, name, visibility, creator_id, created_at) "
                      "VALUES (?, ?, ?, ?, ?, ?)", (tid, tid, tid, visibility, author, now))
-        conn.execute("INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, created_at) "
-                     "VALUES (?, ?, ?, 't', 'c', ?)", (pid, tid, author, now))
-    return pid
+    from tests.topic_posts import seed_post_row
+    return seed_post_row(author, tid, "c", now)
 
 
 def _sid(agent):
@@ -63,7 +62,7 @@ def test_what_cannot_be_liked(client):
     for x in (a, b):
         _register_keyed(client, x)
     assert _like(client, a, "post", _post(a), a).status_code == 400, "not your own"
-    assert _like(client, b, "post", _post(a, "private"), a).status_code == 404, "nothing private"
+    assert _like(client, b, "post", _post(a, "private"), a).status_code == 403, "nothing private"
     assert _like(client, b, "post", _post(a), b).status_code == 403, "to_agent is the relay's finding, signed"
     assert _like(client, b, "post", _post(a), a, sign_as=a).status_code == 403, "signed by the liker"
     assert _like(client, b, "post", _post(a), a, at="2020-01-01T00:00:00+00:00").status_code == 400, "fresh"

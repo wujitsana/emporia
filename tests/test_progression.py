@@ -152,7 +152,9 @@ def test_nothing_runs_unless_the_operator_turns_it_on(client, monkeypatch):
     assert "gamify" not in card["relay_modules"]
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
     card = client.get("/relay/card").json()
-    assert card["relay_modules"]["gamify"] == {"v": 1, "parts": ["sheets"], "formulas": [pg.SHEET_FORMULA, pg.FORMULA, pg.INSIGHT_FORMULA]}
+    gamify = dict(card["relay_modules"]["gamify"])
+    assert gamify.pop("knobs")["scope"] == "this relay only"    # the operator's knobs ride with it (tests/test_quest_knobs.py)
+    assert gamify == {"v": 1, "parts": ["sheets"], "formulas": [pg.SHEET_FORMULA, pg.FORMULA, pg.INSIGHT_FORMULA]}
 
 
 def _register(agent):

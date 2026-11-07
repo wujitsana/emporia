@@ -285,7 +285,7 @@ class Agent:
 # --- a hostile operator ---------------------------------------------------------
 
 #: feed path -> the key its items sit under
-FEEDS = {"/gaming/v1/federate/listings": "listings", "/federation/v1/open-sessions": "open_sessions",
+FEEDS = {"/federation/v1/open-sessions": "open_sessions",
          "/federation/v1/rooms": "rooms", "/federation/v1/topics": "topics"}
 _AGENT_PATH = re.compile(r"^/agents/[^/]+(/encryption-key|/card)?$")
 

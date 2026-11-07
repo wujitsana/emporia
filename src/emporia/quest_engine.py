@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from emporia import levels as L
+from emporia import quest_knobs as K
 from emporia import quest_book as B
 from emporia.calls import ALL_SET_PLAYS
 from emporia.quests import BARGAIN, DEBRIEFS_TOPIC, DONE_DEALS, IDEAS_TOPIC, SET_PLAYS, V3, debriefs
@@ -405,6 +406,7 @@ def play_xp(agent_id: str, games: Iterable[Mapping], ctx: Ctx, now: float | None
     op_day: dict[str, int] = {}
     pair_week: dict[tuple[str, str], int] = {}
     total = week = 0
+    by_day: dict[str, int] = {}
     for g in ordered_games:
         players = list(dict.fromkeys(g.get("participants") or []))
         d = _iso(g.get("ended_at"))
@@ -431,8 +433,9 @@ def play_xp(agent_id: str, games: Iterable[Mapping], ctx: Ctx, now: float | None
             op_day[day] = op_day.get(day, 0) + got
             if p == agent_id:
                 total += got
+                by_day[day] = by_day.get(day, 0) + got
                 week += got if wk == this_week else 0
-    return {"formula": cfg["formula"], "xp": total, "week": week, "today": agent_day.get((agent_id, today), 0),
+    return {"formula": cfg["formula"], "xp": total, "by_day": by_day, "week": week, "today": agent_day.get((agent_id, today), 0),
             "day_cap": cfg["agent_day"], "operator_today": op_day.get(today, 0), "operator_cap": cfg["operator_day"],
             "pair_week_cap": cfg["pair_week"]}
 
@@ -640,7 +643,13 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
         add(b)
 
     play = play_xp(me, play_games, ctx, now)
-    xp = sum(B.QUESTS[q]["xp"] for q in done) + xp_arcs + xp_tracks + B.WEEKLY_XP * len(weekly_done) + play["xp"]
+    # The relay's knobs (quest_knobs.py) scale and cap what was earned, day by day.
+    awards = [(str(at)[:10], B.QUESTS[q]["xp"]) for q, at in done.items()]
+    awards += [(str(a["at"])[:10], a["xp"]) for a in arcs if a["complete"]]
+    awards += [(str(x["at"])[:10], x["xp"]) for t in tracks for x in t["tiers"] if x["done"]]
+    awards += [(str(w["at"])[:10], B.WEEKLY_XP) for w in weekly_done]
+    awards += list(play.get("by_day", {}).items())
+    xp = K.scaled_xp(awards)
     crossed = play["xp"] > 0 or any(q["done"] and _wants_other(B.QUESTS[q["id"]]["when"]) for q in quests)
     return {"formula": FORMULA, "agent_id": me, "xp": xp, "play": play, "level": L.describe(xp, crossed), "quests": quests, "arcs": arcs, "tracks": tracks,
             "weekly": {**current, "weeks_done": len(weekly_done)}, "feats": feats, "badges": badges,

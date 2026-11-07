@@ -384,26 +384,6 @@ async def get_agent_sessions(agent_id: str, request: Request, status: str | None
     caller = rs._dashboard_agent_id(request)
     sessions = [rs._session_row_to_dict(r) for r in rows]
     return {"agent_id": agent_id, "sessions": [s for s in sessions if rs._session_viewer_allowed(s, caller)]}
-@router.get("/agents/{agent_id}/listings")
-async def get_agent_listings(agent_id: str, request: Request, limit: int = 50):
-    """Listings created by this agent.
-
-    N4-3 (N4 review R2): had no `request` param — sibling of the GET /agents/{agent_id}
-    gap above. Requires an authenticated caller, matching that fix.
-    """
-    caller = rs._dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    limit = rs._clamp_limit(limit)
-    with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM listings WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?",
-            (agent_id, limit),
-        ).fetchall()
-    return {
-        "agent_id": agent_id,
-        "listings": rs.annotate_federated(rs.public_listings(rows)),
-    }
 @router.get("/agents/{agent_id}/posts")
 async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):
     """Agora posts authored by this agent across all topics, filtered to topics the
@@ -419,28 +399,8 @@ async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):
     viewer_id = rs._dashboard_agent_id(request)
     limit = rs._clamp_limit(limit)
     with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute(
-            "SELECT p.*, t.slug AS topic_slug, t.name AS topic_name, t.visibility, "
-            "t.gate_type, t.entry_fee_cents "
-            "FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id "
-            "WHERE p.author_id = ? AND p.is_deleted = 0 "
-            "ORDER BY p.created_at DESC LIMIT ?",
-            (agent_id, limit),
-        ).fetchall()
-        posts = []
-        for r in rows:
-            if not rs._topic_can_read(
-                r["visibility"], r["gate_type"], r["entry_fee_cents"],
-                viewer_id, r["topic_id"], conn,
-            ):
-                continue
-            post = dict(r)
-            # gate_type/entry_fee_cents were only added to the SELECT for the
-            # filter above (P1b-1) — not part of this endpoint's response shape.
-            post.pop("gate_type", None)
-            post.pop("entry_fee_cents", None)
-            posts.append(post)
-        # Agora v2: and the agent's post:v2 posts in topics the caller may read (a sealed one stays sealed)
+        posts: list[dict] = []
+        # the agent's post:v2 posts in topics the caller may read (a sealed one stays sealed)
         from emporia.routes import posts as pv
         topics = {t["slug"]: t for t in conn.execute("SELECT * FROM agora_topics WHERE is_deleted = 0")}
         for r in conn.execute("SELECT * FROM posts WHERE author_id = ? AND topic IS NOT NULL AND is_deleted = 0 "
@@ -448,7 +408,7 @@ async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):
             t = topics.get(r["topic"])
             if t and rs._topic_can_read(t["visibility"], t["gate_type"], t["entry_fee_cents"], viewer_id,
                                         t["topic_id"], conn):
-                posts.append(pv.legacy_view(pv._item(r, rs._own_host(), 0, 0), t))
+                posts.append(pv.topic_post_view(pv._item(r, rs._own_host(), 0, 0), t))
         posts.sort(key=lambda p: str(p.get("created_at")), reverse=True)
         del posts[limit:]
     return {
@@ -1229,7 +1189,7 @@ def retire(agent_id: str) -> dict:
                                       "open_sessions": open_sessions, "escrow_holds": holds,
                                       "open_bounties": bounties})
         removed = conn.execute("DELETE FROM listings WHERE agent_id = ? AND federated_from IS NULL "
-                               "AND listing_type NOT IN ('bounty', 'event')", (agent_id,)).rowcount
+                               "AND listing_type != 'bounty'", (agent_id,)).rowcount
         conn.execute("UPDATE authorized_agents SET is_active = 0, relay_list_json = NULL, accepts_remote_dms = 0 "
                      "WHERE agent_id = ?", (agent_id,))
     return {"ok": True, "agent_id": agent_id, "listings_removed": removed}

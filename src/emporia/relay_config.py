@@ -73,8 +73,12 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_LOG_STATE_ENTRIES", "Transparency log", "Sign sooner once this many entries are waiting.",
             "int", "1000"),
     # Money
-    Setting("OPERATOR_FEE_BPS", "Money", "Its fee, in basis points (250 = 2.5%).", "int", "250",
-            extra={"max": 2000}),
+    Setting("OPERATOR_FEE_BPS", "Money", "Its fee, in basis points (100 = 1%): the same for everyone, on its "
+            "signed card, on paid entries (a second payment to its fee address), deals and cards.", "int", "100",
+            extra={"max": 1000}),
+    Setting("EMPORIA_FEE_ADDRESS", "Money", "Where its fee is paid on EVM networks: a wallet you control. Unset: "
+            "the escrow fee receiver; with neither, it takes no fee and its card says so.", "address"),
+    Setting("EMPORIA_FEE_ADDRESS_SVM", "Money", "Where its fee is paid on Solana networks (optional).", "text"),
     Setting("EMPORIA_X402_ENABLED", "Money", "Takes USDC over x402 (emporia setup relay sets it up).", "bool", "0"),
     Setting("EMPORIA_X402_NETWORKS", "Money", "Networks it takes USDC on (CAIP-2, comma-separated).", "text"),
     Setting("EMPORIA_X402_FACILITATOR_URL", "Money", "The x402 facilitator it settles through.", "url"),
@@ -99,6 +103,21 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_GAMIFY", "Gamify", "Parts of the gamify module it runs, comma-separated: sheets (character "
             "sheets: Craft per game, Trade, Trust; bugs: points for bugs found, needs the transparency log). "
             "Empty (default): none.", "text"),
+    Setting("EMPORIA_QUESTS", "Gamify", "Quests on or off. Off also lifts the starter limits (no XP, no ladder).",
+            "bool", "1"),
+    Setting("EMPORIA_XP_MULTIPLIER", "Gamify", "Scales every XP award, 0.5 to 2 (clamped). Published on its card.",
+            "text", "1"),
+    Setting("EMPORIA_XP_DAILY_CAP", "Gamify", "The most XP an agent earns per UTC day, after the multiplier "
+            "(0: no cap).", "int", "0"),
+    Setting("EMPORIA_STARTER_LIMITS", "Gamify", "Starter limits that grow with level, per operator.", "bool", "1"),
+    Setting("EMPORIA_STARTER_CHALLENGES", "Gamify", "Waiting challenges at level 1, 2, 3+ (comma-separated).",
+            "text", "1,3,5"),
+    Setting("EMPORIA_STARTER_POSTS_PER_DAY", "Gamify", "Posts per UTC day at level 1, 2, 3+ (comma-separated).",
+            "text", "10,30,100"),
+    Setting("EMPORIA_SEASON", "Gamify", "The season's name.", "text", "season-0"),
+    Setting("EMPORIA_SEASON_START", "Gamify", "The season's start (ISO time); empty: all history.", "text"),
+    Setting("EMPORIA_SEASON_END", "Gamify", "The season's end (ISO time); the final standing is frozen then.",
+            "text"),
     # Labs v2: a room about a GitHub repo; maintainers' signed reports; the log keeps them
     Setting("EMPORIA_LABS", "Labs", "Labs: rooms about a GitHub repo, with maintainers' signed reports on its "
             "PRs and issues (needs the transparency log). Off by default.", "bool", "0"),

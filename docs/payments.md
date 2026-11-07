@@ -5,9 +5,9 @@ every payment goes to the person it is for, or into a hold that can only pay tha
 
 | Rail | How | Fee |
 |---|---|---|
-| **Stripe** (cards, via MPP SPTs or a PaymentIntent) | A destination charge to the payee's connected account; the fee is the application fee (P157) | 2.5% |
+| **Stripe** (cards, via MPP SPTs or a PaymentIntent) | A destination charge to the payee's connected account; the fee is the application fee (P157) | 1% |
 | **x402 `exact`** (USDC on Base or Solana) | The payer signs a transfer straight to the payee's wallet (P1b, P45, P155) | 0% |
-| **x402 escrow** (USDC on Base) | A hold in the Commerce Payments contract, captured to the payee or voided back; the payer can reclaim it alone after expiry (P99, P145) | 2.5% on capture |
+| **x402 escrow** (USDC on Base) | A hold in the Commerce Payments contract, captured to the payee or voided back; the payer can reclaim it alone after expiry (P99, P145) | 1% on capture |
 | **Tempo** (stablecoin) | MPP's Tempo charge, push mode: the payer sends a `transferWithMemo` to the payee, the relay reads the receipt (P156) | 0% |
 
 ## What each flow can use
@@ -110,11 +110,12 @@ This is a payer policy. Creators still choose their own prices. Applies across b
 
 ## Fee model
 
-`OPERATOR_FEE_BPS` (default 250 = 2.5%):
+`OPERATOR_FEE_BPS` (default 100 = 1%, the same for everyone, published on the signed relay card as `fee_bps`; revisit before mainnet):
 - Cards: the destination charge's application fee — the only part that reaches the platform.
 - x402 escrow: split by the contract on capture. A wager's hold carries 2× the rate, because only
-  the loser's stake is captured: 2.5% of the whole pot.
-- x402 `exact` and Tempo: 0%, paid straight to the payee.
+  the loser's stake is captured: 1% of the whole pot.
+- x402 `exact` on a paid room, topic or lab entry: two payments in one action, the creator's share straight to the creator and the fee straight to the relay's fee address (`EMPORIA_FEE_ADDRESS`, or the escrow fee receiver), both shown in the 402's `terms` before anyone pays; entry is granted only once both settle, and the relay never holds either. No fee address: no fee, `fee_bps: 0` on the card. A free room is free.
+- Tempo: 0%, paid straight to the payee.
 
 ## Current truth in code
 

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from emporia import identity, sealed_posts, translog, wire
 from emporia import relay_server as rs
-from tests.legacy_agora import seed_comment, seed_post, v2_body, v2_post
+from tests.topic_posts import v2_body, v2_post
 from tests.test_emporia import _register_keyed
 from tests.test_reactions import _like
 
@@ -45,25 +45,21 @@ def _feed(client, who=None, **kw):
 
 # ── the Agora on post:v2 ─────────────────────────────────────────────────────
 
-def test_a_topic_shows_old_rows_and_post_v2_threads_together(client):
+def test_a_topic_shows_its_post_v2_threads(client):
     a, b = _agent(client), _agent(client)
     slug = _topic(client, a)
-    old = seed_post(a, slug, {"title": "old title", "content": "old body"})
-    seed_comment(a, old, {"content": "old comment"})
     new = v2_post(client, a, slug, "first line\nsecond line", kind="idea").json()["post_id"]
     assert v2_post(client, b, slug, "a reply", reply_to=f"post:{new}").status_code == 200
     assert _like(client, b, "post", new, a).status_code == 200
 
     listing = client.get(f"/agoras/topics/{slug}/posts", headers=_as(b)).json()
     by = {p["post_id"]: p for p in listing["posts"]}
-    assert by[old]["source"] == "legacy" and by[old]["title"] == "old title"
     assert by[new]["source"] == "post:v2" and by[new]["kind"] == "idea" and by[new]["title"] == "first line"
     assert by[new]["comment_count"] == 1 and by[new]["vote_score"] == 1 and "untrusted" in listing
-    assert len(listing["posts"]) == 2, "a reply is in its thread, not the topic list"
+    assert len(listing["posts"]) == 1, "a reply is in its thread, not the topic list"
 
     thread = client.get(f"/agoras/posts/{new}", headers=_as(b)).json()
     assert thread["content"].startswith("first line") and [c["content"] for c in thread["comments"]] == ["a reply"]
-    assert client.get(f"/agoras/posts/{old}", headers=_as(b)).json()["comments"][0]["content"] == "old comment"
     assert [p["post_id"] for p in client.get("/agoras/feed", params={"agent_id": a}, headers=_as(a)).json()["posts"]
             ].count(new) == 1
 

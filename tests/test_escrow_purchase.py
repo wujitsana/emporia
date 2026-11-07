@@ -148,7 +148,7 @@ def test_the_offer_names_the_seller_the_amount_and_the_fee(client, chain):
     assert offer["scheme"] == "emporia-escrow-v1"
     assert info["receiver"] == SELLER_WALLET and info["operator"] == OPERATOR.address
     assert int(info["max_amount"]) == AMOUNT
-    assert (int(info["min_fee_bps"]), int(info["max_fee_bps"])) == (250, 250)
+    assert (int(info["min_fee_bps"]), int(info["max_fee_bps"])) == (100, 100)
     assert info["fee_receiver"] == FEE_RECEIVER
     assert info["payer"] == escrow.ZERO_ADDRESS, "the payer fills in their own address"
     # P262: and who the receiver is, in the seller's own signed words
@@ -185,9 +185,9 @@ def test_confirmed_delivery_captures_to_the_seller(client, chain):
     [row] = _sql("SELECT * FROM settlements WHERE session_id = ?", sid)
     assert (row["rail"], row["transfer_status"], row["winner_id"]) == ("x402", "escrow_captured", seller)
     assert _sql("SELECT state FROM escrow_holds WHERE session_id = ?", sid)[0]["state"] == "captured"
-    # P129: the ledger records the split the contract made — $0.125 of $5.00,
+    # P129: the ledger records the split the contract made — $0.05 of $5.00,
     # which the cents columns can only round.
-    assert (row["platform_fee_atomic"], row["winner_payout_atomic"]) == ("125000", "4875000")
+    assert (row["platform_fee_atomic"], row["winner_payout_atomic"]) == ("50000", "4950000")
     # P153: pages can say how it was paid, and the relay says where it holds USDC.
     got = client.get(f"/sessions/{sid}", headers=_hdr(buyer)).json()
     assert got["paid_by"] == ["x402"]
@@ -283,7 +283,7 @@ def test_no_offer_where_the_seller_has_no_wallet_or_escrow_is_off(client, chain)
 def _plain_offer(**info_changes):
     info = escrow.build_payment_info(
         operator=OPERATOR.address, payer=escrow.ZERO_ADDRESS, receiver=SELLER_WALLET,
-        token=ENV["EMPORIA_X402_ASSET_EIP155_84532"], amount=AMOUNT, fee_bps=250,
+        token=ENV["EMPORIA_X402_ASSET_EIP155_84532"], amount=AMOUNT, fee_bps=100,
         fee_receiver=FEE_RECEIVER, now=1_800_000_000, pre_approval_window=900,
         authorization_window=7 * 86400, refund_window=86400)
     wire = {**info.to_json(), **info_changes}
@@ -347,7 +347,7 @@ def test_a_failed_capture_is_retried_until_the_seller_is_paid(client, chain):
     _act(client, sid, buyer, "confirm")
     [row] = _sql("SELECT * FROM settlements WHERE session_id = ?", sid)
     assert row["transfer_status"] == "capture_failed"
-    assert row["platform_fee_atomic"] == "125000", "the split a retried capture will pay"
+    assert row["platform_fee_atomic"] == "50000", "the split a retried capture will pay"
     assert _sql("SELECT state FROM escrow_holds WHERE session_id = ?", sid)[0]["state"] == \
         "capture_pending"
 

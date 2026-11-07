@@ -558,15 +558,15 @@ def test_a_bounty_plays_to_the_end_and_the_winner_is_paid(client, _escrow):
     assert captured == [prize_pi], \
         f"the funder's hold is what should have been captured, got {captured}"
     assert transfers and transfers[0].get("destination") == "acct_winner"
-    assert int(transfers[0]["amount"]) == 3900, \
-        "the winner receives the prize less the 2.5% operator fee"
+    assert int(transfers[0]["amount"]) == 3960, \
+        "the winner receives the prize less the 1% operator fee"
 
     settlements = [dict(r) for r in rs.get_db().execute(
         "SELECT * FROM settlements WHERE session_id = ?", (session_id,)).fetchall()]
     assert len(settlements) == 1
     assert settlements[0]["winner_id"] == seller
     assert settlements[0]["status"] == "settled"
-    assert settlements[0]["winner_payout_cents"] == 3900
+    assert settlements[0]["winner_payout_cents"] == 3960
 
     # And standing reflects it — one win for the seller, an entry for each.
     board = client.get("/leaderboard?limit=200").json()["standings"]
@@ -830,34 +830,10 @@ def test_an_unknown_rail_is_refused(client, _escrow):
 # P83 -- a peer may not rewrite what it does not own -------------------------
 
 class _Peer:
-    """One federation peer: a URL, the key it signs with, and what it claims
-    as its origin (its own URL unless told otherwise)."""
+    """A peer relay, by URL."""
 
     def __init__(self, url=None):
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
         self.url = url or f"https://peer-{uuid.uuid4().hex[:8]}.example"
-        self.key = Ed25519PrivateKey.generate()
-
-    def batch(self, listings, *, origin=None):
-        from emporia.identity import federation_signable_bytes
-
-        origin = origin or self.url
-        return {
-            "origin_relay": origin, "listings": listings,
-            "origin_public_key_hex": self.key.public_key().public_bytes_raw().hex(),
-            "signature": self.key.sign(
-                federation_signable_bytes(origin, "listings", listings)).hex(),
-        }
-
-    def push(self, listings, *, origin=None):
-        import anyio
-
-        from emporia import relay_server as rs
-
-        batch = self.batch(listings, origin=origin)
-        with patch.object(rs, "_fetch_federation_batch", AsyncMock(return_value=batch)):
-            return anyio.run(rs._pull_federated_listings, self.url)
 
 
 def _foreign_bounty(agent_id, **meta):
@@ -909,18 +885,6 @@ def test_a_peers_unknown_rail_does_not_break_the_board(client, _escrow):
     assert r.status_code == 200
     row = next(b for b in r.json()["bounties"] if b["listing_id"] == listing["listing_id"])
     assert row["escrow_strength"] is None
-
-
-def _resigned(listing, **changes):
-    """The same listing (same nonce, so the same id), changed and signed again by
-    its agent — the only way a listing's content changes and still verifies."""
-    from emporia import wire
-    from emporia.identity import sign
-    x = {**json.loads(json.dumps(listing)), **changes}
-    x["signature"] = sign(wire.listing_fields_as_signed(x), "peer_agent")
-    return x
-
-
 
 
 # P84 -- a promise binds the account, and can actually be paid ---------------

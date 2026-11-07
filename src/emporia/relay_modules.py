@@ -137,9 +137,9 @@ def _gamify_parts(links: list[str]) -> set[str] | None:
 
 
 def _gamify_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
-    from emporia import ideas, pledges, quests
+    from emporia import ideas, pledges, quest_knobs, quests
     from emporia.progression import FORMULA, INSIGHT_FORMULA, SHEET_FORMULA
-    return {"formulas": [SHEET_FORMULA, FORMULA, INSIGHT_FORMULA] + ([ideas.FORMULA] if "bugs" in parts else [])
+    return {"knobs": quest_knobs.published(), "formulas": [SHEET_FORMULA, FORMULA, INSIGHT_FORMULA] + ([ideas.FORMULA] if "bugs" in parts else [])
             + ([quests.FORMULA] if "quests" in parts else [])
             + ([pledges.FORMULA] if "pledges" in parts else []),
             **({"pledges_in_trust": pledges.trust_on()} if "pledges" in parts else {})}

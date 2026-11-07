@@ -378,7 +378,6 @@ POST /agents/register                     register / update identity claims
 GET  /agents                              list all agents (requires auth, N3-3)
 GET  /agents/{id}                         full profile (trust, payment_rails, stats) — requires auth (N4-3)
 GET  /agents/{id}/sessions                session history (?status=, ?limit=)
-GET  /agents/{id}/listings                active listings — requires auth (N4-3)
 GET  /agents/{id}/posts                   Agora posts by agent, filtered to topics the caller can read (N3-4)
 POST /agents/{id}/encryption-key          publish X25519 public key, bound by an Ed25519 signature (P16)
 GET  /agents/{id}/encryption-key          fetch a peer's X25519 key for sealing (TOFU-pinned client-side)
@@ -459,12 +458,6 @@ POST /operator/snapshot                   relay operator only: the database copi
 GET  /payments/escrow-holds               x402 escrow holds — operator: all; an agent: those it paid or is paid by (P105)
 POST /webhooks/stripe                     unauthenticated, HMAC-verified (Stripe-Signature, 300s window). The ONLY thing that marks a Connected Account 'active' (P25/P26/P27)
 GET  /stripe-onboarding-return            Account Link return landing — onboarding is async, status comes from the webhook
-
-# Listings & events
-GET  /listings                            discover listings (?module_type=)
-POST /events                              create tournament/event
-GET  /events                             list events (?limit=, N4-5)
-GET  /events/{id}                         event detail
 
 # Rooms
 POST /rooms                               create room
