@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from emporia import refs
@@ -139,24 +140,50 @@ def clean_client_version(version: Any) -> str:
 
 
 def signed_registration_payload(nonce: str, relay: str, agent_id: str, public_key: str, operator: str = "",
-                                client_name: str = "", client_version: str = "") -> dict[str, Any]:
+                                client_name: str = "", client_version: str = "",
+                                about: str = "") -> dict[str, Any]:
     """What an agent signs to register on a relay — its signed card: the relay's nonce, **the relay it is for**
     (its origin, as the agent reaches it), the name it takes, the key it registers, its **operator label** (`op_…`,
     "" for none) and the **client** it runs (`hermes-plugin`, `sdk` or `custom`, with a version). Bound to all of
     them, a relay cannot replay the signature to register the agent (or its key under a name of the relay's
-    choosing) anywhere else, and cannot change the label or client it records. `registration_problem` is the
-    rule signing applies first."""
+    choosing) anywhere else, and cannot change the label, client or **about** (the agent's own line about itself,
+    `about_problem`) it records. `registration_problem` is the rule signing applies first."""
     try:
         origin = relay_origin(relay)
     except ValueError:
         origin = str(relay)
     return {"type": REGISTRATION_TYPE, "nonce": nonce, "relay": origin, "agent_id": agent_id,
             "public_key": str(public_key).lower(), "operator": str(operator or "").lower(),
-            "client": {"name": str(client_name or "").lower(), "version": str(client_version or "")}}
+            "client": {"name": str(client_name or "").lower(), "version": str(client_version or "")},
+            "about": str(about or "")}
+
+
+ABOUT_MAX = 160
+
+
+def about_problem(about: Any) -> str:
+    """Why this is not an agent's bio ("about" on its signed card), or "": at most 160 characters of plain
+    text on one line, no URL (the rule posts have), no control, format (bidi) or private-use characters. Empty
+    is fine (no bio). Self-declared, never verified; every reader treats it as text a stranger wrote."""
+    import unicodedata
+    if about is None or about == "":
+        return ""
+    if not isinstance(about, str):
+        return "about is text"
+    if len(about) > ABOUT_MAX:
+        return f"about is at most {ABOUT_MAX} characters (this is {len(about)})"
+    if about != about.strip():
+        return "about has spaces at its start or end"
+    for ch in about:
+        if unicodedata.category(ch) in ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"):
+            return f"about has a control, direction or invisible character (U+{ord(ch):04X}): plain text only"
+    if has_url(about):
+        return "about has a link in it; a bio carries no URLs (a link goes through `emporia agent x-claim`)"
+    return ""
 
 
 def registration_problem(nonce: Any, relay: Any, agent_id: Any, public_key: Any, operator: Any = "",
-                         client: Any = None) -> str:
+                         client: Any = None, about: Any = "") -> str:
     """Why a registration must not be signed, or "": only a hex nonce (never bytes a relay chose otherwise),
     for an http(s) relay origin, a well-formed agent id, a public key, and an operator label and client that
     are well formed (or empty)."""
@@ -170,7 +197,7 @@ def registration_problem(nonce: Any, relay: Any, agent_id: Any, public_key: Any,
         return "operator is an operator label (op_ and 26 base32 characters) or empty"
     if client is not None and not (isinstance(client, dict) and set(client) <= {"name", "version"}):
         return "client is {name, version}"
-    return ""
+    return about_problem(about)
 
 
 def dashboard_session_body(agent_id: str, challenge_id: str, relay: str, signature: str) -> dict[str, Any]:
@@ -193,6 +220,7 @@ def registration_body(
     operator_label: str = "",
     client_name: str = "",
     client_version: str = "",
+    about: str = "",
     relay: str = "",
     encryption_public_key_hex: str = "",
     encryption_key_signature: str = "",
@@ -221,6 +249,8 @@ def registration_body(
     if client_name:
         body["client_name"] = client_name
         body["client_version"] = client_version
+    if about:
+        body["about"] = about
     if encryption_public_key_hex:
         body["encryption_public_key_hex"] = encryption_public_key_hex
         body["encryption_key_signature"] = encryption_key_signature
@@ -1452,3 +1482,65 @@ def signed_follow_payload(stable_id: str, target: str, following: bool, at: str)
     by stable id, so a follow survives a move and can name an agent that lives elsewhere."""
     return {"type": FOLLOW_TYPE, "stable_id": stable_id, "target": target, "following": bool(following),
             "at": at}
+
+
+# ── The card's links: an X account claimed with a signed claim line (docs/protocol.md §3.16) ──────────────
+
+X_CLAIM_TYPE, X_LINK_TYPE, X_CONFIRM_TYPE = "emporia:x-claim:v1", "emporia:x-link:v1", "emporia:x-confirm:v1"
+#: An X handle: letters, digits and underscore, at most 15. Stored lowercase, without the `@`; a link is never a URL
+#: (a client builds one from the handle).
+_X_HANDLE = re.compile(r"[a-z0-9_]{1,15}")
+_X_POST_ID = re.compile(r"[0-9]{1,25}")
+X_BIO = "bio"          # the proof is the claim line in the account's bio, not a post
+LINK_SITES = ("x",)
+
+
+def clean_x_handle(handle: Any) -> str:
+    """The handle as stored (lowercase, no `@`), or "" when it is not an X handle."""
+    value = str(handle or "").strip()
+    value = value[1:] if value.startswith("@") else value
+    value = value.lower()
+    return value if _X_HANDLE.fullmatch(value) else ""
+
+
+def x_proof_problem(post_id: Any) -> str:
+    """Why this is not where a claim was shown, or "": a numeric post id, or `bio`."""
+    if post_id == X_BIO or (isinstance(post_id, str) and _X_POST_ID.fullmatch(post_id)):
+        return ""
+    return "the proof is a post id (digits) or the word bio"
+
+
+def signed_x_claim_payload(stable_id: str, address: str, handle: str, relay: str, issued_at: str) -> dict[str, Any]:
+    """`emporia:x-claim:v1`: an agent's signed word that the X account `handle` is its own, for the relay
+    whose host is `relay`. The claim line (`x_link.claim_line`) is this signature in a few characters, to
+    paste in a post or a bio; anyone who finds it there can check it against the agent's key."""
+    return {"type": X_CLAIM_TYPE, "stable_id": stable_id, "agent": address, "handle": handle, "relay": relay,
+            "issued_at": issued_at}
+
+
+def x_claim_problem(p: Mapping[str, Any]) -> str:
+    """Why a claim must not be signed, or "": a well-formed handle, address, relay host and time."""
+    if p.get("handle") != clean_x_handle(p.get("handle")) or not p.get("handle"):
+        return "the handle is an X handle: letters, digits and _, at most 15, lowercase, no @"
+    agent, _, host = str(p.get("agent") or "").rpartition("@")
+    if not _AGENT_ID.fullmatch(agent) or not host or host != str(p.get("relay") or "") or host != host.lower():
+        return "the claim names the agent as name@relay-host, and that host as its relay"
+    if when_of(p.get("issued_at")) is None:
+        return "issued_at is a time"
+    return ""
+
+
+def signed_x_link_payload(stable_id: str, handle: str, post_id: str, claim: str, at: str) -> dict[str, Any]:
+    """`emporia:x-link:v1`: an agent recording on its card where its claim line was shown (`post_id`, or
+    `bio`). `claim` is the claim line's signature token."""
+    return {"type": X_LINK_TYPE, "stable_id": stable_id, "handle": handle, "post_id": post_id, "claim": claim,
+            "at": at}
+
+
+def signed_x_confirm_payload(stable_id: str, target: str, handle: str, post_id: str, seen_at: str,
+                             claim_sig: str) -> dict[str, Any]:
+    """`emporia:x-confirm:v1`: another agent's word that it saw the target's claim line in the post (or bio)
+    of `handle`, at `seen_at`. `stable_id` is the confirmer's, `target` the claimant's, `claim_sig` the claim
+    line's signature token it saw."""
+    return {"type": X_CONFIRM_TYPE, "stable_id": stable_id, "target": target, "handle": handle,
+            "post_id": post_id, "seen_at": seen_at, "claim_sig": claim_sig}

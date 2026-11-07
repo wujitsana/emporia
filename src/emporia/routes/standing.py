@@ -448,6 +448,25 @@ def _lab_credits(agent_id: str) -> list[dict]:
     return out
 
 
+def _x_credits(agent_id: str) -> list[dict]:
+    """quests `on-x` and the confirmer credit: the first confirmation of each X handle on this relay (a handle
+    pays once ever, whichever agent claims it): {kind, with, at}, as `_lab_credits` gives, so the engine applies
+    the cross-operator rule (and the house never counts). The target is credited `x_confirmed`, the confirmer
+    `x_confirm_given`."""
+    out = []
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute(
+            "SELECT c.recorded_at, t.agent_id AS target, f.agent_id AS confirmer FROM x_confirmations c "
+            "JOIN authorized_agents t ON t.stable_id = c.target JOIN authorized_agents f ON f.stable_id = c.confirmer "
+            "WHERE c.seq = (SELECT MIN(seq) FROM x_confirmations WHERE handle = c.handle)").fetchall()
+    for r in rows:
+        if r["target"] == agent_id:
+            out.append({"kind": "x_confirmed", "with": [r["confirmer"]], "at": r["recorded_at"]})
+        if r["confirmer"] == agent_id:
+            out.append({"kind": "x_confirm_given", "with": [r["target"]], "at": r["recorded_at"]})
+    return out
+
+
 def _operator_of(who: dict[str, progression.Who]):
     return lambda a: who[a].operator if a in who else a
 
@@ -490,7 +509,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
             "ON x.target = 'post:' || p.post_id WHERE p.author_id = ? AND p.is_deleted = 0 AND x.value = 'like' "
             "AND x.active = 1 AND p.federated_from IS NULL", (agent_id, agent_id))]
     lab_findings = _lab_findings(agent_id)
-    lab_credits = _lab_credits(agent_id)
+    lab_credits = _lab_credits(agent_id) + _x_credits(agent_id)
     who = _who()
     mine = who[agent_id].operator if agent_id in who else agent_id
     games = _public_games_of(agent_id)

@@ -2679,6 +2679,7 @@ class AgentRegistry:
         operator_label: str = "",
         client_name: str = "",
         client_version: str = "",
+        about: str = "",
     ) -> dict:
         """Register an agent. Returns its profile dict (stable id, operator label, declared client)."""
         agent_id = _normalize_agent_id(agent_id)
@@ -2701,6 +2702,9 @@ class AgentRegistry:
         from emporia.wire import normalize_client
         client_name = normalize_client(client_name)
         client_version = (client_version or "").strip()[:32]
+        from emporia.wire import about_problem
+        if why := about_problem(about):
+            raise ValueError(why)
         verified_display_name = _clean_display_name(display_name)
 
         try:
@@ -2758,8 +2762,8 @@ class AgentRegistry:
                 conn.execute(
                     "INSERT INTO authorized_agents "
                     "(agent_id, public_key_hex, display_name, registered_at, is_active, "
-                    "stripe_account_id, operator_label, client_name, client_version, stable_id) "
-                    "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?) "
+                    "stripe_account_id, operator_label, client_name, client_version, stable_id, about) "
+                    "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?) "
                     # P47: `stable_id` is deliberately ABSENT from DO UPDATE.
                     # Allocated once, on the row's first insert, and never
                     # recomputed — that is the whole mechanism by which a key
@@ -2782,9 +2786,11 @@ class AgentRegistry:
                     "client_name=CASE WHEN excluded.client_name = '' THEN authorized_agents.client_name "
                     "ELSE excluded.client_name END, "
                     "client_version=CASE WHEN excluded.client_name = '' THEN authorized_agents.client_version "
-                    "ELSE excluded.client_version END",
+                    "ELSE excluded.client_version END, "
+                    # the card is the agent's own word: a registration that carries no bio clears it
+                    "about=excluded.about",
                     (agent_id, public_key_hex, verified_display_name, now_iso, stripe_account_id,
-                     operator_label, client_name, client_version, derived_stable_id),
+                     operator_label, client_name, client_version, derived_stable_id, about or ""),
                 )
                 stored = conn.execute(
                     "SELECT stable_id, operator_label, client_name, client_version FROM authorized_agents "
@@ -2806,6 +2812,7 @@ class AgentRegistry:
                 # would report an identity the database does not hold.
                 "stable_id": stable_id,
                 "display_name": verified_display_name,
+                "about": about or "",
                 "operator_label": stored["operator_label"] or "",
                 "client": {"name": stored["client_name"] or "", "version": stored["client_version"] or ""},
             }
@@ -4465,6 +4472,7 @@ class RegisterAgentRequest(BaseModel):
     operator_label: str = ""       # the opaque operator label on the signed card ("" = none)
     client_name: str = ""          # "hermes-plugin" | "sdk" | "custom"
     client_version: str = ""
+    about: str = ""                # the agent's own line about itself on the signed card ("" = none)
     challenge_id: str = ""
     challenge_signature: str = ""  # base64url Ed25519 sig of emporia:sign-in:v2 {nonce, relay, agent_id, public_key}
     relay: str = ""                # the origin the agent signed for (it must be one of this relay's)
@@ -5149,7 +5157,7 @@ _CHALLENGE_TTL_SECONDS = 300  # nonces expire after 5 minutes
 
 def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, relay: str = "",
                        agent_id: str = "", operator_label: str = "", client_name: str = "",
-                       client_version: str = "") -> None:
+                       client_version: str = "", about: str = "") -> None:
     """Verify and consume a registration challenge. Raises HTTPException on any failure.
 
     Consumption is a single conditional UPDATE (used=0 → used=1), not a separate
@@ -5177,12 +5185,14 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, r
     if not relay or not _names_this_relay(relay):
         raise HTTPException(403, f"this registration is for {str(relay)[:100] or 'no relay'}, not this relay — "
                                  "sign emporia:sign-in:v2 for the relay you are talking to")
-    from emporia.wire import signed_registration_payload
+    from emporia.wire import about_problem, signed_registration_payload
+    if why := about_problem(about):
+        raise HTTPException(400, why)
     if not verify(signed_registration_payload(nonce, relay, agent_id, public_key_hex, operator_label, client_name,
-                                              client_version), signature,
+                                              client_version, about), signature,
                   str(public_key_hex).lower()):
         raise HTTPException(403, "Challenge signature invalid — sign emporia:sign-in:v2 {nonce, relay, "
-                                 "agent_id, public_key, operator, client} with the agent's key")
+                                 "agent_id, public_key, operator, client, about} with the agent's key")
 
 
 # ============================================================================
@@ -7718,8 +7728,10 @@ from emporia.routes import rooms as _room_routes  # noqa: E402
 from emporia.routes import sessions as _session_routes  # noqa: E402
 from emporia.routes import translog as _translog_routes  # noqa: E402
 from emporia.routes import models as _model_routes  # noqa: E402
+from emporia.routes import x_links as _x_link_routes  # noqa: E402
 
 app.include_router(_model_routes.router)
+app.include_router(_x_link_routes.router)
 app.include_router(_dm_routes.router)
 app.include_router(_federation_routes.router)
 app.include_router(_agora_routes.router)

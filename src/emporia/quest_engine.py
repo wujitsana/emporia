@@ -28,7 +28,7 @@ from emporia.quests import BARGAIN, DEBRIEFS_TOPIC, DONE_DEALS, IDEAS_TOPIC, SET
 FORMULA = B.FORMULA
 EVENTS = ("post", "comment", "debrief", "game", "deal", "like", "pledge", "insight",
           "lab_finding", "feed_post", "listing_followed", "lab_confirmed", "lab_fixed", "fix_landed", "fix_reviewed",
-          "idea_adopted")
+          "idea_adopted", "x_confirmed", "x_confirm_given")
 #: named by disabled quests (quest_book.REQUIRES), extracted once their feature lands
 PENDING_EVENTS = {"offer_accepted": "negotiation", "relay_answer": "ask-the-relay"}
 OTHERS_MODES = ("verified", "any")
@@ -447,6 +447,24 @@ def _before(rows: Iterable[Mapping], key: str, cut: float | None) -> list[Mappin
     return out
 
 
+def confirm_xp(evs: Iterable[Mapping]) -> dict:
+    """`x-confirm:v1`: XP for confirming another operator's X link. `evs` are the agent's events; each
+    `x_confirm_given` that counts (`vs` other: never the house, never its own operator) is the first confirmation
+    of an X handle, and pays `CONFIRM.xp`, at most `CONFIRM.agent_day` credits per UTC day. Returns {formula, xp,
+    by_day}."""
+    cfg = B.CONFIRM
+    by_day: dict[str, int] = {}
+    used: dict[str, int] = {}
+    for e in sorted((e for e in evs if e.get("event") == "x_confirm_given" and e.get("vs") == "other"),
+                    key=lambda e: str(e.get("at"))):
+        day = str(e.get("at") or "")[:10]
+        if not day or used.get(day, 0) >= cfg["agent_day"]:
+            continue
+        used[day] = used.get(day, 0) + 1
+        by_day[day] = by_day.get(day, 0) + cfg["xp"]
+    return {"formula": cfg["formula"], "xp": sum(by_day.values()), "by_day": by_day}
+
+
 def season_row(agent_id: str, evs: Iterable[Mapping], play_games: Iterable[Mapping], ctx: Ctx, window: Mapping,
                now: float | None = None, expeditions: Iterable[Mapping] = ()) -> dict:
     """An agent's season: `xp` earned in the window, and its `level` and `badges` as of the window's end.
@@ -641,9 +659,11 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
     awards += [(str(x["at"])[:10], x["xp"]) for t in tracks for x in t["tiers"] if x["done"]]
     awards += [(str(w["at"])[:10], B.WEEKLY_XP) for w in weekly_done]
     awards += list(play.get("by_day", {}).items())
+    confirms = confirm_xp(evs)
+    awards += list(confirms["by_day"].items())
     xp = K.scaled_xp(awards)
     crossed = play["xp"] > 0 or any(q["done"] and _wants_other(B.QUESTS[q["id"]]["when"]) for q in quests)
-    return {"formula": FORMULA, "agent_id": me, "xp": xp, "play": play, "level": L.describe(xp, crossed), "quests": quests, "arcs": arcs, "tracks": tracks,
+    return {"formula": FORMULA, "agent_id": me, "xp": xp, "play": play, "confirm": confirms, "level": L.describe(xp, crossed), "quests": quests, "arcs": arcs, "tracks": tracks,
             "weekly": {**current, "weeks_done": len(weekly_done)}, "feats": feats, "badges": badges,
             "next": next((a["next"]["how"] for a in arcs if a["next"]), ""), "rival": _rival(evs),
             "rules": {"others": ctx.others},

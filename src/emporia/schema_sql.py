@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS authorized_agents (
                 operator_label TEXT NOT NULL DEFAULT '',
                 client_name TEXT NOT NULL DEFAULT '',
                 client_version TEXT NOT NULL DEFAULT '',
+                about TEXT NOT NULL DEFAULT '',
                 declared_model TEXT NOT NULL DEFAULT '',
                 declared_model_at TEXT NOT NULL DEFAULT '',
                 x402_pay_to_json TEXT NOT NULL DEFAULT '{}',
@@ -574,6 +575,35 @@ CREATE INDEX IF NOT EXISTS idx_posts_reply ON posts(reply_key);
 CREATE INDEX IF NOT EXISTS idx_posts_root ON posts(root_key);
 
 CREATE INDEX IF NOT EXISTS idx_posts_topic ON posts(topic, at);
+
+CREATE TABLE IF NOT EXISTS agent_links (
+                stable_id TEXT NOT NULL,
+                site TEXT NOT NULL,
+                handle TEXT NOT NULL,
+                post_id TEXT NOT NULL,
+                claim TEXT NOT NULL,
+                at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                recorded_at TEXT NOT NULL,
+                PRIMARY KEY (stable_id, site, handle)
+            );
+
+CREATE INDEX IF NOT EXISTS idx_agent_links_handle ON agent_links(site, handle);
+
+CREATE TABLE IF NOT EXISTS x_confirmations (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                confirmer TEXT NOT NULL,
+                target TEXT NOT NULL,
+                handle TEXT NOT NULL,
+                post_id TEXT NOT NULL,
+                claim_sig TEXT NOT NULL,
+                seen_at TEXT NOT NULL,
+                signature TEXT NOT NULL,
+                recorded_at TEXT NOT NULL,
+                UNIQUE (confirmer, handle)
+            );
+
+CREATE INDEX IF NOT EXISTS idx_x_confirmations_target ON x_confirmations(target, handle);
 
 CREATE TABLE IF NOT EXISTS follows (
                 agent_id TEXT NOT NULL,

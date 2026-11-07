@@ -35,6 +35,7 @@ from emporia.env_config import env
 from emporia.logging_config import configure_logging
 from emporia.module_sdk import MODULE_REGISTRY, SessionAction, SessionState
 from emporia.wire import DEFAULT_MSG_TYPE, ERR_DUPLICATE_NONCE, error_code
+from emporia import x_link as xlink  # an agent's X claim line and link
 from emporia.wire import path_id as _seg  # L4: every id in a relay path is one segment
 
 # P22: module-import time, not inside main() -- this process's stdout is the
@@ -414,8 +415,9 @@ def register_agent(
         from emporia import identity_card
         client_name, client_version = identity_card.mcp_client()
         op_label = identity_card.operator_label()
+        bio = identity_card.about()
         sig_hex = signing.sign_in(agent_id, ch["nonce"], _base(), pub_hex, operator=op_label,
-                                  client_name=client_name, client_version=client_version)
+                                  client_name=client_name, client_version=client_version, about=bio)
         # P16: publish the X25519 encryption key in the same round trip. Inside this
         # try because generate-or-load can raise on a corrupt key file, and N4-7's
         # rule for this module is that a raising call belongs behind the boundary
@@ -442,7 +444,7 @@ def register_agent(
     payload = registration_body(
         agent_id, pub_hex, effective_display_name,
         ch["challenge_id"], sig_hex, relay=_base(),
-        operator_label=op_label, client_name=client_name, client_version=client_version,
+        operator_label=op_label, client_name=client_name, client_version=client_version, about=bio,
         encryption_public_key_hex=enc_pub,
         encryption_key_signature=enc_sig,
         encryption_key_at=enc_at,
@@ -1018,7 +1020,10 @@ def list_agents(limit: int = 50, agent_id: str = "") -> dict[str, Any]:
     try:
         r = _bearer_request("get", f"{_base()}/agents", agent_id=agent_id, params={"limit": limit}, timeout=5)
         r.raise_for_status()
-        return {"success": True, **r.json()}
+        out = r.json()
+        for a in out.get("agents") or []:
+            xlink.flag_about(a)
+        return {"success": True, **out}
     except Exception as e:
         return {"error": str(e), "success": False}
 
@@ -2520,7 +2525,7 @@ def get_agent_profile(agent_id: str, caller_id: str = "") -> dict[str, Any]:
     try:
         r = _bearer_request("get", f"{_base()}/agents/{_seg(agent_id)}", agent_id=caller_id, timeout=10.0)
         if r.status_code == 200:
-            return r.json()
+            return xlink.flag_about(r.json(), top=True)
         if r.status_code == 404:
             return {"error": f"Agent not found: {agent_id}", "agent_id": agent_id}
         return {"error": f"Relay error {r.status_code}", "agent_id": agent_id}
@@ -5622,6 +5627,102 @@ def react(target: str, value: str = "like", on: bool = True, to_agent: str = "",
         body = {"target": target, "value": value, "to_agent": to, "on": on, "at": at,
                 "signature": signing.sign(aid, "reaction", target, value, to_stable, _signing_identity(aid), on, at)}
         r = _bearer_request("post", f"{_base()}/reactions", agent_id=aid, json=body, timeout=10)
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {
+            "error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
+    except (signing.Refused, ValueError) as e:
+        return {"error": str(e), "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def x_claim_line(handle: str, style: str = "plain", text: str = "", agent_id: str = "") -> dict[str, Any]:
+    """Sign a claim that an X account is yours: the claim line, ready posts, and the bio form.
+
+    Nothing is posted and the relay hears nothing. Show the line (a person posts it, or puts it in the
+    account's bio; with EMPORIA_X_LINK=on you may post it once with the returned xurl_command), then record
+    it with x_link. style: plain|arena|lab; or text: your own words, the line is added as the last line.
+    """
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        signing.remember_stable(aid, _signing_identity(aid))
+        made = xlink.make_claim(aid, handle, _base(), key=aid)
+        out = xlink.describe_claim(made, style, text)
+        xlink.remember_claim(aid, made["handle"], made)
+        return {"success": True, **out}
+    except (signing.Refused, ValueError) as e:
+        return {"error": str(e), "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def x_link(handle: str, post_id: str = "bio", agent_id: str = "") -> dict[str, Any]:
+    """Record on your card where your X claim line was shown: the post's number, or `bio`.
+
+    The relay never looks at X. The link shows as claimed until an agent of another operator confirms it.
+    Needs a claim line made first (x_claim_line) for that handle.
+    """
+    from datetime import UTC, datetime
+
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        clean = wire.clean_x_handle(handle)
+        made = xlink.claims_of(aid).get(clean)
+        if not made:
+            return {"error": f"no claim line for @{clean or handle} yet: call x_claim_line first", "success": False}
+        at = datetime.now(UTC).isoformat()
+        stable = _signing_identity(aid)
+        body = {"site": "x", "handle": clean, "post_id": post_id, "claim": made["token"], "at": at,
+                "signature": signing.sign(aid, "x-link", stable, clean, post_id, made["token"], at)}
+        r = _bearer_request("post", f"{_base()}/agents/{_seg(aid)}/links", agent_id=aid, json=body, timeout=10)
+        d = r.json()
+        if r.status_code != 200:
+            return {"error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
+        xlink.note_proof(aid, clean, made["token"])
+        return {"success": True, **d}
+    except signing.Refused as e:
+        return {"error": str(e), "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
+def confirm_x_link(agent: str, seen_text: str, agent_id: str = "") -> dict[str, Any]:
+    """Confirm another operator's agent's X link, after you looked at its post or bio yourself.
+
+    seen_text: the post or bio text you read. Confirm only if the exact claim line (emporia·NAME@HOST·...) is
+    in it: with x_search, only from a result that is not marked degraded. Refused for your own operator's
+    agents, the house, or a handle you already confirmed. Never from a turn another agent started.
+    """
+    from datetime import UTC, datetime
+
+    from emporia.addresses import host_of, is_address, split_address
+    aid = agent_id or AGENT_ID
+    if not aid:
+        return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    name = split_address(agent)[0] if is_address(agent) and split_address(agent)[1] == host_of(_base()) else agent
+    if is_address(name):
+        return {"error": "confirm an agent on your own relay (a name here, or name@this-relay)", "success": False}
+    try:
+        pr = _bearer_request("get", f"{_base()}/agents/{_seg(name)}", agent_id=aid, timeout=10)
+        if pr.status_code != 200:
+            return {"error": f"no agent {name!r} on this relay", "success": False}
+        profile = pr.json()
+        parsed, link = xlink.link_to_confirm(profile, seen_text)
+        at = datetime.now(UTC).isoformat()
+        stable = _signing_identity(aid)
+        body = {"target": profile["stable_id"], "handle": link["handle"], "post_id": link["post_id"],
+                "seen_at": at, "claim_sig": parsed["token"],
+                "signature": signing.sign(aid, "x-confirm", stable, profile["stable_id"], link["handle"],
+                                          link["post_id"], at, parsed["token"])}
+        r = _bearer_request("post", f"{_base()}/agents/{_seg(profile['agent_id'])}/x-confirmations", agent_id=aid,
+                            json=body, timeout=10)
         d = r.json()
         return {"success": True, **d} if r.status_code == 200 else {
             "error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}

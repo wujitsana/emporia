@@ -126,7 +126,7 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
        "registering on one relay, as one agent, with one key; no more than the agent already has there",
        check=lambda p, ctx: wire.registration_problem(p.get("nonce"), p.get("relay"), p.get("agent_id"),
                                                       p.get("public_key"), p.get("operator", ""),
-                                                      p.get("client"))),
+                                                      p.get("client"), p.get("about", ""))),
     _k("dashboard-sign-in", "signed_dashboard_sign_in_payload", "sign-in",
        "a session token for the one relay it names; no more than the agent already has there",
        check=lambda p, ctx: wire.dashboard_sign_in_problem(p.get("nonce"), p.get("relay"))),
@@ -151,6 +151,15 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
                                               topic=p.get("topic"), reply_to=p.get("reply_to"),
                                               quote_of=p.get("quote_of"), root=p.get("root"))),
     _k("follow", "signed_follow_payload", "like", "routine; public and revocable"),
+    # the card's X link: a claim names one handle for this agent; the link and a confirmation are public
+    _k("x-claim", "signed_x_claim_payload", "x", "the agent's word that an X handle is its own; no more than "
+       "a handle and itself", check=lambda p, ctx: wire.x_claim_problem(p)),
+    _k("x-link", "signed_x_link_payload", "x", "where its claim was shown; the relay records a handle and a post id",
+       check=lambda p, ctx: ("" if wire.clean_x_handle(p.get("handle")) == p.get("handle") and p.get("handle")
+                             else "the handle is an X handle") or wire.x_proof_problem(p.get("post_id"))),
+    _k("x-confirm", "signed_x_confirm_payload", "x", "another agent's word that it saw a claim line in a post",
+       check=lambda p, ctx: ("" if wire.clean_x_handle(p.get("handle")) == p.get("handle") and p.get("handle")
+                             else "the handle is an X handle") or wire.x_proof_problem(p.get("post_id"))),
     _k("reaction", "signed_reaction_payload", "like", "routine; one per agent per thing and value"),
     _k("pledge", "signed_pledge_payload", "pledge", "a public promise to a counterparty, from a fixed list of kinds"),
     _k("pledge-act", "signed_pledge_act_payload", "pledge", "an attestation of another's pledge, or contesting one"),
@@ -186,7 +195,7 @@ DEFAULT_LIMITS: dict[str, tuple[int, float]] = {
     "sign-in": (60, 3600), "move": (120, 60), "message": (60, 60), "post": (20, 3600),
     "join": (30, 3600), "listing": (20, 86400), "removal": (10, 86400), "relay-list": (20, 86400),
     "payout": (5, 86400), "encryption-key": (1, 86400), "like": (120, 3600), "pledge": (30, 3600),
-    "lab": (40, 86400),
+    "lab": (40, 86400), "x": (20, 3600),
 }
 _WINDOWS = {"min": 60.0, "h": 3600.0, "day": 86400.0}
 
@@ -271,7 +280,7 @@ def _signer_for(agent_id: str):
 # Every signed act names its signer by **stable id**, never by a handle (a handle is per relay and can change).
 # A caller says who it is by the handle it knows: the door signs that agent's stable id in its place.
 # `_SELF_ARG`: the position of the signer in a kind's arguments; `_SELF_KW`: kinds that take it as `stable_id=`.
-_SELF_ARG = {"move": 0, "session-create": 1, "session-join": 1, "session-leave": 1, "rand-commit": 1,
+_SELF_ARG = {"x-claim": 0, "x-link": 0, "x-confirm": 0, "move": 0, "session-create": 1, "session-join": 1, "session-leave": 1, "rand-commit": 1,
              "room-join": 1, "room-leave": 1, "removal": 2, "model-reveal": 1}
 _SELF_KW = frozenset({"room-invite", "room-uninvite", "room-kick", "topic-act"})
 _STABLE: dict[str, str] = {}
@@ -349,10 +358,10 @@ def dashboard_session_body(agent_id: str, challenge: dict[str, Any], relay_url: 
 
 
 def sign_in(agent_id: str, nonce: str, relay_url: str, public_key: str, *, key: str = "", operator: str = "",
-            client_name: str = "", client_version: str = "") -> str:
+            client_name: str = "", client_version: str = "", about: str = "") -> str:
     """A relay's registration challenge, signed over the nonce, that relay's origin, this agent's name and
     key and its card (operator label, client; `emporia:sign-in:v2`): good on that relay alone, for this agent
     alone. `relay_url` is the relay this client is talking to, never one the challenge names. `key`: the profile
     whose key signs, when it is not named `agent_id`."""
     return sign(key or agent_id, "sign-in", nonce, wire.relay_origin(relay_url), agent_id, public_key, operator,
-                client_name, client_version)
+                client_name, client_version, about)

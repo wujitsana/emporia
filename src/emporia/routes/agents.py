@@ -56,7 +56,7 @@ async def register_agent(req: rs.RegisterAgentRequest):
     # Challenge verification — proves the registrant holds the matching private key
     if req.challenge_id and req.challenge_signature:
         rs._consume_challenge(req.challenge_id, req.public_key_hex, req.challenge_signature, req.relay,
-                              req.agent_id, req.operator_label, req.client_name, req.client_version)
+                              req.agent_id, req.operator_label, req.client_name, req.client_version, req.about)
     elif rs.REQUIRE_CHALLENGE:
         raise HTTPException(
             400,
@@ -76,6 +76,7 @@ async def register_agent(req: rs.RegisterAgentRequest):
                 operator_label=req.operator_label,
                 client_name=req.client_name,
                 client_version=req.client_version,
+                about=req.about,
             )
         )
     except ValueError as e:
@@ -148,6 +149,7 @@ async def register_agent(req: rs.RegisterAgentRequest):
         "fingerprint": fingerprint(req.public_key_hex),
         "display_name": profile["display_name"],
         "operator_label": profile["operator_label"],
+        "about": profile["about"],
         "client": profile["client"],
         "stripe_account_id": stripe_account_id,
     }
@@ -172,7 +174,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             rows, has_more = rs._fetch_page(
                 conn,
                 "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-                "operator_label, client_name, client_version, declared_model, declared_model_at, stable_id "
+                "operator_label, client_name, client_version, about, declared_model, declared_model_at, stable_id "
                 "FROM authorized_agents WHERE (agent_id LIKE ? OR display_name LIKE ?) "
                 + ("" if include_inactive else "AND is_active = 1 ")    # P222: one that left is gone
                 + "ORDER BY registered_at DESC LIMIT ?",
@@ -182,7 +184,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             rows, has_more = rs._fetch_page(
                 conn,
                 "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-                "operator_label, client_name, client_version, declared_model, declared_model_at, stable_id "
+                "operator_label, client_name, client_version, about, declared_model, declared_model_at, stable_id "
                 "FROM authorized_agents " + ("" if include_inactive else "WHERE is_active = 1 ")
                 + "ORDER BY registered_at DESC LIMIT ?",
                 (), limit,
@@ -194,6 +196,8 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
         # acquisition regardless of row count.
         agent_ids = [row["agent_id"] for row in rows]
         changes = _operator_changes(conn, [row["stable_id"] for row in rows])
+        from emporia.routes.x_links import links_for
+        links = links_for(conn, [row["stable_id"] for row in rows])
         session_counts: dict[str, int] = {}
         win_counts: dict[str, int] = {}
         if agent_ids:
@@ -225,7 +229,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             "agent_id": agent_id,
             "display_name": row["display_name"] or agent_id,
             "address": address(agent_id, rs._own_host()),
-            **_identity_fields(row, caller, changes.get(row["stable_id"], [])),
+            **_identity_fields(row, caller, changes.get(row["stable_id"], []), links.get(row["stable_id"], [])),
             "registered_at": row["registered_at"],
             "is_active": bool(row["is_active"]),
             "has_stripe": bool(row["stripe_account_id"]),
@@ -251,15 +255,26 @@ def _profile_changes(stable_id: str) -> list[str]:
         return _operator_changes(conn, [stable_id]).get(stable_id, [])
 
 
-def _identity_fields(row: Any, caller: str | None, changes: list[str]) -> dict[str, Any]:
+def _profile_links(stable_id: str) -> list[dict[str, Any]]:
+    from emporia.routes.x_links import links_for
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return links_for(conn, [stable_id]).get(stable_id, [])
+
+
+def _identity_fields(row: Any, caller: str | None, changes: list[str],
+                     links: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """What an agent's card says of who runs it and with what — all of it *declared*, none verified. The
     operator label itself is shown to the agent and the relay's operator only (claiming a label merges your
     standing with its holder's, so it is not handed out); everyone sees whether there is one and when it
-    changed. The client is the one on the signed card; the model is the latest one the agent declared."""
+    changed. The client is the one on the signed card; the model is the latest one the agent declared. `about` is
+    the bio on the card (the agent's own line, a stranger's text to every reader); `links` its X accounts,
+    each `claimed` until another operator confirms it."""
     own = bool(caller and caller in (row["agent_id"], rs._relay_operator_id()))
     label = row["operator_label"] or ""
     model = row["declared_model"] or ""
     return {
+        "about": row["about"] or "",
+        "links": links or [],
         "operator_label": label if own else None,
         "has_operator_label": bool(label),
         "operator_changed": [{"on": at, "text": f"operator changed on {at[:10]}"} for at in changes],
@@ -326,7 +341,7 @@ async def get_agent_profile(agent_id: str, request: Request):
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute(
             "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-            "stripe_account_status, operator_label, client_name, client_version, declared_model, "
+            "stripe_account_status, operator_label, client_name, client_version, about, declared_model, "
             "declared_model_at, encryption_public_key, public_key_hex, stable_id, accepts_remote_dms "
             "FROM authorized_agents WHERE agent_id = ?",
             (agent_id,),
@@ -359,7 +374,7 @@ async def get_agent_profile(agent_id: str, request: Request):
         "address": address(row["agent_id"], rs._own_host()),
         "fingerprint": fingerprint(row["public_key_hex"] or ""),
         "display_name": row["display_name"] or row["agent_id"],
-        **_identity_fields(row, caller, _profile_changes(row["stable_id"])),
+        **_identity_fields(row, caller, _profile_changes(row["stable_id"]), _profile_links(row["stable_id"])),
         # P16: "" means this agent has not published one — an ordinary state, not a
         # gap. Served here as well as on the dedicated route so a client already
         # fetching a profile doesn't need a second round trip to learn whether it

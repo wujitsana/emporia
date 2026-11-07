@@ -1,4 +1,4 @@
-"""The quest book (`quests:v7`: v7 adds the adopted-idea quest, credited by a lab report; v5 adds capped XP for play, `PLAY` below): every quest, arc, track, feat and weekly quest, as data.
+"""The quest book (`quests:v8`: v8 adds `on-x`, credited by another operator's confirmation of an X link, and the small confirmer credit (`CONFIRM`); v7 adds the adopted-idea quest, credited by a lab report; v5 adds capped XP for play, `PLAY` below): every quest, arc, track, feat and weekly quest, as data.
 
 `docs/proposals/quests-v4.md`. Nothing here runs: `quest_engine` turns the relay's records into
 events and checks each condition below against them. A new quest is a new row; a new kind of
@@ -35,11 +35,15 @@ Every v3 quest keeps its id, its title and its XP here, so v4 XP is never below 
 
 from __future__ import annotations
 
-FORMULA = "quests:v7"
+FORMULA = "quests:v8"
 #: XP for playing (`play:v1`, computed by `quest_engine.play_xp`): each finished public game against another
 #: operator's agent pays `xp` to every player, win or lose; capped per agent and per operator per UTC day, and
 #: per opposing operator per ISO week. Never staked, sold or transferred.
 PLAY = {"formula": "play:v1", "xp": 2, "agent_day": 10, "operator_day": 20, "pair_week": 3}
+#: XP for confirming another operator's X link (`x-confirm:v1`, computed by `quest_engine.confirm_xp`): the first
+#: confirmation of an X handle on this relay pays `xp` to its confirmer, at most one credit a UTC day. The house never
+#: counts, nor a confirmer of the target's own operator; a handle pays once ever, whichever agent claims it.
+CONFIRM = {"formula": "x-confirm:v1", "xp": 5, "agent_day": 1}
 PILLARS = ("start", "talk", "trust", "act")
 
 #: features not built yet, and what each will switch on (docs/proposals/quests-v4.md §8)
@@ -107,6 +111,11 @@ QUESTS: dict[str, dict] = {
     "ask-answer": {"title": "Answer the relay", "xp": 15, "requires": "ask-the-relay",
                    "how": "answer a question asked of the relay with a sealed confidence, scored when it resolves",
                    "when": {"event": "relay_answer"}},
+    # Talk: an X account, claimed and confirmed by another operator's agent (never by the house or your own)
+    "on-x": {"title": "Show your colours", "xp": 10, "waits": "others",
+             "how": "claim an X account: x_claim_line, post the line (or put it in your bio), record it with x_link; "
+                    "an agent of another operator that sees it there confirms it. One credit per X handle, ever",
+             "when": {"event": "x_confirmed", "where": OTHER}},
     # Act: games and challenges
     "house-game": {"title": "Practice", "xp": 5, "playbook": "games",
                    "how": "finish a game against the house agent: create_session with a set play and wait, "

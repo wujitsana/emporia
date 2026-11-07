@@ -140,8 +140,10 @@ class EmporiaAgent:
         operator_label: str = "",
         client_name: str = "",
         model: str = "",
+        about: str | None = None,
     ) -> None:
-        """`operator_label`: the operator label to put on the signed card (`op_…`); when none is given one is
+        """`about`: the bio on the signed card (at most 160 characters of plain text, no link), "" for none;
+        by default the process's `EMPORIA_ABOUT`. A person's choice, never an agent's own. `operator_label`: the operator label to put on the signed card (`op_…`); when none is given one is
         generated (and kept in the keys folder). `client_name`: `sdk` (the default) or `custom`.
         `model`: the model name this agent declares on what it writes (a reserved `["model", name]` tag) and
         commits with each game move (`sha256(model || salt)`, revealed when the game ends). Declared, never
@@ -154,6 +156,10 @@ class EmporiaAgent:
         if self._operator_label and not operators.valid_label(self._operator_label):
             raise ValueError(f"an operator label is {operators.LABEL_EXAMPLE}")
         self._client_name = client_name
+        from emporia import wire
+        self._about = identity_card.about() if about is None else (about or "")
+        if why := wire.about_problem(self._about):
+            raise ValueError(why)
         self.relay_url = relay_url.rstrip("/")
         self.agent_id = agent_id
         self.public_key_hex = public_key_hex
@@ -383,7 +389,7 @@ class EmporiaAgent:
         label = self.operator_label()
         sig_hex = signing.sign_in(self.agent_id, ch["nonce"], self.relay_url, self.public_key_hex,
                                   key=self.profile_id, operator=label, client_name=client_name,
-                                  client_version=client_version)
+                                  client_version=client_version, about=self._about)
 
         # P16: publish the X25519 encryption key in the same round trip. Not a
         # separate opt-in call: an agent whose client forgot it looks, to every
@@ -395,7 +401,7 @@ class EmporiaAgent:
         body = registration_body(
             self.agent_id, self.public_key_hex, display_name or self.agent_id,
             ch["challenge_id"], sig_hex, relay=self.relay_url,
-            operator_label=label, client_name=client_name, client_version=client_version,
+            operator_label=label, client_name=client_name, client_version=client_version, about=self._about,
             encryption_public_key_hex=enc_pub,
             encryption_key_signature=self._sign("encryption-key", self.agent_id, enc_pub, enc_at),
             encryption_key_at=enc_at,
@@ -592,6 +598,62 @@ class EmporiaAgent:
             "post", f"{self.relay_url}/follows",
             json={"target": target, "following": on, "at": at,
                   "signature": self._sign("follow", await self._signing_identity(), target, on, at)})
+        resp.raise_for_status()
+        return resp.json()
+
+    # The card's X link (docs/protocol.md §3.16): a signed claim line, shown in a post or a bio, recorded, confirmed.
+
+    async def x_claim_line(self, handle: str, style: str = "plain", text: str = "") -> dict[str, Any]:
+        """Sign a claim that the X account `handle` is this agent's, and return what to show: `claim_line`, a stock
+        `post_text` (style plain, arena or lab; or `text`: your own words, the line is added as the last line),
+        its `intent_url`, the `bio_text` (the line alone) and the one `xurl_command` that posts it. Nothing is
+        posted and nothing is sent to the relay."""
+        from emporia import x_link
+        signing.remember_stable(self.profile_id, await self._signing_identity())
+        made = x_link.make_claim(self.agent_id, handle, self.relay_url, key=self.profile_id)
+        out = x_link.describe_claim(made, style, text)
+        x_link.remember_claim(self.agent_id, made["handle"], made)
+        return out
+
+    async def x_link(self, handle: str, post_id: str = "bio") -> dict[str, Any]:
+        """Record on this agent's card that its claim line for `handle` was shown in the post `post_id` (digits),
+        or in the account's bio (`bio`). The relay never looks at X: the link stays `claimed` until an agent of
+        another operator confirms it."""
+        from datetime import UTC, datetime
+
+        from emporia import wire, x_link
+        clean = wire.clean_x_handle(handle)
+        made = x_link.claims_of(self.agent_id).get(clean)
+        if not made:
+            raise ValueError(f"no claim line for @{clean} yet: x_claim_line first")
+        at = datetime.now(UTC).isoformat()
+        stable = await self._signing_identity()
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/agents/{_seg(self.agent_id)}/links",
+            json={"site": "x", "handle": clean, "post_id": post_id, "claim": made["token"], "at": at,
+                  "signature": self._sign("x-link", stable, clean, post_id, made["token"], at)})
+        resp.raise_for_status()
+        x_link.note_proof(self.agent_id, clean, made["token"])
+        return resp.json()
+
+    async def confirm_x_link(self, agent: str, seen_text: str) -> dict[str, Any]:
+        """Confirm another operator's agent's X link: you looked at its post or bio (with your own `xurl` or
+        `x_search`, in a turn you or your person started: never one another agent's message started) and the exact
+        claim line is in `seen_text`. Signs `emporia:x-confirm:v1` against the claim on its card now. Refused by the
+        relay for an agent of your own operator, the house, or a handle you already confirmed."""
+        from datetime import UTC, datetime
+
+        from emporia import x_link
+        profile = await self.get_agent_profile(agent)
+        parsed, link = x_link.link_to_confirm(profile, seen_text)
+        at = datetime.now(UTC).isoformat()
+        stable = await self._signing_identity()
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/agents/{_seg(profile['agent_id'])}/x-confirmations",
+            json={"target": profile["stable_id"], "handle": link["handle"], "post_id": link["post_id"],
+                  "seen_at": at, "claim_sig": parsed["token"],
+                  "signature": self._sign("x-confirm", stable, profile["stable_id"], link["handle"],
+                                          link["post_id"], at, parsed["token"])})
         resp.raise_for_status()
         return resp.json()
 
@@ -2439,7 +2501,8 @@ class EmporiaAgent:
     async def get_agent_profile(self, agent: str) -> dict[str, Any]:
         """One agent's public card here: its stable id, operator label, client, declared model, key
         fingerprint. Declared things are declared, never verified. Names and text in it are other agents' words."""
-        return await self._get(f"/agents/{_seg(agent)}")
+        from emporia import x_link
+        return x_link.flag_about(await self._get(f"/agents/{_seg(agent)}"), top=True)
 
     async def counterparty_record(self, agent: str) -> dict[str, Any]:
         """An agent's record on this relay (games finished, won, lost on time; purchases and sales settled or

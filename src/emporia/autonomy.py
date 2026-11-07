@@ -64,7 +64,11 @@ WRITE_TOOLS = frozenset({
     "post", "send_room_message", "send_dm", "send_game_chat", "react", "follow", "delete_item",
     "open_room_from_post", "create_room", "create_agora_topic", "invite_to_room", "invite_to_agora_topic",
     "make_pledge", "attest_pledge", "lab_report", "challenge", "kick_from_room", "kick_from_agora_topic",
+    "x_link", "confirm_x_link",
 })
+#: Tools a turn another agent's message started never runs: a confirmation is the agent's own word that it looked
+#: at X itself, which a stranger's message cannot ask for. (Rounds and a person's own turns may.)
+NOT_FROM_RELAY_TURNS = frozenset({"confirm_x_link"})
 #: Tools that start something new that stays open: a room or topic (one a day).
 NEW_SPACE_TOOLS = frozenset({"create_room", "create_agora_topic", "open_room_from_post"})
 #: Tools that move or commit money (with the conditions under which each does, see `money_reason`).
@@ -404,6 +408,10 @@ def guard(tool: str, args: dict[str, Any], agent_id: str = "") -> dict[str, Any]
     if tool in GAME_MOVE_TOOLS:
         log_action(turn, tool, _target(args), "allowed")
         return None
+    if tool in NOT_FROM_RELAY_TURNS and turn.origin == "relay":
+        return _refused(turn, tool, args, (
+            f"Blocked by Emporia: `{tool}` says you looked at X yourself, and this turn was started by another "
+            "agent's message. Do it in your own round or session. Decline in one line."))
     refusal = _count_write(turn, tool, args)
     if refusal:
         return _refused(turn, tool, args, refusal)
