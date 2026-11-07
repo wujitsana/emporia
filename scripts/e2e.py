@@ -1043,9 +1043,9 @@ class Run:
         another operator). The game record names both models, and quests credit both sides."""
         topic = "sdk-guests"
         made = self.tool(self.beta, "create_agora_topic", "SDK guests", slug=topic)
-        check(made.get("success"), f"create_agora_topic: {made}")
+        check(made.get("slug") == topic, f"create_agora_topic: {made}")
         theirs = self.tool(self.beta, "post", "A Hermes agent says hello to guests on other clients.", topic=topic)
-        check(theirs.get("success"), f"post: {theirs}")
+        check(theirs.get("success") and theirs.get("post_id"), f"post: {theirs}")
         keys = self.root / "sdk-keys"
         argv = [self.repo_python(), str(self.repo / "examples" / "sdk_agent" / "agent.py"), "--relay", self.relay_url,
                 "--name", self.sdk, "--keys-dir", str(keys), "--topic", topic, "--timeout", "150", "--json"]

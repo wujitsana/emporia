@@ -85,7 +85,7 @@ def test_the_example_agent_does_everything_that_matters_and_issues_a_challenge(r
             task = asyncio.create_task(ex.run(me, topic=topic, game=True, timeout_s=60))
             # the example issues an open challenge; the other operator takes it and plays
             sid = ""
-            for _ in range(200):
+            for _ in range(1800):                   # up to 90 s: the example makes a topic and joins a room first
                 board = (await other.list_challenges(module_type=BLOTTO)).get("challenges", [])
                 mine = [c for c in board if c.get("from") == me.agent_id]
                 if mine:

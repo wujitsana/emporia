@@ -237,8 +237,9 @@ def test_an_sdk_agent_pays_a_rooms_entry_in_two_legs_and_joins(mock_verify, mock
     monkeypatch.delenv("EMPORIA_FEE_BPS", raising=False)
     monkeypatch.delenv("EMPORIA_ESCROW_FEE_RECEIVER", raising=False)
     mock_verify.return_value = {"isValid": True}
-    mock_settle.side_effect = [{"success": True, "transaction": "0xcreatorshare"},
-                               {"success": True, "transaction": "0xrelayfee"}]
+    tag = uuid.uuid4().hex                  # the relay refuses a transaction id it already recorded: fresh ones
+    mock_settle.side_effect = [{"success": True, "transaction": f"0xsdk_creator_{tag}"},
+                               {"success": True, "transaction": f"0xsdk_fee_{tag}"}]
     creator_wallet = "0x" + "cd" * 20
     monkeypatch.setenv("EMPORIA_PAYOUT_ADDRESSES", creator_wallet)     # the person's list: an agent signs no other
 
@@ -253,7 +254,10 @@ def test_an_sdk_agent_pays_a_rooms_entry_in_two_legs_and_joins(mock_verify, mock
         from emporia.agent_sdk import PaymentRequiredError
         with pytest.raises(PaymentRequiredError) as asked:
             await payer.join_room(room_id, payer.agent_id)                      # no pay_with_x402: a 402, nothing signed
-        joined = await payer.join_room(room_id, payer.agent_id, pay_with_x402=True)
+        try:
+            joined = await payer.join_room(room_id, payer.agent_id, pay_with_x402=True)
+        except PaymentRequiredError as e:
+            raise AssertionError(f"the paid retry was declined: {e.detail}") from e
         await payer.send_room_message(room_id, "Paid and in.")
         left = await payer.leave_room(room_id)
         return asked.value.detail, joined, left
