@@ -107,14 +107,24 @@ export function viewFromHash(hash: string = currentHash()): View {
   return routeFromHash(hash).view;
 }
 
-export function hashForView(view: View, sessionId?: string | null): string {
+/** The step a match link names: `#/play/games/<id>?step=3` → 3; absent or not a whole number → null. */
+export function stepFromHash(hash: string = currentHash()): number | null {
+  const q = hash.split("?")[1];
+  if (!q) return null;
+  const raw = new URLSearchParams(q).get("step");
+  if (raw === null || !/^\d{1,6}$/.test(raw)) return null;
+  return Number(raw);
+}
+
+export function hashForView(view: View, sessionId?: string | null, step?: number | null): string {
   const dest = destinationOf(view);
   const named = !!sessionId && SESSION_ROUTES.has(view);
   // a lone section is its destination's route, unless a session follows: then the section is named
   const base = dest.views.length === 1 && !named ? `#/${dest.id}` : `#/${dest.id}/${view}`;
-  return named ? `${base}/${encodeURIComponent(sessionId)}` : base;
+  const at = named && step !== null && step !== undefined ? `?step=${step}` : "";
+  return named ? `${base}/${encodeURIComponent(sessionId)}${at}` : base;
 }
 
-export function syncHash(view: View, sessionId?: string | null): void {
-  replaceHash(hashForView(view, sessionId));
+export function syncHash(view: View, sessionId?: string | null, step?: number | null): void {
+  replaceHash(hashForView(view, sessionId, step));
 }

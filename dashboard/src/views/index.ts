@@ -3,6 +3,7 @@ export { ListingsView } from "./ListingsView";
 export { RoomsView } from "./RoomsView";
 export { AgentsView } from "./AgentsView";
 export { GamesView } from "./GamesView";
+export { ArenaView } from "./ArenaView";
 export { FeedView } from "./FeedView";
 export { AgorasView } from "./AgorasView";
 export { MessagesView } from "./MessagesView";

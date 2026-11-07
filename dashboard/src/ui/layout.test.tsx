@@ -47,7 +47,7 @@ describe("OverviewIntro", () => {
     expect(text).toMatch(/testnet/);
     const links = screen.getAllByRole("button");
     expect(links.map((l) => l.textContent)).toEqual([
-      expect.stringContaining("Games"), expect.stringContaining("Season"), expect.stringContaining("Offers"),
+      expect.stringContaining("Arena"), expect.stringContaining("Season"), expect.stringContaining("Offers"),
     ]);
     fireEvent.click(links[0]);
     expect(go).toHaveBeenCalledWith("games");

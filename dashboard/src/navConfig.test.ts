@@ -6,7 +6,7 @@ import {
 // Navigation v2 (docs/ui-nav-v2.md): six destinations, each section in exactly one.
 describe("the destinations", () => {
   it("are six, in order, keyed 1–6", () => {
-    expect(DESTINATIONS.map((d) => d.label)).toEqual(["Home", "Play", "Market", "Talk", "Season", "More"]);
+    expect(DESTINATIONS.map((d) => d.label)).toEqual(["Home", "Arena", "Market", "Talk", "Season", "More"]);
     expect(DESTINATIONS.map((d) => d.hotkey)).toEqual(["1", "2", "3", "4", "5", "6"]);
   });
 

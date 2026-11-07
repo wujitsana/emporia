@@ -130,6 +130,11 @@ function fieldWinners(a: number[], b: number[], first: string, second: string): 
   return a.map((x, i) => (x > (b[i] ?? 0) ? first : (b[i] ?? 0) > x ? second : null));
 }
 
+/** The same, for allocations that may not both be revealed yet: nothing to compare is no winners. */
+export function fieldWinnersOf(a: number[] | undefined, b: number[] | undefined, first: string, second: string): (string | null)[] {
+  return a && b ? fieldWinners(a, b, first, second) : [];
+}
+
 export function blottoRounds(data: Data, participants: string[]): BlottoRound[] {
   const [first, second] = participants;
   const history = Array.isArray(data.history) ? (data.history as Data[]) : [];

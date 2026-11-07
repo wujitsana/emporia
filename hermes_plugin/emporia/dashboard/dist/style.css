@@ -3670,6 +3670,59 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   .e-app-shell.has-chat .e-relay-status__meta { display: none; }
 }
 .e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }
+
+/* The Arena: home (live, recent, boards) and a match with its step-through replay. Tokens only. */
+.e-arena { display: block; min-width: 0; padding: 0 12px 24px; }
+.e-arena-section { margin: 0 0 20px; }
+.e-arena-cards { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }
+.e-arena-card {
+  display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; cursor: pointer;
+  font: inherit; color: inherit; background: transparent; padding: 8px 10px;
+  border: 1px solid var(--e-rule); border-radius: 0;
+}
+.e-arena-card:hover, .e-arena-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
+.e-arena-card__top { display: flex; justify-content: space-between; gap: 8px; }
+.e-arena-card__game { font-weight: 600; }
+.e-arena-card__live { color: var(--theme-focused-foreground); font-size: 0.75rem; }
+.e-arena-card__result { font-size: 0.85rem; }
+.e-arena-card__models { font-size: 0.7rem; }
+.e-arena-players, .e-arena-slot__who { overflow-wrap: anywhere; }
+.e-arena-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.e-arena-chip { font: inherit; font-size: 0.8rem; color: inherit; background: transparent; padding: 3px 8px; border: 1px solid var(--e-rule); cursor: pointer; }
+.e-arena-chip.is-on { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-arena-back { font: inherit; font-size: 0.8rem; color: var(--theme-focused-foreground); background: transparent; border: 0; padding: 4px 0; cursor: pointer; }
+.e-arena-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.e-arena-head__row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.e-arena-head__title { font-weight: 600; font-size: 1.05rem; }
+.e-arena-head__players { overflow-wrap: anywhere; }
+.e-arena-head__badges { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.e-arena-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .e-arena-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
+.e-arena-stage { min-width: 0; }
+.e-arena-slider { width: 100%; margin: 8px 0; accent-color: var(--theme-focused-foreground); }
+.e-arena-stepline { display: block; margin: 4px 0 10px; overflow-wrap: anywhere; }
+.e-arena-frame { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--e-rule); }
+.e-arena-slots, .e-arena-bids { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.e-arena-slot, .e-arena-bids li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--e-rule); }
+.e-arena-slot__who { min-width: 8ch; }
+.e-arena-move { font-variant-numeric: tabular-nums; font-family: var(--font-family-mono); }
+.e-arena-sealed { opacity: 0.6; font-family: var(--font-family-mono); }
+.e-arena-slot.is-revealed .e-arena-move { color: var(--theme-focused-foreground); }
+.e-arena-bids li.is-called { border-bottom-color: var(--theme-focused-foreground); }
+.e-arena-call { color: var(--theme-focused-foreground); font-size: 0.8rem; }
+.e-arena-verdict { margin: 0; color: var(--theme-focused-foreground); overflow-wrap: anywhere; }
+.e-arena-models { margin-top: 12px; }
+.e-arena-side { min-width: 0; }
+.e-arena-side__label { display: block; font-size: 0.68rem; margin-bottom: 4px; }
+.e-arena-steps { list-style: none; margin: 0 0 8px; padding: 0; max-height: 18rem; overflow-y: auto; }
+.e-arena-step { display: block; width: 100%; text-align: left; font: inherit; font-size: 0.8rem; color: inherit; background: transparent; border: 0; border-left: 2px solid transparent; padding: 3px 6px; cursor: pointer; overflow-wrap: anywhere; }
+.e-arena-step.is-now { border-left-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-arena-step:hover, .e-arena-step:focus-visible { background: var(--theme-border-subdued); outline: none; }
+@media (max-width: 600px) { .e-arena { padding: 0 8px 20px; } .e-arena-steps { max-height: 12rem; } }
+/* The kit's list markers (ul ▪, ol counters) are not wanted in the Arena's lists. */
+.e-arena ul, .e-arena ol { list-style: none; text-indent: 0; padding-left: 0; }
+.e-arena li { padding-left: 0; }
+.e-arena li::before { content: none; display: none; }
 .Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;

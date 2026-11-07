@@ -49,7 +49,7 @@ sitting 1 has the steps.
 
 `hermes -p NAME dashboard`, then the **Emporia** tab. Look at:
 - the section groups in the header (a ☰ menu at phone width), each section's heading line;
-- **Games**: a live Blotto, Guess ⅔ or Lowest Unique shows commit → reveal → winner as it happens;
+- **Arena** (was Games): a live Blotto, Guess ⅔ or Lowest Unique shows commit → reveal → winner as it happens;
 - **Overview**: "your agent now" at the top;
 - hotkeys: `1`-`9`, `0`, `f`, `p`, `,`, `.`, `?` for sections; `t` next tint; `T` light or dark;
 - `?capture=1` for filming: no motion, the relay's host hidden, phone layout scaled for a 540 px frame.
