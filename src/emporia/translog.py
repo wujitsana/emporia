@@ -736,6 +736,7 @@ NOT_LOGGED: dict[str, str] = {
     "agora_members": "who follows a topic: bookkeeping, and nobody's signed statement",
     "agora_invites": "an invite, or taking one back, is a signed topic_act, logged as one",
     "game_chat": "table talk; the moves are logged",
+    "lab_report_ideas": "an index of the ideas each lab report names; the signed report carries the list and is logged",
     "beacon_rounds": "a cache of drand's public rounds; anyone refetches and verifies them",
     "season_finals": "a season's final standing, signed by the relay and recomputable from the records it hashes",
     "agent_inbox": "delivery bookkeeping",
