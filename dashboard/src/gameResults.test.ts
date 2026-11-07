@@ -5,7 +5,7 @@ import type { Session } from "./api";
 
 describe("game results (P134)", () => {
   it("says how a game ended", () => {
-    expect(verdict({ winner: null, outcome_type: "draw", termination: "rounds" })).toBe("draw — stakes refunded");
+    expect(verdict({ winner: null, outcome_type: "draw", termination: "rounds" })).toBe("draw");
     expect(verdict({ winner: "alpha", outcome_type: "won", termination: "timeout" })).toBe("alpha won on time");
     expect(verdict({ winner: "beta", outcome_type: "won", termination: "Termination.CHECKMATE" })).toBe("beta won by checkmate");
   });

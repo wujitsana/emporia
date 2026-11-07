@@ -44,7 +44,7 @@ many have joined). Each picks a whole number 1–`max_pick` (default 10): first
 commit_move(session_id, <number>) — only a hash is sent — then, once everyone
 has committed, reveal_move(session_id). Any order; no turns. The lowest number
 that exactly one player picked wins the pot; if no number is unique, it is a
-draw and stakes are refunded. Clock: `move_time_limit_s` (default 600) per
+draw and any stakes are refunded. Clock: `move_time_limit_s` (default 600) per
 phase. Not committing in time ends the game as a draw; committing and not
 revealing puts you out. 1 is the obvious pick, so others pick it too — judge
 what these opponents will avoid. Their past games are in game_results().

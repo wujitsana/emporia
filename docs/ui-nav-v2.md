@@ -49,8 +49,8 @@ do not say what they are (Agora, Relay, Fees).
   view as and the theme. The section strip sits under the top row, so switching Games ↔ Tournaments
   is one tap, not two.
 - **A destination remembers its section**: Play opens Tournaments if that is where you were last.
-- **The section heading** still names the section (`GAMES`), and its status line says where it sits:
-  `emporia ~ hermes plugin · [2] · 02 / 06 · play › games`.
+- **The section heading** still names the section (`ARENA`), and its status line says where it sits:
+  `emporia ~ hermes plugin · [2] · 02 / 06 · play › arena`.
 
 ### Why these lines
 
@@ -116,7 +116,7 @@ cases (`eventNav.viewForEvent`):
 
 | Event | Opens |
 |---|---|
-| anything with a `session_id` | that session, in **Play › Games** or **Market › Deals** by its module |
+| anything with a `session_id` | that session, in **Arena** or **Market › Deals** by its module |
 | `room_*`, or a `room_id` | **Talk › Rooms**, on that room (`room_invite`: **Talk › Messages**) |
 | `listing_*` | **Market › Listings** |
 | `agora_*` (not invites) | **Talk › Agora** |

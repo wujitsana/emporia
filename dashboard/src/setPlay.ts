@@ -130,6 +130,11 @@ function fieldWinners(a: number[], b: number[], first: string, second: string): 
   return a.map((x, i) => (x > (b[i] ?? 0) ? first : (b[i] ?? 0) > x ? second : null));
 }
 
+/** The same, for allocations that may not both be revealed yet: nothing to compare is no winners. */
+export function fieldWinnersOf(a: number[] | undefined, b: number[] | undefined, first: string, second: string): (string | null)[] {
+  return a && b ? fieldWinners(a, b, first, second) : [];
+}
+
 export function blottoRounds(data: Data, participants: string[]): BlottoRound[] {
   const [first, second] = participants;
   const history = Array.isArray(data.history) ? (data.history as Data[]) : [];
@@ -158,7 +163,7 @@ export function twoThirdsVerdict(picks: Record<string, number>): { average: numb
   const best = Math.min(...dist.map(([, d]) => d));
   const closest = dist.filter(([, d]) => d === best).map(([p]) => p).sort();
   const verdict: Verdict = closest.length > 1
-    ? { winner: null, draw: true, why: `${closest.join(" and ")} tie for closest to ${target.toFixed(1)} — a draw, stakes refunded` }
+    ? { winner: null, draw: true, why: `${closest.join(" and ")} tie for closest to ${target.toFixed(1)} — a draw` }
     : { winner: closest[0], draw: false, why: `${closest[0]} picked ${picks[closest[0]]}, closest to the target ${target.toFixed(1)}` };
   return { average, target, verdict };
 }
@@ -169,7 +174,7 @@ export function lowestUniqueVerdict(picks: Record<string, number>): Verdict | nu
   const counts = new Map<number, number>();
   for (const [, n] of entries) counts.set(n, (counts.get(n) ?? 0) + 1);
   const unique = [...counts].filter(([, c]) => c === 1).map(([n]) => n).sort((a, b) => a - b);
-  if (unique.length === 0) return { winner: null, draw: true, why: "no number was picked by only one player — a draw, stakes refunded" };
+  if (unique.length === 0) return { winner: null, draw: true, why: "no number was picked by only one player — a draw" };
   const winner = entries.find(([, n]) => n === unique[0])![0];
   return { winner, draw: false, why: `${winner} picked ${unique[0]}, the lowest number nobody else picked` };
 }
@@ -212,7 +217,7 @@ export function setPlayView(session: Session, actions?: SessionAction[] | null, 
         ? { winner, draw: false, why: rounds.length
             ? (totalRounds > 1 ? `${winner} won ${Math.max(wa, wb)} of ${rounds.length} rounds` : `${winner} took ${fields} of ${last.fieldWinners.length} fields`)
             : `${winner} won — the other player ran out of time` }
-        : { winner: null, draw: true, why: rounds.length ? "equal rounds — a draw, stakes refunded" : "nobody moved in time — a draw, stakes refunded" };
+        : { winner: null, draw: true, why: rounds.length ? "equal rounds — a draw" : "nobody moved in time — a draw" };
     }
     // The live round: who has committed, who has revealed.
     const phase: Phase = waiting ? "waiting" : finished ? "done" : rawPhase === "reveal" ? "reveal" : "commit";
@@ -251,11 +256,11 @@ export function setPlayView(session: Session, actions?: SessionAction[] | null, 
       const t = twoThirdsVerdict(picks);
       if (t) ({ average, target, verdict } = t);
     } else verdict = lowestUniqueVerdict(picks);
-    if (finished && !verdict) verdict = { winner: null, draw: true, why: "not everyone committed in time — a draw, stakes refunded" };
+    if (finished && !verdict) verdict = { winner: null, draw: true, why: "not everyone committed in time — a draw" };
     const relay = finished ? relayVerdict(actions) : null;
     if (relay && verdict && relay.winner !== verdict.winner) {
       verdict = relay.winner ? { winner: relay.winner, draw: false, why: `${relay.winner} won (the relay's verdict)` }
-        : { winner: null, draw: true, why: "a draw, stakes refunded (the relay's verdict)" };
+        : { winner: null, draw: true, why: "a draw (the relay's verdict)" };
     }
   }
   const seats: Seat[] = parts.map((p) => {

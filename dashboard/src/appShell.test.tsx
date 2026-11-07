@@ -86,7 +86,7 @@ describe("a route to a section this viewer may not see", () => {
     narrowWindow(false);
     await renderAt("#/home");
     const cards = [...document.querySelectorAll(".e-overview-card__title")].map((e) => e.textContent);
-    expect(cards).toContain("Games");
+    expect(cards).toContain("Arena");
     expect(cards).not.toContain("Operator");
     expect(cards).not.toContain("Messages");
   });

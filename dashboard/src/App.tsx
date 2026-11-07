@@ -36,10 +36,11 @@ import {
   FeedView,
   MessagesView,
   GamesView,
+  ArenaView,
   FeesView, StatsView, DocsView, SettingsView, RelayView, OperatorView, GamifyView,
 } from "./views";
 import { VIEWER_ID } from "./relayEnv";
-import { currentHash, onRouteChange, routeFromHash, syncHash } from "./dashboardRoute";
+import { currentHash, onRouteChange, routeFromHash, stepFromHash, syncHash } from "./dashboardRoute";
 import { CAPTURE, PARAM_THEME, PARAM_TINT } from "./capture";
 import { AnimaticHudFoot, BrandTitle } from "./ui/LookChrome";
 import { AgentChatDrawer, ChatMenuItem, ChatToggle } from "./chat/AgentChat";
@@ -99,6 +100,7 @@ function AppInner() {
   // From the route at first render: a child effect (GamesView naming its session) runs before
   // App's own effects, so reading the hash later would read the one it just rewrote.
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(() => routeFromHash().sessionId);
+  const [selectedStep, setSelectedStep] = useState<number | null>(() => stepFromHash());
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [gameModuleType, setGameModuleType] = useState<string | null>(null);
@@ -182,6 +184,7 @@ function AppInner() {
       const r = routeFromHash();
       setView(r.view);
       if (r.sessionId) setSelectedSessionId(r.sessionId);
+      setSelectedStep(r.sessionId ? stepFromHash() : null);
       setNavOpen(false);
     };
     onHash();
@@ -199,6 +202,7 @@ function AppInner() {
       setListingPeek(null);
       setGameModuleType(null);
       setSelectedSessionId(null);
+      setSelectedStep(null);
     },
     [applyView],
   );
@@ -223,6 +227,7 @@ function AppInner() {
         const id = opts?.sessionId;
         if (!id) return;
         setSelectedSessionId(id);
+        setSelectedStep(null);
         setListingPeek(null);
         if (opts?.gameModuleType) applyView(sessionSection(opts.gameModuleType), id);
         else api.session(id)
@@ -288,8 +293,8 @@ function AppInner() {
 
   const currentNav = navById(view);
   // Picking a game or a deal names it in the route, so the address opens that session.
-  const onSessionShown = useCallback((id: string | null) => {
-    if (view === "games" || view === "deals") syncHash(view, id);
+  const onSessionShown = useCallback((id: string | null, step?: number | null) => {
+    if (view === "games" || view === "deals") syncHash(view, id, step);
   }, [view]);
 
   return (
@@ -385,7 +390,15 @@ function AppInner() {
             {view === "listings" && (
               <ListingsView refreshTrigger={listingsRefresh} navigate={navigate} />
             )}
-            {(view === "games" || view === "deals") && (
+            {view === "games" && (
+              <ArenaView
+                initialSessionId={selectedSessionId}
+                initialStep={selectedStep}
+                refreshTrigger={sessionsRefresh}
+                onSessionShown={onSessionShown}
+              />
+            )}
+            {view === "deals" && (
               <GamesView
                 section={view}
                 initialSessionId={selectedSessionId}

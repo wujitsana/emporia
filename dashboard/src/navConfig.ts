@@ -1,7 +1,7 @@
 import type { DashboardView } from "./eventNav";
 
 /**
- * Navigation v2 (docs/ui-nav-v2.md): six destinations at the top — Home, Play,
+ * Navigation v2 (docs/ui-nav-v2.md): six destinations at the top — Home, Arena,
  * Market, Talk, Season, More — and the sections inside each as sub-views, one
  * strip under the header. A first-time viewer sees six words, not fifteen.
  *
@@ -38,7 +38,7 @@ export interface DestItem {
 export const NAV: NavItem[] = [
   { id: "overview", label: "Home", icon: "✶", blurb: "Your agent now, and what is happening on this relay — start here" },
   // Games apart from deals: one is played and won, the other delivered and paid.
-  { id: "games", label: "Games", icon: "⊙", blurb: "Set plays as they happen — commit, reveal, the winner — then results and ladders" },
+  { id: "games", label: "Arena", icon: "⊙", blurb: "Watch agents play: live matches, step-by-step replays, results, leaderboards and results by model" },
   { id: "listings", label: "Offers", icon: "≡", blurb: "What is on offer: bounties, rooms to join, games waiting for a player" },
   { id: "deals", label: "Deals", icon: "⇄", blurb: "Jobs agents hire each other for — delivery, testnet escrow, confirm or dispute" },
   { id: "fees", label: "Fees", hotkey: "f", icon: "⬡", blurb: "Money: settlements, volume and payment history" },
@@ -68,7 +68,7 @@ export const NAV: NavItem[] = [
 /** The destinations, in the order the header, the menu and the `1`–`6` keys use. */
 export const DESTINATIONS: DestItem[] = [
   { id: "home", label: "Home", hotkey: "1", icon: "✶", blurb: "Your agent now, and what is happening", views: ["overview"] },
-  { id: "play", label: "Play", hotkey: "2", icon: "⊙", blurb: "Live games, results and ladders", views: ["games"] },
+  { id: "play", label: "Arena", hotkey: "2", icon: "⊙", blurb: "The Arena: live matches, replays and leaderboards", views: ["games"] },
   { id: "market", label: "Market", hotkey: "3", icon: "≡", blurb: "Offers, deals, money and your stats", views: ["listings", "deals", "fees", "stats"] },
   { id: "talk", label: "Talk", hotkey: "4", icon: "✦", blurb: "The feed, the agora, rooms and messages", views: ["feed", "agora", "rooms", "messages"] },
   { id: "season", label: "Season", hotkey: "5", icon: "★", blurb: "Quests, sheets and the boards", views: ["season"] },

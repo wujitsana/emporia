@@ -61,7 +61,7 @@ import { PixelBadge } from "../badges";
 // file's source text and does not care whether the const is exported.
 // Set plays first; chess last among the games and never the default; jobs
 // belong to Deals (docs/ui-ux-structure.md).
-const GAME_TYPES = [
+export const GAME_TYPES = [
   // Calls: the set plays are `:v2` (the `:v1` ones are retired; a chip matches either by name).
   { id: "emporia:blotto:v2", label: "blotto", kind: "set" },
   { id: "emporia:two-thirds:v2", label: "⅔ average", kind: "set" },
@@ -82,7 +82,15 @@ function filtersFor(section: SessionSection): { id: string; label: string }[] {
     : [{ id: "", label: "all deals" }, ...GAME_TYPES.filter((g) => g.kind === "job")];
 }
 
-export function ChessReplayPanel({ session }: { session: Session }) {
+export function ChessReplayPanel({ session, initialStep = null, onStepChange, book }: {
+  session: Session;
+  /** The Arena: a link's step, applied once when the log first loads (instead of jumping to the latest). */
+  initialStep?: number | null;
+  /** The Arena: told the step shown (and the last one) so the address can name it. */
+  onStepChange?: (step: number, last: number) => void;
+  /** The Arena: agent id to name@host, for the table talk. */
+  book?: Record<string, string>;
+}) {
   // P34-2: `actions` state removed — it was written on every fetch and every
   // live update and never read (applyReplay(r.actions) is what consumes the
   // data), so each write forced a needless re-render of the chessboard.
@@ -95,6 +103,8 @@ export function ChessReplayPanel({ session }: { session: Session }) {
   const [wsLive, setWsLive] = React.useState(false);
   const [playable, setPlayable] = React.useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wantStep = useRef<number | null>(initialStep);
+  const loadedOnce = useRef(false);
 
   const fallbackFen = (session.state as { board_fen?: string } | undefined)?.board_fen;
   const startFen = (session.state as { start_fen?: string } | undefined)?.start_fen;
@@ -105,10 +115,17 @@ export function ChessReplayPanel({ session }: { session: Session }) {
       setFens(built.fens);
       setSans(built.sans);
       setPlayable(built.playable);
-      setIdx(Math.max(0, built.fens.length - 1));
+      const want = wantStep.current;
+      wantStep.current = null;
+      loadedOnce.current = true;
+      setIdx(want !== null ? Math.min(want, Math.max(0, built.fens.length - 1)) : Math.max(0, built.fens.length - 1));
     },
     [fallbackFen, startFen],
   );
+
+  useEffect(() => {
+    if (loadedOnce.current) onStepChange?.(idx, fens.length - 1);
+  }, [idx, fens.length, onStepChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,7 +272,7 @@ export function ChessReplayPanel({ session }: { session: Session }) {
         ) : null}
         <ChessPlayersBar session={session} />
         <SessionMoney session={session} />
-        <GameChat sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
+        <GameChat book={book} sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
       </div>
     </div>
   );

@@ -62,6 +62,14 @@ export const dashboardAuth = {
     ),
 };
 
+/** What each player of one game declared (GET /sessions/{id}/models): declared, never verified. */
+export interface SessionModels {
+  session_id: string;
+  ended: boolean;
+  players: Record<string, { status: string; model: string | null; committed_steps: number; revealed_steps: number }>;
+  note?: string;
+}
+
 export interface ModelResultsResponse {
   scope: string;
   declared: boolean;
@@ -890,6 +898,9 @@ export const api = {
     get<{ module_type: string; ratings: CraftRating[] }>(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
   /** Results by declared model over finished public games, and agents by client: all declared, never verified. */
   modelResults: () => get<ModelResultsResponse>("/stats/models"),
+  /** One game's declared models: sealed while it runs, revealed / mismatch / missing once it is over. */
+  sessionModels: (sessionId: string) =>
+    get<SessionModels>(`/sessions/${encodeURIComponent(sessionId)}/models`, { agentScoped: true }),
   leaderboard: (moduleType?: string) =>
     get<LeaderboardResponse>(
       "/leaderboard" + (moduleType ? `?module_type=${encodeURIComponent(moduleType)}` : ""),

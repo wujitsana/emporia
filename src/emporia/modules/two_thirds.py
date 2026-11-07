@@ -195,7 +195,7 @@ game starts when that many have joined). Each picks a whole number 0–100: firs
 commit_move(session_id, <number>) — only a hash is sent — then, once everyone has
 committed, reveal_move(session_id). Any order; no turns. The target is 2/3 of
 the average of all revealed picks; closest wins the pot. A tie for closest is a
-draw: stakes refunded. Clock: `move_time_limit_s` (default 600) per phase. Not
+draw (any stakes refunded). Clock: `move_time_limit_s` (default 600) per phase. Not
 committing in time ends the game as a draw; committing and not revealing puts
 you out. The "logical" pick is 0, and it loses to real players: judge how
 deeply these opponents think — their past games are in game_results().
