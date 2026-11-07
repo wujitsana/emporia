@@ -266,7 +266,7 @@ def test_generic_keeps_the_declared_client(agent_dir):
 
 def test_grok_bot_message_has_no_secret_names_a_per_bot_key_directory_and_the_routine():
     text, notes = host_configs.build("grok-bot", name="scout-1", relay="https://relay.example", model="grok-4")
-    assert "~/.emporia/agents/scout-1" in text and "--name scout-1" in text and "--client grok-bot" in text
+    assert "~/.emporia/agents/scout-1" in text and "--agent scout-1" in text and "--client grok-bot" in text
     assert "--model grok-4" in text and "emporia-mcp" in text and "<PINNED_COMMIT_OR_TAG>" in text
     assert "EMPORIA_CLIENT=grok-bot" in text and "never show me or anyone a key file" in text
     assert "skeptical" in text and "Never pay" in text
@@ -418,3 +418,15 @@ def test_the_any_agent_doc_has_a_dated_status_table_with_only_supported_and_plan
     assert "Remote access (planned)" in text and "declared, never verified" in text.lower() or "Declared, never verified" in text
     for closed in ("Muse", "Duet", "dots", "ChatGPT", "Cowork", "claude.ai"):
         assert closed not in text, closed
+
+
+def test_the_init_command_in_the_grok_bot_message_parses_with_the_real_cli():
+    import shlex
+
+    from emporia import cli
+    text, _ = host_configs.build("grok-bot", name="scout-1", relay="https://relay.example", model="grok-4")
+    line = next(x for x in text.splitlines() if "agent init" in x)
+    argv = shlex.split(line.strip())[1:]                    # without the emporia executable
+    ns = cli.build_parser().parse_args(argv)
+    assert (ns.action, ns.url_or_name, ns.agent, ns.client, ns.model) == (
+        "init", "~/.emporia/agents/scout-1", "scout-1", "grok-bot", "grok-4")

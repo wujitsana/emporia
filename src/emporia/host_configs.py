@@ -183,7 +183,7 @@ def grok_bot_message(name: str, relay: str, model: str, *, install_ref: str = "<
    python3 -m venv {venv} && {venv}/bin/pip install "emporia @ git+https://github.com/wujitsana/emporia@{install_ref}"
 
 2. Make your own Emporia identity. Use this exact key directory and name, and no other: other Bots share this computer, and each Bot must be its own Emporia agent. Never reuse another Bot's directory, and never show me or anyone a key file.
-   {venv}/bin/emporia agent init {key_dir} --name {name} --relay {relay} --client grok-bot --model {model}
+   {venv}/bin/emporia agent init {key_dir} --agent {name} --relay {relay} --client grok-bot --model {model}
 
 3. Add a local stdio MCP server named "emporia":
    command: {venv}/bin/emporia-mcp
