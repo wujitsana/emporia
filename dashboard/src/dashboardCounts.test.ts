@@ -19,10 +19,8 @@ const failed = <T,>(): PromiseSettledResult<T> => ({
 
 function snapshot(over: Partial<OverviewSnapshot> = {}): OverviewSnapshot {
   return {
-    listings: ok({ listings: [], count: 0, has_more: false }),
     sessions: ok({ sessions: [], count: 0, has_more: false }),
     rooms: ok({ rooms: [], count: 0, has_more: false }),
-    events: ok({ events: [], count: 0, has_more: false }),
     agents: ok({ agents: [], count: 0, has_more: false }),
     settlements: ok({ settlements: [], count: 0, has_more: false }),
     agoraTopics: ok({ topics: [], count: 0, has_more: false }),
@@ -46,7 +44,7 @@ describe("countsFromSnapshot", () => {
     // on it. This is the whole reason the snapshot holds settled results.
     const counts = countsFromSnapshot(snapshot({ rooms: failed() }));
     expect(counts.rooms).toBeNull();
-    expect(counts.listings).toBe(0);
+    expect(counts.offers).toBeNull();
   });
 
   it("counts only emporia: modules as game sessions", () => {
@@ -71,25 +69,22 @@ describe("countsFromSnapshot", () => {
 describe("sectionsFromSnapshot", () => {
   it("says so in words when a collection is empty", () => {
     const byView = new Map(sectionsFromSnapshot(snapshot()).map((r) => [r.view, r]));
-    expect(byView.get("listings")?.lines).toEqual(["No open listings"]);
+    expect(byView.get("offers")?.lines).toEqual(["No open offers"]);
     expect(byView.get("messages")?.lines).toEqual(["No DM threads"]);
   });
 
   it("caps each card at three lines regardless of how much came back", () => {
     const rows = sectionsFromSnapshot(
       snapshot({
-        listings: ok({
-          listings: Array.from({ length: 9 }, (_, i) => ({
-            title: `listing ${i}`,
-            listing_type: "service",
-            payment_mode: "free",
+        rooms: ok({
+          rooms: Array.from({ length: 9 }, (_, i) => ({
+            name: `room ${i}`, room_type: "public", gate_type: "open",
           })),
           count: 9,
-          has_more: false,
         }),
       } as unknown as Partial<OverviewSnapshot>)
     );
-    expect(rows.find((r) => r.view === "listings")?.lines).toHaveLength(3);
+    expect(rows.find((r) => r.view === "offers")?.lines).toHaveLength(3);
   });
 
   it("renders a failed leg as the empty state rather than throwing", () => {
@@ -104,10 +99,8 @@ describe("failedFromSnapshot — rejected is not empty (P69)", () => {
     ({ status: "rejected", reason: new Error(why) });
 
   const allOk = () => ({
-    listings: ok([]),
     sessions: ok({ sessions: [] }),
     rooms: ok({ rooms: [] }),
-    events: ok({ events: [] }),
     agents: ok({ agents: [] }),
     settlements: ok({ settlements: [] }),
     agoraTopics: ok({ topics: [] }),
@@ -125,7 +118,8 @@ describe("failedFromSnapshot — rejected is not empty (P69)", () => {
       typeof failedFromSnapshot
     >[0];
     const failed = failedFromSnapshot(snap);
-    expect([...failed]).toEqual(["rooms"]);
+    // Offers are the rooms anyone may open, so a failed rooms read fails both cards.
+    expect([...failed].sort()).toEqual(["offers", "rooms"]);
   });
 
   it("names each of several independent failures", () => {

@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from emporia import identity, signing, wire
+from emporia import signing, wire
 from tests import test_emporia
 from tests.test_emporia import _ASGIHttpxAdapter, _register_keyed
 
@@ -43,7 +43,7 @@ def test_the_v1_sign_in_over_the_bare_nonce_is_refused_by_name(prod_client):
     ch = _challenge(prod_client)
     r = prod_client.post("/dashboard/session", json={
         "agent_id": "m4_v1", "challenge_id": ch["challenge_id"],
-        "signature_hex": identity.sign_challenge_nonce(ch["nonce"], "m4_v1")})
+        "signature_hex": "ab" * 64})
     assert r.status_code == 400 and "v1" in r.json()["detail"] and "dashboard-sign-in:v2" in r.json()["detail"]
 
 

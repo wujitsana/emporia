@@ -5,9 +5,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from emporia import wire
-from emporia.identity import sign
 from emporia.relay_server import app
-from tests.test_emporia import _register_keyed, _signed_listing, _signed_post, _signed_room
+from tests.test_posts_v2 import _body
+from tests.topic_posts import v2_post
+from tests.test_emporia import _register_keyed, _send_dm_raw, _send_room_raw, _signed_room
+
+
+def _stable_of(agent: str) -> str:
+    """The stable id of a test agent that never rotated: the hash of its key."""
+    from emporia import identity
+    return wire.stable_id_for(identity.get_public_key_hex(agent))
 
 
 @pytest.fixture
@@ -19,25 +26,18 @@ def _h(a):
     return {"x-emporia-agent-id": a}
 
 
-def test_archive_keeps_dms_rooms_posts_listings_and_sessions_and_only_fetches_whats_new(client, monkeypatch,
+def test_archive_keeps_dms_rooms_posts_and_sessions_and_only_fetches_whats_new(client, monkeypatch,
                                                                                          tmp_path):
     from emporia import identity, mcp_server
     for a in ("ar_me", "ar_friend"):
         _register_keyed(client, a)
     thread = client.post("/dm/start", json={"to_agent": "ar_friend", "encrypted": False},
                          headers=_h("ar_me")).json()["thread_id"]
-    nonce = wire.new_message_nonce()
-    client.post(f"/dm/{thread}/send", headers=_h("ar_friend"), json={
-        "content": "hi", "msg_type": "chat", "nonce": nonce,
-        "signature": sign(wire.signed_dm_thread_payload(thread, "hi", "chat", nonce), "ar_friend")})
+    _send_dm_raw(client, thread, "ar_friend", "hi")
     room = client.post("/rooms", json=_signed_room("ar_me", {"name": "Archive room"}), headers=_h("ar_me")).json()["room_id"]
-    n2 = wire.new_message_nonce()
-    client.post(f"/rooms/{room}/message", headers=_h("ar_me"), json={
-        "content": "room line", "msg_type": "chat", "nonce": n2,
-        "signature": sign(wire.signed_room_message_payload(room, "room line", "chat", n2), "ar_me")})
+    _send_room_raw(client, room, "ar_me", "room line")
     slug = client.post("/agoras/topics", json={"name": "Archive topic"}, headers=_h("ar_me")).json()["slug"]
-    client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("ar_me", slug, {"title": "t", "content": "mine"}), headers=_h("ar_me"))
-    client.post("/listings", json=_signed_listing(client, "ar_me", "Archive listing"), headers=_h("ar_me"))
+    v2_post(client, "ar_me", slug, "mine")
     client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": "ar_me", "config": {},
                                    "payment_rules": {"mode": "free"}}, headers=_h("ar_me"))
 
@@ -50,10 +50,10 @@ def test_archive_keeps_dms_rooms_posts_listings_and_sessions_and_only_fetches_wh
     assert first["success"], first
     saved = first["saved"]
     assert saved["dm_messages"] == 1 and saved["room_messages"] == 1 and saved["posts"] == 1
-    assert saved["listings"] >= 1 and saved["sessions"] >= 1
+    assert saved["sessions"] >= 1
     root = tmp_path / "archive"
     dm = next(root.glob(f"*/dms/{thread}.jsonl"))
-    assert json.loads(dm.read_text().splitlines()[0])["content"] == "hi"
+    assert json.loads(json.loads(dm.read_text().splitlines()[0])["content"])["text"] == "hi"
     assert oct(dm.stat().st_mode)[-3:] == "600"
     again = mcp_server.archive_now(agent_id="ar_me")
     assert again["saved"].get("dm_messages", 0) == 0 and again["saved"].get("room_messages", 0) == 0
@@ -65,17 +65,14 @@ def test_an_agent_leaves_a_relay_only_once_nothing_is_open_there(client):
     sess = client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": "lv_agent",
                                           "config": {}, "payment_rules": {"mode": "free"}},
                        headers=_h("lv_agent")).json()["session_id"]
-    assert client.post("/listings", json=_signed_listing(client, "lv_agent", "Leaving"),
-                       headers=_h("lv_agent")).status_code == 200
     r = client.post("/agents/lv_agent/leave", headers=_h("lv_agent"))
     assert r.status_code == 409 and sess in r.json()["detail"]["open_sessions"]
     from emporia import relay_server as rs
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("UPDATE sessions SET status = 'abandoned' WHERE session_id = ?", (sess,))
     r = client.post("/agents/lv_agent/leave", headers=_h("lv_agent"))
-    assert r.status_code == 200 and r.json()["listings_removed"] == 1
-    assert client.post("/listings", json=_signed_listing(client, "lv_agent", "x"),
-                       headers=_h("lv_agent")).status_code in (401, 403)
+    assert r.status_code == 200
+    assert client.post("/posts", json=_body("lv_agent"), headers=_h("lv_agent")).status_code in (401, 403)
     assert client.get("/agents/lv_agent/card").status_code == 404
 
 
@@ -113,10 +110,7 @@ def test_the_agent_reads_its_own_archive_knows_its_settings_and_asks_for_cross_r
     _register_keyed(client, "al_you")
     thread = client.post("/dm/start", json={"to_agent": "al_you", "encrypted": False},
                          headers=_h("al_me")).json()["thread_id"]
-    nonce = wire.new_message_nonce()
-    client.post(f"/dm/{thread}/send", headers=_h("al_you"), json={
-        "content": "keep this", "msg_type": "chat", "nonce": nonce,
-        "signature": sign(wire.signed_dm_thread_payload(thread, "keep this", "chat", nonce), "al_you")})
+    _send_dm_raw(client, thread, "al_you", "keep this")
     keys = tmp_path / "keys"
     keys.mkdir()
     monkeypatch.setattr(identity, "KEY_DIR", keys)

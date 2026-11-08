@@ -36,11 +36,9 @@ def test_warn_if_a2a_enabled_silent_when_absent(capsys):
 
 
 def test_guardrails_are_the_regex_firewall_only():
-    """P151: the NVIDIA-hosted semantic layer is gone. Setting a profile up
-    writes only the firewall's mode, drops the old NeMo setting from a profile
-    that had it, and leaves an NVIDIA_API_KEY alone — it may be the key an
-    agent's own model runs on."""
-    env_block = {"EMPORIA_NEMO_GUARDRAILS_ENABLED": "1", "NVIDIA_API_KEY": "nvapi-model-key"}
+    """Setting a profile up writes only the firewall's mode and leaves an
+    NVIDIA_API_KEY alone — it may be the key an agent's own model runs on."""
+    env_block = {"NVIDIA_API_KEY": "nvapi-model-key"}
     installer._apply_guardrails_env(env_block, disabled=False)
     assert env_block == {"EMPORIA_GUARDRAILS_MODE": "enforce", "NVIDIA_API_KEY": "nvapi-model-key"}
     off: dict[str, str] = {}
@@ -170,11 +168,8 @@ def test_the_testnet_runner_refuses_a_mainnet_chain_id():
 def test_the_platform_plugin_is_installed_enabled_and_configured(tmp_path):
     profile = tmp_path / "profile"
     profile.mkdir()
-    (profile / "config.yaml").write_text("plugins:\n  enabled: [other/plugin, platforms/emporia]\n")
+    (profile / "config.yaml").write_text("plugins:\n  enabled: [other/plugin]\n")
     (profile / ".env").write_text("EMPORIA_ALLOWED_USERS=trusted_agent\nOTHER=1\nEMPORIA_RELAY_URL=http://r.test\n")
-    legacy = profile / "plugins" / "platforms" / "emporia"     # the platform plugin alone, before P295
-    legacy.mkdir(parents=True)
-    (legacy / "plugin.yaml").write_text("name: emporia-platform\n")
 
     installer.install_platform_plugin(profile)
     installer.install_platform_plugin(profile)   # idempotent
@@ -183,7 +178,7 @@ def test_the_platform_plugin_is_installed_enabled_and_configured(tmp_path):
     for part in ("plugin.yaml", "adapter.py", "setup_cli.py", "skills/emporia/SKILL.md",
                  "dashboard/manifest.json", "dashboard/dist/index.js"):
         assert (dst / part).exists(), part
-    assert not (dst / "__pycache__").exists() and not legacy.exists()
+    assert not (dst / "__pycache__").exists()
     config = installer.load_yaml(profile / "config.yaml")
     assert config["plugins"]["enabled"] == ["other/plugin", "emporia"]
     import json
@@ -302,41 +297,39 @@ def _jwt(exp: float) -> str:
     return f"h.{body}.s"
 
 
-def test_the_nous_token_comes_from_hermes_never_from_auth_json(tmp_path, monkeypatch):
-    """Catalog rule 11: the installer used to read auth.json itself, refresh the token as
-    Hermes's client and write it back. Now: the flag, a current EMPORIA_NOUS_JWT, else Hermes
-    for this profile; auth.json is never opened, so it is never changed."""
-    import time
+def test_the_operator_label_is_given_reused_or_minted(tmp_path, monkeypatch):
+    """The installer resolves one operator label per agent profile: the one given; else the profile's own;
+    else one an Emporia profile under the same Hermes root holds (one person's agents share it); else a new
+    random one. auth.json is never opened."""
+    import pytest
 
-    from emporia import nous_token
-    profile = tmp_path / "profile"
-    profile.mkdir()
-    auth = profile / "auth.json"
-    auth.write_text('{"providers": {"nous": {"access_token": "from-the-file", "refresh_token": "r"}}}')
-    before = auth.read_bytes()
-    asked = []
-    current = _jwt(time.time() + 3600)
-    monkeypatch.setattr(nous_token, "from_hermes", lambda p=None: asked.append(p) or current)
-
-    assert installer.resolve_nous_token("explicit", profile_dir=profile) == "explicit"
-    monkeypatch.setenv("EMPORIA_NOUS_JWT", current)
-    assert installer.resolve_nous_token(None, profile_dir=profile) == current and asked == []
-    monkeypatch.setenv("EMPORIA_NOUS_JWT", _jwt(time.time() - 60))          # expired: ask Hermes
-    assert installer.resolve_nous_token(None, profile_dir=profile) == current and asked == [profile]
-    monkeypatch.setattr(nous_token, "from_hermes", lambda p=None: None)        # no login: key_only
-    assert installer.resolve_nous_token(None, profile_dir=profile) is None
-    assert auth.read_bytes() == before
-    assert not hasattr(installer, "_find_auth_json") and not hasattr(installer, "_try_refresh_nous")
+    from emporia import operators
+    root = tmp_path / "hermes"
+    first, second = root / "profiles" / "first", root / "profiles" / "second"
+    for p in (first, second):
+        p.mkdir(parents=True)
+        (p / "config.yaml").write_text("{}\n")
+    minted = installer.resolve_operator_label(None, profile_dir=first)
+    assert operators.valid_label(minted)
+    (first / ".env").write_text(f"EMPORIA_OPERATOR_LABEL={minted}\n")
+    assert installer.resolve_operator_label(None, profile_dir=first) == minted                  # its own
+    assert installer.resolve_operator_label(None, profile_dir=second) == minted                 # reused beside it
+    other = operators.new_label()
+    assert installer.resolve_operator_label(other, profile_dir=second) == other                 # given
+    with pytest.raises(SystemExit):
+        installer.resolve_operator_label("op_nope", profile_dir=second)
+    assert not [n for n in dir(installer) if "nous" in n.lower()] and not hasattr(installer, "_find_auth_json")
     repo = _INSTALLER_PATH.parent.parent
     src = (repo / "installer" / "install.py").read_text() + (repo / "scripts" / "seed_demo_relay.py").read_text()
     assert '"auth.json"' not in src and "refresh_token" not in src
+    assert installer._DASHBOARD_RESTART_NEEDED
 
 
 def test_each_agent_profile_shares_the_relay_but_owns_its_identity(tmp_path, monkeypatch):
     """P109: one relay, separate identities. create_profile() built the MCP
     entry without the profile dir, so it carried no key dir or .env; Hermes
     gives an MCP server only that `env`, and the server then loaded the .env
-    beside its code — the relay profile's keys, Nous token and Stripe secret."""
+    beside its code — the relay profile's keys and Stripe secret."""
     import os
     from unittest.mock import patch
 
@@ -507,7 +500,7 @@ def test_the_dashboard_tab_installs_with_its_config_out_of_git_and_enabled(tmp_p
     bundle = installer._EMPORIA_DIR / "dashboard" / "dist-plugin"
     if not (bundle / "index.js").exists():
         import pytest
-        pytest.skip("dashboard bundle not built (npm run build:hermes-plugin)")
+        pytest.skip("dashboard bundle not built (npm run build:plugin)")
     monkeypatch.setattr(installer.shutil, "which", lambda name: None)     # no npm rebuild
     calls = []
     real_run = installer.subprocess.run
@@ -541,19 +534,19 @@ def test_secrets_move_out_of_config_yaml_into_the_env(tmp_path):
     profile = tmp_path / "profiles" / "p201"
     profile.mkdir(parents=True)
     (profile / "config.yaml").write_text(yaml.dump({
-        "env": {"EMPORIA_NOUS_JWT": "jwt-in-config", "OPENROUTER_API_KEY": "or-config", "EMPORIA_RELAY_URL": "u",
+        "env": {"EMPORIA_SIGNER_TOKEN": "token-in-config", "OPENROUTER_API_KEY": "or-config", "EMPORIA_RELAY_URL": "u",
                 "EMPORIA_PUBLIC_KEY": "ab"},
-        "mcp_servers": {"emporia": {"env": {"EMPORIA_NOUS_JWT": "jwt-in-config", "EMPORIA_KEYS_DIR": "/k"}},
+        "mcp_servers": {"emporia": {"env": {"EMPORIA_SIGNER_TOKEN": "token-in-config", "EMPORIA_KEYS_DIR": "/k"}},
                         "other": {"env": {"SOME_TOKEN": "${SOME_TOKEN}"}}}}))
     (profile / "config.yaml").chmod(0o644)
     (profile / ".env").write_text("OPENROUTER_API_KEY=or-env\n")
     moved = installer.secure_profile(profile)
-    assert moved == ["EMPORIA_NOUS_JWT", "OPENROUTER_API_KEY"]
+    assert moved == ["EMPORIA_SIGNER_TOKEN", "OPENROUTER_API_KEY"]
     cfg = yaml.safe_load((profile / "config.yaml").read_text())
     assert cfg["env"] == {"EMPORIA_RELAY_URL": "u", "EMPORIA_PUBLIC_KEY": "ab"}
-    assert cfg["mcp_servers"]["emporia"]["env"] == {"EMPORIA_NOUS_JWT": "${EMPORIA_NOUS_JWT}", "EMPORIA_KEYS_DIR": "/k"}
+    assert cfg["mcp_servers"]["emporia"]["env"] == {"EMPORIA_SIGNER_TOKEN": "${EMPORIA_SIGNER_TOKEN}", "EMPORIA_KEYS_DIR": "/k"}
     env = (profile / ".env").read_text()
-    assert "EMPORIA_NOUS_JWT=jwt-in-config" in env and "OPENROUTER_API_KEY=or-env" in env   # the .env's wins
+    assert "EMPORIA_SIGNER_TOKEN=token-in-config" in env and "OPENROUTER_API_KEY=or-env" in env   # the .env's wins
     assert "or-config" not in env
     for f in ("config.yaml", ".env"):
         assert oct((profile / f).stat().st_mode)[-3:] == "600"
@@ -626,3 +619,63 @@ def test_setting_up_the_relays_own_profile_keeps_the_relays_settings(tmp_path, m
     env_text = (relay / ".env").read_text()
     assert "STRIPE_SECRET_KEY=sk_test_relay_keeps" in env_text and "STRIPE_PROFILE_ID=profile_test_x" in env_text
     assert "sk_test" not in (relay / "config.yaml").read_text()          # still never in config.yaml
+
+
+def test_every_dependency_install_takes_the_x402_extra():
+    """Release review (11-06): the relay imports eth-abi at start (its money module) and an agent's
+    wallet signs with eth-account, both in the `x402` extra. The checkout install (README) and
+    `emporia update` installed without it: the relay stopped at start with "No module named
+    'eth_abi'", and a bare `uv sync` in update removed the extra from a venv that had it."""
+    root = Path(__file__).parent.parent
+    offenders = []
+    for rel in ("installer/install.py", "src/emporia/cli.py"):
+        for i, line in enumerate((root / rel).read_text().splitlines(), 1):
+            installs = ('"sync"' in line and "uv" in line) or ('"install"' in line and '"-e"' in line)
+            if installs and "x402" not in line:
+                offenders.append(f"{rel}:{i}: {line.strip()}")
+    assert not offenders, offenders
+    readme = (root / "README.md").read_text()
+    assert "uv sync --extra x402" in readme and "pip install -e '.[x402]'" in readme
+
+
+def test_a_new_named_profile_is_found_from_a_checkout_inside_it(tmp_path, monkeypatch):
+    """Release review (11-06): `hermes profile create` makes a profile with no config.yaml, so the
+    README's `cd ~/.hermes/profiles/NAME && git clone … && install.py --install-profile` walked up
+    past it to the Hermes root, and wired the root as agent '.hermes'."""
+    root = tmp_path / ".hermes"
+    (root / "profiles" / "shop" / "emporia").mkdir(parents=True)
+    (root / "config.yaml").write_text("{}\n")
+    (root / "profiles" / "shop" / ".env").write_text("")
+    monkeypatch.chdir(root / "profiles" / "shop" / "emporia")
+    assert installer.find_profile_dir_from_cwd() == (root / "profiles" / "shop").resolve()
+    (root / "elsewhere").mkdir()
+    monkeypatch.chdir(root / "elsewhere")
+    assert installer.find_profile_dir_from_cwd() == root.resolve()       # the root is still found
+
+
+def test_an_agent_id_a_relay_refuses_is_never_written():
+    for good in ("shop", "alpha-2", "data"):
+        assert installer.AGENT_ID_RE.match(good)
+    for bad in (".hermes", "ab", "Shop", "-x-", "a" * 65):
+        assert not installer.AGENT_ID_RE.match(bad)
+    src = (Path(__file__).parent.parent / "src" / "emporia" / "relay_server.py").read_text()
+    assert installer.AGENT_ID_RE.pattern in src            # the relay's own rule, mirrored
+
+
+def test_no_fixed_hermes_data_path():
+    """Hermes's data is wherever HERMES_HOME says; `/opt/data` is only the official image's."""
+    text = (Path(__file__).parent.parent / "installer" / "install.py").read_text()
+    assert 'Path("/opt/data' not in text
+
+
+def test_a_dry_run_on_a_new_profile_says_it_would_make_its_config(tmp_path, capsys, monkeypatch):
+    import os
+    # install_into_profile sets EMPORIA_* in this process's environment for what it runs next.
+    monkeypatch.setattr(os, "environ", os.environ.copy())
+    profile = tmp_path / "profiles" / "shop"
+    profile.mkdir(parents=True)
+    (profile / ".env").write_text("")
+    installer.install_into_profile(profile_dir=profile, relay_url="http://127.0.0.1:1", agent_id="shop",
+                                   dry_run=True)
+    assert "Would create" in capsys.readouterr().out
+    assert not (profile / "config.yaml").exists()

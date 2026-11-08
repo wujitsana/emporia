@@ -2,10 +2,7 @@
 
 Provides:
   - Session management (create, join, action, state)
-  - Listings directory ("Craigslist for agents")
-  - Events/tournaments (brackets, standings, entry terms)
-  - Federated listings gossip (pull from peer relays)
-  - Agent-to-agent negotiation broker
+  - Federated pointer-post gossip (pull from peer relays)
   - Relay descriptor (not an A2A Agent Card) at /relay-card
   - WebSocket real-time updates (per-session + per-agent)
   - Guardrails on all inbound (deterministic regex firewall)
@@ -31,7 +28,7 @@ from __future__ import annotations
 # P92: `python -m emporia.relay_server` runs this file as `__main__`, a second
 # module beside the `emporia.relay_server` every router imports. The old guard
 # at the bottom called main() *above* the router block P56 added, so that
-# command served a relay whose extracted routes (agents, sessions, bounties,
+# command served a relay whose extracted routes (agents, sessions,
 # rooms, DMs, ...) all 404'd, with its own DB handles and registries. Here, before
 # anything else runs, `__main__` does nothing but import the real module
 # — which loads exactly as the `emporia-relay` entry point loads it — and run
@@ -93,14 +90,16 @@ from emporia.identity import (
     build_relay_descriptor,
     federation_signable_bytes,
     normalize_peer_url,
-    normalize_peer_pubkey_keys,
 )
 from emporia.module_sdk import (
     MODULE_REGISTRY,
     SessionState,
     get_interaction_module,
+    session_kind,
 )
 from emporia import __version__
+from emporia import names as _names
+from emporia import operators
 from emporia import rooms as rooms_db
 from emporia import entitlements
 from emporia import translog
@@ -116,6 +115,9 @@ if TYPE_CHECKING:
     from emporia.payments import PaymentRef
 
 # Trigger module registration — import all bundled modules at startup
+import emporia.modules.bargain  # noqa: F401
+import emporia.modules.cv_auction  # noqa: F401
+import emporia.modules.liars_dice  # noqa: F401
 import emporia.modules.blotto  # noqa: F401
 import emporia.modules.chess  # noqa: F401
 import emporia.modules.code_review  # noqa: F401
@@ -228,23 +230,11 @@ def relay_id() -> str:
     return os.getenv("EMPORIA_RELAY_ID", "").strip() or load_or_derive_relay_id()
 
 
-# Set EMPORIA_REQUIRE_NOUS=1 to reject registrations without a verified Nous identity.
-REQUIRE_NOUS = os.getenv("EMPORIA_REQUIRE_NOUS", "0").strip() == "1"
-# Set EMPORIA_WRITE_REQUIRES_NOUS=1 to restrict key_only agents to read-only (GET) access.
-WRITE_REQUIRES_NOUS = os.getenv("EMPORIA_WRITE_REQUIRES_NOUS", "0").strip() == "1"
 # Set EMPORIA_REQUIRE_CHALLENGE=0 to allow registration without proof-of-key-possession
 # (default mandatory — every first-party client already completes the challenge round-trip
 # unconditionally, so this only weakens a direct REST caller's requirements; not recommended).
 REQUIRE_CHALLENGE = os.getenv("EMPORIA_REQUIRE_CHALLENGE", "1").strip() == "1"
-OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "250"))
 MAX_TOTAL_SPEND_CENTS = int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0"))
-# P152: EMPORIA_MPP_TEMPO_ENABLED used to advertise "tempo" as an MPP method
-# with nothing able to settle it. Gone until Tempo settlement exists; an
-# operator who still sets it is told rather than silently ignored.
-if os.getenv("EMPORIA_MPP_TEMPO_ENABLED", "").strip() == "1":
-    logging.getLogger("emporia.relay").warning(
-        "EMPORIA_MPP_TEMPO_ENABLED is ignored: Tempo settlement is not implemented, so the relay "
-        "no longer advertises it (P152)")
 LOG_DIR = Path(os.getenv("EMPORIA_LOG_DIR", "./.local/logs")).expanduser()
 # P55: resolved through emporia.config, the package's only reader of
 # EMPORIA_DB_PATH. Still captured once here — 111 call sites in the suite treat
@@ -252,8 +242,8 @@ LOG_DIR = Path(os.getenv("EMPORIA_LOG_DIR", "./.local/logs")).expanduser()
 DATABASE_PATH = _database_path()
 
 # Federated peers (comma-separated relay URLs; empty = standalone). Normalized
-# (N13-2, R2) so these entries agree with the keys _pull_federated_listings/
-# _pull_federated_lobby actually store under — see identity.normalize_peer_url().
+# (N13-2, R2) so these entries agree with the keys _pull_federated_posts
+# actually stores under — see identity.normalize_peer_url().
 FEDERATED_RELAYS: list[str] = [
     normalize_peer_url(u) for u in os.getenv("FEDERATED_RELAYS", "").split(",") if u.strip()
 ]
@@ -275,9 +265,6 @@ def peer_runs(peer_url: str, module: str, part: str = "") -> bool | None:
     entry = mods.get(module)
     return isinstance(entry, dict) and (not part or part in (entry.get("parts") or []))
 
-# Same shape, for lobby-challenge gossip (N11-5) — kept separate from the listings
-# sync record above since the two feeds are pulled and can fail independently.
-
 # Trust-on-first-use pin of each peer's Ed25519 public key, keyed by peer_url. The first
 # successfully signature-verified pull from a peer pins its key; a later pull presenting a
 # different key for the same peer_url is rejected rather than silently trusted (guards
@@ -295,13 +282,7 @@ _FEDERATION_PEER_PUBKEYS_LOADED = False
 def _ensure_federation_pins_loaded() -> None:
     global _FEDERATION_PEER_PUBKEYS_LOADED
     if not _FEDERATION_PEER_PUBKEYS_LOADED:
-        # N13-2 (R2): migrate any pin written under a pre-fix, un-normalized key (e.g.
-        # a trailing slash) so it's reachable under the same key _pull_federated_*
-        # now always look up.
-        migrated, changed = normalize_peer_pubkey_keys(load_federation_peer_pubkeys())
-        _FEDERATION_PEER_PUBKEYS.update(migrated)
-        if changed:
-            save_federation_peer_pubkeys(_FEDERATION_PEER_PUBKEYS)
+        _FEDERATION_PEER_PUBKEYS.update(load_federation_peer_pubkeys())
         _FEDERATION_PEER_PUBKEYS_LOADED = True
 
 
@@ -352,30 +333,11 @@ def _stripe_account_mode_mismatch(account_mode: str) -> bool:
 
 
 def custodial_cards_allowed() -> bool:
-    """Card flows that leave money on the operator's Stripe balance: a held
-    bounty prize, a wager of three or more players, an entry or a stake paid
-    to the platform and transferred on. Off by default — with it off, every
+    """Card flows that leave money on the operator's Stripe balance: an entry or a purchase paid to the platform and transferred on. Off by default — with it off, every
     card payment is a destination charge to the person it is for, as USDC is
     (P157). An operator who wants those flows sets EMPORIA_CUSTODIAL_CARDS=1
     and takes on holding other people's money."""
     return os.environ.get("EMPORIA_CUSTODIAL_CARDS", "").strip().lower() in ("1", "true", "yes", "on")
-
-
-def card_game_stakes_allowed() -> bool:
-    """Card money on a game: a wager's stakes or a bounty's held prize. Off by
-    default (P159) — Stripe lists games of skill with money prizes as a
-    restricted business, needing its approval, and a captured stake can be
-    charged back by the loser for months, debited from the operator. Games are
-    staked in USDC (x402 escrow) instead. EMPORIA_CARD_GAME_STAKES=1 is for an
-    operator Stripe has approved."""
-    return os.environ.get("EMPORIA_CARD_GAME_STAKES", "").strip().lower() in ("1", "true", "yes", "on")
-
-
-CARD_GAME_REFUSAL = (
-    "This relay does not take card money on games: Stripe restricts games of skill with money "
-    "prizes, and a card stake can be charged back after it is lost. Stake in USDC instead "
-    "(payment_mode='x402', both players with an x402 wallet), or play free."
-)
 
 
 def stripe_payee_account(agent_id: str | None) -> str | None:
@@ -539,6 +501,7 @@ _CHALLENGE_TTL = 300.0  # 5-minute window to complete sign
 
 def _jwt_encode(payload: dict) -> str:
     import json as _json
+    payload = {"jti": secrets.token_hex(12), **payload}      # every token has an id, so it can be revoked
     body = base64.urlsafe_b64encode(_json.dumps(payload).encode()).rstrip(b"=").decode()
     sig = _hmac.new(load_or_generate_relay_jwt_secret(), body.encode(), hashlib.sha256).hexdigest()
     return f"{body}.{sig}"
@@ -563,7 +526,82 @@ def _jwt_decode(token: str) -> dict | None:
     floor = _SESSION_FLOOR.get(str(payload.get("agent_id") or ""))
     if floor is not None and payload.get("issued", 0) < floor:
         return None
+    # Revocation: a signed-out token (its `jti`), and every token issued before an agent's revoke-all.
+    if _token_revoked(payload):
+        return None
     return payload
+
+
+# Revoked tokens, kept in memory (loaded at start from `token_revocations` and `token_floors`, and written through
+# on every revocation) so that checking a token costs no database read.
+_REVOKED: dict[str, float] = {}           # a signed-out token's id -> when it would have expired
+_TOKEN_FLOORS: dict[str, float] = {}      # stable id -> tokens issued before this time are revoked
+
+
+def _load_revocations(conn: Any) -> None:
+    _REVOKED.clear()
+    _TOKEN_FLOORS.clear()
+    for r in conn.execute("SELECT jti, expires_at FROM token_revocations WHERE expires_at >= ?", (time.time(),)):
+        _REVOKED[r["jti"]] = r["expires_at"]
+    for r in conn.execute("SELECT stable_id, valid_after FROM token_floors"):
+        _TOKEN_FLOORS[r["stable_id"]] = r["valid_after"]
+
+
+def _token_revoked(payload: dict) -> bool:
+    jti, stable = str(payload.get("jti") or ""), str(payload.get("stable_id") or "")
+    if not jti or jti in _REVOKED:       # a token with no id cannot be revoked, so none is accepted
+        return True
+    floor = _TOKEN_FLOORS.get(stable)
+    return floor is not None and float(payload.get("issued", 0)) < floor
+
+
+def revoke_token(payload: dict) -> None:
+    """Sign out: this token (by its id) stops working, whoever holds a copy."""
+    jti, expires = str(payload.get("jti") or ""), float(payload.get("exp", 0))
+    with DB_LOCK, get_db() as conn:
+        conn.execute("INSERT OR IGNORE INTO token_revocations (jti, stable_id, revoked_at, expires_at) VALUES (?,?,?,?)",
+                     (jti, str(payload.get("stable_id") or ""), datetime.now(UTC).isoformat(), expires))
+        conn.execute("DELETE FROM token_revocations WHERE expires_at < ?", (time.time(),))
+    _REVOKED[jti] = expires
+    for old in [j for j, exp in _REVOKED.items() if exp < time.time()]:
+        _REVOKED.pop(old, None)
+
+
+def revoke_all_tokens(stable_id: str) -> float:
+    """Revoke-all: every token issued to this agent before now stops working (it signs in again)."""
+    now = time.time()
+    with DB_LOCK, get_db() as conn:
+        conn.execute("INSERT INTO token_floors (stable_id, valid_after) VALUES (?, ?) "
+                     "ON CONFLICT(stable_id) DO UPDATE SET valid_after = excluded.valid_after", (stable_id, now))
+    _TOKEN_FLOORS[stable_id] = now
+    return now
+
+
+def bearer_payload(request: Request) -> dict | None:
+    """The verified token claims of the request's bearer credential (as `_dashboard_agent_id` reads it)."""
+    for name in ("authorization", "x-emporia-authorization"):
+        auth = request.headers.get(name, "")
+        if auth.startswith("Bearer "):
+            payload = _jwt_decode(auth[7:])
+            if _token_agent(payload):
+                return payload
+    return None
+
+
+def _token_agent(payload: dict | None) -> str | None:
+    """The agent a verified token speaks for, or None. A token is for this relay and carries the agent's
+    **stable id**: it is refused when the name now belongs to another key (the agent was renamed or left
+    and someone else registered the name), or when it names no stable id at all."""
+    if not payload or payload.get("relay_id") != relay_id():
+        return None
+    agent_id = payload.get("agent_id") or None
+    if not agent_id:
+        return None
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute("SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)).fetchone()
+    if row and (not payload.get("stable_id") or payload["stable_id"] != row["stable_id"]):
+        return None
+    return agent_id
 
 
 def _dashboard_agent_id(request: Request) -> str | None:
@@ -579,18 +617,15 @@ def _dashboard_agent_id(request: Request) -> str | None:
     P95: a paying request has two things to say — who is paying and with what —
     and they used to share one header. `Authorization: Payment <spt>` displaced
     the identity bearer, so a remote agent paying with an SPT could not also
-    prove who it was. Every route that must know the payer (posting a held
-    bounty, opening a wager, funding a purchase) 401'd for any agent not
-    co-located with the relay; MCP's `post_bounty` never sent a credential at
-    all, so a held bounty had never been postable through it. The identity now
+    prove who it was. Every route that must know the payer (funding a
+    purchase) 401'd for any agent not co-located with the relay. The identity now
     has its own header when the payment needs that one.
     """
     for name in ("authorization", "x-emporia-authorization"):
         auth = request.headers.get(name, "")
         if auth.startswith("Bearer "):
-            payload = _jwt_decode(auth[7:])
-            if payload and payload.get("relay_id") == relay_id():
-                return payload.get("agent_id") or None
+            if agent := _token_agent(_jwt_decode(auth[7:])):
+                return agent
     return None
 
 
@@ -599,25 +634,79 @@ def _ws_agent_id(ws: WebSocket) -> str | None:
     Resolve the connecting agent's identity for a WebSocket upgrade.
 
     As _dashboard_agent_id(), for WS: browsers cannot set headers on a WS
-    handshake, so the token comes as a query param:
-      - ?token=<jwt>  → verified via the same HMAC-SHA256 JWT used for REST
+    handshake, so the token comes as a subprotocol (`_ws_token`), never a URL parameter:
+      - Sec-WebSocket-Protocol: emporia.v1, emporia.token.<jwt>  → verified as the REST JWT is
       - otherwise     → None (unauthenticated). P261: a bare ?agent_id= proves nothing.
     """
-    token = ws.query_params.get("token")
+    token = _ws_token(ws)
     if token:
-        payload = _jwt_decode(token)
-        if payload and payload.get("relay_id") == relay_id():
-            return payload.get("agent_id") or None
+        return _token_agent(_jwt_decode(token))
     return None
 
 
+WS_SUBPROTOCOL = "emporia.v1"
+_WS_TOKEN_PREFIX = "emporia.token."
+
+
+def _ws_token(ws: WebSocket) -> str:
+    """The bearer token a WebSocket handshake carries: in `Sec-WebSocket-Protocol`, as the offered subprotocol
+    `emporia.token.<jwt>` beside `emporia.v1` (a browser sets no other header on a handshake). Never in the
+    URL, where a proxy or a log would keep it."""
+    for offered in str(ws.headers.get("sec-websocket-protocol", "")).split(","):
+        offered = offered.strip()
+        if offered.startswith(_WS_TOKEN_PREFIX):
+            return offered[len(_WS_TOKEN_PREFIX):]
+    return ""
+
+
+async def _ws_accept(ws: WebSocket) -> None:
+    """Accept, choosing `emporia.v1` when the client offered it (the token subprotocol is never echoed)."""
+    offered = [p.strip() for p in str(ws.headers.get("sec-websocket-protocol", "")).split(",")]
+    await ws.accept(subprotocol=WS_SUBPROTOCOL if WS_SUBPROTOCOL in offered else None)
+
+
+def operator_stable_id() -> str:
+    """The relay operator's **stable id** (`EMPORIA_OPERATOR_STABLE_ID`, set by `emporia relay` setup for the
+    operator's agent): who the operator is, whatever name the agent has. "" when none is configured."""
+    return os.getenv("EMPORIA_OPERATOR_STABLE_ID", "").strip().lower()
+
+
 def _relay_operator_id() -> str:
-    """The configured relay operator's agent_id, or "" if none is configured (N6
-    review O2: every "is this caller the operator?" check in this file re-read
-    os.getenv("EMPORIA_AGENT_ID", "") independently — a dozen call sites as of this
-    pass, up from the two the finding originally named, since N6-2's new redaction
-    helpers each added their own. One canonical definition instead."""
-    return os.getenv("EMPORIA_AGENT_ID", "")
+    """The relay operator's name here: the registered agent whose stable id is the configured one, or ""
+    when none is configured or the operator has not registered. The operator is a key, not a name:
+    whoever registers the name `EMPORIA_AGENT_ID` first does not become it (that name is reserved, see
+    `reserved_name_problem`), and every operator check goes through this one function."""
+    stable = operator_stable_id()
+    if not stable:
+        return ""
+    with DB_LOCK, get_db() as conn:
+        row = conn.execute("SELECT agent_id FROM authorized_agents WHERE stable_id = ?", (stable,)).fetchone()
+    return row["agent_id"] if row else ""
+
+
+def house_stable_ids() -> frozenset[str]:
+    """Stable ids allowed to take a house name (`EMPORIA_HOUSE_STABLE_IDS`, comma-separated)."""
+    return frozenset(x.strip().lower() for x in os.getenv("EMPORIA_HOUSE_STABLE_IDS", "").split(",") if x.strip())
+
+
+def reserved_name_problem(agent_id: str, stable_id: str) -> str:
+    """Why `agent_id` may not be registered by the key whose stable id is `stable_id`, or "": the operator's
+    configured name (`EMPORIA_AGENT_ID`) belongs to the operator's key, and a house name
+    (`EMPORIA_HOUSE_AGENTS`) to the operator's key or one in `EMPORIA_HOUSE_STABLE_IDS`. Nobody else may
+    take them, so a name on a fresh relay is never a way into its admin."""
+    operator = operator_stable_id()
+    if not operator:
+        return ""       # no operator is pinned: no name is anyone's to reserve, and nobody is the operator
+    if stable_id == operator:
+        return ""
+    named = os.getenv("EMPORIA_AGENT_ID", "").strip()
+    if named and agent_id == named:
+        return (f"{agent_id!r} is this relay's reserved operator name: only the operator's key "
+                "(EMPORIA_OPERATOR_STABLE_ID) may register it")
+    from emporia import progression
+    if agent_id in progression.house_agents() and stable_id not in house_stable_ids():
+        return f"{agent_id!r} is a house name: only the operator's key or a house key may register it"
+    return ""
 
 
 def _require_caller_is(agent_id: str, request: Request) -> None:
@@ -663,43 +752,9 @@ _MAX_LIMIT = 200
 # P21-1 (B1): a federation peer's response is streamed and capped at this many bytes
 # *before* being buffered for signature verification or JSON parsing — see
 # _fetch_federation_batch(). Default generous enough for a full _MAX_LIMIT-sized batch
-# of listings/challenges with room to spare, small enough that a malicious or hijacked
+# of posts with room to spare, small enough that a malicious or hijacked
 # peer can't OOM the relay by returning an arbitrarily large body.
 MAX_FEDERATION_RESPONSE_BYTES = env_int("MAX_FEDERATION_RESPONSE_BYTES", 8 * 1024 * 1024)
-
-
-# Listing metadata a relay keeps to itself: who funded a bounty (their Nous
-# account, the one link from an agent to a person) and the payment holding its
-# prize. Never in a listing anyone reads — here, or on a linked relay.
-_PRIVATE_LISTING_METADATA = frozenset({"funder_nous_user_id", "payment_intent_id"})
-
-
-def public_listing(row: Any) -> dict[str, Any]:
-    """A listings row as anyone may read it: parsed metadata, private keys out.
-    P245: a listing pulled from another relay carries the key log that relay
-    served with it (`key_log`); `public_listings` fills in the others'."""
-    d = dict(row)
-    meta = json.loads(d.pop("metadata_json", None) or "{}")
-    d["metadata"] = {k: v for k, v in meta.items() if k not in _PRIVATE_LISTING_METADATA}
-    kept = d.pop("agent_key_log_json", None)
-    if d.get("federated_from"):
-        d["key_log"] = json.loads(kept or "[]")
-    return d
-
-
-def public_listings(rows: list[Any]) -> list[dict[str, Any]]:
-    """`public_listing` for each row, and for this relay's own listings the key
-    log of the agent that signed them (P245), so a reader can check the key
-    against the stable id after the agent has changed key."""
-    out = [public_listing(r) for r in rows]
-    own = sorted({x["agent_stable_id"] for x in out if not x.get("federated_from") and x.get("agent_stable_id")})
-    if own:
-        with DB_LOCK, get_db() as conn:
-            logs = {sid: agent_key_log(conn, sid) for sid in own}
-        for x in out:
-            if not x.get("federated_from") and x.get("agent_stable_id"):
-                x["key_log"] = logs[x["agent_stable_id"]]
-    return out
 
 
 def _own_host() -> str:
@@ -707,45 +762,12 @@ def _own_host() -> str:
     return host_of(RELAY_BASE_URL)
 
 
-def annotate_federated(listings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """P184: a listing pulled from a linked relay says where the deal happens —
-    on that relay, which holds the money, the receipts and any dispute — and
-    whether an agent here goes by the same name with a different key.
-    P187: every listing names its seller by address and fingerprint."""
-    from emporia.addresses import address, fingerprint, host_of
-    ids = sorted({x.get("agent_id", "") for x in listings})
-    if not ids:
-        return listings
-    with DB_LOCK, get_db() as conn:
-        local = {r["agent_id"]: r["public_key_hex"] for r in conn.execute(
-            f"SELECT agent_id, public_key_hex FROM authorized_agents WHERE agent_id IN ({','.join('?' * len(ids))})",
-            ids).fetchall()}
-    here_host = _own_host()
-    for x in listings:
-        if x.get("federated_from"):
-            x["agent_address"] = address(x.get("agent_id", ""), host_of(x["federated_from"]))
-            x["agent_fingerprint"] = fingerprint(x.get("agent_public_key_hex") or "")
-        elif x.get("listing_type") != "room":
-            x["agent_address"] = address(x.get("agent_id", ""), here_host)
-            x["agent_fingerprint"] = fingerprint(local.get(x.get("agent_id", "")) or "")
-    for x in (y for y in listings if y.get("federated_from")):
-        x["deal_on"] = x["federated_from"]
-        x["how_to_deal"] = (f"On {x['federated_from']}, not here: visit it — visit_relay("
-                            f"'{x['federated_from']}'), with your operator's yes — and deal there. The same "
-                            f"key is the same agent there.")
-        here = local.get(x.get("agent_id", ""))
-        if here and x.get("agent_public_key_hex") and here != x["agent_public_key_hex"]:
-            x["name_clash"] = (f"'{x['agent_id']}' here is a different agent (another key) from the seller "
-                               f"on {x['federated_from']}.")
-    return listings
-
-
 def _clamp_limit(limit: int, max_limit: int = _MAX_LIMIT) -> int:
     """Bound a caller-supplied `limit` query param to [1, max_limit] (N3-6). Several
     LIMIT-bearing endpoints already did this inline as `min(limit, 200)`; the N3 review
     (O2) named 8 more that took `limit: int` with no cap at all, and applying this
     uniformly turned up 4 further uncapped sites the review's own count had missed
-    (GET /listings, GET /rooms, GET /rooms/{id}/messages, GET /dm/{id}/messages) — an
+    (GET /rooms, GET /rooms/{id}/messages, GET /dm/{id}/messages) — an
     uncapped limit is both a DoS lever (unbounded result set / row-scan) and, on
     GET /agents specifically, the mechanism that turned an N+1 per-row query loop into
     an unbounded one (O1). Also floors at 1 so a caller can't pass 0 or a negative number
@@ -806,11 +828,11 @@ def _escrow_network() -> str | None:
 
 
 def session_paid_by(session_id: str) -> list[str]:
-    """P153: the rails this session's stakes were actually paid on ("stripe",
+    """P153: the rails this session's payments were actually paid on ("stripe",
     "x402") — what a page shows as "paid by" once money has moved."""
     with DB_LOCK, get_db() as conn:
         rows = conn.execute("SELECT DISTINCT rail FROM payments WHERE session_id = ? "
-                            "AND payment_type = 'session_stake'", (session_id,)).fetchall()
+                            "AND payment_type = 'session_price'", (session_id,)).fetchall()
     return sorted(r[0] for r in rows if r[0])
 
 
@@ -892,554 +914,17 @@ def get_db() -> sqlite3.Connection:
 
 
 def init_db() -> None:
+    """Make the relay's tables (`schema_sql.SCHEMA_SQL`, one schema) and stamp its version. The relay starts
+    fresh: a database from another schema version is refused by name, never upgraded."""
     DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     with DB_LOCK, get_db() as conn:
-        # P61: before anything is created or migrated.
-        _assert_schema_not_from_the_future(conn)
-        _assert_ids_are_sha256(conn)
-        _snapshot_before_upgrade(conn)
-        conn.execute("PRAGMA journal_mode=WAL")      # P266: once; it stays with the file
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS authorized_agents (
-                agent_id TEXT PRIMARY KEY,
-                public_key_hex TEXT NOT NULL,
-                display_name TEXT,
-                registered_at TEXT NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 1,
-                stripe_account_id TEXT,
-                nous_user_id TEXT,
-                trust_level TEXT NOT NULL DEFAULT 'key_only',
-                identity_providers_json TEXT NOT NULL DEFAULT '[]',
-                x402_pay_to_json TEXT NOT NULL DEFAULT '{}',
-                encryption_public_key TEXT NOT NULL DEFAULT '',
-                encryption_key_signature TEXT NOT NULL DEFAULT '',
-                encryption_key_at TEXT NOT NULL DEFAULT ''
-            );
-
-            CREATE TABLE IF NOT EXISTS sessions (
-                session_id TEXT PRIMARY KEY,
-                module_type TEXT NOT NULL,
-                config_json TEXT NOT NULL,
-                payment_rules_json TEXT NOT NULL,
-                state_json TEXT NOT NULL,
-                current_agent TEXT NOT NULL,
-                step_number INTEGER NOT NULL DEFAULT 0,
-                status TEXT NOT NULL DEFAULT 'waiting',
-                participants_json TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS participants (
-                session_id TEXT NOT NULL,
-                agent_id TEXT NOT NULL,
-                joined_at TEXT NOT NULL,
-                stake_paid INTEGER NOT NULL DEFAULT 0,
-                join_at TEXT NOT NULL DEFAULT '',
-                join_signature TEXT NOT NULL DEFAULT '',
-                PRIMARY KEY (session_id, agent_id)
-            );
-
-            -- P273: a player's signed leave of a game not yet started.
-            CREATE TABLE IF NOT EXISTS session_leaves (
-                session_id TEXT NOT NULL,
-                agent_id TEXT NOT NULL,
-                at TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                left_at TEXT NOT NULL,
-                PRIMARY KEY (session_id, agent_id, at)
-            );
-
-            -- P273: senders an agent takes no DMs from. Its own private choice.
-            CREATE TABLE IF NOT EXISTS dm_blocks (
-                agent_id TEXT NOT NULL,
-                blocked TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                blocked_stable_id TEXT NOT NULL DEFAULT '',   -- P274: the identity, so a block follows a move
-                PRIMARY KEY (agent_id, blocked)
-            );
-
-            CREATE TABLE IF NOT EXISTS escrow_holds (
-                hold_hash TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                payer_agent_id TEXT NOT NULL,
-                payer_address TEXT NOT NULL,
-                receiver_agent_id TEXT NOT NULL,
-                receiver_address TEXT NOT NULL,
-                network TEXT NOT NULL,
-                amount_atomic TEXT NOT NULL,
-                payment_info_json TEXT NOT NULL,
-                state TEXT NOT NULL,
-                authorize_tx TEXT,
-                capture_tx TEXT,
-                void_tx TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            -- P143: table talk, inside the game it belongs to — same
-            -- visibility as the session, part of its record.
-            CREATE TABLE IF NOT EXISTS game_chat (
-                message_id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                agent_id TEXT NOT NULL,
-                content TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS bounty_entries (
-                listing_id TEXT NOT NULL,
-                agent_id TEXT NOT NULL,
-                nous_user_id TEXT NOT NULL,
-                entered_at TEXT NOT NULL,
-                PRIMARY KEY (listing_id, agent_id)
-            );
-
-            -- P72-4: the Sybil rule, enforced by the database rather than only
-            -- by the check that precedes it. bounties.may_enter() counts one
-            -- entry per Nous account, but a read-then-write cannot survive two
-            -- concurrent entries from two personas of the same account -- both
-            -- read an empty set, both pass, both insert. This UNIQUE index is
-            -- what makes the rule true under concurrency; the Python check is
-            -- what makes the refusal legible.
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_bounty_entries_one_per_account
-                ON bounty_entries (listing_id, nous_user_id);
-
-            CREATE TABLE IF NOT EXISTS actions (
-                action_id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                agent_id TEXT NOT NULL,
-                action_type TEXT NOT NULL,
-                payload_json TEXT NOT NULL,
-                result_json TEXT,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS messages (
-                message_id TEXT PRIMARY KEY,
-                from_agent TEXT NOT NULL,
-                to_agent TEXT NOT NULL,
-                session_id TEXT,
-                type TEXT NOT NULL,
-                payload_json TEXT NOT NULL,
-                signature TEXT,
-                created_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS listings (
-                listing_id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                description TEXT,
-                listing_type TEXT NOT NULL DEFAULT 'service',
-                agent_id TEXT NOT NULL,
-                payment_mode TEXT NOT NULL DEFAULT 'free',
-                price_usd TEXT NOT NULL DEFAULT '0',
-                module_type TEXT,
-                origin_relay TEXT,
-                expires_at TEXT,
-                metadata_json TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL,
-                federated_from TEXT,
-                agent_public_key_hex TEXT,
-                agent_stable_id TEXT,
-                listing_nonce TEXT,
-                signature TEXT,
-                agent_key_log_json TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS events (
-                event_id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                description TEXT,
-                module_type TEXT NOT NULL,
-                organizer_id TEXT NOT NULL,
-                payment_mode TEXT NOT NULL DEFAULT 'free',
-                entry_fee_usd TEXT NOT NULL DEFAULT '0',
-                status TEXT NOT NULL DEFAULT 'open',
-                bracket_json TEXT NOT NULL DEFAULT '{}',
-                participants_json TEXT NOT NULL DEFAULT '[]',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS payments (
-                payment_id TEXT PRIMARY KEY,
-                session_id TEXT,
-                room_id TEXT,
-                agent_id TEXT NOT NULL,
-                amount_cents INTEGER NOT NULL DEFAULT 0,
-                currency TEXT NOT NULL DEFAULT 'usd',
-                payment_intent_id TEXT NOT NULL,
-                payment_type TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'confirmed',
-                created_at TEXT NOT NULL,
-                rail TEXT NOT NULL DEFAULT 'stripe'
-            );
-
-            CREATE TABLE IF NOT EXISTS settlements (
-                settlement_id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                winner_id TEXT,
-                total_stake_cents INTEGER NOT NULL DEFAULT 0,
-                platform_fee_cents INTEGER NOT NULL DEFAULT 0,
-                winner_payout_cents INTEGER NOT NULL DEFAULT 0,
-                platform_fee_bps INTEGER NOT NULL DEFAULT 250,
-                payment_intent_ids TEXT NOT NULL DEFAULT '[]',
-                transfer_id TEXT,
-                transfer_status TEXT NOT NULL DEFAULT 'pending_connect',
-                status TEXT NOT NULL DEFAULT 'settled',
-                created_at TEXT NOT NULL,
-                payer_id TEXT,
-                rail TEXT NOT NULL DEFAULT 'stripe'
-            );
-
-            -- P48: the pre-settlement intent record that closes x402's
-            -- double-charge window. One row per (payer, resource, amount)
-            -- purchase, written and committed BEFORE the facilitator's
-            -- /settle is called and retired once the entitlement it bought
-            -- exists. See _open_x402_intent() for the state machine and why
-            -- `valid_before` is what makes an abandoned attempt safe to retry.
-            CREATE TABLE IF NOT EXISTS x402_settle_intents (
-                intent_key TEXT PRIMARY KEY,
-                payer_id TEXT NOT NULL,
-                payer_stable_id TEXT,
-                resource_type TEXT NOT NULL,
-                resource_id TEXT NOT NULL,
-                amount_cents INTEGER NOT NULL,
-                network TEXT NOT NULL DEFAULT '',
-                asset TEXT NOT NULL DEFAULT '',
-                authorizer TEXT NOT NULL DEFAULT '',
-                nonce TEXT NOT NULL DEFAULT '',
-                valid_before INTEGER NOT NULL DEFAULT 0,
-                status TEXT NOT NULL DEFAULT 'settling',
-                transaction_hash TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
-
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS agent_inbox (
-                inbox_id TEXT PRIMARY KEY,
-                agent_id TEXT NOT NULL,
-                event_type TEXT NOT NULL,
-                payload_json TEXT NOT NULL DEFAULT '{}',
-                is_read INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL
-            );
-        """)
-        # Agoras schema (topic-based agent forums: public/private/restricted)
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS agora_topics (
-                topic_id TEXT PRIMARY KEY,
-                slug TEXT UNIQUE NOT NULL,
-                name TEXT NOT NULL,
-                description TEXT NOT NULL DEFAULT '',
-                visibility TEXT NOT NULL DEFAULT 'public',
-                gate_type TEXT NOT NULL DEFAULT 'open',
-                entry_fee_cents INTEGER NOT NULL DEFAULT 0,
-                creator_id TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                post_count INTEGER NOT NULL DEFAULT 0,
-                subscriber_count INTEGER NOT NULL DEFAULT 0,
-                flair_options TEXT NOT NULL DEFAULT '[]',
-                access_duration_days INTEGER
-            );
-            CREATE TABLE IF NOT EXISTS agora_members (
-                topic_id TEXT NOT NULL,
-                agent_id TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'subscriber',
-                joined_at TEXT NOT NULL,
-                PRIMARY KEY (topic_id, agent_id)
-            );
-            CREATE TABLE IF NOT EXISTS agora_invites (
-                topic_id TEXT NOT NULL,
-                agent_id TEXT NOT NULL,
-                invited_by TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                PRIMARY KEY (topic_id, agent_id)
-            );
-            CREATE TABLE IF NOT EXISTS agora_posts (
-                post_id TEXT PRIMARY KEY,
-                topic_id TEXT NOT NULL,
-                author_id TEXT NOT NULL,
-                title TEXT NOT NULL,
-                content TEXT NOT NULL,
-                post_type TEXT NOT NULL DEFAULT 'text',
-                flair TEXT,
-                vote_score INTEGER NOT NULL DEFAULT 0,
-                comment_count INTEGER NOT NULL DEFAULT 0,
-                is_pinned INTEGER NOT NULL DEFAULT 0,
-                is_locked INTEGER NOT NULL DEFAULT 0,
-                is_deleted INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS agora_comments (
-                comment_id TEXT PRIMARY KEY,
-                post_id TEXT NOT NULL,
-                parent_comment_id TEXT,
-                author_id TEXT NOT NULL,
-                content TEXT NOT NULL,
-                vote_score INTEGER NOT NULL DEFAULT 0,
-                is_deleted INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS agora_votes (
-                voter_id TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                target_type TEXT NOT NULL,
-                value INTEGER NOT NULL,
-                created_at TEXT NOT NULL,
-                PRIMARY KEY (voter_id, target_id, target_type)
-            );
-        """)
-        # DM schema (direct agent-to-agent threads)
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS dm_threads (
-                thread_id TEXT PRIMARY KEY,
-                agent_a TEXT NOT NULL,
-                agent_b TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                last_message_at TEXT NOT NULL,
-                encrypted INTEGER NOT NULL DEFAULT 0,
-                UNIQUE(agent_a, agent_b)
-            );
-            CREATE TABLE IF NOT EXISTS dm_messages (
-                message_id TEXT PRIMARY KEY,
-                thread_id TEXT NOT NULL,
-                sender_id TEXT NOT NULL,
-                content TEXT NOT NULL,
-                msg_type TEXT NOT NULL DEFAULT 'chat',
-                created_at TEXT NOT NULL,
-                signature TEXT,
-                nonce TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS reg_challenges (
-                challenge_id TEXT PRIMARY KEY,
-                nonce TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL,
-                used INTEGER NOT NULL DEFAULT 0
-            );
-
-            -- P243: a room's signed acts — its creation (with every setting), invites,
-            -- kicks — each kept with the payload its author signed.
-            CREATE TABLE IF NOT EXISTS room_acts (
-                act_id TEXT PRIMARY KEY,
-                room_id TEXT NOT NULL,
-                act TEXT NOT NULL,
-                target TEXT,
-                by_agent TEXT NOT NULL,
-                at TEXT NOT NULL,
-                nonce TEXT UNIQUE,
-                payload_json TEXT NOT NULL,
-                signature TEXT NOT NULL
-            );
-
-            -- P278: a topic's signed acts — its creation (with every setting), invites,
-            -- taking them back, kicks — each kept with the payload its creator signed.
-            CREATE TABLE IF NOT EXISTS topic_acts (
-                act_id TEXT PRIMARY KEY,
-                topic_id TEXT NOT NULL,
-                act TEXT NOT NULL,
-                target TEXT,
-                by_agent TEXT NOT NULL,
-                at TEXT NOT NULL,
-                nonce TEXT UNIQUE,
-                payload_json TEXT NOT NULL,
-                signature TEXT NOT NULL
-            );
-
-            -- P241: a game's creator's signed offer of it to other relays' agents.
-            CREATE TABLE IF NOT EXISTS session_offers (
-                session_id TEXT PRIMARY KEY,
-                stable_id TEXT NOT NULL,
-                public_key_hex TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                offered_at TEXT NOT NULL
-            );
-
-            -- P247: a room's creator's / topic's owner's signed advert, so other relays can find it.
-            CREATE TABLE IF NOT EXISTS room_adverts (
-                room_id TEXT PRIMARY KEY,
-                stable_id TEXT NOT NULL,
-                public_key_hex TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                advertised_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS topic_adverts (
-                topic_id TEXT PRIMARY KEY,
-                stable_id TEXT NOT NULL,
-                public_key_hex TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                advertised_at TEXT NOT NULL
-            );
-
-            -- P245: an agent's key log, one row per signed step, by its stable id. Only
-            -- this relay's own agents; what a linked relay served of its agents is kept
-            -- beside the listing or remote agent it came with.
-            CREATE TABLE IF NOT EXISTS agent_key_log (
-                stable_id TEXT NOT NULL,
-                step_no INTEGER NOT NULL,
-                old_key TEXT NOT NULL,
-                new_key TEXT NOT NULL,
-                at TEXT NOT NULL,
-                signed_by TEXT NOT NULL DEFAULT 'key',
-                signature TEXT NOT NULL,
-                commitment TEXT NOT NULL DEFAULT '',
-                recovery_public_key TEXT NOT NULL DEFAULT '',
-                compromised_since TEXT NOT NULL DEFAULT '',
-                recorded_at REAL NOT NULL DEFAULT 0,
-                PRIMARY KEY (stable_id, step_no)
-            );
-
-            -- P246: steps a recovery undid (a thief's key changes after the key was
-            -- lost), kept and served as evidence. They are no longer part of the log.
-            CREATE TABLE IF NOT EXISTS agent_key_log_superseded (
-                stable_id TEXT NOT NULL,
-                seq INTEGER NOT NULL,
-                step_json TEXT NOT NULL,
-                superseded_at TEXT NOT NULL,
-                PRIMARY KEY (stable_id, seq)
-            );
-
-            -- P249: rooms and topics other relays' owners advertised, as pulled from a linked
-            -- relay — each already checked against its owner's signature. The advert is kept
-            -- whole so it can be checked again when it is served.
-            CREATE TABLE IF NOT EXISTS elsewhere_adverts (
-                kind TEXT NOT NULL,
-                peer_url TEXT NOT NULL,
-                ident TEXT NOT NULL,
-                item_json TEXT NOT NULL,
-                pulled_at TEXT NOT NULL,
-                PRIMARY KEY (kind, peer_url, ident)
-            );
-
-            CREATE TABLE IF NOT EXISTS schema_migrations (
-                key TEXT PRIMARY KEY,
-                applied_at TEXT NOT NULL
-            );
-        """)
-        # Schema migrations for existing DBs (idempotent ADD COLUMN)
-        _migrate_authorized_agents(conn)
-        _migrate_dm_threads(conn)
-        _migrate_federated_dms(conn)
-        _migrate_key_logs(conn)
+        _assert_schema_version(conn)
+        conn.execute("PRAGMA journal_mode=WAL")      # once; it stays with the file
+        conn.executescript(SCHEMA_SQL)
         _load_session_floors(conn)      # P246
-        _migrate_payments(conn)
-        _migrate_settlements(conn)
-        _migrate_settlement_dedupe_key(conn)
-        _migrate_settlement_refund_columns(conn)
-        _migrate_settlement_atomic_columns(conn)
-        _migrate_listings_federated_from(conn)
-        _migrate_listings_agent_key(conn)
-        _migrate_listings_agent_signature(conn)
-        _migrate_payout_wallet_proofs(conn)
-        _migrate_relay_list(conn)
-        _migrate_carried_records(conn)
-        _drop_challenge_lobby(conn)
-        # escrow_holds (P99) is a new table, created above by CREATE TABLE IF
-        # NOT EXISTS on any database, old or new, so it needs no migration.
-        # Rename aroga_* → agora_* if old names still exist (typo fix)
-        _migrate_agora_tables(conn)
-        # Rooms schema (separate DDL to keep clean)
-        rooms_db.init_rooms_schema(conn)
-        _migrate_rooms(conn)
-        _migrate_deletions(conn)     # P192: after every table it marks exists
-        _migrate_agora_signatures(conn)
-
-        # P36-1: indexes come AFTER the column migrations, always. They used to
-        # sit in the same executescript as the CREATE TABLE statements, which is
-        # indistinguishable from correct on a fresh database -- the CREATE TABLE
-        # carries every column -- and fatal on a pre-existing one, where CREATE
-        # TABLE IF NOT EXISTS is a no-op and only the ALTERs below add the newer
-        # columns. `idx_settlements_payer ON settlements(payer_id)` was the live
-        # instance: it crashed startup on any relay older than N7.
-        conn.executescript("""
-            CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
-            CREATE INDEX IF NOT EXISTS idx_sessions_module ON sessions(module_type);
-            CREATE INDEX IF NOT EXISTS idx_actions_session ON actions(session_id);
-            CREATE INDEX IF NOT EXISTS idx_game_chat_session ON game_chat(session_id, created_at);
-            CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_agent);
-            CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_agent);
-            CREATE INDEX IF NOT EXISTS idx_listings_type ON listings(listing_type);
-            CREATE INDEX IF NOT EXISTS idx_listings_agent ON listings(agent_id);
-            CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
-            CREATE INDEX IF NOT EXISTS idx_payments_session ON payments(session_id);
-            CREATE INDEX IF NOT EXISTS idx_settlements_session ON settlements(session_id);
-            CREATE INDEX IF NOT EXISTS idx_settlements_winner ON settlements(winner_id);
-            CREATE INDEX IF NOT EXISTS idx_settlements_payer ON settlements(payer_id);
-            -- N9 review O1: all three list_settlements branches ORDER BY created_at
-            -- DESC; without this, SQLite scans the whole table and sorts the matching
-            -- set in a temp b-tree before LIMIT applies (verified via EXPLAIN QUERY
-            -- PLAN — see the commit message for before/after).
-            CREATE INDEX IF NOT EXISTS idx_settlements_created ON settlements(created_at);
-            CREATE INDEX IF NOT EXISTS idx_participants_agent ON participants(agent_id);
-            CREATE INDEX IF NOT EXISTS idx_payments_agent ON payments(agent_id);
-            CREATE INDEX IF NOT EXISTS idx_inbox_agent ON agent_inbox(agent_id, is_read);
-            CREATE INDEX IF NOT EXISTS idx_agora_posts_topic ON agora_posts(topic_id, created_at);
-            CREATE INDEX IF NOT EXISTS idx_agora_posts_author ON agora_posts(author_id);
-            CREATE INDEX IF NOT EXISTS idx_agora_comments_post ON agora_comments(post_id, created_at);
-            CREATE INDEX IF NOT EXISTS idx_agora_members_agent ON agora_members(agent_id);
-            CREATE INDEX IF NOT EXISTS idx_agora_topics_visibility ON agora_topics(visibility, created_at);
-            CREATE INDEX IF NOT EXISTS idx_inbox_created ON agent_inbox(is_read, created_at);
-            CREATE INDEX IF NOT EXISTS idx_dm_threads_a ON dm_threads(agent_a, last_message_at);
-            CREATE INDEX IF NOT EXISTS idx_dm_threads_b ON dm_threads(agent_b, last_message_at);
-            CREATE INDEX IF NOT EXISTS idx_dm_messages_thread ON dm_messages(thread_id, created_at);
-        """)
-        # Access entitlements (P2-3): what a payment actually buys — see
-        # entitlements.py's module docstring
-        entitlements.init_entitlements_schema(conn)
-        # P289: bug quests and security incidents — both in the transparency log
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS likes (
-                agent_id TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                to_agent TEXT NOT NULL,
-                liked INTEGER NOT NULL DEFAULT 1,
-                at TEXT NOT NULL,
-                signature TEXT NOT NULL,
-                PRIMARY KEY (agent_id, kind, target_id, to_agent)
-            );
-            CREATE INDEX IF NOT EXISTS idx_likes_to ON likes(to_agent);
-            CREATE INDEX IF NOT EXISTS idx_likes_target ON likes(kind, target_id);
-            CREATE TABLE IF NOT EXISTS bug_reports (
-                report_id TEXT PRIMARY KEY,
-                reporter_id TEXT NOT NULL,
-                operator_key TEXT NOT NULL,
-                code_commit TEXT NOT NULL,
-                commitment TEXT NOT NULL,
-                sealed INTEGER NOT NULL DEFAULT 1,
-                severity_claimed TEXT NOT NULL,
-                content_json TEXT NOT NULL DEFAULT '',
-                status TEXT NOT NULL DEFAULT 'open',
-                severity TEXT NOT NULL DEFAULT '',
-                points INTEGER NOT NULL DEFAULT 0,
-                fix_commit TEXT NOT NULL DEFAULT '',
-                duplicate_of TEXT NOT NULL DEFAULT '',
-                decided_by TEXT NOT NULL DEFAULT '',
-                created_at TEXT NOT NULL,
-                decided_at TEXT NOT NULL DEFAULT '',
-                revealed_at TEXT NOT NULL DEFAULT ''
-            );
-            CREATE INDEX IF NOT EXISTS idx_bug_reports_operator ON bug_reports(operator_key, status, created_at);
-            CREATE TABLE IF NOT EXISTS security_incidents (
-                incident_id TEXT PRIMARY KEY,
-                summary TEXT NOT NULL,
-                affected TEXT NOT NULL DEFAULT '',
-                report_id TEXT NOT NULL DEFAULT '',
-                detected_at TEXT NOT NULL,
-                fixed_at TEXT NOT NULL DEFAULT '',
-                recorded_by TEXT NOT NULL,
-                recorded_at TEXT NOT NULL
-            );
-        """)
-        # P256: the transparency log (translog.py)
-        translog.init_schema(conn)
-        _assert_not_pre_p3_schema(conn)
+        _load_revocations(conn)
+        translog.init_schema(conn)      # the log's own tables and triggers (P256)
         _stamp_schema_version(conn)
 
 
@@ -1449,794 +934,32 @@ def init_db() -> None:
 # this number moving, so it cannot quietly stop meaning anything. It lives in
 # emporia.schema (P139) so `emporia doctor` can read it without the relay.
 from emporia.schema import SCHEMA_VERSION  # noqa: E402
+from emporia.schema_sql import SCHEMA_SQL  # noqa: E402
 
 
-def _assert_schema_not_from_the_future(conn: Any) -> None:
-    """Refuse a database written by a newer relay than this one (P61).
-
-    `_assert_not_pre_p3_schema()` below already refuses a database that is too
-    *old*. Nothing refused one that was too new: an older binary opening a newer
-    file simply ran its own migrations over it and served, which is undefined
-    rather than diagnosed. That is the ordinary shape of a rollback — deploy,
-    hit a problem, roll back the binary, and the database stays migrated.
-
-    Checked *before* the migrations run, because the damage a stale binary does
-    is done by migrating a schema it does not understand, not by reading it.
-
-    This protects forward only: a relay predating P61 has no gate to trip. That
-    is inherent to adding a version late and is the reason to add it now rather
-    than later.
-    """
-    found = conn.execute("PRAGMA user_version").fetchone()[0]
-    if found > SCHEMA_VERSION:
-        raise RuntimeError(
-            f"This database was written by a newer Emporia relay: it is at "
-            f"schema version {found}, and this relay understands up to "
-            f"{SCHEMA_VERSION}. Refusing to start rather than migrate a schema "
-            f"this binary does not know — run the newer relay, or restore a "
-            f"backup taken before the upgrade."
-        )
-
-
-def _assert_ids_are_sha256(conn: Any) -> None:
-    """P294: refuse a database whose agents were named by SHA3-256 ids.
-
-    Agent ids, recovery commitments and listing ids are SHA-256 since schema
-    30. The old ids sit inside what agents signed (key-log steps, listings,
-    payout wallets, relay lists), so no migration can make them right: the
-    relay starts afresh, with the old data kept aside, and agents register again."""
-    from emporia.schema import IDS_SHA256_SINCE
-    found = conn.execute("PRAGMA user_version").fetchone()[0]
-    has_agents = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'authorized_agents'").fetchone()
-    if found and found < IDS_SHA256_SINCE and has_agents and conn.execute(
-            "SELECT 1 FROM authorized_agents LIMIT 1").fetchone():
-        raise RuntimeError(
-            f"This relay's database (schema {found}) names its agents by SHA3-256 ids; since schema "
-            f"{IDS_SHA256_SINCE} (P294) they are SHA-256, and the old ids are inside what agents signed, "
-            f"so it cannot be migrated. Start it afresh: move {DATABASE_PATH} (and its -wal/-shm files) "
-            f"aside, then start the relay again — agents register on their next start.")
-
-
-def _snapshot_before_upgrade(conn: Any) -> Path | None:
-    """P193: copy the database aside before a schema upgrade changes it — a
-    migration can drop and alter tables, and an operator should be able to roll
-    back to the code and data they had. Beside the database, 0600, named for the
-    version it was taken before. Only when an existing database is older."""
+def _assert_schema_version(conn: Any) -> None:
+    """Refuse a database written under another schema version, by name. The relay starts fresh: there is
+    one schema and no way to carry an older database to it, so the old file is moved aside and the relay
+    makes a new one (agents register again). A newer file is refused too, rather than served by a binary
+    that does not know it."""
     found = conn.execute("PRAGMA user_version").fetchone()[0]
     has_tables = conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' LIMIT 1").fetchone()
-    if not has_tables or found >= SCHEMA_VERSION:
-        return None
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    target = DATABASE_PATH.with_name(f"{DATABASE_PATH.name}.before-v{SCHEMA_VERSION}-{stamp}.bak")
-    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    os.close(fd)
-    dest = sqlite3.connect(target)
-    try:
-        conn.backup(dest)
-    finally:
-        dest.close()
-    logger.warning("database_snapshot_before_upgrade",
-                   extra={"from_version": found, "to_version": SCHEMA_VERSION, "path": str(target)})
-    return target
+    if has_tables and found < SCHEMA_VERSION:
+        raise RuntimeError(
+            f"This relay starts fresh: its database is at schema version {found}, and this relay makes and "
+            f"reads only version {SCHEMA_VERSION}. Move the old database aside ({DATABASE_PATH} and its "
+            f"-wal/-shm files), then start the relay again; agents register on their next start.")
+    if found > SCHEMA_VERSION:
+        raise RuntimeError(
+            f"This database was written by a newer Emporia relay: it is at schema version {found}, and this "
+            f"relay understands only {SCHEMA_VERSION}. Run the newer relay, or move the database aside.")
 
 
 def _stamp_schema_version(conn: Any) -> None:
-    """Record the schema version, after every migration has run.
-
-    Interpolated rather than bound: `PRAGMA user_version = ?` is not a
-    parameterised statement in SQLite. `SCHEMA_VERSION` is an int constant in
-    this module, so there is nothing here a caller can reach.
-    """
+    """Record the schema version. Interpolated rather than bound: `PRAGMA user_version = ?` is not a
+    parameterised statement in SQLite, and `SCHEMA_VERSION` is an int constant."""
     conn.execute(f"PRAGMA user_version = {int(SCHEMA_VERSION)}")
 
-
-def _assert_not_pre_p3_schema(conn: Any) -> None:
-    """P3: `rail` (payments/settlements/access_entitlements) and the
-    `gate_type='paid'` rename (P3-1, was 'stripe_payment') both landed with
-    **no** `ALTER TABLE`/migration — by decision, since the operator is
-    starting from a fresh DB for this pass (see the P3 plan's "Migrations"
-    section). `CREATE TABLE IF NOT EXISTS` is a no-op against a table that
-    already exists, so an old-schema DB wouldn't get `rail` added, and worse:
-    a leftover `rooms.gate_type='stripe_payment'` row would silently fall
-    through every `gate_type == "paid"` check this pass introduced —
-    `rooms._access_active()` would take the *not-paid* branch, skip the
-    entitlement check entirely, and the room would quietly become free. Fail
-    loud on startup instead of serving that.
-    """
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-    if "rail" not in cols:
-        raise RuntimeError(
-            "This database predates the P3 rail-seam pass (settlements.rail is "
-            "missing). No migration is provided for it — delete the database "
-            "file and reseed."
-        )
-    legacy_gate = conn.execute(
-        "SELECT 1 FROM rooms WHERE gate_type = 'stripe_payment' LIMIT 1"
-    ).fetchone()
-    if legacy_gate:
-        raise RuntimeError(
-            "This database has a room with the legacy gate_type='stripe_payment' "
-            "(renamed to 'paid' in P3). No migration is provided for it — delete "
-            "the database file and reseed."
-        )
-    # P1b-2: same fresh-DB posture, same reason — authorized_agents.x402_pay_to_json
-    # landed with no ALTER TABLE either.
-    agent_cols = {r[1] for r in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()}
-    if "x402_pay_to_json" not in agent_cols:
-        raise RuntimeError(
-            "This database predates the P1b x402 pass (authorized_agents."
-            "x402_pay_to_json is missing). No migration is provided for it — "
-            "delete the database file and reseed."
-        )
-
-
-def _migrate_agora_tables(conn: Any) -> None:
-    existing_tables = {
-        row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-    }
-    renames = [
-        ("aroga_topics",   "agora_topics"),
-        ("aroga_members",  "agora_members"),
-        ("aroga_posts",    "agora_posts"),
-        ("aroga_comments", "agora_comments"),
-        ("aroga_votes",    "agora_votes"),
-    ]
-    for old, new in renames:
-        if old in existing_tables and new not in existing_tables:
-            conn.execute(f"ALTER TABLE {old} RENAME TO {new}")
-    # Add gate_type / entry_fee_cents to agora_topics if missing
-    topic_cols = {r[1] for r in conn.execute("PRAGMA table_info(agora_topics)").fetchall()}
-    if "gate_type" not in topic_cols:
-        conn.execute("ALTER TABLE agora_topics ADD COLUMN gate_type TEXT NOT NULL DEFAULT 'open'")
-    if "entry_fee_cents" not in topic_cols:
-        conn.execute("ALTER TABLE agora_topics ADD COLUMN entry_fee_cents INTEGER NOT NULL DEFAULT 0")
-    # P2-3: how long one payment's access lasts — NULL (the correct default for
-    # every pre-existing row) means no expiry, same meaning as for rooms
-    # (_migrate_rooms). No backfill needed: NULL is already the right value.
-    if "access_duration_days" not in topic_cols:
-        conn.execute("ALTER TABLE agora_topics ADD COLUMN access_duration_days INTEGER")
-
-
-def _migrate_rooms(conn: Any) -> None:
-    """Add `access_duration_days` to `rooms` (P2-3) — how long one payment's
-    access lasts. `rooms.py` has no migration mechanism of its own
-    (`init_rooms_schema()` is a bare `CREATE TABLE IF NOT EXISTS`), so this lives
-    here rather than there, called right after `rooms_db.init_rooms_schema(conn)`
-    in `init_db()`. `NULL` (the default `ADD COLUMN` gives every pre-existing
-    row) means no expiry — the correct value for every room created before this
-    pass, none of which had any concept of an access window — so no backfill is
-    needed, only the column."""
-    room_cols = {r[1] for r in conn.execute("PRAGMA table_info(rooms)").fetchall()}
-    if "access_duration_days" not in room_cols:
-        conn.execute("ALTER TABLE rooms ADD COLUMN access_duration_days INTEGER")
-    if "linked_session_salt" not in room_cols:   # P277: a room's signed link to its game is salted
-        conn.execute("ALTER TABLE rooms ADD COLUMN linked_session_salt TEXT")
-    # P19-5: the sender-chosen per-message nonce that closes room replay, mirroring
-    # dm_messages.nonce (P18-2, migrated the identical way here). Before this,
-    # signed_room_message_payload() and the room AAD bound nothing unique to a
-    # message, so a relay could copy one row's content+signature onto another and
-    # both would verify and decrypt — the exact hole P18-2 closed for DMs, open
-    # here because P18-4 shipped room E2E pointing at the pre-existing chain_hash
-    # instead, which is relay-computed and verified by nothing client-side. NULL
-    # allowed so pre-P19-5 rows survive; SQLite treats NULLs as distinct in a
-    # UNIQUE index, so old rows never collide with each other or a new one.
-    msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(room_messages)").fetchall()}
-    if "nonce" not in msg_cols:
-        conn.execute("ALTER TABLE room_messages ADD COLUMN nonce TEXT")
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_room_messages_nonce "
-        "ON room_messages(room_id, nonce) WHERE nonce IS NOT NULL"
-    )
-
-
-def _migrate_payments(conn: Any) -> None:
-    conn.execute(
-        "DELETE FROM payments WHERE rowid NOT IN ("
-        "SELECT MIN(rowid) FROM payments GROUP BY payment_intent_id)"
-    )
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_payment_intent_id "
-        "ON payments(payment_intent_id)"
-    )
-
-
-def _migrate_settlements(conn: Any) -> None:
-    """Add `payer_id` if missing (N7 review R1/R2) and backfill existing rows.
-
-    A room or Agora settlement is one row per payer, written with exactly one
-    PaymentIntent id (join_room/subscribe_agora_topic both call record_settlement
-    with `"payment_intent_ids": [confirmed_pi]`); a session settlement is one
-    aggregate row for the whole shared escrow, with zero or more PIs across every
-    participant, and correctly has no single payer. Backfill only where both
-    signals agree: the row has exactly one PI (never true for a multi-participant
-    session escrow with more than one payer) AND its session_id doesn't match a
-    row in `sessions` at all (ruling out the common case of a 1-payer, 2-party
-    session too). Ambiguous or already-null-PI rows are left NULL.
-
-    N8 review R3 (fixed the every-startup rescan) then N9 review R2 (fixed what
-    that fix broke): a session's aggregate row legitimately keeps payer_id NULL
-    forever, so a naive `WHERE payer_id IS NULL` backfill scan never empties out
-    and would re-scan every session settlement ever written on every startup. N8
-    stopped that by running the backfill only inside `if "payer_id" not in
-    settlement_cols`, alongside the ADD COLUMN — but that conflated "has the
-    column been added" with "has the backfill finished," and removed the only
-    retry. Concretely: Python's sqlite3 module commits `ALTER TABLE` immediately,
-    independent of the surrounding `with conn:` block, while the backfill's
-    UPDATEs share one implicit transaction with everything after them — so a
-    crash mid-backfill (verified empirically: kill the process between the ALTER
-    and the loop's completion) leaves the column present but every legacy
-    room/Agora row still `payer_id IS NULL`, permanently, since the next startup's
-    guard sees the column and never re-enters. And unlike N8-4's docstring
-    claimed, that is NOT a safe degradation: `add_participant()` is called only
-    from session joins (`:3186`, `:3356`), so a room/Agora row's session_id never
-    appears in `participants` — such a row satisfies neither arm of
-    `_caller_owns_settlement_row` and becomes visible only to the relay operator,
-    unreachable by its actual payer.
-
-    Driven off `schema_migrations` instead: the backfill runs once — on whichever
-    startup finds no `settlements_payer_id_backfill` row — and the completion
-    marker is only inserted after the loop finishes, in the same implicit
-    transaction as the UPDATEs it's marking complete. A crash before that marker
-    commits rolls the whole batch back together (nothing partially applied), so
-    the next startup retries cleanly instead of silently giving up.
-    """
-    settlement_cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-    if "payer_id" not in settlement_cols:
-        conn.execute("ALTER TABLE settlements ADD COLUMN payer_id TEXT")
-
-    backfill_key = "settlements_payer_id_backfill"
-    already_done = conn.execute(
-        "SELECT 1 FROM schema_migrations WHERE key = ?", (backfill_key,)
-    ).fetchone()
-    if already_done:
-        return
-
-    rows = conn.execute(
-        "SELECT settlement_id, session_id, payment_intent_ids FROM settlements "
-        "WHERE payer_id IS NULL"
-    ).fetchall()
-    for row in rows:
-        pi_ids = json.loads(row["payment_intent_ids"] or "[]")
-        if len(pi_ids) != 1:
-            continue
-        is_session = conn.execute(
-            "SELECT 1 FROM sessions WHERE session_id = ?", (row["session_id"],)
-        ).fetchone()
-        if is_session:
-            continue
-        payer = conn.execute(
-            "SELECT agent_id FROM payments WHERE payment_intent_id = ?", (pi_ids[0],)
-        ).fetchone()
-        if payer:
-            conn.execute(
-                "UPDATE settlements SET payer_id = ? WHERE settlement_id = ?",
-                (payer["agent_id"], row["settlement_id"]),
-            )
-
-    conn.execute(
-        "INSERT OR IGNORE INTO schema_migrations (key, applied_at) VALUES (?, ?)",
-        (backfill_key, datetime.now(UTC).isoformat()),
-    )
-
-
-def _migrate_settlement_dedupe_key(conn: Any) -> None:
-    """Add `dedupe_key` and a UNIQUE index on it, and (re)compute it from
-    `settlement_dedupe_key()` (P1r-1, R1) so record_settlement()'s
-    `INSERT OR IGNORE` can actually collide on a replay — and *only* a replay.
-
-    `session_id` alone isn't the real natural key — it's overloaded across three
-    resource kinds (see `_settlement_resource_viewer_allowed()`'s docstring) and a
-    session's own aggregate escrow row legitimately has zero-or-more payers, one
-    row for the whole resource, not one per payer, with `payer_id` correctly
-    NULL. P1a-2 keyed on `(session_id, payer_id)` alone, stored as `dedupe_key =
-    session_id || ':' || COALESCE(payer_id, '')`; P1r-1 found that this collapses
-    a payer's second genuine payment for the same resource (rejoin after a kick,
-    resubscribe after an unsubscribe) into their first, so the key now also folds
-    in a digest of `payment_intent_ids` — see `settlement_dedupe_key()`'s
-    docstring for the full shape.
-
-    A stored column (not a bare `UNIQUE(session_id, payer_id, ...)`) is still
-    required: SQLite treats every NULL as distinct from every other NULL in a
-    UNIQUE index, which would not dedupe session-escrow rows (all sharing
-    `payer_id IS NULL`) at all — the exact case that matters most.
-
-    **Marker-gated one-shot, not P1a-2's unconditional every-startup rewrite.**
-    Every existing row's key was computed under the old 2-part shape and must be
-    rewritten once under the new 3-part one — not just backfilled where NULL,
-    since these rows already have a (stale) non-NULL value. Follows
-    `_migrate_settlements()`'s own pattern for exactly the reason its docstring
-    gives: an unconditional per-startup rewrite here would be harmless once
-    settled, but there is no cheap "already correct" check short of recomputing
-    every row's key and comparing, so gate it explicitly instead of relying on
-    that coincidence. Order matters and mirrors the docstring's reasoning
-    end-to-end: drop the old index (a value this migration is about to write may
-    already exist as some *other* row's stale value, and the old index would
-    reject that write) → recompute every row's key from its own
-    payment_intent_ids/payer_id/session_id → delete genuine duplicates (rows that
-    still collide after moving to the strictly finer key — recomputing can only
-    split old groups apart, never merge them, so this should find nothing; kept
-    as a backstop rather than assumed) → recreate the index → set the marker.
-    `ALTER TABLE` commits immediately in Python's sqlite3 regardless of the
-    surrounding `with conn:` (the N9-R2 lesson); the marker row shares its
-    transaction with the rewrite/delete so a crash before it commits retries the
-    whole batch next startup instead of leaving a mix of old- and new-shape keys.
-
-    Pre-existing genuine duplicates (both rows keying identically even under the
-    finer key — a true replay of the same payment, double-inserted by the bug
-    P1a-2 fixed) are deleted, keeping the earliest by rowid, logged first so an
-    unexpected hit is auditable.
-
-    P2-1 (R3): only the rewrite/collapse above is marker-gated — the
-    `CREATE UNIQUE INDEX` itself runs on *every* call, gated branch or not
-    (`IF NOT EXISTS` makes the already-present case free). P1r-1 put the index
-    creation inside the gated block, so once the marker was set the index was
-    never asserted again; losing it after that point (a schema rebuild, manual
-    `DROP INDEX`, any future migration that rebuilds this table — SQLite's
-    standard ALTER-by-rebuild recipe drops every index) left it gone permanently,
-    and every `record_settlement()` after that failed with `OperationalError`
-    since `ON CONFLICT(dedupe_key)` had nothing to conflict on.
-    """
-    from emporia.payments import settlement_dedupe_key
-
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-    if "dedupe_key" not in cols:
-        conn.execute("ALTER TABLE settlements ADD COLUMN dedupe_key TEXT")
-
-    marker_key = "settlements_dedupe_key_payment_scoped"
-    already_done = conn.execute(
-        "SELECT 1 FROM schema_migrations WHERE key = ?", (marker_key,)
-    ).fetchone()
-    if already_done:
-        # P2-1 (R3): asserted unconditionally, every startup — mirrors P1a-2's
-        # original every-startup CREATE INDEX. Only the one-shot rewrite/collapse
-        # below is marker-gated; the index itself must never depend on the marker,
-        # or a rebuild/manual DROP INDEX after the marker is set (SQLite's
-        # standard ALTER-by-rebuild recipe drops every index) permanently starves
-        # record_settlement()'s ON CONFLICT(dedupe_key) of anything to conflict
-        # on — proved live: drop the index post-marker, restart, every settlement
-        # insert after that dies with "ON CONFLICT clause does not match any
-        # PRIMARY KEY or UNIQUE constraint".
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_dedupe_key ON settlements(dedupe_key)"
-        )
-        return
-
-    conn.execute("DROP INDEX IF EXISTS idx_settlements_dedupe_key")
-
-    rows = conn.execute(
-        "SELECT settlement_id, session_id, payer_id, payment_intent_ids FROM settlements"
-    ).fetchall()
-    for row in rows:
-        pi_ids = json.loads(row["payment_intent_ids"] or "[]")
-        new_key = settlement_dedupe_key(row["session_id"], row["payer_id"], pi_ids)
-        conn.execute(
-            "UPDATE settlements SET dedupe_key = ? WHERE settlement_id = ?",
-            (new_key, row["settlement_id"]),
-        )
-
-    _collapse_duplicate_settlements_by_dedupe_key(conn)
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_settlements_dedupe_key ON settlements(dedupe_key)"
-    )
-    conn.execute(
-        "INSERT OR IGNORE INTO schema_migrations (key, applied_at) VALUES (?, ?)",
-        (marker_key, datetime.now(UTC).isoformat()),
-    )
-
-
-def _collapse_duplicate_settlements_by_dedupe_key(conn: Any) -> None:
-    """Delete every settlements row that shares its `dedupe_key` with an earlier
-    one, keeping the earliest by rowid. Split out of
-    `_migrate_settlement_dedupe_key()` so this specific piece — a true replay of
-    the same payment, double-inserted by the bug P1a-2 fixed — is independently
-    testable, including the guard below in isolation from the recompute loop
-    that (today) always precedes it.
-
-    P1r-4 (R4): guarded on `dedupe_key IS NOT NULL` at both the scan and the
-    delete. `GROUP BY` folds every NULL into a single group — unlike `UNIQUE`,
-    which treats each NULL as distinct — so an ungated `GROUP BY dedupe_key`
-    would treat any NULL-key rows as one duplicate group and delete all but one
-    of them. `_migrate_settlement_dedupe_key()`'s recompute loop gives every row
-    a non-NULL key before calling this, so the guard is unreachable via that
-    caller today; kept because these two NULL semantics disagreeing is exactly
-    the kind of mismatch that has bitten this table before (N8-R3/N9-R2), and
-    because this function may gain other callers.
-    """
-    dupes = conn.execute(
-        "SELECT dedupe_key, COUNT(*) c, GROUP_CONCAT(settlement_id) ids "
-        "FROM settlements WHERE dedupe_key IS NOT NULL GROUP BY dedupe_key HAVING c > 1"
-    ).fetchall()
-    for row in dupes:
-        logger.info(
-            "migrate_settlements_dedupe", extra={
-                "dedupe_key": row["dedupe_key"], "duplicate_count": row["c"],
-                "settlement_ids": row["ids"],
-            },
-        )
-    conn.execute(
-        "DELETE FROM settlements WHERE dedupe_key IS NOT NULL AND rowid NOT IN "
-        "(SELECT MIN(rowid) FROM settlements WHERE dedupe_key IS NOT NULL GROUP BY dedupe_key)"
-    )
-
-
-def _migrate_settlement_refund_columns(conn: Any) -> None:
-    """Add `refund_id`/`reversal_id` to settlements (P2r-3, R3) — P2-7's
-    `_refund_kicked_room_payer()` called Stripe to reverse a transfer and
-    refund a charge but recorded neither outcome: `transfer_status` stayed
-    `'transferred'`, `payments.status` stayed `'confirmed'`, and the Stripe
-    refund/reversal ids weren't stored anywhere — money moved, no record,
-    the exact class of bug P1a-2 fixed for settlements in the first place,
-    reintroduced on the refund side by the pass that added refunds.
-
-    NULL on every row (existing or freshly inserted) means "no refund
-    happened" — the correct default, no backfill needed — so no marker gate,
-    same as `access_duration_days` (P2-3).
-    """
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-    if "refund_id" not in cols:
-        conn.execute("ALTER TABLE settlements ADD COLUMN refund_id TEXT")
-    if "reversal_id" not in cols:
-        conn.execute("ALTER TABLE settlements ADD COLUMN reversal_id TEXT")
-
-
-def _migrate_settlement_atomic_columns(conn: Any) -> None:
-    """Add `platform_fee_atomic`/`winner_payout_atomic` (P129): an escrow
-    capture splits in USDC atomic units, so 2.5% of $1.00 is $0.025 — the
-    cents columns could only say 2¢/98¢ while the contract paid 2.5¢/97.5¢.
-    Decimal strings of atomic units; NULL on every other rail, where the cents
-    columns are exact.
-    """
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(settlements)").fetchall()}
-    for col in ("platform_fee_atomic", "winner_payout_atomic"):
-        if col not in cols:
-            conn.execute(f"ALTER TABLE settlements ADD COLUMN {col} TEXT")
-
-
-def _drop_challenge_lobby(conn: Any) -> None:
-    """P188: the challenge lobby is retired — open games travel in the signed
-    open-sessions feed. Its cards were adverts, never money or results."""
-    conn.execute("DROP TABLE IF EXISTS challenges")
-
-
-def _migrate_deletions(conn: Any) -> None:
-    """P192: removals — the signed record of who removed what, and the marks on
-    the rows whose text was erased (emporia.deletion)."""
-    conn.execute("""CREATE TABLE IF NOT EXISTS deletions (
-        kind TEXT NOT NULL, item TEXT NOT NULL, deleted_by TEXT NOT NULL, role TEXT NOT NULL,
-        deleted_at TEXT NOT NULL, signature TEXT NOT NULL, PRIMARY KEY (kind, item))""")
-    for table, col, decl in (("agora_topics", "is_deleted", "INTEGER NOT NULL DEFAULT 0"),
-                             ("room_messages", "deleted_at", "TEXT"), ("dm_messages", "deleted_at", "TEXT"),
-                             ("game_chat", "deleted_at", "TEXT")):
-        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-        if cols and col not in cols:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
-
-
-def _migrate_carried_records(conn: Any) -> None:
-    """P190: records other relays signed for an agent that moved here."""
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()}
-    if "carried_records_json" not in cols:
-        conn.execute("ALTER TABLE authorized_agents ADD COLUMN carried_records_json TEXT")
-
-
-def _migrate_relay_list(conn: Any) -> None:
-    """P187: the agent's signed relay list — where it lives and visits."""
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()}
-    if "relay_list_json" not in cols:
-        conn.execute("ALTER TABLE authorized_agents ADD COLUMN relay_list_json TEXT")
-
-
-def _migrate_listings_agent_key(conn: Any) -> None:
-    """Add `listings.agent_public_key_hex` (P184): the seller's identity key as
-    the relay it was pulled from vouched for it. A name is per relay; the key is
-    what says two listings, or a listing and an agent here, are the same agent."""
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
-    if "agent_public_key_hex" not in cols:
-        conn.execute("ALTER TABLE listings ADD COLUMN agent_public_key_hex TEXT")
-
-
-def _migrate_listings_agent_signature(conn: Any) -> None:
-    """P240: the agent's own signature over a listing, and what it signed with —
-    so a relay that pulls the listing can check the agent said it. A row with no
-    signature was written by the relay (a bounty, an event's listing) and never
-    leaves it."""
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
-    if "signature" in cols:
-        return
-    for col in ("agent_stable_id", "listing_nonce", "signature"):
-        if col not in cols:
-            conn.execute(f"ALTER TABLE listings ADD COLUMN {col} TEXT")
-    # Rows pulled from linked relays before this were taken on their relay's
-    # word alone; they go, and come back on the next pull only if signed.
-    conn.execute("DELETE FROM listings WHERE federated_from IS NOT NULL")
-
-
-def _migrate_payout_wallet_proofs(conn: Any) -> None:
-    """P262: each payout wallet with the agent's signature over it, which payers
-    check. Wallets registered before this carry none; they are dropped, loudly,
-    and the agent registers them again (register_x402_wallet signs)."""
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()}
-    if "x402_pay_to_proofs_json" in cols:
-        return
-    conn.execute("ALTER TABLE authorized_agents ADD COLUMN x402_pay_to_proofs_json TEXT NOT NULL DEFAULT '{}'")
-    dropped = conn.execute("UPDATE authorized_agents SET x402_pay_to_json = '{}' "
-                           "WHERE x402_pay_to_json NOT IN ('', '{}')").rowcount
-    if dropped:
-        logger.warning("payout_wallets_dropped_unsigned", extra={
-            "agents": dropped, "fix": "each agent runs register_x402_wallet again (it signs now)"})
-
-
-def _migrate_agora_signatures(conn: Any) -> None:
-    """P242: an Agora post's and comment's author signature and nonce. Rows
-    from before have neither and read as unsigned, not forged."""
-    for table in ("agora_posts", "agora_comments"):
-        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-        for col in ("nonce", "signature"):
-            if col not in cols:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} TEXT")
-        conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{table}_nonce ON {table}(nonce) "
-                     "WHERE nonce IS NOT NULL")
-
-
-def _migrate_listings_federated_from(conn: Any) -> None:
-    """Add `listings.federated_from` (P87): the peer a row was actually pulled
-    from, as opposed to `origin_relay`, which is whatever that peer *said* the
-    origin was. Ownership of a federated row is checked against this.
-
-    NULL means "not pulled from a peer" for a local row, and "pulled before
-    P87" for a federated one — `_pull_federated_listings` adopts the latter on
-    its next refresh from a peer whose URL matches the row's origin.
-    """
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(listings)").fetchall()}
-    if "federated_from" not in cols:
-        conn.execute("ALTER TABLE listings ADD COLUMN federated_from TEXT")
-
-
-def _migrate_federated_dms(conn: Any) -> None:
-    """P185: DMs with agents on linked relays (emporia.federation_dm). A thread
-    with one is named by both addresses; `local_agent` is the participant here,
-    `remote_address` the other. `remote_agents` pins each remote agent's keys.
-    `accepts_remote_dms`: whether an agent takes DMs from other relays — off
-    until it chooses."""
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(dm_threads)").fetchall()}
-    for col, decl in (("local_agent", "TEXT"), ("remote_address", "TEXT"), ("peer_url", "TEXT"),
-                      ("started_by_local", "INTEGER NOT NULL DEFAULT 0")):
-        if col not in cols:
-            conn.execute(f"ALTER TABLE dm_threads ADD COLUMN {col} {decl}")
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()}
-    if "accepts_remote_dms" not in cols:
-        conn.execute("ALTER TABLE authorized_agents ADD COLUMN accepts_remote_dms INTEGER NOT NULL DEFAULT 0")
-    conn.execute("""CREATE TABLE IF NOT EXISTS remote_agents (
-        address TEXT PRIMARY KEY,
-        peer_url TEXT NOT NULL,
-        public_key_hex TEXT NOT NULL,
-        encryption_public_key TEXT NOT NULL,
-        encryption_key_signature TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        stable_id TEXT NOT NULL DEFAULT '',
-        key_log_json TEXT NOT NULL DEFAULT '[]',
-        encryption_key_at TEXT NOT NULL DEFAULT '')""")
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_dm_threads_local ON dm_threads(local_agent, last_message_at)")
-
-
-def _migrate_key_logs(conn: Any) -> None:
-    """P245: the key log a linked relay served, kept with the listing it signed
-    and the remote agent pinned — so a reader here can check them without asking
-    the other relay again. P246: the fields a commitment or a recovery step adds
-    to this relay's own log."""
-    for table, col, decl in (("listings", "agent_key_log_json", "TEXT"),
-                             ("remote_agents", "stable_id", "TEXT NOT NULL DEFAULT ''"),
-                             ("remote_agents", "key_log_json", "TEXT NOT NULL DEFAULT '[]'"),
-                             ("remote_agents", "encryption_key_at", "TEXT NOT NULL DEFAULT ''"),   # P271
-                             ("participants", "join_at", "TEXT NOT NULL DEFAULT ''"),              # P272
-                             ("participants", "join_signature", "TEXT NOT NULL DEFAULT ''"),
-                             ("dm_blocks", "blocked_stable_id", "TEXT NOT NULL DEFAULT ''"),   # P274
-                             ("agent_key_log", "commitment", "TEXT NOT NULL DEFAULT ''"),
-                             ("agent_key_log", "recovery_public_key", "TEXT NOT NULL DEFAULT ''"),
-                             ("agent_key_log", "compromised_since", "TEXT NOT NULL DEFAULT ''"),
-                             ("agent_key_log", "recorded_at", "REAL NOT NULL DEFAULT 0")):
-        if col not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}:
-            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
-
-
-def _migrate_dm_threads(conn: Any) -> None:
-    """P16: whether a DM thread is end-to-end encrypted.
-
-    `0` is correct for every pre-existing thread — none of them had any concept of
-    encryption, and the flag is opt-in — so this is the column and nothing else, no
-    backfill. Note there is deliberately no migration *off* this: the flag is
-    one-way by design (see `dm_encrypt()`), and a schema that could clear it would
-    be the force-plaintext path the route refuses to provide.
-    """
-    cols = {r[1] for r in conn.execute("PRAGMA table_info(dm_threads)").fetchall()}
-    if "encrypted" not in cols:
-        conn.execute("ALTER TABLE dm_threads ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0")
-    # P17-2: the sender's Ed25519 signature over the message, kept rather than
-    # discarded after write-time verification — `room_messages` has stored one all
-    # along (rooms.py), and DMs had no counterpart, so nothing could re-verify a DM
-    # once it was in the table. NULL (not '') for every pre-P17 row: nothing was
-    # stored, so nothing can be claimed about it, and clients report that as
-    # `verified: None` — "unknown", not "bad".
-    msg_cols = {r[1] for r in conn.execute("PRAGMA table_info(dm_messages)").fetchall()}
-    if "signature" not in msg_cols:
-        conn.execute("ALTER TABLE dm_messages ADD COLUMN signature TEXT")
-    # P18-2: the sender-chosen per-message nonce that closes replay. The UNIQUE
-    # index is the load-bearing half — it binds the relay's *own SQL*, not just its
-    # HTTP handlers, so an operator copying a row's content+signature onto another
-    # row hits an IntegrityError rather than succeeding silently. NULL is allowed so
-    # pre-P18 rows survive; SQLite treats NULLs as distinct in a UNIQUE index, which
-    # is what we want (many old rows, no nonce, no false collisions).
-    if "nonce" not in msg_cols:
-        conn.execute("ALTER TABLE dm_messages ADD COLUMN nonce TEXT")
-    # P28-4: the hash chain rooms have had since P18. `signature` and `nonce`
-    # above give per-message authenticity and replay protection; neither can
-    # detect a DELETED or REORDERED message, because every surviving row still
-    # verifies on its own. Binding message N to N-1 is what does.
-    #
-    # NULL for every pre-P28 row, and deliberately no backfill: a chain computed
-    # now over rows written before the chain existed would be indistinguishable
-    # from one that had been maintained all along, which is a claim the relay
-    # cannot honestly make about its own history. Same posture as `signature`
-    # above — nothing was stored, so nothing is asserted. `_verify_dm_chain()`
-    # reports the size of that unchained prefix rather than vouching for it.
-    if "chain_hash" not in msg_cols:
-        conn.execute("ALTER TABLE dm_messages ADD COLUMN chain_hash TEXT")
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_dm_messages_nonce "
-        "ON dm_messages(thread_id, nonce) WHERE nonce IS NOT NULL"
-    )
-
-
-def _backfill_stripe_account_state(conn: Any) -> None:
-    """P26-1: repair the state P25's migration left behind (see the column's own
-    comment above for the money-stranding failure this prevents).
-
-    P27-1: P26 gated this on `stripe_account_status` being newly added, which
-    meant it only ever fired on a P24 -> P26 jump — and therefore missed every
-    deployment that had actually run P25, i.e. exactly the ones H1 was about.
-    Those relays already have the column, populated with the wrong value,
-    because that mis-defaulting *is* H1. The gate now also fires when
-    `stripe_account_mode` is newly added (the P25 -> P26 upgrade moment).
-
-    That widens when this runs, so the safety no longer rests on the gate
-    alone: the `stripe_account_status = 'none'` predicate makes the statement
-    structurally incapable of touching a row that is already 'pending' or
-    'active'. A live account mid-KYC keeps its 'pending', and a P26-era
-    deauthorized account — which the P26 handler leaves as (id present, status
-    'none'), the same shape repaired here — is protected by the gate, since a
-    table that already has both columns triggers neither branch.
-
-    Rows matched by the predicate can be dated precisely. Before P26 nothing
-    wrote 'none' over an existing account id: auto-provisioning set 'active',
-    live onboarding set 'pending', and the webhook only ever set 'active' or
-    'pending'. So (id present, status 'none') can only have been produced by
-    a column default landing on a row auto-provisioning had already filled —
-    and that block was gated on `sk_test_`. 'test'/'active' is not a guess;
-    it is the only state that path could have produced. That inference holds
-    here and must not be assumed anywhere else.
-    """
-    conn.execute(
-        "UPDATE authorized_agents SET stripe_account_status = 'active', "
-        "stripe_account_mode = 'test' "
-        "WHERE COALESCE(stripe_account_id, '') != '' AND stripe_account_status = 'none'"
-    )
-
-
-def _backfill_stable_ids(conn: Any) -> int:
-    """Give every pre-P47 row a `stable_id`, derived from the key on file.
-
-    A relay upgraded in place has rows registered before this column existed,
-    and their **genesis** key is not recoverable — nothing ever recorded key
-    history. So the key on file becomes the genesis key for those rows. That is
-    a real approximation and is written down rather than glossed: an agent that
-    rotated its key before P47 gets an id derived from its current key, not its
-    first one. Every agent registered after P47 has a true genesis anchor.
-
-    The alternative — leaving NULL — pushes a branch into every reader forever
-    for the sake of a distinction no caller can act on.
-
-    Returns how many rows it touched, so a caller can log it and so the tests
-    can tell "backfilled nothing" from "backfilled correctly".
-    """
-    rows = conn.execute(
-        "SELECT agent_id, public_key_hex FROM authorized_agents WHERE stable_id IS NULL"
-    ).fetchall()
-    touched = 0
-    for row in rows:
-        key = row["public_key_hex"] if not isinstance(row, tuple) else row[1]
-        agent_id = row["agent_id"] if not isinstance(row, tuple) else row[0]
-        if not key:
-            continue
-        try:
-            derived = stable_id_for(key)
-        except ValueError:
-            # A malformed key on file can't produce an id. Left NULL rather
-            # than crashing the migration for every other agent on the relay.
-            logger.warning("stable_id backfill skipped %s: unparseable public key", agent_id)
-            continue
-        conn.execute(
-            "UPDATE authorized_agents SET stable_id = ? WHERE agent_id = ? AND stable_id IS NULL",
-            (derived, agent_id),
-        )
-        touched += 1
-    return touched
-
-
-def _migrate_authorized_agents(conn: Any) -> None:
-    existing = {
-        row[1]
-        for row in conn.execute("PRAGMA table_info(authorized_agents)").fetchall()
-    }
-    migrations = [
-        ("nous_user_id", "TEXT"),
-        ("trust_level", "TEXT NOT NULL DEFAULT 'key_only'"),
-        ("identity_providers_json", "TEXT NOT NULL DEFAULT '[]'"),
-        # P16: the agent's X25519 public key for E2E DMs, plus the Ed25519
-        # signature binding it to this agent_id. '' is the correct value for every
-        # pre-existing row — "has not published one" is a normal state clients
-        # branch on, not a missing migration — so no backfill, only the columns.
-        ("encryption_public_key", "TEXT NOT NULL DEFAULT ''"),
-        ("encryption_key_signature", "TEXT NOT NULL DEFAULT ''"),
-        # P271: when the agent signed the binding (v2); '' for a v1 binding
-        ("encryption_key_at", "TEXT NOT NULL DEFAULT ''"),
-        # P25-2: 'none' (no Connected Account) / 'pending' (created, capabilities
-        # not yet active) / 'active' (transfers capability active).
-        #
-        # P26-1: P25 shipped this claiming 'none' was "already correct for every
-        # pre-existing row." **That was wrong, and it stranded money.**
-        # register_agent() only sets 'active' at *registration* time, so every
-        # agent that registered before P25 kept a working Connected Account while
-        # reading 'none' — and both of P25's new pre-checks skip a payout on
-        # exactly that value. The charge still captures into the platform
-        # balance; the payee's share is never transferred and nothing retries it.
-        # The backfill below is the fix; see _backfill_stripe_account_state().
-        ("stripe_account_status", "TEXT NOT NULL DEFAULT 'none'"),
-        # P26-4: which Stripe mode created this account. '' = unknown. Account
-        # ids don't encode their own mode, and a test-mode acct id is worthless
-        # (worse: dangerous) under a live key — see _stripe_key_mode().
-        ("stripe_account_mode", "TEXT NOT NULL DEFAULT ''"),
-        # P47: the agent's permanent identity, distinct from its handle. NULL
-        # (not '') for a row that predates this column, so the backfill below
-        # can tell "never allocated" from "allocated" without a sentinel — see
-        # _backfill_stable_ids(). Nullable rather than NOT NULL DEFAULT '': a
-        # default would make every legacy row collide on the unique index.
-        ("stable_id", "TEXT"),
-    ]
-    newly_added = set()
-    for col, defn in migrations:
-        if col not in existing:
-            conn.execute(f"ALTER TABLE authorized_agents ADD COLUMN {col} {defn}")
-            newly_added.add(col)
-    # P27-1: either column appearing marks an un-repaired generation --
-    # `stripe_account_status` for a P24-era table, `stripe_account_mode` for a
-    # relay that already ran P25 (and so already has the mis-defaulted status
-    # column). A table that has both is fully migrated and triggers neither.
-    if newly_added & {"stripe_account_status", "stripe_account_mode"}:
-        _backfill_stripe_account_state(conn)
-    if "stable_id" in newly_added:
-        _backfill_stable_ids(conn)
-    # P47: unique, and partial so legacy rows the backfill hasn't reached yet
-    # (or rows a future migration deliberately leaves NULL) don't all collide
-    # on NULL. Unique because two agents sharing an identity would be
-    # indistinguishable to everything downstream — the mirror of the
-    # taken-handle-under-a-different-key check `register()` already makes.
-    conn.execute(
-        "CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_stable_id "
-        "ON authorized_agents(stable_id) WHERE stable_id IS NOT NULL"
-    )
-    # Non-unique index — one Nous user may operate multiple agent personas.
-    # Drop the old unique variant if it exists (created by an earlier migration).
-    conn.execute("DROP INDEX IF EXISTS idx_agents_nous_user_id")
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_agents_nous_user_id "
-        "ON authorized_agents(nous_user_id) WHERE nous_user_id IS NOT NULL"
-    )
-
-
-# ============================================================================
-# Payment helpers
-# ============================================================================
 
 def _payment_metadata_matches(
     metadata: dict[str, Any],
@@ -2244,21 +967,7 @@ def _payment_metadata_matches(
     resource_type: str,
     resource_id: str,
 ) -> bool:
-    if metadata.get("resource_type") == resource_type and metadata.get("resource_id") == resource_id:
-        return True
-    legacy_key = {
-        "session": "session_id",
-        "room": "room_id",
-        "agora": "topic_id",
-    }.get(resource_type)
-    if legacy_key and metadata.get(legacy_key) == resource_id:
-        return True
-    service_type = metadata.get("service_type")
-    if resource_type == "room" and metadata.get("session_id") == resource_id:
-        return service_type == "emporia:room_entry"
-    if resource_type == "agora" and metadata.get("session_id") == resource_id:
-        return service_type == "emporia:agora_subscribe"
-    return False
+    return metadata.get("resource_type") == resource_type and metadata.get("resource_id") == resource_id
 
 
 def _assert_payment_intent_matches(
@@ -2280,7 +989,7 @@ def _assert_payment_intent_matches(
     `expected_payer_agent_id` (P1a-1, R1): a PaymentIntent used to be verified as
     bound to a *resource* but never to a *payer* — any registered agent presenting a
     valid, correctly-bound PI id passed every check here, including one they didn't
-    pay for. Both PI-minting paths (`create_stake_intent`, `confirm_spt`) already stamp
+    pay for. Both PI-minting paths (`create_price_intent`, `confirm_spt`) already stamp
     `metadata[buyer_agent_id]`; this was simply never read. Only
     `_verify_and_confirm_payment()`'s direct-`payment_intent_id` branch passes this —
     the caller is authenticated there, so the check is real. The SPT branch mints the
@@ -2626,7 +1335,9 @@ async def _verify_x402_payment(
     resource_type: str,
     resource_id: str,
     request: Request | None = None,
-) -> "PaymentRef":
+    pay_to_override: str | None = None,
+    verify_only: bool = False,
+) -> "PaymentRef | None":
     """The x402 analogue of `_verify_and_confirm_payment()`'s SPT/direct-PI
     branches — verify a client-supplied x402 credential against what this
     relay actually requires for this resource, then settle it. Raises
@@ -2677,7 +1388,8 @@ async def _verify_x402_payment(
     accepted = x402_payload.get("accepted") or {}
     network = accepted.get("network")
     family = x402_network_family(network) if network else None
-    pay_to = (
+    # `pay_to_override`: the relay's fee address, for the fee leg of a split entry (fees.py)
+    pay_to = pay_to_override or (
         AGENT_REGISTRY.get_x402_pay_to(creator_id, family)
         if creator_id and family else None
     )
@@ -2725,6 +1437,9 @@ async def _verify_x402_payment(
         raise
     except Exception as e:
         raise HTTPException(402, f"x402 verification failed: {e}")
+
+    if verify_only:
+        return None     # a split entry checks both payments before it settles either
 
     # P48: everything from here to the intent's close is the money path. The
     # /verify above is free and non-mutating, so the intent is claimed after
@@ -2784,6 +1499,41 @@ async def _verify_x402_payment(
     return PaymentRef(RAIL_X402, transaction)
 
 
+async def _pay_split_x402(
+    request: Request, creator_payload: dict[str, Any], fee_payload: dict[str, Any] | None, *,
+    creator_id: str | None, creator_cents: int, fee_cents: int, currency: str, challenge_resource: str,
+    payer_id: str, resource_type: str, resource_id: str, fee_pay_to: dict[str, str], refuse,
+) -> "PaymentRef | JSONResponse":
+    """A paid entry: the creator's share and the relay's fee, two x402 payments in one action. Both are
+    checked before either settles, and the entry is granted only when both have. The relay is the payee of
+    neither's money in transit: each settles straight to its own address, so nothing is ever held."""
+    from emporia.payments import RAIL_X402, PaymentRef
+    if fee_payload is None:
+        return refuse(f"this entry is two payments: {creator_cents}¢ to its creator and the relay's fee of "
+                      f"{fee_cents}¢; the fee payment (PAYMENT-SIGNATURE-FEE) is missing")
+    network = (creator_payload.get("accepted") or {}).get("network")
+    fee_network = (fee_payload.get("accepted") or {}).get("network")
+    if not network or network != fee_network:
+        return refuse("the creator's payment and the fee payment must be on the same network")
+    fee_to = fee_pay_to.get(network)
+    if not fee_to:
+        return refuse(f"the relay takes its fee on no address for {network}")
+    fee_type = f"{resource_type}:fee"
+    common = dict(currency=currency, challenge_resource=challenge_resource, payer_id=payer_id,
+                  resource_id=resource_id, request=request)
+    legs = (
+        dict(x402_payload=creator_payload, creator_id=creator_id, amount_cents=creator_cents,
+             resource_type=resource_type, **common),
+        dict(x402_payload=fee_payload, creator_id=None, amount_cents=fee_cents, resource_type=fee_type,
+             pay_to_override=fee_to, **common),
+    )
+    for leg in legs:     # free and non-mutating: nothing moves until both are right
+        await _verify_x402_payment(verify_only=True, **leg)
+    creator_ref = await _verify_x402_payment(**legs[0])
+    fee_ref = await _verify_x402_payment(**legs[1])
+    return PaymentRef(RAIL_X402, creator_ref.reference, fee_reference=fee_ref.reference, fee_cents=fee_cents)
+
+
 async def _verify_and_confirm_payment(
     request: Request,
     *,
@@ -2803,6 +1553,7 @@ async def _verify_and_confirm_payment(
     destination_account: str | None = None,
     application_fee_cents: int | None = None,
     card_unavailable: str | None = None,
+    x402_split: bool = False,
 ) -> "PaymentRef | JSONResponse":
     """Verify a payment credential (SPT via Authorization header, or a client-supplied
     PaymentIntent id) against the expected amount/currency/capture-method/resource binding,
@@ -2859,6 +1610,22 @@ async def _verify_and_confirm_payment(
     )
     _assert_agent_budget(agent_id, amount_cents)
 
+    # A paid entry (`x402_split`) is two x402 payments in one act (fees.py): the creator's share to the
+    # creator and the relay's fee to its published fee address. No fee address, no fee: one payment.
+    from emporia import fees
+    fee_cents = fees.fee_cents(amount_cents) if x402_split else 0
+    creator_cents = amount_cents - fee_cents
+
+    def _fee_pay_to_by_network() -> dict[str, str]:
+        from emporia.payments import _x402_networks, x402_network_family
+        found = fees.addresses()
+        return {n: found[f] for n in _x402_networks() if (f := x402_network_family(n)) in found}
+
+    def _x402_fee_offer() -> dict[str, Any] | None:
+        if not fee_cents or not _x402_enabled():
+            return None
+        return build_x402_challenge(fee_cents, challenge_resource, _fee_pay_to_by_network(), currency=currency)
+
     def _x402_offer() -> dict[str, Any] | None:
         """What x402 currently offers for this exact request, or None if
         nothing can be offered (disabled, no creator, no wallet, wrong
@@ -2876,10 +1643,12 @@ async def _verify_and_confirm_payment(
         `_verify_x402_payment()`'s currency check."""
         if not creator_id or not _x402_enabled():
             return None
-        return build_x402_challenge(
-            amount_cents, challenge_resource, _x402_pay_to_by_network(creator_id),
-            currency=currency,
-        )
+        pay_to = _x402_pay_to_by_network(creator_id)
+        if fee_cents:
+            # a network the fee cannot be paid on is not offered: the fee is not optional
+            fee_networks = _fee_pay_to_by_network()
+            pay_to = {n: a for n, a in pay_to.items() if n in fee_networks}
+        return build_x402_challenge(creator_cents, challenge_resource, pay_to, currency=currency)
 
     def _tempo_offer() -> dict[str, Any] | None:
         """P156: a Tempo charge paid straight to the creator, or None."""
@@ -2915,6 +1684,12 @@ async def _verify_and_confirm_payment(
         if offer:
             content["x402"] = offer["body"]
             challenge_headers = {**challenge_headers, **offer["headers"]}
+            if x402_split:
+                # the fee, shown before any payment: who gets what, and the second payment's requirement
+                content["terms"] = fees.terms(amount_cents)
+                if fee_offer := _x402_fee_offer():
+                    content["x402_fee"] = fee_offer["body"]
+                    challenge_headers["PAYMENT-REQUIRED-FEE"] = fee_offer["headers"]["PAYMENT-REQUIRED"]
         # P1brr-2: only set on the "a PAYMENT-SIGNATURE credential was
         # submitted and declined" path below — the ordinary no-credential
         # challenge (the call site with no declined_reason) never sets it,
@@ -2959,6 +1734,16 @@ async def _verify_and_confirm_payment(
     x402_payload = extract_x402_payload(request.headers.get("PAYMENT-SIGNATURE"))
     if x402_payload is not None:
         offer = _x402_offer()
+        if offer and fee_cents:
+            return await _pay_split_x402(
+                request, x402_payload, extract_x402_payload(request.headers.get("PAYMENT-SIGNATURE-FEE")),
+                creator_id=creator_id, creator_cents=creator_cents, fee_cents=fee_cents,
+                currency=currency, challenge_resource=challenge_resource, payer_id=agent_id,
+                resource_type=resource_type, resource_id=resource_id,
+                fee_pay_to=_fee_pay_to_by_network(),
+                refuse=lambda why: _no_credential_402(f"x402 payment declined: {why}. {challenge_message}", offer,
+                                                      declined_reason="fee_payment"),
+            )
         if offer:
             return await _verify_x402_payment(
                 x402_payload, creator_id=creator_id, amount_cents=amount_cents,
@@ -3184,19 +1969,6 @@ def get_escrow_hold(hold_hash: str) -> dict[str, Any] | None:
     return hold
 
 
-def escrow_holds_for_session(session_id: str) -> list[dict[str, Any]]:
-    """Every hold placed for one session, oldest first (P154: a wager has two)."""
-    with DB_LOCK, get_db() as conn:
-        rows = conn.execute("SELECT * FROM escrow_holds WHERE session_id = ? ORDER BY created_at",
-                            (session_id,)).fetchall()
-    holds = []
-    for row in rows:
-        hold = dict(row)
-        hold["payment_info"] = json.loads(hold.pop("payment_info_json"))
-        holds.append(hold)
-    return holds
-
-
 def escrow_holds_in_states(states: tuple[str, ...], limit: int = 100) -> list[dict[str, Any]]:
     """Holds in any of `states`, oldest first — the reconciler's queue (P111)."""
     marks = ",".join("?" * len(states))
@@ -3229,7 +2001,14 @@ def active_sessions_of(module_type: str, limit: int = 200) -> list[dict[str, Any
         rows = conn.execute(
             "SELECT * FROM sessions WHERE module_type = ? AND status = 'active' "
             "ORDER BY updated_at LIMIT ?", (module_type, limit)).fetchall()
-    return [_session_row_to_dict(r) for r in rows]
+    out = []
+    for r in rows:
+        try:
+            out.append(_session_row_to_dict(r))
+        except ValueError as e:     # a damaged row is skipped and logged, never the whole sweep
+            logger.warning("deadline_sweep_unreadable_session",
+                           extra={"session_id": r["session_id"], "module_type": module_type, "error": str(e)})
+    return out
 
 
 def idle_sessions(before: str, exclude_module: str, limit: int = 200) -> list[dict[str, Any]]:
@@ -3237,8 +2016,7 @@ def idle_sessions(before: str, exclude_module: str, limit: int = 200) -> list[di
     than `exclude_module` (P129's idle sweep; service sessions have deadlines)."""
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
-            # P154: and a wager waiting for its stakes — a half-funded one holds
-            # a player's money until the sweep voids it.
+            # A purchase waiting for its funding: a half-funded one holds money until the sweep voids it.
             "SELECT * FROM sessions WHERE status IN ('waiting', 'active', 'awaiting_funding') "
             "AND updated_at < ? "
             "AND module_type != ? ORDER BY updated_at LIMIT ?",
@@ -3267,7 +2045,7 @@ def update_escrow_hold(hold_hash: str, *, state: str, **tx: str) -> None:
 
 
 def mark_payment_released(payment_intent_id: str) -> None:
-    """A held stake went back to its payer (P130). Only from `confirmed`, so a
+    """A held price went back to its payer (P130). Only from `confirmed`, so a
     payment already refunded or captured keeps what it says."""
     with DB_LOCK, get_db() as conn:
         conn.execute("UPDATE payments SET status = 'released' WHERE payment_intent_id = ? "
@@ -3277,7 +2055,7 @@ def mark_payment_released(payment_intent_id: str) -> None:
 def get_session_payments(session_id: str) -> list[dict[str, Any]]:
     with DB_LOCK, get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM payments WHERE session_id = ? AND payment_type = 'session_stake'",
+            "SELECT * FROM payments WHERE session_id = ? AND payment_type = 'session_price'",
             (session_id,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -3320,7 +2098,7 @@ def record_settlement(settlement: dict[str, Any]) -> None:
     with DB_LOCK, get_db() as conn:
         cur = conn.execute(
             "INSERT INTO settlements "
-            "(settlement_id, session_id, winner_id, total_stake_cents, platform_fee_cents, "
+            "(settlement_id, session_id, winner_id, total_price_cents, platform_fee_cents, "
             "winner_payout_cents, platform_fee_bps, payment_intent_ids, "
             "transfer_id, transfer_status, status, created_at, payer_id, dedupe_key, rail, "
             "platform_fee_atomic, winner_payout_atomic) "
@@ -3330,10 +2108,10 @@ def record_settlement(settlement: dict[str, Any]) -> None:
                 settlement_id,
                 session_id,
                 settlement.get("winner_id"),
-                settlement.get("total_stake_cents", 0),
+                settlement.get("total_price_cents", 0),
                 settlement.get("platform_fee_cents", 0),
                 settlement.get("winner_payout_cents", 0),
-                settlement.get("platform_fee_bps", OPERATOR_FEE_BPS),
+                settlement.get("platform_fee_bps", _fee_bps_now()),
                 json.dumps(settlement.get("payment_intent_ids", [])),
                 settlement.get("transfer_id"),
                 settlement.get("transfer_status", "pending_connect"),
@@ -3417,17 +2195,16 @@ def _normalize_agent_id(agent_id: str) -> str:
 # orphaned rows nobody notices for months.
 _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("access_entitlements", "agent_id"), ("access_removals", "agent_id"),
-    ("bounty_entries", "agent_id"), ("game_chat", "agent_id"),
+    ("game_chat", "agent_id"),
     ("escrow_holds", "payer_agent_id"), ("escrow_holds", "receiver_agent_id"),
     ("access_removals", "removed_by"), ("actions", "agent_id"),
-    ("agent_inbox", "agent_id"), ("agora_comments", "author_id"),
+    ("agent_inbox", "agent_id"),
     ("agora_invites", "agent_id"), ("agora_invites", "invited_by"),
-    ("agora_members", "agent_id"), ("agora_posts", "author_id"),
-    ("agora_topics", "creator_id"), ("agora_votes", "voter_id"),
+    ("agora_members", "agent_id"),
+    ("agora_topics", "creator_id"),
     ("dm_messages", "sender_id"),
     ("dm_threads", "agent_a"), ("dm_threads", "agent_b"), ("dm_threads", "local_agent"),
     ("deletions", "deleted_by"),
-    ("events", "organizer_id"), ("listings", "agent_id"),
     ("messages", "from_agent"), ("messages", "to_agent"),
     ("participants", "agent_id"), ("payments", "agent_id"),
     ("session_leaves", "agent_id"), ("dm_blocks", "agent_id"), ("dm_blocks", "blocked"),   # P273
@@ -3450,41 +2227,78 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     # P278: the same for a topic's signed acts.
     ("topic_acts", "by_agent"), ("topic_acts", "target"),
     ("authorized_agents", "agent_id"),
-    # P289: who filed a bug report, who judged it, who recorded an incident.
-    ("bug_reports", "reporter_id"), ("bug_reports", "decided_by"), ("security_incidents", "recorded_by"),
     # P297: who liked, and whose thing it was. The signature beside them keeps the handle it was signed with.
-    ("likes", "agent_id"), ("likes", "to_agent"),
+    ("reactions", "agent_id"), ("reactions", "to_agent"),
+    # Feed posts and follows: the author, the follower and the followed. A pulled pointer's author is an
+    # address, which no local rename matches. The signatures keep the stable id or handle signed with.
+    ("posts", "author_id"), ("follows", "agent_id"), ("follows", "target"),
+    # Pledges: who promised, to whom, and who attested or contested. The signatures keep the handles signed with.
+    ("pledges", "maker_id"), ("pledges", "to_agent"), ("pledge_acts", "agent_id"),
+    # Labs v2: who made a lab and which maintainer signed a report. The signatures keep the stable ids signed with.
+    ("labs", "creator_id"), ("lab_reports", "maintainer_id"),
+    # emporia:rand:v1: whose commitment, and who won. The signature keeps the handle it was signed with.
+    ("rand_commits", "agent_id"), ("rand_results", "winner"),
 )
 
 # Agent ids inside JSON arrays. Not rewritable in SQL, and deliberately not
 # done with a string replace: `"alice"` is a substring of `"alice_bot"`, so a
 # textual swap would corrupt a neighbour's membership. Parsed, mapped, re-dumped.
 _RENAME_JSON_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("events", "participants_json"),
     ("rooms", "members_json"),
     ("sessions", "participants_json"),
 )
 
 # Every remaining column, declared not to hold an agent handle. Notable
-# judgements: `authorized_agents.nous_user_id` is an identity-provider subject
-# id, not a handle; `agora_votes.target_id` is a post or comment id;
-# `access_*.resource_id` is a room or topic id.
+# judgements: `authorized_agents.operator_label` is an opaque operator label,
+# not a handle; `access_*.resource_id` is a room or topic id.
 _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
+    # The protocol pass: a post's thread keys (its signed reply_to and root without author hints), whether it is a
+    # copy of another relay's record, its expiration tag; a room message's signed stable id; a session's kind.
+    ("posts", "reply_key"), ("posts", "root_key"), ("posts", "is_copy"), ("posts", "expires_at"),
+    ("room_messages", "sender_stable_id"), ("sessions", "kind"),
     # P297: a like's thing (a post, comment, message or session id), its kind, when, and its signature.
-    *(("likes", c) for c in ("kind", "target_id", "liked", "at", "signature")),
-    # P289: bug reports and incidents. `operator_key` is a Nous account or a stable id
-    # (the cap's key), never a handle — so a rename does not reset an operator's cap.
-    *(("bug_reports", c) for c in ("report_id", "operator_key", "code_commit", "commitment", "sealed",
-                                   "severity_claimed", "content_json", "status", "severity", "points", "fix_commit",
-                                   "duplicate_of", "created_at", "decided_at", "revealed_at")),
-    *(("security_incidents", c) for c in ("incident_id", "summary", "affected", "report_id", "detected_at",
-                                          "fixed_at", "recorded_at")),
-    # bounty_entries (P72-4) — `agent_id` is a handle and lives in
-    # _RENAME_COLUMNS above. `nous_user_id` deliberately does NOT: it is an
-    # identity-provider subject, not an Emporia handle, and rewriting it on
-    # rename would break the one-entry-per-account rule it exists to enforce —
-    # the same reasoning that keeps payer_stable_id out, noted below.
-    ("bounty_entries", "listing_id"), ("bounty_entries", "nous_user_id"),
+    *(("reactions", c) for c in ("target", "kind", "target_id", "value", "active", "at", "signature")),
+    # Feed posts: the signed content, its id, origin and key; follows: the signed act; opened_from: which
+    # object a room or topic was opened from.
+    *(("posts", c) for c in ("post_id", "author_stable_id", "author_public_key_hex", "origin_relay",
+                             "federated_from", "nonce", "kind", "label", "text", "tags_json", "topic",
+                             "reply_to", "quote_of", "root", "at", "signature", "key_log_json", "is_deleted",
+                             "recorded_at")),
+    *(("follows", c) for c in ("following", "at", "signature")),
+    # The signed card's bio: the agent's own text.
+    ("authorized_agents", "about"),
+    # The card's X link: named by stable id (a rename changes nothing), handles and post ids are text.
+    *(("agent_links", c) for c in ("stable_id", "site", "handle", "post_id", "claim", "at", "signature", "recorded_at")),
+    *(("x_confirmations", c) for c in ("seq", "confirmer", "target", "handle", "post_id", "claim_sig", "seen_at",
+                                       "signature", "recorded_at")),
+    *(("opened_from", c) for c in ("kind", "ident", "from_post", "reply_post_id", "at")),
+    # Labs v2: the idea posts a report names, credited once each (the author is read from the post).
+    *(("lab_report_ideas", c) for c in ("post_id", "report_id", "lab_slug")),
+    # The randomness service: a cached drand round, its signature and when it was fetched.
+    *(("beacon_rounds", c) for c in ("round", "signature", "fetched_at")),
+    *(("rand_commits", c) for c in ("session_id", "seat", "hash", "beacon_round", "at", "signature")),
+    *(("rand_results", c) for c in ("session_id", "beacon_round", "beacon_signature", "termination",
+                                    "outcome_hash", "recorded_at")),
+    # Season board: a season's frozen final standing and the relay's signature over it.
+    *(("season_finals", c) for c in ("season", "body_json", "signature", "frozen_at")),
+    # Pledges: what was promised on which session, its terms and note, and the signed acts on it.
+    *(("pledges", c) for c in ("pledge_id", "kind", "session_id", "terms_json", "note", "nonce",
+                               "made_at", "signature", "public", "recorded_at")),
+    *(("pledge_acts", c) for c in ("pledge_id", "act", "verdict", "at", "signature", "recorded_at")),
+    # Labs v2: a lab's terms (stable ids are what is signed) and a maintainer's report with the claims it
+    # embeds. Reports are public in every lab, even a private or encrypted one: refs and agents only.
+    *(("labs", c) for c in ("slug", "name", "room_id", "subject_kind", "subject_ref", "repo_url", "branch",
+                            "proof_commit", "creator_stable", "maintainers_json", "licence", "verified",
+                            "proof_json", "checked_at", "signed_at", "signature", "created_at")),
+    *(("lab_reports", c) for c in ("report_id", "lab_slug", "ref_kind", "ref_id", "event", "commit_sha",
+                                   "author_claim", "author_stable", "credited_json", "reviewers_json", "ideas_json", "note",
+                                   "signed_at", "signature", "created_at")),
+    # Identity round: an operator's label history, and the token revocation records, are keyed by stable id.
+    *(("model_commits", c) for c in ("session_id", "step", "stable_id", "model_commit")),
+    *(("model_reveals", c) for c in ("session_id", "step", "stable_id", "model", "salt", "status", "at", "signature")),
+    *(("operator_log", c) for c in ("stable_id", "previous", "label", "recorded_at")),
+    *(("token_revocations", c) for c in ("jti", "stable_id", "revoked_at", "expires_at")),
+    *(("token_floors", c) for c in ("stable_id", "valid_after")),
     # escrow_holds (P99): the on-chain record of a hold. Addresses are wallets,
     # not handles, and the PaymentInfo they sit in is what the payer signed —
     # rewriting either would make the hold uncapturable.
@@ -3497,7 +2311,6 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("escrow_holds", "authorize_tx"), ("escrow_holds", "capture_tx"),
     ("escrow_holds", "void_tx"), ("escrow_holds", "created_at"),
     ("escrow_holds", "updated_at"),
-    ("bounty_entries", "entered_at"),
     # x402_settle_intents (P48) — payer_id is an agent reference and lives in
     # _RENAME_COLUMNS; payer_stable_id deliberately is NOT one (it is P47's
     # identity, which a rename must leave alone — rewriting it here would
@@ -3525,36 +2338,23 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # agent_inbox
     ("agent_inbox", "inbox_id"), ("agent_inbox", "event_type"), ("agent_inbox", "payload_json"),
     ("agent_inbox", "is_read"), ("agent_inbox", "created_at"),
-    # agora_comments
-    ("agora_comments", "comment_id"), ("agora_comments", "post_id"),
-    ("agora_comments", "parent_comment_id"), ("agora_comments", "content"),
-    ("agora_comments", "vote_score"), ("agora_comments", "is_deleted"),
-    ("agora_comments", "created_at"),
     # agora_invites
     ("agora_invites", "topic_id"), ("agora_invites", "created_at"),
     # agora_members
     ("agora_members", "topic_id"), ("agora_members", "role"), ("agora_members", "joined_at"),
-    # agora_posts
-    ("agora_posts", "post_id"), ("agora_posts", "topic_id"), ("agora_posts", "title"),
-    ("agora_posts", "content"), ("agora_posts", "post_type"), ("agora_posts", "flair"),
-    ("agora_posts", "vote_score"), ("agora_posts", "comment_count"),
-    ("agora_posts", "is_pinned"), ("agora_posts", "is_locked"), ("agora_posts", "is_deleted"),
-    ("agora_posts", "created_at"),
     # agora_topics
     ("agora_topics", "topic_id"), ("agora_topics", "slug"), ("agora_topics", "name"),
     ("agora_topics", "description"), ("agora_topics", "visibility"),
     ("agora_topics", "gate_type"), ("agora_topics", "entry_fee_cents"),
     ("agora_topics", "created_at"), ("agora_topics", "post_count"),
     ("agora_topics", "subscriber_count"), ("agora_topics", "flair_options"),
-    ("agora_topics", "access_duration_days"),
-    # agora_votes
-    ("agora_votes", "target_id"), ("agora_votes", "target_type"), ("agora_votes", "value"),
-    ("agora_votes", "created_at"),
+    ("agora_topics", "access_duration_days"), ("agora_topics", "encrypted"),
     # authorized_agents
     ("authorized_agents", "public_key_hex"), ("authorized_agents", "display_name"),
     ("authorized_agents", "registered_at"), ("authorized_agents", "is_active"),
-    ("authorized_agents", "stripe_account_id"), ("authorized_agents", "nous_user_id"),
-    ("authorized_agents", "trust_level"), ("authorized_agents", "identity_providers_json"),
+    ("authorized_agents", "stripe_account_id"), ("authorized_agents", "operator_label"),
+    ("authorized_agents", "client_name"), ("authorized_agents", "client_version"),
+    ("authorized_agents", "declared_model"), ("authorized_agents", "declared_model_at"),
     ("authorized_agents", "x402_pay_to_json"), ("authorized_agents", "x402_pay_to_proofs_json"),
     ("authorized_agents", "encryption_public_key"),
     ("authorized_agents", "encryption_key_signature"),
@@ -3573,23 +2373,12 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("remote_agents", "address"), ("remote_agents", "peer_url"), ("remote_agents", "public_key_hex"),
     ("remote_agents", "encryption_public_key"), ("remote_agents", "encryption_key_signature"),
     ("remote_agents", "updated_at"), ("authorized_agents", "accepts_remote_dms"),
-    # events
-    ("events", "event_id"), ("events", "title"), ("events", "description"),
-    ("events", "module_type"), ("events", "payment_mode"), ("events", "entry_fee_usd"),
-    ("events", "status"), ("events", "bracket_json"), ("events", "created_at"),
-    ("events", "updated_at"),
-    # listings
-    ("listings", "listing_id"), ("listings", "title"), ("listings", "description"),
-    ("listings", "listing_type"), ("listings", "payment_mode"), ("listings", "price_usd"),
-    ("listings", "module_type"), ("listings", "origin_relay"), ("listings", "expires_at"),
-    ("listings", "federated_from"), ("listings", "agent_public_key_hex"),
-    ("listings", "agent_stable_id"), ("listings", "listing_nonce"), ("listings", "signature"),
     ("session_offers", "session_id"), ("session_offers", "stable_id"),
     ("session_offers", "public_key_hex"), ("session_offers", "signature"),
     ("session_offers", "offered_at"),
     ("agent_key_log", "stable_id"), ("agent_key_log", "step_no"), ("agent_key_log", "old_key"),
     ("agent_key_log", "new_key"), ("agent_key_log", "at"), ("agent_key_log", "signed_by"),
-    ("agent_key_log", "signature"), ("listings", "agent_key_log_json"),
+    ("agent_key_log", "signature"),
     ("agent_key_log", "commitment"), ("agent_key_log", "recovery_public_key"),
     ("agent_key_log", "compromised_since"), ("agent_key_log", "recorded_at"),
     ("agent_key_log_superseded", "stable_id"), ("agent_key_log_superseded", "seq"),
@@ -3599,12 +2388,6 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("participants", "join_at"), ("participants", "join_signature"),                      # P272
     ("session_leaves", "session_id"), ("session_leaves", "at"), ("session_leaves", "signature"),   # P273
     ("session_leaves", "left_at"), ("dm_blocks", "created_at"), ("dm_blocks", "blocked_stable_id"),
-    ("room_adverts", "room_id"), ("room_adverts", "stable_id"), ("room_adverts", "public_key_hex"),
-    ("room_adverts", "signature"), ("room_adverts", "advertised_at"),
-    ("topic_adverts", "topic_id"), ("topic_adverts", "stable_id"), ("topic_adverts", "public_key_hex"),
-    ("topic_adverts", "signature"), ("topic_adverts", "advertised_at"),
-    ("elsewhere_adverts", "kind"), ("elsewhere_adverts", "peer_url"), ("elsewhere_adverts", "ident"),
-    ("elsewhere_adverts", "item_json"), ("elsewhere_adverts", "pulled_at"),
     # P256: the transparency log is append-only and never rewritten — a rename
     # changing a leaf would break every proof. Its records name agents by stable_id.
     ("translog_leaves", "idx"), ("translog_leaves", "ref_key"), ("translog_leaves", "record"),
@@ -3619,23 +2402,21 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     # an agent_id, but the outbox is drained within minutes and a rename queues the old and new keys)
     ("translog_outbox", "seq"), ("translog_outbox", "kind"), ("translog_outbox", "ref"),
     ("translog_outbox", "backfill"),
-    ("agora_posts", "nonce"), ("agora_posts", "signature"),
-    ("agora_comments", "nonce"), ("agora_comments", "signature"),
     ("room_acts", "act_id"), ("room_acts", "room_id"), ("room_acts", "act"), ("room_acts", "at"),
     ("room_acts", "nonce"), ("room_acts", "payload_json"), ("room_acts", "signature"),
     ("topic_acts", "act_id"), ("topic_acts", "topic_id"), ("topic_acts", "act"), ("topic_acts", "at"),
     ("topic_acts", "nonce"), ("topic_acts", "payload_json"), ("topic_acts", "signature"),
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
-    ("deletions", "signature"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
+    ("deletions", "signature"), ("deletions", "stable_id"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
     ("dm_messages", "deleted_at"), ("game_chat", "deleted_at"),
-    ("listings", "metadata_json"), ("listings", "created_at"),
+    ("room_messages", "reply_to"), ("room_messages", "root"), ("game_chat", "kind"), ("game_chat", "tags_json"),
+    ("game_chat", "reply_to"), ("game_chat", "quote_of"), ("game_chat", "root"), ("game_chat", "step"),
     # messages
     ("messages", "message_id"), ("messages", "session_id"), ("messages", "type"),
     ("messages", "payload_json"), ("messages", "signature"), ("messages", "created_at"),
     # participants
     ("participants", "session_id"), ("participants", "joined_at"),
-    ("participants", "stake_paid"),
     # payments
     ("payments", "payment_id"), ("payments", "session_id"), ("payments", "room_id"),
     ("payments", "amount_cents"), ("payments", "currency"), ("payments", "payment_intent_id"),
@@ -3659,15 +2440,13 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("rooms", "max_members"), ("rooms", "encrypted"), ("rooms", "linked_session_id"),
     ("rooms", "created_at"), ("rooms", "updated_at"), ("rooms", "access_duration_days"),
     ("rooms", "linked_session_salt"),
-    # schema_migrations
-    ("schema_migrations", "key"), ("schema_migrations", "applied_at"),
     # sessions
     ("sessions", "session_id"), ("sessions", "module_type"), ("sessions", "config_json"),
     ("sessions", "payment_rules_json"), ("sessions", "state_json"), ("sessions", "step_number"),
     ("sessions", "status"), ("sessions", "created_at"), ("sessions", "updated_at"),
     # settlements
     ("settlements", "settlement_id"), ("settlements", "session_id"),
-    ("settlements", "total_stake_cents"), ("settlements", "platform_fee_cents"),
+    ("settlements", "total_price_cents"), ("settlements", "platform_fee_cents"),
     ("settlements", "winner_payout_cents"), ("settlements", "platform_fee_bps"),
     ("settlements", "payment_intent_ids"), ("settlements", "transfer_id"),
     ("settlements", "transfer_status"), ("settlements", "status"),
@@ -3685,7 +2464,32 @@ RESERVED_AGENT_IDS: frozenset[str] = frozenset({
     "relay", "emporia", "admin", "administrator", "system", "root", "operator",
     "support", "security", "official", "api", "www", "null", "none", "undefined",
     "me", "self", "everyone", "anonymous",
+    # Names a person would trust on sight: the house, the tools, the host, the makers.
+    "house", "bot", "hermes", "nous", "moderator", "mod", "staff", "team", "help", "owner", "founder",
+    "bank", "wallet", "escrow", "treasury", "signer", "relay-operator", "emporia-bot", "hermes-agent",
 })
+
+# What a client may call itself on the signed card: `wire.normalize_client` (a host name, `custom:<name>`, `custom`).
+
+
+def _clean_display_name(display_name: str) -> str:
+    """The display name as stored (see `names.clean_display_name`); a ValueError names what is wrong."""
+    return _names.clean_display_name(display_name)
+
+
+def _handle_lookalike_problem(conn: Any, agent_id: str) -> str:
+    """Why a new handle is too close to a reserved name, this relay's own names or an existing handle, or ""."""
+    reserved = set(RESERVED_AGENT_IDS)
+    for name in (os.getenv("EMPORIA_AGENT_ID", "").strip(), *_house_names(), _own_host().split(".")[0]):
+        if name:
+            reserved.add(name)
+    existing = [r["agent_id"] for r in conn.execute("SELECT agent_id FROM authorized_agents").fetchall()]
+    return _names.lookalike_problem(agent_id, existing, reserved)
+
+
+def _house_names() -> list[str]:
+    from emporia import progression
+    return sorted(progression.house_agents())
 
 
 def _rename_in_json_column(
@@ -3736,12 +2540,8 @@ def stable_id_for(public_key_hex: str) -> str:
     * a content address over the name (the hackathon's `content_address_for`,
       removed in P294) changes on rename: it addresses a named thing, a
       different job.
-    * `nous_user_id` is one-to-many by design — the index on it is deliberately
-      non-unique ("one Nous user may operate multiple agent personas"), so it
-      cannot identify an agent. And `register()` UPSERTs `trust_level`, so a
-      key_only agent presenting a Nous claim on an ordinary re-register would
-      *acquire* a Nous-derived id: identity changing at the exact moment it
-      became better attested.
+    * the operator label is one-to-many by design (one person runs many agents),
+      so it cannot identify an agent.
 
     The pubkey was already the ownership proof — registration requires one and
     refuses a taken handle presented under a different key. This writes it down.
@@ -3801,6 +2601,13 @@ def _write_key_log_step(conn: Any, stable_id: str, step_no: int, step: dict[str,
 #: handle. A bearer token issued before then was issued to a key it no longer has.
 _SESSION_FLOOR: dict[str, float] = {}
 
+# `routes.standing._who`'s cache; emptied by `forget_who` when an agent registers, renames or changes label.
+_WHO_CACHE: dict[str, Any] = {}
+
+
+def forget_who() -> None:
+    _WHO_CACHE.clear()
+
 
 def _load_session_floors(conn: Any) -> None:
     _SESSION_FLOOR.clear()
@@ -3821,9 +2628,12 @@ class AgentRegistry:
         public_key_hex: str,
         display_name: str = "",
         stripe_account_id: str | None = None,
-        identity_claims: list[dict] | None = None,
+        operator_label: str = "",
+        client_name: str = "",
+        client_version: str = "",
+        about: str = "",
     ) -> dict:
-        """Register an agent. Returns enriched profile dict with trust_level."""
+        """Register an agent. Returns its profile dict (stable id, operator label, declared client)."""
         agent_id = _normalize_agent_id(agent_id)
         # P47b: the denylist has to live at both doors. An agent refused `admin`
         # on rename could otherwise simply register it.
@@ -3838,32 +2648,16 @@ class AgentRegistry:
         except ValueError:
             raise ValueError("public_key_hex must be a 64-char hex string (Ed25519 public key)")
 
-        nous_user_id: str | None = None
-        trust_level = "key_only"
-        verified_display_name = display_name
-        providers_verified: list[str] = []
-
-        if identity_claims:
-            from emporia.identity_providers import verify_claim, IdentityVerificationError
-            for claim_req in identity_claims:
-                provider = claim_req.get("provider", "")
-                token = claim_req.get("token", "")
-                if not provider or not token:
-                    continue
-                try:
-                    claim = verify_claim(provider, token)
-                    providers_verified.append(provider)
-                    if provider == "nous":
-                        nous_user_id = claim.subject_id
-                        if claim.display_name and not verified_display_name:
-                            verified_display_name = claim.display_name
-                        trust_level = "nous_verified"
-                except IdentityVerificationError:
-                    pass  # skip bad claims; don't fail the whole registration
-
-        # nous_user_id is stored for auditing/correlation but does not
-        # redirect to a canonical agent_id — one Nous user may operate
-        # multiple agent personas (demo bots, specialist profiles, etc.).
+        operator_label = (operator_label or "").strip().lower()
+        if operator_label and not operators.valid_label(operator_label):
+            raise ValueError(f"operator label must look like {operators.LABEL_EXAMPLE}")
+        from emporia.wire import normalize_client
+        client_name = normalize_client(client_name)
+        client_version = (client_version or "").strip()[:32]
+        from emporia.wire import about_problem
+        if why := about_problem(about):
+            raise ValueError(why)
+        verified_display_name = _clean_display_name(display_name)
 
         try:
             with DB_LOCK, get_db() as conn:
@@ -3887,6 +2681,8 @@ class AgentRegistry:
                 # conflict instead of surfacing an IntegrityError.
                 derived_stable_id = stable_id_for(public_key_hex)
                 if not existing_row:
+                    if why := _handle_lookalike_problem(conn, agent_id):
+                        raise ValueError(why)
                     # P245: also a key some agent now holds after rotating — its
                     # stable id is from an earlier key, so it would not match above.
                     twin = conn.execute(
@@ -3912,12 +2708,14 @@ class AgentRegistry:
                 # DO UPDATE names precisely the columns registration owns; anything
                 # an agent set through another endpoint survives by construction
                 # rather than by remembering to add it to a list.
+                now_iso = datetime.now(UTC).isoformat()
+                before = conn.execute("SELECT operator_label FROM authorized_agents WHERE agent_id = ?",
+                                      (agent_id,)).fetchone()
                 conn.execute(
                     "INSERT INTO authorized_agents "
                     "(agent_id, public_key_hex, display_name, registered_at, is_active, "
-                    "stripe_account_id, nous_user_id, trust_level, identity_providers_json, "
-                    "stable_id) "
-                    "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?) "
+                    "stripe_account_id, operator_label, client_name, client_version, stable_id, about) "
+                    "VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?) "
                     # P47: `stable_id` is deliberately ABSENT from DO UPDATE.
                     # Allocated once, on the row's first insert, and never
                     # recomputed — that is the whole mechanism by which a key
@@ -3929,43 +2727,34 @@ class AgentRegistry:
                     "display_name=excluded.display_name, "
                     "registered_at=excluded.registered_at, "
                     "is_active=1, "
-                    # P26-5: was `stripe_account_id=excluded.stripe_account_id`,
-                    # which writes NULL on any re-register that isn't
-                    # auto-provisioning (every live-mode one). stripe_account_status
-                    # is correctly not in this list, so it *survived* — leaving
-                    # 'active' with no account id. The next start_stripe_onboarding
-                    # then created a SECOND real Connected Account: a second real
-                    # KYC, orphaning the first and any balance on it. Registration
-                    # is documented as "safe to call on every start", so this was
-                    # reachable on an ordinary restart. COALESCE keeps an existing
-                    # id whenever this registration didn't mint one.
+                    # P26-5: COALESCE keeps an existing Stripe account id whenever this registration
+                    # didn't mint one (a live-mode re-register writes NULL, and the next onboarding
+                    # would otherwise create a second real Connected Account).
                     "stripe_account_id=COALESCE(excluded.stripe_account_id, authorized_agents.stripe_account_id), "
-                    # P110: a re-registration with no valid Nous claim keeps the
-                    # verification already proven for this key. Nous access
-                    # tokens last an hour and the MCP server re-registers on
-                    # every start, so this used to downgrade every agent to
-                    # key_only by the next day. Safe because the key cannot
-                    # change here (refused above): only the key's holder can
-                    # re-register, and a claim for a different Nous user
-                    # still replaces the old one.
-                    "nous_user_id=COALESCE(excluded.nous_user_id, authorized_agents.nous_user_id), "
-                    "trust_level=CASE WHEN excluded.nous_user_id IS NULL "
-                    "THEN authorized_agents.trust_level ELSE excluded.trust_level END, "
-                    "identity_providers_json=CASE WHEN excluded.nous_user_id IS NULL "
-                    "THEN authorized_agents.identity_providers_json "
-                    "ELSE excluded.identity_providers_json END",
-                    (agent_id, public_key_hex, verified_display_name,
-                     datetime.now(UTC).isoformat(), stripe_account_id,
-                     nous_user_id, trust_level, json.dumps(providers_verified),
-                     derived_stable_id),
+                    # The signed card's label and client: a registration with none keeps what the row has
+                    # (a change of label is logged below, never silent).
+                    "operator_label=CASE WHEN excluded.operator_label = '' THEN authorized_agents.operator_label "
+                    "ELSE excluded.operator_label END, "
+                    "client_name=CASE WHEN excluded.client_name = '' THEN authorized_agents.client_name "
+                    "ELSE excluded.client_name END, "
+                    "client_version=CASE WHEN excluded.client_name = '' THEN authorized_agents.client_version "
+                    "ELSE excluded.client_version END, "
+                    # the card is the agent's own word: a registration that carries no bio clears it
+                    "about=excluded.about",
+                    (agent_id, public_key_hex, verified_display_name, now_iso, stripe_account_id,
+                     operator_label, client_name, client_version, derived_stable_id, about or ""),
                 )
                 stored = conn.execute(
-                    "SELECT stable_id, trust_level, nous_user_id FROM authorized_agents "
+                    "SELECT stable_id, operator_label, client_name, client_version FROM authorized_agents "
                     "WHERE agent_id = ?", (agent_id,),
                 ).fetchone()
                 stable_id = stored["stable_id"]
-                # P110: what the row holds, which a claim-less re-register keeps.
-                trust_level, nous_user_id = stored["trust_level"], stored["nous_user_id"]
+                previous = (before["operator_label"] or "") if before else ""
+                forget_who()
+                if (stored["operator_label"] or "") != previous or (not before and stored["operator_label"]):
+                    conn.execute(
+                        "INSERT INTO operator_log (stable_id, previous, label, recorded_at) VALUES (?,?,?,?)",
+                        (stable_id, previous, stored["operator_label"] or "", now_iso))
             return {
                 "agent_id": agent_id,
                 # P47: read back rather than returned from `derived_stable_id`.
@@ -3975,9 +2764,9 @@ class AgentRegistry:
                 # would report an identity the database does not hold.
                 "stable_id": stable_id,
                 "display_name": verified_display_name,
-                "trust_level": trust_level,
-                "nous_user_id": nous_user_id,
-                "providers_verified": providers_verified,
+                "about": about or "",
+                "operator_label": stored["operator_label"] or "",
+                "client": {"name": stored["client_name"] or "", "version": stored["client_version"] or ""},
             }
         except ValueError:
             raise  # key-conflict or validation errors — preserve message for HTTP status mapping
@@ -4155,6 +2944,10 @@ class AgentRegistry:
             raise ValueError(f"'{new_agent_id}' is a reserved handle")
         if new_agent_id == agent_id:
             raise ValueError("that is already this agent's handle")
+        with DB_LOCK, get_db() as _conn:
+            if why := _handle_lookalike_problem(_conn, new_agent_id):
+                if not _names.skeleton(new_agent_id) == _names.skeleton(agent_id):    # renaming to a spelling of itself is fine
+                    raise ValueError(why)
 
         with DB_LOCK, get_db() as conn:
             row = conn.execute(
@@ -4175,6 +2968,7 @@ class AgentRegistry:
                 )
             for table, column in _RENAME_JSON_COLUMNS:
                 _rename_in_json_column(conn, table, column, agent_id, new_agent_id)
+            forget_who()
             if agent_id in _SESSION_FLOOR:      # P246: a recovery's cut-off goes with the agent
                 _SESSION_FLOOR[new_agent_id] = _SESSION_FLOOR.pop(agent_id)
 
@@ -4196,18 +2990,6 @@ class AgentRegistry:
                 "SELECT stable_id FROM authorized_agents WHERE agent_id = ?", (agent_id,)
             ).fetchone()
         return row["stable_id"] if row else None
-
-    def backfill_stable_ids(self) -> int:
-        """Run `_backfill_stable_ids()` against the live database.
-
-        The migration calls it once, when the column first appears. This is the
-        same operation as an explicitly invocable repair — a relay whose backfill
-        was interrupted, or whose rows were written by an older process mid-upgrade,
-        has NULLs the migration will never look at again (it only fires on the
-        column being newly added). Returns the number of rows touched.
-        """
-        with DB_LOCK, get_db() as conn:
-            return _backfill_stable_ids(conn)
 
     def get_stripe_account(self, agent_id: str) -> str | None:
         try:
@@ -4438,11 +3220,11 @@ class AgentRegistry:
         except Exception:
             return False
 
-    def check_rate_limit(self, agent_id: str) -> bool:
+    def check_rate_limit(self, agent_id: str, limit: int | None = None) -> bool:
         now = time.time()
         minute_ago = now - 60
         self.rate_limits[agent_id] = [t for t in self.rate_limits[agent_id] if t > minute_ago]
-        if len(self.rate_limits[agent_id]) >= self.max_per_minute:
+        if len(self.rate_limits[agent_id]) >= (limit or self.max_per_minute):
             return False
         self.rate_limits[agent_id].append(now)
         return True
@@ -4481,6 +3263,22 @@ class AgentRegistry:
 AGENT_REGISTRY = AgentRegistry()
 
 
+#: An operator's agents together may write this many times one agent's per-minute budget (EMPORIA_OPERATOR_RATE_MULTIPLE).
+OPERATOR_RATE_MULTIPLE = max(1.0, float(os.getenv("EMPORIA_OPERATOR_RATE_MULTIPLE", "3") or 3))
+
+
+def _operator_key(agent_id: str) -> str:
+    """The operator of `agent_id` (`operators.operator_of`), "" when it is not registered."""
+    from emporia import operators
+    try:
+        with DB_LOCK, get_db() as conn:
+            row = conn.execute("SELECT agent_id, operator_label, stable_id FROM authorized_agents WHERE agent_id = ?",
+                               (agent_id,)).fetchone()
+    except Exception:  # noqa: BLE001 — a throttle that cannot look up an operator still throttles the agent
+        return ""
+    return operators.operator_of_row(row) if row else ""
+
+
 def _enforce_agent_rate_limit(agent_id: str) -> None:
     """Per-agent write throttle (N11-4). The identity-keyed complement to the global
     IP middleware below — that middleware exempts localhost and the Docker gateway
@@ -4493,6 +3291,12 @@ def _enforce_agent_rate_limit(agent_id: str) -> None:
     if not AGENT_REGISTRY.check_rate_limit(agent_id):
         RATE_LIMIT_HITS["agent"] += 1
         raise HTTPException(429, "Rate limit exceeded — too many requests, slow down")
+    # per operator as well: an operator's agents together get a few agents' worth, not a budget each
+    operator = _operator_key(agent_id)
+    if operator and not AGENT_REGISTRY.check_rate_limit(
+            f"operator:{operator}", int(AGENT_REGISTRY.max_per_minute * OPERATOR_RATE_MULTIPLE)):
+        RATE_LIMIT_HITS["agent"] += 1
+        raise HTTPException(429, "Rate limit exceeded for your operator's agents together — slow down")
 
 
 #: Operator section: how often a caller was turned away by a rate limit since this relay
@@ -4511,27 +3315,15 @@ SAFETY_STATS: dict[str, int] = {
 }
 
 
-def _require_valid_msg_type(msg_type: str) -> None:
-    """P15: enforce the msg_type domain both message routes already declare but never
-    checked. rooms.py has declared `MsgType` as a closed Literal since rooms shipped,
-    and rooms.post_message() is annotated with it — but annotations aren't runtime
-    checks and both request models type the field as bare `str`, so any string reached
-    storage. Call with the *resolved* value (after `or DEFAULT_MSG_TYPE`), so an omitted
-    field still resolves normally rather than tripping this.
-
-    "system" is rejected here specifically: it's the relay's own type for
-    negotiation-broker output (posted with sender_id="emporia:broker"), so a client
-    supplying it is minting a server-owned label. Not an impersonation primitive — the
-    one consumer that distinguishes broker messages keys off sender, not type — but the
-    type isn't the client's to set.
-    """
-    from emporia.wire import CLIENT_MSG_TYPES
-    if msg_type not in CLIENT_MSG_TYPES:
-        raise HTTPException(
-            400,
-            f"Invalid msg_type '{msg_type}' — must be one of "
-            f"{', '.join(sorted(CLIENT_MSG_TYPES))}",
-        )
+def _require_valid_msg_type(msg_type: str, sealed: bool = False) -> None:
+    """The `msg_type` slot of a room message or DM (rooms v2): a post kind, or a room-only kind
+    (`code`, `lab_task`), or `sealed` where the place is end-to-end encrypted -- and then nothing else.
+    Call with the *resolved* value (after `or DEFAULT_MSG_TYPE`). "system" is server-owned, never a
+    client's. The old types (`chat`, `collab`, the negotiation ones) are refused by name, saying what
+    replaced them (`room_post.type_problem`)."""
+    from emporia import room_post
+    if why := room_post.type_problem(msg_type, sealed=sealed):
+        raise HTTPException(400, why)
 
 
 async def _assert_payload_safe_counted(payload: dict[str, Any]) -> None:
@@ -4623,6 +3415,7 @@ def _session_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "participants": json.loads(row["participants_json"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "kind": row["kind"] if "kind" in row.keys() else "game",
     }
 
 
@@ -4643,11 +3436,11 @@ def save_session(
         conn.execute(
             "INSERT OR REPLACE INTO sessions "
             "(session_id, module_type, config_json, payment_rules_json, state_json, "
-            "current_agent, step_number, status, participants_json, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "current_agent, step_number, status, participants_json, created_at, updated_at, kind) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (session_id, module_type, json.dumps(config), json.dumps(payment_rules),
              json.dumps(state.to_dict()), current_agent, step_number, status,
-             json.dumps(participants), created_at, updated_at),
+             json.dumps(participants), created_at, updated_at, session_kind(module_type)),
         )
 
 
@@ -4657,13 +3450,13 @@ def load_session(session_id: str) -> dict[str, Any] | None:
     return _session_row_to_dict(row) if row else None
 
 
-def add_participant(session_id: str, agent_id: str, stake_paid: bool = False,
+def add_participant(session_id: str, agent_id: str,
                     join_at: str = "", join_signature: str = "") -> None:
     with DB_LOCK, get_db() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO participants (session_id, agent_id, joined_at, stake_paid, join_at, "
-            "join_signature) VALUES (?, ?, ?, ?, ?, ?)",
-            (session_id, agent_id, datetime.now(UTC).isoformat(), int(stake_paid), join_at, join_signature),
+            "INSERT OR REPLACE INTO participants (session_id, agent_id, joined_at, join_at, "
+            "join_signature) VALUES (?, ?, ?, ?, ?)",
+            (session_id, agent_id, datetime.now(UTC).isoformat(), join_at, join_signature),
         )
 
 
@@ -4790,7 +3583,6 @@ async def lifespan(app: FastAPI):
     # — unlike the federation loop, which is gated on peers being configured,
     # there is no deployment where "a payout could be owed" is knowably false.
     _PAYOUT_RECONCILE_TASK = asyncio.create_task(_payout_reconcile_loop())
-    globals()["_BOUNTY_RECONCILE_TASK"] = asyncio.create_task(_bounty_reconcile_loop())
     # P23-3: only started when peers are actually configured -- a standalone
     # relay (the common case) shouldn't spin a task that does nothing every
     # EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS forever.
@@ -4819,12 +3611,6 @@ async def lifespan(app: FastAPI):
             with suppress(asyncio.CancelledError):
                 await _log_task
             globals()["_LOG_STATE_TASK"] = None
-        _bounty_task = globals().get("_BOUNTY_RECONCILE_TASK")
-        if _bounty_task is not None:
-            _bounty_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await _bounty_task
-            globals()["_BOUNTY_RECONCILE_TASK"] = None
         if _FEDERATION_SYNC_TASK is not None:
             _FEDERATION_SYNC_TASK.cancel()
             with suppress(asyncio.CancelledError):
@@ -4982,9 +3768,8 @@ def _require_payload_content_within_limit(payload: dict[str, Any]) -> None:
     exactly matching what each of the ~17 enumerated call sites this replaces
     did by hand for one named field at a time. Called from
     `_assert_payload_safe_counted` itself (below), so every route that already
-    unconditionally scans its whole payload gets this for free — including the
-    three that had no enumerated call at all (both federation imports,
-    `import_challenge`) and were wholly unbounded until now.
+    unconditionally scans its whole payload gets this for free — including
+    the federation import.
 
     Deliberately does **not** replace every enumerated call: a route that scans
     a *sub*-value directly rather than a dict containing it under that field's
@@ -5119,7 +3904,7 @@ app.add_middleware(
     # before it ever reaches the route. PAYMENT-RESPONSE must be exposed for
     # the same reason a JS client would otherwise be unable to read it off a
     # cross-origin response at all.
-    allow_headers=["Content-Type", "Authorization", "PAYMENT-SIGNATURE",
+    allow_headers=["Content-Type", "Authorization", "PAYMENT-SIGNATURE", "PAYMENT-SIGNATURE-FEE",
                    "X-Emporia-Authorization", "PAYMENT-ESCROW"],
     # P22: X-Request-Id is set by request_context (below), registered *after*
     # this middleware so it wraps outside CORS and adds the header once CORS
@@ -5434,16 +4219,6 @@ _PAYOUT_OWED_STATUS_PREFIXES = (
     "pending_connect", "no_stripe_account", "transfer_failed",
 )
 
-_BOUNTY_RECONCILE_INTERVAL_SECONDS = float(
-    os.getenv("EMPORIA_BOUNTY_RECONCILE_INTERVAL_SECONDS", "300")
-)
-_BOUNTY_RECONCILE_TASK: "asyncio.Task | None" = None
-BOUNTY_RECONCILE_STATS: dict[str, Any] = {
-    "runs": 0, "last_run_at": None, "last_error_at": None,
-    "consecutive_failures": 0, "settled": 0, "awaiting_payment": 0,
-    "refunded": 0, "defaulted": 0, "unfunded": 0,
-}
-
 _PAYOUT_RECONCILE_INTERVAL_SECONDS = float(
     os.getenv("EMPORIA_PAYOUT_RECONCILE_INTERVAL_SECONDS", "300")
 )
@@ -5603,41 +4378,6 @@ async def _reconcile_one_payout(row: dict[str, Any]) -> str:
     return "paid"
 
 
-async def _bounty_reconcile_loop() -> None:
-    """Runs the bounty reconciler on an interval (P80).
-
-    P79 wrote the reconciler and never called it. That is not a missing
-    convenience: the automatic default flag is the *only* thing backing a
-    promised prize, so a reconciler nobody runs means a funder can take an
-    agent's work and never pay, and nothing anywhere notices. It also left
-    every held bounty reading "running" on the board after it had been paid.
-
-    Same shape as `_payout_reconcile_loop()` above, including N12-1's rule that
-    one raise must not end the loop for the life of the process — a loop that
-    died silently would be indistinguishable from the defect it exists to fix.
-    """
-    from emporia.routes.bounties import reconcile_bounties
-
-    while True:
-        await asyncio.sleep(_BOUNTY_RECONCILE_INTERVAL_SECONDS)
-        try:
-            counts = await reconcile_bounties()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Bounty reconcile failed — will retry next interval")
-            BOUNTY_RECONCILE_STATS["last_error_at"] = datetime.now(UTC).isoformat()
-            BOUNTY_RECONCILE_STATS["consecutive_failures"] += 1
-            continue
-        BOUNTY_RECONCILE_STATS["runs"] += 1
-        BOUNTY_RECONCILE_STATS["last_run_at"] = datetime.now(UTC).isoformat()
-        BOUNTY_RECONCILE_STATS["consecutive_failures"] = 0
-        for key, ids in counts.items():
-            if ids:
-                BOUNTY_RECONCILE_STATS[key] += len(ids)
-                logger.info("bounty_reconcile", extra={"transition": key, "count": len(ids)})
-
-
 async def _payout_reconcile_loop() -> None:
     """Runs _reconcile_owed_payouts() on EMPORIA_PAYOUT_RECONCILE_INTERVAL_SECONDS
     (default 300s). Same shape as _sweep_loop(), including N12-1's rule that one
@@ -5676,18 +4416,17 @@ async def _payout_reconcile_loop() -> None:
 # Pydantic Models
 # ============================================================================
 
-class IdentityClaimRequest(BaseModel):
-    provider: str   # "nous" | "github" | ...
-    token: str      # raw credential — verified server-side, never stored
-
-
 class RegisterAgentRequest(BaseModel):
     agent_id: str
     public_key_hex: str
     display_name: str = ""
-    identity_claims: list[IdentityClaimRequest] = Field(default_factory=list)
+    operator_label: str = ""       # the opaque operator label on the signed card ("" = none)
+    client_name: str = ""          # "hermes-plugin" | "sdk" | "custom"
+    client_version: str = ""
+    about: str = ""                # the agent's own line about itself on the signed card ("" = none)
     challenge_id: str = ""
-    challenge_signature: str = ""  # hex Ed25519 sig of the nonce bytes
+    challenge_signature: str = ""  # base64url Ed25519 sig of emporia:sign-in:v2 {nonce, relay, agent_id, public_key}
+    relay: str = ""                # the origin the agent signed for (it must be one of this relay's)
     # P16: publish the X25519 encryption key in the same round trip. Optional —
     # an agent that doesn't do encrypted DMs sends neither field.
     encryption_public_key_hex: str = ""
@@ -5713,22 +4452,23 @@ class CreateSessionRequest(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     payment_rules: dict[str, Any] | None = None
     creator_gateway_url: str = ""
-    # P95: a wager's creator stakes too; the direct-PaymentIntent alternative
-    # to an `Authorization: Payment <spt>` credential, as on join.
-    payment_intent_id: str | None = None
     # P279: signed by the creator — the game's id is wire.session_id_for(nonce),
     # the signature over wire.signed_session_create_payload(that id, creator, module, at).
     nonce: str = ""
     at: str = ""
     signature: str = ""
+    # emporia:rand:v1: the creator's signed commitment, for a game that draws from the beacon.
+    rand_commit: dict[str, Any] | None = None
 
 
 class JoinSessionRequest(BaseModel):
     agent_id: str
     agent_gateway_url: str = ""
-    payment_intent_id: str | None = None
     at: str = ""          # P272: the join, signed by the joining agent
     signature: str = ""   # Ed25519 over wire.signed_session_join_payload()
+    # emporia:rand:v1: in a game that draws from the beacon, the joiner's signed commitment
+    # {hash, beacon_round, at, signature} over wire.signed_rand_commit_payload(...).
+    rand_commit: dict[str, Any] | None = None
 
 
 class SubmitActionRequest(BaseModel):
@@ -5739,6 +4479,10 @@ class SubmitActionRequest(BaseModel):
     signature: str | None = None
     # P148: optional table talk sent with the move (signed with it).
     say: str = ""
+    # A declared model, committed with the move (`model_commit.commit(model, salt)`), revealed at the end.
+    model_commit: str = ""
+    # tags of the `say` line (the declared model), signed with the move; none for a sealed line
+    say_tags: list[list[str]] = Field(default_factory=list)
 
 
 class SendMessageRequest(BaseModel):
@@ -5747,29 +4491,6 @@ class SendMessageRequest(BaseModel):
     type: str
     payload: dict[str, Any] = Field(default_factory=dict)
     signature: str | None = None
-
-
-class CreateListingRequest(BaseModel):
-    """P240: signed by the agent (`wire.signed_listing_payload`). `expires_at`
-    is the agent's, inside the signature; `listing_nonce` makes the id."""
-    title: str
-    description: str = ""
-    listing_type: str = "service"
-    payment_mode: str = "free"
-    price_usd: str = "0"
-    module_type: str | None = None
-    expires_at: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    listing_nonce: str
-    signature: str
-
-
-class CreateEventRequest(BaseModel):
-    title: str
-    description: str = ""
-    module_type: str
-    payment_mode: str = "free"
-    entry_fee_usd: str = "0"
 
 
 class CreateRoomRequest(BaseModel):
@@ -5809,11 +4530,8 @@ class InviteToRoomRequest(BaseModel):
 
 class SendRoomMessageRequest(BaseModel):
     content: str
-    msg_type: str = ""                # "chat" | "collab" | "code" | "counter_offer" | "accept" | "reject"
-    parent_message_id: str | None = None
+    msg_type: str = ""                # a post kind | code | lab_task, or "sealed" in an encrypted room
     signature: str | None = None
-    # negotiation constraints (used when msg_type="counter_offer")
-    negotiation_constraints: dict[str, Any] | None = None
     # P19-5: sender-chosen, inside the signature and (on an encrypted room) the
     # AAD — the room analogue of DMSendRequest.nonce. Empty is rejected rather
     # than defaulted, same reasoning as the DM field: a silent fallback would
@@ -5851,7 +4569,7 @@ def _payment_rails(*, has_stripe: bool | None = None) -> tuple[list[str], list[s
     byte-for-byte, because "no wire change" was that pass's contract — which
     left one flag combination answering differently depending on which
     endpoint you asked. With a Stripe key set, the MPP profile not ready and
-    `EMPORIA_MPP_TEMPO_ENABLED=1`, `/health` advertised `"mpp"` (its
+    Tempo switched on, `/health` advertised `"mpp"` (its
     `if payment_methods:` test is truthy on `["tempo"]`) while
     `GET /agents/{id}` omitted it: an `elif` chain resolved `stripe_enabled`
     first and never reached the tempo branch. Same relay, same config, two
@@ -5905,17 +4623,11 @@ async def health(request: Request):
     access = relay_access.mode()
     if access == "closed" and (request.client.host if request.client else "") not in ("127.0.0.1", "::1"):
         # P186: a closed relay says only that it is up — not what it runs or takes.
-        # P240: and its own URL, which its members sign their listings for.
+        # P240: and its own URL, which its members sign their posts for.
         return {"status": "ok", "service": BRAND, "access": access, "relay_url": RELAY_BASE_URL}
-    listing_count = 0
     session_count = 0
     try:
         with DB_LOCK, get_db() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) AS c FROM listings WHERE expires_at IS NULL OR expires_at > ?",
-                (datetime.now(UTC).isoformat(),),
-            ).fetchone()
-            listing_count = row["c"] if row else 0
             # P5-1: was `NOT IN ('complete','cancelled')` — neither literal is
             # ever written to sessions.status, so this counted completed and
             # abandoned sessions as active. Built from _SESSION_TERMINAL_STATUSES
@@ -5938,7 +4650,7 @@ async def health(request: Request):
         "access": access,
         # P187: the host in this relay's agents' addresses (alpha@host).
         "host": _own_host(),
-        # P240: this relay's own URL — what an agent signs as a listing's origin.
+        # P240: this relay's own URL — what an agent signs as a post's origin.
         "relay_url": RELAY_BASE_URL,
         "relay_id": relay_id(),
         "version": __version__,
@@ -5961,11 +4673,13 @@ async def health(request: Request):
         # P156: where entries can be paid in Tempo stablecoin, straight to the creator.
         "tempo_network": (_tempo_cfg() or {}).get("network"),
         "modules": list(MODULE_REGISTRY.keys()),
-        "listing_count": listing_count,
         "session_count": session_count,
         "guardrails_mode": guardrails.DEFAULT_MODE,
-        "require_nous": REQUIRE_NOUS,
-        "operator_fee_bps": OPERATOR_FEE_BPS,
+        # First run: what a new agent's `emporia doctor` explains — the season this relay runs and
+        # whether starter limits bind new agents (levels.py).
+        "season": _season_public(),
+        "starter_limits": _starter_limits_on(),
+        **_fees_card(),
         "mpp_enabled": bool(payment_methods),
         "payment_methods": payment_methods,
         "stripe_enabled": stripe_enabled,
@@ -5995,9 +4709,29 @@ async def health(request: Request):
         "x402_facilitator": _x402_facilitator_url(),
         # P160: whether cards are taken on games (P159) and whether this relay
         # holds card money at all (P157), so a client says what is accepted.
-        "card_game_stakes": card_game_stakes_allowed(),
         "custodial_cards": custodial_cards_allowed(),
     }
+
+
+def _fee_bps_now() -> int:
+    from emporia import fees
+    return fees.fee_bps()
+
+
+def _fees_card() -> dict:
+    """`fee_bps`, `fee_address`: the fee on paid entries (fees.py), the same for everyone."""
+    from emporia import fees
+    return fees.card()
+
+
+def _season_public() -> dict:
+    from emporia import progression
+    return progression.season()
+
+
+def _starter_limits_on() -> bool:
+    from emporia import levels
+    return levels.starter_limits_on()
 
 
 def _chess_lib_available() -> bool:
@@ -6064,6 +4798,20 @@ def _relay_modules() -> dict[str, dict]:
     return relay_modules.advertise(FEDERATED_RELAYS)
 
 
+#: The card's `version` is the federation protocol version. 3 (Feed v2): pointer posts replaced listings and
+#: adverts in the relay-to-relay sync. A linked relay on 2 or less is refused by name (see _old_protocol).
+CARD_VERSION = 3
+
+
+def _old_protocol(card: Any) -> str:
+    """Why a peer's card names a protocol too old to sync with, or ""."""
+    v = card.get("version") if isinstance(card, dict) else None
+    if isinstance(v, int) and v < CARD_VERSION:
+        return (f"it runs relay protocol {v}, which shared listings and adverts; this relay shares pointer posts "
+                f"(emporia:post:v2, protocol {CARD_VERSION}). Upgrade it to sync")
+    return ""
+
+
 @app.get("/relay/card")
 async def relay_identity_card(request: Request):
     """P286: who this relay is, signed with its key — what an agent card is for an agent.
@@ -6075,7 +4823,7 @@ async def relay_identity_card(request: Request):
     if access == "closed" and (request.client.host if request.client else "") not in ("127.0.0.1", "::1"):
         raise HTTPException(404, "closed relay")
     card = {
-        "kind": "emporia-relay-card", "version": 2,
+        "kind": "emporia-relay-card", "version": CARD_VERSION,
         "relay_id": relay_id(),
         "relay_public_key": get_relay_public_key_hex(),
         "relay_key_history": relay_key_history(),
@@ -6084,7 +4832,7 @@ async def relay_identity_card(request: Request):
         "relay_url": RELAY_BASE_URL, "host": _own_host(),
         "operator": _relay_operator_id() or None,
         "access": access,
-        "operator_fee_bps": OPERATOR_FEE_BPS,
+        **_fees_card(),
         # P291 (card v2): what it runs beyond the core — money and its rails, the log,
         # federation and its links, gamify and its formulas — one field, as on /health
         "relay_modules": _relay_modules(),
@@ -6122,9 +4870,7 @@ async def relay_card():
     if not row:
         raise HTTPException(404, f"Owner agent '{owner}' is not yet registered on this relay")
     capabilities = [
-        "emporia:listings:v1",
         "emporia:sessions:v1",
-        "emporia:events:v1",
         "emporia:federation:v1",
         *MODULE_REGISTRY.keys(),
     ]
@@ -6184,8 +4930,6 @@ async def ui_config(request: Request):
         "owner_agent_id": owner or None,
         "relay_id": relay_id(),
         "relay_url": RELAY_BASE_URL,
-        "require_nous": REQUIRE_NOUS,
-        "write_requires_nous": WRITE_REQUIRES_NOUS,
         "require_challenge": REQUIRE_CHALLENGE,
         "agent_count": agent_count,
         "active_session_count": active_session_count,
@@ -6294,7 +5038,7 @@ async def dashboard_session(req: DashboardSessionRequest):
     # Look up the agent's registered public key
     with DB_LOCK, get_db() as conn:
         row = conn.execute(
-            "SELECT public_key_hex FROM authorized_agents WHERE agent_id = ?",
+            "SELECT public_key_hex, stable_id FROM authorized_agents WHERE agent_id = ?",
             (req.agent_id,),
         ).fetchone()
     if not row:
@@ -6308,16 +5052,19 @@ async def dashboard_session(req: DashboardSessionRequest):
     now = time.time()
     jwt = _jwt_encode({
         "agent_id": req.agent_id,
+        "stable_id": row["stable_id"],
         "relay_id": relay_id(),
         "iat": int(now),
         "issued": now,
         "exp": int(now + _JWT_TTL_SECONDS),
+        "jti": secrets.token_hex(12),          # its id: what sign-out revokes
     })
     # Store under challenge_id so the polling dashboard can pick it up automatically
     _PENDING_TOKENS[req.challenge_id] = jwt
     return {
         "token": jwt,
         "agent_id": req.agent_id,
+        "stable_id": row["stable_id"],
         "expires_in": _JWT_TTL_SECONDS,
         "token_type": "Bearer",
     }
@@ -6352,7 +5099,9 @@ _CHALLENGE_TTL_SECONDS = 300  # nonces expire after 5 minutes
 
 
 
-def _consume_challenge(challenge_id: str, public_key_hex: str, signature_hex: str) -> None:
+def _consume_challenge(challenge_id: str, public_key_hex: str, signature: str, relay: str = "",
+                       agent_id: str = "", operator_label: str = "", client_name: str = "",
+                       client_version: str = "", about: str = "") -> None:
     """Verify and consume a registration challenge. Raises HTTPException on any failure.
 
     Consumption is a single conditional UPDATE (used=0 → used=1), not a separate
@@ -6376,15 +5125,18 @@ def _consume_challenge(challenge_id: str, public_key_hex: str, signature_hex: st
         if cur.rowcount == 0:
             raise HTTPException(400, "Challenge already used — request a new one")
 
-    # Verify Ed25519 signature of the nonce
-    try:
-        pub_bytes = bytes.fromhex(public_key_hex)
-        sig_bytes = bytes.fromhex(signature_hex)
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        from emporia.identity import challenge_bytes
-        Ed25519PublicKey.from_public_bytes(pub_bytes).verify(sig_bytes, challenge_bytes(nonce))  # P193
-    except Exception:
-        raise HTTPException(403, "Challenge signature invalid — key mismatch or bad signature")
+    # The signature is over {type, nonce, relay, agent_id, public_key}: for this relay, this name, this key.
+    if not relay or not _names_this_relay(relay):
+        raise HTTPException(403, f"this registration is for {str(relay)[:100] or 'no relay'}, not this relay — "
+                                 "sign emporia:sign-in:v2 for the relay you are talking to")
+    from emporia.wire import about_problem, signed_registration_payload
+    if why := about_problem(about):
+        raise HTTPException(400, why)
+    if not verify(signed_registration_payload(nonce, relay, agent_id, public_key_hex, operator_label, client_name,
+                                              client_version, about), signature,
+                  str(public_key_hex).lower()):
+        raise HTTPException(403, "Challenge signature invalid — sign emporia:sign-in:v2 {nonce, relay, "
+                                 "agent_id, public_key, operator, client, about} with the agent's key")
 
 
 # ============================================================================
@@ -6650,7 +5402,7 @@ class CreatePaymentIntentRequest(BaseModel):
 async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, request: Request):
     """Create a Stripe PaymentIntent for a specific paid session or room.
     Returns payment_intent_id to pass to /sessions/{id}/join or /rooms/{id}/join."""
-    from emporia.payments import create_stake_intent
+    from emporia.payments import create_price_intent
 
     caller = _dashboard_agent_id(request)
     if not caller:
@@ -6673,22 +5425,16 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
         if not session:
             raise HTTPException(404, "Session not found")
         payment_rules = session.get("payment_rules", {})
-        stake = payment_rules.get("stake_per_participant", "0")
-        expected_amount = int(float(stake) * 100) if stake else 0
+        price = payment_rules.get("price", "0")
+        expected_amount = int(float(price) * 100) if price else 0
         currency = (payment_rules.get("currency") or "usd").lower()
         service_type = service_type or session.get("module_type") or "emporia:session"
         if payment_rules.get("mode", "free") == "free" or expected_amount <= 0:
-            raise HTTPException(400, "Session does not require a paid stake")
-        if payment_rules.get("custody") == "direct":
-            # P157: a card wager stake is held for the opponent, once there is one.
-            if caller not in session["participants"] or len(session["participants"]) < 2:
-                raise HTTPException(409, "Stake once your opponent has joined: the hold is theirs if you lose.")
-            payee = next(p for p in session["participants"] if p != caller)
-        elif not custodial_cards_allowed():
+            raise HTTPException(400, "Session does not require a payment")
+        if not custodial_cards_allowed():
             raise HTTPException(409, (
-                "This relay does not hold card stakes on its own balance, so this session "
-                "cannot be staked with a card intent. Fund a purchase with fund_session, or "
-                "stake a two-player wager after both have joined."))
+                "This relay does not hold card money on its own balance, so this session "
+                "cannot be paid with a card intent. Fund a purchase with fund_session."))
     else:
         room = rooms_db.get_room(target_id, db_path=DATABASE_PATH)
         if not room:
@@ -6715,7 +5461,7 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
     # relay could have made itself. The operator set an unsellable price; say so.
     #
     # The `0 <` half is belt-and-braces, not load-bearing: both branches above
-    # already reject a free resource with "does not require a paid stake", so
+    # already reject a free resource with "does not require a payment", so
     # zero cannot reach here today. Stated rather than left to look protective —
     # a stash-verify that folded zero in broke nothing, which is how I know.
     from emporia.payments import STRIPE_MIN_CHARGE_CENTS
@@ -6738,11 +5484,10 @@ async def create_payment_intent_endpoint(req: CreatePaymentIntentRequest, reques
                 f"{payee} has no active Stripe account here, and card payments go straight "
                 f"to the payee on this relay. Pay over x402 or Tempo if offered."))
         from emporia.payments import platform_fee
-        # A wager hold pays the fee on the whole pot — only the loser's is captured.
-        fee = platform_fee(expected_amount * (2 if resource_type == "session" else 1))
+        fee = platform_fee(expected_amount)
 
     try:
-        result = await create_stake_intent(
+        result = await create_price_intent(
             session_id=target_id,
             amount_cents=expected_amount,
             buyer_id=caller,
@@ -6881,7 +5626,7 @@ def _caller_owns_settlement_row(
 # suite the moment PRAGMA table_info(settlements) gains a column not listed in
 # either set — turns "did I remember to redact this" from a habit into a check.
 _SETTLEMENT_PUBLIC_COLUMNS = frozenset({
-    "settlement_id", "session_id", "winner_id", "total_stake_cents",
+    "settlement_id", "session_id", "winner_id", "total_price_cents",
     "platform_fee_cents", "winner_payout_cents", "platform_fee_bps",
     "payment_intent_ids", "transfer_id", "transfer_status", "status",
     "created_at", "payer_id", "refund_id", "reversal_id", "rail",
@@ -6911,6 +5656,40 @@ def _settlement_public_dict(row: Any) -> dict[str, Any]:
     return d
 
 
+def _settlement_kinds(conn: Any, rows: list[Any]) -> dict[str, str]:
+    """Each row's kind, by settlement id: a row with a payer bought access to a room or an
+    Agora topic (`room`, `topic`; `access` if that resource is gone); a row without one is a
+    session's — a `game` (a module that names a winner), or else a
+    `service` purchase (`session` if the session is gone)."""
+    from emporia.standing import game_module_types
+
+    access = {r["session_id"] for r in rows if r["payer_id"] is not None}
+    sessions = {r["session_id"] for r in rows if r["payer_id"] is None}
+
+    def found(sql: str, ids: set[str]) -> dict[str, Any]:
+        if not ids:
+            return {}
+        marks = ",".join("?" * len(ids))
+        return {row[0]: row for row in conn.execute(sql.format(marks=marks), list(ids)).fetchall()}
+
+    rooms = found("SELECT room_id FROM rooms WHERE room_id IN ({marks})", access)
+    topics = found("SELECT topic_id FROM agora_topics WHERE topic_id IN ({marks})", access)
+    sess = found("SELECT session_id, module_type "
+                 "FROM sessions WHERE session_id IN ({marks})", sessions)
+    games = set(game_module_types())
+    kinds: dict[str, str] = {}
+    for r in rows:
+        sid = r["session_id"]
+        if r["payer_id"] is not None:
+            kind = "room" if sid in rooms else "topic" if sid in topics else "access"
+        elif sid not in sess:
+            kind = "session"
+        else:
+            kind = "game" if sess[sid][1] in games else "service"
+        kinds[r["settlement_id"]] = kind
+    return kinds
+
+
 def _settlement_row_dict(
     row: Any, caller: str | None, participant_session_ids: set[str]
 ) -> dict[str, Any]:
@@ -6925,7 +5704,7 @@ def _settlement_row_dict(
     transfer_id — the Stripe transfer object id for that specific payer's payout,
     1:1 with their payment — so a co-payer still got a per-transaction Stripe
     identifier out of the same response N6-2 was written to lock down.
-    `total_stake_cents`/`winner_payout_cents` are left alone: room/topic entry
+    `total_price_cents`/`winner_payout_cents` are left alone: room/topic entry
     fees are uniform, so a co-payer's amount is already public from the resource's
     own fee — only the opaque identifiers need covering.
 
@@ -6980,24 +5759,24 @@ def _redact_payment_row(row: Any, caller: str | None) -> dict[str, Any]:
 
 def _require_operator(caller: str | None, action: str) -> None:
     """Raise 403 for an operator-only maintenance action, with a reason that
-    distinguishes "no relay operator is configured at all" (EMPORIA_AGENT_ID unset —
+    distinguishes "no relay operator is configured at all" (EMPORIA_OPERATOR_STABLE_ID unset —
     no identity can ever satisfy this check) from "you aren't the configured
-    operator" (EMPORIA_AGENT_ID is set, but not to you). N5 review R5 found
+    operator" (it is set, but not to your key). N5 review R5 found
     trigger_federation_sync gave the same generic message either way, which reads
     as "authenticate as the right agent" when the real problem — on a default
     install, where EMPORIA_AGENT_ID is unset — is that the action is unreachable by
     anyone, including whoever would become the operator by setting it.
     """
     owner = _relay_operator_id()
-    if not owner:
+    if not operator_stable_id():
         raise HTTPException(
             403,
-            f"{action}: no relay operator is configured (EMPORIA_AGENT_ID unset) — "
+            f"{action}: no relay operator is configured (EMPORIA_OPERATOR_STABLE_ID unset) — "
             "this action is unavailable on this relay"
         )
     if not caller:   # no credential at all: 401, as every other route answers it
         raise HTTPException(401, f"{action}: authentication required (the relay operator's bearer token)")
-    if caller != owner:
+    if not owner or caller != owner:
         raise HTTPException(403, f"{action}: relay operator access required")
 
 
@@ -7029,8 +5808,12 @@ async def list_settlements(
                           `limit` (default 50) with `has_more` in the response (N8 review R2 —
                           this and the unfiltered branch below were hardcoded to `LIMIT 100` and
                           always reported `has_more: false`, reintroducing on these two branches
-                          the exact truncation-signal defect N6-3 fixed for ?session_id=)
-      - no filter      → requires dashboard auth AND relay operator identity. Same `limit`/
+                          the exact truncation-signal defect N6-3 fixed for ?session_id=).
+                          Also X's own sales of access (a room or topic X created, paid
+                          for by another agent; the payer's identifiers redacted), and
+                          each row's `kind` (_settlement_kinds) — the Stats view's
+                          earnings by source.
+      - no filter     → requires dashboard auth AND relay operator identity. Same `limit`/
                           `has_more` contract as the other two branches (N8 review R2)
 
     A caller authorized to see a resource's settlements (via ?session_id=, above) still only
@@ -7086,15 +5869,30 @@ async def list_settlements(
             # query or _caller_owns_settlement_row, change both — the agreement
             # test (test_settlement_ownership_sql_matches_python_predicate) is
             # what keeps them honest.
+            #
+            # Stats view: the third arm is the agent's own sales of access — a room
+            # or Agora topic it created, paid for by someone else (one row per
+            # payer, `winner_id` the creator, `payer_id` set). Before it, a
+            # creator had no path to its entry fees at all, so they never counted
+            # as its earnings. Those rows are the payer's receipts too, so they go
+            # through _settlement_row_dict and the payer's identifiers stay
+            # redacted; the first two arms (what the caller owns) are unchanged.
             rows, has_more = _fetch_page(
                 conn,
                 "SELECT * FROM settlements WHERE payer_id = ? "
                 "OR (payer_id IS NULL AND session_id IN "
                 "(SELECT session_id FROM participants WHERE agent_id = ?)) "
+                "OR (payer_id IS NOT NULL AND winner_id = ?) "
                 "ORDER BY created_at DESC LIMIT ?",
-                (agent_id, agent_id), limit,
+                (agent_id, agent_id, agent_id), limit,
             )
-            settlements = [_settlement_public_dict(r) for r in rows]
+            kinds = _settlement_kinds(conn, rows)
+            settlements = []
+            for r in rows:
+                owned = r["payer_id"] is None or r["payer_id"] == agent_id
+                d = _settlement_public_dict(r) if owned else _settlement_row_dict(r, dashboard_id, set())
+                d["kind"] = kinds.get(r["settlement_id"], "session")
+                settlements.append(d)
         else:
             rows, has_more = _fetch_page(
                 conn,
@@ -7222,9 +6020,6 @@ async def list_escrow_holds(request: Request):
     return {"holds": [dict(r) for r in rows]}
 
 
-# Listings and Events moved to emporia/routes/{listings,events}.py (P56).
-# The routers are included at the bottom of this file.
-
 
 
 # ============================================================================
@@ -7280,23 +6075,6 @@ async def _fetch_federation_batch(url: str, *, client: httpx.AsyncClient | None 
             await client.aclose()
 
 
-def _peer_owns_listing(existing: Any, peer_url: str) -> bool:
-    """May the peer at `peer_url` replace this existing listing row? (P87)
-
-    Only the peer it was pulled from. A local row (`federated_from` NULL and
-    `origin_relay` this relay) is never peer-writable. A row pulled before P87
-    has no `federated_from`, so it is adopted by a peer whose URL is the row's
-    own origin — the ordinary case, where a relay is reached at the URL it
-    reports — and by no other.
-    """
-    if existing["federated_from"]:
-        return normalize_peer_url(existing["federated_from"]) == peer_url
-    origin = existing["origin_relay"] or ""
-    if not origin or normalize_peer_url(origin) == normalize_peer_url(RELAY_BASE_URL):
-        return False
-    return normalize_peer_url(origin) == peer_url
-
-
 async def _repin_if_rotated(peer_url: str, presented: str) -> bool:
     """P191: a peer presenting a new key keeps its pin only if its history shows
     the pinned key handing over to it, each step signed by the key before."""
@@ -7316,58 +6094,52 @@ async def _repin_if_rotated(peer_url: str, presented: str) -> bool:
     return True
 
 
-async def _pull_federated_listings(peer_url: str) -> int:
-    """Pull listings from a peer relay and upsert locally (federation gossip).
+async def _pull_federated_posts(peer_url: str) -> int:
+    """Pull the pointer posts a linked relay's agents wrote, and keep those whose agent signature checks.
 
-    Rejects the batch unless it carries a valid Ed25519 signature from the peer's own
-    relay key (see federated_listings_out()) — an unsigned or badly-signed response is
-    trusted no further than any other unauthenticated internet traffic. A peer's key is
-    pinned on first successful verification (_FEDERATION_PEER_PUBKEYS) and any later pull
-    presenting a different key for the same peer_url is rejected rather than silently
-    re-trusted, so a URL/DNS hijack can't swap in a different signer unnoticed.
+    Only `pointer` posts travel. The batch must be signed by the peer's own relay key (pinned on the
+    first good pull; a later key must follow from the pinned one by a signed rotation, or the batch is
+    refused as a possible URL hijack), must name the relay it was fetched from, and each post must carry
+    its agent's own signature, key log and the origin it names (`wire.post_verdict`): the batch
+    signature says which relay sent it, a separate fact. Nothing a post points at is fetched.
     """
     peer_url = normalize_peer_url(peer_url)  # N13-2 (R2): one identity for this peer
     try:
-        data = await _fetch_federation_batch(f"{peer_url}/gaming/v1/federate/listings")
+        data = await _fetch_federation_batch(f"{peer_url}/federation/v1/posts")
     except Exception as e:
+        why = str(e)
+        try:    # an older relay has no posts feed: say which protocol it runs rather than that a path is missing
+            from emporia import fetch
+            old = _old_protocol((await fetch.request("GET", f"{peer_url}/relay/card", timeout=10)).json())
+            why = f"refused: {old}" if old else why
+        except Exception:  # noqa: BLE001
+            pass
         _FEDERATION_LAST_SYNC[peer_url] = {
-            "ok": False,
-            "imported": 0,
-            "error": str(e),
-            "synced_at": datetime.now(UTC).isoformat(),
-        }
+            "ok": False, "imported": 0, "error": why, "synced_at": datetime.now(UTC).isoformat()}
         return 0
 
     origin = data.get("origin_relay", peer_url)
-    listings = data.get("listings", [])
+    posts = data.get("posts", [])
     pubkey_hex = data.get("origin_public_key_hex", "")
     signature_hex = data.get("signature", "")
 
     def _reject(reason: str) -> int:
         _FEDERATION_LAST_SYNC[peer_url] = {
-            "ok": False,
-            "imported": 0,
-            "error": reason,
-            "synced_at": datetime.now(UTC).isoformat(),
-        }
+            "ok": False, "imported": 0, "error": reason, "synced_at": datetime.now(UTC).isoformat()}
         return 0
 
-    if not pubkey_hex or not signature_hex:
+    if not pubkey_hex or not signature_hex or not isinstance(posts, list):
         return _reject("peer response is unsigned — refusing to import (upgrade the peer relay)")
     try:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
         Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex)).verify(
             bytes.fromhex(signature_hex),
-            federation_signable_bytes(origin, "listings", listings),
+            federation_signable_bytes(origin, "posts", posts),
         )
     except Exception:
         return _reject("signature verification failed — batch may be tampered or corrupt")
 
-    # P264: a peer speaks only for itself, as the advert pull already required:
-    # the origin it names must be the URL it was linked and fetched at. Before,
-    # the origin was the peer's own claim and each listing was checked against
-    # it, so a linked relay could re-serve another relay's signed listings —
-    # one it had stopped serving included — as if it were that relay.
+    # A peer speaks only for itself: the origin it names must be the URL it was linked and fetched at.
     if normalize_peer_url(origin) != peer_url:
         return _reject(f"the feed names {origin!r} as its origin, not the relay linked as {peer_url!r}")
 
@@ -7384,127 +6156,75 @@ async def _pull_federated_listings(peer_url: str) -> int:
         _FEDERATION_PEER_PUBKEYS[peer_url] = pubkey_hex
         save_federation_peer_pubkeys(_FEDERATION_PEER_PUBKEYS)
 
-    # Skip our own relay to prevent loops. Checked by public key, not just URL — the key is
-    # a persistent identity tied to a key file, while RELAY_BASE_URL is an env var an
-    # operator can change; a URL-only check would miss "this is actually our own batch,
-    # reflected back by a peer" once the URL has drifted from what old listings recorded.
-    # Both sides normalized (N13-2, R2) — a trailing-slash mismatch between a peer's
-    # self-reported origin_relay and our own RELAY_BASE_URL must not defeat this check.
+    # Skip our own relay, by key as well as URL, to prevent loops.
     if normalize_peer_url(origin) == normalize_peer_url(RELAY_BASE_URL) or pubkey_hex == get_relay_public_key_hex():
         _FEDERATION_LAST_SYNC[peer_url] = {
-            "ok": True,
-            "imported": 0,
-            "note": "skipped — peer reported our own relay as origin",
-            "synced_at": datetime.now(UTC).isoformat(),
-        }
+            "ok": True, "imported": 0, "note": "skipped — peer reported our own relay as origin",
+            "synced_at": datetime.now(UTC).isoformat()}
         return 0
 
-    # N13-3 (R3): cap what we accept, mirroring the LIMIT this relay already applies to
-    # what it serves (federated_listings_out). Applied after signature verification
-    # (which covers the full, untruncated list) so this never invalidates a genuinely
-    # signed batch; only caps the unbounded CPU/DB-write/guardrails-scan (N12-6,
-    # including paid NIM calls when enabled) cost of importing it. A peer oversending
-    # isn't silently dropped — noted in the sync record below, which
-    # GET /federation/peers already surfaces.
-    peer_batch_size = len(listings)
+    # N13-3 (R3): cap what we accept, after the signature (which covers the whole list) is checked.
+    peer_batch_size = len(posts)
     if peer_batch_size > _MAX_LIMIT:
-        listings = listings[:_MAX_LIMIT]
+        posts = posts[:_MAX_LIMIT]
 
-    from emporia.wire import listing_verdict
+    from emporia.wire import post_verdict
 
     imported = 0
-    rejected_foreign = 0
     refused: dict[str, int] = {}
     kept: set[str] = set()
-    for listing in listings:
-        if not listing.get("listing_id"):
+    for post in posts:
+        if not isinstance(post, dict) or not post.get("post_id"):
             continue
-        # P240: the agent's own word, checked here, not taken from the relay
-        # that sent it — the batch signature says which relay sent it, a
-        # separate fact. One hop still: a listing must name the relay that
-        # served it as its origin.
-        why = listing_verdict(listing, verify)
-        if not why and listing.get("origin_relay") != origin:
-            why = "it was put up on another relay than the one serving it"
+        why = post_verdict(post, verify)
+        if not why and post.get("origin_relay") != origin:
+            why = "it was posted on another relay than the one serving it"
+        if not why and (post.get("kind") != "pointer" or post.get("topic") or post.get("reply_to")):
+            why = "only pointer posts travel between relays"
         if why:
             refused[why] = refused.get(why, 0) + 1
             continue
         try:
-            # N12-6: untrusted external content landing in a store the dashboard
-            # renders — matches the scan MCP sync_lobby_from_peer already does for
-            # challenges. Rejects the individual item, not the whole batch.
-            await _assert_payload_safe_counted(listing)
+            # N12-6: untrusted external text landing in a store the dashboard renders.
+            await _assert_payload_safe_counted({"text": post["text"], "label": post.get("label", ""),
+                                                "tags": post.get("tags") or []})
         except Exception:
             continue
+        from emporia.addresses import address, host_of
         with DB_LOCK, get_db() as conn:
-            # P83: ownership, the rule N12-3 put on lobby imports and this
-            # importer never got. A signature proves who sent the batch, not
-            # what they may say about someone else's row: `INSERT OR REPLACE`
-            # let any configured peer overwrite a *local* listing by reusing its
-            # id — a bounty's payment_intent_id, state and funder included.
-            #
-            # P87: owned by the peer it was pulled from, not by the origin that
-            # peer claimed. `origin` is self-reported, so P83's origin check let
-            # one peer claim another's origin and overwrite that peer's rows.
-            # `peer_url` is the URL we fetched and whose key we pinned.
-            existing = conn.execute(
-                "SELECT origin_relay, federated_from FROM listings WHERE listing_id = ?",
-                (listing["listing_id"],),
-            ).fetchone()
-            if existing and not _peer_owns_listing(existing, peer_url):
-                rejected_foreign += 1
+            # Ownership (P83/P87): a peer may refresh only the rows it served before, never a local one.
+            existing = conn.execute("SELECT federated_from, is_copy FROM posts WHERE post_id = ?",
+                                    (post["post_id"],)).fetchone()
+            if existing and (existing["federated_from"] != peer_url or existing["is_copy"]):
+                refused["its id is already taken here"] = refused.get("its id is already taken here", 0) + 1
                 continue
             conn.execute(
-                "INSERT OR REPLACE INTO listings "
-                "(listing_id, title, description, listing_type, agent_id, payment_mode, "
-                "price_usd, module_type, origin_relay, expires_at, metadata_json, created_at, "
-                "federated_from, agent_public_key_hex, agent_stable_id, listing_nonce, signature, "
-                "agent_key_log_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    listing["listing_id"],
-                    listing.get("title", ""),
-                    listing.get("description", ""),
-                    listing.get("listing_type", "service"),
-                    listing.get("agent_id", ""),
-                    listing.get("payment_mode", "free"),
-                    listing.get("price_usd", "0"),
-                    listing.get("module_type"),
-                    origin,
-                    listing.get("expires_at"),
-                    json.dumps(listing.get("metadata") or {}),
-                    listing.get("created_at", datetime.now(UTC).isoformat()),
-                    peer_url,
-                    str(listing["agent_public_key_hex"]).lower(),
-                    listing["agent_stable_id"],
-                    listing["listing_nonce"],
-                    listing["signature"],
-                    json.dumps(listing.get("key_log") or []),
-                ),
-            )
+                "INSERT OR REPLACE INTO posts (post_id, author_id, author_stable_id, author_public_key_hex, "
+                "origin_relay, federated_from, nonce, kind, label, text, tags_json, topic, reply_to, quote_of, "
+                "at, signature, key_log_json, is_deleted, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,NULL,?,"
+                "?,?,?,0,?)",
+                (post["post_id"], address(str(post.get("author_id") or ""), host_of(origin)), post["author_stable_id"],
+                 str(post["author_public_key_hex"]).lower(), origin, peer_url, post["nonce"], "pointer",
+                 post.get("label") or "", post["text"], json.dumps(post.get("tags") or []),
+                 post.get("quote_of"), post["at"], post["signature"], json.dumps(post.get("key_log") or []),
+                 datetime.now(UTC).isoformat()))
         imported += 1
-        kept.add(listing["listing_id"])
-    # P184: the batch is the peer's whole current list, so a row it no longer
-    # sends was withdrawn or sold there. Only when the batch was not cut short.
+        kept.add(post["post_id"])
+    # The batch is the peer's whole current list: a post it no longer sends was withdrawn there.
     if peer_batch_size <= _MAX_LIMIT:
         with DB_LOCK, get_db() as conn:
-            stale = [r["listing_id"] for r in conn.execute(
-                "SELECT listing_id FROM listings WHERE federated_from = ?", (peer_url,)).fetchall()
-                if r["listing_id"] not in kept]
-            for listing_id in stale:
-                conn.execute("DELETE FROM listings WHERE listing_id = ? AND federated_from = ?",
-                             (listing_id, peer_url))
+            for r in conn.execute("SELECT post_id FROM posts WHERE federated_from = ? AND is_copy = 0",
+                                  (peer_url,)).fetchall():
+                if r["post_id"] not in kept:
+                    conn.execute("DELETE FROM posts WHERE post_id = ? AND federated_from = ?",
+                                 (r["post_id"], peer_url))
     sync_record: dict[str, Any] = {
-        "ok": True,
-        "imported": imported,
-        "origin_relay": origin,
+        "ok": True, "imported": imported, "origin_relay": origin,
         "synced_at": datetime.now(UTC).isoformat(),
     }
     if peer_batch_size > _MAX_LIMIT:
         sync_record["truncated"] = True
         sync_record["peer_batch_size"] = peer_batch_size
-    if rejected_foreign:
-        sync_record["rejected_not_owner"] = rejected_foreign
     if refused:
         sync_record["refused"] = sum(refused.values())
         sync_record["refused_why"] = refused
@@ -7512,91 +6232,11 @@ async def _pull_federated_listings(peer_url: str) -> int:
     return imported
 
 
-
-
-async def _pull_federated_adverts(peer_url: str) -> None:
-    """P249: pull the rooms and Agora topics a linked relay's owners advertised,
-    keep the ones whose owner's signature checks out, and drop what the relay no
-    longer sends — a withdrawn advert leaves here on the next pull.
-
-    The feed must be signed by the relay key this relay pinned for that peer
-    (the same pin the listings use) and must name the relay it was fetched from;
-    each advert must then carry its owner's own signature over the terms and
-    that relay (`wire.room_advert_verdict`). Forged ones are counted in the
-    peer's sync record (`adverts_refused`, `adverts_refused_why`), as listings
-    are. A peer that does not serve the feeds is left as it was."""
-    from emporia.adverts import verdict_for
-    peer_url = normalize_peer_url(peer_url)
-    _ensure_federation_pins_loaded()
-    record: dict[str, Any] = {}
-    refused: dict[str, int] = {}
-    kept_total = 0
-    for kind in ("rooms", "topics"):
-        try:
-            data = await _fetch_federation_batch(f"{peer_url}/federation/v1/{kind}")
-        except Exception as e:  # noqa: BLE001 — an older peer has no feed; keep what we have
-            record["adverts_error"] = str(e)[:200]
-            continue
-        origin = data.get("origin_relay", peer_url)
-        items = data.get(kind) or []
-        pubkey_hex, signature_hex = data.get("origin_public_key_hex", ""), data.get("signature", "")
-        pinned = _FEDERATION_PEER_PUBKEYS.get(peer_url)
-        try:
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-            Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex)).verify(
-                bytes.fromhex(signature_hex), federation_signable_bytes(origin, kind, items))
-        except Exception:  # noqa: BLE001
-            record["adverts_error"] = f"the {kind} feed is not signed by the relay's key"
-            continue
-        if pinned != pubkey_hex or normalize_peer_url(origin) != peer_url or not isinstance(items, list):
-            # Only a relay already pinned by a listings pull is believed, and only about itself.
-            record["adverts_error"] = f"the {kind} feed is not from the relay this one linked"
-            continue
-        truncated = len(items) > _MAX_LIMIT
-        keep: dict[str, str] = {}
-        for item in items[:_MAX_LIMIT]:
-            if not isinstance(item, dict):
-                why = "not an advert"
-            else:
-                ident = str(item.get("room_id" if kind == "rooms" else "slug") or "")
-                why = verdict_for(kind, item, origin) if ident else "it names nothing"
-            if not why:
-                try:
-                    await _assert_payload_safe_counted(item)
-                except Exception:  # noqa: BLE001
-                    why = "its text was refused by the guardrails"
-            if why:
-                refused[why] = refused.get(why, 0) + 1
-                continue
-            keep[ident] = json.dumps(item)
-        now = datetime.now(UTC).isoformat()
-        with DB_LOCK, get_db() as conn:
-            for ident, item_json in keep.items():
-                conn.execute("INSERT OR REPLACE INTO elsewhere_adverts (kind, peer_url, ident, item_json, pulled_at) "
-                             "VALUES (?,?,?,?,?)", (kind, peer_url, ident, item_json, now))
-            if not truncated:
-                for r in conn.execute("SELECT ident FROM elsewhere_adverts WHERE kind = ? AND peer_url = ?",
-                                      (kind, peer_url)).fetchall():
-                    if r["ident"] not in keep:
-                        conn.execute("DELETE FROM elsewhere_adverts WHERE kind = ? AND peer_url = ? AND ident = ?",
-                                     (kind, peer_url, r["ident"]))
-        kept_total += len(keep)
-    sync = _FEDERATION_LAST_SYNC.get(peer_url)
-    if sync is not None:
-        sync["adverts"] = kept_total
-        sync.update(record)
-        if refused:
-            sync["adverts_refused"] = sum(refused.values())
-            sync["adverts_refused_why"] = refused
-
-
 async def _sync_all_federated_peers() -> dict[str, int]:
-    """Pull listings from every configured peer, concurrently. (P188: the
-    challenge lobby, which this also pulled, is retired.)
+    """Pull pointer posts from every configured peer, concurrently.
 
-    P23-3: used to be a `for peer in FEDERATED_RELAYS: await ...` loop -- both
-    `_pull_federated_listings`/`_pull_federated_lobby` already catch and record
-    per-peer failures into `_FEDERATION_LAST_SYNC`/`_FEDERATION_LOBBY_LAST_SYNC`
+    P23-3: used to be a `for peer in FEDERATED_RELAYS: await ...` loop -- the pullers
+    already catch and record per-peer failures into `_FEDERATION_LAST_SYNC`
     rather than raising, so a bad peer never crashed the loop, it just serialized
     everyone behind its own `_fetch_federation_batch` timeout (15s) needlessly.
     `asyncio.gather` here cuts worst-case wall time from O(peers) to
@@ -7619,19 +6259,13 @@ async def _sync_all_federated_peers() -> dict[str, int]:
     peers = list(FEDERATED_RELAYS)
     drop_unlinked_federated_rows()
     async def _pull_peer(peer: str) -> int:
-        imported = await _pull_federated_listings(peer)
-        # P291: then what it runs, from its card signed by the key the listings pinned —
+        imported = await _pull_federated_posts(peer)
+        # P291: then what it runs, from its card signed by the key the posts pinned —
         # what is kept from it below, and what is offered to it, follows that
         try:
             await _pull_peer_modules(normalize_peer_url(peer))
         except Exception:
             logger.exception("federation_modules_pull_raised_unexpectedly", extra={"peer_url": peer})
-        # P249: the adverts come after the listings, which pin the peer's key; a failure
-        # here never fails the sync, and one peer's slowness holds up only that peer.
-        try:
-            await _pull_federated_adverts(peer)
-        except Exception:
-            logger.exception("federation_advert_pull_raised_unexpectedly", extra={"peer_url": peer})
         try:   # P281: and its log's state, checked against the one kept from last time
             if peer_runs(peer, "log") is False:
                 _note_peer_log_off(normalize_peer_url(peer))
@@ -7641,7 +6275,7 @@ async def _sync_all_federated_peers() -> dict[str, int]:
             logger.exception("federation_log_check_raised_unexpectedly", extra={"peer_url": peer})
         return imported
 
-    listing_results = await asyncio.gather(*(_pull_peer(p) for p in peers), return_exceptions=True)
+    pull_results = await asyncio.gather(*(_pull_peer(p) for p in peers), return_exceptions=True)
 
     def _coerce(results: list) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -7656,7 +6290,7 @@ async def _sync_all_federated_peers() -> dict[str, int]:
                 counts[peer] = result
         return counts
 
-    return _coerce(listing_results)
+    return _coerce(pull_results)
 
 
 async def _pull_peer_modules(peer_url: str) -> dict[str, Any] | None:
@@ -7664,7 +6298,6 @@ async def _pull_peer_modules(peer_url: str) -> dict[str, Any] | None:
     when signed by the key this relay pinned for it; otherwise nothing is kept
     and the peer is treated as before (`peer_runs` → None). Then:
 
-    * paid listings from a relay that takes no payments go — nobody could buy them;
     * whether it links back (federation, both ways) goes in its sync record,
       since sealed DMs need both ways.
     """
@@ -7681,18 +6314,15 @@ async def _pull_peer_modules(peer_url: str) -> dict[str, Any] | None:
             and verify_relay_card(card)["ok"] and isinstance(card.get("relay_modules"), dict)):
         sync["relay_modules_error"] = "its card is not signed by the key pinned for it, or names no modules"
         return None
+    if old := _old_protocol(card):
+        sync["relay_modules_error"] = f"refused: {old}"
+        return None
     mods = card["relay_modules"]
     _FEDERATION_PEER_MODULES[peer_url] = mods
     sync.pop("relay_modules_error", None)
     sync["relay_modules"] = mods
     back = (mods.get("federation") or {}).get("links") or []
     sync["links_back"] = normalize_peer_url(RELAY_BASE_URL) in {normalize_peer_url(u) for u in back}
-    if "money" not in mods:
-        with DB_LOCK, get_db() as conn:
-            gone = conn.execute("DELETE FROM listings WHERE federated_from = ? AND payment_mode != 'free'",
-                                (peer_url,)).rowcount
-        if gone:
-            sync["listings_unpayable"] = gone
     return mods
 
 
@@ -7736,18 +6366,14 @@ def _check_peer_log(peer_url: str) -> dict[str, Any] | None:
 
 
 def drop_unlinked_federated_rows() -> int:
-    """P184: listings pulled from a relay no longer linked go — unlinking a
-    relay must not leave its listings shown here forever."""
+    """P184: pointer posts pulled from a relay no longer linked go — unlinking a
+    relay must not leave its posts shown here forever."""
     linked = [normalize_peer_url(u) for u in FEDERATED_RELAYS]
     with DB_LOCK, get_db() as conn:
-        q = "DELETE FROM listings WHERE federated_from IS NOT NULL"
-        advert_q = "DELETE FROM elsewhere_adverts"        # P249: adverts follow the link too
+        post_q = "DELETE FROM posts WHERE federated_from IS NOT NULL"
         if linked:
-            marks = ",".join("?" * len(linked))
-            q += f" AND federated_from NOT IN ({marks})"
-            advert_q += f" WHERE peer_url NOT IN ({marks})"
-        conn.execute(advert_q, linked)
-        return conn.execute(q, linked).rowcount
+            post_q += f" AND federated_from NOT IN ({','.join('?' * len(linked))})"
+        return conn.execute(post_q, linked).rowcount
 
 
 _FEDERATION_SYNC_INTERVAL_SECONDS = float(os.getenv("EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS", "300"))
@@ -7761,7 +6387,7 @@ async def _federation_sync_loop() -> None:
 
     P23-3: before this, `POST /gaming/v1/federate/sync` was the *only* sync
     path -- operator-triggered only, no periodic retry. Per-peer failures were
-    already recorded and non-fatal (see _pull_federated_listings), so a
+    already recorded and non-fatal (see _pull_federated_posts), so a
     transient failure just sat there until a human re-triggered. This periodic
     loop is itself the retry mechanism -- no separate backoff needed, the same
     reasoning _sweep_loop() already applies to its own failures.
@@ -8011,8 +6637,6 @@ async def delete_session(session_id: str, request: Request, force: bool = False)
 # Messaging / Negotiation
 # ============================================================================
 
-VALID_MSG_TYPES = {"challenge", "counter_offer", "accept", "reject", "chat", "rpc", "notification"}
-
 
 @app.post("/messages")
 async def send_message(req: SendMessageRequest, request: Request):
@@ -8059,9 +6683,7 @@ async def send_message(req: SendMessageRequest, request: Request):
 
 @app.get("/messages")
 async def get_messages(agent_id: str, request: Request, session_id: str | None = None, limit: int = 50):
-    """Deprecated history view — use GET /inbox for live events, GET /dm for peer chat.
-    Still returns the raw messages audit table for back-compat.
-    """
+    """The raw messages audit table: this agent's messages, newest first."""
     _require_caller_is(agent_id, request)
     limit = _clamp_limit(limit)
     with DB_LOCK, get_db() as conn:
@@ -8078,7 +6700,6 @@ async def get_messages(agent_id: str, request: Request, session_id: str | None =
                 (agent_id, agent_id, limit),
             ).fetchall()
     return {
-        "deprecated": "Use GET /inbox (events) or GET /dm (peer chat). This endpoint reads the raw audit table.",
         "messages": [
             {**dict(r), "payload": json.loads(r["payload_json"])}
             for r in rows
@@ -8102,15 +6723,13 @@ async def ws_global_events(ws: WebSocket):
     Clients receive a JSON frame for every relay-side event:
       {"type": "session_created", ...}
       {"type": "session_action",  ...}
-      {"type": "listing_created", ...}
       {"type": "room_created",    ...}
       {"type": "room_message",    ...}
-      {"type": "event_created",   ...}
     Send {"type": "ping"} to keep alive; relay responds {"type": "pong"}.
     """
     if await _ws_refused(ws):
         return
-    await ws.accept()
+    await _ws_accept(ws)
     ws_id = uuid.uuid4().hex[:12]
     logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "global"})
     ws_connections["__global__"].add(ws)
@@ -8120,14 +6739,11 @@ async def ws_global_events(ws: WebSocket):
             "status": "ok",
             "service": BRAND,
             "version": __version__,
-            "listing_count": 0,
             "session_count": 0,
             "modules": list(MODULE_REGISTRY.keys()),
         }
         try:
             with DB_LOCK, get_db() as conn:
-                row = conn.execute("SELECT COUNT(*) AS c FROM listings WHERE status='open'").fetchone()
-                health_data["listing_count"] = row["c"] if row else 0
                 # P5-1: same fix as /health's REST handler above — see that
                 # comment for why the old literals were wrong.
                 row2 = conn.execute(
@@ -8177,7 +6793,7 @@ async def ws_session(ws: WebSocket, session_id: str):
         logger.warning("ws_rejected", extra={"channel": "session", "session_id": session_id, "reason": "not_allowed"})
         await ws.close(code=1008)
         return
-    await ws.accept()
+    await _ws_accept(ws)
     ws_id = uuid.uuid4().hex[:12]
     logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "session", "session_id": session_id})
     ws_connections[session_id].add(ws)
@@ -8207,7 +6823,7 @@ async def ws_agent(ws: WebSocket, agent_id: str):
         logger.warning("ws_rejected", extra={"channel": "agent", "agent_id": agent_id, "reason": "not_authorized"})
         await ws.close(code=1008)
         return
-    await ws.accept()
+    await _ws_accept(ws)
     ws_id = uuid.uuid4().hex[:12]
     logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "agent", "agent_id": agent_id})
     key = f"agent:{agent_id}"
@@ -8230,7 +6846,6 @@ async def ws_agent(ws: WebSocket, agent_id: str):
 # Public: open to all registered agents.
 # Private: hidden from listing; gated by invite OR Stripe payment.
 # Encryption flag: relay stores opaque ciphertext, skips guardrails scan.
-# Negotiation routing: counter_offer in a 2-member private room is brokered.
 # Session link: a game session can have an associated room for in-session chat.
 # ============================================================================
 
@@ -8343,11 +6958,18 @@ async def _settle_access_payment(
         # bought; see _retire_x402_intent().
         _retire_x402_intent(
             payer_id=payer_id, resource_type=resource_type,
-            resource_id=resource_id, amount_cents=amount_cents,
+            resource_id=resource_id, amount_cents=amount_cents - payment_ref.fee_cents,
         )
-        platform_fee = 0
-        creator_payout = amount_cents
-        platform_fee_bps = 0
+        if payment_ref.fee_cents:
+            # a split entry (fees.py): the fee was paid straight to the relay's fee address
+            _retire_x402_intent(
+                payer_id=payer_id, resource_type=f"{resource_type}:fee",
+                resource_id=resource_id, amount_cents=payment_ref.fee_cents,
+            )
+        platform_fee = payment_ref.fee_cents
+        creator_payout = amount_cents - platform_fee
+        from emporia import fees as _fees
+        platform_fee_bps = _fees.fee_bps() if platform_fee else 0
         transfer_id = None
         # "direct": no platform-held balance ever existed to transfer out of
         # — distinct from "no_stripe_account" (Stripe, platform holds funds,
@@ -8357,12 +6979,12 @@ async def _settle_access_payment(
     elif payment_ref.destination:
         # P157: a destination charge — Stripe paid the creator, less the fee,
         # when it was captured. Nothing reached the platform but the fee.
-        platform_fee_bps = OPERATOR_FEE_BPS
+        platform_fee_bps = _fee_bps_now()
         platform_fee = _platform_fee(amount_cents)
         creator_payout = amount_cents - platform_fee
         transfer_id, transfer_status = None, "destination"
     else:
-        platform_fee_bps = OPERATOR_FEE_BPS
+        platform_fee_bps = _fee_bps_now()
         platform_fee = _platform_fee(amount_cents)
         creator_payout = amount_cents - platform_fee
         transfer_id = None
@@ -8407,11 +7029,11 @@ async def _settle_access_payment(
         "winner_id": creator_id,
         "outcome_type": outcome_type,
         "status": "settled",
-        "total_stake_cents": amount_cents,
+        "total_price_cents": amount_cents,
         "platform_fee_cents": platform_fee,
         "winner_payout_cents": creator_payout,
         "platform_fee_bps": platform_fee_bps,
-        "payment_intent_ids": [payment_ref.reference],
+        "payment_intent_ids": [payment_ref.reference] + ([payment_ref.fee_reference] if payment_ref.fee_reference else []),
         "transfer_id": transfer_id,
         "transfer_status": transfer_status,
         "payer_id": payer_id,
@@ -8498,6 +7120,10 @@ async def _finish_interrupted_access_purchase(
                 return
             dest = None
         ref = PaymentRef(ref.rail, ref.reference, dest)
+    if ref.rail == "x402":
+        from emporia import fees
+        # a split entry was paid in two: the fee went to the relay's fee address (fees.py)
+        ref = PaymentRef(ref.rail, ref.reference, fee_cents=fees.fee_cents(row["amount_cents"]))
     await _settle_access_payment(
         resource_type=resource_type,
         resource_id=resource_id,
@@ -8525,7 +7151,7 @@ async def _refund_kicked_room_payer(room_id: str, agent_id: str) -> dict[str, An
     that transfer back would leave the platform eating the creator's share —
     so the order here undoes both hops in reverse: reverse the transfer,
     *then* refund the charge. Net effect: the payer is made whole, the
-    creator's payout is reversed, and the platform's 2.5% fee is simply never
+    creator's payout is reversed, and the platform's 1% fee is simply never
     kept — no separate "give back the fee" step, since reversing 100% of the
     transfer plus refunding 100% of the charge already nets to zero for the
     platform.
@@ -8717,7 +7343,7 @@ async def ws_room(ws: WebSocket, room_id: str):
         logger.warning("ws_rejected", extra={"channel": "room", "room_id": room_id, "reason": "not_a_member"})
         await ws.close(code=1008)
         return
-    await ws.accept()
+    await _ws_accept(ws)
     ws_id = uuid.uuid4().hex[:12]
     logger.info("ws_connected", extra={"ws_id": ws_id, "channel": "room", "room_id": room_id})
     key = f"room:{room_id}"
@@ -8759,28 +7385,11 @@ class CreateAgoraTopicRequest(BaseModel):
     # P2-3: how long one payment's access lasts for a paid_invite topic. None
     # (default) = no expiry.
     access_duration_days: int | None = None
+    # Agora v2: a private or restricted `invite` topic sealed to its members (as an encrypted room is).
+    encrypted: bool = False
     # P278: signed by the creator over every setting (wire.signed_agora_topic_payload).
     nonce: str = ""
     signature: str = ""
-
-class CreateAgoraPostRequest(BaseModel):
-    title: str
-    content: str
-    post_type: str = "text"  # "text" | "link" | "code" | "data"
-    flair: str | None = None
-    # P242: signed by its author (wire.signed_agora_post_payload).
-    nonce: str
-    signature: str
-
-class AddAgoraCommentRequest(BaseModel):
-    content: str
-    parent_comment_id: str | None = None
-    # P242: signed by its author (wire.signed_agora_comment_payload).
-    nonce: str
-    signature: str
-
-class AgoraVoteRequest(BaseModel):
-    value: int  # 1 or -1
 
 class AgoraSubscribeRequest(BaseModel):
     agent_id: str
@@ -8788,30 +7397,14 @@ class AgoraSubscribeRequest(BaseModel):
 
 
 def _require_registered(agent_id: str) -> None:
-    """Raise 403 if agent_id is not registered, or is key_only when WRITE_REQUIRES_NOUS is on.
+    """Raise 403 if agent_id is not registered.
 
     Read endpoints are open; all write operations (create/post/join/subscribe/vote/message)
-    require prior registration. With WRITE_REQUIRES_NOUS=1, only nous_verified agents may write.
+    require prior registration.
     """
     if not AGENT_REGISTRY.is_authorized(agent_id):
         raise HTTPException(403, f"Agent '{agent_id}' not registered on this relay. "
                             "Register first via POST /agents/register or MCP auto-registration.")
-    if WRITE_REQUIRES_NOUS:
-        try:
-            with DB_LOCK, get_db() as conn:
-                row = conn.execute(
-                    "SELECT trust_level FROM authorized_agents WHERE agent_id = ?", (agent_id,)
-                ).fetchone()
-            if not row or row["trust_level"] != "nous_verified":
-                raise HTTPException(
-                    403,
-                    f"Agent '{agent_id}' has key_only trust. "
-                    "Write operations require nous_verified — register with a valid Nous JWT.",
-                )
-        except HTTPException:
-            raise
-        except Exception:
-            pass
 
 
 _AGORA_VISIBILITIES = {"public", "private", "restricted"}
@@ -8822,7 +7415,7 @@ def _agora_is_member(conn: Any, topic_id: str, agent_id: str, *, gate_type: str)
     rule (a `paid_invite` topic's membership requires an *active* entitlement,
     not just a still-present `agora_members` row), same two exemptions (the
     topic owner/moderators, and an agent with no entitlement row at all for
-    this topic — grandfathered, see entitlements.has_any_grant()'s docstring).
+    this topic — a purchase in flight, see entitlements.has_any_grant()'s docstring).
 
     Takes an already-open `conn` rather than owning its own connection, unlike
     rooms.is_member() — every call site here already holds one via `with
@@ -8882,12 +7475,6 @@ def _topic_can_read(
     if not agent_id:
         return False
     return _agora_is_member(conn, topic_id, agent_id, gate_type=gate_type)
-
-
-def _slugify(name: str) -> str:
-    import re
-    s = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return s[:64] or "topic"
 
 
 
@@ -9021,33 +7608,45 @@ def main():
 # ============================================================================
 
 from emporia.routes import agents as _agent_routes
-from emporia.routes import bounties as _bounty_routes
 from emporia.routes import standing as _standing_routes  # noqa: E402
-from emporia.routes import bugs as _bug_routes  # noqa: E402
 from emporia.routes import operator as _operator_routes  # noqa: E402
+from emporia.routes import ideas as _idea_routes  # noqa: E402
+from emporia.routes import labs as _lab_routes  # noqa: E402
+from emporia.routes import pledges as _pledge_routes  # noqa: E402
+from emporia.routes import whats_next as _next_routes  # noqa: E402
 from emporia.routes import likes as _like_routes  # noqa: E402
+from emporia.routes import posts as _post_routes  # noqa: E402
+from emporia.routes import beacon as _beacon_routes  # noqa: E402
+from emporia.routes import games_export as _games_export_routes  # noqa: E402
+from emporia.routes import happening as _happening_routes  # noqa: E402
 from emporia.routes import deletion as _deletion_routes  # noqa: E402
 from emporia.routes import agoras as _agora_routes  # noqa: E402
 from emporia.routes import dm as _dm_routes  # noqa: E402
-from emporia.routes import events as _events_routes  # noqa: E402
 from emporia.routes import federation as _federation_routes  # noqa: E402
-from emporia.routes import listings as _listings_routes  # noqa: E402
 from emporia.routes import rooms as _room_routes  # noqa: E402
 from emporia.routes import sessions as _session_routes  # noqa: E402
 from emporia.routes import translog as _translog_routes  # noqa: E402
+from emporia.routes import models as _model_routes  # noqa: E402
+from emporia.routes import x_links as _x_link_routes  # noqa: E402
 
-app.include_router(_listings_routes.router)
-app.include_router(_events_routes.router)
+app.include_router(_model_routes.router)
+app.include_router(_x_link_routes.router)
 app.include_router(_dm_routes.router)
 app.include_router(_federation_routes.router)
 app.include_router(_agora_routes.router)
 app.include_router(_room_routes.router)
 app.include_router(_session_routes.router)
 app.include_router(_agent_routes.router)
-app.include_router(_bounty_routes.router)
 app.include_router(_standing_routes.router)
-app.include_router(_bug_routes.router)
 app.include_router(_operator_routes.router)
+app.include_router(_idea_routes.router)
+app.include_router(_lab_routes.router)
+app.include_router(_pledge_routes.router)
+app.include_router(_next_routes.router)
 app.include_router(_like_routes.router)
+app.include_router(_post_routes.router)
+app.include_router(_games_export_routes.router)
+app.include_router(_beacon_routes.router)
+app.include_router(_happening_routes.router)
 app.include_router(_deletion_routes.router)
 app.include_router(_translog_routes.router)

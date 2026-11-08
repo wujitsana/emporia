@@ -24,10 +24,6 @@ def name_of(profile: Path) -> str:
     return profile.name if profile.parent.name == "profiles" else DEFAULT
 
 
-def profile_path(root: Path, name: str) -> Path:
-    return root if name == DEFAULT else root / "profiles" / name
-
-
 def profiles(root: Path) -> list[Path]:
     """Every profile under a root, the root itself first when it is one."""
     named = sorted(p.parent for p in (root / "profiles").glob("*/config.yaml"))

@@ -529,14 +529,6 @@ def sign_kind(agent_id: str, kind: str, args: list, kwargs: dict) -> str:
     return sig
 
 
-def sign_in(agent_id: str, nonce: str) -> str:
-    from emporia import signing
-    held = _identity(agent_id)
-    signing.check("sign-in", {"nonce": nonce}, signing.Context(agent_id, env=dict(policy(agent_id).get("env", {}))),
-                  history=FileHistory(agent_id))
-    return _sign_with(agent_id, held, lambda h: h.sign(identity.challenge_bytes(nonce))).hex()
-
-
 # Kinds only a person signs (signing.KINDS' `person`), and the sign-in their
 # commands need first. Never reachable with an agent's token: these run in the
 # person's own terminal, as the signer's user (they read its folder).
@@ -881,6 +873,12 @@ app = FastAPI(title="Emporia signer", docs_url=None, redoc_url=None, openapi_url
 def _agent(request: Request) -> str:
     agent_id = request.headers.get("x-emporia-agent", "")
     token = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    # Review pass 2: the id exactly as the signer files it. `agent_dir` folds case and odd
+    # characters, so `ALICE` or ` alice` found alice's policy and token, while the
+    # per-process counters (`_OPENS`, the open cap and its burst alert) and approvals keyed
+    # the spelling: each new spelling started a fresh count.
+    if agent_id != identity._keyfile_stem(agent_id):
+        agent_id = ""
     want = policy(agent_id).get("token_sha256", "") if agent_id else ""
     if not (want and token and hmac.compare_digest(want, _hash(token))):
         raise HTTPException(401, "not an agent this signer holds keys for, or the wrong token")
@@ -947,7 +945,9 @@ def _run(request: Request, fn):
 @app.post("/v1/x402")
 async def sign_x402(request: Request) -> dict:
     body = await request.json()
-    return {"header": _run(request, lambda aid: agent_wallet.sign_exact(aid, body["body"], body.get("network", "")))}
+    return {"header": _run(request, lambda aid: agent_wallet.sign_exact(
+        aid, body["body"], body.get("network", ""), fee_leg=bool(body.get("fee_leg")),
+        creator_amount=int(body.get("creator_amount") or 0)))}
 
 
 @app.post("/v1/tempo")
@@ -1011,12 +1011,6 @@ async def sign(request: Request) -> dict:
     if not isinstance(args, list) or not isinstance(kwargs, dict):
         raise HTTPException(400, {"error": "args is a list and kwargs an object"})
     return _signing_call(request, kind, lambda aid: sign_kind(aid, kind, args, kwargs))
-
-
-@app.post("/v1/sign-in")
-async def post_sign_in(request: Request) -> dict:
-    body = await request.json()
-    return _signing_call(request, "sign-in", lambda aid: sign_in(aid, str(body.get("nonce", ""))))
 
 
 @app.post("/v1/open")

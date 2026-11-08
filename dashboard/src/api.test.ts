@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ENCRYPTED_PLACEHOLDER,
   dmDisplayContent,
+  postDisplay,
   dmThreadPreview,
   looksLikeEncryptedEnvelope,
   type DMThread,
@@ -85,12 +86,12 @@ describe("dmThreadPreview", () => {
     // thread.encrypted is checked first specifically so a thread that upgraded
     // to encryption mid-conversation doesn't leak a stale plaintext preview.
     expect(dmThreadPreview({ ...base, encrypted: true, last_content: "not json at all" }))
-      .toBe("🔒 encrypted");
+      .toBe("[sealed] encrypted");
   });
 
   it("shows the lock when last_content looks like an envelope, even if encrypted is unset", () => {
     const env = JSON.stringify({ v: 2, alg: "x", keys: { a: "x" } });
-    expect(dmThreadPreview({ ...base, last_content: env })).toBe("🔒 encrypted");
+    expect(dmThreadPreview({ ...base, last_content: env })).toBe("[sealed] encrypted");
   });
 
   it("shows a truncated plaintext preview otherwise", () => {
@@ -105,5 +106,17 @@ describe("dmThreadPreview", () => {
 
   it("shows an em-dash placeholder for a thread with no messages yet", () => {
     expect(dmThreadPreview(base)).toBe("—");
+  });
+});
+
+describe("postDisplay", () => {
+  const body = (o: object) => JSON.stringify({ kind: "note", label: "", text: "hi", tags: [], reply_to: null, quote_of: null, ...o });
+  it("shows a post body as its text, with the kind and hashtags", () => {
+    expect(postDisplay(body({}))).toBe("hi");
+    expect(postDisplay(body({ kind: "question", tags: [["t", "labs"], ["p", "x"]] }))).toBe("[question] hi  #labs");
+  });
+  it("leaves anything else as it is", () => {
+    expect(postDisplay("plain")).toBe("plain");
+    expect(postDisplay('{"a":1}')).toBe('{"a":1}');
   });
 });

@@ -352,7 +352,7 @@ PROFILE_NAME_RULE = ("lowercase letters, digits, - and _, starting with a letter
 
 
 class ProfileNameRefused(ValueError):
-    """`--profile NAME` names no profile Hermes would accept."""
+    """`--agent-profile NAME` names no profile Hermes would accept."""
 
 
 def _valid_profile_name(name: str) -> bool:
@@ -362,12 +362,24 @@ def _valid_profile_name(name: str) -> bool:
     return bool(_PROFILE_ID.fullmatch(name)) and name not in _RESERVED_NAMES
 
 
+def _setup_menu():
+    """setup_menu.py beside this file, loaded by path (this file also runs outside its package)."""
+    import importlib.util
+    mod = sys.modules.get("emporia_setup_menu")
+    if mod is None:
+        spec = importlib.util.spec_from_file_location("emporia_setup_menu", HERE / "setup_menu.py")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["emporia_setup_menu"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
 def choose_profile(args: argparse.Namespace, here: str, tty: bool, ask=input) -> tuple[str, bool] | None:
     """Which profile becomes the agent, and whether it is a new one. A
     marketplace agent has its terminal and file tools turned off, so a profile
     of its own is the recommended answer; this one is offered too.
 
-    Review follow-up L7: `--profile NAME` is held to Hermes's name rules before
+    Review follow-up L7: `--agent-profile NAME` is held to Hermes's name rules before
     anything runs (`ProfileNameRefused`): it became `profiles/<NAME>` paths that
     setup checks, writes and may remove, and only Hermes's own commands checked it."""
     if args.profile:
@@ -379,13 +391,20 @@ def choose_profile(args: argparse.Namespace, here: str, tty: bool, ask=input) ->
         return here, False
     if not tty:
         return None
-    print("\n  Which Hermes profile should be the Emporia agent?")
-    print("    1. A new profile, just for it (recommended: a marketplace agent has no terminal or file tools)")
-    print(f"    2. This profile ({here})")
-    while True:
-        pick = (ask("  Choose [1]: ").strip() or "1")
-        if pick in ("1", "2"):
-            break
+    menu = _setup_menu()
+    print("\n  A marketplace agent has no terminal or file tools, so a profile of its own keeps your other work out of its reach.")
+    items = [menu.Item("a new profile, just for it", "Your current profile is untouched; nothing else you do in Hermes "
+                       "shares its keys or tools. Safest.", True),
+             menu.Item(f"this profile ({here})", "Its tools and memory become the agent's, and its role changes them.")]
+    if ask is input:
+        picked = menu.select("Which Hermes profile should be the Emporia agent?", items)
+        if picked is False:
+            picked = menu.numbered("Which Hermes profile should be the Emporia agent?", items)
+        if picked is None:
+            raise KeyboardInterrupt
+    else:
+        picked = menu.numbered("Which Hermes profile should be the Emporia agent?", items, ask)
+    pick = str(picked + 1)
     if pick == "2":
         return here, False
     while True:
@@ -473,7 +492,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
         return 2
     if chosen is None:
         print("  No terminal to ask in. Say which profile, and the answers, for example:\n"
-              "      hermes emporia setup --profile shop --relay https://relay.example -- --role marketplace "
+              "      hermes emporia setup --agent-profile shop --relay https://relay.example -- --role marketplace "
               "--keys env\n  (--here sets up this profile instead of a new one)")
         return 2
     name, new = chosen
@@ -526,19 +545,30 @@ def cmd_setup(args: argparse.Namespace) -> int:
             return 1
     code = _emporia(rt, "setup", "agent", name, *extra)
     if code == 0:
-        _next_steps(name)
+        _next_steps(name, rt)
+        _labs_line(name)
     elif made == "made":
         _remove_profile(name)          # only if setup agent stopped before writing the agent
     return code
 
 
-def _next_steps(name: str) -> None:
-    """P296: after the restart setup printed, how to see that it worked."""
+def _next_steps(name: str, rt: Path | None = None) -> None:
+    """P296: after the restart setup printed, how to see that it worked. First run: the runtime's
+    "you're in" block first (`emporia welcome NAME`: read-only, no network)."""
     p = "" if name == profile_name() else f"-p {name} "
+    if rt is not None:
+        _emporia(rt, "welcome", name)
     print("\n  Then:")
     print(f"      hermes {p}emporia status     # its name on the relay, and whether it has registered")
     print(f"      hermes {p}dashboard          # the Emporia tab: its sessions, rooms, payments, DMs")
     print(f"      hermes {p}emporia doctor     # if anything looks wrong; each problem names its fix")
+
+
+def _labs_line(name: str) -> None:
+    """One line after the end-of-setup block: what taking part in labs needs. Explains; installs nothing."""
+    p = "" if name == profile_name() else f"-p {name} "
+    print(f"\n  Labs: to contribute on GitHub, see `hermes {p}emporia doctor` (Labs section): it needs git and gh "
+          "(or Hermes's GitHub skill), signed in.")
 
 
 def _origin(rt: Path) -> str:
@@ -665,8 +695,9 @@ def _profiles_running(rt: Path) -> list[str]:
 # `emporia wallet backup` is, and the commands that change keys, wallets or roles still wait
 # for the person's yes. An agent with a terminal could already run the runtime's CLI
 # (`$EMPORIA_PYTHON -m emporia.cli`, guarded the same way); this adds no reach.
-PASSTHROUGH = ("agent", "archive", "bugs", "delete", "dms", "guardians", "house", "identity", "log",
-               "login", "operator", "relay", "role", "sheet", "signer", "stats", "visits", "wallet")
+PASSTHROUGH = ("agent", "archive", "delete", "dms", "guardians", "house", "identity", "lab", "log",
+               "operator", "relay", "role", "rounds", "sheet", "signer", "stats", "visits", "wake", "wallet",
+               "welcome")
 # `emporia setup <these>` passes through too: the plugin's setup is the agent's.
 SETUP_PASSTHROUGH = ("relay", "stripe", "dashboard", "log")
 
@@ -683,7 +714,11 @@ def register_cli(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="emporia_command")
     p = sub.add_parser("setup", help="Install Emporia's runtime and set this profile up as an agent")
     where = p.add_mutually_exclusive_group()
-    where.add_argument("--profile", help="The profile to set up as the agent; made if it does not exist")
+    # Not `--profile`: Hermes takes `--profile NAME` / `-p NAME` anywhere on its command line as its
+    # own profile switch and strips it before this parser runs (found by the 11-06 release review:
+    # `hermes emporia setup --profile shop` failed with "Profile 'shop' does not exist").
+    where.add_argument("--agent-profile", dest="profile", metavar="NAME",
+                       help="The profile to set up as the agent; made if it does not exist")
     where.add_argument("--here", action="store_true", help="Set up this profile (default: asked; a new one is recommended)")
     p.add_argument("--relay", help="The relay to join (https URL)")
     p.add_argument("--plugin-source", default="emporia",

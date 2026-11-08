@@ -3,7 +3,8 @@
 What it earned, spent and is owed, what it did, and what its Emporia activity cost in model
 tokens — so one number says whether it pays for itself. Aggregates only, from records that
 already exist: the relay's records about this agent (its own payments, the settlements it is
-in, its escrow holds, its counterparty record) and, on this machine, Hermes's own session
+in or paid by — a room's or topic's entry fees are its creator's — its escrow holds, its
+counterparty record) and, on this machine, Hermes's own session
 records (`state.db`, read-only) and the plugin's turn count. Nothing is sent anywhere.
 
 `collect` fetches; `agent_stats` is pure (rows in, figures out); `render` writes it for a person.
@@ -104,9 +105,23 @@ def turns_used(profile: Path, now: float | None = None) -> int:
     return sum(1 for t in (turns or []) if isinstance(t, (int, float)) and now - t < DAY)
 
 
-_PAID = {"paid", "transferred", "captured", "succeeded", "settled"}
-_OWED_PREFIXES = ("pending",)
-_FAILED = {"capture_failed", "failed"}
+# Owed: the relay holds it and has not paid it out yet — waiting on a Connect account
+# (`pending_connect*`), or with none to send it to (`no_stripe_account`, a room or topic entry).
+_OWED_PREFIXES = ("pending", "no_stripe_account")
+# Failed: nothing reached the payee (`transfer_failed: <reason>` carries its reason).
+_FAILED_PREFIXES = ("capture_failed", "transfer_failed", "failed")
+
+#: Where earnings came from, by the relay's settlement `kind` (relay_server._settlement_kinds).
+#: From a relay that names no kind: a row with a payer is an access sale, else a session's.
+SOURCES = {"service": "services", "game": "games", "room": "rooms",
+           "topic": "topics", "access": "rooms_topics", "session": "sessions"}
+
+
+def earning_source(s: dict[str, Any]) -> str:
+    """A settlement's source of earnings: services, games, rooms or topics. A room's
+    or topic's entry fee is its creator's sale (the relay's ?agent_id= rows include them)."""
+    kind = s.get("kind") or ("access" if s.get("payer_id") else "session")
+    return SOURCES.get(str(kind), "sessions")
 
 
 def agent_stats(agent_id: str, relay: dict[str, Any], model: dict[str, Any] | None = None,
@@ -125,6 +140,8 @@ def agent_stats(agent_id: str, relay: dict[str, Any], model: dict[str, Any] | No
         spent[str(p.get("rail") or "stripe")] += int(p.get("amount_cents") or 0)
         spent_for[str(p.get("payment_type") or "other")] += int(p.get("amount_cents") or 0)
     earned: dict[str, int] = defaultdict(int)
+    by_source: dict[str, int] = defaultdict(int)
+    sales: dict[str, int] = defaultdict(int)
     owed = fees = failed = 0
     for s in relay.get("settlements") or []:
         if s.get("winner_id") != agent_id or _when(s.get("created_at")) < since:
@@ -133,12 +150,16 @@ def agent_stats(agent_id: str, relay: dict[str, Any], model: dict[str, Any] | No
             continue
         cents = int(s.get("winner_payout_cents") or 0)
         transfer = str(s.get("transfer_status") or "")
-        if transfer in _FAILED:
+        source = earning_source(s)
+        if transfer.startswith(_FAILED_PREFIXES):
             failed += cents
         elif transfer.startswith(_OWED_PREFIXES):
             owed += cents
         else:
             earned[str(s.get("rail") or "stripe")] += cents
+            by_source[source] += cents
+        if source in ("rooms", "topics", "rooms_topics"):
+            sales[source] += 1
         fees += int(s.get("platform_fee_cents") or 0)
     held_atomic = sum(int(h.get("amount_atomic") or 0) for h in relay.get("holds") or []
                       if h.get("payer_agent_id") == agent_id and h.get("state") in ("authorized", "held"))
@@ -150,6 +171,7 @@ def agent_stats(agent_id: str, relay: dict[str, Any], model: dict[str, Any] | No
     return {
         "agent_id": agent_id, "days": days,
         "earned_cents": earned_total, "earned_by_rail": dict(earned),
+        "earned_by_source": dict(by_source), "access_sales": dict(sales),
         "owed_cents": owed, "failed_payout_cents": failed, "fees_on_winnings_cents": fees,
         "spent_cents": spent_total, "spent_by_rail": dict(spent), "spent_on": dict(spent_for),
         "held_in_escrow_usdc": held_atomic / 1e6,
@@ -174,6 +196,9 @@ def render(st: dict[str, Any]) -> str:
     lines.append(f"  earned   {_usd(st['earned_cents'])}  ({rails(st['earned_by_rail'])})"
                  + (f"; owed {_usd(st['owed_cents'])}" if st["owed_cents"] else "")
                  + (f"; failed payouts {_usd(st['failed_payout_cents'])}" if st["failed_payout_cents"] else ""))
+    sources = {k.replace("rooms_topics", "rooms/topics"): v for k, v in st.get("earned_by_source", {}).items()}
+    if sum(1 for v in sources.values() if v) > 1:
+        lines.append(f"    from   {rails(sources)}")
     lines.append(f"  spent    {_usd(st['spent_cents'])}  ({rails(st['spent_by_rail'])})")
     if st["held_in_escrow_usdc"]:
         lines.append(f"  in escrow now  {st['held_in_escrow_usdc']:.2f} USDC")

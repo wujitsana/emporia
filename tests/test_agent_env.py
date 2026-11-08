@@ -20,10 +20,15 @@ _ENVF = re.compile(r'''\benv(?:_int|_float)?\(\s*["']([A-Z][A-Z0-9_]*)["']''')
 _GLOBAL = {"HERMES_HOME", "TERM", "NO_COLOR", "PATH", "HOME", "USER", "LANG", "TZ"}
 
 
-def _named_in_source() -> set[str]:
+# The bridge (a gateway-side process, not the MCP server) reads the wake mode and the allowlist; the
+# setup text names the gateway's settings to say what they do. Neither is the MCP server's reading.
+_GATEWAY_SIDE = {"wake.py", "setup_choices.py"}
+
+
+def _named_in_source(skip: frozenset[str] = frozenset()) -> set[str]:
     names = set()
     for path in sorted((REPO / "src" / "emporia").rglob("*.py")):
-        if path.name == "agent_env.py":
+        if path.name == "agent_env.py" or path.name in skip:
             continue
         text = path.read_text()
         names |= {next(g for g in m.groups() if g) for m in _READ.finditer(text)}
@@ -33,7 +38,7 @@ def _named_in_source() -> set[str]:
 
 
 def test_every_name_the_runtime_reads_is_handed_to_its_mcp_server():
-    missing = sorted(_named_in_source() - agent_env.known())
+    missing = sorted(_named_in_source(frozenset(_GATEWAY_SIDE)) - agent_env.known())
     assert not missing, ("names the runtime reads that Hermes would not hand its MCP server; add them to "
                          f"agent_env.LITERAL_NAMES: {missing}")
 
@@ -42,7 +47,7 @@ def test_the_gateways_own_settings_are_not_the_servers_and_the_runtime_reads_non
     """Found by the end-to-end run: setup writes the adapter's settings (its python, allowed
     senders) after the MCP entry, and doctor said the server was "not handed" them. They are
     the gateway's: off the server's list — safe only while no runtime code reads one."""
-    assert not set(agent_env.GATEWAY_ONLY) & _named_in_source()
+    assert not set(agent_env.GATEWAY_ONLY) & _named_in_source(frozenset(_GATEWAY_SIDE))
     values = {"EMPORIA_PYTHON": "/rt/.venv/bin/python", "EMPORIA_ALLOWED_USERS": "emporia:relay",
               "EMPORIA_X402_MAX_DAILY_CENTS": "300"}
     env = agent_env.mcp_env(values)

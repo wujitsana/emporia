@@ -9,14 +9,13 @@ from emporia import module_sdk
 from emporia.module_sdk import MODULE_REGISTRY, load_operator_modules, register_module
 
 _GAME = '''
-from emporia.module_sdk import (STAKE_WAGER, InteractionModule, SessionResult,
+from emporia.module_sdk import (InteractionModule, SessionResult,
                                 SessionState, register_module)
 
 @register_module
 class Coin(InteractionModule):
     MODULE_TYPE = "{mt}"
     DECLARES_WINNER = True
-    STAKE_MODEL = STAKE_WAGER
     RULES = "Call heads or tails."
     def initial_state(self, participants, config):
         return SessionState(data={{}}, current_agent=participants[0], step_number=0,
@@ -50,8 +49,8 @@ def test_an_operators_game_loads_and_serves_its_rules(module_dir):
     assert load_operator_modules(f" {name} ,") == ["acme:coin:v1"]
     [listed] = [m for m in module_sdk.list_available_modules() if m["module_type"] == "acme:coin:v1"]
     assert listed["rules"] == "Call heads or tails."
-    assert (listed["bundled"], listed["declares_winner"], listed["stake_model"]) == \
-        (False, True, "wager")
+    assert (listed["bundled"], listed["declares_winner"], listed["price_model"]) == \
+        (False, True, None)
 
 
 def test_an_operator_module_cannot_take_the_bundled_namespace(module_dir):

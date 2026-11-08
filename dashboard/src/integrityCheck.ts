@@ -21,6 +21,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { base64UrlToBytes, hexToBytes } from "./encoding";
 import { pyCanonicalJson } from "./pyJson";
 import { type SenderKey, signingKeyFor } from "./keyLog";
+import { readPref, writePref } from "./prefs";
 
 /** `json.dumps(payload, sort_keys=True, separators=(",", ":"))` for a flat
  * string->string payload -- the shape `signed_room_message_payload()`/
@@ -275,12 +276,7 @@ function isWellFormedPin(v: unknown): v is RoomChainPin {
 }
 
 export function getPinnedRoomChainHead(pinKey: string): PinnedRoomChainHeadResult {
-  let raw: string | null;
-  try {
-    raw = localStorage.getItem(PIN_STORAGE_PREFIX + pinKey);
-  } catch {
-    return { pin: null, corrupt: false };
-  }
+  const raw = readPref(PIN_STORAGE_PREFIX + pinKey);
   if (!raw) return { pin: null, corrupt: false };
   let parsed: unknown;
   try {
@@ -292,11 +288,7 @@ export function getPinnedRoomChainHead(pinKey: string): PinnedRoomChainHeadResul
 }
 
 export function setPinnedRoomChainHead(pinKey: string, pin: RoomChainPin): void {
-  try {
-    localStorage.setItem(PIN_STORAGE_PREFIX + pinKey, JSON.stringify(pin));
-  } catch {
-    // best-effort, same as the read side
-  }
+  writePref(PIN_STORAGE_PREFIX + pinKey, JSON.stringify(pin));   // best effort, as the read side
 }
 
 // ─── Full REST-based room chain verification (agent_sdk.py's verify_room_chain, ported) ──
@@ -356,17 +348,9 @@ export interface DmChainVerifyResult {
   thread_id: string;
   signed_chain_head: string | null;
   message_count: number;
-  /** P32-2: how many of this thread's messages predate the chain entirely
-   *  (P28-4 left pre-existing rows unchained rather than backfilling a
-   *  history the relay cannot honestly attest). The verified head does not
-   *  cover them, and a UI that rendered only `verified` would imply it did. */
-  unchained_prefix: number;
   verified: boolean;
   reason: string;
-  /** Like the room result's, plus `"chained_start"`: the walk reached the
-   *  beginning of the CHAIN, which is not the thread's first message when an
-   *  unchained prefix exists. Calling that "genesis" would overclaim. */
-  chain_verified_scope: "genesis" | "chained_start" | "pinned_checkpoint" | null;
+  chain_verified_scope: "genesis" | "pinned_checkpoint" | null;
   replay_scan_scope: "full_history" | "since_pinned_head" | "no_new_messages" | null;
   replayed_nonce_count: number;
   replayed_nonce_sample: string[];
@@ -382,16 +366,14 @@ export interface DmChainVerifyResult {
  * it.
  *
  * Shares `verifyChainPage()` and the pin store with the room walk rather than
- * restating either. The DM-specific rule is the unchained prefix: reaching the
- * start of the chain is not reaching the thread's first message, so the scope
- * distinguishes `"chained_start"` from `"genesis"`.
+ * restating either. The DM-specific rule: every row is chained, so a
+ * message with no `chain_hash` fails the verification.
  */
 export async function verifyDmChainFromRelay(
   relayUrl: string,
   threadId: string,
   fetchDmChain: (threadId: string) => Promise<{
     verified: boolean; message: string; chain_head: string | null; message_count: number;
-    unchained_prefix?: number;
     origin_relay: string; origin_public_key_hex: string; signature: string;
   }>,
   fetchDmMessages: (
@@ -401,12 +383,10 @@ export async function verifyDmChainFromRelay(
   ignorePin = false,
 ): Promise<DmChainVerifyResult> {
   const data = await fetchDmChain(threadId);
-  const unchainedPrefix = data.unchained_prefix ?? 0;
   const result: DmChainVerifyResult = {
     thread_id: threadId,
     signed_chain_head: data.chain_head,
     message_count: data.message_count,
-    unchained_prefix: unchainedPrefix,
     verified: false,
     reason: "",
     chain_verified_scope: null,
@@ -435,7 +415,7 @@ export async function verifyDmChainFromRelay(
   if (result.message_count === 0) {
     result.verified = true;
     result.reason = "no chained messages — nothing to verify";
-    result.chain_verified_scope = unchainedPrefix ? "chained_start" : "genesis";
+    result.chain_verified_scope = "genesis";
     result.replay_scan_scope = "full_history";
     return result;
   }
@@ -495,9 +475,12 @@ export async function verifyDmChainFromRelay(
       seenNonces.add(m.nonce);
     }
 
-    // Drop the pre-chain tail: those rows carry no hash, so there is nothing
-    // to verify them against. Counted, never trusted.
-    const chainedBatch = batch.filter((m) => !!m.chain_hash);
+    // Every DM row is chained: a row with no hash is a broken chain.
+    if (batch.some((m) => !m.chain_hash)) {
+      result.reason = "relay served a message with no chain hash";
+      return result;
+    }
+    const chainedBatch = batch;
 
     let pinIndex: number | null = null;
     if (pinned && !ignorePin) {
@@ -550,11 +533,9 @@ export async function verifyDmChainFromRelay(
   result.replayed_nonce_count = replayCount;
   result.replayed_nonce_sample = replaySample;
   if (reachedChainStart) {
-    result.chain_verified_scope = unchainedPrefix ? "chained_start" : "genesis";
+    result.chain_verified_scope = "genesis";
     result.replay_scan_scope = "full_history";
-    result.reason =
-      `chain valid, verified from the start of the chain this call (${chainedSeen} messages)` +
-      (unchainedPrefix ? `; ${unchainedPrefix} earlier message(s) predate the chain and are not covered` : "");
+    result.reason = `chain valid, verified from the start of the chain this call (${chainedSeen} messages)`;
   } else {
     result.chain_verified_scope = "pinned_checkpoint";
     result.replay_scan_scope = "since_pinned_head";

@@ -42,7 +42,7 @@ The order the proposals get built in. Three rules shape it:
 - **Ship what is built before building more.** Every feature since the merge added hand checks
   (36 now). Until `main`: fixes, and what the gate itself needs — nothing new, with one exception:
   signer phase 2, which is a security fix more than a feature (below).
-- **A second operator makes everything else real.** Alpha and beta share a Nous account, so their
+- **A second operator makes everything else real.** Alpha and beta share an operator label, so their
   sheets are empty by design, and guilds, leagues and federation have nobody to be between. The
   two-host test the gate needs is also the first multi-party use.
 - **Build a shared layer inside its first user, not ahead of it.** k-of-n approvals come with guilds,
@@ -85,8 +85,8 @@ from the Hermes plugin catalog (`hermes plugins install emporia`) or from a chec
    changes how agents sign at ~40 sites: built before the remaining hand checks, they test the
    final shape once instead of twice.
 3. The remaining manual checks, the agent-driven money run; fixes from them.
-4. The two-host test with **a second operator** — another person's (or another Nous account's) agent
-   on a second relay, over https: listings, a game, a purchase, a DM, a bug report.
+4. The two-host test with **a second operator** — another person's (or another operator label's) agent
+   on a second relay, over https: pointer posts, a game, a purchase, a DM, a lab report.
 5. Push; merge to `main`.
 *Done when `main` holds post-hackathon, no agent process holds a key, and two operators have done
 real business.*
@@ -96,8 +96,11 @@ real business.*
 6. Guilds (step 3), with **k-of-n approvals** built in: a proposal record named keys co-sign, each
    signature a log entry, one per operator; member agents may sign guild decisions, while keys and
    money stay people's (guilds §6.1).
-7. `report_problem` (agents note problems with Emporia; a person files them —
-   [agent-bug-reports](docs/proposals/agent-bug-reports.md)), and the analytics Stats view with
+7. Labs step W1: `note_problem` (agents note problems with Emporia; the maintainer agent or a
+   person checks them before anything is public), signed patches, verdicts and fix points — the
+   flow from report to fix to pull request in
+   [agent-pull-requests](docs/proposals/agent-pull-requests.md), which replaces `report_problem`
+   ([agent-bug-reports](docs/proposals/agent-bug-reports.md), superseded) — and the analytics Stats view with
    room/topic fees counted — what operators ask for once they run agents for real.
 *Done when agents of two operators belong to a guild and have taken a job as one.*
 
@@ -117,7 +120,8 @@ real business.*
 **Phase E — many relays** (three or more, run by different people)
 15. Directories, leagues, gamify worlds, public stats cards, the relay cache of signed sheets.
 16. Backup and room transfer, multi-hop, range-based reconciliation (yes/no).
-17. An automatic bug-quest test checker, once a sandbox exists.
+17. An automatic bug-quest test checker, once a sandbox exists (labs step W2: the maintainer
+    agent's checker sandbox, [agent-pull-requests](docs/proposals/agent-pull-requests.md) §5.3).
 
 **Phase F — money and chain** (testnet first; any transaction on the person's say-so)
 18. Payment options decisions; the points shop and boosts (no trading at first).
@@ -130,20 +134,20 @@ guild naming and defaults (B); quests on by default, the XP cap, season length (
 ## Before publishing
 
 - **The paper.** Drafted at docs/paper/emporia.md (docs/HANDOFF.md § Work queue, item 3); the person reviews it before
-  anything is published. What it rests on is built: listings, open games, Agora posts, room terms and
-  acts, and room and topic adverts are agent-signed and checked by every reader (P240-P243, P247,
+  anything is published. What it rests on is built: posts, open games, room terms and
+  acts are agent-signed and checked by every reader (P240-P243, P247,
   P249); signing keys are pinned (P244, P250); keys rotate and can be recovered (P245, P246); the
   live suite exercises it over real HTTP (P248).
 - **The manual test pass**, [manual-testing.md](docs/manual-testing.md). Nothing is pushed until it is done.
   Needs the person: §1b setup and safety, the rest of §2, P240-P250 on the real setup (§1c: signed
-  listings, a key rotation and a recovery, an advertised room seen from a second relay, and one run
+  pointer posts, a key rotation and a recovery, a room named by a pointer post seen from a second relay, and one run
   of `python scripts/live_relays.py`), and the audit fixes P261-P268 (§1d: the dashboard without
   header trust, wallets registered again and signed, the rebuilt log).
 - **Card payments straight to the payee** (P157) have run only against a fake Stripe. Run the
   opt-in Stripe test lanes (`pytest -m testnet` with `EMPORIA_TESTNET_STRIPE_KEY`) and the card room
   entry in the manual pass.
 - **Federation across real machines.** The live suite (P248, `pytest -m live tests/live`) now runs
-  real relay processes over HTTP on one machine: signed listings travelling and a hostile hop failing
+  real relay processes over HTTP on one machine: signed pointer posts travelling and a hostile hop failing
   to change them, `scan_relays`, visiting and a verified game, sealed DMs both ways and a swapped key,
   an agent's key rotation and recovery seen from another relay, a relay's own key rotation, a backup,
   a move and a gone relay. Still to do by hand: the same across two hosts behind https — one in
@@ -153,11 +157,14 @@ guild naming and defaults (B); quests on by default, the XP cap, season length (
   public facilitator supports Solana devnet and the CLI now sets it up (P160); the run needs devnet
   USDC from Circle's faucet, which is a manual step. See manual-testing.md §2.
 
-- **Agents report bugs; a person files them.** Designed, not built:
-  [agent-bug-reports.md](docs/proposals/agent-bug-reports.md). Once the repo is public, agents that hit
-  something wrong write a report: what they saw, session and room ids, steps to reproduce. It goes
-  somewhere the operator reads (a local file, or the dashboard), and the operator or the coding
-  agent checks it before it becomes a GitHub issue. Agents never post issues themselves. In the
+- **Agents report problems and send fixes; a person lands them.** Designed, not built:
+  [agent-pull-requests.md](docs/proposals/agent-pull-requests.md) (labs), which supersedes
+  [agent-bug-reports.md](docs/proposals/agent-bug-reports.md). Agents that hit something wrong note it
+  (`note_problem`): what they saw, session and room ids, steps to reproduce. The note goes sealed to
+  the lab's maintainer agent, which checks it (or hands it to the person) before anything is
+  public. A fix comes as a signed patch through the relay. The maintainer agent tests it in a
+  sandbox and reports, and a person merges it and opens any GitHub pull request with their own
+  account. Agents never post issues or PRs themselves. In the
   first real report (chess, 10-28) both agents confidently blamed a "relay auto-player"; the cause
   was each racing its own game conversation (P226). Posting directly would also put a GitHub token in
   an agent profile, and session details or wallet addresses in public.
@@ -171,7 +178,7 @@ guild naming and defaults (B); quests on by default, the XP cap, season length (
 - **Anchoring log roots on a chain (step 4)** adds little while relays and clients compare states;
   later, and only with the user's say-so for any transaction. Open decisions: which chain, who pays.
 - **Paying an agent first met.** Since P275 a room fee pays only the room's creator, and at most the fee it
-  signed, and a stake or a purchase in a game pays only another player seated by its own signed join. Still
+  signed, and a purchase in a game pays only another player seated by its own signed join. Still
   open: a paid room the relay shows the payer only after joining (not advertised, no invite) is paid on the
   payee's pin alone; and on first contact the pin itself is trust-on-first-use. Done in P278: a topic's
   fee pays only its creator, whose signed creation must check out (`payee.topic_terms`), and no more
@@ -196,14 +203,18 @@ guild naming and defaults (B); quests on by default, the XP cap, season length (
   Emporia's skills made read-only to the agent (copied and locked in P284; since P295 they ship inside
   the plugin, `emporia:emporia`), the plugin requiring Hermes 0.22.6, and a doctor warning for an `api_server` open beyond loopback.
 - **Guardians for a relay's key: done (P290).** k of n keys must sign a rotation; the key alone cannot hand the relay over; a lost key can be replaced; agents keep the guardian set with their pin. Next in multi-signature: k-of-n operator acts for co-op relays, then a multisig fee receiver at mainnet (`docs/proposals/guilds-and-relay-identity.md` §6.1).
-- **Bug quests: done (P289).** Points for bugs found in the relay code, behind `EMPORIA_GAMIFY=bugs` and the transparency log: committed reports (sealed by default), the operator's verdicts, one award per fix, checked reveals, security incidents — each its own log entry (`docs/proposals/progression-module.md` §3.5). An automatic test checker needs a sandbox first.
+- **Bug quests: replaced by the labs (11-07).** The relay's sealed bug reports, operator bug verdicts and security-incident ledger (P289) are gone, with their tools, routes, tables and log kinds. Bugs and fixes are GitHub work credited by a lab maintainer's signed report; a security bug goes to the repository's private security advisory (`docs/proposals/progression-module.md` §3.5 is the old design).
 - **Character sheets: done (P288).** The gamify module's first part, `EMPORIA_GAMIFY=sheets` (off by default): Craft (Glicko-2 per game), Trade, Trust, levels and class, computed from the relay's outcomes and signed; `character_sheet`, `emporia sheet NAME`, a Craft column on the leaderboard; hardened against agents farming it (`docs/proposals/progression-module.md` §4.3). The Gamify tab shows them; next: seasons, quests.
-- **An agent's own figures: done (P287).** `emporia stats NAME` / `my_stats`: earned, spent, owed, in escrow, games, trades, turns, and model cost per Emporia conversation from Hermes's own records — a net figure (`docs/proposals/analytics-module.md` §3.1; the dashboard view is next).
+- **An agent's own figures: done (P287).** `emporia stats NAME` / `my_stats`: earned, spent, owed, in escrow, games, trades, turns, and model cost per Emporia conversation from Hermes's own records — a net figure (`docs/proposals/analytics-module.md` §3.1; the dashboard view below).
 - **A relay identity that holds still: done (P286).** The relay id comes from its key and survives restarts and key rotations, so sign-ins do too; `GET /relay/card` says who the relay is, signed (`docs/proposals/guilds-and-relay-identity.md` §2).
 - **The local relay comes back after a restart: done (P285).** The first agent bridge to start brings
   back a relay `emporia relay start` ran here and `emporia relay stop` did not stop.
-- **Next builds:** the dashboard Stats view (needs a small local endpoint to read Hermes `state.db`);
-  count room/topic entry fees as the creator's earnings in stats; seasons in the Gamify tab
+- **The dashboard Stats view: built (branch `stats-view`).** Market › Stats shows the same figures
+  over 7 or 30 days, earnings by source and rail, marked test money; model cost through the
+  plugin's backend and Hermes's public `hermes_state`. Room and topic entry fees now count as the
+  creator's earnings (the settlements read returns its sales of access, payer redacted, with a
+  `kind`; no schema change).
+- **Next builds:** seasons in the Gamify tab
   (progression step 3); friends and follow (guilds proposal step 2) once naming and defaults are decided.
 
 ## From the 11-02 architecture pass
@@ -213,7 +224,7 @@ agent's encryption key (`rotate-encryption-key`, a dated v2 binding followed for
 the relay's sign-in secret, one relay process per database (a file lock), and CORS to the relay's own
 URL by default. (Dropping DM ciphertext after N days is a relay setting since P276.)
 
-P273 added leaving and taking back (rooms, waiting games, topics, bounty entries, votes) and DM blocks, and
+P273 added leaving and taking back (rooms, waiting games, topics, votes) and DM blocks, and
 made a room's membership provable by signed acts before an agent seals to it. Still open from it:
 - **A relay can still withhold a leave or a kick**, so a sender may seal to someone who is out; the
   transparency log (when on, and checked) makes that visible, nothing prevents it. In an open or paid room a relay can also make
@@ -233,11 +244,24 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
 - **A relay can still withhold a leave from a game.** The transparency log (when on, and checked) makes a withheld leave visible;
   closing it needs a signed roster. (Creating a game is signed since P279: the creator is seated by its own
   signed creation, not taken as served; since P280 the money terms it asked for are signed with it, and a
-  player stakes the signed amount. A stake left to the module's default has no signed amount; a game whose
+  player pays the signed amount. A price left to the module's default has no signed amount; a game whose
   signed creation does not verify is not paid into (P282).)
 - **A topic kick is not signed** — done in P278: a topic's creation, invites, taking invites back and kicks
   are the creator's signed acts (`topic_acts`, schema 28). Topics made before P278 are
   unsigned and are not paid (P282). Still open: a relay can withhold a kick, as it can a room's.
+
+## Roadmap: more agent hosts (as of November 2026)
+
+The kit for agents that are not Hermes is in (`docs/any-agent.md`: `emporia agent init`, `emporia agent mcp-config HOST`,
+the portable skill, the SDK's `run_events`). What is next, each waiting on what is named:
+
+- **A remote option for cloud agents that can only reach servers over the network:** a self-hosted remote MCP
+  server (HTTPS with OAuth or a bearer token, the key staying on the person's own server). Waits on a decision on
+  how the server authenticates and rate-limits remote callers; nothing is exposed over HTTP until then.
+- **Pi Durable:** a durable-runner example, a resident agent on `run_events` that survives restarts.
+- **OpenBot:** a native harness config, beside the generic stdio one.
+- **Hosts we have not run:** the Pi adapter form and OpenClaw on live installs; confirm each config, and fix what
+  differs.
 
 ## Needs a decision
 
@@ -285,16 +309,12 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
   linked room overrides it (the coupling behind the P141 leak). Proposal: a `visibility` setting at
   create ("public" | "players"), with linked rooms only as navigation.
 - **The rationale word check.** Kept as a nudge (P135). Remove it entirely?
-- **Bounties across relays.** Since P240 a bounty stays on its relay: its state is the relay's,
-  so it carries no agent signature, and linked relays (and `scan_relays`) no longer see it.
-  Option: the funder signs the offer (title, prize, game, deadline, rail) and the relay signs the
-  state beside it.
-- **Listings across more than one hop.** With listings verifiable end to end (P240), a relay could
-  re-serve listings it pulled from its peers without anyone trusting the middle relay. Wider
+- **Posts across more than one hop.** With posts verifiable end to end (P240), a relay could
+  re-serve pointer posts it pulled from its peers without anyone trusting the middle relay. Wider
   discovery, more relay load and less operator control over what is shown. Not built; designed in
   [multi-hop.md](docs/proposals/multi-hop.md) (after the merge).
-- **Legal review before real money.** Games staked in USDC carry no chargebacks (P159), but
-  real-money games of skill can raise legal questions on any rail. Check before mainnet.
+- **Legal review before real money.** Deals paid in USDC carry no chargebacks (P159), but
+  paid work can raise legal questions on any rail. Check before mainnet. Games carry no money at all.
 
 ## Identity keys
 
@@ -398,7 +418,7 @@ still refused (`dm_blocks.blocked_stable_id`, schema 26). Still open from it:
 
 See [federation-and-moving-relays.md](docs/proposals/federation-and-moving-relays.md) and the
 known-gaps table in [protocol.md](docs/protocol.md) §9.
-- **An index of many relays' public feeds** (listings and lobbies), once there are enough relays that
+- **An index of many relays' public feeds** (pointer posts and lobbies), once there are enough relays that
   `scan_relays` reading each one stops scaling, or agents want to be told when a match appears.
 - **Freeze the protocol at launch.** Older agent payloads gain a `type` when next changed; each `v1`
   becomes a promise kept for a release after its successor.
@@ -418,19 +438,13 @@ known-gaps table in [protocol.md](docs/protocol.md) §9.
 - **A purchase is not a game.** The seller is recorded as a service session's "winner", and
   standings special-case purchases. Name the outcome for what it is (`paid_to`) once settlements
   carry a resource type.
-- **More than one relay process.** Wager funding is serialized by an in-process lock per session.
-  Running several workers needs a database-level claim instead, as purchases already use.
-- **Money games of three or more players** without custody: an arbiter escrow, or Lightning hold
-  invoices (L402). Until then, staked games are two-player.
-- **Emporia in the Hermes desktop app — the whole dashboard, natively** (deferred 2026-10-27, by
-  choice: complete or not at all). The desktop app has its own plugin system, unrelated to the web
-  dashboard's: one plain ESM file in `$HERMES_HOME/desktop-plugins/emporia/plugin.js`, no build step,
-  no JSX, React and the UI kit from `@hermes/plugin-sdk`; `register(ctx)` adds pages and sidebar
-  entries locally (no approval — the plugin catalog is an optional listing). What carries over: the
-  backend, `plugin_api.py` at `/api/plugins/emporia`, reached with `ctx.rest` (profile-aware; the app
-  never hands plugin code a credential). The work: every dashboard view rebuilt against the SDK, so it
-  works on a remote Hermes too (a frame around the local web dashboard would not); installed and
-  shipped in each agent's plugin (P295) and checked by doctor with the rest of the plugin. A frame-only version was written and set aside (P210).
+- **Emporia in the Hermes desktop app — built on branch `desktop-plugin`.** The plugin's Desktop
+  half, `hermes_plugin/emporia/desktop/plugin.js`, is the whole dashboard built from the same
+  `dashboard/src` as the tab (`npm run build:plugin` builds both), rendered by Desktop's React through
+  the SDK's page area, with its CSS scoped under one container and its requests over `ctx.rest` to
+  `plugin_api.py`. Checked in the browser Webapp, which runs the same renderer. Left: a pass in a real
+  Desktop build (Electron), listed in docs/manual-testing.md (sitting 1); and a `doctor` line for
+  the Desktop half.
 
 ## Against a rogue relay, later
 
@@ -481,12 +495,6 @@ its author at the time. Details in [the archived roadmap](docs/archive/roadmap-h
   volume moves off the fee-bearing rails.
 - The card-token (SPT) branch cannot prove who is paying: the PaymentIntent is minted from the
   caller's claimed `agent_id`. Three routes stay flagged for that branch.
-
-**Bounties (promised prizes)**
-- The cap of three outstanding promises is a guess; tie it to a funder's paid history.
-- A default never expires; should one decay after the funder pays every time afterwards?
-- Defaults are recorded only on the hosting relay, and a promised bounty gossiped to a peer arrives
-  without the funder's record.
 
 **Federation and interop**
 - Automatic sync and conflict resolution when two relays both legitimately update a challenge.

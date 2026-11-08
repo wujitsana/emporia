@@ -1,0 +1,779 @@
+/* The agent chat drawer: monospace, hairline rules, the theme's accent as the
+   one highlight, 40–48px targets on a phone. Tokens only (--theme-*, --e-rule,
+   --e-accent-wash); no colours of its own.
+
+   It is sized to the app's own frame, never to the browser window: inside the
+   Hermes tab the frame is the tab's container (hermesPlugin.tsx), so the
+   transcript scrolls and the composer stays pinned at the bottom of what you
+   see. Below the header-nav width it covers the frame (absolute, inside the
+   shell's `contain: layout paint`), never the Hermes app around it. */
+
+.root {
+  display: none;
+  flex: none;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: min(27rem, 40%);
+  height: 100%;
+  min-height: 0;
+  position: relative;
+  align-self: stretch;
+  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: var(--theme-background);
+  color: var(--theme-text);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.open {
+  display: flex;
+}
+
+/* ── head ─────────────────────────────────────────────────────────────── */
+
+.head {
+  flex: none;
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+}
+
+.headRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.heading {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 1ch;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.headIcon {
+  color: var(--theme-focused-foreground);
+}
+
+.close {
+  min-width: 40px !important;
+  min-height: 40px !important;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1ch;
+  margin-top: 2px;
+  font-size: 0.74rem;
+  opacity: 0.62;
+}
+
+.conn[data-conn="open"] {
+  color: var(--theme-focused-foreground);
+  opacity: 1;
+}
+
+.sessionBar {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sessionPick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1ch;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sessionPick:hover,
+.sessionPick[aria-expanded="true"] {
+  border-color: var(--theme-focused-foreground);
+}
+
+.sessionPickTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smallButton {
+  flex: none;
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: var(--theme-focused-foreground);
+  font: inherit;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.smallButton:hover {
+  border-color: var(--theme-focused-foreground);
+}
+
+.error {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: var(--theme-focused-foreground);
+}
+
+/* ── transcript ───────────────────────────────────────────────────────── */
+
+.transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.intro {
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  border-left: 3px solid var(--theme-focused-foreground);
+  padding: 10px 14px 12px;
+  line-height: 1.55;
+}
+
+.intro p {
+  margin: 0 0 6px;
+}
+
+.introTitle {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.introNote {
+  font-size: 0.78rem;
+  opacity: 0.65;
+}
+
+.line {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.who {
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
+}
+
+.line[data-who="you"] .who {
+  color: var(--theme-focused-foreground);
+  opacity: 1;
+}
+
+.line[data-who="you"] .text {
+  padding: 6px 10px;
+  background: var(--e-accent-wash, rgba(128, 128, 128, 0.08));
+  border-left: 2px solid var(--theme-focused-foreground);
+}
+
+.text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.caret {
+  color: var(--theme-focused-foreground);
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.working {
+  display: flex;
+  gap: 1ch;
+  align-items: center;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.notice {
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  opacity: 0.75;
+  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  padding: 2px 0 2px 10px;
+  max-height: 22rem;
+  overflow-y: auto;
+}
+
+.notice[data-tone="error"] {
+  opacity: 1;
+  border-left: 2px solid var(--theme-focused-foreground);
+}
+
+.notice[data-tone="command"] {
+  border-left: 0;
+  padding-left: 0;
+  opacity: 0.9;
+}
+
+.prompt {
+  color: var(--theme-focused-foreground);
+}
+
+/* ── tool cards ───────────────────────────────────────────────────────── */
+
+.tool {
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  min-width: 0;
+}
+
+.toolHead {
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toolHead:hover .toolName {
+  color: var(--theme-focused-foreground);
+}
+
+.toolMark {
+  flex: none;
+  width: 1.5ch;
+  color: var(--theme-focused-foreground);
+}
+
+.tool[data-status="failed"] .toolMark,
+.tool[data-status="blocked"] .toolMark {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.toolName {
+  flex: none;
+  font-weight: 600;
+}
+
+.toolContext {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.65;
+}
+
+.toolTime {
+  flex: none;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
+  font-size: 0.72rem;
+}
+
+.toolCaret {
+  flex: none;
+  opacity: 0.5;
+}
+
+.toolOut {
+  margin: 0;
+  padding: 8px 10px;
+  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  max-height: 16rem;
+  overflow: auto;
+  font: inherit;
+  font-size: 0.76rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Relay content: dashed rule, a label that says so. */
+.untrusted {
+  border-style: dashed;
+}
+
+.line.untrusted {
+  border: 1px dashed var(--e-rule, rgba(128, 128, 128, 0.35));
+  padding: 6px 10px;
+}
+
+.untrustedLabel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 1ch;
+  padding: 0 10px 6px;
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+
+.line .untrustedLabel {
+  padding: 0;
+}
+
+.untrustedLabel [class*="Badge_root"] {
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  background: transparent;
+  border: 1px solid currentColor;
+}
+
+/* ── approval / clarify ───────────────────────────────────────────────── */
+
+.approval {
+  border: 1px solid var(--theme-focused-foreground);
+  border-left-width: 3px;
+  padding: 10px 12px;
+  background: var(--e-accent-wash, transparent);
+}
+
+.cardTitle {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--theme-focused-foreground);
+  margin-bottom: 6px;
+}
+
+.cardText {
+  margin: 0 0 6px;
+}
+
+.cardNote {
+  margin: 6px 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.cardFoot {
+  margin: 8px 0 0;
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+.command {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: var(--theme-background);
+  font: inherit;
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 10rem;
+  overflow: auto;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.choice {
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid var(--theme-focused-foreground);
+  background: var(--theme-background);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.choice:hover:not(:disabled),
+.picked {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+}
+
+.choice:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.deny {
+  border-color: var(--e-rule, rgba(128, 128, 128, 0.4));
+}
+
+.answered {
+  font-size: 0.8rem;
+  color: var(--theme-focused-foreground);
+}
+
+.question + .question {
+  margin-top: 10px;
+}
+
+.answerInput {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 6px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.3));
+  background: var(--theme-background);
+  color: inherit;
+  font: inherit;
+}
+
+/* ── sessions ─────────────────────────────────────────────────────────── */
+
+.sessions {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 16px;
+}
+
+.sessionsHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 12px 4px 0;
+}
+
+.sessionList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sessionRow {
+  display: flex !important;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sessionRow:hover .sessionTitle {
+  color: var(--theme-focused-foreground);
+}
+
+.sessionTitle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 1ch;
+  overflow-wrap: anywhere;
+}
+
+.sessionMeta {
+  font-size: 0.74rem;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background)); /* faint as a colour, >= 4.5:1 (dashboard.css 30.7) */
+}
+
+.tag {
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0 0.6ch;
+  border: 1px solid currentColor;
+  color: var(--theme-focused-foreground);
+  white-space: nowrap;
+}
+
+.empty {
+  padding: 8px 12px;
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.6;
+}
+
+/* ── composer ─────────────────────────────────────────────────────────── */
+
+.composer {
+  position: relative;
+  flex: none;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: var(--theme-background);
+}
+
+.inputRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+/* One slim line (42px) by default; it grows with the text (ChatDrawer's
+   layout effect) up to about four lines, then scrolls inside. */
+.input {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  height: 42px;
+  min-height: 42px;
+  max-height: calc(4 * 1.45em + 20px);
+  padding: 10px 10px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.35));
+  background: var(--theme-background);
+  color: inherit;
+  font: inherit;
+  line-height: 1.45;
+  resize: none;
+  overflow-y: auto;
+}
+
+.input:focus {
+  border-color: var(--theme-focused-foreground);
+}
+
+.send {
+  flex: none;
+  box-sizing: border-box;
+  min-width: 48px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--theme-focused-foreground);
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.send:disabled {
+  background: transparent;
+  color: inherit;
+  border-color: var(--e-rule, rgba(128, 128, 128, 0.35));
+  opacity: 0.6;
+  cursor: default;
+}
+
+.stop {
+  background: transparent;
+  color: var(--theme-focused-foreground);
+}
+
+.readOnly {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.typeahead {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 100%;
+  z-index: 5;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  border: 1px solid var(--theme-focused-foreground);
+  background: var(--theme-background);
+}
+
+.typeRow {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 0 1ch;
+  width: 100%;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.typeRow[data-reach="terminal"],
+.typeRow[data-reach="voice"],
+.typeRow[data-reach="settings"] {
+  opacity: 0.6;
+}
+
+.typeRowOn {
+  background: var(--e-accent-wash, rgba(128, 128, 128, 0.1));
+}
+
+.typeName {
+  color: var(--theme-focused-foreground);
+  white-space: nowrap;
+}
+
+.typeMeta {
+  grid-column: 1 / -1;
+  font-size: 0.72rem;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── back control (phone) ─────────────────────────────────────────────── */
+
+.back {
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: var(--theme-focused-foreground);
+  font: inherit;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+  flex: none;
+}
+
+/* "← back to the dashboard", then the menu: the full-page chat's top row. */
+.backRow {
+  align-items: stretch;
+  flex: none;
+  border-bottom: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+}
+
+.backRow .back {
+  flex: 1;
+  border-bottom: 0;
+}
+
+.menu {
+  flex: none;
+  min-width: 48px;
+  min-height: 44px;
+  border: 0;
+  border-left: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+}
+
+.phoneOnly {
+  display: none;
+}
+
+/* Below the header-nav breakpoint: one full-screen panel, "← back" on top. */
+@media (max-width: 900px) {
+  .root {
+    position: absolute;
+    inset: 0;
+    z-index: 120;
+    width: 100%;
+    height: 100%;
+    border-left: 0;
+  }
+
+  .phoneOnly {
+    display: flex;
+  }
+
+  .close {
+    display: none !important;
+  }
+
+  .sessionPick,
+  .smallButton,
+  .choice,
+  .toolHead,
+  .typeRow {
+    min-height: 44px;
+  }
+
+  .sessionRow {
+    min-height: 48px;
+  }
+
+  .input,
+  .answerInput {
+    font-size: 16px; /* no zoom-on-focus on a phone */
+  }
+}
+
+/* The kit gives every `ul li` an inline :before spacer (global.css), which
+   opens an empty line above a block button. Lists here are rows, not prose. */
+.typeahead > li::before,
+.sessionList > li::before {
+  content: none;
+  display: none;
+}
+
+/* A flex column shrinks its scrollable children to nothing when it overflows;
+   transcript items keep their height and the transcript scrolls instead. */
+.transcript > * {
+  flex-shrink: 0;
+}
+
+/* A short screen (the 540 × 540 capture frame, a phone held sideways): the
+   "← back" row already says where you are, so the title row goes. */
+@media (max-width: 900px) and (max-height: 640px) {
+  .headRow {
+    display: none;
+  }
+
+  .head {
+    padding-top: 8px;
+  }
+
+  .sessionBar {
+    margin-top: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caret {
+    animation: none;
+  }
+}

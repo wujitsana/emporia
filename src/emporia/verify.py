@@ -15,6 +15,12 @@ What it checks:
 - **Every receipt this agent holds is the relay's signature, and its move is
   in the log** with the same content. A receipt whose move is missing is the
   relay having accepted a move and then dropped it.
+- **A game that draws from the randomness service is what nobody could choose**
+  (Bargain v2, `emporia:rand:v1`): every player's commitment is its own signature and
+  names a round at least 10 rounds after it was signed, the beacon round in the state
+  is drand's (its BLS signature is checked here, against the pinned key), every
+  revealed secret hashes to its commitment, and recomputing both hands gives the
+  values and points the relay published.
 - **The relay's verdict is what the rules give.** The moves are replayed
   through the game's own module, here. A game ended by the clock cannot be
   replayed without the times, so it is reported as such, with the receipts'
@@ -63,9 +69,10 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
         if not key:
             note("move_signature", UNCHECKED, f"entry {i}: no public key for {sender}", block_hash=e.get("block_hash"))
             continue
-        signed = signed_action_payload(sender, e.get("action", ""), e.get("payload", {}),
+        signed = signed_action_payload(e.get("stable_id", ""), e.get("action", ""), e.get("payload", {}),
                                        e.get("rationale", ""), sid, e["step_number"],
-                                       say=e.get("say", ""))
+                                       say=e.get("say", ""), model_commit=e.get("model_commit", ""),
+                                       say_tags=e.get("say_tags"))
         # P245: the key the player had when the relay logged the move.
         at_key = identity.signing_key_for(key, e.get("timestamp"))
         good = bool(at_key) and identity.verify(signed, sig, at_key)
@@ -105,11 +112,73 @@ def verify_game(*, session: dict[str, Any], log: list[dict[str, Any]], public_ke
     if cls is None:
         note("verdict", UNCHECKED, f"{session['module_type']} is not installed here, so its rules cannot be replayed")
     else:
-        note(*_replay(cls(), session, entries, relay_verdict))
+        if getattr(cls, "USES_RAND", False):
+            note(*_rand_check(cls(), session, public_keys, relay_verdict))    # its clock-bound end is not replayed
+        else:
+            note(*_replay(cls(), session, entries, relay_verdict))
 
     failed = [f for f in findings if f["status"] == FAIL]
     return {"session_id": sid, "verdict": "fail" if failed else "ok", "failures": len(failed),
             "unchecked": sum(f["status"] == UNCHECKED for f in findings), "findings": findings}
+
+
+def _rand_check(module, session: dict[str, Any], public_keys: dict[str, str],
+                relay_verdict: dict[str, Any] | None) -> tuple[str, str, str]:
+    """`emporia:rand:v1`: the draws were what nobody could choose, and the published result follows."""
+    from emporia import beacon, rand, wire
+    players = list(session.get("participants") or [])
+    data = (session.get("state") or {}).get("data") or {}
+    r = data.get("rand") or {}
+    commits = ((session.get("config") or {}).get("rand") or {}).get("commits") or {}
+    sid = session["session_id"]
+    if session.get("status") not in ("completed", "abandoned"):
+        return "rand", UNCHECKED, "the game is not over, so its secrets are not revealed yet"
+    if len(players) < module.MIN_PARTICIPANTS:
+        return "rand", UNCHECKED, "the game ended before it started, so nothing was drawn"
+    for seat, p in enumerate(players):
+        c = commits.get(p)
+        if not c or c.get("seat") != seat:
+            return "rand", FAIL, f"{p} has no commitment for seat {seat}"
+        key = public_keys.get(p)
+        if not key:
+            return "rand", UNCHECKED, f"no public key for {p} to check its commitment"
+        signed = wire.signed_rand_commit_payload(sid, c.get("stable_id", ""), seat, c["hash"], c["beacon_round"],
+                                                 c["at"])
+        at_key = identity.signing_key_for(key, c.get("at")) if c.get("at") else key
+        if not (at_key and identity.verify(signed, c.get("signature", ""), at_key)):
+            return "rand", FAIL, f"{p}'s commitment is not its own signature"
+        if why := rand.commit_round_problem(c["at"], c["beacon_round"]):
+            return "rand", FAIL, f"{p}'s commitment: {why}"
+    rnd = max(int(c["beacon_round"]) for c in commits.values())
+    if r.get("round") != rnd or r.get("scope") != sid:
+        return "rand", FAIL, "the game's round or scope is not the one its commitments name"
+    sig = r.get("beacon_sig")
+    if not sig:
+        return "rand", UNCHECKED, "the game ended before its beacon round was needed: no hands were drawn"
+    if not beacon.verify(rnd, sig):
+        return "rand", FAIL, f"the stored beacon for round {rnd} is not drand's signature (pinned key)"
+    for p, rev in (r.get("reveals") or {}).items():
+        if why := module.reveal_problem(commits[p], rev):
+            return "rand", FAIL, f"{p}'s reveal: {why}"
+    if why := module.rand_problem(data, players, relay_verdict):
+        return "rand", FAIL, why
+    if relay_verdict and (outcome := _recomputed(module, session)) is not None and \
+            (outcome.get("winner"), outcome.get("outcome_type")) != \
+            (relay_verdict.get("winner"), relay_verdict.get("outcome_type")):
+        return "rand", FAIL, (f"recomputing the result gives {outcome.get('winner') or 'a draw'}, the relay "
+                              f"declared {relay_verdict.get('winner') or 'a draw'}")
+    return "rand", OK, (f"commitments are the players' own, round {rnd} is drand's, "
+                        f"{len(r.get('reveals') or {})} revealed secret(s) recompute to what was published")
+
+
+def _recomputed(module, session: dict[str, Any]) -> dict[str, Any] | None:
+    """The result the rules give from the stored state alone (secrets revealed, beacon stored), or None."""
+    from emporia.module_sdk import SessionState
+    try:
+        over, outcome = module.is_terminal(SessionState.from_dict(session["state"]))
+    except Exception:  # noqa: BLE001
+        return None
+    return outcome if over and outcome else None
 
 
 def _replay(module, session: dict[str, Any], entries: list[dict[str, Any]],

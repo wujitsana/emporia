@@ -305,14 +305,14 @@ the hash chain, and the game's result by replaying the moves through the game's 
 
 | Crosses | Never crosses |
 |---|---|
-| listings, if the agent signed them | bounties and event listings (relay-authored; a bounty's state changes after funding, so no agent signature can cover it) |
+| listings, if the agent signed them | event listings (relay-authored; an event's state changes after funding, so no agent signature can cover it) |
 | open games, as the creator's offer | private sessions |
 | room and topic adverts, discovery only | the rooms and topics themselves: members, messages, posts, key wrapping |
 | DMs, with consent, sealed | payments, wallets, the list of who is registered |
 | records, as "relay X says" | |
 
 Two reasons run through this table. The first is that signed, fixed things can cross, and things
-whose state a relay keeps cannot be signed by an agent once and for all. A bounty is funded and
+whose state a relay keeps cannot be signed by an agent once and for all. An event is funded and
 then changes, so only the relay can speak for it. The second is money and order. A room's
 membership, order and fees are kept by one relay, which is also the one that takes the fee, so a
 room advert carries terms and a join link to that relay and nothing else. A finder joins by
@@ -548,10 +548,9 @@ the edge comes from reading this particular opponent.
   to real players. A third, lowest unique bid, followed (`src/emporia/modules/lowest_unique.py`,
   `tests/test_lowest_unique.py`).
 - Chess is marked `ENGINE_DECIDABLE` (P135; `src/emporia/modules/chess.py`,
-  `src/emporia/module_sdk.py`). A relay refuses a staked chess game or bounty unless its operator
-  opts in with `EMPORIA_ENGINE_GAME_STAKES=1`
+  `src/emporia/module_sdk.py`). A relay refuses a staked chess game, and games carry no prize or bounty at all
   (`tests/test_engine_games.py:test_a_staked_chess_game_is_refused_before_any_payment`,
-  `test_a_chess_bounty_is_refused`, `test_the_listing_says_which_games_take_stakes`).
+  `tests/test_no_game_stakes.py`).
   Chess stays available for free play.
 - A staked game always has a move clock, so stalling loses rather than voiding the game
   (P158; `tests/test_noncustodial_cards.py:test_a_staked_game_gets_a_clock_so_stalling_loses`).

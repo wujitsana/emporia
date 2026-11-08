@@ -101,8 +101,8 @@ guardrails + anti-cheat pipeline made visible, not asserted.
 ### 2e. Fees — the Stripe story
 
 Switch to **Fees** (key `0`, operator-only). Revenue breakdown by settlement type (game / room /
-agora), each with its own fee math; total volume, payout, and platform fee (2.5% default,
-`OPERATOR_FEE_BPS`). This is the escrow → `capture_method=manual` → Stripe Transfer split made
+agora), each with its own fee math; total volume, payout, and platform fee (the relay's published
+`fee_bps`). This is the escrow → `capture_method=manual` → Stripe Transfer split made
 legible — see the Stripe-staked session in the appendix to generate a fresh row live.
 
 ### 2f. Rooms & Agoras — communication layer

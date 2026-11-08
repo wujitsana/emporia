@@ -4,7 +4,11 @@ from fastapi.testclient import TestClient
 
 from emporia import relay_server as rs
 from emporia.relay_server import app
-from tests.test_emporia import _register, _register_keyed, _signed_listing
+from tests.test_emporia import _register, _register_keyed
+from tests.test_posts_v2 import _body
+
+
+from tests.ids import stable_of  # noqa: E402
 
 
 @pytest.fixture
@@ -31,7 +35,7 @@ def _as(agent_id: str) -> dict:
 
 def test_an_open_relay_is_as_before(client):
     _register_keyed(client, "ra_open")
-    assert client.post("/listings", json=_signed_listing(client, "ra_open", "x"),
+    assert client.post("/posts", json=_body("ra_open"),
                        headers=_as("ra_open")).status_code == 200
 
 
@@ -40,12 +44,12 @@ def test_a_closed_relay_serves_members_only(client, remote, monkeypatch):
     _register_keyed(client, "ra_stranger")
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "closed")
     monkeypatch.setenv("EMPORIA_RELAY_MEMBERS", _key("ra_member"))
-    assert client.post("/listings", json=_signed_listing(client, "ra_member", "mine"),
+    assert client.post("/posts", json=_body("ra_member"),
                        headers=_as("ra_member")).status_code == 200
-    r = client.post("/listings", json=_signed_listing(client, "ra_stranger", "theirs"), headers=_as("ra_stranger"))
+    r = client.post("/posts", json=_body("ra_stranger"), headers=_as("ra_stranger"))
     assert r.status_code == 403 and "closed" in r.json()["detail"]
     assert client.get("/listings").status_code == 403                    # nobody browses
-    assert client.get("/gaming/v1/federate/listings").status_code == 403  # nor pulls its feed
+    assert client.get("/federation/v1/posts").status_code == 403  # nor pulls its feed
     assert remote.get("/health").json() == {"status": "ok", "service": remote.get("/health").json()["service"],
                                             "access": "closed", "relay_url": rs.RELAY_BASE_URL}
     assert "version" in client.get("/health").json()                     # this machine sees it all
@@ -68,11 +72,11 @@ def test_a_read_only_relay_lets_anyone_browse_and_members_act(client, monkeypatc
     _register_keyed(client, "ra_ro_visitor")
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "read-only")
     monkeypatch.setenv("EMPORIA_RELAY_MEMBERS", _key("ra_ro_member"))
-    assert client.get("/listings").status_code == 200
-    assert client.get("/gaming/v1/federate/listings").status_code == 200
-    assert client.post("/listings", json=_signed_listing(client, "ra_ro_visitor", "x"),
+    assert client.get("/leaderboard").status_code == 200
+    assert client.get("/federation/v1/posts").status_code == 200
+    assert client.post("/posts", json=_body("ra_ro_visitor"),
                        headers=_as("ra_ro_visitor")).status_code == 403
-    assert client.post("/listings", json=_signed_listing(client, "ra_ro_member", "x"),
+    assert client.post("/posts", json=_body("ra_ro_member"),
                        headers=_as("ra_ro_member")).status_code == 200
 
 
@@ -85,9 +89,9 @@ def test_a_mistyped_mode_closes_rather_than_opens(monkeypatch):
 def test_the_operator_is_always_a_member(client, monkeypatch):
     _register(client, "ra_operator")
     monkeypatch.setenv("EMPORIA_RELAY_ACCESS", "closed")
-    monkeypatch.setenv("EMPORIA_AGENT_ID", "ra_operator")
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("ra_operator"))
     monkeypatch.delenv("EMPORIA_RELAY_MEMBERS", raising=False)
-    assert client.get("/listings", headers=_as("ra_operator")).status_code == 200
+    assert client.get("/leaderboard", headers=_as("ra_operator")).status_code == 200
 
 
 def test_access_changes_apply_from_the_env_file_without_a_restart(tmp_path, monkeypatch):
@@ -103,39 +107,22 @@ def test_access_changes_apply_from_the_env_file_without_a_restart(tmp_path, monk
     assert relay_access.mode() == "closed" and relay_access.is_member_key("AB" * 32)
 
 
-def test_an_agents_nous_account_is_shown_to_itself_and_the_operator_only(client, monkeypatch):
+def test_an_agents_operator_label_is_shown_to_itself_and_the_operator_only(client, monkeypatch):
     from emporia import relay_server as rs
     _register(client, "ra_nous_owner")
     _register(client, "ra_nous_other")
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("UPDATE authorized_agents SET nous_user_id = 'nous_private_1', trust_level = 'nous_verified' "
+        conn.execute("UPDATE authorized_agents SET operator_label = 'op_privatelabel1' "
                      "WHERE agent_id = 'ra_nous_owner'")
-    assert client.get("/agents/ra_nous_owner", headers=_as("ra_nous_owner")).json()["nous_user_id"] == "nous_private_1"
+    assert client.get("/agents/ra_nous_owner", headers=_as("ra_nous_owner")).json()["operator_label"] == "op_privatelabel1"
     seen = client.get("/agents/ra_nous_owner", headers=_as("ra_nous_other")).json()
-    assert seen["nous_user_id"] is None and seen["trust_level"] == "nous_verified"
+    assert seen["operator_label"] is None and seen["has_operator_label"] is True
     listed = client.get("/agents", params={"limit": 200}, headers=_as("ra_nous_other")).json()["agents"]
-    assert "nous_private_1" not in str(listed)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", "ra_nous_other")
-    assert client.get("/agents/ra_nous_owner", headers=_as("ra_nous_other")).json()["nous_user_id"] == "nous_private_1"
+    assert "op_privatelabel1" not in str(listed)
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("ra_nous_other"))
+    assert client.get("/agents/ra_nous_owner", headers=_as("ra_nous_other")).json()["operator_label"] == "op_privatelabel1"
 
 
-def test_an_older_database_is_copied_aside_before_it_is_upgraded(tmp_path, monkeypatch):
-    """P193: a schema upgrade can drop and alter tables; the operator keeps the old copy."""
-    import sqlite3
-
-    from emporia import relay_server as rs
-    db = tmp_path / "old.sqlite3"
-    conn = sqlite3.connect(db)
-    conn.execute("CREATE TABLE challenges (challenge_id TEXT)")
-    conn.execute("INSERT INTO challenges VALUES ('kept')")
-    conn.execute("PRAGMA user_version = 6")
-    conn.commit()
-    monkeypatch.setattr(rs, "DATABASE_PATH", db)
-    snap = rs._snapshot_before_upgrade(conn)
-    assert snap and snap.name.startswith("old.sqlite3.before-v") and oct(snap.stat().st_mode)[-3:] == "600"
-    assert sqlite3.connect(snap).execute("SELECT challenge_id FROM challenges").fetchone() == ("kept",)
-    conn.execute(f"PRAGMA user_version = {rs.SCHEMA_VERSION}")
-    assert rs._snapshot_before_upgrade(conn) is None                # current: nothing to keep
 
 
 def test_a_relay_serves_no_dashboard(client):
@@ -177,10 +164,6 @@ def test_the_operator_removes_an_agent_that_cannot_leave(client, monkeypatch, ca
     registered ones, so they could not leave. The operator removes them."""
     from emporia import cli
     _register(client, "ra_lost_keys")      # its keys on disk are not these, so it cannot sign
-    from emporia import relay_server as rs
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT INTO listings (listing_id, title, agent_id, origin_relay, created_at) "
-                     "VALUES ('lst_ra_stale', 'stale', 'ra_lost_keys', ?, '2026-01-01')", (rs.RELAY_BASE_URL,))
     _register(client, "ra_viewer")
     listed = lambda: [a["agent_id"] for a in client.get("/agents", params={"limit": 200},   # noqa: E731
                                                           headers=_as("ra_viewer")).json()["agents"]]
@@ -202,7 +185,7 @@ def test_the_cli_sets_the_mode_and_removes_a_member_in_the_relays_env_file(tmp_p
     .env, and the relay applies it from there without a restart."""
     from emporia import cli, relay_access
     env = tmp_path / ".env"
-    env.write_text("OPERATOR_FEE_BPS=300\n")
+    env.write_text("EMPORIA_FEE_BPS=300\n")
     monkeypatch.setenv("EMPORIA_RELAY_ENV_FILE", str(env))
     monkeypatch.setattr(cli, "_agent_profiles", lambda _root: [])
     alpha, beta = "a1" * 32, "b2" * 32
@@ -212,7 +195,7 @@ def test_the_cli_sets_the_mode_and_removes_a_member_in_the_relays_env_file(tmp_p
     out = capsys.readouterr().out
     assert "This relay is now closed" in out and "emporia relay restart" in out
     assert relay_access.mode() == "closed" and relay_access.is_member_key(alpha) and relay_access.is_member_key(beta)
-    assert "OPERATOR_FEE_BPS=300" in env.read_text(), "the other settings stay"
+    assert "EMPORIA_FEE_BPS=300" in env.read_text(), "the other settings stay"
 
     assert cli.main(["relay", "members", "remove", beta, *dirs]) == 0
     assert "removed" in capsys.readouterr().out

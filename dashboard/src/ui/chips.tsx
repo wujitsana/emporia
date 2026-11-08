@@ -11,12 +11,15 @@ interface AgentLinkProps {
   /** If true, show full id; default shows last 12 chars */
   full?: boolean;
   className?: string;
+  /** The agent's overall level (level:v1), shown beside the name; a label, never a ranking. */
+  level?: number | null;
 }
 
-export function AgentLink({ agent_id, navigate, full, className }: AgentLinkProps) {
+export function AgentLink({ agent_id, navigate, full, className, level }: AgentLinkProps) {
   const label = full ? agent_id : (agent_id.length > 14 ? `…${agent_id.slice(-12)}` : agent_id);
+  const lv = level ? <span className="e-faint" title="overall level (from quest XP)"> · Lv {level}</span> : null;
   if (!navigate) {
-    return <span className={`e-entity-chip e-entity-chip--inert ${className ?? ""}`}>{label}</span>;
+    return <span className={`e-entity-chip e-entity-chip--inert ${className ?? ""}`}>{label}{lv}</span>;
   }
   return (
     <button
@@ -25,7 +28,7 @@ export function AgentLink({ agent_id, navigate, full, className }: AgentLinkProp
       title={agent_id}
       onClick={(e) => { e.stopPropagation(); navigate("agents", { agentId: agent_id }); }}
     >
-      {label}
+      {label}{lv}
     </button>
   );
 }
@@ -46,7 +49,7 @@ export function SessionLink({ session_id, navigate, className }: SessionLinkProp
       type="button"
       className={`e-entity-chip e-entity-chip--session ${className ?? ""}`}
       title={session_id}
-      onClick={(e) => { e.stopPropagation(); navigate("sessions", { sessionId: session_id }); }}
+      onClick={(e) => { e.stopPropagation(); navigate("session", { sessionId: session_id }); }}
     >
       {label}
     </button>

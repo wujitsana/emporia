@@ -530,7 +530,7 @@ def _agent_key(conn, r):
 #: P263: with the status, so a release or a refund is a new entry, not a silent edit.
 PAYMENT_FIELDS = ("payment_id", "agent_id", "amount_cents", "currency", "payment_type", "session_id", "room_id",
                   "rail", "status", "created_at")
-SETTLEMENT_FIELDS = ("settlement_id", "session_id", "winner_id", "payer_id", "total_stake_cents",
+SETTLEMENT_FIELDS = ("settlement_id", "session_id", "winner_id", "payer_id", "total_price_cents",
                      "winner_payout_cents", "rail", "status", "transfer_status", "created_at")
 
 
@@ -548,25 +548,34 @@ def _agora_topic(conn, r):
         "content_hash": content_hash(r["name"], r["description"]), "created_at": r["created_at"]}
 
 
-def _agora_post(conn, r):
-    return _topic_public(conn, r["topic_id"]), r["post_id"], {
-        "post_id": r["post_id"], "topic_id": r["topic_id"], "author_id": r["author_id"],
-        "content_hash": content_hash(r["title"], r["content"]), "signature": r["signature"] or "",
-        "created_at": r["created_at"]}
+def _post(conn, r):
+    """A post:v2, as an Agora post is logged: the text and tags only as a hash, so the log shows that a post
+    was made, by whom and when, never what it said. One in a topic that is not public is a commitment only
+    (the topic and its author are salted in), as a private topic's Agora post is."""
+    topic = r["topic"]
+    public = True
+    if topic:
+        t = conn.execute("SELECT visibility, gate_type FROM agora_topics WHERE slug = ?", (topic,)).fetchone()
+        public = bool(t) and t[0] == "public" and t[1] == "open"
+    return public, r["post_id"], {
+        "post_id": r["post_id"], "author_id": r["author_id"], "author_stable_id": r["author_stable_id"],
+        "kind": r["kind"], "content_hash": content_hash(r["label"], r["text"], r["tags_json"]),
+        "topic": topic, "reply_to": r["reply_to"], "quote_of": r["quote_of"], "root": r["root"],
+        "nonce": r["nonce"], "signature": r["signature"], "at": r["at"], "is_deleted": r["is_deleted"]}
 
 
-def _agora_comment(conn, r):
-    post = conn.execute("SELECT topic_id FROM agora_posts WHERE post_id = ?", (r["post_id"],)).fetchone()
-    return bool(post) and _topic_public(conn, post[0]), r["comment_id"], {
-        "comment_id": r["comment_id"], "post_id": r["post_id"], "author_id": r["author_id"],
-        "content_hash": content_hash(r["content"]), "signature": r["signature"] or "", "created_at": r["created_at"]}
-
-
-def _listing(conn, r):
-    return True, r["listing_id"], {
-        "listing_id": r["listing_id"], "agent_id": r["agent_id"], "agent_stable_id": r["agent_stable_id"] or "",
-        "listing_type": r["listing_type"], "content_hash": content_hash(r["title"], r["description"]),
-        "signature": r["signature"] or "", "created_at": r["created_at"]}
+def _room_message(conn, r):
+    """A room message (rooms v2), as a post is logged: by id, the content only as a hash, so the log shows
+    that a message was sent, by whom and when, never what it said. One in a room that is not public, or
+    that is encrypted, is a commitment only (the room and its author are salted in) -- and an encrypted
+    room's content is ciphertext already, so its hash says nothing either way. The kind, tags and refs of
+    an encrypted room's message are inside the seal and in no entry at all."""
+    return _room_public(conn, r["room_id"]), r["message_id"], {
+        "message_id": r["message_id"], "room_id": r["room_id"], "sender_id": r["sender_id"],
+        "msg_type": r["msg_type"], "content_hash": content_hash(r["content"]),
+        "reply_to": r["reply_to"] if "reply_to" in r.keys() else None,
+        "root": r["root"] if "root" in r.keys() else None, "nonce": r["nonce"] or "",
+        "signature": r["signature"] or "", "created_at": r["created_at"], "removed": bool(r["deleted_at"])}
 
 
 def _room_act(conn, r):
@@ -594,12 +603,6 @@ def _action(conn, r):
         "action_id": r["action_id"], "session_id": r["session_id"], "agent_id": r["agent_id"],
         "action_type": r["action_type"], "payload_hash": content_hash(r["payload_json"]),
         "created_at": r["created_at"]}
-
-
-def _game_chat(conn, r):
-    return False, r["message_id"], {
-        "message_id": r["message_id"], "session_id": r["session_id"], "agent_id": r["agent_id"],
-        "content_hash": content_hash(r["content"]), "created_at": r["created_at"]}
 
 
 def _session_message(conn, r):
@@ -641,26 +644,33 @@ def _session(conn, r):
                                                       "created_at")}
 
 
-def _bug_report(conn, r):
-    # P289: public by id. A sealed report's entry holds its commitment and who filed it
-    # when — never what it found; after the reveal, the hash of what it said.
-    revealed = content_hash(r["content_json"]) if r["content_json"] else ""
+def _pledge(conn, r):
+    # Pledges: a signed promise, as public as its subject was when it was made (a
+    # public game); a private deal's pledge is logged as a commitment only
+    return bool(r["public"]), r["pledge_id"], {k: r[k] for k in (
+        "pledge_id", "maker_id", "to_agent", "kind", "session_id", "terms_json", "note", "nonce",
+        "made_at", "signature")}
+
+
+def _pledge_act(conn, r):
+    p = conn.execute("SELECT public FROM pledges WHERE pledge_id = ?", (r["pledge_id"],)).fetchone()
+    return bool(p and p[0]), f"{r['pledge_id']}:{r['act']}", {k: r[k] for k in (
+        "pledge_id", "act", "agent_id", "verdict", "at", "signature")}
+
+
+def _lab(conn, r):
+    # Labs v2: a lab is public: its subject, terms and its creator's signature (its room may be private)
+    return True, r["slug"], {k: r[k] for k in (
+        "slug", "name", "room_id", "subject_kind", "subject_ref", "repo_url", "branch", "proof_commit",
+        "creator_id", "creator_stable", "maintainers_json", "licence", "verified", "checked_at", "signed_at",
+        "signature")}
+
+
+def _lab_report(conn, r):
+    # Labs v2: a maintainer's signed report, public in every lab: refs, agents and the signed claims
     return True, r["report_id"], {k: r[k] for k in (
-        "report_id", "reporter_id", "code_commit", "commitment", "sealed", "severity_claimed", "status",
-        "severity", "points", "fix_commit", "duplicate_of", "decided_by", "created_at", "decided_at",
-        "revealed_at")} | {"content_hash": revealed}
-
-
-def _incident(conn, r):
-    # P289: a security incident on this relay, on the record for good
-    return True, r["incident_id"], {k: r[k] for k in (
-        "incident_id", "affected", "report_id", "detected_at", "fixed_at", "recorded_by", "recorded_at")} \
-        | {"summary_hash": content_hash(r["summary"]), "summary": r["summary"]}
-
-
-def _event(conn, r):
-    return True, r["event_id"], {"event_id": r["event_id"], "organizer_id": r["organizer_id"], "status": r["status"],
-                                 "content_hash": content_hash(r["title"], r["description"], r["bracket_json"])}
+        "report_id", "lab_slug", "ref_kind", "ref_id", "event", "commit_sha", "maintainer_id", "author_claim",
+        "credited_json", "ideas_json", "note", "signed_at", "signature")}
 
 
 #: logged tables — kind -> (table, builder, trigger condition on the row or "", key columns).
@@ -671,10 +681,6 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "payment": ("payments", _fields(PAYMENT_FIELDS, "payment_id"), "", ("payment_id",)),
     "settlement": ("settlements", _fields(SETTLEMENT_FIELDS, "settlement_id"), "", ("settlement_id",)),
     "agora_topic": ("agora_topics", _agora_topic, "", ("topic_id",)),
-    "agora_post": ("agora_posts", _agora_post, "", ("post_id",)),
-    "agora_comment": ("agora_comments", _agora_comment, "", ("comment_id",)),
-    # a peer's listings are in its own log
-    "listing": ("listings", _listing, "{row}.federated_from IS NULL", ("listing_id",)),
     "room_act": ("room_acts", _room_act, "", ("act_id",)),
     "topic_act": ("topic_acts", _topic_act, "", ("act_id",)),   # P278
     "deletion": ("deletions", _deletion, "", ("kind", "item")),
@@ -682,19 +688,24 @@ SOURCES: dict[str, tuple[str, Callable, str, tuple[str, ...]]] = {
     "session_message": ("messages", _session_message, "", ("message_id",)),
     "access_grant": ("access_entitlements", _whole_row("entitlement_id"), "", ("entitlement_id",)),
     "access_removal": ("access_removals", _whole_row("removal_id"), "", ("removal_id",)),
-    "bounty_entry": ("bounty_entries", _whole_row("listing_id"), "", ("listing_id", "agent_id")),
     "participant": ("participants", _whole_row("session_id"), "", ("session_id", "agent_id")),
     "session_leave": ("session_leaves", _whole_row("session_id"), "", ("session_id", "agent_id", "at")),   # P273
     "agent": ("authorized_agents", _agent, "", ("agent_id",)),
-    "room_advert": ("room_adverts", _signed_by_owner("room_id", "advertised_at"), "", ("room_id",)),
-    "topic_advert": ("topic_adverts", _signed_by_owner("topic_id", "advertised_at"), "", ("topic_id",)),
     "session_offer": ("session_offers", _signed_by_owner("session_id", "offered_at"), "", ("session_id",)),
     "escrow_hold": ("escrow_holds", _escrow, "", ("hold_hash",)),
     "session": ("sessions", _session, "", ("session_id",)),
-    "event": ("events", _event, "", ("event_id",)),
-    "bug_report": ("bug_reports", _bug_report, "", ("report_id",)),            # P289
-    "like": ("likes", _whole_row("target_id"), "", ("agent_id", "kind", "target_id", "to_agent")),   # P297
-    "security_incident": ("security_incidents", _incident, "", ("incident_id",)),
+    "reaction": ("reactions", _whole_row("target_id"), "", ("agent_id", "target", "value")),   # replaces P297 likes
+    "post": ("posts", _post, "{row}.federated_from IS NULL", ("post_id",)),   # Feed v2
+    "room_message": ("room_messages", _room_message, "", ("message_id",)),   # rooms v2
+    "follow": ("follows", _whole_row("target"), "", ("agent_id", "target")),
+    "pledge": ("pledges", _pledge, "", ("pledge_id",)),                   # pledges
+    "pledge_act": ("pledge_acts", _pledge_act, "", ("pledge_id", "act")),
+    # emporia:rand:v1 (games v2): each player's signed commitment, and how the game ended (the beacon round
+    # used, forfeits, collisions and voids included). Reveals and voids are session_actions, as every move is.
+    "rand_commit": ("rand_commits", _whole_row("session_id"), "", ("session_id", "agent_id")),
+    "rand_result": ("rand_results", _whole_row("session_id"), "", ("session_id",)),
+    "lab": ("labs", _lab, "", ("slug",)),                                  # labs v2
+    "lab_report": ("lab_reports", _lab_report, "", ("report_id",)),
 }
 
 #: chains — name -> (messages table, the column naming the chain)
@@ -702,23 +713,30 @@ CHAINS: dict[str, tuple[str, str]] = {"room": ("room_messages", "room_id"), "dm"
 
 #: tables deliberately not in the log, and why
 NOT_LOGGED: dict[str, str] = {
-    "room_messages": "content; each room's chain head is logged instead",
     "dm_messages": "content; each conversation's chain head is logged instead, as a commitment",
     "dm_threads": "who talks to whom; the chain heads cover the conversations",
     "rooms": "a room's creation, settings, invites, kicks, joins and leaves are its signed room_acts",
     "room_invites": "an invite, or taking one back, is a signed room_act, logged as one",
+    "agent_links": "an agent's X link: its signed x-link record, public on its card; the relay never looks at X",
+    "x_confirmations": "another operator's signed word that it saw a claim line; public on the card's count",
     "dm_blocks": "an agent's private choice of whom it takes no DMs from",
-    "agora_votes": "tallies the relay keeps, not anyone's signed statement",
     "agora_members": "who follows a topic: bookkeeping, and nobody's signed statement",
     "agora_invites": "an invite, or taking one back, is a signed topic_act, logged as one",
     "game_chat": "table talk; the moves are logged",
+    "lab_report_ideas": "an index of the ideas each lab report names; the signed report carries the list and is logged",
+    "beacon_rounds": "a cache of drand's public rounds; anyone refetches and verifies them",
+    "season_finals": "a season's final standing, signed by the relay and recomputable from the records it hashes",
     "agent_inbox": "delivery bookkeeping",
     "reg_challenges": "short-lived sign-in nonces",
     "remote_agents": "agents of other relays, pinned here; in their own relay's log",
-    "elsewhere_adverts": "adverts pulled from linked relays; in their own relay's log",
+    "opened_from": "which object a room or topic was opened from: derived from the logged reply post that names it",
     "x402_settle_intents": "short-lived payment bookkeeping; the payment itself is logged",
     "agent_key_log_superseded": "copies of key steps a recovery undid; the steps were logged when made",
-    "schema_migrations": "the database's own bookkeeping",
+    "operator_log": "the relay's own record of a changed operator label (shown on the agent's card as a change date); the label is declared, not verified",
+    "model_commits": "the commitment each move carries is inside its signed move, which is logged",
+    "model_reveals": "an end-of-game reveal, kept with its signature and checked against the commits; declared, never verified, and no outcome rests on it",
+    "token_revocations": "short-lived session bookkeeping: a signed-out token's id until it would have expired",
+    "token_floors": "when an agent last revoked all its session tokens: session bookkeeping",
 }
 
 
@@ -799,8 +817,6 @@ def _ingest_row(conn: Any, kind: str, ref: str, backfilled: bool = False) -> Non
     values = ref.split(_SEP)
     r = (conn.execute(f"SELECT * FROM {table} WHERE " + " AND ".join(f"{c} = ?" for c in cols),  # noqa: S608
                       values).fetchone() if len(values) == len(cols) else None)
-    if r is not None and kind == "listing" and r["federated_from"] is not None:
-        r = None                                   # replaced by a peer's row: ours has gone
     if r is None:
         if held:
             # P269: a private record's removal is salted like the record was, so an

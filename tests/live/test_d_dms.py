@@ -3,12 +3,12 @@ import json
 import sqlite3
 
 
-from emporia.federation_dm import thread_id_for
+from tests.live.threads import thread_id_for
 
 
 def _read(agent, other: str) -> dict:
     """`agent`'s side of its thread with `other` (an address), as its own client opens and checks it."""
-    thread = thread_id_for(agent.address, other)
+    thread = thread_id_for(agent, other)
     out = agent.tool("get_dm_messages", thread_id=thread)
     assert out["success"], out
     return out

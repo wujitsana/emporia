@@ -7,7 +7,6 @@ import os
 import stat
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -16,35 +15,34 @@ from fastapi.testclient import TestClient
 
 from emporia import federation_dm as fd
 from emporia import identity, key_rotation, wire
-from emporia import relay_server as rs
 from emporia.addresses import fingerprint
 from emporia.agent_sdk import EmporiaAgent
 from emporia.identity import (
     get_public_key_hex,
     sign,
     sign_payload,
-    verify,
-    verify_agora_comment,
-    verify_agora_post,
     verify_dm_message,
     verify_room_acts,
     verify_room_message,
 )
 from emporia.relay_server import app
 from tests.test_emporia import (
-    _make_peer_batch,
     _register_keyed,
     _rotate_keyed,
     _send_dm_raw,
-    _signed_comment,
     _signed_invite,
     _signed_kick,
-    _signed_post,
     _signed_room,
 )
-from tests.test_signed_open_sessions import _session
 
 ORIGIN = "https://kr-relay.example"
+
+
+def _stable_of(agent: str) -> str:
+    """The stable id of a test agent that never rotated: the hash of its key."""
+    from emporia import identity, wire
+    from emporia import relay_server as _rs
+    return _rs.AGENT_REGISTRY.get_stable_id(agent) or wire.stable_id_for(identity.get_public_key_hex(agent))
 
 
 @pytest.fixture
@@ -273,8 +271,8 @@ def test_sign_in_uses_the_new_key_at_once_and_not_the_old(client):
     assert _session_token(client, "kr_signin", old_priv) != 200
     # and the agent's signed acts are checked against the new key
     slug = _topic(client, "kr_signin")
-    assert client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("kr_signin", slug, {"title": "t", "content": "c"}),
-                       headers=_as("kr_signin")).status_code == 200
+    from tests.test_posts_v2 import _post
+    assert _post(client, "kr_signin", text="c", topic=slug).status_code == 200
 
 
 # --- what was signed before still checks; what is signed after checks too -------
@@ -283,47 +281,34 @@ def test_posts_comments_messages_and_acts_check_against_the_key_of_their_time(cl
     for a in ("kr_old_hand", "kr_reader", "kr_pal"):
         _register_keyed(client, a)
     hand = "kr_old_hand"
-    slug = _topic(client, hand)
     room_id = client.post("/rooms", json=_signed_room(hand, {"name": "kr room", "room_type": "private",
                                                              "gate_type": "invite"}), headers=_as(hand)).json()["room_id"]
     thread = client.post("/dm/start", json={"to_agent": "kr_pal"}, headers=_as(hand)).json()["thread_id"]
 
     def say_room(text):
+        from emporia import room_post
         nonce = wire.new_message_nonce()
+        content = room_post.canonical(room_post.body("note", text))
         r = client.post(f"/rooms/{room_id}/message", headers=_as(hand), json={
-            "content": text, "nonce": nonce, "signature": sign(wire.signed_room_message_payload(room_id, text, "chat", nonce), hand)})
+            "content": content, "msg_type": "note", "nonce": nonce,
+            "signature": sign(wire.signed_room_message_payload(room_id, content, "note", nonce, _stable_of(hand)), hand)})
         assert r.status_code == 200, r.text
 
     def write_everything(tag):
-        post_id = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post(hand, slug, {"title": tag, "content": tag}),
-                              headers=_as(hand)).json()["post_id"]
-        assert client.post(f"/agoras/posts/{post_id}/comments", json=_signed_comment(hand, post_id, {"content": tag}),
-                           headers=_as(hand)).status_code == 200
         say_room(tag)
         assert _send_dm_raw(client, thread, hand, tag).status_code == 200
-        return post_id
 
-    old_post = write_everything("before")
+    write_everything("before")
     assert client.post(f"/rooms/{room_id}/invite", json=_signed_invite(hand, room_id, {"invitee_id": "kr_pal"}),
                        headers=_as(hand)).status_code == 200
     assert client.post(f"/rooms/{room_id}/join", json={"agent_id": "kr_pal"}, headers=_as("kr_pal")).status_code == 200
-    old_key = get_public_key_hex(hand)
     new_key = _rotate_keyed(client, hand)
-    new_post = write_everything("after")
+    write_everything("after")
     assert client.post(f"/rooms/{room_id}/kick", json=_signed_kick(hand, room_id, {"target_agent_id": "kr_pal"}),
                        headers=_as(hand)).status_code == 200
 
     key = _key_for(client, hand, "kr_reader")
     assert key == new_key and len(key.windows) == 2
-
-    # Agora
-    for post_id, tag in ((old_post, "before"), (new_post, "after")):
-        post = client.get(f"/agoras/posts/{post_id}", headers=_as("kr_reader")).json()
-        assert verify_agora_post(slug, post, key) is True, tag
-        assert verify_agora_comment(post["comments"][0], key) is True, tag
-    old = client.get(f"/agoras/posts/{old_post}", headers=_as("kr_reader")).json()
-    assert verify_agora_post(slug, old, new_key) is False                  # the new key alone does not explain it
-    assert verify_agora_post(slug, old, identity.SigningKey(old_key)) is True
 
     # room messages and DMs
     msgs = client.get(f"/rooms/{room_id}/messages", headers=_as(hand)).json()
@@ -342,130 +327,7 @@ def test_posts_comments_messages_and_acts_check_against_the_key_of_their_time(cl
     assert verify_room_acts(room, new_key)["settings"] is False
 
 
-# --- listings, offers and adverts need the current key ---------------------------
-
-def _listing(client, agent_id: str, title: str) -> dict:
-    stable = _profile(client, agent_id)["stable_id"]
-    body = {"title": title, "description": "", "listing_type": "service", "payment_mode": "free", "price_usd": "0",
-            "module_type": None, "metadata": {}, "expires_at": wire.listing_expires_at(72),
-            "listing_nonce": wire.new_message_nonce()}
-    body["signature"] = sign(wire.signed_listing_payload(
-        stable, client.get("/health").json()["relay_url"], body["listing_nonce"], title, "", "service", "free", "0",
-        None, {}, body["expires_at"]), agent_id)
-    r = client.post("/listings", json=body, headers=_as(agent_id))
-    assert r.status_code == 200, r.text
-    return r.json()
-
-
-def _feed_listing(client, listing_id: str):
-    return next((x for x in client.get("/gaming/v1/federate/listings").json()["listings"]
-                 if x["listing_id"] == listing_id), None)
-
-
-def test_a_listing_is_dropped_from_the_feed_when_its_key_is_replaced_until_signed_again(client):
-    _register_keyed(client, "kr_seller")
-    old = _listing(client, "kr_seller", "Before")["listing_id"]
-    item = _feed_listing(client, old)
-    assert wire.listing_verdict(item, verify) == ""
-    _rotate_keyed(client, "kr_seller")
-    assert _feed_listing(client, old) is None
-    now_log = _profile(client, "kr_seller")["key_log"]
-    assert "since replaced" in wire.listing_verdict({**item, "key_log": now_log}, verify)
-    fresh = _listing(client, "kr_seller", "After")["listing_id"]
-    new_item = _feed_listing(client, fresh)
-    assert wire.listing_verdict(new_item, verify) == "" and new_item["key_log"] == now_log
-    assert wire.listing_verdict({**new_item, "key_log": []}, verify) != ""         # without the log the key proves nothing
-    forged = [{**now_log[0], "signature": now_log[0]["signature"][::-1]}]
-    assert wire.listing_verdict({**new_item, "key_log": forged}, verify) != ""
-
-
-async def test_a_listing_pulled_from_a_rotated_agent_is_kept_with_its_log_and_served_with_it(client):
-    keys, stable, log = _chain(2)
-    new_priv = keys[1]
-    nonce = wire.new_message_nonce()
-    item = {"title": "Rotated seller", "description": "", "listing_type": "service", "agent_id": "kr_remote",
-            "payment_mode": "free", "price_usd": "0", "module_type": None, "metadata": {},
-            "expires_at": wire.listing_expires_at(72), "created_at": "2026-01-01T00:00:00+00:00",
-            "origin_relay": "https://peer-p245.example", "listing_id": wire.listing_id_for(stable, nonce),
-            "listing_nonce": nonce, "agent_stable_id": stable, "agent_public_key_hex": _hex(new_priv), "key_log": log}
-    item["signature"] = sign_payload(new_priv, wire.listing_fields_as_signed(item))
-    assert wire.listing_verdict(item, verify) == ""
-    peer = "https://peer-p245.example"
-    batch, _ = _make_peer_batch(peer, [item])
-    rs._FEDERATION_PEER_PUBKEYS.pop(peer, None)
-    with patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock, return_value=batch):
-        assert await rs._pull_federated_listings(peer) == 1
-    served = next(x for x in client.get("/listings?limit=200").json()["listings"] if x["listing_id"] == item["listing_id"])
-    assert served["key_log"] == log and wire.listing_verdict(served, verify) == ""
-
-    # without its log the same listing is refused on import
-    nonce2 = wire.new_message_nonce()
-    bare = {**item, "listing_nonce": nonce2, "listing_id": wire.listing_id_for(stable, nonce2), "key_log": []}
-    bare["signature"] = sign_payload(new_priv, wire.listing_fields_as_signed(bare))
-    batch, _ = _make_peer_batch(peer, [bare])
-    rs._FEDERATION_PEER_PUBKEYS.pop(peer, None)
-    with patch("emporia.relay_server._fetch_federation_batch", new_callable=AsyncMock, return_value=batch):
-        assert await rs._pull_federated_listings(peer) == 0
-    assert "stable id" in next(iter(rs._FEDERATION_LAST_SYNC[peer]["refused_why"]))
-
-
-def test_an_offer_or_an_advert_signed_with_a_replaced_key_leaves_the_feeds_until_signed_again(client):
-    _register_keyed(client, "kr_host")
-    origin = client.get("/health").json()["relay_url"]
-
-    def offer(session_id):
-        stable = _profile(client, "kr_host")["stable_id"]
-        s = client.get(f"/sessions/{session_id}", headers=_as("kr_host")).json()
-        signed = wire.signed_open_session_payload(stable, origin, session_id, s["module_type"], s["config"], s["payment_rules"])
-        return client.post(f"/sessions/{session_id}/offer", json={"signature": sign(signed, "kr_host")}, headers=_as("kr_host"))
-
-    def advertise_room(room_id):
-        stable = _profile(client, "kr_host")["stable_id"]
-        r = client.get(f"/rooms/{room_id}", headers=_as("kr_host")).json()
-        signed = wire.signed_room_advert_payload(stable, origin, room_id, *(r[f] for f in wire.ROOM_ADVERT_FIELDS))
-        return client.post(f"/rooms/{room_id}/advertise", json={"signature": sign(signed, "kr_host")}, headers=_as("kr_host"))
-
-    def advertise_topic(slug):
-        stable = _profile(client, "kr_host")["stable_id"]
-        t = client.get(f"/agoras/topics/{slug}", headers=_as("kr_host")).json()
-        signed = wire.signed_topic_advert_payload(stable, origin, slug, *(t[f] for f in wire.TOPIC_ADVERT_FIELDS))
-        return client.post(f"/agoras/topics/{slug}/advertise", json={"signature": sign(signed, "kr_host")}, headers=_as("kr_host"))
-
-    session_id = _session(client, "kr_host")
-    room_id = client.post("/rooms", json=_signed_room("kr_host", {"name": "kr open room"}), headers=_as("kr_host")).json()["room_id"]
-    slug = _topic(client, "kr_host")
-    assert offer(session_id).status_code == 200 and advertise_room(room_id).status_code == 200
-    assert advertise_topic(slug).status_code == 200
-
-    def in_feeds():
-        lobby = client.get("/federation/v1/open-sessions").json()
-        rooms, topics = client.get("/federation/v1/rooms").json(), client.get("/federation/v1/topics").json()
-        return (session_id in {x["session_id"] for x in lobby["open_sessions"]},
-                room_id in {x["room_id"] for x in rooms["rooms"]}, slug in {x["slug"] for x in topics["topics"]}), \
-            (lobby, rooms, topics)
-
-    seen, (lobby, rooms, topics) = in_feeds()
-    assert seen == (True, True, True)
-    assert wire.open_session_verdict(lobby["open_sessions"][0], lobby["origin_relay"], verify) == ""
-    _rotate_keyed(client, "kr_host")
-    assert in_feeds()[0] == (False, False, False)
-    assert offer(session_id).status_code == 200 and advertise_room(room_id).status_code == 200
-    assert advertise_topic(slug).status_code == 200
-    seen, (lobby, rooms, topics) = in_feeds()
-    assert seen == (True, True, True)
-    mine = next(x for x in lobby["open_sessions"] if x["session_id"] == session_id)
-    assert mine["key_log"] and wire.open_session_verdict(mine, lobby["origin_relay"], verify) == ""
-    room = next(x for x in rooms["rooms"] if x["room_id"] == room_id)
-    topic = next(x for x in topics["topics"] if x["slug"] == slug)
-    assert wire.room_advert_verdict(room, rooms["origin_relay"], verify) == ""
-    assert wire.topic_advert_verdict(topic, topics["origin_relay"], verify) == ""
-    for bad in ({"key_log": []}, {"key_log": mine["key_log"][::-1] + mine["key_log"]}):
-        assert wire.open_session_verdict({**mine, **bad}, lobby["origin_relay"], verify) != ""
-        assert wire.room_advert_verdict({**room, **bad}, rooms["origin_relay"], verify) != ""
-        assert wire.topic_advert_verdict({**topic, **bad}, topics["origin_relay"], verify) != ""
-
-
-# --- pins follow a log, and only a real one ---------------------------------------
+# --- pinned keys follow the agent's own log ---------------------------------------------------
 
 def _pin(name: str) -> tuple[str, str]:
     return f"{name}@kr.example", "https://kr.example"
@@ -550,45 +412,8 @@ def test_the_sdk_follows_a_rotation_it_can_check_and_flags_one_it_cannot():
 
 # --- an agent that rotated still signs as the identity its relay holds (P248) ----------
 
-def test_a_rotated_agent_still_signs_listings_offers_and_adverts_with_the_mcp_tools(client, monkeypatch):
-    """Found by the live suite: the clients signed as the hash of the key they held, which after a rotation is
-    no longer the agent's stable id, so the relay refused every listing, offer and advert (403)."""
-    from emporia import mcp_server
-    _register_keyed(client, "kr_signs")
-    new = _rotate_keyed(client, "kr_signs")
-    monkeypatch.setattr(mcp_server, "RELAY_URL", "http://relay-under-test")
-    monkeypatch.setattr(mcp_server, "_bearer_request", lambda method, url, **kw: getattr(client, method)(
-        "/" + url.split("/", 3)[3], headers=_as("kr_signs"),
-        **{k: v for k, v in kw.items() if k in ("json", "params")}))
-    with patch("httpx.get", lambda url, **kw: client.get("/" + url.split("/", 3)[3])):
-        listing = mcp_server.create_listing("After rotating", agent_id="kr_signs")
-        game = mcp_server.create_session("emporia:chess:v1", agent_id="kr_signs")
-        room = mcp_server.create_room("after rotating", creator_id="kr_signs", advertise=True)
-    assert listing["success"], listing
-    assert game["success"] and game["offered"], game
-    assert room["success"] and room["advertised"], room
-    mine = next(x for x in client.get("/gaming/v1/federate/listings").json()["listings"]
-                if x["listing_id"] == listing["listing_id"])
-    assert mine["agent_public_key_hex"] == new and wire.listing_verdict(mine, verify) == ""
 
 
-def test_a_rotated_agent_still_signs_listings_offers_and_adverts_with_the_sdk(client):
-    import httpx
-    _register_keyed(client, "kr_sdk_signs")
-    new = _rotate_keyed(client, "kr_sdk_signs")
-
-    async def scenario():
-        agent = EmporiaAgent(relay_url="http://testserver", agent_id="kr_sdk_signs", public_key_hex=new)
-        agent._http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
-        try:
-            listing = await agent.create_listing("After rotating", price_usd="1.00")
-            game = await agent.create_session("emporia:chess:v1")
-            room = await agent.create_room("sdk after rotating", advertise=True)
-            return listing, game, room
-        finally:
-            await agent._http.aclose()
-    listing, game, room = asyncio.run(scenario())
-    assert listing["listing_id"] and game["offered"] and room["advertised"], (listing, game, room)
 
 
 # --- remote agents pinned by the relay ---------------------------------------------

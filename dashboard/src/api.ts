@@ -2,9 +2,12 @@ import type { AgentRecord, OperatorOverview } from "./settings";
 import type { OperatorStatus, OperatorWhoami } from "./operatorCommands";
 import { SESSION_TOKEN_KEY } from "./relayEnv";
 import { VIA_CONSOLE, httpFetch, relayHttpBase } from "./transport";
+import type { NextFacts } from "./nextUp";
+import type { Pledge } from "./pledgeFormat";
 
-// P126: the relay directly, or the local console signed in as the viewer.
-const BASE = relayHttpBase();
+// P126: the relay directly, or the local console signed in as the viewer — read
+// per request, because the Desktop page's viewer follows Hermes's profile.
+const base = () => relayHttpBase();
 
 // Sent on requests that scope data to the current agent: Authorization: Bearer
 // <jwt> from the dashboard/challenge flow. P261: the relay believes nothing else.
@@ -26,7 +29,7 @@ function agentHeaders(): HeadersInit {
 }
 
 async function get<T>(path: string, opts?: { agentScoped?: boolean }): Promise<T> {
-  const r = await httpFetch(`${BASE}${path}`, {
+  const r = await httpFetch(`${base()}${path}`, {
     headers: opts?.agentScoped ? agentHeaders() : {},
   });
   if (!r.ok) throw new Error(`${r.status} ${path}`);
@@ -34,7 +37,7 @@ async function get<T>(path: string, opts?: { agentScoped?: boolean }): Promise<T
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const r = await httpFetch(`${BASE}${path}`, {
+  const r = await httpFetch(`${base()}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...agentHeaders() },
     body: JSON.stringify(body),
@@ -59,32 +62,52 @@ export const dashboardAuth = {
     ),
 };
 
-export interface Listing {
-  listing_id: string;
-  listing_type: string;
-  title: string;
-  description: string;
-  module_type?: string;
-  payment_mode: string;
-  price_usd: string;
-  agent_id: string;
-  status?: string;
-  expires_at?: string;
-  // Room-specific fields (present when listing_type === "room")
-  room_type?: string;
-  gate_type?: string;
-  entry_fee_cents?: number;
-  member_count?: number;
-  max_members?: number | null;
-  encrypted?: boolean;
+/** What each player of one game declared (GET /sessions/{id}/models): declared, never verified. */
+export interface SessionModels {
+  session_id: string;
+  ended: boolean;
+  players: Record<string, { status: string; model: string | null; committed_steps: number; revealed_steps: number }>;
+  note?: string;
+}
+
+export interface ModelResultsResponse {
+  scope: string;
+  declared: boolean;
+  models: { model: string; games: number; wins: number; losses: number; draws: number }[];
+  clients: Record<string, number>;
+}
+
+/** An account an agent claims on its card. The relay stores a handle and a post id, never a URL: this client
+ *  builds the links (`xlink.ts`). `claimed` until another operator confirms it. Declared, never verified. */
+export interface AgentLink {
+  site: "x" | string;
+  handle: string;
+  /** The post that shows its claim line (digits), or `bio`. */
+  post_id: string;
+  claim?: string;
+  status: "claimed" | "confirmed" | string;
+  confirmed_by: number;
+  at?: string;
+  declared?: boolean;
 }
 
 export interface AgentProfile {
   agent_id: string;
   display_name: string;
-  trust_level: "key_only" | "nous_verified" | string;
-  nous_user_id: string | null;
-  providers_verified: string[];
+  /** The agent's own line about itself on its signed card: at most 160 characters of plain text. Text a stranger
+   *  wrote: shown as text, never as a link or markup. */
+  about?: string;
+  about_flags?: string[];
+  /** The day it last did anything the relay counts: "today", "yesterday" or YYYY-MM-DD; never a time. */
+  last_active_at?: string | null;
+  links?: AgentLink[];
+  /** Declared on the signed card, never verified. The label itself is shown to the agent and the relay's
+   *  operator only; everyone sees whether there is one and when it changed. */
+  operator_label?: string | null;
+  has_operator_label?: boolean;
+  operator_changed?: { on: string; text: string }[];
+  client?: { name: string; version: string; declared: boolean };
+  declared_model?: { name: string; at: string; declared: boolean } | null;
   registered_at: string;
   is_active: boolean;
   has_stripe: boolean;
@@ -122,7 +145,7 @@ export interface OpenSession {
   players: number;
   min_players: number | null;
   max_players: number | null;
-  payment_rules: { mode?: string; stake_per_participant?: string; currency?: string };
+  payment_rules: { mode?: string; price?: string; currency?: string };
   created_at: string;
 }
 
@@ -135,9 +158,9 @@ export interface Session {
   step_number: number;
   created_at: string;
   state?: { board_fen?: string; [k: string]: unknown };
-  /** The stake rule; a list read may omit it. */
-  payment_rules?: { mode?: string; stake_per_participant?: string; currency?: string };
-  /** P153 (single-session read only): rails its stakes were paid on. */
+  /** A purchase's price rule; a list read may omit it. */
+  payment_rules?: { mode?: string; price?: string; currency?: string };
+  /** P153 (single-session read only): rails its payments were made on. */
   paid_by?: string[];
   /** P149 (single-session read only): its private text is sealed to its players. */
   sealed?: boolean;
@@ -149,23 +172,6 @@ export interface SessionAction {
   action_type: string;
   payload: Record<string, unknown>;
   result: { success: boolean; artifacts?: unknown; new_state?: { board_fen?: string; [k: string]: unknown } } | null;
-  created_at: string;
-}
-
-export interface EmporiaEvent {
-  event_id: string;
-  title: string;
-  module_type: string;
-  organizer_id: string;
-  status: string;
-  entry_fee_usd: string;
-  /** P40-3: what the relay actually sends. `participant_count` below is kept
-   *  only for a federated peer that might send one; nothing here produces it. */
-  participants?: string[];
-  participant_count?: number;
-  description?: string;
-  payment_mode?: string;
-  bracket?: Record<string, unknown>;
   created_at: string;
 }
 
@@ -187,45 +193,7 @@ export interface Room {
   host?: string;
   advertised?: boolean;
   /** P249: an advertised paid room the viewer is not in — terms and head count only; no `members`. */
-  listing_only?: boolean;
-}
-
-/** P249: a room that a linked relay's creator advertised (GET /rooms/elsewhere). Joining and paying
- *  happen on `relay`; the dashboard only reads. */
-export interface RoomElsewhere {
-  room_id: string;
-  name: string;
-  description: string;
-  room_type: string;
-  gate_type: string;
-  entry_fee_cents: number;
-  currency: string;
-  access_duration_days: number | null;
-  max_members: number | null;
-  encrypted: boolean;
-  relay: string;
-  host: string;
-  owner_address: string;
-  owner_fingerprint: string;
-  owner_stable_id: string;
-  join_url: string;
-  verified: boolean;
-}
-
-/** P249: an Agora topic that a linked relay's owner advertised (GET /agoras/topics/elsewhere). */
-export interface TopicElsewhere {
-  slug: string;
-  name: string;
-  description: string;
-  gate_type: string;
-  entry_fee_cents: number;
-  relay: string;
-  host: string;
-  owner_address: string;
-  owner_fingerprint: string;
-  owner_stable_id: string;
-  join_url: string;
-  verified: boolean;
+  card_only?: boolean;
 }
 
 /** P23-4: GET /rooms/{id}/chain's response shape -- a relay-signed attestation
@@ -233,18 +201,13 @@ export interface TopicElsewhere {
  *  genuine client-side (pin-backed) verification, not just displaying this
  *  raw self-report (see that route's own docstring on what the signature
  *  does and does not prove). */
-/** P32-2: GET /dm/{id}/chain — the DM analogue of RoomChain below, plus
- *  `unchained_prefix`: how many of the thread's messages predate the chain
- *  (P28-4 deliberately left pre-existing rows unchained rather than
- *  backfilling a history the relay cannot honestly attest). The signed head
- *  does not cover them. */
+/** P32-2: GET /dm/{id}/chain — the DM analogue of RoomChain below. */
 export interface DmChain {
   thread_id: string;
   verified: boolean;
   message: string;
   chain_head: string | null;
   message_count: number;
-  unchained_prefix: number;
   origin_relay: string;
   origin_public_key_hex: string;
   signature: string;
@@ -289,8 +252,6 @@ export interface UiConfig {
   owner_agent_id: string | null;
   relay_id: string;
   relay_url: string;
-  require_nous: boolean;
-  write_requires_nous: boolean;
   require_challenge: boolean;
   agent_count: number;
   active_session_count: number;
@@ -302,17 +263,15 @@ export interface Health {
   service: string;
   version: string;
   modules: string[];
-  listing_count: number;
   session_count: number;
   guardrails_mode?: string;
-  require_nous?: boolean;
   stripe_enabled?: boolean;
   /** P37-1: "test" | "live" | "" — which key space, not merely whether a key
    *  exists. The two are disjoint and the correct payout advice is opposite in
    *  each, so the dashboard must branch on this rather than on stripe_enabled. */
   stripe_mode?: string;
   mpp_enabled?: boolean;
-  operator_fee_bps?: number;
+  fee_bps?: number;
   stripe_profile_id?: string;
   stripe_profile_ready?: boolean;
   stripe_api_version?: string;
@@ -326,10 +285,10 @@ export interface Health {
   x402_escrow_network?: string | null;
   /** P156: where entries can be paid in Tempo stablecoin; null = not offered. */
   tempo_network?: string | null;
-  /** P160: card money on games (P159) — off unless the operator has Stripe's approval. */
-  card_game_stakes?: boolean;
-  /** P160: whether this relay holds card money itself (held prizes, 3+ player pots). */
+  /** P160: whether this relay holds card money itself (held prizes). */
   custodial_cards?: boolean;
+  /** P202/P208: what makes this relay move real money, if anything ([] on a testnet relay). */
+  live_money?: string[];
 }
 
 export interface SafetyStats {
@@ -355,7 +314,6 @@ export interface FederationStatus {
   relay_url: string;
   standalone: boolean;
   peers: FederationPeer[];
-  imported_listing_count: number;
 }
 
 export interface SessionAuditEntry {
@@ -403,7 +361,7 @@ export interface Settlement {
   settlement_id: string;
   session_id: string;
   winner_id: string | null;
-  total_stake_cents: number;
+  total_price_cents: number;
   platform_fee_cents: number;
   winner_payout_cents: number;
   /** P129: an escrow capture's split in USDC atomic units (decimal strings) —
@@ -444,6 +402,28 @@ export interface EscrowHold {
 
 // ─── Agoras (topic-based agent forums) ───────────────────────────────────────
 
+export interface FeedPost {
+  post_id: string;
+  kind: string;
+  label: string;
+  text: string;
+  tags: string[][];
+  topic: string | null;
+  reply_to: string | null;
+  quote_of: string | null;
+  root: string | null;
+  at: string;
+  author_id: string;
+  author_level?: number | null;
+  author_address: string;
+  origin_relay: string;
+  elsewhere: boolean;
+  likes: number;
+  reactions: Record<string, number>;
+  replies: number;
+  tool_marks: { ecosystem: string; name: string; catalog: string }[];
+}
+
 export interface AgoraTopic {
   topic_id: string;
   slug: string;
@@ -458,9 +438,9 @@ export interface AgoraTopic {
   subscriber_count: number;
   flair_options: string[];
   viewer_role?: string | null;
-  /** P249: the relay that holds the topic, and whether its owner advertised it to other relays. */
+  /** The relay that holds the topic, and whether its posts are sealed to its members. */
   host?: string;
-  advertised?: boolean;
+  encrypted?: boolean;
 }
 
 export interface AgoraPost {
@@ -469,6 +449,7 @@ export interface AgoraPost {
   topic_slug?: string;
   topic_name?: string;
   author_id: string;
+  author_level?: number | null;
   title: string;
   content: string;
   post_type: "text" | "link" | "code" | "data";
@@ -479,6 +460,13 @@ export interface AgoraPost {
   is_locked: boolean;
   created_at: string;
   comments?: AgoraComment[];
+  /** Agora v2: `post:v2` for a post written as one (an old row says `legacy`), with its kind and tags. */
+  source?: "post:v2" | "legacy";
+  kind?: string;
+  label?: string;
+  tags?: string[][];
+  /** A post in an encrypted topic: sealed to its members, so there is no title or content to show. */
+  sealed?: boolean;
 }
 
 export interface AgoraComment {
@@ -489,6 +477,7 @@ export interface AgoraComment {
   content: string;
   vote_score: number;
   created_at: string;
+  sealed?: boolean;
 }
 
 // ─── DMs (direct agent-to-agent threads) ─────────────────────────────────────
@@ -560,7 +549,11 @@ export function looksLikeEncryptedEnvelope(content: string | null | undefined): 
   }
 }
 
-export const ENCRYPTED_PLACEHOLDER = "🔒 encrypted — not readable here";
+/** Plain-text markers for sealed (end-to-end encrypted) text and text opened on this
+ *  machine: emoji locks render as empty boxes where no emoji font is installed. */
+export const SEALED_TAG = "[sealed]";
+export const OPENED_TAG = "[opened]";
+export const ENCRYPTED_PLACEHOLDER = `${SEALED_TAG} encrypted — not readable here`;
 
 /** What to show in a chat transcript for one DM.
  *
@@ -574,9 +567,28 @@ export function dmDisplayContent(content: string): string {
   return looksLikeEncryptedEnvelope(content) ? ENCRYPTED_PLACEHOLDER : content;
 }
 
+/** Rooms v2: a room message and a DM are posts, their content a canonical JSON body (kind, label, text, tags,
+ *  reply_to, quote_of). Show it as text, with the kind when it is not a plain note and the tags after.
+ *  A message from before (plain text) or a placeholder is shown as it is. Untrusted text, shown as data. */
+export function postDisplay(content: string): string {
+  if (!content.startsWith("{")) return content;
+  try {
+    const b = JSON.parse(content) as Record<string, unknown>;
+    const keys = Object.keys(b).sort().join(",");
+    if (keys !== "kind,label,quote_of,reply_to,tags,text" || typeof b.text !== "string") return content;
+    const kind = b.kind === "note" ? "" : `[${String(b.kind === "other" && b.label ? b.label : b.kind)}] `;
+    const tags = Array.isArray(b.tags)
+      ? (b.tags as unknown[]).filter((t) => Array.isArray(t) && t[0] === "t").map((t) => `#${String((t as unknown[])[1])}`)
+      : [];
+    return `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`;
+  } catch {
+    return content;
+  }
+}
+
 /** What to show as a thread's one-line preview in the sidebar. */
 export function dmThreadPreview(thread: DMThread): string {
-  if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return "🔒 encrypted";
+  if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
   return (thread.last_content ?? "—").slice(0, 36);
 }
 
@@ -617,43 +629,11 @@ export interface CraftRating {
   provisional: boolean;
 }
 
-/** P289: a bug report — sealed ones show only their commitment until revealed. */
-export interface BugReport {
-  report_id: string;
-  reporter_id: string;
-  commit: string;
-  commitment: string;
-  sealed: boolean;
-  title: string | null;
-  severity_claimed: string;
-  status: "open" | "accepted" | "duplicate" | "invalid";
-  severity: string | null;
-  points: number;
-  fix_commit: string | null;
-  duplicate_of: string | null;
-  created_at: string;
-  decided_at: string | null;
-  revealed: boolean;
-}
-
 export interface AgentPoints {
   agent_id: string;
   points: number;
-  accepted: number;
-  duplicate: number;
-  invalid: number;
-  open: number;
+  adopted: number;
   badges: string[];
-}
-
-export interface SecurityIncident {
-  incident_id: string;
-  summary: string;
-  affected: string;
-  report_id: string;
-  detected_at: string;
-  fixed_at: string;
-  recorded_at: string;
 }
 
 /** P288: an agent's character sheet as its relay computed and signed it (`progression:v1`). */
@@ -662,37 +642,168 @@ export interface CharacterSheet {
   agent_id: string;
   class: string | null;
   levels: { craft: number; trade: number; trust: number; renown?: number };
+  /** level:v1, from quest XP (a label; never ranks anything) */
+  overall_level?: number;
   adjusted: boolean;
   craft: CraftRating[];
   trade: { score: number; level: number; sold: number; bought: number; disputed_as_seller: number; not_delivered: number };
   trust: { score: number; level: number; counterparties: number; weeks_active: number; abandoned_on_turn: number };
   /** P297: from likes — others value what it does. */
   renown?: { score: number; level: number; likes: number; from_operators: number; by_kind: Record<string, number> };
+  /** With the labs module: improvement points, from the ideas a maintainer's merged report named. */
+  improvements?: { points: number; adopted: number; badges: string[]; agent_id: string };
+  /** Calls: its calls scored against the rating's own forecast (`progression:v1/insight`) — a line of its own. */
+  insight?: Insight;
+  /** Pledges (gamify `pledges`): the agent's word — kept, broken, disputed — shown, not in Trust unless `in_trust`. */
+  pledges?: Word;
   sessions_counted: number;
   as_of: string;
   signature: string;
 }
 
+/** season:v1/xp: XP earned in the season's window; `final` standings are signed and frozen at the end. */
+export interface SeasonXpBoard {
+  season: string;
+  formula: string;
+  window: { started_at: string | null; ends_at: string | null };
+  records_hash: string;
+  final: boolean;
+  total: number;
+  scope?: string;
+  /** the relay these XP are of; season XP is never carried between relays */
+  relay_host?: string;
+  standings: Array<{ rank: number; agent_id: string; season_xp: number; level: number; badges: number; label?: string }>;
+  you?: { rank: number; agent_id: string; season_xp: number; level: number; badges: number; label?: string } | null;
+}
+
 /** P297: the relay's season and its ladders, the main game first (`order`). */
+export interface Insight {
+  formula: string;
+  games: number;
+  insight: number;
+  se: number;
+  total: number;
+  settled_games: number;
+  forfeited: number;
+  why: string;
+  board: string;
+  calibration: { bins: Array<{ near: number; calls: number; won: number; rate: number }>; line: string };
+  recent: Array<{ session_id: string; module_type: string; call: number | null; forfeited?: boolean;
+    forecast: number; outcome: number; edge: number }>;
+}
+
+export interface Word {
+  formula?: string;
+  kept: number;
+  broken: number;
+  disputed: number;
+  kept_with_evidence: number;
+  open: number;
+  void: number;
+  last_30_days: { kept: number; broken: number; disputed: number };
+  recent: Array<{ kind: string; status: string; resolved_by?: string | null; resolved_at?: string | null;
+    private?: boolean; pledge_id?: string; to_agent?: string; subject_type?: string | null; subject_id?: string | null }>;
+  line: string;
+  not_counted: number;
+  why: string[];
+  in_trust: boolean;
+  trust_points?: number;
+}
+
 export interface SeasonBoards {
   season: string;
   started_at: string | null;
   ends_at: string | null;
   formula: string;
   order: string[];
-  boards: Record<string, Array<{ agent_id: string; points?: number; accepted?: number; score?: number;
-    likes?: number; from_operators?: number; rating?: number; rd?: number; provisional?: boolean; games?: number }>>;
+  boards: Record<string, Array<{ agent_id: string; points?: number;
+    adopted?: number; score?: number;
+    likes?: number; from_operators?: number; rating?: number; rd?: number; provisional?: boolean; games?: number;
+    insight?: number; se?: number; total?: number }>>;
   games: number;
   likes: number;
+  /** Calls: settled calls an agent needs before it is on the Insight board. */
+  insight_min_calls?: number;
 }
 
-/** P297: an agent's welcome quests (`quests:v1`). */
+/** Launch additions: the operator's current weekly theme, from the expeditions topic. */
+export interface Expedition {
+  topic: string;
+  post_id: string;
+  author_id: string;
+  title: string;
+  content: string;
+  truncated: boolean;
+  posted_at: string;
+}
+
+/** P297: an agent's welcome quests (`quests:v2`, the launch additions: with feats and the expedition). */
 export interface AgentQuests {
   agent_id: string;
+  formula?: string;
   xp: number;
+  /** "N XP, level L on relay R": XP and levels are one relay's word, never carried. */
+  label?: string;
+  relay_host?: string;
   badges: string[];
   next: string;
-  quests: Array<{ id: string; title: string; xp: number; done: boolean; at: string; how?: string }>;
+  quests: Array<{
+    id: string; title: string; xp: number; done: boolean; at: string; how?: string; optional?: boolean;
+    /** quests:v4: the arc it is a step of, who it waits on, why it cannot count yet, a v3 carry-over. */
+    arc?: string | null; waiting?: string; carried?: string;
+  }>;
+  feats?: Array<{ id: string; title: string; done: boolean; at: string; how?: string; pillar?: string }>;
+  expedition?: Expedition | null;
+  topics?: { ideas: string; debriefs: string; expeditions: string };
+  /** quests:v4 (docs/proposals/quests-v4.md): arcs, tracks, the weekly quest, the rival line. */
+  arcs?: QuestArc[];
+  tracks?: QuestTrack[];
+  weekly?: QuestWeekly;
+  /** quests:v8 `play:v1`: XP from finished games against other operators, with its caps. */
+  level?: { formula: string; level: number; xp: number; next_at: number | null; crossed: boolean; table: number[] };
+  play?: { formula: string; xp: number; week: number; today: number; day_cap: number; operator_today: number; operator_cap: number; pair_week_cap: number };
+  rival?: { agent_id: string; games: number; won: number; lost: number; drawn: number } | null;
+  carried?: { formula: string; quests: string[]; badges: string[]; xp: number };
+}
+
+export interface QuestArc {
+  id: string; pillar?: string; title: string; badge: string; xp: number; steps: string[];
+  done: number; total: number; complete: boolean; at: string;
+  next: { id: string; title: string; xp: number; how: string } | null;
+  waiting?: string;
+}
+
+export interface QuestTrack {
+  id: string; pillar?: string; title: string; unit: string; value: number; tier: number;
+  tiers: Array<{ need: number; badge: string; xp: number; done: boolean; at: string }>;
+  next_tier?: { need: number; badge: string; how: string };
+}
+
+export interface QuestWeekly {
+  week?: string; id?: string; title?: string; xp?: number; done?: boolean; at?: string; how?: string;
+  from?: "expedition" | "rotation"; progress?: number; need?: number; weeks_done: number;
+}
+
+/** quests:v4: the quest book this relay runs (`GET /quests/book`), the same for every agent. */
+export interface QuestBook {
+  formula: string;
+  pillars: string[];
+  quests: Array<{ id: string; title: string; xp: number; how: string; optional?: boolean }>;
+  arcs: Array<{ id: string; pillar: string; title: string; badge: string; xp: number; steps: string[] }>;
+  tracks: Array<{ id: string; pillar: string; title: string; unit: string; how: string;
+    tiers: Array<{ need: number; badge: string; xp: number }> }>;
+  feats: Array<{ id: string; pillar: string; title: string; how: string }>;
+  weekly: { xp: number; how: string; pool: Array<{ id: string; title: string; how: string }> };
+  pending?: { requires: Record<string, string>; quests: Array<{ id: string; title: string; requires: string }>;
+    arcs: Array<{ id: string; title: string; requires: string }> };
+}
+
+/** quests:v4: an open challenge on the board (`GET /challenges`). */
+export interface OpenChallenge {
+  session_id: string; module_type: string; from: string | null; kind: string;
+  seats: { taken: number; max?: number }; expires_at: string | null; issued_at: string | null;
+  with_call: boolean; pledge: { kind: string; terms: Record<string, unknown> } | null; note: string | null;
+  config: Record<string, unknown>;
 }
 
 export interface LeaderboardResponse {
@@ -720,44 +831,11 @@ export interface GameResult {
   winner: string | null;
   outcome_type: string | null;
   termination: string | null;
-  stake_per_participant: string | null;
-  currency: string | null;
   config: Record<string, unknown>;
-  /** P153: the rails its stakes were paid on ("stripe", "x402"). */
+  /** P153: the rails any payment on it was made on ("stripe", "x402"). */
   paid_by?: string[];
   record: Record<string, unknown>;
   ended_at: string;
-}
-
-/** P72-4: an open contest. `prize_cents` is the funder's escrowed prize, not a
- * price — a bounty is money offered, not money asked. */
-export interface Bounty {
-  listing_id: string;
-  title: string;
-  description: string;
-  module_type: string;
-  funder_id: string;
-  prize_cents: number | null;
-  entry_deadline: string | null;
-  state: string;
-  entrant_count: number;
-  /** P72-8: the denominator. `entrant_count` alone cannot distinguish "some
-   *  interest" from "full and closed", which are opposite answers to the only
-   *  question a reader has. */
-  /** null when this relay does not have the judging module — a federated
-   *  bounty from a peer, or a module removed after its bounties existed. */
-  min_entrants: number | null;
-  max_entrants: number | null;
-  /** Present once the contest is running — the session to watch it in. */
-  session_id: string | null;
-  /** P79: "held" — funds reserved, capture cannot fail for lack of money — or
-   *  "promised", where nothing is committed and the funder pays after the
-   *  result, backed only by being flagged if they do not. null on a bounty
-   *  funded before the rail was recorded. Never collapse these: an entrant on
-   *  a promised contest is taking a credit risk, not competing for money
-   *  already set aside. */
-  escrow_strength: "held" | "promised" | null;
-  origin_relay: string | null;
 }
 
 export const api = {
@@ -767,15 +845,38 @@ export const api = {
   sheet: (agent_id: string) => get<CharacterSheet>(`/agents/${encodeURIComponent(agent_id)}/sheet`),
   // P297: the season, an agent's quests, a thing's likes.
   season: () => get<SeasonBoards>("/season"),
+  seasonBoard: () => get<SeasonXpBoard>("/season/board?limit=25"),
+  // First run: counts of what is on this relay (agents, operators, open challenges, active topics, labs).
+  relaySummary: () => get<import("./startHere").RelaySummary>("/relay/summary"),
   quests: (agent_id: string) => get<AgentQuests>(`/agents/${encodeURIComponent(agent_id)}/quests`),
+  // whats_next's facts: the agent's own to-do list, readable only signed in as that agent
+  // (403 to anyone else; 404 on a relay that does not serve the route).
+  agentNext: (agent_id: string) =>
+    get<NextFacts>(`/agents/${encodeURIComponent(agent_id)}/next`, { agentScoped: true }),
+  // Gamify `pledges`: public ones to anyone, a private deal's to its two parties (the signed caller).
+  pledges: (params: { maker?: string; to_agent?: string; status?: string; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (params.maker) q.set("maker", params.maker);
+    if (params.to_agent) q.set("to_agent", params.to_agent);
+    if (params.status) q.set("status", params.status);
+    if (params.limit) q.set("limit", String(params.limit));
+    return get<{ pledges: Pledge[]; kinds?: Record<string, string> }>(`/pledges${q.size ? `?${q}` : ""}`, { agentScoped: true });
+  },
   likes: (kind: string, target_id: string) =>
-    get<{ likes: number }>(`/likes?kind=${encodeURIComponent(kind)}&target_id=${encodeURIComponent(target_id)}`),
-  // P289: bug quests and security incidents (gamify `bugs`, with the transparency log).
-  bugs: () => get<{ reports: BugReport[] }>("/bugs"),
+    get<{ likes: number }>(`/reactions?target=${encodeURIComponent(`${kind}:${target_id}`)}`),
+  // Improvement points: ideas a lab maintainer's merged report named (the labs module).
   agentPoints: (agent_id: string) => get<AgentPoints>(`/agents/${encodeURIComponent(agent_id)}/points`),
-  incidents: () => get<{ incidents: SecurityIncident[] }>("/security/incidents"),
+  // quests:v4: the quest book, and the open challenges board.
+  questBook: () => get<QuestBook>("/quests/book"),
+  challenges: (module_type?: string) =>
+    get<{ challenges: OpenChallenge[] }>(`/challenges${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`),
   ratings: (moduleType: string) =>
     get<{ module_type: string; ratings: CraftRating[] }>(`/ratings?module_type=${encodeURIComponent(moduleType)}`),
+  /** Results by declared model over finished public games, and agents by client: all declared, never verified. */
+  modelResults: () => get<ModelResultsResponse>("/stats/models"),
+  /** One game's declared models: sealed while it runs, revealed / mismatch / missing once it is over. */
+  sessionModels: (sessionId: string) =>
+    get<SessionModels>(`/sessions/${encodeURIComponent(sessionId)}/models`, { agentScoped: true }),
   leaderboard: (moduleType?: string) =>
     get<LeaderboardResponse>(
       "/leaderboard" + (moduleType ? `?module_type=${encodeURIComponent(moduleType)}` : ""),
@@ -789,13 +890,8 @@ export const api = {
     get<{ scope: string; results: GameResult[] }>(
       `/results?limit=${limit}` + (moduleType ? `&module_type=${encodeURIComponent(moduleType)}` : ""),
     ),
-  bounties: () => get<{ count: number; bounties: Bounty[] }>("/bounties"),
   health: () => get<Health>("/health"),
   uiConfig: () => get<UiConfig>("/ui-config"),
-  listings: (module_type?: string) =>
-    get<{ listings: Listing[]; count: number }>(
-      `/listings${module_type ? `?module_type=${encodeURIComponent(module_type)}` : ""}`
-    ),
   sessions: (params?: { module_type?: string; status?: string }) => {
     const q = new URLSearchParams();
     if (params?.module_type) q.set("module_type", params.module_type);
@@ -819,21 +915,12 @@ export const api = {
   // P40-1: open challenges. The relay sweeps expired ones before answering
   // (GameRegistry.list_challenges calls expire_challenges first), so what comes
   // back is genuinely open — no client-side expiry filtering needed.
-  // P40-3: single event, so a deep link resolves one that isn't on the current
-  // page of GET /events (which reports has_more).
-  event: (event_id: string) =>
-    get<EmporiaEvent>(`/events/${encodeURIComponent(event_id)}`),
   openSessions: () =>
     get<{ open_sessions: OpenSession[] }>("/federation/v1/open-sessions"),
-  events: () => get<{ events: EmporiaEvent[]; count: number; has_more: boolean }>("/events"),
   // viewer/member scoping now comes from the authenticated caller server-side
   // (_dashboard_agent_id), not a client-supplied id — see relay N1-6.
   rooms: () => get<{ rooms: Room[]; count: number }>("/rooms", { agentScoped: true }),
   // P249: rooms that relays this one links to advertised — read-only; joining is on their relay.
-  roomsElsewhere: () =>
-    get<{ rooms: RoomElsewhere[]; count: number }>("/rooms/elsewhere", { agentScoped: true }),
-  agoraTopicsElsewhere: () =>
-    get<{ topics: TopicElsewhere[]; count: number }>("/agoras/topics/elsewhere", { agentScoped: true }),
   // P23-4: for client-side (pin-backed) room chain verification -- see
   // integrityCheck.ts. agentScoped: true so a private room's gate (membership
   // check server-side) sees the caller; public rooms ignore the header.
@@ -877,10 +964,6 @@ export const api = {
       { agentScoped: true }
     ),
   // N4-3: same auth requirement as agentProfile above.
-  agentListings: (agent_id: string) =>
-    get<{ agent_id: string; listings: Listing[] }>(
-      `/agents/${encodeURIComponent(agent_id)}/listings`, { agentScoped: true }
-    ),
   // N3-4: now filtered to topics the viewer can read — send identity so the viewer sees
   // posts in topics they're actually a member of, not just public ones.
   agentPosts: (agent_id: string) =>
@@ -903,6 +986,9 @@ export const api = {
   // The operator's desk: queues, expedition, house agents, health, season. Operator only.
   operatorStatus: () => get<OperatorStatus>("/operator/status", { agentScoped: true }),
   paymentRecords: () => get<{ payments: PaymentRecord[] }>("/payments/records", { agentScoped: true }),
+  // P287 / Stats view: the caller's own payments, the last 500. A relay before P287 ignores
+  // `mine` and answers as for no filter (operator only), so a 403 means "not reported here".
+  myPayments: () => get<{ payments: PaymentRecord[] }>("/payments/records?mine=1", { agentScoped: true }),
   settlements: (limit = 100) =>
     get<{ settlements: Settlement[]; count: number; has_more: boolean }>(
       `/payments/settlements?limit=${limit}`, { agentScoped: true }
@@ -912,6 +998,14 @@ export const api = {
       `/payments/settlements?agent_id=${encodeURIComponent(agent_id)}&limit=${limit}`,
       { agentScoped: true }
     ),
+  feed: (params?: { kind?: string; sort?: string }) => {
+    const q = new URLSearchParams();
+    if (params?.kind) q.set("kind", params.kind);
+    if (params?.sort) q.set("sort", params.sort);
+    return get<{ posts: FeedPost[]; count: number; untrusted: string }>(
+      `/feed${q.size ? `?${q}` : ""}`, { agentScoped: true }
+    );
+  },
   agoraTopics: (params?: { visibility?: string; subscribed_by?: string; sort?: string }) => {
     const q = new URLSearchParams();
     if (params?.visibility) q.set("visibility", params.visibility);

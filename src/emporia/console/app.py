@@ -12,7 +12,9 @@
 Two ways to reach it, and nothing else:
 
 * **socket** — a Unix socket in a 0700 directory; the Hermes dashboard plugin
-  proxies to it after Hermes's own sign-in. File permissions are the gate.
+  proxies to it after Hermes's own sign-in. One console per Hermes profile, serving
+  that profile's agents only, and every request carries the secret the plugin gave
+  it at start (`SECRET_HEADER`): the folder's permissions are not the only gate.
 * **standalone** — 127.0.0.1 only, for agent systems without a dashboard of
   their own. A one-time link sets an HttpOnly, SameSite=Strict cookie; every
   request needs it, and a Host other than localhost is refused (DNS rebinding).
@@ -43,14 +45,23 @@ _MAX_MESSAGES = 200
 _LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
 
 
+def x_link_host(relay_url: str) -> str:
+    from emporia.addresses import host_of
+    return host_of(relay_url)
+
+
 class Console:
     """What the routes share: the key directories, the relay, the session secret."""
 
     def __init__(self, key_dirs: list[Path], relay_url: str, *, session_token: str | None,
-                 transport=None):
+                 socket_secret: str | None = None, transport=None):
         self.key_dirs = key_dirs
         self.relay = RelayClient(relay_url, transport=transport)
         self.session_token = session_token     # None in socket mode
+        # Console scope: in socket mode, the per-start secret the dashboard plugin gave this
+        # process on stdin and presents on every request (SECRET_HEADER). None: no secret
+        # is asked (tests that build the app directly).
+        self.socket_secret = socket_secret
         # P198: the printed link works once; the cookie it sets is a separate
         # secret, so a link seen again (logs, shell history) opens nothing.
         self.link_key: str | None = session_token
@@ -122,9 +133,14 @@ class Console:
         return opened
 
 
-def _authorized(console: Console, cookies: dict[str, str], host: str) -> bool:
+#: Console scope: the header carrying the per-start socket secret (socket mode).
+SECRET_HEADER = "x-emporia-console-secret"
+
+
+def _authorized(console: Console, cookies: dict[str, str], host: str, secret: str = "") -> bool:
     if console.session_token is None:
-        return True                                   # socket mode: the filesystem is the gate
+        # Socket mode: the 0700 folder, and the secret its plugin was given at this start.
+        return console.socket_secret is None or secrets.compare_digest(secret, console.socket_secret)
     name = host.split("]")[0] + "]" if host.startswith("[") else host.rsplit(":", 1)[0]
     if name not in _LOCAL_HOSTS:
         return False
@@ -184,7 +200,8 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
     async def gate(request: Request, call_next):
         if request.url.path == "/session":
             response = await call_next(request)
-        elif not _authorized(console, dict(request.cookies), request.headers.get("host", "")):
+        elif not _authorized(console, dict(request.cookies), request.headers.get("host", ""),
+                             request.headers.get(SECRET_HEADER, "")):
             response = JSONResponse({"detail": "open the console with the link it printed"}, status_code=401)
         else:
             response = await call_next(request)
@@ -224,6 +241,18 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
             raise HTTPException(404, "not a document the dashboard shows")
         return PlainTextResponse((_REPO / path).read_text(encoding="utf-8"),
                                  media_type="text/markdown; charset=utf-8")
+
+    @app.get("/doc-texts")
+    async def doc_texts():
+        """Every listed doc's text in one JSON answer, for the Hermes tab and the
+        Desktop page (whose `ctx.rest` carries JSON only). The same list as /docs."""
+        texts = {}
+        for path in sorted(_doc_paths()):
+            try:
+                texts[path] = (_REPO / path).read_text(encoding="utf-8")
+            except OSError:
+                continue
+        return {"texts": texts}
 
     @app.api_route("/relay/{agent_id}/{path:path}",
                    methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
@@ -283,6 +312,50 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
             return {"agents": agents, "machine": cli.machine_settings(console.relay.relay_url)}
         return await asyncio.to_thread(collect)
 
+    @app.get("/x-claim/{agent_id}")
+    async def x_claim(agent_id: str, handle: str, style: str = "plain"):
+        """The text for the dashboard's "Post on X" button: the agent's signed claim for `handle` in a stock post
+        (`style`), made here with its own key (or through its signer). It sends nothing to the relay or to X and
+        changes nothing on the marketplace: the person opens X's composer with it. The claim is kept in the
+        agent's plugin-data folder so `x_link` can record it once it is posted."""
+        import time as _time
+
+        from emporia import identity, wire, x_link
+        from emporia.console.agents import _SignsInThroughItsSigner, _signer_client, load_identity_key
+        agent = console.agent(agent_id)
+        clean = wire.clean_x_handle(handle)
+        if not clean or style not in x_link.STYLES:
+            raise HTTPException(400, f"handle is an X handle (letters, digits, _; at most 15); style is one of "
+                                     f"{', '.join(x_link.STYLES)}")
+        who = (await console.relay.forward(agent, "GET", f"agents/{agent_id}", "", {}, b"")).json()
+        if "stable_id" not in who:
+            raise HTTPException(502, "the relay did not know this agent")
+        host = x_link_host(console.relay.relay_url)
+        epoch = int(_time.time())
+        payload = wire.signed_x_claim_payload(who["stable_id"], f"{agent_id}@{host}", clean, host, x_link.iso_of(epoch))
+        if why := wire.x_claim_problem(payload):
+            raise HTTPException(400, why)
+        key = await asyncio.to_thread(load_identity_key, agent)
+        if isinstance(key, _SignsInThroughItsSigner):
+            sig = await asyncio.to_thread(
+                _signer_client(agent).sign, "x-claim",
+                [who["stable_id"], payload["agent"], clean, host, payload["issued_at"]], {})
+            pub = who.get("public_key_hex", "")
+        else:
+            sig = identity.sign_payload(key, payload)
+            pub = key.public_key().public_bytes_raw().hex()
+        line = x_link.encode_line(agent_id, host, epoch, sig)
+        made = {"handle": clean, "line": line, "token": x_link.parse_line(line)["token"], "address": payload["agent"],
+                "stable_id": who["stable_id"], "relay_host": host, "issued_at": payload["issued_at"],
+                "public_key": pub}
+        profile = agent.key_dir.parent.parent.parent
+        if len(agent.key_dir.parts) >= 4 and (profile / "config.yaml").is_file():
+            x_link.remember_claim(agent_id, clean, made, profile / "plugin-data" / "emporia")
+        try:
+            return x_link.describe_claim(made, style)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
     @app.get("/verify/{agent_id}/{session_id}")
     async def verify(agent_id: str, session_id: str):
         """P146: check a game here, on this machine — not the relay's word for
@@ -331,7 +404,8 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
     async def ws(socket: WebSocket, agent_id: str, path: str):
         import websockets
 
-        if not _authorized(console, dict(socket.cookies), socket.headers.get("host", "")):
+        if not _authorized(console, dict(socket.cookies), socket.headers.get("host", ""),
+                           socket.headers.get(SECRET_HEADER, "")):
             await socket.close(code=1008)
             return
         agent = console.agents().get(agent_id)
@@ -339,10 +413,12 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
             await socket.close(code=1008)
             return
         query = {k: v for k, v in socket.query_params.items() if k not in ("token", "agent_id")}
-        query.update({"agent_id": agent.agent_id, "token": await console.relay.token(agent)})
+        query.update({"agent_id": agent.agent_id})
+        from emporia.agent_sdk import ws_subprotocols
+        subprotocols = ws_subprotocols(await console.relay.token(agent))
         await socket.accept()
         try:
-            async with websockets.connect(console.relay.ws_url(path, query)) as upstream:
+            async with websockets.connect(console.relay.ws_url(path, query), subprotocols=subprotocols) as upstream:
                 async def down():
                     async for msg in upstream:
                         await (socket.send_text(msg) if isinstance(msg, str)

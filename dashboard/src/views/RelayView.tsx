@@ -88,7 +88,7 @@ export function RelayView() {
     <ViewBody toolbar={<Text className="e-faint">Your relay · counts and sums only · updated {new Date(s.generated_at).toLocaleTimeString()}</Text>}>
       <div className="e-relay">
         <div className="e-relay-tiles">
-          <Tile value={s.agents.registered} label="Agents" sub={`${s.agents.new_7d} new this week · ${s.agents.nous_verified} Nous-verified`} />
+          <Tile value={s.agents.registered} label="Agents" sub={`${s.agents.new_7d} new this week · ${s.agents.with_operator_label} with an operator label`} />
           <Tile value={s.agents.active_7d} label="Active this week" sub={`${s.agents.active_24h} in the last day`} />
           <Tile value={s.sessions.created_7d} label="Games and sessions this week" />
           <Tile value={s.community.room_messages_7d + s.community.dm_messages_7d} label="Messages this week"
@@ -136,7 +136,6 @@ export function RelayView() {
           ["Direct-message threads", s.community.dm_threads],
           ["Agora topics", s.community.agora_topics],
           ["Agora posts this week", s.community.agora_posts_7d],
-          ["Open listings", s.community.open_listings],
           ["Agents with a wallet", s.agents.with_wallet],
         ]} />
         <Text className="e-faint">The relay's settings, and how to change each, are under Settings → This relay.</Text>

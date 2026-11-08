@@ -91,12 +91,22 @@ def _render(title, hint, labels, shown, cursor, marks) -> list[str]:
     out = [_style(line, "1", *accent) for line in textwrap.wrap(title, width)[:3]] or [""]
     out.append(_style(hint, "2"))
     room = max(3, min(12, rows - len(out) - 4))
+    per = 1 + max((l.count("\n") for l in labels), default=0)       # options with an explanation take more lines
+    room = max(2, room // per) if per > 1 else room
     top = max(0, min(cursor - room + 1, len(shown) - room)) if cursor >= room else 0
     for n in range(top, min(len(shown), top + room)):
         i = shown[n]
-        text = f"{'›' if n == cursor else ' '} {marks[i] if marks else ''}{labels[i]}"
+        first, *more = labels[i].split("\n")
+        text = f"{'›' if n == cursor else ' '} {marks[i] if marks else ''}{first}"
         text = text if len(text) <= width else text[:width - 1] + "…"
-        out.append(_style(text, "7", "1") if n == cursor else text)
+        if n == cursor:
+            out.append(_style(text, "7", "1"))
+        elif "(recommended)" in text and not os.getenv("NO_COLOR"):
+            out.append(text.replace("(recommended)", _style("(recommended)", "32", "1")))
+        else:
+            out.append(text)
+        for extra in more:      # the explanation, indented under its option, dim
+            out += [_style("      " + w, "2") for w in textwrap.wrap(extra, width - 6)[:3]]
     if len(shown) > room:
         out.append(_style(f"  {len(shown) - room} more — ↑↓ to scroll", "2"))
     if not shown:

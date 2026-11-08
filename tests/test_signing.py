@@ -8,6 +8,14 @@ import pytest
 from emporia import identity, signing, wire
 
 SRC = Path(signing.__file__).parent
+PERSON_SIGNED = ("signed_key_recovery_payload",)
+
+
+def test_no_verdict_is_an_agent_kind():
+    """There is no operator verdict on an idea any more: an idea is adopted by a maintainer's lab report."""
+    assert "idea-verdict" not in signing.KINDS and not hasattr(wire, "signed_idea_verdict_payload")
+    with pytest.raises(signing.Refused, match="no rule"):
+        signing.sign("p293-agent", "idea-verdict", "pst_1", "adopted", "abc1234", "", "e2e", "k", "t")
 
 
 def ctx(**env):
@@ -17,7 +25,7 @@ def ctx(**env):
 def test_every_wire_builder_an_agent_signs_has_a_rule():
     built = {k.builder for k in signing.KINDS.values() if k.builder}
     agent_signed = {n for n, _ in inspect.getmembers(wire, inspect.isfunction)
-                    if n.startswith("signed_") and n not in ("signed_key_recovery_payload",)}
+                    if n.startswith("signed_") and n not in PERSON_SIGNED}
     # what the agent signs is in the table; the recovery step is signed by the person's offline key
     assert agent_signed - built == set(), sorted(agent_signed - built)
 
@@ -36,7 +44,7 @@ def test_who_the_agent_is_stays_its_persons(kind):
 
 
 def test_routine_kinds_sign_at_once_with_no_one_asked():
-    for kind in ("move", "room-message", "dm", "agora-post", "listing", "session-join", "room-leave", "removal"):
+    for kind in ("move", "room-message", "dm", "session-join", "room-leave", "removal"):
         signing.check(kind, {}, ctx())
 
 
@@ -91,7 +99,10 @@ def test_the_same_bytes_as_before(tmp_path, monkeypatch):
     assert sig == identity.sign(p, "p293-signer")
     assert identity.verify(p, sig, identity.generate_or_load_keypair("p293-signer")[1].hex())
     nonce = "ab" * 16
-    assert signing.sign_in("p293-signer", nonce) == identity.sign_challenge_nonce(nonce, "p293-signer")
+    pub = identity.generate_or_load_keypair("p293-signer")[1].hex()
+    sig_in = signing.sign_in("p293-signer", nonce, "https://relay.example", pub)
+    assert identity.verify(wire.signed_registration_payload(nonce, "https://relay.example", "p293-signer", pub),
+                           sig_in, pub)
 
 
 def _calls(path: Path) -> list[str]:
@@ -99,9 +110,9 @@ def _calls(path: Path) -> list[str]:
     out = []
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == "emporia.identity":
-            out += [f"import {a.name}" for a in node.names if a.name in ("sign", "sign_raw", "sign_challenge_nonce")]
+            out += [f"import {a.name}" for a in node.names if a.name in ("sign", "sign_raw")]
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "identity" \
-                and node.attr in ("sign", "sign_raw", "sign_challenge_nonce"):
+                and node.attr in ("sign", "sign_raw"):
             out.append(f"identity.{node.attr}")
     return out
 
@@ -112,25 +123,13 @@ def test_the_agent_signs_only_through_signing(module):
 
 
 def test_every_id_emporia_derives_is_sha256(tmp_path):
-    """P294: agent ids, recovery commitments and listing ids are SHA-256 with v2 labels — one hash for
+    """P294: agent ids and recovery commitments are SHA-256 with v2 labels — one hash for
     everything Emporia chooses — and a relay holding agents from before refuses to start."""
     import hashlib
-    import sqlite3
 
-    from emporia import relay_server as rs
     key = "ab" * 32
     assert wire.stable_id_for(key) == hashlib.sha256(b"emporia:agent:v2:" + bytes.fromhex(key)).hexdigest()
     assert wire.recovery_commitment_for(key) == hashlib.sha256(
         b"emporia:recovery:v2:" + bytes.fromhex(key)).hexdigest()
-    assert wire.listing_id_for("sid", "n1") == "lst_" + hashlib.sha256(b"emporia:listing:v2:sid:n1").hexdigest()[:32]
     for name in ("wire.py", "identity.py", "relay_server.py"):
         assert "sha3_256(" not in (SRC / name).read_text(), name
-    old = sqlite3.connect(tmp_path / "old.sqlite3")
-    old.execute("CREATE TABLE authorized_agents (agent_id TEXT)")
-    old.execute("INSERT INTO authorized_agents VALUES ('alpha')")
-    old.execute("PRAGMA user_version = 29")
-    with pytest.raises(RuntimeError, match="SHA3-256 ids"):
-        rs._assert_ids_are_sha256(old)
-    empty = sqlite3.connect(tmp_path / "empty.sqlite3")
-    empty.execute("PRAGMA user_version = 29")
-    rs._assert_ids_are_sha256(empty)                                  # nothing to keep: nothing refused

@@ -8,7 +8,17 @@ from fastapi.testclient import TestClient
 from emporia import wire
 from emporia.identity import sign
 from emporia.relay_server import app
-from tests.test_emporia import _register_keyed, _signed_listing, _signed_post, _signed_room
+from tests.topic_posts import v2_post
+from tests.test_emporia import _register_keyed, _send_dm_raw, _signed_room
+
+
+from tests.ids import stable_of  # noqa: E402
+
+
+def _stable_of(agent: str) -> str:
+    """The stable id of a test agent that never rotated: the hash of its key."""
+    from emporia import identity, wire
+    return wire.stable_id_for(identity.get_public_key_hex(agent))
 
 
 @pytest.fixture
@@ -25,7 +35,7 @@ def _delete(client, agent, kind, item, *, by=None, signer=None, at=None):
     by = by or agent
     return client.post("/delete", headers=_h(agent), json={
         "kind": kind, "item": item, "by": by, "at": at,
-        "signature": sign(wire.signed_delete_payload(kind, item, by, at), signer or agent)})
+        "signature": sign(wire.signed_delete_payload(kind, item, _stable_of(agent), at), signer or agent)})
 
 
 def _db(sql, *args):
@@ -38,8 +48,7 @@ def _topic_and_post(client, owner, author):
     slug = client.post("/agoras/topics", json={"name": f"T {owner}", "description": "d"},
                        headers=_h(owner)).json()["slug"]
     client.post(f"/agoras/topics/{slug}/subscribe", json={}, headers=_h(author))
-    post = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post(author, slug, {"title": "secret title", "content": "secret body"}),
-                       headers=_h(author)).json()["post_id"]
+    post = v2_post(client, author, slug, "secret title\nsecret body").json()["post_id"]
     return slug, post
 
 
@@ -47,11 +56,11 @@ def test_an_author_removes_a_post_and_its_text_is_gone(client):
     for a in ("dl_owner", "dl_author", "dl_stranger"):
         _register_keyed(client, a)
     slug, post = _topic_and_post(client, "dl_owner", "dl_author")
-    assert _delete(client, "dl_stranger", "agora_post", post).status_code == 403
-    r = _delete(client, "dl_author", "agora_post", post)
+    assert _delete(client, "dl_stranger", "post", post).status_code == 403
+    r = _delete(client, "dl_author", "post", post)
     assert r.status_code == 200 and r.json()["removed"]["role"] == "author"
-    row = _db("SELECT title, content, is_deleted FROM agora_posts WHERE post_id = ?", post)
-    assert (row["title"], row["content"], row["is_deleted"]) == ("", "", 1)
+    row = _db("SELECT text, is_deleted FROM posts WHERE post_id = ?", post)
+    assert (row["text"], row["is_deleted"]) == ("", 1)
     assert client.get(f"/agoras/posts/{post}", headers=_h("dl_owner")).status_code == 404
     assert _db("SELECT role, deleted_by FROM deletions WHERE item = ?", post)["deleted_by"] == "dl_author"
 
@@ -60,26 +69,28 @@ def test_a_moderator_and_the_operator_may_remove_others_posts(client, monkeypatc
     for a in ("dm_owner", "dm_poster", "dm_op"):
         _register_keyed(client, a)
     slug, post = _topic_and_post(client, "dm_owner", "dm_poster")
-    assert _delete(client, "dm_owner", "agora_post", post).json()["removed"]["role"] == "moderator"
+    assert _delete(client, "dm_owner", "post", post).json()["removed"]["role"] == "moderator"
     _, post2 = _topic_and_post(client, "dm_poster", "dm_poster")
-    monkeypatch.setenv("EMPORIA_AGENT_ID", "dm_op")
-    assert _delete(client, "dm_op", "agora_post", post2).json()["removed"]["role"] == "operator"
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("dm_op"))
+    assert _delete(client, "dm_op", "post", post2).json()["removed"]["role"] == "operator"
 
 
 def test_a_removal_must_be_signed_by_the_one_asking_and_fresh(client):
     for a in ("ds_author", "ds_other"):
         _register_keyed(client, a)
     _, post = _topic_and_post(client, "ds_author", "ds_author")
-    assert _delete(client, "ds_author", "agora_post", post, signer="ds_other").status_code == 403
+    assert _delete(client, "ds_author", "post", post, signer="ds_other").status_code == 403
     stale = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
-    assert _delete(client, "ds_author", "agora_post", post, at=stale).status_code == 400
+    assert _delete(client, "ds_author", "post", post, at=stale).status_code == 400
 
 
 def _room_message(client, room_id, sender, content):
+    from emporia import room_post
     nonce = wire.new_message_nonce()
+    content = room_post.canonical(room_post.body("note", content))
     r = client.post(f"/rooms/{room_id}/message", headers=_h(sender), json={
-        "content": content, "msg_type": "chat", "nonce": nonce,
-        "signature": sign(wire.signed_room_message_payload(room_id, content, "chat", nonce), sender)})
+        "content": content, "msg_type": "note", "nonce": nonce,
+        "signature": sign(wire.signed_room_message_payload(room_id, content, "note", nonce, _stable_of(sender)), sender)})
     assert r.status_code == 200, r.text
     return r.json()["message_id"]
 
@@ -121,27 +132,21 @@ def test_a_dm_author_removes_their_message_and_the_dm_chain_still_checks(client)
     for text in ("hello", "oops"):
         nonce = wire.new_message_nonce()
         nonces.append(nonce)
-        client.post(f"/dm/{thread}/send", headers=_h("dd_a"), json={
-            "content": text, "msg_type": "chat", "nonce": nonce,
-            "signature": sign(wire.signed_dm_thread_payload(thread, text, "chat", nonce), "dd_a")})
+        _send_dm_raw(client, thread, "dd_a", text, nonce=nonce)
     assert _delete(client, "dd_b", "dm_message", f"{thread}/{nonces[1]}").status_code == 403   # not theirs
     assert _delete(client, "dd_a", "dm_message", f"{thread}/{nonces[1]}").status_code == 200
     assert _verify_dm_chain(thread).ok
     msgs = client.get(f"/dm/{thread}/messages", params={"agent_id": "dd_b"}, headers=_h("dd_b")).json()["messages"]
-    assert [m["content"] for m in msgs if not m["deleted_at"]] == ["hello"]
+    assert [m["text"] for m in msgs if not m["deleted_at"]] == ["hello"]
 
 
 def test_listings_and_game_chat_and_topics(client):
     for a in ("dx_seller", "dx_owner"):
         _register_keyed(client, a)
-    listing = client.post("/listings", json=_signed_listing(client, "dx_seller", "Lessons"),
-                          headers=_h("dx_seller")).json()["listing_id"]
-    assert _delete(client, "dx_seller", "listing", listing).status_code == 200
-    assert _db("SELECT 1 FROM listings WHERE listing_id = ?", listing) is None
     slug, post = _topic_and_post(client, "dx_owner", "dx_owner")
     assert _delete(client, "dx_owner", "agora_topic", slug).json()["removed"]["role"] == "owner"
     assert client.get(f"/agoras/topics/{slug}", headers=_h("dx_owner")).status_code == 404
-    assert _db("SELECT content FROM agora_posts WHERE post_id = ?", post)["content"] == ""
+    assert _db("SELECT text FROM posts WHERE post_id = ?", post)["text"] == ""
 
 
 def test_the_agent_tool_signs_its_own_removal(client, monkeypatch):
@@ -152,7 +157,7 @@ def test_the_agent_tool_signs_its_own_removal(client, monkeypatch):
                         lambda method, url, **kw: getattr(client, method)(
                             "/" + url.split("/", 3)[3], headers=_h("dt_agent"),
                             **{k: v for k, v in kw.items() if k in ("json", "params")}))
-    out = mcp_server.delete_item("agora_post", post, agent_id="dt_agent")
+    out = mcp_server.delete_item("post", post, agent_id="dt_agent")
     assert out["success"] and out["removed"]["by"] == "dt_agent"
 
 
@@ -169,13 +174,10 @@ def test_a_relay_can_erase_dm_content_after_a_stated_number_of_days(client, monk
     thread = client.post("/dm/start", json={"to_agent": "dr_b", "encrypted": False},
                          headers=_h("dr_a")).json()["thread_id"]
     for text in ("old news", "fresh"):
-        nonce = wire.new_message_nonce()
-        client.post(f"/dm/{thread}/send", headers=_h("dr_a"), json={
-            "content": text, "msg_type": "chat", "nonce": nonce,
-            "signature": sign(wire.signed_dm_thread_payload(thread, text, "chat", nonce), "dr_a")})
+        _send_dm_raw(client, thread, "dr_a", text)
     with rs.get_db() as conn:     # the first one is 40 days old
         conn.execute("UPDATE dm_messages SET created_at = '2026-01-01T00:00:00+00:00' WHERE thread_id = ? "
-                     "AND content = 'old news'", (thread,))
+                     "AND json_extract(content, '$.text') = 'old news'", (thread,))
     assert rs._expire_dm_content() == 0                         # off by default
     assert client.get("/health").json()["dm_retention_days"] == 0
     monkeypatch.setenv("EMPORIA_DM_RETENTION_DAYS", "30")
@@ -184,7 +186,7 @@ def test_a_relay_can_erase_dm_content_after_a_stated_number_of_days(client, monk
     assert rs._expire_dm_content() == 0                         # once
     assert _verify_dm_chain(thread).ok
     msgs = client.get(f"/dm/{thread}/messages", params={"agent_id": "dr_b"}, headers=_h("dr_b")).json()["messages"]
-    assert [m["content"] for m in msgs] == ["", "fresh"]
+    assert [m["text"] if m["content"] else "" for m in msgs] == ["", "fresh"]
     assert msgs[0]["removed"]["role"] == "expired" and msgs[0]["removed"]["signature"] == ""
     with patch.dict("os.environ", {"EMPORIA_DM_RETENTION_DAYS": "nonsense"}):
         assert deletion.dm_retention_days() == 0

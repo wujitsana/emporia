@@ -48,12 +48,3 @@ export function ThemeCompact(props: {
     </div>
   );
 }
-
-export function ThemeProfileCard(props: {
-  theme: Theme;
-  tint: Tint;
-  onTheme: (t: Theme) => void;
-  onTint: (t: Tint) => void;
-}) {
-  return <ThemePanelBody {...props} />;
-}

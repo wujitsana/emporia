@@ -56,16 +56,10 @@ body.theme-light {
 
 .e-dim   { opacity: 0.5; }
 .e-faint { opacity: 0.35; }
-
-.e-trust-verified {
-  background: var(--theme-focused-foreground);
-  color: var(--theme-background);
-}
 .e-trust-key { opacity: 0.55; }
 
 /* Master-detail selection indicator */
 .e-sel   { border-left: 2px solid var(--theme-focused-foreground); padding-left: 8px; }
-.e-unsel { border-left: 2px solid transparent; padding-left: 8px; }
 
 .e-status-txt {
   font-size: 0.682rem;
@@ -75,59 +69,23 @@ body.theme-light {
 
 /* ─── 3. APP SHELL LAYOUT ────────────────────────────────────────────────── */
 
+/* The app is one frame: the header, the section strip, the view (which
+   scrolls) and the chat drawer all live inside it, and so does every overlay
+   (the phone menu and its backdrop, full-page chat, popovers). `contain:
+   layout paint` makes the frame the containing block of anything positioned
+   inside it, so nothing reaches past it into the page around it: inside the
+   Hermes tab the frame is the tab's own container (hermesPlugin.tsx sizes it to
+   what is visible, --e-frame-h: 100%), on the Desktop page the page's pane,
+   standalone the window. */
 .e-app-shell {
   display: flex;
-  min-height: 100vh;
+  height: var(--e-frame-h, 100dvh);
+  min-height: 0;
   width: 100%;
   max-width: 100%;
   position: relative;
-  overflow-x: clip;
-}
-
-/* Old left-sidebar layout — kept for non-header-nav mode */
-.e-app-sidebar {
-  flex-shrink: 0;
-  width: clamp(12rem, 22ch, 100%);
-  max-width: 20rem;
-  border-right: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-  height: 100vh;
-  min-height: 100vh;
-  position: sticky;
-  top: 0;
-  align-self: stretch;
-  background: var(--theme-background);
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
-}
-
-.e-app-shell--header-nav .e-app-sidebar { display: none; }
-
-.e-sidebar-inner {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-  overflow: hidden;
-}
-.e-sidebar-head { flex-shrink: 0; }
-
-.e-sidebar-nav {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px 0 8px;
-  overflow-y: auto;
-}
-
-.e-nav-row-label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  width: 100%;
+  contain: layout paint;
 }
 .e-nav-row-hotkey { font-size: 0.715rem; opacity: 0.5; font-variant-numeric: tabular-nums; }
 
@@ -139,24 +97,6 @@ body.theme-light {
   opacity: 0.45;
   padding: 6px 10px 4px;
   user-select: none;
-}
-
-.e-sidebar-fill {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 8px 8px 10px;
-  overflow-y: auto;
-  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-}
-
-.e-sidebar-keys { display: flex; flex-direction: column; gap: 6px; }
-.e-sidebar-keys__grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
 }
 .e-sidebar-key {
   display: flex;
@@ -175,47 +115,11 @@ body.theme-light {
 .e-sidebar-key:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
 .e-sidebar-key__k { opacity: 0.55; font-variant-numeric: tabular-nums; }
 
-.e-sidebar-foot {
-  flex-shrink: 0;
-  position: relative;
-  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-}
-.e-sidebar-foot--minimal { padding: 10px 12px; }
-
-.e-theme-panel {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  right: 0;
-  z-index: 5;
-  background: var(--theme-background);
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));
-  border-bottom: none;
-  padding: 14px 12px 16px;
-  box-shadow: 0 -12px 28px rgba(0,0,0,0.25);
-}
-.e-theme-panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.e-theme-panel__title  { font-size: 0.715rem; letter-spacing: 0.08em; }
-.e-theme-panel__label  { font-size: 0.66rem; letter-spacing: 0.1em; margin-bottom: 8px; display: block; }
-.e-theme-panel__modes  { display: flex; gap: 10px; }
-.e-theme-panel__rule   { height: 1px; margin: 14px 0 12px; background: var(--theme-border-subdued, rgba(255,255,255,0.1)); }
-.e-theme-panel__tints  {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 14px;
-  justify-content: flex-start;
-  padding-top: 2px;
-}
-
 .e-app-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   max-width: 100%;
   display: flex;
   flex-direction: column;
@@ -265,27 +169,16 @@ body.theme-light {
 .e-brand-title { font-size: 1.155rem !important; letter-spacing: 0.06em; }
 .e-brand-title--header { font-size: 1.1rem; font-weight: 600; }
 
-.e-topbar-title {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  min-width: 0;
-}
-.e-topbar-icon { font-size: 1.485rem; line-height: 1; color: var(--theme-focused-foreground); margin-top: 2px; }
-.e-topbar-blurb { font-size: 0.748rem !important; max-width: 42ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-/* Section tabs — desktop horizontal nav */
+/* Destinations (nav v2): six tabs in the header row, beside the brand. */
 .e-section-tabs {
   display: none;
   gap: 2px;
-  padding: 0 12px 8px;
   overflow-x: auto;
   max-width: 100%;
   box-sizing: border-box;
 }
 @media (min-width: 901px) {
-  .e-section-tabs { display: flex; flex-wrap: wrap; }
-}
+  .e-section-tabs--horizontal { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; }}
 
 .e-section-tab {
   display: inline-flex;
@@ -363,10 +256,6 @@ body.theme-light {
   height: 100%;
   padding: 16px 12px;
 }
-.e-mobile-drawer__theme {
-  padding-top: 12px;
-  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-}
 
 /* ─── 6. VIEW BODY ───────────────────────────────────────────────────────── */
 
@@ -440,19 +329,6 @@ body.theme-light {
 .e-rail-item:focus-visible { outline: none; }
 .e-rail-item:focus-visible { color: var(--theme-focused-foreground); }
 
-/* Legacy ActionListItem in sidebar — flatten it */
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_icon"] { display: none !important; }
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_text"] {
-  background: transparent !important;
-  padding: 6px 8px 6px 10px !important;
-}
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_item"] {
-  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05));
-}
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_item"]:hover [class*="ActionListItem_icon"],
-.e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="ActionListItem_item"]:focus [class*="ActionListItem_icon"] {
-  background: transparent !important;
-}
 .e-dashboard-shell [class*="SidebarLayout_sidebar"] [class*="Badge_root"] {
   background: transparent !important;
   padding: 0 !important;
@@ -536,11 +412,6 @@ body.theme-light {
   font-family: var(--font-family-mono, ui-monospace, monospace);
 }
 .e-meta-grid dd { margin: 0; font-size: 0.858rem; word-break: break-word; }
-.e-meta-grid--inline {
-  margin-top: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-}
-.e-meta-grid--inline .e-meta-grid__row { grid-template-columns: 1fr; gap: 2px; }
 
 /* Empty pane */
 .e-empty-pane {
@@ -595,10 +466,6 @@ body.theme-light {
   display: block;
   font-size: 0.7rem;
   margin-bottom: 6px;
-}
-.e-chess-meta {
-  width: 100%;
-  margin-top: 4px;
 }
 
 .e-chess-players {
@@ -769,7 +636,7 @@ body.theme-light {
   gap: 12px;
   margin-bottom: 24px;
 }
-@media (min-width: 720px) { .e-hero-stats { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 720px) { .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}
 
 .e-hero-stat {
   padding: 16px 18px;
@@ -794,15 +661,6 @@ body.theme-light {
 .e-hero-stat--accent .e-hero-stat__value { color: var(--theme-focused-foreground); }
 .e-hero-stat__label { font-size: 0.715rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; }
 .e-hero-stat__hint  { font-size: 0.748rem; opacity: 0.4; }
-.e-hero-stats--clickable .e-hero-stat {
-  cursor: pointer;
-  border: 1px solid transparent;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-}
-.e-hero-stats--clickable .e-hero-stat:hover { border-color: var(--theme-focused-foreground); }
-.e-hero-stat--status { cursor: default; }
 
 /* MCP command hint — "show the tool call" write-action affordance */
 .e-mcp-hint {
@@ -823,7 +681,6 @@ body.theme-light {
   word-break: break-all;
 }
 .e-mcp-hint__code:hover { text-decoration: underline; }
-.e-mcp-hint__copied { font-size: 0.682rem; opacity: 0.7; }
 
 /* Rail chips (payment rail badges) */
 .e-rail-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -849,7 +706,6 @@ body.theme-light {
   background: transparent !important;
   white-space: nowrap;
 }
-.e-status-pill--on { color: var(--theme-focused-foreground); border-color: var(--theme-focused-foreground); }
 .e-status-pill--off { opacity: 0.45; }
 
 /* ─── 9. OVERVIEW ────────────────────────────────────────────────────────── */
@@ -879,9 +735,9 @@ body.theme-light {
   margin-bottom: 20px;
   min-width: 0;
 }
-@media (min-width: 560px)  { .e-overview-hub { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (min-width: 900px)  { .e-overview-hub { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-@media (min-width: 1300px) { .e-overview-hub { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@media (min-width: 560px)  { .e-overview-hub { grid-template-columns: repeat(3, minmax(0, 1fr)); }}
+@media (min-width: 900px)  { .e-overview-hub { grid-template-columns: repeat(4, minmax(0, 1fr)); }}
+@media (min-width: 1300px) { .e-overview-hub { grid-template-columns: repeat(5, minmax(0, 1fr)); }}
 
 .e-overview-card {
   display: flex;
@@ -908,7 +764,8 @@ body.theme-light {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 2px 6px;
   margin-bottom: 6px;
   min-width: 0;
 }
@@ -956,33 +813,6 @@ body.theme-light {
   white-space: nowrap;
 }
 
-.e-dashboard-layout {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 1rem;
-  align-items: start;
-}
-@media (min-width: 1100px) { .e-dashboard-layout { grid-template-columns: 1.35fr 1fr; } }
-
-.e-grid-stats {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1px;
-  background: var(--theme-border-subdued, rgba(255,255,255,0.06));
-}
-@media (min-width: 600px) { .e-grid-stats { grid-template-columns: repeat(3, 1fr); } }
-
-/* Nav card grid (classic layout, still rendered in overview) */
-.e-grid-nav-cards {
-  display: grid;
-  grid-template-columns: repeat(1, 1fr);
-  gap: 10px;
-}
-@media (min-width: 480px)  { .e-grid-nav-cards { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 768px)  { .e-grid-nav-cards { grid-template-columns: repeat(3, 1fr); } }
-@media (min-width: 1200px) { .e-grid-nav-cards { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1400px) { .e-grid-nav-cards { grid-template-columns: repeat(3, 1fr); } }
-
 .e-nav-card {
   display: flex;
   flex-direction: column;
@@ -1001,10 +831,6 @@ body.theme-light {
 .e-nav-card:hover,
 .e-nav-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
 .e-nav-card[data-active="true"] { border-color: var(--theme-focused-foreground); box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }
-.e-nav-card__head { display: flex; width: 100%; align-items: center; gap: 10px; }
-.e-nav-card__icon { font-size: 1.375rem; line-height: 1; flex-shrink: 0; }
-.e-nav-card__caption { font-size: 0.792rem; line-height: 1.3; }
-.e-nav-card__blurb  { font-size: 0.792rem; line-height: 1.35; }
 .e-nav-card__hotkey {
   position: absolute;
   top: 10px; right: 10px;
@@ -1014,47 +840,9 @@ body.theme-light {
   padding: 2px 5px;
 }
 
-.e-stat-tile {
-  padding: 16px 20px 14px;
-  background: var(--theme-background);
-  border: none;
-  cursor: default;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  text-align: left;
-  color: inherit;
-  font: inherit;
-}
-.e-stat-tile[data-clickable] { cursor: pointer; }
-.e-stat-tile[data-clickable]:hover { outline: 1px solid var(--theme-focused-foreground); outline-offset: -1px; }
-
 /* Stat strip */
 .e-stat-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-.e-stat-strip__item {
-  padding: 8px 14px;
-  border-radius: 0;
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-  background: transparent !important;
-}
-.e-stat-strip__item--link { cursor: pointer; font: inherit; color: inherit; }
-.e-stat-strip__item--link:hover { border-color: var(--theme-focused-foreground); }
-.e-stat-strip__item--link:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: 2px; }
-.e-stat-strip__val { font-size: 1.1rem; font-weight: 600; display: block; }
 .e-stat-strip__lbl { font-size: 0.682rem; opacity: 0.55; }
-
-.e-nav-row-meta { display: inline-flex; align-items: center; gap: 6px; }
-.e-nav-metric {
-  font-size: 0.682rem;
-  font-variant-numeric: tabular-nums;
-  padding: 1px 6px;
-  background: transparent;
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1));
-  color: var(--theme-focused-foreground);
-  max-width: 5ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* Live event feed */
 .e-feed-panel { max-height: min(70vh, 520px); overflow-y: auto; }
@@ -1090,59 +878,13 @@ body.theme-light {
 .e-feed-detail  { font-size: 0.902rem !important; }
 .e-feed-time    { font-size: 0.748rem !important; font-variant-numeric: tabular-nums; }
 .e-feed-jump    { font-size: 0.715rem !important; opacity: 0.45; margin-top: 4px; }
-.e-feed-count   { font-variant-numeric: tabular-nums; }
-
-/* Shortcut list (overview shortcuts panel) */
-.e-shortcut-list { list-style: none; margin: 0; padding: 0; }
-.e-shortcut-row {
-  display: grid;
-  grid-template-columns: 28px 1fr auto 28px;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border: none;
-  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.e-shortcut-row:hover { background: transparent; }
-.e-shortcut-row__icon    { opacity: 0.9; }
-.e-shortcut-row__label   { font-weight: 500; font-size: 0.902rem; }
-.e-shortcut-row__metric  { font-size: 0.748rem; color: var(--theme-text-subdued, #888); text-align: right; }
-.e-nav-kbd {
-  font-family: inherit;
-  font-size: 0.682rem;
-  padding: 2px 5px;
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.15));
-  opacity: 0.7;
-  text-align: center;
-}
-.e-panel-hint     { font-size: 0.682rem !important; }
-.e-panel-footnote { display: block; font-size: 0.748rem; margin-top: 12px; }
 
 /* ─── 10. THEME PICKER ───────────────────────────────────────────────────── */
 
 .e-theme-compact { position: relative; }
 .e-theme-compact--inline { display: flex; align-items: center; }
-.e-theme-compact__btn { padding: 4px; border: none; background: transparent; cursor: pointer; }
+/* Fixed, but inside the frame's `contain: layout paint`: it covers the frame, never the page around it. */
 .e-theme-compact__backdrop { position: fixed; inset: 0; z-index: 200; border: 0; background: transparent; }
-.e-theme-compact__pop {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 210;
-  padding: 10px 12px;
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12));
-  background: var(--theme-background);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  width: max-content;
-}
-
-.e-theme-picker--mini { flex-direction: row; align-items: center; gap: 8px; }
 
 .e-theme-duo {
   display: inline-flex;
@@ -1184,55 +926,6 @@ body.theme-light {
 .e-theme-circle--mode[data-mode="theme-light"] { background: #f2f2f2; }
 .e-theme-circle--mode[data-mode="theme-dark"]  { background: #121212; }
 .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
-
-.e-accent-row   { display: flex; flex-wrap: wrap; gap: 4px; }
-.e-accent-dot {
-  width: 22px; height: 22px;
-  padding: 0;
-  border: 2px solid transparent;
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.e-accent-dot span { width: 12px; height: 12px; border-radius: 50%; display: block; flex-shrink: 0; }
-.e-accent-dot.is-active { border-color: var(--theme-focused-foreground); }
-.e-accent-dot--inline span { width: 10px; height: 10px; }
-
-.e-accent-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-.e-accent-swatch {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 4px;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.638rem;
-  color: inherit;
-}
-.e-accent-swatch.is-active { border-color: var(--theme-focused-foreground); }
-.e-accent-swatch__dot { width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2); }
-.e-accent-swatch__dot--sm { width: 12px; height: 12px; }
-.e-accent-swatch__name { opacity: 0.75; }
-
-/* Dark/light pill toggle */
-.e-mode-toggles {
-  display: flex;
-  background: var(--theme-border-subdued, rgba(255,255,255,0.08));
-  border-radius: 20px;
-  padding: 2px;
-  gap: 2px;
-}
 .e-mode-toggle {
   width: 26px; height: 26px;
   padding: 0;
@@ -1256,111 +949,8 @@ body.theme-light {
   color: var(--theme-focused-foreground);
   box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
-
-.e-tint-swatch {
-  width: 14px; height: 14px;
-  border-radius: 50%;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  flex-shrink: 0;
-  outline: 2px solid transparent;
-  outline-offset: 2px;
-}
-.e-tint-swatch:hover,
-.e-tint-swatch:focus-visible { outline-color: var(--theme-text, #fff); }
-.e-tint-swatch[aria-pressed="true"] { outline-color: var(--theme-focused-foreground); }
-.e-tint-swatch--inline { width: 10px; height: 10px; pointer-events: none; vertical-align: middle; }
-
-.e-theme-tints--footer { padding: 0; margin: 0; }
-.e-theme-picker { display: flex; flex-direction: column; gap: 10px; }
-.e-theme-picker--mini { flex-direction: row; align-items: center; gap: 10px; }
-.e-theme-picker__label { display: block; font-size: 0.682rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.6; margin-bottom: 6px; }
-.e-theme-tints--profile {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 8px;
-}
-.e-tint-swatch--labeled { position: relative; height: 36px; border-radius: 4px; border: 2px solid transparent; }
-.e-tint-swatch--labeled[aria-pressed="true"] { border-color: var(--theme-focused-foreground); }
-.e-tint-swatch__label {
-  position: absolute;
-  inset: auto 4px 3px 4px;
-  font-size: 0.605rem;
-  text-align: center;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
-  pointer-events: none;
-}
-
-.e-sidebar-theme-trigger {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border: none;
-  border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  text-align: left;
-}
-.e-sidebar-theme-trigger__right { display: flex; align-items: center; gap: 8px; }
-.e-sidebar-theme-trigger:hover { background: transparent; }
-.e-sidebar-theme-row { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; margin: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
-.e-sidebar-theme-row:hover,
-.e-sidebar-theme-row:focus-visible { outline: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.15)); outline-offset: -1px; }
-.e-sidebar-theme-simple  { display: flex; flex-direction: column; gap: 4px; }
-.e-sidebar-theme-label   { flex: 1; min-width: 0; white-space: nowrap; }
-.e-sidebar-theme-value   { display: inline-flex; align-items: center; gap: 8px; margin-left: 6px; opacity: 0.85; }
-.e-sidebar-theme-summary { display: inline-flex; align-items: center; gap: 6px; }
-
 /* ─── 11. RELAY STRIP ────────────────────────────────────────────────────── */
 
-.e-relay-strip {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 10px;
-  max-width: 100%;
-  justify-content: flex-end;
-}
-.e-relay-strip--compact { gap: 6px; }
-.e-relay-strip__host {
-  font-size: 0.792rem;
-  max-width: 22ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.e-relay-strip__meta {
-  font-size: 0.682rem;
-  max-width: 22ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.e-relay-strip__ws {
-  font-family: var(--font-family-mono, ui-monospace, monospace);
-  font-size: 0.792rem;
-  color: var(--theme-focused-foreground);
-  max-width: min(42vw, 520px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.e-relay-strip--with-ws { flex-wrap: wrap; row-gap: 4px; }
-.e-relay-ws-line {
-  display: block;
-  font-family: var(--font-family-mono, ui-monospace, monospace);
-  font-size: 0.88rem;
-  color: var(--theme-focused-foreground);
-  word-break: break-all;
-  margin-top: 6px;
-}
 .e-relay-status {
   display: inline-flex;
   align-items: center;
@@ -1406,8 +996,7 @@ body.theme-light {
   color: var(--theme-focused-foreground);
 }
 .e-status-chip:not(.is-ok) {
-  opacity: 0.7;
-}
+  opacity: 0.7;}
 .e-status-chip__label {
   letter-spacing: 0.02em;
 }
@@ -1427,10 +1016,6 @@ body.theme-light {
   display: inline-block;
   width: 1ch;
   text-align: center;
-}
-.e-status-chip__dot--pulse {
-  color: var(--theme-focused-foreground);
-  animation: e-status-pulse 1.2s ease-in-out infinite;
 }
 @keyframes e-status-pulse {
   0%, 100% { opacity: 1; }
@@ -1517,16 +1102,13 @@ body.theme-light {
   white-space: pre-wrap;
 }
 
-.e-dm-scroll { max-height: min(55vh, 480px); overflow-y: auto; padding-top: 8px; }
-
 /* Agora detail pane (also used for events detail) */
 .e-split-main { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 8px 0 16px 0; }
 .e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main {
   padding-left: 4px;
 }
 .e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main:has(.e-chess-main) {
-  padding-left: 0;
-}
+  padding-left: 0;}
 .e-agora-detail { overflow: hidden; }
 .e-agora-detail__scroll { flex: 1; overflow-y: auto; padding: 16px; }
 .e-agora-detail__title { font-size: 1.1rem; font-weight: 600; margin-bottom: 4px; display: block; }
@@ -1549,8 +1131,6 @@ body.theme-light {
 
 .e-post-row { display: flex; gap: 10px; align-items: flex-start; flex: 1; }
 .e-post-title { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-
-.e-vote-row { display: flex; align-items: center; gap: 6px; }
 .e-vote-btn {
   background: none;
   border: none;
@@ -1562,15 +1142,7 @@ body.theme-light {
   transition: opacity 0.15s, color 0.15s;
 }
 .e-vote-btn:hover { opacity: 1; }
-.e-vote-btn--up:hover,
-.e-vote-btn--up.is-voted   { color: var(--theme-focused-foreground); opacity: 1; }
-.e-vote-btn--down:hover,
-.e-vote-btn--down.is-voted { color: #a0a0a0; opacity: 1; }
 .e-vote-score { font-size: 13px; min-width: 20px; text-align: center; }
-.e-vote-inline { display: flex; flex-direction: row; align-items: center; gap: 4px; flex-shrink: 0; }
-
-.e-compose-inline { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; }
-.e-agent-chips    { padding-top: 0; border-bottom: none; }
 
 /* ─── 15. SEGMENT TABS ───────────────────────────────────────────────────── */
 
@@ -1620,12 +1192,6 @@ body.theme-light {
 .e-gate-badge--invite { background: rgba(128,128,255,0.15); color: #8888ff; }
 .e-gate-badge--paid   { background: rgba(80,200,120,0.15);  color: #4caf7a; }
 .e-gate-badge--advert { background: rgba(255,190,80,0.15);  color: #d9a441; }
-
-/* P249: rooms and topics advertised by relays this one links to — read-only. */
-.e-elsewhere { margin-top: 14px; padding-top: 8px; border-top: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.1)); }
-.e-elsewhere__title { padding: 0 10px 4px; }
-.e-elsewhere__row { padding: 6px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.05)); }
-.e-elsewhere__head { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 
 .e-outcome-pill {
   display: inline-block;
@@ -1687,7 +1253,7 @@ body.theme-light {
 .e-compact-table { overflow-x: auto; }
 
 .e-compact-table table,
-.e-listings-native {
+.e-table {
   width: 100%;
   border-collapse: collapse;
   font-family: var(--font-family-mono, ui-monospace, monospace);
@@ -1697,7 +1263,7 @@ body.theme-light {
 /* Header row — keep the SRCL gray bar */
 .e-dashboard-shell .e-compact-table thead td,
 .e-dashboard-shell table thead td,
-.e-listings-native thead td {
+.e-table thead td {
   background: var(--ansi-240-gray-35, #585858) !important;
   color: var(--color-white, #fff);
   padding: 4px 8px;
@@ -1705,16 +1271,16 @@ body.theme-light {
   letter-spacing: 0.06em;
 }
 
-.e-listings-native tbody td {
+.e-table tbody td {
   padding: 5px 8px;
   border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
 }
 .e-dashboard-shell table tbody tr { background: transparent !important; }
 .e-dashboard-shell table tbody tr:hover { background: transparent !important; }
 
-.e-listings-row { cursor: pointer; }
-.e-listings-row:hover td { border-left: 2px solid var(--theme-focused-foreground); padding-left: 6px; }
-.e-listings-row:focus-visible { outline: 1px solid var(--theme-focused-foreground); }
+.e-table-row { cursor: pointer; }
+.e-table-row:hover td { border-left: 2px solid var(--theme-focused-foreground); padding-left: 6px; }
+.e-table-row:focus-visible { outline: 1px solid var(--theme-focused-foreground); }
 
 /* ─── 18. TOOLBAR & SEARCH ───────────────────────────────────────────────── */
 
@@ -1736,13 +1302,24 @@ body.theme-light {
   padding: 8px 12px;
   border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
 }
+/* The kit Input draws its text in a display layer and puts the real <input>
+   (which gets this class) transparent on top. So the box lives on the display
+   layer, and the input just covers it exactly — styling the input itself drew
+   a second, empty box under the placeholder. */
+.e-search-row > [class*="Input_root"] { flex: 1; min-width: 0; }
+.e-search-row [class*="Input_displayed"] {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 12px;
+  box-sizing: border-box;
+}
 .e-search-bar {
-  flex: 1;
-  min-width: 0;
-  font-size: 1.045rem !important;
-  padding: 8px 10px !important;
-  border: 1px solid var(--theme-border, rgba(255,255,255,0.2)) !important;
-  background: var(--theme-background) !important;
+  height: 100%;
+  padding: 0 12px !important;
+  box-sizing: border-box;
+  border: 0 !important;
+  background: transparent !important;
 }
 
 /* ─── 19. ACTION TIMELINE ────────────────────────────────────────────────── */
@@ -1768,21 +1345,8 @@ body.theme-light {
 .e-session-status-dot--active    { background: var(--theme-focused-foreground); }
 .e-session-status-dot--completed { background: rgba(128,128,128,0.6); }
 .e-session-status-dot--abandoned { background: rgba(180,80,80,0.5); }
-
 /* ─── 21. MESSAGES / INBOX ───────────────────────────────────────────────── */
 
-.e-messages-subnav {
-  padding: 10px 16px 0;
-  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-  flex-shrink: 0;
-}
-.e-messages-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
 .e-messages-pane {
   display: flex;
   flex-direction: column;
@@ -1812,18 +1376,6 @@ body.theme-light {
 
 /* ─── 22. SRCL COMPONENT OVERRIDES ──────────────────────────────────────── */
 
-/* Window panels — flat */
-.e-dashboard-shell [class*="Window_window"] {
-  background: var(--theme-background) !important;
-  box-shadow: none !important;
-}
-
-/* Navigation component */
-.e-dashboard-shell [class*="Navigation_root"] {
-  background: transparent !important;
-  border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.06));
-}
-
 /* ActionButton — outline style, no fills */
 .e-dashboard-shell [class*="ActionButton_content"] {
   background: transparent !important;
@@ -1845,39 +1397,15 @@ body.theme-light {
 .e-dashboard-shell [class*="ActionButton_root"]:focus,
 .e-dashboard-shell [class*="ActionButton_root"]:active { background: transparent !important; }
 
-/* ActionListItem rows */
-.e-dashboard-shell [class*="ActionListItem_text"] { background: transparent !important; }
-.e-dashboard-shell [class*="ActionListItem_icon"] { background: transparent !important; }
-
 /* Badges — square */
 .e-dashboard-shell [class*="Badge_root"] { border-radius: 0 !important; }
 
-/* Select / Input */
-.e-dashboard-shell [class*="Select_root"],
+/* Input */
 .e-dashboard-shell [class*="Input_root"] input { background: transparent !important; }
-.e-dashboard-shell [class*="Select_display"] {
-  background: transparent !important;
-  border: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.12)) !important;
-  padding-left: 8px !important;
-  border-radius: 2px;
-}
-.e-dashboard-shell [class*="Select_display"]:hover,
-.e-dashboard-shell [class*="Select_display"]:focus {
-  background: transparent !important;
-  color: var(--theme-focused-foreground) !important;
-  border-color: var(--theme-focused-foreground) !important;
-}
-.e-dashboard-shell [class*="Select_control"]         { background: transparent !important; }
-.e-dashboard-shell [class*="Select_control"].focused {
-  background: transparent !important;
-  color: var(--theme-focused-foreground) !important;
-}
 
 /* Kill all surfaces from panels and stat blocks */
 .e-dashboard-shell .e-app-top,
-.e-dashboard-shell .e-app-header,
 .e-dashboard-shell .e-mobile-top { background: var(--theme-background) !important; }
-.e-dashboard-shell .e-app-sidebar,
 .e-dashboard-shell .e-app-drawer,
 .e-dashboard-shell .e-mobile-drawer { background: var(--theme-background) !important; box-shadow: none; }
 .e-dashboard-shell .e-panel-card,
@@ -1885,7 +1413,6 @@ body.theme-light {
 .e-dashboard-shell .e-panel-card__body,
 .e-dashboard-shell .e-slim-card,
 .e-dashboard-shell .e-hero-stat,
-.e-dashboard-shell .e-stat-strip__item,
 .e-dashboard-shell .e-kpi,
 .e-dashboard-shell .e-empty-pane { background: transparent !important; }
 
@@ -1894,16 +1421,14 @@ body.theme-light {
 @media (max-width: 900px) {
   .e-app-top { display: none; }
   .e-mobile-top { display: flex; }
-  .e-app-relay-bar { display: none; }
   .e-mobile-top { flex-wrap: wrap; }
-  .e-topbar-blurb { display: none; }
   .e-view-body { padding: 14px 12px 24px; }
   .e-app-drawer {
     display: flex;
-    position: fixed;
+    position: absolute;
     left: 0; top: 0; bottom: 0;
-    z-index: 100;
-    width: min(85vw, 16rem);
+    z-index: 140;     /* above full-page chat (120): the chat's ☰ opens it */
+    width: min(85%, 16rem);
     transform: translateX(-105%);
     transition: transform 0.2s ease;
     background: var(--theme-background);
@@ -1915,31 +1440,20 @@ body.theme-light {
   }
   .e-app-shell.is-nav-open .e-app-backdrop {
     display: block;
-    position: fixed;
+    position: absolute;
     inset: 0;
-    z-index: 90;
+    z-index: 130;
     background: rgba(0,0,0,0.55);
     border: 0;
     padding: 0;
     cursor: pointer;
-  }
-}
+  }}
 
-/* Stack SidebarLayout vertically on narrow screens */
-@media (max-width: 700px) {
-  .e-view [class*="SidebarLayout_root"] { flex-direction: column !important; align-items: stretch !important; }
-  .e-view [class*="SidebarLayout_sidebar"] {
-    width: 100% !important;
-    max-width: 100% !important;
-    border-bottom: 1px solid var(--theme-border-subdued, rgba(255,255,255,0.08));
-    max-height: 38vh;
-    overflow-y: auto;
-  }
-}
+/* Narrow screens: SidebarLayout itself (kit module CSS) turns rail-beside-detail
+   into list-then-detail with a back control — see ui/kit/SidebarLayout.tsx. */
 
 @media (min-width: 901px) {
-  .e-hero-stats { grid-template-columns: repeat(4, 1fr); }
-}
+  .e-hero-stats { grid-template-columns: repeat(4, 1fr); }}
 
 /* P121: unread count on a conversation or on Activity. */
 .e-unread-count {
@@ -1958,6 +1472,9 @@ body.theme-light {
   background: var(--theme-background, transparent); color: inherit;
   border: 1px solid var(--theme-border, rgba(128,128,128,0.4)); border-radius: 4px;
 }
+/* A phone (the switcher sits in the menu): under 16px, iOS zooms the page when the select takes focus. */
+@media (max-width: 900px) {
+  .e-viewer-switch select { font-size: 16px; min-height: 40px; }}
 
 /* P124: inbox / sent / all above the conversation list. */
 .e-messages-boxes { padding: 8px 10px; border-bottom: 1px solid var(--theme-border-subdued, rgba(128,128,128,0.12)); }
@@ -1969,9 +1486,6 @@ body.theme-light {
 .e-docs-rail-item { display: flex; flex-direction: column; gap: 2px; text-align: left; }
 .e-doc { overflow-y: auto; max-width: 92ch; padding: 8px 20px 40px 20px; line-height: 1.55; }
 .e-doc .e-doc-h { margin: 1.4em 0 0.5em 0; line-height: 1.25; scroll-margin-top: 8px; }
-.e-doc .e-doc-h1 { font-size: 1.5em; margin-top: 0.4em; }
-.e-doc .e-doc-h2 { font-size: 1.25em; }
-.e-doc .e-doc-h3 { font-size: 1.08em; }
 .e-doc p, .e-doc .e-doc-list, .e-doc .e-doc-quote { margin: 0.6em 0; }
 .e-doc .e-doc-list { padding-left: 1.6em; }
 .e-doc code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 0 0.25em;
@@ -1997,8 +1511,6 @@ body.theme-light {
 .e-setting-mark { width: 1.2em; text-align: center; }
 .e-setting-label { font-weight: 600; }
 .e-setting-value { font-family: var(--font-family-mono, monospace); overflow-wrap: anywhere; }
-.e-setting-warn .e-setting-mark { color: #c8901a; }
-.e-setting-danger .e-setting-mark, .e-setting-danger .e-setting-value { color: #d9534f; }
 .e-setting-about, .e-setting-cmd, .e-setting-note { padding-left: calc(1.2em + 8px); }
 .e-setting-cmd { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .e-setting-cmd code { font-family: var(--font-family-mono, monospace); font-size: 0.92em; padding: 1px 6px;
@@ -2027,6 +1539,631 @@ body.theme-light {
 .e-relay-table th, .e-relay-table td { text-align: left; padding: 4px 10px;
   border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
 
+/* Market › Stats: the agent's own figures. Bars are decoration: every value is also text. */
+.e-stats-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.e-stats-num { font-variant-numeric: tabular-nums; }
+.e-stats-list { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.e-stats-bars { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.e-stats-bars__row { display: grid; grid-template-columns: minmax(12ch, 16rem) minmax(60px, 1fr) auto; gap: 10px;
+  align-items: center; }
+.e-stats-bars__track { height: 8px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
+.e-stats-bars__fill { display: block; height: 100%; background: var(--theme-focused-foreground, currentColor); }
+.e-stats-money-note, .e-stats-missing { display: block; }
+.e-stats-table td { white-space: nowrap; }
+@media (max-width: 700px) {
+  .e-stats-bars__row { grid-template-columns: 1fr auto; }
+  .e-stats-bars__track { grid-column: 1 / -1; grid-row: 2; }}
+
+/* ─── 24. RETROMOD ───────────────────────────────────────────────────────────
+   The terminal look, kept and made consistent: monospace, hairline boxes, the
+   theme's accent as the one highlight. Modern where it helps reading and
+   touching: smooth type, clear focus, one heading per section, 44px targets on
+   a phone, list-then-detail split views, tables that scroll in their own box.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.e-dashboard-shell {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  --e-rule: var(--theme-border-subdued, rgba(128, 128, 128, 0.22));
+  --e-accent-wash: color-mix(in srgb, var(--theme-focused-foreground) 9%, transparent);
+}
+
+/* One focus ring, everywhere — keyboard users always see where they are. */
+.e-dashboard-shell :focus-visible,
+.e-dashboard-shell .e-rail-item:focus-visible,
+.e-dashboard-shell .e-theme-circle:focus-visible {
+  outline: 2px solid var(--theme-focused-foreground);
+  outline-offset: 2px;
+}
+.e-dashboard-shell .e-rail-item:focus-visible { outline-offset: -2px; }
+
+/* Section heading: ▍Name, then the plain-words line on what it shows. */
+.e-page-head {
+  padding: 14px 24px 12px;
+  border-bottom: 1px solid var(--e-rule);
+  max-width: min(1440px, 100%);
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.e-page-head__title {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 1ch;
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+.e-page-head__blurb {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  opacity: 0.62;
+  max-width: 80ch;
+}
+
+/* Sub-heading inside a view: CAPS label with a box-drawing rule after it. */
+.e-subhead {
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+  margin: 18px 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.e-subhead::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--e-rule);
+}
+.e-subhead:first-child { margin-top: 4px; }
+.e-note { font-size: 0.8rem; line-height: 1.5; opacity: 0.6; margin: 2px 0 0; }
+
+.e-section-tabs--horizontal { align-items: center; }
+.e-section-tab.is-active { background: var(--e-accent-wash) !important; }
+
+/* The menu: the six destinations, each with its sections named under it. */
+.e-section-tabs--drawer .e-section-tab {
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "icon label key" "icon sub key";
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 0;
+  text-align: left;
+}
+.e-section-tabs--drawer .e-section-tab__icon { grid-area: icon; }
+.e-section-tabs--drawer .e-section-tab__label { grid-area: label; font-size: 0.95rem; }
+.e-section-tabs--drawer .e-section-tab__key { grid-area: key; }
+.e-section-tab__sub {
+  grid-area: sub;
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  white-space: normal;
+}
+
+/* The sections inside the current destination: one strip under the header, every width. */
+.e-subnav {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 16px;
+  min-height: 40px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--e-rule);
+  background: var(--theme-background);
+}
+.e-subnav__dest {
+  display: inline-flex;
+  align-items: center;
+  padding-right: 10px;
+  margin-right: 4px;
+  border-right: 1px solid var(--e-rule);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  white-space: nowrap;
+}
+.e-subnav__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.e-subnav__tab:hover { border-bottom-color: var(--theme-border); }
+.e-subnav__tab.is-active { border-bottom-color: var(--theme-focused-foreground); font-weight: 700; }
+.e-subnav__keys {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+}
+@media (max-width: 900px) {
+  .e-subnav { padding: 0 8px; }
+  .e-subnav__dest, .e-subnav__keys { display: none; }
+  .e-subnav__tab { min-height: 44px; padding: 0 14px; }}
+/* The whole menu scrolls as one, so the foot never covers the last sections. */
+.e-section-tabs--drawer { flex: none; overflow: visible; }
+.e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }
+.e-mobile-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--e-rule);
+}
+.e-mobile-drawer__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--e-rule);
+}
+.e-icon-button,
+.e-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.e-icon-button:hover,
+.e-menu-button:hover { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-menu-button .e-nav-badge { margin-left: 0; }
+
+/* Phone top bar: one row — menu, where you are, relay state. */
+.e-mobile-top { flex-wrap: nowrap !important; gap: 10px; padding: 6px 12px; }
+/* Brand above, the section you are in below it — both always fit. */
+.e-mobile-top__where {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.e-mobile-top__where .e-brand-title { font-size: 0.8rem !important; line-height: 1.2; opacity: 0.75; }
+.e-mobile-top__section {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.85rem;
+  line-height: 1.25;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--theme-focused-foreground);
+}
+.e-mobile-top__section::before { content: "▸ "; opacity: 0.6; }
+
+/* The brand: the word, decoded (LookChrome.BrandTitle); a fixed width so the
+   header never shifts while glyphs change. */
+.e-brand { display: inline-block; min-width: 7.2ch; font-variant-numeric: tabular-nums; }
+.e-mobile-top .e-relay-status__host { display: none; }
+.e-mobile-top .e-relay-status__chips { gap: 6px; }
+.e-mobile-top .e-status-chip { padding: 4px 6px; }
+
+/* A label above a run of rail rows ("Which game", "Character sheets"). */
+.e-rail-label {
+  padding: 12px 12px 4px;
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+
+/* Rail rows: room to breathe, the selected one washed in the accent. */
+.e-rail-item { padding: 8px 10px 8px 12px; min-height: 40px; }
+.e-rail-item.is-selected { background: var(--e-accent-wash); }
+.e-dashboard-shell [class*="SidebarLayout_sidebar"] {
+  border-right: 1px solid var(--e-rule);
+  box-sizing: border-box;
+}
+.e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main { padding: 12px 16px 24px 20px; }
+.e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main:has(.e-chess-main) { padding-left: 8px;}
+
+/* What-you-are-looking-at box on the Overview. */
+.e-intro {
+  border: 1px solid var(--e-rule);
+  border-left: 3px solid var(--theme-focused-foreground);
+  padding: 12px 16px 14px;
+  margin-bottom: 16px;
+  line-height: 1.55;
+}
+.e-intro__title {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin: 0 0 6px;
+}
+.e-intro__text { margin: 0; font-size: 0.9rem; max-width: 78ch; }
+.e-intro__go { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.e-intro__link {
+  flex: 1 1 13rem;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.e-intro__link:hover { border-color: var(--theme-focused-foreground); }
+.e-intro__link-label { color: var(--theme-focused-foreground); font-size: 0.85rem; }
+.e-intro__link-hint { font-size: 0.72rem; opacity: 0.6; }
+
+/* The toolbar line above a split view is context, not content — keep it small. */
+.e-view-body--flush .e-view-toolbar,
+.e-view-body--flush .e-view-toolbar p { font-size: 0.78rem; line-height: 1.45; }
+
+/* Leaderboard-style tables size to their content instead of spreading three
+   short columns across a wide screen. */
+.e-table.e-board { width: auto; min-width: min(100%, 34rem); }
+
+/* Replay status line (ply, started, audit, verify) wraps instead of running off the edge. */
+.e-chess-replay-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; min-width: 0; }
+
+/* ─── 25. PHONE (≤ 700px) ───────────────────────────────────────────────── */
+
+@media (max-width: 700px) {
+  .e-page-head { padding: 12px 16px 10px; }
+  .e-page-head__blurb { font-size: 0.78rem; }
+  .e-view-toolbar { justify-content: flex-start; }
+  .e-view-body { padding: 12px 16px 24px; }
+  .e-dashboard-shell [class*="SidebarLayout_sidebar"] { border-right: 0; }
+  .e-dashboard-shell [class*="SidebarLayout_content"] > .e-split-main { padding: 12px 16px 24px; }
+
+  /* Tables scroll inside their own box; short cells stay on one line. */
+  .e-table,
+  .e-relay-table,
+  .e-compact-table table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .e-table td,
+  .e-relay-table td,
+  .e-relay-table th { white-space: nowrap; }
+
+  /* Comfortable targets. */
+  .e-rail-item { min-height: 48px; padding: 10px 16px; }
+  /* Filters (data-keep-list) become a row of chips, so the list itself is near the top. */
+  .e-rail-item[data-keep-list] {
+    display: inline-flex;
+    align-items: center;
+    width: auto;
+    min-height: 40px;
+    margin: 4px 0 4px 8px;
+    padding: 6px 12px !important;
+    border: 1px solid var(--e-rule) !important;
+  }
+  .e-rail-item[data-keep-list].is-selected { border-color: var(--theme-focused-foreground) !important; }
+  .e-segment-tab { min-height: 40px; padding: 6px 12px; }
+  .e-dashboard-shell [class*="ActionButton_root"] { min-height: 40px; }
+  .e-search-row [class*="Input_displayed"] { min-height: 44px; }
+  .e-theme-duo { padding: 12px 14px; }
+  .e-theme-circle { width: 20px; height: 20px; }
+  .e-theme-duo__rule { margin: 0 12px; }
+  .e-viewer-switch select { min-height: 40px; font-size: 14px; }
+  .e-meta-grid__row { grid-template-columns: 6rem 1fr; }}
+
+@media (pointer: coarse) {
+  .e-section-tab { min-height: 44px; }
+  .e-rail-item { min-height: 48px; }
+  .e-segment-tab { min-height: 40px; }}
+
+/* ─── 26. SET PLAYS (blotto, ⅔, lowest unique) ─────────────────────────── */
+
+.e-setplay { padding: 16px 20px 24px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.e-setplay__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.e-setplay__game {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--theme-focused-foreground);
+}
+.e-setplay__players { margin: 2px 0 0; font-size: 1.05rem; }
+.e-setplay__status {
+  flex: none;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border: 1px solid var(--e-rule);
+  opacity: 0.75;
+}
+.e-setplay__status.is-live {
+  opacity: 1;
+  border-color: var(--theme-focused-foreground);
+  color: var(--theme-focused-foreground);
+}
+.e-setplay__status.is-live::before { content: "● "; }
+.e-setplay__verdict { margin: 0; font-size: 0.95rem; }
+.e-setplay__verdict.is-win { color: var(--theme-focused-foreground); font-weight: 600; }
+.e-setplay__why { color: var(--theme-text); opacity: 0.6; font-size: 0.82rem; font-weight: 400; }
+.e-setplay__wait { margin: 0; font-size: 0.82rem; line-height: 1.5; opacity: 0.7; max-width: 72ch; }
+.e-setplay__meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; padding-top: 8px; border-top: 1px solid var(--e-rule); }
+.e-setplay__badges { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; }
+.e-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* commit → reveal → winner */
+.e-phase-strip { list-style: none; display: flex; flex-wrap: wrap; align-items: center; margin: 0; padding: 0; font-size: 0.78rem; }
+.e-phase-strip__step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 0;
+  opacity: 0.4;
+  white-space: nowrap;
+}
+.e-phase-strip__step + .e-phase-strip__step::before {
+  content: "";
+  width: clamp(12px, 4vw, 56px);
+  height: 1px;
+  margin-right: 10px;
+  background: currentColor;
+  opacity: 0.6;
+}
+.e-phase-strip__step.is-done { opacity: 0.75; }
+.e-phase-strip__step.is-now { opacity: 1; color: var(--theme-focused-foreground); }
+.e-phase-strip__n {
+  display: inline-grid;
+  place-items: center;
+  width: 1.7em;
+  height: 1.7em;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.72rem;
+}
+.e-phase-strip__step.is-now .e-phase-strip__n {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  border-color: var(--theme-focused-foreground);
+}
+.e-phase-strip__who { font-weight: 600; }
+
+/* Seats (pick games) */
+.e-seats { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--e-rule); }
+.e-seat {
+  display: grid;
+  grid-template-columns: minmax(8ch, 1fr) minmax(12ch, 1.4fr) 5ch;
+  gap: 8px;
+  align-items: baseline;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--e-rule);
+  font-size: 0.85rem;
+}
+.e-seat__state { opacity: 0.65; font-size: 0.78rem; }
+.e-seat__move { text-align: right; font-size: 1rem; }
+.e-seat.is-to_commit { opacity: 0.55; }
+.e-seat.is-out { opacity: 0.45; text-decoration: line-through; }
+.e-seat.is-winner {
+  background: color-mix(in srgb, var(--theme-focused-foreground) 16%, transparent);
+  box-shadow: inset 3px 0 0 var(--theme-focused-foreground);
+}
+.e-seat.is-winner .e-seat__name,
+.e-seat.is-winner .e-seat__move { color: var(--theme-focused-foreground); font-weight: 600; }
+
+/* Blotto: a row per player, a column per field */
+.e-blotto__rules, .e-lowest__rules, .e-twothirds__rules { margin: 0 0 8px; font-size: 0.75rem; line-height: 1.5; }
+.e-blotto__scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.e-blotto__grid { border-collapse: collapse; font-size: 0.95rem; }
+.e-blotto__grid th, .e-blotto__grid td { padding: 8px 10px; border: 1px solid var(--e-rule); text-align: center; }
+.e-blotto__grid thead th { font-size: 0.68rem; letter-spacing: 0.1em; font-weight: 400; opacity: 0.6; border-top: 0; }
+.e-blotto__grid thead th:first-child { border-left: 0; }
+.e-blotto__grid tbody th { text-align: left; font-weight: 400; min-width: 12ch; border-left: 0; }
+.e-blotto__name { display: block; }
+.e-blotto__state { display: block; font-size: 0.68rem; opacity: 0.6; white-space: nowrap; }
+.e-blotto__grid td { min-width: 3.2ch; }
+.e-blotto__grid td.is-hidden { opacity: 0.4; }
+.e-blotto__grid td.is-won {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  font-weight: 700;
+}
+.e-blotto__grid tr.is-winner th { color: var(--theme-focused-foreground); font-weight: 600; }
+.e-blotto__took { font-weight: 600; }
+.e-blotto__history { margin-top: 8px; font-size: 0.78rem; }
+.e-blotto__history summary { cursor: pointer; opacity: 0.7; }
+
+/* Guess ⅔: one number line */
+.e-numline {
+  --rows: 1;
+  position: relative;
+  margin: 28px 12px 4px;
+  height: calc(40px + var(--rows) * 30px);
+}
+.e-numline__axis { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--theme-text); opacity: 0.5; }
+.e-numline__tick { position: absolute; top: -6px; width: 1px; height: 14px; background: var(--theme-text); opacity: 0.45; }
+.e-numline__tick > span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 0.68rem; }
+.e-numline__mark { position: absolute; top: -8px; bottom: 0; width: 0; border-left: 2px dashed var(--theme-text); opacity: 0.55; }
+.e-numline__mark > span { position: absolute; bottom: -2px; left: 5px; font-size: 0.7rem; white-space: nowrap; }
+/* The target (⅔ of the average) is always left of the average: label it on its left. */
+.e-numline__mark--target > span { left: auto; right: 5px; }
+.e-numline__mark--target.is-low > span { left: 5px; right: auto; bottom: 16px; }
+.e-numline__mark--target { border-left-color: var(--theme-focused-foreground); opacity: 1; }
+.e-numline__mark--target > span { color: var(--theme-focused-foreground); font-weight: 600; }
+.e-numline__pick { position: absolute; top: 0; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; z-index: 1; }
+.e-numline__pin { width: 2px; height: calc(10px + var(--row, 0) * 30px); background: var(--theme-text); opacity: 0.6; }
+.e-numline__label { font-size: 0.75rem; white-space: nowrap; padding: 1px 4px; border: 1px solid var(--e-rule); background: var(--theme-background); }
+.e-numline__pick.is-winner .e-numline__pin { background: var(--theme-focused-foreground); opacity: 1; width: 3px; }
+.e-numline__pick.is-winner .e-numline__label {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  border-color: var(--theme-focused-foreground);
+  font-weight: 700;
+}
+
+/* Lowest unique: a box per number */
+.e-lowest__row { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(4.6rem, 1fr)); gap: 6px; margin: 0; padding: 0; }
+.e-lowest__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 4.6rem;
+  padding: 6px 8px;
+  border: 1px solid var(--e-rule);
+  font-size: 0.78rem;
+}
+.e-lowest__n { font-size: 1.05rem; }
+.e-lowest__cell.is-empty { opacity: 0.4; }
+.e-lowest__cell.is-taken .e-lowest__who { text-decoration: line-through; opacity: 0.6; }
+.e-lowest__cell.is-unique { border-color: var(--theme-text); }
+.e-lowest__tag { margin-top: auto; font-size: 0.65rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.55; }
+.e-lowest__cell.is-winner {
+  background: var(--theme-focused-foreground);
+  color: var(--theme-background);
+  border-color: var(--theme-focused-foreground);
+  font-weight: 700;
+}
+.e-lowest__cell.is-winner .e-lowest__tag { opacity: 0.85; }
+
+/* Game rows in the Games rail */
+.e-game-row { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; }
+.e-game-row__top { display: flex; justify-content: space-between; gap: 8px; }
+.e-game-row__kind { font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--theme-focused-foreground); }
+.e-game-row__phase { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.6; white-space: nowrap; }
+
+/* ─── 27. OVERVIEW: YOUR AGENT NOW ─────────────────────────────────────── */
+
+.e-now { border: 1px solid var(--e-rule); margin-bottom: 16px; }
+.e-now__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--e-rule);
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.e-now__head > span:first-child { opacity: 0.6; }
+.e-now__row {
+  display: grid;
+  grid-template-columns: 7ch minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  align-items: baseline;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--e-rule);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.e-now__row:last-child { border-bottom: 0; }
+.e-now__row:hover { background: color-mix(in srgb, var(--theme-focused-foreground) 8%, transparent); }
+.e-now__row--static { cursor: default; }
+.e-now__row--static:hover { background: transparent; }
+.e-now__label { font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }
+.e-now__go { color: var(--theme-focused-foreground); }
+.e-now__sub { grid-column: 2 / 4; font-size: 0.75rem; opacity: 0.6; overflow-wrap: anywhere; }
+.e-now__live { color: var(--theme-focused-foreground); }
+
+/* ─── 28. THEME / TINT CROSS-FADE ──────────────────────────────────────── */
+/* On only for the length of a theme or tint change (themeConfig.applyTheme),
+   so hovers and other transitions are untouched the rest of the time. A run
+   through the tints reads as one surface changing colour, not a flash. */
+@media (prefers-reduced-motion: no-preference) {
+  .e-theme-anim,
+  .e-theme-anim *,
+  .e-theme-anim *::before,
+  .e-theme-anim *::after {
+    transition-property: color, background-color, border-color, outline-color, fill, stroke, box-shadow, text-decoration-color !important;
+    transition-duration: 0.35s !important;
+    transition-timing-function: ease-out !important;
+    transition-delay: 0s !important;
+  }}
+
+/* ─── 29. CAPTURE MODE (?capture=1, src/capture.ts) ────────────────────── */
+/* For filming: nothing moves between frames, so a tint switched on the beat
+   lands in one frame; the relay's host:port is not on screen. */
+.e-capture,
+.e-capture *,
+.e-capture *::before,
+.e-capture *::after {
+  transition: none !important;
+  animation: none !important;
+}
+.e-capture .e-capture-hide { display: none !important; }
+/* The capture frame (540 × 540 CSS px) is the phone layout; scale it so the
+   smallest text on screen (0.65rem / 11px labels) is at least 13 CSS px. */
+@media (max-width: 700px) {
+  .e-capture .e-app-shell { zoom: 1.25; height: calc(var(--e-frame-h, 100dvh) / 1.25); }}
+
+.e-quest-next { margin: 4px 0 10px; font-size: 0.85rem; line-height: 1.5; }
+.e-quest-next code { font-size: 0.78rem; overflow-wrap: anywhere; opacity: 0.8; }
+
+@media (max-width: 700px) {
+  /* On a detail screen, the list's own controls (search, counts, the toolbar
+     line) belong to the list: hide them so the detail starts at the top. */
+  .e-view-body:has([data-pane-shown="detail"]) .e-view-toolbar,
+  .e-view-body__inner:has(> [data-pane-shown="detail"]) > .e-search-row { display: none; }
+  /* Keep commit → reveal → winner on one line; the verdict line names the winner. */
+  .e-phase-strip { flex-wrap: nowrap; }
+  .e-phase-strip__step { padding-right: 6px; gap: 5px; }
+  .e-phase-strip__step + .e-phase-strip__step::before { width: 14px; margin-right: 6px; }
+  .e-phase-strip__who { display: none; }
+  .e-setplay { padding: 12px 16px 24px; }
+  .e-blotto__grid th, .e-blotto__grid td { padding: 8px 6px; }
+  .e-blotto__grid tbody th { min-width: 9ch; }}
+
+@media (prefers-reduced-motion: reduce) {
+  .e-dashboard-shell *,
+  .e-app-drawer { transition: none !important; animation: none !important; }}
+
+/* Calls (:v2 set plays): a forecast sealed with the first move — "called · sealed", then its percent. */
+.e-call-tag { margin-left: 8px; padding: 0 6px; font-size: 0.72rem; letter-spacing: 0.04em; white-space: nowrap;
+  border: 1px dashed var(--e-rule); opacity: 0.8; }
+.e-call-tag.is-revealed { border-style: solid; border-color: var(--theme-focused-foreground);
+  color: var(--theme-focused-foreground); opacity: 1; }
+/* Bargain: the offers table (blotto's grid, wider cells) and each hand, sealed until the end. */
+.e-bargain__offers td, .e-bargain__offers th { text-align: left; white-space: nowrap; font-size: 0.85rem; }
+.e-bargain__hand { grid-template-columns: minmax(8ch, 1fr) minmax(16ch, 3fr) 4ch; }
+
 /* Operator section: the operator's desk — cards and commands from the views it sits beside. */
 .e-op { display: flex; flex-direction: column; gap: 14px; }
 .e-op-list { display: flex; flex-direction: column; gap: 10px; }
@@ -2034,6 +2171,617 @@ body.theme-light {
 .e-op .e-setting-cmd.e-op-cmd { padding-left: 0; }
 .e-op-cmd__label { min-width: 12ch; }
 .e-op-cmds__note { font-size: 0.85em; }
-.e-op-test { margin: 6px 0; padding: 6px 8px; max-height: 14em; overflow: auto; white-space: pre-wrap;
-  overflow-wrap: anywhere; font-family: var(--font-family-mono, monospace); font-size: 0.9em;
-  border: 1px solid color-mix(in srgb, currentColor 18%, transparent); }
+
+/* Launch additions: the operator's current expedition, under an agent's quests — the theme's accent, a quiet rule. */
+.e-gamify-expedition { margin-top: 12px; padding: 6px 0 6px 10px;
+  border-left: 2px solid var(--theme-focused-foreground); display: flex; flex-direction: column; gap: 2px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   30. THE LOOK — the one style (the demo animatic's information cards)
+   Pixel headings (Silkscreen) that unscramble, mono lines typed with
+   a block cursor, corner brackets, status lines above and below,
+   and the tint as a FILL with dark ink on it, never as text on the
+   light canvas. It was the "animatic" style beside "retromod"
+   (docs/ui-style-experimental.md, now history); since ui-v2 it is
+   the only one. `.e-look` is on the app's root with the theme and
+   tint classes (themeConfig.applyTheme), so these rules keep their
+   weight over the older ones above without a switch.
+   - It follows light/dark and all eight tints: every colour comes
+     from the tint (--tint; amber when there is none).
+   - Motion: arrivals only, 0.35–0.45 s, ease-out. Nothing moves with
+     prefers-reduced-motion or in capture mode (?capture=1).
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 0. THE PIXEL FACE ─────────────────────────────────────────────────────
+   Silkscreen (SIL OFL 1.1, assets/fonts/OFL-Silkscreen.txt), bundled: the
+   dashboard makes no third-party requests. Latin only; anything else falls
+   back to the mono stack. Not fetched until a pixel heading is on screen. */
+@font-face {
+  font-family: "EmporiaPixel";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/Silkscreen-Regular.woff2") format("woff2");
+}
+
+/* ─── 1. TOKENS ─────────────────────────────────────────────────────────── */
+
+.e-look {
+  --anim-tint: var(--tint, #f0a832);                                   /* amber when no tint is set */
+  --anim-ink: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);       /* text on a fill, both themes */
+  --anim-fill: oklch(from var(--anim-tint) max(l, 0.86) c h);         /* caption bands, chips, the won cells */
+  /* brackets, rules, ticks: graphics only. P10: L 0.58, not 0.62, so it clears 3:1 on the light
+     canvas in every tint (green measured 2.89:1); textContrast.test.ts holds it there. */
+  --anim-line: oklch(from var(--anim-tint) 0.58 c h);
+  --anim-pixel: "EmporiaPixel", var(--font-family-mono, monospace);
+  --anim-bracket: 12px;
+  --anim-bracket-w: 2px;
+  --anim-ease: cubic-bezier(0.33, 1, 0.68, 1);                          /* power2.out */
+}
+
+/* The light canvas for every tint, amber included : white with a breath of the tint, near-black ink.
+   The accent used AS TEXT is darker than the graphics accent so it reads
+   (≥ 4.5:1 on the canvas). */
+body.e-look.theme-light {
+  --theme-background: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
+  --theme-background-modal: oklch(from var(--anim-tint) 0.92 calc(c * 0.18) h);
+  --theme-background-input: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
+  --theme-border: oklch(from var(--anim-tint) 0.84 calc(c * 0.28) h);
+  --theme-border-subdued: oklch(from var(--anim-tint) 0.88 calc(c * 0.22) h);
+  --theme-text: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);
+  --theme-button: oklch(from var(--anim-tint) 0.18 calc(c * 0.4) h);
+  --theme-button-text: oklch(from var(--anim-tint) 0.97 calc(c * 0.1) h);
+  --theme-focused-foreground: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h);
+  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) 0.45 min(c, 0.2) h / 0.5);
+}
+
+/* The dark variant: the same cards on a near-black tinted canvas. */
+body.e-look.theme-dark {
+  --theme-background: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);
+  --theme-background-modal: oklch(from var(--anim-tint) 0.24 calc(c * 0.22) h);
+  --theme-background-input: oklch(from var(--anim-tint) 0.28 calc(c * 0.2) h);
+  --theme-border: oklch(from var(--anim-tint) 0.4 calc(c * 0.28) h);
+  --theme-border-subdued: oklch(from var(--anim-tint) 0.32 calc(c * 0.26) h);
+  --theme-text: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);
+  --theme-button: oklch(from var(--anim-tint) 0.94 calc(c * 0.12) h);
+  --theme-button-text: oklch(from var(--anim-tint) 0.14 calc(c * 0.18) h);
+  --theme-focused-foreground: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h);
+  --theme-focused-foreground-subdued: oklch(from var(--anim-tint) max(l, 0.78) min(c, 0.22) h / 0.5);
+  --anim-line: oklch(from var(--anim-tint) 0.72 c h);
+}
+
+.e-look .e-dashboard-shell {
+  --e-rule: var(--theme-border-subdued);
+  --anim-wash: color-mix(in srgb, var(--anim-fill) 45%, transparent);
+  --e-accent-wash: var(--anim-wash);
+}
+/* On the dark canvas a strong wash would sit under light text: keep it faint. */
+.e-look.theme-dark .e-dashboard-shell { --anim-wash: color-mix(in srgb, var(--anim-fill) 14%, transparent); }
+
+/* ─── 2. CORNER BRACKETS ─────────────────────────────────────────────────
+   Four L-shaped corners drawn as background images, so no element and no
+   ::before/::after is taken from the other rules. On panels only: the
+   frame around data, never over it. */
+.e-look .e-page-head,
+.e-look .e-now,
+.e-look .e-intro,
+.e-look .e-panel-card,
+.e-look .e-overview-card,
+.e-look .e-setplay,
+.e-look .e-empty-pane {
+  background-image:
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
+    linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line));
+  background-size:
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket),
+    var(--anim-bracket) var(--anim-bracket-w), var(--anim-bracket-w) var(--anim-bracket);
+  background-position: 0 0, 0 0, 100% 0, 100% 0, 0 100%, 0 100%, 100% 100%, 100% 100%;
+  background-repeat: no-repeat;
+  background-origin: border-box;
+  border-radius: 0;
+}
+.e-look .e-page-head { --anim-bracket: 18px; --anim-bracket-w: 3px; }
+
+/* ─── 3. THE SECTION HEADING: status line, pixel title, typed line ─────── */
+
+.e-look .e-page-head {
+  position: relative;
+  padding: 12px 24px 16px;
+  margin-top: 10px;
+  border-bottom: 0;
+  max-width: min(1440px, calc(100% - 32px));
+}
+.e-look .e-page-head__title {
+  font-family: var(--anim-pixel);
+  font-weight: 400;
+  font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.4rem);
+  line-height: 1.05;
+  letter-spacing: 0.04em;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+.e-look .e-page-head__blurb {
+  margin-top: 10px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  opacity: 0.86;
+  max-width: 72ch;
+}
+
+/* The block cursor at the end of a typed line. */
+.e-look .e-anim-cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1em;
+  margin-left: 0.15em;
+  vertical-align: -0.14em;
+  background: currentColor;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .e-look .e-anim-cursor { animation: e-anim-blink 1.06s steps(1, end) infinite; }}
+@keyframes e-anim-blink { 50% { opacity: 0; } }
+
+/* Status lines: `emporia ~ hermes plugin · [1] · 01 / 14 · overview` above,
+   `T+00:28 · as alpha · watch only` below. Small, but ink at 80 %, not faint. */
+.e-look .e-anim-hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  letter-spacing: 0.05em;
+  color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background));
+  font-variant-numeric: tabular-nums;
+}
+.e-look .e-anim-hud__key {
+  padding: 1px 8px;
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  font-weight: 700;
+}
+.e-look .e-anim-hud--foot {
+  max-width: min(1440px, calc(100% - 32px));
+  margin: 8px auto 12px;
+  padding: 8px 24px 0;
+  border-top: 1px solid var(--theme-border-subdued);
+  box-sizing: border-box;
+}
+
+/* The beat flash: an ink bar along the heading's top edge, once per section. */
+.e-look .e-anim-flash {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  height: 4px;
+  background: var(--anim-ink);
+  opacity: 0;
+  pointer-events: none;
+}
+.e-look.theme-dark .e-anim-flash { background: var(--anim-fill); }
+@media (prefers-reduced-motion: no-preference) {
+  .e-look .e-anim-flash { animation: e-anim-flash 0.42s var(--anim-ease) both; }}
+@keyframes e-anim-flash {
+  0% { opacity: 1; transform: scaleX(0.2); transform-origin: left; }
+  45% { opacity: 1; transform: scaleX(1); transform-origin: left; }
+  100% { opacity: 0; transform: scaleX(1); transform-origin: left; }
+}
+
+/* ─── 4. HEADER, NAV, MENU ──────────────────────────────────────────────── */
+
+.e-look .e-brand-title {
+  font-family: var(--anim-pixel);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.e-look .e-section-tab { opacity: 0.8; }
+.e-look .e-section-tab.is-active {
+  background: var(--anim-fill) !important;
+  color: var(--anim-ink);
+  border-color: var(--anim-fill);
+  font-weight: 700;
+}
+.e-look .e-section-tab.is-active .e-section-tab__icon { color: var(--anim-ink); }
+.e-look .e-section-tab.is-active .e-section-tab__sub { color: var(--anim-ink); }
+.e-look .e-subnav__tab.is-active { border-bottom-color: var(--anim-line); }
+.e-look .e-mobile-top__section {
+  font-family: var(--anim-pixel);
+  color: var(--theme-text);
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+}
+.e-look .e-mobile-top__section::before { content: "> "; opacity: 0.8; }
+.e-look .e-section-tab__key { opacity: 1; color: color-mix(in srgb, var(--theme-text) 80%, var(--theme-background)); }
+.e-look .e-section-tab.is-active .e-section-tab__key { color: var(--anim-ink); }
+
+/* Relay / live: square chips, the live one filled. */
+.e-look .e-status-chip { border-color: var(--theme-border); background: transparent; }
+.e-look .e-status-chip.is-ok {
+  background: var(--anim-fill);
+  border-color: var(--anim-fill);
+  color: var(--anim-ink);
+  font-weight: 700;
+}
+.e-look .e-status-chip.is-ok .e-status-chip__loader{ color: var(--anim-ink); }
+
+/* ─── 5. CAPTION BARS AND CHIPS ─────────────────────────────────────────
+   The animatic's two text-on-fill shapes: a small bold chip (its
+   `CARD · build now` badge) for labels, and a bold band (its captions)
+   for the one line that says what happened. */
+.e-look .e-intro__title,
+.e-look .e-now__head > span:first-child,
+.e-look .e-now__label {
+  display: inline-block;
+  width: fit-content;
+  padding: 2px 8px;
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  font-weight: 700;
+  opacity: 1;
+}
+.e-look .e-now__label { padding: 1px 6px; font-size: 0.66rem; }
+.e-look .e-now__go,
+.e-look .e-now__live,
+.e-look .e-intro__link-label { color: var(--theme-focused-foreground); font-weight: 600; }
+.e-look .e-now__live { color: var(--anim-ink); }
+.e-look .e-now__head { align-items: center; }
+.e-look .e-now__head > span:last-child { font-family: var(--anim-pixel); font-size: 0.9rem; letter-spacing: 0.06em; }
+.e-look .e-intro { border-left-width: 1px; }
+.e-look .e-intro__text { font-size: 0.95rem; }
+
+/* Sub-headings inside a view, in the pixel face: the QUESTS card. */
+.e-look .e-subhead {
+  font-family: var(--anim-pixel);
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  opacity: 1;
+  margin-top: 22px;
+}
+.e-look .e-subhead::after { background: var(--anim-line); opacity: 0.6; }
+.e-look .e-panel-card__title { opacity: 0.85; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.e-look .e-overview-card__title { font-family: var(--anim-pixel); letter-spacing: 0.05em; text-transform: uppercase; }
+.e-look .e-rail-label { opacity: 0.8; font-weight: 700; }
+.e-look .e-rail-item.is-selected {
+  background: var(--e-accent-wash);
+  box-shadow: inset 3px 0 0 var(--anim-line);
+}
+
+/* Quests read like the animatic's QUESTS card: `>` lines, the done ones ticked. */
+.e-look .e-quest-row { font-size: 0.95rem !important; line-height: 1.7; opacity: 1; }
+.e-look .e-quest-row::before { content: "> "; color: var(--theme-focused-foreground); font-weight: 700; }
+.e-look .e-quest-row:not(.is-done) { color: color-mix(in srgb, var(--theme-text) 74%, var(--theme-background));}
+.e-look .e-quest-next .e-now__label { margin-right: 4px; }
+
+/* ─── 6. SET PLAYS ───────────────────────────────────────────────────── */
+
+.e-look .e-setplay { padding: 18px 20px 22px; }
+.e-look .e-setplay__game {
+  font-family: var(--anim-pixel);
+  font-size: clamp(1.4rem, 1rem + 1.4vw, 2rem);
+  line-height: 1.05;
+  letter-spacing: 0.05em;
+  color: var(--theme-text);
+}
+.e-look .e-setplay__players { font-size: 1.05rem; margin-top: 6px; }
+.e-look .e-setplay__status { opacity: 1; border-color: var(--theme-border); font-weight: 700; }
+.e-look .e-setplay__status.is-live {
+  background: var(--anim-fill);
+  border-color: var(--anim-fill);
+  color: var(--anim-ink);
+}
+/* The verdict is the caption band. */
+.e-look .e-setplay__verdict.is-win {
+  padding: 8px 12px;
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.e-look .e-setplay__verdict.is-win .e-setplay__why { color: var(--anim-ink); opacity: 0.85; }
+.e-look .e-setplay__wait { opacity: 0.86; font-size: 0.86rem; }
+
+/* commit → reveal → winner: square steps, the current one a filled pixel label. */
+.e-look .e-phase-strip__n { border-radius: 0; }
+.e-look .e-phase-strip__step.is-now {
+  opacity: 1;
+  color: var(--anim-ink);
+  background: var(--anim-fill);
+  padding: 3px 10px 3px 4px;
+  font-family: var(--anim-pixel);
+  letter-spacing: 0.05em;
+}
+.e-look .e-phase-strip__step.is-now .e-phase-strip__n {
+  background: var(--anim-ink);
+  border-color: var(--anim-ink);
+  color: var(--anim-fill);
+  font-family: var(--font-family-mono, monospace);
+}
+.e-look .e-phase-strip__step + .e-phase-strip__step::before { background: var(--anim-line); opacity: 0.8; }
+
+/* Won cells, winning seats and picks: the fill with ink on it. */
+.e-look .e-blotto__grid td.is-won,
+.e-look .e-lowest__cell.is-winner,
+.e-look .e-numline__pick.is-winner .e-numline__label {
+  background: var(--anim-fill);
+  color: var(--anim-ink);
+  border-color: var(--anim-line);
+}
+.e-look .e-blotto__grid tr.is-winner th,
+.e-look .e-seat.is-winner .e-seat__name,
+.e-look .e-seat.is-winner .e-seat__move { color: var(--theme-text); font-weight: 700; }
+.e-look .e-seat.is-winner {
+  background: var(--anim-wash);
+  box-shadow: inset 3px 0 0 var(--anim-line);
+}
+.e-look .e-numline__pick.is-winner .e-numline__pin { background: var(--anim-line); }
+.e-look .e-numline__mark--target { border-left-color: var(--anim-line); }
+.e-look .e-numline__mark--target > span { color: var(--theme-text); }
+.e-look .e-game-row__kind { color: var(--theme-text); font-weight: 700; }
+.e-look .e-blotto__grid thead th,
+.e-look .e-blotto__state,
+.e-look .e-seat__state { opacity: 0.8; }
+
+/* ─── 7. A CALMER FAINT ──────────────────────────────────────────────────
+   Secondary text used to dim to 35–50 % opacity, which falls under
+   4.5:1 on a tinted canvas. Faint is a colour at about 4.6:1 or more. */
+.e-look {
+  --anim-faint: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+}
+.e-look .e-faint,
+.e-look .e-dim,
+.e-look .e-rail-item .e-faint,
+.e-look .e-relay-status__host,
+.e-look .e-relay-status__meta,
+.e-look .e-game-row__phase,
+.e-look .e-chat-line__time,
+.e-look .e-chat-line__type,
+.e-look .e-badge--dim,
+.e-look .e-slim-card__title,
+.e-look .e-blotto__grid td.is-hidden,
+.e-look .e-phase-strip__step.is-next,
+/* Review pass 2: labels and hints still dimmed by opacity (2.9–4.0:1 on light green). */
+.e-look .e-meta-grid dt,
+.e-look .e-overview-card__body p,
+.e-look .e-overview-card--failed .e-overview-card__body,
+.e-look .e-empty-pane__hint,
+.e-look .e-slim-card__foot,
+.e-look .e-hero-stat__label,
+.e-look .e-hero-stat__hint,
+.e-look .e-chess-players__vs,
+.e-look .e-chess-speed__lbl,
+.e-look .e-lowest__tag,
+.e-look .e-chess-move-idx,
+.e-look .e-role-pill--spectator,
+.e-look .e-entity-chip--inert,
+.e-look .e-inbox-event--read,
+.e-look .e-seat.is-to_commit,
+.e-look .e-trust-key,
+.e-look [style*="opacity: 0.4"],
+.e-look [style*="opacity: 0.5"],
+.e-look [style*="opacity: 0.6"] {
+  opacity: 1 !important;
+  color: var(--anim-faint);
+}
+.e-look .e-phase-strip__step.is-done { opacity: 1; }
+/* Names in a chat are ink, so they read on the tint. */
+.e-look .e-chat-line__name { color: var(--theme-text) !important; }
+.e-look .e-entity-chip--agent,
+.e-look .e-entity-chip--session { opacity: 1; color: var(--theme-focused-foreground); }
+
+/* ─── 8. MOTION ─────────────────────────────────────────────────────────
+   Panels arrive with a short rise when a section opens (they mount with it).
+   Off with reduced motion; capture mode turns every animation off anyway. */
+@media (prefers-reduced-motion: no-preference) {
+  .e-look .e-page-head,
+  .e-look .e-now,
+  .e-look .e-intro,
+  .e-look .e-setplay {
+    animation: e-anim-rise 0.38s var(--anim-ease) both;
+  }
+  .e-look .e-now { animation-delay: 0.05s; }
+  .e-look .e-setplay { animation-delay: 0.04s; }}
+@keyframes e-anim-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ─── 10. PHONE ──────────────────────────────────────────────────────── */
+@media (max-width: 700px) {
+  .e-look .e-page-head { padding: 10px 16px 14px; margin-top: 8px; max-width: calc(100% - 16px); }
+  .e-look .e-page-head__title { font-size: 1.55rem; }
+  .e-look .e-page-head__blurb { font-size: 0.84rem; }
+  .e-look .e-anim-hud { font-size: 0.7rem; }
+  .e-look .e-anim-hud--top .e-anim-hud__where { flex-basis: 100%; }
+  .e-look .e-anim-hud--foot { padding: 8px 16px 0; max-width: calc(100% - 16px); }
+  .e-look .e-setplay__game { font-size: 1.4rem; }}
+
+/* ─── 11. HOME'S FIRST FRAME, THE MONEY CHIP, PLEDGES (review pass 2: P2, P3, P5, P6) ── */
+
+/* Home leads with the agent: "your agent now" beside "next up" (one column when narrow,
+   or when next up is not shown: auto-fit drops the empty track). */
+.e-home-lead {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 0 16px;
+  align-items: start;
+}
+.e-now__row--badges { align-items: center; }
+.e-now__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.e-now__more { font-size: 0.75rem; }
+
+/* Next up: one row per thing to do, its clock, and the exact call (copy-only). */
+.e-next__why { overflow-wrap: anywhere; }
+.e-next__clock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.e-next__row.is-urgent .e-next__clock { color: var(--theme-focused-foreground); font-weight: 700; }
+.e-next__open {
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--theme-focused-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+.e-next__call { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; opacity: 1; }
+.e-next__call code { overflow-wrap: anywhere; }
+.e-next__foot {
+  margin: 0;
+  padding: 8px 14px 10px;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+}
+/* Text another agent wrote: quoted and underlined as data, never styled as the dashboard's own words. */
+.e-untrusted { font-style: italic; border-bottom: 1px dotted currentColor; }
+.e-untrusted::before { content: "\201C"; }
+.e-untrusted::after { content: "\201D"; }
+
+/* The relay's pipeline, folded to one chip beside the status line; it opens to the sentence. */
+.e-overview-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 14px;
+}
+.e-overview-status-row .e-overview-status { margin-bottom: 0; }
+.e-pipeline-chip { font-size: 0.726rem; max-width: 100%; }
+.e-pipeline-chip > summary {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--e-rule);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  list-style: none;
+}
+.e-pipeline-chip > summary::-webkit-details-marker { display: none; }
+.e-pipeline-chip > summary::after { content: " +"; }
+.e-pipeline-chip[open] > summary::after { content: " \2212"; }
+.e-pipeline-chip__text {
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+  color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+}
+.e-look .e-pipeline-chip > summary { background: var(--anim-fill); color: var(--anim-ink); font-weight: 700; border-color: transparent; }
+
+/* P6: what kind of money the amounts are, beside the relay chip. */
+.e-money-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--theme-border-subdued, rgba(128, 128, 128, 0.3));
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.e-money-chip--test { background: var(--theme-border, transparent); }
+.e-money-chip--real { border-color: currentColor; }
+.e-look .e-money-chip--test { background: var(--anim-fill); color: var(--anim-ink); border-color: transparent; }
+
+/* The agent's pledges, under its Word line on the sheet. */
+.e-pledges { margin-top: 6px; }
+.e-pledge__status { white-space: nowrap; }
+.e-pledge.is-kept .e-pledge__status { color: var(--theme-focused-foreground); }
+.e-pledge.is-broken .e-pledge__status,
+.e-pledge.is-disputed .e-pledge__status { font-weight: 700; }
+
+/* P5: with the chat open beside the view the header keeps one row: it drops the relay's host
+   and version and the chat button's word, tightens its gaps, and lets the tabs scroll in
+   their own row rather than wrap (App sets .has-chat only above the header-nav width). */
+@media (min-width: 901px) {
+  .e-app-shell.has-chat .e-app-top__row { flex-wrap: nowrap; gap: 10px; padding-left: 14px; padding-right: 14px; }
+  .e-app-shell.has-chat .e-brand-title--header { flex-shrink: 0; }
+  .e-app-shell.has-chat .e-section-tabs--horizontal { flex-wrap: nowrap; }
+  .e-app-shell.has-chat .e-section-tab { padding: 6px 7px; }
+  .e-app-shell.has-chat .e-app-top__actions { flex-shrink: 0; gap: 10px; }
+  .e-app-shell.has-chat .e-relay-status { gap: 8px; flex-wrap: nowrap; }
+  .e-app-shell.has-chat .e-relay-status__chips { gap: 6px; }
+  .e-app-shell.has-chat .e-relay-status__host,
+  .e-app-shell.has-chat .e-relay-status__meta { display: none; }}
+.e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }
+
+/* The Arena: home (live, recent, boards) and a match with its step-through replay. Tokens only. */
+.e-arena { display: block; min-width: 0; padding: 0 12px 24px; }
+.e-arena-section { margin: 0 0 20px; }
+.e-arena-cards { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); }
+.e-arena-card {
+  display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; cursor: pointer;
+  font: inherit; color: inherit; background: transparent; padding: 8px 10px;
+  border: 1px solid var(--e-rule); border-radius: 0;
+}
+.e-arena-card:hover, .e-arena-card:focus-visible { border-color: var(--theme-focused-foreground); outline: none; }
+.e-arena-card__top { display: flex; justify-content: space-between; gap: 8px; }
+.e-arena-card__game { font-weight: 600; }
+.e-arena-card__live { color: var(--theme-focused-foreground); font-size: 0.75rem; }
+.e-arena-card__result { font-size: 0.85rem; }
+.e-arena-card__models { font-size: 0.7rem; }
+.e-arena-players, .e-arena-slot__who { overflow-wrap: anywhere; }
+.e-arena-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.e-arena-chip { font: inherit; font-size: 0.8rem; color: inherit; background: transparent; padding: 3px 8px; border: 1px solid var(--e-rule); cursor: pointer; }
+.e-arena-chip.is-on { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-arena-back { font: inherit; font-size: 0.8rem; color: var(--theme-focused-foreground); background: transparent; border: 0; padding: 4px 0; cursor: pointer; }
+.e-arena-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.e-arena-head__row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+.e-arena-head__title { font-weight: 600; font-size: 1.05rem; }
+.e-arena-head__players { overflow-wrap: anywhere; }
+.e-arena-head__badges { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.e-arena-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .e-arena-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }}
+.e-arena-stage { min-width: 0; }
+.e-arena-slider { width: 100%; margin: 8px 0; accent-color: var(--theme-focused-foreground); }
+.e-arena-stepline { display: block; margin: 4px 0 10px; overflow-wrap: anywhere; }
+.e-arena-frame { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--e-rule); }
+.e-arena-slots, .e-arena-bids { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.e-arena-slot, .e-arena-bids li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--e-rule); }
+.e-arena-slot__who { min-width: 8ch; }
+.e-arena-move { font-variant-numeric: tabular-nums; font-family: var(--font-family-mono); }
+.e-arena-sealed { opacity: 0.6; font-family: var(--font-family-mono); }
+.e-arena-slot.is-revealed .e-arena-move { color: var(--theme-focused-foreground); }
+.e-arena-bids li.is-called { border-bottom-color: var(--theme-focused-foreground); }
+.e-arena-call { color: var(--theme-focused-foreground); font-size: 0.8rem; }
+.e-arena-verdict { margin: 0; color: var(--theme-focused-foreground); overflow-wrap: anywhere; }
+.e-arena-models { margin-top: 12px; }
+.e-arena-side { min-width: 0; }
+.e-arena-side__label { display: block; font-size: 0.68rem; margin-bottom: 4px; }
+.e-arena-steps { list-style: none; margin: 0 0 8px; padding: 0; max-height: 18rem; overflow-y: auto; }
+.e-arena-step { display: block; width: 100%; text-align: left; font: inherit; font-size: 0.8rem; color: inherit; background: transparent; border: 0; border-left: 2px solid transparent; padding: 3px 6px; cursor: pointer; overflow-wrap: anywhere; }
+.e-arena-step.is-now { border-left-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-arena-step:hover, .e-arena-step:focus-visible { background: var(--theme-border-subdued); outline: none; }
+@media (max-width: 600px) { .e-arena { padding: 0 8px 20px; } .e-arena-steps { max-height: 12rem; }}
+/* The kit's list markers (ul ▪, ol counters) are not wanted in the Arena's lists. */
+.e-arena ul, .e-arena ol { list-style: none; text-indent: 0; padding-left: 0; }
+.e-arena li { padding-left: 0; }
+.e-arena li::before { content: none; display: none; }
+/* No horizontal page scroll at phone width: every Arena box may shrink, every long name may wrap. */
+.e-arena, .e-arena * { min-width: 0; overflow-wrap: anywhere; }
+.e-arena { max-width: 100%; box-sizing: border-box; }
+.e-arena-slot, .e-arena-bids li, .e-arena-head__row, .e-arena-head__badges { min-width: 0; }
+.e-arena-slider, .e-arena-frame, .e-arena-cards { max-width: 100%; box-sizing: border-box; }
+@media (max-width: 600px) { .e-arena { padding-left: 0; padding-right: 0; } .e-arena-slot__who { min-width: 0; }}
+
+/* The agent card: one component, full on the agent page, compact in headers and lists. Plain text, wraps at any width. */
+.e-agent-card { overflow-wrap: anywhere; max-width: 100%; }
+.e-agent-card__head { display: flex; gap: 10px; align-items: center; }
+.e-agent-card__text { min-width: 0; }
+.e-agent-card--compact { display: inline-flex; gap: 6px; align-items: flex-start; vertical-align: top; }
+.e-agent-card--compact .e-agent-card__about { display: block; }
+.e-agent-card__badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }

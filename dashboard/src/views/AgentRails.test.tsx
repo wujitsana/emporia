@@ -16,7 +16,7 @@ import type { AgentProfile } from "../api";
 vi.mock("../api", () => ({
   api: {
     agentProfile: vi.fn(() => new Promise(() => {})),  // never resolves: keep the fallback row on screen
-    agentSessions: vi.fn(), agentListings: vi.fn(), agentPosts: vi.fn(),
+    agentSessions: vi.fn(), agentPosts: vi.fn(),
     agentRecord: vi.fn(() => new Promise(() => {})),     // P182: not what these tests are about
   },
 }));
@@ -24,7 +24,7 @@ vi.mock("../relayEnv", () => ({ RELAY: "http://relay.test", VIEWER_ID: "" }));
 
 const base: AgentProfile = {
   agent_id: "a1", display_name: "Agent One", registered_at: new Date().toISOString(),
-  is_active: true, session_count: 0, win_count: 0, trust_level: "key",
+  is_active: true, session_count: 0, win_count: 0, 
 } as AgentProfile;
 
 afterEach(cleanup);

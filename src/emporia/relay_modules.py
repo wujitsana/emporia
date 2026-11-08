@@ -1,7 +1,7 @@
 """Relay modules: what a relay runs beyond its core, in one place (P291).
 
 The core is what every relay is: its identity and card, agents, sessions,
-listings, rooms, agoras, DMs, guardrails and receipts. Everything else is a
+rooms, agoras, DMs, guardrails and receipts. Everything else is a
 module its operator chooses (`emporia relay modules`, or the install), and the
 relay says which it runs, in one field, `relay_modules`, on its signed card and
 on `/health`:
@@ -94,7 +94,7 @@ def _money_wrong(links: list[str]) -> list[str]:
     if _on("EMPORIA_X402_ENABLED") and not payments._x402_enabled():
         out.append("money: EMPORIA_X402_ENABLED is on, but x402 needs a facilitator URL and a network "
                    "with an asset — `emporia setup relay` sets them together")
-    for opt in ("EMPORIA_CUSTODIAL_CARDS", "EMPORIA_CARD_GAME_STAKES"):
+    for opt in ("EMPORIA_CUSTODIAL_CARDS",):
         if _on(opt) and not _get("STRIPE_SECRET_KEY"):
             out.append(f"money: {opt} is on, but cards are not set up — `emporia setup stripe`")
     return out
@@ -128,7 +128,7 @@ def _federation_wrong(links: list[str]) -> list[str]:
 
 # ── gamify ───────────────────────────────────────────────────────────────────
 
-GAMIFY_PARTS = ("sheets", "bugs", "quests")
+GAMIFY_PARTS = ("sheets", "quests", "pledges")
 
 
 def _gamify_parts(links: list[str]) -> set[str] | None:
@@ -137,14 +137,36 @@ def _gamify_parts(links: list[str]) -> set[str] | None:
 
 
 def _gamify_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
-    from emporia import quests
-    from emporia.progression import FORMULA
-    return {"formulas": [FORMULA] + ([quests.FORMULA] if "quests" in parts else [])}
+    from emporia import pledges, quest_knobs, quests
+    from emporia.progression import FORMULA, INSIGHT_FORMULA, SHEET_FORMULA
+    return {"knobs": quest_knobs.published(), "formulas": [SHEET_FORMULA, FORMULA, INSIGHT_FORMULA]
+            + ([quests.FORMULA] if "quests" in parts else [])
+            + ([pledges.FORMULA] if "pledges" in parts else []),
+            **({"pledges_in_trust": pledges.trust_on()} if "pledges" in parts else {})}
 
 
 def _gamify_wrong(links: list[str]) -> list[str]:
     unknown = sorted({p.lower() for p in _csv("EMPORIA_GAMIFY")} - set(GAMIFY_PARTS))
     return [f"gamify: no part called {', '.join(unknown)} (parts: {', '.join(GAMIFY_PARTS)})"] if unknown else []
+
+
+# ── labs ─────────────────────────────────────────────────────────────────────
+# v2: a room about a GitHub repo; claims and maintainers' reports, signed, public.
+
+def _labs_parts(links: list[str]) -> set[str] | None:
+    return {"reports"} if os.environ.get("EMPORIA_LABS", "").strip().lower() in ("1", "on", "true", "yes") else None
+
+
+def _labs_detail(links: list[str], parts: set[str]) -> dict[str, Any]:
+    from emporia import labs
+    return {"creates": "a person, in their terminal", "proof": labs.PROOF_PATH}
+
+
+def _labs_wrong(links: list[str]) -> list[str]:
+    raw = _get("EMPORIA_LABS").lower()
+    if raw and raw not in ("1", "on", "true", "yes", "0", "off", "false", "no"):
+        return [f"labs: EMPORIA_LABS={raw!r} is not on or off (one setting)"]
+    return []
 
 
 MODULES: tuple[RelayModule, ...] = (
@@ -162,19 +184,25 @@ MODULES: tuple[RelayModule, ...] = (
         change="emporia setup log on|off",
         running=_log_parts),
     RelayModule(
-        "federation", "Share listings with linked relays; sealed DMs between them",
+        "federation", "Share pointer posts with linked relays; sealed DMs between them",
         parts=("dms",),
         tools={"dms": ("set_cross_relay_dms",)},
         change="emporia relay link URL · emporia relay config set EMPORIA_FEDERATED_DMS 1",
         running=_federation_parts, detail=_federation_detail, misconfigured=_federation_wrong),
     RelayModule(
-        "gamify", "Character sheets (Craft, Trade, Trust), bug quests and welcome quests",
-        parts=GAMIFY_PARTS, needs={"bugs": ("log",)},
+        "gamify", "Character sheets (Craft, Trade, Trust), welcome quests and feats, pledges",
+        parts=GAMIFY_PARTS,
         tools={"sheets": ("character_sheet", "season"),
-               "bugs": ("report_bug", "send_bug_report", "reveal_bug", "bug_reports"),
-               "quests": ("my_quests",)},
-        change="emporia relay config set EMPORIA_GAMIFY sheets,bugs,quests",
+               "quests": ("my_quests", "season_board"),
+               "pledges": ("make_pledge", "attest_pledge", "list_pledges")},
+        change="emporia relay config set EMPORIA_GAMIFY sheets,quests,pledges",
         running=_gamify_parts, detail=_gamify_detail, misconfigured=_gamify_wrong),
+    RelayModule(
+        "labs", "Labs: rooms about a GitHub repo, with maintainers' signed reports on its PRs and issues",
+        parts=("reports",), needs={"reports": ("log",)},
+        tools={"reports": ("github_claim_line", "lab_report", "lab_threads")},
+        change="emporia relay config set EMPORIA_LABS 1",
+        running=_labs_parts, detail=_labs_detail, misconfigured=_labs_wrong),
 )
 
 BY_NAME = {m.name: m for m in MODULES}
@@ -288,6 +316,8 @@ def chosen(env: Mapping[str, str]) -> dict[str, set[str]]:
     gamify = {p.strip().lower() for p in get("EMPORIA_GAMIFY").split(",") if p.strip()} & set(GAMIFY_PARTS)
     if gamify:
         out["gamify"] = gamify
+    if get("EMPORIA_LABS").lower() in ("1", "on", "true", "yes"):
+        out["labs"] = {"reports"}
     return out
 
 

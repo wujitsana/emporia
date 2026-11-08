@@ -1,35 +1,29 @@
 """P157: no card money waits with the relay.
 
 Every card payment is a Stripe destination charge to the person it is for: a
-room's creator, a purchase's seller, a wager's opponent. Card flows that would
-have to hold money on the operator's balance — a held prize, a wager of three
-or more — are refused unless the operator opts in (EMPORIA_CUSTODIAL_CARDS).
+room's creator, a purchase's seller. Card flows that would
+have to hold money on the operator's balance are refused unless the operator opts in (EMPORIA_CUSTODIAL_CARDS).
 The fake Stripe records what the relay asked for, including each charge's
 destination and fee, so these tests say where money would actually go.
 """
 import asyncio
 import uuid
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
 
 from emporia import relay_server as rs
 from tests.test_emporia import _register_keyed, _signed_room
-from tests.test_stake_models import FakeStripe, _resp, client, stripe  # noqa: F401  (fixtures)
-from tests.test_x402_wager import _play
+from tests.test_price_models import FakeStripe, _resp
 
-CARD_WAGER = {"mode": "stripe_link", "stake_per_participant": "5.00", "currency": "usd"}
+CARD_STAKE = {"mode": "stripe_link", "price": "5.00", "currency": "usd"}
 PAY = {"Authorization": "Payment spt_noncustodial_test"}
 
 
 @pytest.fixture(autouse=True)
 def _default_relay(monkeypatch):
     monkeypatch.delenv("EMPORIA_CUSTODIAL_CARDS", raising=False)
-    # The card-wager tests below are for an operator Stripe approved for skill
-    # games (P159); the default refuses card money on games — see the end.
-    monkeypatch.setenv("EMPORIA_CARD_GAME_STAKES", "1")
 
 
 @pytest.fixture
@@ -98,10 +92,10 @@ def test_a_card_entry_pays_the_creator_directly(client, stripe_entries):
     assert r.status_code == 200, r.text
     [pi] = stripe_entries.pis.values()
     assert pi["transfer_data"] == {"destination": "acct_owner"}, "charged to the creator, not the platform"
-    assert pi["application_fee_amount"] == 2, "the fee is the only part the platform receives"
+    assert pi["application_fee_amount"] == 1, "the fee is the only part the platform receives"
     assert stripe_entries.transfers == [], "no transfer: nothing sat on the platform's balance"
     [row] = _settlement_rows(room)
-    assert (row["transfer_status"], row["platform_fee_cents"], row["winner_payout_cents"]) == ("destination", 2, 98)
+    assert (row["transfer_status"], row["platform_fee_cents"], row["winner_payout_cents"]) == ("destination", 1, 99)
 
 
 def test_no_card_is_offered_for_a_creator_stripe_cannot_pay(client, stripe_entries):
@@ -162,149 +156,35 @@ def test_an_interrupted_entry_is_finished_from_what_stripe_says(client, stripe_e
 
 # -- wagers -------------------------------------------------------------------
 
-def _card_wager(client, accounts=True):
-    a, b = _agents(client, 2, "cw")
-    with _accounts(**({a: "acct_a", b: "acct_b"} if accounts else {})):
-        r = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": a,
-                                           "payment_rules": CARD_WAGER}, headers=_hdr(a))
+def test_a_card_intent_for_a_session_is_refused_on_a_relay_that_holds_no_card_money(client, stripe):
+    a, b = _agents(client, 2, "ci")
+    with _accounts(**{a: "acct_a", b: "acct_b"}):
+        r = client.post("/sessions", json={"module_type": "emporia:service:v1", "creator_agent_id": a,
+                                           "config": {"description": "A haiku"}, "payment_rules": CARD_STAKE},
+                        headers=_hdr(a))
         assert r.status_code == 200, r.text
         sid = r.json()["session_id"]
-        j = client.post(f"/sessions/{sid}/join", json={"agent_id": b}, headers=_hdr(b))
-        assert j.status_code == 200, j.text
-    return sid, a, b
-
-
-def test_each_card_stake_is_a_hold_paid_to_the_opponent(client, stripe):
-    sid, a, b = _card_wager(client)
-    assert stripe.pis == {}, "nothing is charged at create or join"
-    assert rs.load_session(sid)["status"] == "awaiting_funding"
-    with _accounts(**{a: "acct_a", b: "acct_b"}):
-        assert client.post(f"/sessions/{sid}/fund", headers={**_hdr(a), **PAY}).status_code == 200
-        again = client.post(f"/sessions/{sid}/fund", headers={**_hdr(a), **PAY})
-        assert again.status_code == 409, "staked once"
-        assert rs.load_session(sid)["status"] == "awaiting_funding"
-        assert client.post(f"/sessions/{sid}/fund", headers={**_hdr(b), **PAY}).status_code == 200
-        assert rs.load_session(sid)["status"] == "active"
-        holds = {pi["metadata"]["buyer_agent_id"]: (pid, pi) for pid, pi in stripe.pis.items()}
-        assert holds[a][1]["transfer_data"] == {"destination": "acct_b"}, "a's stake pays b if a loses"
-        assert holds[b][1]["transfer_data"] == {"destination": "acct_a"}
-        assert holds[a][1]["capture_method"] == "manual"
-        assert holds[a][1]["application_fee_amount"] == 25, "2.5% of the $10 pot, on the one captured"
-        r = _play(client, sid, a, b, [30, 30, 30, 5, 5], [20] * 5)
-    assert r.json()["outcome"]["winner"] == a
-    assert stripe.captured == [holds[b][0]], "b's hold, paid to a by Stripe"
-    assert stripe.cancelled == [holds[a][0]], "a's own hold, cancelled"
-    assert stripe.transfers == [], "the relay moved nothing itself"
-    [row] = _settlement_rows(sid)
-    assert (row["rail"], row["winner_id"], row["transfer_status"]) == ("stripe", a, "destination")
-    assert (row["total_stake_cents"], row["platform_fee_cents"], row["winner_payout_cents"]) == (1000, 25, 975)
-
-
-def test_a_card_wager_draw_cancels_both(client, stripe):
-    sid, a, b = _card_wager(client)
-    with _accounts(**{a: "acct_a", b: "acct_b"}):
-        for who in (a, b):
-            client.post(f"/sessions/{sid}/fund", headers={**_hdr(who), **PAY})
-        r = _play(client, sid, a, b, [20] * 5, [20] * 5)
-    assert r.json()["outcome"]["outcome_type"] == "draw"
-    assert not stripe.captured and len(stripe.cancelled) == 2
-
-
-def test_a_card_wager_needs_two_players_who_can_be_paid(client, stripe):
-    a, nobody = _agents(client, 2, "cx")
-    with _accounts(**{a: "acct_a"}):
-        r = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "creator_agent_id": a,
-                                           "config": {"players": 3}, "payment_rules": CARD_WAGER},
-                        headers=_hdr(a))
-        assert r.status_code == 400 and "two players" in r.text, "a pot of three would sit with the relay"
-        r = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": nobody,
-                                           "payment_rules": CARD_WAGER}, headers=_hdr(nobody))
-        assert r.status_code == 409 and "Stripe account" in r.text
-
-
-def test_the_opt_in_brings_back_the_held_pot(client, stripe, monkeypatch):
-    monkeypatch.setenv("EMPORIA_CUSTODIAL_CARDS", "1")
-    a, = _agents(client, 1, "co")
-    r = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "creator_agent_id": a,
-                                       "config": {"players": 3}, "payment_rules": CARD_WAGER},
-                    headers={**_hdr(a), **PAY})
-    assert r.status_code == 200, r.text
-    [pi] = stripe.pis.values()
-    assert pi["transfer_data"] is None, "a platform charge, as before"
-
-
-def test_a_card_intent_for_a_wager_names_the_opponent(client, stripe):
-    sid, a, b = _card_wager(client)
-    fake_post = stripe.post
-
-    async def post(url, *args, **kw):    # a created intent carries its client secret
-        r = await fake_post(url, *args, **kw)
-        r.json.return_value.setdefault("client_secret", "pi_secret_x")
-        return r
-
-    with _accounts(**{a: "acct_a", b: "acct_b"}), patch("httpx.AsyncClient.post", side_effect=post):
         r = client.post("/payments/create-intent",
                         json={"session_id": sid, "amount_cents": 500, "seller_id": "relay"}, headers=_hdr(a))
-    assert r.status_code == 200, r.text
-    pi = stripe.pis[r.json()["payment_intent_id"]]
-    assert pi["transfer_data"] == {"destination": "acct_b"} and pi["application_fee_amount"] == 25
-
-
-# -- bounties -----------------------------------------------------------------
-
-def test_a_held_card_prize_is_refused(client, stripe):
-    funder, = _agents(client, 1, "bf")
-    deadline = (datetime.now(UTC) + timedelta(days=1)).isoformat()
-    r = client.post("/bounties", json={"title": "Prize", "description": "d", "prize_cents": 1000,
-                                       "module_type": "emporia:blotto:v1", "rail": "stripe",
-                                       "entry_deadline": deadline},
-                    headers={**_hdr(funder), **PAY})
-    assert r.status_code == 400 and "does not hold card prizes" in r.text
+    assert r.status_code == 409 and "fund_session" in r.text
     assert stripe.pis == {}
 
 
-# -- P158: a staked game cannot be stalled out of ------------------------------
+# -- P159: no card money rides on a game --------------------------------------
 
-def test_a_staked_game_gets_a_clock_so_stalling_loses(client, stripe, monkeypatch):
-    """Without a clock, the losing player could stop moving until the idle
-    sweep abandoned the game and gave every stake back."""
-    monkeypatch.setenv("EMPORIA_ENGINE_GAME_STAKES", "1")
-    a, = _agents(client, 1, "ck")
-    with _accounts(**{a: "acct_a"}):
-        r = client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": a,
-                                           "payment_rules": CARD_WAGER}, headers=_hdr(a))
-        assert r.status_code == 200, r.text
-        assert rs.load_session(r.json()["session_id"])["config"]["move_time_limit_s"] == 3600
-        free = client.post("/sessions", json={"module_type": "emporia:chess:v1", "creator_agent_id": a},
-                           headers=_hdr(a))
-    assert "move_time_limit_s" not in rs.load_session(free.json()["session_id"])["config"], \
-        "a free game keeps no clock unless asked"
-
-
-def test_funding_locks_do_not_outlive_the_funding(client, stripe):
-    from emporia.routes import sessions as routes
-    sid, a, b = _card_wager(client)
-    with _accounts(**{a: "acct_a", b: "acct_b"}):
-        for who in (a, b):
-            client.post(f"/sessions/{sid}/fund", headers={**_hdr(who), **PAY})
-    assert rs.load_session(sid)["status"] == "active" and sid not in routes._WAGER_FUNDING_LOCKS
-
-
-# -- P159: by default, no card money on games ---------------------------------
-
-def test_by_default_games_are_staked_in_usdc_not_on_cards(client, stripe, monkeypatch):
-    monkeypatch.delenv("EMPORIA_CARD_GAME_STAKES")
+def test_by_default_no_card_money_rides_on_a_game(client, stripe, monkeypatch):
     a, = _agents(client, 1, "dg")
     with _accounts(**{a: "acct_a"}):
-        r = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": a,
-                                           "payment_rules": CARD_WAGER}, headers={**_hdr(a), **PAY})
-        assert r.status_code == 400 and "payment_mode='x402'" in r.text
-        deadline = (datetime.now(UTC) + timedelta(days=1)).isoformat()
-        r = client.post("/bounties", json={"title": "Prize", "description": "d", "prize_cents": 1000,
-                                           "module_type": "emporia:blotto:v1", "rail": "stripe",
-                                           "entry_deadline": deadline}, headers={**_hdr(a), **PAY})
-        assert r.status_code == 400 and "promise" in r.text
-        free = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": a},
+        r = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": a,
+                                           "payment_rules": CARD_STAKE}, headers={**_hdr(a), **PAY})
+        assert r.status_code == 400 and "takes no stakes" in r.text
+        free = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": a},
                            headers=_hdr(a))
     assert free.status_code == 200, "free play is untouched"
     assert stripe.pis == {}
+
+
+@pytest.fixture(autouse=True)
+def _relay_fee_address(monkeypatch):
+    """The relay's fee exists once it has a fee address (fees.py): these tests are about where the 1% goes."""
+    monkeypatch.setenv("EMPORIA_FEE_ADDRESS", "0x" + "fe" * 20)

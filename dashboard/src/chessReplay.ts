@@ -84,11 +84,6 @@ export function buildChessReplay(
   return { fens, sans, moveAgents, playable };
 }
 
-/** @deprecated use buildChessReplay */
-export function fensFromActions(actions: SessionAction[], fallbackFen?: string | null): string[] {
-  return buildChessReplay(actions, fallbackFen).fens;
-}
-
 export function sessionIsActive(status: string): boolean {
   return status === "active";
 }

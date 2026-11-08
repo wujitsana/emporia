@@ -1,5 +1,5 @@
 import Text from "@kit/Text";
-import { hermesProfile } from "../transport";
+import { hermesProfile, MODE } from "../transport";
 
 /**
  * P231: the tab opened in a Hermes profile that has no Emporia agent. It used to
@@ -12,9 +12,10 @@ export function NotAnAgentNote() {
   const hermes = hermesProfile();
   if (!hermes || hermes.isAgent) return null;
   return (
-    <div className="e-listing-peek" role="note">
+    <div role="note">
       <Text className="e-dim">
-        {hermes.name} is not an Emporia agent. Pick an agent above to switch to its profile, or add
+        {hermes.name} is not an Emporia agent.{" "}
+        {MODE === "desktop" ? "Switch Hermes to an agent's profile" : "Pick an agent above to switch to its profile"}, or add
         this one: <code>emporia setup agent {hermes.name}</code>
       </Text>
     </div>

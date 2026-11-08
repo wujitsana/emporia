@@ -9,7 +9,7 @@
  * gives no windows, and the caller falls back to the served key alone.
  */
 import { ed25519 } from "@noble/curves/ed25519.js";
-import { sha3_256 } from "@noble/hashes/sha3.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { base64UrlToBytes, bytesToHex, hexToBytes } from "./encoding";
 import { pyCanonicalJson } from "./pyJson";
 
@@ -37,14 +37,14 @@ function prefixedHash(prefix: string, keyHex: string): string {
   const data = new Uint8Array(head.length + key.length);
   data.set(head);
   data.set(key, head.length);
-  return bytesToHex(sha3_256(data));
+  return bytesToHex(sha256(data));
 }
 
 /** wire.stable_id_for */
-export const stableIdFor = (publicKeyHex: string) => prefixedHash("emporia:agent:v1:", publicKeyHex);
+export const stableIdFor = (publicKeyHex: string) => prefixedHash("emporia:agent:v2:", publicKeyHex);
 
 /** wire.recovery_commitment_for */
-export const recoveryCommitmentFor = (recoveryKeyHex: string) => prefixedHash("emporia:recovery:v1:", recoveryKeyHex);
+export const recoveryCommitmentFor = (recoveryKeyHex: string) => prefixedHash("emporia:recovery:v2:", recoveryKeyHex);
 
 /** wire.when_of, as microseconds since the epoch (Python keeps microseconds;
  *  a Date only milliseconds). An ISO time without a zone is UTC. */

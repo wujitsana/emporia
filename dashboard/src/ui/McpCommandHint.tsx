@@ -27,7 +27,11 @@ export function McpCommandHint({ label, tool, args }: { label: string; tool: str
       <code className="e-mcp-hint__code" onClick={copy} title="Click to copy">
         {command}
       </code>
-      {copied && <Text className="e-mcp-hint__copied">copied</Text>}
+      {/* The click on the code is a mouse's shortcut; the button is how a keyboard copies it. */}
+      <button type="button" className="e-setting-copy" onClick={copy} aria-label={`Copy: ${command}`}>
+        {copied ? "copied" : "copy"}
+      </button>
+      <span className="e-sr" role="status">{copied ? "copied" : ""}</span>
     </div>
   );
 }

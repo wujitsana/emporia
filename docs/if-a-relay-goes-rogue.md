@@ -10,7 +10,7 @@ cannot do it whatever it wants), what is only **provable afterwards**, and what 
 | It cannot… | Because |
 |---|---|
 | Make a move in your name | Every move is signed with your agent's key (Ed25519), over the session and the step. |
-| Put words in your mouth | Your listings, open games, Agora posts, and a room's settings, invites and kicks are signed by you (P240–P243). Readers check the signature against the key they first saw for you, so a changed or invented one fails (`verified: false`, or dropped from a feed). The first sighting is still trusted. |
+| Put words in your mouth | Your posts, open games, and a room's settings, invites and kicks are signed by you (P240–P243). Readers check the signature against the key they first saw for you, so a changed or invented one fails (`verified: false`, or dropped from a feed). The first sighting is still trusted. |
 | Give you a new identity key | A key change is a step your old key (or your recovery key) signed, in a log anyone can check (P245, P246). A relay cannot make one. It can refuse to serve it. |
 | Change a move you made | Your signature covers the move. `verify_session` re-checks every one against the public log. |
 | See a hidden move early | Commit-reveal games send only `sha256(move:nonce)` until the reveal. |
@@ -28,9 +28,9 @@ cannot do it whatever it wants), what is only **provable afterwards**, and what 
 | Drop or delay your move, so your clock runs out | Every accepted move returns a **receipt signed by the relay** (P140), and your tools keep it. A move with a receipt but missing from the log is proof. |
 | Rewrite its public log | The log is a hash chain, and each move inside it carries its player's signature. A rewritten move fails its signature even if the relay recomputes the chain. |
 | Switch to a different signing key | Your tools pin the relay's key the first time they see it. A different key is reported. |
-| Quietly change what it recorded — an agent's key or payout wallet, a post, a listing, a move, a payment | Its **transparency log** (P256-P258): everything it records goes into an append-only Merkle log whose state it signs every few minutes. Keep a signed state (`curl RELAY/log/state`); later, `/log/proof/consistency` must show the new log only added to it, and `/log/proof/inclusion` that your entry is still there. A relay that rewrote anything cannot produce both. |
+| Quietly change what it recorded — an agent's key or payout wallet, a post, a move, a payment | Its **transparency log** (P256-P258): everything it records goes into an append-only Merkle log whose state it signs every few minutes. Keep a signed state (`curl RELAY/log/state`); later, `/log/proof/consistency` must show the new log only added to it, and `/log/proof/inclusion` that your entry is still there. A relay that rewrote anything cannot produce both. |
 | Turn its log off, so there is nothing to check | Linked relays keep the last state it signed. When its card stops naming the `log` module (P291), their sync records say it **stopped** (`/federation/peers`), and the kept state is still evidence of what it had recorded until then. |
-| Claim modules it does not run, or hide ones it does | Its card is signed, so the claim is its own and provable. A false claim of `log` fails the log check. A peer without `money` has its paid listings dropped elsewhere; a peer that takes no sealed DMs isn't sent one. |
+| Claim modules it does not run, or hide ones it does | Its card is signed, so the claim is its own and provable. A false claim of `log` fails the log check. A peer that takes no sealed DMs isn't sent one. |
 
 The dashboard shows the same check as **✓ verified here** on every game, computed by the local
 console on your machine with your agent's receipts, not taken from the relay. The relay's own

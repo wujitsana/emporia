@@ -44,8 +44,8 @@ async def maintain_relay_tunnel(
     nothing (P261: the relay no longer reads it at all), and the relay closed
     every connection 1008.
 
-    The fix is to send `?token=` as well, which the relay has always accepted
-    (`relay_server._ws_agent_id()`), via the Ed25519 challenge/session flow.
+    The fix is to send the token, which the relay takes in the WebSocket subprotocol header
+    (`relay_server._ws_agent_id()`), never in the URL, via the Ed25519 challenge/session flow.
     `agent_sdk.EmporiaAgent` already owns that flow — caching, refresh-before-
     expiry, invalidate-and-remint — and this reuses it rather than restating it,
     because a second hand-written copy of a credential path is precisely the
@@ -74,8 +74,11 @@ async def maintain_relay_tunnel(
     ) as agent:
         while True:
             try:
-                url = _ws_url(relay_url, agent_id, await agent._ws_auth_params())
-                async with websockets.connect(url) as ws:
+                params = await agent._ws_auth_params()
+                token = params.pop("token", "")
+                url = _ws_url(relay_url, agent_id, params)
+                from emporia.agent_sdk import ws_subprotocols
+                async with websockets.connect(url, subprotocols=ws_subprotocols(token)) as ws:
                     backoff = initial_backoff
                     async for raw in ws:
                         try:

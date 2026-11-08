@@ -5,13 +5,12 @@ builds the same command strings in TypeScript (`dashboard/src/operatorCommands.t
 are held to one table, `dashboard/src/operatorCommands.vectors.json`, by their tests.
 
 Every action is a command a person runs in their own terminal, never a button: the
-dashboard only watches. Verdicts (a bug's, an idea's) are the person's signed decisions,
-and the key guard refuses them from an agent's tools outright; the relay controls (an
-expedition, the house agent, a snapshot) wait for the person's yes when an agent asks.
+dashboard only watches. The relay controls (an expedition, the house agent, a snapshot) wait for the
+person's yes when an agent asks.
 
 A command only ever carries an id the relay generated, checked against a strict pattern;
 anything else in it is a placeholder in capitals for the person to fill in. Text from the
-relay (a title, a test) is shown beside a command, never put inside one.
+relay (a title) is shown beside a command, never put inside one.
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ from typing import Any
 PREFIX = "hermes emporia"
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}$")
 _NAME = re.compile(r"^(?:[a-z0-9][a-z0-9_-]{0,63}|NAME)$")   # a profile, or the placeholder NAME
-SEVERITIES = ("low", "medium", "high", "critical")
 
 PERSON = "person"       # only a person runs it; the key guard refuses it from an agent's tools
 APPROVE = "approve"     # an agent asking to run it waits for the person's yes
@@ -45,26 +43,11 @@ def _one(label: str, command: str, gate: str) -> dict[str, str]:
     return {"label": label, "command": command, "gate": gate}
 
 
-def bug_commands(name: str, item: dict[str, Any]) -> list[dict[str, str]]:
-    """Accept (with the claimed severity, and the fix commit to fill in), duplicate, invalid."""
-    rid = item.get("report_id")
-    if not safe_name(name) or not safe_id(rid):
+def lab_commands(name: str, lab: str) -> list[dict[str, str]]:
+    """Labs v2: read a lab's threads and board."""
+    if not safe_name(name) or not safe_id(lab):
         return []
-    sev = item.get("severity_claimed") if item.get("severity_claimed") in SEVERITIES else "SEVERITY"
-    return [_one(f"accept, severity {sev}", _cmd("bugs", name, "verdict", rid, "accepted", "--severity", sev,
-                                                 "--fix", "FIX_COMMIT"), PERSON),
-            _one("a duplicate", _cmd("bugs", name, "verdict", rid, "duplicate", "--of", "EARLIER_REPORT"), PERSON),
-            _one("invalid", _cmd("bugs", name, "verdict", rid, "invalid"), PERSON)]
-
-
-def idea_commands(name: str, item: dict[str, Any], verdicts: bool) -> list[dict[str, str]]:
-    """Adopt (with what it led to), noted, duplicate — when the relay takes idea verdicts."""
-    pid = item.get("post_id")
-    if not verdicts or not safe_name(name) or not safe_id(pid):
-        return []
-    return [_one("adopt", _cmd("ideas", name, "adopt", pid, "--ref", "COMMIT_OR_ROADMAP_ITEM"), PERSON),
-            _one("noted", _cmd("ideas", name, "noted", pid), PERSON),
-            _one("a duplicate", _cmd("ideas", name, "duplicate", pid, "--of", "EARLIER_POST"), PERSON)]
+    return [_one("read the lab's threads", _cmd("lab", name, "show", lab), READ)]
 
 
 def expedition_command(name: str) -> list[dict[str, str]]:
@@ -130,29 +113,19 @@ def render(status: dict[str, Any], name: str) -> list[str]:
                + (f"{last['at']} ({last['kind']})" if last else "none"))
     cmds(snapshot_command(name))
 
-    b = status.get("bugs") or {}
+    p = status.get("labs") or {}
     out.append("")
-    if not b.get("on"):
-        out.append(f"Bug reports: off — {b.get('why')}")
+    if not p.get("on"):
+        out.append(f"Lab activity: off — {p.get('why')}")
     else:
-        out.append(f"Bug reports waiting for a verdict: {b.get('open', 0)}")
-        for it in b.get("items") or []:
-            what = it.get("title") or it.get("where") or ""
-            out.append(f"  {it['report_id']}  claimed {it['severity_claimed']:<8} by {it['reporter_id']:<14} {what}")
-            if it.get("test"):
-                out.extend(f"      | {line}" for line in str(it["test"]).splitlines()[:6])
-            cmds(bug_commands(name, it))
-
-    i = status.get("ideas") or {}
-    out.append("")
-    if not i.get("topic_exists"):
-        out.append(f"Ideas: no `{i.get('topic')}` topic on this relay yet")
-    else:
-        out.append(f"Ideas in `{i.get('topic')}` not yet judged: {i.get('open', 0)}"
-                   + ("" if i.get("verdicts") else " (this relay takes no idea verdicts)"))
-        for it in i.get("items") or []:
-            out.append(f"  {it['post_id']}  by {it['author_id']:<14} {it.get('title') or ''}")
-            cmds(idea_commands(name, it, bool(i.get("verdicts"))))
+        out.append(f"Lab activity: {len(p.get('labs') or [])} lab(s), {p.get('reports', 0)} report(s), "
+                   f"{len(p.get('open_threads') or [])} open thread(s)")
+        for r in p.get("recent") or []:
+            out.append(f"  {r['at'][:16]}  {r['lab']:<10} {r['ref']:<32} {r['event']:<9} by {r['maintainer_id']}")
+        for t in p.get("open_threads") or []:
+            out.append(f"  open  {t['lab']:<10} {t['ref']:<32} {t['messages']} message(s)")
+        for lb in p.get("labs") or []:
+            cmds(lab_commands(name, lb["slug"]))
 
     e = status.get("expedition") or {}
     out.append("")

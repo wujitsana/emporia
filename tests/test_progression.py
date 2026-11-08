@@ -1,4 +1,5 @@
 """P288: the gamify module's sheet — Craft per game (Glicko-2), Trade, Trust, levels, class."""
+from datetime import datetime
 import json
 import uuid
 
@@ -12,7 +13,7 @@ from emporia.routes import standing as st
 DAY = 86_400
 
 
-def game(a, b, winner, day, module="emporia:blotto:v1", **extra):
+def game(a, b, winner, day, module="emporia:blotto:v2", **extra):
     return {"session_id": f"s{uuid.uuid4().hex[:8]}", "module_type": module, "participants": [a, b],
             "winner": winner, "ended_at": day * DAY, **extra}
 
@@ -26,16 +27,16 @@ def test_glicko2_matches_glickmans_worked_example():
 
 
 def test_winning_raises_losing_lowers_and_a_draw_between_equals_holds():
-    t = pg.craft_ratings([game("a", "b", "a", 1)])["emporia:blotto:v1"]
+    t = pg.craft_ratings([game("a", "b", "a", 1)])["emporia:blotto:v2"]
     assert t["a"].rating > 1500 > t["b"].rating and t["a"].games == t["b"].games == 1
-    d = pg.craft_ratings([game("a", "b", None, 1, termination="rounds")])["emporia:blotto:v1"]
+    d = pg.craft_ratings([game("a", "b", None, 1, termination="rounds")])["emporia:blotto:v2"]
     assert round(d["a"].rating) == round(d["b"].rating) == 1500 and d["a"].rd < pg.START_RD
 
 
 def test_the_same_opponent_again_and_again_flattens():
     """Ten wins over one agent weigh less than ten wins over ten agents."""
-    one = pg.craft_ratings([game("a", "b", "a", i) for i in range(10)])["emporia:blotto:v1"]["a"]
-    ten = pg.craft_ratings([game("a", f"b{i}", "a", i) for i in range(10)])["emporia:blotto:v1"]["a"]
+    one = pg.craft_ratings([game("a", "b", "a", i) for i in range(10)])["emporia:blotto:v2"]["a"]
+    ten = pg.craft_ratings([game("a", f"b{i}", "a", i) for i in range(10)])["emporia:blotto:v2"]["a"]
     assert ten.rating > one.rating and one.opponents == 1 and ten.opponents == 10
 
 
@@ -48,7 +49,7 @@ def test_a_game_nobody_played_is_no_result():
 def test_a_many_player_win_counts_as_one_game():
     many = pg.craft_ratings([{**game("a", "b", "a", 1, module="emporia:two_thirds:v1"),
                               "participants": ["a", "b", "c", "d", "e"]}])["emporia:two_thirds:v1"]
-    two = pg.craft_ratings([game("a", "b", "a", 1)])["emporia:blotto:v1"]
+    two = pg.craft_ratings([game("a", "b", "a", 1)])["emporia:blotto:v2"]
     assert abs(many["a"].rating - two["a"].rating) < 60
     assert many["b"].rating == many["c"].rating < 1500       # losers move against the winner only
 
@@ -60,15 +61,10 @@ def test_tied_players_share_the_win():
     assert t["a"].rating == t["b"].rating > 1500 > t["c"].rating
 
 
-def test_a_stake_counts_a_little_more_but_not_by_its_size():
-    free = pg.craft_ratings([game("a", "b", "a", 1)])["emporia:blotto:v1"]["a"].rating
-    small = pg.craft_ratings([game("a", "b", "a", 1, stake_per_participant="0.10")])["emporia:blotto:v1"]["a"].rating
-    big = pg.craft_ratings([game("a", "b", "a", 1, stake_per_participant="100")])["emporia:blotto:v1"]["a"].rating
-    assert small > free and small == big
 
 
 def test_uncertainty_grows_while_an_agent_does_not_play():
-    r = pg.craft_ratings([game("a", f"b{i}", "a", i) for i in range(30)])["emporia:blotto:v1"]["a"]
+    r = pg.craft_ratings([game("a", f"b{i}", "a", i) for i in range(30)])["emporia:blotto:v2"]["a"]
     assert pg.as_of(r, r.last_at + 365 * DAY).rd > r.rd
 
 
@@ -146,19 +142,23 @@ def client():
 
 def test_nothing_runs_unless_the_operator_turns_it_on(client, monkeypatch):
     monkeypatch.delenv("EMPORIA_GAMIFY", raising=False)
-    assert client.get("/ratings", params={"module_type": "emporia:blotto:v1"}).status_code == 404
+    assert client.get("/ratings", params={"module_type": "emporia:blotto:v2"}).status_code == 404
     assert client.get("/agents/anyone/sheet").status_code == 404
     card = client.get("/relay/card").json()
     assert "gamify" not in card["relay_modules"]
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
     card = client.get("/relay/card").json()
-    assert card["relay_modules"]["gamify"] == {"v": 1, "parts": ["sheets"], "formulas": [pg.FORMULA]}
+    gamify = dict(card["relay_modules"]["gamify"])
+    assert gamify.pop("knobs")["scope"] == "this relay only"    # the operator's knobs ride with it (tests/test_quest_knobs.py)
+    assert gamify == {"v": 1, "parts": ["sheets"], "formulas": [pg.SHEET_FORMULA, pg.FORMULA, pg.INSIGHT_FORMULA]}
 
 
 def _register(agent):
+    """A bare row for a test agent, with the stable id its key would give (the operator is a key)."""
+    from tests.ids import stable_of
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT OR IGNORE INTO authorized_agents (agent_id, public_key_hex, registered_at) "
-                     "VALUES (?, '', '2026-01-01T00:00:00+00:00')", (agent,))
+        conn.execute("INSERT OR IGNORE INTO authorized_agents (agent_id, public_key_hex, registered_at, stable_id) "
+                     "VALUES (?, '', '2026-01-01T00:00:00+00:00', ?)", (agent, stable_of(agent)))
 
 
 def _session(module, participants, data, status="completed", current="", step=2, metadata=None):
@@ -182,28 +182,28 @@ def test_the_sheet_and_ladder_come_from_this_relays_records(client, monkeypatch)
     a, b = f"pg_a_{uuid.uuid4().hex[:6]}", f"pg_b_{uuid.uuid4().hex[:6]}"
     for x in (a, b):
         _register(x)
-    won = _session("emporia:blotto:v1", [a, b], {"wins": {a: 2, b: 0}, "history": [{}, {}], "rounds": 3})
+    won = _session("emporia:blotto:v2", [a, b], {"wins": {a: 2, b: 0}, "history": [{}, {}], "rounds": 3})
     _session("emporia:service:v1", [b, a], {"buyer": b, "seller": a, "status": "confirmed"})
-    _session("emporia:blotto:v1", [a, b], {"wins": {a: 0, b: 0}, "history": [], "rounds": 3},
+    _session("emporia:blotto:v2", [a, b], {"wins": {a: 0, b: 0}, "history": [], "rounds": 3},
              status="abandoned", current=b, step=1)
 
     sh = client.get(f"/agents/{a}/sheet").json()
-    assert sh["craft"][0]["module_type"] == "emporia:blotto:v1" and sh["craft"][0]["rating"] > 1500
+    assert sh["craft"][0]["module_type"] == "emporia:blotto:v2" and sh["craft"][0]["rating"] > 1500
     assert sh["trade"]["sold"] == 1 and sh["sessions_counted"] == 3 and sh["signature"]
     assert sh["trust"]["abandoned_on_turn"] == 0
     assert client.get(f"/agents/{b}/sheet").json()["trust"]["abandoned_on_turn"] == 1
     assert won in [g["session_id"] for g in st._craft_games()]
 
-    ladder = client.get("/ratings", params={"module_type": "emporia:blotto:v1"}).json()["ratings"]
+    ladder = client.get("/ratings", params={"module_type": "emporia:blotto:v2"}).json()["ratings"]
     names = [r["agent_id"] for r in ladder]
     assert names.index(a) < names.index(b)
-    rows = client.get("/leaderboard", params={"module_type": "emporia:blotto:v1", "limit": 200}).json()["standings"]
+    rows = client.get("/leaderboard", params={"module_type": "emporia:blotto:v2", "limit": 200}).json()["standings"]
     mine = next(r for r in rows if r["agent_id"] == a)
     assert mine["rating"]["rating"] > 1500 and mine["rating"]["provisional"] is True
 
 
 def test_a_private_game_is_not_in_anyones_craft(monkeypatch):
-    sid = _session("emporia:blotto:v1", ["p1", "p2"], {"wins": {"p1": 2, "p2": 0}, "history": [{}, {}], "rounds": 3})
+    sid = _session("emporia:blotto:v2", ["p1", "p2"], {"wins": {"p1": 2, "p2": 0}, "history": [{}, {}], "rounds": 3})
     monkeypatch.setattr(rs, "_session_visibility", lambda s: "participants" if s["session_id"] == sid else "public")
     assert sid not in [g["session_id"] for g in st._craft_games()]
 
@@ -217,16 +217,16 @@ def test_an_unknown_agent_has_no_sheet(client, monkeypatch):
 
 
 def who(**ops):
-    """Standing data: name=operator (or name=(operator, verified, registered_day))."""
+    """Standing data: name=operator (or name=(operator, registered_day))."""
     out = {}
     for name, v in ops.items():
-        op, verified, day = v if isinstance(v, tuple) else (v, True, -100)
-        out[name] = pg.Who(operator=op, verified=verified, registered_at=day * DAY)
+        op, day = v if isinstance(v, tuple) else (v, -100)
+        out[name] = pg.Who(operator=op, registered_at=day * DAY)
     return out
 
 
 def test_your_own_other_agent_is_not_an_opponent_or_a_customer():
-    w = who(a="nous:1", sock="nous:1", b="nous:2")
+    w = who(a="label:1", sock="label:1", b="label:2")
     t = pg.craft_ratings([game("a", "sock", "a", i) for i in range(20)], w)
     assert t == {}                                                     # nothing at all
     sh = pg.base_sheet("a", table={}, deals=[deal("sock", "a", "confirmed", i) for i in range(20)],
@@ -235,40 +235,39 @@ def test_your_own_other_agent_is_not_an_opponent_or_a_customer():
 
 
 def test_many_agents_of_one_operator_are_one_counterparty():
-    flock = {f"b{i}": "nous:farm" for i in range(10)}
-    w = who(s="nous:me", **flock, **{f"c{i}": f"nous:{i}" for i in range(10)})
+    flock = {f"b{i}": "label:farm" for i in range(10)}
+    w = who(s="label:me", **flock, **{f"c{i}": f"label:{i}" for i in range(10)})
     one = pg.base_sheet("s", table={}, deals=[deal(f"b{i}", "s", "confirmed", i) for i in range(10)],
                         abandoned=[], registered_at=None, now=0, who=w)
     ten = pg.base_sheet("s", table={}, deals=[deal(f"c{i}", "s", "confirmed", i) for i in range(10)],
                         abandoned=[], registered_at=None, now=0, who=w)
     assert one["trust"]["counterparties"] == 1 and ten["trust"]["counterparties"] == 10
     assert one["trade"]["score"] < ten["trade"]["score"] / 2
-    games = pg.craft_ratings([game("a", f"b{i}", "a", i) for i in range(10)], {**w, "a": pg.Who("nous:a", True, 0)})
-    assert games["emporia:blotto:v1"]["a"].opponents == 1
+    games = pg.craft_ratings([game("a", f"b{i}", "a", i) for i in range(10)], {**w, "a": pg.Who("label:a", 0)})
+    assert games["emporia:blotto:v2"]["a"].opponents == 1
 
 
-def test_fresh_and_unverified_agents_count_for_little():
-    verified = who(s="nous:me", **{f"b{i}": f"nous:{i}" for i in range(10)})
-    keyonly = who(s="nous:me", **{f"b{i}": (f"b{i}", False, -100) for i in range(10)})
-    fresh = who(s="nous:me", **{f"b{i}": (f"nous:{i}", True, 0) for i in range(10)})   # registered that day
+def test_fresh_agents_count_for_little():
+    verified = who(s="label:me", **{f"b{i}": f"label:{i}" for i in range(10)})
+    fresh = who(s="label:me", **{f"b{i}": (f"label:{i}", 0) for i in range(10)})   # registered that day
     deals = [deal(f"b{i}", "s", "confirmed", 0) for i in range(10)]
     score = {name: pg.base_sheet("s", table={}, deals=deals, abandoned=[], registered_at=None, now=0,
                                  who=w)["trade"]["score"] for name, w in
-             (("verified", verified), ("keyonly", keyonly), ("fresh", fresh))}
-    assert score["keyonly"] <= score["verified"] / 4 + 0.01 and score["fresh"] <= score["verified"] / 10 + 0.01
+             (("verified", verified), ("fresh", fresh))}
+    assert score["fresh"] <= score["verified"] / 10 + 0.01
     beat_verified = pg.craft_ratings([game("a", f"b{i}", "a", 0) for i in range(10)],
-                                     {**verified, "a": pg.Who("nous:a", True, -100 * DAY)})
+                                     {**verified, "a": pg.Who("label:a", -100 * DAY)})
     beat_fresh = pg.craft_ratings([game("a", f"b{i}", "a", 0) for i in range(10)],
-                                  {**fresh, "a": pg.Who("nous:a", True, -100 * DAY)})
-    assert beat_fresh["emporia:blotto:v1"]["a"].rating < beat_verified["emporia:blotto:v1"]["a"].rating - 100
+                                  {**fresh, "a": pg.Who("label:a", -100 * DAY)})
+    assert beat_fresh["emporia:blotto:v2"]["a"].rating < beat_verified["emporia:blotto:v2"]["a"].rating - 100
 
 
 def test_an_agent_nobody_registered_counts_least():
-    assert pg._weight({}, "ghost", 0) == pg.UNVERIFIED_WEIGHT * pg.MIN_RAMP
+    assert pg._weight({}, "ghost", 0) == pg.UNKNOWN_WEIGHT * pg.MIN_RAMP
 
 
 def test_walking_away_from_a_losing_game_is_a_loss():
-    t = pg.craft_ratings([{**game("a", "b", None, 1), "abandoned_by": "a"}])["emporia:blotto:v1"]
+    t = pg.craft_ratings([{**game("a", "b", None, 1), "abandoned_by": "a"}])["emporia:blotto:v2"]
     assert t["a"].rating < 1500 < t["b"].rating
     assert pg.craft_ratings([{**game("a", "b", None, 1), "abandoned_by": "z"}]) == {}
 
@@ -286,9 +285,9 @@ def test_the_relay_weighs_by_operator_and_never_says_who_is_linked(client, monke
     for x in (a, sock):
         _register(x)
     with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("UPDATE authorized_agents SET nous_user_id = ? WHERE agent_id IN (?, ?)", (nous, a, sock))
+        conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id IN (?, ?)", (nous, a, sock))
     for _ in range(3):
-        _session("emporia:blotto:v1", [a, sock], {"wins": {a: 2, sock: 0}, "history": [{}, {}], "rounds": 3})
+        _session("emporia:blotto:v2", [a, sock], {"wins": {a: 2, sock: 0}, "history": [{}, {}], "rounds": 3})
     _session("emporia:service:v1", [sock, a], {"buyer": sock, "seller": a, "status": "confirmed"})
     body = client.get(f"/agents/{a}/sheet").text
     sh = json.loads(body)
@@ -297,7 +296,7 @@ def test_the_relay_weighs_by_operator_and_never_says_who_is_linked(client, monke
 
 
 def test_leaving_a_game_against_your_own_agent_counts_nothing_either_way():
-    w = who(a="nous:1", sock="nous:1")
+    w = who(a="label:1", sock="label:1")
     sh = pg.base_sheet("a", table={}, deals=[], registered_at=None, now=0, who=w,
                        abandoned=[{"participants": ["a", "sock"], "current_agent": "a", "step_number": 9}])
     assert sh["trust"]["abandoned_on_turn"] == 0 and sh["trust"]["score"] == 0 and sh["adjusted"] is True
@@ -309,17 +308,20 @@ def test_craft_rates_set_plays_not_games_an_engine_decides():
     from emporia.routes.standing import craft_modules
     rated = craft_modules()
     assert "emporia:chess:v1" not in rated
-    assert {"emporia:blotto:v1", "emporia:two-thirds:v1", "emporia:lowest-unique:v1"} <= set(rated)
+    assert {"emporia:blotto:v2", "emporia:two-thirds:v2", "emporia:lowest-unique:v2"} <= set(rated)
 
 
 # -- P297: Renown, from likes ---------------------------------------------------
+
+_LIKE_AT = datetime.fromisoformat("2026-11-05T00:00:00+00:00").timestamp()
+
 
 def _like(giver, to, target, at="2026-11-05T00:00:00+00:00", kind="post"):
     return {"agent_id": giver, "to_agent": to, "kind": kind, "target_id": target, "at": at}
 
 
 def test_renown_counts_others_likes_once_per_operator_per_thing():
-    who = {a: pg.Who(operator=op, verified=True, registered_at=0) for a, op in
+    who = {a: pg.Who(operator=op, registered_at=0) for a, op in
            (("me", "op-me"), ("mine2", "op-me"), ("a1", "op-a"), ("a2", "op-a"), ("b", "op-b"))}
     likes = [_like("a1", "me", "p1"), _like("a2", "me", "p1"),       # one operator, one thing: once
              _like("mine2", "me", "p1"),                             # my own operator: nothing
@@ -329,7 +331,7 @@ def test_renown_counts_others_likes_once_per_operator_per_thing():
 
 
 def test_renown_flattens_repeats_cancels_swaps_and_ignores_the_house():
-    who = {a: pg.Who(operator=a, verified=True, registered_at=0) for a in ("me", "fan", "pal", "house")}
+    who = {a: pg.Who(operator=a, registered_at=0) for a in ("me", "fan", "pal", "house")}
     flat = pg.renown("me", [_like("fan", "me", f"p{i}") for i in range(4)], who)
     assert flat["score"] == round(1 + 1 / 2 + 1 / 3 + 1 / 4, 2)
     swap = pg.renown("me", [_like("pal", "me", "p1"), _like("me", "pal", "q1")], who)
@@ -337,17 +339,17 @@ def test_renown_flattens_repeats_cancels_swaps_and_ignores_the_house():
     assert pg.renown("me", [_like("house", "me", "p1")], who, house=frozenset({"house"}))["score"] == 0
 
 
-def test_a_new_or_unverified_liker_weighs_little():
-    who = {"me": pg.Who("me", True, 0), "fresh": pg.Who("fresh", False, None)}
-    assert pg.renown("me", [_like("fresh", "me", "p1")], who)["score"] == pg.UNVERIFIED_WEIGHT
+def test_a_new_liker_weighs_little():
+    who = {"me": pg.Who("me", 0), "fresh": pg.Who("fresh", _LIKE_AT)}
+    assert pg.renown("me", [_like("fresh", "me", "p1")], who)["score"] == pg.MIN_RAMP
 
 
 def test_the_sheet_says_why_likes_counted_little_or_nothing():
     """Found by the end-to-end run: two agents who liked each other showed likes=1, score=0,
     and nothing said why. Kinds of reason only, never which agents."""
-    who = {a: pg.Who(operator=op, verified=True, registered_at=0) for a, op in
+    who = {a: pg.Who(operator=op, registered_at=0) for a, op in
            (("me", "op-me"), ("mine2", "op-me"), ("pal", "op-pal"), ("fan", "op-fan"))}
-    who["fresh"] = pg.Who("op-fresh", False, None)
+    who["fresh"] = pg.Who("op-fresh", _LIKE_AT)
     swap = pg.renown("me", [_like("pal", "me", "p1"), _like("me", "pal", "q1")], who)
     assert swap["why"] == [pg.RENOWN_WHY["swap"]] and "cancels" in swap["why"][0]
     assert pg.renown("me", [_like("mine2", "me", "p1")], who)["why"] == [pg.RENOWN_WHY["operator"]]
@@ -370,17 +372,17 @@ def test_the_season_is_open_and_a_window_over_the_records(client, monkeypatch):
     a, b = f"ss_a_{uuid.uuid4().hex[:6]}", f"ss_b_{uuid.uuid4().hex[:6]}"
     for x in (a, b):
         _register(x)
-    _session("emporia:blotto:v1", [a, b], {"wins": {a: 2, b: 0}, "history": [{}, {}], "rounds": 3})
+    _session("emporia:blotto:v2", [a, b], {"wins": {a: 2, b: 0}, "history": [{}, {}], "rounds": 3})
     body = client.get("/season").json()
     assert body["season"] == "season-0" and body["ends_at"] is None and body["formula"] == pg.SEASON_FORMULA
-    assert a in [r["agent_id"] for r in body["boards"]["emporia:blotto:v1"]] and "renown" in body["boards"]
+    assert a in [r["agent_id"] for r in body["boards"]["emporia:blotto:v2"]] and "renown" in body["boards"]
     monkeypatch.setenv("EMPORIA_SEASON_START", "2026-12-01T00:00:00+00:00")       # after the game
-    assert a not in [r["agent_id"] for r in client.get("/season").json()["boards"].get("emporia:blotto:v1", [])]
+    assert a not in [r["agent_id"] for r in client.get("/season").json()["boards"].get("emporia:blotto:v2", [])]
 
 
 def test_season_renown_uses_the_seasons_likes_only():
     s = {"season": "season-0", "started_at": "2026-11-05T00:00:00+00:00", "ends_at": None}
-    who = {x: pg.Who(x, True, 0) for x in ("me", "fan")}
+    who = {x: pg.Who(x, 0) for x in ("me", "fan")}
     old, new = _like("fan", "me", "p1", at="2026-11-01T00:00:00+00:00"), _like("fan", "me", "p2",
                                                                               at="2026-11-06T00:00:00+00:00")
     boards = pg.season_boards([], [old, new], who, 0, s)["boards"]
@@ -391,7 +393,7 @@ def test_a_swap_across_the_season_start_still_cancels():
     """Review follow-up (L6): the season's board saw only the season's likes, so a like given
     before EMPORIA_SEASON_START no longer cancelled its return like inside the season."""
     s = {"season": "season-0", "started_at": "2026-11-05T00:00:00+00:00", "ends_at": None}
-    who = {x: pg.Who(x, True, 0) for x in ("me", "pal")}
+    who = {x: pg.Who(x, 0) for x in ("me", "pal")}
     before = _like("me", "pal", "q1", at="2026-11-01T00:00:00+00:00")
     inside = _like("pal", "me", "p1", at="2026-11-06T00:00:00+00:00")
     assert pg.season_boards([], [before, inside], who, 0, s)["boards"]["renown"] == []
@@ -400,7 +402,7 @@ def test_a_swap_across_the_season_start_still_cancels():
 def test_a_ring_of_three_counts_a_quarter():
     """L6: three operators liking around a ring (a → b → c → a) evaded the swap rule entirely.
     Each like that closes a ring now weighs RING_WEIGHT; a chain that does not close is full."""
-    who = {x: pg.Who(x, True, 0) for x in ("a", "b", "c", "d", "house")}
+    who = {x: pg.Who(x, 0) for x in ("a", "b", "c", "d", "house")}
     ring = [_like("a", "b", "pb"), _like("b", "c", "pc"), _like("c", "a", "pa")]
     for x in ("a", "b", "c"):
         r = pg.renown(x, ring, who)
@@ -426,7 +428,7 @@ def test_the_season_board_is_linear_in_the_relays_likes(monkeypatch):
     for i in range(2000):
         a, b = rng.sample(agents, 2)
         likes.append(_like(a, b, f"p{i}", at="2026-11-01T00:00:00+00:00"))
-    who = {a: pg.Who(a, i % 3 == 0, 0) for i, a in enumerate(agents)}
+    who = {a: pg.Who(a, 0) for a in agents}
     s = {"season": "season-0", "started_at": None, "ends_at": None}
     alone = {a: pg.renown(a, likes, who)["score"] for a in agents}
     calls = {"n": 0}
@@ -443,12 +445,11 @@ def test_the_season_board_is_linear_in_the_relays_likes(monkeypatch):
 
 def test_the_season_puts_the_main_game_first():
     s = {"season": "season-0", "started_at": None, "ends_at": None}
-    reports = [{"reporter_id": "finder", "status": "accepted", "points": 40, "decided_at": "2026-11-06T00:00:00"},
-               {"reporter_id": "house", "status": "accepted", "points": 100, "decided_at": "2026-11-06T00:00:00"},
-               {"reporter_id": "x", "status": "invalid", "points": 0, "decided_at": "2026-11-06T00:00:00"}]
-    games = [{"session_id": "g", "module_type": "emporia:blotto:v1", "participants": ["a", "b"], "winner": "a",
+    ideas = [{"author_id": "finder", "points": 40, "at": "2026-11-06T00:00:00"},
+             {"author_id": "house", "points": 100, "at": "2026-11-06T00:00:00"}]
+    games = [{"session_id": "g", "module_type": "emporia:blotto:v2", "participants": ["a", "b"], "winner": "a",
               "ended_at": "2026-11-06T00:00:00"}]
-    out = pg.season_boards(games, [], None, 0, s, frozenset({"house"}), reports=reports)
-    assert out["order"][:2] == ["bugs", "renown"] and out["order"][2] == "emporia:blotto:v1"
-    assert out["boards"]["bugs"] == [{"agent_id": "finder", "points": 40, "accepted": 1}]
-    assert "bugs" not in pg.season_boards(games, [], None, 0, s)["boards"], "only where bug quests run"
+    out = pg.season_boards(games, [], None, 0, s, frozenset({"house"}), ideas=ideas)
+    assert out["order"][:3] == ["ideas", "renown", "insight"] and out["order"][3] == "emporia:blotto:v2"
+    assert out["boards"]["ideas"] == [{"agent_id": "finder", "points": 40, "adopted": 1}]
+    assert "ideas" not in pg.season_boards(games, [], None, 0, s)["boards"], "only where the labs module runs"

@@ -83,7 +83,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
   // P105: a failed capture moved no money; it is counted, not summed.
   const failed = settlements.filter((s) => settlementHealth(s) === "failed");
   const moved = settlements.filter((s) => settlementHealth(s) !== "failed");
-  const totalStake = moved.reduce((s, r) => s + r.total_stake_cents, 0);
+  const totalPrice = moved.reduce((s, r) => s + r.total_price_cents, 0);
   const totalFees = moved.reduce((s, r) => s + settlementFeeMicros(r), 0);
   const totalPayout = moved.reduce((s, r) => s + settlementPayoutMicros(r), 0);
   const feeBps = settlements[0]?.platform_fee_bps ?? 250;
@@ -115,7 +115,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
               </div>
             )}
             <div className="e-kpi">
-              <span className="e-kpi__val">${(totalStake / 100).toFixed(2)}</span>
+              <span className="e-kpi__val">${(totalPrice / 100).toFixed(2)}</span>
               <span className="e-kpi__lbl">volume</span>
             </div>
             <div className="e-kpi">
@@ -151,7 +151,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
 
         {settlements.length === 0 && !loading && (
           <Text className="e-faint" style={{ marginTop: 12 }}>
-            No settlements yet — appears when staked sessions complete.
+            No settlements yet — appears when deals and paid entries settle.
           </Text>
         )}
 
@@ -165,7 +165,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
             }
           >
             <div className="e-compact-table" style={{ overflowX: "auto" }}>
-              <table className="e-listings-native">
+              <table className="e-table">
                 <thead>
                   <tr>
                     <td>SESSION</td>
@@ -173,7 +173,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
                     <td>STATUS</td>
                     <td>RAIL</td>
                     <td>WINNER</td>
-                    <td>STAKE</td>
+                    <td>AMOUNT</td>
                     <td>PAYOUT</td>
                     <td>FEE</td>
                     <td>DATE</td>
@@ -204,7 +204,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
                             ? <AgentLink agent_id={s.winner_id} navigate={navigate} full />
                             : <Text className="e-faint">—</Text>}
                         </td>
-                        <td>${(s.total_stake_cents / 100).toFixed(2)}</td>
+                        <td>${(s.total_price_cents / 100).toFixed(2)}</td>
                         <td>
                           {s.status === "refunded"
                             ? <Text className="e-dim">refund</Text>
@@ -232,7 +232,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
             action={<Text className="e-dim">{holds.length}</Text>}
           >
             <div className="e-compact-table" style={{ overflowX: "auto" }}>
-              <table className="e-listings-native">
+              <table className="e-table">
                 <thead>
                   <tr>
                     <td>SESSION</td><td>BUYER</td><td>SELLER</td><td>AMOUNT</td>
@@ -272,7 +272,7 @@ export function FeesView({ navigate, isOperator = false }: { navigate?: Navigate
             action={<Text className="e-dim">{payments.length}</Text>}
           >
             <div className="e-compact-table" style={{ overflowX: "auto" }}>
-              <table className="e-listings-native">
+              <table className="e-table">
                 <thead>
                   <tr>
                     <td>WHEN</td><td>AGENT</td><td>AMOUNT</td><td>TYPE</td>

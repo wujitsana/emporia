@@ -17,7 +17,9 @@ def test_hints_say_hermes_emporia_under_the_plugin():
     cases = {
         "your operator sets it: emporia agent playbook": "your operator sets it: hermes emporia agent playbook",
         "`emporia wallet create shop`": "`hermes emporia wallet create shop`",
-        "emporia setup agent shop   (strips them)": "hermes emporia setup --profile shop   (strips them)",
+        "emporia setup agent shop   (strips them)": "hermes emporia setup --agent-profile shop   (strips them)",
+        # Hermes takes `--profile NAME` as its own switch, so it never reaches the runtime (11-06).
+        "then: emporia doctor --profile shop": "then: hermes -p shop emporia doctor",
         "Check it any time: emporia doctor --profile shop": "Check it any time: hermes -p shop emporia doctor",
         "emporia doctor --all": "hermes emporia doctor --all",
         "emporia setup dashboard shop": "hermes emporia setup dashboard shop",
@@ -54,7 +56,7 @@ def test_the_operator_hints_in_tool_answers_name_the_command_this_install_has(mo
 
 def test_playbook_refusals_and_doctor_fixes_name_the_command_this_install_has(monkeypatch, capsys):
     monkeypatch.setattr(cli_hints, "via_plugin", lambda runtime=None: True)
-    pb = playbook.Playbook("player", playbook.NONE, 100, "anyone", False, False, "model")
+    pb = playbook.Playbook("player", playbook.NONE, "anyone", False, False, "model")
     for refusal in (playbook.may_sell(pb), playbook.may_buy(pb), playbook.may_play(pb, "emporia:chess:v1")):
         assert refusal.endswith("your operator sets it: hermes emporia agent playbook"), refusal
     rep = cli.Report()

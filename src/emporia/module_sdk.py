@@ -12,10 +12,9 @@ Terminology:
 from __future__ import annotations
 
 import importlib
-import json
 import re
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -74,16 +73,15 @@ class SessionResult:
     artifacts: dict[str, Any] | None = None
 
 
-STAKE_WAGER = "wager"
-STAKE_PURCHASE = "purchase"
+PRICE_PURCHASE = "purchase"
 
 
 class PaymentRules(BaseModel):
     """Declarative payment configuration. No blockchain/wallet fields."""
     mode: str = "free"  # "free", "stripe_link", "mpp"
-    stake_per_participant: str = "0"
+    price: str = "0"
     currency: str = "USD"
-    platform_fee_bps: int = 250  # 2.5%
+    platform_fee_bps: int = 100  # 1%
     payout_distribution: dict[str, float] = Field(default_factory=dict)
 
 
@@ -95,11 +93,21 @@ class InteractionModule(ABC):
     """
 
     MODULE_TYPE: str = "emporia:generic:v1"
+    #: What sort of session this module runs: `game` for every module today. A session record carries it
+    #: (`kind`) and refs show a session as `session` beside it, so other sorts of session (a lab session, a
+    #: workshop) can be added as modules without a new ref kind or route. Lowercase, `[a-z][a-z0-9-]*`;
+    #: a third party's own kind is `vendor.name`.
+    KIND: str = "game"
     #: P133: the rules, for agents, in plain text — served by the relay's
     #: /modules, so an agent on any system learns a game from the relay that
     #: hosts it, with nothing to install. Say how to win, how to move, the
     #: clock, and what a draw does.
     RULES: str = ""
+    #: A play guide for the agent that is playing, plain text, at most HOW_TO_PLAY_MAX characters: the exact
+    #: move format for the generic tools (commit_move / reveal_move / submit_action), one worked turn,
+    #: a few honest strategy notes, and the clock. Served as `how_to_play` by /modules, and with a game
+    #: when its player joins or reads it. Empty for a module that is not played turn by turn.
+    HOW_TO_PLAY: str = ""
     MIN_PARTICIPANTS: int = 2
     MAX_PARTICIPANTS: int = 8
 
@@ -114,39 +122,19 @@ class InteractionModule(ABC):
     #                     action payload/artifacts *are* the delivered product.
     DEFAULT_VISIBILITY: str = "public"
 
-    # P72-2: can this module decide a contest on its own?
-    #
-    # A bounty pays a winner out of escrow, so something has to name one. Only
-    # a module that reaches a terminal state with a `winner` can do that
-    # without a judge, which is the whole reason the first bounty lane ships
-    # before any voting exists.
-    #
-    # Declared here rather than kept as a list in the bounty code, because a
-    # list of module names in another file is a second copy of a rule that
-    # already lives in the module — and this codebase has now been bitten
-    # three times by exactly that (P55, P59, P70). A new module answers for
-    # itself; nothing needs updating elsewhere.
-    #
-    # False by default: a module that has not thought about it cannot judge
-    # money. `research` and `code_review` reach terminal states but name no
-    # winner, and so are correctly excluded without either file changing.
+    # Does this module reach a terminal state with a named `winner`? Declared by the module itself.
+    # False by default: `research` and `code_review` reach terminal states but name no winner.
     DECLARES_WINNER: bool = False
 
-    # P95: who stakes, and who can be paid. The session routes used to apply
-    # one rule to every module — "creator joins free, challenger pays" — which
-    # was wrong both ways it could be: a wager's creator risked nothing, and a
-    # service session charged the *seller* (the joiner) while the buyer paid
-    # nothing at all.
+    # Who pays, and who can be paid. Games take no stakes of any kind (no money,
+    # no XP, no Nerve): only a purchase carries money between participants.
     #
-    #   STAKE_WAGER     every participant holds the stake; the winner, decided
-    #                   later, is paid. Stripe holds only: an x402 authorization
-    #                   names its payee when signed and reserves nothing.
-    #   STAKE_PURCHASE  participants[0] (the buyer) pays participants[1] (the
+    #   PRICE_PURCHASE  participants[0] (the buyer) pays participants[1] (the
     #                   seller). The payee is known once the seller joins, so
     #                   the hold is a destination charge to the seller's own
     #                   Stripe account and never sits on the platform balance.
-    #   None            takes no stake; a session that asks for one is refused.
-    STAKE_MODEL: str | None = None
+    #   None            takes no money; a session that asks for any is refused.
+    PRICE_MODEL: str | None = None
 
     #: P149: payload fields holding free text that, in a private session whose
     #: players all publish encryption keys, must arrive sealed to the players
@@ -161,17 +149,60 @@ class InteractionModule(ABC):
     TURN_ORDER: bool = True
 
     #: P135: True when an engine decides the game (chess, Go): nothing the relay
-    #: sees can tell an agent's own play from an engine's, so money on it pays
-    #: whoever runs the stronger engine. Such a module takes no wager stake and
-    #: no bounty prize unless the operator opts in (EMPORIA_ENGINE_GAME_STAKES=1).
+    #: sees can tell an agent's own play from an engine's, so a rating on it measures
+    #: whoever runs the stronger engine. Such a module is left out of the
+    #: rated games (standing).
     ENGINE_DECIDABLE: bool = False
 
     #: P131: True when is_terminal() can end a session by the clock alone, so
     #: the relay's deadline sweep has to ask it (not only submit_action).
     TIMED: bool = False
 
+    #: Calls (gamify): the module type that replaced this one, when it is retired. A
+    #: retired type creates no new session (POST /sessions refuses it, naming the
+    #: successor); one already running finishes under its own rules.
+    RETIRED_FOR: str | None = None
+
+    #: Review pass 2, P1 (decided 11-06): False when one player's gain is not the other's
+    #: loss (Bargain: a good deal raises both). Such a game keeps its own Craft ladder and
+    #: board, but its rating feeds neither the Craft level, the class, nor a ladder
+    #: challenge: a non-zero-sum rating drifts upward with play (`progression:v2`).
+    ZERO_SUM: bool = True
+
+    #: `emporia:rand:v1` (architecture-v2 section 5.1): True when each seated player signs a
+    #: commitment `sha256(s || nonce)` with its create or join, naming a drand round, and the game's
+    #: private draws come from that round and the player's own secret. The relay stores the
+    #: commitments in `config["rand"]` and never sees a secret or a draw. The relay fills
+    #: `state.data["rand"]["beacon_sig"]` (public) once `beacon_round(state)` has been published.
+    USES_RAND: bool = False
+
+    #: True when table talk is part of the game: a session is created with
+    #: `chat` on unless its creator turned it off.
+    CHAT_BY_DEFAULT: bool = False
+
+    #: Action types whose payload is a move `move_problem(data, payload)` can
+    #: check before it is signed and sent (the MCP tools ask it first).
+    CHECKED_ACTIONS: tuple[str, ...] = ()
+
+    def derived(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Fields a viewer is shown beyond what the state stores (a dealt game's weights)."""
+        return {}
+
+    def beacon_round(self, state: SessionState) -> int | None:
+        """USES_RAND: the drand round the module needs in `state.data["rand"]["beacon_sig"]` now, or None."""
+        return None
+
+    def rand_problem(self, data: dict[str, Any], players: list[str], relay_verdict: dict[str, Any] | None) -> str:
+        """USES_RAND: why the draws a finished game published are not what the revealed secrets and the
+        stored beacon give, or "" (`verify_session` and the offline export verifier ask this)."""
+        return ""
+
+    def seats(self, config: dict[str, Any]) -> int:
+        """USES_RAND: how many seated players the game waits for (and so how many commitments)."""
+        return 2
+
     def validate_config(self, config: dict[str, Any]) -> tuple[bool, str]:
-        """Check a session's settings at creation, before anyone stakes on them
+        """Check a session's settings at creation, before anyone plays on them
         (P131). Return (valid, error_message); the default accepts anything."""
         return True, ""
 
@@ -180,14 +211,6 @@ class InteractionModule(ABC):
         soon as the minimum has joined. A game for a chosen number of players
         waits for all of them."""
         return len(participants) >= self.MIN_PARTICIPANTS
-
-    def validate_participants(self, participants: list[str]) -> tuple[bool, str]:
-        n = len(participants)
-        if n < self.MIN_PARTICIPANTS:
-            return False, f"Need at least {self.MIN_PARTICIPANTS} participants, got {n}"
-        if n > self.MAX_PARTICIPANTS:
-            return False, f"Max {self.MAX_PARTICIPANTS} participants, got {n}"
-        return True, ""
 
     @abstractmethod
     def initial_state(self, participants: list[str], config: dict[str, Any]) -> SessionState:
@@ -205,12 +228,6 @@ class InteractionModule(ABC):
     def is_terminal(self, state: SessionState) -> tuple[bool, dict[str, Any]]:
         """Return (is_over, outcome_dict)."""
 
-    def serialize_state(self, state: SessionState) -> str:
-        return json.dumps(state.to_dict(), sort_keys=True)
-
-    def deserialize_state(self, data: str) -> SessionState:
-        return SessionState.from_dict(json.loads(data))
-
 
 # ============================================================================
 # Module Registry
@@ -220,7 +237,14 @@ MODULE_REGISTRY: dict[str, type[InteractionModule]] = {}
 
 #: `<namespace>:<name>:v<N>` — lowercase. `emporia:` is the bundled games' own.
 MODULE_TYPE_RE = re.compile(r"[a-z0-9][a-z0-9-]*:[a-z0-9][a-z0-9-]*:v[0-9]+")
+SESSION_KIND_RE = re.compile(r"[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)?")
 BUNDLED_NAMESPACE = "emporia"
+
+
+def session_kind(module_type: str) -> str:
+    """The kind of session a module runs (`InteractionModule.KIND`): `game` when the module is unknown."""
+    cls = MODULE_REGISTRY.get(module_type)
+    return getattr(cls, "KIND", "game") if cls else "game"
 
 
 def register_module(cls: type[InteractionModule]) -> type[InteractionModule]:
@@ -230,6 +254,8 @@ def register_module(cls: type[InteractionModule]) -> type[InteractionModule]:
     mt = cls.MODULE_TYPE
     if not MODULE_TYPE_RE.fullmatch(mt or ""):
         raise ValueError(f"MODULE_TYPE {mt!r} must look like 'namespace:name:v1' (lowercase)")
+    if not SESSION_KIND_RE.fullmatch(getattr(cls, "KIND", "") or ""):
+        raise ValueError(f"{mt}: KIND {cls.KIND!r} must be lowercase (a-z, 0-9, -), or vendor.name")
     existing = MODULE_REGISTRY.get(mt)
     if existing is not None and existing is not cls and (
             existing.__module__, existing.__qualname__) != (cls.__module__, cls.__qualname__):
@@ -249,27 +275,13 @@ def load_bundled_modules() -> None:
         importlib.import_module(f"emporia.modules.{m.name}")
 
 
-def engine_game_stakes_allowed() -> bool:
-    """P135: the operator's opt-in to money on ENGINE_DECIDABLE games."""
-    import os
-    return os.environ.get("EMPORIA_ENGINE_GAME_STAKES", "").strip().lower() in ("1", "true", "yes")
-
-
-ENGINE_GAME_REFUSAL = (
-    "{mt} is decided by engines: nothing the relay sees can tell an agent's own play "
-    "from an engine's, so money on it pays whoever runs the stronger engine. This relay "
-    "takes no stakes or prizes on it — play it free, or stake on a game an engine cannot "
-    "simply win (emporia:blotto:v1). Operators can allow it with EMPORIA_ENGINE_GAME_STAKES=1."
-)
-
-
 def load_operator_modules(spec: str) -> list[str]:
     """Import an operator's own game modules (P133): `spec` is a comma-separated
     list of importable Python modules (EMPORIA_MODULES), each registering its
     classes with @register_module. Returns the module types they added.
 
     Explicit and loud on purpose: a module that declares a winner decides who
-    receives staked money, so nothing loads by being installed, and a
+    receives money, so nothing loads by being installed, and a
     configured module that fails to import stops the relay rather than
     quietly serving without it. Operator modules name their own namespace — `emporia:`
     is reserved for the bundled games.
@@ -299,24 +311,14 @@ def get_interaction_module(module_type: str) -> InteractionModule:
     return cls()
 
 
-# ============================================================================
-# Session outcome
-# ============================================================================
+#: The most a play guide may run to (a guide rides on join and get_session responses).
+HOW_TO_PLAY_MAX = 1200
 
-@dataclass(frozen=True)
-class SessionOutcome:
-    """Final outcome when collaboration terminates."""
-    is_over: bool
-    winner: str | None = None
-    payouts: dict[str, str] | None = None
-    artifacts: dict[str, Any] | None = None
-    summary: str | None = None
 
-    def to_json(self) -> str:
-        return json.dumps(
-            {k: v for k, v in asdict(self).items() if v is not None},
-            sort_keys=True, separators=(",", ":")
-        )
+def how_to_play_for(module_type: str) -> str:
+    """The play guide of a registered module type, or "" (unknown type, or a module with none)."""
+    cls = MODULE_REGISTRY.get(module_type)
+    return cls.HOW_TO_PLAY.strip() if cls else ""
 
 
 def list_available_modules() -> list[dict[str, Any]]:
@@ -325,17 +327,24 @@ def list_available_modules() -> list[dict[str, Any]]:
     for mod_type, cls in sorted(MODULE_REGISTRY.items()):
         result.append({
             "module_type": mod_type,
+            "kind": cls.KIND,
             "min_participants": cls.MIN_PARTICIPANTS,
             "max_participants": cls.MAX_PARTICIPANTS,
             "payment_mode": cls.PAYMENT_RULES.mode,
             # P133: what an agent needs to choose and play a game it has never seen.
-            "stake_model": cls.STAKE_MODEL,
+            "price_model": cls.PRICE_MODEL,
             "declares_winner": cls.DECLARES_WINNER,
             "timed": cls.TIMED,
             "engine_decidable": cls.ENGINE_DECIDABLE,
-            "stakes_allowed": cls.STAKE_MODEL is not None and (
-                not cls.ENGINE_DECIDABLE or engine_game_stakes_allowed()),
             "bundled": mod_type.split(":", 1)[0] == BUNDLED_NAMESPACE,
+            **({"retired_for": cls.RETIRED_FOR} if cls.RETIRED_FOR else {}),
             "rules": cls.RULES.strip(),
+            "how_to_play": cls.HOW_TO_PLAY.strip(),
         })
     return result
+
+
+def retired_refusal(module_type: str, successor: str) -> str:
+    """Why a retired module type takes no new session (calls, gamify)."""
+    return (f"{module_type} is retired: create {successor} instead (the same game; its commitment also "
+            f"seals an optional call). Games already running under {module_type} finish under its rules.")

@@ -1,4 +1,3 @@
-import Text from "@kit/Text";
 import type { ReactNode } from "react";
 
 /** Minimal retro panel — thin border, small label, no SRCL Card chrome. */
@@ -37,34 +36,6 @@ export function MetaGrid({ rows }: { rows: [string, ReactNode][] }) {
         </div>
       ))}
     </dl>
-  );
-}
-
-/** Empty detail pane — add context instead of a single faint line. */
-export function EmptyPane({
-  title = "Nothing selected",
-  hint,
-  facts,
-}: {
-  title?: string;
-  hint?: string;
-  facts?: [string, string][];
-}) {
-  return (
-    <div className="e-empty-pane">
-      <Text className="e-empty-pane__title">{title}</Text>
-      {hint ? <Text className="e-empty-pane__hint">{hint}</Text> : null}
-      {facts && facts.length > 0 ? (
-        <dl className="e-meta-grid e-meta-grid--inline">
-          {facts.map(([k, v]) => (
-            <div key={k} className="e-meta-grid__row">
-              <dt>{k}</dt>
-              <dd>{v}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-    </div>
   );
 }
 

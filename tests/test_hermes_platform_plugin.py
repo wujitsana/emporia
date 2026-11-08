@@ -13,7 +13,7 @@ def test_every_key_emporia_can_keep_in_a_profile_env_is_declared_secret():
     manifest = yaml.safe_load(MANIFEST.read_text())
     entries = manifest.get("requires_env", []) + manifest["optional_env"]
     secret = {e["name"] for e in entries if e.get("password") is True}
-    expected = set(ENV_KEY_NAMES.values()) | {"EMPORIA_NOUS_JWT", "EMPORIA_OPERATOR_PRIVATE_KEY",
+    expected = set(ENV_KEY_NAMES.values()) | {"EMPORIA_OPERATOR_PRIVATE_KEY",
                                               "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
                                               "OP_SERVICE_ACCOUNT_TOKEN", "BW_SESSION", "VAULT_TOKEN",
                                               "EMPORIA_SIGNER_TOKEN"}
@@ -24,12 +24,12 @@ def test_doctor_finds_secrets_in_config_yaml_and_secure_moves_them(tmp_path, mon
     from emporia import cli
     profile = tmp_path / "profiles" / "p201doc"
     profile.mkdir(parents=True)
-    (profile / "config.yaml").write_text(yaml.dump({"env": {"EMPORIA_NOUS_JWT": "jwt"}}))
+    (profile / "config.yaml").write_text(yaml.dump({"env": {"EMPORIA_SIGNER_TOKEN": "jwt"}}))
     (profile / ".env").write_text("EMPORIA_AGENT_ID=p201doc\n")
     rep = cli.Report()
     cli.doctor_profile_secrets(rep, profile, {})
     out = capsys.readouterr().out
-    assert rep.failed and "config.yaml holds secrets: EMPORIA_NOUS_JWT" in out and "jwt\n" not in out
+    assert rep.failed and "config.yaml holds secrets: EMPORIA_SIGNER_TOKEN" in out and "jwt\n" not in out
     monkeypatch.setattr(cli, "profiles_root", lambda: tmp_path / "profiles")
     assert cli.main(["agent", "secure", "p201doc"]) == 0
     assert "jwt" not in capsys.readouterr().out
@@ -71,11 +71,11 @@ def test_agent_refresh_all_brings_every_copy_up_to_date(tmp_path, monkeypatch, c
     from emporia import cli
     root = tmp_path / "profiles"
     for name in ("alpha", "beta"):
-        installed = root / name / "plugins" / "platforms" / "emporia"         # before P295
+        installed = root / name / "plugins" / "emporia"
         shutil.copytree(MANIFEST.parent, installed, ignore=shutil.ignore_patterns("__pycache__"))
         (installed / "key_guard.py").write_text("# old\n")
         (root / name / "config.yaml").write_text(
-            "plugins:\n  enabled: [platforms/emporia]\nmcp_servers:\n  emporia: {command: x}\n")
+            "plugins:\n  enabled: [emporia]\nmcp_servers:\n  emporia: {command: x}\n")
     (root / "plain").mkdir()
     (root / "plain" / "config.yaml").write_text("{}")             # never set up for Emporia: left alone
     tab_only = tmp_path / "plugins" / "emporia"                   # P295: a root that only shows the tab
@@ -89,9 +89,7 @@ def test_agent_refresh_all_brings_every_copy_up_to_date(tmp_path, monkeypatch, c
         rep = cli.Report()
         cli.doctor_profile_secrets(rep, root / name, {})
         assert not rep.failed
-        # P295: one plugin under one key, the old one gone
         assert yaml.safe_load((root / name / "config.yaml").read_text())["plugins"]["enabled"] == ["emporia"]
-        assert not (root / name / "plugins" / "platforms" / "emporia").exists()
     assert not (root / "plain" / "plugins").exists()
     assert (tab_only / "plugin.yaml").read_text() == "name: emporia\n", "a root that is no agent is left alone"
     assert not (tmp_path / "plugin-data").exists()

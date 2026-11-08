@@ -5,7 +5,7 @@ import RowSpaceBetween from "@kit/RowSpaceBetween";
 import SidebarLayout from "@kit/SidebarLayout";
 import Text from "@kit/Text";
 import React, { useEffect, useRef } from "react";
-import { api, dashboardToken, looksLikeEncryptedEnvelope } from "../api";
+import { OPENED_TAG, SEALED_TAG, api, dashboardToken, looksLikeEncryptedEnvelope } from "../api";
 import type { Session, SessionAction } from "../api";
 import { FlatRailItem } from "../ui/FlatRailItem";
 import { SegmentTabs } from "../ui/SegmentTabs";
@@ -27,38 +27,69 @@ import { ChessMoveLine, ChessPlayersBar } from "../ui/chessMatch";
 import { resolveDeepLinkedSession, shouldShowDeliveryActions } from "../sessionSelect";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
-import type { NavOpts } from "../eventNav";
-import { ListingPeekBanner } from "../ui/ListingPeekBanner";
+import { isJobModule } from "../eventNav";
 import { AuditBadge } from "../ui/AuditBadge";
 import { McpCommandHint } from "../ui/McpCommandHint";
 import { useInterval } from "../hooks";
+import { OpenChallenges } from "./QuestArcs";
 import { relaySocket } from "../transport";
 import { sessionStatusLabel } from "../paymentFormat";
 import { whenText } from "../relayFormat";
 import { Leaderboard } from "../ui/Leaderboard";
+import { ModelResults } from "../ui/ModelResults";
 import { GameResults } from "../ui/GameResults";
 import { GameChat } from "../ui/GameChat";
 import { VerifyBadge } from "../ui/VerifyBadge";
 import { SessionMoney } from "../ui/SessionMoney";
 import { PurchaseConversation } from "../ui/PurchaseConversation";
 import { openSealed, sealedItems } from "../sealedSession";
+import { SET_PLAYS, gameBase, isBargain, isSetPlay, isTablePlay, phaseLine, setPlayView } from "../setPlay";
+import { sessionMatches, type SessionSection } from "../sessionSelect";
+import { SetPlayPanel } from "../ui/SetPlayPanel";
+import { BargainPanel } from "../ui/BargainPanel";
+import { ChancePanel } from "../ui/ChancePanel";
+import { isChanceGame } from "../chance";
+import { Ladder } from "./GamifyView";
+import { AskAgent } from "../chat/AskAgent";
+import { gamePrompt } from "../chat/askPrompts";
+import { PixelBadge } from "../badges";
 
 // P42: not exported — the rail and the module-filter mapping below are its
 // only readers. Still pinned against MODULE_REGISTRY by
 // test_dashboard_game_types_match_the_relay_module_registry, which reads this
 // file's source text and does not care whether the const is exported.
-const GAME_TYPES = [
-  { id: "", label: "all" },
-  { id: "emporia:chess:v1", label: "chess" },
-  { id: "emporia:blotto:v1", label: "blotto" },
-  { id: "emporia:two-thirds:v1", label: "⅔ average" },
-  { id: "emporia:lowest-unique:v1", label: "lowest unique" },
-  { id: "emporia:service:v1", label: "service" },
-  { id: "emporia:code-review:v1", label: "code review" },
-  { id: "emporia:research:v1", label: "research" },
+// Set plays first; chess last among the games and never the default; jobs
+// belong to Deals (docs/ui-ux-structure.md).
+export const GAME_TYPES = [
+  // Calls: the set plays are `:v2` (the `:v1` ones are retired; a chip matches either by name).
+  { id: "emporia:blotto:v2", label: "blotto", kind: "set" },
+  { id: "emporia:two-thirds:v2", label: "⅔ average", kind: "set" },
+  { id: "emporia:lowest-unique:v2", label: "lowest unique", kind: "set" },
+  { id: "emporia:bargain:v2", label: "bargain", kind: "set" },
+  { id: "emporia:liars-dice:v1", label: "liar's dice", kind: "set" },
+  { id: "emporia:cv-auction:v1", label: "auction", kind: "set" },
+  { id: "emporia:chess:v1", label: "chess", kind: "chess" },
+  { id: "emporia:service:v1", label: "service", kind: "job" },
+  { id: "emporia:code-review:v1", label: "code review", kind: "job" },
+  { id: "emporia:research:v1", label: "research", kind: "job" },
 ] as const;
 
-export function ChessReplayPanel({ session }: { session: Session }) {
+/** The filter chips a section offers; "" is the section's default (set plays / all deals). */
+function filtersFor(section: SessionSection): { id: string; label: string }[] {
+  return section === "games"
+    ? [{ id: "", label: "set plays" }, ...GAME_TYPES.filter((g) => g.kind !== "job")]
+    : [{ id: "", label: "all deals" }, ...GAME_TYPES.filter((g) => g.kind === "job")];
+}
+
+export function ChessReplayPanel({ session, initialStep = null, onStepChange, book }: {
+  session: Session;
+  /** The Arena: a link's step, applied once when the log first loads (instead of jumping to the latest). */
+  initialStep?: number | null;
+  /** The Arena: told the step shown (and the last one) so the address can name it. */
+  onStepChange?: (step: number, last: number) => void;
+  /** The Arena: agent id to name@host, for the table talk. */
+  book?: Record<string, string>;
+}) {
   // P34-2: `actions` state removed — it was written on every fetch and every
   // live update and never read (applyReplay(r.actions) is what consumes the
   // data), so each write forced a needless re-render of the chessboard.
@@ -71,6 +102,8 @@ export function ChessReplayPanel({ session }: { session: Session }) {
   const [wsLive, setWsLive] = React.useState(false);
   const [playable, setPlayable] = React.useState(true);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wantStep = useRef<number | null>(initialStep);
+  const loadedOnce = useRef(false);
 
   const fallbackFen = (session.state as { board_fen?: string } | undefined)?.board_fen;
   const startFen = (session.state as { start_fen?: string } | undefined)?.start_fen;
@@ -81,10 +114,17 @@ export function ChessReplayPanel({ session }: { session: Session }) {
       setFens(built.fens);
       setSans(built.sans);
       setPlayable(built.playable);
-      setIdx(Math.max(0, built.fens.length - 1));
+      const want = wantStep.current;
+      wantStep.current = null;
+      loadedOnce.current = true;
+      setIdx(want !== null ? Math.min(want, Math.max(0, built.fens.length - 1)) : Math.max(0, built.fens.length - 1));
     },
     [fallbackFen, startFen],
   );
+
+  useEffect(() => {
+    if (loadedOnce.current) onStepChange?.(idx, fens.length - 1);
+  }, [idx, fens.length, onStepChange]);
 
   useEffect(() => {
     let cancelled = false;
@@ -231,7 +271,7 @@ export function ChessReplayPanel({ session }: { session: Session }) {
         ) : null}
         <ChessPlayersBar session={session} />
         <SessionMoney session={session} />
-        <GameChat sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
+        <GameChat book={book} sessionId={session.session_id} live={session.status === "active" || session.status === "waiting"} />
       </div>
     </div>
   );
@@ -244,8 +284,8 @@ const ACTION_ICONS: Record<string, string> = {
   confirm: "✔",
   dispute: "✗",
   submit: "⬆",
-  commit: "🔒",
-  reveal: "🔓",
+  commit: "■",
+  reveal: "◆",
   review: "✎",
   reject: "✗",
   complete: "★",
@@ -256,7 +296,7 @@ function actionSummary(a: SessionAction, opened: Record<string, string> = {}): s
   const p: Record<string, unknown> = { ...(a.payload ?? {}) };
   for (const [k, v] of Object.entries(p)) {
     if (typeof v === "string" && looksLikeEncryptedEnvelope(v)) {
-      p[k] = opened[`${a.action_id}:${k}`] !== undefined ? `🔓 ${opened[`${a.action_id}:${k}`]}` : "🔒 sealed to the players";
+      p[k] = opened[`${a.action_id}:${k}`] !== undefined ? `${OPENED_TAG} ${opened[`${a.action_id}:${k}`]}` : `${SEALED_TAG} sealed to the players`;
     }
   }
   if (p.deliverable) return String(p.deliverable).slice(0, 120);
@@ -434,59 +474,122 @@ function useChanged(deps: readonly unknown[]): boolean {
   return changed;
 }
 
+/** One game's standing: its Craft ladder, its standings and its recent results. */
+function LaddersPanel({ moduleType, onOpen }: { moduleType: string; onOpen: (sessionId: string) => void }) {
+  const label = GAME_TYPES.find((g) => gameBase(g.id) === gameBase(moduleType))?.label ?? moduleType;
+  return (
+    <div className="e-split-main">
+      <Text className="e-subhead">{label} — Craft ladder, this relay</Text>
+      <Ladder moduleType={moduleType} />
+      <Text className="e-subhead">{label} — standings</Text>
+      <Leaderboard moduleType={moduleType} />
+      <ModelResults />
+      <Text className="e-subhead">{label} — recent results</Text>
+      <GameResults moduleType={moduleType} onOpen={onOpen} />
+    </div>
+  );
+}
+
+/** A rail row: what is being played, by whom, and where the table is. */
+function SessionRow({ s, showStatus }: { s: Session; showStatus: boolean }) {
+  const kind = s.module_type.replace("emporia:", "").replace(/:v\d+$/, "");
+  const label = GAME_TYPES.find((g) => gameBase(g.id) === gameBase(s.module_type))?.label ?? kind;
+  if (isSetPlay(s.module_type)) {
+    const v = setPlayView(s);
+    const n = s.participants?.length ?? 0;
+    return (
+      <span className="e-game-row">
+        <span className="e-game-row__top">
+          <span className="e-game-row__kind"><PixelBadge id={s.module_type} size={1} /> {label}</span>
+          {s.status === "active" && <PixelBadge id="live" size={1} />}
+          <span className="e-game-row__phase">{phaseLine(v)}</span>
+        </span>
+        <Text>{n <= 2 ? s.participants.map((p) => shortAgent(p, 10)).join(" v ") : `${n} players · ${s.participants.slice(0, 3).map((p) => shortAgent(p, 8)).join(", ")}${n > 3 ? "…" : ""}`}</Text>
+        <Text className="e-faint">…{s.session_id.slice(-8)}{s.created_at ? ` · ${whenText(s.created_at)}` : ""}</Text>
+      </span>
+    );
+  }
+  const { white, black } = chessSides(s);
+  const st = s.state as { last_san?: string } | undefined;
+  const hint = st?.last_san ? `…${st.last_san}` : `${s.step_number} ${s.module_type === "emporia:chess:v1" ? "plies" : "steps"}`;
+  return (
+    <span className="e-game-row">
+      <span className="e-game-row__top">
+        <span className="e-game-row__kind">{!isJobModule(s.module_type) && <><PixelBadge id={s.module_type} size={1} /> </>}{label}</span>
+        {showStatus && <span className="e-game-row__phase">{s.status === "active" ? "live" : sessionStatusLabel(s.status)}</span>}
+      </span>
+      <Text>
+        {s.module_type === "emporia:chess:v1"
+          ? `${shortAgent(white, 10)} v ${shortAgent(black, 10)}`
+          : (s.participants ?? []).map((p) => shortAgent(p, 10)).join(" & ")}
+      </Text>
+      <Text className="e-faint">{hint} · …{s.session_id.slice(-8)}{s.created_at ? ` · ${whenText(s.created_at)}` : ""}</Text>
+    </span>
+  );
+}
+
+type RailTab = "live" | "history" | "ladders";
+/** One empty list for the ladders tab: a fresh `[]` each render looks "changed" to useChanged and loops. */
+const NO_SESSIONS: Session[] = [];
+
+/**
+ * Games (set plays first, then chess) or Deals (service, code review,
+ * research): the same list-then-detail shape over the relay's sessions, split
+ * by what a viewer does with them — a game is played and won, a deal is
+ * delivered and paid.
+ */
 export function GamesView({
+  section = "games",
   initialSessionId,
   initialGameModule,
-  listingPeek,
   refreshTrigger,
+  onSessionShown,
 }: {
+  section?: SessionSection;
   initialSessionId: string | null;
   initialGameModule: string | null;
-  listingPeek: NavOpts["listingPeek"] | null;
-  /** P34-1: bumped by App.tsx on a `session_created`/`session_completed` WS
-   *  event so a new or finished game appears immediately rather than on the
-   *  next poll tick. App has computed this signal since the trigger was added
-   *  but never passed it here — the two sibling triggers (listings, events)
-   *  were both wired, this one was dropped. */
+  /** P34-1: bumped by App.tsx on a session event, so a new or finished game
+   *  appears immediately rather than on the next poll tick. */
   refreshTrigger: number;
+  /** Told which session is open (or none), so the route can name it. */
+  onSessionShown?: (sessionId: string | null) => void;
 }) {
+  const games = section === "games";
+  const filters = filtersFor(section);
   const [gameType, setGameType] = React.useState("");
-  const [liveTab, setLiveTab] = React.useState<"live" | "history">("live");
+  const [liveTab, setLiveTab] = React.useState<RailTab>("live");
+  const [ladderGame, setLadderGame] = React.useState<string>(SET_PLAYS[0]);
+  const query = gameType || undefined;
   const [liveSessions, liveLoading, liveErr] = useInterval(
-    () => api.sessions({ module_type: gameType || undefined, status: "active" }),
+    () => api.sessions({ module_type: query, status: "active" }),
     6_000,
     [gameType, refreshTrigger],
   );
-  // P105: a service purchase waits in `awaiting_funding` between the seller
-  // joining and the buyer funding it. Neither list asked for that status, so
-  // those sessions were invisible here. Shown under live, labelled.
-  const [fundingSessions] = useInterval(
-    () => gameType === "" || gameType === "emporia:service:v1"
-      ? api.sessions({ module_type: gameType || undefined, status: "awaiting_funding" })
-      : Promise.resolve({ sessions: [] as Session[] }),
+  // Games: a table waiting for players is live too. Deals: P105 — a purchase
+  // waits in `awaiting_funding` between the seller joining and the buyer funding.
+  const [pendingSessions] = useInterval(
+    () => api.sessions({ module_type: query, status: games ? "waiting" : "awaiting_funding" }),
     10_000,
-    [gameType, refreshTrigger],
+    [gameType, refreshTrigger, games],
   );
   const [historySessions, histLoading, histErr] = useInterval(
-    () => api.sessions({ module_type: gameType || undefined, status: "completed" }),
+    () => api.sessions({ module_type: query, status: "completed" }),
     10_000,
     [gameType, refreshTrigger],
   );
   const [selected, setSelected] = React.useState<Session | null>(null);
-  // Standings & results, chosen from the rail. Without it they showed only
-  // when no game was open — and a live game always opened on its own.
-  const [board, setBoard] = React.useState(false);
 
+  const mine = React.useCallback((s: Session) => sessionMatches(s, section, gameType), [section, gameType]);
   const live = React.useMemo(() => [
     ...(liveSessions?.sessions ?? []).filter(chessSessionPlayable),
-    ...(fundingSessions?.sessions ?? []),
-  ], [liveSessions, fundingSessions]);
+    ...(pendingSessions?.sessions ?? []),
+  ].filter(mine), [liveSessions, pendingSessions, mine]);
   const history = React.useMemo(
-    () => (historySessions?.sessions ?? []).filter(chessSessionPlayable),
-    [historySessions],
+    () => (historySessions?.sessions ?? []).filter(chessSessionPlayable).filter(mine),
+    [historySessions, mine],
   );
-  const shown = liveTab === "live" ? live : history;
-  const isChessSelected = selected?.module_type.includes("chess");
+  const ladders = games && liveTab === "ladders";
+  const shown = liveTab === "live" ? live : liveTab === "history" ? history : NO_SESSIONS;
   const pollLoading = liveTab === "live" ? liveLoading : histLoading;
   const pollErr = liveTab === "live" ? liveErr : histErr;
 
@@ -495,25 +598,19 @@ export function GamesView({
   // polled lists, so they are derived here rather than synced from effects.
   if (useChanged([initialGameModule]) && initialGameModule) {
     const mod = initialGameModule.toLowerCase();
-    const id =
-      GAME_TYPES.find((g) => g.id && mod.includes(g.id.replace("emporia:", "")))?.id ??
-      (mod.includes("chess") ? "emporia:chess:v1" : "");
-    if (id) setGameType(id);
+    const hit = GAME_TYPES.find((g) => mod.includes(gameBase(g.id).replace("emporia:", "")));
+    // A set play opens on the set plays (so its table is in the list); chess and jobs on their own chip.
+    if (hit) setGameType(hit.kind === "set" ? "" : hit.id);
   }
 
   /* P36-3: resolve a deep-linked session against BOTH lists and follow it to the
-     right tab. This used to search `shown` — the current tab's list, already
-     narrowed by the game-type rail — and the tab defaults to "live", so a link
-     to a finished game selected nothing and said nothing about it.
-
-     If it is in neither list the rail may be hiding it or it may be past the
-     page, so ask the relay directly, once per id (the ref; the lists are rebuilt
-     every poll, so without it a miss would refetch on every tick). */
+     right tab. If it is in neither list the filter may be hiding it or it may be
+     past the page, so ask the relay directly, once per id (the ref; the lists are
+     rebuilt every poll, so without it a miss would refetch on every tick). */
   const deepLinkFetched = React.useRef<string | null>(null);
   const [deepLinkMiss, setDeepLinkMiss] = React.useState<string | null>(null);
 
-  // A deep link is followed once: after that, a click on another session sticks
-  // (polls rebuild `live`/`history`; re-applying on each would snap back to it).
+  // A deep link is followed once: after that, a click on another session sticks.
   const [deepLinkDone, setDeepLinkDone] = React.useState<string | null>(null);
   const deepLinkInputsChanged = useChanged([initialSessionId, live, history]);
   if (deepLinkInputsChanged && initialSessionId && deepLinkDone !== initialSessionId) {
@@ -536,8 +633,9 @@ export function GamesView({
     api.session(initialSessionId)
       .then((s) => {
         if (lifetime.signal.aborted) return;
-        setGameType("");                              // the rail was hiding it
-        setLiveTab(s.status === "active" ? "live" : "history");
+        // Show the chip it is under: set plays (the default) or its own.
+        setGameType(isTablePlay(s.module_type) ? "" : s.module_type);
+        setLiveTab(s.status === "completed" ? "history" : "live");
         setSelected(s);
         setDeepLinkMiss(null);
         setDeepLinkDone(initialSessionId);
@@ -546,46 +644,34 @@ export function GamesView({
     return () => lifetime.abort();
   }, [initialSessionId, live, history, liveLoading, histLoading, deepLinkDone]);
 
-  // Likewise a listing peek picks its session once, not again on every poll.
-  const [peekDone, setPeekDone] = React.useState<typeof listingPeek | null>(null);
-  if (listingPeek && peekDone !== listingPeek && shown.length > 0) {
-    const agent = listingPeek.agentId;
-    const match =
-      shown.find((s) => s.participants.some((p) => p === agent || p.includes(agent.slice(-8)))) ??
-      shown.find((s) => listingPeek.moduleType && s.module_type === listingPeek.moduleType);
-    if (match) setSelected(match);
-    setPeekDone(listingPeek);
-  }
-
-  if (useChanged([shown, liveTab, gameType, initialSessionId, listingPeek, board])
-    && !initialSessionId && !listingPeek && !board) {
+  // Default: the first live table (or result). Kept while it stays in the list.
+  if (useChanged([shown, liveTab, gameType, initialSessionId])
+    && !ladders && (!initialSessionId || deepLinkDone === initialSessionId)) {
     setSelected((cur) => {
-      // Keep current selection only if it's still in the visible list
       if (cur && shown.some((s) => s.session_id === cur.session_id)) return cur;
+      if (cur && cur.session_id === deepLinkDone) return cur;
       return shown.length > 0 ? shown[0] : null;
     });
   }
 
+  const shownId = ladders ? null : selected?.session_id ?? null;
+  React.useEffect(() => { onSessionShown?.(shownId); }, [shownId, onSessionShown]);
+
+  const openResult = (id: string) => {
+    api.session(id).then((s) => {
+      setLiveTab(s.status === "active" || s.status === "waiting" ? "live" : "history");
+      setGameType(isTablePlay(s.module_type) ? "" : s.module_type);
+      setSelected(s);
+    }).catch(() => setDeepLinkMiss(id));
+  };
+
+  const tabs = games ? (["live", "history", "ladders"] as const) : (["live", "history"] as const);
   const sidebar = (
     <div>
-      <FlatRailItem selected={board && !selected} onClick={() => { setBoard(true); setSelected(null); }}>
-        <Text>standings · results</Text>
-      </FlatRailItem>
-      <Divider />
-      {GAME_TYPES.map((g) => (
-        <FlatRailItem
-          key={g.id}
-          selected={gameType === g.id}
-          onClick={() => { setGameType(g.id); setSelected(null); }}
-        >
-          <Text>{g.label}</Text>
-        </FlatRailItem>
-      ))}
-      <Divider />
       <Indent>
         <SegmentTabs
           className="e-segment-tabs--grow"
-          options={["live", "history"] as const}
+          options={tabs}
           value={liveTab}
           onChange={(v) => {
             setLiveTab(v);
@@ -593,62 +679,77 @@ export function GamesView({
           }}
           labels={{
             live: live.length > 0 ? `live · ${live.length}` : "live",
-            history: "history",
+            history: games ? "results" : "done",
+            ladders: "ladders",
           }}
         />
       </Indent>
-      {shown.length === 0 ? (
-        <Indent>
-          <Text className="e-faint">
-            {liveTab === "live" ? "No active games" : "No completed games"}
-          </Text>
-        </Indent>
+      {ladders ? (
+        <>
+          <div className="e-rail-label">Which game's ladder</div>
+          {filters.filter((g) => g.id).map((g) => (
+            <FlatRailItem key={g.id} selected={ladderGame === g.id} onClick={() => setLadderGame(g.id)}>
+              <Text>{g.label}</Text>
+            </FlatRailItem>
+          ))}
+        </>
       ) : (
-        shown.map((s) => {
-          const { white, black } = chessSides(s);
-          const st = s.state as { last_san?: string } | undefined;
-          const hint = st?.last_san ? `…${st.last_san}` : `${s.step_number} plies`;
-          return (
-          <FlatRailItem
-            key={s.session_id}
-            selected={selected?.session_id === s.session_id}
-            onClick={() => { setBoard(false); setSelected(s); }}
-          >
-            <RowSpaceBetween>
-              <Text>
-                {s.module_type === "emporia:chess:v1"
-                  ? `${shortAgent(white, 10)} v ${shortAgent(black, 10)}`
-                  : (s.participants ?? []).map((p) => shortAgent(p, 10)).join(" v ")}
+        <>
+          <div className="e-rail-label">{games ? "Which game" : "Which kind"}</div>
+          {filters.map((g) => (
+            <FlatRailItem
+              key={g.id}
+              selected={gameType === g.id}
+              keepList
+              onClick={() => { setGameType(g.id); setSelected(null); }}
+            >
+              <Text>{g.label}</Text>
+            </FlatRailItem>
+          ))}
+          <Divider />
+          {shown.length === 0 ? (
+            <Indent>
+              <Text className="e-faint">
+                {liveTab === "live"
+                  ? games
+                    ? "No tables live right now. A table appears here when an agent opens a game or accepts a challenge."
+                    : "No deals in progress. A deal appears here when an agent hires a service."
+                  : games
+                    ? "No finished games yet. Each result lands here, and opens at its winner."
+                    : "No finished deals yet."}
               </Text>
-              {liveTab === "live" && (
-                <Text className="e-dim e-status-txt">
-                  {s.status === "active" ? "live" : sessionStatusLabel(s.status)}
-                </Text>
-              )}
-            </RowSpaceBetween>
-            <Text className="e-dim">
-              {s.module_type.replace("emporia:", "").replace(":v1", "")} · {hint}
-            </Text>
-            <Text className="e-faint">…{s.session_id.slice(-8)}{s.created_at ? ` · ${whenText(s.created_at)}` : ""}</Text>
-          </FlatRailItem>
-          );
-        })
+            </Indent>
+          ) : (
+            shown.map((s) => (
+              <FlatRailItem
+                key={s.session_id}
+                selected={selected?.session_id === s.session_id}
+                onClick={() => setSelected(s)}
+              >
+                <SessionRow s={s} showStatus={liveTab === "live"} />
+              </FlatRailItem>
+            ))
+          )}
+        </>
       )}
     </div>
   );
 
+  const isChessSelected = selected?.module_type.includes("chess");
   return (
     <ViewBody flush>
-      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={28}>
-        <div className="e-split-main">
+      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={30}
+        initialPane={initialSessionId ? "detail" : "list"}
+        backLabel={games ? (ladders ? "back to games" : "back to tables") : "back to deals"}>
+        {ladders ? (
+          <LaddersPanel moduleType={ladderGame} onOpen={openResult} />
+        ) : (
+        <div className="e-split-main e-split-main--flush">
           <Indent>
             <ViewStatus loading={pollLoading} error={pollErr} />
           </Indent>
-          {/* P36-3: a deep link that resolves to nothing used to be silent — the
-              view simply stayed on whatever was already selected, which reads as
-              "the link did nothing" rather than "that session isn't visible to
-              you". The relay 403s a non-participant on a private session, so
-              this covers both "gone" and "not yours". */}
+          {/* P36-3: a deep link that resolves to nothing says so — the relay 403s a
+              non-participant on a private session, so this covers "gone" and "not yours". */}
           {deepLinkMiss && !selected ? (
             <Indent>
               <Text className="e-faint">
@@ -657,40 +758,31 @@ export function GamesView({
               </Text>
             </Indent>
           ) : null}
-          {listingPeek && !selected ? <ListingPeekBanner peek={listingPeek} /> : null}
-          {!selected && listingPeek ? (
+          {!selected && !deepLinkMiss && games ? (
             <Indent>
-              <Text className="e-faint">Pick a live or history session in the sidebar.</Text>
+              {/* quests:v4: the open challenges anyone may take, then the recent results. */}
+              <OpenChallenges moduleType={gameType || undefined} />
+              {/* With no table open, the recent results — each opens at its end. */}
+              <GameResults moduleType={gameType || undefined} onOpen={openResult} />
             </Indent>
           ) : null}
-          {!selected && !listingPeek && !deepLinkMiss ? (
-            <Indent>
-              {/* P134: with no game open, the tab shows how games have gone —
-                  standings and results, for the game picked on the left. */}
-              <Leaderboard moduleType={gameType || undefined} />
-              <GameResults
-                moduleType={gameType || undefined}
-                onOpen={(id) => {
-                  api.session(id).then((s) => {
-                    // Show the list it is in, or auto-select swaps it for a live game.
-                    setLiveTab(s.status === "active" || s.status === "waiting" ? "live" : "history");
-                    setBoard(false);
-                    setSelected(s);
-                  })
-                    .catch(() => setDeepLinkMiss(id));
-                }}
-              />
-            </Indent>
+          {selected ? (
+            <AskAgent block prompt={gamePrompt(selected)}
+              label={selected.module_type === "emporia:service:v1" ? "ask agent about this deal" : "ask agent about this game"} />
           ) : null}
-          {selected && isChessSelected ? (
+          {selected && isSetPlay(selected.module_type) ? (
+            <SetPlayPanel key={selected.session_id} session={selected} />
+          ) : selected && isBargain(selected.module_type) ? (
+            <BargainPanel key={selected.session_id} session={selected} />
+          ) : selected && isChanceGame(selected.module_type) ? (
+            <ChancePanel key={selected.session_id} session={selected} />
+          ) : selected && isChessSelected ? (
             <ChessReplayPanel key={selected.session_id} session={selected} />
           ) : selected ? (
-            <>
-              {listingPeek ? <ListingPeekBanner peek={listingPeek} /> : null}
-              <NonChessSessionPanel key={selected.session_id} session={selected} />
-            </>
+            <NonChessSessionPanel key={selected.session_id} session={selected} />
           ) : null}
         </div>
+        )}
       </SidebarLayout>
     </ViewBody>
   );

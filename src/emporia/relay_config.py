@@ -22,7 +22,7 @@ class Setting:
     name: str
     group: str
     about: str
-    kind: str = "text"          # bool | int | url | urls | enum | address | keys | text
+    kind: str = "text"          # bool | int | url | urls | enum | address | key | keys | text
     default: str = ""
     choices: tuple[str, ...] = ()
     live: bool = False          # applies without a restart
@@ -38,18 +38,21 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_RELAY_HOST", "Identity", "The address it listens on — 127.0.0.1; anything else only in a "
             "container.", "text", "127.0.0.1"),
     Setting("EMPORIA_RELAY_ID", "Identity", "Its name to other relays. Taken from its key and kept (P286); set only to keep an older name.", "text"),
-    Setting("EMPORIA_AGENT_ID", "Identity", "Its operator: the agent (or owner key) that sees its settings and "
-            "activity and may remove anything.", "text"),
+    Setting("EMPORIA_OPERATOR_STABLE_ID", "Identity", "Its operator, by key: the stable id (64 hex) of the agent that "
+            "sees its settings and activity and may remove anything. Set by the relay setup wizard from the "
+            "operator's agent; a name alone makes nobody the operator.", "text"),
+    Setting("EMPORIA_AGENT_ID", "Identity", "The operator's name here. Reserved: only the operator's key "
+            "(EMPORIA_OPERATOR_STABLE_ID) may register it.", "text"),
+    Setting("EMPORIA_HOUSE_STABLE_IDS", "Identity", "Stable ids (comma-separated) allowed to register the house "
+            "names (EMPORIA_HOUSE_AGENTS), besides the operator's key.", "text"),
     # Who may use it
     Setting("EMPORIA_RELAY_ACCESS", "Access", "open: any agent. read-only: anyone browses, members act. closed: "
             "members only, no federation.", "enum", "open", ("open", "read-only", "closed"), live=True),
     Setting("EMPORIA_RELAY_MEMBERS", "Access", "Members' public keys, comma-separated (emporia relay members add).",
             "keys", live=True),
-    Setting("EMPORIA_REQUIRE_NOUS", "Access", "Only agents with a verified Nous sign-in may register.", "bool", "0"),
-    Setting("EMPORIA_WRITE_REQUIRES_NOUS", "Access", "Agents without Nous verification may only read.", "bool", "0"),
     Setting("RATE_LIMIT_PER_MINUTE", "Access", "Requests per agent per minute.", "int", "60"),
     # Other relays
-    Setting("FEDERATED_RELAYS", "Federation", "Relays it shares listings with (emporia relay link).", "urls"),
+    Setting("FEDERATED_RELAYS", "Federation", "Relays it shares pointer posts with (emporia relay link).", "urls"),
     Setting("EMPORIA_FEDERATED_DMS", "Federation", "Sealed DMs with relays linked both ways; each agent opts in.",
             "bool", "0"),
     Setting("EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS", "Federation", "How often it pulls from linked relays.",
@@ -63,15 +66,18 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_LOG_STATE_ENTRIES", "Transparency log", "Sign sooner once this many entries are waiting.",
             "int", "1000"),
     # Money
-    Setting("OPERATOR_FEE_BPS", "Money", "Its fee, in basis points (250 = 2.5%).", "int", "250",
-            extra={"max": 2000}),
+    Setting("EMPORIA_FEE_BPS", "Money", "Its fee, in basis points (100 = 1%): one number, the same for everyone, on its "
+            "signed card (`fee_bps`), on paid entries (a second payment to its fee address), deals and cards. "
+            "0 when it has no fee address.", "int", "100",
+            extra={"max": 1000}),
+    Setting("EMPORIA_FEE_ADDRESS", "Money", "Where its fee is paid on EVM networks: a wallet you control, also the "
+            "escrow's fee receiver. Unset: it takes no fee and its card says so.", "address"),
+    Setting("EMPORIA_FEE_ADDRESS_SVM", "Money", "Where its fee is paid on Solana networks (optional).", "text"),
     Setting("EMPORIA_X402_ENABLED", "Money", "Takes USDC over x402 (emporia setup relay sets it up).", "bool", "0"),
     Setting("EMPORIA_X402_NETWORKS", "Money", "Networks it takes USDC on (CAIP-2, comma-separated).", "text"),
     Setting("EMPORIA_X402_FACILITATOR_URL", "Money", "The x402 facilitator it settles through.", "url"),
-    Setting("EMPORIA_ESCROW_FEE_RECEIVER", "Money", "The wallet its fee is paid to.", "address"),
     Setting("EMPORIA_ESCROW_NETWORK", "Money", "Where it holds USDC in escrow.", "text"),
     Setting("EMPORIA_CUSTODIAL_CARDS", "Money", "Card money held on the operator's balance (opt-in).", "bool", "0"),
-    Setting("EMPORIA_CARD_GAME_STAKES", "Money", "Card payments for game stakes (opt-in).", "bool", "0"),
     Setting("STRIPE_SECRET_KEY", "Money", "Its Stripe key.",
             secret="From the Stripe dashboard: Developers → API keys (sk_test_… while testing).",
             extra={"prefix": ("sk_test_", "sk_live_", "rk_test_", "rk_live_")}),
@@ -81,14 +87,32 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_OPERATOR_PRIVATE_KEY", "Money", "The escrow operator key.",
             secret="Better left unset: `emporia relay host` makes one in its own 0600 key file."),
     # Games
-    Setting("EMPORIA_ENGINE_GAME_STAKES", "Games", "Stakes on games an engine wins (chess); off by default.",
-            "bool", "0"),
     Setting("EMPORIA_SESSION_IDLE_HOURS", "Games", "A game nobody moves in is abandoned after this.", "int", "24"),
     Setting("EMPORIA_MODULES", "Games", "Extra game modules to load, after review.", "text"),
     # P288: the gamify module — every part off unless turned on
     Setting("EMPORIA_GAMIFY", "Gamify", "Parts of the gamify module it runs, comma-separated: sheets (character "
-            "sheets: Craft per game, Trade, Trust; bugs: points for bugs found, needs the transparency log). "
-            "Empty (default): none.", "text"),
+            "sheets: Craft per game, Trade, Trust), quests, pledges. Adopted ideas are not a part: they come with the "
+            "labs module. Empty (default): none.", "text"),
+    Setting("EMPORIA_QUESTS", "Gamify", "Quests on or off. Off also lifts the starter limits (no XP, no ladder).",
+            "bool", "1"),
+    Setting("EMPORIA_XP_MULTIPLIER", "Gamify", "Scales every XP award, 0.5 to 2 (clamped). Published on its card.",
+            "text", "1"),
+    Setting("EMPORIA_XP_DAILY_CAP", "Gamify", "The most XP an agent earns per UTC day, after the multiplier "
+            "(0: no cap).", "int", "0"),
+    Setting("EMPORIA_STARTER_LIMITS", "Gamify", "Starter limits that grow with level, per operator.", "bool", "1"),
+    Setting("EMPORIA_STARTER_CHALLENGES", "Gamify", "Waiting challenges at level 1, 2, 3+ (comma-separated).",
+            "text", "1,3,5"),
+    Setting("EMPORIA_STARTER_POSTS_PER_DAY", "Gamify", "Posts per UTC day at level 1, 2, 3+ (comma-separated).",
+            "text", "10,30,100"),
+    Setting("EMPORIA_SEASON", "Gamify", "The season's name.", "text", "season-0"),
+    Setting("EMPORIA_SEASON_START", "Gamify", "The season's start (ISO time); empty: all history.", "text"),
+    Setting("EMPORIA_SEASON_END", "Gamify", "The season's end (ISO time); the final standing is frozen then.",
+            "text"),
+    # Labs v2: a room about a GitHub repo; maintainers' signed reports; the log keeps them
+    Setting("EMPORIA_LABS", "Labs", "Labs: rooms about a GitHub repo, with maintainers' signed reports on its "
+            "PRs and issues (needs the transparency log). Off by default.", "bool", "0"),
+    Setting("EMPORIA_LAB_HOSTS", "Labs", "Git hosts a lab's repo may be on, comma-separated (default github.com, "
+            "gitlab.com, codeberg.org; `file` for a test relay's local repositories).", "text"),
     # Running it
     Setting("EMPORIA_GUARDRAILS_MODE", "Operations", "The inbound content scan: enforce, warn or off.", "enum",
             "enforce", ("enforce", "warn", "off")),
@@ -141,6 +165,10 @@ def check(setting: Setting, value: str) -> str:
         if not re.fullmatch(r"0x[0-9a-fA-F]{40}", value):
             raise ValueError("an address, 0x and 40 hex")
         return value
+    if setting.kind == "key":
+        if not re.fullmatch(r"[0-9a-f]{64}", value.lower()):
+            raise ValueError("a public key, 64 hex")
+        return value.lower()
     if setting.kind == "keys":
         keys = [k.strip().lower() for k in value.split(",") if k.strip()]
         if not all(re.fullmatch(r"[0-9a-f]{64}", k) for k in keys):

@@ -19,7 +19,6 @@ from tests.test_emporia import (
     _send_dm_raw,
     _signed_room,
 )
-from tests.test_signed_agoras import _signed_post, _topic
 
 KEY_A = "a" * 64
 KEY_B = "b" * 64
@@ -126,33 +125,6 @@ def test_a_pin_that_cannot_be_written_raises(tmp_path):
 
 # --- through the tools -----------------------------------------------------
 
-def test_a_forged_agora_post_under_a_swapped_key_fails_and_is_reported(client, relay):
-    for a in ("pin_ag_victim", "pin_ag_evil", "pin_viewer"):
-        _register_keyed(client, a)
-    slug = _topic(client, "pin_ag_victim")
-    for who, text in (("pin_ag_victim", "my words"), ("pin_ag_evil", "forged words")):
-        assert client.post(f"/agoras/topics/{slug}/posts", json=_signed_post(who, slug, {"title": who, "content": text}),
-                           headers=_as(who)).status_code == 200
-    listed = mcp_server.list_agora_posts(topic_slug=slug, agent_id="pin_viewer")
-    assert {p["author_id"]: p["verified"] for p in listed["posts"]} == {"pin_ag_victim": True, "pin_ag_evil": True}
-    assert "signing_key_changed" not in listed
-
-    # The relay now says the evil post is the victim's, and serves the evil key as the victim's.
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("UPDATE agora_posts SET author_id = 'pin_ag_victim' WHERE title = 'pin_ag_evil'")
-    relay["pin_ag_victim"] = get_public_key_hex("pin_ag_evil")
-    listed = mcp_server.list_agora_posts(topic_slug=slug, agent_id="pin_viewer")
-    forged = next(p for p in listed["posts"] if p["title"] == "pin_ag_evil")
-    assert forged["verified"] is False
-    assert listed["signing_key_changed"] == ["pin_ag_victim"]
-    pin_id = identity.signing_pin_id("pin_ag_victim", mcp_server._base())
-    assert identity.load_peer_signing_keys()[pin_id]["public_key_hex"] == get_public_key_hex("pin_ag_victim")
-
-    # After a human re-pins, the new key is the one used.
-    identity.trust_new_signing_key(pin_id, get_public_key_hex("pin_ag_evil"))
-    listed = mcp_server.list_agora_posts(topic_slug=slug, agent_id="pin_viewer")
-    assert next(p for p in listed["posts"] if p["title"] == "pin_ag_evil")["verified"] is True
-    assert "signing_key_changed" not in listed
 
 
 def test_check_room_reports_a_creator_key_the_relay_swapped(client, relay):

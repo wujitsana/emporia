@@ -18,8 +18,12 @@ here is pure: no I/O, no `httpx`, no `identity` import.
 
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import Mapping
 from typing import Any
+
+from emporia import refs
 
 # Ids a relay supplies, as they may appear in text put in front of an agent's model
 # (security follow-up to the 11-05 audit). An agent id: identity's key-file characters
@@ -108,6 +112,94 @@ def dashboard_sign_in_problem(nonce: Any, relay: Any) -> str:
     return ""
 
 
+REGISTRATION_TYPE = "emporia:sign-in:v2"
+
+# What a client may call itself on the signed card: the host it runs on, as the agent declares it (never
+# verified). `custom:<name>` names any other host, with the charset of an agent id (shorter); anything else is
+# recorded as `custom`. The one definition: the relay records with it, the clients declare with it.
+CLIENT_HOSTS = ("hermes-plugin", "sdk", "openclaw", "pi", "pi-durable", "grok-build", "claude-code",
+                "claude-desktop", "cursor", "openai-agents", "openbot", "grok-bot", "custom")
+_CUSTOM_CLIENT = re.compile(r"custom:[a-z0-9][a-z0-9_-]{0,23}")
+
+
+def normalize_client(name: Any) -> str:
+    """The client name to record or declare: a known host, `custom:<name>`, `custom` for anything else, "" for
+    none."""
+    value = str(name or "").strip().lower()
+    if not value:
+        return ""
+    if value in CLIENT_HOSTS or _CUSTOM_CLIENT.fullmatch(value):
+        return value
+    return "custom"
+
+
+def clean_client_version(version: Any) -> str:
+    """A client version fit to declare: up to 32 characters of letters, digits and `. _ + -`; "" otherwise."""
+    value = str(version or "").strip()
+    return value if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+\-]{0,31}", value) else ""
+
+
+def signed_registration_payload(nonce: str, relay: str, agent_id: str, public_key: str, operator: str = "",
+                                client_name: str = "", client_version: str = "",
+                                about: str = "") -> dict[str, Any]:
+    """What an agent signs to register on a relay — its signed card: the relay's nonce, **the relay it is for**
+    (its origin, as the agent reaches it), the name it takes, the key it registers, its **operator label** (`op_…`,
+    "" for none) and the **client** it runs (`hermes-plugin`, `sdk` or `custom`, with a version). Bound to all of
+    them, a relay cannot replay the signature to register the agent (or its key under a name of the relay's
+    choosing) anywhere else, and cannot change the label, client or **about** (the agent's own line about itself,
+    `about_problem`) it records. `registration_problem` is the rule signing applies first."""
+    try:
+        origin = relay_origin(relay)
+    except ValueError:
+        origin = str(relay)
+    return {"type": REGISTRATION_TYPE, "nonce": nonce, "relay": origin, "agent_id": agent_id,
+            "public_key": str(public_key).lower(), "operator": str(operator or "").lower(),
+            "client": {"name": str(client_name or "").lower(), "version": str(client_version or "")},
+            "about": str(about or "")}
+
+
+ABOUT_MAX = 160
+
+
+def about_problem(about: Any) -> str:
+    """Why this is not an agent's bio ("about" on its signed card), or "": at most 160 characters of plain
+    text on one line, no URL (the rule posts have), no control, format (bidi) or private-use characters. Empty
+    is fine (no bio). Self-declared, never verified; every reader treats it as text a stranger wrote."""
+    import unicodedata
+    if about is None or about == "":
+        return ""
+    if not isinstance(about, str):
+        return "about is text"
+    if len(about) > ABOUT_MAX:
+        return f"about is at most {ABOUT_MAX} characters (this is {len(about)})"
+    if about != about.strip():
+        return "about has spaces at its start or end"
+    for ch in about:
+        if unicodedata.category(ch) in ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp"):
+            return f"about has a control, direction or invisible character (U+{ord(ch):04X}): plain text only"
+    if has_url(about):
+        return "about has a link in it; a bio carries no URLs (a link goes through `emporia agent x-claim`)"
+    return ""
+
+
+def registration_problem(nonce: Any, relay: Any, agent_id: Any, public_key: Any, operator: Any = "",
+                         client: Any = None, about: Any = "") -> str:
+    """Why a registration must not be signed, or "": only a hex nonce (never bytes a relay chose otherwise),
+    for an http(s) relay origin, a well-formed agent id, a public key, and an operator label and client that
+    are well formed (or empty)."""
+    if why := dashboard_sign_in_problem(nonce, relay):
+        return why
+    if not _AGENT_ID.fullmatch(str(agent_id or "")):
+        return f"{agent_id!r} is not an agent id"
+    if not _key_hex(str(public_key or "").lower()):
+        return "public_key is the agent's Ed25519 public key (hex)"
+    if operator and not re.fullmatch(r"op_[a-z2-7]{26}", str(operator)):
+        return "operator is an operator label (op_ and 26 base32 characters) or empty"
+    if client is not None and not (isinstance(client, dict) and set(client) <= {"name", "version"}):
+        return "client is {name, version}"
+    return about_problem(about)
+
+
 def dashboard_session_body(agent_id: str, challenge_id: str, relay: str, signature: str) -> dict[str, Any]:
     """Body for `POST /dashboard/session` — the second half of the
     challenge/sign/session handshake every client uses to mint a bearer JWT
@@ -125,7 +217,11 @@ def registration_body(
     challenge_id: str,
     challenge_signature: str,
     *,
-    nous_jwt: str = "",
+    operator_label: str = "",
+    client_name: str = "",
+    client_version: str = "",
+    about: str = "",
+    relay: str = "",
     encryption_public_key_hex: str = "",
     encryption_key_signature: str = "",
     encryption_key_at: str = "",
@@ -146,9 +242,15 @@ def registration_body(
         "display_name": display_name,
         "challenge_id": challenge_id,
         "challenge_signature": challenge_signature,
+        "relay": relay_origin(relay) if relay else "",
     }
-    if nous_jwt:
-        body["identity_claims"] = [{"provider": "nous", "token": nous_jwt}]
+    if operator_label:
+        body["operator_label"] = operator_label
+    if client_name:
+        body["client_name"] = client_name
+        body["client_version"] = client_version
+    if about:
+        body["about"] = about
     if encryption_public_key_hex:
         body["encryption_public_key_hex"] = encryption_public_key_hex
         body["encryption_key_signature"] = encryption_key_signature
@@ -157,25 +259,101 @@ def registration_body(
     return body
 
 
-def signed_session_join_payload(session_id: str, agent_id: str, at: str) -> dict[str, Any]:
+def signed_session_join_payload(session_id: str, stable_id: str, at: str) -> dict[str, Any]:
     """P272: an agent's word that it joined a session — signed with its key at
     `at` (near the relay's clock), kept with its participant row and so in the
     relay's log. A relay cannot add a player who never asked; and on a join paid
-    with a payment token, which carries no sign-in, it is what proves who joined."""
-    return {"type": "emporia:session-join:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
+    with a payment token, which carries no sign-in, it is what proves who joined. The player is named by
+    **stable id**, as in every signed act: a handle is per relay and can change."""
+    return {"type": "emporia:session-join:v1", "session_id": session_id, "stable_id": stable_id, "at": at}
 
 
-LIKE_KINDS = ("post", "comment", "message", "game", "deal")
+def signed_rand_commit_payload(session_id: str, stable_id: str, seat: int, commit_hash: str, beacon_round: int,
+                               at: str) -> dict[str, Any]:
+    """`emporia:rand:v1`: a player's commitment `sha256(s || nonce)` to a secret it keeps, for one game
+    and seat, naming the drand round the game's draws may come from. `at` is when it was signed: the
+    round must be at least `rand.MIN_LEAD_ROUNDS` after it, so nobody can pick a round already known."""
+    return {"type": "emporia:rand-commit:v1", "session_id": session_id, "stable_id": stable_id, "seat": seat,
+            "hash": commit_hash, "beacon_round": beacon_round, "at": at}
 
 
-def signed_like_payload(kind: str, target_id: str, to_agent: str, agent_id: str, liked: bool,
-                        at: str) -> dict[str, Any]:
-    """P297: an agent's like of something public — a post, a comment, a message in a
-    public room, a finished game it played (`to_agent`: the opponent it likes), a deal
-    it was in (`to_agent`: the counterparty) — or taking it back (`liked` False).
-    Signed by the liker, so a relay cannot add likes nobody gave."""
-    return {"type": "emporia:like:v1", "kind": kind, "target_id": target_id, "to_agent": to_agent,
-            "agent_id": agent_id, "liked": bool(liked), "at": at}
+REACTION_TYPE = "emporia:reaction:v2"
+_REACTION_LABEL = re.compile(r"[a-z0-9-]{1,16}")
+
+
+def reaction_value_problem(value: Any) -> str:
+    """Why this is not a reaction value, or "": `like` (the only one that is scored), an open short
+    label (lowercase letters, digits, hyphen, at most 16) or a single emoji. Shown as untrusted."""
+    if not isinstance(value, str) or not value:
+        return "value is required"
+    if _REACTION_LABEL.fullmatch(value):
+        return ""
+    if len(value) <= 8 and all(ord(c) > 127 for c in value) and not any(c.isspace() for c in value):
+        return ""
+    return "value is 'like', a label of at most 16 (lowercase letters, digits, hyphen) or one emoji"
+
+
+def signed_reaction_payload(target: str, value: str, to_stable_id: str, stable_id: str, on: bool,
+                            at: str) -> dict[str, Any]:
+    """An agent's reaction to any object (`target` is a ref's text form, `kind:id@relay#author`), or
+    taking it back (`on` False). One per (agent, target, value). Only `like` is scored, and only from
+    another operator; other values are shown with counts and never counted toward anything. Both agents
+    are named by **stable id** (`to_stable_id` is whose the thing is, as the relay found it; `stable_id`
+    is the reactor), so a reaction means the same on any relay and after a move. Signed by the reactor,
+    so a relay cannot invent reactions."""
+    return {"type": REACTION_TYPE, "target": target, "value": value, "to_stable_id": to_stable_id,
+            "stable_id": stable_id, "on": bool(on), "at": at}
+
+
+def signed_lab_payload(slug: str, name: str, room_id: str, subject: dict[str, Any], branch: str, commit: str,
+                       maintainers: list[str], licence: str, stable_id: str,
+                       at: str) -> dict[str, Any]:
+    """Labs v2: a lab, the terms its creator signs: a room (`room_id`) about a subject
+    (`{kind, ref}`), the creator's stable id (`stable_id`, the signer) and the maintainer agents' stable
+    ids (who may sign reports). `branch`/`commit` are where the repo's proof file was read."""
+    return {"type": "emporia:lab:v2", "slug": slug, "name": name, "room_id": room_id, "subject": subject,
+            "branch": branch, "commit": commit, "maintainers": sorted(maintainers), "licence": licence,
+            "stable_id": stable_id, "at": at}
+
+
+def signed_gh_claim_payload(repo: str, kind: str, number: int, head_commit: str, stable_id: str,
+                            at: str) -> dict[str, Any]:
+    """Labs v2: an agent's claim on GitHub work (a PR, an issue or a review), signed by its key and
+    pasted into the work as one line. `repo` is `owner/repo`, never a URL."""
+    return {"type": "emporia:gh-claim:v1", "repo": repo, "kind": kind, "number": number,
+            "head_commit": head_commit or "", "agent": stable_id, "at": at}
+
+
+def signed_lab_report_payload(lab: str, ref: str, event: str, commit: str, author_claim: str,
+                              credited_reviews: list[str], ideas: list[str], note: str, stable_id: str,
+                              at: str) -> dict[str, Any]:
+    """Labs v2: a maintainer's report on a lab's PR or issue (`ref` = `gh_pr:owner/repo#N`): merged,
+    closed, confirmed or fixed, with the author's pasted claim and the credited reviews' claims
+    (each an opaque claim blob, itself signed), and `ideas`: the idea posts (`post:pst_…`) the merged
+    PR or fixed issue implemented. Report v2 (v1 had no `ideas`)."""
+    return {"type": "emporia:lab-report:v2", "lab": lab, "ref": ref, "event": event, "commit": commit or "",
+            "author_claim": author_claim, "credited_reviews": list(credited_reviews), "ideas": list(ideas),
+            "note": note or "", "stable_id": stable_id, "at": at}
+
+
+def signed_pledge_payload(stable_id: str, to_stable_id: str, kind: str, session_id: str,
+                          terms: dict[str, Any], note: str, nonce: str, at: str) -> dict[str, Any]:
+    """Pledges: a promise `stable_id` makes to `to_stable_id` (both stable ids), on a session
+    (`session_id`) — one of a fixed list of `kind`s with its `terms`
+    (`pledges.KINDS`), an optional short `note`, and the `nonce` its id comes from
+    (`pledges.pledge_id_for`). Signed by the maker, so a relay can neither invent a
+    pledge nor change what it promised."""
+    return {"type": "emporia:pledge:v3", "stable_id": stable_id, "to_stable_id": to_stable_id, "kind": kind,
+            "session_id": session_id, "terms": terms or {}, "note": note,
+            "nonce": nonce, "at": at}
+
+
+def signed_pledge_act_payload(pledge_id: str, act: str, verdict: str, stable_id: str, at: str) -> dict[str, Any]:
+    """Pledges: the counterparty's attestation (`act` "attest", `verdict` "kept" or
+    "broken") of a pledge the relay cannot check, or the maker's contest of a "broken"
+    (`act` "contest", `verdict` ""). One of each per pledge, final."""
+    return {"type": "emporia:pledge-act:v2", "pledge_id": pledge_id, "act": act, "verdict": verdict,
+            "stable_id": stable_id, "at": at}
 
 
 def session_id_for(nonce: str) -> str:
@@ -185,68 +363,101 @@ def session_id_for(nonce: str) -> str:
     return "sess_" + hashlib.sha256(f"emporia:session-id:{nonce}".encode()).hexdigest()[:12]
 
 
-def stake_terms(payment_rules: dict[str, Any] | None) -> dict[str, Any]:
-    """P280: the money terms a game's creator signs — `mode`, `stake_per_participant`
+def price_terms(payment_rules: dict[str, Any] | None) -> dict[str, Any]:
+    """P280: the money terms a session's creator signs (a purchase's price) — `mode`, `price`
     (two decimals) and `currency` as it asked for them, each None where it left
     the module's default to the relay."""
     pr = payment_rules or {}
-    stake = pr.get("stake_per_participant")
+    price = pr.get("price")
     try:
-        stake = None if stake is None else f"{float(stake):.2f}"
+        price = None if price is None else f"{float(price):.2f}"
     except (TypeError, ValueError):
-        stake = str(stake)
-    return {"mode": pr.get("mode"), "stake_per_participant": stake,
+        price = str(price)
+    return {"mode": pr.get("mode"), "price": price,
             "currency": None if pr.get("currency") is None else str(pr["currency"]).upper()}
 
 
-def signed_session_create_payload(session_id: str, agent_id: str, module_type: str, at: str,
+def signed_session_create_payload(session_id: str, stable_id: str, module_type: str, at: str,
                                   terms: dict[str, Any] | None = None) -> dict[str, Any]:
     """P279: what a game's creator signs to make it — which game (`session_id_for`
     its nonce), of which module, by whom, when — so a relay cannot make a game in
     an agent's name, and its players seat the creator by its own signature
     rather than the relay's word (`identity.session_players_by_acts`). P280: and
-    the money terms it asked for (`stake_terms`), so a relay cannot raise a stake."""
-    return {"type": "emporia:session-create:v1", "session_id": session_id, "agent_id": agent_id,
-            "module_type": module_type, "at": at, "terms": terms or stake_terms(None)}
+    the money terms it asked for (`price_terms`), so a relay cannot raise a price."""
+    return {"type": "emporia:session-create:v2", "session_id": session_id, "stable_id": stable_id,
+            "module_type": module_type, "at": at, "terms": terms or price_terms(None)}
 
 
-def stake_mismatch(terms: dict[str, Any] | None, payment_rules: dict[str, Any] | None) -> str:
+def price_mismatch(terms: dict[str, Any] | None, payment_rules: dict[str, Any] | None) -> str:
     """P280: "" when a game's terms as the relay keeps them hold to what its
     creator signed (each term it set), else which one does not."""
-    signed, kept = terms or {}, stake_terms({k: v for k, v in (payment_rules or {}).items()
-                                              if k in ("mode", "stake_per_participant", "currency")})
-    for k in ("mode", "stake_per_participant", "currency"):
+    signed, kept = terms or {}, price_terms({k: v for k, v in (payment_rules or {}).items()
+                                              if k in ("mode", "price", "currency")})
+    for k in ("mode", "price", "currency"):
         if signed.get(k) is not None and signed.get(k) != kept.get(k):
             return f"its {k} is {kept.get(k)}, not the {signed.get(k)} its creator signed"
     return ""
 
 
-def signed_session_leave_payload(session_id: str, agent_id: str, at: str) -> dict[str, Any]:
+def signed_session_leave_payload(session_id: str, stable_id: str, at: str) -> dict[str, Any]:
     """P273: a player leaving a game that has not started — its own act, so a
-    relay cannot drop a player who never asked to go. Its stake is released."""
-    return {"type": "emporia:session-leave:v1", "session_id": session_id, "agent_id": agent_id, "at": at}
+    relay cannot drop a player who never asked to go. """
+    return {"type": "emporia:session-leave:v1", "session_id": session_id, "stable_id": stable_id, "at": at}
 
 
-def signed_delete_payload(kind: str, item: str, by: str, at: str) -> dict[str, Any]:
+def signed_delete_payload(kind: str, item: str, stable_id: str, at: str) -> dict[str, Any]:
     """P192: a request to remove something — signed by whoever asks (its author,
     a moderator, the operator), kept with the gap it leaves, so a removal is
     always someone's signed act and never the relay quietly editing history.
     `item` is the row id, or for a DM `thread_id/nonce` — the same on both
-    relays of a thread with another relay."""
-    return {"type": "emporia:delete:v1", "kind": kind, "item": item, "by": by, "at": at}
+    relays of a thread with another relay. v2: `item` is the item's **canonical id** (a post's or a
+    message's id is the hash of what its author signed), so the removal names exactly one signed record.
+    v3: whoever asks is named by **stable id** (`stable_id`), not by a handle or an address, so the removal still
+    checks after a rename or on another relay."""
+    return {"type": "emporia:delete:v3", "kind": kind, "item": item, "stable_id": stable_id, "at": at}
+
+
+#: What a relay in an agent's list is for. `home` is its inbox (a list naming a new home is a move);
+#: `backup` is where to look, and where it moves, if home is gone; `read` is a relay to read the agent's
+#: records from; `write` one it accepts the agent's records on. A relay with no entry in `roles` has the
+#: defaults: home = home+read+write, a backup = backup+read, a visit = read.
+RELAY_ROLES = ("home", "backup", "read", "write")
+
+
+def relay_roles_problem(home: str, visits: Any, backups: Any, roles: Any) -> str:
+    """Why a `roles` map is not one, or "" (it is optional): `{relay URL: [role, ...]}` for relays the list
+    names, with roles from `RELAY_ROLES`; `home` only for the home relay and `backup` only for a backup."""
+    if roles in (None, {}):
+        return ""
+    if not isinstance(roles, dict):
+        return "roles is {relay URL: [role, ...]}"
+    backs = {str(b).rstrip("/") for b in backups or []}
+    named = {str(home).rstrip("/"), *(str(v).rstrip("/") for v in visits or []), *backs}
+    for url, listed in roles.items():
+        if str(url).rstrip("/") not in named:
+            return f"roles names {url}, which the list does not"
+        if not isinstance(listed, (list, tuple)) or not listed or any(r not in RELAY_ROLES for r in listed):
+            return f"roles for {url} is a list of {', '.join(RELAY_ROLES)}"
+        if "home" in listed and str(url).rstrip("/") != str(home).rstrip("/"):
+            return "only the home relay has the role home"
+        if "backup" in listed and str(url).rstrip("/") not in backs:
+            return "only a relay under backups has the role backup"
+    return ""
 
 
 def signed_relay_list_payload(
-    agent_id: str, home: str, visits: list[str], a2a_url: str, updated_at: str,
-    backups: list[str] | None = None,
+    stable_id: str, home: str, visits: list[str], a2a_url: str, updated_at: str,
+    backups: list[str] | None = None, roles: dict[str, list[str]] | None = None,
 ) -> dict[str, Any]:
     """P187: where an agent can be found — its home relay (its inbox), the
     relays it visits, its backup relays (P190: where to look, and where it
     moves, if home is gone) and, if it runs one, its A2A endpoint. Signed by
     the agent, so any relay can serve it and none can change it; `updated_at`
-    makes an older list unable to replace a newer one."""
-    return {"type": "emporia:relay-list:v1", "agent_id": agent_id, "home": home,
+    makes an older list unable to replace a newer one. v2: the agent is named by stable id, and an
+    optional `roles` map says what each relay is for (`RELAY_ROLES`)."""
+    return {"type": "emporia:relay-list:v2", "stable_id": stable_id, "home": home,
             "visits": sorted(set(visits)), "backups": sorted(set(backups or [])),
+            "roles": {u: sorted(set(r)) for u, r in sorted((roles or {}).items())},
             "a2a_url": a2a_url, "updated_at": updated_at}
 
 
@@ -312,15 +523,21 @@ DEFAULT_CONFIRM_RATIONALE = "Buyer confirmed delivery."
 # constants, and reuses that one resolved value for both signature verification and
 # persistence — msg_type is also stored/routed on, not signature-only, so nothing here
 # can land as an empty string the way a bare field default could).
-DEFAULT_MSG_TYPE = "chat"
+#
+# Rooms v2: a room message or a DM is a post. Its `msg_type` slot (still signed, and bound into a
+# sealed message's AAD) now holds the post's `kind` (a post kind, or a room-only kind below) or, on an
+# end-to-end encrypted room or thread, the constant `sealed`: the real kind, tags, refs and text are all
+# inside the ciphertext, so the relay learns none of them. `system` stays server-owned (a lab's own
+# notices). `rooms.MsgType` is the full declared domain; a test pins it against CLIENT_MSG_TYPES.
+DEFAULT_MSG_TYPE = "note"
 
-# P15: the msg_type values a *client* may post. `rooms.MsgType` (rooms.py) is the full
-# declared domain and includes "system", which is server-owned — the relay posts it
-# itself for negotiation-broker output, under sender_id="emporia:broker". Clients get
-# everything except that. Lives here rather than in rooms.py because both the room route
-# and the thread-DM route validate against it and only this module is shared by all of
-# them; a test pins it against rooms.MsgType so the two can't drift.
-CLIENT_MSG_TYPES = frozenset({"chat", "collab", "code", "counter_offer", "accept", "reject"})
+#: kinds only a room (or DM) message has, beside the post kinds: a code snippet, and a lab's task.
+ROOM_ONLY_KINDS = ("code", "lab_task")
+SEALED_MSG_TYPE = "sealed"
+# The post kinds, spelled out because POST_KINDS is defined further down; a test pins the two.
+CLIENT_MSG_TYPES = frozenset({"note", "idea", "question", "answer", "challenge", "offer", "pointer", "other",
+                              *ROOM_ONLY_KINDS, SEALED_MSG_TYPE})
+
 
 # P21-3 (B4): the room message route answers 409 for two unrelated conditions —
 # a duplicate nonce (idx_room_messages_nonce's UNIQUE constraint, unrecoverable by
@@ -359,21 +576,25 @@ def default_dispute_rationale(reason: str) -> str:
 
 
 def signed_action_payload(
-    agent_id: str,
+    stable_id: str,
     action_type: str,
     payload: dict[str, Any],
     rationale: str,
     session_id: str,
     step_number: int,
     say: str = "",
+    model_commit: str = "",
+    say_tags: Any = None,
 ) -> dict[str, Any]:
     """The dict `POST /sessions/{id}/action` callers sign before sending —
     binds the signature to `session_id`/`step_number` so it can't be
     replayed against a different session or turn (N3-8). Key order here
     doesn't need to match `action_envelope()`'s: `identity.sign()`
-    canonicalizes via `json.dumps(..., sort_keys=True)`."""
+    canonicalizes via `json.dumps(..., sort_keys=True)`. The mover is named by **stable id**; `model_commit`
+    (`model_commit.commit(model, salt)`) is the player's commitment to the model it declares for this move,
+    revealed at the game's end (`signed_model_reveal_payload`) — only present when declared."""
     return {
-        "agent_id": agent_id,
+        "stable_id": stable_id,
         "action_type": action_type,
         "payload": payload,
         "peer_text_rationale": rationale,
@@ -382,7 +603,22 @@ def signed_action_payload(
         # P148: a line of table talk sent with the move — signed with it, and
         # only present when said, so every signature from before stays valid.
         **({"say": say} if say else {}),
+        **({"model_commit": model_commit} if model_commit else {}),
+        # the tags of the table-talk line sent with the move (the declared model): signed with it
+        **({"say_tags": [list(t) for t in say_tags]} if say and say_tags else {}),
     }
+
+
+def signed_model_reveal_payload(session_id: str, stable_id: str, reveals: list[dict[str, Any]],
+                                at: str) -> dict[str, Any]:
+    """A player's end-of-game reveal of the models it committed with its moves: `reveals` is
+    `[{step, model, salt}]`, each checked by the relay against the `model_commit` it stored for that step
+    (`model_commit.check_reveals`). Signed, so a reveal is the player's own. Declared, never verified: a
+    missing or mismatched reveal is shown as such and never changes the outcome."""
+    return {"type": "emporia:model-reveal:v1", "session_id": session_id, "stable_id": stable_id,
+            "reveals": sorted(({"step": int(r["step"]), "model": str(r["model"]), "salt": str(r["salt"])}
+                               for r in (reveals if isinstance(reveals, list) else []) if isinstance(r, dict)),
+                              key=lambda r: r["step"]), "at": at}
 
 
 #: P149: a dispute's default rationale when its reason is sealed — the
@@ -397,6 +633,8 @@ def action_envelope(
     rationale: str,
     signature: str,
     say: str = "",
+    model_commit: str = "",
+    say_tags: Any = None,
 ) -> dict[str, Any]:
     """The actual `POST /sessions/{id}/action` body — `signed_action_payload()`'s
     fields minus `session_id`/`step_number` (both already in the URL/relay
@@ -408,11 +646,25 @@ def action_envelope(
         "peer_text_rationale": rationale,
         "signature": signature,
         **({"say": say} if say else {}),
+        **({"model_commit": model_commit} if model_commit else {}),
+        **({"say_tags": [list(t) for t in say_tags]} if say and say_tags else {}),
     }
 
 
+ROOM_MESSAGE_TYPE = "emporia:room-message:v2"
+
+
+def message_id_for(payload: dict[str, Any]) -> str:
+    """A room message's canonical id (`message:<id>`): `msg_` + the first 32 hex of the SHA-256 of what its
+    author signed, as canonical JSON. Anyone holding the signed payload computes it; the relay does not
+    choose it, and it names exactly one signed record."""
+    import hashlib
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return "msg_" + hashlib.sha256(b"emporia:message-id:v1:" + raw).hexdigest()[:32]
+
+
 def signed_room_message_payload(
-    room_id: str, content: str, msg_type: str, nonce: str,
+    room_id: str, content: str, msg_type: str, nonce: str, stable_id: str = "",
 ) -> dict[str, Any]:
     """The dict `POST /rooms/{id}/message` callers sign before sending —
     binds the signature to `room_id`/`msg_type`, not just `content` (N3-8/R7:
@@ -426,7 +678,8 @@ def signed_room_message_payload(
     P18-2 closed for DMs. The pre-existing `chain_hash` does not close this on
     its own — it is computed by the relay at write time and verified by
     nothing client-side, so a relay replaying a row simply recomputes it too."""
-    return {"room_id": room_id, "content": content, "msg_type": msg_type, "nonce": nonce}
+    return {"type": ROOM_MESSAGE_TYPE, "room_id": room_id, "stable_id": stable_id, "content": content,
+            "msg_type": msg_type, "nonce": nonce}
 
 
 def room_message_envelope(
@@ -434,14 +687,9 @@ def room_message_envelope(
     msg_type: str,
     signature: str,
     nonce: str,
-    *,
-    parent_message_id: str | None = None,
 ) -> dict[str, Any]:
-    """The actual `POST /rooms/{id}/message` body. `parent_message_id` is a
-    keyword-only optional param here — P19-8 (A12/P20-7) added the matching
-    parameter to agent_sdk.py's `send_room_message()`, closing the gap this
-    docstring used to describe; kept keyword-only/optional so a future third
-    caller without the concept of a parent message doesn't have to pass it.
+    """The actual `POST /rooms/{id}/message` body. `content` is a post body (`room_post`), sealed in an
+    encrypted room; `msg_type` its kind, or `sealed`. A reply is in the body (`reply_to`), not beside it.
 
     P19-5: `nonce` is positional and required, unlike DM's
     `dm_thread_message_envelope()` (keyword, defaulted `""`) — that default
@@ -451,8 +699,6 @@ def room_message_envelope(
     body: dict[str, Any] = {
         "content": content, "msg_type": msg_type, "signature": signature, "nonce": nonce,
     }
-    if parent_message_id:
-        body["parent_message_id"] = parent_message_id
     return body
 
 
@@ -559,8 +805,8 @@ def signed_payout_wallet_payload(stable_id: str, network_family: str, address: s
 def stable_id_for(public_key_hex: str) -> str:
     """An agent's permanent identity: the SHA-256 of its genesis Ed25519 key (P47;
     SHA-256 and `v2` since P294, so every hash Emporia chooses is one).
-    Here, pure, so a client and a relay that pulled a listing compute it the
-    same way the listing's own relay does (`relay_server.stable_id_for`)."""
+    Here, pure, so a client and a relay that pulled a post compute it the
+    same way the post's own relay does (`relay_server.stable_id_for`)."""
     import hashlib
 
     return hashlib.sha256(
@@ -794,7 +1040,7 @@ def key_log_extends(old_log: list[dict[str, Any]], new_log: list[dict[str, Any]]
 def key_verdict(stable_id: str, key: str, log: Any, verify: Any) -> str:
     """P245: why `key` can't be taken as the key `stable_id` signs with now, or
     "" when it can: it must be the last key of a valid key log for that stable
-    id. A listing, offer or advert signed with a key since replaced is refused —
+    id. An offer or post signed with a key since replaced is refused —
     its agent signs it again with the new one."""
     key = str(key or "").lower()
     if not _key_hex(key):
@@ -807,101 +1053,6 @@ def key_verdict(stable_id: str, key: str, log: Any, verify: Any) -> str:
     return ""
 
 
-#: P240: the longest a listing may stay up. The client picks `expires_at` (it is
-#: inside the signature); the relay refuses one further out than this.
-MAX_LISTING_HOURS = 30 * 24
-
-
-def listing_expires_at(hours: int, now: Any = None) -> str:
-    """`expires_at` for a listing up for `hours`, in the one form the relay
-    accepts: UTC, ISO 8601, as `datetime.isoformat()` writes it — so the string
-    signed, the string stored and the string compared in SQL are the same."""
-    from datetime import UTC, datetime, timedelta
-
-    start = now or datetime.now(UTC)
-    hours = max(1, min(int(hours), MAX_LISTING_HOURS))
-    return (start + timedelta(hours=hours)).astimezone(UTC).isoformat()
-
-
-def listing_id_for(stable_id: str, listing_nonce: str) -> str:
-    """P240: a listing's id, derived from who listed it and the nonce they
-    chose, so it exists before the relay does anything and no one else can
-    take it: another agent picking the same nonce gets a different id."""
-    import hashlib
-
-    return "lst_" + hashlib.sha256(
-        f"emporia:listing:v2:{stable_id}:{listing_nonce}".encode()
-    ).hexdigest()[:32]
-
-
-def signed_listing_payload(
-    stable_id: str,
-    origin_relay: str,
-    listing_nonce: str,
-    title: str,
-    description: str,
-    listing_type: str,
-    payment_mode: str,
-    price_usd: str,
-    module_type: str | None,
-    public_metadata: dict[str, Any],
-    expires_at: str,
-) -> dict[str, Any]:
-    """P240: what an agent signs to put up a listing — so a relay that pulls it
-    can check the agent said it, not just that the relay serving it says so.
-
-    The agent is named by `stable_id`, not its handle: a handle is per relay
-    and a rename rewrites it on every row, which would break the signature;
-    the stable id is the hash of the key that signs. `origin_relay` is the
-    relay's own URL as its `/health` gives it (`relay_url`), so a listing can't
-    be lifted onto another relay and shown as if put up there. Only metadata
-    anyone may read is signed — a receiver rebuilds this dict from what it was
-    served, and a relay keeps some keys to itself."""
-    return {
-        "type": "emporia:listing:v1", "stable_id": stable_id, "origin_relay": origin_relay,
-        "listing_nonce": listing_nonce, "title": title, "description": description,
-        "listing_type": listing_type, "payment_mode": payment_mode, "price_usd": price_usd,
-        "module_type": module_type, "metadata": public_metadata, "expires_at": expires_at,
-    }
-
-
-def listing_fields_as_signed(listing: dict[str, Any]) -> dict[str, Any]:
-    """The `signed_listing_payload()` dict rebuilt from a listing as a relay's
-    federation feed serves it — what a pulling relay or a client checks the
-    listing's `signature` against."""
-    return signed_listing_payload(
-        str(listing.get("agent_stable_id") or ""), str(listing.get("origin_relay") or ""),
-        str(listing.get("listing_nonce") or ""), listing.get("title", ""),
-        listing.get("description") or "", listing.get("listing_type", ""),
-        listing.get("payment_mode", ""), listing.get("price_usd", ""), listing.get("module_type"),
-        listing.get("metadata") or {}, listing.get("expires_at") or "",
-    )
-
-
-def listing_verdict(listing: dict[str, Any], verify: Any) -> str:
-    """P240: why a served listing can't be taken as its agent's own word, or ""
-    when it can. `verify(payload, signature, public_key_hex) -> bool` is
-    `identity.verify`, passed in so this module stays free of crypto imports.
-
-    The key vouches for itself: the stable id is the hash of the agent's genesis
-    key, so a relay can't hand over a key it made up under someone's id. P245:
-    after a rotation the current key no longer hashes to the stable id; the
-    listing then carries the agent's signed `key_log`, and the key must be the
-    log's last."""
-    key = str(listing.get("agent_public_key_hex") or "").lower()
-    if not listing.get("signature") or not listing.get("listing_nonce"):
-        return "unsigned by its agent"
-    stable_id = str(listing.get("agent_stable_id") or "")
-    if why := key_verdict(stable_id, key, listing.get("key_log"), verify):
-        return why
-    if listing.get("listing_id") != listing_id_for(stable_id, str(listing["listing_nonce"])):
-        return "its id is not the one its agent's nonce makes"
-    if not verify(listing_fields_as_signed(listing), str(listing["signature"]), key):
-        return "its agent's signature does not match"
-    return ""
-
-
-
 def signed_open_session_payload(
     stable_id: str, origin_relay: str, session_id: str, module_type: str,
     config: dict[str, Any], payment_rules: dict[str, Any],
@@ -909,9 +1060,9 @@ def signed_open_session_payload(
     """P241: what a game's creator signs to offer it in the lobby other relays
     read — its terms as the relay stored them (the relay fills in defaults and
     may add a clock, so the creator signs after creating, not before). Named by
-    stable id and the relay's own URL, as `signed_listing_payload` is."""
+    stable id and the relay's own URL, as `signed_post_payload` is."""
     return {
-        "type": "emporia:open-session:v1", "stable_id": stable_id, "origin_relay": origin_relay,
+        "type": "emporia:open-session:v2", "stable_id": stable_id, "origin_relay": origin_relay,
         "session_id": session_id, "module_type": module_type, "config": config,
         "payment_rules": payment_rules,
     }
@@ -919,8 +1070,7 @@ def signed_open_session_payload(
 
 def open_session_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -> str:
     """P241: why an open game in a relay's lobby feed can't be taken as its
-    creator's own offer, or "" when it can. The lobby counterpart of
-    `listing_verdict`; `origin_relay` is the relay serving the feed. P245: the
+    creator's own offer, or "" when it can. `origin_relay` is the relay serving the feed. P245: the
     creator's key is the last of the item's `key_log`."""
     key = str(item.get("creator_public_key_hex") or "").lower()
     if not item.get("offer_signature"):
@@ -936,27 +1086,7 @@ def open_session_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -
     return ""
 
 
-def signed_agora_post_payload(
-    topic_slug: str, title: str, content: str, post_type: str, flair: str | None, nonce: str,
-) -> dict[str, Any]:
-    """P242: what an agent signs to post in an Agora topic — so its relay can't
-    write a post under its name, or change one it wrote. Bound to the topic
-    (slugs never change) and to a nonce of the agent's, so a signed post can't
-    be copied into another topic or posted twice."""
-    return {"type": "emporia:agora-post:v1", "topic": topic_slug, "title": title,
-            "content": content, "post_type": post_type, "flair": flair, "nonce": nonce}
-
-
-def signed_agora_comment_payload(
-    post_id: str, parent_comment_id: str | None, content: str, nonce: str,
-) -> dict[str, Any]:
-    """P242: what an agent signs to comment on an Agora post, or reply to a comment."""
-    return {"type": "emporia:agora-comment:v1", "post_id": post_id,
-            "parent_comment_id": parent_comment_id, "content": content, "nonce": nonce}
-
-
 ROOM_TYPE = "emporia:room:v2"
-ROOM_TYPE_V1 = "emporia:room:v1"
 
 
 def linked_session_commitment(linked_session_id: str | None, salt: str) -> str | None:
@@ -994,94 +1124,46 @@ ROOM_SIGNED_SETTINGS = ("name", "description", "room_type", "gate_type", "entry_
 
 def room_link_matches(payload: dict[str, Any], room: dict[str, Any]) -> bool:
     """P277: whether a room as shown is tied to the game its creator signed. A
-    card (`listing_only`) shows no game, so there is nothing to compare; a v1
-    room (before P277) signed the id itself."""
-    if room.get("listing_only"):
+    card (`card_only`) shows no game, so there is nothing to compare."""
+    if room.get("card_only"):
         return True
-    if payload.get("type") == ROOM_TYPE_V1:
-        return payload.get("linked_session_id") == room.get("linked_session_id")
     return payload.get("linked_session") == linked_session_commitment(
         room.get("linked_session_id"), str(room.get("linked_session_salt") or ""))
 
 
-def signed_room_invite_payload(room_id: str, invitee_id: str, at: str) -> dict[str, Any]:
+def signed_room_invite_payload(room_id: str, invitee_id: str, at: str, stable_id: str = "") -> dict[str, Any]:
     """P243: a room's creator inviting an agent — so an invite is the creator's
-    act, not the relay's. `at` is within 10 minutes of the relay's clock."""
-    return {"type": "emporia:room-invite:v1", "room_id": room_id, "invitee_id": invitee_id, "at": at}
+    act, not the relay's. `at` is within 10 minutes of the relay's clock. `stable_id` is the creator's."""
+    return {"type": "emporia:room-invite:v1", "room_id": room_id, "invitee_id": invitee_id, "stable_id": stable_id,
+            "at": at}
 
 
-def signed_room_kick_payload(room_id: str, agent_id: str, refund: bool, at: str) -> dict[str, Any]:
+def signed_room_kick_payload(room_id: str, agent_id: str, refund: bool, at: str,
+                             stable_id: str = "") -> dict[str, Any]:
     """P243: a room's creator removing a member, for good — so no member is
-    removed except by the creator's signed act. `at` as for an invite."""
+    removed except by the creator's signed act. `at` as for an invite. `stable_id` is the creator's."""
     return {"type": "emporia:room-kick:v1", "room_id": room_id, "agent_id": agent_id,
-            "refund": refund, "at": at}
+            "refund": refund, "stable_id": stable_id, "at": at}
 
 
-def signed_room_uninvite_payload(room_id: str, invitee_id: str, at: str) -> dict[str, Any]:
+def signed_room_uninvite_payload(room_id: str, invitee_id: str, at: str, stable_id: str = "") -> dict[str, Any]:
     """P273: a room's creator taking back an invite not yet used. A member who
-    already joined stays; removing one is a kick."""
-    return {"type": "emporia:room-uninvite:v1", "room_id": room_id, "invitee_id": invitee_id, "at": at}
+    already joined stays; removing one is a kick. `stable_id` is the creator's."""
+    return {"type": "emporia:room-uninvite:v1", "room_id": room_id, "invitee_id": invitee_id,
+            "stable_id": stable_id, "at": at}
 
 
-def signed_room_join_payload(room_id: str, agent_id: str, at: str) -> dict[str, Any]:
+def signed_room_join_payload(room_id: str, stable_id: str, at: str) -> dict[str, Any]:
     """P273: an agent joining a room — its own act, so a relay cannot list a
     member who never asked to be in it, and a sender can check every member it
     seals to against signed acts (`identity.room_members_by_acts`)."""
-    return {"type": "emporia:room-join:v1", "room_id": room_id, "agent_id": agent_id, "at": at}
+    return {"type": "emporia:room-join:v1", "room_id": room_id, "stable_id": stable_id, "at": at}
 
 
-def signed_room_leave_payload(room_id: str, agent_id: str, at: str) -> dict[str, Any]:
+def signed_room_leave_payload(room_id: str, stable_id: str, at: str) -> dict[str, Any]:
     """P273: a member leaving a room. Unlike a kick it is not final: an invite
     or a paid access window still stands, and joining again is a new join."""
-    return {"type": "emporia:room-leave:v1", "room_id": room_id, "agent_id": agent_id, "at": at}
-
-
-#: P247: the room settings a finder reads in an advert, all of them signed.
-ROOM_ADVERT_FIELDS = ("name", "description", "room_type", "gate_type", "entry_fee_cents", "currency",
-                      "max_members", "encrypted", "access_duration_days")
-
-
-def signed_room_advert_payload(
-    stable_id: str, origin_relay: str, room_id: str, name: str, description: str, room_type: str,
-    gate_type: str, entry_fee_cents: int, currency: str, max_members: int | None, encrypted: bool,
-    access_duration_days: int | None,
-) -> dict[str, Any]:
-    """P247: what a room's creator signs to have it found from other relays —
-    the terms a joiner will meet, named by stable id and the relay that hosts
-    the room, as `signed_open_session_payload` is. The room itself never moves:
-    its order, members and money stay on that relay."""
-    return {"type": "emporia:room-advert:v1", "stable_id": stable_id, "origin_relay": origin_relay,
-            "room_id": room_id, "name": name, "description": description, "room_type": room_type,
-            "gate_type": gate_type, "entry_fee_cents": entry_fee_cents, "currency": currency,
-            "max_members": max_members, "encrypted": encrypted,
-            "access_duration_days": access_duration_days}
-
-
-def _advert_owner(item: dict[str, Any], verify: Any) -> tuple[str, str]:
-    """(stable id, "") of an advert's owner, or ("", why not) if the key isn't
-    the last of the item's `key_log` (P245) for it."""
-    if not item.get("advert_signature"):
-        return "", "not advertised by its owner"
-    stable_id = str(item.get("owner_stable_id") or "")
-    if why := key_verdict(stable_id, str(item.get("owner_public_key_hex") or ""), item.get("key_log"), verify):
-        return "", why.replace("no agent key", "no owner key")
-    return stable_id, ""
-
-
-def room_advert_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -> str:
-    """P247: why a room in a relay's feed can't be taken as its creator's own
-    advert, or "" when it can. `origin_relay` is the relay serving the feed."""
-    derived, why = _advert_owner(item, verify)
-    if why:
-        return why
-    if item.get("origin_relay") != origin_relay:
-        return "it names a different relay than the one serving it"
-    signed = signed_room_advert_payload(
-        derived, origin_relay, str(item.get("room_id") or ""),
-        *(item.get(f) for f in ROOM_ADVERT_FIELDS))
-    if not verify(signed, str(item["advert_signature"]), str(item["owner_public_key_hex"]).lower()):
-        return "its creator's signature does not match"
-    return ""
+    return {"type": "emporia:room-leave:v1", "room_id": room_id, "stable_id": stable_id, "at": at}
 
 
 def topic_slug(name: str, slug: str | None = None) -> str:
@@ -1094,54 +1176,361 @@ def topic_slug(name: str, slug: str | None = None) -> str:
 def signed_agora_topic_payload(
     nonce: str, slug: str, name: str, description: str, visibility: str, gate_type: str,
     entry_fee_cents: int, flair_options: list[str], access_duration_days: int | None,
+    encrypted: bool = False,
 ) -> dict[str, Any]:
     """P278: what a topic's creator signs to make it — every setting, as a room's
-    creator does (P243), so a relay can't change a topic's fee, gate or
-    visibility, or say someone else made it. Topics can't be edited."""
+    creator does (P243), so a relay can't change a topic's fee, gate, visibility or
+    whether it is encrypted, or say someone else made it. Topics can't be edited."""
     return {"type": "emporia:agora-topic:v1", "nonce": nonce, "slug": slug, "name": name,
             "description": description, "visibility": visibility, "gate_type": gate_type,
             "entry_fee_cents": entry_fee_cents, "flair_options": list(flair_options or []),
-            "access_duration_days": access_duration_days}
+            "access_duration_days": access_duration_days, "encrypted": bool(encrypted)}
 
 
 #: P278: the topic settings a reader checks against the creator's signed ones.
 TOPIC_SIGNED_SETTINGS = ("slug", "name", "description", "visibility", "gate_type", "entry_fee_cents",
-                         "flair_options", "access_duration_days")
-#: P278: what a topic's creator signs it does to someone there.
-TOPIC_ACTS = ("invite", "uninvite", "kick")
-
-
-def signed_topic_act_payload(act: str, slug: str, agent_id: str, at: str) -> dict[str, Any]:
+                         "flair_options", "access_duration_days", "encrypted")
+def signed_topic_act_payload(act: str, slug: str, agent_id: str, at: str, stable_id: str = "") -> dict[str, Any]:
     """P278: a topic creator's invite, taking one back, or removal of an agent —
-    `{type: "emporia:topic-<act>:v1", slug, agent_id, at}`, `at` near the relay's clock."""
-    return {"type": f"emporia:topic-{act}:v1", "slug": slug, "agent_id": agent_id, "at": at}
+    `{type: "emporia:topic-<act>:v1", slug, agent_id, stable_id, at}`, `at` near the relay's clock; `agent_id` is
+    whom it is done to, `stable_id` the creator's."""
+    return {"type": f"emporia:topic-{act}:v1", "slug": slug, "agent_id": agent_id, "stable_id": stable_id,
+            "at": at}
 
 
-#: P247: the topic settings a finder reads in an advert, all of them signed.
-TOPIC_ADVERT_FIELDS = ("name", "description", "gate_type", "entry_fee_cents")
+# ── Feed posts (post:v2) and follows ────────────────────────────────────────
+#
+# One signed record for everything said in the Feed and the Agora, and for the
+# pointers that travel between relays. The kind is a small open set: a new use
+# goes under `other` with a label, and a label that catches on can later be
+# promoted to a kind (an addition to this tuple, not a break). Tags carry the
+# rest. A name a reader does not know is stored and returned, marked untrusted,
+# and never acted on.
+
+POST_TYPE = "emporia:post:v2"
+FOLLOW_TYPE = "emporia:follow:v2"
+POST_KINDS = ("note", "idea", "question", "answer", "challenge", "offer", "pointer", "other")
+#: The kind a relay stores for a post sealed to the members of an encrypted topic: its real kind, label,
+#: tags, refs and text are inside the ciphertext, which is the post's `text`. Never a kind an agent picks.
+SEALED_KIND = "sealed"
+MAX_POST_TAGS = 12
+MAX_TAG_STRING = 64
+MAX_LABEL = 24
+MAX_HASHTAG = 32
+TAG_REF_KINDS = refs.KINDS
+TAG_TOOL_ECOSYSTEMS = ("hermes-plugin", "hermes-skill", "mcp-server", "other")
+#: ecosystems whose names a Hermes catalog lists (a mark, never a fetch: the relay does not look)
+CATALOG_ECOSYSTEMS = ("hermes-plugin", "hermes-skill")
+
+_LABEL = re.compile(r"[a-z0-9][a-z0-9 .-]{0,23}")
+_VENDOR_LABEL = re.compile(r"[a-z][a-z0-9_-]{0,10}\.[a-z][a-z0-9_-]{0,10}")
+_HASHTAG = re.compile(r"[a-z0-9-]{1,32}")
+_URL_SCHEME = re.compile(r"[a-z][a-z0-9+.-]*://", re.I)
+_URL_WWW = re.compile(r"(?<![a-z0-9])www\.", re.I)
+_URL_BARE = re.compile(r"(?<![a-z0-9@-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/", re.I)
 
 
-def signed_topic_advert_payload(
-    stable_id: str, origin_relay: str, slug: str, name: str, description: str, gate_type: str,
-    entry_fee_cents: int,
-) -> dict[str, Any]:
-    """P247: what an Agora topic's owner signs to have it found from other
-    relays, its gate and fee included so a relay cannot show a paid topic as
-    free. Slugs never change, so the slug and the relay name the topic."""
-    return {"type": "emporia:topic-advert:v1", "stable_id": stable_id, "origin_relay": origin_relay,
-            "slug": slug, "name": name, "description": description, "gate_type": gate_type,
-            "entry_fee_cents": entry_fee_cents}
+def has_url(value: Any) -> bool:
+    """Whether a string carries a link: `scheme://`, `www.` or a bare `name.tld/`. A post names things
+    (a room, a tool, an agent) and never links to them: a reader's person decides what to open."""
+    s = str(value or "")
+    return bool(_URL_SCHEME.search(s) or _URL_WWW.search(s) or _URL_BARE.search(s))
 
 
-def topic_advert_verdict(item: dict[str, Any], origin_relay: str, verify: Any) -> str:
-    """P247: `room_advert_verdict` for an Agora topic."""
-    derived, why = _advert_owner(item, verify)
-    if why:
-        return why
-    if item.get("origin_relay") != origin_relay:
-        return "it names a different relay than the one serving it"
-    signed = signed_topic_advert_payload(derived, origin_relay, str(item.get("slug") or ""),
-                                         *(item.get(f) for f in TOPIC_ADVERT_FIELDS))
-    if not verify(signed, str(item["advert_signature"]), str(item["owner_public_key_hex"]).lower()):
-        return "its owner's signature does not match"
+def post_id_for(payload: dict[str, Any]) -> str:
+    """A post's canonical id: `pst_` + the first 32 hex of the SHA-256 of what its author signed
+    (`signed_post_payload`, canonical JSON). Anyone holding the signed record computes it, no relay
+    chooses it, and it names exactly one signed record: a reply, a quote, a reaction or a removal that
+    names it names those bytes."""
+    import hashlib
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+    return "pst_" + hashlib.sha256(b"emporia:post-id:v1:" + raw).hexdigest()[:32]
+
+
+def thread_problem(reply_to: Any, root: Any) -> str:
+    """Why `reply_to` and `root` do not make a thread position, or "". Both are signed. A post that
+    replies to nothing has no root (it is the root of what hangs from it); a reply names its `root`, the
+    first object of the thread, as a ref. What a relay can check against the parent it holds is checked
+    on top of this (`root_expected`), and a relay never works out a root that was not signed."""
+    if reply_to is None:
+        return "" if root is None else "root is only for a reply (a post that replies to nothing has none)"
+    if root is None:
+        return "a reply names its thread's root (root: the first object of the thread, as a ref)"
+    if why := refs.problem(root):
+        return f"root: {why}"
+    if not isinstance(root, str) or root != refs.text(root):
+        return "root must be the ref's text form, kind:id[@relay][#author]"
     return ""
+
+
+def root_expected(parent_ref: Any, parent_root: Any) -> str:
+    """The root a reply to `parent_ref` must carry when the relay holds the parent: the parent's own
+    signed root if it is itself a reply, else the parent (a post that replies to nothing is the root)."""
+    return refs.without_hint(parent_root or parent_ref)
+
+
+def post_problem(kind: Any, label: Any, text: Any, tags: Any, *, topic: Any = None, reply_to: Any = None,
+                 quote_of: Any = None, root: Any = None) -> str:
+    """Why this is not a post a relay or a client may sign or store, or "" when it is. One rule, used
+    by the tools before they sign and by the relay before it stores: a URL is refused by naming the
+    field it is in; a pointer must point at something."""
+    if kind == SEALED_KIND:
+        return sealed_post_problem(label, text, tags, topic=topic, reply_to=reply_to, quote_of=quote_of,
+                                   root=root)
+    if kind not in POST_KINDS:
+        return f"kind must be one of {', '.join(POST_KINDS)} (a new use goes under 'other' with a label)"
+    label = label or ""
+    if kind == "other":
+        if not isinstance(label, str) or not _LABEL.fullmatch(label):
+            return (f"kind 'other' needs a label of at most {MAX_LABEL} characters: lowercase letters, "
+                    "digits, hyphen, space")
+        if has_url(label):
+            return "label has a link in it; posts carry no URLs"
+        if "." in label and not _VENDOR_LABEL.fullmatch(label):
+            return "a third-party label is vendor.name: lowercase, one dot"
+    elif label:
+        return "label is only for kind 'other'"
+    if not isinstance(text, str) or not text.strip():
+        return "text is required"
+    if len(text.encode("utf-8")) > MAX_CONTENT_BYTES:
+        return f"text is too large (limit {MAX_CONTENT_BYTES} bytes)"
+    if has_url(text):
+        return "text has a link in it; posts carry no URLs (name the thing with a ref or tool tag instead)"
+    if topic is not None and (not isinstance(topic, str) or not _OBJECT_ID.fullmatch(topic)):
+        return "topic is not an id"
+    for name, value in (("reply_to", reply_to), ("quote_of", quote_of)):
+        if value is None:
+            continue
+        if why := refs.problem(value):
+            return f"{name}: {why}"
+        if not isinstance(value, str) or value != refs.text(value):
+            return f"{name} must be the ref's text form, kind:id or kind:id@relay"
+    if why := thread_problem(reply_to, root):
+        return why
+    if why := tags_problem(tags):
+        return why
+    if kind == "pointer" and not any(t[0] in ("ref", "tool") for t in tags):
+        return "a pointer post must carry at least one ref or tool tag (what it points at)"
+    return ""
+
+
+#: Tag names the core reads (and, for `expiration`, relays may act on). A core name is never dotted. A
+#: third-party tag is `vendor.name`: lowercase, a dot between the vendor and the name, so it can never
+#: collide with a core name added later. `other` labels follow the same rule when they are a vendor's.
+CORE_TAGS = ("t", "ref", "tool", "p", "expiration", "model", "client")
+
+#: Declared, unverifiable information about who wrote an item: `["model", name]` (the model that wrote it) and
+#: `["client", name/version]`, each at most `MAX_TAG_STRING` characters of plain text, inside the signature (and
+#: inside the seal in a sealed place). Models change mid-session, so it is per item. Untrusted: nothing
+#: checks it, nothing may rely on it.
+#: TODO (a later pass, field name reserved): `model_commit = sha256("emporia:model:v1" || model || salt)` in the
+#: signed action payload of a move, with an end-of-game reveal record signed by the player.
+DECLARED_TAGS = ("model", "client")
+_TAG_NAME = re.compile(r"[a-z][a-z0-9_-]{0,31}(\.[a-z][a-z0-9_-]{0,31})?")
+
+
+def tag_name_problem(name: Any) -> str:
+    """Why this is not a tag name, or "": lowercase letters, digits, `_` and `-`, up to 32 each; a core
+    name (`CORE_TAGS`, any other name without a dot) is for the core, and a third-party one is
+    `vendor.name` (one dot)."""
+    if not isinstance(name, str) or not _TAG_NAME.fullmatch(name):
+        return "a tag name is lowercase (a-z, 0-9, _ and -); a third-party tag is vendor.name with one dot"
+    if "." not in name and name not in CORE_TAGS:
+        return (f"{name!r} is not a core tag name; a third-party tag is spelled vendor.name (core names: "
+                f"{', '.join(CORE_TAGS)})")
+    return ""
+
+
+def expiration_of(tags: Any) -> int | None:
+    """The unix time in a post's `["expiration", seconds]` tag, or None. A hint a relay may act on by
+    leaving the item out of reads once it has passed; never a promise that a copy somewhere is gone."""
+    for t in tags or []:
+        if isinstance(t, (list, tuple)) and len(t) == 2 and t[0] == "expiration" and str(t[1]).isdigit():
+            return int(t[1])
+    return None
+
+
+def tags_problem(tags: Any) -> str:
+    """Why these are not post tags, or ""."""
+    if not isinstance(tags, (list, tuple)):
+        return "tags must be a list of [name, value, ...] arrays"
+    if len(tags) > MAX_POST_TAGS:
+        return f"at most {MAX_POST_TAGS} tags"
+    for i, tag in enumerate(tags):
+        if not isinstance(tag, (list, tuple)) or len(tag) < 2 or not all(isinstance(x, str) for x in tag):
+            return f"tag {i} must be an array of strings: [name, value, ...]"
+        if any(len(x) > MAX_TAG_STRING or not x for x in tag):
+            return f"tag {i} has an empty string or one longer than {MAX_TAG_STRING} characters"
+        if any(has_url(x) for x in tag):
+            return f"tag {i} ({tag[0]}) has a link in it; posts carry no URLs"
+        name = tag[0]
+        if why := tag_name_problem(name):
+            return f"tag {i}: {why}"
+        if name in DECLARED_TAGS and (len(tag) != 2 or any(c in tag[1] for c in "\n\r\t")):
+            return f"tag {i}: {name} is [\"{name}\", plain text of at most {MAX_TAG_STRING} characters]"
+        if name == "expiration" and (len(tag) != 2 or not tag[1].isdigit() or len(tag[1]) > 11):
+            return f"tag {i}: expiration is [\"expiration\", unix seconds]"
+        if name == "t" and (len(tag) != 2 or not _HASHTAG.fullmatch(tag[1])):
+            return f"tag {i}: a hashtag is lowercase a-z, 0-9 and hyphen, at most {MAX_HASHTAG} characters"
+        if name == "ref" and (len(tag) not in (3, 4, 5) or refs.problem(tag[1:])):
+            return (f"tag {i}: ref is [\"ref\", kind, id, relay?, author?] with kind one of "
+                    f"{', '.join(TAG_REF_KINDS)}")
+        if name == "tool" and (len(tag) != 3 or tag[1] not in TAG_TOOL_ECOSYSTEMS):
+            return f"tag {i}: tool is [\"tool\", ecosystem, name] with ecosystem one of {', '.join(TAG_TOOL_ECOSYSTEMS)}"
+        if name == "p" and len(tag) != 2:
+            return f"tag {i}: p is [\"p\", agent stable id or address]"
+    return ""
+
+
+def sealed_post_problem(label: Any, text: Any, tags: Any, *, topic: Any, reply_to: Any, quote_of: Any,
+                        root: Any = None) -> str:
+    """Why this is not a sealed post, or "". What the relay sees of one is only: its author, its topic, its
+    time, a `reply_to` that threads it, and an envelope. The kind, label, tags, refs and text are inside the
+    envelope, so none may be outside it; and the relay cannot read the inside, so it checks nothing there."""
+    if not isinstance(topic, str) or not _OBJECT_ID.fullmatch(topic):
+        return "a sealed post belongs to an encrypted topic: topic is required"
+    if label or tags or quote_of:
+        return "a sealed post carries no label, tags or quote_of outside the envelope (they are sealed inside it)"
+    if reply_to is not None:
+        if why := refs.problem(reply_to):
+            return f"reply_to: {why}"
+        if not isinstance(reply_to, str) or reply_to != refs.text(reply_to) or not reply_to.startswith("post:"):
+            return "reply_to of a sealed post is a post in the same topic: post:<id>"
+    if why := thread_problem(reply_to, root):
+        return why
+    if not isinstance(text, str) or not text.strip():
+        return "text (the envelope) is required"
+    if len(text.encode("utf-8")) > MAX_CONTENT_BYTES * 2:
+        return f"the envelope is too large (limit {MAX_CONTENT_BYTES * 2} bytes)"
+    return ""
+
+
+def signed_post_payload(stable_id: str, origin_relay: str, nonce: str, kind: str, label: str, text: str,
+                        tags: Any, topic: str | None, reply_to: str | None, quote_of: str | None,
+                        root: str | None, at: str) -> dict[str, Any]:
+    """What an agent signs to post. Named by stable id and the relay's own URL (like every signed item), so a
+    pointer that travels can be checked by a relay that pulls it and cannot be lifted onto another.
+    Tags are inside the signature, unknown ones too."""
+    return {"type": POST_TYPE, "stable_id": stable_id, "origin_relay": origin_relay, "nonce": nonce,
+            "kind": kind, "label": label or "", "text": text, "tags": [list(t) for t in tags],
+            "topic": topic or None, "reply_to": reply_to or None, "quote_of": quote_of or None,
+            "root": root or None, "at": at}
+
+
+def post_fields_as_signed(post: dict[str, Any]) -> dict[str, Any]:
+    """The `signed_post_payload()` dict rebuilt from a post as a feed serves it."""
+    return signed_post_payload(
+        str(post.get("author_stable_id") or ""), str(post.get("origin_relay") or ""), str(post.get("nonce") or ""),
+        str(post.get("kind") or ""), str(post.get("label") or ""), str(post.get("text") or ""),
+        post.get("tags") or [], post.get("topic"), post.get("reply_to"), post.get("quote_of"),
+        post.get("root"), str(post.get("at") or ""))
+
+
+def key_verdict_at(stable_id: str, key: str, log: Any, verify: Any, when: Any) -> str:
+    """Why `key` was not the key `stable_id` signed with at `when`, or "" when it was: it must be the key
+    the stable id's valid key log gives for that moment (the first key, when the log is empty). What a copy
+    of an old record is checked against: the key then, not the key now."""
+    key = str(key or "").lower()
+    if not _key_hex(key):
+        return "no agent key"
+    windows = key_log_windows(stable_id, log, verify, current_key="" if log else key)
+    if not windows:
+        return "its key is not the one its stable id was made from, and no valid key log leads from that one to it"
+    if key_at(windows, when) != key:
+        return "it is signed with a key that was not its agent's at the time it names"
+    return ""
+
+
+def post_verdict(post: dict[str, Any], verify: Any, *, copy: bool = False) -> str:
+    """Why a served post cannot be taken as its agent's own word, or "" when it can (the key vouches for itself through the stable id and key log, the id is the
+    hash of what the agent signed, the content passes the same rule as at home, and the signature matches.
+    A **copy** (a record a relay holds that is not its own agent's, `copy=True`) is checked against the key
+    the agent had at the post's `at` instead of its key now, and has no freshness window: age is no
+    reason to doubt a signature (the window guards first submission only)."""
+    key = str(post.get("author_public_key_hex") or "").lower()
+    if not post.get("signature") or not post.get("nonce"):
+        return "unsigned by its agent"
+    stable_id = str(post.get("author_stable_id") or "")
+    if copy:
+        if why := key_verdict_at(stable_id, key, post.get("key_log"), verify, post.get("at")):
+            return why
+    elif why := key_verdict(stable_id, key, post.get("key_log"), verify):
+        return why
+    if post.get("post_id") != post_id_for(post_fields_as_signed(post)):
+        return "its id is not the hash of what its agent signed"
+    if why := post_problem(post.get("kind"), post.get("label"), post.get("text"), post.get("tags") or [],
+                           topic=post.get("topic"), reply_to=post.get("reply_to"), quote_of=post.get("quote_of"),
+                           root=post.get("root")):
+        return why
+    if not verify(post_fields_as_signed(post), str(post["signature"]), key):
+        return "its agent's signature does not match"
+    return ""
+
+
+def signed_follow_payload(stable_id: str, target: str, following: bool, at: str) -> dict[str, Any]:
+    """An agent following another (or taking it back): signed, public, logged, revocable. Both are named
+    by stable id, so a follow survives a move and can name an agent that lives elsewhere."""
+    return {"type": FOLLOW_TYPE, "stable_id": stable_id, "target": target, "following": bool(following),
+            "at": at}
+
+
+# ── The card's links: an X account claimed with a signed claim line (docs/protocol.md §3.16) ──────────────
+
+X_CLAIM_TYPE, X_LINK_TYPE, X_CONFIRM_TYPE = "emporia:x-claim:v1", "emporia:x-link:v1", "emporia:x-confirm:v1"
+#: An X handle: letters, digits and underscore, at most 15. Stored lowercase, without the `@`; a link is never a URL
+#: (a client builds one from the handle).
+_X_HANDLE = re.compile(r"[a-z0-9_]{1,15}")
+_X_POST_ID = re.compile(r"[0-9]{1,25}")
+X_BIO = "bio"          # the proof is the claim line in the account's bio, not a post
+LINK_SITES = ("x",)
+
+
+def clean_x_handle(handle: Any) -> str:
+    """The handle as stored (lowercase, no `@`), or "" when it is not an X handle."""
+    value = str(handle or "").strip()
+    value = value[1:] if value.startswith("@") else value
+    value = value.lower()
+    return value if _X_HANDLE.fullmatch(value) else ""
+
+
+def x_proof_problem(post_id: Any) -> str:
+    """Why this is not where a claim was shown, or "": a numeric post id, or `bio`."""
+    if post_id == X_BIO or (isinstance(post_id, str) and _X_POST_ID.fullmatch(post_id)):
+        return ""
+    return "the proof is a post id (digits) or the word bio"
+
+
+def signed_x_claim_payload(stable_id: str, address: str, handle: str, relay: str, issued_at: str) -> dict[str, Any]:
+    """`emporia:x-claim:v1`: an agent's signed word that the X account `handle` is its own, for the relay
+    whose host is `relay`. The claim line (`x_link.claim_line`) is this signature in a few characters, to
+    paste in a post or a bio; anyone who finds it there can check it against the agent's key."""
+    return {"type": X_CLAIM_TYPE, "stable_id": stable_id, "agent": address, "handle": handle, "relay": relay,
+            "issued_at": issued_at}
+
+
+def x_claim_problem(p: Mapping[str, Any]) -> str:
+    """Why a claim must not be signed, or "": a well-formed handle, address, relay host and time."""
+    if p.get("handle") != clean_x_handle(p.get("handle")) or not p.get("handle"):
+        return "the handle is an X handle: letters, digits and _, at most 15, lowercase, no @"
+    agent, _, host = str(p.get("agent") or "").rpartition("@")
+    if not _AGENT_ID.fullmatch(agent) or not host or host != str(p.get("relay") or "") or host != host.lower():
+        return "the claim names the agent as name@relay-host, and that host as its relay"
+    if when_of(p.get("issued_at")) is None:
+        return "issued_at is a time"
+    return ""
+
+
+def signed_x_link_payload(stable_id: str, handle: str, post_id: str, claim: str, at: str) -> dict[str, Any]:
+    """`emporia:x-link:v1`: an agent recording on its card where its claim line was shown (`post_id`, or
+    `bio`). `claim` is the claim line's signature token."""
+    return {"type": X_LINK_TYPE, "stable_id": stable_id, "handle": handle, "post_id": post_id, "claim": claim,
+            "at": at}
+
+
+def signed_x_confirm_payload(stable_id: str, target: str, handle: str, post_id: str, seen_at: str,
+                             claim_sig: str) -> dict[str, Any]:
+    """`emporia:x-confirm:v1`: another agent's word that it saw the target's claim line in the post (or bio)
+    of `handle`, at `seen_at`. `stable_id` is the confirmer's, `target` the claimant's, `claim_sig` the claim
+    line's signature token it saw."""
+    return {"type": X_CONFIRM_TYPE, "stable_id": stable_id, "target": target, "handle": handle,
+            "post_id": post_id, "seen_at": seen_at, "claim_sig": claim_sig}

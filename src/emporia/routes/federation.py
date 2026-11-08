@@ -7,7 +7,6 @@ scratchpad/extract_router.py's main_defs(). Shared helpers stay in
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -22,38 +21,6 @@ from emporia.identity import (
 router = APIRouter()
 
 
-@router.get("/gaming/v1/federate/listings")
-async def federated_listings_out():
-    """Serve local listings for federation pull by peer relays.
-
-    The batch is signed with this relay's own Ed25519 key (persisted, distinct from any agent's key —
-    see identity.generate_or_load_relay_keypair()) so a pulling peer can verify the batch
-    actually came from here unaltered, rather than trusting the HTTP response wholesale.
-    """
-    # P240: only listings their agent signed. Each carries that signature, the
-    # nonce and stable id it was made with, and the agent's key, so a relay that
-    # pulls it checks the agent's word, not just this relay's. A listing this
-    # relay wrote itself (a bounty, an event's) has no signature and stays here.
-    with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM listings WHERE (expires_at IS NULL OR expires_at > ?) "
-            "AND origin_relay = ? AND signature IS NOT NULL "
-            f"ORDER BY created_at DESC LIMIT {rs._MAX_LIMIT}",
-            (datetime.now(UTC).isoformat(), rs.RELAY_BASE_URL),
-        ).fetchall()
-    from emporia.identity import verify
-    from emporia.wire import listing_verdict
-    # P245: not one signed with a key its agent has since replaced; the agent signs it again.
-    listings = [x for x in rs.public_listings(rows) if not listing_verdict(x, verify)]
-    for x in listings:
-        x.pop("federated_from", None)
-    signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "listings", listings))
-    return {
-        "origin_relay": rs.RELAY_BASE_URL,
-        "origin_public_key_hex": get_relay_public_key_hex(),
-        "signature": signature,
-        "listings": listings,
-    }
 @router.post("/gaming/v1/federate/sync")
 async def trigger_federation_sync(request: Request):
     """Manually trigger a federation pull from all configured peers.
@@ -86,12 +53,6 @@ async def federation_peers():
     rs._ensure_federation_pins_loaded()
     from emporia import logcheck
     seen = logcheck.load(logcheck.PEER_FILE).get("relays") or {}
-    with rs.DB_LOCK, rs.get_db() as conn:
-        imported_row = conn.execute(
-            "SELECT COUNT(*) AS c FROM listings WHERE origin_relay IS NOT NULL "
-            "AND origin_relay != ?",
-            (rs.RELAY_BASE_URL,),
-        ).fetchone()
     return {
         "relay_url": rs.RELAY_BASE_URL,
         "standalone": not rs.FEDERATED_RELAYS,
@@ -104,7 +65,6 @@ async def federation_peers():
             }
             for peer in rs.FEDERATED_RELAYS
         ],
-        "imported_listing_count": imported_row["c"] if imported_row else 0,
     }
 
 
@@ -114,7 +74,6 @@ def _lobby_items() -> list[dict]:
     still matches its terms here — so this relay serves only what the creator
     signed, and each item carries what a reader needs to check that."""
     from emporia.addresses import address, fingerprint
-    from emporia.bounties import seats_for
     from emporia.identity import verify
     from emporia.module_sdk import MODULE_REGISTRY
     from emporia.wire import open_session_verdict
@@ -136,7 +95,8 @@ def _lobby_items() -> list[dict]:
         offer = offers[s["session_id"]]
         creator = (s["participants"] or [""])[0]
         try:
-            lo, hi = seats_for(s["module_type"], MODULE_REGISTRY)
+            cls = MODULE_REGISTRY[s["module_type"]]
+            lo, hi = cls.MIN_PARTICIPANTS, cls.MAX_PARTICIPANTS
         except KeyError:
             lo = hi = None
         item = {
@@ -157,44 +117,14 @@ def _lobby_items() -> list[dict]:
 @router.get("/federation/v1/open-sessions")
 async def federated_open_sessions():
     """P188: the lobby — games and purchases on this relay waiting for a player, for agents
-    elsewhere to find — signed, like the listings feed. Only what anyone here
+    elsewhere to find — signed, like the posts feed. Only what anyone here
     may already see: public sessions, no named opponent; never a private one.
-    Joining one happens here, where its stake, receipts and any dispute live.
+    Joining one happens here, where its receipts and any dispute live.
     P241: only games their creator offered, each with the creator's signature."""
     out = _lobby_items()
     signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "open_sessions", out))
     return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),
             "signature": signature, "open_sessions": out}
-
-
-def _advert_feed(kind: str) -> list[dict]:
-    """P247: the rooms or topics their owners advertised whose advert still
-    matches what is stored here — so a changed or deleted one drops out of the
-    feed on its own. Each item names its origin relay and carries the owner's
-    key, stable id and signature for the reader to check, and where to join.
-    P249: only what `emporia.adverts` allows — a private invite-only room never."""
-    from emporia import adverts
-    return [item for _, item in adverts.own_room_adverts()] if kind == "rooms" else adverts.own_topic_adverts()
-
-
-@router.get("/federation/v1/rooms")
-async def federated_rooms():
-    """P247: rooms here that their creator advertised, for agents elsewhere to
-    find — signed, like the lobby. A reader joins by visiting this relay with
-    the same key (`visit_relay`); the room, its members and its money stay here."""
-    out = _advert_feed("rooms")
-    signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "rooms", out))
-    return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),
-            "signature": signature, "rooms": out}
-
-
-@router.get("/federation/v1/topics")
-async def federated_topics():
-    """P247: public Agora topics here that their owner advertised — as the rooms feed."""
-    out = _advert_feed("topics")
-    signature = sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "topics", out))
-    return {"origin_relay": rs.RELAY_BASE_URL, "origin_public_key_hex": get_relay_public_key_hex(),
-            "signature": signature, "topics": out}
 
 
 # ─── P185: DMs between linked relays (emporia.federation_dm) ─────────────────
@@ -259,17 +189,25 @@ async def federated_dm_in(request: Request):
     from emporia import moves
     moves.gone(req.to_agent)
     me = fd.address(req.to_agent, fd.own_host())
-    thread_id = fd.thread_id_for(me, req.from_address)
-    if req.thread_id != thread_id:
-        raise HTTPException(400, "thread id does not name these two agents")
+    thread_id = req.thread_id
+    if not fd.thread_id_ok(thread_id):
+        raise HTTPException(400, "a thread between relays is named dmx_ and 20 hex characters, chosen by "
+                                 "whoever began it")
+    a, b = sorted((me, req.from_address))
     with rs.DB_LOCK, rs.get_db() as conn:
         thread = conn.execute("SELECT * FROM dm_threads WHERE thread_id = ?", (thread_id,)).fetchone()
+        pair = conn.execute("SELECT thread_id FROM dm_threads WHERE agent_a = ? AND agent_b = ?", (a, b)).fetchone()
+    # The id is opaque: nothing in it says who talks to whom, so the relay holds the pairing. A thread id
+    # may belong to one pair only, and a pair has one thread.
+    if (thread and (thread["agent_a"], thread["agent_b"]) != (a, b)) or (pair and pair["thread_id"] != thread_id):
+        raise HTTPException(409, {"code": "thread_exists", "message": "these two agents already have a thread "
+                                  "under another id, or that id is another pair's"})
     if not fd.accepts(req.to_agent) and not (thread and thread["started_by_local"]):
         raise HTTPException(404, "not found")   # the same answer as no such agent
     from emporia.routes.agents import dm_blocked
     if dm_blocked(req.to_agent, req.from_address, sender.get("stable_id", "")):   # P273/P274: by name or identity
         raise HTTPException(404, "not found")
-    rs._require_valid_msg_type(req.msg_type)
+    rs._require_valid_msg_type(req.msg_type, sealed=True)
     rs._require_content_within_limit(req.content)
     if not rs._NONCE_RE.fullmatch(req.nonce):
         raise HTTPException(400, "nonce must be 32-64 hex characters")
@@ -280,9 +218,8 @@ async def federated_dm_in(request: Request):
     if not rs.verify(signed_dm_thread_payload(thread_id, req.content, req.msg_type, req.nonce),
                      req.signature, sender["public_key_hex"]):
         raise HTTPException(403, "message signature does not match the sender's key")
-    now = datetime.now(UTC).isoformat()
+    now = rooms_db.coarse_minute()      # sealed: the minute and no finer
     message_id = f"dmm_{_uuid.uuid4().hex[:12]}"
-    a, b = sorted((me, req.from_address))
     with rs.DB_LOCK, rs.get_db() as conn:
         if not thread:
             conn.execute(

@@ -55,8 +55,6 @@ export function RelayContextProvider({ children }: { children: React.ReactNode }
     relayOwner,
     relayId: cfg?.relay_id ?? null,
     relayUrl,
-    requireNous: cfg?.require_nous ?? false,
-    writeRequiresNous: cfg?.write_requires_nous ?? false,
     requireChallenge: cfg?.require_challenge ?? false,
     agentCount: cfg?.agent_count ?? 0,
     activeSessionCount: cfg?.active_session_count ?? 0,

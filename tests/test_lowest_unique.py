@@ -4,13 +4,13 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import commit_reveal
+from emporia import calls, commit_reveal
 from emporia import relay_server as rs
 from emporia.modules.lowest_unique import _verdict
 from emporia.relay_server import app
 from tests.test_emporia import _register_keyed, _signed_action_body
 
-GAME = "emporia:lowest-unique:v1"
+GAME = "emporia:lowest-unique:v2"
 
 
 def test_the_lowest_number_only_one_player_picked_wins():
@@ -37,7 +37,7 @@ def test_a_four_player_game_through_the_relay():
         body = _signed_action_body(client, sid, who, action, payload, "Picking what they will avoid")
         return client.post(f"/sessions/{sid}/action", json=body)
     for p in players:
-        assert act(p, "commit", {"commitment": commit_reveal.commitment(picks[p], nonces[p])}).status_code == 200
+        assert act(p, "commit", {"commitment": calls.commitment(picks[p], None, nonces[p])}).status_code == 200
     for p in players:
         r = act(p, "reveal", {"move": picks[p], "nonce": nonces[p]})
         assert r.status_code == 200, r.text
@@ -46,14 +46,14 @@ def test_a_four_player_game_through_the_relay():
 
 @pytest.mark.parametrize("pick", [0, 11])
 def test_a_pick_outside_the_range_cannot_be_revealed(pick):
-    from emporia.module_sdk import SessionAction, SessionState
-    from emporia.modules.lowest_unique import LowestUniqueModule
-    m = LowestUniqueModule()
+    from emporia.module_sdk import SessionAction
+    from emporia.modules.lowest_unique import LowestUniqueV2Module
+    m = LowestUniqueV2Module()
     st = m.initial_state(["a", "b", "c", "d"], {})
     nonce = commit_reveal.new_nonce()
     for p in "abcd":
         st = m.apply_action(st, SessionAction(agent_id=p, action_type="commit", payload={
-            "commitment": commit_reveal.commitment(pick if p == "a" else 1, nonce)})).new_state
+            "commitment": calls.commitment(pick if p == "a" else 1, None, nonce)})).new_state
     ok, why = m.validate_action(st, SessionAction(agent_id="a", action_type="reveal",
                                                   payload={"move": pick, "nonce": nonce}))
     assert not ok and "1–10" in why

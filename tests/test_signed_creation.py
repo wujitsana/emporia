@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from emporia import identity, wire
 from emporia.relay_server import app
+from tests.ids import stable_of
 from tests.test_emporia import _publish_enc_key, _register_keyed
 
 RELAY = "http://testserver"
@@ -34,7 +35,7 @@ def test_a_game_is_signed_by_its_creator_and_named_by_its_nonce():
         stale["at"] = "2026-01-01T00:00:00+00:00"
         stale["signature"] = identity.sign(wire.signed_session_create_payload(
             wire.session_id_for(stale["nonce"]), "sc_maker", body["module_type"], stale["at"],
-            wire.stake_terms(None)), "sc_maker")
+            wire.price_terms(None)), "sc_maker")
         assert c.post("/sessions", json=stale, headers=h).status_code == 400
 
 
@@ -58,7 +59,7 @@ def test_players_seat_the_creator_only_by_its_signed_creation():
     assert "scs_maker" not in identity.seated_players(sid, unsigned, "scs_joiner", "scs_joiner", RELAY)
     at = datetime.now(UTC).isoformat()
     as_join = {**served, "joins": {**served["joins"], "scs_maker": {"at": at, "signature": identity.sign(
-        wire.signed_session_join_payload(sid, "scs_maker", at), "scs_maker")}}}
+        wire.signed_session_join_payload(sid, stable_of("scs_maker"), at), "scs_maker")}}}
     assert "scs_maker" not in identity.seated_players(sid, as_join, "scs_joiner", "scs_joiner", RELAY), \
         "a join is not a creation"
 
@@ -75,26 +76,26 @@ def test_the_creator_signs_the_stake_and_a_relay_that_raises_it_is_caught():
     for a in ("st_maker", "st_joiner"):
         _register_keyed(client, a)
         _publish_enc_key(client, a)
-    rules = {"mode": "x402", "stake_per_participant": "2.00", "currency": "USD"}
+    rules = {"mode": "x402", "price": "2.00", "currency": "USD"}
     sid = client.post("/sessions", json={"module_type": "emporia:service:v1", "config": {"description": "w"},
                                          "payment_rules": rules},
                       headers={"x-emporia-agent-id": "st_maker"}).json()["session_id"]
     assert client.post(f"/sessions/{sid}/join", json={"agent_id": "st_joiner"},
                        headers={"x-emporia-agent-id": "st_joiner"}).status_code == 200
     served = client.get(f"/sessions/{sid}/encryption-keys", headers={"x-emporia-agent-id": "st_joiner"}).json()
-    assert served["terms"]["stake_per_participant"] == "2.00"
+    assert served["terms"]["price"] == "2.00"
     assert identity.game_terms(sid, served, "st_joiner", "st_joiner", RELAY) == ({"st_maker"}, "2.00")
 
     with rs.get_db() as conn:   # the relay raises the stake it keeps
         row = conn.execute("SELECT payment_rules_json FROM sessions WHERE session_id = ?", (sid,)).fetchone()
         conn.execute("UPDATE sessions SET payment_rules_json = ? WHERE session_id = ?",
-                     (json.dumps({**json.loads(row[0]), "stake_per_participant": "5.00"}), sid))
+                     (json.dumps({**json.loads(row[0]), "price": "5.00"}), sid))
     raised = client.get(f"/sessions/{sid}/encryption-keys", headers={"x-emporia-agent-id": "st_joiner"}).json()
     with pytest.raises(ValueError, match="5.00, not the 2.00"):
         identity.game_terms(sid, raised, "st_joiner", "st_joiner", RELAY)
     # And its signed terms changed too: then the creation does not verify, and the game is refused
     # (review of P280: before, the stake fell back to the relay's word).
-    forged = {**raised, "terms": {**raised["terms"], "stake_per_participant": "5.00"}}
+    forged = {**raised, "terms": {**raised["terms"], "price": "5.00"}}
     with pytest.raises(ValueError, match="no creation signed by st_maker"):
         identity.game_terms(sid, forged, "st_joiner", "st_joiner", RELAY)
     stripped = {**served, "joins": {k: v for k, v in served["joins"].items() if k != "st_maker"}}

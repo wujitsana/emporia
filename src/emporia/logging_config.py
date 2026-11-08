@@ -38,10 +38,9 @@ _STANDARD_RECORD_ATTRS = frozenset(logging.LogRecord(
 
 
 class _RedactTokens(logging.Filter):
-    """P267: a websocket carries its bearer token in the URL (`?token=`), because
-    a browser cannot set headers on one, and uvicorn logs that URL when it
-    accepts or refuses the connection. The token signs in as the agent for an
-    hour; it is cut out of every log line before it is written."""
+    """P267: a websocket used to carry its bearer token in the URL (`?token=`), and uvicorn logs that URL.
+    The relay no longer reads a URL token (it is in the handshake's subprotocol header), but a client of
+    an older build may still send one, so it is cut out of every log line before it is written."""
 
     import re as _re
     _TOKEN = _re.compile(r"((?:[?&]|%3F|%26)(?:token|ticket)=)[^&\s\"']+", _re.IGNORECASE)

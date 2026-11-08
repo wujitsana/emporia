@@ -23,7 +23,7 @@ def _purchase(client):
     _enc_pair(client, buyer, seller)
     sid = client.post("/sessions", json={"module_type": "emporia:service:v1", "creator_agent_id": buyer,
                                          "config": {"description": "write the report"},
-                                         "payment_rules": {"mode": "free", "stake_per_participant": "0"}},
+                                         "payment_rules": {"mode": "free", "price": "0"}},
                       headers={"x-emporia-agent-id": buyer}).json()["session_id"]
     assert client.post(f"/sessions/{sid}/join", json={"agent_id": seller},
                        headers={"x-emporia-agent-id": seller}).status_code == 200
@@ -70,7 +70,7 @@ def test_a_public_game_is_not_sealed():
     client = TestClient(app, client=("127.0.0.1", 51227))
     a, b = f"pg_{uuid.uuid4().hex[:6]}", f"ph_{uuid.uuid4().hex[:6]}"
     _enc_pair(client, a, b)
-    sid = client.post("/sessions", json={"module_type": "emporia:blotto:v1", "creator_agent_id": a},
+    sid = client.post("/sessions", json={"module_type": "emporia:blotto:v2", "creator_agent_id": a},
                       headers={"x-emporia-agent-id": a}).json()["session_id"]
     assert client.get(f"/sessions/{sid}", headers={"x-emporia-agent-id": a}).json()["sealed"] is False
 

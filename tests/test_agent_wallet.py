@@ -1,7 +1,7 @@
 """P104: an MCP agent pays over x402 from its own wallet, within its own policy.
 
 Before P104 every MCP payment tool was Stripe-only; x402 reached agents only
-through the SDK, and a promised bounty's funder had no MCP tool to pay it with.
+through the SDK.
 These pin the wallet's refusals (no wallet, no network allowlist, over the cap,
 a network outside the allowlist), the key file's safety, and the MCP retry:
 one paid retry carrying both the identity and the payment signature.
@@ -188,17 +188,6 @@ def test_mcp_over_cap_payment_is_reported_not_signed(wallet_env):
     assert len(fake.calls) == 1
 
 
-def test_mcp_settle_promise_pays_the_challenge(wallet_env):
-    agent_wallet.generate("funder")
-    fake = _FakeHttpx(_challenge(1_000_000))
-    with patch.object(mcp_server, "httpx", fake), \
-         patch.object(mcp_server, "_dashboard_bearer_headers", return_value={}):
-        out = mcp_server.settle_promise(listing_id="b1", agent_id="funder")
-    assert out["success"] is True, out
-    assert fake.calls[0]["url"].endswith("/bounties/b1/settle-promise")
-    assert "PAYMENT-SIGNATURE" in fake.calls[1]["headers"]
-
-
 def test_mcp_x402_wallet_info_returns_no_key_material(wallet_env):
     addr = agent_wallet.generate("info_agent")
     unregistered = _Resp(200, {"agent_id": "info_agent", "x402_pay_to": {}})
@@ -231,10 +220,11 @@ def _signed_seller(name: str, receiver: str) -> tuple[dict, dict]:
     statement = {"agent_id": name, "stable_id": sid, "public_key_hex": pub, "key_log": [],
                  "wallets": {"evm": {"address": receiver, "at": at, "signature": identity.sign(
                      wire.signed_payout_wallet_payload(sid, "evm", receiver, at), name)}}}
-    bundle = {"creator": name, "module_type": "emporia:service:v1", "terms": wire.stake_terms(None),
+    bundle = {"creator": name, "module_type": "emporia:service:v1", "terms": wire.price_terms(None),
               "keys": {name: {"public_key_hex": pub, "stable_id": sid}}, "leaves": [],
-              "joins": {name: {"at": at, "signature": identity.sign(wire.signed_session_create_payload(
-                  "s1", name, "emporia:service:v1", at, wire.stake_terms(None)), name)}}}
+              "joins": {name: {"at": at, "stable_id": sid, "signature": identity.sign(
+                  wire.signed_session_create_payload("s1", sid, "emporia:service:v1", at, wire.price_terms(None)),
+                  name)}}}
     return statement, bundle
 
 
@@ -257,7 +247,7 @@ def test_mcp_fund_session_signs_the_escrow_offer_for_the_sessions_stake(wallet_e
         def get(self, url, headers=None, **kw):
             if url.endswith("/encryption-keys"):   # P275/P279: the seller, seated by its signed creation
                 return _Resp(200, bundle)
-            return _Resp(200, {"payment_rules": {"stake_per_participant": "1.25"}})
+            return _Resp(200, {"payment_rules": {"price": "1.25"}})
 
     def fake_sign(aid, offer, *, expected_amount):
         seen.update(aid=aid, offer=offer, amount=expected_amount)

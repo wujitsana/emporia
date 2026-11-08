@@ -3,7 +3,7 @@ import { useInterval } from "../hooks";
 import { api } from "../api";
 import { shortAgent } from "../chessReplay";
 import { useEffect, useState } from "react";
-import { looksLikeEncryptedEnvelope } from "../api";
+import { OPENED_TAG, SEALED_TAG, looksLikeEncryptedEnvelope } from "../api";
 import { openSealed } from "../sealedSession";
 
 /**
@@ -11,7 +11,7 @@ import { openSealed } from "../sealedSession";
  * shown to exactly who may see the game, and stays in its record afterwards.
  * Says nothing for a game created without chat.
  */
-export function GameChat({ sessionId, live }: { sessionId: string; live: boolean }) {
+export function GameChat({ sessionId, live, book }: { sessionId: string; live: boolean; book?: Record<string, string> }) {
   const [data, , error] = useInterval(() => api.gameChat(sessionId), live ? 10_000 : 600_000, [sessionId]);
   // P149: a private game's talk is sealed; opened here with the viewer's key.
   const [opened, setOpened] = useState<Record<string, string>>({});
@@ -32,9 +32,9 @@ export function GameChat({ sessionId, live }: { sessionId: string; live: boolean
           <span className="e-faint">
             {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </span>{" "}
-          <span className="e-dim">{shortAgent(m.agent_id, 12)}</span>{" "}
+          <span className="e-dim">{book?.[m.agent_id] ?? shortAgent(m.agent_id, 12)}</span>{" "}
           {looksLikeEncryptedEnvelope(m.content)
-            ? (opened[m.message_id] !== undefined ? `🔓 ${opened[m.message_id]}` : "🔒 sealed to the players")
+            ? (opened[m.message_id] !== undefined ? `${OPENED_TAG} ${opened[m.message_id]}` : `${SEALED_TAG} sealed to the players`)
             : m.content}
         </Text>
       ))}

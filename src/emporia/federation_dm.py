@@ -53,10 +53,19 @@ def enabled() -> bool:
     return os.getenv("EMPORIA_FEDERATED_DMS", "").strip() == "1" and relay_access.federates()
 
 
-def thread_id_for(a: str, b: str) -> str:
-    """The same id on both relays: it is named by the two addresses."""
-    first, second = sorted((a, b))
-    return "dmx_" + hashlib.sha256(f"{first}|{second}".encode()).hexdigest()[:20]
+_THREAD_ID = re.compile(r"dmx_[0-9a-f]{20}")
+
+
+def new_thread_id() -> str:
+    """The id of a thread with another relay's agent: random, chosen by whoever begins it. It is **opaque**:
+    unlike an id derived from the two addresses (which anyone could recompute to see who talks to whom), it
+    says nothing. Both relays learn it from the first message and each holds the pairing."""
+    import secrets
+    return "dmx_" + secrets.token_hex(10)
+
+
+def thread_id_ok(value: Any) -> bool:
+    return isinstance(value, str) and bool(_THREAD_ID.fullmatch(value))
 
 
 def linked_peer(host: str) -> str:
@@ -118,10 +127,10 @@ async def peer_key(peer: str) -> str:
     pinned = rs._FEDERATION_PEER_PUBKEYS.get(peer)
     if pinned:
         return pinned
-    data = await rs._fetch_federation_batch(f"{peer}/gaming/v1/federate/listings")
+    data = await rs._fetch_federation_batch(f"{peer}/federation/v1/posts")
     key, sig = data.get("origin_public_key_hex", ""), data.get("signature", "")
-    if not (key and sig and verify_raw(federation_signable_bytes(data.get("origin_relay", peer), "listings",
-                                                                 data.get("listings", [])), sig, key)):
+    if not (key and sig and verify_raw(federation_signable_bytes(data.get("origin_relay", peer), "posts",
+                                                                 data.get("posts", [])), sig, key)):
         raise HTTPException(502, f"{peer} did not prove its relay key")
     rs._FEDERATION_PEER_PUBKEYS[peer] = key
     rs.save_federation_peer_pubkeys(rs._FEDERATION_PEER_PUBKEYS)
@@ -173,7 +182,7 @@ async def call_peer(peer: str, method: str, path: str, payload: dict | None = No
 def agent_record(agent_id: str) -> dict[str, Any] | None:
     """What a linked relay may know of an agent here: its address, public keys
     and the signed key log that leads to the current one. Nothing else — no
-    wallets, no Nous account, no activity."""
+    wallets, no operator label, no activity."""
     from emporia import relay_server as rs
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute(

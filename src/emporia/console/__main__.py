@@ -1,10 +1,13 @@
 """Run the local console (P126).
 
     python -m emporia.console                      # standalone, 127.0.0.1:8089, prints a link
-    python -m emporia.console --uds PATH           # for the Hermes dashboard plugin
+    python -m emporia.console --uds PATH --profile DIR   # for the Hermes dashboard plugin
 
-Keys: every Hermes profile's key directory under --hermes-root (found from
-this checkout by default), or the --keys-dir directories given. Relay:
+Keys, standalone: every Hermes profile's key directory under --hermes-root
+(found from this checkout by default), or the --keys-dir directories given.
+On a socket (console scope): only the one profile --profile names — the one
+whose dashboard plugin started it — and only with the per-start secret the
+plugin writes on stdin (one line), which every request then carries. Relay:
 --relay-url, else EMPORIA_RELAY_URL.
 """
 
@@ -64,10 +67,25 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--relay-url", default=os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088"))
     p.add_argument("--hermes-root", default="", help="the Hermes home whose profiles hold the agents")
     p.add_argument("--keys-dir", action="append", default=[])
+    p.add_argument("--profile", default="", help="on a socket: the one Hermes profile it serves")
     args = p.parse_args(argv)
 
-    key_dirs = [Path(d).expanduser() for d in args.keys_dir] or hermes_layout.key_dirs(
-        Path(args.hermes_root).expanduser() if args.hermes_root else _hermes_root())
+    if args.uds:
+        # Console scope: one profile, one secret per start (see the module docstring).
+        if not args.profile or args.hermes_root or args.keys_dir:
+            print("error: a socket console serves one profile: --profile DIR, "
+                  "without --hermes-root or --keys-dir", file=sys.stderr)
+            return 1
+        secret = sys.stdin.readline().strip()
+        if len(secret) < 32:
+            print("error: no socket secret on stdin (the dashboard plugin writes one at each start)",
+                  file=sys.stderr)
+            return 1
+        key_dirs = [Path(args.profile).expanduser() / "home" / ".hermes" / "keys"]
+    else:
+        secret = None
+        key_dirs = [Path(d).expanduser() for d in args.keys_dir] or hermes_layout.key_dirs(
+            Path(args.hermes_root).expanduser() if args.hermes_root else _hermes_root())
     found = discover(key_dirs)
     if not found:
         print("error: no agent keys found; pass --keys-dir", file=sys.stderr)
@@ -79,7 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         os.chmod(sock.parent, 0o700)
         if sock.exists():
             sock.unlink()
-        console = Console(key_dirs, args.relay_url, session_token=None)
+        console = Console(key_dirs, args.relay_url, session_token=None, socket_secret=secret)
         _exit_with_parent()
         print(f"Emporia console on {sock} for {', '.join(sorted(found))} → {args.relay_url}",
               file=sys.stderr)

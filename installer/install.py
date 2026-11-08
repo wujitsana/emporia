@@ -34,9 +34,9 @@ See README.md § Operations and docs/RUNBOOK.md.
 from __future__ import annotations
 
 import argparse
-import datetime
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -70,7 +70,6 @@ _SAFE_ENV_KEYS = {
     "OPENROUTER_API_KEY",
     "STRIPE_PROFILE_ID",
     "STRIPE_API_VERSION",
-    "EMPORIA_MPP_TEMPO_ENABLED",
     "EMPORIA_MAX_TOTAL_SPEND_CENTS",
     "EMPORIA_GUARDRAILS_MODE",
 }
@@ -87,7 +86,6 @@ _SECRET_ENV_KEYS = {
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
     "NOUS_API_KEY",
-    "EMPORIA_NOUS_JWT",
 }
 
 _PROVIDER_ENV_KEYS = ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")
@@ -101,14 +99,12 @@ _PROVIDER_ENV_KEYS = ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")
 # profile now, and stripped from one that already has them.
 _RELAY_ONLY_ENV_KEYS = frozenset({
     "STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID", "STRIPE_API_VERSION",
-    "STRIPE_WEBHOOK_SECRET", "EMPORIA_MPP_TEMPO_ENABLED",
+    "STRIPE_WEBHOOK_SECRET",
 })
 
 
 def _apply_guardrails_env(env_block: dict[str, str], *, disabled: bool = False) -> None:
-    """The regex firewall: enforce, or off. P151 removed the NVIDIA-hosted
-    semantic layer; its old setting is dropped from any profile set up again."""
-    env_block.pop("EMPORIA_NEMO_GUARDRAILS_ENABLED", None)
+    """The regex firewall: enforce, or off."""
     if disabled:
         env_block["EMPORIA_GUARDRAILS_MODE"] = "off"
         return
@@ -119,46 +115,21 @@ def _guardrails_env_lines(*, disabled: bool = False) -> list[str]:
     return ["EMPORIA_GUARDRAILS_MODE=off" if disabled else "EMPORIA_GUARDRAILS_MODE=enforce"]
 
 
-def _nous_access_token_expired(token: str, leeway_sec: int = 30) -> bool:
-    """True if the JWT's exp is in the past, or it has none we can read (not verified — the
-    relay verifies the token; this only decides whether to ask Hermes for a current one)."""
-    from emporia import nous_token
-    exp = nous_token.expires_at(token)
-    return exp is None or datetime.datetime.now(datetime.timezone.utc).timestamp() >= exp - leeway_sec
-
-
-def resolve_nous_token(
-    explicit: str | None = None, profile_dir: Path | None = None
-) -> str | None:
-    """A current Nous access token, or None (the agent then registers key_only).
-
-    Priority: --nous-token arg → a non-expired EMPORIA_NOUS_JWT → Hermes, asked for this
-    profile's own login (`nous_token.from_hermes`).
-
-    Catalog rule 11: this used to read Hermes's auth.json itself, refresh an expired token
-    against the Nous portal as Hermes's own client, and write the new tokens back. Hermes
-    owns that login: its refresh token rotates under Hermes's lock, and a second refresher
-    races it (a reused refresh token revokes the whole session). Hermes is asked instead,
-    and does its own refresh.
-    """
-    # 1. Explicit CLI arg
+def resolve_operator_label(explicit: str | None = None, profile_dir: Path | None = None) -> str:
+    """The operator label for an agent profile: the one given (`--operator-label`), else the one this profile
+    already holds, else one an Emporia profile under the same Hermes root holds (the same person's agents share
+    it), else a new random one. Automatic and unproven: see `emporia.operators`."""
+    from emporia import identity_card, operators
     if explicit:
-        return explicit
-
-    # 2. Env var only if not expired (stale profile .env must not block a current login)
-    env_tok = os.getenv("EMPORIA_NOUS_JWT", "").strip()
-    if env_tok and not _nous_access_token_expired(env_tok):
-        return env_tok
-
-    # 3. Hermes, for this profile
-    from emporia import nous_token
-    token = nous_token.from_hermes(profile_dir)
-    if token:
-        return token
-    print("  No current Nous login from Hermes for this profile. To restore nous_verified trust:")
-    print("    hermes auth add nous --type oauth --no-browser --manual-paste")
-    print("  then run this again; the fresh login is picked up automatically.")
-    return None
+        want = explicit.strip().lower()
+        if not operators.valid_label(want):
+            raise SystemExit(f"--operator-label must be {operators.LABEL_EXAMPLE}")
+        return want
+    if profile_dir is not None:
+        have = identity_card.label_of_profile(profile_dir) or identity_card.label_on_this_install(profile_dir)
+        if have:
+            return have
+    return operators.new_label()
 
 
 def _hermes_profile_exists(name: str) -> bool:
@@ -195,14 +166,27 @@ def _hermes_profile_create(name: str) -> None:
 # Profile discovery
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _is_named_profile(path: Path) -> bool:
+    """A Hermes named profile, which `hermes profile create` makes without a config.yaml
+    (Hermes writes one on first use): a folder in a `profiles/` folder, with Hermes's files."""
+    return path.parent.name == "profiles" and any((path / f).exists() for f in ("config.yaml", ".env", "SOUL.md"))
+
+
 def find_profile_dir_from_cwd() -> Path | None:
-    """Walk up from CWD looking for a Hermes config.yaml (up to 4 levels)."""
+    """Walk up from CWD looking for the Hermes profile it is in (up to 4 levels): a folder with a
+    config.yaml, or a named profile that has none yet. Found by the 11-06 release review: a profile
+    fresh from `hermes profile create` has no config.yaml, so a checkout cloned into it (as the
+    README says) was taken for the Hermes root's, and the root was wired as agent '.hermes'."""
     current = Path.cwd().resolve()
     for _ in range(4):
-        if (current / "config.yaml").exists():
+        if (current / "config.yaml").exists() or _is_named_profile(current):
             return current
         current = current.parent
     return None
+
+
+# The relay's agent-id rule (emporia.relay_server._AGENT_ID_RE).
+AGENT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]$")
 
 
 def find_profile_dir_by_name(name: str) -> Path | None:
@@ -216,8 +200,10 @@ def find_profile_dir_by_name(name: str) -> Path | None:
 
 def _profile_base_dirs() -> list[Path]:
     """Ordered list of directories that may contain profiles."""
+    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser()
+    root = home.parent.parent if home.parent.name == "profiles" else home
     candidates = [
-        Path("/opt/data/profiles"),
+        root / "profiles",                     # wherever Hermes's data is (never a fixed path)
         Path.home() / "profiles",
         Path.home() / ".hermes" / "profiles",
         Path.cwd(),
@@ -690,8 +676,8 @@ def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profi
         # setting or key is written (through Hermes); the server reads no .env at all.
         env["EMPORIA_DOTENV"] = str(profile_dir / ".env")
         env.update(mcp_references(profile_dir, env))
-    # P114: where Hermes is, so the MCP server can ask it for a current Nous
-    # token whatever PATH Hermes gives it (it lives in ~/.local/bin here).
+    # Where Hermes is, so the MCP server can find it whatever PATH Hermes gives it (it lives in
+    # ~/.local/bin here).
     hermes_bin = os.getenv("EMPORIA_HERMES_BIN", "").strip() or shutil.which("hermes")
     if hermes_bin:
         env["EMPORIA_HERMES_BIN"] = hermes_bin
@@ -825,12 +811,20 @@ def install_into_profile(
     stripe_profile_id: str | None = None,
     stripe_api_version: str | None = None,
     max_budget_cents: int | None = None,
-    nous_token: str | None = None,
+    operator_label: str | None = None,
     no_guardrails: bool = False,
     dry_run: bool = False,
 ) -> bool:
     config_path = profile_dir / "config.yaml"
-    if not config_path.exists():
+    if not config_path.exists() and _is_named_profile(profile_dir):
+        # A profile fresh from `hermes profile create`: Hermes writes its config.yaml on first use.
+        if dry_run:
+            print(f"  [dry-run] Would create {config_path} (a new profile has none yet)")
+        else:
+            config_path.write_text("{}\n")
+            os.chmod(config_path, 0o600)
+            print(f"  + {config_path} (a new profile has none yet)")
+    if not config_path.exists() and not dry_run:
         print(f"  ERROR: no config.yaml at {config_path}")
         return False
 
@@ -840,7 +834,7 @@ def install_into_profile(
         keys_dir=Path(_profile_runtime_env(profile_dir)["EMPORIA_KEYS_DIR"]),
     )
 
-    config = load_yaml(config_path)
+    config = load_yaml(config_path) if config_path.exists() else {}   # a dry run of a new profile
     changed = False
 
     _warn_if_a2a_enabled(config)
@@ -877,7 +871,7 @@ def install_into_profile(
     # the entry is inert either way.
 
     # Env block
-    # P201: secrets (the Stripe key, the Nous token) go only to the .env below.
+    # P201: secrets (the Stripe key) go only to the .env below.
     env_block = config.setdefault("env", {})
     if stripe_profile_id:
         if not _valid_stripe_profile_id(stripe_profile_id):
@@ -894,8 +888,6 @@ def install_into_profile(
         env_block["STRIPE_API_VERSION"] = stripe_api_version
         changed = True
         print("  + env.STRIPE_API_VERSION")
-    if env_block.pop("EMPORIA_MPP_TEMPO_ENABLED", None) is not None:  # P152: no longer a setting
-        changed = True
     if max_budget_cents is not None:
         if max_budget_cents > 0:
             if env_block.get("EMPORIA_MAX_TOTAL_SPEND_CENTS") != str(max_budget_cents):
@@ -906,8 +898,8 @@ def install_into_profile(
             env_block.pop("EMPORIA_MAX_TOTAL_SPEND_CENTS", None)
             changed = True
             print("  ~ removed total spend limit (unlimited)")
-    if nous_token:
-        print("  + EMPORIA_NOUS_JWT in .env  (Nous identity verified)")
+    operator_label = resolve_operator_label(operator_label, profile_dir)
+    print(f"  + EMPORIA_OPERATOR_LABEL in .env  ({operator_label}: declared, not verified)")
     if no_guardrails:
         _apply_guardrails_env(env_block, disabled=True)
         changed = True
@@ -928,7 +920,7 @@ def install_into_profile(
     else:
         print("  Already up to date — no changes needed")
 
-    # .env file: ensure EMPORIA_AGENT_ID and optionally Nous JWT are present
+    # .env file: ensure EMPORIA_AGENT_ID and the operator label are present
     env_file = profile_dir / ".env"
     from emporia import profile_env          # catalog rule 11: through Hermes for a profile's .env
     env_lines: list[str] = profile_env.lines(env_file)
@@ -963,17 +955,12 @@ def install_into_profile(
         env_lines, _ = _set_env_line(env_lines, "STRIPE_PROFILE_ID", stripe_profile_id)
     elif not stripe_secret_key:
         env_lines = [ln for ln in env_lines if not ln.startswith("STRIPE_PROFILE_ID=")]
-    env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_NEMO_GUARDRAILS_ENABLED=")]
-    env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_MPP_TEMPO_ENABLED=")]
     if max_budget_cents is not None:
         if max_budget_cents > 0:
             env_lines, _ = _set_env_line(env_lines, "EMPORIA_MAX_TOTAL_SPEND_CENTS", str(max_budget_cents))
         else:
             env_lines = [ln for ln in env_lines if not ln.startswith("EMPORIA_MAX_TOTAL_SPEND_CENTS=")]
-    if nous_token:
-        env_lines, c3 = _set_env_line(env_lines, "EMPORIA_NOUS_JWT", nous_token)
-    else:
-        c3 = False
+    env_lines, c3 = _set_env_line(env_lines, "EMPORIA_OPERATOR_LABEL", operator_label)
     env_dirty = False
     for line in _guardrails_env_lines(disabled=no_guardrails):
         key, _, val = line.partition("=")
@@ -984,8 +971,7 @@ def install_into_profile(
     os.environ["EMPORIA_RELAY_URL"] = relay_url
     os.environ["EMPORIA_DB_PATH"] = db_path
     os.environ["EMPORIA_KEYS_DIR"] = runtime_env["EMPORIA_KEYS_DIR"]
-    if nous_token:
-        os.environ["EMPORIA_NOUS_JWT"] = nous_token
+    os.environ["EMPORIA_OPERATOR_LABEL"] = operator_label
     if stripe_secret_key:
         os.environ["STRIPE_SECRET_KEY"] = stripe_secret_key
     elif "STRIPE_SECRET_KEY" in os.environ:
@@ -1041,7 +1027,7 @@ def create_profile(
     relay_url: str,
     current_profile_dir: Path | None,
     max_budget_cents: int | None = None,
-    nous_token: str | None = None,
+    operator_label: str | None = None,
     inherit_env: bool = True,
     dry_run: bool = False,
     update_dashboard: bool = False,
@@ -1153,8 +1139,6 @@ def create_profile(
         env_block["EMPORIA_MAX_TOTAL_SPEND_CENTS"] = str(max_budget_cents)
     else:
         env_block.pop("EMPORIA_MAX_TOTAL_SPEND_CENTS", None)
-    if nous_token:
-        env_block["EMPORIA_NOUS_JWT"] = nous_token
     _apply_guardrails_env(env_block, disabled=False)
     # P54: EMPORIA_PUBLIC_KEY used to be written here. Nothing in this repo,
     # in Hermes, or anywhere else ever read it — it was a key-shaped name in an
@@ -1178,6 +1162,7 @@ def create_profile(
     runtime_env = _profile_runtime_env(profile_dir)
     _ensure_keys_dir(runtime_env, dry_run)
     env_path = profile_dir / ".env"
+    operator_label = resolve_operator_label(operator_label, profile_dir)
     safe_env_lines = [
         f"EMPORIA_RELAY_URL={relay_url}",
         f"EMPORIA_AGENT_ID={aid}",
@@ -1208,8 +1193,7 @@ def create_profile(
         safe_env_lines.append(provider_line)
     if max_budget_cents is not None and max_budget_cents > 0:
         safe_env_lines.append(f"EMPORIA_MAX_TOTAL_SPEND_CENTS={max_budget_cents}")
-    if nous_token:
-        safe_env_lines.append(f"EMPORIA_NOUS_JWT={nous_token}")
+    safe_env_lines.append(f"EMPORIA_OPERATOR_LABEL={operator_label}")
     safe_env_lines.extend(_guardrails_env_lines(disabled=False))
     # Every inherited secret (P201: config.yaml no longer holds any), once.
     written = {ln.split("=", 1)[0] for ln in safe_env_lines}
@@ -1223,8 +1207,7 @@ def create_profile(
     os.environ["EMPORIA_RELAY_URL"] = relay_url
     os.environ["EMPORIA_DB_PATH"] = runtime_env["EMPORIA_DB_PATH"]
     os.environ["EMPORIA_KEYS_DIR"] = runtime_env["EMPORIA_KEYS_DIR"]
-    if nous_token:
-        os.environ["EMPORIA_NOUS_JWT"] = nous_token
+    os.environ["EMPORIA_OPERATOR_LABEL"] = operator_label
 
     if dry_run:
         print(f"  [dry-run] Would write {env_path}")
@@ -1282,13 +1265,16 @@ def _ensure_project_dependencies(*, dry_run: bool = False) -> None:
         # "No module named ruff", with nothing connecting it to the setup step
         # that caused it. Measured, not guessed: both imports were gone after a
         # local-demo run.
+        # The x402 extra (eth-account, eth-abi): the relay imports it at start for its money
+        # module, and an agent's wallet signs with it. Found by the 11-06 release review: a
+        # plain install's relay stopped at start with "No module named 'eth_abi'".
         subprocess.run(
-            [uv, "sync", "--inexact", "--directory", str(_EMPORIA_DIR)],
+            [uv, "sync", "--inexact", "--extra", "x402", "--directory", str(_EMPORIA_DIR)],
             cwd=str(_EMPORIA_DIR), check=False,
         )
     else:
         subprocess.run(
-            [py, "-m", "pip", "install", "-e", str(_EMPORIA_DIR)],
+            [py, "-m", "pip", "install", "-e", f"{_EMPORIA_DIR}[x402]"],
             cwd=str(_EMPORIA_DIR),
             check=False,
         )
@@ -1427,7 +1413,7 @@ def bootstrap_test_profiles(
     stripe_profile_id: str | None = None,
     stripe_api_version: str | None = None,
     max_budget_cents: int | None = None,
-    nous_token: str | None = None,
+    operator_label: str | None = None,
     dry_run: bool = False,
     dev_skills: bool = False,
 ) -> None:
@@ -1443,7 +1429,7 @@ def bootstrap_test_profiles(
             relay_url=relay_url,
             current_profile_dir=current_profile_dir,
             max_budget_cents=max_budget_cents,
-            nous_token=nous_token,
+            operator_label=operator_label,
             inherit_env=False,  # P117: bare — the model's key is copied on its own
             dry_run=dry_run,
             update_dashboard=False,  # don't overwrite operator dashboard env
@@ -1489,12 +1475,10 @@ def _hermes_optional_skills_root() -> Path | None:
 
 
 # P295: one plugin, `<home>/plugins/emporia`, keyed `emporia` in plugins.enabled.
-# Before, the platform plugin alone sat in `plugins/platforms/emporia`, keyed so.
 PLUGIN_KEY = "emporia"
-LEGACY_PLATFORM_KEY = "platforms/emporia"
 # The relay's own reports (your turn, results) are attributed to this sender by
 # frames.RELAY_SENDER; it is allowlisted so they reach the agent. Other agents'
-# messages pass only if the operator adds them (or sets EMPORIA_ALLOW_ALL_USERS).
+# messages pass only if the operator adds them (or sets EMPORIA_WAKE=open).
 RELAY_SENDER = "emporia:relay"
 
 
@@ -1565,13 +1549,12 @@ def _place_plugin(dst: Path, dry_run: bool = False) -> bool:
 
 
 def _enable_plugin(profile_dir: Path) -> None:
-    """`emporia` in plugins.enabled (and out of disabled); the old key
-    `platforms/emporia` (P92-P294, the platform plugin alone) out of both."""
+    """`emporia` in plugins.enabled (and out of disabled)."""
     config_path = profile_dir / "config.yaml"
     config = load_yaml(config_path) if config_path.exists() else {}
     plugins = config.get("plugins") if isinstance(config.get("plugins"), dict) else {}
-    enabled = [e for e in (plugins.get("enabled") or []) if e != LEGACY_PLATFORM_KEY]
-    disabled = [d for d in (plugins.get("disabled") or []) if d not in (PLUGIN_KEY, LEGACY_PLATFORM_KEY)]
+    enabled = list(plugins.get("enabled") or [])
+    disabled = [d for d in (plugins.get("disabled") or []) if d != PLUGIN_KEY]
     if PLUGIN_KEY not in enabled:
         enabled.append(PLUGIN_KEY)
     if enabled != plugins.get("enabled") or disabled != (plugins.get("disabled") or []):
@@ -1636,11 +1619,7 @@ def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
     global _GATEWAY_RESTART_NEEDED, _DASHBOARD_RESTART_NEEDED
     if profile_dir.name not in _TOUCHED_PROFILES:
         _TOUCHED_PROFILES.append(profile_dir.name)
-    legacy = profile_dir / "plugins" / "platforms" / "emporia"
     changed = _place_plugin(dst)
-    if legacy.exists():                       # P295: the platform plugin alone, before
-        shutil.rmtree(legacy)
-        changed = True
     if changed:
         _GATEWAY_RESTART_NEEDED = _DASHBOARD_RESTART_NEEDED = True     # the tab is in it too
         print(f"  + Emporia plugin: {dst} (new or changed — needs a gateway restart)")
@@ -1675,41 +1654,6 @@ def install_platform_plugin(profile_dir: Path, dry_run: bool = False) -> None:
     write_tab_settings(profile_dir, profile_dir, values.get("EMPORIA_RELAY_URL", ""))
 
 
-# P284 copied Emporia's own skills into each agent profile and locked them there.
-# P295: they ship in the plugin (hermes_plugin/emporia/skills), which registers
-# them read-only as `emporia:emporia` and `emporia:emporia-setup`; what the
-# installer once put in a profile's skills/ is removed.
-OLD_SKILL_FILES: tuple[str, ...] = ("emporia", "emporia-setup", "emporia.md")
-_SKILL_COPIES = ".emporia-copies.json"     # in skills/: which of them Emporia copied there
-
-
-def old_skill_copies(profile_dir: Path) -> list[Path]:
-    """Emporia's skills where an installer before P295 put them: its links into
-    the repo, and the copies it recorded. A folder of the operator's own is not one."""
-    skills_dir = profile_dir / "skills"
-    try:
-        data = json.loads((skills_dir / _SKILL_COPIES).read_text())
-        copies = {str(n) for n in data} if isinstance(data, list) else set()
-    except (OSError, ValueError):
-        copies = set()
-    return [d for n in OLD_SKILL_FILES if (d := skills_dir / n).is_symlink() or (d.exists() and n in copies)]
-
-
-def remove_old_skill_copies(profile_dir: Path, dry_run: bool = False) -> None:
-    for old in old_skill_copies(profile_dir):
-        if dry_run:
-            print(f"  [dry-run] Would remove {old} (the plugin carries Emporia's skills now)")
-            continue
-        if old.is_symlink() or old.is_file():
-            old.unlink()
-        else:
-            shutil.rmtree(old)
-        print(f"  - {old} (the plugin carries Emporia's skills now: emporia:{old.stem})")
-    marker = profile_dir / "skills" / _SKILL_COPIES
-    if marker.exists() and not dry_run:
-        marker.unlink()
-
-
 def _install_skill_link(
     profile_dir: Path,
     dry_run: bool = False,
@@ -1720,9 +1664,8 @@ def _install_skill_link(
 
     Links the payment skills (mpp-agent, stripe-link-cli, stripe-projects) from
     the Hermes install's optional-skills catalog, and with dev_skills the repo's
-    dev skills. Removes the copies of Emporia's own skills older installs made.
+    dev skills.
     """
-    remove_old_skill_copies(profile_dir, dry_run=dry_run)
     skills_dir = profile_dir / "skills"
     links: list[tuple[Path, Path]] = []
     optional_root = _hermes_optional_skills_root()
@@ -1808,9 +1751,10 @@ def main() -> None:
                         help="Stripe API version for SPT/MPP preview endpoints")
     parser.add_argument("--max-budget-cents", type=int, default=int(os.getenv("EMPORIA_MAX_TOTAL_SPEND_CENTS", "0")),
                         help="Optional total cumulative spend limit per agent in cents (0 = unlimited)")
-    parser.add_argument("--nous-token", default=None, metavar="JWT",
-                        help="Nous access JWT — stored as EMPORIA_NOUS_JWT; "
-                             "enables nous_verified trust level on this relay")
+    parser.add_argument("--operator-label", default=None, metavar="op_…",
+                        help="the operator label to put on the agent's signed card (stored as "
+                             "EMPORIA_OPERATOR_LABEL); default: the profile's, else another Emporia profile's "
+                             "under the same Hermes root, else a new random one")
     parser.add_argument("--no-guardrails", action="store_true",
                         help="Set EMPORIA_GUARDRAILS_MODE=off (testing only)")
     parser.add_argument("--no-inherit-env", action="store_true",
@@ -1863,8 +1807,7 @@ def main() -> None:
     if not args.dry_run:
         _ensure_project_dependencies(dry_run=False)
 
-    # Detect current profile first — Hermes is asked for *this* profile's Nous
-    # login (resolve_nous_token), so token resolution needs to know which it is.
+    # Detect the current profile first.
     # 1. Walk up from CWD
     current_profile_dir = find_profile_dir_from_cwd()
     # 2. Fall back to HERMES_PROFILE env var
@@ -1877,14 +1820,8 @@ def main() -> None:
     else:
         print("No profile detected from CWD — using relay URL defaults")
 
-    # Resolve Nous JWT once up front — all operations share the same token.
-    # Falls back to asking Hermes for this profile's login; warns if unavailable.
-    nous_token = resolve_nous_token(args.nous_token, profile_dir=current_profile_dir)
-    if nous_token:
-        print("  Nous token: ready (agents will register as nous_verified)")
-    else:
-        print("  Nous token: not available — agents will register as key_only (read-only trust)")
-        print("  To enable nous_verified: hermes auth add nous --type oauth --no-browser --manual-paste")
+    # The operator label (declared, not verified): --operator-label, else resolved per agent profile.
+    operator_label = args.operator_label or None
     print()
 
     interactive = not args.non_interactive
@@ -1902,6 +1839,13 @@ def main() -> None:
             or os.getenv("HERMES_AGENT_ID")
             or current_profile_dir.name
         )
+        if not AGENT_ID_RE.match(agent_id):
+            # The relay's own rule. Found by the 11-06 release review: the Hermes root
+            # (~/.hermes) gave the agent id '.hermes', which no relay registers.
+            print(f"ERROR: {agent_id!r} (from {current_profile_dir}) is not an agent id a relay accepts: "
+                  "lowercase letters, digits, - and _, 3-64 characters, starting and ending with a letter "
+                  "or digit. Pass --agent-id NAME, or run this inside a named profile's folder.")
+            sys.exit(1)
         print(f"Installing into: {current_profile_dir}  agent_id={agent_id!r}")
 
         stripe_key, stripe_profile_id = resolve_provider_secrets(
@@ -1921,7 +1865,7 @@ def main() -> None:
             stripe_profile_id=stripe_profile_id,
             stripe_api_version=args.stripe_api_version,
             max_budget_cents=args.max_budget_cents,
-            nous_token=nous_token,
+            operator_label=operator_label,
             no_guardrails=args.no_guardrails,
             dry_run=args.dry_run,
         )
@@ -1956,7 +1900,7 @@ def main() -> None:
             x402_max_daily_cents=args.x402_max_daily_cents,
             sync_model=args.sync_model,
             max_budget_cents=args.max_budget_cents,
-            nous_token=nous_token,
+            operator_label=operator_label,
             # P117: bare by default — the model and its key, nothing else from
             # this profile; --inherit-env restores copying its other settings.
             inherit_env=args.inherit_env and not args.no_inherit_env,
@@ -1980,7 +1924,7 @@ def main() -> None:
             stripe_profile_id=stripe_profile_id,
             stripe_api_version=args.stripe_api_version,
             max_budget_cents=args.max_budget_cents,
-            nous_token=nous_token,
+            operator_label=operator_label,
             dry_run=args.dry_run,
             dev_skills=args.dev_skills,
         )

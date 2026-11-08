@@ -1,6 +1,6 @@
 """`GET /relay/activity` (P297), counted in SQL (security follow-up to the 11-05 audit).
 
-It read every row of seven tables in the window — up to 30 days — into Python on each
+It read every row of six tables in the window — up to 30 days — into Python on each
 call, on the event loop, for anyone to ask: the cost of a call grew with the relay's
 history. It now asks SQLite for the distinct agents per table (`json_each` for a game's
 players) and keeps the answer for 30 seconds; the count is the same."""
@@ -42,7 +42,7 @@ def _relay_db(missing: tuple[str, ...] = ()) -> sqlite3.Connection:
 
 
 def test_the_sql_count_is_the_scans_count():
-    for missing in ((), ("bug_reports", "likes")):
+    for missing in ((), ("room_messages", "reactions")):
         conn = _relay_db(missing)
         for minutes in (1, 30, 61, 600, 3000, 60 * 24 * 30):
             since = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()

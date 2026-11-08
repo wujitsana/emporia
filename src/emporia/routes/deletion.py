@@ -36,7 +36,8 @@ async def delete_item(req: DeleteRequest, request: Request):
     deletion.check_fresh(req.at)
     if req.by not in (caller, address(caller, own_host())):
         raise HTTPException(403, "a removal is signed by the agent asking for it")
-    if not rs.AGENT_REGISTRY.verify_signature(caller, signed_delete_payload(req.kind, req.item, req.by, req.at),
+    stable = rs.AGENT_REGISTRY.get_stable_id(caller) or ""
+    if not rs.AGENT_REGISTRY.verify_signature(caller, signed_delete_payload(req.kind, req.item, stable, req.at),
                                               req.signature):
         raise HTTPException(403, "signature does not match your key")
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -45,30 +46,28 @@ async def delete_item(req: DeleteRequest, request: Request):
             raise HTTPException(404, "nothing to remove")
         if row["is_deleted"]:
             return {"ok": True, "already": deletion.removal_of(conn, req.kind, req.item)}
-        if req.kind == "listing" and row["scope"] in ("bounty", "event"):
-            raise HTTPException(400, "a bounty is cancelled (cancel_bounty) and an event closed, not deleted — "
-                                     "they hold money or entries")
         role = deletion.role_of(conn, req.kind, row, caller, req.by)
-        if req.kind == "listing" and row["federated_from"] and role != "operator":
+        if req.kind == "post" and row["federated_from"] and role != "operator":
             raise HTTPException(403, f"it lives on {row['federated_from']} — remove it there")
         if req.kind == "agora_topic" and role == "author":
             role = "owner"
         remote = req.kind == "dm_message" and row["remote_address"] and role == "author"
     if remote:
-        await _remove_remote_dm(row, req)
+        await _remove_remote_dm(row, req, stable)
     with rs.DB_LOCK, rs.get_db() as conn:
         deletion.remove(conn, req.kind, row, req.item)
-        entry = deletion.record(conn, req.kind, req.item, req.by, role, req.at, req.signature)
+        entry = deletion.record(conn, req.kind, req.item, req.by, role, req.at, req.signature, stable)
     return {"ok": True, "removed": entry}
 
 
-async def _remove_remote_dm(row, req: DeleteRequest) -> None:
+async def _remove_remote_dm(row, req: DeleteRequest, stable_id: str) -> None:
     """The author's removal in a thread with another relay reaches that relay
     first — the same signed request, which it checks against the author's key."""
     from emporia import federation_dm as fd
     thread_id, _, nonce = req.item.partition("/")
     r = await fd.call_peer(row["peer_url"], "POST", "/federation/v1/dm-delete", {
-        "thread_id": thread_id, "nonce": nonce, "by": req.by, "at": req.at, "signature": req.signature})
+        "thread_id": thread_id, "nonce": nonce, "by": req.by, "stable_id": stable_id, "at": req.at,
+        "signature": req.signature})
     if r.status_code not in (200, 404):
         raise HTTPException(502, f"{row['peer_url']} did not remove it ({r.status_code}) — nothing was removed here")
 
@@ -77,6 +76,7 @@ class FederatedDelete(BaseModel):
     thread_id: str
     nonce: str
     by: str
+    stable_id: str
     at: str
     signature: str
 
@@ -95,8 +95,9 @@ async def federated_dm_delete(request: Request):
         raise HTTPException(403, f"{peer} cannot speak for {req.by}")
     pinned = fd.remote(req.by)
     item = f"{req.thread_id}/{req.nonce}"
-    if not pinned or not rs.verify(signed_delete_payload("dm_message", item, req.by, req.at), req.signature,
-                                   pinned["public_key_hex"]):
+    if not pinned or (pinned.get("stable_id") and pinned["stable_id"] != req.stable_id) or not rs.verify(
+            signed_delete_payload("dm_message", item, req.stable_id, req.at), req.signature,
+            pinned["public_key_hex"]):
         raise HTTPException(403, "not signed by that agent's key")
     with rs.DB_LOCK, rs.get_db() as conn:
         row = deletion._row(conn, "dm_message", item)
@@ -106,5 +107,5 @@ async def federated_dm_delete(request: Request):
             raise HTTPException(403, "only its author removes a message from the other relay")
         if not row["is_deleted"]:
             deletion.remove(conn, "dm_message", row, item)
-            deletion.record(conn, "dm_message", item, req.by, "author", req.at, req.signature)
+            deletion.record(conn, "dm_message", item, req.by, "author", req.at, req.signature, req.stable_id)
     return {"ok": True}

@@ -217,6 +217,32 @@ def _wrap_key_for(
     return {"n": _b64e(nonce), "ct": _b64e(AESGCM(wrap_key).encrypt(nonce, cek, aad))}
 
 
+#: Size buckets of a sealed envelope as stored (its JSON text, in bytes). The relay sees which bucket a
+#: message is in and no finer: 1 KiB, then doubling to the content cap.
+PAD_MIN = 1024
+
+
+def padded_size(n: int) -> int:
+    """The bucket a serialised envelope of `n` bytes is padded up to: a power of two from 1 KiB, never
+    beyond `wire.MAX_CONTENT_BYTES` (a message already past it is the caller's to refuse)."""
+    from emporia.wire import MAX_CONTENT_BYTES
+    size = PAD_MIN
+    while size < n:
+        size *= 2
+    return max(n, min(size, MAX_CONTENT_BYTES))
+
+
+def _pad(env: dict[str, Any]) -> dict[str, Any]:
+    """Add a `pad` filler so `json.dumps(env)` lands on a size bucket. It sits outside the ciphertext and is
+    never read; it hides how long the message is from the relay, down to the bucket."""
+    n = len(json.dumps(env).encode())
+    want = padded_size(n + len(', "pad": ""'))
+    fill = want - n - len(', "pad": ""')
+    if fill > 0:
+        env["pad"] = "A" * fill
+    return env
+
+
 def seal(plaintext: str, recipients: dict[str, str], aad: bytes) -> dict[str, Any]:
     """Encrypt `plaintext` so that exactly the agents in `recipients`
     (`{agent_id: x25519_public_key_hex}`) can recover it.
@@ -232,7 +258,7 @@ def seal(plaintext: str, recipients: dict[str, str], aad: bytes) -> dict[str, An
     eph_pub = eph_priv.public_key().public_bytes_raw()
     cek = os.urandom(_CEK_BYTES)
     nonce = os.urandom(_NONCE_BYTES)
-    return {
+    return _pad({
         "v": ENVELOPE_VERSION,
         "alg": ENVELOPE_ALG,
         "epk": eph_pub.hex(),
@@ -244,7 +270,7 @@ def seal(plaintext: str, recipients: dict[str, str], aad: bytes) -> dict[str, An
             agent_id: _wrap_key_for(eph_priv, eph_pub, agent_id, pub_hex, cek, aad)
             for agent_id, pub_hex in sorted(recipients.items())
         },
-    }
+    })
 
 
 def open_sealed(

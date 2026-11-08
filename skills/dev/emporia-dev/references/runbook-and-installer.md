@@ -40,12 +40,6 @@ When updating install/runbook copy for judges or operators:
 - Use **operator**, **judge**, **Hermes agent** — not **“Admin”** as a person/role.
 - Stripe field names like `stripe_mpp_admin_notice` are API/product labels; describe them as **operator-facing notices**.
 
-## Verify stack (no curl|python pipes)
-
-```bash
-cd emporia
-.venv/bin/python scripts/_inspect_sessions.py
-.venv/bin/python scripts/_test_replay_fens.py
-```
+## Verify stack
 
 Health: `chess_lib: true` after relay restart post-`uv sync`.

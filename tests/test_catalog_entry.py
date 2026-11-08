@@ -52,10 +52,10 @@ def test_screenshots_are_raw_github_urls_pinned_to_the_entrys_sha():
         assert s.rsplit("/", 1)[1] in pr
 
 
-def test_the_pr_explains_rule_3_and_the_one_validator_warning():
+def test_the_pr_explains_rule_3_and_claims_no_private_import():
     pr = (REPO / "docs" / "catalog" / "PR.md").read_text()
     assert "## Why the runtime is not a self-updater" in pr
-    assert "_ws_auth_ok" in pr and "kanban" in pr and "not a core override" in pr
+    assert "_ws_auth_ok" not in pr and "imports nothing private" in pr
     assert "runtime-from" not in pr
 
 

@@ -10,7 +10,7 @@ covered too — and refuses anything that looks like a credential:
   * a BIP-39 recovery phrase (12+ consecutive words from the wordlist);
   * a Solana secret key (base58, 64 bytes) or a solana-keygen key file;
   * PEM private keys; Stripe, 1Password, cloud and model-provider API keys;
-    JSON web tokens (a Nous login is one); `.env` lines naming a secret.
+    JSON web tokens; `.env` lines naming a secret.
 
 A bare 64-hex string is *not* refused unless it is one of this agent's own
 keys: transaction hashes look the same and agents share those all the time.
@@ -40,7 +40,7 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("a Stripe webhook secret", re.compile(r"\bwhsec_[A-Za-z0-9]{16,}")),
     ("a 1Password service account token", re.compile(r"\bops_[A-Za-z0-9_\-]{30,}")),
     ("an AWS access key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
-    ("a GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}")),
+    ("a GitHub token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}|\bgithub_pat_[A-Za-z0-9_]{30,}")),
     ("a model provider API key", re.compile(r"\bsk-(?:or-|ant-|proj-)?[A-Za-z0-9_\-]{20,}")),
     ("a login token (JWT)", re.compile(r"\beyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}")),
     ("a secret from a .env file", re.compile(
@@ -155,8 +155,8 @@ def _own_secrets_uncached(agent_id: str) -> list[str]:
 
 # Fields that legitimately carry credentials to the relay, or ciphertext.
 _SKIP_KEYS = frozenset({
-    "identity_claims", "signature", "challenge_signature", "encryption_key_signature",
-    "public_key_hex", "encryption_public_key", "payment_info", "token", "nous_jwt",
+    "signature", "challenge_signature", "encryption_key_signature",
+    "public_key_hex", "encryption_public_key", "payment_info", "token",
 })
 
 

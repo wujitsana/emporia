@@ -15,15 +15,17 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import bugs, operator_desk, playbook
+from emporia import operator_desk, playbook
 from emporia import relay_server as rs
 from emporia.routes import operator as op_routes
 from conftest import header_shim_off
-from tests.test_bugs import file
 from tests.test_emporia import _register, _register_keyed
 
 REPO = Path(__file__).resolve().parent.parent
 VECTORS = REPO / "dashboard" / "src" / "operatorCommands.vectors.json"
+
+
+from tests.ids import stable_of  # noqa: E402
 
 
 def _load(name, path):
@@ -40,9 +42,8 @@ setup_cli = _load("emporia_setup_cli_op", REPO / "hermes_plugin" / "emporia" / "
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,bugs")
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
     monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
-    monkeypatch.delenv("EMPORIA_QUEST_IDEAS_TOPIC", raising=False)
     monkeypatch.delenv("EMPORIA_EXPEDITIONS_TOPIC", raising=False)
     return TestClient(rs.app, client=("127.0.0.1", 51301))
 
@@ -59,7 +60,7 @@ def setup(client, monkeypatch, *tags):
     agents = [name(t) for t in ("op", *tags)]
     for a in agents:
         _register_keyed(client, a)
-    monkeypatch.setenv("EMPORIA_AGENT_ID", agents[0])
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(agents[0]))
     return agents
 
 
@@ -72,11 +73,13 @@ def _topic(slug, creator="someone"):
 
 
 def _post(slug, author, title, at, deleted=0):
-    pid = f"pst_{uuid.uuid4().hex[:12]}"
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("INSERT INTO agora_posts (post_id, topic_id, author_id, title, content, created_at, is_deleted) "
-                     "VALUES (?, ?, ?, ?, 'because it would help', ?, ?)", (pid, _topic(slug), author, title, at, deleted))
-        conn.commit()
+    from tests.topic_posts import seed_post_row
+    _topic(slug)
+    pid = seed_post_row(author, slug, f"{title}\nbecause it would help", at, kind="idea")
+    if deleted:
+        with rs.DB_LOCK, rs.get_db() as conn:
+            conn.execute("UPDATE posts SET is_deleted = 1 WHERE post_id = ?", (pid,))
+            conn.commit()
     return pid
 
 
@@ -99,7 +102,8 @@ def test_operator_detection_cannot_be_spoofed(client, monkeypatch):
         assert client.get("/operator/whoami", headers={"X-Emporia-Agent-Id": op}).status_code == 401
         assert client.get("/operator/status", headers={"X-Emporia-Agent-Id": op}).status_code == 401
         # Nor a query naming it, beside the caller's own token.
-        token = rs._jwt_encode({"agent_id": other, "relay_id": rs.relay_id(), "iat": int(time.time()),
+        token = rs._jwt_encode({"agent_id": other, "stable_id": rs.AGENT_REGISTRY.get_stable_id(other),
+                                "relay_id": rs.relay_id(), "iat": int(time.time()),
                                 "issued": time.time(), "exp": int(time.time() + 600)})
         r = client.get(f"/operator/whoami?agent_id={op}", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 200 and r.json()["agent_id"] == other and r.json()["is_operator"] is False
@@ -120,7 +124,7 @@ def test_operator_detection_cannot_be_spoofed(client, monkeypatch):
 def test_no_operator_configured_means_nobody_is_one(client, monkeypatch):
     a = name("lone")
     _register(client, a)
-    monkeypatch.delenv("EMPORIA_AGENT_ID", raising=False)
+    monkeypatch.delenv("EMPORIA_OPERATOR_STABLE_ID", raising=False)
     me = client.get("/operator/whoami", headers=as_(a)).json()
     assert me["is_operator"] is False and me["operator_configured"] is False
     r = client.get("/operator/status", headers=as_(a))
@@ -137,65 +141,12 @@ def test_every_other_agent_is_refused_the_desk_and_the_snapshot(client, monkeypa
 
 # ── the desk ──────────────────────────────────────────────────────────────────
 
-def test_the_bug_queue_is_the_open_reports_with_the_claimed_severity_and_the_test(client, monkeypatch):
-    op, reporter = setup(client, monkeypatch, "rep")
-    sealed, *_ = file(client, reporter)
-    fields, *_rest = (bugs.report_fields("a1b2c3d4e5f6", f"crash {uuid.uuid4().hex[:4]}",
-                                         "def test_x():\n    assert parse('') == []", "parse('') raises", "high"),)
-    salt = bugs.new_salt()
-    opened = client.post("/bugs", headers=as_(reporter), json={
-        "commit": "a1b2c3d4e5f6", "commitment": bugs.commitment(fields, salt), "severity": "high", "sealed": False,
-        "content": {k: fields[k] for k in ("title", "test", "description")}, "salt": salt})
-    assert sealed.status_code == opened.status_code == 200
-    decided, *_ = file(client, reporter)
-    assert client.post(f"/bugs/{decided.json()['report_id']}/verdict", headers=as_(op),
-                       json={"verdict": "invalid"}).status_code == 200
-    q = client.get("/operator/status", headers=as_(op)).json()["bugs"]
-    assert q["on"] and q["severities"] == list(bugs.SEVERITIES)
-    mine = {i["report_id"]: i for i in q["items"] if i["reporter_id"] == reporter}
-    assert set(mine) == {sealed.json()["report_id"], opened.json()["report_id"]}, "a decided report is not waiting"
-    o = mine[opened.json()["report_id"]]
-    assert o["severity_claimed"] == "high" and "assert parse('') == []" in o["test"] and not o["sealed"]
-    s = mine[sealed.json()["report_id"]]
-    assert s["sealed"] and s["test"] is None and reporter in s["where"]
-    assert q["open"] >= 2
-
-
-def test_without_bug_quests_the_desk_says_so_and_still_answers(client, monkeypatch):
+def test_without_the_labs_module_the_desk_still_answers(client, monkeypatch):
     op, = setup(client, monkeypatch)
-    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
+    monkeypatch.setenv("EMPORIA_LABS", "0")
     d = client.get("/operator/status", headers=as_(op)).json()
-    assert d["bugs"]["on"] is False and "bugs" in d["bugs"]["why"]
+    assert d["labs"]["on"] is False and "bugs" not in d and "ideas" not in d, "no idea queue: there is no verdict"
     assert d["health"]["version"]
-
-
-def test_the_ideas_queue_is_the_unjudged_posts_in_the_ideas_topic(client, monkeypatch):
-    op, author = setup(client, monkeypatch, "author")
-    monkeypatch.setenv("EMPORIA_QUEST_IDEAS_TOPIC", f"ideas-{uuid.uuid4().hex[:6]}")
-    topic = os.environ["EMPORIA_QUEST_IDEAS_TOPIC"]
-    first = _post(topic, author, "Show the claimed severity", "2026-11-05T01:00:00+00:00")
-    second = _post(topic, author, "Name the commit", "2026-11-05T02:00:00+00:00")
-    _post(topic, author, "gone", "2026-11-05T03:00:00+00:00", deleted=1)
-    _post("elsewhere", author, "not an idea", "2026-11-05T01:00:00+00:00")
-    q = client.get("/operator/status", headers=as_(op)).json()["ideas"]
-    assert q["topic"] == topic and q["topic_exists"]
-    assert [i["post_id"] for i in q["items"]] == [first, second], "oldest first, live posts in the topic only"
-    # A relay that takes idea verdicts (gamify season 1's table): a judged post leaves the queue.
-    with rs.DB_LOCK, rs.get_db() as conn:
-        conn.execute("CREATE TABLE IF NOT EXISTS idea_verdicts (post_id TEXT PRIMARY KEY, author_id TEXT, "
-                     "operator_key TEXT, verdict TEXT, ref TEXT, duplicate_of TEXT, points INTEGER, "
-                     "decided_by TEXT, decided_at TEXT, signature TEXT)")
-        conn.execute("INSERT INTO idea_verdicts (post_id, verdict) VALUES (?, 'noted')", (first,))
-        conn.commit()
-    try:
-        q = client.get("/operator/status", headers=as_(op)).json()["ideas"]
-        assert [i["post_id"] for i in q["items"]] == [second] and q["verdicts"] is True
-    finally:
-        with rs.DB_LOCK, rs.get_db() as conn:
-            conn.execute("DROP TABLE idea_verdicts")
-            conn.commit()
-    q = client.get("/operator/status", headers=as_(op)).json()["ideas"]
-    assert q["verdicts"] is False, "no idea verdicts on this relay: the view offers no command for one"
 
 
 def test_the_expedition_is_the_operators_newest_post_there(client, monkeypatch):
@@ -261,43 +212,37 @@ def test_a_rate_limit_hit_is_counted(client, monkeypatch):
 
 def _built(case):
     k = case["kind"]
-    if k == "bug":
-        return operator_desk.bug_commands(case["name"], case["item"])
-    if k == "idea":
-        return operator_desk.idea_commands(case["name"], case["item"], case["verdicts"])
     if k == "expedition":
         return operator_desk.expedition_command(case["name"])
     if k == "house":
         return operator_desk.house_commands(case["name"], case.get("running"))
+    if k == "lab":
+        return operator_desk.lab_commands(case["name"], case["item"]["lab"])
     return operator_desk.snapshot_command(case["name"])
 
 
 def test_the_commands_match_the_table_the_dashboard_is_held_to():
     cases = json.loads(VECTORS.read_text())["cases"]
-    assert len(cases) >= 10
+    assert len(cases) >= 8
     for case in cases:
         assert _built(case) == case["expect"], case
 
 
 def test_a_command_carries_only_checked_ids_and_placeholders():
-    assert operator_desk.bug_commands("op", {"report_id": "bug_1; rm -rf ~", "severity_claimed": "low"}) == []
-    assert operator_desk.idea_commands("op", {"post_id": "$(id)"}, True) == []
-    assert operator_desk.bug_commands("Op Name", {"report_id": "bug_1"}) == []
-    accept = operator_desk.bug_commands("op", {"report_id": "bug_1", "severity_claimed": "critical"})[0]
-    assert accept["command"] == "hermes emporia bugs op verdict bug_1 accepted --severity critical --fix FIX_COMMIT"
-    assert accept["gate"] == operator_desk.PERSON
+    assert operator_desk.lab_commands("op", "$(id)") == []
+    assert operator_desk.lab_commands("Op Name", "calc") == []
+    assert not hasattr(operator_desk, "idea_commands"), "an idea is adopted by a lab report, not by a command"
 
 
 def test_every_suggested_command_is_a_real_command_under_the_key_guard():
     """Each command the desk suggests parses as `emporia …` (minus the `hermes` prefix, which
-    the plugin passes through) — except idea verdicts, which arrive with gamify season 1 —
-    and an agent's terminal cannot run any of them silently."""
+    the plugin passes through) and an agent's terminal cannot run any of them silently."""
     from emporia import cli
     parser = cli.build_parser()
     for case in json.loads(VECTORS.read_text())["cases"]:
         for c in case["expect"]:
             words = shlex.split(c["command"])
-            assert words[:2] == ["hermes", "emporia"] and words[2] in setup_cli.PASSTHROUGH + ("ideas",), c
+            assert words[:2] == ["hermes", "emporia"] and words[2] in setup_cli.PASSTHROUGH, c
             verdict = guard.pre_tool_call("terminal", {"command": c["command"]})
             if c["gate"] == operator_desk.PERSON:
                 assert verdict and verdict["action"] == "block", c
@@ -305,64 +250,42 @@ def test_every_suggested_command_is_a_real_command_under_the_key_guard():
                 assert verdict and verdict["action"] == "approve", c
             else:
                 assert verdict is None, c
-            if words[2] == "ideas":
-                continue
-            # A placeholder is the person's to fill in: SEVERITY with one of the severities.
-            parser.parse_args([{"SEVERITY": "low"}.get(w, w) for w in words[2:]])
+            parser.parse_args(words[2:])
 
 
 def test_the_desk_prints_with_its_commands(client, monkeypatch):
-    op, reporter = setup(client, monkeypatch, "rep")
-    r, *_ = file(client, reporter)
+    op, = setup(client, monkeypatch)
     d = client.get("/operator/status", headers=as_(op)).json()
     text = "\n".join(operator_desk.render(d, "opdesk"))
-    assert "you are its operator" in text and r.json()["report_id"] in text
-    assert f"hermes emporia bugs opdesk verdict {r.json()['report_id']} accepted --severity medium" in text
+    assert "you are its operator" in text
     assert "hermes emporia operator opdesk snapshot" in text and "expedition" in text
 
 
 # ── the key guard ─────────────────────────────────────────────────────────────
 
-def test_verdicts_are_a_persons_and_relay_controls_wait_for_a_yes():
-    for cmd in ("emporia ideas alpha adopt pst_1 --ref abc1234", "hermes emporia ideas alpha noted pst_1",
-                "emporia ideas alpha duplicate pst_2 --of pst_1",
-                "hermes emporia bugs alpha verdict bug_1 accepted --severity low --fix abc1234"):
-        r = guard.pre_tool_call("terminal", {"command": cmd})
-        assert r and r["action"] == "block", cmd
+def test_relay_controls_wait_for_a_yes():
     for cmd in ("emporia house start h", "hermes emporia house stop h", "emporia house run h --once",
                 "emporia operator alpha snapshot", "hermes emporia operator alpha expedition 'W' --text 't'"):
         r = guard.pre_tool_call("terminal", {"command": cmd})
         assert r and r["action"] == "approve" and "relay operator" in r["message"], cmd
     for cmd in ("emporia operator alpha", "emporia operator alpha whoami", "emporia house status h",
-                "emporia ideas alpha", "hermes emporia operator alpha status --json"):
+                "hermes emporia operator alpha status --json"):
         assert guard.pre_tool_call("terminal", {"command": cmd}) is None, cmd
 
 
-def test_no_agent_tool_reaches_a_verdict_or_the_operators_write():
-    """Verdicts are the person's signed decisions: no MCP tool posts one, nor a snapshot."""
+def test_no_agent_tool_reaches_the_operators_write():
+    """A snapshot is the person's command: no MCP tool posts one."""
     src = (REPO / "src" / "emporia" / "mcp_server.py").read_text()
-    assert "/verdict" not in src and "/operator/snapshot" not in src and "/security/incidents" not in src
+    assert "/operator/snapshot" not in src
 
 
 # ── the CLI ───────────────────────────────────────────────────────────────────
-
-def test_a_bug_verdict_needs_a_persons_terminal(monkeypatch, capsys):
-    from emporia import cli
-    monkeypatch.setattr(cli, "_TTY", False)
-    monkeypatch.setattr(cli, "_agent_profiles", lambda root: [(Path("/nowhere/alpha"), {})])
-    monkeypatch.setattr(cli, "_signed_get", lambda *a, **k: pytest.fail("no call reaches the relay"))
-    args = cli.build_parser().parse_args(["bugs", "alpha", "verdict", "bug_1", "invalid"])
-    assert cli.cmd_bugs(args) == 1
-    assert "only a person" in capsys.readouterr().out
-
 
 def test_operator_command_prints_the_desk_or_the_refusal(monkeypatch, capsys, tmp_path):
     from emporia import cli
     monkeypatch.setattr(cli, "_agent", lambda n: (tmp_path, n, {"EMPORIA_AGENT_ID": n}))
     status = {"relay_url": "http://127.0.0.1:1", "health": {"version": "0", "schema": {"code": 1, "database": 1}},
-              "bugs": {"on": True, "open": 1, "items": [{"report_id": "bug_ab", "reporter_id": "r",
-                                                         "severity_claimed": "low", "title": "t"}]},
-              "ideas": {"topic": "ideas", "topic_exists": False}, "expedition": {"topic": "expeditions"},
+              "expedition": {"topic": "expeditions"},
               "house": {"agents": []}, "season": {"season": "season-0", "boards": []}}
     calls = []
 
@@ -376,7 +299,7 @@ def test_operator_command_prints_the_desk_or_the_refusal(monkeypatch, capsys, tm
     monkeypatch.setattr(cli, "_operator_call", call)
     assert cli.main(["operator", "opdesk"]) == 0
     out = capsys.readouterr().out
-    assert "hermes emporia bugs opdesk verdict bug_ab accepted --severity low --fix FIX_COMMIT" in out
+    assert "hermes emporia operator opdesk snapshot" in out and "ideas" not in out.lower()
     assert cli.main(["operator", "opdesk", "whoami"]) == 1
     assert "relay operator access required" in capsys.readouterr().out
     assert calls[0] == ("GET", "/operator/status", {"window_s": 3600})
@@ -391,7 +314,7 @@ def test_house_stop_stops_only_the_runner_it_started(tmp_path, monkeypatch, caps
     pid_file.write_text(str(os.getpid()))
     monkeypatch.setattr(cli.os, "kill", lambda *a: pytest.fail("killed a process it did not start"))
     assert cli.main(["house", "stop", "h"]) == 1
-    assert "no runner" in capsys.readouterr().out and not pid_file.exists()
+    assert "not h's house runner" in capsys.readouterr().out and not pid_file.exists()
     assert cli.main(["house", "status", "h"]) == 0
     assert "not running here" in capsys.readouterr().out
 
@@ -424,7 +347,7 @@ def test_the_operator_preset_plays_sells_and_buys_nothing():
     assert pb.preset == "operator" and pb.games == playbook.NONE and not pb.sells and not pb.buys
     assert pb.answers == "anyone" and pb.runs == "model"
     assert playbook.may_play(pb, "emporia:blotto:v1") and playbook.may_sell(pb) and playbook.may_buy(pb)
-    assert "verdicts" in playbook.ABOUT["operator"]
+    assert "verdict" not in playbook.ABOUT["operator"]
 
 
 def test_the_console_names_each_agents_profile(tmp_path):

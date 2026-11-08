@@ -4,10 +4,8 @@
  * The relay grew states the UI never learned: a settlement whose capture
  * failed is still written `status: "settled"` (its `transfer_status` says
  * `capture_failed`), x402 escrow holds and destination charges settle with no
- * transfer at all, and bounties gained `awaiting_payment`, `defaulted`,
- * `unfunded` and `cancelling`. Each fell through to the generic rendering — a
- * failed capture showed the same ● as money delivered. Same failure the
- * BountyBoard comment names: the reassuring reading, chosen by omission.
+ * transfer at all. Each fell through to the generic rendering — a
+ * failed capture showed the same ● as money delivered. The reassuring reading, chosen by omission.
  */
 import type { Settlement } from "./api";
 
@@ -21,7 +19,8 @@ const DIRECT_TRANSFERS = new Set(["direct", "escrow_captured", "destination", "t
 export function settlementHealth(s: Pick<Settlement, "status" | "transfer_status">): SettlementHealth {
   if (s.status === "refunded") return "refunded";
   const t = s.transfer_status ?? "";
-  if (FAILED_TRANSFERS.has(t) || t.startsWith("capture_failed")) return "failed";
+  // A session payout that raised is written `transfer_failed: <reason>` (payments.settle).
+  if (FAILED_TRANSFERS.has(t) || t.startsWith("capture_failed") || t.startsWith("transfer_failed")) return "failed";
   if (DIRECT_TRANSFERS.has(t) || t === "no_payment") return "settled";
   // pending_connect*, no_stripe_account: owed, not yet paid out.
   return t ? "pending" : "settled";
@@ -132,37 +131,6 @@ export function holdStateTitle(state: string): string {
   }
 }
 
-/** A bounty state, for the board: a short label and what it means. */
-export function bountyStateLabel(
-  state: string,
-  full: boolean,
-): { label: string; title: string; failed?: boolean } {
-  switch (state) {
-    case "open":
-      return full
-        ? { label: "ready", title: "Seats are full; waiting to be started." }
-        : { label: "open", title: "Open for entry." };
-    case "running":
-      return { label: "running", title: "Being played now." };
-    case "awaiting_payment":
-      return { label: "awaiting payment", title: "A winner is named; the funder owes the promised prize." };
-    case "defaulted":
-      return { label: "defaulted", title: "The funder did not pay the promised prize in time.", failed: true };
-    case "unfunded":
-      return { label: "unfunded", title: "The held prize could not be captured, so the winner was not paid.", failed: true };
-    case "settled":
-      return { label: "paid", title: "The prize was paid to the winner." };
-    case "refunded":
-      return { label: "refunded", title: "No winner; the prize went back to the funder." };
-    case "cancelling":
-      return { label: "cancelling", title: "Being withdrawn; the hold is being released." };
-    case "cancelled":
-      return { label: "cancelled", title: "Withdrawn by the funder before anyone entered." };
-    default:
-      return { label: state, title: `This bounty is ${state}.` };
-  }
-}
-
 /** A session status, for the session lists. */
 export function sessionStatusLabel(status: string): string {
   if (status === "awaiting_funding") return "awaiting funding";
@@ -171,23 +139,19 @@ export function sessionStatusLabel(status: string): string {
 }
 
 /** P153: what can pay for something, before anyone does. */
-export type MoneyMove = "entry" | "purchase" | "wager" | "bounty_held" | "bounty_promised";
-
-/** P154: two-player games — an x402 wager needs the payee known when signed. */
-export const TWO_PLAYER_GAMES = new Set(["emporia:blotto:v1", "emporia:chess:v1"]);
+export type MoneyMove = "entry" | "purchase";
 
 export function acceptsLabel(
   move: MoneyMove,
   h: { stripe_enabled?: boolean; x402_enabled?: boolean; x402_networks?: string[];
        x402_escrow_network?: string | null; tempo_network?: string | null;
-       card_game_stakes?: boolean; custodial_cards?: boolean } | null,
-  moduleType?: string,
+       custodial_cards?: boolean } | null,
 ): string {
   const card = !!h?.stripe_enabled;
   const usdc = !!h?.x402_enabled;
   // P160: name the networks, so a reader knows which wallet and which chain.
   const on = (nets: (string | null | undefined)[]) => {
-    const names = nets.filter((n): n is string => !!n).map(networkLabel);
+    const names = nets.filter((n): n is string => !!n).map(networkWithKind);
     return names.length ? ` (${names.join(", ")})` : "";
   };
   const ways: string[] = [];
@@ -201,26 +165,47 @@ export function acceptsLabel(
       if (card) ways.push("card");
       if (h?.x402_escrow_network) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
       break;
-    case "wager":            // (P154) USDC escrow, each stake held for the opponent; cards only by opt-in (P159)
-      if (card && h?.card_game_stakes) ways.push("card");
-      if (h?.x402_escrow_network && moduleType && TWO_PLAYER_GAMES.has(moduleType))
-        ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
-      break;
-    case "bounty_held":      // a held card prize needs both opt-ins (P157, P159)
-      if (card && h?.card_game_stakes && h?.custodial_cards) ways.push("card");
-      break;
-    case "bounty_promised":
-      if (usdc) ways.push("USDC, paid after the result");
-      break;
   }
   return ways.length ? `accepts ${ways.join(" · ")}` : "no payment rail on this relay";
 }
 
-/** P153: how a session's stakes were actually paid. USDC on a session is
- *  always held in escrow (a direct x402 payment is for entries, which are not
- *  sessions). */
-export function paidByLabel(rails: string[] | undefined): string | null {
-  if (!rails || rails.length === 0) return null;
-  return "paid by " + rails.map((r) =>
-    r === "stripe" ? "card" : r === "x402" ? "USDC escrow" : r === "tempo" ? "Tempo" : r).join(" + ");
+/** The test networks (src/emporia/networks.py marks the same ones). */
+const TESTNETS = new Set(["eip155:84532", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "eip155:42431"]);
+
+/**
+ * Whether payments on this escrow network are test money. A relay that does not
+ * name its escrow network is holding test funds: agents pay on testnets unless
+ * a person unlocks a real-money network for that agent in their own terminal.
+ */
+export function isTestnet(network: string | null | undefined): boolean {
+  return !network || TESTNETS.has(network);
+}
+
+/** Whether this network is one of the known test networks. Unlike `isTestnet`, an unnamed
+ *  or unknown network is not: only a known testnet counts as test money (networks.py). */
+export function isKnownTestnet(network: string | null | undefined): boolean {
+  return !!network && TESTNETS.has(network);
+}
+
+/** "Base Sepolia testnet", "Solana devnet": a network's name that says when it is a test one. */
+export function networkWithKind(network: string): string {
+  const name = networkLabel(network);
+  return TESTNETS.has(network) && !/devnet|testnet/i.test(name) ? `${name} testnet` : name;
+}
+
+/**
+ * The money line under a deal, in two parts: what is paid
+ * ("1.00 USDC (testnet)") and how it is held ("escrow", "card"), or null when
+ * nobody has paid yet. USDC on a session is always held in escrow.
+ */
+export function priceText(amount: number, currency: string | undefined, opts: {
+  rails?: string[]; mode?: string; escrowNetwork?: string | null;
+}): { amount: string; via: string | null } {
+  const rails = opts.rails ?? [];
+  const usdc = rails.includes("x402") || opts.mode === "x402";
+  const unit = usdc ? `USDC${isTestnet(opts.escrowNetwork) ? " (testnet)" : ""}` : (currency ?? "").toUpperCase();
+  const via = rails.length
+    ? rails.map((r) => (r === "x402" ? "escrow" : r === "stripe" ? "card" : r === "tempo" ? "Tempo" : r)).join(" + ")
+    : null;
+  return { amount: `${amount.toFixed(2)} ${unit}`.trim(), via };
 }

@@ -6,7 +6,7 @@ the flags and stopped short of the rest. Measured: on a developer machine the
 profile `.env` injects **ten** further variables into every test run, three of
 them live credentials —
 
-    STRIPE_SECRET_KEY   NVIDIA_API_KEY   EMPORIA_NOUS_JWT
+    STRIPE_SECRET_KEY   NVIDIA_API_KEY
     OPENROUTER_API_KEY  STRIPE_PROFILE_ID   STRIPE_API_VERSION
     EMPORIA_AGENT_ID    EMPORIA_RELAY_URL
     EMPORIA_GUARDRAILS_MODE
@@ -86,9 +86,10 @@ TEST_ENVIRONMENT: dict[str, str] = {
     # Permissive gates. Tests that verify the *gated* behaviour opt back in with
     # patch.dict or by patching the module global (several are computed once at
     # import and will not re-read the variable).
-    "EMPORIA_WRITE_REQUIRES_NOUS": "0",
-    "EMPORIA_REQUIRE_NOUS": "0",
     "EMPORIA_REQUIRE_CHALLENGE": "0",
+    # Starter limits (levels.py) grow with level; the suite's agents are brand new, so they start off.
+    # Tests of the limits themselves turn them on.
+    "EMPORIA_STARTER_LIMITS": "0",
 
     # Credentials: obviously-fake, never blank. A blank key makes a forgotten
     # mock fail with "not configured", which reads like a test-setup problem; a
@@ -102,14 +103,8 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "EMPORIA_NO_DOTENV": "1",
     # P194: no background archive runs against whatever relay a test points at.
     "EMPORIA_NO_ARCHIVE": "1",
-    # P114: and never the installed Hermes. nous_token.current() asks Hermes for
-    # a current Nous token when none is configured; from a test that fetched the
-    # developer's real token (and a failing assertion printed it).
+    # P114: and never the installed Hermes: a test that asked it would read the developer's real settings.
     "EMPORIA_HERMES_BIN": "/nonexistent/emporia-suite/hermes",
-    # P135: chess is the suite's long-standing wager for testing payment
-    # mechanics, so the suite opts in to stakes on engine-decided games the way
-    # an operator would. test_engine_games.py clears it to test the refusal.
-    "EMPORIA_ENGINE_GAME_STAKES": "1",
     # P281: the transparency log is off by default; the suite keeps it on so every
     # write path is still tested with its leaf. test_translog checks the default.
     "EMPORIA_TRANSPARENCY_LOG": "on",
@@ -118,7 +113,10 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "STRIPE_API_VERSION": "2026-04-22.preview",
     "NVIDIA_API_KEY": "",
     "OPENROUTER_API_KEY": "",
-    "EMPORIA_NOUS_JWT": "",
+    # The card's operator label and declared model are the person's: none leaks into a test from a profile.
+    "EMPORIA_OPERATOR_LABEL": "",
+    "EMPORIA_DECLARE_MODEL": "off",
+    "EMPORIA_MODEL": "",
 
     # Behaviour switches the profile would otherwise choose for us.
     "EMPORIA_GUARDRAILS_MODE": "enforce",
@@ -140,7 +138,7 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "EMPORIA_ESCROW_RPC_URL": "",
     "EMPORIA_ESCROW_CONTRACT": "",
     "EMPORIA_ESCROW_COLLECTOR": "",
-    "EMPORIA_ESCROW_FEE_RECEIVER": "",
+    "EMPORIA_FEE_ADDRESS": "",
 }
 
 os.environ.update(TEST_ENVIRONMENT)
@@ -231,6 +229,14 @@ def _fetch_through_httpx_get(monkeypatch):
     monkeypatch.setattr(fetch, "_PASSTHROUGH", True)
 
 
+# Rounds are a Hermes cron job: no test may make or touch a real one. `hermes cron` is stubbed for every test
+# (a listing that shows no jobs); tests/test_rounds.py puts its own fake in place.
+@pytest.fixture(autouse=True)
+def _no_real_cron(monkeypatch):
+    from emporia import rounds
+    monkeypatch.setattr(rounds, "run_hermes", lambda argv: "")
+
+
 # P204: the signer. Its folder defaults to beside Hermes's profiles — a real
 # one on a developer machine — and `emporia signer start` spawns a process. A
 # test answering yes to "start the signer?" once left one running there.
@@ -291,8 +297,9 @@ def _token_for(agent_id: str) -> str:
     if rs is None:
         import emporia.relay_server as rs
     now = _time.time()
-    return rs._jwt_encode({"agent_id": agent_id, "relay_id": rs.relay_id(), "iat": int(now), "issued": now,
-                           "exp": int(now + 3600)})
+    stable = rs.AGENT_REGISTRY.get_stable_id(agent_id) or ""
+    return rs._jwt_encode({"agent_id": agent_id, "stable_id": stable, "relay_id": rs.relay_id(), "iat": int(now),
+                           "issued": now, "exp": int(now + 3600)})
 
 
 def _shim_request(request):
@@ -304,8 +311,9 @@ def _shim_request(request):
         request.headers["x-emporia-authorization"] = f"Bearer {_token_for(named)}"
     query = dict(parse_qsl(request.url.query.decode() if isinstance(request.url.query, bytes)
                            else str(request.url.query), keep_blank_values=True))
-    if request.url.scheme in ("ws", "wss") and query.get("agent_id") and "token" not in query:
-        query["token"] = _token_for(query["agent_id"])
+    if request.url.scheme in ("ws", "wss") and query.get("agent_id") and "sec-websocket-protocol" not in request.headers:
+        # the relay takes a websocket's token in the handshake's subprotocol header, never in the URL
+        request.headers["sec-websocket-protocol"] = f"emporia.v1, emporia.token.{_token_for(query.pop('agent_id'))}"
         request.url = request.url.copy_with(query=urlencode(query).encode())
     return _signed_topic(_signed_join(request), named)
 
@@ -334,7 +342,7 @@ def _signed_topic(request, named):
                                else str(request.url.query), keep_blank_values=True))
         if "signature" not in query:
             query.update(at=at, signature=identity.sign(wire.signed_topic_act_payload(
-                "uninvite", m.group(1), m.group(2), at), named))
+                "uninvite", m.group(1), m.group(2), at, _derived_stable(named)), named))
             request.url = request.url.copy_with(query=urlencode(query).encode())
         return request
     if method == "POST" and path == "/sessions":
@@ -355,12 +363,12 @@ def _signed_topic(request, named):
         body["signature"] = identity.sign(wire.signed_agora_topic_payload(
             body["nonce"], body["slug"], body.get("name", ""), body.get("description", ""),
             body.get("visibility", "public"), body.get("gate_type", "open"), body.get("entry_fee_cents", 0),
-            body.get("flair_options") or [], body.get("access_duration_days")), named)
+            body.get("flair_options") or [], body.get("access_duration_days"), bool(body.get("encrypted"))), named)
     else:
         target = body.get("invitee_id") if act.group(2) == "invite" else body.get("target_agent_id")
         body["at"] = at
-        body["signature"] = identity.sign(wire.signed_topic_act_payload(act.group(2), act.group(1), target or "", at),
-                                          named)
+        body["signature"] = identity.sign(wire.signed_topic_act_payload(act.group(2), act.group(1), target or "", at,
+                                                                        _derived_stable(named)), named)
     headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
     return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
                          extensions=request.extensions)
@@ -387,7 +395,13 @@ def _signed_join(request):
     sid = request.url.path.split("/")[2]
     body["at"] = datetime.now(UTC).isoformat()
     make = wire.signed_session_join_payload if kind.group(1) == "sessions" else wire.signed_room_join_payload
-    body["signature"] = identity.sign(make(sid, body["agent_id"], body["at"]), body["agent_id"])
+    body["signature"] = identity.sign(make(sid, _derived_stable(body["agent_id"]), body["at"]), body["agent_id"])
+    if kind.group(1) == "sessions" and "rand_commit" not in body:
+        # emporia:rand:v1: a game that draws from the beacon takes the joiner's commitment, as the tools add it.
+        rs = sys.modules.get("emporia.relay_server")
+        s = rs.load_session(sid) if rs else None
+        if s and _uses_rand(s.get("module_type")):
+            body["rand_commit"] = make_test_commit(sid, body["agent_id"], len(s.get("participants") or []))
     headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
     return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
                          extensions=request.extensions)
@@ -458,25 +472,39 @@ def payee_for(agent_id: str = "", **wallets: str) -> dict:
                 for f, a in wallets.items()}}
 
 
+def _stable_of(agent: str) -> str:
+    from tests.ids import stable_of
+    return stable_of(agent)
+
+
+def _derived_stable(agent: str) -> str:
+    """The hash of the agent's key: what a test shim signs as, with no relay read (the shim must not change how many
+    reads a request makes). Rotation tests use `_stable_of`, the relay's own."""
+    from emporia import identity, wire
+    return wire.stable_id_for(identity.get_public_key_hex(agent))
+
+
 def signed_join_body(session_id: str, agent_id: str, **extra) -> dict:
     """P272: a join body the agent signed, for tests with no shim (prod_client)."""
     from datetime import UTC, datetime
+    stable_of = _stable_of
 
     from emporia import identity, wire
     at = datetime.now(UTC).isoformat()
     return {"agent_id": agent_id, "at": at,
-            "signature": identity.sign(wire.signed_session_join_payload(session_id, agent_id, at), agent_id),
+            "signature": identity.sign(wire.signed_session_join_payload(session_id, stable_of(agent_id), at), agent_id),
             **extra}
 
 
 def signed_room_join_body(room_id: str, agent_id: str, **extra) -> dict:
     """P273: a room join body the agent signed, for tests with no shim."""
     from datetime import UTC, datetime
+    stable_of = _stable_of
 
     from emporia import identity, wire
     at = datetime.now(UTC).isoformat()
     return {"agent_id": agent_id, "at": at,
-            "signature": identity.sign(wire.signed_room_join_payload(room_id, agent_id, at), agent_id), **extra}
+            "signature": identity.sign(wire.signed_room_join_payload(room_id, stable_of(agent_id), at), agent_id), **extra}
 
 
 def _signed_creation(request, named, at):
@@ -492,11 +520,59 @@ def _signed_creation(request, named, at):
         return request
     body["nonce"], body["at"] = wire.new_message_nonce(), at
     body["signature"] = identity.sign(wire.signed_session_create_payload(
-        wire.session_id_for(body["nonce"]), named, str(body.get("module_type") or ""), at,
-        wire.stake_terms(body.get("payment_rules"))), named)
+        wire.session_id_for(body["nonce"]), _derived_stable(named), str(body.get("module_type") or ""), at,
+        wire.price_terms(body.get("payment_rules"))), named)
+    if _uses_rand(body.get("module_type")) and "rand_commit" not in body:
+        body["rand_commit"] = make_test_commit(wire.session_id_for(body["nonce"]), named, 0)
     headers = {k: v for k, v in request.headers.items() if k.lower() != "content-length"}
     return type(request)(request.method, request.url, headers=headers, content=_json.dumps(body).encode(),
                          extensions=request.extensions)
+
+
+#: (session_id, agent_id) -> (s, nonce) hex: the secrets the shim committed for tests, standing in for
+#: the file a player's tools keep. A test reveals with `reveal_body(...)`.
+RAND_SECRETS: dict = {}
+
+
+def _uses_rand(module_type) -> bool:
+    from emporia.module_sdk import MODULE_REGISTRY, load_bundled_modules
+    load_bundled_modules()
+    return bool(getattr(MODULE_REGISTRY.get(str(module_type or "")), "USES_RAND", False))
+
+
+def make_test_commit(session_id: str, agent_id: str, seat: int, *, round_offset: int = -5) -> dict:
+    """A signed `rand_commit` for `agent_id`, naming the round `round_offset` rounds from now (default: one
+    already published, which the autouse `rand_testmode` fixture allows), keeping its secret in RAND_SECRETS."""
+    import time
+    from datetime import UTC, datetime
+
+    from emporia import identity, rand, wire
+    s, nonce = rand.new_secret()
+    h = rand.commit_hash(bytes.fromhex(s), bytes.fromhex(nonce))
+    now = time.time()
+    rnd = rand.round_at(now) + round_offset
+    at = datetime.fromtimestamp(now, UTC).isoformat()
+    RAND_SECRETS[(session_id, agent_id)] = (s, nonce)
+    return {"hash": h, "beacon_round": rnd, "at": at,
+            "signature": identity.sign(wire.signed_rand_commit_payload(session_id, _stable_of(agent_id), seat, h, rnd, at),
+                                       agent_id)}
+
+
+def fake_beacon_sig(rnd: int) -> str:
+    """A stand-in 48-byte beacon signature for a round (tests never touch the network or the BLS check)."""
+    import hashlib
+    return hashlib.sha512(f"test-beacon-{rnd}".encode()).hexdigest()[:96]
+
+
+@pytest.fixture(autouse=True)
+def rand_testmode(monkeypatch):
+    """Games that draw from `emporia:rand:v1` are played at once in tests: any round may be named, and a round is
+    'published' with a fake signature. Tests of the real rules put these back."""
+    from emporia import rand
+    from emporia.routes import beacon as beacon_route
+    monkeypatch.setattr(rand, "MIN_LEAD_ROUNDS", -10**6)
+    monkeypatch.setattr(beacon_route, "signature", fake_beacon_sig)
+    yield
 
 
 def signed_session_body(creator: str, body: dict) -> dict:
@@ -506,8 +582,8 @@ def signed_session_body(creator: str, body: dict) -> dict:
     from emporia import identity, wire
     b = {**body, "nonce": wire.new_message_nonce(), "at": datetime.now(UTC).isoformat()}
     b["signature"] = identity.sign(wire.signed_session_create_payload(
-        wire.session_id_for(b["nonce"]), creator, str(b.get("module_type") or ""), b["at"],
-        wire.stake_terms(b.get("payment_rules"))), creator)
+        wire.session_id_for(b["nonce"]), _stable_of(creator), str(b.get("module_type") or ""), b["at"],
+        wire.price_terms(b.get("payment_rules"))), creator)
     return b
 
 
@@ -518,7 +594,7 @@ def signed_topic_body(creator: str, body: dict) -> dict:
     b["signature"] = identity.sign(wire.signed_agora_topic_payload(
         b["nonce"], b["slug"], b.get("name", ""), b.get("description", ""), b.get("visibility", "public"),
         b.get("gate_type", "open"), b.get("entry_fee_cents", 0), b.get("flair_options") or [],
-        b.get("access_duration_days")), creator)
+        b.get("access_duration_days"), bool(b.get("encrypted"))), creator)
     return b
 
 
@@ -528,7 +604,8 @@ def signed_topic_act(act: str, slug: str, target: str, creator: str) -> dict:
 
     from emporia import identity, wire
     at = datetime.now(UTC).isoformat()
-    return {"at": at, "signature": identity.sign(wire.signed_topic_act_payload(act, slug, target, at), creator)}
+    return {"at": at, "signature": identity.sign(wire.signed_topic_act_payload(act, slug, target, at, _stable_of(creator)),
+                                       creator)}
 
 
 # P295: a test of `emporia agent refresh all` once found the profiles from this
@@ -537,7 +614,7 @@ def signed_topic_act(act: str, slug: str, target: str, creator: str) -> dict:
 # profile and the root. Whatever a later change forgets to stand in for, the
 # installer's writes into this machine's Hermes fail the test instead.
 _INSTALLER_WRITES = ("install_platform_plugin", "install_dashboard_plugin", "_install_skill_link",
-                     "remove_old_skill_copies", "write_tab_settings", "save_yaml", "_write_private",
+                     "write_tab_settings", "save_yaml", "_write_private",
                      "_place_plugin", "_enable_plugin", "create_profile", "install_into_profile")
 
 
@@ -573,3 +650,60 @@ def _never_write_this_machines_hermes(monkeypatch):
     for name in _INSTALLER_WRITES:
         if hasattr(inst, name):
             monkeypatch.setattr(inst, name, guarded(name, getattr(inst, name)))
+
+
+
+@pytest.fixture(autouse=True)
+def _scratch_hermes_home(monkeypatch, tmp_path):
+    """The plugin's hooks and the runtime's autonomy checks keep state in <HERMES_HOME>/plugin-data/emporia.
+    A test must never write into a real Hermes profile (the environment's HERMES_HOME is one), so every
+    test gets its own. Tests of the autonomy checks themselves set EMPORIA_UNTRACKED_TURNS="" to opt in."""
+    home = tmp_path / "hermes-home"
+    home.mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    monkeypatch.delenv("EMPORIA_DOTENV", raising=False)
+    monkeypatch.setenv("EMPORIA_UNTRACKED_TURNS", "person")
+
+
+@pytest.fixture
+def stripe():
+    """A fake Stripe (tests/test_price_models.FakeStripe) behind httpx, with a test key."""
+    from unittest.mock import AsyncMock, patch
+
+    from tests.test_price_models import FakeStripe
+    fake = FakeStripe()
+    with patch.dict(os.environ, {"STRIPE_SECRET_KEY": "sk_test_price_models"}), \
+         patch("httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=fake.post), \
+         patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=fake.get):
+        yield fake
+
+
+@pytest.fixture
+def client():
+    """A client of the relay app, from loopback."""
+    from fastapi.testclient import TestClient
+
+    from emporia.relay_server import app
+    return TestClient(app, client=("127.0.0.1", 51216))
+
+
+@pytest.fixture
+def profiles(tmp_path, monkeypatch):
+    """A relay profile (`op`) holding the checkout, under a temporary profiles root."""
+    import yaml
+
+    from emporia import cli
+    root = tmp_path / "profiles"
+    op = root / "op"
+    op.mkdir(parents=True)
+    (op / "config.yaml").write_text(yaml.dump(
+        {"model": {"provider": "openrouter", "default": "deepseek/deepseek-v4-flash-0731"}}))
+    (op / ".env").write_text("OPENROUTER_API_KEY=sk-or-x\nSTRIPE_SECRET_KEY=sk_test_relay\n")
+    monkeypatch.setattr(cli, "this_profile", lambda: op)
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
+    inst = cli.installer()
+    monkeypatch.setattr(inst, "_hermes_profile_create", lambda name: (root / name).mkdir())
+    monkeypatch.setattr(inst, "install_platform_plugin", lambda *a, **k: None)
+    monkeypatch.setattr(inst, "_install_skill_link", lambda *a, **k: None)
+    monkeypatch.setattr(inst, "_TOUCHED_PROFILES", [])
+    return root, op

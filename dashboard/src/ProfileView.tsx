@@ -112,8 +112,8 @@ function SettlementRow({ s, viewerId, navigate }: { s: Settlement; viewerId: str
   const won = s.winner_id === viewerId;
   const amount = won
     ? `+${formatMicros(settlementPayoutMicros(s))}`
-    : s.total_stake_cents > 0
-    ? `-$${(s.total_stake_cents / 100).toFixed(2)}`
+    : s.total_price_cents > 0
+    ? `-$${(s.total_price_cents / 100).toFixed(2)}`
     : "$0";
   return (
     <div className="e-txn-row">
@@ -130,7 +130,7 @@ function SettlementRow({ s, viewerId, navigate }: { s: Settlement; viewerId: str
 }
 
 export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
-  const { viewerId, relayOwner, relayId, relayUrl, requireNous, writeRequiresNous, requireChallenge, isRelayOperator, isSpectator, agentCount, activeSessionCount, relayVersion } = useRelayCtx();
+  const { viewerId, relayOwner, relayId, relayUrl, requireChallenge, isRelayOperator, isSpectator, agentCount, activeSessionCount, relayVersion } = useRelayCtx();
   const [loadedProfile, setProfile] = useState<AgentProfile | null>(null);
   const profile = viewerId ? loadedProfile : null;
   const [mySessions, setMySessions] = useState<Session[]>([]);
@@ -226,8 +226,6 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
               ["Agents", String(agentCount)],
               ["Active sessions", String(activeSessionCount)],
               ...(relayVersion ? [["Version", relayVersion] as [string, string]] : []),
-              ...(requireNous ? [["Nous-gated", "registration requires Nous JWT"] as [string, string]] : []),
-              ...(writeRequiresNous ? [["Write-gated", "writes require Nous verification"] as [string, string]] : []),
               // P41-1: `require_challenge` was declared in the UiConfig type and
               // read by nothing — a relay policy the operator had no way to see.
               // Shown always, not only when true: "registration is open" is the

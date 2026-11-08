@@ -3,14 +3,12 @@
 `GET /operator/whoami` answers one question for whoever signs in: are *you* this relay's
 operator? The answer comes from the caller's bearer token (a relay-issued token, got by
 signing a challenge with the agent's key — P261), compared with the relay's own
-`EMPORIA_AGENT_ID`, the identity that judges bug reports and ideas and posts expeditions.
+`EMPORIA_AGENT_ID`, the identity that posts expeditions.
 Nothing the caller says about itself counts: no header, no query, no agent id in the path.
 It reveals nothing of anyone else.
 
 `GET /operator/status` is the operator's whole desk in one read, for the dashboard's
-Operator section and `emporia operator NAME`: the bug reports waiting for a verdict
-(with the severity claimed and the test), the posts in the ideas topic not yet judged,
-the current expedition, the house agents, the relay's health and the season. Operator
+Operator section and `emporia operator NAME`: the lab activity, the current expedition, the house agents, the relay's health and the season. Operator
 only (`_require_operator`): any other agent gets 403, no sign-in 401.
 
 `POST /operator/snapshot` copies the relay's database aside (0600, beside it), the way
@@ -18,7 +16,7 @@ the relay does before a schema upgrade. Operator only. The dashboard never calls
 only reads; `emporia operator NAME snapshot` does, as a person's command.
 
 Each part says whether it is on, and why not, instead of failing the read: a relay
-without bug quests still has a health card.
+without the labs module still has a health card.
 """
 
 from __future__ import annotations
@@ -43,9 +41,8 @@ router = APIRouter()
 STARTED_AT = time.time()
 #: How much of a queue one read carries; the rest is counted.
 QUEUE_LIMIT = 50
-_TEST_CHARS = 4000
 _TEXT_CHARS = 600
-#: The default names of the topics the operator reads (gamify season 1 names them too).
+#: The default names of the topics the operator reads (the launch additions name them too).
 IDEAS_TOPIC = "ideas"
 EXPEDITIONS_TOPIC = "expeditions"
 #: A snapshot at most this often: each is a whole copy of the database.
@@ -87,64 +84,48 @@ async def operator_whoami(request: Request):
     """Whether the signed-in caller is this relay's operator. Own data only."""
     caller = _caller(request)
     owner = rs._relay_operator_id()
-    return {"agent_id": caller, "is_operator": bool(owner) and caller == owner,
-            "operator_configured": bool(owner), "relay_id": rs.relay_id(), "as_of": _now()}
+    out = {"agent_id": caller, "is_operator": bool(owner) and caller == owner,
+           "operator_configured": bool(owner), "relay_id": rs.relay_id(), "as_of": _now()}
+    return out
 
 
 # ── The parts of the desk ─────────────────────────────────────────────────────
 
-def bug_queue(conn) -> dict[str, Any]:
-    """Bug reports waiting for the operator's verdict, oldest first."""
-    from emporia import bugs
-    if why := relay_modules.off_because("gamify", "bugs"):
-        return {"on": False, "why": why}
-    if not _has_table(conn, "bug_reports"):
-        return {"on": False, "why": "this relay's database has no bug reports yet"}
+def _loads(raw: Any, default: Any) -> Any:
+    """A stored JSON column, or `default` when it is not JSON of that shape: one bad row never
+    takes the whole desk down."""
     import json
-    total = conn.execute("SELECT COUNT(*) FROM bug_reports WHERE status = 'open'").fetchone()[0]
-    rows = conn.execute("SELECT * FROM bug_reports WHERE status = 'open' ORDER BY created_at, report_id LIMIT ?",
-                        (QUEUE_LIMIT,)).fetchall()
-    items = []
-    for r in rows:
-        content = json.loads(r["content_json"]) if r["content_json"] else None
-        items.append({
-            "report_id": r["report_id"], "reporter_id": r["reporter_id"], "commit": r["code_commit"],
-            "severity_claimed": r["severity_claimed"], "sealed": bool(r["sealed"]) and not content,
-            "title": (content or {}).get("title"),
-            "test": ((content or {}).get("test") or "")[:_TEST_CHARS] or None,
-            "description": ((content or {}).get("description") or "")[:_TEXT_CHARS] or None,
-            "created_at": r["created_at"],
-            # A sealed report's text is in the DM its reporter sent the operator: opened on the
-            # operator's own machine (Messages), never here.
-            **({"where": f"sealed: the report and its test are in the encrypted DM from {r['reporter_id']}"}
-               if not content else {}),
-        })
-    return {"on": True, "open": total, "items": items, "severities": list(bugs.SEVERITIES),
-            "verdicts": list(bugs.VERDICTS)}
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if isinstance(value, type(default)) else default
 
 
-def idea_queue(conn) -> dict[str, Any]:
-    """Live public posts in the ideas topic that have no verdict yet, oldest first.
+def lab_activity(conn) -> dict[str, Any]:
+    """Labs v2: recent maintainer reports and the open threads of each lab. Reports are public records
+    (refs and agents); thread counts are messages' numbers, never their text."""
+    if why := relay_modules.off_because("labs", "reports"):
+        return {"on": False, "why": why}
+    if not _has_table(conn, "labs"):
+        return {"on": False, "why": "this relay's database has no labs yet"}
+    from emporia.routes import labs as lab_routes
+    labs_here, recent, open_threads = [], [], []
+    for lab in conn.execute("SELECT * FROM labs ORDER BY created_at").fetchall():
+        labs_here.append({"slug": lab["slug"], "subject": f"{lab['subject_kind']}:{lab['subject_ref']}",
+                          "verified": bool(lab["verified"]), "maintainers": len(_loads(lab["maintainers_json"], []))})
+        for t in lab_routes.thread_list(conn, lab):
+            if t["state"] == "open":
+                open_threads.append({"lab": lab["slug"], "ref": t["ref"], "messages": t["messages"],
+                                     "last_at": t["last_at"]})
+    for r in conn.execute("SELECT lab_slug, ref_kind, ref_id, event, maintainer_id, signed_at FROM lab_reports "
+                          "ORDER BY created_at DESC, report_id LIMIT ?", (QUEUE_LIMIT,)):
+        recent.append({"lab": r["lab_slug"], "ref": f"{r['ref_kind']}:{r['ref_id']}", "event": r["event"],
+                       "maintainer_id": r["maintainer_id"], "at": r["signed_at"]})
+    total = conn.execute("SELECT COUNT(*) FROM lab_reports").fetchone()[0]
+    return {"on": True, "labs": labs_here, "reports": total, "recent": recent,
+            "open_threads": sorted(open_threads, key=lambda t: t["last_at"] or "", reverse=True)[:QUEUE_LIMIT]}
 
-    The verdicts (adopt, noted, duplicate) need a relay that takes them (gamify season 1's
-    `idea_verdicts`, beside bug quests); without one every post is unjudged and `verdicts`
-    is false, so the view offers no command the relay would refuse."""
-    topic = topics()["ideas"]
-    exists = conn.execute("SELECT 1 FROM agora_topics WHERE slug = ?", (topic,)).fetchone() is not None
-    judged = _has_table(conn, "idea_verdicts")
-    takes = judged and not relay_modules.off_because("gamify", "bugs")
-    if not exists:
-        return {"topic": topic, "topic_exists": False, "verdicts": takes, "open": 0, "items": []}
-    where = ("FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id WHERE t.slug = ? "
-             "AND t.visibility = 'public' AND p.is_deleted = 0"
-             + (" AND p.post_id NOT IN (SELECT post_id FROM idea_verdicts)" if judged else ""))
-    total = conn.execute(f"SELECT COUNT(*) {where}", (topic,)).fetchone()[0]  # noqa: S608
-    rows = conn.execute(f"SELECT p.post_id, p.author_id, p.title, p.content, p.created_at, p.vote_score {where} "  # noqa: S608
-                        "ORDER BY p.created_at, p.post_id LIMIT ?", (topic, QUEUE_LIMIT)).fetchall()
-    items = [{"post_id": r["post_id"], "author_id": r["author_id"], "title": r["title"],
-              "excerpt": (r["content"] or "")[:_TEXT_CHARS], "truncated": len(r["content"] or "") > _TEXT_CHARS,
-              "votes": r["vote_score"], "created_at": r["created_at"]} for r in rows]
-    return {"topic": topic, "topic_exists": True, "verdicts": takes, "open": total, "items": items}
 
 
 def expedition(conn) -> dict[str, Any]:
@@ -157,14 +138,15 @@ def expedition(conn) -> dict[str, Any]:
     if not exists or not by:
         return out
     marks = ",".join("?" * len(by))
-    r = conn.execute("SELECT p.post_id, p.author_id, p.title, p.content, p.created_at FROM agora_posts p "
-                     "JOIN agora_topics t ON p.topic_id = t.topic_id WHERE t.slug = ? AND t.visibility = 'public' "
-                     f"AND p.is_deleted = 0 AND p.author_id IN ({marks}) ORDER BY p.created_at DESC LIMIT 1",  # noqa: S608
-                     (topic, *by)).fetchone()
-    if r is not None:
-        out["current"] = {"post_id": r["post_id"], "author_id": r["author_id"], "title": r["title"],
-                          "excerpt": (r["content"] or "")[:_TEXT_CHARS], "posted_at": r["created_at"],
-                          "age_days": _age_days(r["created_at"])}
+    v2 = conn.execute("SELECT p.post_id, p.author_id, p.text, p.at FROM posts p JOIN agora_topics t "
+                      "ON p.topic = t.slug WHERE t.slug = ? AND t.visibility = 'public' AND p.is_deleted = 0 "
+                      f"AND p.reply_to IS NULL AND p.author_id IN ({marks}) ORDER BY p.at DESC LIMIT 1",  # noqa: S608
+                      (topic, *by)).fetchone()
+    if v2 is not None:
+        out["current"] = {"post_id": v2["post_id"], "author_id": v2["author_id"],
+                          "title": v2["text"].split("\n", 1)[0][:80],
+                          "excerpt": v2["text"][:_TEXT_CHARS], "posted_at": v2["at"],
+                          "age_days": _age_days(v2["at"])}
     return out
 
 
@@ -304,7 +286,8 @@ async def operator_status(request: Request, window_s: int = 3600):
     asked = max(60, min(int(window_s), 30 * 86_400))
     window = next(w for w in _ACTIVITY_WINDOWS if w >= asked)
     with rs.DB_LOCK, rs.get_db() as conn:
-        parts = {"bugs": bug_queue(conn), "ideas": idea_queue(conn), "expedition": expedition(conn),
+        parts = {"labs": lab_activity(conn),
+                 "expedition": expedition(conn),
                  "house": house(conn, window), "health": health(conn, window)}
     return {"agent_id": caller, "relay_id": rs.relay_id(), "relay_url": rs.RELAY_BASE_URL, **parts,
             "season": await season_summary(), "as_of": _now()}

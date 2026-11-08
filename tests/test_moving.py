@@ -81,9 +81,13 @@ def test_an_owner_without_hermes_gets_a_key_and_watches_as_operator(tmp_path, ca
     from emporia import cli
     port = _free_port()
     relay_url = f"http://127.0.0.1:{port}"
-    relay = _start(tmp_path, port, {"EMPORIA_AGENT_ID": "owner_p199"})
+    keys = tmp_path / "owner-keys"
+    keys.mkdir(mode=0o700)
+    from emporia import identity, wire
+    monkeypatch.setattr(identity, "KEY_DIR", keys)
+    stable = wire.stable_id_for(identity.generate_or_load_keypair("owner_p199")[1].hex())
+    relay = _start(tmp_path, port, {"EMPORIA_AGENT_ID": "owner_p199", "EMPORIA_OPERATOR_STABLE_ID": stable})
     try:
-        keys = tmp_path / "owner-keys"
         assert cli.main(["relay", "owner-key", relay_url, "owner_p199", "--keys-dir", str(keys)]) == 0
         out = capsys.readouterr().out
         assert "EMPORIA_AGENT_ID owner_p199" in out and "python -m emporia.console" in out
@@ -110,15 +114,15 @@ def test_the_list_a_move_tells_the_old_relay_carries_the_backups_the_agent_signe
     stamp = "2026-10-28T12:00:00+00:00"
     published = {"home": "https://new-home.example", "visits": [], "backups": ["https://backup.example"],
                  "a2a_url": "", "updated_at": stamp}
-    payload = wire.signed_relay_list_payload("mv_backups", published["home"], [], "", stamp, published["backups"])
+    payload = wire.signed_relay_list_payload(wire.stable_id_for(identity.get_public_key_hex("mv_backups")), published["home"], [], "", stamp, published["backups"])
     r = client.post("/agents/mv_backups/relay-list", headers={"x-emporia-agent-id": "mv_backups"},
                     json={**published, "signature": identity.sign(payload, "mv_backups")})
     assert r.status_code == 200, r.text
     card = client.get("/agents/mv_backups/card").json()["card"]
     body = mcp_server._relay_list_body(card)
     assert body["backups"] == ["https://backup.example"] and body["signature"] == card["relay_list_signature"]
-    again = wire.signed_relay_list_payload("mv_backups", body["home"], body["visits"], body["a2a_url"],
-                                           body["updated_at"], body["backups"])
+    again = wire.signed_relay_list_payload(wire.stable_id_for(identity.get_public_key_hex("mv_backups")), body["home"], body["visits"], body["a2a_url"],
+                                           body["updated_at"], body["backups"], body["roles"])
     assert identity.verify(again, body["signature"], identity.get_public_key_hex("mv_backups"))
 
 

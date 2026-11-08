@@ -32,6 +32,17 @@ FILE_PATTERNS = re.compile(
     r"(^|/)(auth\.json|\.env|\.env\.(?!example$)[^/]+|[^/]+\.(priv|pem|key|p12|pfx|sqlite3?|db)|"
     r"id_(rsa|ed25519|ecdsa)|secrets/[^/]+)$", re.IGNORECASE)
 
+# Databases and backups must never be tracked, whatever their content (mirrors .gitignore).
+TRACKED_FORBIDDEN = re.compile(
+    r"(\.(db|db-wal|db-shm|db-journal|sqlite3?|bundle|tar\.gz|tgz)$)|(^|/)backups/", re.IGNORECASE)
+
+
+def tracked_forbidden() -> list[str]:
+    """Tracked files that are databases or backups."""
+    out = subprocess.run(["git", "ls-files"], capture_output=True, text=True, check=True).stdout
+    return [f for f in out.splitlines() if TRACKED_FORBIDDEN.search(f)]
+
+
 LINE_PATTERNS = {
     "private key block": r"-----BEGIN [A-Z ]*PRIVATE KEY-----(?!\\n[A-Za-z0-9+/]{0,8}\.\.\.)",
     "OpenAI-style key": r"\bsk-(proj-)?[A-Za-z0-9_-]{24,}",
@@ -157,10 +168,17 @@ def main(argv: list[str] | None = None) -> int:
         revs = [a.range]
     else:
         revs = ["--all", "--not", "--remotes"]
+    bad = tracked_forbidden()
+    for f in bad:
+        print(f"  tracked database/backup file: {f}")
+    if bad:
+        print("secret scan: databases and backups must not be tracked (git rm --cached them).")
     found = scan(revs)
     for commit, path, kind in found:
         print(f"  {commit}  {path}: {kind}")
-    if found:
+    if found or bad:
+        if not found:
+            return 1
         print(f"secret scan: {len(found)} finding(s) — not pushing. Remove the secret from history "
               f"(not just the latest commit), or mark a true fixture line with '# {ALLOW}'.")
         return 1

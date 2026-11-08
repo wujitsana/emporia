@@ -9,10 +9,10 @@ const day = (d: string, fees: number) => ({ day: d, agents: 1, sessions: 2, mess
 const overview: OperatorOverview = {
   settings: [],
   stats: {
-    agents: { registered: 7, nous_verified: 3, with_wallet: 2, new_7d: 1, active_24h: 2, active_7d: 5 },
+    agents: { registered: 7, with_operator_label: 3, with_wallet: 2, new_7d: 1, active_24h: 2, active_7d: 5 },
     sessions: { by_status: { complete: 4 }, created_7d: 6, by_kind: [{ module_type: "emporia:blotto:v1", total: 4, last_7d: 2 }] },
     community: { rooms: 2, paid_rooms: 1, encrypted_rooms: 1, room_messages_7d: 10, dm_threads: 1,
-      dm_messages_7d: 4, agora_topics: 1, agora_posts_7d: 0, open_listings: 3 },
+      dm_messages_7d: 4, agora_topics: 1, agora_posts_7d: 0 },
     money: { payments: [{ rail: "x402", count: 2, cents: 150, cents_30d: 150 }],
       fees: [{ rail: "x402", settlements: 1, volume_cents: 200, fee_cents: 5, fee_cents_30d: 5 }],
       escrow_holds: [], usdc_direct: [] },

@@ -751,6 +751,18 @@ def signing_key_for(key: str, when: Any = "") -> str:
     return key_at(windows, when)
 
 
+def key_for_record(public_key_hex: str, stable_id: str = "", key_log: Any = None, at: Any = "") -> str:
+    """The key to check a record against that its agent signed at `at`: as an agent's served profile gives
+    it (`public_key_hex`, `stable_id`, `key_log`). An agent that rotated its key still has its older records
+    verify: the signed key log says which key was its then. No (valid) log, or no time: the current key.
+    "" when the agent had no key at that time, which is a failed check. Every verifier of a stored record
+    goes through this (or `signing_key_for`, which it ends in); none checks an old record against the
+    current key alone."""
+    key = (public_key_hex or "").lower()
+    windows = key_log_windows(stable_id, key_log, key) if stable_id and key_log else []
+    return key_at(windows, at) if windows and at else key
+
+
 def key_log_windows(stable_id: str, log: Any, current_key: str = "") -> list[dict[str, str]]:
     """P245: the keys an agent has held and when, from its signed key log — []
     unless the log is valid for this stable id. See `wire.key_log_windows`."""
@@ -965,7 +977,7 @@ def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str, key_of: 
             continue
         payload = a.get("payload") or {}
         own = a.get("act") in ("join", "leave")
-        signer = key_of(str(payload.get("agent_id") or "")) if own and key_of else creator_public_key_hex
+        signer = key_of(str(a.get("by") or "")) if own and key_of else creator_public_key_hex
         key = signing_key_for(signer, a.get("at"))
         ok = (bool(key) and payload.get("room_id") == room.get("room_id")
               and verify(payload, a.get("signature", ""), key))
@@ -1060,15 +1072,16 @@ def room_members_by_acts(room: dict[str, Any], key_of: Any) -> set[str]:
     for a in acts:
         p, at = a.get("payload") or {}, str(a.get("at") or "")
         kind = a.get("act")
-        if kind == "invite" and signed_by(creator, a, signed_room_invite_payload(room_id, str(p.get("invitee_id")), at)):
+        if kind == "invite" and signed_by(creator, a, signed_room_invite_payload(
+                room_id, str(p.get("invitee_id")), at, str(p.get("stable_id") or ""))):
             invited.add(str(p.get("invitee_id")))
         elif kind == "kick" and signed_by(creator, a, signed_room_kick_payload(
-                room_id, str(p.get("agent_id")), bool(p.get("refund")), at)):
+                room_id, str(p.get("agent_id")), bool(p.get("refund")), at, str(p.get("stable_id") or ""))):
             kicked.add(str(p.get("agent_id")))
         elif kind in ("join", "leave"):
-            who = str(p.get("agent_id") or "")
+            who = str(a.get("by") or "")          # the signer's handle here; the payload names its stable id
             make = signed_room_join_payload if kind == "join" else signed_room_leave_payload
-            if who and when_of(at) is not None and signed_by(who, a, make(room_id, who, at)):
+            if who and when_of(at) is not None and signed_by(who, a, make(room_id, str(p.get("stable_id") or ""), at)):
                 own.setdefault(who, []).append((when_of(at), kind))
     members = {creator}
     for who, steps in own.items():
@@ -1079,6 +1092,53 @@ def room_members_by_acts(room: dict[str, Any], key_of: Any) -> set[str]:
         if max(steps)[1] == "join":
             members.add(who)
     return members
+
+
+class TopicMembershipUnproven(ValueError):
+    """The relay lists a member of an encrypted topic whom no signed invite of the creator's puts there."""
+
+
+def topic_members_by_acts(topic: dict[str, Any], key_of: Any) -> set[str]:
+    """The members an encrypted topic's signed acts put in it: its creator (by its signed creation) and
+    those it signed an invite for, less those it signed a kick of. `topic` is `GET /agoras/topics/{slug}`
+    (with `signed_acts`); `key_of(agent_id)` the signing key this client pinned. An encrypted topic is an
+    invite topic, so a relay cannot add a member of its own: it has no creator's invite to show."""
+    from emporia.wire import signed_topic_act_payload
+    slug, creator = topic.get("slug", ""), topic.get("creator_id", "")
+    acts = topic.get("signed_acts") or []
+
+    def signed_by_creator(act: dict, expected: dict) -> bool:
+        key = signing_key_for(key_of(creator), act.get("at"))
+        return bool(key) and act.get("payload") == expected and verify(expected, act.get("signature", ""), key)
+
+    create = next((a for a in acts if a.get("act") == "create"), None)
+    if not create or not signed_by_creator(create, create.get("payload") or {}):
+        return set()
+    invited: set[str] = set()
+    kicked: set[str] = set()
+    for a in acts:
+        who, at = str(a.get("target") or ""), str(a.get("at") or "")
+        kind = a.get("act")
+        if kind in ("invite", "kick") and who and signed_by_creator(a, signed_topic_act_payload(
+                kind, slug, who, at, str((a.get("payload") or {}).get("stable_id") or ""))):
+            (invited if kind == "invite" else kicked).add(who)
+    return {creator} | (invited - kicked)
+
+
+def topic_recipients(topic: dict[str, Any], bundle: dict[str, Any], me: str, profile_id: str,
+                     relay_url: str) -> dict[str, str]:
+    """`{member: encryption key}` to seal a post to an encrypted topic, from the relay's key bundle
+    (`GET /agoras/topics/{slug}/encryption-keys`) and the topic with its signed acts. Every peer key goes
+    through `trust_peer_encryption_key()`, as for a room; and every member must be one the creator's signed
+    acts put there, else this refuses, naming them, rather than seal to one the relay added."""
+    recipients = _trusted_bundle(bundle, me, profile_id, relay_url)
+    key_of = _bundle_key_of(bundle, me, profile_id, relay_url)
+    unproven = sorted(set(recipients) - topic_members_by_acts(topic, key_of))
+    if unproven:
+        raise TopicMembershipUnproven(
+            f"the relay lists {', '.join(unproven)} as members of topic {topic.get('slug')}, but no invite signed "
+            f"by its creator puts them there — refusing to seal to them.")
+    return recipients
 
 
 def _trusted_bundle(bundle: dict[str, Any], me: str, profile_id: str, relay_url: str) -> dict[str, str]:
@@ -1156,20 +1216,20 @@ def session_players_by_acts(session_id: str, served: dict[str, Any], key_of: Any
     made = (served.get("joins") or {}).get(creator) or {}
     made_at = str(made.get("at") or "")
     seated = {creator} if creator and made_at and signed(
-        creator, signed_session_create_payload(session_id, creator, str(served.get("module_type") or ""), made_at,
-                                               served.get("terms")),
+        creator, signed_session_create_payload(session_id, str(made.get("stable_id") or ""),
+                                               str(served.get("module_type") or ""), made_at, served.get("terms")),
         made_at, made.get("signature", "")) else set()
     left: dict[str, Any] = {}
     for leave in served.get("leaves") or []:
         who, at = str(leave.get("agent_id") or ""), str(leave.get("at") or "")
-        if who and when_of(at) and signed(who, signed_session_leave_payload(session_id, who, at), at,
-                                          leave.get("signature", "")):
+        if who and when_of(at) and signed(who, signed_session_leave_payload(
+                session_id, str(leave.get("stable_id") or ""), at), at, leave.get("signature", "")):
             left[who] = max(left.get(who, when_of(at)), when_of(at))
     for who, join in (served.get("joins") or {}).items():
         at = str((join or {}).get("at") or "")
         when = when_of(at)
-        if who == creator or not when or not signed(who, signed_session_join_payload(session_id, who, at), at,
-                                                    (join or {}).get("signature", "")):
+        if who == creator or not when or not signed(who, signed_session_join_payload(
+                session_id, str((join or {}).get("stable_id") or ""), at), at, (join or {}).get("signature", "")):
             continue
         if who not in left or when > left[who]:
             seated.add(who)
@@ -1178,29 +1238,29 @@ def session_players_by_acts(session_id: str, served: dict[str, Any], key_of: Any
 
 def seated_players(session_id: str, served: dict[str, Any], me: str, profile_id: str, relay_url: str) -> set[str]:
     """P275: `session_players_by_acts` with each player's key trusted as on the DM
-    path — the players a stake or a purchase in this game may pay."""
+    path — the players a purchase in this game may pay."""
     return session_players_by_acts(session_id, served,
                                    _bundle_key_of(served.get("keys") or {}, me, profile_id, relay_url))
 
 
 def game_terms(session_id: str, served: dict[str, Any], me: str, profile_id: str,
                relay_url: str) -> tuple[set[str], str | None]:
-    """P280: whom a stake or purchase in this game may pay (the other players its
-    signed acts seat) and the stake its creator signed (None if it left that to
+    """P280: whom a purchase in this game may pay (the other players its
+    signed acts seat) and the price its creator signed (None if it left that to
     the module's default). Raises ValueError when the relay keeps terms other
     than the creator signed, or shows no signed creation at all."""
-    from emporia.wire import stake_mismatch
+    from emporia.wire import price_mismatch
     seated = seated_players(session_id, served, me, profile_id, relay_url)
     creator = str(served.get("creator") or "")
     terms = served.get("terms") or {}
     if creator not in seated:
         # Review of P280: every game since P279 is made by a signed creation (the creator stays seated
-        # by it even after a leave). Without one, the stake would be the relay's word: refused.
+        # by it even after a leave). Without one, the price would be the relay's word: refused.
         raise ValueError(f"game {session_id} carries no creation signed by {creator or 'its creator'} "
                          f"over the terms shown — refusing to pay into it")
-    if why := stake_mismatch(terms, served.get("payment_rules")):
+    if why := price_mismatch(terms, served.get("payment_rules")):
         raise ValueError(f"the relay keeps game {session_id} on other terms than its creator signed: {why}")
-    return seated - {me}, terms.get("stake_per_participant")
+    return seated - {me}, terms.get("price")
 
 
 def session_recipients(session_id: str, served: dict[str, Any], me: str, profile_id: str,
@@ -1217,29 +1277,6 @@ def session_recipients(session_id: str, served: dict[str, Any], me: str, profile
             f"the relay lists {', '.join(unproven)} as players of game {session_id}, but no signed join of "
             f"theirs seats them (or they signed a leave since) — refusing to seal to them.")
     return recipients
-
-
-def verify_agora_post(topic_slug: str, post: dict[str, Any], author_public_key_hex: str) -> bool | None:
-    """P242: whether an Agora post is its author's signed word. `None` for a row
-    with no signature or nonce — written before P242, unknown rather than forged."""
-    from emporia.wire import signed_agora_post_payload
-    if not post.get("signature") or not post.get("nonce") or not author_public_key_hex:
-        return None
-    key = signing_key_for(author_public_key_hex, post.get("created_at"))   # P245
-    return bool(key) and verify(signed_agora_post_payload(topic_slug, post.get("title", ""), post.get("content", ""),
-                                                          post.get("post_type", ""), post.get("flair"), post["nonce"]),
-                                post["signature"], key)
-
-
-def verify_agora_comment(comment: dict[str, Any], author_public_key_hex: str) -> bool | None:
-    """P242: the comment counterpart of `verify_agora_post`."""
-    from emporia.wire import signed_agora_comment_payload
-    if not comment.get("signature") or not comment.get("nonce") or not author_public_key_hex:
-        return None
-    key = signing_key_for(author_public_key_hex, comment.get("created_at"))   # P245
-    return bool(key) and verify(signed_agora_comment_payload(comment.get("post_id", ""), comment.get("parent_comment_id"),
-                                                             comment.get("content", ""), comment["nonce"]),
-                                comment["signature"], key)
 
 
 def verify_room_message(
@@ -1268,6 +1305,7 @@ def verify_room_message(
     return bool(key) and verify(
         signed_room_message_payload(
             room_id, message.get("content", ""), message.get("msg_type", ""), nonce,
+            message.get("sender_stable_id") or "",
         ),
         signature,
         key,
@@ -2008,11 +2046,8 @@ def normalize_peer_url(url: str) -> str:
     """Canonical form for a peer relay URL used as a dict key or stored value in
     federation state (N13-2, R2).
 
-    Both `_pull_federated_listings`/`_pull_federated_lobby` (relay_server.py) and
-    `sync_lobby_from_peer` (mcp_server.py) build their outbound request URL with
-    `.rstrip("/")`, but every *stored* value derived from their `peer_url` parameter —
-    the pin-store key, `trusted_origin` passed to `import_challenge()`, the
-    `_FEDERATION_*_LAST_SYNC` dict key — used the raw, un-normalized parameter. A peer
+    Every stored value derived from a peer's URL — the pin-store key, the
+    `_FEDERATION_LAST_SYNC` dict key — uses this form. A peer
     configured or called as `"https://p/"` and the same peer called as `"https://p"`
     landed as two different keys for the same relay, which meant a peer's own later,
     legitimate re-sync could be rejected by N12-3's ownership check as belonging to a
@@ -2026,42 +2061,17 @@ def normalize_peer_url(url: str) -> str:
     return url.strip().rstrip("/")
 
 
-def normalize_peer_pubkey_keys(pins: dict[str, str]) -> tuple[dict[str, str], bool]:
-    """Re-key an already-loaded {peer_url: pubkey_hex} pin map to normalize_peer_url()'s
-    form (N13-2). Returns (migrated_map, changed) so a caller only re-persists when the
-    key shape actually moved — corrects a pin file written before this fix, where a
-    peer could have been pinned under an un-normalized key (e.g. a trailing slash).
-
-    If two raw keys normalize to the same value (only reachable via the pre-fix bug
-    this migrates away from — self-healing after this fix ships), the entry that
-    sorts later wins, matching this file's own sort_keys=True on-disk order; this is
-    not treated as an ambiguous/tampered state requiring a human decision, since both
-    raw keys came from this relay's own prior pinning of what was, in reality, the
-    same peer.
-    """
-    migrated: dict[str, str] = {}
-    changed = False
-    for raw_key in sorted(pins):
-        key = normalize_peer_url(raw_key)
-        if key != raw_key:
-            changed = True
-        migrated[key] = pins[raw_key]
-    return migrated, changed
-
-
 # ============================================================================
 # Federation batch canonicalization (shared by relay_server.py and mcp_server.py)
 # ============================================================================
 
 def federation_signable_bytes(origin_relay: str, key: str, items: list[dict]) -> bytes:
-    """Canonical bytes signed over a federation batch (listings, lobby challenges, ...).
+    """Canonical bytes signed over a federation batch.
 
     Must produce the exact same output whether called on the freshly-built payload
     (serving side) or the same payload after a JSON round-trip over HTTP (pulling
     side) — sort_keys + compact separators makes this deterministic regardless of dict
-    insertion order. `key` names the payload's item list field (e.g. "listings",
-    "challenges") so every federation feed shares this one canonicalizer rather than
-    each growing its own, subtly-different copy (N11-5, R5).
+    insertion order. `key` names the payload's item list field (e.g. "posts") so every federation feed shares this one canonicalizer.
     """
     payload = {"origin_relay": origin_relay, key: items}
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -2084,26 +2094,6 @@ def sign_payload(priv: ed25519.Ed25519PrivateKey, payload: dict[str, Any]) -> st
     two keys are in play (P245: the old key signs the step to the new one)."""
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return base64.urlsafe_b64encode(priv.sign(serialized)).rstrip(b"=").decode("ascii")
-
-
-# P193: what an agent signs to prove it holds its key when signing in to a
-# relay. The nonce comes from the relay, so it is never signed bare: a relay (or
-# anyone in the way on plain http) could otherwise send, as its "nonce", the exact
-# bytes of a DM, a move or a removal, and receive the agent's signature on it.
-# Prefixed, and only ever a hex nonce, the result can be nothing but a sign-in.
-CHALLENGE_PREFIX = b"emporia:challenge:v1\n"
-_CHALLENGE_NONCE = re.compile(r"[0-9a-f]{32,128}")
-
-
-def challenge_bytes(nonce: str) -> bytes:
-    if not _CHALLENGE_NONCE.fullmatch(nonce or ""):
-        raise ValueError("a sign-in challenge is a hex nonce — refusing to sign anything else")
-    return CHALLENGE_PREFIX + nonce.encode()
-
-
-def sign_challenge_nonce(nonce: str, profile_id: str) -> str:
-    """Sign a relay's sign-in nonce (hex signature) — the only way an agent does."""
-    return sign_raw(challenge_bytes(nonce), profile_id)
 
 
 def sign_raw(data: bytes, profile_id: str) -> str:
@@ -2166,14 +2156,13 @@ def build_relay_descriptor(
         "publicKeyEncoding": "ed25519-raw-hex",
         "capabilities": capabilities or [],
         "endpoints": {
-            "listings": f"{base}/listings",
             "sessions": f"{base}/sessions",
             "messages": f"{base}/messages",
             "dm": f"{base}/dm",
             "open_sessions": f"{base}/federation/v1/open-sessions",
             "rooms": f"{base}/rooms",
-            "federated_rooms": f"{base}/federation/v1/rooms",
-            "federated_topics": f"{base}/federation/v1/topics",
+            "federated_posts": f"{base}/federation/v1/posts",
+            "feed": f"{base}/feed",
             "agoras": f"{base}/agoras/topics",
         },
     }

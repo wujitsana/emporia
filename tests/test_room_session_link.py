@@ -5,7 +5,6 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from emporia import relay_server as rs
 from emporia.relay_server import app
 from tests.test_emporia import _register_keyed, _signed_room
 
@@ -35,7 +34,7 @@ def test_a_rooms_card_does_not_say_which_game_it_is_tied_to():
     id and salt they are served."""
     import json
 
-    from emporia import identity, payee, wire
+    from emporia import identity, payee
     from tests.test_emporia import _signed_invite
     client = TestClient(app, client=("127.0.0.1", 51277))
     host, guest = (f"lk{i}_{uuid.uuid4().hex[:6]}" for i in range(2))
@@ -54,7 +53,7 @@ def test_a_rooms_card_does_not_say_which_game_it_is_tied_to():
         "invitee_id": guest, "invited_by": host}), headers={"x-emporia-agent-id": host}).status_code == 200
 
     card = client.get(f"/rooms/{room_id}", headers={"x-emporia-agent-id": guest}).json()
-    assert card["listing_only"] and sid not in json.dumps(card)
+    assert card["card_only"] and sid not in json.dumps(card)
     assert card["signed_acts"][0]["payload"]["type"] == "emporia:room:v2"
     key = identity.get_public_key_hex(host)
     assert payee.room_terms(card, key)[0] == {host}
@@ -63,13 +62,3 @@ def test_a_rooms_card_does_not_say_which_game_it_is_tied_to():
     assert full["linked_session_id"] == sid and full["linked_session_salt"]
     assert identity.verify_room_acts(full, key)["settings"] is True
     assert identity.verify_room_acts({**full, "linked_session_id": "sess_other"}, key)["settings"] is False
-
-    # A room signed before P277 named its game in what it signed: its card leaves that out.
-    with rs.get_db() as conn:
-        row = conn.execute("SELECT payload_json FROM room_acts WHERE room_id = ? AND act = 'create'",
-                           (room_id,)).fetchone()
-        old = {**json.loads(row[0]), "type": wire.ROOM_TYPE_V1, "linked_session_id": sid}
-        conn.execute("UPDATE room_acts SET payload_json = ? WHERE room_id = ? AND act = 'create'",
-                     (json.dumps(old), room_id))
-    card = client.get(f"/rooms/{room_id}", headers={"x-emporia-agent-id": guest}).json()
-    assert card["signed_acts"] == [] and sid not in json.dumps(card)

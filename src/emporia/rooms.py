@@ -23,10 +23,6 @@ Encryption flag:
                               wrapped for them, and re-wrapping history would require the
                               relay to hold plaintext, the whole thing being avoided.
 
-Negotiation routing:
-  msg_type='counter_offer' in a 2-member private room triggers negotiation.process_offer()
-  automatically. The relay responds with the broker's ACCEPT or COUNTER decision as a
-  system message in the same room.
 
 Message chain integrity:
   Each message hashes (prev_hash:sender:content:created_at) → chain_hash, computed by the
@@ -62,7 +58,7 @@ _LOCK = threading.RLock()
 
 RoomType = Literal["public", "private"]
 GateType = Literal["open", "invite", "paid"]
-MsgType = Literal["chat", "collab", "code", "counter_offer", "accept", "reject", "system"]
+MsgType = Literal["note", "idea", "question", "answer", "challenge", "offer", "pointer", "other", "code", "lab_task", "sealed", "system"]
 
 
 # ============================================================================
@@ -101,7 +97,7 @@ CREATE TABLE IF NOT EXISTS room_messages (
     message_id TEXT PRIMARY KEY,
     room_id TEXT NOT NULL,
     sender_id TEXT NOT NULL,
-    msg_type TEXT NOT NULL DEFAULT 'chat',
+    msg_type TEXT NOT NULL DEFAULT 'note',
     content TEXT NOT NULL,
     parent_message_id TEXT,
     chain_hash TEXT,
@@ -109,7 +105,10 @@ CREATE TABLE IF NOT EXISTS room_messages (
     nonce TEXT,
     metadata_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL,
-    deleted_at TEXT
+    deleted_at TEXT,
+    reply_to TEXT,
+    root TEXT,
+    sender_stable_id TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_room_messages_room ON room_messages(room_id);
@@ -126,6 +125,8 @@ def init_rooms_schema(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(room_messages)").fetchall()}
     if "deleted_at" not in cols:
         conn.execute("ALTER TABLE room_messages ADD COLUMN deleted_at TEXT")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_room_messages_root ON room_messages(root)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_room_messages_reply ON room_messages(reply_to)")
 
 
 # ============================================================================
@@ -169,10 +170,6 @@ class Room:
             d["encrypted"] = self.encrypted
         return d
 
-    def is_negotiation_room(self) -> bool:
-        """A 2-member private room is a negotiation channel."""
-        return self.room_type == "private" and len(self.members) == 2
-
 
 @dataclass(frozen=True)
 class RoomMessage:
@@ -195,6 +192,11 @@ class RoomMessage:
     seq: int | None = None
     # P192: when its text was removed (emporia.deletion); None if it was not.
     deleted_at: str | None = None
+    # Rooms v2: the reply link and thread root a plain room keeps (None in an encrypted room).
+    reply_to: str | None = None
+    root: str | None = None
+    # The sender's stable id, as it signed it into the message (what a reader verifies the signature with).
+    sender_stable_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -251,6 +253,9 @@ def _row_to_message(row: sqlite3.Row) -> RoomMessage:
         created_at=row["created_at"],
         seq=row["seq"] if "seq" in row.keys() else None,
         deleted_at=row["deleted_at"] if "deleted_at" in row.keys() else None,
+        reply_to=row["reply_to"] if "reply_to" in row.keys() else None,
+        root=row["root"] if "root" in row.keys() else None,
+        sender_stable_id=row["sender_stable_id"] if "sender_stable_id" in row.keys() else None,
     )
 
 
@@ -354,8 +359,7 @@ def verify_chain(
     seed `prev_hash`; that seed row is taken on trust and is not itself counted
     as verified. `scope` says which happened — `"genesis"` when the walk reached
     the room's true first message, `"recent_window"` when it did not — because a
-    bare `ok=True` from a window would claim history the call never read. Same
-    reasoning P28-4 applied to the DM unchained prefix.
+    bare `ok=True` from a window would claim history the call never read.
 
     Mismatch indices are absolute (an index into the room, not an offset into
     the window), so the same message gets the same number at any cap.
@@ -412,6 +416,19 @@ def verify_chain(
 # ============================================================================
 # Room CRUD
 # ============================================================================
+
+def may_read(row, caller: str | None) -> bool:
+    """Who may read a room, in one place (a row of `rooms`, or anything with the same keys): its members;
+    and anyone, for a public open room that is not end-to-end encrypted. A private, paid, invite-only or
+    encrypted room is for its members. `routes.room_threads._readable_room` and `routes.posts._object_problem`
+    both ask this."""
+    keys = row.keys()
+    members = json.loads(row["members_json"] or "[]")
+    if caller and caller in members:
+        return True
+    return (row["room_type"] == "public" and row["gate_type"] == "open"
+            and not ("encrypted" in keys and row["encrypted"]))
+
 
 def create_room(
     name: str,
@@ -537,9 +554,9 @@ def _access_active(
     actually closes, not just that it stops future free rejoins (P2-4). Two
     exemptions, both intentional: the room creator (never paid to be there,
     can't expire out of their own room) and, for anyone else, an agent with
-    no entitlement row at all for this resource — see
-    `entitlements.has_any_grant()`'s docstring for why "predates
-    entitlements" must never be conflated with "entitlement lapsed."
+    no entitlement row at all for this resource (a purchase still in flight) — see
+    `entitlements.has_any_grant()`'s docstring for why that must never be
+    conflated with "entitlement lapsed."
 
     For any other gate_type, this is a pure in-memory check — no entitlement
     query, hence no extra DB round-trip — since only `paid` rooms
@@ -707,19 +724,36 @@ def remove_invite(room_id: str, agent_id: str, db_path: Path | None = None) -> N
 # Messages
 # ============================================================================
 
+def coarse_minute(now: datetime | None = None) -> str:
+    """The current time rounded down to the minute (UTC, ISO 8601): what the relay stores and serves as the
+    time of a sealed message, so it learns the minute and no finer. Ordering within a thread is the
+    relay's sequence number (`seq`), which does not depend on the clock."""
+    return (now or datetime.now(UTC)).replace(second=0, microsecond=0).isoformat()
+
+
 def post_message(
     room_id: str,
     sender_id: str,
     content: str,
-    msg_type: MsgType = "chat",
+    msg_type: MsgType = "note",
     parent_message_id: str | None = None,
     signature: str | None = None,
     nonce: str | None = None,
     metadata: dict[str, Any] | None = None,
     db_path: Path | None = None,
+    reply_to: str | None = None,
+    root: str | None = None,
+    message_id: str | None = None,
+    coarse_time: bool = False,
+    sender_stable_id: str = "",
 ) -> RoomMessage:
-    message_id = f"rmsg_{uuid.uuid4().hex[:12]}"
-    created_at = datetime.now(UTC).isoformat()
+    """Store a message. `message_id` is its canonical id (`wire.message_id_for` of what its author signed);
+    `coarse_time` rounds the stored time down to the minute, for a sealed room (ordering is the table's
+    sequence, not the clock)."""
+    message_id = message_id or f"rmsg_{uuid.uuid4().hex[:12]}"
+    created_at = (coarse_minute() if coarse_time else datetime.now(UTC).isoformat())
+    if root == "self":          # a message that starts a thread is its own root
+        root = f"message:{message_id}"
 
     with _LOCK, _connect(db_path) as conn:
         prev_hash = _last_chain_hash(room_id, conn)
@@ -727,11 +761,11 @@ def post_message(
         conn.execute(
             "INSERT INTO room_messages "
             "(message_id, room_id, sender_id, msg_type, content, "
-            "parent_message_id, chain_hash, signature, nonce, metadata_json, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "parent_message_id, chain_hash, signature, nonce, metadata_json, created_at, reply_to, root, "
+            "sender_stable_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (message_id, room_id, sender_id, msg_type, content,
              parent_message_id, chain_hash, signature, nonce,
-             json.dumps(metadata or {}), created_at),
+             json.dumps(metadata or {}), created_at, reply_to, root, sender_stable_id or None),
         )
         row = conn.execute(
             "SELECT * FROM room_messages WHERE message_id = ?", (message_id,)
@@ -846,6 +880,7 @@ def get_messages(
     before: str | None = None,
     db_path: Path | None = None,
     before_seq: int | None = None,
+    after_seq: int | None = None,
 ) -> list[RoomMessage]:
     """P31-3: `before` alone is not a total cursor. Two messages can share a
     `created_at` — `post_message()` computes it before taking `_LOCK`, the same
@@ -859,6 +894,11 @@ def get_messages(
     unaffected.
     """
     with _LOCK, _connect(db_path) as conn:
+        if after_seq is not None:       # paging forward: the oldest messages after a `seq`
+            rows = conn.execute(
+                "SELECT *, rowid AS seq FROM room_messages WHERE room_id = ? AND rowid > ? "
+                "ORDER BY rowid LIMIT ?", (room_id, after_seq, limit)).fetchall()
+            return [_row_to_message(row) for row in rows]
         if before and before_seq is not None:
             rows = conn.execute(
                 "SELECT *, rowid AS seq FROM room_messages WHERE room_id = ? AND "

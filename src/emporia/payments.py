@@ -14,12 +14,12 @@ Payment modes supported:
                 WWW-Authenticate: Payment ... challenge; agent wallet retries.
                 Kept as enum value; full MPP server wiring is post-hackathon.
 
-Payment split: 97.5% winner / 2.5% platform (OPERATOR_FEE_BPS=250 default).
+Payment split: 99% winner / 1% platform (EMPORIA_FEE_BPS=100 default).
 STRIPE_SECRET_KEY must come from env — never hardcoded.
 
 Stripe does NOT provide agent identity. The SPT object exposes only:
 card brand, last-four, usage limits (currency/max_amount/expires_at), deactivation
-status. Agent identity on Emporia stays with Ed25519 + Nous — Stripe is payment only.
+status. Agent identity on Emporia stays with Ed25519 — Stripe is payment only.
 """
 
 from __future__ import annotations
@@ -69,12 +69,13 @@ def settlement_dedupe_key(
 
 
 def platform_fee(amount_cents: int) -> int:
-    """2.5% platform fee in cents. Only collected when the rounded amount is ≥ 1¢.
-    Transactions where 2.5% rounds to 0 pay no fee — payout goes 100% to the recipient.
+    """1% platform fee in cents. Only collected when the rounded amount is ≥ 1¢.
+    Transactions where the fee rounds to 0 pay no fee — payout goes 100% to the recipient.
     """
     if amount_cents <= 0:
         return 0
-    fee = round(amount_cents * OPERATOR_FEE_BPS / 10000)
+    from emporia import fees
+    fee = round(amount_cents * fees.fee_bps() / 10000)
     return fee if fee >= 1 else 0
 
 
@@ -126,14 +127,16 @@ class PaymentRef:
     # P157: the connected account a Stripe destination charge pays on capture
     # (None for a platform charge, and on every other rail).
     destination: str | None = None
+    # A split x402 entry (fees.py): the second payment, to the relay's fee address, and its amount.
+    fee_reference: str | None = None
+    fee_cents: int = 0
 
 
 STRIPE_API_BASE = os.getenv("STRIPE_API_BASE", "https://api.stripe.com/v1")
 STRIPE_API_VERSION = os.getenv("STRIPE_API_VERSION", "2026-04-22.preview")
-OPERATOR_FEE_BPS = int(os.getenv("OPERATOR_FEE_BPS", "250"))  # 2.5%
 
 # P74: the constant `settle()`'s docstring has always cited and that never
-# existed. It claimed "Requires total_stake_cents >= STRIPE_MIN_CHARGE_CENTS
+# existed. It claimed "Requires total_price_cents >= STRIPE_MIN_CHARGE_CENTS
 # (50c) - enforced upstream"; nothing upstream enforced anything, and the only
 # amount guard in this module was `amount_cents <= 0`. So a resource priced at
 # a penny passed every check here and was rejected by Stripe, and the agent saw
@@ -813,7 +816,7 @@ async def confirm_spt(
     `application_fee_cents`, so they never sit on the platform's balance. Only
     possible when the payee is known before the hold is placed — Stripe fixes
     the destination at creation (capture's `transfer_data` takes an amount, not
-    a destination) — which is true of a purchase and never of a wager.
+    a destination) — which is true of a purchase.
 
     Uses the correct field per Stripe docs:
       payment_method_data[shared_payment_granted_token] = spt_xxx
@@ -852,10 +855,6 @@ async def confirm_spt(
         "metadata[resource_type]": resource_type,
         "metadata[resource_id]": session_id,
     }
-    if resource_type == "room":
-        metadata["metadata[room_id]"] = session_id
-    elif resource_type == "agora":
-        metadata["metadata[topic_id]"] = session_id
 
     # P88: an SPT is consumed by the first PaymentIntent that uses it. Without a
     # key, a request that timed out *after* Stripe charged the card left the
@@ -946,7 +945,7 @@ def _stripe_key() -> str:
     return key
 
 
-async def create_stake_intent(
+async def create_price_intent(
     session_id: str,
     amount_cents: int,
     buyer_id: str,
@@ -960,7 +959,7 @@ async def create_stake_intent(
     destination_account: str | None = None,
     application_fee_cents: int | None = None,
 ) -> dict[str, Any]:
-    """Create a Stripe PaymentIntent for a session stake using manual capture (escrow).
+    """Create a Stripe PaymentIntent for a deal price using manual capture (escrow).
 
     `destination_account` (P157): a destination charge to that connected account,
     less `application_fee_cents` — the intent the relay will accept when it does
@@ -993,10 +992,6 @@ async def create_stake_intent(
             "metadata[resource_type]": resource_type,
             "metadata[resource_id]": session_id,
         }
-        if resource_type == "room":
-            metadata["metadata[room_id]"] = session_id
-        elif resource_type == "agora":
-            metadata["metadata[topic_id]"] = session_id
         resp = await client.post(
             f"{STRIPE_API_BASE}/payment_intents",
             auth=(key, ""),
@@ -1175,7 +1170,7 @@ async def cancel_payment_hold(payment_intent_id: str) -> dict[str, Any]:
 async def settle(
     session_id: str,
     winner_id: str,
-    total_stake_cents: int,
+    total_price_cents: int,
     payment_intent_ids: list[str],
     winner_stripe_account: str | None = None,
     *,
@@ -1187,11 +1182,11 @@ async def settle(
     Escrow flow:
     1. All agent PIs were created with capture_method=manual (holds, not charges).
     2. On winner determination, relay captures all PIs → funds land in platform balance.
-    3. Relay transfers 97.5% to winner's connected account; platform keeps 2.5%.
+    3. Relay transfers 99% to winner's connected account; platform keeps 1%.
     4. If game was never played / abandoned, call cancel_payment_hold() instead.
 
-    Platform fee: OPERATOR_FEE_BPS basis points (default 250 = 2.5%), minimum 1¢.
-    Requires total_stake_cents ≥ STRIPE_MIN_CHARGE_CENTS (50¢). P74: that was
+    Platform fee: `fees.fee_bps()` basis points (default 100 = 1%, 0 with no fee address), minimum 1¢.
+    Requires total_price_cents ≥ STRIPE_MIN_CHARGE_CENTS (50¢). P74: that was
     a claim about a constant this module did not define and nobody enforced —
     it is now real, checked where the PaymentIntent is created, before Stripe
     is asked.
@@ -1215,9 +1210,9 @@ async def settle(
     caller that genuinely doesn't know shouldn't have its previously-working
     payout broken by this check.
     """
-    fee = platform_fee(total_stake_cents)
+    fee = platform_fee(total_price_cents)
     platform_fee_cents = fee
-    winner_payout_cents = total_stake_cents - platform_fee_cents
+    winner_payout_cents = total_price_cents - platform_fee_cents
 
     # Step 1: Capture all authorized holds → platform balance
     capture_results = []
@@ -1300,10 +1295,10 @@ async def settle(
     return {
         "session_id": session_id,
         "winner_id": winner_id,
-        "total_stake_cents": total_stake_cents,
+        "total_price_cents": total_price_cents,
         "platform_fee_cents": platform_fee_cents,
         "winner_payout_cents": winner_payout_cents,
-        "platform_fee_bps": OPERATOR_FEE_BPS,
+        "platform_fee_bps": __import__("emporia.fees", fromlist=["x"]).fee_bps(),
         "payment_intent_ids": payment_intent_ids,
         "capture_results": capture_results,
         "refund_results": refund_results,
@@ -1340,10 +1335,10 @@ async def settle_destination_charges(
     return {
         "session_id": session_id,
         "winner_id": payee_id,
-        "total_stake_cents": total_cents,
+        "total_price_cents": total_cents,
         "platform_fee_cents": fee,
         "winner_payout_cents": total_cents - fee,
-        "platform_fee_bps": OPERATOR_FEE_BPS,
+        "platform_fee_bps": __import__("emporia.fees", fromlist=["x"]).fee_bps(),
         "payment_intent_ids": payment_intent_ids,
         "capture_results": capture_results,
         "transfer_id": None,
@@ -1543,7 +1538,7 @@ async def payout_winner(
 ) -> dict[str, Any]:
     """Transfer winner payout to their Stripe Connected Account.
 
-    Platform keeps OPERATOR_FEE_BPS; this function transfers only the winner's
+    Platform keeps the relay fee (`fees.fee_bps()`); this function transfers only the winner's
     net share. Requires the platform balance to have sufficient funds — in test mode
     the confirmed PaymentIntents fund the platform balance automatically.
 

@@ -5,8 +5,7 @@ import sqlite3
 
 import httpx
 
-from emporia import identity, wire
-from emporia.federation_dm import thread_id_for
+from tests.live.threads import thread_id_for
 
 
 def _pin(agent, other: str) -> dict:
@@ -24,30 +23,22 @@ def _remote_copy(relay, address: str) -> dict:
 
 
 def _read(agent, other: str) -> dict:
-    out = agent.tool("get_dm_messages", thread_id=thread_id_for(agent.address, other))
+    out = agent.tool("get_dm_messages", thread_id=thread_id_for(agent, other))
     assert out["success"], out
     return out
 
 
-def _titles(out: dict) -> list[str]:
-    return sorted(x["title"] for x in out["listings"] if x.get("federated_from"))
-
-
 def test_a_rotated_key_is_followed_from_other_relays_and_the_old_key_signs_nothing_new(fleet):
-    a, b, victim, rogue = fleet.a, fleet.b, fleet.victim, fleet.rogue
+    a, b = fleet.a, fleet.b
     alpha, bob = fleet.registered("alpha", a), fleet.registered("bob", b)
     for agent in (alpha, bob):
         assert agent.tool("set_dm_policy", other_relays=True)["success"]
     old_key = alpha.public_key
 
-    # before: a DM and a listing, signed by the first key; bob pins that key and B shows the listing
+    # before: a DM signed by the first key; bob pins that key
     assert alpha.tool("send_dm", to_agent_id=bob.address, content="signed with my first key")["success"]
     assert _read(bob, alpha.address)["messages"][0]["verified"] is True
     assert _pin(bob, alpha.address)["public_key_hex"] == old_key
-    assert alpha.tool("create_listing", agent_id="alpha", title="Chess lessons", price_usd="3.00")["success"]
-    stale_copy = next(x for x in httpx.get(f"{a.url}/gaming/v1/federate/listings").json()["listings"])
-    b.sync()
-    assert _titles(bob.tool("list_listings")) == ["Chess lessons"]
 
     # alpha rotates her key on A
     rotated = alpha.rotate_key()
@@ -56,20 +47,6 @@ def test_a_rotated_key_is_followed_from_other_relays_and_the_old_key_signs_nothi
     profile = httpx.get(f"{a.url}/agents/alpha/key-log").json()
     assert profile["public_key_hex"] == new_key and [(s["old"], s["new"]) for s in profile["key_log"]] == \
         [(old_key, new_key)]
-
-    # the listing the old key signed leaves A's feed, so B's copy goes with the next pull; she signs a new one
-    assert httpx.get(f"{a.url}/gaming/v1/federate/listings").json()["listings"] == []
-    b.sync()
-    assert _titles(bob.tool("list_listings")) == []
-    again = alpha.tool("create_listing", agent_id="alpha", title="Chess lessons, again", price_usd="3.00")
-    assert again["success"], again
-    record = b.sync()["peers"][a.url]
-    assert record["ok"] and record["imported"] == 1 and not record.get("refused"), record
-    shown = bob.tool("list_listings")
-    assert _titles(shown) == ["Chess lessons, again"] and "refused_federated" not in shown
-    [item] = [x for x in shown["listings"] if x.get("federated_from")]
-    assert item["agent_public_key_hex"] == new_key and item["key_log"][-1]["new"] == new_key
-    assert wire.listing_verdict(item, identity.verify) == ""          # the log, signed step by step, leads to her key
 
     # her next DM carries the signed log, so B's own copy of her follows it (a bare new key would be refused) ...
     assert _remote_copy(b, alpha.address)["public_key_hex"] == old_key
@@ -85,18 +62,3 @@ def test_a_rotated_key_is_followed_from_other_relays_and_the_old_key_signs_nothi
     assert _pin(bob, alpha.address)["public_key_hex"] == new_key
     assert bob.tool("send_dm", to_agent_id=alpha.address, content="got both")["success"]
     assert [m["verified"] for m in _read(alpha, bob.address)["messages"]] == [True, True, True]
-
-    # a relay that serves the listing the old key signed, naming the log it must answer to, gets it refused
-    # (P264: the hop names itself — it may speak only for itself — so her current listing, put up on A,
-    # is refused for that; the stale one is refused for its key before that is even asked.)
-    rogue.target = a.url
-    rogue.claim_origin = True
-    rogue.rewrite["listings"] = lambda items: [*items, {**stale_copy, "key_log": profile["key_log"]}]
-    record = victim.sync()["peers"][rogue.url]
-    assert record["ok"] and record["imported"] == 0 and record["refused"] == 2, record
-    assert any("since replaced" in why for why in record["refused_why"]), record
-    assert not [x for x in httpx.get(f"{victim.url}/listings").json()["listings"] if x.get("federated_from")]
-
-    # A limit, stated so nobody counts on more: a relay that leaves the log out says nothing against the old
-    # key, and the listing - still her word, once - checks. What ends it is its own expiry (a week by default).
-    assert wire.listing_verdict(stale_copy, identity.verify) == ""

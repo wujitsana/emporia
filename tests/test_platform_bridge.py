@@ -209,7 +209,7 @@ def test_running_the_module_serves_every_router(tmp_path):
             pytest.fail("relay did not start")
         r = httpx.post(f"http://127.0.0.1:{port}/agents/challenge", timeout=5)
         assert r.status_code == 200, r.status_code
-        assert httpx.get(f"http://127.0.0.1:{port}/bounties", timeout=5).status_code == 200
+        assert httpx.get(f"http://127.0.0.1:{port}/leaderboard", timeout=5).status_code == 200
     finally:
         proc.terminate()
         proc.wait(timeout=10)
@@ -261,7 +261,7 @@ from gateway.config import PlatformConfig
 from emporia_platform.adapter import EmporiaAdapter
 async def main():
     a = EmporiaAdapter(PlatformConfig(enabled=True, extra={{
-        "relay_url": "http://relay.test", "agent_id": "alice", "python": {str(fake_bridge)!r}}}))
+        "relay_url": "http://relay.test", "agent_id": "alice", "python": {str(fake_bridge)!r}, "wake": "open"}}))
     got = []
     async def capture(ev):
         got.append([ev.text, ev.source.user_id, ev.source.chat_id])
@@ -437,7 +437,7 @@ def test_a_cancelled_card_hold_is_recorded_as_released(client, monkeypatch):
             conn.execute(
                 "INSERT INTO payments (payment_id, session_id, agent_id, amount_cents, currency, "
                 "payment_intent_id, payment_type, status, created_at, rail) "
-                "VALUES (?, ?, ?, 100, 'usd', ?, 'session_stake', 'confirmed', ?, 'stripe')",
+                "VALUES (?, ?, ?, 100, 'usd', ?, 'session_price', 'confirmed', ?, 'stripe')",
                 (uuid.uuid4().hex, sid, who, pi, datetime.now(UTC).isoformat()))
 
     async def cancel(pi):
@@ -453,7 +453,7 @@ def test_a_cancelled_card_hold_is_recorded_as_released(client, monkeypatch):
 
 def test_a_commit_reveal_turn_points_at_the_right_tools():
     """P139: the generic hint sent Blotto players to submit_action."""
-    n = format_frame({"type": "your_turn", "session_id": "s1", "module_type": "emporia:blotto:v1"}, ME)
+    n = format_frame({"type": "your_turn", "session_id": "s1", "module_type": "emporia:blotto:v2"}, ME)
     assert "commit_move" in n.text and "reveal_move" in n.text and "submit_action" not in n.text
     n = format_frame({"type": "your_turn", "session_id": "s1", "module_type": "emporia:chess:v1"}, ME)
     assert "submit_action" in n.text

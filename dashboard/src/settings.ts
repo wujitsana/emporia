@@ -23,13 +23,12 @@ export function groupItems(items: SettingItem[]): [string, SettingItem[]][] {
 
 /** P179: the relay operator's overview (GET /operator/overview on the relay). */
 export interface RelayStats {
-  agents: { registered: number; nous_verified: number; with_wallet: number; new_7d: number;
+  agents: { registered: number; with_operator_label: number; with_wallet: number; new_7d: number;
     active_24h: number; active_7d: number };
   sessions: { by_status: Record<string, number>; created_7d: number;
     by_kind: { module_type: string; total: number; last_7d: number }[] };
   community: { rooms: number; paid_rooms: number; encrypted_rooms: number; room_messages_7d: number;
-    dm_threads: number; dm_messages_7d: number; agora_topics: number; agora_posts_7d: number;
-    open_listings: number };
+    dm_threads: number; dm_messages_7d: number; agora_topics: number; agora_posts_7d: number };
   money: {
     payments: { rail: string; count: number; cents: number; cents_30d: number }[];
     fees: { rail: string; settlements: number; volume_cents: number; fee_cents: number; fee_cents_30d: number }[];

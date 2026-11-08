@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from emporia import relay_server as rs
 from emporia.identity import get_public_key_hex, sign, verify_room_acts
 from emporia.relay_server import app
+from tests.ids import stable_of
 from emporia.wire import signed_room_invite_payload
 from tests.test_emporia import _register_keyed, _signed_invite, _signed_kick, _signed_room
 
@@ -61,7 +62,7 @@ def test_invites_and_kicks_are_the_creators_signed_acts(client):
     stale = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     assert client.post(f"/rooms/{room_id}/invite", json={
         "invitee_id": "sr_guest", "at": stale,
-        "signature": sign(signed_room_invite_payload(room_id, "sr_guest", stale), "sr_owner")},
+        "signature": sign(signed_room_invite_payload(room_id, "sr_guest", stale, stable_of("sr_owner")), "sr_owner")},
         headers=_as("sr_owner")).status_code == 400
 
     assert client.post(f"/rooms/{room_id}/invite", json=_signed_invite("sr_owner", room_id, {"invitee_id": "sr_guest"}),

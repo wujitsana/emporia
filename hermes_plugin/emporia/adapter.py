@@ -14,6 +14,13 @@ The bridge owns the relay connection (authentication, reconnect with backoff).
 This adapter owns the process: it restarts the bridge with backoff if it exits,
 and stops it on disconnect.
 
+Wake mode (EMPORIA_WAKE: closed, games or open; default games): which events may start a turn.
+The bridge decides before it writes a line; this adapter checks again with its own copy of the
+table (the plugin imports nothing from Emporia; tests/test_wake.py keeps the two equal) and
+tells the gateway to admit exactly the senders whose notice passed (`resolved_allowlist_user_ids`),
+so no allow-all switch is needed. Attribution never changes: text another agent wrote comes
+from that agent's id.
+
 Config, env first then `gateway.platforms.emporia.extra`: EMPORIA_RELAY_URL /
 relay_url, EMPORIA_AGENT_ID / agent_id, EMPORIA_PYTHON / python,
 EMPORIA_PROFILE_ID / profile_id.
@@ -50,6 +57,28 @@ _TOPIC_RE = re.compile(r"(session|dm|room|agora):[A-Za-z0-9_.:@-]{1,90}")
 # A game's turns are not counted: the game's own limits end it.
 DEFAULT_THREAD_LIMIT = 20
 _THREAD_WINDOW_S = 3600.0
+
+# The wake mode (a copy of emporia/wake.py's table: this file imports nothing from Emporia).
+WAKE_MODES = ("closed", "games", "open")
+DEFAULT_WAKE = "games"
+_RELAY_SENDER = "emporia:relay"
+_WAKE_GAME_FRAMES = frozenset({"challenge", "accept", "reject", "game_chat"})
+_WAKE_VISITED_REPORTS = frozenset({"session_started", "your_turn", "session_completed", "session_abandoned"})
+# How long a sender whose notice passed stays admitted at the gateway: its check runs a moment
+# after the adapter hands the message over.
+_ADMIT_TTL_S = 600.0
+_MAX_ADMITTED = 512
+
+
+def wake_admits(mode: str, frame_type: str, sender: str, listed=frozenset()) -> bool:
+    """Whether a notice of this kind from this sender may start a turn in this wake mode."""
+    if mode == "open" or sender == _RELAY_SENDER or sender in listed or "*" in listed:
+        return True
+    if mode != "games":
+        return False
+    if sender.startswith(_RELAY_SENDER + "@"):
+        return frame_type in _WAKE_VISITED_REPORTS
+    return frame_type in _WAKE_GAME_FRAMES
 
 
 def _setting(extra: dict, env: str, key: str, default: str = "") -> str:
@@ -149,6 +178,12 @@ class EmporiaAdapter(BasePlatformAdapter):
         except ValueError:
             self.thread_limit = DEFAULT_THREAD_LIMIT
         self._thread_seen: dict[str, list[float]] = {}
+        raw_mode = _setting(extra, "EMPORIA_WAKE", "wake").lower()
+        # Unset: games; unreadable: closed.
+        self.wake_mode = (raw_mode if raw_mode in WAKE_MODES else "closed") if raw_mode else DEFAULT_WAKE
+        self.wake_listed = frozenset(s.strip() for s in _setting(extra, "EMPORIA_ALLOWED_USERS", "allowed_users")
+                                     .split(",") if s.strip())
+        self._admitted: dict[str, float] = {}
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._run_task: Optional[asyncio.Task] = None
         self._stopping = False
@@ -307,6 +342,11 @@ class EmporiaAdapter(BasePlatformAdapter):
         if not self._message_handler:
             return
         sender = str(notice.get("sender") or "emporia:relay")
+        if not wake_admits(self.wake_mode, str(notice.get("frame_type") or ""), sender, self.wake_listed):
+            logger.info("Emporia: wake mode %s: a %s from %s is not delivered", self.wake_mode,
+                        notice.get("frame_type"), sender)
+            return
+        self._admit(sender)
         text = self._within_limit(notice, sender)
         if text is None:
             return
@@ -317,6 +357,22 @@ class EmporiaAdapter(BasePlatformAdapter):
         await self.handle_message(MessageEvent(
             text=text, message_type=MessageType.TEXT, source=source,
             message_id=message_id or None, timestamp=datetime.datetime.now()))
+
+    def _admit(self, sender: str, now: Optional[float] = None) -> None:
+        """Remember that the wake mode let this sender's notice through (see resolved_allowlist_user_ids)."""
+        now = time.monotonic() if now is None else now
+        self._admitted = {s: t for s, t in self._admitted.items() if t > now}
+        if len(self._admitted) >= _MAX_ADMITTED:
+            self._admitted.pop(min(self._admitted, key=self._admitted.get))
+        self._admitted[sender] = now + _ADMIT_TTL_S
+
+    def resolved_allowlist_user_ids(self) -> set[str]:
+        """Senders the gateway admits besides EMPORIA_ALLOWED_USERS: those whose notice the wake mode
+        just let through. The gateway authorizes per sender and cannot say "challenges from anyone,
+        DMs from nobody"; the adapter decides per kind of event, and this keeps the gateway's
+        verdict no wider than that decision, with no allow-all switch."""
+        now = time.monotonic()
+        return {s for s, t in self._admitted.items() if t > now}
 
     def _within_limit(self, notice: dict[str, Any], sender: str, now: Optional[float] = None) -> Optional[str]:
         """The notice's text, or None when this conversation is over its hourly
@@ -406,7 +462,6 @@ def register_platform(ctx):
         # stranger can write. The relay's own reports come from
         # `emporia:relay`, which the installer allowlists.
         allowed_users_env="EMPORIA_ALLOWED_USERS",
-        allow_all_env="EMPORIA_ALLOW_ALL_USERS",
         emoji="🏛️",
         pii_safe=False,
         allow_update_command=False,

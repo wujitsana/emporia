@@ -1,61 +1,70 @@
-import Text from "@kit/Text";
-import { visibleNav, type View } from "./navConfig";
+import type { ReactNode } from "react";
+import { destinationOf, visibleDestinations, type Destination, type View } from "./navConfig";
 import { useRelayCtx } from "./relayCtx";
 import { ThemePanelBody } from "./ThemeControls";
+import { ViewerSwitcher } from "./ui/ViewerSwitcher";
+import { BrandTitle } from "./ui/LookChrome";
 import type { Theme, Tint } from "./themeConfig";
 import type { DashboardView } from "./eventNav";
 
-function useVisibleNav() {
-  // P34-2: `isRelayOperator` was destructured here and never used — the nav
-  // gates on `isSpectator` alone, and App.tsx passes operator-ness to FeesView
-  // itself. P35-2: the filter itself moved to navConfig.visibleNav(), so the
-  // keyboard handler in App.tsx can ask the same question and get the same
-  // answer instead of searching the unfiltered list.
+type Badges = Partial<Record<DashboardView, number>>;
+
+function useDestinations() {
+  // P35-2: one visibility rule (navConfig.visibleNav) for the nav and the keys.
   const { isSpectator, isRelayOperator } = useRelayCtx();
-  return visibleNav({ isSpectator, isOperator: isRelayOperator });
+  return visibleDestinations({ isSpectator, isOperator: isRelayOperator });
 }
 
-/** Single nav source: horizontal tabs (desktop header) or drawer list (mobile). */
+function Count({ n }: { n: number }) {
+  return n > 0 ? <span className="e-nav-badge">{n > 99 ? "99+" : n}</span> : null;
+}
+
+/** A destination's badge: the sum of its sections' (Talk carries Messages' unread). */
+function destBadge(views: DashboardView[], badges: Badges): number {
+  return views.reduce((sum, v) => sum + (badges[v] ?? 0), 0);
+}
+
+/**
+ * The six destinations (navigation v2, docs/ui-nav-v2.md): a row of tabs in the
+ * desktop header, or the menu's list on a phone. A destination opens its last
+ * section, else its first.
+ */
 export function SectionTabs({
   view,
-  onGo,
+  onGoDest,
   variant = "horizontal",
   badges = {},
 }: {
   view: View;
-  onGo: (id: View) => void;
+  onGoDest: (id: Destination) => void;
   variant?: "horizontal" | "drawer";
-  badges?: Partial<Record<DashboardView, number>>;
+  badges?: Badges;
 }) {
-  const visibleNav = useVisibleNav();
-  const tabView = view === "games" ? "sessions" : view;
+  const dests = useDestinations();
+  const here = destinationOf(view).id;
   return (
-    <nav
-      className={`e-section-tabs e-section-tabs--${variant}`}
-      aria-label="Sections"
-    >
-      {visibleNav.map((n) => {
-        const active = tabView === n.id;
-        const badgeCount = badges[n.id] ?? 0;
+    <nav className={`e-section-tabs e-section-tabs--${variant}`} aria-label="Sections">
+      {dests.map((d) => {
+        const active = d.id === here;
         return (
           <button
-            key={n.id}
+            key={d.id}
             type="button"
             className={`e-section-tab${active ? " is-active" : ""}`}
-            onClick={() => onGo(n.id)}
-            title={n.blurb}
+            onClick={() => onGoDest(d.id)}
+            title={d.blurb}
+            aria-current={active ? "page" : undefined}
           >
-            <span className="e-section-tab__icon" aria-hidden>
-              {n.icon}
-            </span>
+            <span className="e-section-tab__icon" aria-hidden>{d.icon}</span>
             <span className="e-section-tab__label">
-              {n.label}
-              {badgeCount > 0 && (
-                <span className="e-nav-badge">{badgeCount > 99 ? "99+" : badgeCount}</span>
-              )}
+              {d.label}
+              <Count n={destBadge(d.views, badges)} />
             </span>
             {variant === "drawer" ? (
-              <kbd className="e-section-tab__key">{n.hotkey}</kbd>
+              <>
+                <span className="e-section-tab__sub">{d.items.map((n) => n.label).join(" · ")}</span>
+                <kbd className="e-section-tab__key">{d.hotkey}</kbd>
+              </>
             ) : null}
           </button>
         );
@@ -64,29 +73,77 @@ export function SectionTabs({
   );
 }
 
-/** Mobile slide-out — same sections as header tabs + theme. */
+/**
+ * The sections inside the current destination — `Games · Deals`, `Agora ·
+ * Rooms · Messages` — one strip under the header, on every width. Not drawn for a
+ * destination with a single section (Home, Season).
+ */
+export function SubNav({ view, onGo, badges = {} }: { view: View; onGo: (id: View) => void; badges?: Badges }) {
+  const dests = useDestinations();
+  const here = destinationOf(view).id;
+  const dest = dests.find((d) => d.id === here);
+  if (!dest || dest.items.length < 2) return null;
+  return (
+    <nav className="e-subnav" aria-label={`${dest.label}: sections`}>
+      <span className="e-subnav__dest" aria-hidden>{dest.label}</span>
+      {dest.items.map((n) => {
+        const active = n.id === view;
+        return (
+          <button
+            key={n.id}
+            type="button"
+            className={`e-subnav__tab${active ? " is-active" : ""}`}
+            onClick={() => onGo(n.id)}
+            title={n.blurb}
+            aria-current={active ? "page" : undefined}
+          >
+            {n.label}
+            <Count n={badges[n.id] ?? 0} />
+          </button>
+        );
+      })}
+      <span className="e-subnav__keys" aria-hidden>[ ]</span>
+    </nav>
+  );
+}
+
+/** The phone's menu: the agent chat, the six destinations, then who you view as and the theme. */
 export function MobileNavDrawer({
   view,
-  onGo,
+  onGoDest,
+  onClose,
   theme,
   tint,
   onTheme,
   onTint,
   badges,
+  lead,
 }: {
   view: View;
-  onGo: (id: View) => void;
+  onGoDest: (id: Destination) => void;
+  onClose?: () => void;
+  /** Drawn above the destinations (the agent chat, in the Hermes tab). */
+  lead?: ReactNode;
   theme: Theme;
   tint: Tint;
   onTheme: (t: Theme) => void;
   onTint: (t: Tint) => void;
-  badges?: Partial<Record<DashboardView, number>>;
+  badges?: Badges;
 }) {
   return (
     <div className="e-mobile-drawer">
-      <Text className="e-brand-title">✶ Emporia</Text>
-      <SectionTabs view={view} onGo={onGo} variant="drawer" badges={badges} />
-      <div className="e-mobile-drawer__theme">
+      <div className="e-mobile-drawer__head">
+        <span className="e-brand-title"><BrandTitle /></span>
+        {onClose ? (
+          <button type="button" className="e-icon-button" onClick={onClose} aria-label="Close menu">
+            ✕
+          </button>
+        ) : null}
+      </div>
+      {lead}
+      <SectionTabs view={view} onGoDest={onGoDest} variant="drawer" badges={badges} />
+      <div className="e-mobile-drawer__foot">
+        <ViewerSwitcher />
         <ThemePanelBody theme={theme} tint={tint} onTheme={onTheme} onTint={onTint} />
       </div>
     </div>

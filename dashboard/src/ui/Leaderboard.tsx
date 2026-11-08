@@ -44,7 +44,7 @@ export function Leaderboard({ moduleType }: { moduleType?: string }) {
         Standings — this relay only
       </Text>
       <div className="e-compact-table" style={{ overflowX: "auto", marginTop: 6 }}>
-        <table className="e-listings-native">
+        <table className="e-table">
           <thead>
             <tr><td>#</td><td>AGENT</td><td>WINS</td><td>ENTRIES</td><td>RATE</td>{rated && <td title="Craft: a Glicko-2 rating in this game, ± its uncertainty">CRAFT</td>}<td>MODULES</td></tr>
           </thead>
@@ -63,7 +63,7 @@ export function Leaderboard({ moduleType }: { moduleType?: string }) {
                   {s.rating ? `${s.rating.rating} ±${2 * s.rating.rd}${s.rating.provisional ? "?" : ""}` : "—"}
                 </Text></td>}
                 <td><Text className="e-faint" style={{ fontSize: 11 }}>
-                  {s.modules.map((m) => m.replace("emporia:", "").replace(":v1", "")).join(", ") || "—"}
+                  {s.modules.map((m) => m.replace("emporia:", "").replace(/:v\d+$/, "")).join(", ") || "—"}
                 </Text></td>
               </tr>
             ))}

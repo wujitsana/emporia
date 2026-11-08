@@ -99,7 +99,7 @@ async def dm_start(req: DMStartRequest, request: Request):
     # published a key; `encrypted: false` still asks for plaintext explicitly.
     both_keys = all(rs.AGENT_REGISTRY.get_encryption_key(x)[0] for x in (a, b))
     want = req.encrypted if req.encrypted is not None else both_keys
-    now = datetime.now(UTC).isoformat()
+    now = rooms_db.coarse_minute() if want else datetime.now(UTC).isoformat()
     thread_id = f"dm_{uuid.uuid4().hex[:12]}"
     with rs.DB_LOCK, rs.get_db() as conn:
         existing = conn.execute(
@@ -158,10 +158,14 @@ async def _dm_start_remote(caller: str, agent_id: str, peer: str, encrypted: boo
     rs._require_encryption_keys_published([caller])
     me = fd.address(caller, fd.own_host())
     them = fd.address(agent_id, fd.host_of(peer))
-    thread_id = fd.thread_id_for(me, them)
-    with rs.DB_LOCK, rs.get_db() as conn:
-        replying = conn.execute("SELECT 1 FROM dm_threads WHERE thread_id = ?", (thread_id,)).fetchone()
-    if replying and fd.remote(them):
+
+    def held(addr: str):
+        a, b = sorted((me, addr))
+        with rs.DB_LOCK, rs.get_db() as conn:
+            return conn.execute("SELECT * FROM dm_threads WHERE agent_a = ? AND agent_b = ?", (a, b)).fetchone()
+
+    existing = held(them)
+    if existing and fd.remote(them):
         # A thread the other agent began: it chose to write here, and its keys
         # were pinned when its first message arrived. Its opt-in is not needed.
         # P271: its record is asked for again, so a key it replaced since is
@@ -170,15 +174,16 @@ async def _dm_start_remote(caller: str, agent_id: str, peer: str, encrypted: boo
             await fd.look_up(peer, agent_id)
         except Exception:  # noqa: BLE001 - the pinned keys stand
             pass
-        return {"thread_id": thread_id, "agent_a": min(me, them), "agent_b": max(me, them), "created": False,
-                "encrypted": True, "federated": True, "my_label": me, "peer_label": them, "peer_relay": peer}
+        return {"thread_id": existing["thread_id"], "agent_a": min(me, them), "agent_b": max(me, them),
+                "created": False, "encrypted": True, "federated": True, "my_label": me, "peer_label": them,
+                "peer_relay": peer}
     record = await fd.look_up(peer, agent_id)
     them = record["address"]
-    thread_id = fd.thread_id_for(me, them)
+    existing = held(them)
     a, b = sorted((me, them))
-    now = datetime.now(UTC).isoformat()
+    now = rooms_db.coarse_minute()
+    thread_id = existing["thread_id"] if existing else fd.new_thread_id()    # opaque, chosen here
     with rs.DB_LOCK, rs.get_db() as conn:
-        existing = conn.execute("SELECT thread_id FROM dm_threads WHERE thread_id = ?", (thread_id,)).fetchone()
         if existing:
             conn.execute("UPDATE dm_threads SET started_by_local = 1 WHERE thread_id = ?", (thread_id,))
         else:
@@ -237,18 +242,12 @@ def _dm_last_chain_hash(conn: Any, thread_id: str) -> str | None:
 
 
 class DmChainVerification(NamedTuple):
-    """`_verify_dm_chain()`'s result. Mirrors `rooms.ChainVerification` field for
-    field, plus `unchained_prefix` — the DM-only region P28-4 refuses to vouch
-    for. `message_count` counts *chained* messages, as it always has: the
-    unchained prefix is reported separately rather than folded into a total that
-    would imply coverage.
-    """
+    """`_verify_dm_chain()`'s result. Mirrors `rooms.ChainVerification` field for field."""
 
     ok: bool
     message: str
     head: str | None
     message_count: int
-    unchained_prefix: int
     verified_count: int
     scope: str
 
@@ -258,36 +257,26 @@ def _verify_dm_chain(thread_id: str, limit: int | None = None) -> DmChainVerific
     `chain_hash`.
 
     The DM counterpart of `rooms.verify_chain()`, and it reuses that module's
-    `compute_chain_hash()` rather than restating the frame. The one real
-    difference is the boundary: rooms have been chained since P18, while DM rows
-    written before P28-4 have `chain_hash` NULL. Those are skipped and *counted*,
-    never treated as verified — an operator can delete the entire unchained
-    prefix and the chained suffix still verifies perfectly, so a bare
-    `verified: true` would overclaim precisely where the guarantee stops.
+    `compute_chain_hash()` rather than restating the frame. Every DM row is
+    chained; a row with no `chain_hash` is a broken chain (someone wrote around
+    the relay), reported as a failure, never skipped.
 
     `limit` bounds the walk exactly as `rooms.verify_chain()`'s does, and for the
     same reason (P44) — kept in step with it deliberately, since P8's lesson here
     was that these two verifiers drift when only one of them gets fixed. `scope`
-    carries all three outcomes: `"genesis"` (walked every message in the thread),
-    `"chained_start"` (walked every *chained* message, but an unchained prefix
-    sits in front of it), `"recent_window"` (stopped at the cap).
+    carries both outcomes: `"genesis"` (walked every message in the thread) and
+    `"recent_window"` (stopped at the cap).
     """
     with rs.DB_LOCK, rs.get_db() as conn:
         total = conn.execute(
             "SELECT COUNT(*) AS n FROM dm_messages WHERE thread_id = ?", (thread_id,),
         ).fetchone()["n"]
-        chained_total = conn.execute(
-            "SELECT COUNT(*) AS n FROM dm_messages WHERE thread_id = ? AND chain_hash IS NOT NULL",
-            (thread_id,),
-        ).fetchone()["n"]
-        unchained_prefix = total - chained_total
         rows = []
-        if chained_total:
-            if limit is None or chained_total <= limit:
+        if total:
+            if limit is None or total <= limit:
                 rows = conn.execute(
                     "SELECT sender_id, content, created_at, chain_hash, deleted_at FROM dm_messages "
-                    "WHERE thread_id = ? AND chain_hash IS NOT NULL "
-                    "ORDER BY created_at ASC, rowid ASC",
+                    "WHERE thread_id = ? ORDER BY created_at ASC, rowid ASC",
                     (thread_id,),
                 ).fetchall()
             else:
@@ -295,42 +284,43 @@ def _verify_dm_chain(thread_id: str, limit: int | None = None) -> DmChainVerific
                 # idx_dm_messages_thread can serve without reading the thread.
                 rows = conn.execute(
                     "SELECT sender_id, content, created_at, chain_hash, deleted_at FROM dm_messages "
-                    "WHERE thread_id = ? AND chain_hash IS NOT NULL "
-                    "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                    "WHERE thread_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
                     (thread_id, limit + 1),
                 ).fetchall()
                 rows.reverse()
 
     if not rows:
-        return DmChainVerification(
-            True, "no chained messages — nothing to verify", None, 0,
-            unchained_prefix, 0, "chained_start" if unchained_prefix else "genesis",
-        )
+        return DmChainVerification(True, "no messages — nothing to verify", None, 0, 0, "genesis")
+
+    at_start = limit is None or total <= limit
+    first_index = 0 if at_start else total - len(rows)
+    scope = "genesis" if at_start else "recent_window"
+    for offset, row in enumerate(rows):
+        if not row["chain_hash"]:
+            return DmChainVerification(
+                False, f"message {first_index + offset} has no chain hash", None, total, 0, scope,
+            )
 
     head = rows[-1]["chain_hash"]
-    at_start = limit is None or chained_total <= limit
     if at_start:
         prev_hash: str | None = None
         walk, first_index = rows, 0
-        scope = "chained_start" if unchained_prefix else "genesis"
     else:
         prev_hash = rows[0]["chain_hash"]
-        walk, first_index = rows[1:], chained_total - len(rows) + 1
-        scope = "recent_window"
+        walk, first_index = rows[1:], total - len(rows) + 1
 
     for offset, row in enumerate(walk):
         if not rooms_db.link_ok(prev_hash, row):
             return DmChainVerification(
                 False, f"hash mismatch at message {first_index + offset}",
-                None, chained_total, unchained_prefix, offset, scope,
+                None, total, offset, scope,
             )
         prev_hash = row["chain_hash"]
 
     verified = len(walk)
-    detail = "chain valid" if scope != "recent_window" else "recent window valid"
+    detail = "chain valid" if at_start else "recent window valid"
     return DmChainVerification(
-        True, f"{detail} ({verified} of {chained_total} messages)",
-        head, chained_total, unchained_prefix, verified, scope,
+        True, f"{detail} ({verified} of {total} messages)", head, total, verified, scope,
     )
 
 
@@ -370,11 +360,6 @@ async def get_dm_chain(thread_id: str, request: Request):
     catches inconsistency, not an internally consistent rewrite. Client-side
     head pinning is what catches that; this route is the half a client pins.
 
-    `unchained_prefix` is the DM-specific caveat: messages written before P28-4
-    have no `chain_hash` and are not covered by `chain_head`. A client treating
-    a nonzero value as "verified" would be trusting exactly the region the relay
-    is declining to vouch for.
-
     `chain_verified_scope` and `verified_message_count` carry P44's bounded walk,
     with the same guarantees the room route's docstring spells out: the signed
     payload is unchanged by the cap, and a client wanting the full history
@@ -396,7 +381,6 @@ async def get_dm_chain(thread_id: str, request: Request):
         "message": result.message,
         "chain_head": result.head,
         "message_count": result.message_count,
-        "unchained_prefix": result.unchained_prefix,
         "verified_message_count": result.verified_count,
         "chain_verified_scope": result.scope,
         "origin_relay": rs.RELAY_BASE_URL,
@@ -483,8 +467,8 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     # Local import + resolved-once pattern matches P12-3's room-message fix.
     from emporia.wire import ERR_DUPLICATE_NONCE, DEFAULT_MSG_TYPE, signed_dm_thread_payload
     effective_msg_type = req.msg_type or DEFAULT_MSG_TYPE
-    rs._require_valid_msg_type(effective_msg_type)
     rs._require_content_within_limit(req.content)
+    rs._require_valid_msg_type(effective_msg_type, sealed=bool(thread["encrypted"]))
     # P16: enforce the thread's mode. The relay reads no plaintext and holds no key
     # here — `validate_envelope_for()` inspects the envelope's structure and the set
     # of agent_ids the content key was wrapped to, nothing more. It catches the two
@@ -591,6 +575,13 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     # cannot scan what it cannot read. msg_type is unaffected — it sits outside the
     # envelope and is already restricted to a closed six-value enum.
     if not thread["encrypted"]:
+        # Rooms v2: a DM is a post body (kind, text, tags, refs). An encrypted thread's is inside the seal.
+        from emporia import room_post
+        b = room_post.parse(req.content)
+        if b is None or room_post.canonical(b) != req.content:
+            raise HTTPException(400, "a DM's content is a post body, as canonical JSON (room_post.canonical)")
+        if why := room_post.problem(b, effective_msg_type):
+            raise HTTPException(400, why)
         try:
             await rs._assert_payload_safe_counted({"content": req.content})
         except PermissionError as e:
@@ -601,9 +592,17 @@ async def dm_send(thread_id: str, req: DMSendRequest, request: Request):
     sender_label = _my_label(thread, caller)
     if thread["remote_address"]:
         await _deliver_remote(thread, caller, sender_label, req, effective_msg_type)
-    now = datetime.now(UTC).isoformat()
+    # a sealed thread keeps the minute and no finer (ordering is the table's sequence, not the clock)
+    now = rooms_db.coarse_minute() if thread["encrypted"] else datetime.now(UTC).isoformat()
     message_id = f"dmm_{uuid.uuid4().hex[:12]}"
     with rs.DB_LOCK, rs.get_db() as conn:
+        if thread["encrypted"]:
+            # a thread upgraded to sealed keeps its order: a coarse minute never sorts before a plaintext
+            # message sent earlier in that minute
+            last = conn.execute("SELECT created_at FROM dm_messages WHERE thread_id = ? "
+                                "ORDER BY created_at DESC, rowid DESC LIMIT 1", (thread_id,)).fetchone()
+            if last and last["created_at"] > now:
+                now = last["created_at"]
         try:
             # P28-4: computed inside the same DB_LOCK as the INSERT, so two
             # concurrent sends can't both read the same predecessor and chain
@@ -787,7 +786,12 @@ async def dm_messages(
         with rs.DB_LOCK, rs.get_db() as conn:
             for item, removal in deletion.removals_for(conn, "dm_message", list(gone)).items():
                 gone[item]["removed"] = removal
-    return {"thread_id": thread_id, "messages": messages, "my_label": _my_label(thread, agent_id)}
+    from emporia import room_post
+    for m in messages:      # a plaintext thread's message is a post: its fields beside `content`
+        if m["msg_type"] != "sealed" and not m.get("deleted_at"):
+            m.update(room_post.view(m["msg_type"], m["content"]))
+    return {"thread_id": thread_id, "messages": messages, "my_label": _my_label(thread, agent_id),
+            "untrusted": room_post.UNTRUSTED}
 
 
 # ============================================================================

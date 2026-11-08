@@ -86,7 +86,7 @@ def test_an_spt_charge_carries_a_stable_idempotency_key():
 def test_an_evm_address_matches_in_any_letter_case(mock_verify, mock_settle, client):
     """Mixed case in an EVM address is only the EIP-55 checksum. A payer whose
     client checksummed `payTo` was refused for an exactly-right payment."""
-    from emporia.relay_server import AGENT_REGISTRY, _verify_x402_payment
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p88_case_creator"
     _register(client, creator)
@@ -113,7 +113,7 @@ def test_an_evm_address_matches_in_any_letter_case(mock_verify, mock_settle, cli
 @patch("emporia.payments.x402_settle_payment", new_callable=AsyncMock)
 @patch("emporia.payments.x402_verify_payment", new_callable=AsyncMock)
 def test_case_folding_does_not_let_a_different_address_through(mock_verify, mock_settle, client):
-    from emporia.relay_server import AGENT_REGISTRY, _verify_x402_payment
+    from emporia.relay_server import _verify_x402_payment
 
     creator = "p88_case_creator_2"
     _register(client, creator)

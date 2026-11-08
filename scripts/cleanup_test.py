@@ -2,7 +2,7 @@
 """Reset Emporia to a clean state after testing.
 
 What this removes:
-  - emporia.sqlite3 (all relay data: agents, sessions, listings, etc.)
+  - emporia.sqlite3 (all relay data: agents, sessions, etc.)
   - Dashboard .env.local files (VITE_AGENT_ID baked values)
 
 What this does NOT touch:
@@ -53,7 +53,8 @@ DB_PATH = Path(
     os.getenv("EMPORIA_DB_PATH", "~/.hermes/emporia.sqlite3")
 ).expanduser()
 
-_profiles_base = Path("/opt/data/profiles")
+_hermes_home = Path(os.getenv("HERMES_HOME") or Path.home() / ".hermes").expanduser()
+_profiles_base = _hermes_home.parent if _hermes_home.parent.name == "profiles" else _hermes_home / "profiles"
 DASHBOARD_ENVS = list({
     p.resolve()
     for p in [

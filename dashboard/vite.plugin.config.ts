@@ -1,7 +1,8 @@
 /**
  * P126: the Emporia dashboard bundled as a Hermes dashboard plugin.
  *
- *   npm run build:hermes-plugin   →  ../hermes_plugin/emporia/dashboard/dist/{index.js,style.css}
+ *   npm run build:plugin   →  ../hermes_plugin/emporia/dashboard/dist/{index.js,style.css}
+ *                             (and the Desktop page, vite.desktop.config.ts, and the console)
  *
  * P295: built into the plugin folder and committed — a catalog install is that
  * folder alone, at a pinned commit. Not minified, so a reviewer reads what runs;
@@ -16,39 +17,16 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
-import fs from "fs";
-import crypto from "crypto";
-import { noRemoteFonts } from "./postcss.noRemoteFonts";
-import { scopeToShadowHost } from "./src/shadowScope";
+import { SHARED_INPUTS, pluginVersion, writeSourceDigest } from "./buildMeta.ts";
+import { noRemoteFonts } from "./postcss.noRemoteFonts.ts";
+import { scopeToShadowHost } from "./src/shadowScope.ts";
+import { cssModuleName } from "./src/cssModuleName.ts";
 
 const KIT = path.resolve("src/ui/kit");
 
 /** P295: what the committed bundle was built from — tests/test_dashboard_plugin.py
  *  recomputes it and fails when dashboard/ changed without a rebuild. */
-export const SOURCE_INPUTS = ["src", "vite.plugin.config.ts", "package-lock.json", "postcss.noRemoteFonts.ts"];
-
-function sourceDigest(): string {
-  const files: string[] = [];
-  const walk = (rel: string) => {
-    const st = fs.statSync(rel);
-    if (st.isDirectory()) fs.readdirSync(rel).sort().forEach((n) => walk(path.posix.join(rel, n)));
-    else if (!/\.test\.tsx?$/.test(rel)) files.push(rel);
-  };
-  SOURCE_INPUTS.forEach(walk);
-  const h = crypto.createHash("sha256");
-  for (const f of files.sort()) {
-    h.update(f + "\n");
-    h.update(fs.readFileSync(f));
-  }
-  return h.digest("hex");
-}
-
-const writeSourceDigest = {
-  name: "emporia-source-digest",
-  closeBundle() {
-    fs.writeFileSync("../hermes_plugin/emporia/dashboard/dist/SOURCE", sourceDigest() + "\n");
-  },
-};
+export const SOURCE_INPUTS = [...SHARED_INPUTS, "vite.plugin.config.ts"];
 
 const shadowScope = {
   postcssPlugin: "emporia-shadow-scope",
@@ -61,7 +39,7 @@ const shadowScope = {
 
 export default defineConfig({
   base: "./",
-  plugins: [react(), writeSourceDigest],
+  plugins: [react(), writeSourceDigest(SOURCE_INPUTS, "../hermes_plugin/emporia/dashboard/dist/SOURCE")],
   resolve: {
     alias: [
       { find: "@kit", replacement: KIT },
@@ -69,9 +47,12 @@ export default defineConfig({
       { find: /^\.\/docTexts$/, replacement: path.resolve("src/docTexts.plugin.ts") },
     ],
   },
-  define: { "process.env.NODE_ENV": JSON.stringify("production") },
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+    __EMPORIA_VERSION__: JSON.stringify(pluginVersion()),
+  },
   css: {
-    modules: { localsConvention: "camelCase" },
+    modules: { localsConvention: "camelCase", generateScopedName: cssModuleName },
     postcss: { plugins: [noRemoteFonts, shadowScope] },
   },
   publicDir: false,
@@ -88,7 +69,7 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
-        inlineDynamicImports: true,
+        codeSplitting: false,
         assetFileNames: (a) => (a.names?.[0] ?? a.name ?? "").endsWith(".css")
           ? "style.css" : "assets/[name][extname]",
       },

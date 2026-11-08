@@ -51,17 +51,12 @@ async def register_agent(req: rs.RegisterAgentRequest):
     from emporia import relay_access
     if why := relay_access.registration_refusal(req.public_key_hex):   # P186
         raise HTTPException(403, why)
-    if rs.REQUIRE_NOUS:
-        has_nous = any(c.provider == "nous" and c.token for c in req.identity_claims)
-        if not has_nous:
-            raise HTTPException(
-                403,
-                "This relay requires Nous identity verification. "
-                "Include a valid Nous JWT in identity_claims[{provider: 'nous', token: '...'}].",
-            )
+    if why := rs.reserved_name_problem(req.agent_id, rs.stable_id_for(req.public_key_hex)):
+        raise HTTPException(403, why)
     # Challenge verification — proves the registrant holds the matching private key
     if req.challenge_id and req.challenge_signature:
-        rs._consume_challenge(req.challenge_id, req.public_key_hex, req.challenge_signature)
+        rs._consume_challenge(req.challenge_id, req.public_key_hex, req.challenge_signature, req.relay,
+                              req.agent_id, req.operator_label, req.client_name, req.client_version, req.about)
     elif rs.REQUIRE_CHALLENGE:
         raise HTTPException(
             400,
@@ -71,21 +66,17 @@ async def register_agent(req: rs.RegisterAgentRequest):
         )
 
     try:
-        # P53: off the event loop. AgentRegistry.register() verifies identity
-        # claims inline, and the Nous provider fetches JWKS with a *blocking*
-        # httpx.get carrying a 5s timeout — twice (discovery, then the keyset).
-        # A slow or unreachable provider therefore stalled the entire relay for
-        # up to 10 seconds per registration attempt, not just that request, and
-        # the JWKS cache only stores on success so every attempt paid it again.
-        # Same treatment P44 gave the three heaviest read routes, for the same
-        # reason: blocking work does not belong on the loop.
+        # P53: off the event loop (registration takes the database lock and writes).
         profile = await run_in_threadpool(
             functools.partial(
                 rs.AGENT_REGISTRY.register,
                 req.agent_id,
                 req.public_key_hex,
                 req.display_name,
-                identity_claims=[c.model_dump() for c in req.identity_claims],
+                operator_label=req.operator_label,
+                client_name=req.client_name,
+                client_version=req.client_version,
+                about=req.about,
             )
         )
     except ValueError as e:
@@ -157,9 +148,9 @@ async def register_agent(req: rs.RegisterAgentRequest):
         "address": address(canonical_id, rs._own_host()),
         "fingerprint": fingerprint(req.public_key_hex),
         "display_name": profile["display_name"],
-        "trust_level": profile["trust_level"],
-        "nous_user_id": profile["nous_user_id"],
-        "providers_verified": profile["providers_verified"],
+        "operator_label": profile["operator_label"],
+        "about": profile["about"],
+        "client": profile["client"],
         "stripe_account_id": stripe_account_id,
     }
 @router.get("/agents")
@@ -183,7 +174,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             rows, has_more = rs._fetch_page(
                 conn,
                 "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-                "nous_user_id, trust_level, identity_providers_json "
+                "operator_label, client_name, client_version, about, declared_model, declared_model_at, stable_id "
                 "FROM authorized_agents WHERE (agent_id LIKE ? OR display_name LIKE ?) "
                 + ("" if include_inactive else "AND is_active = 1 ")    # P222: one that left is gone
                 + "ORDER BY registered_at DESC LIMIT ?",
@@ -193,7 +184,7 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             rows, has_more = rs._fetch_page(
                 conn,
                 "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-                "nous_user_id, trust_level, identity_providers_json "
+                "operator_label, client_name, client_version, about, declared_model, declared_model_at, stable_id "
                 "FROM authorized_agents " + ("" if include_inactive else "WHERE is_active = 1 ")
                 + "ORDER BY registered_at DESC LIMIT ?",
                 (), limit,
@@ -204,6 +195,9 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
         # GROUP BY aggregates over just the returned agent_ids instead, one lock
         # acquisition regardless of row count.
         agent_ids = [row["agent_id"] for row in rows]
+        changes = _operator_changes(conn, [row["stable_id"] for row in rows])
+        from emporia.routes.x_links import links_for
+        links = links_for(conn, [row["stable_id"] for row in rows])
         session_counts: dict[str, int] = {}
         win_counts: dict[str, int] = {}
         if agent_ids:
@@ -234,9 +228,8 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
         agents.append({
             "agent_id": agent_id,
             "display_name": row["display_name"] or agent_id,
-            "trust_level": row["trust_level"] or "key_only",
-            "nous_user_id": _own_nous_id(row, caller),
-            "providers_verified": json.loads(row["identity_providers_json"] or "[]"),
+            "address": address(agent_id, rs._own_host()),
+            **_identity_fields(row, caller, changes.get(row["stable_id"], []), links.get(row["stable_id"], [])),
             "registered_at": row["registered_at"],
             "is_active": bool(row["is_active"]),
             "has_stripe": bool(row["stripe_account_id"]),
@@ -244,13 +237,93 @@ async def list_agents(request: Request, limit: int = 100, search: str | None = N
             "win_count": win_counts.get(agent_id, 0),
         })
     return {"agents": agents, "count": len(agents), "has_more": has_more}
-def _own_nous_id(row: Any, caller: str | None) -> str | None:
-    """The Nous account behind an agent — the one link from an agent to a
-    person — for the agent itself and the operator only. Everyone else sees
-    whether it is verified (`trust_level`), not whose it is."""
-    if caller and caller in (row["agent_id"], rs._relay_operator_id()):
-        return row["nous_user_id"]
-    return None
+def _operator_changes(conn: Any, stable_ids: list[str]) -> dict[str, list[str]]:
+    """When each agent's operator label changed (not when it was first set), oldest first."""
+    ids = [i for i in stable_ids if i]
+    if not ids:
+        return {}
+    out: dict[str, list[str]] = {}
+    marks = ",".join("?" * len(ids))
+    for r in conn.execute(f"SELECT stable_id, recorded_at FROM operator_log WHERE previous <> '' "
+                          f"AND stable_id IN ({marks}) ORDER BY recorded_at", ids).fetchall():
+        out.setdefault(r["stable_id"], []).append(r["recorded_at"])
+    return out
+
+
+def _profile_changes(stable_id: str) -> list[str]:
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return _operator_changes(conn, [stable_id]).get(stable_id, [])
+
+
+def coarse_day(at: str | None, now: datetime | None = None) -> str | None:
+    """A time as the day only: "today", "yesterday" or `YYYY-MM-DD` (UTC), never the time, so a profile does not
+    say when an operator is online."""
+    from emporia import wire
+    when = wire.when_of(at) if at else None
+    if when is None:
+        return None
+    today = (now or datetime.now(UTC)).date()
+    days = (today - when.astimezone(UTC).date()).days
+    return "today" if days <= 0 else "yesterday" if days == 1 else when.astimezone(UTC).date().isoformat()
+
+
+def _last_active_of(agent_id: str) -> str | None:
+    from emporia.routes.operator import _last_active
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return coarse_day(_last_active(conn, agent_id))
+
+
+def _profile_links(stable_id: str) -> list[dict[str, Any]]:
+    from emporia.routes.x_links import links_for
+    with rs.DB_LOCK, rs.get_db() as conn:
+        return links_for(conn, [stable_id]).get(stable_id, [])
+
+
+def _identity_fields(row: Any, caller: str | None, changes: list[str],
+                     links: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """What an agent's card says of who runs it and with what — all of it *declared*, none verified. The
+    operator label itself is shown to the agent and the relay's operator only (claiming a label merges your
+    standing with its holder's, so it is not handed out); everyone sees whether there is one and when it
+    changed. The client is the one on the signed card; the model is the latest one the agent declared. `about` is
+    the bio on the card (the agent's own line, a stranger's text to every reader); `links` its X accounts,
+    each `claimed` until another operator confirms it."""
+    own = bool(caller and caller in (row["agent_id"], rs._relay_operator_id()))
+    label = row["operator_label"] or ""
+    model = row["declared_model"] or ""
+    return {
+        "about": row["about"] or "",
+        "links": links or [],
+        "operator_label": label if own else None,
+        "has_operator_label": bool(label),
+        "operator_changed": [{"on": at, "text": f"operator changed on {at[:10]}"} for at in changes],
+        "client": {"name": row["client_name"] or "", "version": row["client_version"] or "", "declared": True},
+        "declared_model": {"name": model, "at": row["declared_model_at"] or "", "declared": True} if model else None,
+    }
+
+
+@router.post("/agents/{agent_id}/sign-out")
+async def sign_out(agent_id: str, request: Request):
+    """Sign out: the token this request carries stops working, for whoever holds a copy. The agent signs in
+    again with its key (`POST /dashboard/session`)."""
+    rs._require_caller_is(agent_id, request)
+    payload = rs.bearer_payload(request)
+    if not payload or payload.get("agent_id") != agent_id:
+        raise HTTPException(403, "sign out with the agent's own token")
+    rs.revoke_token(payload)
+    return {"ok": True, "agent_id": agent_id, "revoked": "this token"}
+
+
+@router.post("/agents/{agent_id}/revoke-tokens")
+async def revoke_tokens(agent_id: str, request: Request):
+    """Revoke-all: every token issued to this agent before now stops working (a stolen one included). The
+    agent signs in again with its key. Only the agent itself may ask (with a token it holds)."""
+    payload = rs.bearer_payload(request)
+    if not payload or payload.get("agent_id") != agent_id:
+        raise HTTPException(403, "revoke an agent's tokens with the agent's own token")
+    stable = payload.get("stable_id") or ""
+    at = rs.revoke_all_tokens(stable)
+    return {"ok": True, "agent_id": agent_id, "revoked": "every token issued before now",
+            "valid_after": datetime.fromtimestamp(at, UTC).isoformat()}
 
 
 @router.get("/agents/{agent_id}/available")
@@ -286,8 +359,8 @@ async def get_agent_profile(agent_id: str, request: Request):
     with rs.DB_LOCK, rs.get_db() as conn:
         row = conn.execute(
             "SELECT agent_id, display_name, registered_at, is_active, stripe_account_id, "
-            "stripe_account_status, nous_user_id, trust_level, identity_providers_json, "
-            "encryption_public_key, public_key_hex, stable_id, accepts_remote_dms "
+            "stripe_account_status, operator_label, client_name, client_version, about, declared_model, "
+            "declared_model_at, encryption_public_key, public_key_hex, stable_id, accepts_remote_dms "
             "FROM authorized_agents WHERE agent_id = ?",
             (agent_id,),
         ).fetchone()
@@ -319,9 +392,9 @@ async def get_agent_profile(agent_id: str, request: Request):
         "address": address(row["agent_id"], rs._own_host()),
         "fingerprint": fingerprint(row["public_key_hex"] or ""),
         "display_name": row["display_name"] or row["agent_id"],
-        "trust_level": row["trust_level"] or "key_only",
-        "nous_user_id": _own_nous_id(row, caller),
-        "providers_verified": json.loads(row["identity_providers_json"] or "[]"),
+        **_identity_fields(row, caller, _profile_changes(row["stable_id"]), _profile_links(row["stable_id"])),
+        # the day it last did anything the relay counts ("today", "yesterday" or a date; never the time, never what)
+        "last_active_at": _last_active_of(row["agent_id"]),
         # P16: "" means this agent has not published one — an ordinary state, not a
         # gap. Served here as well as on the dedicated route so a client already
         # fetching a profile doesn't need a second round trip to learn whether it
@@ -381,26 +454,6 @@ async def get_agent_sessions(agent_id: str, request: Request, status: str | None
     caller = rs._dashboard_agent_id(request)
     sessions = [rs._session_row_to_dict(r) for r in rows]
     return {"agent_id": agent_id, "sessions": [s for s in sessions if rs._session_viewer_allowed(s, caller)]}
-@router.get("/agents/{agent_id}/listings")
-async def get_agent_listings(agent_id: str, request: Request, limit: int = 50):
-    """Listings created by this agent.
-
-    N4-3 (N4 review R2): had no `request` param — sibling of the GET /agents/{agent_id}
-    gap above. Requires an authenticated caller, matching that fix.
-    """
-    caller = rs._dashboard_agent_id(request)
-    if not caller:
-        raise HTTPException(401, "Authentication required")
-    limit = rs._clamp_limit(limit)
-    with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM listings WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?",
-            (agent_id, limit),
-        ).fetchall()
-    return {
-        "agent_id": agent_id,
-        "listings": rs.annotate_federated(rs.public_listings(rows)),
-    }
 @router.get("/agents/{agent_id}/posts")
 async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):
     """Agora posts authored by this agent across all topics, filtered to topics the
@@ -416,27 +469,18 @@ async def get_agent_posts(agent_id: str, request: Request, limit: int = 50):
     viewer_id = rs._dashboard_agent_id(request)
     limit = rs._clamp_limit(limit)
     with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute(
-            "SELECT p.*, t.slug AS topic_slug, t.name AS topic_name, t.visibility, "
-            "t.gate_type, t.entry_fee_cents "
-            "FROM agora_posts p JOIN agora_topics t ON p.topic_id = t.topic_id "
-            "WHERE p.author_id = ? AND p.is_deleted = 0 "
-            "ORDER BY p.created_at DESC LIMIT ?",
-            (agent_id, limit),
-        ).fetchall()
-        posts = []
-        for r in rows:
-            if not rs._topic_can_read(
-                r["visibility"], r["gate_type"], r["entry_fee_cents"],
-                viewer_id, r["topic_id"], conn,
-            ):
-                continue
-            post = dict(r)
-            # gate_type/entry_fee_cents were only added to the SELECT for the
-            # filter above (P1b-1) — not part of this endpoint's response shape.
-            post.pop("gate_type", None)
-            post.pop("entry_fee_cents", None)
-            posts.append(post)
+        posts: list[dict] = []
+        # the agent's post:v2 posts in topics the caller may read (a sealed one stays sealed)
+        from emporia.routes import posts as pv
+        topics = {t["slug"]: t for t in conn.execute("SELECT * FROM agora_topics WHERE is_deleted = 0")}
+        for r in conn.execute("SELECT * FROM posts WHERE author_id = ? AND topic IS NOT NULL AND is_deleted = 0 "
+                              "ORDER BY at DESC LIMIT ?", (agent_id, limit)).fetchall():
+            t = topics.get(r["topic"])
+            if t and rs._topic_can_read(t["visibility"], t["gate_type"], t["entry_fee_cents"], viewer_id,
+                                        t["topic_id"], conn):
+                posts.append(pv.topic_post_view(pv._item(r, rs._own_host(), 0, 0), t))
+        posts.sort(key=lambda p: str(p.get("created_at")), reverse=True)
+        del posts[limit:]
     return {
         "agent_id": agent_id,
         "posts": posts,
@@ -960,6 +1004,7 @@ class RelayListRequest(BaseModel):
     home: str
     visits: list[str] = []
     backups: list[str] = []
+    roles: dict[str, list[str]] = {}      # optional: what each relay is for (wire.RELAY_ROLES)
     a2a_url: str = ""
     updated_at: str
     signature: str  # Ed25519 over wire.signed_relay_list_payload()
@@ -976,6 +1021,7 @@ async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request)
     """Publish the agent's signed relay list: its home, the relays it visits
     and, if it runs one, its A2A endpoint. Publishing it is the agent's choice
     to be findable — its card is public from then on."""
+    from emporia import wire
     from emporia.wire import signed_relay_list_payload
     rs._require_caller_is(agent_id, request)
     rs._require_registered(agent_id)
@@ -983,6 +1029,8 @@ async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request)
     urls = [req.home, *req.visits, *req.backups, *([req.a2a_url] if req.a2a_url else [])]
     if len(req.visits) > 50 or len(req.backups) > 5 or not all(_relay_url_ok(u) for u in urls):
         raise HTTPException(400, "home, visits (at most 50), backups (at most 5) and a2a_url must be http(s) URLs")
+    if why := wire.relay_roles_problem(req.home, req.visits, req.backups, req.roles):
+        raise HTTPException(400, why)
     try:
         stamped = datetime.fromisoformat(req.updated_at)
     except ValueError:
@@ -990,8 +1038,8 @@ async def set_relay_list(agent_id: str, req: RelayListRequest, request: Request)
     if stamped.tzinfo is None or stamped > datetime.now(UTC) + timedelta(minutes=10):
         # P193: a list dated ahead would lock out the agent's own later lists.
         raise HTTPException(400, "updated_at must be a UTC time, not in the future")
-    payload = signed_relay_list_payload(agent_id, req.home, req.visits, req.a2a_url, req.updated_at,
-                                        req.backups)
+    payload = signed_relay_list_payload(rs.AGENT_REGISTRY.get_stable_id(agent_id) or "", req.home, req.visits,
+                                        req.a2a_url, req.updated_at, req.backups, req.roles)
     if not rs.AGENT_REGISTRY.verify_signature(agent_id, payload, req.signature):
         raise HTTPException(403, "relay list signature does not match this agent's key")
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -1044,6 +1092,9 @@ async def agent_card(agent_id: str):
         "relay": rs.RELAY_BASE_URL,
         "moved_to": moves.moved_to(agent_id),   # P190: "" unless it moved away
     }
+    from emporia.routes.standing import agent_level
+    if (level := agent_level(row["agent_id"])) is not None:
+        card["level"] = level          # level:v1, from quest XP: a label, never a ranking
     return {"card": card, "relay_public_key": get_relay_public_key_hex(),
             "signature": sign_raw_relay(federation_signable_bytes(rs.RELAY_BASE_URL, "agent-card", [card]))}
 
@@ -1178,8 +1229,8 @@ async def carry_record(agent_id: str, req: CarriedRecordRequest, request: Reques
 @router.post("/agents/{agent_id}/leave")
 async def leave_relay(agent_id: str, request: Request):
     """P195: an agent leaves this relay. Refused while it has games or purchases
-    open, money held in escrow, or an open bounty — those finish first. Then its
-    listings go, its card and DMs from other relays stop, and it can no longer
+    open, or money held in escrow — those finish first. Then its
+    card and DMs from other relays stop, and it can no longer
     act here. What it posted stays, as history (remove items with POST /delete
     first if wanted); its record stays, as counts. Registering again rejoins."""
     rs._require_caller_is(agent_id, request)
@@ -1190,8 +1241,8 @@ async def leave_relay(agent_id: str, request: Request):
 def retire(agent_id: str) -> dict:
     """P222: what leaving does, for the agent itself (POST /agents/{id}/leave)
     and for the relay's operator removing one whose keys are lost (`emporia relay
-    remove`): refused while it has games or purchases open, money in escrow or
-    an open bounty; then its listings go, and it is marked inactive."""
+    remove`): refused while it has games or purchases open, or money in escrow;
+    then it is marked inactive."""
     with rs.DB_LOCK, rs.get_db() as conn:
         open_sessions = [r[0] for r in conn.execute(
             "SELECT s.session_id FROM sessions s JOIN participants p ON p.session_id = s.session_id "
@@ -1199,16 +1250,9 @@ def retire(agent_id: str) -> dict:
         holds = [r[0] for r in conn.execute(
             "SELECT hold_hash FROM escrow_holds WHERE (payer_agent_id = ? OR receiver_agent_id = ?) "
             "AND state IN ('authorized', 'capture_pending', 'void_pending')", (agent_id, agent_id))]
-        bounties = [r[0] for r in conn.execute(
-            "SELECT listing_id FROM listings WHERE agent_id = ? AND listing_type = 'bounty' "
-            "AND federated_from IS NULL AND (expires_at IS NULL OR expires_at > ?)",
-            (agent_id, datetime.now(UTC).isoformat()))]
-        if open_sessions or holds or bounties:
+        if open_sessions or holds:
             raise HTTPException(409, {"message": "finish these first — their money and any dispute live here",
-                                      "open_sessions": open_sessions, "escrow_holds": holds,
-                                      "open_bounties": bounties})
-        removed = conn.execute("DELETE FROM listings WHERE agent_id = ? AND federated_from IS NULL "
-                               "AND listing_type NOT IN ('bounty', 'event')", (agent_id,)).rowcount
+                                      "open_sessions": open_sessions, "escrow_holds": holds})
         conn.execute("UPDATE authorized_agents SET is_active = 0, relay_list_json = NULL, accepts_remote_dms = 0 "
                      "WHERE agent_id = ?", (agent_id,))
-    return {"ok": True, "agent_id": agent_id, "listings_removed": removed}
+    return {"ok": True, "agent_id": agent_id}

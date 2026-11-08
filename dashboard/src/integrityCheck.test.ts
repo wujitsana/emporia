@@ -340,7 +340,7 @@ describe("room chain head pinning (localStorage TOFU store)", () => {
         async () => ({
           verified: true, message: "chain valid (2 messages)",
           chain_head: DM_GOLDEN.chainHead, message_count: DM_GOLDEN.messages.length,
-          unchained_prefix: 0, origin_relay: DM_GOLDEN.relayUrl,
+          origin_relay: DM_GOLDEN.relayUrl,
           origin_public_key_hex: DM_GOLDEN.relayPubkeyHex, signature: DM_GOLDEN.signature,
         }),
         async () => ({ messages: DM_GOLDEN.messages }),
@@ -372,7 +372,7 @@ describe("room chain head pinning (localStorage TOFU store)", () => {
         async () => ({
           verified: true, message: "chain valid (2 messages)",
           chain_head: DM_GOLDEN.chainHead, message_count: DM_GOLDEN.messages.length,
-          unchained_prefix: 0, origin_relay: DM_GOLDEN.relayUrl,
+          origin_relay: DM_GOLDEN.relayUrl,
           origin_public_key_hex: DM_GOLDEN.relayPubkeyHex, signature: DM_GOLDEN.signature,
         }),
         async () => ({ messages: DM_GOLDEN.messages }),
@@ -384,26 +384,18 @@ describe("room chain head pinning (localStorage TOFU store)", () => {
 
     /** Build a signed DM-chain response plus its message list. */
     async function makeThread(opts: {
-      relayUrl: string; threadId: string; contents: string[]; unchainedPrefix?: number;
+      relayUrl: string; threadId: string; contents: string[];
     }) {
       const secretKey = ed25519.utils.randomSecretKey();
       const pubHex = bytesToHex(ed25519.getPublicKey(secretKey));
       const messages: any[] = [];
       let prev: string | null = null;
-      // Unchained rows come first and carry no hash, exactly as pre-P28 rows do.
-      for (let i = 0; i < (opts.unchainedPrefix ?? 0); i++) {
-        messages.push({
-          sender_id: "a", content: `legacy ${i}`,
-          created_at: `2020-01-01T00:00:0${i}.000000+00:00`, chain_hash: null,
-          nonce: `legacy_${i}`, seq: i + 1,
-        });
-      }
       for (const [i, content] of opts.contents.entries()) {
         const created_at = `2026-04-04T00:00:${String(i).padStart(2, "0")}.000000+00:00`;
         prev = await computeChainHash(prev, "a", content, created_at);
         messages.push({
           sender_id: "a", content, created_at, chain_hash: prev,
-          nonce: `n_${i}`, seq: (opts.unchainedPrefix ?? 0) + i + 1,
+          nonce: `n_${i}`, seq: i + 1,
         });
       }
       const chainHead = prev;
@@ -414,7 +406,7 @@ describe("room chain head pinning (localStorage TOFU store)", () => {
       const signature = bytesToHex(ed25519.sign(new TextEncoder().encode(signable), secretKey));
       const fetchChain = async () => ({
         verified: true, message: "ok", chain_head: chainHead,
-        message_count: opts.contents.length, unchained_prefix: opts.unchainedPrefix ?? 0,
+        message_count: opts.contents.length,
         origin_relay: opts.relayUrl, origin_public_key_hex: pubHex, signature,
       });
       const fetchMessages = async () => ({ messages });
@@ -430,7 +422,6 @@ describe("room chain head pinning (localStorage TOFU store)", () => {
       const result = await verifyDmChainFromRelay(relayUrl, threadId, fetchChain, fetchMessages);
       expect(result.verified).toBe(true);
       expect(result.chain_verified_scope).toBe("genesis");
-      expect(result.unchained_prefix).toBe(0);
       // `dm|` namespacing keeps a thread's pin from ever colliding with a room's.
       expect(getPinnedRoomChainHead(`${relayUrl}|dm|${threadId}`)).toEqual({
         pin: { chain_head: chainHead, origin_public_key_hex: pubHex },
@@ -501,7 +492,7 @@ describe("room chain head pinning (localStorage TOFU store)", () => {
       const signature = bytesToHex(ed25519.sign(new TextEncoder().encode(signable), secretKey));
       const fetchChain = async () => ({
         verified: true, message: "ok", chain_head: clean.head, message_count: 250,
-        unchained_prefix: 0, origin_relay: relayUrl,
+        origin_relay: relayUrl,
         origin_public_key_hex: pubHex, signature,
       });
 
@@ -536,19 +527,17 @@ describe("room chain head pinning (localStorage TOFU store)", () => {
       expect(after.verified).toBe(false);
     });
 
-    it("reports chained_start, not genesis, when messages predate the chain", async () => {
+    it("fails when a message has no chain hash", async () => {
       const relayUrl = "http://relay-dm3.example";
-      const threadId = "dm_prefix";
+      const threadId = "dm_unhashed";
       const { fetchChain, fetchMessages } = await makeThread({
-        relayUrl, threadId, contents: ["modern one", "modern two"], unchainedPrefix: 2,
+        relayUrl, threadId, contents: ["one", "two"],
       });
-      const result = await verifyDmChainFromRelay(relayUrl, threadId, fetchChain, fetchMessages);
-      expect(result.verified).toBe(true);
-      // Reaching the start of the CHAIN is not reaching the thread's first
-      // message; calling this "genesis" would claim coverage it doesn't have.
-      expect(result.chain_verified_scope).toBe("chained_start");
-      expect(result.unchained_prefix).toBe(2);
-      expect(result.reason).toContain("not covered");
+      const page = await fetchMessages();
+      page.messages[0].chain_hash = null;
+      const result = await verifyDmChainFromRelay(relayUrl, threadId, fetchChain, async () => page);
+      expect(result.verified).toBe(false);
+      expect(result.reason).toContain("no chain hash");
     });
   });
 

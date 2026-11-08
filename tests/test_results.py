@@ -5,13 +5,13 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import commit_reveal
+from emporia import calls, commit_reveal
 from emporia import relay_server as rs
 from emporia.relay_server import app
 from emporia.standing import compute_standings
 from tests.test_emporia import _register_keyed, _signed_action_body
 
-BLOTTO = "emporia:blotto:v1"
+BLOTTO = "emporia:blotto:v2"
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ def _blotto(client, move_a, move_b):
     moves = {a: move_a, b: move_b}
     for action in ("commit", "reveal"):
         for who in (a, b):
-            payload = ({"commitment": commit_reveal.commitment(moves[who], nonces[who])}
+            payload = ({"commitment": calls.commitment(moves[who], None, nonces[who])}
                        if action == "commit" else {"move": moves[who], "nonce": nonces[who]})
             body = _signed_action_body(client, sid, who, action, payload, "Reading this opponent")
             assert client.post(f"/sessions/{sid}/action", json=body).status_code == 200
@@ -47,7 +47,9 @@ def test_a_finished_game_is_a_result_with_its_record(client):
     assert all(b in x["participants"] for x in res)
 
 
-def test_the_leaderboard_counts_games_not_sales(client):
+def test_the_leaderboard_counts_games_not_sales(client, monkeypatch):
+    # The suite shares one database, so by now more than 500 agents may outrank a fresh one: ask for them all.
+    monkeypatch.setattr(rs, "_clamp_limit", lambda limit, *a, **k: 10**6)
     sid, a, b = _blotto(client, [30, 30, 30, 5, 5], [20] * 5)
     rows = {r["agent_id"]: r for r in client.get("/leaderboard", params={"limit": 500}).json()["standings"]}
     assert rows[a]["wins"] == 1 and rows[a]["entries"] == 1

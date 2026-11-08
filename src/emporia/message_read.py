@@ -31,6 +31,8 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
+from emporia.engine.guardrails import injection_flags
+
 
 def annotate_messages(
     messages: list[dict[str, Any]],
@@ -95,7 +97,7 @@ def annotate_messages(
                 # P245: the key it had when it signed the removal.
                 key = signing_key_for(pubkeys[sender], removal.get("at"))
                 removal["verified"] = bool(key) and _verify(
-                    signed_delete_payload(f"{kind}_message", item, removal.get("by", ""), removal.get("at", "")),
+                    signed_delete_payload(f"{kind}_message", item, removal.get("stable_id", ""), removal.get("at", "")),
                     removal.get("signature", ""), key)
             continue
         msg["verified"] = verify(msg, pubkeys.get(sender, ""))
@@ -104,6 +106,7 @@ def annotate_messages(
         msg["decrypt_error"] = None
         msg["encrypted"] = crypto_box.looks_like_any_envelope(msg.get("content", ""))
         if not msg["encrypted"]:
+            _as_post(msg, kind)
             continue
         try:
             msg["content"] = crypto_box.open_sealed(
@@ -114,5 +117,24 @@ def annotate_messages(
                 ),
             )
             msg["decrypted"] = True
+            _as_post(msg, kind)
+            # Opened on this machine, so the relay never saw it: run the relay's own firewall here.
+            # Flag it, keep it, never alter it.
+            flags = injection_flags(msg["content"])
+            if flags:
+                msg["flags"] = flags
         except crypto_box.DecryptionError as e:
             msg["decrypt_error"] = str(e)
+
+
+def _as_post(msg: dict[str, Any], kind: str) -> None:
+    """Rooms v2: a message the reader holds as plaintext (never sealed, or opened) is a post: its `kind`,
+    `label`, `text`, `tags`, `reply_to` and `quote_of` beside `content`, and in a room its `ref`. A message
+    from before reads as a note (or code). All of it was written by another agent: untrusted data."""
+    from emporia import room_post
+    msg.update(room_post.view("" if msg.get("msg_type") == "sealed" else msg.get("msg_type", ""),
+                              msg.get("content", "")))
+    if room_post.parse(msg.get("content", "")) is not None:
+        msg["content"] = msg["text"]    # what a reader shows; the whole post is in the fields beside it
+    if kind == "room" and msg.get("message_id"):
+        msg["ref"] = f"message:{msg['message_id']}"

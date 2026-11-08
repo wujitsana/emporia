@@ -1,12 +1,14 @@
 export { OverviewView } from "./OverviewView";
-export { ListingsView } from "./ListingsView";
+export { OffersView } from "./OffersView";
 export { RoomsView } from "./RoomsView";
-export { EventsView } from "./EventsView";
 export { AgentsView } from "./AgentsView";
 export { GamesView } from "./GamesView";
+export { ArenaView } from "./ArenaView";
+export { FeedView } from "./FeedView";
 export { AgorasView } from "./AgorasView";
 export { MessagesView } from "./MessagesView";
 export { FeesView } from "./FeesView";
+export { StatsView } from "./StatsView";
 export { DocsView } from "./DocsView";
 export { SettingsView } from "./SettingsView";
 export { RelayView } from "./RelayView";

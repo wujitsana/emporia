@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from emporia import agent_wallet, cli, identity, mcp_server, networks
-from tests.test_cli import profiles  # noqa: F401  (fixture)
 
 BASE = "eip155:84532"
 SOL = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
@@ -195,7 +194,9 @@ def test_setup_agent_asks_and_one_phrase_is_the_recommended_choice(profiles, mon
     # existing profile? no · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20
     # role: 1 (marketplace) · wallets: 3 (one phrase) · networks: Enter · caps: 5, 20 · ask above $2
     # · the signer (P204): Enter, not now
-    _typing(monkeypatch, "1", "3", "", "5", "20", "2", "")
+    # first: "use the recommended settings for everything?" no · … · after the signer: wake (Enter),
+    # the bio (Enter: the suggestion), the optional features (Enter keeps both ticked), rounds' interval (Enter: every 4 hours)
+    _typing(monkeypatch, "n", "1", "3", "", "5", "20", "2", "", "", "", "", "")
     monkeypatch.setattr(cli, "_choose_relay", lambda current="": "")   # P177: tested on its own
     shown = []
     monkeypatch.setattr(cli, "_show_phrase", lambda phrase, name: shown.append(phrase) or True)
@@ -753,8 +754,6 @@ def test_doctor_says_a_phrase_is_not_backed_up(profiles, capsys, monkeypatch):
     root, _ = profiles
     with patch.dict(os.environ):
         cli.main(["setup", "agent", "upsilon", "--keys", "files", "--wallet", "--solana"])
-    from emporia import nous_token
-    monkeypatch.setattr(nous_token, "from_hermes", lambda profile=None: None)
     capsys.readouterr()
     cli.main(["doctor", "--profiles-root", str(root)])
     assert "emporia wallet backup upsilon" in capsys.readouterr().out
@@ -768,7 +767,7 @@ def test_setup_offers_a_solana_only_wallet(profiles, monkeypatch):
     monkeypatch.setattr(cli, "_choose_relay", lambda current="": "")
     keys = [k for k, _ in cli.WALLET_MODES]
     assert keys[:4] == ["none", "evm", "phrase", "separate"] and "solana" in keys, "earlier answers keep their numbers"
-    _typing(monkeypatch, "1", str(keys.index("solana") + 1), "", "5", "20", "2", "")
+    _typing(monkeypatch, "n", "1", str(keys.index("solana") + 1), "", "5", "20", "2", "", "", "", "", "")
     with patch.dict(os.environ):
         assert cli.main(["setup", "agent", "phi", "--keys", "files", "--playbook", "custom"]) == 0
     keys_dir = root / "phi" / "home" / ".hermes" / "keys"
@@ -895,7 +894,7 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     monkeypatch.setattr(cli, "this_profile", lambda: root / "keeper")
     monkeypatch.setattr("shutil.which", lambda _: None)            # no Docker here
     folder = tmp_path / "emporia-relay"
-    _typing(monkeypatch, "", "1,2", "0x" + "ab" * 20)            # Nous · modules: money, log · fee address
+    _typing(monkeypatch, "1,2", "0x" + "ab" * 20)                # modules: money, log · fee address
     assert cli.main(["relay", "host", "--run", "docker", "--dir", str(folder), "--domain", "relay.example.com",
                      "--admin", "keeper", "--access", "open", "--transparency-log", "on"]) == 0
     out = capsys.readouterr().out
@@ -907,11 +906,11 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     assert not compose["services"]["relay"]["build"].startswith("/")          # host paths differ
     assert "reverse_proxy relay:8088" in (folder / "Caddyfile").read_text()
     env = _env_of(folder)
-    assert env["EMPORIA_RELAY_URL"] == "https://relay.example.com" and env["EMPORIA_REQUIRE_NOUS"] == "1"
-    assert env["EMPORIA_ESCROW_FEE_RECEIVER"] == "0x" + "ab" * 20 and env["EMPORIA_TRANSPARENCY_LOG"] == "on"
+    assert env["EMPORIA_RELAY_URL"] == "https://relay.example.com" and "EMPORIA_REQUIRE_NOUS" not in env
+    assert env["EMPORIA_FEE_ADDRESS"] == "0x" + "ab" * 20 and env["EMPORIA_TRANSPARENCY_LOG"] == "on"
     assert env["EMPORIA_AGENT_ID"] and oct((folder / ".env").stat().st_mode)[-3:] == "600"
     assert _env_of(root / "keeper")["EMPORIA_RELAY_URL"] == "http://relay:8088"
-    assert "EMPORIA_ESCROW_FEE_RECEIVER" not in _env_of(root / "keeper")      # the relay's, in its own folder
+    assert "EMPORIA_FEE_ADDRESS" not in _env_of(root / "keeper")      # the relay's, in its own folder
     (folder / "compose.yaml").write_text("services: {}\n")            # someone else's: not replaced
     _typing(monkeypatch)
     assert cli.main(["relay", "host", "--run", "docker", "--dir", str(folder), "--domain", "relay.example.com",
@@ -939,7 +938,7 @@ def test_relay_host_as_a_service_on_a_server_of_its_own(profiles, monkeypatch, c
     monkeypatch.setattr("shutil.which", lambda _: None)            # nothing runs here: commands are shown
     monkeypatch.setattr("emporia.relay_host.in_container", lambda: False)   # this test may run in one
     folder = tmp_path / "emporia-relay"
-    _typing(monkeypatch, "", "")                                   # Nous · modules: none ticked
+    _typing(monkeypatch, "")                                       # modules: none ticked
     assert cli.main(["relay", "host", "--run", "service", "--dir", str(folder), "--domain", "relay.example.com",
                      "--admin", "warden", "--access", "closed"]) == 0
     out = capsys.readouterr().out
@@ -1027,9 +1026,9 @@ def test_relay_config_shows_checks_and_writes_settings(tmp_path, monkeypatch, ca
     folder.mkdir()
     monkeypatch.setattr(cli, "_TTY", False)
     run = lambda *a: cli.main(["relay", "config", *a, "--dir", str(folder)])   # noqa: E731
-    assert run("set", "OPERATOR_FEE_BPS", "300") == 0 and _env_of(folder)["OPERATOR_FEE_BPS"] == "300"
-    assert run("set", "OPERATOR_FEE_BPS", "lots") == 1
-    assert run("set", "OPERATOR_FEE_BPS", "5000") == 1                       # at most 20%
+    assert run("set", "EMPORIA_FEE_BPS", "300") == 0 and _env_of(folder)["EMPORIA_FEE_BPS"] == "300"
+    assert run("set", "EMPORIA_FEE_BPS", "lots") == 1
+    assert run("set", "EMPORIA_FEE_BPS", "5000") == 1                       # at most 10%
     assert run("set", "EMPORIA_RELAY_ACCESS", "closed") == 0
     assert "Applies within seconds" in capsys.readouterr().out
     assert run("set", "EMPORIA_RELAY_ACCESS", "wide-open") == 1
@@ -1038,10 +1037,10 @@ def test_relay_config_shows_checks_and_writes_settings(tmp_path, monkeypatch, ca
     assert run("set", "STRIPE_SECRET_KEY", "sk_live_x") == 1                  # never on the command line
     assert "type it hidden" in capsys.readouterr().out and "sk_live_x" not in _env_of(folder).values()
     assert run("set", "NOT_A_SETTING", "x") == 1
-    assert run("unset", "OPERATOR_FEE_BPS") == 0 and "OPERATOR_FEE_BPS" not in _env_of(folder)
+    assert run("unset", "EMPORIA_FEE_BPS") == 0 and "EMPORIA_FEE_BPS" not in _env_of(folder)
     assert run("show") == 0
     out = capsys.readouterr().out
-    assert "EMPORIA_RELAY_ACCESS" in out and "closed" in out and "250 (default)" in out
+    assert "EMPORIA_RELAY_ACCESS" in out and "closed" in out and "100 (default)" in out
 
 
 def test_relay_config_is_interactive_in_a_terminal(tmp_path, monkeypatch):
@@ -1049,10 +1048,10 @@ def test_relay_config_is_interactive_in_a_terminal(tmp_path, monkeypatch):
     folder.mkdir()
     from emporia import relay_config as rc
     names = [s.name for s in rc.SETTINGS]
-    fee = names.index("OPERATOR_FEE_BPS") + 1
+    fee = names.index("EMPORIA_FEE_BPS") + 1
     _typing(monkeypatch, str(fee), "400", str(len(names) + 1))   # pick the fee · 400 · done
     assert cli.main(["relay", "config", "--dir", str(folder)]) == 0
-    assert _env_of(folder)["OPERATOR_FEE_BPS"] == "400"
+    assert _env_of(folder)["EMPORIA_FEE_BPS"] == "400"
 
 
 def test_a_docker_relays_secret_is_a_file_typed_hidden(tmp_path, monkeypatch, capsys):

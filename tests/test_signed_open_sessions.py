@@ -69,9 +69,9 @@ def test_a_game_with_a_named_opponent_is_never_offered(client):
 
 
 @pytest.mark.parametrize("field,value", [
-    ("payment_rules", {"mode": "x402", "stake_per_participant": "50"}),
+    ("payment_rules", {"mode": "x402", "price": "50"}),
     ("config", {"creator_plays": "black"}),
-    ("module_type", "emporia:blotto:v1"),
+    ("module_type", "emporia:blotto:v2"),
     ("creator_stable_id", "00" * 32),
 ])
 def test_a_relay_cannot_change_an_offered_games_terms(client, field, value):
@@ -115,7 +115,7 @@ def test_the_mcp_tool_offers_and_scan_relays_drops_a_forged_game(client, monkeyp
     original = federation._lobby_items
 
     def tampered():
-        return [{**x, "payment_rules": {"mode": "x402", "stake_per_participant": "99"}}
+        return [{**x, "payment_rules": {"mode": "x402", "price": "99"}}
                 if x["session_id"] == made["session_id"] else x for x in original()]
 
     with patch.object(federation, "_lobby_items", tampered), patch("httpx.get", fake_get):

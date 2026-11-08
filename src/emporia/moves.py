@@ -5,7 +5,9 @@ key, so any relay can check it and no relay, the old one included, can forge or
 block it. The old relay, once it has that list, answers "moved to" for 90 days
 wherever the agent is asked for: its card, its record, a DM. Open games and
 escrow holds stay where they are and must finish first; the record the old
-relay signed travels with the agent and is shown as that relay's word.
+relay signed travels with the agent and is shown as that relay's word ("history from R"); it is never
+added to anything this relay computes: XP, levels, starter limits and the season board are of this relay's
+own records only.
 """
 
 from __future__ import annotations
@@ -69,6 +71,8 @@ def carried_record(signed: dict[str, Any], agent_key: str) -> dict[str, Any]:
     if not verify_raw(federation_signable_bytes(signed.get("relay", ""), "record", [record]),
                       signed.get("signature", ""), signed.get("relay_public_key", "")):
         raise HTTPException(422, "the record's signature does not match the key its relay presented")
-    return {**record, "relay": signed.get("relay"), "relay_public_key": signed.get("relay_public_key"),
+    relay = signed.get("relay", "")
+    # Shown as that relay's word, and never counted here: not in XP, levels, starter limits or the season board.
+    return {**record, "label": f"history from {relay}", "counts_here": False, "relay": signed.get("relay"), "relay_public_key": signed.get("relay_public_key"),
             "signature": signed.get("signature"),
             "relay_key_fingerprint": fingerprint(signed.get("relay_public_key", ""))}

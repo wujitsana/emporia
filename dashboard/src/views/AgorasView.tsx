@@ -5,14 +5,12 @@ import Indent from "@kit/Indent";
 import RowSpaceBetween from "@kit/RowSpaceBetween";
 import SidebarLayout from "@kit/SidebarLayout";
 import Text from "@kit/Text";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { AgoraPost, AgoraTopic } from "../api";
 import { ViewBody } from "../ui/layout";
 import { FlatRailItem } from "../ui/FlatRailItem";
-import { AdvertisedBadge, HostLine, OnOtherRelays } from "../ui/Adverts";
-import { topicRow } from "../advertFormat";
-import { useInterval } from "../hooks";
+import { HostLine } from "../ui/Adverts";
 import { SegmentTabs } from "../ui/SegmentTabs";
 import { ViewStatus } from "../ui/ViewStatus";
 import { VIEWER_ID } from "../relayEnv";
@@ -53,8 +51,8 @@ function GateBadge({ gate, fee }: { gate?: string; fee?: number }) {
  * settles that at the source rather than by adding provenance to work around it.
  *
  * The number stays: reading what agents make of each other's posts is exactly
- * what a visibility surface is for. Agents vote through `vote_agora_post` /
- * `vote_agora_comment` (MCP and SDK).
+ * what a visibility surface is for. It is the likes other operators gave the post
+ * (`react`); an old row shows the score it ended with.
  */
 function VoteScore({ score }: { score: number }) {
   return (
@@ -90,9 +88,6 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
   const [err, setErr] = useState<string | null>(null);
   const [loadingTopics, setLoadingTopics] = useState(true);
   const [postsDenied, setPostsDenied] = useState(false);
-  // P249: topics that relays this one links to advertised — read-only, joined on their own relay.
-  const [elsewhere, elsewhereLoading, elsewhereError] = useInterval(() => api.agoraTopicsElsewhere(), 30_000);
-  const elsewhereRows = useMemo(() => (elsewhere?.topics ?? []).map(topicRow), [elsewhere]);
 
   // Loading starts over whenever the visibility filter changes (state starts
   // true for the first load); compared while rendering, not set from an effect.
@@ -210,7 +205,11 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
           <RowSpaceBetween>
             <Text style={{ fontSize: 13 }}>{t.name}</Text>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-              <AdvertisedBadge advertised={t.advertised} />
+              {t.encrypted ? (
+                <span className="e-gate-badge e-gate-badge--invite" title="sealed to its members: the relay cannot read it">
+                  encrypted
+                </span>
+              ) : null}
               <GateBadge gate={t.gate_type} fee={t.entry_fee_cents} />
               <Text className="e-dim e-status-txt">{t.post_count}p</Text>
             </div>
@@ -219,7 +218,6 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
           <HostLine host={t.host} />
         </FlatRailItem>
       ))}
-      <OnOtherRelays what="topics" rows={elsewhereRows} loading={elsewhereLoading} error={elsewhereError} />
     </div>
   );
 
@@ -244,13 +242,17 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
         <ActionButton onClick={() => setSelectedPost(null)}>← topic</ActionButton>
       </div>
       <div className="e-agora-detail__scroll">
-        <Text className="e-agora-detail__title">{selectedPost.title}</Text>
+        <Text className="e-agora-detail__title">{selectedPost.sealed ? "Sealed post" : selectedPost.title}</Text>
         <Text className="e-dim e-agora-detail__meta">
-          <AgentLink agent_id={selectedPost.author_id} navigate={navigate} /> · {selectedPost.created_at?.slice(0, 16)}
+          <AgentLink agent_id={selectedPost.author_id} level={selectedPost.author_level} navigate={navigate} /> · {selectedPost.created_at?.slice(0, 16)}
           {selectedPost.flair ? ` · ${selectedPost.flair}` : ""} · score {selectedPost.vote_score}
           {likes !== null ? ` · ❤ ${likes}` : ""}
         </Text>
-        <Text className="e-agora-detail__body">{selectedPost.content}</Text>
+        <Text className="e-agora-detail__body">
+          {selectedPost.sealed
+            ? "Sealed to the members of this topic: the relay cannot read it, and neither can this view. Their agents open it on their own machines."
+            : selectedPost.content}
+        </Text>
         <Divider />
         <Text className="e-dim">comments ({selectedPost.comment_count})</Text>
         <div className="e-agora-comments">
@@ -267,7 +269,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
                   <AgentLink agent_id={c.author_id} navigate={navigate} /> · {c.created_at?.slice(0, 16)}{" "}
 <VoteScore score={c.vote_score} />
                 </Text>
-                <Text>{c.content}</Text>
+                <Text>{c.sealed ? "(sealed to the topic's members)" : c.content}</Text>
               </div>
             ))
           )}
@@ -297,8 +299,9 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
                 <VoteScore score={p.vote_score} />
                 <div>
                   <div className="e-post-title">
-                    {p.is_pinned ? <span title="pinned">📌</span> : null}
+                    {p.is_pinned ? <span title="pinned" className="e-faint">[pinned]</span> : null}
                     <Text style={{ fontWeight: 600 }}>{p.title}</Text>
+                    {p.source === "post:v2" && p.kind ? <Text className="e-dim">[{p.kind}]</Text> : null}
                     {p.flair ? <Text className="e-dim">[{p.flair}]</Text> : null}
                     <Text className="e-faint">{POST_TYPE_ICON[p.post_type] ?? p.post_type}</Text>
                   </div>
@@ -308,7 +311,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
                         <span className="e-badge e-badge--dim">{p.topic_name}</span>{" "}
                       </>
                     ) : null}
-                    <AgentLink agent_id={p.author_id} navigate={navigate} /> · {p.created_at?.slice(0, 16)} · {p.comment_count} comments
+                    <AgentLink agent_id={p.author_id} level={p.author_level} navigate={navigate} /> · {p.created_at?.slice(0, 16)} · {p.comment_count} comments
                   </Text>
                 </div>
               </div>

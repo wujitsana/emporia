@@ -22,25 +22,6 @@ def test_merge_env_file_changes_only_what_it_sets_and_keeps_a_backup(tmp_path):
     assert cli.merge_env_file(env, {"NEW": "x"}) == [], "no change, no new backup"
 
 
-@pytest.fixture
-def profiles(tmp_path, monkeypatch):
-    """A relay profile (`op`) holding the checkout, under a temporary profiles root."""
-    root = tmp_path / "profiles"
-    op = root / "op"
-    op.mkdir(parents=True)
-    (op / "config.yaml").write_text(yaml.dump(
-        {"model": {"provider": "openrouter", "default": "deepseek/deepseek-v4-flash-0731"}}))
-    (op / ".env").write_text("OPENROUTER_API_KEY=sk-or-x\nSTRIPE_SECRET_KEY=sk_test_relay\n")
-    monkeypatch.setattr(cli, "this_profile", lambda: op)
-    monkeypatch.setattr(cli, "health", lambda timeout=3.0: None)
-    inst = cli.installer()
-    monkeypatch.setattr(inst, "_hermes_profile_create", lambda name: (root / name).mkdir())
-    monkeypatch.setattr(inst, "install_platform_plugin", lambda *a, **k: None)
-    monkeypatch.setattr(inst, "_install_skill_link", lambda *a, **k: None)
-    monkeypatch.setattr(inst, "_TOUCHED_PROFILES", [])
-    return root, op
-
-
 def test_setup_agent_makes_a_slim_profile_with_its_own_wallet(profiles, capsys):
     root, _ = profiles
     with patch.dict(os.environ):
@@ -65,13 +46,10 @@ def test_doctor_names_each_problem_with_its_fix(profiles, capsys, monkeypatch):
     bad.mkdir()
     (bad / "config.yaml").write_text(yaml.dump(
         {"mcp_servers": {"emporia": {"env": {"EMPORIA_AGENT_ID": "legacy"}}}}))
-    # EMPORIA_NOUS_VERIFY=1: a missing Nous login is a problem only for an agent that verifies.
-    (bad / ".env").write_text("STRIPE_SECRET_KEY=sk_live_relays\nEMPORIA_NOUS_VERIFY=1\n")
+    (bad / ".env").write_text("STRIPE_SECRET_KEY=sk_live_relays\n")
     keys = bad / "home" / ".hermes" / "keys"
     keys.mkdir(parents=True)
     (keys / "legacy.priv").write_bytes(b"x" * 32)
-    from emporia import nous_token
-    monkeypatch.setattr(nous_token, "from_hermes", lambda profile=None: None)
     monkeypatch.setattr(cli, "hermes_home", lambda: root / "no-hermes")
     rc = cli.main(["doctor", "--profiles-root", str(root)])
     out = capsys.readouterr().out
@@ -79,7 +57,6 @@ def test_doctor_names_each_problem_with_its_fix(profiles, capsys, monkeypatch):
     assert "✗ not answering" in out and "emporia relay start" in out
     assert "lacks EMPORIA_DOTENV, EMPORIA_KEYS_DIR, EMPORIA_HERMES_BIN" in out
     assert "holds the relay's settings: STRIPE_SECRET_KEY" in out
-    assert "emporia login --profile legacy" in out
     assert "sk_live_relays" not in out, "doctor never prints a secret"
 
 
@@ -93,7 +70,7 @@ def test_setup_relay_writes_the_testnet_preset_and_makes_an_operator_key(profile
     dotenv = (op / ".env").read_text()
     assert "STRIPE_SECRET_KEY=sk_test_relay" in dotenv, "other lines are kept"
     assert "EMPORIA_ESCROW_CONTRACT=0xf96815976523E00e65Be8f34cA5e64b4f41EB19c" in dotenv
-    assert "EMPORIA_ESCROW_FEE_RECEIVER=0x" + "ab" * 20 in dotenv
+    assert "EMPORIA_FEE_ADDRESS=0x" + "ab" * 20 in dotenv
     assert (keys / "relay_operator.secp256k1").exists()
     assert "EMPORIA_OPERATOR_ADDRESS=0x" in dotenv
     assert "PRIVATE" not in dotenv.replace("EMPORIA_OPERATOR_PRIVATE_KEY", ""), "no key in the .env"
@@ -108,7 +85,7 @@ def test_doctor_says_when_the_relay_needs_a_restart():
     bundled = [t for t in MODULE_REGISTRY if t.startswith("emporia:")]
     assert cli._relay_code_behind({"schema_version": SCHEMA_VERSION, "modules": bundled}) == ""
     assert "schema" in cli._relay_code_behind({"schema_version": SCHEMA_VERSION - 1, "modules": bundled})
-    assert "emporia:two-thirds:v1" in cli._relay_code_behind(
+    assert "emporia:two-thirds:v2" in cli._relay_code_behind(
         {"schema_version": SCHEMA_VERSION, "modules": [t for t in bundled if "two-thirds" not in t]})
     assert cli._relay_code_behind({"modules": bundled}) == "it reports no schema version"
 
@@ -128,31 +105,24 @@ def _agent_profile(root, name="zed", env="", cfg=None):
 
 
 def _doctor(root, capsys, monkeypatch):
-    from emporia import nous_token
-    monkeypatch.setattr(nous_token, "from_hermes", lambda profile=None: None)
     cli.main(["doctor", "--all", "--profiles-root", str(root)])
     return capsys.readouterr().out
 
 
-def test_doctor_checks_old_skill_copies_api_server_and_turn_cap(profiles, capsys, monkeypatch):
+def test_doctor_checks_api_server_and_turn_cap(profiles, capsys, monkeypatch):
     import json
     import time
     root, _ = profiles
     prof = _agent_profile(root, env="API_SERVER_KEY=" + "k" * 20 + "\nAPI_SERVER_HOST=0.0.0.0\nEMPORIA_DAILY_TURNS=2\n")
     now = time.time()
     (prof / "emporia_turns.json").write_text(json.dumps({"turns": [now - 10, now - 100, now - 90000], "notified": 0}))
-    (prof / "skills" / "emporia").mkdir(parents=True)                 # P284's copy, before P295
-    (prof / "skills" / ".emporia-copies.json").write_text(json.dumps(["emporia"]))
     out = _doctor(root, capsys, monkeypatch)
-    assert "older copies of Emporia's skills in its skills/ (emporia)" in out and "emporia agent refresh zed" in out
     assert "api_server listens on 0.0.0.0" in out and "make zed act and pay" in out
     assert "relay-started turns in 24 h: 2 / 2 — at the cap" in out
     assert "k" * 20 not in out
 
-    cli.installer().remove_old_skill_copies(prof)
     (prof / ".env").write_text("API_SERVER_KEY=" + "k" * 20 + "\n")   # key alone: enabled, loopback default
     out = _doctor(root, capsys, monkeypatch)
-    assert "Emporia's skills come from its plugin, read-only" in out
     assert "api_server listens" not in out
     assert "relay-started turns in 24 h: 2 / 300" in out
 
@@ -168,23 +138,6 @@ def test_doctor_api_server_off_or_loopback_is_quiet(profiles, capsys, monkeypatc
     cfg["platforms"]["api_server"]["enabled"] = False
     (prof / "config.yaml").write_text(yaml.dump(cfg))
     assert "api_server listens" not in _doctor(root, capsys, monkeypatch)
-
-
-def test_old_copies_of_emporias_skills_are_removed_and_the_operators_own_kept(tmp_path, capsys):
-    """P295: the skills ship in the plugin, so what installers since P284 put in a
-    profile's skills/ — a link into the repo, or a recorded copy — goes; a folder
-    Emporia did not put there stays."""
-    import json
-    inst = cli.installer()
-    prof = tmp_path / "zed"
-    (prof / "skills" / "emporia-setup").mkdir(parents=True)
-    (prof / "skills" / "emporia.md").symlink_to(tmp_path / "gone")             # an older link
-    (prof / "skills" / ".emporia-copies.json").write_text(json.dumps(["emporia-setup"]))
-    (prof / "skills" / "emporia").mkdir()                                      # not recorded: the operator's
-    inst._install_skill_link(prof)
-    assert not (prof / "skills" / "emporia-setup").exists() and not (prof / "skills" / "emporia.md").is_symlink()
-    assert (prof / "skills" / "emporia").is_dir() and not (prof / "skills" / ".emporia-copies.json").exists()
-    assert "the plugin carries Emporia's skills now" in capsys.readouterr().out
 
 
 def test_the_plugin_passes_the_catalogs_own_validation_and_registers_everything(tmp_path):
@@ -221,7 +174,8 @@ print(json.dumps(got))
                          timeout=60, env={**os.environ, "HERMES_HOME": str(tmp_path), "PYTHONPATH": "/opt/hermes"})
     assert out.returncode == 0, out.stderr[-2000:]
     assert json.loads(out.stdout.strip().splitlines()[-1]) == {
-        "hooks": ["pre_tool_call", "transform_tool_result", "pre_llm_call"], "platform": "emporia",
+        "hooks": ["pre_tool_call", "transform_tool_result", "pre_llm_call", "post_llm_call", "pre_tool_call", "pre_llm_call",
+                  "pre_llm_call"], "platform": "emporia",
         "skills": ["emporia", "emporia-setup"], "cli": "emporia"}
 
 
@@ -492,7 +446,7 @@ def test_new_profile_is_refused_for_a_profile_that_holds_an_agent(profiles, caps
     with patch.object(cli_hints, "via_plugin", lambda runtime=None: True), patch.dict(os.environ):
         assert cli.main(["setup", "agent", "lambda", "--new-profile"]) == 1
     out = capsys.readouterr().out
-    assert "hermes emporia setup --profile lambda" in out and "`emporia setup agent" not in out, out
+    assert "hermes emporia setup --agent-profile lambda" in out and "`emporia setup agent" not in out, out
 
 
 def test_setup_agent_is_the_wizard_not_the_check_before_it():

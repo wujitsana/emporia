@@ -5,6 +5,8 @@ import type { RelayHealth } from "./hooks";
 import { toWsUrl } from "./hooks";
 import { resolveRelayUrl } from "./relayEnv";
 import { relayHost } from "./relayFormat";
+import { MODE, socketsCarried } from "./transport";
+import { moneyChip } from "./moneyChip";
 
 // P42: internal to this file — see the note on trustBadge in AgentsView.
 function relayWsOrigin(httpRelay?: string): string {
@@ -62,7 +64,7 @@ function StatusChip({
 /**
  * Relay connectivity in the header.
  * - REST / “API”: HTTP GET /health (relay up, version, guardrails).
- * - events: WebSocket /ws/events (live session/listing/event pushes to the dashboard).
+ * - events: WebSocket /ws/events (live session pushes to the dashboard).
  */
 export function RelayStrip({
   relayUrl,
@@ -79,7 +81,8 @@ export function RelayStrip({
 }) {
   const online = health?.status === "ok";
   const resolved = relayUrl && relayUrl.length > 0 ? relayUrl : resolveRelayUrl();
-  const host = relayHost(resolved);
+  // The Desktop page has no address of its own: it reaches the relay through Hermes.
+  const host = MODE === "desktop" ? "via Hermes" : relayHost(resolved);
   const wsEvents = relayEventsWsUrl(resolved);
 
   const meta = [health?.version ? `v${health.version}` : null, health?.guardrails_mode]
@@ -87,31 +90,40 @@ export function RelayStrip({
     .join(" · ");
 
   const restTitle = online
-    ? `Relay REST API is up (${resolved}/health)`
+    ? `Relay is up — its API answers (${resolved}/health)`
     : health
       ? `Relay HTTP unreachable (${resolved})`
       : `Checking relay health…`;
 
   const wsTitle = wsConnected
-    ? `Live event stream connected: ${wsEvents}`
-    : `Event stream offline — ${wsEvents}`;
+    ? `Live updates on: new games and deals appear as they happen (${wsEvents})`
+    : !socketsCarried()
+      ? "Live updates off: this Hermes profile runs the plugin in its plugin host, which carries no websockets yet. The dashboard refreshes on a timer."
+      : `Live updates off — the dashboard still refreshes on a timer (${wsEvents})`;
 
+  // P6: what kind of money the amounts on screen are — test money on a testnet relay.
+  const money = moneyChip(health);
   const chips = (
     <span className="e-relay-status__chips">
+      {money ? (
+        <span className={`e-money-chip e-money-chip--${money.kind}`} title={money.title}>
+          {money.label}<span className="e-sr"> — {money.title}</span>
+        </span>
+      ) : null}
       <StatusChip
         ok={online}
-        label="API"
+        label="relay"
         title={restTitle}
         loading={health === null}
       />
-      <StatusChip ok={wsConnected} label="events" title={wsTitle} liveLoader={wsConnected} />
+      <StatusChip ok={wsConnected} label="live" title={wsTitle} liveLoader={wsConnected} />
     </span>
   );
 
   if (compact) {
     return (
       <span className="e-relay-status e-relay-status--compact">
-        <span className="e-relay-status__host" title={resolved}>
+        <span className="e-relay-status__host e-capture-hide" title={resolved}>
           {host}
         </span>
         {chips}
@@ -121,7 +133,7 @@ export function RelayStrip({
 
   return (
     <span className="e-relay-status" title={resolved}>
-      <span className="e-relay-status__host">{host}</span>
+      <span className="e-relay-status__host e-capture-hide">{host}</span>
       {meta ? <span className="e-relay-status__meta">{meta}</span> : null}
       {chips}
       {showWs ? <Text className="e-faint">{wsEvents}</Text> : null}

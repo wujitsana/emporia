@@ -88,9 +88,6 @@ class Client:
     def sign(self, kind: str, args: list, kwargs: dict) -> str:
         return self._signing("/v1/sign", {"kind": kind, "args": args, "kwargs": kwargs})["signature"]
 
-    def sign_in(self, nonce: str) -> str:
-        return self._signing("/v1/sign-in", {"nonce": nonce})["signature"]
-
     def identity(self) -> dict:
         with self._http() as h:
             r = h.get("/v1/identity", headers=self._headers())

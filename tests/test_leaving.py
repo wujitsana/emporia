@@ -9,6 +9,7 @@ from emporia import identity, wire
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
 from emporia.relay_server import app
+from tests.ids import stable_of
 from tests.test_emporia import _publish_enc_key, _register_keyed, _signed_room
 
 RELAY = "http://testserver"
@@ -37,7 +38,8 @@ def _room(client, creator: str, **settings) -> str:
 
 def _signed(make, ident: str, agent: str, **extra) -> dict:
     at = datetime.now(UTC).isoformat()
-    return {"at": at, "signature": identity.sign(make(ident, agent, at), agent), **extra}
+    from tests.ids import stable_of
+    return {"at": at, "signature": identity.sign(make(ident, stable_of(agent), at), agent), **extra}
 
 
 def _recipients(client, room_id: str, me: str) -> dict:
@@ -73,7 +75,7 @@ def test_a_sender_refuses_a_member_the_relay_added_on_its_own(client):
     at = datetime.now(UTC).isoformat()
     assert client.post(f"/rooms/{room_id}/invite", headers=_as("rm273_host"), json={
         "invitee_id": "rm273_guest", "at": at,
-        "signature": identity.sign(wire.signed_room_invite_payload(room_id, "rm273_guest", at), "rm273_host"),
+        "signature": identity.sign(wire.signed_room_invite_payload(room_id, "rm273_guest", at, stable_of("rm273_host")), "rm273_host"),
     }).status_code == 200
     assert client.post(f"/rooms/{room_id}/join", json={"agent_id": "rm273_guest"},
                        headers=_as("rm273_guest")).status_code == 200
@@ -92,8 +94,8 @@ def test_a_sender_refuses_a_member_the_relay_added_on_its_own(client):
         conn.execute("INSERT INTO room_acts (act_id, room_id, act, target, by_agent, at, payload_json, signature) "
                      "VALUES ('act_puppet273', ?, 'join', 'rm273_puppet', 'rm273_puppet', ?, ?, ?)",
                      (room_id, at := datetime.now(UTC).isoformat(),
-                      __import__("json").dumps(wire.signed_room_join_payload(room_id, "rm273_puppet", at)),
-                      identity.sign(wire.signed_room_join_payload(room_id, "rm273_puppet", at), "rm273_puppet")))
+                      __import__("json").dumps(wire.signed_room_join_payload(room_id, stable_of("rm273_puppet"), at)),
+                      identity.sign(wire.signed_room_join_payload(room_id, stable_of("rm273_puppet"), at), "rm273_puppet")))
     with pytest.raises(identity.RoomMembershipUnproven, match="rm273_puppet"):
         _recipients(client, room_id, "rm273_host")
 
@@ -137,13 +139,13 @@ def test_an_unused_room_invite_can_be_taken_back(client):
         at = datetime.now(UTC).isoformat()
         return client.post(f"/rooms/{room_id}/invite", headers=_as("ui273_host"), json={
             "invitee_id": who, "at": at,
-            "signature": identity.sign(wire.signed_room_invite_payload(room_id, who, at), "ui273_host")})
+            "signature": identity.sign(wire.signed_room_invite_payload(room_id, who, at, stable_of("ui273_host")), "ui273_host")})
 
     def revoke(who, signer="ui273_host"):
         at = datetime.now(UTC).isoformat()
         return client.post(f"/rooms/{room_id}/invite/revoke", headers=_as(signer), json={
             "invitee_id": who, "at": at,
-            "signature": identity.sign(wire.signed_room_uninvite_payload(room_id, who, at), signer)})
+            "signature": identity.sign(wire.signed_room_uninvite_payload(room_id, who, at, stable_of(signer)), signer)})
     assert invite("ui273_guest").status_code == 200 and invite("ui273_other").status_code == 200
     assert revoke("ui273_guest", "ui273_other").status_code == 403
     assert revoke("ui273_guest").status_code == 200
@@ -158,7 +160,7 @@ def test_an_unused_room_invite_can_be_taken_back(client):
 def test_a_player_leaves_a_game_not_yet_started(client):
     for a in ("sl273_host", "sl273_a", "sl273_b"):
         _register_keyed(client, a)
-    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "config": {},
+    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v2", "config": {},
                                          "payment_rules": {"mode": "free"}},
                       headers=_as("sl273_host")).json()["session_id"]
     assert client.post(f"/sessions/{sid}/join", json={"agent_id": "sl273_a"}, headers=_as("sl273_a")).status_code == 200
@@ -181,54 +183,31 @@ def test_a_player_leaves_a_game_not_yet_started(client):
     assert client.post(f"/sessions/{sid}/join", json={"agent_id": "sl273_a"}, headers=_as("sl273_a")).status_code == 200
 
 
-def test_a_player_who_leaves_a_waiting_game_gets_the_stake_held_for_it_back(client, monkeypatch):
-    import uuid
-
-    from emporia import payments
+def test_a_player_who_leaves_a_waiting_game_leaves_it_open_for_the_others(client):
     for a in ("sh273_host", "sh273_a", "sh273_b"):
         _register_keyed(client, a)
-    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "config": {"players": 4},
+    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v2", "config": {"players": 4},
                                          "payment_rules": {"mode": "free"}},
                       headers=_as("sh273_host")).json()["session_id"]
     for a in ("sh273_a", "sh273_b"):
         assert client.post(f"/sessions/{sid}/join", json={"agent_id": a}, headers=_as(a)).status_code == 200
-    with rs.DB_LOCK, rs.get_db() as conn:
-        for who in ("sh273_a", "sh273_b"):
-            conn.execute(
-                "INSERT INTO payments (payment_id, session_id, agent_id, amount_cents, currency, "
-                "payment_intent_id, payment_type, status, created_at, rail) "
-                "VALUES (?, ?, ?, 100, 'usd', ?, 'session_stake', 'confirmed', ?, 'stripe')",
-                (uuid.uuid4().hex, sid, who, f"pi_{sid}_{who}", datetime.now(UTC).isoformat()))
-    cancelled = []
-
-    async def cancel(pi):
-        cancelled.append(pi)
-        return {"payment_intent_id": pi, "status": "canceled"}
-    monkeypatch.setattr(payments, "cancel_payment_hold", cancel)
-
     r = client.post(f"/sessions/{sid}/leave", json=_signed(wire.signed_session_leave_payload, sid, "sh273_a"),
                     headers=_as("sh273_a"))
     assert r.status_code == 200, r.text
-    assert cancelled == [f"pi_{sid}_sh273_a"], "only the leaver's hold is cancelled"
-    assert [x["status"] for x in r.json()["stake_released"]] == ["canceled"]
-    status = {p["agent_id"]: p["status"] for p in rs.get_session_payments(sid)}
-    assert status == {"sh273_a": "released", "sh273_b": "confirmed"}, "the other player's stake stays held"
+    assert r.json() == {"status": "left", "session_id": sid}, "games hold nothing, so nothing is released"
+    assert rs.get_session_payments(sid) == []
     assert client.get(f"/sessions/{sid}", headers=_as("sh273_host")).json()["status"] == "waiting"
 
 
-def test_a_vote_can_be_taken_back(client):
+def test_the_agoras_own_write_routes_are_gone(client):
     _register_keyed(client, "v273_author")
-    _register_keyed(client, "v273_voter")
-    from tests.test_emporia import _signed_post
     slug = client.post("/agoras/topics", json={"name": "v273 topic", "description": "d", "visibility": "public",
                                                "gate_type": "open", "creator_id": "v273_author"},
                        headers=_as("v273_author")).json()["slug"]
-    post = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("v273_author", slug, {"title": "t", "content": "c"}),
-                       headers=_as("v273_author")).json()["post_id"]
-    assert client.post(f"/agoras/posts/{post}/vote", json={"value": 1}, headers=_as("v273_voter")).json()["vote_score"] == 1
-    assert client.post(f"/agoras/posts/{post}/vote", json={"value": 0}, headers=_as("v273_voter")).json()["vote_score"] == 0
-    assert client.post(f"/agoras/posts/{post}/vote", json={"value": 0}, headers=_as("v273_voter")).json()["vote_score"] == 0
-    assert client.post(f"/agoras/posts/{post}/vote", json={"value": 2}, headers=_as("v273_voter")).status_code == 400
+    for path in (f"/agoras/topics/{slug}/posts", "/agoras/posts/pst_x/vote", "/agoras/posts/pst_x/comments",
+                 "/agoras/comments/cmt_x/vote"):
+        r = client.post(path, json={}, headers=_as("v273_author"))
+        assert r.status_code in (404, 405), path           # gone: no route, no stub
 
 
 def test_an_unused_topic_invite_can_be_taken_back(client):
@@ -289,7 +268,7 @@ def test_an_old_join_replayed_after_a_leave_is_refused(client):
     assert client.post(f"/rooms/{room_id}/join", json=old, headers=_as("rp273_guest")).status_code == 409
 
     _register_keyed(client, "rp273_third")
-    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "config": {},
+    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v2", "config": {},
                                          "payment_rules": {"mode": "free"}},
                       headers=_as("rp273_host")).json()["session_id"]
     seat = signed_join_body(sid, "rp273_guest")
@@ -304,7 +283,7 @@ def _private_purchase(client, buyer: str, seller: str) -> str:
     _enc_pair(client, buyer, seller)
     sid = client.post("/sessions", json={"module_type": "emporia:service:v1", "creator_agent_id": buyer,
                                          "config": {"description": "write the report"},
-                                         "payment_rules": {"mode": "free", "stake_per_participant": "0"}},
+                                         "payment_rules": {"mode": "free", "price": "0"}},
                       headers=_as(buyer)).json()["session_id"]
     assert client.post(f"/sessions/{sid}/join", json={"agent_id": seller}, headers=_as(seller)).status_code == 200
     return sid
@@ -328,7 +307,7 @@ def test_a_player_seals_only_to_players_their_own_signed_joins_seat(client):
     with pytest.raises(identity.SessionMembershipUnproven, match="pp274_mole"):
         _players(client, sid, "pp274_buyer")
     # a join signature for another game does not seat it either
-    other = wire.signed_session_join_payload("sess_elsewhere", "pp274_mole", at := datetime.now(UTC).isoformat())
+    other = wire.signed_session_join_payload("sess_elsewhere", stable_of("pp274_mole"), at := datetime.now(UTC).isoformat())
     rs.add_participant(sid, "pp274_mole", join_at=at, join_signature=identity.sign(other, "pp274_mole"))
     with pytest.raises(identity.SessionMembershipUnproven, match="pp274_mole"):
         _players(client, sid, "pp274_seller")
@@ -339,7 +318,7 @@ def test_a_player_who_signed_a_leave_is_not_sealed_to(client):
     import json as _json
     for a in ("lv274_host", "lv274_a"):
         _keyed(client, a)
-    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v1", "config": {},
+    sid = client.post("/sessions", json={"module_type": "emporia:two-thirds:v2", "config": {},
                                          "payment_rules": {"mode": "free"}},
                       headers=_as("lv274_host")).json()["session_id"]
     from conftest import signed_join_body
@@ -358,7 +337,7 @@ def test_a_player_who_signed_a_leave_is_not_sealed_to(client):
 def test_a_topic_creator_removes_a_subscriber_for_good(client):
     """P274: as a room kick — even a public topic, which anyone may read, takes
     no more posts, comments or votes from the removed agent."""
-    from tests.test_emporia import _signed_comment, _signed_post
+    from tests.test_posts_v2 import _post
     for a in ("tk274_owner", "tk274_pest", "tk274_other"):
         _register_keyed(client, a)
     slug = client.post("/agoras/topics", json={"name": "tk274 topic", "description": "d", "visibility": "public",
@@ -366,8 +345,7 @@ def test_a_topic_creator_removes_a_subscriber_for_good(client):
                        headers=_as("tk274_owner")).json()["slug"]
     assert client.post(f"/agoras/topics/{slug}/subscribe", json={"agent_id": "tk274_pest"},
                        headers=_as("tk274_pest")).status_code == 200
-    post = client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("tk274_owner", slug, {"title": "t", "content": "c"}),
-                       headers=_as("tk274_owner")).json()["post_id"]
+    post = _post(client, "tk274_owner", text="c", topic=slug).json()["post_id"]
     assert client.post(f"/agoras/topics/{slug}/kick", json={"target_agent_id": "tk274_pest"},
                        headers=_as("tk274_other")).status_code == 403
     assert client.post(f"/agoras/topics/{slug}/kick", json={"target_agent_id": "tk274_owner"},
@@ -376,13 +354,10 @@ def test_a_topic_creator_removes_a_subscriber_for_good(client):
     assert r.status_code == 200 and r.json()["was_member"] is True
     assert client.post(f"/agoras/topics/{slug}/subscribe", json={"agent_id": "tk274_pest"},
                        headers=_as("tk274_pest")).status_code == 403
-    assert client.post(f"/agoras/topics/{slug}/posts", json=_signed_post("tk274_pest", slug, {"title": "x", "content": "y"}),
-                       headers=_as("tk274_pest")).status_code == 403
-    assert client.post(f"/agoras/posts/{post}/comments", json=_signed_comment("tk274_pest", post, {"content": "z"}),
-                       headers=_as("tk274_pest")).status_code == 403
-    assert client.post(f"/agoras/posts/{post}/vote", json={"value": -1}, headers=_as("tk274_pest")).status_code == 403
+    assert _post(client, "tk274_pest", text="y", topic=slug).status_code == 403
+    assert _post(client, "tk274_pest", text="z", reply_to=f"post:{post}", topic=slug).status_code == 403
     assert client.get(f"/agoras/posts/{post}", headers=_as("tk274_pest")).status_code == 200      # public: still readable
-    assert client.post(f"/agoras/posts/{post}/vote", json={"value": 1}, headers=_as("tk274_other")).status_code == 200
+    assert _post(client, "tk274_other", text="fine", topic=slug).status_code == 200
 
 
 def test_a_block_follows_the_sender_to_another_relay(client):

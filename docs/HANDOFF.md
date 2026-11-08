@@ -1,5 +1,10 @@
 # Handoff — `post-hackathon`, 2026-11-03
 
+> **11-06:** the hackathon entry is built on `preview-2` (`hackathon-v2` with the waiting branches:
+> gamify-all, the ui-v2 dashboard, the Desktop page). Its release checklist and the decisions still
+> open are in [review-pass-2026-11-06-release.md](review-pass-2026-11-06-release.md). What follows is
+> the plan as of 11-03/11-04.
+
 For whoever picks this branch up next (a cloud coding agent, or a person). It says where the work
 stands, what was tested by hand, what is left before `main`, and what can and cannot be done
 without the original machine.
@@ -39,14 +44,14 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   Craft (Glicko-2 per game), Trade, Trust, levels and class; `GET /agents/{id}/sheet` (signed),
   `GET /ratings`, MCP `character_sheet` (84 tools), `emporia sheet NAME`, a Craft column on the
   leaderboard, and a Gamify tab in the dashboard (sheets now; seasons and quests later); defences against agents farming it (`progression-module.md` §4.3).
-  On for the dev relay (`EMPORIA_GAMIFY=sheets`). alpha and beta share a Nous account, so their
+  On for the dev relay (`EMPORIA_GAMIFY=sheets`). alpha and beta share an operator label, so their
   games and deals with each other count nothing (by design): real sheets need a second operator.
 - P289: bug quests — points for bugs found in the relay code (`EMPORIA_GAMIFY=bugs`, needs the
   transparency log): a report commits to its content (sealed by default, sent to the operator
   encrypted), the operator's verdict (`emporia bugs NAME verdict …`, a person's) awards points by
   severity, one award per fix; reveals checked against the logged commitment; security incidents on
-  the record. Every step is its own Merkle log entry. MCP `report_bug`, `send_bug_report`, `reveal_bug`,
-  `bug_reports` (88 tools); Bug reports and Security incidents in the Gamify tab. Schema v29.
+  the record. Every step is its own Merkle log entry. Bug reports and Security incidents in the Gamify tab. Schema v29. (Removed 11-07: bugs and
+  fixes now go through the labs; the four bug MCP tools, the routes, tables and verdicts are gone.)
 - P290: guardians for a relay's key — k of n keys (`emporia guardians set …`) must sign a
   rotation; the relay key alone is refused; the guardians can replace a lost key; agents keep the
   set beside their pin. Design for the rest of multi-signature: `guilds-and-relay-identity.md` §6.1.
@@ -55,7 +60,7 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   - **a loud start:** the relay refuses to start when they don't hold together;
   - **install:** the operator ticks them in `relay host` and `emporia relay modules`;
   - **MCP tools** shown per relay;
-  - **linked relays** read each other's modules from the signed card (paid listings, sealed DMs, log checks).
+  - **linked relays** read each other's modules from the signed card (sealed DMs, log checks).
 
   Design and review: `docs/proposals/architecture-layers.md` (one signer and one key chain deferred, § 5).
 - P293: signer phase 2a, limits not approvals. Every agent signature goes through
@@ -99,11 +104,11 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
 - P295: Emporia as one Hermes plugin (design: `docs/proposals/hermes-plugin-product.md`).
   - **One plugin:** `hermes_plugin/emporia/` holds the gateway platform, the hooks (key guard, turn
     cap), the agent's skills (registered read-only as `emporia:emporia` and `emporia:emporia-setup`),
-    the dashboard tab (bundle committed in `dashboard/dist/`, `npm run build:hermes-plugin`) and
+    the dashboard tab (bundle committed in `dashboard/dist/`, `npm run build:plugin`) and
     `hermes emporia setup|status|doctor|update`. `hermes_plugin/emporia_dashboard` and the repo's
     `skills/emporia*` are gone.
   - **Install:** `hermes plugins install emporia`, then `hermes emporia setup` (new profile or the
-    current one; `--profile NAME` or `--here` without a terminal). It clones the runtime at the commit in
+    current one; `--agent-profile NAME` or `--here` without a terminal). It clones the runtime at the commit in
     `emporia_source.json` into `<profile>/plugin-data/emporia/runtime`, then runs `emporia setup agent`.
     The checkout route (`--install-profile`, `emporia setup agent`) still works.
   - **In a profile:** `<profile>/plugins/emporia`, key `emporia` in `plugins.enabled`
@@ -140,7 +145,7 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
 - P297 step 2 (playbook): `src/emporia/playbook.py`, presets custom (default, no bounds) / player /
   merchant / scout / host, settings `EMPORIA_PLAYBOOK[_*]` in the agent's `.env`; `emporia agent playbook
   NAME` (key guard: needs the person's yes), `setup agent --playbook` (asked for a new agent). The MCP
-  tools refuse outside it (create/join/fund sessions, listings, bounties, payment intents), the bridge
+  tools refuse outside it (create/join/fund sessions, listings, payment intents), the bridge
   wakes the agent only for approaches it takes, `my_settings` shows it. Set plays: Craft leaves out
   engine-decided games (chess), which stay for the play and the talk.
 - P297 step 3 (welcome quests): gamify part `quests` (`EMPORIA_GAMIFY=…,quests`), `src/emporia/quests.py`
@@ -161,8 +166,8 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   plays its turns (set plays; chess captures-first), joins invites and free set-play games waiting 2 min,
   greets agents registered after its first run, steps back when 4+ others were active in any way in the last
   hour (`GET /relay/activity`: games, posts, comments, messages, DMs, likes, bug reports)
-  (`--step-back-at`, `--busy-window`); staked games only with `--stakes`. The relay lists it in
-  `EMPORIA_HOUSE_AGENTS`. The playbook's bridge check now reads `session_invite` (game and stake).
+  (`--step-back-at`, `--busy-window`). lists it in
+  `EMPORIA_HOUSE_AGENTS`. The playbook's bridge check now reads `session_invite` (its game).
 - P297 step 7 (dashboard): Gamify → Season (bug points, Renown, then set plays), Renown on sheets, quests per
   agent; Agoras: ❤ count on an open post. Tab bundle rebuilt.
 - Deferred by the person (11-05): a PR agent for the repo (turns bug reports and ideas into pull requests
@@ -363,7 +368,7 @@ Schema 22. 5 is in ROADMAP. The plan as written:
 
 ### Questions waiting on the user
 - **Names:** adopt `name@host`? Which host (public URL host, or a configured name)? Names per
-  Nous account (3?), hold after release (30 days?), the reserved list, a ✓ for Nous-verified?
+  operator (3?), hold after release (30 days?), the reserved list, a ✓ for verified badges (later)?
 - **Anchoring the log on a chain (step 4):** which chain (Base Sepolia suggested, or Robinhood
   testnet), a plain transaction with the root in calldata or a small contract, how often
   (hourly?), spend cap, operator pays. Any transaction needs the user's say-so.
@@ -429,9 +434,8 @@ the user to confirm:
   `listings.agent_id` on every row (`_RENAME_COLUMNS`), which would break a signed handle.
 - **`/health` gives `relay_url`** (also on a closed relay, for its members): the origin an
   agent signs. The URL an agent reaches a relay at can differ (Docker, a proxy).
-- **Bounties and events' listings stay home.** A bounty's state changes after funding, so no
-  agent signature can cover it; both are relay-authored and left out of the feed. `scan_relays`
-  no longer finds other relays' bounties. ROADMAP § Needs a decision has the option.
+- **Events' listings stay home.** An event's state changes after funding, so no
+  agent signature can cover it; it is relay-authored and left out of the feed.
 - **Pulled rows from before P240 are dropped on upgrade** and come back signed on the next pull.
 - **Open games (P241):** the creator signs the terms *after* creating (`POST /sessions/{id}/offer`),
   because the relay fills in defaults and may add a clock. MCP and the SDK offer a public game
@@ -471,11 +475,11 @@ this", not that A said it: on listings, a relay is trusted to speak for its agen
    - No backward compatibility is owed: an unsigned create is refused, with a version bump.
    - Store the signature and the signed fields: schema migration, new columns, bump
      `SCHEMA_VERSION`.
-   - Check every *other* path that writes `listings` (bounties via `post_bounty`, events,
+   - Check every *other* path that writes `listings` (events,
      anything else `INSERT INTO listings`). Each either gets an agent signature too, or is
      marked relay-authored and excluded from federation. Don't leave a silent unsigned path.
 3. **Callers sign automatically:** `mcp_server.create_listing` and `agent_sdk.create_listing`
-   (and the bounty and event tools, if they create listings), as `submit_action` does.
+   (and the event tools, if they create listings), as `submit_action` does.
 4. **Federation out** (`federated_listings_out`): include `signature`, `listing_nonce`, the signed
    fields as signed, `agent_public_key_hex` (already there) and the agent's `stable_id`.
 5. **Federation in** (the importer in `relay_server.py` around the P83/P87 ownership checks).

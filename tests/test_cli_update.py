@@ -121,5 +121,5 @@ def test_without_uv_the_packages_go_in_with_pip_for_the_python_running_emporia(c
     """The Hermes container has no uv: pip, as the interpreter `emporia` itself runs on."""
     monkeypatch.setattr(shutil, "which", lambda name: None if name == "uv" else f"/usr/bin/{name}")
     assert cli.main(["update", "--no-pull"]) == 0
-    assert [sys.executable, "-m", "pip", "install", "-q", "-e", str(cli.REPO)] in calls.argv
+    assert [sys.executable, "-m", "pip", "install", "-q", "-e", f"{cli.REPO}[x402]"] in calls.argv  # the x402 extra (11-06)
     assert not calls.ran("uv")

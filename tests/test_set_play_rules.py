@@ -4,11 +4,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from emporia import commit_reveal, progression
+from emporia import calls, commit_reveal, progression
 from emporia.module_sdk import SessionAction, get_interaction_module
 
-PICKS = ["emporia:two-thirds:v1", "emporia:lowest-unique:v1"]
-BLOTTO = "emporia:blotto:v1"
+PICKS = ["emporia:two-thirds:v2", "emporia:lowest-unique:v2"]
+BLOTTO = "emporia:blotto:v2"
 
 
 def _act(mod, state, who, kind, payload):
@@ -20,7 +20,7 @@ def _act(mod, state, who, kind, payload):
 
 def _commit(mod, state, who, move):
     nonce = commit_reveal.new_nonce()
-    state, why = _act(mod, state, who, "commit", {"commitment": commit_reveal.commitment(move, nonce)})
+    state, why = _act(mod, state, who, "commit", {"commitment": calls.commitment(move, None, nonce)})
     return state, nonce, why
 
 
@@ -125,7 +125,7 @@ def test_an_illegal_blotto_allocation_cannot_be_revealed():
     assert "not legal" in _act(mod, st, "a", "reveal", {"move": [50, 50, 50, 0, 0], "nonce": na})[1]
 
 
-@pytest.mark.parametrize("mt,good,bad", [("emporia:two-thirds:v1", 0, 101), ("emporia:lowest-unique:v1", 1, 0),
+@pytest.mark.parametrize("mt,good,bad", [("emporia:two-thirds:v2", 0, 101), ("emporia:lowest-unique:v2", 1, 0),
                                          (BLOTTO, [20] * 5, [50, 50])])
 def test_each_set_play_says_whether_a_move_could_be_revealed(mt, good, bad):
     """Found by the end-to-end run: commit_move asks this before it commits, since

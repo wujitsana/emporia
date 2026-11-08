@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from emporia.module_sdk import (
-    STAKE_PURCHASE,
+    PRICE_PURCHASE,
     InteractionModule,
     PaymentRules,
     SessionAction,
@@ -56,14 +56,14 @@ Talk about the job by send_dm (end-to-end encrypted), not table chat."""
 
     MODULE_TYPE = "emporia:service:v1"
     DECLARES_WINNER = True
-    STAKE_MODEL = STAKE_PURCHASE
+    PRICE_MODEL = PRICE_PURCHASE
     MIN_PARTICIPANTS = 2
     MAX_PARTICIPANTS = 2
     DEFAULT_VISIBILITY = "participants"  # paid deliverable, not spectator content
 
     PAYMENT_RULES = PaymentRules(
         mode="stripe_link",
-        stake_per_participant="10.00",
+        price="10.00",
         currency="USD",
         platform_fee_bps=250,
         payout_distribution={"seller": 0.975},

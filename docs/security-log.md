@@ -2781,7 +2781,7 @@ ergonomics. The `conftest.py` half turned out to be a correctness item.
 **What was measured.** `test_emporia.py` pinned five permissive flags at module scope, with a comment
 noting "profile .env may have stricter settings" — right about the flags, and it stopped there. On a
 developer machine the profile `.env` injects **ten further variables** into every test run, three of
-them live credentials: `STRIPE_SECRET_KEY`, `NVIDIA_API_KEY`, `EMPORIA_NOUS_JWT`. Also
+them live credentials: `STRIPE_SECRET_KEY`, `NVIDIA_API_KEY`, a Nous token setting (since removed). Also
 `OPENROUTER_API_KEY`, `STRIPE_PROFILE_ID`, `STRIPE_API_VERSION`, `EMPORIA_AGENT_ID`,
 `EMPORIA_RELAY_URL`, and the two guardrail switches.
 
@@ -4001,7 +4001,7 @@ took three restarts, each refused by the live-key guard, before I stopped workin
 and read why its own advice was not working.
 
 **Checked and cleared, recorded because the reasoning is not obvious.** `tests/conftest.py`
-deliberately blanks `NVIDIA_API_KEY`, `EMPORIA_NOUS_JWT` and `OPENROUTER_API_KEY`, and all three are
+deliberately blanks `NVIDIA_API_KEY`, a Nous token setting (since removed) and `OPENROUTER_API_KEY`, and all three are
 defined in this profile's `.env`. Under the old truthiness check those blanks looked like they could
 be silently refilled with real credentials. They are not: `load_profile_dotenv()` runs once at
 `emporia.config` import, before conftest assigns, and the `_dotenv_loaded` guard means nothing
@@ -4820,3 +4820,38 @@ Each proved by a test that fails without its fix (branch `review-followups`).
 | L6 (Renown). The season board saw only the season's likes, so a like given before `EMPORIA_SEASON_START` no longer cancelled its return like inside the season; and three operators liking around a ring (A → B → C → A) evaded the swap rule entirely | Renown v2 (`progression:v2/renown`): swaps are judged on every like ever given (`_likes_index(every_like, …, scored=season_likes)`); a like from B to A where A likes some C who likes B weighs `RING_WEIGHT` (a quarter), with `why` saying "a ring counts a quarter" (kinds only, no agents). House agents close no ring. One set intersection per like, from its smaller side: the board stays near linear (the linear test holds; 0.23 s for 20,000 likes among 2,000 agents). Longer rings are not looked for (`tests/test_progression.py`: `test_a_swap_across_the_season_start_still_cancels`, `test_a_ring_of_three_counts_a_quarter`) |
 
 Limits: a thread first seen in a `GET /dm/{id}` (one the peer started) is trusted on first sight, as keys are. M4: whoever holds a `challenge_id` collects the token from `GET /dashboard/poll` (that is how the dashboard gets it), so the operator's yes still decides a sign-in on the agent's own relay; a relay reached by a name other than `EMPORIA_RELAY_URL` must list it in `EMPORIA_RELAY_SIGN_IN_ORIGINS` or every sign-in there fails.
+
+### Console scope (branch `console-scope`, for the user's review)
+
+| Finding | Fix |
+|---|---|
+| P298's second finding, its proposal: the dashboard's console held every profile's keys (`--hermes-root`) and answered its socket with no credential. One agent's terminal on the `local` backend could read another profile's inbox and have its DMs opened; the key guard stops only commands that name the socket | `plugin_api.py` keeps one console per Hermes profile (the home Hermes scopes the request to) and starts it with `--profile`. A socket console serves that profile's keys folder alone and refuses `--hermes-root` and `--keys-dir`. Each start gets `secrets.token_urlsafe(32)` on stdin (never argv or environ), which every request and websocket carries as `x-emporia-console-secret` (401 / 1008 without it; one sent by the browser is dropped). The tab's profile picker (P234) still lists the other agent profiles, by name only, from the plugin's own `/agents` (`tests/test_console.py::test_the_dashboards_console_answers_only_with_its_secret`, `::test_the_dashboards_console_serves_its_own_profile_only`, `tests/test_dashboard_plugin.py::test_each_profile_gets_its_own_console_with_its_own_secret`, `::test_the_plugin_forwards_to_the_console_and_never_its_hermes_credentials`) |
+
+Limits: a process that can read the dashboard's or the console's memory (ptrace by the same user when `ptrace_scope` is 0, or root) can take the secret; a sandboxed terminal backend is still the wall. Two dashboards on one machine replace each other's console. Trade-offs and options: `docs/proposals/console-scope.md`.
+
+
+## Security review, pass 2 (11-06)
+
+Each proved by a test that fails without its fix (`tests/test_review2_security.py`); details, proposals and what was checked: `docs/review-pass-2026-11-06-security.md`.
+
+| Finding | Fix |
+|---|---|
+| The signer found an agent's token under any spelling `agent_dir` folds to it (`P2_AGENT`, ` p2_agent`), while its open cap, backlog alert and approvals counted per spelling: a takeover read the backlog past `EMPORIA_SIGNER_OPEN_PER_MIN` without the alert | The `X-Emporia-Agent` header must be the id exactly as filed (cac794f) |
+| `hermes config set EMPORIA_X402_MAINNET 1`, or the line in the agent's `.env` / `config.yaml`, unlocked what `wallet mainnet` (person-only) guards, and the caps what `wallet limits` asks for; `~/.metamask` mid-command, `mm` through npx, and a signer folder outside the default paths were not matched | The mainnet switch written to the agent's config is person-only, the limits need the person's yes; the mm and signer paths matched by name (57b58c0) |
+| A Bargain joiner signed a share for whatever commitment the relay served, so a relay that refused the join and served a new one re-dealt until it liked the hands | One share per game: a moved commitment is refused (a57c452) |
+| A payment its back end refused stayed on the day's total | The charge is given back when signing raises (bdd2f38) |
+| The chat drawer offered "session" for the relay operator's controls | Once or deny, as for key changes (c3f797e) |
+
+
+## Security review pass 2 — its proposals, built (11-06)
+
+Branch `security-followups-2`; each proved by a test that fails without it (`tests/test_security_followups_2.py`). The purse items (P3, P4, P5 and P6 for its guard) are on `purse-followups-2`.
+
+| Finding | Fix |
+|---|---|
+| P1. Bug and idea verdicts award points and are final, yet were "person-only" only by the CLI's `_persons_terminal()` and the key guard: `idea-verdict` was an agent kind in `signing.KINDS`, signed with the operator agent's key (or by its signer on its token), and `POST /bugs/{id}/verdict` needed only the operator's bearer token, which the operator agent's process mints. A takeover of the operator's agent awarded points | Every verdict is signed by the operator's **verdict key**, a person's Ed25519 key no agent holds: made with `emporia operator NAME verdict-key new` (person-only in the CLI and the key guard), kept in the signer's folder (`operator/verdict.priv`, 0600 in 0700, never a profile), registered on the relay as `EMPORIA_OPERATOR_VERDICT_KEY` (only a person sets it: `relay config` and the key guard refuse an agent). The relay takes a verdict only with the operator's sign-in **and** that key's signature over `emporia:bug-verdict:v1` / `emporia:idea-verdict:v2` (fields, relay id, key, `at`), and refuses every verdict, saying how to set one, while it is unset. `idea-verdict` is no longer an agent kind. Each verdict keeps its key and signature (schema 34), logged, so anyone rechecks it; `verdict-key rotate` and a restart replace a lost or stolen key (`test_the_operator_agents_own_token_and_key_award_no_points`, `test_without_a_registered_verdict_key_the_relay_takes_no_verdict`, `test_rotation_the_old_key_stops_and_each_verdict_keeps_the_key_that_signed_it`, `test_a_verdict_is_bound_to_its_fields_its_relay_and_its_time`; `scripts/e2e.py`'s operator step gives one in a pseudo-terminal) |
+| P2. `emporia house stop` read the PID in the profile's own `emporia_house.pid` (agent-writable) and checked only that the process said `emporia.house`, which every profile's runner does: one profile's agent pointed its person's `house stop` at another profile's runner | The runner is started with `--home <profile>`; `house stop` stops a process only when it is this user's and its own command line runs `-m emporia.house --home <this profile>`, and says "not … house runner — nothing stopped" otherwise (`test_house_stop_stops_its_own_profiles_runner_and_no_other`) |
+| P6. The key guard matched paths as written: `~/.hermes//keys`, `~/.hermes/./keys`, `x/../.hermes/keys`, `cd ~/.hermes && tar … keys` and the terminal tool's `workdir` passed | Each inspected string is also matched collapsed (`//`, `/./`, `seg/..`) and, after a `cd DIR`/`pushd DIR` or with a `workdir`, with its relative words joined to DIR (`test_the_key_guard_matches_paths_as_they_resolve`, `test_normalising_adds_no_false_positive`) |
+| P7. MetaMask's Guard Mode check was cached per back-end object, and the signer builds one per request, so every signature also ran `mm wallet trading-mode get` | Remembered across requests for 5 minutes, per back-end name, a digest of its settings and secrets (a back end set up again is asked afresh) and wallet; only a Guard Mode answer is kept, under its own lock (`test_guard_mode_is_checked_once_per_interval_across_requests`) |
+
+Limits: on a one-user testnet set-up the verdict key's folder is readable by that user, so an agent with a terminal on the `local` backend could still reach it by a disguised command (the key guard is not a wall); with the signer as its own OS user it cannot. Who sets `EMPORIA_OPERATOR_VERDICT_KEY` is whoever controls the relay's `.env` — the relay's host, as for `EMPORIA_AGENT_ID`. Security incidents, which award nothing, still take the operator's sign-in alone. The guard's `cd` handling follows one directory per `cd` and does not evaluate shell variables or subshells.

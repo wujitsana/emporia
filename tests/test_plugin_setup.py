@@ -38,7 +38,30 @@ def test_without_a_terminal_it_asks_nothing_and_needs_the_choice_as_a_flag(capsy
         assert setup_cli.cmd_setup(_args()) == 2
     finally:
         sys.stdin = real
-    assert "--profile" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "--agent-profile shop" in out and "--profile shop" not in out.replace("--agent-profile", "")
+
+
+def _option_strings(parser):
+    for action in parser._actions:
+        yield from action.option_strings
+        if isinstance(action, argparse._SubParsersAction):
+            for sub in action.choices.values():
+                yield from _option_strings(sub)
+
+
+def test_no_option_of_hermes_emporia_is_one_hermes_takes_for_itself():
+    """Release review (11-06): Hermes reads `--profile NAME`, `--profile=NAME` and `-p NAME` anywhere
+    on its command line as its own profile switch, and strips them before a plugin's parser runs.
+    `hermes emporia setup --profile shop` therefore never reached setup ("Profile 'shop' does not
+    exist"). The agent profile is `--agent-profile`."""
+    parser = argparse.ArgumentParser()
+    setup_cli.register_cli(parser)
+    options = set(_option_strings(parser))
+    assert not {o for o in options if o in ("-p", "--profile") or o.startswith("--profile=")}, options
+    setup = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction)).choices["setup"]
+    args = setup.parse_args(["--agent-profile", "shop", "--relay", "https://r.test", "--", "--role", "marketplace"])
+    assert (args.profile, args.relay, args.rest) == ("shop", "https://r.test", ["--", "--role", "marketplace"])
 
 
 @pytest.mark.parametrize("bad", ["../escape", "a/b", "-dash", "Bad Name", "x" * 65, "root", "default"])
@@ -92,7 +115,8 @@ def test_it_runs_setup_agent_for_the_chosen_profile_only(monkeypatch, capsys):
     monkeypatch.setattr(setup_cli, "_emporia", lambda rt, *a: ran.append(a) or 0)
     assert setup_cli.checkout() == REPO                          # in this repo the checkout is the runtime
     assert setup_cli.cmd_setup(_args(profile="shop", relay="https://r.test", rest=["--", "--role", "marketplace"])) == 0
-    assert ran == [("setup", "agent", "shop", "--relay-url", "https://r.test", "--role", "marketplace")]
+    assert ran == [("setup", "agent", "shop", "--relay-url", "https://r.test", "--role", "marketplace"),
+                   ("welcome", "shop")]                           # then the read-only "you're in" block
     out = capsys.readouterr().out
     assert "hermes -p shop emporia status" in out and "hermes -p shop dashboard" in out   # P296: what next
 
@@ -366,9 +390,9 @@ def test_a_new_profile_gets_the_plugin_before_its_agent_is_set_up(monkeypatch, t
     monkeypatch.setattr(setup_cli, "python_of", lambda r: Path(sys.executable))
     monkeypatch.setattr(setup_cli, "_create_profile", lambda n: order.append(("create", n)) or True)
     monkeypatch.setattr(setup_cli, "_install_plugin_into", lambda n, s: order.append(("plugin", n)) or True)
-    monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: order.append(("setup", a[2])) or 0)
+    monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: order.append(("setup", a[2]) if a[0] == "setup" else (a[0],)) or 0)
     assert setup_cli.cmd_setup(_args(profile="shop")) == 0
-    assert order == [("create", "shop"), ("plugin", "shop"), ("setup", "shop")]
+    assert order == [("create", "shop"), ("plugin", "shop"), ("setup", "shop"), ("welcome",)]
 
 
 @pytest.mark.parametrize("made,flag", [("made", True), ("there", False)])
@@ -425,11 +449,11 @@ def test_hermes_emporia_runs_the_runtimes_command_with_every_word(monkeypatch, t
     monkeypatch.setattr(setup_cli, "_emporia", lambda r, *a: ran.append(a) or 0)
     parser = argparse.ArgumentParser()
     setup_cli.register_cli(parser)
-    for argv in (["agent", "playbook", "shop", "--games", "set-plays"], ["wallet", "--help"], ["login"],
+    for argv in (["agent", "playbook", "shop", "--games", "set-plays"], ["wallet", "--help"], ["operator", "label"],
                  ["house", "run", "h", "--once", "-h"], ["setup", "dashboard", "shop"],
                  ["setup", "relay", "--preset", "base-sepolia"]):
         assert setup_cli.dispatch(parser.parse_args(argv)) == 0
-    assert ran == [("agent", "playbook", "shop", "--games", "set-plays"), ("wallet", "--help"), ("login",),
+    assert ran == [("agent", "playbook", "shop", "--games", "set-plays"), ("wallet", "--help"), ("operator", "label"),
                    ("house", "run", "h", "--once", "-h"), ("setup", "dashboard", "shop"),
                    ("setup", "relay", "--preset", "base-sepolia")]
     monkeypatch.setattr(setup_cli, "runtime", lambda: None)

@@ -22,7 +22,7 @@ A whole agent can be packaged and installed from git: `hermes profile install <g
 
 ```bash
 hermes profile install https://github.com/someone/their-agent
-hermes emporia setup --profile their-agent
+hermes emporia setup --agent-profile their-agent
 ```
 
 Setup keeps its SOUL, skills, other MCP servers and settings (P295).
@@ -106,7 +106,7 @@ newcomer has someone to deal with in its first minutes.
 **Where it runs:** apart from the relay, as an ordinary client:
 - it is a profile `house` in the Hermes container on the same VPS, but a separate container from the
   relay;
-- it is set up with `hermes emporia setup --profile house`, and so doubles as a live test of the
+- it is set up with `hermes emporia setup --agent-profile house`, and so doubles as a live test of the
   plugin;
 - it reaches the relay by its public https URL;
 - its keys never go near the relay.

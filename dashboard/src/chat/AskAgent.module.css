@@ -1,0 +1,37 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6ch;
+  min-height: 32px;
+  padding: 2px 10px;
+  border: 1px solid var(--e-rule, rgba(128, 128, 128, 0.22));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.root:hover {
+  border-color: var(--theme-focused-foreground);
+  color: var(--theme-focused-foreground);
+}
+
+.row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 8px;
+}
+
+.glyph {
+  color: var(--theme-focused-foreground);
+}
+
+@media (max-width: 700px) {
+  .root {
+    min-height: 40px;
+    padding: 4px 12px;
+  }
+}
