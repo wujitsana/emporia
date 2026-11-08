@@ -141,17 +141,17 @@ def test_house_and_retired_games_count_nothing():
 
 
 def test_same_operator_tables_count_nothing_for_anyone():
-    who = {"a": pg.Who("label:1", True), "b": pg.Who("label:1", True), "c": pg.Who("label:2", True)}
+    who = {"a": pg.Who("label:1"), "b": pg.Who("label:1"), "c": pg.Who("label:2")}
     two = _g("s1", "a", "b", "a", 1, calls={"a": 90})
     assert pg.calls_of([two], who) == {}
     three = {**two, "participants": ["a", "b", "c"], "calls": {"a": 60, "c": 40}, "termination": "closest"}
     assert pg.calls_of([three], who) == {}, "two seats of one operator: nobody's call counts"
 
 
-def test_an_unverified_or_new_counterparty_weighs_little():
-    who = {"a": pg.Who("label:1", True), "b": pg.Who("b", False)}
+def test_a_counterparty_the_relay_has_no_record_of_weighs_little():
+    who = {"a": pg.Who("label:1")}
     [c] = pg.calls_of([_g("s1", "a", "b", "a", 1, calls={"a": 70})], who)["a"]
-    assert c.weight == approx(pg.UNVERIFIED_WEIGHT)   # registered_at unknown: no ramp, key-only: a quarter
+    assert c.weight == approx(pg.UNKNOWN_WEIGHT * pg.MIN_RAMP)
 
 
 def test_walking_away_from_a_sealed_call_scores_the_worst_call():

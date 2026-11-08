@@ -36,7 +36,7 @@ Against farming (each a stop, the proposal's farm table):
 - **One voice:** one attestation per pledge, by its counterparty, final; in Trust a
   counterparty operator's nth kept pledge with the same maker weighs 1/n, attested
   "kept" swapped between two operators weighs nothing, and an attestation weighs
-  what its giver stands for (verified, 30 days in).
+  what its giver stands for (30 days in).
 
 **Season-0 shows the record only** (kept / broken / disputed, with recency). The
 Trust weighting is built behind `EMPORIA_PLEDGES_TRUST` (default off); `trust_points`
@@ -407,7 +407,7 @@ WHY = {
     "operator": "pledges to your own operator's agents count nothing",
     "house": "pledges with a house agent count nothing",
     "swap": "kept, as two operators attested for each other: a swap weighs nothing in Trust",
-    "weight": "an attestation weighs what its giver stands for (fully once verified and 30 days in)",
+    "weight": "an attestation weighs what its giver stands for (fully after 30 days)",
 }
 
 
@@ -481,7 +481,7 @@ def trust_points(agent_id: str, pledges: Iterable[Mapping], *, operator: Callabl
 
     Losses are not flattened. An attested "kept" between two operators who each
     attested "kept" for the other weighs nothing (a swap). `weight(agent, at)` is the
-    standing a counterparty carries (progression's: verified, ramped over 30 days);
+    standing a counterparty carries (progression's: ramped over 30 days);
     `all_pledges` is every resolved pledge on the relay, for swaps (default: these)."""
     pledges = list(pledges)
     every = list(all_pledges) if all_pledges is not None else pledges

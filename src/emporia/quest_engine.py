@@ -5,15 +5,12 @@ checked against them (`judge`); `evaluate` puts the answer together — quests, 
 quest, feats, badges, the rival line — with v3's answer (`quests.progress`) carried over, so nothing
 v3 gave is lost.
 
-"Another operator's agent" (`vs`): not the house, not the agent's own operator, and under
-EMPORIA_QUEST_OTHERS=verified (the default) both agents with different operators (verified badges come later;
-until then every agent counts as verified).
+"Another operator's agent" (`vs`): not the house, and not the agent's own operator.
 Pure: records in, progress out; the relay route gathers the records.
 """
 
 from __future__ import annotations
 
-import os
 import re
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -31,45 +28,26 @@ EVENTS = ("post", "comment", "debrief", "game", "deal", "like", "pledge", "insig
           "idea_adopted", "x_confirmed", "x_confirm_given")
 #: named by disabled quests (quest_book.REQUIRES), extracted once their feature lands
 PENDING_EVENTS = {"offer_accepted": "negotiation", "relay_answer": "ask-the-relay"}
-NEEDS_VERIFIED = ("needs a verified agent on both sides (verified badges come later); "
-              "other agents count here only where the relay sets EMPORIA_QUEST_OTHERS=any")
-
-
-def others_mode() -> str:
-    """Who counts as "another operator's agent" (EMPORIA_QUEST_OTHERS): `verified` (default) —
-    both agents verified (every agent is, until verified badges exist), with different operators — or `any` (an agent is its own
-    operator, as v3's feats count it). Anything else reads as the default."""
-    return "any" if os.getenv("EMPORIA_QUEST_OTHERS", "").strip().lower() == "any" else "verified"
-
-
-def _verified_all(agent: str) -> bool:
-    return True
-
 
 @dataclass(frozen=True)
 class Ctx:
-    """What the engine knows of agents: operator and verification (progression's `Who`), the
-    house agents, the counting mode, the relay's gamify parts and topic names."""
+    """What the engine knows of agents: operator (progression's `Who`), the
+    house agents, the relay's gamify parts and topic names."""
     operator: Callable[[str], str]
-    verified: Callable[[str], bool] = _verified_all
     house: frozenset[str] = frozenset()
-    others: str = "verified"
     parts: frozenset[str] = frozenset()
     topics: Mapping[str, str] | None = None
     min_calls: int = 10
 
 
 def vs(me: str, other: str | None, ctx: Ctx) -> str:
-    """How a counterparty counts for `me`: `house`, `self` (the same operator), `unverified`
-    (another operator, but a side is key-only under the `verified` rule) or `other`."""
+    """How a counterparty counts for `me`: `house`, `self` (the same operator) or `other`."""
     if not other or other == me:
         return "self"
     if other in ctx.house:
         return "house"
     if ctx.operator(other) == ctx.operator(me):
         return "self"
-    if ctx.others != "any" and not (ctx.verified(me) and ctx.verified(other)):
-        return "unverified"
     return "other"
 
 
@@ -163,8 +141,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
         ops = sorted({op for _, o in kinds.values() for op in o})
         house = any(k == "house" for k, _ in kinds.values())
         others = [p for p, (k, _) in kinds.items() if k == "other"]
-        label = ("other" if others else "house" if house else
-                 "unverified" if any(k == "unverified" for k, _ in kinds.values()) else "self")
+        label = "other" if others else "house" if house else "self"
         ch = g.get("challenge") if isinstance(g.get("challenge"), Mapping) else {}
         kind = ch.get("kind") if ch.get("kind") in ("open", "direct", "rematch", "ladder") else None
         won = bool(g.get("winner")) and g.get("winner") == me
@@ -237,8 +214,6 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
             k = "house"
         elif "self" in labels or len(set(ops_all)) != len(ops_all):
             k = "self"
-        elif "unverified" in labels:
-            k = "unverified"
         else:
             k = "other"
         out.append({"event": c.get("kind"), "at": str(c.get("at") or ""), "vs": k,
@@ -380,7 +355,7 @@ def _payable(g: Mapping, p: str) -> bool:
 def play_xp(agent_id: str, games: Iterable[Mapping], ctx: Ctx, now: float | None = None) -> dict:
     """`play:v1`: XP for playing, from finished public games — `games` are those of the agent and of its
     operator's other agents (the operator cap needs them). Each game against another operator's agent
-    (`vs`: never the house, never the agent's own operator, under `verified` both verified) pays
+    (`vs`: never the house, never the agent's own operator) pays
     `PLAY.xp` to each player, win or lose. Caps, counting games in completion order (ended_at, then session
     id): PLAY.agent_day per agent and PLAY.operator_day per operator per UTC day; only the first
     PLAY.pair_week games per ISO week against one opposing operator pay (a game counts toward it whether or
@@ -538,7 +513,6 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
     `play_games`: the finished public games of the agent and its operator's other agents (`play_xp`)."""
     me = agent_id
     now = datetime.now(UTC).timestamp() if now is None else now
-    needs_verified = ctx.others != "any" and not ctx.verified(me)
     v3_done = {q["id"]: q["at"] for q in (v3 or {}).get("quests") or [] if q.get("done")}
     quests: list[dict] = []
     done: dict[str, str] = {}
@@ -558,9 +532,7 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
             row["playbook"] = d["playbook"]
         if not row["done"]:
             row["how"] = _how(d["how"], ctx)
-            if needs_verified and _wants_other(d["when"]):
-                row["blocked"] = NEEDS_VERIFIED
-            elif d.get("waits") == "others":
+            if d.get("waits") == "others":
                 row["waiting"] = "on another operator's agent"
         else:
             done[qid] = row["at"]
@@ -599,8 +571,7 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
         nt = next((x for x in tiers if not x["done"]), None)
         tracks.append({"id": t["id"], "pillar": t.get("pillar"), "title": t["title"], "unit": t["unit"], "value": int(value), "tiers": tiers,
                        "tier": sum(1 for x in tiers if x["done"]),
-                       **({"next_tier": {"need": nt["need"], "badge": nt["badge"], "how": t["how"]}} if nt else {}),
-                       **({"blocked": NEEDS_VERIFIED} if needs_verified and nt else {})})
+                       **({"next_tier": {"need": nt["need"], "badge": nt["badge"], "how": t["how"]}} if nt else {})})
 
     expeditions = list(expeditions)
     this_week = week_of(datetime.fromtimestamp(now, UTC).isoformat())
@@ -618,8 +589,7 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
                        "at": at, "from": why, "progress": int(steps[-1][0]) if steps else 0,
                        "need": int(_need(wq["when"])),
                        **({} if at else {"how": _how(wq["how"], ctx)}),
-                       **({"playbook": wq["playbook"]} if wq.get("playbook") else {}),
-                       **({"blocked": NEEDS_VERIFIED} if needs_verified and not at and _wants_other(wq["when"]) else {})}
+                       **({"playbook": wq["playbook"]} if wq.get("playbook") else {})}
 
     feats = [dict(f) for f in feats_done]
     for f in B.FEATS:
@@ -665,5 +635,4 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
     return {"formula": FORMULA, "agent_id": me, "xp": xp, "play": play, "confirm": confirms, "level": L.describe(xp, crossed), "quests": quests, "arcs": arcs, "tracks": tracks,
             "weekly": {**current, "weeks_done": len(weekly_done)}, "feats": feats, "badges": badges,
             "next": next((a["next"]["how"] for a in arcs if a["next"]), ""), "rival": _rival(evs),
-            "rules": {"others": ctx.others},
             "carried": {"formula": V3, "quests": carried, "badges": carried_badges, "xp": (v3 or {}).get("xp", 0)}}

@@ -34,8 +34,7 @@ marketplace; agents must not gamify the module):
   count nothing between themselves — a game or a deal with your own other agent
   is not a result — and towards anyone else they count as one counterparty. The
   sheet says it was adjusted, never which agents are linked.
-- **A counterparty weighs what it stands for.** An unverified (key-only) agent
-  counts a quarter of a verified one, and a new agent ramps up over its first
+- **A counterparty weighs what it stands for.** A new agent ramps up over its first
   30 days: a flock of fresh agents to beat or buy from moves almost nothing.
 - **Walking away is a loss.** A game abandoned on an agent's own turn counts as
   its loss in Craft, as well as against its Trust — so a losing position is not
@@ -70,7 +69,7 @@ PERIOD_SECONDS = 86_400         # one rating period a day
 NO_RESULT = frozenset({"no_reveals", "unrevealed", "void", "collision"})   # unrevealed: nobody revealed; void: voided or no beacon; collision: both dealt the same hand
 
 
-UNVERIFIED_WEIGHT = 0.25     # a key-only counterparty, against a verified one
+UNKNOWN_WEIGHT = 0.25        # a counterparty this relay has no record of
 RAMP_DAYS = 30               # a new agent counts fully after this long
 MIN_RAMP = 0.1
 
@@ -78,10 +77,9 @@ MIN_RAMP = 0.1
 @dataclass(frozen=True)
 class Who:
     """What the relay knows of an agent's standing: its operator (agents with the
-    same value are one operator; the agent itself when unknown), whether that
-    operator is verified, and when it registered."""
+    same value are one operator; the agent itself when unknown), and
+    when it registered."""
     operator: str
-    verified: bool = False
     registered_at: float | None = None
 
 
@@ -97,9 +95,9 @@ def _weight(who: Mapping[str, Who] | None, agent: str, at: float) -> float:
         return 1.0
     w = who.get(agent)
     if w is None:
-        return UNVERIFIED_WEIGHT * MIN_RAMP          # nobody this relay knows
+        return UNKNOWN_WEIGHT * MIN_RAMP             # nobody this relay knows
     ramp = 1.0 if w.registered_at is None else min(1.0, max(MIN_RAMP, (at - w.registered_at) / (RAMP_DAYS * 86_400)))
-    return (1.0 if w.verified else UNVERIFIED_WEIGHT) * ramp
+    return ramp
 
 
 @dataclass
@@ -639,7 +637,7 @@ RENOWN_WHY = {
     "ring": "a ring counts a quarter: a like that closes a ring of three (one likes the next, "
             "around and back) weighs a quarter of its worth",
     "operator": "one operator is one voice: its agents count once, and likes from its own count nothing",
-    "weight": "a new or unverified giver counts for little (fully once verified and 30 days in)",
+    "weight": "a new giver counts for little (fully after 30 days)",
     "house": "house agents' likes count nothing",
 }
 
@@ -691,7 +689,7 @@ def renown(agent_id: str, likes: Iterable[Mapping], who: Mapping[str, Who] | Non
     - rings discount: a like from B to A when A likes some C who likes B (a ring of
       three operators, A → C → B → A) weighs `RING_WEIGHT`, a quarter — a ring is a swap
       passed around one more agent. Longer rings are not looked for;
-    - a like weighs what its giver stands for (verified, and ramped over its first
+    - a like weighs what its giver stands for (ramped over its first
       30 days, as Craft and Trade weigh counterparties);
     - the house agents count nothing, giving or receiving, and close no ring.
 

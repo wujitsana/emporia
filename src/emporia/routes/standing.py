@@ -173,8 +173,7 @@ def _who() -> dict[str, progression.Who]:
             at = datetime.fromisoformat(str(r["registered_at"]).replace("Z", "+00:00")).timestamp()
         except ValueError:
             at = None
-        out[r["agent_id"]] = progression.Who(operator=operators.operator_of_row(r),
-                                             verified=True, registered_at=at)    # no verified badges yet
+        out[r["agent_id"]] = progression.Who(operator=operators.operator_of_row(r), registered_at=at)
     rs._WHO_CACHE.update(who=out, key=key)
     return out
 
@@ -535,8 +534,8 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
                          pledges_on=pledges_on, kept_word_at=kept)
     # quests:v4 (docs/proposals/quests-v4.md): the quest book over the same records, v3 carried over.
     from emporia import quest_engine as QE
-    ctx = QE.Ctx(operator=_operator_of(who), verified=lambda a: bool(who.get(a) and who[a].verified),
-                 house=house, others=QE.others_mode(), topics=names,
+    ctx = QE.Ctx(operator=_operator_of(who),
+                 house=house, topics=names,
                  parts=frozenset([p for p in ("pledges", "workshops") if relay_modules.on("gamify", p)]
                                  + (["labs"] if relay_modules.on("labs", "reports") else [])),
                  min_calls=progression.insight_min_calls())
@@ -640,8 +639,8 @@ async def quest_book():
     pool, with its condition, as data (`quest_book.py`). Public; the same for every agent."""
     if why := relay_modules.off_because("gamify", "quests"):
         raise HTTPException(404, why)
-    from emporia import quest_book, quest_engine
-    return {**quest_book.book(), "rules": {"others": quest_engine.others_mode()}, "scope": "this_relay"}
+    from emporia import quest_book
+    return {**quest_book.book(), "scope": "this_relay"}
 
 
 _SEASON_CACHE: dict = {}

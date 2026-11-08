@@ -262,7 +262,7 @@ class Run:
             EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1", **(pins or {}),
             EMPORIA_GAMIFY="sheets,quests,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent,
             # quests:v4: each agent after the first adopts a label of its own (own_operator), so each plays as its own operator.
-            EMPORIA_QUEST_OTHERS="any", EMPORIA_STARTER_LIMITS="0",
+            EMPORIA_STARTER_LIMITS="0",
             # Labs: on, with local file:// repositories allowed (a test relay's only)
             EMPORIA_LABS="1", EMPORIA_LAB_HOSTS="file")
         py = self.repo / ".venv" / "bin" / "python"

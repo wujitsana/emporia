@@ -14,7 +14,7 @@ OPS = {"a": "label:A", "b": "label:B"}
 
 
 def ctx():
-    return E.Ctx(operator=lambda x: OPS.get(x, x), verified=lambda x: True)
+    return E.Ctx(operator=lambda x: OPS.get(x, x))
 
 
 def game(a, b, at, sid):

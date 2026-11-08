@@ -25,7 +25,6 @@ REPO_NAME = "acme/widgets"
 def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_LABS", "1")
     monkeypatch.setenv("EMPORIA_LAB_HOSTS", "file")
-    monkeypatch.setenv("EMPORIA_QUEST_OTHERS", "any")
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
     monkeypatch.setenv("EMPORIA_GAMIFY", "quests")
     monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)

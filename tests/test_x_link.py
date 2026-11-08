@@ -20,7 +20,6 @@ def name(tag: str) -> str:
 @pytest.fixture
 def relay(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
-    monkeypatch.setenv("EMPORIA_QUEST_OTHERS", "any")
     monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
     return httpx.ASGITransport(app=rs.app)
 

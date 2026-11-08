@@ -8,13 +8,11 @@ NOW = 1_794_000_000          # 2026-11-06 UTC
 DAY = "2026-11-06"
 OPS = {"me": "label:ME", "mine2": "label:ME", "mine3": "label:ME", "b1": "label:B", "c1": "label:C", "d1": "label:D",
        "e1": "label:E", "f1": "label:F", "g1": "label:G", "h1": "label:H", "k1": "k1", "k2": "k2", "house": "label:HOUSE"}
-VERIFIED = {a for a, op in OPS.items() if op.startswith("label:")}
 _n = [0]
 
 
-def ctx(others="verified"):
-    return E.Ctx(operator=lambda a: OPS.get(a, a), verified=lambda a: a in VERIFIED, house=frozenset({"house"}),
-                 others=others)
+def ctx():
+    return E.Ctx(operator=lambda a: OPS.get(a, a), house=frozenset({"house"}))
 
 
 def g(a, b, at=f"{DAY}T10:00:00+00:00", termination="closest", **kw):
@@ -102,9 +100,3 @@ def test_a_forfeit_pays_the_player_who_revealed_not_the_refuser():
     assert play([f])["xp"] == 2
     assert play([f], agent="b1")["xp"] == 0
     assert play([g("me", "b1", termination="forfeit")])["xp"] == 0, "a forfeit that names no refuser pays nobody"
-
-
-def test_farm_a_key_only_sybil_pays_nothing_under_verified_but_does_under_any():
-    games = [g("k1", "k2"), g("me", "k1")]
-    assert play(games, agent="k1")["xp"] == 0 and play(games)["xp"] == 0
-    assert play(games, agent="k1", c=ctx("any"))["xp"] == 4

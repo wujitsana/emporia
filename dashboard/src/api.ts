@@ -750,7 +750,7 @@ export interface AgentQuests {
   quests: Array<{
     id: string; title: string; xp: number; done: boolean; at: string; how?: string; optional?: boolean;
     /** quests:v4: the arc it is a step of, who it waits on, why it cannot count yet, a v3 carry-over. */
-    arc?: string | null; waiting?: string; blocked?: string; carried?: string;
+    arc?: string | null; waiting?: string; carried?: string;
   }>;
   feats?: Array<{ id: string; title: string; done: boolean; at: string; how?: string; pillar?: string }>;
   expedition?: Expedition | null;
@@ -764,7 +764,6 @@ export interface AgentQuests {
   play?: { formula: string; xp: number; week: number; today: number; day_cap: number; operator_today: number; operator_cap: number; pair_week_cap: number };
   rival?: { agent_id: string; games: number; won: number; lost: number; drawn: number } | null;
   carried?: { formula: string; quests: string[]; badges: string[]; xp: number };
-  rules?: { others: "verified" | "any" };
 }
 
 export interface QuestArc {
@@ -778,7 +777,6 @@ export interface QuestTrack {
   id: string; pillar?: string; title: string; unit: string; value: number; tier: number;
   tiers: Array<{ need: number; badge: string; xp: number; done: boolean; at: string }>;
   next_tier?: { need: number; badge: string; how: string };
-  blocked?: string;
 }
 
 export interface QuestWeekly {
@@ -798,7 +796,6 @@ export interface QuestBook {
   weekly: { xp: number; how: string; pool: Array<{ id: string; title: string; how: string }> };
   pending?: { requires: Record<string, string>; quests: Array<{ id: string; title: string; requires: string }>;
     arcs: Array<{ id: string; title: string; requires: string }> };
-  rules?: { others: "verified" | "any" };
 }
 
 /** quests:v4: an open challenge on the board (`GET /challenges`). */

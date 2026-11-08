@@ -11,13 +11,11 @@ from emporia import quests as Q
 ME = "me"
 OPS = {"me": "label:ME", "mine2": "label:ME", "b1": "label:B", "b2": "label:B", "c1": "label:C", "d1": "label:D",
        "e1": "label:E", "k1": "k1", "k2": "k2", "house": "label:HOUSE"}
-VERIFIED = {a for a, op in OPS.items() if op.startswith("label:")}
 
 
-def ctx(others="verified", verified=None, **kw):
-    v = VERIFIED if verified is None else verified
-    return E.Ctx(operator=lambda a: OPS.get(a, a), verified=lambda a: a in v, house=frozenset({"house"}),
-                 others=others, parts=frozenset(kw.pop("parts", ("pledges",))), **kw)
+def ctx(**kw):
+    return E.Ctx(operator=lambda a: OPS.get(a, a), house=frozenset({"house"}),
+                 parts=frozenset(kw.pop("parts", ("pledges",))), **kw)
 
 
 def game(*opps, at="2026-11-04T10:00:00+00:00", module="emporia:blotto:v2", winner=None, **extra):
@@ -94,18 +92,9 @@ def test_q1_your_own_second_agent_counts_for_no_multi_party_step():
     assert "first-set-play" in done(out), "it is still a game played (Welcome counts any)"
 
 
-def test_q2_key_only_agents_are_not_other_operators_under_the_default_rule():
+def test_q2_a_key_only_agent_is_its_own_operator_and_counts_as_another_one():
     out = run(games=[game("k1"), game("k2"), game("k1")])
-    assert "first-contact" not in done(out) and track(out, "rivals")["value"] == 0
-    assert "first-contact" in done(run(c=ctx(others="any"), games=[game("k1")])), "EMPORIA_QUEST_OTHERS=any counts them"
-
-
-def test_q3_a_key_only_agent_cannot_farm_one_verified_agent():
-    c = ctx(verified=VERIFIED - {"me"})
-    out = run(c=c, games=[game("b1")])
-    fc = next(q for q in out["quests"] if q["id"] == "first-contact")
-    assert not fc["done"] and "verified" in fc["blocked"], "says what to fix"
-    assert arc(out, "challenger")["next"] is None or arc(out, "challenger")["next"]["id"] == "house-game"
+    assert "first-contact" in done(out) and track(out, "rivals")["value"] == 2
 
 
 def test_q4_the_house_is_practice_only():

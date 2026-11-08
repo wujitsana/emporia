@@ -65,7 +65,7 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
     from emporia import challenges as C
     from emporia import progression
     from emporia.calls import ALL_SET_PLAYS, current
-    from emporia.quest_engine import Ctx, others_mode, vs
+    from emporia.quest_engine import Ctx, vs
     from emporia.routes import standing as ST
     from emporia.standing import game_module_types
     if module_type not in game_module_types():
@@ -88,8 +88,7 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
             config["opponent"] = next(p for p in old["participants"] if p != caller)
         who = ST._who()
         ctx = Ctx(operator=lambda a: who[a].operator if a in who else a,
-                  verified=lambda a: bool(who.get(a) and who[a].verified),
-                  house=progression.house_agents(), others=others_mode())
+                  house=progression.house_agents())
         if asked["kind"] == "ladder":
             them = config["opponent"]
             if module_type not in ST.craft_modules() or not module.ZERO_SUM:
@@ -100,9 +99,6 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
             if k == "house" or k == "self":
                 raise C.ChallengeError("a ladder challenge is to another operator's agent: your own agents and the "
                                        "house count for no ladder; challenge them directly instead")
-            if k == "unverified":
-                raise C.ChallengeError("a ladder challenge needs a verified agent on both sides; this relay counts "
-                                       "other agents only with EMPORIA_QUEST_OTHERS=any")
             table, _, _ = ST._craft_table()
             relay["ladder"] = C.ladder_ranks(progression.ladder(table, current(module_type), time.time()), caller, them)
         opponent = config.get("opponent")

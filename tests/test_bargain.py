@@ -577,8 +577,8 @@ def test_a_good_deal_raises_both_and_no_deal_lowers_both():
 
 
 def test_same_operator_and_repeat_bargains_count_as_the_other_set_plays():
-    who = {"a": progression.Who("op1", True, 0), "sock": progression.Who("op1", True, 0),
-           "b": progression.Who("op2", True, 0)}
+    who = {"a": progression.Who("op1", 0), "sock": progression.Who("op1", 0),
+           "b": progression.Who("op2", 0)}
     assert BARGAIN not in progression.craft_ratings([_bargain("a", "sock", 1.0, 1.0, 1)], who), \
         "your own other agent is not an opponent"
     once = progression.craft_ratings([_bargain("a", "b", 0.8, 0.8, 1)], who)[BARGAIN]["a"].rating

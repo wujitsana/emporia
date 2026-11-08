@@ -40,8 +40,7 @@ quests, XP only, never suggested as `next`:
 code per quest): **arcs** (Welcome, Bug hunt, Arrival, Challenger — short chains, one next step
 each), **tracks** (Rivals, Regulars, Ladder — tiers I–III), a **weekly** quest the expedition may
 name, and rare **feats**. Steps that need "another operator" count only another operator's agent,
-never the house, and under EMPORIA_QUEST_OTHERS=verified (the default) only when both agents are
-verified, with different operators. `quest_engine.evaluate` computes it; `progress` (below, v3)
+never the house, and only with different operators. `quest_engine.evaluate` computes it; `progress` (below, v3)
 is computed beside it so nothing v3 gave is lost: a quest or badge v3 counts stays, marked carried.
 
 Pure: records in, progress out. The relay route gathers the records; the gamify

@@ -554,9 +554,9 @@ def _access_active(
     actually closes, not just that it stops future free rejoins (P2-4). Two
     exemptions, both intentional: the room creator (never paid to be there,
     can't expire out of their own room) and, for anyone else, an agent with
-    no entitlement row at all for this resource — see
-    `entitlements.has_any_grant()`'s docstring for why "predates
-    entitlements" must never be conflated with "entitlement lapsed."
+    no entitlement row at all for this resource (a purchase still in flight) — see
+    `entitlements.has_any_grant()`'s docstring for why that must never be
+    conflated with "entitlement lapsed."
 
     For any other gate_type, this is a pure in-memory check — no entitlement
     query, hence no extra DB round-trip — since only `paid` rooms

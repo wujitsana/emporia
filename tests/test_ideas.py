@@ -18,7 +18,6 @@ from tests.topic_posts import seed_post_row
 def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_LABS", "1")
     monkeypatch.setenv("EMPORIA_LAB_HOSTS", "file")
-    monkeypatch.setenv("EMPORIA_QUEST_OTHERS", "any")
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
     monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)

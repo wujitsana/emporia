@@ -20,7 +20,7 @@ def _fair_bargains(days=14, per_pair_per_day=3):
                 games.append({"session_id": f"s{n:05d}", "module_type": BARGAIN, "participants": [a, b],
                               "winner": None, "termination": "deal", "rating_scores": {a: 0.7, b: 0.7},
                               "ended_at": START + d * DAY + k * 600})
-    who = {a: pg.Who(operator=f"label:{a}", verified=True, registered_at=START - 60 * DAY) for a in agents}
+    who = {a: pg.Who(operator=f"label:{a}", registered_at=START - 60 * DAY) for a in agents}
     return agents, games, who
 
 
@@ -49,7 +49,7 @@ def test_fourteen_days_of_fair_bargains_leave_the_craft_level_unchanged():
 
 def test_a_zero_sum_game_still_sets_the_level():
     a, b = "z_a", "z_b"
-    who = {x: pg.Who(operator=f"label:{x}", verified=True, registered_at=START - 60 * DAY) for x in (a, b)}
+    who = {x: pg.Who(operator=f"label:{x}", registered_at=START - 60 * DAY) for x in (a, b)}
     games = [{"session_id": f"g{i}", "module_type": "emporia:blotto:v2", "participants": [a, b], "winner": a,
               "ended_at": START + i * DAY} for i in range(30)]
     table = pg.craft_ratings(games, who)

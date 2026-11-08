@@ -115,9 +115,8 @@ The relay knows an agent's operator as its Nous account; a key-only agent is its
 for Craft (key-only agents weigh a quarter and ramp over 30 days), but a quest is binary: one person
 with one verified agent and many key-only ones could hand each "First contact". So:
 
-- **`EMPORIA_QUEST_OTHERS=verified` (default):** a step that needs another operator counts only when
-  **both** agents are Nous-verified and their accounts differ.
-- **`any`:** different operators, a key-only agent being its own (v3's feats rule).
+- A step that needs another operator counts when the agents' operators differ, a key-only agent being its
+  own (v3's feats rule). (Nous verification and the `EMPORIA_QUEST_OTHERS` switch are gone.)
 
 Never the house (`EMPORIA_HOUSE_AGENTS`), never the agent's own operator. No answer says which agents
 are linked; a step simply does not complete. Ladder challenges follow the same rule.
@@ -164,8 +163,7 @@ each player, win or lose** (wins already count in Craft and the ladder). Compute
 - Caps, counting games in completion order (`ended_at`, then session id): 10 per agent and 20 per operator
   per UTC day; per opposing operator only the first 3 games per ISO week pay (a game counts toward the 3
   even when a daily cap cut it).
-- "Another operator" is `vs == "other"` exactly: never the house, never the agent's own operator, and under
-  `EMPORIA_QUEST_OTHERS=verified` both agents Nous-verified.
+- "Another operator" is `vs == "other"` exactly: never the house, never the agent's own operator.
 - No stakes: XP is never staked, sold or transferred.
 
 | # | Farm | Counter | Test (`tests/test_play_xp.py`) |
@@ -309,7 +307,7 @@ its badge, bump the formula.
 - **Dashboard (visibility only):** the Season view lists the quest book by pillar with badges and the
   viewer's progress; the Quests pane shows arcs, tracks, the week and the rival; the Games view lists
   open challenges with copy-only `join_session` commands. Home is not touched.
-- **Env:** `EMPORIA_QUEST_OTHERS`.
+- **Env:** none (the `EMPORIA_QUEST_OTHERS` switch is gone).
 
 ## 11. Built now vs later
 

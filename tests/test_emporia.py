@@ -4739,7 +4739,7 @@ def test_agora_renews_after_expiry_and_unsubscribe(mock_verify, mock_payout, cli
     """P2r-2 (R2): sibling of the still-subscribed renewal test — the agent
     unsubscribed after their entitlement expired, so already_member is also
     False on the renewal attempt. Proves the fix isn't accidentally coupled
-    to the already_member short-circuit's own P2-5 grandfather logic."""
+    to the already_member short-circuit's own P2-5 purchase-in-flight rule."""
     from emporia.relay_server import get_db
 
     _register(client, "p2r2_unsub_owner")
@@ -7449,19 +7449,19 @@ def test_is_member_creator_unaffected_by_expiry_check(rooms_db_path):
     assert is_member(room.room_id, "agent_owner", db_path=rooms_db_path)
 
 
-def test_is_member_grandfathers_paid_member_with_no_entitlement_row(rooms_db_path):
-    """P2-5: a member added directly (simulating a paid-room member who joined
-    before P2-3 shipped, so no entitlement row was ever created for them) must
-    not be locked out — has_any_grant() is False for them, which is the
-    grandfather signal, distinct from an entitlement that actively expired."""
+def test_is_member_admits_a_paid_member_whose_purchase_is_in_flight(rooms_db_path):
+    """P2-5: a member with no entitlement row (a paid join commits the membership
+    before the entitlement, so this is a purchase still in flight) must not be
+    locked out — has_any_grant() is False for them, the signal that is distinct
+    from an entitlement that actively expired."""
     from emporia.rooms import create_room, add_member, is_member
 
-    room = create_room("Legacy Paid Room", "agent_owner", room_type="private",
+    room = create_room("In-flight Paid Room", "agent_owner", room_type="private",
                        gate_type="paid", entry_fee_cents=100,
                        db_path=rooms_db_path)
-    add_member(room.room_id, "agent_legacy_payer", db_path=rooms_db_path)
-    assert is_member(room.room_id, "agent_legacy_payer", db_path=rooms_db_path), \
-        "a member with no entitlement row at all must be grandfathered in, not locked out"
+    add_member(room.room_id, "agent_inflight_payer", db_path=rooms_db_path)
+    assert is_member(room.room_id, "agent_inflight_payer", db_path=rooms_db_path), \
+        "a member with no entitlement row at all is a purchase in flight, not locked out"
 
 
 def test_is_member_regrant_after_expiry_restores_access(rooms_db_path):
@@ -13422,7 +13422,7 @@ def test_entitlement_is_removed_works_with_no_entitlement_ever_existing(entitlem
     assert not is_removed("room", "room_never_paid", "kicked_agent", reason="some_other_reason",
                            db_path=entitlements_db_path)
     # And it must not create an entitlement row — has_any_grant() must stay False,
-    # or the grandfather logic elsewhere (P2-5) would misread a kicked-but-never-paid
+    # or the purchase-in-flight rule elsewhere (P2-5) would misread a kicked-but-never-paid
     # agent as "had a lapsed entitlement."
     assert not has_any_grant("room", "room_never_paid", "kicked_agent", db_path=entitlements_db_path)
 
@@ -19686,7 +19686,6 @@ def test_p28_dm_chain_fails_loudly_on_a_row_without_a_chain_hash(client):
     body = client.get(f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p28pre_alice"}).json()
     assert body["verified"] is False, body
     assert "no chain hash" in body["message"], body
-    assert "unchained_prefix" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -19973,7 +19972,6 @@ def test_p30_sdk_fails_a_dm_row_without_a_chain_hash():
     r = asyncio.run(scenario())
     assert r["verified"] is False, r
     assert "no chain hash" in r["reason"], r
-    assert "unchained_prefix" not in r
 
 
 def test_p30_mcp_verify_dm_chain_matches_the_sdk_twin(prod_client):
@@ -23227,11 +23225,9 @@ def test_a_paid_agora_subscribe_that_crashes_at_the_grant_is_repaired_by_the_ret
 
     A crash at the grant leaves this subscriber a member with no entitlement
     row at all — and that is exactly the state P2-5's `not ever_entitled`
-    grandfather clause reads as "this membership predates entitlements
-    existing", so the short-circuit admits them free, permanently. The
-    interrupted purchase and a genuine pre-entitlements membership are
-    indistinguishable from membership alone; only the payment record tells
-    them apart, and nothing was consulting it.
+    rule reads as "a purchase in flight", so the short-circuit admits them,
+    and (before P50) never finished the purchase. Only the payment record
+    says whether the purchase completed, and nothing was consulting it.
     """
     from emporia import entitlements
     from emporia.relay_server import DATABASE_PATH, get_db
@@ -23274,8 +23270,8 @@ def test_a_paid_agora_subscribe_that_crashes_at_the_grant_is_repaired_by_the_ret
         assert not entitlements.has_any_grant(
             "agora", topic_id, "p50_agora_payer", db_path=DATABASE_PATH,
         ), (
-            "precondition: no entitlement row at all — the state the grandfather "
-            "clause cannot distinguish from a pre-entitlements membership"
+            "precondition: no entitlement row at all — the in-flight state "
+            "the short-circuit admits"
         )
 
         mock_verify.return_value = _pi("pi_P50_AGORA_TWO")
@@ -24721,7 +24717,7 @@ def test_every_router_module_is_actually_included():
         # an open window admits; a closed one does not
         (True,  True,  False, "active",  True),
         (True,  True,  False, "expired", False),
-        # grandfathered: no entitlement row at all is "predates entitlements",
+        # no entitlement row at all is a purchase in flight,
         # never "entitlement lapsed"
         (True,  True,  False, "none",    True),
     ],
@@ -24732,7 +24728,7 @@ def test_access_active_state_matrix(tmp_path, is_member, gate_has_expiry, is_exe
 
     The two exemptions are the subtle rows: a creator with an expired window is
     still in (they never paid), and an agent with *no* entitlement row is still
-    in (their membership predates entitlements). Those two are the difference
+    in (their purchase is in flight). Those two are the difference
     between this rule and the naive `has_access()` check, and they are why it
     had to be written down once rather than remembered twice.
     """

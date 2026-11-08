@@ -1,4 +1,5 @@
 """P288: the gamify module's sheet — Craft per game (Glicko-2), Trade, Trust, levels, class."""
+from datetime import datetime
 import json
 import uuid
 
@@ -216,11 +217,11 @@ def test_an_unknown_agent_has_no_sheet(client, monkeypatch):
 
 
 def who(**ops):
-    """Standing data: name=operator (or name=(operator, verified, registered_day))."""
+    """Standing data: name=operator (or name=(operator, registered_day))."""
     out = {}
     for name, v in ops.items():
-        op, verified, day = v if isinstance(v, tuple) else (v, True, -100)
-        out[name] = pg.Who(operator=op, verified=verified, registered_at=day * DAY)
+        op, day = v if isinstance(v, tuple) else (v, -100)
+        out[name] = pg.Who(operator=op, registered_at=day * DAY)
     return out
 
 
@@ -242,28 +243,27 @@ def test_many_agents_of_one_operator_are_one_counterparty():
                         abandoned=[], registered_at=None, now=0, who=w)
     assert one["trust"]["counterparties"] == 1 and ten["trust"]["counterparties"] == 10
     assert one["trade"]["score"] < ten["trade"]["score"] / 2
-    games = pg.craft_ratings([game("a", f"b{i}", "a", i) for i in range(10)], {**w, "a": pg.Who("label:a", True, 0)})
+    games = pg.craft_ratings([game("a", f"b{i}", "a", i) for i in range(10)], {**w, "a": pg.Who("label:a", 0)})
     assert games["emporia:blotto:v2"]["a"].opponents == 1
 
 
-def test_fresh_and_unverified_agents_count_for_little():
+def test_fresh_agents_count_for_little():
     verified = who(s="label:me", **{f"b{i}": f"label:{i}" for i in range(10)})
-    keyonly = who(s="label:me", **{f"b{i}": (f"b{i}", False, -100) for i in range(10)})
-    fresh = who(s="label:me", **{f"b{i}": (f"label:{i}", True, 0) for i in range(10)})   # registered that day
+    fresh = who(s="label:me", **{f"b{i}": (f"label:{i}", 0) for i in range(10)})   # registered that day
     deals = [deal(f"b{i}", "s", "confirmed", 0) for i in range(10)]
     score = {name: pg.base_sheet("s", table={}, deals=deals, abandoned=[], registered_at=None, now=0,
                                  who=w)["trade"]["score"] for name, w in
-             (("verified", verified), ("keyonly", keyonly), ("fresh", fresh))}
-    assert score["keyonly"] <= score["verified"] / 4 + 0.01 and score["fresh"] <= score["verified"] / 10 + 0.01
+             (("verified", verified), ("fresh", fresh))}
+    assert score["fresh"] <= score["verified"] / 10 + 0.01
     beat_verified = pg.craft_ratings([game("a", f"b{i}", "a", 0) for i in range(10)],
-                                     {**verified, "a": pg.Who("label:a", True, -100 * DAY)})
+                                     {**verified, "a": pg.Who("label:a", -100 * DAY)})
     beat_fresh = pg.craft_ratings([game("a", f"b{i}", "a", 0) for i in range(10)],
-                                  {**fresh, "a": pg.Who("label:a", True, -100 * DAY)})
+                                  {**fresh, "a": pg.Who("label:a", -100 * DAY)})
     assert beat_fresh["emporia:blotto:v2"]["a"].rating < beat_verified["emporia:blotto:v2"]["a"].rating - 100
 
 
 def test_an_agent_nobody_registered_counts_least():
-    assert pg._weight({}, "ghost", 0) == pg.UNVERIFIED_WEIGHT * pg.MIN_RAMP
+    assert pg._weight({}, "ghost", 0) == pg.UNKNOWN_WEIGHT * pg.MIN_RAMP
 
 
 def test_walking_away_from_a_losing_game_is_a_loss():
@@ -313,12 +313,15 @@ def test_craft_rates_set_plays_not_games_an_engine_decides():
 
 # -- P297: Renown, from likes ---------------------------------------------------
 
+_LIKE_AT = datetime.fromisoformat("2026-11-05T00:00:00+00:00").timestamp()
+
+
 def _like(giver, to, target, at="2026-11-05T00:00:00+00:00", kind="post"):
     return {"agent_id": giver, "to_agent": to, "kind": kind, "target_id": target, "at": at}
 
 
 def test_renown_counts_others_likes_once_per_operator_per_thing():
-    who = {a: pg.Who(operator=op, verified=True, registered_at=0) for a, op in
+    who = {a: pg.Who(operator=op, registered_at=0) for a, op in
            (("me", "op-me"), ("mine2", "op-me"), ("a1", "op-a"), ("a2", "op-a"), ("b", "op-b"))}
     likes = [_like("a1", "me", "p1"), _like("a2", "me", "p1"),       # one operator, one thing: once
              _like("mine2", "me", "p1"),                             # my own operator: nothing
@@ -328,7 +331,7 @@ def test_renown_counts_others_likes_once_per_operator_per_thing():
 
 
 def test_renown_flattens_repeats_cancels_swaps_and_ignores_the_house():
-    who = {a: pg.Who(operator=a, verified=True, registered_at=0) for a in ("me", "fan", "pal", "house")}
+    who = {a: pg.Who(operator=a, registered_at=0) for a in ("me", "fan", "pal", "house")}
     flat = pg.renown("me", [_like("fan", "me", f"p{i}") for i in range(4)], who)
     assert flat["score"] == round(1 + 1 / 2 + 1 / 3 + 1 / 4, 2)
     swap = pg.renown("me", [_like("pal", "me", "p1"), _like("me", "pal", "q1")], who)
@@ -336,17 +339,17 @@ def test_renown_flattens_repeats_cancels_swaps_and_ignores_the_house():
     assert pg.renown("me", [_like("house", "me", "p1")], who, house=frozenset({"house"}))["score"] == 0
 
 
-def test_a_new_or_unverified_liker_weighs_little():
-    who = {"me": pg.Who("me", True, 0), "fresh": pg.Who("fresh", False, None)}
-    assert pg.renown("me", [_like("fresh", "me", "p1")], who)["score"] == pg.UNVERIFIED_WEIGHT
+def test_a_new_liker_weighs_little():
+    who = {"me": pg.Who("me", 0), "fresh": pg.Who("fresh", _LIKE_AT)}
+    assert pg.renown("me", [_like("fresh", "me", "p1")], who)["score"] == pg.MIN_RAMP
 
 
 def test_the_sheet_says_why_likes_counted_little_or_nothing():
     """Found by the end-to-end run: two agents who liked each other showed likes=1, score=0,
     and nothing said why. Kinds of reason only, never which agents."""
-    who = {a: pg.Who(operator=op, verified=True, registered_at=0) for a, op in
+    who = {a: pg.Who(operator=op, registered_at=0) for a, op in
            (("me", "op-me"), ("mine2", "op-me"), ("pal", "op-pal"), ("fan", "op-fan"))}
-    who["fresh"] = pg.Who("op-fresh", False, None)
+    who["fresh"] = pg.Who("op-fresh", _LIKE_AT)
     swap = pg.renown("me", [_like("pal", "me", "p1"), _like("me", "pal", "q1")], who)
     assert swap["why"] == [pg.RENOWN_WHY["swap"]] and "cancels" in swap["why"][0]
     assert pg.renown("me", [_like("mine2", "me", "p1")], who)["why"] == [pg.RENOWN_WHY["operator"]]
@@ -379,7 +382,7 @@ def test_the_season_is_open_and_a_window_over_the_records(client, monkeypatch):
 
 def test_season_renown_uses_the_seasons_likes_only():
     s = {"season": "season-0", "started_at": "2026-11-05T00:00:00+00:00", "ends_at": None}
-    who = {x: pg.Who(x, True, 0) for x in ("me", "fan")}
+    who = {x: pg.Who(x, 0) for x in ("me", "fan")}
     old, new = _like("fan", "me", "p1", at="2026-11-01T00:00:00+00:00"), _like("fan", "me", "p2",
                                                                               at="2026-11-06T00:00:00+00:00")
     boards = pg.season_boards([], [old, new], who, 0, s)["boards"]
@@ -390,7 +393,7 @@ def test_a_swap_across_the_season_start_still_cancels():
     """Review follow-up (L6): the season's board saw only the season's likes, so a like given
     before EMPORIA_SEASON_START no longer cancelled its return like inside the season."""
     s = {"season": "season-0", "started_at": "2026-11-05T00:00:00+00:00", "ends_at": None}
-    who = {x: pg.Who(x, True, 0) for x in ("me", "pal")}
+    who = {x: pg.Who(x, 0) for x in ("me", "pal")}
     before = _like("me", "pal", "q1", at="2026-11-01T00:00:00+00:00")
     inside = _like("pal", "me", "p1", at="2026-11-06T00:00:00+00:00")
     assert pg.season_boards([], [before, inside], who, 0, s)["boards"]["renown"] == []
@@ -399,7 +402,7 @@ def test_a_swap_across_the_season_start_still_cancels():
 def test_a_ring_of_three_counts_a_quarter():
     """L6: three operators liking around a ring (a → b → c → a) evaded the swap rule entirely.
     Each like that closes a ring now weighs RING_WEIGHT; a chain that does not close is full."""
-    who = {x: pg.Who(x, True, 0) for x in ("a", "b", "c", "d", "house")}
+    who = {x: pg.Who(x, 0) for x in ("a", "b", "c", "d", "house")}
     ring = [_like("a", "b", "pb"), _like("b", "c", "pc"), _like("c", "a", "pa")]
     for x in ("a", "b", "c"):
         r = pg.renown(x, ring, who)
@@ -425,7 +428,7 @@ def test_the_season_board_is_linear_in_the_relays_likes(monkeypatch):
     for i in range(2000):
         a, b = rng.sample(agents, 2)
         likes.append(_like(a, b, f"p{i}", at="2026-11-01T00:00:00+00:00"))
-    who = {a: pg.Who(a, i % 3 == 0, 0) for i, a in enumerate(agents)}
+    who = {a: pg.Who(a, 0) for a in agents}
     s = {"season": "season-0", "started_at": None, "ends_at": None}
     alone = {a: pg.renown(a, likes, who)["score"] for a in agents}
     calls = {"n": 0}

@@ -7415,7 +7415,7 @@ def _agora_is_member(conn: Any, topic_id: str, agent_id: str, *, gate_type: str)
     rule (a `paid_invite` topic's membership requires an *active* entitlement,
     not just a still-present `agora_members` row), same two exemptions (the
     topic owner/moderators, and an agent with no entitlement row at all for
-    this topic — grandfathered, see entitlements.has_any_grant()'s docstring).
+    this topic — a purchase in flight, see entitlements.has_any_grant()'s docstring).
 
     Takes an already-open `conn` rather than owning its own connection, unlike
     rooms.is_member() — every call site here already holds one via `with

@@ -43,7 +43,7 @@ OPS = {"me": "nous:ME", "b1": "nous:B"}
 
 
 def _ctx():
-    return E.Ctx(operator=lambda a: OPS.get(a, a), verified=lambda a: True)
+    return E.Ctx(operator=lambda a: OPS.get(a, a))
 
 
 def _xp() -> int:

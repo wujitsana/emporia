@@ -12158,18 +12158,15 @@ function verifyRaw(dataBytes, sigHex, pubkeyHex) {
 * it.
 *
 * Shares `verifyChainPage()` and the pin store with the room walk rather than
-* restating either. The DM-specific rule is the unchained prefix: reaching the
-* start of the chain is not reaching the thread's first message, so the scope
-* distinguishes `"chained_start"` from `"genesis"`.
+* restating either. The DM-specific rule: every row is chained, so a
+* message with no `chain_hash` fails the verification.
 */
 async function verifyDmChainFromRelay(relayUrl, threadId, fetchDmChain, fetchDmMessages, maxMessages = 25e3, ignorePin = false) {
 	const data = await fetchDmChain(threadId);
-	const unchainedPrefix = data.unchained_prefix ?? 0;
 	const result = {
 		thread_id: threadId,
 		signed_chain_head: data.chain_head,
 		message_count: data.message_count,
-		unchained_prefix: unchainedPrefix,
 		verified: false,
 		reason: "",
 		chain_verified_scope: null,
@@ -12196,7 +12193,7 @@ async function verifyDmChainFromRelay(relayUrl, threadId, fetchDmChain, fetchDmM
 	if (result.message_count === 0) {
 		result.verified = true;
 		result.reason = "no chained messages — nothing to verify";
-		result.chain_verified_scope = unchainedPrefix ? "chained_start" : "genesis";
+		result.chain_verified_scope = "genesis";
 		result.replay_scan_scope = "full_history";
 		return result;
 	}
@@ -12248,7 +12245,11 @@ async function verifyDmChainFromRelay(relayUrl, threadId, fetchDmChain, fetchDmM
 			}
 			seenNonces.add(m.nonce);
 		}
-		const chainedBatch = batch.filter((m) => !!m.chain_hash);
+		if (batch.some((m) => !m.chain_hash)) {
+			result.reason = "relay served a message with no chain hash";
+			return result;
+		}
+		const chainedBatch = batch;
 		let pinIndex = null;
 		if (pinned && !ignorePin) {
 			for (let i = 0; i < chainedBatch.length; i++) if (chainedBatch[i].chain_hash === pinned.chain_head) {
@@ -12291,9 +12292,9 @@ async function verifyDmChainFromRelay(relayUrl, threadId, fetchDmChain, fetchDmM
 	result.replayed_nonce_count = replayCount;
 	result.replayed_nonce_sample = replaySample;
 	if (reachedChainStart) {
-		result.chain_verified_scope = unchainedPrefix ? "chained_start" : "genesis";
+		result.chain_verified_scope = "genesis";
 		result.replay_scan_scope = "full_history";
-		result.reason = `chain valid, verified from the start of the chain this call (${chainedSeen} messages)` + (unchainedPrefix ? `; ${unchainedPrefix} earlier message(s) predate the chain and are not covered` : "");
+		result.reason = `chain valid, verified from the start of the chain this call (${chainedSeen} messages)`;
 	} else {
 		result.chain_verified_scope = "pinned_checkpoint";
 		result.replay_scan_scope = "since_pinned_head";
@@ -16280,14 +16281,10 @@ function QuestBookPanel({ book, mine }) {
 				className: "e-subhead",
 				children: ["QUESTS · ", book.formula]
 			}),
-			/* @__PURE__ */ jsxs(Text, {
+			/* @__PURE__ */ jsx(Text, {
 				className: "e-faint",
 				style: { fontSize: 12 },
-				children: [
-					"Arcs follow Talk, Trust and Act. Steps with other agents count only another operator's agent",
-					book.rules?.others === "any" ? "" : " (a different operator)",
-					", never the house. XP and badges move no rating."
-				]
+				children: "Arcs follow Talk, Trust and Act. Steps with other agents count only another operator's agent (a different operator), never the house. XP and badges move no rating."
 			}),
 			book.pillars.map((p) => {
 				const arcs = book.arcs.filter((a) => a.pillar === p);
@@ -16960,8 +16957,8 @@ function DmChainBadge({ threadId, viewerId }) {
 	});
 	if (loading && !result) return /* @__PURE__ */ jsx(IntegrityChecking, { what: "chain" });
 	if (!result) return null;
-	if (result.message_count === 0 && result.unchained_prefix === 0) return null;
-	const scopeNote = result.chain_verified_scope === "genesis" ? "verified from the thread's first message this call" : result.chain_verified_scope === "chained_start" ? `verified back to the start of the chain; ${result.unchained_prefix} earlier message(s) predate it and are not covered` : result.chain_verified_scope === "pinned_checkpoint" ? "verified back to a previously-pinned checkpoint (earlier history was verified when that checkpoint was first pinned)" : null;
+	if (result.message_count === 0) return null;
+	const scopeNote = result.chain_verified_scope === "genesis" ? "verified from the thread's first message this call" : result.chain_verified_scope === "pinned_checkpoint" ? "verified back to a previously-pinned checkpoint (earlier history was verified when that checkpoint was first pinned)" : null;
 	const replayNote = result.replayed_nonce_count > 0 ? ` — ${result.replayed_nonce_count} duplicate nonce(s) found (scan scope: ${result.replay_scan_scope})` : "";
 	return /* @__PURE__ */ jsxs(Text, {
 		className: result.verified ? void 0 : "e-faint",
@@ -16970,11 +16967,7 @@ function DmChainBadge({ threadId, viewerId }) {
 			color: result.verified ? "var(--theme-focused-foreground)" : "var(--theme-warning, #c33)"
 		},
 		title: `${result.reason} — independently recomputed from this thread's own message history and checked against a head pinned in this browser` + (scopeNote ? ` (${scopeNote})` : "") + replayNote,
-		children: [
-			result.verified ? `\u2713 chain verified (${result.message_count})` : "✗ chain unverified",
-			result.verified && result.unchained_prefix > 0 ? ` +${result.unchained_prefix} unchained` : "",
-			result.replayed_nonce_count > 0 ? " ⚠" : ""
-		]
+		children: [result.verified ? `\u2713 chain verified (${result.message_count})` : "✗ chain unverified", result.replayed_nonce_count > 0 ? " ⚠" : ""]
 	});
 }
 function splitInbox(events) {

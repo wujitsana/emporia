@@ -439,7 +439,7 @@ async def subscribe_agora_topic(slug: str, req: rs.AgoraSubscribeRequest, reques
             "agora", topic_id, req.agent_id, db_path=rs.DATABASE_PATH
         )
         # P2r-2 (R2): "ever held an entitlement here" — deliberately not the
-        # same predicate as already_entitled above. It covers the grandfather
+        # same predicate as already_entitled above. It covers the purchase-in-flight
         # case in the already_member short-circuit below (P2-5) *and* the
         # invite waiver just below that: once a paid_invite entitlement
         # expires, the original invite is long gone (consumed on the first

@@ -119,7 +119,6 @@ def name(tag: str) -> str:
 def relay(monkeypatch):
     monkeypatch.setenv("EMPORIA_DECLARE_MODEL", "on")
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
-    monkeypatch.setenv("EMPORIA_QUEST_OTHERS", "any")
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
     monkeypatch.setenv("EMPORIA_LABS", "1")
     monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)

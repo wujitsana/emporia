@@ -7,7 +7,7 @@ OPS = {"me": "label:ME", "b1": "label:B", "mine2": "label:ME", "house": "label:H
 
 
 def ctx():
-    return E.Ctx(operator=lambda a: OPS.get(a, a), verified=lambda a: True, house=frozenset({"house"}))
+    return E.Ctx(operator=lambda a: OPS.get(a, a), house=frozenset({"house"}))
 
 
 def game(*opps, at="2026-11-04T10:00:00+00:00", module="emporia:blotto:v2", **kw):

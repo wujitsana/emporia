@@ -41,8 +41,8 @@ longer what makes the ban stick — `record_removal()` is, unconditionally,
 regardless of whether this resource/agent pair ever had a payment at all.
 Kept as two separate tables rather than folding removal into
 `access_entitlements` as a special row: `has_any_grant()`'s entire job is
-distinguishing "never had an entitlement" (grandfathered) from "had one that
-lapsed" (must be denied), and a tombstone entitlement row for a never-paid
+distinguishing "never had an entitlement" (a purchase still in flight) from "had one
+that lapsed" (must be denied), and a tombstone entitlement row for a never-paid
 kicked agent would make that distinction lie.
 """
 
@@ -257,10 +257,12 @@ def has_any_grant(
     """True if this agent has ever received a grant for this resource, active
     or not. Exists to distinguish "this entitlement expired/was revoked"
     (`has_access()` is False *and* this is True — access should now be denied)
-    from "this membership predates entitlements existing at all" (`has_access()`
-    is False *and* this is also False — a member added before P2-3 shipped, who
-    must not be locked out by expiry enforcement for a window that never
-    applied to them). See `rooms.is_member()` (P2-5) and `_agora_is_member()`
+    from "this purchase is still in flight" (`has_access()` is False *and* this
+    is also False). A paid join commits the membership first and writes the
+    entitlement when it settles, so a member with no entitlement row at all is
+    one whose settlement has not finished (a crash between the two leaves exactly
+    this); `_finish_interrupted_access_purchase()` completes it on their next
+    join, and until then they must not be locked out or charged twice. See `rooms.is_member()` (P2-5) and `_agora_is_member()`
     (relay_server.py, P2-5's Agora sibling), the two callers.
 
     `conn` — see `has_access()`'s docstring; same optional reused-connection
@@ -333,8 +335,7 @@ def access_active(
     record keeps returning to (N4-R1(b) found them already apart; P2r-1 added a
     check to one purely so a future feature would not have to remember; P50's
     defect was *worse* on the Agora side precisely because its copy of the
-    grandfather clause read an interrupted purchase as a pre-entitlements
-    membership).
+    in-flight rule below was applied to the wrong thing).
 
     The two exemptions are the subtle part and both are deliberate:
 
@@ -343,9 +344,11 @@ def access_active(
       creator_id`; an Agora passes `role in ("owner", "moderator")`. Two
       vocabularies, one rule, which is why this is a boolean the caller
       computes rather than something this function tries to infer.
-    * **No entitlement row at all** means this membership predates entitlements
-      existing, not that one lapsed. Conflating those locks out members added
-      before P2-3 shipped. See `has_any_grant()`'s docstring.
+    * **No entitlement row at all** means a purchase still in flight (the
+      membership commits before the entitlement), not that one lapsed. Treating
+      it as lapsed would lock out and re-charge a payer whose settlement a crash
+      interrupted. Free gates never reach this rule. See `has_any_grant()`'s
+      docstring.
 
     `gate_has_expiry` is the caller's, not ours: rooms expire on `paid`, Agoras
     on `paid_invite`, and only the caller knows its own gate vocabulary. A gate
