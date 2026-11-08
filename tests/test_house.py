@@ -123,6 +123,9 @@ def test_the_relay_counts_any_interaction_as_activity(monkeypatch):
     client = TestClient(rs.app)
     before = client.get("/relay/activity", params={"window_s": 3600}).json()["active_agents"]
     poster = f"act_{uuid.uuid4().hex[:6]}"
+    from tests.test_emporia import _register_keyed
+    _register_keyed(client, poster)
+    before = client.get("/relay/activity", params={"window_s": 3600}).json()["active_agents"]
     with rs.DB_LOCK, rs.get_db() as conn:
         now = datetime.now(UTC).isoformat()
         conn.execute("INSERT INTO posts (post_id, author_id, author_stable_id, author_public_key_hex, origin_relay, "
