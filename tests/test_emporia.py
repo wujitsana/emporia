@@ -19609,7 +19609,6 @@ def test_p28_dm_messages_are_chained_and_verifiable(client):
     assert body["verified"] is True, body
     assert body["message_count"] == 3, body
     assert body["chain_head"], body
-    assert body["unchained_prefix"] == 0, body
     # Signed with the relay's federation key, exactly as the room route is --
     # the attestation is the half a plain read can't provide.
     assert body["origin_public_key_hex"], body
@@ -19664,49 +19663,30 @@ def test_p28_dm_chain_is_participants_only(client):
     ).status_code == 200
 
 
-def test_p28_dm_chain_reports_an_unchained_prefix_rather_than_vouching_for_it(client):
-    """P28-4: pre-P28 rows have `chain_hash` NULL — nothing was stored, so
-    nothing can be claimed about them, the same posture P17's `signature` and
-    P18's `nonce` migrations took. The chain therefore starts at the first
-    chained message.
-
-    That boundary must be stated, not hidden. An operator can delete the entire
-    unchained prefix and the chained suffix still verifies perfectly, so
-    reporting a bare `verified: true` would overclaim exactly where the
-    guarantee stops. `unchained_prefix` is how a client learns how much of the
-    thread the head does not cover.
-    """
+def test_p28_dm_chain_fails_loudly_on_a_row_without_a_chain_hash(client):
+    """Every DM row is chained. A row with `chain_hash` NULL (written around the
+    relay) is a broken chain, reported as a failure rather than skipped."""
     from emporia.relay_server import get_db
 
     thread_id = _p28_dm_thread(client, "p28pre_alice", "p28pre_bob")
+    _p28_dm_send(client, thread_id, "p28pre_alice", "chained one")
+    ok = client.get(f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p28pre_alice"}).json()
+    assert ok["verified"] is True and ok["message_count"] == 1, ok
 
-    # Two genuinely pre-P28 rows: written straight to the table with chain_hash
-    # NULL and an earlier created_at, exactly as they would have been before the
-    # column existed. Nulling an already-chained message instead would be an
-    # unfaithful fixture -- the later message committed to that hash, so the
-    # suffix would legitimately fail to verify and the test would be measuring
-    # its own setup rather than the migration boundary.
     with get_db() as conn:
-        for i in range(2):
-            conn.execute(
-                "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, "
-                "msg_type, created_at, signature, nonce, chain_hash) "
-                "VALUES (?,?,?,?,?,?,?,?,NULL)",
-                (f"dmm_pre_p28_{i}", thread_id, "p28pre_alice", f"legacy {i}",
-                 "chat", f"2020-01-0{i + 1}T00:00:00+00:00", None, f"legacy_nonce_{i}"),
-            )
+        conn.execute(
+            "INSERT INTO dm_messages (message_id, thread_id, sender_id, content, "
+            "msg_type, created_at, signature, nonce, chain_hash) "
+            "VALUES (?,?,?,?,?,?,?,?,NULL)",
+            ("dmm_unhashed", thread_id, "p28pre_alice", "unhashed",
+             "chat", "2020-01-01T00:00:00+00:00", None, "unhashed_nonce"),
+        )
         conn.commit()
 
-    _p28_dm_send(client, thread_id, "p28pre_alice", "chained one")
-    _p28_dm_send(client, thread_id, "p28pre_bob", "chained two")
-
-    r = client.get(f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p28pre_alice"})
-    assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["unchained_prefix"] == 2, body
-    assert body["message_count"] == 2, body
-    assert body["verified"] is True, body
-    assert body["chain_head"], body
+    body = client.get(f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p28pre_alice"}).json()
+    assert body["verified"] is False, body
+    assert "no chain hash" in body["message"], body
+    assert "unchained_prefix" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -19808,7 +19788,7 @@ def test_p29_dm_chain_catches_history_truncation(client):
     before = client.get(
         f"/dm/{thread_id}/chain", headers={"x-emporia-agent-id": "p29trunc_alice"}
     ).json()
-    assert before["verified"] is True and before["unchained_prefix"] == 0, before
+    assert before["verified"] is True, before
 
     with get_db() as conn:
         conn.execute(
@@ -19823,10 +19803,6 @@ def test_p29_dm_chain_catches_history_truncation(client):
         "truncating the start of a thread must break the chain -- the GENESIS "
         "restart exists for the migration boundary and must not double as a "
         f"way to launder a deleted prefix: {after}"
-    )
-    assert after["unchained_prefix"] == 0, (
-        "the surviving rows all still carry a chain_hash, so none of this is "
-        f"the unchained-migration case: {after}"
     )
 
 
@@ -19893,7 +19869,6 @@ def test_p30_sdk_verifies_a_dm_chain_and_pins_it():
     first, second = asyncio.run(scenario())
     assert first["verified"] is True, first
     assert first["chain_verified_scope"] == "genesis", first
-    assert first["unchained_prefix"] == 0, first
     assert first["message_count"] == 3, first
     # Second call: nothing changed, so the pin answers without a re-walk.
     assert second["verified"] is True, second
@@ -19966,11 +19941,8 @@ def test_p30_sdk_catches_a_self_consistent_rewrite_the_relay_signs():
     assert "rewritten" in after["reason"], after
 
 
-def test_p30_sdk_reports_chained_start_not_genesis_when_a_prefix_predates_the_chain():
-    """P30-2: pre-P28 messages carry no hash, so reaching the start of the
-    chain is not the same as reaching the thread's first message. Reporting
-    that as "genesis" would claim the whole thread was checked when its
-    earliest part structurally cannot be."""
+def test_p30_sdk_fails_a_dm_row_without_a_chain_hash():
+    """P30-2: every DM row is chained, so a message with no hash fails the check."""
     import asyncio
 
     from emporia.relay_server import get_db
@@ -19999,10 +19971,9 @@ def test_p30_sdk_reports_chained_start_not_genesis_when_a_prefix_predates_the_ch
             await b.__aexit__()
 
     r = asyncio.run(scenario())
-    assert r["verified"] is True, r
-    assert r["chain_verified_scope"] == "chained_start", r
-    assert r["unchained_prefix"] == 1, r
-    assert "not covered" in r["reason"], r
+    assert r["verified"] is False, r
+    assert "no chain hash" in r["reason"], r
+    assert "unchained_prefix" not in r
 
 
 def test_p30_mcp_verify_dm_chain_matches_the_sdk_twin(prod_client):
@@ -20615,7 +20586,7 @@ def test_capped_verify_never_claims_history_it_did_not_read(rooms_db_path):
     invisible to a 10-message window — which is fine, and exactly why the
     window must not be reported as `genesis`. A bare `verified: true` would
     overclaim precisely where the guarantee stops, the same reasoning P28-4
-    applied to the DM unchained prefix."""
+    applied to DM chains."""
     import sqlite3
 
     from emporia import rooms as rooms_mod
@@ -20740,10 +20711,8 @@ def test_dm_chain_route_declares_its_verification_scope(client):
     assert wide["signature"] == data["signature"]
 
 
-def test_dm_chain_scope_still_names_the_unchained_prefix(client):
-    """P28-4's distinction survives the cap: a thread whose chained suffix was
-    fully walked but which has pre-P28-4 unchained rows in front of it is
-    `chained_start`, never `genesis`."""
+def test_dm_chain_with_an_unhashed_row_fails_even_under_the_cap(client):
+    """A row with no chain hash fails the DM verification at any cap."""
     import sqlite3
 
     from emporia import relay_server
@@ -20767,8 +20736,8 @@ def test_dm_chain_scope_still_names_the_unchained_prefix(client):
     with patch.object(relay_server, "CHAIN_VERIFY_LIMIT", 1000):
         data = client.get(f"/dm/{thread_id}/chain",
                           headers={"X-Emporia-Agent-Id": "p44_dmu_a"}).json()
-    assert data["chain_verified_scope"] == "chained_start", data
-    assert data["unchained_prefix"] == 1
+    assert data["verified"] is False, data
+    assert "no chain hash" in data["message"], data
 
 
 def test_session_audit_route_reads_its_log_once(client):

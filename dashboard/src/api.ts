@@ -201,18 +201,13 @@ export interface Room {
  *  genuine client-side (pin-backed) verification, not just displaying this
  *  raw self-report (see that route's own docstring on what the signature
  *  does and does not prove). */
-/** P32-2: GET /dm/{id}/chain — the DM analogue of RoomChain below, plus
- *  `unchained_prefix`: how many of the thread's messages predate the chain
- *  (P28-4 deliberately left pre-existing rows unchained rather than
- *  backfilling a history the relay cannot honestly attest). The signed head
- *  does not cover them. */
+/** P32-2: GET /dm/{id}/chain — the DM analogue of RoomChain below. */
 export interface DmChain {
   thread_id: string;
   verified: boolean;
   message: string;
   chain_head: string | null;
   message_count: number;
-  unchained_prefix: number;
   origin_relay: string;
   origin_public_key_hex: string;
   signature: string;

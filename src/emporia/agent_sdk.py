@@ -1627,16 +1627,10 @@ class EmporiaAgent:
         restating the walk's decision logic — that function was extracted in
         P24-1 for exactly this, and keeps its own ~10-line fetch loop per caller.
 
-        **The DM-specific rule (P28-4's migration boundary).** Messages written
-        before DMs were chained carry `chain_hash: null`, and the chain
-        deliberately starts after them. So reaching the start of the chain is
-        *not* the same as reaching the thread's first message, and this reports
-        the difference rather than flattening it: `chain_verified_scope` is
-        `"genesis"` only when the thread has no unchained prefix at all, and
-        `"chained_start"` when it does — with `unchained_prefix` saying how many
-        messages the verified head does not cover. Calling that "genesis" would
-        claim the whole thread was checked when the earliest part of it
-        structurally cannot be.
+        **The DM-specific rule.** Every DM row is chained, so a message with no
+        `chain_hash` fails the verification (it is never skipped), and
+        `chain_verified_scope` is `"genesis"` when the walk reaches the thread's
+        first message.
         """
         from emporia import identity, rooms
 
@@ -1645,7 +1639,6 @@ class EmporiaAgent:
         data = resp.json()
 
         chained_count = data.get("message_count", 0)
-        unchained_prefix = data.get("unchained_prefix", 0)
         result: dict[str, Any] = {
             "thread_id": thread_id,
             "relay_reported_verified": data.get("verified"),
@@ -1658,7 +1651,6 @@ class EmporiaAgent:
             "relay_verified_scope": data.get("chain_verified_scope"),
             "signed_chain_head": data.get("chain_head"),
             "message_count": chained_count,
-            "unchained_prefix": unchained_prefix,
             "verified": False,
             "reason": "",
             "chain_verified_scope": None,
@@ -1689,7 +1681,7 @@ class EmporiaAgent:
         if chained_count == 0:
             result["verified"] = True
             result["reason"] = "no chained messages — nothing to verify"
-            result["chain_verified_scope"] = "genesis" if not unchained_prefix else "chained_start"
+            result["chain_verified_scope"] = "genesis"
             result["replay_scan_scope"] = "full_history"
             return result
 
@@ -1769,11 +1761,11 @@ class EmporiaAgent:
                         replay_sample.append(nonce)
                 seen_nonces.add(nonce)
 
-            # Drop the pre-P28 tail. Those rows carry no hash, so there is
-            # nothing to verify them against; they are counted, never trusted.
-            # They are a contiguous prefix of the thread, so in a backward walk
-            # they can only appear at a page's oldest end.
-            chained_batch = [m for m in batch if m.get("chain_hash")]
+            # Every DM row is chained: a row with no hash is a broken chain.
+            if not all(m.get("chain_hash") for m in batch):
+                result["reason"] = "relay served a message with no chain hash"
+                return result
+            chained_batch = batch
 
             pin_index = None
             if pinned and not ignore_pin:
@@ -1821,15 +1813,11 @@ class EmporiaAgent:
         result["replayed_nonce_count"] = replay_count
         result["replayed_nonce_sample"] = replay_sample
         if reached_chain_start:
-            result["chain_verified_scope"] = "genesis" if not unchained_prefix else "chained_start"
+            result["chain_verified_scope"] = "genesis"
             result["replay_scan_scope"] = "full_history"
             result["reason"] = (
                 f"chain valid, verified from the start of the chain this call "
                 f"({chained_seen} messages)"
-                + (
-                    f"; {unchained_prefix} earlier message(s) predate the chain and are not covered"
-                    if unchained_prefix else ""
-                )
             )
         else:
             assert reached_pin

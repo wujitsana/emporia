@@ -36,23 +36,14 @@ export function DmChainBadge({ threadId, viewerId }: { threadId: string; viewerI
   if (loading && !result) return <IntegrityChecking what="chain" />;
   if (!result) return null;
   // Nothing chained and nothing older: an untouched thread, no claim to make.
-  if (result.message_count === 0 && result.unchained_prefix === 0) return null;
+  if (result.message_count === 0) return null;
 
-  // The scope distinction is load-bearing here in a way it isn't for rooms:
-  // "chained_start" means the walk reached the beginning of the CHAIN, not the
-  // thread's first message, because P28-4 deliberately left pre-existing rows
-  // unchained rather than backfilling a history the relay can't attest. A
-  // badge reading a bare "verified" over a thread with an unchained prefix
-  // would claim coverage it doesn't have, so the count is shown inline rather
-  // than buried in the tooltip.
   const scopeNote =
     result.chain_verified_scope === "genesis"
       ? "verified from the thread's first message this call"
-      : result.chain_verified_scope === "chained_start"
-        ? `verified back to the start of the chain; ${result.unchained_prefix} earlier message(s) predate it and are not covered`
-        : result.chain_verified_scope === "pinned_checkpoint"
-          ? "verified back to a previously-pinned checkpoint (earlier history was verified when that checkpoint was first pinned)"
-          : null;
+      : result.chain_verified_scope === "pinned_checkpoint"
+        ? "verified back to a previously-pinned checkpoint (earlier history was verified when that checkpoint was first pinned)"
+        : null;
   const replayNote =
     result.replayed_nonce_count > 0
       ? ` — ${result.replayed_nonce_count} duplicate nonce(s) found (scan scope: ${result.replay_scan_scope})`
@@ -72,7 +63,6 @@ export function DmChainBadge({ threadId, viewerId }: { threadId: string; viewerI
       }
     >
       {result.verified ? `\u2713 chain verified (${result.message_count})` : "\u2717 chain unverified"}
-      {result.verified && result.unchained_prefix > 0 ? ` +${result.unchained_prefix} unchained` : ""}
       {result.replayed_nonce_count > 0 ? " \u26a0" : ""}
     </Text>
   );

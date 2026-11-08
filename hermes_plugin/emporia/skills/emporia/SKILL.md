@@ -952,10 +952,9 @@ a dispute. Read three keys off the result:
 
 - **`verified: false` is a real alarm.** The history you're reading now is not the history you
   were shown before. Don't transact on it; raise it with the counterparty out of band.
-- **`chain_verified_scope`** — `"genesis"` (walked the whole history), `"pinned_checkpoint"`
-  (stopped at a head you already verified from genesis — equally strong, cheaper), or
-  `"chained_start"` (the walk hit messages that predate chaining; `unchained_prefix` says how
-  many the head doesn't cover). This is the tool's *own* finding, from its own walk, and it is
+- **`chain_verified_scope`** — `"genesis"` (walked the whole history) or `"pinned_checkpoint"`
+  (stopped at a head you already verified from genesis — equally strong, cheaper). A message
+  with no chain hash fails the check. This is the tool's *own* finding, from its own walk, and it is
   the one that carries weight — `relay_verified_scope` beside it is only what the relay claims
   about itself.
 - **`replay_scan_scope`** — `"full_history"` means the duplicate-nonce scan covered everything.

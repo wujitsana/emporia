@@ -359,8 +359,7 @@ def verify_chain(
     seed `prev_hash`; that seed row is taken on trust and is not itself counted
     as verified. `scope` says which happened — `"genesis"` when the walk reached
     the room's true first message, `"recent_window"` when it did not — because a
-    bare `ok=True` from a window would claim history the call never read. Same
-    reasoning P28-4 applied to the DM unchained prefix.
+    bare `ok=True` from a window would claim history the call never read.
 
     Mismatch indices are absolute (an index into the room, not an offset into
     the window), so the same message gets the same number at any cap.

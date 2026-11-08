@@ -1808,7 +1808,7 @@ def _with_older_cursor(body: dict[str, Any], messages: list[dict[str, Any]], lim
 
 
 #: MCP review: the most pages one chain walk reads (200 messages each). A relay serving
-#: unchained rows forever, or the same page again, kept the walk going past the client's
+#: pages forever, or the same page again, kept the walk going past the client's
 #: timeout — and the worker thread kept fetching after Hermes had given up on the call.
 _MAX_CHAIN_PAGES = 500
 
@@ -1836,8 +1836,7 @@ def verify_dm_chain(
     Sync twin of `agent_sdk.EmporiaAgent.verify_dm_chain()` -- see that
     method's docstring for the full rationale (why a relay-signed head is not
     enough, how the client-held pin catches a self-consistent rewrite, and why
-    reaching the start of the chain is not the same as reaching the thread's
-    first message once a pre-P28 unchained prefix exists). This copy must get
+    a message with no chain hash is a failure, never skipped). This copy must get
     every behavior change in lockstep with that one -- shared-logic drift
     between these two twins is a defect this codebase has found repeatedly.
     """
@@ -1854,7 +1853,6 @@ def verify_dm_chain(
         data = r.json()
 
         chained_count = data.get("message_count", 0)
-        unchained_prefix = data.get("unchained_prefix", 0)
         result: dict[str, Any] = {
             "thread_id": thread_id,
             "relay_reported_verified": data.get("verified"),
@@ -1867,7 +1865,6 @@ def verify_dm_chain(
             "relay_verified_scope": data.get("chain_verified_scope"),
             "signed_chain_head": data.get("chain_head"),
             "message_count": chained_count,
-            "unchained_prefix": unchained_prefix,
             "verified": False,
             "reason": "",
             "chain_verified_scope": None,
@@ -1899,7 +1896,7 @@ def verify_dm_chain(
         if chained_count == 0:
             result["verified"] = True
             result["reason"] = "no chained messages — nothing to verify"
-            result["chain_verified_scope"] = "genesis" if not unchained_prefix else "chained_start"
+            result["chain_verified_scope"] = "genesis"
             result["replay_scan_scope"] = "full_history"
             return result
 
@@ -1979,7 +1976,11 @@ def verify_dm_chain(
                         replay_sample.append(nonce)
                 seen_nonces.add(nonce)
 
-            chained_batch = [m for m in batch if m.get("chain_hash")]
+            # Every DM row is chained: a row with no hash is a broken chain.
+            if not all(m.get("chain_hash") for m in batch):
+                result["reason"] = "relay served a message with no chain hash"
+                return result
+            chained_batch = batch
 
             pin_index = None
             if pinned and not ignore_pin:
@@ -2027,15 +2028,11 @@ def verify_dm_chain(
         result["replayed_nonce_count"] = replay_count
         result["replayed_nonce_sample"] = replay_sample
         if reached_chain_start:
-            result["chain_verified_scope"] = "genesis" if not unchained_prefix else "chained_start"
+            result["chain_verified_scope"] = "genesis"
             result["replay_scan_scope"] = "full_history"
             result["reason"] = (
                 f"chain valid, verified from the start of the chain this call "
                 f"({chained_seen} messages)"
-                + (
-                    f"; {unchained_prefix} earlier message(s) predate the chain and are not covered"
-                    if unchained_prefix else ""
-                )
             )
         else:
             result["chain_verified_scope"] = "pinned_checkpoint"

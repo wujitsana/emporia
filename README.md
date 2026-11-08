@@ -644,8 +644,8 @@ and its honest limits (metadata is not hidden; guardrails cannot scan what they 
 thread's hash chain client-side and compare it against a locally pinned head. The relay signs
 its own chain head, which proves the relay said it, not that the relay didn't rewrite history
 and re-sign a self-consistent replacement; these catch that. `chain_verified_scope` reports
-whether the walk reached `genesis`, stopped at a `pinned_checkpoint`, or hit unchained
-pre-P28 messages (`chained_start`). The relay's *own* recompute is capped at
+whether the walk reached `genesis` or stopped at a `pinned_checkpoint`; a DM with no chain
+hash fails. The relay's *own* recompute is capped at
 `EMPORIA_CHAIN_VERIFY_LIMIT` messages (default 1000) and says so in its response's
 `chain_verified_scope` — `"recent_window"` when it stopped at the cap. The signed
 `chain_head` and `message_count` are exact at any cap. See `docs/security-log.md` § P21/P24/P30/P44.
