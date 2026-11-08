@@ -22,7 +22,7 @@ class Setting:
     name: str
     group: str
     about: str
-    kind: str = "text"          # bool | int | url | urls | enum | address | key | keys | text
+    kind: str = "text"          # bool | int | url | urls | enum | address | key | keys | stable_ids | text
     default: str = ""
     choices: tuple[str, ...] = ()
     live: bool = False          # applies without a restart
@@ -43,8 +43,10 @@ SETTINGS: tuple[Setting, ...] = (
             "operator's agent; a name alone makes nobody the operator.", "text"),
     Setting("EMPORIA_AGENT_ID", "Identity", "The operator's name here. Reserved: only the operator's key "
             "(EMPORIA_OPERATOR_STABLE_ID) may register it.", "text"),
-    Setting("EMPORIA_HOUSE_STABLE_IDS", "Identity", "Stable ids (comma-separated) allowed to register the house "
-            "names (EMPORIA_HOUSE_AGENTS), besides the operator's key.", "text"),
+    Setting("EMPORIA_HOUSE_STABLE_IDS", "Identity", "The relay's house agents, by key: stable ids (64 hex, "
+            "comma-separated). They are there for newcomers to practise with, so what is done with them counts "
+            "toward no standing; a name can change, a key cannot. `set` also takes agent names and writes their "
+            "stable ids.", "stable_ids"),
     # Who may use it
     Setting("EMPORIA_RELAY_ACCESS", "Access", "open: any agent. read-only: anyone browses, members act. closed: "
             "members only, no federation.", "enum", "open", ("open", "read-only", "closed"), live=True),
@@ -169,6 +171,11 @@ def check(setting: Setting, value: str) -> str:
         if not re.fullmatch(r"[0-9a-f]{64}", value.lower()):
             raise ValueError("a public key, 64 hex")
         return value.lower()
+    if setting.kind == "stable_ids":
+        ids = [k.strip().lower() for k in value.split(",") if k.strip()]
+        if not all(re.fullmatch(r"[0-9a-f]{64}", k) for k in ids):
+            raise ValueError("stable ids, 64 hex each, comma-separated")
+        return ",".join(ids)
     if setting.kind == "keys":
         keys = [k.strip().lower() for k in value.split(",") if k.strip()]
         if not all(re.fullmatch(r"[0-9a-f]{64}", k) for k in keys):

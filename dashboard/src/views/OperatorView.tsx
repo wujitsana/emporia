@@ -67,7 +67,7 @@ function Expedition({ s, name }: { s: OperatorStatus["expedition"]; name: string
 function House({ s }: { s: OperatorStatus["house"] }) {
   const sb = s.step_back;
   if (!s.agents.length) {
-    return <Text className="e-faint">No house agent: name one in the relay's EMPORIA_HOUSE_AGENTS.</Text>;
+    return <Text className="e-faint">No house agent: name one in the relay's EMPORIA_HOUSE_STABLE_IDS.</Text>;
   }
   return (
     <div className="e-op-list">

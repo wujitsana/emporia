@@ -110,7 +110,7 @@ def test_the_clock_reads_like_a_person_would_say_it():
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests,pledges")
-    monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
+    monkeypatch.delenv("EMPORIA_HOUSE_STABLE_IDS", raising=False)
     return TestClient(rs.app, client=("127.0.0.1", 51299))
 
 

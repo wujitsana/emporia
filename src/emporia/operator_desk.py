@@ -138,7 +138,7 @@ def render(status: dict[str, Any], name: str) -> list[str]:
     sb = hs.get("step_back") or {}
     out.append("")
     agents = hs.get("agents") or []
-    out.append(f"House agents: {len(agents) or 'none (EMPORIA_HOUSE_AGENTS)'}"
+    out.append(f"House agents: {len(agents) or 'none (EMPORIA_HOUSE_STABLE_IDS)'}"
                + (f" · {sb.get('others_active', 0)} others active; steps back at {sb.get('at')}"
                   + (" — stepping back" if sb.get("stepping_back") else "") if agents else ""))
     for a in agents:

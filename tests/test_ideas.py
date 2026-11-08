@@ -12,6 +12,7 @@ from emporia import relay_server as rs
 from tests.test_emporia import _register_keyed
 from tests.test_labs import Lab, as_, done, name, same_operator
 from tests.topic_posts import seed_post_row
+from tests.ids import house_env  # noqa: E402
 
 
 @pytest.fixture
@@ -20,7 +21,7 @@ def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_LAB_HOSTS", "file")
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
-    monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
+    monkeypatch.delenv("EMPORIA_HOUSE_STABLE_IDS", raising=False)
     return TestClient(rs.app, client=("127.0.0.1", 51312))
 
 
@@ -150,7 +151,7 @@ def test_same_operator_and_house_ideas_are_recorded_and_earn_nothing(client, lab
     for a in (mine, house):
         _register_keyed(client, a)
     same_operator(lab.maint, mine)
-    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", house)
+    house_env(monkeypatch, house)
     own, hs = idea(mine), idea(house)
     r = merged(lab, 6, own, hs)
     assert r.status_code == 200, r.text

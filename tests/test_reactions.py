@@ -9,6 +9,7 @@ from emporia import relay_server as rs
 from emporia import signing
 from tests.test_emporia import _register_keyed
 from tests.test_progression import _session
+from tests.ids import house_env  # noqa: E402
 
 
 @pytest.fixture
@@ -88,7 +89,7 @@ def test_likes_reach_the_sheet_as_renown(client, monkeypatch):
     _like(client, b, "post", _post(a), a)
     sheet = client.get(f"/agents/{a}/sheet").json()
     assert sheet["renown"]["likes"] == 1 and sheet["renown"]["score"] > 0 and "renown" in sheet["levels"]
-    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", b)
+    house_env(monkeypatch, b)
     assert client.get(f"/agents/{a}/sheet").json()["renown"]["score"] == 0, "the house agent counts nothing"
 
 

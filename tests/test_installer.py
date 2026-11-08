@@ -285,7 +285,7 @@ def test_an_agent_profile_never_gets_the_relays_stripe_settings(tmp_path, monkey
         assert k not in config_env, k
     assert "sk_live" not in env_text + yaml.dump(config_env)
     assert config_env["EMPORIA_AGENT_ID"] == "agent_one"
-    assert "OPENROUTER_API_KEY=or-shared" in env_text, "unrelated settings still inherit"
+    assert "or-shared" not in env_text, "no credential is inherited from the person's profile"
     assert "OPENROUTER_API_KEY" not in config_env, "P201: secrets only in the .env"
     assert oct((agent / ".env").stat().st_mode)[-3:] == "600" == oct((agent / "config.yaml").stat().st_mode)[-3:]
 
@@ -401,9 +401,14 @@ def test_re_running_the_installer_keeps_the_operators_own_env_lines(tmp_path):
     assert installer._merge_profile_env(tmp_path / "absent.env", ["A=1"]) == ["A=1"]
 
 
-def test_sync_model_makes_an_existing_profile_follow_the_operators_model(tmp_path, monkeypatch):
-    """P116: an existing profile kept its own model on re-install; --sync-model
-    switches it to the current profile's."""
+def _quiet_installer(monkeypatch):
+    monkeypatch.setattr(installer, "install_platform_plugin", lambda *a, **k: None)
+    monkeypatch.setattr(installer, "_install_skill_link", lambda *a, **k: None)
+
+
+def test_setup_never_changes_an_existing_profiles_model(tmp_path, monkeypatch):
+    """The live deploy switched alpha/beta from nous to openrouter: an existing profile keeps its
+    own model whatever is asked, --sync-model and the recommended settings included."""
     import os
     from unittest.mock import patch
 
@@ -413,55 +418,80 @@ def test_sync_model_makes_an_existing_profile_follow_the_operators_model(tmp_pat
     agent = tmp_path / "profiles" / "agent_m"
     for d in (relay, agent):
         d.mkdir(parents=True)
-    want = {"provider": "openrouter", "default": "deepseek/deepseek-v4-flash-0731",
-            "base_url": "https://openrouter.ai/api/v1"}
-    (relay / "config.yaml").write_text(yaml.dump({"model": want}))
-    (agent / "config.yaml").write_text(yaml.dump({"model": {"provider": "nvidia", "default": "old"}}))
-    monkeypatch.setattr(installer, "install_platform_plugin", lambda *a, **k: None)
-    monkeypatch.setattr(installer, "_install_skill_link", lambda *a, **k: None)
+    (relay / "config.yaml").write_text(yaml.dump({"model": {
+        "provider": "openrouter", "default": "deepseek/deepseek-v4-flash-0731"}}))
+    (agent / "config.yaml").write_text(yaml.dump({"model": {"provider": "nous", "default": "old"}}))
+    _quiet_installer(monkeypatch)
 
     def model():
         return yaml.safe_load((agent / "config.yaml").read_text())["model"]
     with patch.dict(os.environ):
-        installer.create_profile(name="agent_m", relay_url="http://127.0.0.1:8088",
-                                 current_profile_dir=relay)
-        assert model()["default"] == "old", "an existing profile keeps its model by default"
+        installer.create_profile(name="agent_m", relay_url="http://127.0.0.1:8088", current_profile_dir=relay)
+        assert model() == {"provider": "nous", "default": "old"}
         installer.create_profile(name="agent_m", relay_url="http://127.0.0.1:8088",
                                  current_profile_dir=relay, sync_model=True)
-        assert model()["default"] == "deepseek/deepseek-v4-flash-0731"
-        assert model()["provider"] == "openrouter"
+        assert model() == {"provider": "nous", "default": "old"}, "even when asked: setup never changes it"
 
 
-def test_a_new_agent_profile_gets_its_models_key_and_nothing_else(tmp_path, monkeypatch):
-    """P117: profiles are created bare (Hermes will not combine --no-skills with
-    --clone-from), so the installer copies the model and the one API key its
-    provider needs. Without the key Hermes opens with "No inference provider is
-    configured". The relay's other secrets stay behind."""
+def test_a_new_profile_gets_the_model_when_asked_and_never_a_key(tmp_path, monkeypatch, capsys):
+    """Credentials are each profile's own (catalog rule 11): setup copies the model, never the person's
+    provider key or any other secret, and names the variable (not its value) the new profile still needs."""
     import os
     from unittest.mock import patch
 
     import yaml
 
-    for k in ("OPENROUTER_API_KEY", "STRIPE_SECRET_KEY", "ANTHROPIC_API_KEY"):
+    for k in ("OPENROUTER_API_KEY", "STRIPE_SECRET_KEY", "ANTHROPIC_API_KEY", "NOUS_API_KEY", "SOME_TOKEN"):
         monkeypatch.delenv(k, raising=False)
     relay = tmp_path / "profiles" / "relay_profile"
-    agent = tmp_path / "profiles" / "fresh_agent"
     relay.mkdir(parents=True)
     (relay / "config.yaml").write_text(yaml.dump({"model": {
         "provider": "openrouter", "default": "deepseek/deepseek-v4-flash-0731"}}))
     (relay / ".env").write_text("OPENROUTER_API_KEY=sk-or-test\nSTRIPE_SECRET_KEY=sk_live_x\n"
-                                "ANTHROPIC_API_KEY=sk-ant-unrelated\n")
-    monkeypatch.setattr(installer, "install_platform_plugin", lambda *a, **k: None)
-    monkeypatch.setattr(installer, "_install_skill_link", lambda *a, **k: None)
-    monkeypatch.setattr(installer, "_hermes_profile_create", lambda name: agent.mkdir(parents=True))
+                                "ANTHROPIC_API_KEY=sk-ant-unrelated\nSOME_TOKEN=tok\nNOUS_API_KEY=nk\n")
+    _quiet_installer(monkeypatch)
+    for name, sync in (("kept_bare", False), ("fresh_agent", True)):
+        agent = tmp_path / "profiles" / name
+        monkeypatch.setattr(installer, "_hermes_profile_create", lambda n, agent=agent: agent.mkdir(parents=True))
+        with patch.dict(os.environ):
+            installer.create_profile(name=name, relay_url="http://127.0.0.1:8088",
+                                     current_profile_dir=relay, sync_model=sync)
+        dotenv = (agent / ".env").read_text()
+        for secret in ("sk-or-test", "sk_live_x", "sk-ant-unrelated", "tok", "nk"):
+            assert secret not in dotenv, (name, secret)
+        names = {ln.split("=", 1)[0] for ln in dotenv.splitlines() if "=" in ln}
+        assert not [n for n in names if n.endswith(("_API_KEY", "_TOKEN", "_SECRET_KEY"))], names
+        model = yaml.safe_load((agent / "config.yaml").read_text()).get("model")
+        assert (model or {}).get("provider") == ("openrouter" if sync else None)
+    out = capsys.readouterr().out
+    assert "needs OPENROUTER_API_KEY" in out and "sk-or-test" not in out
+    assert "--inherit-env" not in installer.__doc__ and not hasattr(installer, "_SAFE_ENV_KEYS")
 
+
+def test_setup_keeps_an_existing_agents_identity_key_source(tmp_path, monkeypatch):
+    """The live deploy would have switched an agent's identity: a profile whose key is linked in its
+    .env gets no second key file and its source line is untouched."""
+    import os
+    from unittest.mock import patch
+
+    import yaml
+
+    relay = tmp_path / "profiles" / "relay_profile"
+    agent = tmp_path / "profiles" / "has_key"
+    for d in (relay, agent):
+        d.mkdir(parents=True)
+    (relay / "config.yaml").write_text("{}")
+    (agent / "config.yaml").write_text(yaml.dump({"model": {"provider": "nous", "default": "m"}}))
+    (agent / ".env").write_text("EMPORIA_IDENTITY_KEY_SOURCE=env:EMPORIA_IDENTITY_PRIVATE_KEY\n"
+                                "EMPORIA_IDENTITY_PRIVATE_KEY=" + "ab" * 32 + "\n")
+    _quiet_installer(monkeypatch)
     with patch.dict(os.environ):
-        installer.create_profile(name="fresh_agent", relay_url="http://127.0.0.1:8088",
-                                 current_profile_dir=relay, inherit_env=False)
-    dotenv = (agent / ".env").read_text()
-    assert "OPENROUTER_API_KEY=sk-or-test" in dotenv
-    assert "sk_live_x" not in dotenv and "sk-ant-unrelated" not in dotenv
-    assert yaml.safe_load((agent / "config.yaml").read_text())["model"]["provider"] == "openrouter"
+        installer.create_profile(name="has_key", relay_url="http://127.0.0.1:8088", current_profile_dir=relay,
+                                 agent_id="has_key")
+    env = (agent / ".env").read_text()
+    assert "EMPORIA_IDENTITY_KEY_SOURCE=env:EMPORIA_IDENTITY_PRIVATE_KEY" in env
+    assert "EMPORIA_IDENTITY_PRIVATE_KEY=" + "ab" * 32 in env
+    assert not list((agent / "home" / ".hermes" / "keys").glob("*.priv")), "no second identity key was made"
 
 
 def test_the_installer_says_which_restart_a_change_needs(tmp_path, monkeypatch, capsys):
@@ -553,40 +583,16 @@ def test_secrets_move_out_of_config_yaml_into_the_env(tmp_path):
     assert installer.secure_profile(profile) == []                    # nothing left
 
 
-def test_a_docker_key_is_copied_only_for_a_profile_that_cannot_read_it(tmp_path, monkeypatch, capsys):
-    """P201: a multiplexed profile reads only its own .env, so a key docker-compose
-    gives the container must be copied; one with its own gateway reads it."""
-    profiles = tmp_path / "profiles"
-    shared, alone = profiles / "shared", profiles / "alone"
-    for p, cfg in ((shared, {}), (alone, {"gateway": {"standalone": True}})):
-        p.mkdir(parents=True)
-        (p / "config.yaml").write_text(yaml.dump(cfg))
-    monkeypatch.setenv("OPENROUTER_API_KEY", "or-from-compose")
-    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    model = {"provider": "openrouter"}
-    assert installer.is_multiplexed(shared) and not installer.is_multiplexed(alone)
-    assert installer._provider_key_line(model, profile_dir=shared) == "OPENROUTER_API_KEY=or-from-compose"
-    assert "each profile here reads only its own .env" in capsys.readouterr().out
-    assert installer._provider_key_line(model, profile_dir=alone) is None
-    assert "nothing copied" in capsys.readouterr().out
-    assert installer._provider_key_line(model, {"OPENROUTER_API_KEY": "or-file"},
-                                        profile_dir=shared) == "OPENROUTER_API_KEY=or-file"   # a .env first
-
-
-def test_in_a_terminal_the_person_picks_the_standard_key_or_another(tmp_path, monkeypatch):
-    profile = tmp_path / "profiles" / "asked"
+def test_the_model_key_note_names_the_variable_never_a_value(tmp_path, monkeypatch):
+    profile = tmp_path / "profiles" / "noted"
     profile.mkdir(parents=True)
     (profile / "config.yaml").write_text("{}")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "or-standard")
-    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     model = {"provider": "openrouter"}
-    monkeypatch.setattr("builtins.input", lambda *a: "")
-    assert installer._provider_key_line(model, profile_dir=profile) == "OPENROUTER_API_KEY=or-standard"
-    monkeypatch.setattr("builtins.input", lambda *a: "o")
-    monkeypatch.setattr("getpass.getpass", lambda *a: "or-its-own")
-    assert installer._provider_key_line(model, profile_dir=profile) == "OPENROUTER_API_KEY=or-its-own"
-    monkeypatch.setattr("builtins.input", lambda *a: "n")
-    assert installer._provider_key_line(model, profile_dir=profile) is None
+    note = installer._provider_key_note(model, profile)
+    assert "OPENROUTER_API_KEY" in note and "hermes -p noted model" in note
+    assert installer._provider_key_note({"provider": "nous"}, profile) is None
+    (profile / ".env").write_text("OPENROUTER_API_KEY=its-own\n")
+    assert installer._provider_key_note(model, profile) is None
 
 
 def test_the_emporia_command_is_linked_onto_path_once(tmp_path, monkeypatch):

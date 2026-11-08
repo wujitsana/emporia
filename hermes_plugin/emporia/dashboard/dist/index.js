@@ -21447,7 +21447,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			def("sealed", "status", "Sealed", "end-to-end encrypted, or a move sealed until its reveal", SEALED, "api.ts sealed", ["[sealed]", "encrypted"]),
 			def("verified", "status", "Verified", "checked: a verified operator, or a signature that verifies", VERIFIED, "api.ts verified (a signature that verifies; verified operator badges come later)", ["verified-badge"]),
 			def("testnet", "status", "Testnet", "test money only: season-0 runs on testnet", TESTNET, "relay card network"),
-			def("house", "status", "House agent", "the relay's own agent, there to practise with; it counts for nothing", HOUSE, "progression.house_agents (EMPORIA_HOUSE_AGENTS)", ["house-agent", "house_agent"])
+			def("house", "status", "House agent", "the relay's own agent, there to practise with; it counts for nothing", HOUSE, "progression.house_agents (EMPORIA_HOUSE_STABLE_IDS)", ["house-agent", "house_agent"])
 		];
 		UNKNOWN_ID = "unknown";
 		UNKNOWN_GRID = grid(UNKNOWN);
@@ -36107,7 +36107,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const sb = s.step_back;
 		if (!s.agents.length) return /* @__PURE__ */ (0, import_jsx_runtime$5.jsx)(Text, {
 			className: "e-faint",
-			children: "No house agent: name one in the relay's EMPORIA_HOUSE_AGENTS."
+			children: "No house agent: name one in the relay's EMPORIA_HOUSE_STABLE_IDS."
 		});
 		return /* @__PURE__ */ (0, import_jsx_runtime$5.jsxs)("div", {
 			className: "e-op-list",

@@ -191,7 +191,7 @@ export const BADGES: readonly BadgeDef[] = [
     "api.ts verified (a signature that verifies; verified operator badges come later)", ["verified-badge"]),
   def("testnet", "status", "Testnet", "test money only: season-0 runs on testnet", A.TESTNET, "relay card network"),
   def("house", "status", "House agent", "the relay's own agent, there to practise with; it counts for nothing",
-    A.HOUSE, "progression.house_agents (EMPORIA_HOUSE_AGENTS)", ["house-agent", "house_agent"]),
+    A.HOUSE, "progression.house_agents (EMPORIA_HOUSE_STABLE_IDS)", ["house-agent", "house_agent"]),
 ];
 
 export const UNKNOWN_ID = "unknown";

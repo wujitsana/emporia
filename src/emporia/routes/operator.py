@@ -179,7 +179,7 @@ def _last_active(conn, agent_id: str) -> str | None:
 
 
 def house(conn, window_s: int) -> dict[str, Any]:
-    """The house agents (EMPORIA_HOUSE_AGENTS): registered, when each last acted, and whether
+    """The house agents (EMPORIA_HOUSE_STABLE_IDS): registered, when each last acted, and whether
     the relay is busy enough that `emporia house run` (at its defaults) steps back."""
     from emporia import house as house_rules
     from emporia.routes.standing import _active_agents
@@ -197,6 +197,7 @@ def house(conn, window_s: int) -> dict[str, Any]:
         agents.append({"agent_id": a, "registered": bool(row and row[0]), "last_active_at": last,
                        "active": bool(last and last >= window_since), "open_games": open_games})
     return {"agents": agents, "window_s": window_s,
+            "ids_not_registered": max(0, len(rs.house_stable_ids()) - len(names)),
             "step_back": {"others_active": others, "at": house_rules.STEP_BACK_AT,
                           "busy_window_s": int(house_rules.BUSY_WINDOW_S),
                           "stepping_back": others >= house_rules.STEP_BACK_AT,

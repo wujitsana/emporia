@@ -3,7 +3,7 @@
 Each player commits to a secret with its create/join; its hand and walk-away come from that secret and
 a public drand round (`emporia:rand:v1`). The relay holds neither. The tests use the shim's fake
 beacon (conftest `rand_testmode`); the real BLS check has its own tests in test_rand.py."""
-from tests.ids import stable_of  # noqa: E402
+from tests.ids import house_env, stable_of  # noqa: E402
 import asyncio
 import copy
 import json
@@ -590,7 +590,7 @@ def test_a_house_bargain_counts_for_no_rating_but_does_for_quests(client, monkey
     from emporia import quests
     from emporia.routes import standing
     sid, a, h = _game(client)
-    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", h)
+    house_env(monkeypatch, h)
     monkeypatch.setattr(B, "draw", lambda scope, seat, sig, s: (B.HANDS[2 + 3 * seat], seat))   # two different hands
     _act(client, sid, a, "offer", {"keep": {"silk": 1}})
     _act(client, sid, h, "accept")

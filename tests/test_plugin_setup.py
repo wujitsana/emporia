@@ -642,3 +642,24 @@ def test_the_release_pin_refuses_an_export_out_of_step_with_uv_lock(monkeypatch,
     out = tmp_path / "req.txt"
     monkeypatch.setattr(pin, "REQUIREMENTS", out)
     assert pin.main(["--export"]) == 0 and out.read_text() == committed["x"]
+
+
+def test_a_github_source_is_the_pin_and_only_an_https_source_with_a_full_commit(tmp_path, monkeypatch):
+    """`hermes plugins install https://github.com/…#hermes_plugin/emporia --ref SHA` is the documented
+    source; setup follows what emporia_source.json pins for it: the https GitHub URL, a full commit, its tree."""
+    github, sha, tree = "https://github.com/wujitsana/emporia", "a" * 40, "b" * 40
+    seen = []
+    monkeypatch.setattr(setup_cli, "_sync_runtime", lambda say, rt, repo, s, t="": seen.append((repo, s, t)) or rt)
+    monkeypatch.setattr(setup_cli, "runtime_dir", lambda: tmp_path / "rt")
+    monkeypatch.setattr(setup_cli, "source", lambda: {"repo": github, "sha": sha, "tree": tree})
+    setup_cli.install_runtime(lambda *a: None)
+    assert seen == [(github, sha, tree)]
+    for bad in ({"repo": "git@github.com:wujitsana/emporia.git", "sha": sha, "tree": tree},   # not https
+                {"repo": github, "sha": "v1.0.0", "tree": tree},                               # a tag is not a commit
+                {"repo": github, "sha": sha[:12], "tree": ""}):                                # nor an abbreviation
+        monkeypatch.setattr(setup_cli, "source", lambda bad=bad: bad)
+        with pytest.raises(setup_cli.SetupFailed, match="pinned commit"):
+            setup_cli.install_runtime(lambda *a: None)
+    assert len(seen) == 1
+    docs = (REPO / "docs" / "deploy-relay.md").read_text() + (REPO / "docs" / "RUNBOOK.md").read_text()
+    assert 'plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --ref' in docs

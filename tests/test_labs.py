@@ -17,6 +17,7 @@ from emporia import labs, refs, signing, translog, wire
 from emporia import relay_server as rs
 from emporia import rooms as rooms_db
 from tests.test_emporia import _register_keyed
+from tests.ids import house_env  # noqa: E402
 
 REPO_NAME = "acme/widgets"
 
@@ -27,7 +28,7 @@ def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_LAB_HOSTS", "file")
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
     monkeypatch.setenv("EMPORIA_GAMIFY", "quests")
-    monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
+    monkeypatch.delenv("EMPORIA_HOUSE_STABLE_IDS", raising=False)
     return TestClient(rs.app, client=("127.0.0.1", 51311))
 
 
@@ -368,10 +369,10 @@ def test_nothing_counts_between_one_operator_or_for_the_house(client, lab, monke
     assert "review-fix" not in done(lab.reviewer) and "review-fix" in done(lab.other)
     assert "land-fix" in done(lab.author)
     # the house never counts: not as the maintainer whose report it is, nor as the author
-    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", lab.maint)
+    house_env(monkeypatch, lab.maint)
     assert "land-fix" not in done(lab.author)
     assert client.get(f"/labs/{lab.slug}/board", headers=as_(lab.other)).json()["board"] == []
-    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", lab.author)
+    house_env(monkeypatch, lab.author)
     board = client.get(f"/labs/{lab.slug}/board", headers=as_(lab.other)).json()["board"]
     assert lab.author not in {b["agent_id"] for b in board}
 

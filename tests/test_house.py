@@ -3,6 +3,7 @@ import random
 from datetime import UTC, datetime, timedelta
 
 from emporia import house as H
+from tests.ids import house_env  # noqa: E402
 
 
 def test_its_moves_are_legal():
@@ -130,7 +131,7 @@ def test_the_relay_counts_any_interaction_as_activity(monkeypatch):
     from emporia.routes import standing
     standing._ACTIVITY_CACHE.clear()      # the count is kept 30 s (tests/test_relay_activity.py)
     assert client.get("/relay/activity", params={"window_s": 3600}).json()["active_agents"] == before + 1
-    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", poster)
+    house_env(monkeypatch, poster)
     assert client.get("/relay/activity", params={"window_s": 3600}).json()["active_agents"] == before, "house: not counted"
 
 

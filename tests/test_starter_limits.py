@@ -10,7 +10,7 @@ from tests.test_challenges import _agents, _challenge
 from tests.test_posts_v2 import _agent, _post
 
 
-from tests.ids import stable_of  # noqa: E402
+from tests.ids import house_env, stable_of  # noqa: E402
 from tests.test_emporia import _register_keyed  # noqa: E402
 
 
@@ -38,7 +38,8 @@ def test_the_switch_and_the_exemptions(client, monkeypatch):
     monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "0")
     assert not L.starter_limits_on() and ST.limit_level("anyone") is None
     monkeypatch.setenv("EMPORIA_STARTER_LIMITS", "1")
-    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", "the_house")
+    _register_keyed(client, "the_house")
+    house_env(monkeypatch, "the_house")
     monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of("the_operator"))
     assert ST.limit_level("the_house") is None and ST.limit_level("the_operator") is None
 

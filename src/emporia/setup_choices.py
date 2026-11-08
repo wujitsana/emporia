@@ -174,10 +174,13 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
            YES_NO("registers it now, with its own key; free.", "it registers the first time its gateway starts.",
                   True, "Nothing else is needed afterwards."),
            "it registers by itself when its gateway starts"),
-    Choice("sync_model", "Use the same model and API key as this profile?",
-           "The agent needs a model to think with; each of its turns is billed to that key.",
-           YES_NO("copies this profile's model and key; one bill, nothing to type.",
-                  "you give it a model and key of its own; separate bills.", True, "Easiest."),
+    Choice("sync_model", "Use the same model as this profile?",
+           "Asked only for a NEW agent profile; an existing profile's model is never changed by setup. "
+           "Its API key is never copied: each profile's credentials are its own, added through Hermes.",
+           YES_NO("gives the new profile this profile's model (no key; add one with `hermes -p NAME model` "
+                  "if the model needs it).",
+                  "it starts with Hermes's own default; pick one with `hermes -p NAME model`.", True,
+                  "Easiest; a Nous login or a key is still its own."),
            "hermes -p NAME model"),
     Choice("signer", "Keep its wallet behind the signer?",
            "The signer holds the keys and the limits apart from the agent; required for real money.",

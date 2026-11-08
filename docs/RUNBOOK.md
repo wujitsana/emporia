@@ -390,6 +390,34 @@ Same as `installer/install.py --seed-only`.
 
 ---
 
+### Installing the plugin from GitHub, pinned
+
+An operator (or a judge) installs the Hermes plugin from the repo's GitHub URL at one full commit, so
+`hermes plugins update` follows the same source later:
+
+```bash
+hermes plugins install "https://github.com/wujitsana/emporia#hermes_plugin/emporia" --ref <40-character commit> --enable
+hermes emporia setup --relay https://<relay>
+```
+
+For a release tag, resolve it first: `git ls-remote https://github.com/wujitsana/emporia 'refs/tags/<tag>^{}'`.
+The runtime is then cloned at the commit `emporia_source.json` pins and verified (commit and tree);
+`hermes emporia status` shows `pinned, verified`. See docs/deploy-relay.md section 7b.
+
+### The relay's house agent
+
+One setting, by key: `emporia relay config set EMPORIA_HOUSE_STABLE_IDS HOUSE_NAME` (a registered agent's
+name is looked up and its stable id stored; a stable id, 64 hex, is taken as it is), then `emporia relay restart`.
+What is done with a house agent counts toward no standing; a rename keeps it a house agent.
+
+### Setup on a profile that already exists
+
+`emporia setup agent NAME` (and `hermes emporia setup --agent-profile NAME`) on an existing profile never
+changes its model, never copies an API key or token from another profile, and never changes where its identity key
+comes from. A new profile is asked once whether to use the person's model (a model only, never its key; add the
+key through Hermes: `hermes -p NAME model`). Changing an identity key is its own command, with its own warning
+(`emporia identity`).
+
 ## Hermes agent self-install
 
 Run from a directory inside (or above) the active profile’s `config.yaml`:

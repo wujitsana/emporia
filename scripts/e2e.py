@@ -260,7 +260,7 @@ class Run:
             # The operator section: the merchant is this relay's operator (and the lab's maintainer);
             # the labs need the transparency log.
             EMPORIA_AGENT_ID=self.merchant, EMPORIA_TRANSPARENCY_LOG="1", **(pins or {}),
-            EMPORIA_GAMIFY="sheets,quests,pledges", EMPORIA_HOUSE_AGENTS=self.house_agent,
+            EMPORIA_GAMIFY="sheets,quests,pledges",
             # quests:v4: each agent after the first adopts a label of its own (own_operator), so each plays as its own operator.
             EMPORIA_STARTER_LIMITS="0",
             # Labs: on, with local file:// repositories allowed (a test relay's only)
@@ -374,6 +374,40 @@ class Run:
             check((head, origin) == (self.sha, self.https_repo), f"the runtime is {head[:12]} from {origin}")
             check(self.runtime_python().is_file(), "setup installed no packages into the runtime")
         self.own_operator(name, register=name != self.merchant)
+
+    def setup_again(self, name: str) -> None:
+        """Setup run again on an existing agent profile (the live deploy's bugs): it keeps its own model,
+        gets no provider key copied from the person's profile, and keeps its identity key where it is,
+        even with --sync-model."""
+        import yaml
+        judge_dir, agent_dir = self.profile(self.judge), self.profile(name)
+        jcfg = yaml.safe_load((judge_dir / "config.yaml").read_text()) or {}
+        jcfg["model"] = {"provider": "openrouter", "default": "e2e-person-model"}
+        (judge_dir / "config.yaml").write_text(yaml.safe_dump(jcfg))
+        with (judge_dir / ".env").open("a") as f:
+            f.write("OPENROUTER_API_KEY=e2e-not-a-real-person-key\n")
+        acfg = yaml.safe_load((agent_dir / "config.yaml").read_text()) or {}
+        own = {"provider": "nous", "default": "e2e-own-model"}
+        acfg["model"] = own
+        (agent_dir / "config.yaml").write_text(yaml.safe_dump(acfg))
+
+        def identity_lines() -> list[str]:
+            return sorted(ln for ln in (agent_dir / ".env").read_text().splitlines()
+                          if ln.startswith(("EMPORIA_IDENTITY_", "EMPORIA_ENCRYPTION_")))
+        before, keys_before = identity_lines(), sorted(p.name for p in agent_dir.rglob("*.priv"))
+        check(before, f"{name} holds no identity lines in its .env to keep")
+        self.hermes_cmd("-p", self.judge, "emporia", "setup", "--agent-profile", name, "--relay", self.relay_url,
+                        "--plugin-source", self.plugin_source(),
+                        "--", "--role", "marketplace", "--keys", "env", "--playbook", "player", "--sync-model",
+                        timeout=SETUP_TIMEOUT)
+        after = yaml.safe_load((agent_dir / "config.yaml").read_text()) or {}
+        check(after.get("model") == own, f"setup changed {name}'s model: {after.get('model')}")
+        env = (agent_dir / ".env").read_text()
+        check("e2e-not-a-real-person-key" not in env and "OPENROUTER_API_KEY" not in env,
+              f"setup copied a provider key into {name}'s .env")
+        check(identity_lines() == before, f"setup changed {name}'s identity lines")
+        check(sorted(p.name for p in agent_dir.rglob("*.priv")) == keys_before, f"setup made a key file for {name}")
+        self.check_agent(name)
 
     def register_label(self, name: str) -> None:
         """Its tools register with the label it now holds, so the relay has it before play. (Not at setup for the
@@ -1377,6 +1411,8 @@ def main(argv: list[str] | None = None) -> int:
         run.step(f"{run.merchant} registers with the operator label of its own", run.register_label, run.merchant)
         for name in (run.player, run.merchant):
             run.step(f"{name}: role, keys, plugin, registered, doctor", run.check_agent, name)
+        run.step(f"setup again on {run.player}: it keeps its model, copies no provider key, keeps its identity",
+                 run.setup_again, run.player)
         run.step("playbook refusals name their fix", run.refusals)
         sid = run.step("free blotto, end to end", run.blotto)
         run.step("illegal commit and missing session refused", run.illegal_commit)

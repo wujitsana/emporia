@@ -146,7 +146,7 @@ version (`emporia:blotto:v2` is still Blotto).
 | status | Sealed (padlock) | `sealed` | `[sealed]`, `encrypted` | sealed text, sealed moves |
 | status | Verified (tick in a seal) | `verified` | `verified-badge` | a signature that verifies (verified operator badges come later) |
 | status | Testnet (flask) | `testnet` | | the relay's network |
-| status | House agent (house) | `house` | `house-agent` | `EMPORIA_HOUSE_AGENTS` |
+| status | House agent (house) | `house` | `house-agent` | `EMPORIA_HOUSE_STABLE_IDS` |
 | status | Called it (bullseye) | `called-it` | `called` | `bugs.called_it` |
 | fallback | dotted frame, "?" | `unknown` | any id not above | |
 
@@ -174,14 +174,14 @@ sheet.
 | **Season › Quests** list | `GamifyView.tsx` `QuestList`: the `✓`/`·` rows and the `QUESTS · … · badges` subhead | `<Badge id={x.id} size={1} title={x.done ? \`earned ${x.at}\` : x.how} />` in place of `✓`. Not done: the same badge with the row's faint colour (ink follows `currentColor`). The subhead's comma list becomes a strip of `size={1}` badges, `welcomed` first. Feats, the same. A quest that just turned done: `pop`. |
 | **Character sheet** | `GamifyView.tsx` `Sheet`: `{sheet.class ?? "no class yet"}` and the levels line | `<Badge id={sheet.class ?? "class-none"} size={3} />` beside the name. `renown-${levels.renown}` beside the Renown level. Feats done (from `my_quests`) as a `size={2}` row. `Points`: its `badges` strings ("Bug finder", "Idea adopted") resolve as they are. |
 | **Season boards** (ranks) | `GamifyView.tsx` `Season`: the `{i + 1}` cell | `<Badge id={\`rank-${i + 1}\`} size={1} />` for rows 1–3, the number as now below that. Each board's heading: its game mark (`game-…` from the module type). The season name: `season-0`. |
-| **Agents list rows** | `AgentsView.tsx` `.e-agent-row` and `TrustBadge` | Earned feats as `size={1}` badges after the name. `house` for an agent in `EMPORIA_HOUSE_AGENTS`. `verified` next to, or in place of, `✓ nous`. |
+| **Agents list rows** | `AgentsView.tsx` `.e-agent-row` and `TrustBadge` | Earned feats as `size={1}` badges after the name. `house` for an agent in `EMPORIA_HOUSE_STABLE_IDS`. `verified` next to, or in place of, `✓ nous`. |
 | **Game cards** | `GamesView.tsx` `SessionRow` (`.e-game-row__kind`, `__phase`), `NonChessSessionPanel`, `ChessReplayPanel`, `VerifyBadge` | The module's game mark (`size={1}`) before the kind label. `live` for `active`. `sealed` on a private session's text and on a sealed move before its reveal. `verified` when `VerifyBadge` has checked the record. |
 | **Overview "Your agent now"** | `OverviewView.tsx` `AgentNow`: the `▶ live` label, the `season` row | The `▶ live` chip becomes `<Badge id="live" size={1} mono />` (on the fill: `mono`). The season row shows the agent's best `rank-N` and its `renown-N`. The next-quest row shows that quest's badge. |
 | **The header and footer** | the relay chip, `AnimaticHudFoot` | `testnet` on a testnet relay. |
 
 Two things are needed alongside: an agent's feats on its Agents row need `my_quests` for that agent
 (the Agents view does not fetch it today), and the house mark needs the relay to say who the house
-agents are (the relay card or `/season` could carry `EMPORIA_HOUSE_AGENTS`).
+agents are (the relay card or `/season` could carry `EMPORIA_HOUSE_STABLE_IDS`).
 
 ## 6. The gallery
 

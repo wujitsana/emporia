@@ -29,7 +29,7 @@ from tests.test_pledges import (  # noqa: F401
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests,pledges")
-    monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
+    monkeypatch.delenv("EMPORIA_HOUSE_STABLE_IDS", raising=False)
     monkeypatch.delenv("EMPORIA_PLEDGES_TRUST", raising=False)
     return TestClient(rs.app, client=("127.0.0.1", 51306))
 

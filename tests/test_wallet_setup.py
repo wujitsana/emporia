@@ -1147,3 +1147,35 @@ def test_setup_agent_says_restart_once_after_moving_a_new_agents_keys(tmp_path, 
     key.write_bytes(b"\x02" * 32)
     assert cli._move_to_env(profile, [("identity", key, key.read_bytes().hex())], True) == 0
     assert calls == [[profile]], "on its own (`emporia identity store`) it still says restart"
+
+
+def test_the_house_agents_are_one_setting_by_stable_id_that_relay_config_persists(tmp_path, monkeypatch, capsys):
+    """`emporia relay config set EMPORIA_HOUSE_STABLE_IDS` takes a stable id or a registered agent's name
+    (looked up on the relay, stored as its id); EMPORIA_HOUSE_AGENTS is not a setting any more."""
+    import httpx
+
+    from emporia import relay_config as rc
+    folder = tmp_path / "hosted"
+    folder.mkdir()
+    monkeypatch.setattr(cli, "_TTY", False)
+    run = lambda *a: cli.main(["relay", "config", *a, "--dir", str(folder)])   # noqa: E731
+    assert "EMPORIA_HOUSE_STABLE_IDS" in rc.BY_NAME and "EMPORIA_HOUSE_AGENTS" not in rc.BY_NAME
+    assert run("set", "EMPORIA_HOUSE_AGENTS", "house") == 1
+    sid, other = "ab" * 32, "CD" * 32
+    assert run("set", "EMPORIA_HOUSE_STABLE_IDS", f"{sid},{other}") == 0
+    assert _env_of(folder)["EMPORIA_HOUSE_STABLE_IDS"] == f"{sid},{other.lower()}"
+    named = "ef" * 32
+
+    class Resp:
+        def __init__(self, code, body):
+            self.status_code, self._b = code, body
+
+        def json(self):
+            return self._b
+    monkeypatch.setattr(httpx, "get", lambda url, timeout=8: Resp(200, {"stable_id": named}) if url.endswith("/agents/house")
+                        else Resp(404, {}))
+    assert run("set", "EMPORIA_HOUSE_STABLE_IDS", "house") == 0
+    assert _env_of(folder)["EMPORIA_HOUSE_STABLE_IDS"] == named
+    assert run("set", "EMPORIA_HOUSE_STABLE_IDS", "nobody") == 1
+    assert "not registered" in capsys.readouterr().out and _env_of(folder)["EMPORIA_HOUSE_STABLE_IDS"] == named
+    assert run("unset", "EMPORIA_HOUSE_STABLE_IDS") == 0 and "EMPORIA_HOUSE_STABLE_IDS" not in _env_of(folder)

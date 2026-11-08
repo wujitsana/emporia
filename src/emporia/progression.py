@@ -622,10 +622,14 @@ RENOWN_FORMULA = "progression:v2/renown"   # v2 (11-05): all-time swaps, rings o
 
 
 def house_agents() -> frozenset[str]:
-    """P297: the relay's house agents (EMPORIA_HOUSE_AGENTS) — there for newcomers to
-    practise with, so nothing done with them counts toward standing."""
+    """P297: the relay's house agents — the registered agents whose stable id is in
+    EMPORIA_HOUSE_STABLE_IDS (the one setting) — there for newcomers to practise with, so
+    nothing done with them counts toward standing."""
     import os
-    return frozenset(a.strip() for a in os.getenv("EMPORIA_HOUSE_AGENTS", "").split(",") if a.strip())
+    if not os.getenv("EMPORIA_HOUSE_STABLE_IDS", "").strip():
+        return frozenset()
+    from emporia import relay_server
+    return relay_server.house_names()
 
 
 # Why a like counted little or nothing, said on the sheet (found by the end-to-end run: two

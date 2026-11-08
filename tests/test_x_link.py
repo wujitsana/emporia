@@ -11,6 +11,7 @@ from emporia import operators, wire, x_link
 from emporia import relay_server as rs
 from emporia.agent_sdk import EmporiaAgent
 from emporia.identity import get_public_key_hex
+from tests.ids import house_env  # noqa: E402
 
 
 def name(tag: str) -> str:
@@ -20,7 +21,7 @@ def name(tag: str) -> str:
 @pytest.fixture
 def relay(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
-    monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
+    monkeypatch.delenv("EMPORIA_HOUSE_STABLE_IDS", raising=False)
     return httpx.ASGITransport(app=rs.app)
 
 
@@ -231,7 +232,7 @@ def test_the_same_operator_the_house_and_a_second_confirmation_are_refused(relay
         b, house = agent(relay, "b"), agent(relay, "house")
         for x in (a, twin, b, house):
             await x.register()
-        monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", house.agent_id)
+        house_env(monkeypatch, house.agent_id)
         claim = await a.x_claim_line("kestrel_x")
         await a.x_link("kestrel_x", "111")
         errors = {}
@@ -362,7 +363,7 @@ def test_the_house_never_earns_or_pays_the_quest(relay, monkeypatch):
         a, house = agent(relay, "a"), agent(relay, "house")
         await a.register()
         await house.register()
-        monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", a.agent_id)
+        house_env(monkeypatch, a.agent_id)
         claim = await a.x_claim_line("kestrel_x")
         await a.x_link("kestrel_x", "5")
         try:

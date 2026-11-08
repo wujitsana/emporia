@@ -373,3 +373,22 @@ def test_an_approval_is_for_the_holds_terms_not_just_how_it_reads(held, monkeypa
                     **offer["payment_info"]})
     assert len(seen) == 2 and seen[0] != seen[1] and all("Terms " in m for m in seen)
     assert agent_wallet._exact(5_004_000) == "5.004" and agent_wallet._exact(6_000_000) == "6.00"
+
+
+def test_doctor_escrow_off_is_a_note_unless_the_relays_card_requires_it(monkeypatch, capsys):
+    """A testnet relay without escrow is a choice: a warning naming the command to turn it on, not a failure."""
+    from emporia import cli
+    monkeypatch.delenv("EMPORIA_ESCROW_NETWORK", raising=False)
+    monkeypatch.setattr(cli, "doctor_federation", lambda rep, h: None)
+    monkeypatch.setattr(cli, "_relay_code_behind", lambda h: "")
+    card = {"version": "x", "x402_enabled": True, "x402_networks": ["eip155:84532"]}
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": dict(card))
+    rep = cli.Report()
+    cli.doctor_relay(rep)
+    out = capsys.readouterr().out
+    assert not rep.failed and "escrow off" in out and "emporia setup relay --preset base-sepolia" in out
+    assert "✗" not in out.split("escrow off")[0].splitlines()[-1]
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": {**card, "x402_escrow_required": True})
+    rep = cli.Report()
+    cli.doctor_relay(rep)
+    assert rep.failed and "escrow is required" in capsys.readouterr().out

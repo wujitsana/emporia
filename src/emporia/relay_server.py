@@ -689,11 +689,23 @@ def house_stable_ids() -> frozenset[str]:
     return frozenset(x.strip().lower() for x in os.getenv("EMPORIA_HOUSE_STABLE_IDS", "").split(",") if x.strip())
 
 
+def house_names() -> frozenset[str]:
+    """The house agents' names here: the registered agents whose stable id is in `EMPORIA_HOUSE_STABLE_IDS`.
+    A house agent is a key, not a name, so a rename keeps it and nobody gains it by taking a name."""
+    ids = sorted(house_stable_ids())
+    if not ids:
+        return frozenset()
+    with DB_LOCK, get_db() as conn:
+        rows = conn.execute(f"SELECT agent_id FROM authorized_agents WHERE stable_id IN ({','.join('?' * len(ids))})",  # noqa: S608
+                            ids).fetchall()
+    return frozenset(r["agent_id"] for r in rows)
+
+
 def reserved_name_problem(agent_id: str, stable_id: str) -> str:
     """Why `agent_id` may not be registered by the key whose stable id is `stable_id`, or "": the operator's
-    configured name (`EMPORIA_AGENT_ID`) belongs to the operator's key, and a house name
-    (`EMPORIA_HOUSE_AGENTS`) to the operator's key or one in `EMPORIA_HOUSE_STABLE_IDS`. Nobody else may
-    take them, so a name on a fresh relay is never a way into its admin."""
+    configured name (`EMPORIA_AGENT_ID`) belongs to the operator's key. Nobody else may
+    take it, so a name on a fresh relay is never a way into its admin. (A house agent is a key in
+    `EMPORIA_HOUSE_STABLE_IDS`, not a name, so no name is reserved for it.)"""
     operator = operator_stable_id()
     if not operator:
         return ""       # no operator is pinned: no name is anyone's to reserve, and nobody is the operator
@@ -703,9 +715,6 @@ def reserved_name_problem(agent_id: str, stable_id: str) -> str:
     if named and agent_id == named:
         return (f"{agent_id!r} is this relay's reserved operator name: only the operator's key "
                 "(EMPORIA_OPERATOR_STABLE_ID) may register it")
-    from emporia import progression
-    if agent_id in progression.house_agents() and stable_id not in house_stable_ids():
-        return f"{agent_id!r} is a house name: only the operator's key or a house key may register it"
     return ""
 
 
@@ -2488,8 +2497,7 @@ def _handle_lookalike_problem(conn: Any, agent_id: str) -> str:
 
 
 def _house_names() -> list[str]:
-    from emporia import progression
-    return sorted(progression.house_agents())
+    return sorted(house_names())
 
 
 def _rename_in_json_column(

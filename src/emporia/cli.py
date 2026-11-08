@@ -3955,6 +3955,29 @@ def cmd_agent_rotate_encryption_key(name: str, yes: bool = False) -> int:
     return 0
 
 
+def _stable_ids_of(raw: str, relay: str) -> str:
+    """`emporia relay config set EMPORIA_HOUSE_STABLE_IDS`: each item a stable id (64 hex) or the name of a
+    registered agent, which is looked up on the relay and stored as its stable id (a name can change; the
+    key behind it cannot). ValueError, naming the item, when a name cannot be resolved."""
+    import httpx
+    out = []
+    for item in (i.strip() for i in raw.split(",") if i.strip()):
+        if re.fullmatch(r"[0-9a-fA-F]{64}", item):
+            out.append(item.lower())
+            continue
+        try:
+            r = httpx.get(f"{relay.rstrip('/')}/agents/{item}", timeout=8)
+        except Exception as e:  # noqa: BLE001
+            raise ValueError(f"cannot look {item!r} up: the relay at {relay} is not answering ({type(e).__name__}); "
+                             "give its stable id (64 hex) instead") from e
+        stable = r.json().get("stable_id") if r.status_code == 200 else ""
+        if not stable:
+            raise ValueError(f"{item!r} is not registered on {relay}: register it first, or give its stable id")
+        out.append(str(stable).lower())
+        print(f"  {item} -> {stable[:12]}… (its stable id)")
+    return ",".join(out)
+
+
 def cmd_relay_config(args: argparse.Namespace) -> int:
     """P199: `emporia relay config` — the relay's settings, in its .env.
 
@@ -3986,8 +4009,8 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
                 return "set, in the .env — move it: set it again" if in_docker else "set"
             return "set (file)" if in_docker and (secrets / st.name).exists() else "not set"
         value = current.get(st.name, "")
-        if st.kind == "keys" and value:
-            return f"{len([k for k in value.split(',') if k.strip()])} key(s)"
+        if st.kind in ("keys", "stable_ids") and value:
+            return f"{len([k for k in value.split(',') if k.strip()])} " + ("key(s)" if st.kind == "keys" else "id(s)")
         return value or (f"{st.default} (default)" if st.default else "—")
 
     def write_secret(st: "rc.Setting", clear: bool) -> int:
@@ -4030,6 +4053,12 @@ def cmd_relay_config(args: argparse.Namespace) -> int:
             print(f"  {st.name} cleared" + ("" if was_set else " (it was not set)") + (
                 f" — back to its default, {st.default}" if st.default else ""))
         else:
+            if st.kind == "stable_ids":
+                try:
+                    raw = _stable_ids_of(raw, current.get("EMPORIA_RELAY_URL") or relay_url())
+                except ValueError as e:
+                    print(f"  {st.name}: {e}")
+                    return 1
             try:
                 value = rc.check(st, raw)
             except ValueError as e:
@@ -4300,9 +4329,12 @@ def cmd_relay_seed(args: argparse.Namespace) -> int:
     # 3. the house agent
     status, d = _operator_call(profile, "GET", "/operator/status")
     house = ((d or {}).get("house") or {}).get("agents") if status == 200 and isinstance(d, dict) else None
-    if not house:
+    pending = ((d or {}).get("house") or {}).get("ids_not_registered") if status == 200 and isinstance(d, dict) else 0
+    if not house and pending:
+        print(f"  ! house agent: {pending} stable id(s) named, none registered yet — start its gateway once so it registers")
+    elif not house:
         print("  ! house agent: none named. Make a profile for it (hermes emporia setup, a new profile), then "
-              "emporia relay config set EMPORIA_HOUSE_AGENTS ITS_ID, restart the relay, and run it")
+              "emporia relay config set EMPORIA_HOUSE_STABLE_IDS ITS_NAME (it writes the key's stable id), restart the relay, and run it")
     else:
         for a in house:
             if not a.get("registered"):
@@ -4557,7 +4589,12 @@ def doctor_relay(rep: Report) -> dict | None:
         rep.ok(f"USDC (x402) on {', '.join(label(n) for n in h.get('x402_networks') or [])}")
     else:
         rep.warn("x402 off", "emporia setup relay --preset base-sepolia")
-    if os.getenv("EMPORIA_ESCROW_NETWORK"):
+    # The relay's own card says what it runs; this process's environment only matters for the
+    # usability check. Escrow off is a deliberate choice on a testnet relay: a note with the command
+    # to turn it on, a failure only when the card says escrow is required.
+    card_escrow = h.get("x402_escrow_network")
+    configured_here = bool(os.getenv("EMPORIA_ESCROW_NETWORK"))
+    if card_escrow:
         try:
             from emporia import escrow_chain
             from emporia.operator_signer import load_operator_signer
@@ -4565,10 +4602,19 @@ def doctor_relay(rep: Report) -> dict | None:
             signer = load_operator_signer(cfg.network)
             rep.ok(f"escrow on {cfg.network}, operator {signer.address[:10]}…")
         except Exception as e:  # noqa: BLE001
-            rep.fail(f"escrow configured but not usable: {str(e)[:120]}",
-                     "emporia setup relay --preset base-sepolia")
+            if configured_here:
+                rep.fail(f"escrow configured but not usable: {str(e)[:120]}",
+                         "emporia setup relay --preset base-sepolia")
+            else:
+                rep.ok(f"escrow on {label(card_escrow)} (the relay's card)")
+    elif h.get("x402_escrow_required"):
+        rep.fail("this relay's card says escrow is required, and it is off", "emporia setup relay --preset base-sepolia")
+    elif configured_here:
+        rep.warn("escrow is set in this profile's settings but the relay is not using it",
+                 "emporia relay restart")
     else:
-        rep.warn("escrow off — x402 service purchases unavailable", "emporia setup relay --preset base-sepolia")
+        rep.warn("escrow off (optional on a testnet relay; x402 service purchases need it)",
+                 "emporia setup relay --preset base-sepolia")
     if h.get("tempo_network"):
         rep.ok(f"Tempo on {label(h['tempo_network'])}")
     # P208: a relay on this machine holding real money, and the agents' user
@@ -5474,7 +5520,7 @@ def _is_house_of(pid: int, profile: Path) -> bool:
 def cmd_house(args: argparse.Namespace) -> int:
     """P297: `emporia house run NAME` — the house agent's rules runner, as NAME (its own
     keys, relay and playbook, the env its MCP server runs with). No model, no tokens.
-    The relay should list NAME in EMPORIA_HOUSE_AGENTS so nothing done with it counts.
+    The relay should list its key in EMPORIA_HOUSE_STABLE_IDS so nothing done with it counts.
 
     Operator section: `emporia house start NAME` runs it in the background (its PID kept in
     the profile), `emporia house stop NAME` stops that one process and no other, and
@@ -5524,7 +5570,7 @@ def cmd_house(args: argparse.Namespace) -> int:
               f"emporia agent playbook {args.name} --preset host")
     print(f"  The house agent {agent_id}: plays, takes free set-play games left waiting "
           f"{int(args.adopt_after)}s while the relay is quiet (it steps back once {args.step_back_at} others "
-          f"played in {int(args.busy_window)}s), greets newcomers. On the relay, list it in EMPORIA_HOUSE_AGENTS.")
+          f"played in {int(args.busy_window)}s), greets newcomers. On the relay: emporia relay config set EMPORIA_HOUSE_STABLE_IDS {agent_id}.")
     # P2: --home names this profile in the runner's own command line, which `house stop` checks
     argv = [sys.executable, "-m", "emporia.house", "--home", str(profile.resolve()), "--interval", str(args.interval),
             "--adopt-after", str(args.adopt_after), "--step-back-at", str(args.step_back_at),
@@ -5811,8 +5857,20 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     heading(f"{'Update' if existing else 'New'} agent: {name}",
             "Its model and API key, and Emporia: its tools, skill, platform plugin and its own keys.")
     fast = _TTY and _fast_path(args)
-    sync_model = args.sync_model or (existing and me is not None and me != profile and (fast or ask_setting(
-        "sync_model", f"Use the same model and API key as {me.name if me else 'this profile'}?")))
+    # The model: an existing profile always keeps its own (setup never changes it, even
+    # with --sync-model or the recommended settings). Only a NEW profile is asked, and
+    # never gets the person's API key: credentials are each profile's own, added through Hermes.
+    can_sync = not existing and me is not None and me != profile
+    if existing and args.sync_model:
+        print(localize(f"  {name}'s model stays as it is: setup never changes an existing profile's model "
+                       f"(`hermes -p {name} model` does)."))
+    if not can_sync:
+        sync_model = False
+    elif args.sync_model is not None:
+        sync_model = args.sync_model
+    else:
+        sync_model = fast or ask_setting("sync_model", f"Use the same model as {me.name if me else 'this profile'}?")
+    identity_before = _holds_an_agent(profile) if existing else False
     # P177: which relay it joins — one found, one run here, or a remote one.
     current_relay = ((inst.load_yaml(profile / "config.yaml").get("mcp_servers") or {}).get("emporia") or {}) \
         .get("env", {}).get("EMPORIA_RELAY_URL", "") if existing else ""
@@ -5909,7 +5967,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     wizard_commit()        # P213: from here it writes the profile
     heading("Saving")
     inst.create_profile(
-        name=name, relay_url=chosen_relay, current_profile_dir=me, inherit_env=args.inherit_env,
+        name=name, relay_url=chosen_relay, current_profile_dir=me,
         sync_model=bool(sync_model), x402_pay_networks=networks, agent_id=agent_id, profile_path=profile,
         x402_max_payment_cents=args.max_payment_cents if wallet else None,
         x402_max_daily_cents=args.max_daily_cents if wallet else None,
@@ -5925,7 +5983,9 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
         _, aid, _ = _agent(name)
         fresh = [(w, f, f.read_bytes().hex()) for w in ("identity", "encryption")
                  if (f := _key_file(profile, aid, w)).exists()]
-        if fresh and not existing and not inst.harvest_env(profile).get("EMPORIA_IDENTITY_KEY_SOURCE"):
+        held = inst.harvest_env(profile)
+        if (fresh and not existing and not identity_before and not held.get("EMPORIA_IDENTITY_KEY_SOURCE")
+                and not held.get("EMPORIA_IDENTITY_PRIVATE_KEY")):
             _move_to_env(profile, fresh, True, restart_hint=False)   # setup says restart at its end
         elif fresh and existing:
             print(localize(f"  Its existing keys are still files; move them with `emporia identity store {name} "
@@ -8245,10 +8305,9 @@ def build_parser() -> argparse.ArgumentParser:
                          "$EMPORIA_RELAY_URL)")
     ag.add_argument("--max-payment-cents", type=int, default=1000)
     ag.add_argument("--max-daily-cents", type=int, default=2500)
-    ag.add_argument("--sync-model", action="store_true",
-                    help="an existing profile switches to this profile's model")
-    ag.add_argument("--inherit-env", action="store_true",
-                    help="also copy this profile's other settings (default: bare)")
+    ag.add_argument("--sync-model", action=argparse.BooleanOptionalAction, default=None,
+                    help="a NEW profile uses this profile's model (never its API key; asked if neither flag "
+                         "is given). An existing profile's model is never changed by setup")
     ag.add_argument("--register", action="store_true",
                     help="register it (and its wallet) on the relay now")
     ag.add_argument("--new-profile", action="store_true", help=argparse.SUPPRESS)  # the plugin made it just now

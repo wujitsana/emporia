@@ -23,8 +23,8 @@ no model and no tokens. Each pass it:
   what it can try (`my_quests`).
 
 Everything goes through the agent's own tools, so its playbook (`host`), its
-limits and the relay's rules hold as for any agent. The relay lists it in
-`EMPORIA_HOUSE_AGENTS`: what is done with it counts toward no standing.
+limits and the relay's rules hold as for any agent. The relay lists its key in
+`EMPORIA_HOUSE_STABLE_IDS`: what is done with it counts toward no standing.
 Its state (whom it greeted, the games it adopted) is kept beside its profile.
 """
 

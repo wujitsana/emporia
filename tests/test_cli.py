@@ -31,13 +31,37 @@ def test_setup_agent_makes_a_slim_profile_with_its_own_wallet(profiles, capsys):
     mcp_env = yaml.safe_load((prof / "config.yaml").read_text())["mcp_servers"]["emporia"]["env"]
     assert mcp_env["EMPORIA_DOTENV"] == str(prof / ".env")
     dotenv = (prof / ".env").read_text()
-    assert "OPENROUTER_API_KEY=sk-or-x" in dotenv and "STRIPE_SECRET_KEY" not in dotenv
+    assert "sk-or-x" not in dotenv and "STRIPE_SECRET_KEY" not in dotenv, "no credential is copied"
     assert "EMPORIA_X402_PAY_NETWORKS=eip155:84532" in dotenv
     assert "EMPORIA_X402_MAX_DAILY_CENTS=700" in dotenv
     wallet = prof / "home" / ".hermes" / "keys" / "gamma.x402.secp256k1"
     assert wallet.exists() and stat.S_IMODE(wallet.stat().st_mode) == 0o600
     out = capsys.readouterr().out
     assert "x402 wallet: 0x" in out
+
+
+def test_setup_agent_on_an_existing_profile_keeps_its_model_credentials_and_identity(profiles, monkeypatch, capsys):
+    """The live deploy: setup on alpha/beta switched nous to openrouter, copied the person's provider key and
+    would have changed the identity source. Setup again, with and without --sync-model, changes none of it."""
+    root, _ = profiles
+    prof = root / "alpha"
+    (prof / "home" / ".hermes" / "keys").mkdir(parents=True)
+    (prof / "config.yaml").write_text(yaml.dump({"model": {"provider": "nous", "default": "nous-model"},
+                                                 "mcp_servers": {"emporia": {"env": {"EMPORIA_AGENT_ID": "alpha"}}}}))
+    own_env = ("EMPORIA_AGENT_ID=alpha\nEMPORIA_IDENTITY_KEY_SOURCE=env:EMPORIA_IDENTITY_PRIVATE_KEY\n"
+               "EMPORIA_IDENTITY_PRIVATE_KEY=" + "cd" * 32 + "\n")
+    (prof / ".env").write_text(own_env)
+    for extra in ([], ["--sync-model"], ["--no-sync-model", "--keys", "env"]):
+        with patch.dict(os.environ):
+            assert cli.main(["setup", "agent", "alpha", "--agent-id", "alpha", *extra]) == 0
+        cfg = yaml.safe_load((prof / "config.yaml").read_text())
+        assert cfg["model"] == {"provider": "nous", "default": "nous-model"}, extra
+        env = (prof / ".env").read_text()
+        assert "sk-or-x" not in env and "OPENROUTER_API_KEY" not in env, extra
+        assert "EMPORIA_IDENTITY_KEY_SOURCE=env:EMPORIA_IDENTITY_PRIVATE_KEY" in env, extra
+        assert "EMPORIA_IDENTITY_PRIVATE_KEY=" + "cd" * 32 in env, extra
+        assert not list((prof / "home" / ".hermes" / "keys").glob("alpha.priv")), extra
+    assert "never changes an existing profile's model" in capsys.readouterr().out
 
 
 def test_doctor_names_each_problem_with_its_fix(profiles, capsys, monkeypatch):

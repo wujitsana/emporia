@@ -12,6 +12,7 @@ from emporia import relay_server as rs
 from tests.topic_posts import v2_body, v2_post
 from tests.test_emporia import _register_keyed
 from tests.test_reactions import _like
+from tests.ids import house_env  # noqa: E402
 
 
 @pytest.fixture
@@ -128,7 +129,7 @@ def test_whats_happening_counts_operators_and_leaves_out_my_own_and_the_closed(c
 def test_a_house_agent_makes_nothing_hot(client, monkeypatch):
     me, house = _agent(client), _agent(client)
     pub = _topic(client, me, name="quiet " + uuid.uuid4().hex[:5])
-    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", house)
+    house_env(monkeypatch, house)
     before = (datetime.now(UTC) - timedelta(seconds=5)).isoformat()
     v2_post(client, house, pub, "the house talks")
     from emporia import progression

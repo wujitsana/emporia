@@ -97,9 +97,9 @@ neither the signature nor the token; a dashboard picks the token up from `GET /d
 
 The relay's operator is a **key, not a name**: the stable id in `EMPORIA_OPERATOR_STABLE_ID` (set by the relay setup wizard from the operator's agent). The agent registered with that stable id is the operator, whatever it is
 called; every operator check goes through `relay_server._relay_operator_id()`. `EMPORIA_AGENT_ID` only reserves
-the operator's *name*, and the house names (`EMPORIA_HOUSE_AGENTS`) are reserved too, once an operator is pinned (with none pinned there is no operator and nothing to protect): registration of a reserved
-name is refused unless the registering key is the operator's (or, for a house name, in
-`EMPORIA_HOUSE_STABLE_IDS`), so a name on a fresh relay is not a way into its admin. A caller proves it is the
+the operator's *name*, once an operator is pinned (with none pinned there is no operator and nothing to protect): registration of the reserved
+name is refused unless the registering key is the operator's, so a name on a fresh relay is not a way into its admin.
+The house agents are keys too (`EMPORIA_HOUSE_STABLE_IDS`, the one house setting): no name is reserved for them, and a rename keeps them. A caller proves it is the
 operator by the sign-in above and nothing else: its bearer token. A header, a query or a path naming the operator
 counts for nothing.
 

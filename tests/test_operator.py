@@ -25,7 +25,7 @@ REPO = Path(__file__).resolve().parent.parent
 VECTORS = REPO / "dashboard" / "src" / "operatorCommands.vectors.json"
 
 
-from tests.ids import stable_of  # noqa: E402
+from tests.ids import house_env, stable_of  # noqa: E402
 
 
 def _load(name, path):
@@ -43,7 +43,7 @@ setup_cli = _load("emporia_setup_cli_op", REPO / "hermes_plugin" / "emporia" / "
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
-    monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
+    monkeypatch.delenv("EMPORIA_HOUSE_STABLE_IDS", raising=False)
     monkeypatch.delenv("EMPORIA_EXPEDITIONS_TOPIC", raising=False)
     return TestClient(rs.app, client=("127.0.0.1", 51301))
 
@@ -164,15 +164,15 @@ def test_the_expedition_is_the_operators_newest_post_there(client, monkeypatch):
 
 def test_house_agents_their_activity_and_the_step_back(client, monkeypatch):
     op, house_a, player = setup(client, monkeypatch, "house", "player")
-    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", f"{house_a},{name('unregistered')}")
+    house_env(monkeypatch, house_a)
+    monkeypatch.setenv("EMPORIA_HOUSE_STABLE_IDS", os.environ["EMPORIA_HOUSE_STABLE_IDS"] + "," + "ab" * 32)
     from datetime import UTC, datetime
     _post("lobby", house_a, "hello", datetime.now(UTC).isoformat())
     _post("lobby", player, "hi", datetime.now(UTC).isoformat())
     h = client.get("/operator/status", headers=as_(op)).json()["house"]
     by = {a["agent_id"]: a for a in h["agents"]}
     assert by[house_a]["registered"] and by[house_a]["active"] and by[house_a]["last_active_at"]
-    gone = next(a for a in h["agents"] if a["agent_id"] != house_a)
-    assert not gone["registered"] and not gone["active"] and gone["last_active_at"] is None
+    assert list(by) == [house_a] and h["ids_not_registered"] == 1, "a stable id nobody registered yet is counted, not named"
     sb = h["step_back"]
     assert sb["at"] == 4 and sb["busy_window_s"] == 3600 and sb["others_active"] >= 1
     assert sb["stepping_back"] == (sb["others_active"] >= 4)

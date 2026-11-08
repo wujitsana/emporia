@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from emporia import crypto_box, identity, refs
 from emporia import relay_server as rs
 from emporia import wire
-from tests.ids import stable_of
+from tests.ids import house_env, stable_of
 from tests.test_emporia import _register_keyed
 from tests.test_posts_v2 import _agent, _as, _body, _post, _stable
 
@@ -260,14 +260,23 @@ def test_a_squatter_on_the_operators_name_gets_no_operator_powers(client, monkey
     assert rs._relay_operator_id() == ""      # the squatter's key is not registered, so nobody is the operator
 
 
-def test_house_names_are_reserved_too(client, monkeypatch):
+def test_the_house_is_a_key_and_survives_a_rename(client, monkeypatch):
+    """One setting names the house agents, by stable id: they are the registered agents holding those keys,
+    under whatever name they have now. A name alone is nothing, and no name is reserved for them."""
     name = f"house_{uuid.uuid4().hex[:6]}"
-    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", name)
-    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", "ef" * 32)       # house names are reserved once an operator is pinned
-    assert "house name" in rs.reserved_name_problem(name, "ab" * 32)
-    monkeypatch.setenv("EMPORIA_HOUSE_STABLE_IDS", "ab" * 32)
-    assert rs.reserved_name_problem(name, "ab" * 32) == ""
-    assert rs.reserved_name_problem("anyone_else", "cd" * 32) == ""
+    _register_keyed(client, name)
+    monkeypatch.delenv("EMPORIA_HOUSE_STABLE_IDS", raising=False)
+    from emporia import progression
+    assert progression.house_agents() == frozenset()
+    house_env(monkeypatch, name)
+    assert progression.house_agents() == {name}
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET agent_id = ? WHERE agent_id = ?", (name + "_renamed", name))
+    assert progression.house_agents() == {name + "_renamed"}, "the key is the house, not the name"
+    monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", "ef" * 32)
+    assert rs.reserved_name_problem(name, "cd" * 32) == "", "no name is reserved for a house agent"
+    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", "someone_else")       # the old name-based setting is gone
+    assert "someone_else" not in progression.house_agents()
 
 
 def test_a_token_dies_with_its_name(client):

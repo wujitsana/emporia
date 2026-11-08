@@ -63,30 +63,12 @@ load_profile_dotenv()
 DEFAULT_RELAY_URL = os.getenv("EMPORIA_RELAY_URL", "http://localhost:8088")
 MCP_TOOL_NAME = "emporia"
 
-# Which .env keys are safe to inherit (never copy raw secrets by default)
-_SAFE_ENV_KEYS = {
-    "EMPORIA_RELAY_URL",
-    "HERMES_AGENT_ID",
-    "OPENROUTER_API_KEY",
-    "STRIPE_PROFILE_ID",
-    "STRIPE_API_VERSION",
-    "EMPORIA_MAX_TOTAL_SPEND_CENTS",
-    "EMPORIA_GUARDRAILS_MODE",
-}
 def _valid_stripe_profile_id(value: str | None) -> bool:
     if not value:
         return False
     value = value.strip()
     return value.startswith("profile_") or value.startswith("profile_test_")
 
-
-_SECRET_ENV_KEYS = {
-    "STRIPE_SECRET_KEY",
-    "NVIDIA_API_KEY",
-    "OPENAI_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "NOUS_API_KEY",
-}
 
 _PROVIDER_ENV_KEYS = ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")
 
@@ -340,68 +322,16 @@ def is_multiplexed(profile_dir: Path) -> bool:
     return gateway.get("standalone") is not True
 
 
-def _ask_provider_key(name: str, where: str, must_copy: bool) -> str | None:
-    """In a terminal: the standard key, another, or none. None means skip."""
-    import getpass
-    note = (" It is copied into this agent's .env: each profile here gets only its own .env's keys."
-            if must_copy else "")
-    print(f"\n  The model needs {name}. Found in {where}.{note}")
-    options = [("standard", "Use that standard key"), ("other", "Enter another key for this agent"),
-               ("skip", "Skip — add it to its .env later")]
-    try:   # P212: the arrow-key menus when there is a terminal for them
-        from emporia import menus
-        picked = menus.select("  Which key?", [t for _, t in options]) if menus.available() else None
-        answer = None if picked is None else "skip" if picked is menus.BACK else options[picked][0]
-    except ImportError:
-        answer = None
-    if answer is None:
-        raw = input("  Use that standard key? [Y/n, or o for another] ").strip().lower()
-        answer = "standard" if raw in ("", "y", "yes") else "other" if raw.startswith("o") else "skip"
-    if answer == "standard":
-        return "standard"
-    if answer == "other":
-        other = getpass.getpass(f"  {name} for this agent (hidden): ").strip()
-        return other or None
-    return None
-
-
-def _provider_key_line(model_block: dict | None, *sources: dict[str, str],
-                       profile_dir: Path | None = None, labels: list[str] | None = None) -> str | None:
-    """`KEY=value` for the model's provider, to go in the new profile's .env.
-
-    From the first .env-type source that has it; else from this process's
-    environment (a key docker-compose passes the container). That one is copied
-    only when the profile cannot read the environment itself (multiplexed, P201);
-    in a terminal the person chooses the standard key, another, or none."""
+def _provider_key_note(model_block: dict | None, profile_dir: Path) -> str | None:
+    """What a profile's model needs that setup never supplies: its provider's API key.
+    Credentials are each profile's own and go in only through Hermes (catalog rule 11),
+    so setup copies none between profiles. Returns the one-line note, or None when
+    the model needs no key or the profile's .env already has it (names only, never values)."""
     name = _PROVIDER_KEYS.get(str((model_block or {}).get("provider") or "").lower())
-    if not name:
+    if not name or harvest_env(profile_dir).get(name):
         return None
-    if profile_dir is not None and harvest_env(profile_dir).get(name):
-        return f"{name}={harvest_env(profile_dir)[name]}"
-    # P216: say which file — "another profile's .env" was wrong when it was the main one.
-    value, where = next(((src[name], (labels or [])[i] if i < len(labels or []) else "another .env")
-                         for i, src in enumerate(sources) if src.get(name)), ("", ""))
-    if not value and os.environ.get(name, "").strip():
-        value = os.environ[name].strip()
-        where = "the container's environment (docker-compose)" if _in_container() else "this shell's environment"
-    if not value:
-        print(f"  WARNING: the model's provider needs {name}, and none was found to copy")
-        return None
-    from_env = where.endswith("environment") or "environment (" in where
-    must_copy = profile_dir is None or is_multiplexed(profile_dir)
-    if from_env and not must_copy:
-        print(f"  {name}: this profile runs its own gateway and reads it from {where} — nothing copied")
-        return None
-    if sys.stdin.isatty():
-        choice = _ask_provider_key(name, where, must_copy)
-        if choice is None:
-            print(f"  {name} not set — add it to {profile_dir / '.env' if profile_dir else 'the .env'} before it runs")
-            return None
-        if choice != "standard":
-            return f"{name}={choice}"
-    else:
-        print(f"  {name}: copied from {where}" + (" (each profile here reads only its own .env)" if from_env else ""))
-    return f"{name}={value}"
+    return (f"  {profile_dir.name}'s model needs {name}, which setup does not copy from another profile "
+            f"(each profile's credentials are its own). Add it through Hermes: `hermes -p {profile_dir.name} model`.")
 
 
 def hermes_home_of(profile_dir: Path) -> Path:
@@ -1028,7 +958,6 @@ def create_profile(
     current_profile_dir: Path | None,
     max_budget_cents: int | None = None,
     operator_label: str | None = None,
-    inherit_env: bool = True,
     dry_run: bool = False,
     update_dashboard: bool = False,
     dev_skills: bool = False,
@@ -1071,40 +1000,35 @@ def create_profile(
             _hermes_profile_create(name)
         profile_dir.mkdir(parents=True, exist_ok=True)
 
-    # Keypair
-    pub_hex, _ = generate_keypair(
-        aid, dry_run=dry_run,
-        keys_dir=Path(_profile_runtime_env(profile_dir)["EMPORIA_KEYS_DIR"]),
-    )
+    # Keypair. An existing agent keeps the identity it has: one linked or held in its
+    # .env (EMPORIA_IDENTITY_KEY_SOURCE / EMPORIA_IDENTITY_PRIVATE_KEY) gets no second key
+    # file beside it, and setup never changes where its key comes from.
+    from emporia import key_source as _ks
+    _held = harvest_env(profile_dir) if updating else {}
+    if updating and (_held.get(_ks.SOURCE_VARS["identity"]) or _held.get(_ks.ENV_KEY_NAMES["identity"])):
+        print("  keypair: the profile's identity key is kept as it is (linked in its .env)")
+    else:
+        generate_keypair(
+            aid, dry_run=dry_run,
+            keys_dir=Path(_profile_runtime_env(profile_dir)["EMPORIA_KEYS_DIR"]),
+        )
 
     # On update, start from the existing config so we don't clobber other settings.
     existing_config: dict[str, Any] = load_yaml(config_path) if updating else {}
 
-    # Inherit model block from current profile (or keep existing)
+    # The model. An existing profile always keeps its own: setup never changes it. A new
+    # profile gets the person's model only when asked to (sync_model). No credential is
+    # ever copied from another profile (catalog rule 11: each profile's are its own).
     model_block: dict | None = existing_config.get("model")
+    model_how = "kept (the profile's own)" if model_block else "none set"
     inherited_env: dict[str, str] = dict(existing_config.get("env", {}))
-    if current_profile_dir:
-        cur_config = load_yaml(current_profile_dir / "config.yaml")
-        # P116: --sync-model makes an existing profile follow this one's model;
-        # without it an existing profile keeps its own (a new one always copies).
-        if not model_block or sync_model:
-            model_block = _model_block(cur_config) or model_block
-        if inherit_env:
-            env_from_file = harvest_env(current_profile_dir)
-            env_from_config = cur_config.get("env", {})
-            upstream = collect_upstream_env(current_profile_dir)
-            for k in _SAFE_ENV_KEYS:
-                if k not in inherited_env:
-                    for src in (env_from_file, env_from_config, upstream):
-                        if k in src:
-                            inherited_env[k] = src[k]
-                            break
-            for k in _SECRET_ENV_KEYS:
-                if k not in inherited_env:
-                    for src in (env_from_file, env_from_config, upstream):
-                        if k in src and src[k]:
-                            inherited_env[k] = src[k]
-                            break
+    if not updating and sync_model and current_profile_dir:
+        copied = _model_block(load_yaml(current_profile_dir / "config.yaml"))
+        if copied:
+            model_block, model_how = copied, f"copied from {current_profile_dir.name} (no API key copied)"
+    elif sync_model and updating:
+        print("  The model of an existing profile is never changed by setup "
+              f"(change it with `hermes -p {name} model`).")
 
     # Build config (merge over existing)
     config: dict[str, Any] = dict(existing_config)
@@ -1181,16 +1105,8 @@ def create_profile(
         safe_env_lines.append(f"EMPORIA_X402_MAX_PAYMENT_CENTS={x402_max_payment_cents}")
     if x402_max_daily_cents is not None:
         safe_env_lines.append(f"EMPORIA_X402_MAX_DAILY_CENTS={x402_max_daily_cents}")
-    # P117: the one key this profile's model needs, into the .env Hermes reads it from.
-    provider_line = _provider_key_line(
-        model_block, env_block,
-        *((harvest_env(current_profile_dir), collect_upstream_env(current_profile_dir))
-          if current_profile_dir else ()), profile_dir=profile_dir,
-        labels=["its own settings",
-                *((f"{current_profile_dir.name}'s .env", f"Hermes's main .env ({hermes_home_of(current_profile_dir)})")
-                  if current_profile_dir else ())])
-    if provider_line:
-        safe_env_lines.append(provider_line)
+    if note := _provider_key_note(model_block, profile_dir):
+        print(note)
     if max_budget_cents is not None and max_budget_cents > 0:
         safe_env_lines.append(f"EMPORIA_MAX_TOTAL_SPEND_CENTS={max_budget_cents}")
     safe_env_lines.append(f"EMPORIA_OPERATOR_LABEL={operator_label}")
@@ -1198,7 +1114,7 @@ def create_profile(
     # Every inherited secret (P201: config.yaml no longer holds any), once.
     written = {ln.split("=", 1)[0] for ln in safe_env_lines}
     for k, v in env_block.items():
-        if ((is_secret_name(k) or k in _SECRET_ENV_KEYS) and v and k not in written
+        if (is_secret_name(k) and v and k not in written
                 and (own_relay or k not in _RELAY_ONLY_ENV_KEYS)):
             safe_env_lines.append(f"{k}={v}")
 
@@ -1229,7 +1145,7 @@ def create_profile(
     print(f"  Relay    : {relay_url}")
     print(f"  Profile  : {profile_dir}")
     if model_block:
-        print(f"  Model    : {model_block.get('default', model_block.get('provider', '?'))}")
+        print(f"  Model    : {model_block.get('default', model_block.get('provider', '?'))}  ({model_how})")
     print(f"  The agent registers as '{aid}' when its MCP server starts.")
 
 
@@ -1430,7 +1346,6 @@ def bootstrap_test_profiles(
             current_profile_dir=current_profile_dir,
             max_budget_cents=max_budget_cents,
             operator_label=operator_label,
-            inherit_env=False,  # P117: bare — the model's key is copied on its own
             dry_run=dry_run,
             update_dashboard=False,  # don't overwrite operator dashboard env
             dev_skills=dev_skills,
@@ -1729,8 +1644,8 @@ def main() -> None:
     parser.add_argument("--x402-max-daily-cents", type=int, default=None,
                         help="With --create-profile: most the x402 wallet signs in any 24 hours")
     parser.add_argument("--sync-model", action="store_true",
-                        help="With --create-profile on an existing profile: switch it to this "
-                             "profile's model (a new profile always copies it)")
+                        help="With --create-profile for a NEW profile: give it this profile's model "
+                             "(never its API key; an existing profile's model is never changed)")
     parser.add_argument("--no-seed", action="store_true",
                         help="With --install-profile on a local relay: skip the demo seed")
     parser.add_argument("--local-demo", action="store_true",
@@ -1757,12 +1672,6 @@ def main() -> None:
                              "under the same Hermes root, else a new random one")
     parser.add_argument("--no-guardrails", action="store_true",
                         help="Set EMPORIA_GUARDRAILS_MODE=off (testing only)")
-    parser.add_argument("--no-inherit-env", action="store_true",
-                        help="Don't copy env vars from current profile when creating new profile")
-    parser.add_argument("--inherit-env", action="store_true",
-                        help="With --create-profile: also copy this profile's other settings "
-                             "(provider keys, budgets). Default is bare: the model "
-                             "and the one key it needs")
     parser.add_argument("--dev-skills", action="store_true",
                         help="Symlink dev skills from repo (emporia-dev, srcl-terminal-ui)")
     parser.add_argument("--dry-run", action="store_true",
@@ -1901,9 +1810,6 @@ def main() -> None:
             sync_model=args.sync_model,
             max_budget_cents=args.max_budget_cents,
             operator_label=operator_label,
-            # P117: bare by default — the model and its key, nothing else from
-            # this profile; --inherit-env restores copying its other settings.
-            inherit_env=args.inherit_env and not args.no_inherit_env,
             dry_run=args.dry_run,
             dev_skills=args.dev_skills,
         )

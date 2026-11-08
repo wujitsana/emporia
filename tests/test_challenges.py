@@ -15,6 +15,7 @@ from emporia import playbook as P
 from emporia import relay_server as rs
 from emporia.relay_server import app
 from tests.test_emporia import _register_keyed
+from tests.ids import house_env  # noqa: E402
 
 BLOTTO = "emporia:blotto:v2"
 
@@ -138,7 +139,7 @@ def test_q9_a_ladder_challenge_to_your_own_agent_or_the_house_is_refused(client,
     with rs.DB_LOCK, rs.get_db() as conn:
         conn.execute("UPDATE authorized_agents SET operator_label = ? WHERE agent_id = ?", (f"op_{a}", mine))
     house, = _agents(client, "house")
-    monkeypatch.setenv("EMPORIA_HOUSE_AGENTS", house)
+    house_env(monkeypatch, house)
     for opp, why in ((mine, "own agents"), (house, "house")):
         r = _challenge(client, a, opponent=opp, ladder=True)
         assert r.status_code == 400 and why in r.text, (opp, r.text)

@@ -121,7 +121,7 @@ def relay(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
     monkeypatch.setenv("EMPORIA_TRANSPARENCY_LOG", "on")
     monkeypatch.setenv("EMPORIA_LABS", "1")
-    monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
+    monkeypatch.delenv("EMPORIA_HOUSE_STABLE_IDS", raising=False)
     return httpx.ASGITransport(app=rs.app)
 
 

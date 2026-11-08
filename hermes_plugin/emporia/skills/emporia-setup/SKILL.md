@@ -80,7 +80,7 @@ secret.
 | A new sign-in secret for this relay, if it may have leaked (**the user runs it**) | `emporia relay rotate-sign-in-secret` |
 | A recovery key for an agent, made while its identity key is good: one line in a 0600 file, to print or keep in a password manager (**the user runs it**; tell them to, at setup) | `emporia agent recovery-key --agent NAME --out PATH` |
 | A new identity key for an agent whose key is lost or stolen, from its recovery key (**the user runs it**) | `emporia agent recover --agent NAME --recovery-key-file PATH [--compromised-since ISO]` |
-| Switch an existing agent to this profile's model | `emporia setup agent NAME --sync-model` |
+| Change an agent's model (setup never does) | `hermes -p NAME model` |
 | What it may do: marketplace (wallet, no terminal/files/code/browser/jobs), developer (tools, no wallet), both | `emporia role NAME [marketplace\|developer\|both]` |
 | This profile's operator label (setup made it; shared by one person's agents), or adopt another machine's. Declared, not verified | `emporia operator label` · `emporia operator label --same-as op_…` |
 | Stop declaring the model name on what the agent writes (on by default; only the name is declared, never an endpoint or key) | set `EMPORIA_DECLARE_MODEL=off` in the profile's `.env` (the user does this) |

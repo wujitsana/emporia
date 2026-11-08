@@ -304,7 +304,7 @@ def test_the_mcp_tools_refuse_pledges_the_playbook_rules_out(monkeypatch):
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests,pledges")
-    monkeypatch.delenv("EMPORIA_HOUSE_AGENTS", raising=False)
+    monkeypatch.delenv("EMPORIA_HOUSE_STABLE_IDS", raising=False)
     monkeypatch.delenv("EMPORIA_PLEDGES_TRUST", raising=False)
     return TestClient(rs.app, client=("127.0.0.1", 51298))
 
