@@ -10,7 +10,8 @@ unrecoverable money, the rule `payments._x402_asset_for` already follows:
     EMPORIA_ESCROW_RPC_URL       JSON-RPC endpoint for that network
     EMPORIA_ESCROW_CONTRACT      AuthCaptureEscrow address
     EMPORIA_ESCROW_COLLECTOR     ERC3009PaymentCollector address
-    EMPORIA_ESCROW_FEE_RECEIVER  where the operator fee goes (a Safe, ideally)
+    EMPORIA_FEE_ADDRESS          where the operator fee goes (a Safe, ideally); the relay's one
+                                 published fee address, read through `fees.addresses()`
 
 The token and its EIP-712 domain come from the existing x402 settings for the
 same network (EMPORIA_X402_ASSET_<NET>, EMPORIA_X402_EXTRA_<NET>), so a network
@@ -31,7 +32,7 @@ import httpx
 from eth_abi import decode, encode
 from eth_utils import keccak, to_checksum_address
 
-from emporia import escrow
+from emporia import escrow, fees
 
 _INFO_TUPLE = ("(address,address,address,address,uint120,uint48,uint48,uint48,"
                "uint16,uint16,address,uint256)")
@@ -78,7 +79,7 @@ def load_config() -> EscrowConfig | None:
         "rpc_url": os.getenv("EMPORIA_ESCROW_RPC_URL", "").strip(),
         "contract": os.getenv("EMPORIA_ESCROW_CONTRACT", "").strip(),
         "collector": os.getenv("EMPORIA_ESCROW_COLLECTOR", "").strip(),
-        "fee_receiver": os.getenv("EMPORIA_ESCROW_FEE_RECEIVER", "").strip(),
+        "fee_receiver": fees.addresses().get("evm", ""),
     }
     if not network.startswith("eip155:") or not all(values.values()):
         return None

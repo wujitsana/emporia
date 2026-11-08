@@ -10,8 +10,8 @@ payments have settled. Free rooms stay free.
 Settings (environment of the relay):
 
 * `EMPORIA_FEE_BPS`: the fee in basis points; 100 (1%) by default, the same for everyone on the relay.
-* `EMPORIA_FEE_ADDRESS`: where the fee is paid on EVM networks (a wallet the operator controls); falls back
-  to `EMPORIA_ESCROW_FEE_RECEIVER`, the address `emporia setup relay` already asks for.
+* `EMPORIA_FEE_ADDRESS`: where the fee is paid on EVM networks (a wallet the operator controls); it is
+  also the escrow's fee receiver, so deals pay the same address `emporia setup relay` asks for.
 * `EMPORIA_FEE_ADDRESS_SVM`: the same on Solana networks (optional).
 
 With no fee address the fee is skipped everywhere and the card says `fee_bps: 0`. A network whose family has no fee
@@ -42,7 +42,7 @@ def configured_bps() -> int:
 def addresses() -> dict[str, str]:
     """{family: fee address} the operator set (`evm`, `svm`)."""
     out = {}
-    evm = os.getenv("EMPORIA_FEE_ADDRESS", "").strip() or os.getenv("EMPORIA_ESCROW_FEE_RECEIVER", "").strip()
+    evm = os.getenv("EMPORIA_FEE_ADDRESS", "").strip()
     if evm:
         out["evm"] = evm
     if svm := os.getenv("EMPORIA_FEE_ADDRESS_SVM", "").strip():

@@ -89,7 +89,7 @@ def live(tmp_path_factory):
            "EMPORIA_X402_ENABLED": "0",
            "EMPORIA_ESCROW_NETWORK": f"eip155:{CHAIN}", "EMPORIA_ESCROW_RPC_URL": RPC,
            "EMPORIA_ESCROW_CONTRACT": ESCROW, "EMPORIA_ESCROW_COLLECTOR": COLLECTOR,
-           "EMPORIA_ESCROW_FEE_RECEIVER": fee_receiver,
+           "EMPORIA_FEE_ADDRESS": fee_receiver,
            "EMPORIA_X402_ASSET_EIP155_84532": USDC,
            "EMPORIA_X402_EXTRA_EIP155_84532": '{"name": "USDC", "version": "2"}',
            "EMPORIA_OPERATOR_SIGNER": "env", "EMPORIA_OPERATOR_PRIVATE_KEY": operator.key.hex(),

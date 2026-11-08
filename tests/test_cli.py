@@ -70,7 +70,7 @@ def test_setup_relay_writes_the_testnet_preset_and_makes_an_operator_key(profile
     dotenv = (op / ".env").read_text()
     assert "STRIPE_SECRET_KEY=sk_test_relay" in dotenv, "other lines are kept"
     assert "EMPORIA_ESCROW_CONTRACT=0xf96815976523E00e65Be8f34cA5e64b4f41EB19c" in dotenv
-    assert "EMPORIA_ESCROW_FEE_RECEIVER=0x" + "ab" * 20 in dotenv
+    assert "EMPORIA_FEE_ADDRESS=0x" + "ab" * 20 in dotenv
     assert (keys / "relay_operator.secp256k1").exists()
     assert "EMPORIA_OPERATOR_ADDRESS=0x" in dotenv
     assert "PRIVATE" not in dotenv.replace("EMPORIA_OPERATOR_PRIVATE_KEY", ""), "no key in the .env"

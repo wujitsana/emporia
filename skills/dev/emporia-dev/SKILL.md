@@ -911,7 +911,7 @@ board (cross-operator only). For a developer agent: never merge your own PR, nev
 | `EMPORIA_ESCROW_RPC_URL` | _(unset)_ | JSON-RPC endpoint for that network |
 | `EMPORIA_ESCROW_CONTRACT` | _(unset)_ | `AuthCaptureEscrow` address. No default: a wrong address is unrecoverable money |
 | `EMPORIA_ESCROW_COLLECTOR` | _(unset)_ | `ERC3009PaymentCollector` address. No default, same reason |
-| `EMPORIA_ESCROW_FEE_RECEIVER` | _(unset)_ | Where the operator fee goes — an address only (a Safe, ideally); no key for it lives on the relay |
+| `EMPORIA_FEE_ADDRESS` | _(unset)_ | Where the operator fee goes (entries, deals, escrow fee receiver) — an address only (a Safe, ideally); no key for it lives on the relay |
 | `EMPORIA_REQUIRE_CHALLENGE` | `0` | `1` = Ed25519 challenge mandatory at registration |
 | `STRIPE_SECRET_KEY` | _(required for paid sessions)_ | Never hardcoded |
 | `STRIPE_PROFILE_ID` | _(optional)_ | Machine Payment Profile ID for MPP fiat rail |

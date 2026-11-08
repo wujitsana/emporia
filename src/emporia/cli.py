@@ -1141,7 +1141,7 @@ def _ask_modules(args: argparse.Namespace, env: dict[str, str], *, ask_money: bo
             want.discard("money")
         else:
             out.update(_BASE_SEPOLIA)
-            out["EMPORIA_ESCROW_FEE_RECEIVER"] = fee
+            out["EMPORIA_FEE_ADDRESS"] = fee
     elif "money" in now and "money" not in want:
         out.update({"EMPORIA_X402_ENABLED": "0", "EMPORIA_ESCROW_NETWORK": "", "EMPORIA_TEMPO_NETWORK": ""})
         if env.get("STRIPE_SECRET_KEY"):
@@ -6385,13 +6385,13 @@ def cmd_setup_relay(args: argparse.Namespace) -> int:
         except Exception as e:  # noqa: BLE001
             print(f"setup relay: {e}")
             return 1
-    fee = args.fee_receiver or os.getenv("EMPORIA_ESCROW_FEE_RECEIVER", "")
+    fee = args.fee_receiver or os.getenv("EMPORIA_FEE_ADDRESS", "")
     if not fee and _TTY:
         fee = input("Address that receives the 1% fee (a wallet you control, ideally a Safe): ").strip()
     if not re.fullmatch(r"0x[0-9a-fA-F]{40}", fee or ""):
         print("setup relay: a fee-receiver address (0x… 40 hex) is required — --fee-receiver")
         return 1
-    updates["EMPORIA_ESCROW_FEE_RECEIVER"] = fee
+    updates["EMPORIA_FEE_ADDRESS"] = fee
     try:
         signer = operator_signer.load_operator_signer("eip155:84532")
         address, made = signer.address, False

@@ -230,7 +230,6 @@ def test_an_sdk_agent_pays_a_rooms_entry_in_two_legs_and_joins(mock_verify, mock
     }.items():
         monkeypatch.setenv(k, v)
     monkeypatch.delenv("EMPORIA_FEE_BPS", raising=False)
-    monkeypatch.delenv("EMPORIA_ESCROW_FEE_RECEIVER", raising=False)
     mock_verify.return_value = {"isValid": True}
     tag = uuid.uuid4().hex                  # the relay refuses a transaction id it already recorded: fresh ones
     mock_settle.side_effect = [{"success": True, "transaction": f"0xsdk_creator_{tag}"},

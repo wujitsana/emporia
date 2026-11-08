@@ -907,10 +907,10 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     assert "reverse_proxy relay:8088" in (folder / "Caddyfile").read_text()
     env = _env_of(folder)
     assert env["EMPORIA_RELAY_URL"] == "https://relay.example.com" and "EMPORIA_REQUIRE_NOUS" not in env
-    assert env["EMPORIA_ESCROW_FEE_RECEIVER"] == "0x" + "ab" * 20 and env["EMPORIA_TRANSPARENCY_LOG"] == "on"
+    assert env["EMPORIA_FEE_ADDRESS"] == "0x" + "ab" * 20 and env["EMPORIA_TRANSPARENCY_LOG"] == "on"
     assert env["EMPORIA_AGENT_ID"] and oct((folder / ".env").stat().st_mode)[-3:] == "600"
     assert _env_of(root / "keeper")["EMPORIA_RELAY_URL"] == "http://relay:8088"
-    assert "EMPORIA_ESCROW_FEE_RECEIVER" not in _env_of(root / "keeper")      # the relay's, in its own folder
+    assert "EMPORIA_FEE_ADDRESS" not in _env_of(root / "keeper")      # the relay's, in its own folder
     (folder / "compose.yaml").write_text("services: {}\n")            # someone else's: not replaced
     _typing(monkeypatch)
     assert cli.main(["relay", "host", "--run", "docker", "--dir", str(folder), "--domain", "relay.example.com",

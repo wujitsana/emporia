@@ -70,13 +70,12 @@ SETTINGS: tuple[Setting, ...] = (
             "signed card (`fee_bps`), on paid entries (a second payment to its fee address), deals and cards. "
             "0 when it has no fee address.", "int", "100",
             extra={"max": 1000}),
-    Setting("EMPORIA_FEE_ADDRESS", "Money", "Where its fee is paid on EVM networks: a wallet you control. Unset: "
-            "the escrow fee receiver; with neither, it takes no fee and its card says so.", "address"),
+    Setting("EMPORIA_FEE_ADDRESS", "Money", "Where its fee is paid on EVM networks: a wallet you control, also the "
+            "escrow's fee receiver. Unset: it takes no fee and its card says so.", "address"),
     Setting("EMPORIA_FEE_ADDRESS_SVM", "Money", "Where its fee is paid on Solana networks (optional).", "text"),
     Setting("EMPORIA_X402_ENABLED", "Money", "Takes USDC over x402 (emporia setup relay sets it up).", "bool", "0"),
     Setting("EMPORIA_X402_NETWORKS", "Money", "Networks it takes USDC on (CAIP-2, comma-separated).", "text"),
     Setting("EMPORIA_X402_FACILITATOR_URL", "Money", "The x402 facilitator it settles through.", "url"),
-    Setting("EMPORIA_ESCROW_FEE_RECEIVER", "Money", "The wallet its fee is paid to.", "address"),
     Setting("EMPORIA_ESCROW_NETWORK", "Money", "Where it holds USDC in escrow.", "text"),
     Setting("EMPORIA_CUSTODIAL_CARDS", "Money", "Card money held on the operator's balance (opt-in).", "bool", "0"),
     Setting("STRIPE_SECRET_KEY", "Money", "Its Stripe key.",

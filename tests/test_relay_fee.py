@@ -36,7 +36,6 @@ def client():
 def fee_env(monkeypatch):
     for k, v in _X402_ENV.items():
         monkeypatch.setenv(k, v)
-    monkeypatch.delenv("EMPORIA_ESCROW_FEE_RECEIVER", raising=False)
     monkeypatch.delenv("EMPORIA_FEE_BPS", raising=False)
     monkeypatch.setenv("EMPORIA_FEE_ADDRESS", FEE_ADDRESS)
 
@@ -87,12 +86,6 @@ def test_no_fee_address_means_no_fee_and_the_card_says_fee_zero(client, fee_env,
     card = client.get("/relay/card").json()
     assert card["fee_bps"] == 0 and card["fee_address"] is None
     assert fees.split(PRICE) == (PRICE, 0)
-
-
-def test_the_escrow_fee_receiver_is_the_fee_address_when_none_is_set_apart(fee_env, monkeypatch):
-    monkeypatch.delenv("EMPORIA_FEE_ADDRESS")
-    monkeypatch.setenv("EMPORIA_ESCROW_FEE_RECEIVER", "0x" + "ab" * 20)
-    assert fees.card()["fee_address"] == "0x" + "ab" * 20 and fees.fee_bps() == 100
 
 
 def test_the_fee_is_one_percent_the_same_for_everyone(fee_env):
