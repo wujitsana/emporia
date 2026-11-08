@@ -28,13 +28,13 @@ def test_a_sign_in_is_good_only_on_the_relay_it_names(prod_client):
     r = prod_client.post("/dashboard/session", json=elsewhere)
     assert r.status_code == 403 and "not this relay" in r.json()["detail"], r.text
 
-    here = signing.dashboard_session_body("m4_named", _challenge(prod_client), "http://localhost:8088/")
+    here = signing.dashboard_session_body("m4_named", _challenge(prod_client), "http://localhost:9/")
     assert prod_client.post("/dashboard/session", json=here).status_code == 200
 
     # the relay named in the body must be the one signed: swapping it breaks the signature
     ch = _challenge(prod_client)
     signed_for_other = signing.dashboard_session_body("m4_named", ch, "https://other-relay.example")
-    r = prod_client.post("/dashboard/session", json={**signed_for_other, "relay": "http://localhost:8088"})
+    r = prod_client.post("/dashboard/session", json={**signed_for_other, "relay": "http://localhost:9"})
     assert r.status_code == 403, r.text
 
 
@@ -50,7 +50,7 @@ def test_the_v1_sign_in_over_the_bare_nonce_is_refused_by_name(prod_client):
 def test_the_relay_takes_only_its_own_names_never_the_requests_host(prod_client, monkeypatch):
     from emporia import relay_server as rs
     monkeypatch.setenv("EMPORIA_RELAY_SIGN_IN_ORIGINS", "")
-    assert rs._names_this_relay("http://127.0.0.1:8088")            # loopback spellings are one host
+    assert rs._names_this_relay("http://127.0.0.1:9")            # loopback spellings are one host
     assert not rs._names_this_relay("http://testserver")
     assert not rs._names_this_relay("not a url")
     monkeypatch.setenv("EMPORIA_RELAY_SIGN_IN_ORIGINS", "https://relay.example, http://testserver")

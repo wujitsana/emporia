@@ -121,7 +121,8 @@ TEST_ENVIRONMENT: dict[str, str] = {
     # Behaviour switches the profile would otherwise choose for us.
     "EMPORIA_GUARDRAILS_MODE": "enforce",
     "EMPORIA_AGENT_ID": "",
-    "EMPORIA_RELAY_URL": "http://localhost:8088",
+    # Never the default 8088, where a machine that runs a relay has the real one: nothing listens here.
+    "EMPORIA_RELAY_URL": "http://127.0.0.1:9",
     # Review follow-up M4: a dashboard sign-in names its relay. The suite's in-process
     # clients reach the relay as `http://testserver` (TestClient) and `http://relay.test`.
     "EMPORIA_RELAY_SIGN_IN_ORIGINS": "http://testserver,http://relay.test",
@@ -707,3 +708,40 @@ def profiles(tmp_path, monkeypatch):
     monkeypatch.setattr(inst, "_install_skill_link", lambda *a, **k: None)
     monkeypatch.setattr(inst, "_TOUCHED_PROFILES", [])
     return root, op
+
+
+# A test never reaches a real relay. The default relay of a machine that runs one is localhost:8088
+# (the live testnet relay on a developer's or operator's machine); test-owned servers use other ports.
+# Any connection to loopback port 8088 is refused and fails the test, so a missed pin or mock
+# surfaces instead of registering agents somewhere real.
+_LIVE_RELAY_PORT = 8088
+_live_relay_hits: list[str] = []
+
+
+@pytest.fixture(autouse=True)
+def _never_reach_the_default_relay(monkeypatch):
+    import socket
+    real_connect, real_connect_ex = socket.socket.connect, socket.socket.connect_ex
+
+    def refused(address) -> bool:
+        if isinstance(address, tuple) and len(address) >= 2 and address[1] == _LIVE_RELAY_PORT:
+            host = str(address[0])
+            if host in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+                _live_relay_hits.append(f"{host}:{address[1]}")
+                return True
+        return False
+
+    def connect(self, address):
+        if refused(address):
+            raise ConnectionRefusedError(f"tests never reach a real relay ({address[0]}:{address[1]})")
+        return real_connect(self, address)
+
+    def connect_ex(self, address):
+        if refused(address):
+            return 111
+        return real_connect_ex(self, address)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", connect_ex)
+    _live_relay_hits.clear()
+    yield
+    assert not _live_relay_hits, f"this test tried to reach the default relay at {_live_relay_hits[0]}: pin its relay"
