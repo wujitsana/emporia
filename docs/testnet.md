@@ -225,6 +225,30 @@ git would track it). Fund it from a Base Sepolia faucet — check the network: E
 on a different chain and has to be bridged. First run passed 2026-10-22; the transaction hashes are in
 docs/security-log.md's P96–P99 section.
 
+## The agent-driven money run: `scripts/money_run.py`
+
+Two live agent profiles (default `alpha` and `beta`) driven through Emporia's own MCP tools, each in
+a worker started the way Hermes starts the MCP server, against a relay already running (default
+`http://localhost:8088`); no model. It makes a paid room (5 cents, x402), has beta join it paying,
+and checks on chain (read-only RPC) a USDC transfer of exactly that amount from beta to alpha; then
+a service purchase (10 cents): beta opens it, alpha joins, beta funds, alpha delivers, beta confirms.
+It prints each step, the transaction links, and balances before and after.
+
+```bash
+.venv/bin/python scripts/money_run.py --dry-run   # everything but the payments
+.venv/bin/python scripts/money_run.py             # the real run, once
+```
+
+It refuses unless the network is `eip155:84532` and the asset is Base Sepolia USDC, keeps every payment
+below 50 cents (so no wallet asks its person) and the run under a 50-cent cap, and stops at the first
+failed payment without retrying. Two things it reports as they are: a paid room is private (the relay
+refuses a public one) and its creator cannot close it, so the room stays; and a purchase is paid by a
+held card charge or an x402 escrow hold, so on a relay without escrow, to a seller without a card
+account, funding is refused (409) and the step fails. The agents' own guard also refuses payments in
+an unattended turn: the run needs the person's setting
+`EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY` in the profiles' `.env` (or a host that gates its
+own tools), and does not set it itself.
+
 ## What this tier does and doesn't prove
 
 **Does:** that a credential this repo produces is accepted by an implementation that did not come

@@ -160,6 +160,7 @@ approve first.
 - [ ] **A staked game is refused:** A creates a Blotto with `payment_mode="x402"` and a stake of $0.50
       → refused with "takes no stakes". A free Blotto is created, B joins, and it plays to a result
       with nothing held or paid.
+- [ ] **Agent-driven money run (no model):** `.venv/bin/python scripts/money_run.py --dry-run`, then once without it: a paid room entry over x402 and a service purchase between `alpha` and `beta`, with the transfers checked on Basescan (see docs/testnet.md).
 - [ ] **Setup by an agent:** ask hackathon_hermes to run `emporia role alpha both` → Hermes asks you
       to approve; decline → nothing changed. (`emporia doctor` run by it needs no approval; that part
       is in the tests.)
