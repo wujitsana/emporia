@@ -3249,6 +3249,7 @@ def cmd_features(args: argparse.Namespace) -> int:
             return 1
         profile, name = found
         held = installer().harvest_env(profile)
+        key_dir = Path(held.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
         label = name
         restart = (f"restart its MCP server: `/reload-mcp` in its chat, or "
                    f"`hermes {'' if name == 'default' else f'-p {name} '}gateway restart`")
@@ -3256,8 +3257,8 @@ def cmd_features(args: argparse.Namespace) -> int:
         def save(value: str) -> None:
             merge_env_file(profile / ".env", {F.SETTING: value})
     try:
-        now = F.enabled_from(held)
-        asked = [w for raw in (args.names or []) for w in [x.strip() for x in raw.split(",") if x.strip()]]
+        now = F.enabled_from(held, key_dir)
+        asked =[w for raw in (args.names or []) for w in [x.strip() for x in raw.split(",") if x.strip()]]
         for w in asked:
             if w not in F.BY_NAME or w == F.CORE:
                 raise F.FeatureError(f"unknown feature {w!r}: one of {', '.join(F.OPTIONAL)}")
@@ -4971,7 +4972,8 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     dotenv = inst.harvest_env(profile)
     from emporia import features as _F
     try:
-        rep.ok(_F.summary(_F.enabled_from(dotenv)) + ("" if dotenv.get(_F.SETTING) else " (the recommended set: none chosen yet)"))
+        rep.ok(_F.summary(_F.enabled_from(dotenv, key_dir))
+               + ("" if dotenv.get(_F.SETTING) else " (none chosen yet: the recommended set plus what its settings imply)"))
     except _F.FeatureError as e:
         rep.fail(f"{_F.SETTING} is not readable: {e}", f"emporia features on NAME  (or set {_F.SETTING} in the profile's .env)")
     doctor_identity_key(rep, name, agent_id, key_dir, linked_identity, dotenv,
