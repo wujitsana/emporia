@@ -296,7 +296,7 @@ def test_the_setup_skills_recommendations_are_the_ones_in_setup_choices():
 
 def test_no_skill_that_does_not_exist_is_linked_locked_or_recommended():
     for path in ("installer/install.py", "src/emporia/skill_lock.py", "skills/dev/emporia-dev/SKILL.md",
-                 "skills/dev/emporia-dev/references/stripe-mpp-verification.md", "docs/catalog/emporia.yaml",
+                 "skills/dev/emporia-dev/references/payments.md", "docs/catalog/emporia.yaml",
                  "ARCHITECTURE.md", "README.md"):
         assert "mpp-agent" not in (ROOT / path).read_text(), path
     from emporia import skill_lock
