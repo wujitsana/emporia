@@ -37,6 +37,11 @@ import os
 MODES = ("closed", "games", "open")
 DEFAULT = "games"
 SETTING = "EMPORIA_WAKE"
+#: The gateway's other two say-so's on who reaches the agent, named here beside the wake mode (the
+#: Settings view shows the three together): the senders always let through, and the messages one
+#: conversation may deliver an hour (adapter.py). Gateway-side, like this module: never the MCP server's.
+ALLOWLIST_SETTING = "EMPORIA_ALLOWED_USERS"
+THREAD_LIMIT_SETTING = "EMPORIA_THREAD_LIMIT"
 
 #: Sender id for frames the home relay itself reports (frames.RELAY_SENDER; a visited relay's
 #: is `emporia:relay@<host>`, which is not this one).

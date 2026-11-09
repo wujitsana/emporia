@@ -173,6 +173,87 @@ def test_settings_are_read_only_and_hold_no_secret(tmp_path, monkeypatch):
     assert c.post("/settings").status_code == 405, "nothing is changed from the browser"
 
 
+def test_settings_are_drawn_like_hermes_form_and_name_only_what_hermes_can_change(tmp_path, monkeypatch):
+    """The Settings view groups like Hermes's config page and draws each value as its form would: a switch,
+    the chosen option among its options, a number with its unit. `env` names a setting only when Hermes's
+    own dashboard can change it (plugin.yaml optional_env, never a secret); a secret is only set or not set."""
+    import yaml
+
+    from emporia import cli
+    profile = tmp_path / "profiles" / "mu"
+    keys = profile / "home" / ".hermes" / "keys"
+    keys.mkdir(parents=True)
+    (profile / "config.yaml").write_text(f"mcp_servers:\n  emporia:\n    env:\n      EMPORIA_KEYS_DIR: {keys}\n")
+    secret = "22" * 32
+    (profile / ".env").write_text("EMPORIA_RELAY_URL=http://relay.test\nEMPORIA_X402_EVM_PRIVATE_KEY=0x" + secret
+                                  + "\nEMPORIA_X402_EVM_KEY_SOURCE=env:EMPORIA_X402_EVM_PRIVATE_KEY\nEMPORIA_THREAD_LIMIT=0\n"
+                                  "EMPORIA_WAKE=open\nEMPORIA_SIGNER_URL=http://127.0.0.1:1\n"
+                                  "EMPORIA_SIGNER_TOKEN=tok-" + secret + "\nEMPORIA_DECLARE_MODEL=off\n")
+    monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": None)
+    report = cli.agent_settings(profile, "mu")
+    assert secret not in json.dumps(report)
+    groups = list(dict.fromkeys(i["group"] for i in report))
+    assert groups == [g for g in cli.SETTINGS_GROUPS if g in groups], "sections come in the view's order"
+    assert {"Relay & identity", "Who can reach the agent", "Features & tools", "Money & limits", "Keys & signer",
+            "Sharing"} <= set(groups)
+    items = {i["label"]: i for i in report}
+    wake = items["Wake mode"]
+    assert (wake["kind"], wake["current"], wake["options"], wake["recommended"], wake["is_default"]) == (
+        "choice", "open", ["closed", "games", "open"], "games", False)
+    assert wake["env"] == "EMPORIA_WAKE"
+    limit = items["Messages per conversation"]
+    assert (limit["kind"], limit["value"], limit["level"]) == ("number", "no limit", "warn")
+    assert items["Turns other agents can start"]["value"] == "300 per 24 hours"
+    assert items["Turns other agents can start"]["is_default"] is True
+    assert items["Largest single payment"]["value"] == "$10.00 per payment"
+    assert items["Declare its model"]["current"] == "off" and items["Declare its model"]["recommended"] == "on"
+    assert items["Signer token"] == {**items["Signer token"], "kind": "secret", "value": "set", "current": "set"}
+    assert "env" not in items["Signer token"], "a secret is never offered for editing"
+    declared = {e["name"]: e for e in yaml.safe_load(
+        (cli.REPO / "hermes_plugin" / "emporia" / "plugin.yaml").read_text())["optional_env"]}
+    for i in report:
+        assert i.get("kind") != "secret" or i["value"] in ("set", "not set"), i
+        if "env" in i:
+            assert declared[i["env"]]["password"] is False, i["env"]
+        assert i["about"].endswith(".") and len(i["about"]) <= 120, i["about"]
+    machine = cli.machine_settings("http://relay.test")
+    assert {i["group"] for i in machine} == {"This machine"}
+
+
+def test_the_console_reads_the_agents_own_log_check_and_never_runs_one(tmp_path, monkeypatch):
+    """P281: the dashboard shows what the agent's own last check of its relay's transparency log found,
+    from the state it keeps (log_states.json): numbers and words, no key, no signature. Nothing is fetched
+    from the relay and nothing is written; a never-checked relay is `kept: null`."""
+    from unittest.mock import patch
+
+    from emporia import cli, logcheck
+    keys = tmp_path / "profiles" / "nu" / "home" / ".hermes" / "keys"
+    keys.mkdir(parents=True)
+    with patch.object(identity, "KEY_DIR", keys):
+        identity.generate_or_load_keypair("nu")
+    c = TestClient(build_app(Console([keys], "http://relay.test", session_token=None)))
+    assert c.get("/log-check/nu").json() == {"relay": "http://relay.test", "kept": None}
+    signature = "ab" * 64
+    state = {"type": "emporia:log-state:v1", "relay_public_key": "cd" * 32, "size": 1204, "root": "ef" * 32,
+             "at": "2026-11-09T11:55:00+00:00", "epoch": 2, "signature": signature}
+    (keys / logcheck.CLIENT_FILE).write_text(json.dumps({"relays": {"http://relay.test": {
+        "state": state, "status": "fail", "detail": "the log shrank from 1300 to 1204 entries",
+        "checked_at": "2026-11-09T11:58:00+00:00",
+        "failures": [{"at": "x", "detail": "shrank", "evidence": {"states": [state]}}]}}}))
+    before = (keys / logcheck.CLIENT_FILE).read_text()
+    monkeypatch.setattr(logcheck, "check", lambda *a, **k: pytest.fail("the console ran a check"))
+    monkeypatch.setattr(cli, "health", lambda *a, **k: pytest.fail("the console asked the relay"))
+    r = c.get("/log-check/nu")
+    assert r.status_code == 200
+    assert r.json()["kept"] == {"status": "fail", "ok": False, "detail": "the log shrank from 1300 to 1204 entries",
+                                "checked_at": "2026-11-09T11:58:00+00:00", "size": 1204, "epoch": 2,
+                                "state_at": "2026-11-09T11:55:00+00:00", "failures": 1}
+    assert signature not in r.text and "cd" * 32 not in r.text and "ef" * 32 not in r.text
+    assert (keys / logcheck.CLIENT_FILE).read_text() == before, "nothing written"
+    assert c.post("/log-check/nu").status_code == 405
+    assert c.get("/log-check/nobody").status_code == 404
+
+
 def test_the_console_opens_an_encrypted_rooms_messages_for_a_member(client):
     """P238: rooms showed 🔒 only on the dashboard; DMs opened on this machine."""
     _enc_pair(client, "p238_a", "p238_b")

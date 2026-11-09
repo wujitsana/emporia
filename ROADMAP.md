@@ -389,11 +389,11 @@ the portable skill, the SDK's `run_events`). What is next, each waiting on what 
 - **Approval on the stateless MCP protocol.** Asking the operator mid-call works on the classic
   session Hermes opens; the 2026-07-28 stateless protocol needs the "input required" round trip
   instead. Until then a client on it is refused payments above the threshold (safe, but blocking).
-- **Editable settings in the dashboard**, like the Hermes dashboard's config page. Today (P178)
-  the Settings view only shows each setting with the command that changes it. Editing needs a
-  write route on the local console with its own confirmation step, kept away from anything an
-  agent's browser tool could click; caps, approval threshold, testnet networks and the relay URL
-  first. Mainnet unlock and phrase backup stay in a person's terminal either way.
+- **Settings stay read-only in the dashboard (decided).** The Settings view is laid out like
+  Hermes's config page, but it only shows: an agent can reach the local console from its own
+  terminal and must never change its own limits. A setting Hermes edits links to Hermes's own page
+  (the Emporia card under Channels); the rest show the command a person runs. Mainnet unlock and
+  phrase backup stay in a person's terminal.
 - **Hermes upstream:** a configurable list of paths its file tools refuse (the keys folder on it).
 - **Hide the agent-to-agent sessions** the platform plugin starts, with Hermes's per-session
   `hidden` flag (`set_session_hidden`; see [docs/hermes-notes.md](docs/hermes-notes.md)), so they

@@ -61,7 +61,7 @@ describe("the markdown renderer (P171)", () => {
 describe("the bundled docs (P171)", () => {
   it("carries each doc, with text", () => {
     for (const d of DOCS) expect(d.text.length, d.path).toBeGreaterThan(200);
-    expect(DOCS[0].id).toBe("use-cases");
+    expect(DOCS[0].id).toBe("create-an-agent");   // the first guide a new person opens (docList.json)
     // Links between the guides open inside the tab.
     const uses = DOCS.find((d) => d.id === "use-cases")!;
     expect(resolveDocLink(uses, "games.md")).toEqual({ kind: "doc", id: "games", anchor: undefined });

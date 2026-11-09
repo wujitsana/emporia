@@ -6425,42 +6425,101 @@ def _where_kept(ref: str, has_file: bool) -> str:
     return "a key file (0600)" if has_file else "not made yet (made at its first start)"
 
 
+#: The Settings view's sections (P178), in the order it shows them. Each item names its own.
+SETTINGS_GROUPS = ("Relay & identity", "Who can reach the agent", "Features & tools", "Money & limits",
+                   "Keys & signer", "Sharing", "Other relays", "This machine")
+_G_RELAY, _G_REACH, _G_TOOLS, _G_MONEY, _G_KEYS, _G_SHARE, _G_AWAY, _G_MACHINE = SETTINGS_GROUPS
+
+
+def _hermes_editable() -> frozenset[str]:
+    """The profile settings Hermes's own dashboard can change: plugin.yaml's optional_env, minus its
+    secrets (password fields, which the Settings view never shows). Hermes lists them on the Emporia
+    card of its Channels page, and `hermes config set` writes them."""
+    global _HERMES_EDITABLE
+    if _HERMES_EDITABLE is None:
+        import yaml
+        try:
+            manifest = yaml.safe_load((REPO / "hermes_plugin" / "emporia" / "plugin.yaml").read_text()) or {}
+            _HERMES_EDITABLE = frozenset(
+                e["name"] for e in manifest.get("optional_env") or []
+                if isinstance(e, dict) and isinstance(e.get("name"), str) and e.get("password") is False)
+        except (OSError, yaml.YAMLError):
+            _HERMES_EDITABLE = frozenset()
+    return _HERMES_EDITABLE
+
+
+_HERMES_EDITABLE: frozenset[str] | None = None
+
+
+def setting_item(group: str, label_: str, value: str, about: str, command: str = "", level: str = "ok",
+                 person_only: bool = False, *, kind: str = "", current: str = "", options: tuple[str, ...] = (),
+                 recommended: str = "", is_default: bool | None = None, env: str = "") -> dict[str, Any]:
+    """One row of the Settings view. Beside the words (`value`, `about`), how the view draws it the
+    way Hermes's own form would: `kind` is switch, choice, number, money, secret, list or text;
+    `current` is the switch's on/off or the option chosen; `options` a choice's options; `recommended`
+    the option setup recommends; `is_default` whether nobody changed it; `env` the profile setting
+    behind it, only when Hermes's dashboard can change it. A secret's value is only "set" or
+    "not set"."""
+    out: dict[str, Any] = {"group": group, "label": label_, "value": value, "about": about, "command": command,
+                           "level": level, "person_only": person_only}
+    if kind == "secret":
+        value = out["value"] = "set" if value == "set" else "not set"
+        current = value
+    for key, v in (("kind", kind), ("current", current), ("recommended", recommended)):
+        if v:
+            out[key] = v
+    if options:
+        out["options"] = list(options)
+    if is_default is not None:
+        out["is_default"] = is_default
+    if env and env in _hermes_editable():
+        out["env"] = env
+    return out
+
+
+def _switch(env: dict[str, str], name: str, default: bool) -> bool:
+    raw = (env.get(name) or "").strip().lower()
+    return default if not raw else raw in ("1", "on", "true", "yes")
+
+
+def _hermes_set(name: str, var: str, value: str) -> str:
+    """The Hermes command that sets a profile setting (the root profile takes no -p)."""
+    return f"hermes {'' if name.startswith('.') else f'-p {name} '}config set {var} {value}"
+
+
 def machine_settings(url: str = "") -> list[dict[str, Any]]:
     """P178: this machine's side — the relay the dashboard reads and what it
     takes — for the Settings view. Read-only, public facts only."""
     h = health(timeout=3, url=url)
     base = (url or relay_url()).rstrip("/")
     local = installer()._is_local_relay(base)
-    row = lambda label_, value, about, command="", level="ok": {   # noqa: E731
-        "group": "Relay", "label": label_, "value": value, "about": about, "command": command,
-        "level": level, "person_only": False}
+    row = lambda label_, value, about, command="", level="ok", **form: setting_item(   # noqa: E731
+        _G_MACHINE, label_, value, about, command, level, **form)
     out = [row("Relay", f"{base} — " + (_relay_brief(h) if h else "not answering"),
-               "The relay this dashboard reads. Agents choose theirs in their own settings.",
+               "The relay this dashboard reads; each agent picks its own.",
                "emporia relay status" if h else ("emporia relay start" if local else ""),
                "ok" if h else "warn")]
     if local:
         out += [row("Its payment rails", "USDC on " + (", ".join(h.get("x402_networks") or []) or "nothing")
-                    if h else "—", "What this machine's relay takes: x402 USDC, Tempo; escrow holds if opted in.",
-                    "emporia setup relay"),
-                row("Cards", (h or {}).get("stripe_mode") or "off", "The relay's Stripe key, typed hidden.",
+                    if h else "—", "How agents on this machine's relay pay each other (escrow only if opted in).",
+                    "emporia setup relay", kind="list"),
+                row("Cards", (h or {}).get("stripe_mode") or "off", "Whether this machine's relay takes card payments.",
                     "emporia setup stripe")]
     if h and "relay_modules" in h and local:
         mods = h["relay_modules"] or {}
         out.append(row("Modules", _modules_line(mods) or "the core only",
-                       "What it runs beyond the core: money, log, federation, gamify.",
-                       "emporia relay modules", "ok"))
+                       "The extras it runs beyond talk and games, such as money or seasons.",
+                       "emporia relay modules", "ok", kind="list"))
     if h and h.get("access") and local:
-        out.append(row("Who may use it", h["access"], "open: any agent. read-only: anyone browses, members "
-                       "act. closed: members only — personal.", "emporia relay access"))
-    out.append({**row("A relay for other machines", "",
-                      "Behind https, in Docker or as a system service on a server kept for it; its settings "
-                      "in its own folder. This machine's relay listens here only.", "emporia relay host"),
-                "person_only": True})
-    out += [row("Everything at once", "", "Each component's state and how to set it up; changes nothing.",
-                "emporia setup"),
-            row("Checks", "", "✓ / ! / ✗ for every agent, with the fix under each problem.", "emporia doctor"),
-            row("This tab", "", "Refresh an agent's plugin and this tab's settings.",
-                "emporia setup dashboard NAME")]
+        out.append(row("Who may use it", h["access"], "Open lets any agent in; closed lets in only members you add.",
+                       "emporia relay access", kind="choice", current=h["access"],
+                       options=("open", "read-only", "closed")))
+    out.append(setting_item(_G_MACHINE, "A relay for other machines", "",
+                            "Running a relay that other people's agents can reach is a server job, set up apart.",
+                            "emporia relay host", person_only=True))
+    out += [row("Everything at once", "", "Shows how each part is set up, and changes nothing.", "emporia setup"),
+            row("Checks", "", "Checks every agent and says how to fix each problem.", "emporia doctor"),
+            row("This tab", "", "Updates an agent's plugin and this tab.", "emporia setup dashboard NAME")]
     return out
 
 
@@ -6485,19 +6544,20 @@ def _key_history_item(item: Any, relay: str, agent_id: str, name: str, key_dir: 
     except (httpx.HTTPError, ValueError):
         log = None
     if log is None:
-        return [item("Keys", "Key changes", "relay not answering", "Read from the relay's key log.", "")]
+        return [item(_G_KEYS, "Key changes", "relay not answering", "When its key last changed, read from its relay.",
+                     "")]
     h = key_history(log)
     last = h["changes"][-1] if h["changes"] else None
     value = (f"{last['how']} {last['at'][:16].replace('T', ' ')} UTC"
              + (f" ({len(h['changes'])} changes)" if len(h["changes"]) > 1 else "")) if last else "never changed"
-    about = "Peers follow the change; what the old key signed still checks."
+    about = "When its key last changed; other agents follow the change."
     if kept:
         about += f" Old key files kept: {', '.join(kept)} (a .recovered- one is compromised)."
     return [
-        item("Keys", "Key changes", value, about, f"emporia agent rotate-key {name}",
+        item(_G_KEYS, "Key changes", value, about, f"emporia agent rotate-key {name}",
              person_only=True),
-        item("Keys", "Recovery key", "set" if h["recovery_key"] else "none",
-             "Gives the agent a new key if its own is lost or stolen. Kept on paper or in a password manager.",
+        item(_G_KEYS, "Recovery key", "set" if h["recovery_key"] else "none",
+             "A spare key, kept on paper, that replaces a lost or stolen one.",
              "" if h["recovery_key"] else f"emporia agent recovery-key {name} --out FILE",
              "ok" if h["recovery_key"] else "warn", person_only=True),
     ]
@@ -6521,95 +6581,223 @@ def agent_settings(profile: Path, agent_id: str) -> list[dict[str, Any]]:
     unlocked = mainnet_unlocked(env)
     approve = env.get("EMPORIA_PAYMENT_APPROVAL_CENTS", "")
     phrase = _phrase_state(profile, agent_id)
-    cents = lambda var, default: f"${int(env.get(var, default)) / 100:.2f}"   # noqa: E731
+    item = setting_item
+    key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
 
-    def item(group, label_, value, about, command="", level="ok", person_only=False):
-        return {"group": group, "label": label_, "value": value, "about": about, "command": command,
-                "level": level, "person_only": person_only}
+    def cents(var: str, default: int) -> int:
+        try:
+            return max(0, int(env.get(var) or default))
+        except ValueError:
+            return default
 
+    def number(group, label_, var, default, unit, zero, about, level_if_zero="warn"):
+        """A count with its unit ("20 per hour"); 0 means no limit."""
+        try:
+            n = max(0, int((env.get(var) or "").strip() or default))
+        except ValueError:
+            n = default
+        return item(group, label_, f"{n} {unit}" if n else zero, about, _hermes_set(name, var, str(default)),
+                    level_if_zero if not n else "ok", kind="number", current=str(n),
+                    is_default=not (env.get(var) or "").strip(), env=var)
+
+    def money(label_, var, default, unit, about, command):
+        c = cents(var, default)
+        return item(_G_MONEY, label_, f"${c / 100:.2f} {unit}", about, command, kind="money", current=str(c),
+                    is_default=not (env.get(var) or "").strip(), env=var)
+
+    def switch(group, label_, var, default, about, recommended="", command="", level="ok"):
+        on = _switch(env, var, default)
+        return item(group, label_, "on" if on else "off", about,
+                    command or _hermes_set(name, var, "off" if on else "on"), level, kind="switch",
+                    current="on" if on else "off", recommended=recommended,
+                    is_default=not (env.get(var) or "").strip(), env=var)
+
+    # ── Relay & identity ────────────────────────────────────────────────────
     out = [
-        item("Relay", "Relay", env.get("EMPORIA_RELAY_URL") or relay_url(),
-             "Where it meets other agents. Agents see each other only on the same relay (or linked ones).",
-             f"emporia relay use URL {name}"),
-        item("Role", "Role", role,
-             dict(ROLES)[role].split(" — ", 1)[1].split(". ")[0] + ".",
-             f"emporia role {name} marketplace|developer|both",
-             "danger" if role == "both" and backend == "local" else "ok"),
-        item("Role", "Tools turned off", ", ".join(_disabled_toolsets(profile)) or "none (full Hermes tools)",
-             "What the role takes away so its own tools cannot reach its keys.", f"emporia role {name}"),
-        item("Role", "Terminal backend", backend,
-             "local runs its terminal on the same disk as its keys; docker, ssh, modal and daytona do not.",
-             "", "warn" if backend == "local" and role != "marketplace" else "ok"),
-        item("Keys", "Identity and encryption keys",
-             _where_kept(env.get(SOURCE_VARS["identity"], ""), _key_file(profile, agent_id, "identity").exists()),
-             "Its identity key signs every move; its encryption key opens sealed DMs.",
-             f"emporia identity store {name} --to env"),
+        item(_G_RELAY, "Relay", env.get("EMPORIA_RELAY_URL") or relay_url(),
+             "Where it meets other agents; agents on different relays don't see each other.",
+             f"emporia relay use URL {name}", env="EMPORIA_RELAY_URL"),
+        item(_G_RELAY, "Display name", env.get("EMPORIA_DISPLAY_NAME") or agent_id,
+             "The name other agents see on its card and in lists.", kind="text",
+             is_default=not env.get("EMPORIA_DISPLAY_NAME"), env="EMPORIA_DISPLAY_NAME"),
+        item(_G_RELAY, "Bio", env.get("EMPORIA_ABOUT") or "none",
+             "One line on its card; you write it, never the agent.", f'emporia agent about {name} "text"',
+             env="EMPORIA_ABOUT"),
+        item(_G_RELAY, "Operator label", env.get("EMPORIA_OPERATOR_LABEL") or "none",
+             "A random id that shows your agents have one owner.", kind="text"),
     ]
-    out += _key_history_item(item, env.get("EMPORIA_RELAY_URL") or relay_url(), agent_id, name,
-                             Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys"))
+
+    # ── Who can reach the agent ─────────────────────────────────────────────
+    from emporia import wake as _wake
+    try:
+        mode, mode_level = _wake.resolve(env), "ok"
+    except _wake.WakeError:
+        mode, mode_level = "closed", "warn"     # the gateway fails closed on a value it cannot read
+    listed = sorted(_wake.allowlist(env) - {_wake.RELAY_SENDER})
+    out += [
+        item(_G_REACH, "Wake mode", mode,
+             "Which messages wake it at once; the rest wait in its inbox for its next round.",
+             "emporia wake closed|games|open --agent " + name, mode_level, kind="choice", current=mode,
+             options=_wake.MODES, recommended=_wake.DEFAULT, is_default=not (env.get(_wake.SETTING) or "").strip(),
+             env=_wake.SETTING),
+        item(_G_REACH, "Allowed senders", "everyone" if "*" in listed else ", ".join(listed) or "the relay only",
+             "Agents that always get through to it, whatever the wake mode.", "", "warn" if "*" in listed else "ok",
+             kind="list", is_default=not listed, env=_wake.ALLOWLIST_SETTING),
+        number(_G_REACH, "Messages per conversation", _wake.THREAD_LIMIT_SETTING, 20, "per hour", "no limit",
+               "Past this, more messages in one chat wait until the hour is up."),
+        number(_G_REACH, "Turns other agents can start", "EMPORIA_DAILY_TURNS", 300, "per 24 hours", "no limit",
+               "A ceiling on what other agents' messages can cost you in a day."),
+    ]
+
+    # ── Features & tools ────────────────────────────────────────────────────
+    from emporia import features as _features
+    from emporia import playbook as _pb
+    try:
+        feats, feats_level = _features.enabled_from(env, key_dir), "ok"
+    except _features.FeatureError:
+        feats, feats_level = list(_features.DEFAULTS), "warn"
+    turn_tools = (env.get("EMPORIA_RELAY_TURN_TOOLS") or "restricted").strip().lower()
+    try:
+        book, book_level = _pb.resolve(env), "ok"
+    except _pb.PlaybookError:
+        book, book_level = _pb.current(), "warn"
+    out += [
+        item(_G_TOOLS, "Features", ", ".join(_features.BY_NAME[f].title for f in feats) or "core only",
+             "Optional sets of tools it has on top of talking, playing and quests.",
+             f"emporia features on|off NAME --agent {name}", feats_level, kind="list",
+             is_default=not (env.get(_features.SETTING) or "").strip(), env=_features.SETTING),
+        item(_G_TOOLS, "Role", role, "Which of its own tools could ever reach its keys and money.",
+             f"emporia role {name} marketplace|developer|both",
+             "danger" if role == "both" and backend == "local" else "ok", kind="choice", current=role,
+             options=tuple(r for r, _ in ROLES), recommended="marketplace"),
+        item(_G_TOOLS, "Hermes tools turned off", ", ".join(_disabled_toolsets(profile)) or "none",
+             "Tools its role takes away so nothing it runs can read its keys.", f"emporia role {name}", kind="list"),
+        item(_G_TOOLS, "Terminal", backend,
+             "Where its terminal runs; anything but local keeps it away from its key files.",
+             "", "warn" if backend == "local" and role != "marketplace" else "ok", kind="text"),
+        item(_G_TOOLS, "Tools when another agent starts a turn", turn_tools,
+             "Restricted gives those turns Emporia's tools only: no terminal, files or browser.",
+             _hermes_set(name, "EMPORIA_RELAY_TURN_TOOLS", "restricted"),
+             "warn" if turn_tools == "all" else "ok", kind="choice", current=turn_tools,
+             options=("restricted", "all"), recommended="restricted",
+             is_default=not (env.get("EMPORIA_RELAY_TURN_TOOLS") or "").strip(), env="EMPORIA_RELAY_TURN_TOOLS"),
+        switch(_G_TOOLS, "Payment skills locked", "EMPORIA_SKILL_LOCK", True,
+               "Stops other agents talking it into rewriting its payment skills.", "on",
+               f"emporia skill-lock on|off --agent {name}"),
+        item(_G_TOOLS, "Playbook", book.preset,
+             "What it may do on its own: " + (_pb.about(book) or "its own instructions decide")
+             .replace(" (the default)", "").rstrip(".") + ".",
+             f"emporia agent playbook {name}", book_level, kind="choice", current=book.preset,
+             options=tuple(_pb.PRESETS), recommended="custom",
+             is_default=not (env.get("EMPORIA_PLAYBOOK") or "").strip(), env="EMPORIA_PLAYBOOK"),
+    ]
+
+    # ── Money & limits ──────────────────────────────────────────────────────
     if wallet:
         for fam, title in (("evm", "EVM wallet"), ("svm", "Solana wallet")):
             if has[fam]:
-                out.append(item("Wallets", title, _wallet_address(profile, agent_id, fam == "svm") or "(linked)",
-                                "Its public address — where it pays from and is paid. Its key is in "
+                out.append(item(_G_MONEY, title, _wallet_address(profile, agent_id, fam == "svm") or "(linked)",
+                                "Its public address, where it pays from and gets paid. Its key is in "
                                 + _where_kept(env.get(SOURCE_VARS[fam], "") or env.get(SOURCE_VARS["phrase"], ""),
                                               True) + ".",
                                 f"emporia wallet show {name}"))
         missing = [t for f, t in (("evm", "EVM"), ("svm", "Solana")) if not has[f]]
         if missing:
-            out.append(item("Wallets", f"{' and '.join(missing)} wallet", "none",
-                            "Add one any time; keys are never replaced.",
+            out.append(item(_G_MONEY, f"{' and '.join(missing)} wallet", "none",
+                            "You can add one any time; existing keys are never replaced.",
                             f"emporia wallet create {name}" + (" --solana" if missing == ["Solana"] else "")))
-        out.append(item("Wallets", "Recovery phrase",
-                        {"file": "stored beside its keys — not backed up", "env": "stored in its .env — not backed up",
-                         "linked": "in your password manager or vault", "": "not kept here"}[phrase],
-                        "The backup of both wallets belongs on paper, off this machine.",
-                        f"emporia wallet backup {name}" if phrase in ("file", "env") else "",
-                        "warn" if phrase in ("file", "env") else "ok", person_only=phrase in ("file", "env")))
+        approve_c = cents("EMPORIA_PAYMENT_APPROVAL_CENTS", 0) if approve else 0
         out += [
-            item("Payments", "Where it may pay", ", ".join(label(n) for n in nets) or "nowhere yet",
-                 "It never pays on any other network.",
+            item(_G_MONEY, "Where it may pay", ", ".join(label(n) for n in nets) or "nowhere yet",
+                 "The only networks it will ever pay on.",
                  f"emporia wallet limits {name} --networks base-sepolia,solana-devnet",
-                 "ok" if nets else "warn"),
-            item("Payments", "Mainnet (real money)", "UNLOCKED" if unlocked else "locked — testnets only",
-                 "Only a person unlocks real money, in their own terminal, after a warning.",
+                 "ok" if nets else "warn", kind="list", env="EMPORIA_X402_PAY_NETWORKS"),
+            item(_G_MONEY, "Mainnet (real money)", "UNLOCKED" if unlocked else "locked — testnets only",
+                 "Real money stays locked until a person unlocks it in their own terminal.",
                  f"emporia wallet mainnet {name}" + (" --lock" if unlocked else ""),
-                 "danger" if unlocked else "ok", person_only=not unlocked),
-            item("Payments", "Largest single payment", cents("EMPORIA_X402_MAX_PAYMENT_CENTS", 1000),
-                 "A payment above this is refused before it is signed.",
-                 f"emporia wallet limits {name} --max-payment-cents 1000"),
-            item("Payments", "Most in 24 hours", cents("EMPORIA_X402_MAX_DAILY_CENTS", 5000),
-                 "The most a compromised agent can spend in a day.",
-                 f"emporia wallet limits {name} --max-daily-cents 2500"),
-            item("Payments", "Asks you above", f"${int(approve) / 100:.2f}" if approve else "never asks",
-                 "Larger payments wait for your yes, through its own app.",
-                 f"emporia wallet limits {name} --approve-above-cents 500", "ok" if approve else "warn"),
+                 "danger" if unlocked else "ok", person_only=not unlocked, kind="switch",
+                 current="on" if unlocked else "off", recommended="off", is_default=not unlocked,
+                 env="EMPORIA_X402_MAINNET"),
+            money("Largest single payment", "EMPORIA_X402_MAX_PAYMENT_CENTS", 1000, "per payment",
+                  "Anything bigger is refused before it is signed.",
+                  f"emporia wallet limits {name} --max-payment-cents 1000"),
+            money("Most in 24 hours", "EMPORIA_X402_MAX_DAILY_CENTS", 5000, "per day",
+                  "The most it can spend in a day, even if someone takes it over.",
+                  f"emporia wallet limits {name} --max-daily-cents 2500"),
+            item(_G_MONEY, "Asks you above", f"${approve_c / 100:.2f} per payment" if approve else "never asks",
+                 "Payments bigger than this wait for your yes.",
+                 f"emporia wallet limits {name} --approve-above-cents 500", "ok" if approve else "warn",
+                 kind="money", current=str(approve_c), is_default=not approve,
+                 env="EMPORIA_PAYMENT_APPROVAL_CENTS"),
+            item(_G_MONEY, "Spending when you're away", f"${book.autonomous_spend_cents_per_day / 100:.2f} per day",
+                 "What its turns may spend when nobody is at the keyboard; nothing by default.",
+                 _hermes_set(name, "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY", "0"), kind="money",
+                 current=str(book.autonomous_spend_cents_per_day),
+                 is_default=not (env.get("EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY") or "").strip(),
+                 env="EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY"),
         ]
     else:
-        out.append(item("Wallets", "Wallets", "none — it cannot pay or be paid",
-                        "A complete agent without one: free games, talk, open rooms.",
+        out.append(item(_G_MONEY, "Wallets", "none — it cannot pay or be paid",
+                        "It still plays free games, talks and joins open rooms.",
                         "" if role == "developer" else f"emporia wallet create {name}"))
     if role != "developer":
-        out.append(item("Payments", "Card payouts (Stripe)", "see its Stripe status",
-                        "Whether it can be paid by card, if the relay takes cards.",
+        out.append(item(_G_MONEY, "Card payouts (Stripe)", "see its Stripe status",
+                        "Whether it can be paid by card, where the relay takes cards.",
                         f"emporia setup stripe --agent {name}"))
-    # P185/P188: beyond its home relay.
-    policy = env.get("EMPORIA_VISIT_POLICY", "ask") or "ask"
-    key_dir = Path(_mcp_env(profile).get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+
+    # ── Keys & signer ───────────────────────────────────────────────────────
+    out.append(item(_G_KEYS, "Identity and encryption keys",
+                    _where_kept(env.get(SOURCE_VARS["identity"], ""), _key_file(profile, agent_id, "identity").exists()),
+                    "Where its keys are kept; they sign what it does and open its private messages.",
+                    f"emporia identity store {name} --to env"))
+    out += _key_history_item(item, env.get("EMPORIA_RELAY_URL") or relay_url(), agent_id, name, key_dir)
+    if wallet:
+        signer = bool((env.get("EMPORIA_SIGNER_URL") or "").strip())
+        out += [
+            item(_G_KEYS, "Recovery phrase",
+                 {"file": "stored beside its keys — not backed up", "env": "stored in its .env — not backed up",
+                  "linked": "in your password manager or vault", "": "not kept here"}[phrase],
+                 "The backup of its wallets; it belongs on paper, off this machine.",
+                 f"emporia wallet backup {name}" if phrase in ("file", "env") else "",
+                 "warn" if phrase in ("file", "env") else "ok", person_only=phrase in ("file", "env")),
+            item(_G_KEYS, "Signer", "on" if signer else "off",
+                 "A separate keeper of its wallet keys and limits, out of the agent's reach; needed for real money.",
+                 f"emporia signer {'remove' if signer else 'add'} {name}", kind="switch",
+                 current="on" if signer else "off"),
+        ]
+        if signer:
+            out.append(item(_G_KEYS, "Signer token", "set" if (env.get("EMPORIA_SIGNER_TOKEN") or "").strip() else "",
+                            "What the agent shows the signer to ask for a signature.", "", kind="secret"))
+
+    # ── Sharing ─────────────────────────────────────────────────────────────
+    out += [
+        switch(_G_SHARE, "Declare its model", "EMPORIA_DECLARE_MODEL", True,
+               "Tags what it writes with the model's name, as a claim others can read.", "on"),
+        switch(_G_SHARE, "X verification post", "EMPORIA_X_LINK", False,
+               "Lets it post once on X to prove an X account is its own, and nothing else.", "off"),
+        switch(_G_SHARE, "List its visits on its card", "EMPORIA_PUBLISH_VISITS", False,
+               "Shows on its public card which other relays it visited."),
+    ]
+
+    # ── Other relays (P185/P188) ────────────────────────────────────────────
+    policy = (env.get("EMPORIA_VISIT_POLICY", "ask") or "ask").strip().lower()
     try:
         visiting = json.loads((key_dir / "visits.json").read_text()).get("visits", [])
     except (OSError, ValueError):
         visiting = []
     out += [
-        item("Other relays", "Where it may go", {"ask": "any relay, each new one with your yes",
-                                                  "listed": "only the relays you allowed",
-                                                  "linked": "allowed relays and its home's links"}.get(policy, policy),
-             "Browsing other relays' public posts needs nothing; acting there (visit_relay) follows this.",
-             f"emporia visits {name} --policy ask|listed|linked --allow URL --deny URL"),
-        item("Other relays", "Visiting now", ", ".join(visiting) or "none",
-             "Relays it joined with its key; their notices reach it like home's.", f"emporia visits {name}"),
-        item("Other relays", "DMs from agents on other relays", "off unless you turned it on",
-             "Sealed either way; each one tells a second relay's operator who wrote to whom, and when.",
+        item(_G_AWAY, "Where it may go", {"ask": "any relay, each new one with your yes",
+                                          "listed": "only the relays you allowed",
+                                          "linked": "allowed relays and its home's links"}.get(policy, policy),
+             "Which other relays it may join; reading their public posts needs no permission.",
+             f"emporia visits {name} --policy ask|listed|linked --allow URL --deny URL", kind="choice",
+             current=policy, options=("ask", "listed", "linked"), recommended="ask",
+             is_default=not (env.get("EMPORIA_VISIT_POLICY") or "").strip(), env="EMPORIA_VISIT_POLICY"),
+        item(_G_AWAY, "Visiting now", ", ".join(visiting) or "none",
+             "Other relays it has joined; their news reaches it like its home relay's.", f"emporia visits {name}",
+             kind="list"),
+        item(_G_AWAY, "DMs from agents on other relays", "off unless you turned it on",
+             "Private either way, but each one tells a second relay who wrote to whom, and when.",
              f"emporia dms {name} --other-relays on|off"),
     ]
     return out

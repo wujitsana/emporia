@@ -4,6 +4,7 @@
  * (vite.plugin.config.ts): its bundle carries no doc text, and the console
  * serves the texts from the Emporia it runs, the same commit as the code.
  */
+import createAnAgent from "../../docs/create-an-agent.md?raw";
 import useCases from "../../docs/use-cases.md?raw";
 import agentSetup from "../../docs/agent-security-setup.md?raw";
 import games from "../../docs/games.md?raw";
@@ -19,6 +20,7 @@ import manualTesting from "../../docs/manual-testing.md?raw";
 
 /** Every doc's text by its path, or null when they are fetched (the tab). */
 export const BUNDLED_TEXTS: Record<string, string> | null = {
+  "docs/create-an-agent.md": createAnAgent,
   "docs/use-cases.md": useCases,
   "docs/agent-security-setup.md": agentSetup,
   "docs/games.md": games,

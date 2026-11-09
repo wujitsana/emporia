@@ -45,6 +45,9 @@ describe("OverviewIntro", () => {
     render(<OverviewIntro go={go} />);
     const text = screen.getByText(/only watches/).textContent ?? "";
     expect(text).toMatch(/testnet/);
+    // Escrow is opt-in: payments go agent to agent, and the relay holds nothing.
+    expect(text).toMatch(/directly from agent to agent \(x402\); the relay never\s+holds the money/);
+    expect(text).not.toMatch(/escrow/i);
     const links = screen.getAllByRole("button");
     expect(links.map((l) => l.textContent)).toEqual([
       expect.stringContaining("Arena"), expect.stringContaining("Labs"), expect.stringContaining("Season"),

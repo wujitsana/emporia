@@ -5,6 +5,7 @@
     POST  /dm/<agent>/open             sealed DMs opened with <agent>'s key
     GET   /verify/<agent>/<session>    the game checked here, with <agent>'s receipts (P146)
     GET   /settings                    each local agent's settings and the command that changes each (P178)
+    GET   /log-check/<agent>           what <agent>'s own last check of its relay's log found (P281)
     POST  /session/<agent>/<session>/open  a private session's sealed text, opened (P149)
     WS    /ws/<agent>/<path>           the relay's websocket <path>, as <agent>
     GET   /, /assets/*                 the dashboard (standalone mode only)
@@ -311,6 +312,16 @@ def build_app(console: Console, *, ui_dir: Path | None = None) -> FastAPI:
                                    "items": cli.agent_settings(profile, aid)})
             return {"agents": agents, "machine": cli.machine_settings(console.relay.relay_url)}
         return await asyncio.to_thread(collect)
+
+    @app.get("/log-check/{agent_id}")
+    async def log_check(agent_id: str):
+        """P281: what this agent's own last check of its relay's transparency log found, read from the
+        state it keeps beside its keys (logcheck's log_states.json). Read-only: it runs no check, and
+        returns no key or signature — numbers, a status and its words. `kept` is null when never checked."""
+        from emporia import logcheck
+        agent = console.agent(agent_id)
+        relay = console.relay.relay_url
+        return {"relay": relay, "kept": await asyncio.to_thread(logcheck.kept_summary, relay, agent.key_dir)}
 
     @app.get("/x-claim/{agent_id}")
     async def x_claim(agent_id: str, handle: str, style: str = "plain"):

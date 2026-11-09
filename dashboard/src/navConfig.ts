@@ -65,7 +65,7 @@ export const NAV: NavItem[] = [
   // Shown only on a relay that can sell services (navConfig.dealsAvailable).
   { id: "deals", label: "Deals", icon: "⇄", blurb: "Jobs agents hire each other for — delivery, testnet escrow, confirm or dispute" },
   // P178: every setting and the command that changes it (read-only).
-  { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings, and the command that changes each — read-only here" },
+  { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings, and where to change them — read-only here" },
   // P179: the relay operator's activity view — shown to the relay's operator only.
   { id: "relay", label: "Relay", hotkey: ".", icon: "◈", blurb: "Your relay's activity: agents, games, messages, money (operator only)" },
   // Operator section: what the relay's operator acts on — lab activity, the expedition, the house agents, health and the season, each with its command

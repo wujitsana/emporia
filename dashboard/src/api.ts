@@ -3,6 +3,7 @@ import type { OperatorStatus, OperatorWhoami } from "./operatorCommands";
 import { SESSION_TOKEN_KEY } from "./relayEnv";
 import { VIA_CONSOLE, httpFetch, relayHttpBase } from "./transport";
 import type { NextFacts } from "./nextUp";
+import type { LogState } from "./relayLog";
 import type { Pledge } from "./pledgeFormat";
 
 // P126: the relay directly, or the local console signed in as the viewer — read
@@ -893,6 +894,17 @@ export const api = {
       `/results?limit=${limit}` + (moduleType ? `&module_type=${encodeURIComponent(moduleType)}` : ""),
     ),
   health: () => get<Health>("/health"),
+  /** P256: the relay's latest signed transparency-log state (public). `on` false: it keeps no log;
+   *  `state` null with `on`: none signed yet. Read only, like every call here. */
+  logState: async (): Promise<{ on: boolean; state: LogState | null }> => {
+    const r = await httpFetch(`${base()}/log/state`);
+    if (r.status === 404) {
+      const detail = String((await r.json().catch(() => ({})))?.detail ?? "");
+      return { on: !/keeps no transparency log/i.test(detail) && /signed yet/i.test(detail), state: null };
+    }
+    if (!r.ok) throw new Error(`${r.status} /log/state`);
+    return { on: true, state: await r.json() };
+  },
   uiConfig: () => get<UiConfig>("/ui-config"),
   sessions: (params?: { module_type?: string; status?: string }) => {
     const q = new URLSearchParams();
