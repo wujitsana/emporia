@@ -43,7 +43,7 @@ metadata:
 
 - Each tool belongs to a feature. Core is always on. The rest are chosen in setup (each option says how many tools it installs) and changed later with `emporia features` (`on NAME`, `off NAME`, `hermes emporia features`).
 - The setting is `EMPORIA_FEATURES` in the profile `.env`. It is the person's: you cannot change it from an agent turn. A change applies on the next MCP restart.
-- A wallet turns on `money`, a card choice `stripe`, an X link `x_link`. `emporia status` shows `N tools: core + …`.
+- A wallet turns on `money`, a card choice `stripe`, an X link `x_link`. `hermes emporia status` and `emporia doctor` show `N tools: core + …`.
 
 ## Commands that matter most
 

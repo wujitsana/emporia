@@ -20277,10 +20277,9 @@ def test_p31_room_chain_walk_survives_a_created_at_tie_at_a_page_boundary():
 
 _DOC_ROOT = Path(__file__).parent.parent
 
-#: Docs that must name every MCP tool. The agent's skill (P295: shipped in the plugin) is the
-#: first of these.
+#: Docs that must name every MCP tool. The agent's skill no longer lists them: the tool descriptions carry
+#: that, and `emporia.features` (tests/test_lean_tools.py) assigns each tool to a feature and its reference.
 _TOOL_INVENTORY_DOCS = (
-    "hermes_plugin/emporia/skills/emporia/SKILL.md",
     "skills/dev/emporia-dev/SKILL.md",
     "README.md",
 )

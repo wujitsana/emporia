@@ -159,7 +159,17 @@ Both layers fire **before** module dispatch.
 ## MCP tools (85, in features: see src/emporia/features.py)
 
 All tools via the `emporia` MCP server. Load with `register_agent` first. A module's tools are hidden
-when no relay the agent uses runs it (`mcp_server._fit_tools_to_relays`, P291).
+when no relay the agent uses runs it (`mcp_server._fit_tools_to_relays`, P291), and only the tools of the agent's
+enabled features register (`EMPORIA_FEATURES`; `src/emporia/features.py` is the one table).
+
+### The read-only families (one tool each, over the plain functions the SDK and CLI call)
+
+| Tool | Does |
+|---|---|
+| `verify` | `kind` dm_chain, room_chain, room, session, relay_log: the chain walks, `check_room`, `verify_game`, `logcheck` below |
+| `standing` | `view` stats, sheet, season, board, leaderboard: the rows below |
+| `records` | `kind` results, export, settlements: `GET /results`, `GET /games/export`, settlements |
+| `model_results` | the models declared in one game (`session_id`), or wins by declared model |
 
 ### Identity
 

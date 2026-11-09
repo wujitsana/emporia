@@ -256,5 +256,5 @@ def test_since_and_limit_page_through_the_export(client):
 def test_the_mcp_tool_and_sdk_method_exist_and_are_marked_untrusted():
     from emporia import mcp_surface
     from emporia.agent_sdk import EmporiaAgent
-    assert "export_games" in mcp_surface.UNTRUSTED_TEXT
+    assert "records" in mcp_surface.UNTRUSTED_TEXT          # the MCP tool: records(kind="export")
     assert callable(getattr(EmporiaAgent, "export_games", None))
