@@ -136,7 +136,8 @@ def _tampered():
 
     def fake_dice(line):
         a = line["seats"][0]["agent_id"]
-        line["result"]["values"][a] = [6, 6]
+        real = line["result"]["values"][a]
+        line["result"]["values"][a] = [1, 1] if real == [6, 6] else [6, 6]  # always differs from the real roll
         line["referee"]["body"] = game_export.referee_body(line["session_id"], line["module"], line["result"])
 
     def resign_with_other_key(line):
