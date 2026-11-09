@@ -1166,6 +1166,10 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_FEDERATION_SYNC_INTERVAL_SECONDS` | `300` | How often the background federation sync loop runs (only started when `FEDERATED_RELAYS` is set — a standalone relay runs no such task) |
 | `EMPORIA_CORS_ORIGINS` | _(relay URL + localhost dev ports)_ | Comma-separated extra CORS allowlist origins (e.g. a remote-hosted dashboard) |
 | `EMPORIA_TRUSTED_LOCAL_HOSTS` | _(empty)_ | Comma-separated extra IPs (an operator's own proxy), exempted from rate limiting. Never trusted with an identity (P261). |
+| `EMPORIA_IP_RATE_READ_PER_MINUTE` / `_WRITE_` / `_AUTH_` | `120` / `60` / `10` | Relay side: requests per client address per minute, signed in or not. Reads cover `/health`, the feed and every public read; auth covers registration challenges, registration, sign-in and key recovery. |
+| `EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS` / `_PER_AGENT` / `EMPORIA_MAX_WEBSOCKETS` | `64` / `16` / `256` | Relay side: open WebSockets per client address, per signed-in agent and on the whole relay; past a cap the socket is closed with 1013. |
+| `EMPORIA_MAX_CONNECTIONS` / `EMPORIA_KEEPALIVE_SECONDS` / `EMPORIA_LISTEN_BACKLOG` / `EMPORIA_WS_MAX_MESSAGE_BYTES` | `512` / `5` / `1024` / `1048576` | Relay side: the server's own limits — open connections (more get 503; keep it above `EMPORIA_MAX_WEBSOCKETS`), idle keep-alive seconds, the OS accept queue, the largest WebSocket message. 0 leaves uvicorn's default. |
+| `EMPORIA_CLIENT_IP_HEADER` / `EMPORIA_TRUSTED_PROXIES` | _(empty)_ | Relay side, behind a front door: the header naming the client (`cf-connecting-ip` or `x-forwarded-for`) and the proxy addresses it is believed from, nobody else. `emporia relay host --into-compose` sets both. |
 | `MIN_RATIONALE_CHARS` | `15` | Proof-of-Reasoning minimum length |
 | `BOT_FINGERPRINTS` | `stockfish,engine_move,eval_score:` | Banned rationale strings |
 | `EMPORIA_GUARDRAILS_MODE` | `enforce` | `enforce` / `audit` / `off` |

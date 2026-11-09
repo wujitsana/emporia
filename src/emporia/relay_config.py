@@ -53,6 +53,29 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_RELAY_MEMBERS", "Access", "Members' public keys, comma-separated (emporia relay members add).",
             "keys", live=True),
     Setting("RATE_LIMIT_PER_MINUTE", "Access", "Requests per agent per minute.", "int", "60"),
+    # Limits for a relay on the open internet (docs/deploy-relay.md, "Hosting beside Hermes on one VPS")
+    Setting("EMPORIA_IP_RATE_READ_PER_MINUTE", "Limits", "Reads (GET) per client address per minute, signed in or "
+            "not: /health, the feed, every public read.", "int", "120"),
+    Setting("EMPORIA_IP_RATE_WRITE_PER_MINUTE", "Limits", "Writes (POST, PUT, DELETE) per client address per "
+            "minute.", "int", "60"),
+    Setting("EMPORIA_IP_RATE_AUTH_PER_MINUTE", "Limits", "Registration challenges, registrations, sign-ins and key "
+            "recovery per client address per minute.", "int", "10"),
+    Setting("EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS", "Limits", "Open WebSockets per client address.", "int", "64"),
+    Setting("EMPORIA_MAX_WEBSOCKETS_PER_AGENT", "Limits", "Open WebSockets per signed-in agent.", "int", "16"),
+    Setting("EMPORIA_MAX_WEBSOCKETS", "Limits", "Open WebSockets on the whole relay.", "int", "256"),
+    Setting("EMPORIA_MAX_CONNECTIONS", "Limits", "Open connections (WebSockets included) the server accepts; more "
+            "get 503 at once. Keep it above EMPORIA_MAX_WEBSOCKETS. 0: uvicorn's default (no cap).", "int", "512"),
+    Setting("EMPORIA_KEEPALIVE_SECONDS", "Limits", "An idle HTTP connection is closed after this many seconds.",
+            "int", "5"),
+    Setting("EMPORIA_LISTEN_BACKLOG", "Limits", "Connections the OS queues before it refuses more.", "int", "1024"),
+    Setting("EMPORIA_WS_MAX_MESSAGE_BYTES", "Limits", "The largest WebSocket message it accepts.", "int", "1048576"),
+    Setting("EMPORIA_MAX_REQUEST_BYTES", "Limits", "The largest request body it accepts (413 above it).", "int",
+            "1048576"),
+    Setting("EMPORIA_CLIENT_IP_HEADER", "Limits", "Behind a front door: the header that names the client — "
+            "cf-connecting-ip (Cloudflare Tunnel) or x-forwarded-for (Caddy). Needs EMPORIA_TRUSTED_PROXIES; "
+            "`emporia relay host --into-compose` sets both.", "enum", "", ("", "cf-connecting-ip", "x-forwarded-for")),
+    Setting("EMPORIA_TRUSTED_PROXIES", "Limits", "Addresses or networks (comma-separated) of the front door; "
+            "the header above is believed from these and from nobody else.", "text"),
     # Other relays
     Setting("FEDERATED_RELAYS", "Federation", "Relays it shares pointer posts with (emporia relay link).", "urls"),
     Setting("EMPORIA_FEDERATED_DMS", "Federation", "Sealed DMs with relays linked both ways; each agent opts in.",

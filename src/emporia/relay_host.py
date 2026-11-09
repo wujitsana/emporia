@@ -102,6 +102,7 @@ services:
     build: {build}
     image: emporia-relay
     restart: unless-stopped
+    user: "0:0"   # reads secrets/ whoever owns it, then drops to the image's user
     env_file:
       - .env
     ports:
@@ -132,6 +133,251 @@ volumes:
 
 def caddyfile(domain: str, upstream: str = "relay:8088") -> str:
     return f"{MARK}\n{domain} {{\n\treverse_proxy {upstream}\n}}\n"
+
+
+# ─── Beside Hermes: a snippet for the person's existing compose file ───────────
+#
+# The host has only Docker (no Emporia checkout), and Hermes already runs from a compose
+# file of the person's. `relay host --into-compose` writes services/volumes/networks to
+# paste into that file. The relay image builds from a git URL pinned to one commit, so the
+# host needs nothing but network access to the repository. The relay sits on its own
+# network; Hermes's is not on it. Its settings are in a folder of their own under the
+# data volume, mounted read-only.
+
+SNIPPET = "compose.snippet.yaml"
+REPO_URL = "https://github.com/wujitsana/emporia.git"
+CLOUDFLARED_IMAGE = "cloudflare/cloudflared:2024.12.2"
+# The compose network the relay and its front door share. Only the front door has a fixed
+# address on it, which is the one address whose client-address header the relay believes.
+EDGE_SUBNET = "172.29.231.0/24"
+PROXY_IP = "172.29.231.10"
+RELAY_UID = 10001
+CLOUDFLARED_UID = 65532
+FRONT_DOORS = (
+    ("tunnel", "Cloudflare Tunnel — a connector container dials out to Cloudflare; no port is open on the VPS, its IP "
+               "stays hidden, and Cloudflare absorbs floods and can rate-limit before they arrive (recommended)"),
+    ("caddy", "Caddy on ports 80 and 443 — your VPS faces the internet itself, with automatic certificates; no "
+              "Cloudflare account needed. Pair it with a firewall"),
+)
+
+
+def source_pin(repo: Path) -> tuple[str, str]:
+    """(git URL, full 40-hex commit) the relay image is built from.
+
+    The runtime pin (hermes_plugin/emporia/emporia_source.json) when it names a commit,
+    else this checkout's HEAD. The host builds from that URL, so the commit must be
+    pushed there."""
+    import json
+    import subprocess
+
+    url, sha = REPO_URL, ""
+    try:
+        pin = json.loads((repo / "hermes_plugin" / "emporia" / "emporia_source.json").read_text())
+        if pin.get("repo"):
+            url = pin["repo"].rstrip("/") + ".git"
+        sha = str(pin.get("sha") or "")
+    except (OSError, ValueError):
+        pass
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        out = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True)
+        sha = out.stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ValueError("no commit to build the relay from: this is not a git checkout, and the runtime pin "
+                         "names none (--commit takes a full 40-character commit)")
+    return url, sha
+
+
+def host_path(folder: Path, data_mount: str = "/opt/data", host_data: str = "${HOME}/.hermes") -> str:
+    """Where the host sees `folder`, when Hermes's data volume is `data_mount` here and
+    `host_data` there."""
+    try:
+        rel = folder.resolve().relative_to(data_mount)
+    except ValueError:
+        return str(folder)
+    return f"{host_data}/{rel}" if str(rel) != "." else host_data
+
+
+def snippet_yaml(front_door: str, host_dir: str, repo_url: str, sha: str, domain: str) -> str:
+    """The services, volumes and networks to add to the person's compose file.
+    `host_dir`: the settings folder as the host sees it (compose expands ${HOME})."""
+    if front_door not in ("tunnel", "caddy"):
+        raise ValueError(f"front door: tunnel or caddy, not {front_door!r}")
+    tunnel = front_door == "tunnel"
+    door = f"""
+  # Front door: a connector that dials out to Cloudflare. It publishes no port. In the
+  # Cloudflare dashboard the tunnel's public hostname {domain} points at http://emporia-relay:8088.
+  emporia-cloudflared:
+    image: {CLOUDFLARED_IMAGE}
+    restart: unless-stopped
+    user: "{CLOUDFLARED_UID}:{CLOUDFLARED_UID}"
+    command: ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:2000", "run", "--token-file", "/run/tunnel/token"]
+    volumes:
+      - {host_dir}/cloudflared:/run/tunnel:ro   # the tunnel token: one file, `token`
+    networks:
+      emporia-edge:
+        ipv4_address: {PROXY_IP}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "cloudflared", "tunnel", "--metrics", "127.0.0.1:2000", "ready"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    depends_on:
+      emporia-relay:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: {{max-size: "10m", max-file: "3"}}
+""" if tunnel else f"""
+  # Front door: Caddy on 80 and 443 gets and renews the certificate. It overwrites
+  # X-Forwarded-For with the address it saw (Caddyfile), and is the only address the relay
+  # believes that header from.
+  emporia-caddy:
+    image: {CADDY_IMAGE}
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - {host_dir}/Caddyfile:/etc/caddy/Caddyfile:ro
+      - emporia-caddy-data:/data   # certificates
+    tmpfs:
+      - /config
+      - /tmp
+    networks:
+      emporia-edge:
+        ipv4_address: {PROXY_IP}
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]   # 80 and 443 only
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    depends_on:
+      emporia-relay:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: {{max-size: "10m", max-file: "3"}}
+"""
+    header = "cf-connecting-ip" if tunnel else "x-forwarded-for"
+    return f"""{MARK} — re-running it rewrites this file.
+# Add each top-level part to your existing Hermes compose file (services: under services:,
+# and so on), or run: docker compose -f <your compose file> -f {host_dir}/{SNIPPET} up -d
+# Paths use ${{HOME}}: the host's view of Hermes's data volume. Change them if it is elsewhere.
+services:
+  # The relay: built from one pinned commit, on a network of its own that Hermes is not on,
+  # published on no port. Hermes's agents reach it at its public https address.
+  emporia-relay:
+    build: {repo_url}#{sha}
+    image: emporia-relay:{sha[:12]}
+    restart: unless-stopped
+    user: "{RELAY_UID}:{RELAY_UID}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 256
+    env_file:
+      - {host_dir}/.env
+    environment:
+      - EMPORIA_RELAY_ENV_FILE=/app/relay.env
+      # Believe {header} from the front door's one address, and from nobody else.
+      - EMPORIA_CLIENT_IP_HEADER={header}
+      - EMPORIA_TRUSTED_PROXIES={PROXY_IP}
+    expose:
+      - "8088"
+    volumes:
+      - emporia-data:/data   # its identity, operator key and database: never delete
+      - {host_dir}/.env:/app/relay.env:ro   # who may use it; re-read when it changes
+      - {host_dir}/secrets:/run/secrets:ro  # one file per secret (Stripe, an operator key by value)
+    networks:
+      - emporia-edge
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {{max-size: "10m", max-file: "5"}}
+{door}
+volumes:
+  emporia-data:
+{"" if tunnel else "  emporia-caddy-data:" + chr(10)}
+networks:
+  emporia-edge:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: {EDGE_SUBNET}
+"""
+
+
+def into_compose_caddyfile(domain: str) -> str:
+    return (f"{MARK}\n{domain} {{\n\treverse_proxy emporia-relay:8088 {{\n"
+            f"\t\theader_up X-Forwarded-For {{remote_host}}\n\t}}\n}}\n")
+
+
+def write_into_compose_files(folder: Path, front_door: str, host_dir: str, repo_url: str, sha: str,
+                             domain: str) -> list[Path]:
+    """The snippet, its folder (settings, secrets/, and the tunnel's or Caddy's own), and
+    the Caddyfile. The settings folder is world-traversable and `.env` readable: the
+    relay runs as another user than whoever made them, and nothing secret is in `.env`."""
+    folder.mkdir(parents=True, exist_ok=True)
+    folder.chmod(0o755)
+    (folder / "secrets").mkdir(mode=0o700, exist_ok=True)
+    files = {folder / SNIPPET: snippet_yaml(front_door, host_dir, repo_url, sha, domain)}
+    if front_door == "tunnel":
+        (folder / "cloudflared").mkdir(mode=0o700, exist_ok=True)
+    else:
+        files[folder / "Caddyfile"] = into_compose_caddyfile(domain)
+    return _write(files)
+
+
+def into_compose_steps(front_door: str, host_dir: str, domain: str, needs_key: bool, secrets: list[str]) -> list[str]:
+    """What the person does by hand, in order, with the exact commands. The relay's
+    uid owns what only it may read; the tunnel's owns the token."""
+    steps = [f"Add the snippet to your Hermes compose file: copy the services:, volumes: and networks: entries of "
+             f"{host_dir}/{SNIPPET} under the same keys there (or pass it as a second -f file — one project either way)."]
+    if front_door == "tunnel":
+        steps += [
+            f"Cloudflare (one time): Zero Trust > Networks > Tunnels > Create a tunnel > Cloudflared. Copy its token. "
+            f"Add a public hostname {domain} with service http://emporia-relay:8088. The domain's DNS must be on Cloudflare "
+            f"and the record proxied (orange cloud).",
+            f"Put the token where only the connector reads it (paste, then Ctrl-D):\n"
+            f"        sudo install -d -o {CLOUDFLARED_UID} -g {CLOUDFLARED_UID} -m 700 {host_dir}/cloudflared\n"
+            f"        sudo install -m 400 -o {CLOUDFLARED_UID} -g {CLOUDFLARED_UID} /dev/stdin {host_dir}/cloudflared/token",
+            "Cloudflare, Network: turn WebSockets on. Security > WAF > Rate limiting rules: see docs/deploy-relay.md.",
+        ]
+    else:
+        steps += [f"DNS: an A record for {domain} to this VPS. Firewall: allow 22, 80 and 443 only "
+                  f"(sudo ufw default deny incoming && sudo ufw allow 22,80,443/tcp && sudo ufw enable)."]
+    if secrets or needs_key:
+        steps.append(f"Give the relay's user its secrets, and nobody else:\n"
+                     f"        sudo chown -R {RELAY_UID}:{RELAY_UID} {host_dir}/secrets && sudo chmod 700 {host_dir}/secrets"
+                     f" && sudo chmod 600 {host_dir}/secrets/*")
+    if needs_key:
+        steps.append("Make the escrow operator key inside the relay's volume, then put the address it prints in the "
+                     f"relay's .env ({host_dir}/.env) as EMPORIA_OPERATOR_ADDRESS=0x…:\n"
+                     "        docker compose run --rm --no-deps emporia-relay python -m emporia.operator_signer generate")
+    names = " ".join(["emporia-relay", "emporia-cloudflared" if front_door == "tunnel" else "emporia-caddy"])
+    steps.append(f"Start it (the first build pulls the pinned commit from GitHub, so the host must reach it):\n"
+                 f"        docker compose up -d --build {names}")
+    steps.append(f"Check: curl -s https://{domain}/health   (status ok). Then move your agents to it: "
+                 f"emporia relay use https://{domain} NAME …")
+    return steps
 
 
 SERVICE = "emporia-relay.service"

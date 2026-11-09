@@ -813,10 +813,13 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     if not _persons_terminal():
         print("relay host: only a person runs this, in their own terminal — it opens a relay to other machines.")
         return 1
+    into = bool(getattr(args, "into_compose", False))
     ways, why = rh.ways_to_run(rh.in_container(), bool(shutil.which("docker")),
                                Path("/run/systemd/system").is_dir())
-    run = args.run
-    heading("Host a relay", "For agents on other machines — behind https, in Docker or as a system service.")
+    run = "docker" if into else args.run
+    heading("Host a relay", "For agents on other machines — behind https, " + (
+        "as services to add to the compose file Hermes already runs from, on this VPS." if into
+        else "in Docker or as a system service."))
     if not run and len(ways) == 1:
         run = ways[0]
         print(f"  {why}")
@@ -831,14 +834,34 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     # Docker: beside the profiles, so the host sees it wherever Hermes's data is mounted.
     home = (this_profile() or Path.home()) if run == "docker" else Path.home()
     folder = Path(args.dir or prompt("Folder for it", str(home / "emporia-relay"))).expanduser().resolve()
-    heading("Its address", "Others reach it at https://<domain>. Point the domain's DNS (an A record) at this "
-            "machine first; ports 80 and 443 must be open for the certificate. Leave it blank if you put your own "
-            "proxy in front.")
+    front_door = repo_url = sha = ""
+    if into:
+        heading("Its front door", "How the internet reaches the relay. Either way the relay publishes no port itself: "
+                "only the front door's container reaches it, over a network Hermes is not on.")
+        front_door = getattr(args, "front_door", "") or choose("Front door:", [
+            (k, label) for k, label in rh.FRONT_DOORS], 0)
+        try:
+            repo_url, sha = rh.source_pin(REPO)
+        except ValueError as e:
+            print(f"relay host: {e}")
+            return 1
+        heading("Its address", "Others reach it at https://<domain>. " + (
+            "The domain's DNS is on Cloudflare; the tunnel's public hostname is this domain." if front_door == "tunnel"
+            else "Point the domain's DNS (an A record) at this VPS; ports 80 and 443 must be open."))
+    else:
+        heading("Its address", "Others reach it at https://<domain>. Point the domain's DNS (an A record) at this "
+                "machine first; ports 80 and 443 must be open for the certificate. Leave it blank if you put your own "
+                "proxy in front.")
     domain = (args.domain or prompt("Domain", "")).strip().lower()
     if domain and not rh.valid_domain(domain):
         print(f"relay host: {domain!r} is not a domain name, like relay.example.com")
         return 1
+    if into and not domain:
+        print("relay host: --into-compose needs the domain others reach it on (relay.example.com)")
+        return 1
     where = "in Docker beside it" if run == "docker" else "on this server, as its own user"
+    if into:
+        where = "outside this stack (its own profile, reaching the relay at its public address)"
     heading("Its operator", f"The agent that sees its settings and activity. A Hermes agent can run it {where}: "
             "name that agent's profile, or leave it blank.")
     admin_name = (args.admin if args.admin is not None else prompt("Agent profile to run it", "")).strip()
@@ -846,8 +869,12 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     if admin and not (admin / "config.yaml").exists():
         print(f"relay host: no Hermes profile at {admin}")
         return 1
+    host_dir = ""
     try:
-        if run == "docker":
+        if into:
+            host_dir = getattr(args, "host_dir", "") or rh.host_path(folder)
+            written = rh.write_into_compose_files(folder, front_door, host_dir, repo_url, sha, domain)
+        elif run == "docker":
             written = rh.write_files(folder, REPO, domain, admin)
         else:
             exe = Path(sys.executable).with_name("emporia-relay")
@@ -855,7 +882,9 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     except FileExistsError as e:
         print(f"relay host: {e}")
         return 1
-    if admin:
+    if admin and into:
+        print(f"  {admin_name} is its operator; it reaches the relay at https://{domain}.")
+    elif admin:
         # Docker: inside the stack the relay is `relay`. Service: the agent reaches it over http, as any client.
         inside = rh.INSIDE_URL if run == "docker" else f"http://127.0.0.1:{rh.LOCAL_PORT}"
         _set_agent_relay(admin, inside)
@@ -898,9 +927,22 @@ def cmd_relay_host(args: argparse.Namespace) -> int:
     wizard_commit()        # P213: from here it writes the relay's settings
     heading("Saving")
     merge_env_file(env_path, updates)
-    env_path.chmod(0o600)
+    # Beside Hermes the relay runs as another user: .env is readable (nothing secret is in it —
+    # secrets are files in secrets/, owned by the relay's user).
+    env_path.chmod(0o644 if into else 0o600)
     for path in (*written, env_path):
         print(f"  wrote {path}")
+    if into:
+        needs_key = payments and "EMPORIA_OPERATOR_ADDRESS" not in installer().harvest_env(folder)
+        print(f"\nThe snippet ({folder / rh.SNIPPET}):\n")
+        print((folder / rh.SNIPPET).read_text())
+        print("Do these on the host, in order:")
+        for i, step in enumerate(rh.into_compose_steps(front_door, host_dir, domain, needs_key,
+                                                       ["money"] if payments else []), 1):
+            print(f"  {i}. {step}")
+        print("\n  Why it is safe beside Hermes, and the firewall, backups and limits: "
+              "docs/deploy-relay.md, \"Hosting beside Hermes on one VPS\".")
+        return 0
     # P208: its keys are apart from Hermes only if Hermes's user cannot get round that.
     if ways := _reachable_anyway(run == "docker"):
         print(f"  ! Hermes runs here as a user for whom {'; '.join(ways)} — its agents could reach this relay's keys "
@@ -8236,6 +8278,14 @@ def build_parser() -> argparse.ArgumentParser:
                    help="host: who may use it (default: asks; open for a public relay)")
     r.add_argument("--run", choices=["docker", "service"], default="",
                    help="host: in Docker, or as a system service on a server kept for it")
+    r.add_argument("--into-compose", action="store_true",
+                   help="host: write services to add to the compose file Hermes already runs from, "
+                        "hardened, built from a pinned commit (no Emporia on the host)")
+    r.add_argument("--front-door", choices=["tunnel", "caddy"], default="",
+                   help="host --into-compose: Cloudflare Tunnel (recommended) or Caddy on 80/443")
+    r.add_argument("--host-dir", default="",
+                   help="host --into-compose: the folder as the host sees it (default: ${HOME}/.hermes/… "
+                        "from where Hermes's data is mounted)")
     r.add_argument("--transparency-log", choices=["on", "off"], default="",
                    help="host: keep a transparency log")
     r.add_argument("--modules", default="",

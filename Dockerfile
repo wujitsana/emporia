@@ -47,8 +47,17 @@ ENV EMPORIA_KEYS_DIR=/data/keys \
     EMPORIA_LOG_DIR=/data/logs \
     EMPORIA_RELAY_PORT=8088 \
     EMPORIA_RELAY_HOST=0.0.0.0 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    HOME=/data \
     PATH="/app/.venv/bin:${PATH}"
 VOLUME ["/data"]
+
+# Runs as the `emporia` user (uid 10001) from the start, so a container with a read-only
+# root filesystem and no capabilities works (`emporia relay host --into-compose`). Its
+# secrets folder must then be readable by uid 10001. An older stack that starts the
+# image as root (`user: "0:0"` in its compose file) still works: the relay reads its
+# secrets as root and drops to this user, as before (EMPORIA_RUN_AS).
+USER 10001:10001
 
 EXPOSE 8088
 

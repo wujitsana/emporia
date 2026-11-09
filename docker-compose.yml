@@ -40,6 +40,9 @@ services:
     image: emporia-relay
     container_name: emporia-relay
     restart: unless-stopped
+    # Starts as root only to read ./secrets (any owner), then drops to the image's user.
+    # For a hardened relay beside Hermes use `emporia relay host --into-compose` instead.
+    user: "0:0"
     ports:
       # This machine only, over plain http. For agents on other machines use
       # `emporia relay host`: its own folder and settings, with https in front.

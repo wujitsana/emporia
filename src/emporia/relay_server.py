@@ -99,6 +99,7 @@ from emporia.module_sdk import (
 )
 from emporia import __version__
 from emporia import names as _names
+from emporia import proxy_ip as _proxy_ip
 from emporia import operators
 from emporia import rooms as rooms_db
 from emporia import entitlements
@@ -3657,10 +3658,13 @@ from collections import deque as _deque
 
 _RATE_WINDOWS: dict[tuple[str, str], _deque] = defaultdict(lambda: _deque())
 # (ip, bucket) → deque of timestamps
+# Per client address, whatever the route and whoever (or nobody) is signed in, so the
+# unauthenticated ones are covered: registration challenge, sign-in, /health, public reads.
+# Settings: EMPORIA_IP_RATE_{READ,WRITE,AUTH}_PER_MINUTE.
 _RATE_LIMITS: dict[str, tuple[int, float]] = {
-    "default":   (120, 60.0),   # 120 req / 60s per IP
-    "auth":      (10,  60.0),   # 10 req / 60s — dashboard challenge/session
-    "write":     (60,  60.0),   # 60 req / 60s — POST/PUT/DELETE
+    "default":   (_int_or(os.getenv("EMPORIA_IP_RATE_READ_PER_MINUTE"), 120), 60.0),    # GET/HEAD
+    "auth":      (_int_or(os.getenv("EMPORIA_IP_RATE_AUTH_PER_MINUTE"), 10), 60.0),     # challenge, register, sign-in, key recovery
+    "write":     (_int_or(os.getenv("EMPORIA_IP_RATE_WRITE_PER_MINUTE"), 60), 60.0),    # POST/PUT/DELETE
 }
 _AUTH_PATHS = {"/dashboard/challenge", "/dashboard/session", "/agents/challenge", "/agents/register"}
 
@@ -3871,8 +3875,22 @@ class GuardedCORSMiddleware(CORSMiddleware):
 # need no sign-in, so without this one address could hold sockets open until
 # the relay ran out of them. Counted after uvicorn's forwarded-address handling,
 # so behind the hosted relay's proxy it is each client, not the proxy.
-_WS_PER_ADDRESS = env_int("EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS", 64)
+#
+# Three caps, each a relay setting: per address, per signed-in agent (a token in the
+# handshake, as `_ws_agent_id` reads it) and for the whole relay. The settings were
+# read with a doubled prefix until now, so the documented one never applied.
+_WS_PER_ADDRESS = _int_or(os.getenv("EMPORIA_MAX_WEBSOCKETS_PER_ADDRESS"), 64)
+_WS_PER_AGENT = _int_or(os.getenv("EMPORIA_MAX_WEBSOCKETS_PER_AGENT"), 16)
+_WS_TOTAL = _int_or(os.getenv("EMPORIA_MAX_WEBSOCKETS"), 256)
 _WS_OPEN: dict[str, int] = defaultdict(int)
+_WS_OPEN_AGENT: dict[str, int] = defaultdict(int)
+_WS_OPEN_TOTAL = [0]
+
+
+def _release(counts: dict[str, int], key: str) -> None:
+    counts[key] -= 1
+    if counts[key] <= 0:
+        counts.pop(key, None)
 
 
 class WebSocketLimit:
@@ -3885,18 +3903,29 @@ class WebSocketLimit:
         ip = (scope.get("client") or ("unknown", 0))[0]
         if ip in _RATE_LIMIT_EXEMPT_HOSTS or ip == "testclient":
             return await self.inner(scope, receive, send)
-        if _WS_OPEN[ip] >= _WS_PER_ADDRESS:
+        try:
+            agent = _ws_agent_id(WebSocket(scope, receive, send)) or ""
+        except Exception:
+            agent = ""
+        over = ("address", _WS_OPEN[ip], _WS_PER_ADDRESS) if _WS_OPEN[ip] >= _WS_PER_ADDRESS else (
+            ("agent", _WS_OPEN_AGENT[agent], _WS_PER_AGENT) if agent and _WS_OPEN_AGENT[agent] >= _WS_PER_AGENT else (
+                ("relay", _WS_OPEN_TOTAL[0], _WS_TOTAL) if _WS_OPEN_TOTAL[0] >= _WS_TOTAL else None))
+        if over:
             await receive()                                   # the connect, then refuse it
-            logger.warning("ws_refused_too_many", extra={"open": _WS_OPEN[ip], "limit": _WS_PER_ADDRESS})
+            logger.warning("ws_refused_too_many", extra={"cap": over[0], "open": over[1], "limit": over[2]})
             await send({"type": "websocket.close", "code": 1013})   # try again later
             return
         _WS_OPEN[ip] += 1
+        _WS_OPEN_TOTAL[0] += 1
+        if agent:
+            _WS_OPEN_AGENT[agent] += 1
         try:
             await self.inner(scope, receive, send)
         finally:
-            _WS_OPEN[ip] -= 1
-            if _WS_OPEN[ip] <= 0:
-                _WS_OPEN.pop(ip, None)
+            _release(_WS_OPEN, ip)
+            _WS_OPEN_TOTAL[0] -= 1
+            if agent:
+                _release(_WS_OPEN_AGENT, agent)
 
 
 app.add_middleware(WebSocketLimit)
@@ -4025,6 +4054,23 @@ async def request_context(request: Request, call_next):
         return response
     finally:
         request_id_ctx.reset(token)
+
+
+# Behind a front door (Cloudflare Tunnel, Caddy) the client is whoever the trusted proxy
+# says, so every per-address limit above sees it. Registered last: it wraps outermost.
+# Off unless both settings are given — see emporia/proxy_ip.py.
+CLIENT_IP_HEADER = os.getenv("EMPORIA_CLIENT_IP_HEADER", "").strip().lower()
+try:
+    TRUSTED_PROXIES = _proxy_ip.parse_trusted(os.getenv("EMPORIA_TRUSTED_PROXIES", ""))
+except ValueError as _e:
+    raise SystemExit(f"emporia relay: EMPORIA_TRUSTED_PROXIES is not a list of addresses or networks: {_e}")
+if CLIENT_IP_HEADER and CLIENT_IP_HEADER not in _proxy_ip.HEADERS:
+    raise SystemExit(f"emporia relay: EMPORIA_CLIENT_IP_HEADER is one of {', '.join(_proxy_ip.HEADERS)}")
+if CLIENT_IP_HEADER and not TRUSTED_PROXIES:
+    raise SystemExit("emporia relay: EMPORIA_CLIENT_IP_HEADER needs EMPORIA_TRUSTED_PROXIES — the proxy "
+                     "address(es) whose header is believed; a header from anyone else would be a claim")
+if CLIENT_IP_HEADER:
+    app.add_middleware(_proxy_ip.ClientIPFromProxy, header=CLIENT_IP_HEADER, trusted=TRUSTED_PROXIES)
 
 
 # ============================================================================
@@ -7610,7 +7656,27 @@ def main():
     if refusal := bind_refusal(RELAY_HOST) or live_money_refusal(_identity.KEY_DIR):
         raise SystemExit(refusal)
     drop_root()
-    uvicorn.run(app, host=RELAY_HOST, port=RELAY_PORT)
+    uvicorn.run(app, host=RELAY_HOST, port=RELAY_PORT, **uvicorn_limits())
+
+
+def uvicorn_limits() -> dict[str, Any]:
+    """The server's own limits, so a flood meets them before it reaches a handler.
+
+    `limit_concurrency`: connections (open WebSockets included) past it get 503 at once;
+    it sits above EMPORIA_MAX_WEBSOCKETS so a full house of sockets cannot lock out plain
+    requests. `timeout_keep_alive`: an idle HTTP connection is closed after this. `backlog`:
+    connections the OS queues before refusing. `ws_max_size`: the largest WebSocket frame.
+    With a client-address header configured, uvicorn's own X-Forwarded-For handling is
+    off — `proxy_ip` is the one place that decides whom to believe."""
+    out: dict[str, Any] = {
+        "limit_concurrency": _int_or(os.getenv("EMPORIA_MAX_CONNECTIONS"), 512),
+        "timeout_keep_alive": _int_or(os.getenv("EMPORIA_KEEPALIVE_SECONDS"), 5),
+        "backlog": _int_or(os.getenv("EMPORIA_LISTEN_BACKLOG"), 1024),
+        "ws_max_size": _int_or(os.getenv("EMPORIA_WS_MAX_MESSAGE_BYTES"), 1024 * 1024),
+    }
+    if CLIENT_IP_HEADER:
+        out["proxy_headers"] = False
+    return {k: v for k, v in out.items() if k == "proxy_headers" or v > 0}      # 0: uvicorn's default
 
 
 # ============================================================================
