@@ -20280,7 +20280,6 @@ _DOC_ROOT = Path(__file__).parent.parent
 #: Docs that must name every MCP tool. The agent's skill no longer lists them: the tool descriptions carry
 #: that, and `emporia.features` (tests/test_lean_tools.py) assigns each tool to a feature and its reference.
 _TOOL_INVENTORY_DOCS = (
-    "skills/dev/emporia-dev/SKILL.md",
     "README.md",
 )
 
@@ -20386,8 +20385,6 @@ _FRAMEWORK_ROUTES = frozenset({
     ("GET", "/redoc"), ("GET", "/openapi.json"),
 })
 
-_ROUTE_LINE_RE = re.compile(r"^(GET|POST|PUT|PATCH|DELETE)\s+(/\S*)", re.M)
-_ROUTE_DOC = "skills/dev/emporia-dev/SKILL.md"
 
 
 def _normalize_route(path: str) -> str:
@@ -20443,31 +20440,18 @@ def _registered_rest_routes() -> set[tuple[str, str]]:
     } - _FRAMEWORK_ROUTES
 
 
-def test_the_dev_skill_lists_every_rest_route_the_relay_serves():
-    """A route absent from the dev skill is a route a developer never learns
-    exists -- the REST analogue of P43-1's finding about MCP tools, which the
-    same pass recorded as unbuilt and left unbuilt for six more.
-
-    Both directions are asserted from one map, because the two failures are
-    opposite and equally silent: an undocumented route is a capability nobody
-    finds, and a documented route the relay no longer serves is an instruction
-    to call something that 404s.
-    """
+def test_the_contributor_skill_names_no_route_the_relay_does_not_serve():
+    """The contributor skill carries no route list (the routers and `/openapi.json` are the list), but a
+    route line it does write must be a served one: an instruction to call something that 404s is worse
+    than none."""
+    route_line = re.compile(r"^\s*(GET|POST|PUT|PATCH|DELETE)\s+(/\S*)", re.M)
     live = _registered_rest_routes()
-    documented = {
+    named = {
         (method, _normalize_route(path))
-        for method, path in _ROUTE_LINE_RE.findall(
-            (_DOC_ROOT / _ROUTE_DOC).read_text()
-        )
+        for doc in sorted((_DOC_ROOT / "skills/dev/emporia-dev").rglob("*.md"))
+        for method, path in route_line.findall(doc.read_text())
     }
-    assert not (live - documented), (
-        f"routes the relay serves but {_ROUTE_DOC} does not list -- add a line "
-        f"for each: {sorted(live - documented)}"
-    )
-    assert not (documented - live), (
-        f"routes {_ROUTE_DOC} tells developers to call that the relay does not "
-        f"serve: {sorted(documented - live)}"
-    )
+    assert not (named - live), f"the contributor skill tells developers to call routes the relay does not serve: {sorted(named - live)}"
 
 
 def test_the_agora_invite_route_the_docs_denied_the_existence_of_works(client):
@@ -24095,7 +24079,7 @@ _ENV_READ_RE = re.compile(
 # "EMPORIA_X402_ASSET_" + network) never appear as a literal, so they can't be
 # extracted — their table rows carry a `<NETWORK>` placeholder instead and are
 # excluded from the reverse check by that marker, not by an allowlist.
-_ENV_DOC_FILES = ("README.md", "skills/dev/emporia-dev/SKILL.md")
+_ENV_DOC_FILES = ("README.md",)
 
 
 def _env_vars_read_by_source() -> dict[str, set[str]]:
@@ -24176,6 +24160,9 @@ def test_every_documented_environment_variable_is_actually_read():
             r'(?:_get_scoped_secret\(|_setting\((?:extra,\s*)?|\(\()\s*"([A-Z][A-Z0-9_]*)"',
             path.read_text()))
         read.update(re.findall(r'_env\s*=\s*"([A-Z][A-Z0-9_]*)"', path.read_text()))
+
+    # A person's switch that setup writes and the agent's own skill honours: no `getenv` of its own.
+    read.add("EMPORIA_X_LINK")
 
     stale = sorted(
         n for n in _env_vars_documented()

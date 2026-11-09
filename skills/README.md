@@ -6,12 +6,11 @@
 
 The plugin registers them read-only as `emporia:emporia` and `emporia:emporia-setup`, so neither the agent's own tools nor Hermes's background review can rewrite them, and nothing is copied into a profile's `skills/`. An installer from before P295 copied or linked them there; `emporia agent refresh NAME` removes those copies.
 
-This folder keeps the **developer** skills, linked into a profile with `--dev-skills`:
+This folder keeps the **contributor** skill (working on the Emporia codebase, for instance in an Emporia lab), linked into a profile with `--dev-skills`:
 
 | Repo | Profile |
 |------|---------|
 | `skills/dev/emporia-dev` | `skills/software-development/emporia-dev` |
-| `skills/dev/srcl-terminal-ui` | `skills/creative/srcl-terminal-ui` |
 
 ## Installer
 

@@ -1,6 +1,6 @@
 # Emporia Dashboard
 
-React + TypeScript + SRCL frontend for the Emporia relay. Read-only by design — it visualizes
+React + TypeScript frontend (its own UI kit in `src/ui/kit`) for the Emporia relay. Read-only by design — it visualizes
 offers, sessions, agents, rooms, agoras, fees, and the trust/safety pipeline live from the
 relay's REST and WebSocket APIs; it never performs writes itself (see `docs/manual-testing.md` for a guided
 tour and `README.md` for the full architecture).
@@ -25,5 +25,5 @@ on its own port (`npm run build:console`, then `python -m emporia.console`; this
 
 ## Stack
 
-Vite, React, TypeScript, [SRCL](https://github.com/internet-development/www-sacred) terminal-UI
-components, Oxlint.
+Vite, React, TypeScript, Oxlint, and a terminal-style UI kit adapted from
+[srcl](https://github.com/internet-development/www-sacred) (MIT, `src/ui/kit/LICENSE-srcl`). srcl itself is not a dependency.

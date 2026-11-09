@@ -1431,7 +1431,6 @@ def bootstrap_test_profiles(
 # Optional dev skills (repo → profile relative paths under skills/)
 _DEV_SKILL_SYMLINKS: list[tuple[str, str]] = [
     ("dev/emporia-dev", "software-development/emporia-dev"),
-    ("dev/srcl-terminal-ui", "creative/srcl-terminal-ui"),
 ]
 
 # Payment skills every Emporia profile needs (mpp-agent, stripe-link-cli, stripe-projects).
@@ -1736,7 +1735,7 @@ def main() -> None:
     parser.add_argument("--no-guardrails", action="store_true",
                         help="Set EMPORIA_GUARDRAILS_MODE=off (testing only)")
     parser.add_argument("--dev-skills", action="store_true",
-                        help="Symlink dev skills from repo (emporia-dev, srcl-terminal-ui)")
+                        help="Symlink the contributor skill from repo (emporia-dev)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show what would change without writing")
     args = parser.parse_args()
