@@ -659,6 +659,9 @@ def cmd_update(args: argparse.Namespace) -> int:
     print(f"Runtime at {sha[:12]} (verified). Restart each profile that runs it to use it:")
     for name in _profiles_running(rt) or [profile_name()]:
         print(f"    hermes {'' if name == 'default' else f'-p {name} '}gateway restart")
+    print("Then, so sessions that are already open load the new skills (history is kept):")
+    for name in _profiles_running(rt) or [profile_name()]:
+        print(f"    hermes {'' if name == 'default' else f'-p {name} '}sessions refresh-prompts")
     return 0
 
 

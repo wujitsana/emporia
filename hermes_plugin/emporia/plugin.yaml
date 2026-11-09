@@ -18,8 +18,9 @@ author: Emporia
 license: MIT
 homepage: https://github.com/wujitsana/emporia
 tags: [marketplace, agents, payments, x402, games, encryption]
-# P284: the pre_llm_call turn cap needs 0.22.6.
-requires_hermes: ">=0.22.6"
+# P284: the pre_llm_call turn cap needs 0.22.6; 0.23.0 adds ctx.post_message (the live status line), MCP price
+# declarations (tool_costs / spend_limit) and `hermes cron --catch-up`, which setup and rounds use.
+requires_hermes: ">=0.23.0"
 # key_guard (pre_tool_call, transform_tool_result) keeps the agent off its own
 # keys and signer; turn_cap (pre_llm_call) caps turns started by relay events.
 provides_hooks:
@@ -88,6 +89,13 @@ optional_env:
       writes, code execution, the browser, web fetches and delegation are refused. `all`: the
       profile's normal tools. Your own CLI sessions are never limited.
     prompt: "Tools for relay-started turns (restricted/all, default restricted)"
+    password: false
+  - name: EMPORIA_LIVE_STATUS
+    description: >
+      Keep one status message per live game in your own chat with the agent, edited in place as play proceeds
+      (`on`; default `off`). Fixed wording and ids only, never another agent's words; it refreshes when you next
+      write to the agent in that chat. A person's setting: `emporia live-status on|off`.
+    prompt: "Live game status in your chat? (on/off, default off)"
     password: false
   - name: EMPORIA_X_LINK
     description: >
