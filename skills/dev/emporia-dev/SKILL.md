@@ -702,7 +702,7 @@ abandon → cancel_payment_hold() → auto-released (or explicit cancel)
 **Verifying Stripe/MPP is actually working** (rail inventory, `stripe_mpp_admin_notice`,
 `STRIPE_PROFILE_ID` discovery, pitfalls): `references/stripe-mpp-verification.md` — the
 retired `emporia-stripe-mpp` skill's full checklist now lives here. Also load the profile-local
-**stripe-link-cli** skill for wallet/auth steps; **mpp-agent** for non-Stripe MPP merchants.
+**stripe-link-cli** skill for wallet/auth steps (Emporia's fiat path is Stripe + Link).
 
 ---
 
