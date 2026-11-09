@@ -6505,7 +6505,7 @@ def _key_history_item(item: Any, relay: str, agent_id: str, name: str, key_dir: 
         item(_G_KEYS, "Recovery key", "set" if h["recovery_key"] else "none",
              "A spare key, kept on paper, that replaces a lost or stolen one.",
              "" if h["recovery_key"] else f"emporia agent recovery-key {name} --out FILE",
-             "ok" if h["recovery_key"] else "warn", person_only=True, kind="secret"),
+             "ok" if h["recovery_key"] else "warn", person_only=True),
     ]
 
 

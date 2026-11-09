@@ -190,15 +190,15 @@ def included(get: Get, state: dict, ref: str, matches: Callable[[dict], bool]) -
 
 # ─── what was kept ────────────────────────────────────────────────────────────
 
-def _path(name: str, key_dir: Path | None = None) -> Path:
+def _path(name: str) -> Path:
     from emporia.identity import KEY_DIR
-    return (key_dir or KEY_DIR) / name
+    return KEY_DIR / name
 
 
 def load(name: str = CLIENT_FILE, key_dir: Path | None = None) -> dict[str, Any]:
     """What was kept; `key_dir` reads another agent's folder (the local console, read-only)."""
     try:
-        data = json.loads(_path(name, key_dir).read_text())
+        data = json.loads((key_dir / name if key_dir else _path(name)).read_text())
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}

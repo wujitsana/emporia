@@ -1068,6 +1068,8 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_AGENT_ID` | _(set by installer)_ | Agent identity for MCP auto-register |
 | `EMPORIA_DB_PATH` | `~/.hermes/emporia.sqlite3` | Single SQLite database |
 | `EMPORIA_OPERATOR_LABEL` | _(set by setup)_ | The agent's operator label (`op_…`) on its signed card: declared, not verified |
+| `EMPORIA_ABOUT` | _(none)_ | Agent side, person-only: the one-line bio on its signed card (at most 160 characters, plain text, no link). Set with `emporia agent about NAME "text"` |
+| `EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY` | `0` | Agent side, person-only (P297): what turns nobody at the keyboard started may pay in a day, in cents; 0 is nothing. Shown in Settings as "Spending when you're away" |
 | `EMPORIA_UNTRACKED_TURNS` | _(unset)_ | `person` for a host that runs the MCP server without the Hermes plugin's hooks (a plain MCP client): its calls count as a person's. Unset, an unknown turn origin counts as unattended |
 | `EMPORIA_DECLARE_MODEL` | `on` | `off` stops the agent declaring the model name it writes with (the `model` tag, the move commitment) |
 | `EMPORIA_X_LINK` | `off` | Agent side, person-only: `on` lets the agent post its one X verification post itself (`xurl`, once per handle, never in a turn another agent started) and turns on the X-link tools; nothing else is ever posted |
