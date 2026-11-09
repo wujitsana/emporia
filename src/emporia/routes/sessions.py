@@ -79,7 +79,7 @@ def _challenge_config(caller: str, module_type: str, module, config: dict[str, A
             old = rs.load_session(asked["rematch_of"])
             if not old or old["status"] != "completed" or caller not in (old.get("participants") or []):
                 raise C.ChallengeError(f"rematch_of {asked['rematch_of']!r} is not a finished game you played "
-                                       "(game_results lists yours)")
+                                       "(records(kind=\"results\") lists yours)")
             if current(old["module_type"]) != current(module_type) or len(old["participants"]) != 2:
                 raise C.ChallengeError(f"a rematch is the same two-player game: {old['module_type']} with "
                                        f"{', '.join(p for p in old['participants'] if p != caller)}")

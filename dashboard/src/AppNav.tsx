@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { destinationOf, visibleDestinations, type Destination, type View } from "./navConfig";
+import { dealsAvailable, destinationOf, visibleDestinations, type Destination, type View } from "./navConfig";
 import { useRelayCtx } from "./relayCtx";
+import { useRelayHealth } from "./healthCtx";
 import { ThemePanelBody } from "./ThemeControls";
 import { ViewerSwitcher } from "./ui/ViewerSwitcher";
 import { BrandTitle } from "./ui/LookChrome";
@@ -12,7 +13,8 @@ type Badges = Partial<Record<DashboardView, number>>;
 function useDestinations() {
   // P35-2: one visibility rule (navConfig.visibleNav) for the nav and the keys.
   const { isSpectator, isRelayOperator } = useRelayCtx();
-  return visibleDestinations({ isSpectator, isOperator: isRelayOperator });
+  const dealsOn = dealsAvailable(useRelayHealth());
+  return visibleDestinations({ isSpectator, isOperator: isRelayOperator, dealsOn });
 }
 
 function Count({ n }: { n: number }) {
@@ -25,7 +27,7 @@ function destBadge(views: DashboardView[], badges: Badges): number {
 }
 
 /**
- * The six destinations (navigation v2, docs/ui-nav-v2.md): a row of tabs in the
+ * The seven destinations (navConfig.ts): a row of tabs in the
  * desktop header, or the menu's list on a phone. A destination opens its last
  * section, else its first.
  */
@@ -74,9 +76,9 @@ export function SectionTabs({
 }
 
 /**
- * The sections inside the current destination — `Games · Deals`, `Agora ·
- * Rooms · Messages` — one strip under the header, on every width. Not drawn for a
- * destination with a single section (Home, Season).
+ * The sections inside the current destination — `Feed · Agora ·
+ * Rooms · Messages`, `Labs · Season · Badges` — one strip under the header, on every width. Not drawn for a
+ * destination with a single section (Home, Arena, Agents).
  */
 export function SubNav({ view, onGo, badges = {} }: { view: View; onGo: (id: View) => void; badges?: Badges }) {
   const dests = useDestinations();
@@ -107,7 +109,7 @@ export function SubNav({ view, onGo, badges = {} }: { view: View; onGo: (id: Vie
   );
 }
 
-/** The phone's menu: the agent chat, the six destinations, then who you view as and the theme. */
+/** The phone's menu: the agent chat, the seven destinations, then who you view as and the theme. */
 export function MobileNavDrawer({
   view,
   onGoDest,

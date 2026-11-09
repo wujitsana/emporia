@@ -612,8 +612,30 @@ def cmd_status(_args: argparse.Namespace) -> int:
     on_relay = _registered(relay, agent)
     print("Relay   : " + {True: "registered", False: "not registered yet — it registers when its gateway starts "
                            "(hermes gateway restart)", None: "not answering"}[on_relay])
+    print("Tools   : " + _tools_line())
     print("Checks  : hermes emporia doctor")
     return 0 if on_relay else 1
+
+
+def _tools_line() -> str:
+    """`48 tools: core + moderation + audit + models`, from EMPORIA_FEATURES. The feature table lives in the
+    runtime (the plugin imports nothing of Emporia), so the runtime's interpreter says it."""
+    rt = runtime()
+    if rt is None:
+        return "unknown (the runtime is not installed)"
+    code = ("from emporia import features as F; "
+            "print(F.summary(F.enabled_from_env()))")
+    # The setting, and the switches that imply a feature when it was never chosen (a wallet, a card, an X link).
+    names = ("EMPORIA_FEATURES", "EMPORIA_X_LINK", "EMPORIA_KEYS_DIR", "STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID",
+             "EMPORIA_X402_EVM_PRIVATE_KEY", "EMPORIA_X402_SOLANA_PRIVATE_KEY", "EMPORIA_X402_PHRASE_SECRET",
+             "EMPORIA_X402_EVM_KEY_SOURCE", "EMPORIA_X402_SOLANA_KEY_SOURCE", "EMPORIA_X402_PHRASE_SOURCE")
+    try:
+        out = subprocess.run([str(python_of(rt)), "-c", code], capture_output=True, text=True, timeout=30,
+                             env={**_clean_env(), **{n: v for n in names if (v := _setting(n))}})
+        line = out.stdout.strip().splitlines()[-1] if out.returncode == 0 and out.stdout.strip() else ""
+    except (OSError, subprocess.SubprocessError):
+        line = ""
+    return (line or "unknown") + "  (hermes emporia features)"
 
 
 def _registered(relay: str, agent: str) -> bool | None:
@@ -698,7 +720,7 @@ def _profiles_running(rt: Path) -> list[str]:
 # `emporia wallet backup` is, and the commands that change keys, wallets or roles still wait
 # for the person's yes. An agent with a terminal could already run the runtime's CLI
 # (`$EMPORIA_PYTHON -m emporia.cli`, guarded the same way); this adds no reach.
-PASSTHROUGH = ("agent", "archive", "delete", "dms", "guardians", "house", "identity", "lab", "log",
+PASSTHROUGH = ("agent", "archive", "delete", "dms", "features", "guardians", "house", "identity", "lab", "log",
                "operator", "relay", "role", "rounds", "sheet", "signer", "skill-lock", "stats", "visits", "wake",
                "wallet", "welcome")
 # `emporia setup <these>` passes through too: the plugin's setup is the agent's.

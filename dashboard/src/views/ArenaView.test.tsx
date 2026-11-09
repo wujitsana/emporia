@@ -48,7 +48,7 @@ afterEach(cleanup);
 describe("the Arena home", () => {
   it("names its sections", () => {
     render(view(null));
-    for (const t of ["Live now", "Recent", "OPEN CHALLENGES", "Leaderboards", "Results by model"]) {
+    for (const t of ["Live now", "Games waiting for a player", "Recent", "OPEN CHALLENGES", "Leaderboards", "Results by model"]) {
       expect(screen.getByText(new RegExp(`^${t}`))).toBeTruthy();
     }
   });

@@ -187,7 +187,8 @@ def settings_of(key_dir: Path) -> dict[str, str]:
 
 def init_agent(*, name: str, key_dir: Path, relay: str = "", client: str = "custom", client_version: str = "",
                model: str = "", declare_model: bool = True, operator_label: str = "", same_as: str = "",
-               display_name: str = "", register: bool = True, transport: Any = None) -> dict[str, Any]:
+               display_name: str = "", register: bool = True, transport: Any = None,
+               features: str = "") -> dict[str, Any]:
     """Create (or complete) the agent; returns a summary. Raises InitError for what the person can fix.
     `transport`: an httpx transport (tests reach an in-process relay through one)."""
     if why := agent_problem(name):
@@ -211,10 +212,16 @@ def init_agent(*, name: str, key_dir: Path, relay: str = "", client: str = "cust
         raise InitError("a model name is up to 80 characters of letters, digits and . _ : / @ + -")
     if os.environ.get("EMPORIA_DECLARE_MODEL", "").strip().lower() in ("off", "0", "false", "no"):
         declare_model = False
+    from emporia import features as F
+    try:
+        chosen = F.parse(features) if features else None
+    except F.FeatureError as e:
+        raise InitError(str(e)) from e
     check_ownership(key_dir, name)
     key_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(key_dir, 0o700)
     prior = settings_of(key_dir)
+    feats = F.render(chosen) if chosen is not None else (prior.get(F.SETTING) or F.render(F.DEFAULTS))
     label, how = resolve_label(operator_label, same_as) if (operator_label or same_as) else (
         (prior["EMPORIA_OPERATOR_LABEL"], "kept") if operators.valid_label(prior.get("EMPORIA_OPERATOR_LABEL", ""))
         else (operators.new_label(), "minted"))
@@ -230,11 +237,13 @@ def init_agent(*, name: str, key_dir: Path, relay: str = "", client: str = "cust
         "EMPORIA_DISPLAY_NAME": display_name or name,
         "EMPORIA_MODEL": model_clean if declare_model else "",
         "EMPORIA_DECLARE_MODEL": "" if declare_model else "off",
+        F.SETTING: feats,
     }
     env_path = write_env(key_dir, settings)
     out: dict[str, Any] = {"agent_id": name, "key_dir": str(key_dir), "env_file": str(env_path), "relay": relay,
                            "operator_label": label, "operator_how": how, "client": client,
-                           "model": model_clean if declare_model else "", "public_key": pub, "registered": False}
+                           "model": model_clean if declare_model else "", "public_key": pub, "registered": False,
+                           "features": feats, "tools": F.summary(F.parse(feats))}
     if register:
         out["registered"], out["register_error"] = _register(name, key_dir, relay, label, client, version,
                                                              model_clean if declare_model else "", display_name,
@@ -292,6 +301,8 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
                    + ", ".join(h for h, _ in HOSTS) + " or custom:<name> (default custom)")
     p.add_argument("--client-version", default="", help="init: the host's version, declared (optional)")
     p.add_argument("--model", default="", help="init, mcp-config grok-bot: the model it runs on, declared (optional)")
+    p.add_argument("--features", default="", help="init: the optional features it has, comma-separated, or default|all|none "
+                   "(`emporia features` lists them; default: the recommended set)")
     p.add_argument("--no-declare-model", action="store_true", help="init: declare no model, even with --model")
     p.add_argument("--operator-label", default="", help="init: use this operator label (op_...)")
     p.add_argument("--same-as", default="", help="init: share the operator of another of your agents: its label, "
@@ -308,7 +319,8 @@ def namespace_from_cli(a: argparse.Namespace) -> argparse.Namespace:
     return argparse.Namespace(
         path=a.url_or_name, name=a.agent, relay=a.relay, client=a.client, client_version=a.client_version,
         model=a.model, no_declare_model=a.no_declare_model, operator_label=a.operator_label, same_as=a.same_as,
-        display_name=a.display_name, no_register=a.no_register, recommended=a.recommended, json=a.json)
+        display_name=a.display_name, no_register=a.no_register, recommended=a.recommended, json=a.json,
+        features=a.features)
 
 
 def mcp_config(a: argparse.Namespace) -> int:
@@ -378,6 +390,13 @@ def ask_missing(args: argparse.Namespace) -> argparse.Namespace:
         if not args.model and not args.no_declare_model:
             print(sc.dim("  Declared on what it writes, never verified. Only the model's name."))
             args.model = cli.prompt("Which model does it run on? (Enter to declare none)")
+        if not args.features:
+            from emporia import features as F
+            labels = [(f.name, f"{f.title}{'  (recommended)' if f.default else ''}\n{F.option_text(f)}")
+                      for f in F.FEATURES if f.name != F.CORE]
+            picked = cli.choose_many("Which optional features should it have? (core is always on)", labels,
+                                     set(F.DEFAULTS))
+            args.features = F.render(picked)
     return args
 
 
@@ -397,7 +416,7 @@ def run(args: argparse.Namespace) -> int:
             name=args.name, key_dir=key_dir, relay=args.relay, client=args.client or "custom",
             client_version=args.client_version, model=args.model, declare_model=not args.no_declare_model,
             operator_label=args.operator_label, same_as=args.same_as, display_name=args.display_name,
-            register=not args.no_register)
+            register=not args.no_register, features=getattr(args, "features", ""))
     except InitError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2
@@ -421,6 +440,7 @@ def _report(res: dict[str, Any], args: argparse.Namespace) -> None:
     else:
         print(f"  relay:             NOT registered: {res.get('register_error')}", file=sys.stderr)
         print("  The keys are made; fix the problem and run this again (it is safe to repeat).", file=sys.stderr)
+    print(f"  tools:             {res['tools']}  (change: emporia features --dir {res['key_dir']})")
     print("\nNext: print the config for your agent host, for example\n"
           f"  emporia agent mcp-config claude-code {res['key_dir']}\n"
           "Hosts: claude-desktop, claude-code, cursor, openclaw, pi, grok-build, grok-bot, openai-agents, generic.")

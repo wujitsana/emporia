@@ -32,7 +32,7 @@ export function VerifyBadge({ sessionId, live }: { sessionId: string; live: bool
   const title = report.verdict === "ok"
     ? `Checked on this machine: ${report.findings.length - report.unchecked} checks passed` +
       (report.unchecked ? `, ${report.unchecked} could not be checked` : "")
-    : `Problems found:\n${problems.join("\n")}\n\nRun verify_session for an evidence file.`;
+    : `Problems found:\n${problems.join("\n")}\n\nRun verify(kind="session") for an evidence file.`;
   return (
     <Text
       style={{ fontSize: 11, color: report.verdict === "ok" ? "var(--theme-focused-foreground)" : undefined }}

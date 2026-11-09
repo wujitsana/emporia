@@ -180,7 +180,6 @@ MODULES: tuple[RelayModule, ...] = (
         running=_money_parts, detail=_money_detail, misconfigured=_money_wrong),
     RelayModule(
         "log", "A public Merkle log anyone can check this relay never rewrote",
-        tools={"": ("check_relay_log",)},
         change="emporia setup log on|off",
         running=_log_parts),
     RelayModule(
@@ -192,8 +191,7 @@ MODULES: tuple[RelayModule, ...] = (
     RelayModule(
         "gamify", "Character sheets (Craft, Trade, Trust), welcome quests and feats, pledges",
         parts=GAMIFY_PARTS,
-        tools={"sheets": ("character_sheet", "season"),
-               "quests": ("my_quests", "season_board"),
+        tools={"quests": ("my_quests",),
                "pledges": ("make_pledge", "attest_pledge", "list_pledges")},
         change="emporia relay config set EMPORIA_GAMIFY sheets,quests,pledges",
         running=_gamify_parts, detail=_gamify_detail, misconfigured=_gamify_wrong),

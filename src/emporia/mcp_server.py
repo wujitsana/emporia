@@ -1,10 +1,12 @@
 """Emporia MCP Server — the tools a Hermes agent acts on the relay with, via FastMCP
 (stdio/streamable-http/sse).
 
-The inventory is the registered tools themselves (`mcp.list_tools()`); the agent skill
-(hermes_plugin/emporia/skills/emporia/SKILL.md) lists them and tests pin the count. What the
-model reads of each tool is `mcp_surface.DESCRIPTIONS`, not the docstrings below, which are
-maintainer notes. A relay that does not run a module hides its tools (`_fit_tools_to_relays`).
+The inventory is the registered tools themselves (`mcp.list_tools()`); `emporia.features` assigns each
+to one feature and tests pin the table. What the model reads of each tool is
+`mcp_surface.DESCRIPTIONS`, not the docstrings below, which are maintainer notes. Only the tools of the
+agent's enabled features show, and only those a relay it uses can serve (`_fit_tools_to_relays`).
+The read-only families (`verify`, `standing`, `records`, `model_results`) are one tool each over the
+plain functions above them, which the SDK, the CLI and tests still call.
 
 Non-obvious fix: discover_peer_lobby GET was going through x402 retry — read-only discovery
 must not trigger a payment gate. Replaced with plain httpx.get().
@@ -476,13 +478,13 @@ def _visits() -> list[str]:
 
 
 def _fit_tools_to_relays() -> set[str]:
-    """P291: show only the tools a relay this agent uses can serve. Each relay
-    says what it runs beyond its core (`relay_modules` on /health); a module's
-    tools appear when its home or a relay it visits runs it — no payment tools
-    on a relay without money, no lab tools on one without labs. A relay
-    that does not answer hides nothing: tools never vanish because one was down.
-    Returns the tools hidden."""
-    from emporia import relay_modules
+    """Show only the tools this agent has: those of its enabled features (`EMPORIA_FEATURES`, see
+    `emporia.features`) that a relay it uses can serve (P291). Each relay says what it runs beyond its
+    core (`relay_modules` on /health); a module's tools appear when its home or a relay it visits runs
+    it: no payment tools on a relay without money, no lab tools on one without labs. A relay that does
+    not answer hides nothing of its own: tools never vanish because one was down, and the agent's
+    features alone decide. Returns the tools hidden."""
+    from emporia import features, relay_modules
     seen: list[Any] = []
     for url in [RELAY_URL, *_visits()]:
         try:
@@ -490,12 +492,28 @@ def _fit_tools_to_relays() -> set[str]:
             seen.append(r.json().get("relay_modules") if r.status_code == 200 else None)
         except Exception:  # noqa: BLE001 — not answering: hide nothing
             seen.append(None)
-    hide = relay_modules.tools_to_hide(seen)
-    mcp.enable(names=relay_modules.all_tools() - hide)
+    by_relay = relay_modules.tools_to_hide(seen)
+    by_feature = features.hidden_by_features(features.enabled_from_env())
+    hide = by_relay | by_feature
+    mcp.enable(names=features.all_tools())
     if hide:
         mcp.disable(names=hide)
-    logger.info("tools_fitted_to_relays", extra={"hidden": sorted(hide)})
+    logger.info("tools_fitted", extra={"hidden_by_relays": sorted(by_relay), "hidden_by_features": len(by_feature)})
     return hide
+
+
+def _note_needs(items: list[Any], keys: tuple[str, ...]) -> list[Any]:
+    """Items (a suggested step, a quest) that name a tool of a feature this agent has off get a `needs` line, built
+    from our own feature table: `needs: feature pledges: your person turns it on with ...`. The text of an item is
+    only searched for tool names; none of it is repeated. A dead call is better said than left."""
+    from emporia import features
+    on = features.enabled_from_env()
+    for item in items:
+        if isinstance(item, dict):
+            off = features.off_features_named_in(" ".join(str(item.get(k) or "") for k in keys), on)
+            if off:
+                item["needs"] = features.needs_note(off)
+    return items
 
 
 def _backups() -> list[str]:
@@ -1226,7 +1244,6 @@ def _signed_room_act(creator: str, act: str, room_id: str, target: str, *, refun
             "signature": signing.sign(creator, "room-kick", room_id, target, refund, at)}
 
 
-@mcp.tool()
 def check_room(room_id: str, agent_id: str = "") -> dict[str, Any]:
     """Check a room against its creator's own signatures (P243), rather than
     taking the relay's word for it.
@@ -1825,7 +1842,6 @@ def _chain_walk_stalled(pages: int, before: Any, before_seq: Any, seen: set[tupl
     return ""
 
 
-@mcp.tool()
 def verify_dm_chain(
     thread_id: str, agent_id: str = "", max_messages: int | None = None,
     ignore_pin: bool = False,
@@ -2052,7 +2068,6 @@ def verify_dm_chain(
         return {"error": str(e), "success": False}
 
 
-@mcp.tool()
 def verify_room_chain(
     room_id: str, agent_id: str = "", max_messages: int | None = None, ignore_pin: bool = False,
 ) -> dict[str, Any]:
@@ -3839,7 +3854,6 @@ def join_session(
         return {"error": str(e), "success": False}
 
 
-@mcp.tool()
 @_relay_aware
 def my_stats(days: int = 30) -> dict[str, Any]:
     """Your own figures for your person (P287), when they ask: what you earned (by rail) and
@@ -3869,7 +3883,6 @@ def my_stats(days: int = 30) -> dict[str, Any]:
     return {"success": True, **st, "summary": analytics.render(st)}
 
 
-@mcp.tool()
 @_relay_aware
 def character_sheet(agent_id: str = "") -> dict[str, Any]:
     """An agent's sheet on this relay (P288) — yours when agent_id is empty. So far Craft:
@@ -3894,7 +3907,6 @@ def character_sheet(agent_id: str = "") -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-@mcp.tool()
 @_relay_aware
 def season(limit: int = 10) -> dict[str, Any]:
     """This relay's season (P297) — season-0, open-ended, unless its operator names
@@ -3913,7 +3925,6 @@ def season(limit: int = 10) -> dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 
-@mcp.tool()
 @_relay_aware
 def season_board(limit: int = 25, agent_id: str = "") -> dict[str, Any]:
     """The season's XP standings on this relay: who earned the most XP in its window, top `limit` and your own
@@ -3954,6 +3965,10 @@ def my_quests(agent_id: str = "") -> dict[str, Any]:
             r = httpx.get(f"{_base()}/agents/{_seg(who)}/quests", timeout=10)
         d = r.json() if r.content else {}
         if r.status_code == 200:
+            if isinstance(d.get("quests"), list):
+                d["quests"] = _note_needs(d["quests"], ("how",))
+            if isinstance(d.get("next"), dict):
+                d["next"] = _note_needs([d["next"]], ("how",))[0]
             return {"success": True, **d}
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
     except Exception as e:
@@ -4189,7 +4204,7 @@ def whats_next(limit: int = 8) -> dict[str, Any]:
     except Exception as e:
         return {"error": str(e), "success": False}
     pb = playbook.current()
-    items = next_steps.rank(d, pb, max(1, min(int(limit or 8), 20)))
+    items = _note_needs(next_steps.rank(d, pb, max(1, min(int(limit or 8), 20))), ("tool", "call"))
     return {"success": True, "agent_id": aid, "as_of": d.get("as_of"), "playbook": pb.preset, "items": items,
             "nothing_to_do": not items, "unread_total": (d.get("inbox") or {}).get("unread_total", 0),
             "untrusted": _UNTRUSTED}
@@ -4732,7 +4747,6 @@ def _pinned_relay_key(current: str | None) -> tuple[str | None, bool]:
     return _pin_relay_key_for(_base(), current)
 
 
-@mcp.tool()
 @_relay_aware
 def check_relay_log(compare_with: str = "") -> dict[str, Any]:
     """Check the relay's transparency log without trusting the relay (P281).
@@ -4751,7 +4765,6 @@ def check_relay_log(compare_with: str = "") -> dict[str, Any]:
 
 
 
-@mcp.tool()
 @_relay_aware
 def verify_session(session_id: str, agent_id: str = "") -> dict[str, Any]:
     """Check a game without trusting the relay (P144), and keep the evidence.
@@ -5198,7 +5211,6 @@ def reveal_models(session_id: str, agent_id: str = "") -> dict[str, Any]:
     return {"success": True, "nothing_to_reveal": True} if out is None else {"success": "error" not in out, **out}
 
 
-@mcp.tool()
 @_relay_aware
 def get_game_models(session_id: str, agent_id: str = "") -> dict[str, Any]:
     """The models each player declared in a game, as its record shows them. While the game is on: only whether a
@@ -5211,7 +5223,6 @@ def get_game_models(session_id: str, agent_id: str = "") -> dict[str, Any]:
         return {"error": str(e)}
 
 
-@mcp.tool()
 @_relay_aware
 def get_model_results() -> dict[str, Any]:
     """Results by declared model on this relay: wins, losses and draws per model over finished public games, and
@@ -5763,7 +5774,6 @@ def open_room_from_post(post_id: str, name: str, kind: str = "room", description
     return {"success": bool(said.get("success")), kind: ident, "reply": said}
 
 
-@mcp.tool()
 @_relay_aware
 def leaderboard(module_type: str = "") -> dict[str, Any]:
     """Standings on this relay: wins, entries, win rate, modules played.
@@ -5780,7 +5790,6 @@ def leaderboard(module_type: str = "") -> dict[str, Any]:
         return {"error": str(e)}
 
 
-@mcp.tool()
 @_relay_aware
 def game_results(module_type: str = "", agent_id: str = "", limit: int = 10) -> dict[str, Any]:
     """Finished games on this relay, newest first: players, winner, how it
@@ -5800,7 +5809,6 @@ def game_results(module_type: str = "", agent_id: str = "", limit: int = 10) -> 
         return {"error": str(e)}
 
 
-@mcp.tool()
 @_relay_aware
 def export_games(module: str = "", since: str = "", limit: int = 20) -> dict[str, Any]:
     """Open game records: finished PUBLIC games as JSON, each with everything needed to re-check it
@@ -5830,7 +5838,6 @@ def export_games(module: str = "", since: str = "", limit: int = 20) -> dict[str
 # Settlement tools
 # ============================================================================
 
-@mcp.tool()
 @_relay_aware
 def get_settlements(session_id: str = "") -> dict[str, Any]:
     """Fetch settlement records.
@@ -5905,6 +5912,88 @@ def sign_dashboard_challenge(challenge_id: str, nonce: str, relay_url: str = "")
     return {"success": True, "agent_id": AGENT_ID, "relay": target,
             "expires_in": (r.json() or {}).get("expires_in"),
             "next": "the dashboard that showed this challenge picks the sign-in up by itself"}
+
+
+# ─── lean surface: read-only families behind one tool each ───────────────────
+# Each helper above stays a plain function (the SDK, the CLI and tests call them); only these are tools.
+
+_VERIFY_KINDS = ("dm_chain", "room_chain", "room", "session", "relay_log")
+_STANDING_VIEWS = ("stats", "sheet", "season", "board", "leaderboard")
+_RECORD_KINDS = ("results", "export", "settlements")
+
+
+def _bad_choice(what: str, got: str, valid: tuple[str, ...]) -> dict[str, Any]:
+    return {"error": f"unknown {what} {got!r}: one of {', '.join(valid)}", "success": False}
+
+
+@mcp.tool()
+@_relay_aware
+def verify(kind: str, target: str = "", agent_id: str = "", max_messages: int | None = None,
+           ignore_pin: bool = False, compare_with: str = "") -> dict[str, Any]:
+    """Check something yourself instead of trusting the relay. kind: dm_chain (target: thread id),
+    room_chain (room id), room (room id: settings, invites, kicks signed by members), session (session id:
+    evidence file), relay_log (no target; compare_with: other relay URLs)."""
+    if kind == "dm_chain":
+        out = verify_dm_chain(thread_id=target, agent_id=agent_id, max_messages=max_messages, ignore_pin=ignore_pin)
+    elif kind == "room_chain":
+        out = verify_room_chain(room_id=target, agent_id=agent_id, max_messages=max_messages, ignore_pin=ignore_pin)
+    elif kind == "room":
+        out = check_room(room_id=target, agent_id=agent_id)
+    elif kind == "session":
+        out = verify_session(session_id=target, agent_id=agent_id)
+    elif kind == "relay_log":
+        out = check_relay_log(compare_with=compare_with)
+    else:
+        return _bad_choice("kind", kind, _VERIFY_KINDS)
+    return {**out, "kind": kind} if isinstance(out, dict) else out
+
+
+@mcp.tool()
+@_relay_aware
+def standing(view: str = "stats", agent_id: str = "", days: int = 30, limit: int = 0,
+             module_type: str = "") -> dict[str, Any]:
+    """Where you or others stand. view: stats (your earnings, spend, token cost; days), sheet (ratings and
+    Renown of agent_id), season (the season and its ladders; limit), board (season XP standings; limit),
+    leaderboard (contest wins; module_type)."""
+    if view == "stats":
+        out = my_stats(days=days)
+    elif view == "sheet":
+        out = character_sheet(agent_id=agent_id)
+    elif view == "season":
+        out = season(limit=limit or 10)
+    elif view == "board":
+        out = season_board(limit=limit or 25, agent_id=agent_id)
+    elif view == "leaderboard":
+        out = leaderboard(module_type=module_type)
+    else:
+        return _bad_choice("view", view, _STANDING_VIEWS)
+    return {**out, "view": view} if isinstance(out, dict) else out     # ours last: an answer cannot name its own view
+
+
+@mcp.tool()
+@_relay_aware
+def records(kind: str = "results", session_id: str = "", module_type: str = "", agent_id: str = "",
+            limit: int = 0, since: str = "") -> dict[str, Any]:
+    """Records of finished work. kind: results (finished games, newest first; module_type, agent_id, limit),
+    export (finished public games as records to re-verify offline; module_type, since, limit),
+    settlements (session_id, or all for a relay operator)."""
+    if kind == "results":
+        out = game_results(module_type=module_type, agent_id=agent_id, limit=limit or 10)
+    elif kind == "export":
+        out = export_games(module=module_type, since=since, limit=limit or 20)
+    elif kind == "settlements":
+        out = get_settlements(session_id=session_id)
+    else:
+        return _bad_choice("kind", kind, _RECORD_KINDS)
+    return {**out, "view": kind} if isinstance(out, dict) else out
+
+
+@mcp.tool()
+@_relay_aware
+def model_results(session_id: str = "", agent_id: str = "") -> dict[str, Any]:
+    """The models declared in play. With session_id: that game's players' models; without: results by
+    declared model and agents by client over this relay's finished public games."""
+    return get_game_models(session_id=session_id, agent_id=agent_id) if session_id else get_model_results()
 
 
 def _apply_agent_surface() -> None:

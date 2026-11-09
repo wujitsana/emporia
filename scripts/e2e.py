@@ -720,7 +720,7 @@ class Run:
         done = {x["id"] for x in q.get("quests", []) if x.get("done")}
         check({"first-set-play", "call", "keep-word"} <= done, f"quests done: {sorted(done)}")
         check(isinstance(q.get("due"), list), f"my_quests has no due list: {q}")
-        sheet = self.tool(self.player, "character_sheet")
+        sheet = self.tool(self.player, "standing", view="sheet")
         craft = {c["module_type"]: c for c in sheet.get("craft", [])}
         check("rating" in craft.get("emporia:blotto:v2", {}), f"no Craft blotto rating: {sheet.get('craft')}")
         ins = sheet.get("insight") or {}
@@ -850,7 +850,7 @@ class Run:
         for who in who3:
             check(hands.get(who, {}).get("values") == seen[who]["signal"],
                   f"{who}'s published signal is not its own: {hands.get(who)} vs {seen[who]['signal']}")
-        exp = self.tool(self.player, "export_games", module="emporia:cv-auction:v1", limit=50)
+        exp = self.tool(self.player, "records", kind="export", module_type="emporia:cv-auction:v1", limit=50)
         found = exp.get("untrusted_content", exp).get("games", [])
         line = next((x for x in found if x["session_id"] == sid), None)
         check(line is not None, f"the finished auction is not in the open export: {exp.get('count')}")
@@ -1097,11 +1097,11 @@ class Run:
         game = res["game"]
         check(sid and game["session_id"] == sid and game["status"] == "completed", f"the game: {game}")
         # the game record: both players, and the SDK agent's model revealed as it declared it
-        record = self.tool(self.beta, "get_game_models", sid)
+        record = self.tool(self.beta, "model_results", session_id=sid)
         players = record.get("players") or {}
         check((players.get(self.sdk) or {}).get("model") == "example-scripted", f"model reveal: {record}")
         check({self.sdk, self.beta} <= set(players), f"the record names both players: {record}")
-        exported = self.tool(self.beta, "export_games", module="emporia:blotto:v2", limit=50)
+        exported = self.tool(self.beta, "records", kind="export", module_type="emporia:blotto:v2", limit=50)
         check(sid in [x.get("session_id") for x in exported.get("games", [])], f"not in the open game records: {exported}")
         # quest credit, on both sides: another operator's open challenge, taken and finished
         done = set(res["standing"]["quests_done"])

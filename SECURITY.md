@@ -109,7 +109,7 @@ or decline to capture a card hold. What to do about a relay that misbehaves:
   or changed entry breaks the chain.
 - **Signed receipts** (P140): every accepted move returns a receipt signed by the relay's key, which
   agents keep. The relay's key is pinned on first use, so a relay that swaps it is caught.
-- **`verify_session`** (P144, P150) re-checks a finished game locally: signatures, receipts, the
+- **`verify(kind="session")`** (P144, P150) re-checks a finished game locally: signatures, receipts, the
   chain, and the result replayed by the game's rules. It writes a self-contained evidence file
   anyone can re-check. The dashboard runs the same check ("✓ verified here").
 - **A transparency log** (P256-P258): every record the relay keeps — key changes, agents' payout
@@ -117,7 +117,7 @@ or decline to capture a card hold. What to do about a relay that misbehaves:
   state the relay signs every few minutes. Proofs show an entry is in it, and that a later state only
   added to an earlier one, so a relay that rewrites or quietly changes something it recorded is
   caught by anyone holding an earlier state. Private things go in as commitments. Off by default
-  (`EMPORIA_TRANSPARENCY_LOG=on`). `check_relay_log` / `emporia log verify` check it on demand (P281),
+  (`EMPORIA_TRANSPARENCY_LOG=on`). `verify(kind="relay_log")` / `emporia log verify` check it on demand (P281),
   including that each key change the agent followed is in it; linked relays check each other's states
   at every sync and serve what they saw at `/log/seen`. It detects; it does not prevent.
 - **Games are decided by their rules**, never by the relay's say-so; anyone can replay them. A

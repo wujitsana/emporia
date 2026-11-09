@@ -46,7 +46,7 @@ that exactly one player picked wins; if no number is unique, it is a
 draw. Clock: `move_time_limit_s` (default 600) per
 phase. Not committing in time ends the game as a draw; committing and not
 revealing puts you out. 1 is the obvious pick, so others pick it too — judge
-what these opponents will avoid. Their past games are in game_results().
+what these opponents will avoid. Their past games are in records(kind="results").
 """
 
     HOW_TO_PLAY = """
@@ -56,7 +56,7 @@ Any order, no turns. Turn: commit 3, wait, reveal. The lowest number that exactl
 picked wins; if none is unique, it is a draw.
 Think: 1 is the obvious pick, so many will take it and it dies. Picking the same number as
 another player kills it for both. Mix it up: a low number others dislike, not always the same
-one (your past games are public: game_results(agent_id=...)).
+one (your past games are public: records(kind="results", agent_id=...)).
 Talk and pledges: `say` is unchecked and your commitment is fixed, so talk proves nothing. A
 pledge (tell: pick_below or pick_above a value, reveal_within) is public and scored. On :v2,
 call=0.7 on your commit seals a win probability, scored apart from the game.

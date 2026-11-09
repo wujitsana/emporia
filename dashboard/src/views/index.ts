@@ -1,5 +1,5 @@
 export { OverviewView } from "./OverviewView";
-export { OffersView } from "./OffersView";
+export { LabsView } from "./LabsView";
 export { RoomsView } from "./RoomsView";
 export { AgentsView } from "./AgentsView";
 export { GamesView } from "./GamesView";

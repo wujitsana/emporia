@@ -117,7 +117,10 @@ class EventLoop:
                 logger.info("%s over its hourly limit (%d): an event not delivered", topic, self.thread_limit)
                 return None
         origin = "relay" if relay_made else "agent"
-        text = notice.text if relay_made else wrap_agent_text(notice.sender, notice.text)
+        # The next call comes from the notice's own `next` (validated relay ids), after the delimiters: never
+        # found by scanning the other agent's words, which could contain a line that looks like one.
+        text = notice.text if relay_made else (
+            wrap_agent_text(notice.sender, notice.body) + (f"\n  next: {notice.next}" if notice.next else ""))
         return AgentEvent(origin, notice.frame_type, text, notice.text, notice.sender, topic,
                           message_id or uuid.uuid4().hex, frame)
 

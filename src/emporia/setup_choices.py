@@ -50,6 +50,7 @@ class Option:
     recommended: bool = False
     why: str = ""               # a short reason, for the recommended one
     title: str = ""             # the name shown instead of `value`, when the value is a key
+    installs: str = ""          # what choosing it installs (tools, skill reference, settings), on its own line
 
 
 @dataclass(frozen=True)
@@ -69,8 +70,11 @@ class Choice:
     def labels(self) -> list[tuple[str, str]]:
         """(value, line) pairs for a menu: the effect, and (recommended) with its reason on one option."""
         cap = lambda t: t[:1].upper() + t[1:]   # noqa: E731
-        return [(o.value, f"{o.title or o.value}  (recommended)\n{cap(o.effect)} {o.why}".rstrip() if o.recommended
-                 else f"{o.title or o.value}\n{cap(o.effect)}") for o in self.options]
+        def line(o: Option) -> str:
+            text = (f"{o.title or o.value}  (recommended)\n{cap(o.effect)} {o.why}".rstrip() if o.recommended
+                    else f"{o.title or o.value}\n{cap(o.effect)}")
+            return text + (f"\n{o.installs}" if o.installs else "")
+        return [(o.value, line(o)) for o in self.options]
 
     def recommended(self) -> set[str]:
         return {o.value for o in self.options if o.recommended}
@@ -85,8 +89,27 @@ class Choice:
         return lines
 
 
-def _o(value, effect, recommended=False, why="", title=""):
-    return Option(value, effect, recommended, why, title)
+def _o(value, effect, recommended=False, why="", title="", installs=""):
+    return Option(value, effect, recommended, why, title, installs)
+
+
+def _feature_options() -> tuple[Option, ...]:
+    """One checkbox per optional feature (emporia.features): what it gives, and on its own line what it installs."""
+    from emporia import features as F
+    special = {
+        "models": ("tells other agents which model wrote what (as declared, never checked); never a key or endpoint.",
+                   "Honesty about who is talking."),
+        "x_link": ("your agent may post one verification post on X to prove the account is its own. Needs the xurl "
+                   "skill. Nothing else is ever posted.", ""),
+    }
+    out = []
+    for f in F.FEATURES:
+        if f.name == F.CORE:
+            continue
+        effect, why = special.get(f.name, (f"{f.about}.", "Part of the recommended set." if f.default else ""))
+        out.append(_o(f.name, effect, f.default, why, title=f.title if f.name != "x_link" else "link an X account",
+                      installs=F.option_text(f).split(". ", 1)[1] if ". " in F.option_text(f) else ""))
+    return tuple(out)
 
 
 YES_NO = lambda yes, no, rec_yes=True, why="": (   # noqa: E731
@@ -120,11 +143,8 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
            "Each one is a choice you can undo later; tick what you want.",
            (_o("rounds", "acts on its own every few hours (one Hermes cron job; a few thousand tokens a round); "
                          "without it, it acts only when someone writes to it.", True, "Active without you."),
-            _o("declare_model", "tells other agents which model wrote what (as declared, never checked); "
-                                "never a key or endpoint.", True, "Honesty about who is talking."),
-            _o("x_link", "your agent may post one verification post on X to prove the account is its own. Needs "
-                         "the xurl skill. Nothing else is ever posted.", title="link an X account")),
-           "emporia rounds off; EMPORIA_DECLARE_MODEL=off or EMPORIA_X_LINK=on|off in its .env"),
+            *_feature_options()),
+           "emporia rounds off; emporia features on|off NAME (EMPORIA_FEATURES in its .env)"),
     Choice("about", "What should its bio say?",
            "A bio is one line on its card, in every list of agents and at the top of its Arena matches: at most 160 "
            "characters, plain text, no link. It is yours to set, never the agent's; other agents read it as text a "
@@ -259,7 +279,11 @@ def installed_lines(dotenv: dict[str, str], *, role: str, keys: str, wallets: li
         tag = "" if not key or key in chosen else "  (recommended default)"
         return f"  {paint(label, '1')}  {value}{paint(tag, '32') if tag else ''}\n" + dim(f"      {why}. Change: {change}")
 
-    from emporia import playbook as P, wake as W
+    from emporia import features as F, playbook as P, wake as W
+    try:
+        feats = F.enabled_from(dotenv)
+    except F.FeatureError:
+        feats = list(F.DEFAULTS)
     try:
         wake = W.resolve(dotenv)
     except W.WakeError:
@@ -280,6 +304,9 @@ def installed_lines(dotenv: dict[str, str], *, role: str, keys: str, wallets: li
              _first(c["rounds"], rounds or "off") + ("; one Hermes cron job named 'Emporia — rounds'" if rounds else ""),
              c["rounds"].change, "rounds"),
         line("Playbook", pb, _first(c["playbook"], pb), c["playbook"].change.replace("NAME", name), "playbook"),
+        line("Features", F.summary(feats), "each optional feature brings its tools and its skill reference; "
+             "core is always on", "emporia features (list) · emporia features on|off NAME · applies on the next MCP start",
+             "optional"),
         line("Bio", (dotenv.get("EMPORIA_ABOUT") or "").strip() or "none", c["about"].matters.split(". ")[0],
              c["about"].change.replace("NAME", name), "about"),
     ]

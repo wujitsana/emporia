@@ -1,4 +1,4 @@
-import { api, dmThreadPreview, type Room } from "./api";
+import { api, dmThreadPreview } from "./api";
 import type { RelayHealth } from "./hooks";
 import { isJobModule, type DashboardView } from "./eventNav";
 import type { NavItem } from "./navConfig";
@@ -13,7 +13,7 @@ export interface OverviewSectionRow {
 }
 
 /** Tabs omitted from Overview hub. */
-export const OVERVIEW_SKIP_VIEWS: DashboardView[] = ["overview", "season", "fees", "stats", "profile", "docs", "settings", "relay", "badges"];
+export const OVERVIEW_SKIP_VIEWS: DashboardView[] = ["overview", "season", "labs", "fees", "stats", "profile", "docs", "settings", "relay", "badges"];
 
 const MAX_LINES = 3;
 
@@ -63,11 +63,6 @@ export async function fetchOverviewSnapshot(
   return { sessions, rooms, agents, settlements, agoraTopics, dmThreads };
 }
 
-/** An offer is a room anyone may open: public, or paid. A private room is not one. */
-function offeredRooms(r: { rooms?: Room[] } | null): Room[] {
-  return (r?.rooms ?? []).filter((x) => x.room_type === "public" || x.gate_type === "paid");
-}
-
 /** Live snippets from each dashboard tab (for Overview). Pure. */
 export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectionRow[] {
   const val = <T>(r: PromiseSettledResult<T>): T | null =>
@@ -87,13 +82,6 @@ export function sectionsFromSnapshot(snapshot: OverviewSnapshot): OverviewSectio
   const kindOf = (m: string) => m.split(":")[1] ?? "game";
 
   const rows: OverviewSectionRow[] = [
-    {
-      view: "offers",
-      lines:
-        offeredRooms(rooms).length
-          ? offeredRooms(rooms).slice(0, MAX_LINES).map((r) => clip(`${r.name} · ${r.gate_type}`))
-          : ["No open offers"],
-    },
     {
       view: "rooms",
       lines:
@@ -171,7 +159,6 @@ export interface DashboardCounts {
    * /payments/settlements actually report `has_more` today — the rest merge
    * multiple sources or post-filter in Python and always resolve to a plain
    * number (see the Deferred section of the N8/N9 review notes). */
-  offers: number | string | null;
   sessions: number | string | null;
   rooms: number | string | null;
   agents: number | string | null;
@@ -205,7 +192,6 @@ export interface DashboardCounts {
  */
 export function failedFromSnapshot(snapshot: OverviewSnapshot): Set<OverviewTabId> {
   const pairs: [OverviewTabId, PromiseSettledResult<unknown>][] = [
-    ["offers", snapshot.rooms],
     ["games", snapshot.sessions],
     ["deals", snapshot.sessions],
     ["rooms", snapshot.rooms],
@@ -252,7 +238,6 @@ export function countsFromSnapshot(snapshot: OverviewSnapshot): DashboardCounts 
   const dealSessions = emporia ? emporia.filter((s) => isJobModule(s.module_type)).length : null;
 
   return {
-    offers: roomsR.status === "fulfilled" ? offeredRooms(roomsR.value).length : null,
     sessions: len(sessionsR),
     rooms: len(roomsR),
     agents: len(agentsR),
@@ -275,8 +260,6 @@ export function metricForNav(
   switch (item.id) {
     case "overview":
       return online ? "● LIVE" : health ? "OFFLINE" : "…";
-    case "offers":
-      return String(counts?.offers ?? "—");
     case "deals":
       return String(counts?.dealSessions ?? "—");
     case "rooms":
@@ -310,10 +293,6 @@ export function countCaptionForNav(
   switch (item.id) {
     case "overview":
       return online ? "Relay connected" : health ? "Relay unreachable" : null;
-    case "offers": {
-      const c = n(counts?.offers);
-      return c != null ? `${c} offer${c === 1 ? "" : "s"}` : null;
-    }
     case "deals": {
       const c = n(counts?.dealSessions);
       return c != null ? `${c} deal${c === 1 ? "" : "s"}` : null;

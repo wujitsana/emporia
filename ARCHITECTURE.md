@@ -7,7 +7,7 @@
 │                   Hermes Agent                       │
 │  ┌────────────┐  ┌──────────────┐  ┌─────────────┐ │
 │  │ Platform   │  │  MCP Server  │  │ Skill .md   │ │
-│  │  plugin    │  │ (96 tools)   │  │  (guidance) │ │
+│  │  plugin    │  │ (85 tools)   │  │  (guidance) │ │
 │  │ emporia/   │  │ stdio/http   │  │             │ │
 │  └─────┬──────┘  └──────┬───────┘  └─────────────┘ │
 │        │ outbound WS    │ tool calls                 │
@@ -267,7 +267,7 @@ operator's by design (`docs/agent-security-setup.md` § The signer).
   the agent's `.env`). `relay stop` and `signer stop` signal a recorded pid only if it is still theirs.
 - **Analytics (`analytics.py`, P287):** an agent's own figures: earned, spent, owed, in escrow,
   games, trades, turns, and model cost per Emporia conversation read from Hermes's own records.
-  Served as `emporia stats NAME`, MCP `my_stats` and `/payments/records?mine=1`. Design:
+  Served as `emporia stats NAME`, MCP `standing(view="stats")` and `/payments/records?mine=1`. Design:
   `docs/proposals/analytics-module.md`.
 - **The gamify module (`progression.py`, `ideas.py`; P288):** every part off unless the relay's
   `EMPORIA_GAMIFY` names it, listed on the relay card. `sheets`: a base sheet computed from outcomes,
@@ -401,7 +401,7 @@ leaves ──► stored complete subtrees ──► root ──► signed state 
   larger: consistency proof; smaller or older epoch: fail; new epoch: only with the signed hand-over),
   and keeps states per relay in `log_states.json` beside `relay_pins.json`. `verify_relay` also proves
   each followed key step is in the log and asks other relays' `/log/seen`. Entry points: MCP
-  `check_relay_log`, SDK `agent.check_relay_log`, CLI `emporia log verify`.
+  `verify(kind="relay_log")`, SDK `agent.check_relay_log`, CLI `emporia log verify`.
 - **Peer checks (P281):** the federation sync runs `logcheck.check` on each linked peer's `/log/state`
   (pinned key only), kept in `_peer_log_states.json`, whether or not this relay keeps a log. Served at
   `GET /log/seen`; `GET /federation/peers` carries a `log` summary per peer.
@@ -413,7 +413,7 @@ leaves ──► stored complete subtrees ──► root ──► signed state 
 Three hackathon-required Stripe skills:
 - **stripe-link-cli**: payment mode for agent payments (Link requires US account setup)
 - **stripe-projects**: v2 story — relay reads `DATABASE_URL` from env (Neon + Vercel provisioning)
-- **mpp-agent**: `mpp` is the protocol-level paid join mode. Stripe is the wired MPP settlement rail; x402 (P1b) is a second, non-custodial rail with its own challenge/response shape (`PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`) offered alongside MPP in the same 402, not routed through it. Tempo (P156) is MPP's stablecoin method, offered in the same 402; Privy remains unimplemented.
+- **MPP**: `mpp` is the protocol-level paid join mode. Stripe is the wired MPP settlement rail; x402 (P1b) is a second, non-custodial rail with its own challenge/response shape (`PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`) offered alongside MPP in the same 402, not routed through it. Tempo (P156) is MPP's stablecoin method, offered in the same 402; Privy remains unimplemented.
 
 Payment split: one published `fee_bps` (1%) per relay, set by the relay operator (see `src/emporia/fees.py`).
 Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official Stripe endpoint.

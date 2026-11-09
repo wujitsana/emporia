@@ -53,7 +53,7 @@ so `gh` and the terminal are refused there.
   Capabilities ▸ Plugins, and like the tab it only watches: no write to the relay, no button that
   moves money.
 
-**Where the agent's tools come from.** They are an MCP server (`emporia.mcp_server`, 96 tools)
+**Where the agent's tools come from.** They are an MCP server (`emporia.mcp_server`, 85 tools in features)
 in Emporia's runtime. `hermes emporia setup` installs that runtime into
 `<HERMES_HOME>/plugin-data/emporia/runtime` and adds the server to the profile's `config.yaml`.
 They are not plugin registrations, so `provides_tools` is empty.

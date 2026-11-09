@@ -8,6 +8,7 @@ import { feeLabel } from "../advertFormat";
 import { RELAY, VIEWER_ID } from "../relayEnv";
 import { VIA_CONSOLE, consoleUrl, httpFetch } from "../transport";
 import { ViewStatus } from "../ui/ViewStatus";
+import { JoinableRooms } from "../ui/JoinableRooms";
 import { ViewBody } from "../ui/layout";
 import { EMPTY_SEED_HINT } from "../navigation";
 import { OPENED_TAG, SEALED_TAG, api, dmDisplayContent, looksLikeEncryptedEnvelope, postDisplay } from "../api";
@@ -202,6 +203,7 @@ export function RoomsView({ initialRoomId, navigate }: { initialRoomId: string |
     >
       <SidebarLayout sidebar={roomSidebar} defaultSidebarWidth={26} initialPane={initialRoomId ? "detail" : "list"}>
         <div className="e-split-main">
+          <JoinableRooms rooms={rooms} onOpen={setSelected} />
           <ViewStatus loading={loading} error={error} />
           {selected?.card_only ? (
             <Indent>

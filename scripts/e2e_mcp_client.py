@@ -88,7 +88,7 @@ async def run(cfg: dict, topic: str, timeout: float) -> dict[str, Any]:
         g = g.get("untrusted_content", g)
         out["status"] = g["status"]
         await call("reveal_models", session_id=sid)
-        models = await call("get_game_models", session_id=sid)
+        models = await call("model_results", session_id=sid)
         out["models"] = models.get("untrusted_content", models)
         profile = await call("get_agent_profile", agent_id=me)
         out["profile"] = profile.get("untrusted_content", profile)

@@ -2,15 +2,25 @@ import type { View } from "../navConfig";
 
 /**
  * A route to a section this viewer may not see (`#/more/operator` opened by
- * someone who does not run the relay, `#/market/fees` by a spectator). The nav
- * hides these sections, but a link or a bookmark still lands on them, and the
- * page used to show the section's heading over nothing. It says why instead.
+ * someone who does not run the relay, `#/you/fees` by a spectator, `#/you/deals`
+ * on a relay that cannot sell services). The nav hides these sections, but a
+ * link or a bookmark still lands on them, and the page used to show the
+ * section's heading over nothing. It says why instead.
  *
  * No redirect: the operator's sections open only once the relay has confirmed a
  * signed sign-in, which arrives after the first render, so bouncing away would
  * send the real operator off their own link.
  */
 export function GatedNote({ view }: { view: View }) {
+  if (view === "deals") {
+    return (
+      <div className="e-view-body">
+        <div className="e-empty-pane" role="note">
+          <div className="e-empty-pane__title">Service purchases need escrow or cards on this relay.</div>
+        </div>
+      </div>
+    );
+  }
   const operatorOnly = view === "relay" || view === "operator";
   return (
     <div className="e-view-body">

@@ -1,5 +1,5 @@
 /**
- * The Stats view's figures (Market › Stats): what the viewing agent earned, spent and is owed,
+ * The Stats view's figures (You › Stats): what the viewing agent earned, spent and is owed,
  * what it did, and — where Hermes's own records are readable — what its Emporia conversations
  * cost in model tokens, so one number says whether it pays for itself.
  *

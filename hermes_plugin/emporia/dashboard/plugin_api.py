@@ -371,7 +371,7 @@ def _model_cost(agent: str, days: int, now: float) -> dict:
     """What `agent`'s Emporia conversations cost in model tokens over `days`, from this
     profile's Hermes session records — read through Hermes's own `hermes_state.SessionDB`
     (read-only), a module Hermes documents for plugins. Aggregates only: no title, preview or
-    message leaves this function. The same figure as `my_stats` / `emporia stats NAME`."""
+    message leaves this function. The same figure as `standing(view="stats")` / `emporia stats NAME`."""
     out: dict = {"available": False, "usd": 0.0, "tokens": 0, "sessions": 0, "by_kind": {},
                  "days": days, "source": "hermes"}
     try:

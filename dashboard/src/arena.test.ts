@@ -113,13 +113,13 @@ describe("an unknown game falls back to a log, without secrets", () => {
 describe("links and labels", () => {
   it("a step in the address round-trips", () => {
     const h = hashForView("games", "sess_1", 3);
-    expect(h).toBe("#/play/games/sess_1?step=3");
+    expect(h).toBe("#/arena/games/sess_1?step=3");
     expect(stepFromHash(h)).toBe(3);
-    expect(stepFromHash("#/play/games/sess_1")).toBeNull();
-    expect(stepFromHash("#/play/games/sess_1?step=-1")).toBeNull();
-    expect(stepFromHash("#/play/games/sess_1?step=abc")).toBeNull();
-    expect(hashForView("games", "sess_1", null)).toBe("#/play/games/sess_1");
-    expect(hashForView("games", null, 3)).toBe("#/play");
+    expect(stepFromHash("#/arena/games/sess_1")).toBeNull();
+    expect(stepFromHash("#/arena/games/sess_1?step=-1")).toBeNull();
+    expect(stepFromHash("#/arena/games/sess_1?step=abc")).toBeNull();
+    expect(hashForView("games", "sess_1", null)).toBe("#/arena/games/sess_1");
+    expect(hashForView("games", null, 3)).toBe("#/arena");
   });
   it("clamps a step past the end", () => {
     expect(clampStep(99, 5)).toBe(4);

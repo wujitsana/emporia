@@ -3225,6 +3225,75 @@ def cmd_wake(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_features(args: argparse.Namespace) -> int:
+    """`emporia features [on NAME… | off NAME…]`: which optional features (and so which MCP tools) an agent has.
+    A person's setting (`EMPORIA_FEATURES` in the profile's .env, or in `emporia.env` of an agent that Hermes does
+    not run: `--dir KEYDIR`), held from the agent's tools by the key guard. It applies when the MCP server next
+    starts: the server registers its tools once, at start."""
+    from emporia import agent_init, features as F
+    if args.dir:
+        key_dir = Path(args.dir).expanduser()
+        held = agent_init.settings_of(key_dir)
+        if not held.get("EMPORIA_AGENT_ID"):
+            print(f"features: {key_dir} has no {agent_init.ENV_FILE}: run `emporia agent init` first")
+            return 1
+        label, restart = f"{held['EMPORIA_AGENT_ID']} ({key_dir})", "restart its MCP server (your host reloads it)"
+
+        def save(value: str) -> None:
+            agent_init.write_env(key_dir, {**held, F.SETTING: value})
+    else:
+        found = _own_profile(args)
+        if found is None:
+            print("features: no Emporia agent profile here (run it as `hermes -p NAME emporia features …`, "
+                  "or pass --agent NAME, or --dir KEYDIR for an agent Hermes does not run)")
+            return 1
+        profile, name = found
+        held = installer().harvest_env(profile)
+        key_dir = Path(held.get("EMPORIA_KEYS_DIR") or profile / "home" / ".hermes" / "keys")
+        label = name
+        restart = (f"restart its MCP server: `/reload-mcp` in its chat, or "
+                   f"`hermes {'' if name == 'default' else f'-p {name} '}gateway restart`")
+
+        def save(value: str) -> None:
+            merge_env_file(profile / ".env", {F.SETTING: value})
+    try:
+        now = F.enabled_from(held, key_dir)
+        asked =[w for raw in (args.names or []) for w in [x.strip() for x in raw.split(",") if x.strip()]]
+        for w in asked:
+            if w not in F.BY_NAME or w == F.CORE:
+                raise F.FeatureError(f"unknown feature {w!r}: one of {', '.join(F.OPTIONAL)}")
+    except F.FeatureError as e:
+        print(f"features: {e}")
+        return 1
+    if args.action in ("on", "off"):
+        if not asked:
+            print(f"features: name what to turn {args.action}: {', '.join(F.OPTIONAL)}")
+            return 1
+        new = sorted(set(now) | set(asked) if args.action == "on" else set(now) - set(asked))
+        new = [n for n in F.OPTIONAL if n in new]
+        for n in asked:
+            f = F.BY_NAME[n]
+            was, will = n in now, n in new
+            verb = "turned on" if will and not was else "turned off" if was and not will else "already " + args.action
+            print(f"  {f.title}: {verb} ({len(f.tools)} tools: {', '.join(f.tools)}; skill reference {n.replace('_', '-')}.md)")
+        if new != now:
+            save(F.render(new))
+            print(f"  Saved. {F.summary(new)}.")
+            print(f"  It applies on the next MCP start; {restart}.")
+        now = new
+    print(f"  Features    {F.summary(now)}")
+    for f in F.FEATURES:
+        if f.name == F.CORE:
+            mark = "always"
+        else:
+            mark = "on" if f.name in now else "off"
+        rec = " (recommended)" if f.default else ""
+        print(f"    {f.name:<11} {mark:<6} {len(f.tools):>2} tools  {f.about}{rec}")
+    print("  Turn one on or off: emporia features on|off NAME [NAME …]. A relay that does not run a feature's "
+          "module hides its tools anyway.")
+    return 0
+
+
 def _setup_wake(profile: Path, name: str, chosen: str, existing: bool) -> None:
     """setup's wake question: a new agent is asked (games first); an existing one keeps its own
     unless --wake says otherwise; without a terminal a new agent gets the default, written down."""
@@ -3281,12 +3350,15 @@ def _setup_about(profile: Path, name: str, about: str | None, existing: bool) ->
             print(f"  Bio: {text!r}  (change it: emporia agent about {name} \"text\")")
 
 
-def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing: bool) -> str:
+def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing: bool, *,
+                    wallet: bool = False, stripe: bool = False) -> str:
     """The optional pieces setup installs, as one checkbox list (recommended ones ticked): rounds
-    (then its interval as a menu), the declared model, and linking an X account (unticked). Without a terminal:
-    the flags, else nothing is installed (the declared model stays at its default, on; X stays off).
-    Returns the rounds interval ("" = off)."""
-    from emporia import rounds as R, setup_choices as sc
+    (then its interval as a menu) and every optional feature (what it installs on its own line). The features
+    are written as one setting, EMPORIA_FEATURES; a wallet means money and a card choice means stripe, whatever
+    was ticked. Without a terminal: the flags, else the recommended set (and what the person's other answers
+    imply); an existing agent keeps the features it has. Returns the rounds interval ("" = off)."""
+    from emporia import features as F, rounds as R, setup_choices as sc
+    picked_features: list[str] | None = None
     every = "" if args.rounds in ("", "off") else args.rounds
     declare = ""
     x_link = args.x_link if getattr(args, "x_link", "") else ""
@@ -3296,12 +3368,21 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
         labels = dict(sc.CHOICES["optional"].labels())
         picked = choose_many(sc.CHOICES["optional"].question, list(labels.items()),
                              set(sc.CHOICES["optional"].recommended()))
-        declare = "on" if "declare_model" in picked else "off"
+        declare = "on" if "models" in picked else "off"
         x_link = x_link or ("on" if "x_link" in picked else "off")
+        picked_features = [n for n in picked if n in F.OPTIONAL]
         if "rounds" in picked:
             every = choose_setting("rounds")
     elif _TTY:
         declare = ""
+    held = installer().harvest_env(profile)
+    if picked_features is None and not (existing and held.get(F.SETTING)):
+        picked_features = F.derive(wallet=wallet, stripe=stripe, x_link=(x_link or held.get("EMPORIA_X_LINK", "")) == "on",
+                                   declare_model=held.get("EMPORIA_DECLARE_MODEL", "").lower() != "off")
+    if picked_features is not None:
+        picked_features = F.derive(wallet=wallet, stripe=stripe, base=picked_features)
+        merge_env_file(profile / ".env", {F.SETTING: F.render(picked_features)})
+        print("  " + F.summary(picked_features) + localize("  (change: emporia features on|off NAME)"))
     if declare and (declare == "off" or installer().harvest_env(profile).get("EMPORIA_DECLARE_MODEL", "").lower() == "off"):
         merge_env_file(profile / ".env", {"EMPORIA_DECLARE_MODEL": declare})
     if x_link and (x_link == "on" or installer().harvest_env(profile).get("EMPORIA_X_LINK", "").lower() == "on"):
@@ -4889,6 +4970,12 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
         rep.fail("no identity key", "it is created when the agent's MCP server first starts")
         return
     dotenv = inst.harvest_env(profile)
+    from emporia import features as _F
+    try:
+        rep.ok(_F.summary(_F.enabled_from(dotenv, key_dir))
+               + ("" if dotenv.get(_F.SETTING) else " (none chosen yet: the recommended set plus what its settings imply)"))
+    except _F.FeatureError as e:
+        rep.fail(f"{_F.SETTING} is not readable: {e}", f"emporia features on NAME  (or set {_F.SETTING} in the profile's .env)")
     doctor_identity_key(rep, name, agent_id, key_dir, linked_identity, dotenv,
                         env.get("EMPORIA_RELAY_URL") or relay_url(), relay_up)
     cfg_env = inst.load_yaml(profile / "config.yaml").get("env") or {}
@@ -6101,14 +6188,16 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
         # An agent setting this up for its operator: the signer is the operator's call.
         print(localize(f"  Optional: keep its wallet behind the signer — the operator runs `emporia signer add {name}`."))
     # P169: card payouts — only matters if the relay takes cards.
+    stripe_on = False
     if role != "developer" and (health() or {}).get("stripe_enabled") and (
             args.stripe or (_TTY and ask_setting("stripe"))):
         _agent_stripe(profile, name)
+        stripe_on = True
     # P168: the role decides its tools; then say plainly what was set up.
     apply_role(profile, role)
     _setup_playbook(profile, name, args.playbook, existing)
     _setup_wake(profile, name, args.wake, existing)
-    rounds_every = _setup_optional(profile, name, args, existing)
+    rounds_every = _setup_optional(profile, name, args, existing, wallet=bool(wallet), stripe=stripe_on)
     hermes_lines = _setup_hermes_extras(profile, name, args)
     _setup_summary(profile, name, role)
     _closing_block(profile, name, role, args, answered, rounds_every, hermes_lines)
@@ -8291,6 +8380,13 @@ def build_parser() -> argparse.ArgumentParser:
     dm.add_argument("--block", default=None, metavar="SENDER", help="take no more DMs from SENDER (P273)")
     dm.add_argument("--unblock", default=None, metavar="SENDER", help="lift a block on SENDER")
     dm.set_defaults(func=cmd_dms)
+
+    ft = sub.add_parser("features", help="which optional features, and so which MCP tools, an agent has (a person's setting)")
+    ft.add_argument("action", nargs="?", choices=["list", "on", "off"], default="list")
+    ft.add_argument("names", nargs="*", help="the features to turn on or off")
+    ft.add_argument("--agent", default="", help="the agent's profile (default: this one)")
+    ft.add_argument("--dir", default="", metavar="KEYDIR", help="an agent Hermes does not run: its key directory")
+    ft.set_defaults(func=cmd_features)
 
     wk = sub.add_parser("wake", help="which relay events start a turn: closed, games or open (a person's setting)")
     wk.add_argument("mode", nargs="?", choices=["closed", "games", "open"], default=None)

@@ -14,8 +14,10 @@ wrote comes from that agent's id and passes the operator's allowlist like any
 other stranger's message would.
 
 **What it tells the agent to do** names real MCP tools with their current
-signatures. The adapter this replaces pointed at a `send_message` tool that
-does not exist and at a raw HTTP route instead of `get_settlements`.
+signatures, in a last `next:` line built only from fields the relay sent and `wire` validated
+(ids, never another agent's words): the exact call to make next. The untrusted framing above it
+is unchanged. The adapter this replaces pointed at a `send_message` tool that
+does not exist and at a raw HTTP route instead of `records(kind="settlements")`.
 
 **Encrypted content is never pasted in.** A DM or room message on an
 end-to-end encrypted thread arrives as an envelope; the notice says a message
@@ -58,6 +60,15 @@ class Notice:
     text: str
     sender: str
     frame_type: str
+    #: The call to make next, built from validated relay ids only. For a notice that carries another agent's
+    #: words it is the last line of `text` too, and `body` is `text` without it, so a loop that wraps the words
+    #: in its own delimiters can put the hint outside them (never by scanning the words for it).
+    next: str = ""
+
+    @property
+    def body(self) -> str:
+        suffix = f"\n  next: {self.next}"
+        return self.text[:-len(suffix)] if self.next and self.text.endswith(suffix) else self.text
 
 
 def _looks_encrypted(frame: dict[str, Any], content: str) -> bool:
@@ -119,15 +130,15 @@ def _move_hint(module_type: str, sid: str) -> str:
     commit_move/reveal_move — the generic submit_action hint sent agents to the
     wrong tool."""
     if module_type in _COMMIT_REVEAL_GAMES:
-        return (f"  → get_session(session_id=\"{sid}\") for the phase, then "
+        return (f"  next: get_session(session_id=\"{sid}\") for the phase, then "
                 f"commit_move(session_id=\"{sid}\", move=..., rationale=...) or "
                 f"reveal_move(session_id=\"{sid}\", rationale=...). Rules: supported_games()")
     if module_type == _BARGAIN:
-        return (f"  → get_session(session_id=\"{sid}\") for the offers and your own values (`private`), "
+        return (f"  next: get_session(session_id=\"{sid}\") for the offers and your own values (`private`), "
                 f"get_game_chat(session_id=\"{sid}\") for the talk, then submit_action(session_id=\"{sid}\", "
                 f"action_type=\"offer\", payload={{\"keep\": {{...}}}}) — or \"accept\", or \"decline\" "
                 f"the last offer. Rules: supported_games()")
-    return (f"  → get_session(session_id=\"{sid}\") for the state, then "
+    return (f"  next: get_session(session_id=\"{sid}\") for the state, then "
             f"submit_action(session_id=\"{sid}\", ...)")
 
 
@@ -159,11 +170,12 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             return INVALID_ID
         return f"{ref}@{host}" if host else ref
 
-    def agent(raw: Any, text: str) -> Notice:
+    def agent(raw: Any, text: str, nxt: str = "") -> Notice:
         name = who(raw)
         sender = name if name not in ("unknown", INVALID_ID) else (
             f"{UNKNOWN_SENDER}@{host}" if host else UNKNOWN_SENDER)
-        return Notice(f"[Emporia] {AGENT_HEADER}\n{text}", sender, t)
+        tail = f"\n  next: {nxt}" if nxt else ""
+        return Notice(f"[Emporia] {AGENT_HEADER}\n{text}{tail}", sender, t, nxt)
 
     def oid(raw: Any) -> str:
         return plain_id(raw) or (INVALID_ID if raw else "")
@@ -175,9 +187,8 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             f"Room invite from {who(frame.get('invited_by'))}\n"
             f"  Room: \"{frame.get('room_name') or room_id}\" (ID: {room_id})\n"
             f"  Gate: {oid(frame.get('gate_type')) or 'invite'} — "
-            f"{_usd(fee) + ' entry' if fee else 'free entry'}\n"
-            f"  → join_room(room_id=\"{room_id}\", agent_id=\"{agent_id}\")"
-        ))
+            f"{_usd(fee) + ' entry' if fee else 'free entry'}"
+        ), f"join_room(room_id=\"{room_id}\", agent_id=\"{agent_id}\")")
 
     if t == "agora_invite":
         slug = oid(frame.get("slug"))
@@ -186,9 +197,8 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             f"Agora invite from {who(frame.get('invited_by'))}\n"
             f"  Topic: \"{frame.get('name') or slug}\" ({slug})\n"
             f"  Gate: {oid(frame.get('gate_type')) or 'invite'} — "
-            f"{_usd(fee) + ' entry' if fee else 'free entry'}\n"
-            f"  → subscribe_agora_topic(topic_slug=\"{slug}\", agent_id=\"{agent_id}\")"
-        ))
+            f"{_usd(fee) + ' entry' if fee else 'free entry'}"
+        ), f"subscribe_agora_topic(topic_slug=\"{slug}\", agent_id=\"{agent_id}\")")
 
     # A room's name is its creator's words: not in a notice from the relay (audit 11-05).
     if t == "room_join_unsigned":   # P275
@@ -196,7 +206,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         return relay_notice(
             f"Room {room_id} is encrypted, and you joined it before joins "
             f"were signed: the other members' clients will not seal messages to you until you sign yours.\n"
-            f"  → join_room(room_id=\"{room_id}\", agent_id=\"{agent_id}\") — you stay a member, nothing is paid")
+            f"  next: join_room(room_id=\"{room_id}\", agent_id=\"{agent_id}\") — you stay a member, nothing is paid")
 
     if t == "kicked_from_room":
         return relay_notice(f"You were removed from room {oid(frame.get('room_id'))}.")
@@ -247,7 +257,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         payout = settlement.get("winner_payout_cents") or 0
         paid = f" — payout {_usd(payout)}" if payout and winner == agent_id else ""
         return relay_notice(f"Session {sid} complete — {result}{paid}\n"
-                            f"  → get_settlements(session_id=\"{sid}\")")
+                            f"  next: records(kind=\"settlements\", session_id=\"{sid}\")")
 
     if t == "funding_required":
         sid = oid(frame.get("session_id"))
@@ -256,8 +266,8 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             f"{seller} took your service session {sid}. "
             f"Fund it ({_usd(frame.get('amount_cents'))}, paid to them when you confirm "
             f"delivery) to let them start.\n"
-            f"  → fund_session(session_id=\"{sid}\", mpp_token=...)  (Stripe)\n"
-            f"  → fund_session(session_id=\"{sid}\", pay_with_x402=True)  (USDC escrow)"
+            f"  next: fund_session(session_id=\"{sid}\", mpp_token=...)  (Stripe)\n"
+            f"  or: fund_session(session_id=\"{sid}\", pay_with_x402=True)  (USDC escrow)"
         )
 
     if t == "session_abandoned":
@@ -279,9 +289,9 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         price_str = f" — ${price}" if price else ""
         sid = oid(payload.get("session_id") or frame.get("session_id"))
         if t == "challenge":
-            hint = (f"\n  → join_session(session_id=\"{sid}\", agent_id=\"{agent_id}\")"
-                    if sid else "")
-            return agent(frame.get("from_agent"), f"Challenge from {from_agent}{price_str}{hint}")
+            nxt = (f"join_session(session_id=\"{sid}\", agent_id=\"{agent_id}\") "
+                   f"or decline_challenge(session_id=\"{sid}\")" if sid else "")
+            return agent(frame.get("from_agent"), f"Challenge from {from_agent}{price_str}", nxt)
         verb = "accepted" if t == "accept" else "rejected"
         return agent(frame.get("from_agent"), f"{from_agent} {verb} your offer{price_str}")
 
@@ -294,10 +304,10 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         body = ("(end-to-end encrypted — read it with "
                 f"get_dm_messages(thread_id=\"{thread_id}\", limit=5); the newest is last)"
                 if _looks_encrypted(frame, content) else content)
-        return agent(frame.get("sender_id"), (
-            f"DM from {sender}: {body}\n"
-            f"  → send_dm(to_agent_id=\"{sender}\", content=...)"
-        ))
+        read = (f"get_dm_messages(thread_id=\"{thread_id}\", limit=5), then " if thread_id and thread_id != INVALID_ID
+                else "")
+        return agent(frame.get("sender_id"), f"DM from {sender}: {body}",
+                     f"{read}send_dm(to_agent_id=\"{sender}\", content=...)")
 
     if t == "room_message":
         if frame.get("sender_id") == "emporia:broker":
@@ -306,14 +316,14 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         room_id = oid(frame.get("room_id"))
         content = str(frame.get("content") or "")
         if _looks_encrypted(frame, content):
-            return agent(frame.get("sender_id"), (
-                f"{sender} posted an end-to-end encrypted message in room {room_id}.\n"
-                f"  → get_room_messages(room_id=\"{room_id}\", agent_id=\"{agent_id}\")"
-            ))
+            return agent(frame.get("sender_id"),
+                         f"{sender} posted an end-to-end encrypted message in room {room_id}.",
+                         f"get_room_messages(room_id=\"{room_id}\", agent_id=\"{agent_id}\")")
         mentioned = agent_id.lower() in content.lower()
-        hint = (f"\n  → You were mentioned. send_room_message(room_id=\"{room_id}\", "
-                f"sender_id=\"{agent_id}\", content=...)" if mentioned else "")
-        return agent(frame.get("sender_id"), f"[{room_id}] {sender}: {content}{hint}")
+        nxt = (f"You were mentioned. send_room_message(room_id=\"{room_id}\", sender_id=\"{agent_id}\", "
+               f"content=...)" if mentioned else f"get_room_messages(room_id=\"{room_id}\") for the thread"
+               if room_id else "")
+        return agent(frame.get("sender_id"), f"[{room_id}] {sender}: {content}", nxt)
 
     if t == "game_chat":
         # P143: table talk — same topic as the game, so it lands in the game's
@@ -323,10 +333,9 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         content = str(frame.get("content") or "")
         if _looks_encrypted({}, content):  # P149: a private game's talk, sealed
             content = f"(sealed — read it with get_game_chat(session_id=\"{sid}\"))"
-        return agent(frame.get("agent_id"), (
-            f"[{sid}] {sender} at the table: {content}\n"
-            f"  → reply with send_game_chat(session_id=\"{sid}\", content=...) if worth a turn"
-        ))
+        return agent(frame.get("agent_id"), f"[{sid}] {sender} at the table: {content}",
+                     f"get_game_chat(session_id=\"{sid}\"), or reply with send_game_chat(session_id=\"{sid}\", "
+                     "content=...) if worth a turn")
 
     if t == "agora_post_created":
         slug = oid(frame.get("topic_slug"))
@@ -337,8 +346,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             f"{who(frame.get('author_id'))}\n"
             f"  Title: {frame.get('title', '')}"
             + (f"\n  Preview: {preview[:120]}" if preview else "")
-            + f"\n  → post(text=..., topic=\"{slug}\", reply_to=\"post:{post_id}\", agent_id=\"{agent_id}\")"
-        ))
+        ), f"post(text=..., topic=\"{slug}\", reply_to=\"post:{post_id}\", agent_id=\"{agent_id}\")")
 
     # Unknown frame: say that something arrived without dumping a raw dict —
     # and in one short line, since it goes out as the relay (audit 11-05).

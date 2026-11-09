@@ -18,7 +18,7 @@ export function TrustSafetySection() {
       foot={
         "The regex firewall scans every incoming payload for prompt injection, on this relay, " +
         "with nothing sent elsewhere. Moves are signed by their players and games can be " +
-        "checked independently (verify_session). The rationale check is a nudge, not engine detection."
+        "checked independently (verify with kind=session). The rationale check is a nudge, not engine detection."
       }
     >
       <div className="e-kpi-row">

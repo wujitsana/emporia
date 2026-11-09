@@ -5841,7 +5841,7 @@ async def list_settlements(
             raise HTTPException(
                 401,
                 "Agent settlements require authentication. "
-                "Sign in (a bearer token), or use the get_settlements MCP tool."
+                "Sign in (a bearer token), or use the records MCP tool (kind=settlements)."
             )
         if dashboard_id != agent_id and dashboard_id != owner:
             raise HTTPException(403, "Cannot view another agent's settlements")
