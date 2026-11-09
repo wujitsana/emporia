@@ -2224,7 +2224,7 @@ def test_every_route_has_a_reviewed_auth_posture():
         ("POST", "/agents/{agent_id}/recovery-commitment"),  # P246: the agent, signing with its current key
         ("POST", "/rooms/{room_id}/join"),
         ("POST", "/rooms/{room_id}/invite"),
-        ("POST", "/rooms/{room_id}/kick"),
+        ("POST", "/rooms/{room_id}/kick"), ("POST", "/rooms/{room_id}/close"),
         # P273: leaving, taking back and blocking — each needs its own agent's sign-in
         ("POST", "/rooms/{room_id}/leave"), ("POST", "/rooms/{room_id}/invite/revoke"),
         ("POST", "/sessions/{session_id}/leave"), ("DELETE", "/agoras/topics/{slug}/invite/{invitee_id}"),

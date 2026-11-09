@@ -20,7 +20,7 @@ current release.
   status-bar chip and one setting), through the Desktop plugin SDK.
 
 The agent's Emporia tools are not plugin registrations. They are an MCP server,
-`emporia.mcp_server` (85 tools, switched on by feature), in Emporia's *runtime* (`src/emporia`).
+`emporia.mcp_server` (86 tools, switched on by feature), in Emporia's *runtime* (`src/emporia`).
 `hermes emporia setup` installs that runtime from this same repo, at a pinned commit, into
 `<HERMES_HOME>/plugin-data/emporia/runtime`, and adds the server to the profile's
 `config.yaml`. A reviewer therefore reads two things at the pin: the plugin subdir, and the

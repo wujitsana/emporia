@@ -110,6 +110,54 @@ def test_log_verify_takes_a_key_directory_for_an_agent_that_is_not_hermes(monkey
     assert parsed.dir == "/x" and parsed.name == ""
 
 
+# ── close_room ──────────────────────────────────────────────────────────────────────────────
+
+def test_a_creator_closes_its_room_and_the_history_stays():
+    from datetime import UTC, datetime
+
+    from fastapi.testclient import TestClient
+
+    from emporia import autonomy, features, relay_server as rs, wire
+    from emporia.identity import sign
+    from tests.test_emporia import _register_keyed, _signed_room, _stable_of
+
+    client = TestClient(rs.app, client=("127.0.0.1", 51234))
+    for n in ("cl_owner", "cl_member", "cl_late"):
+        _register_keyed(client, n)
+    h = lambda n: {"x-emporia-agent-id": n}                                   # noqa: E731
+    room = client.post("/rooms", json=_signed_room("cl_owner", {"name": "cl room"}), headers=h("cl_owner")).json()
+    rid = room["room_id"]
+    assert client.post(f"/rooms/{rid}/join", json={"agent_id": "cl_member"}, headers=h("cl_member")).status_code == 200
+    from emporia import rooms as rooms_db
+    rooms_db.post_message(rid, "cl_owner", "before closing", db_path=rs.DATABASE_PATH)
+
+    def body(who="cl_owner"):
+        at = datetime.now(UTC).isoformat()
+        return {"at": at, "signature": sign(wire.signed_room_close_payload(rid, at, _stable_of(who)), who)}
+
+    assert client.post(f"/rooms/{rid}/close", json=body("cl_member"), headers=h("cl_member")).status_code in (401, 403)
+    forged = body()
+    forged["signature"] = "A" * 86
+    assert client.post(f"/rooms/{rid}/close", json=forged, headers=h("cl_owner")).status_code in (400, 401, 403)
+    done = client.post(f"/rooms/{rid}/close", json=body(), headers=h("cl_owner"))
+    assert done.status_code == 200 and done.json()["removed"] == ["cl_member"], done.text
+    got = client.get(f"/rooms/{rid}", headers=h("cl_owner")).json()
+    assert got["closed"] is True and got["members"] == ["cl_owner"]
+    assert [a["act"] for a in got["signed_acts"]][-1] == "close"
+    # nobody joins or is invited again; closing twice says so; the history is still there
+    assert client.post(f"/rooms/{rid}/join", json={"agent_id": "cl_late"}, headers=h("cl_late")).status_code == 403
+    assert client.post(f"/rooms/{rid}/join", json={"agent_id": "cl_member"}, headers=h("cl_member")).status_code == 403
+    assert client.post(f"/rooms/{rid}/close", json=body(), headers=h("cl_owner")).status_code == 409
+    msgs = client.get(f"/rooms/{rid}/messages", headers=h("cl_owner"))
+    assert msgs.status_code == 200 and "before closing" in msgs.text
+    # the signed acts check out, and put the creator alone in the room
+    from emporia.identity import get_public_key_hex, room_members_by_acts, signing_key_for
+    keys = {n: get_public_key_hex(n) for n in ("cl_owner", "cl_member")}
+    assert room_members_by_acts(got, lambda a: keys[a]) == {"cl_owner"}
+    assert "close_room" in features.BY_NAME["rooms_host"].tools and "close_room" in autonomy.WRITE_TOOLS
+    assert signing_key_for
+
+
 def test_doctor_never_prints_an_empty_dashboard_tab_section(capsys):
     from emporia import cli
     for compact in (False, True):

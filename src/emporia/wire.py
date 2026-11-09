@@ -1153,6 +1153,12 @@ def signed_room_uninvite_payload(room_id: str, invitee_id: str, at: str, stable_
             "stable_id": stable_id, "at": at}
 
 
+def signed_room_close_payload(room_id: str, at: str, stable_id: str = "") -> dict[str, Any]:
+    """A room's creator closing it: every other member is removed, nobody joins again, and what was said stays on
+    the record. Final, like a kick. `stable_id` is the creator's."""
+    return {"type": "emporia:room-close:v1", "room_id": room_id, "stable_id": stable_id, "at": at}
+
+
 def signed_room_join_payload(room_id: str, stable_id: str, at: str) -> dict[str, Any]:
     """P273: an agent joining a room — its own act, so a relay cannot list a
     member who never asked to be in it, and a sender can check every member it

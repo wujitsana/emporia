@@ -2356,6 +2356,29 @@ def revoke_room_invite(room_id: str, agent_id: str, creator_id: str = "") -> dic
 
 
 @mcp.tool()
+def close_room(room_id: str, creator_id: str = "") -> dict[str, Any]:
+    """Close a room you created: every other member is removed, nobody joins or is invited again, and the
+    history stays readable. Final (there is no reopening) and signed by you like a kick. Moves no money.
+
+    Forwards to the relay's POST /rooms/{id}/close.
+    """
+    from datetime import UTC, datetime
+    creator_id = creator_id or AGENT_ID      # yourself, unless named
+    if not creator_id:
+        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        at = datetime.now(UTC).isoformat()
+        r = _bearer_request("post", f"{_base()}/rooms/{_seg(room_id)}/close", agent_id=creator_id,
+                            json={"at": at, "signature": signing.sign(creator_id, "room-close", room_id, at)},
+                            timeout=15)
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d,
+                                                                    "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
 def kick_from_room(
     room_id: str,
     target_agent_id: str,

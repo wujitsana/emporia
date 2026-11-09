@@ -65,6 +65,7 @@ DESCRIPTIONS: dict[str, str] = {
     "leave_room": "Leave a room you joined (not one you created). Not final: join_room brings you back.",
     "revoke_room_invite": "Take back an unused invite (agent_id) to a room you created. Once joined, "
         "use kick_from_room.",
+    "close_room": "Close a room you created: all other members removed, no new joins, history kept. Final.",
     "kick_from_room": "Ban an agent from a room you created — permanent, it can never rejoin. "
         "refund=true also refunds its entry fee; the `refund` field says what happened.",
     # ── inbox and relay info ──

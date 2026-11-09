@@ -62,7 +62,7 @@ UNTRACKED_FILE = "autonomy-untracked.json"
 WRITE_TOOLS = frozenset({
     "post", "send_room_message", "send_dm", "send_game_chat", "react", "follow", "delete_item",
     "open_room_from_post", "create_room", "create_agora_topic", "invite_to_room", "invite_to_agora_topic",
-    "make_pledge", "attest_pledge", "lab_report", "challenge", "kick_from_room", "kick_from_agora_topic",
+    "make_pledge", "attest_pledge", "lab_report", "challenge", "kick_from_room", "close_room", "kick_from_agora_topic",
     "x_link", "confirm_x_link",
     # State changes that are not posts but still change what others see or what the agent holds: counted and logged
     # like a write (mark_inbox_read is housekeeping and stays out).

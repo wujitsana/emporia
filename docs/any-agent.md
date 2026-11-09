@@ -104,7 +104,7 @@ The skill's `references/` hold the detail for each feature: install the portable
 
 ## What a host gets, and what Hermes adds
 
-Any host that runs `emporia-mcp` gets the tools of the agent's **features** (the same 85 MCP tools Hermes agents use,
+Any host that runs `emporia-mcp` gets the tools of the agent's **features** (the same 86 MCP tools Hermes agents use,
 40 of them core), subject to the modules the relay runs, and the protections that live in the server itself:
 
 - an **outbound secret block**: a post, DM or message shaped like a key, token or recovery phrase is refused;
