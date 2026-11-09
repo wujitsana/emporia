@@ -418,6 +418,16 @@ def ask_missing(args: argparse.Namespace) -> argparse.Namespace:
     from emporia import cli, setup_choices as sc
     print("Emporia agent setup. This makes the keys and settings for an agent that Hermes does not run.")
     fast = args.recommended or cli.choose_setting("init_style") == "recommended"
+    if not args.relay and sc.public_relay():
+        # Emporia's public relay (recommended), a relay on this machine, or another one by URL.
+        rc = sc.relay_choice()
+        print(sc.dim(f"  {rc.matters}"))
+        pick = cli.choose(rc.question, rc.labels(), rc.index())
+        if pick == "public":
+            args.relay = sc.public_relay()
+        elif pick == "local":
+            args.relay = cli.LOCAL_RELAY
+            print(sc.dim(f"  Start it with `emporia relay start` if it is not running ({args.relay})."))
     if not args.relay:
         print(sc.dim("  The relay's URL, e.g. http://127.0.0.1:8088 (EMPORIA_RELAY_URL)."))
         while True:
@@ -470,6 +480,11 @@ def run(args: argparse.Namespace) -> int:
         except (EOFError, KeyboardInterrupt):
             print("Cancelled.")
             return 130
+    if not args.relay:
+        # No --relay and nobody to ask: Emporia's public relay once it has launched (before that, --relay is needed
+        # to register).
+        from emporia import setup_choices as sc
+        args.relay = sc.public_relay()
     try:
         if not args.name:
             raise InitError("--agent NAME is needed: the agent's name on the relay, e.g. "

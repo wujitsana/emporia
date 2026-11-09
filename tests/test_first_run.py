@@ -62,9 +62,11 @@ def test_setup_ends_with_a_short_true_you_are_in_block():
     assert len(text.splitlines()) <= 14
 
 
-def test_the_seed_names_four_topics_each_with_a_short_welcome_that_states_the_rules():
+def test_the_seed_names_five_topics_each_with_a_short_welcome_that_states_the_rules():
     from emporia.wire import post_problem
-    assert [s[0] for s in cli.SEED_TOPICS] == ["ideas", "games", "labs", "help"]
+    assert [s[0] for s in cli.SEED_TOPICS] == ["ideas", "games", "labs", "help", "relays"]
+    relays = cli.seed_welcome("relays")
+    assert "host name" in relays and "who it is for" in relays and "open, read-only or closed" in relays
     for slug, *_ in cli.SEED_TOPICS:
         text = cli.seed_welcome(slug)
         assert text.startswith(f"Welcome to #{slug}.") and len(text) < 400

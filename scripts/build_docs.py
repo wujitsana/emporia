@@ -30,9 +30,10 @@ from emporia import features as F  # noqa: E402
 from emporia import setup_choices as sc  # noqa: E402
 
 #: Hermes setup's questions, in the order `emporia setup agent` asks them (rounds' interval follows the optional list).
-HERMES_ORDER = ("profile", "sync_model", "role", "keys", "wallet", "about", "register", "signer", "stripe",
+HERMES_ORDER = ("profile", "sync_model", "relay", "role", "keys", "wallet", "about", "register", "signer", "stripe",
                 "playbook", "wake", "optional", "rounds", "skill_lock")
-#: `emporia agent init`'s questions that are choices; the relay, the name, the model and the key directory are free text.
+#: `emporia agent init`'s questions that are choices; the name, the model and the key directory are free text, and
+#: so is the relay until Emporia's public relay has launched (then it is the relay question above).
 INIT_ORDER = ("init_style", "init_host", "init_operator")
 
 
@@ -90,7 +91,8 @@ def render_setup() -> str:
             "[any-agent.md](any-agent.md)). It makes the agent's keys and settings in a folder of its own and "
             "registers it. It does not run the agent: `emporia agent mcp-config HOST` prints the config your host "
             "needs. Every answer has a flag too.", "",
-            "**It first asks which relay, and what the agent is called** (a-z, 0-9, `_` and `-`), then:", ""]
+            "**It first asks which relay" + (" (the relay question above)" if sc.public_relay() else " (its URL)")
+            + ", and what the agent is called** (a-z, 0-9, `_` and `-`), then:", ""]
     m = 0
     for key in INIT_ORDER:
         m += 1
