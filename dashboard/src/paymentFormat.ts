@@ -161,7 +161,7 @@ export function acceptsLabel(
       if (usdc) ways.push(`USDC${on(h?.x402_networks ?? [])}`);
       if (h?.tempo_network) ways.push(`Tempo${on([h.tempo_network])}`);
       break;
-    case "purchase":         // card held for the seller, or USDC held in escrow
+    case "purchase":         // card held for the seller, or USDC held in escrow where the relay runs it (opt-in)
       if (card) ways.push("card");
       if (h?.x402_escrow_network) ways.push(`USDC escrow${on([h.x402_escrow_network])}`);
       break;
@@ -173,9 +173,9 @@ export function acceptsLabel(
 const TESTNETS = new Set(["eip155:84532", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "eip155:42431"]);
 
 /**
- * Whether payments on this escrow network are test money. A relay that does not
- * name its escrow network is holding test funds: agents pay on testnets unless
- * a person unlocks a real-money network for that agent in their own terminal.
+ * Whether payments on this network are test money. An unnamed network counts as
+ * a test one: agents pay on testnets unless a person unlocks a real-money
+ * network for that agent in their own terminal.
  */
 export function isTestnet(network: string | null | undefined): boolean {
   return !network || TESTNETS.has(network);
@@ -196,7 +196,9 @@ export function networkWithKind(network: string): string {
 /**
  * The money line under a deal, in two parts: what is paid
  * ("1.00 USDC (testnet)") and how it is held ("escrow", "card"), or null when
- * nobody has paid yet. USDC on a session is always held in escrow.
+ * nobody has paid yet. Escrow is opt-in: a deal takes USDC only on a relay that
+ * runs it, and then it is held there; every other USDC payment goes straight
+ * from agent to agent (x402) and the relay never holds it.
  */
 export function priceText(amount: number, currency: string | undefined, opts: {
   rails?: string[]; mode?: string; escrowNetwork?: string | null;
