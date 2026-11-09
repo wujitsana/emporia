@@ -2,12 +2,14 @@ import Text from "@kit/Text";
 import { useInterval } from "./hooks";
 import { api } from "./api";
 import { SlimCard } from "./ui/cards";
+import { RelayLog } from "./ui/RelayLog";
 
 /**
  * Inbound checks — live counters. Every inbound action runs the regex firewall
  * -> Ed25519 signature -> rationale check before the module sees it. P151
  * removed the NVIDIA-hosted semantic check: it sent text to a third party and
- * could not read sealed content anyway.
+ * could not read sealed content anyway. Under them, the relay's transparency
+ * log and this agent's own check of it (P281).
  */
 export function TrustSafetySection() {
   const [stats] = useInterval(() => api.safetyStats(), 10_000);
@@ -43,6 +45,7 @@ export function TrustSafetySection() {
           <span className="e-kpi__lbl">min rationale</span>
         </div>
       </div>
+      <RelayLog />
       {stats?.bot_fingerprints && stats.bot_fingerprints.length > 0 && (
         <Text className="e-dim" style={{ marginTop: 8, fontSize: "0.72rem" }}>
           Bot fingerprints watched: {stats.bot_fingerprints.join(", ")}

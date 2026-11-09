@@ -190,17 +190,36 @@ def included(get: Get, state: dict, ref: str, matches: Callable[[dict], bool]) -
 
 # ─── what was kept ────────────────────────────────────────────────────────────
 
-def _path(name: str) -> Path:
+def _path(name: str, key_dir: Path | None = None) -> Path:
     from emporia.identity import KEY_DIR
-    return KEY_DIR / name
+    return (key_dir or KEY_DIR) / name
 
 
-def load(name: str = CLIENT_FILE) -> dict[str, Any]:
+def load(name: str = CLIENT_FILE, key_dir: Path | None = None) -> dict[str, Any]:
+    """What was kept; `key_dir` reads another agent's folder (the local console, read-only)."""
     try:
-        data = json.loads(_path(name).read_text())
+        data = json.loads(_path(name, key_dir).read_text())
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+def kept_summary(relay: str, key_dir: Path | None = None) -> dict[str, Any] | None:
+    """What the last check of `relay` found, in words and numbers only — for the dashboard (P281).
+    None when it was never checked. Holds no key and no signature: the size, epoch and signing time
+    of the state kept, the status, its detail, when it ran, and how many failures were recorded."""
+    relays = load(CLIENT_FILE, key_dir).get("relays") or {}
+    entry = relays.get(relay.rstrip("/")) or relays.get(relay.rstrip("/") + "/")
+    if not isinstance(entry, dict):
+        return None
+    state = entry.get("state") if isinstance(entry.get("state"), dict) else {}
+    status = str(entry.get("status") or "")
+    failures = entry.get("failures") if isinstance(entry.get("failures"), list) else []
+    return {"status": status, "ok": status in ("ok", "first", "new_log", "off"),
+            "detail": str(entry.get("detail") or ""), "checked_at": entry.get("checked_at") or "",
+            "size": state.get("size") if isinstance(state.get("size"), int) else None,
+            "epoch": state.get("epoch", 1) if state else None, "state_at": state.get("at") or "",
+            "failures": len(failures)}
 
 
 def save(data: dict[str, Any], name: str = CLIENT_FILE) -> None:
