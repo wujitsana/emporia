@@ -120,6 +120,146 @@ optional_env:
       never a provider endpoint or key, and it is shown as declared, never verified.
     prompt: "Declare the model name on what this agent writes? (on/off, default on)"
     password: false
+  # Person-facing settings (key_guard's person-only list, setup's choices): declared so Hermes's setup
+  # and dashboard show them with their meaning. `hermes emporia setup` and the `emporia` commands (or
+  # `/emporia` in chat) write them; the agent's own tools never may (key_guard). Rounds are a Hermes
+  # cron job (`emporia rounds`), not a setting.
+  - name: EMPORIA_FEATURES
+    description: "Which optional features (and so which MCP tools) the agent has: a comma list; each is a choice you can undo. `emporia features on|off NAME`; applies on the next MCP start."
+    prompt: "Optional features (comma-separated names; empty for the defaults)"
+    password: false
+  - name: EMPORIA_SKILL_LOCK
+    description: "Lock the agent's payment skills against rewriting by the agent (Hermes's own lock; you can still edit them). `emporia skill-lock on|off|status`."
+    prompt: "Lock payment skills? (on/off, default on)"
+    password: false
+  - name: EMPORIA_PLAYBOOK
+    description: "What the agent may do on its own: custom (its own instructions decide), player, merchant, scout, host or operator. Bounds, never its personality. `emporia agent playbook NAME`."
+    prompt: "Playbook preset (custom/player/merchant/scout/host/operator)"
+    password: false
+  - name: EMPORIA_PLAYBOOK_GAMES
+    description: "Playbook override: which games the agent may take (`emporia agent playbook`)."
+    prompt: "Playbook games (or empty)"
+    password: false
+  - name: EMPORIA_PLAYBOOK_ANSWERS
+    description: "Playbook override: whom the agent answers (`emporia agent playbook`)."
+    prompt: "Playbook answers (or empty)"
+    password: false
+  - name: EMPORIA_PLAYBOOK_SELLS
+    description: "Playbook override: whether and what the agent sells (`emporia agent playbook`)."
+    prompt: "Playbook sells (or empty)"
+    password: false
+  - name: EMPORIA_PLAYBOOK_BUYS
+    description: "Playbook override: whether and what the agent buys, within its spending limits (`emporia agent playbook`)."
+    prompt: "Playbook buys (or empty)"
+    password: false
+  - name: EMPORIA_PLAYBOOK_RUNS
+    description: "Playbook override: who runs its games, the model or the rules runner (`emporia agent playbook`)."
+    prompt: "Playbook runs (or empty)"
+    password: false
+  - name: EMPORIA_PLAYBOOK_PLEDGES
+    description: "Playbook override: whether the agent makes pledges (`emporia agent playbook`)."
+    prompt: "Playbook pledges (or empty)"
+    password: false
+  - name: EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY
+    description: "What the agent's unattended turns (rounds, relay-started) may spend a day, in cents. Default 0: they spend nothing."
+    prompt: "Unattended spending per day, in cents (default 0)"
+    password: false
+  - name: EMPORIA_GAMES_BY
+    description: "`runner`: the rules runner plays the agent's games (a house agent), so a model turn and the runner never both move. Empty: the model plays."
+    prompt: "Who plays its games (runner or empty)"
+    password: false
+  - name: EMPORIA_UNTRACKED_TURNS
+    description: "`person`: a host that gates its tools itself says turns without a tracked origin are the person's. Leave empty unless you run such a host."
+    prompt: "Untracked turns are the person's? (person or empty)"
+    password: false
+  - name: EMPORIA_CLIENT
+    description: "The host this agent declares on its signed card (hermes, claude-code, ...). A claim, never verified."
+    prompt: "Declared host (or empty)"
+    password: false
+  - name: EMPORIA_CLIENT_VERSION
+    description: "The version of the declared host. A claim, never verified."
+    prompt: "Declared host version (or empty)"
+    password: false
+  - name: EMPORIA_DISPLAY_NAME
+    description: "The agent's display name on its card and in lists."
+    prompt: "Display name (or empty)"
+    password: false
+  - name: EMPORIA_KEYS_DIR
+    description: "Where this agent's key files live (default: the profile's home/.hermes/keys). Keys stay out of the agent's reach."
+    prompt: "Key directory (or empty)"
+    password: false
+  - name: EMPORIA_KEY_STORAGE
+    description: "`env`: new keys go to the profile .env, which Hermes hides from the agent's tools; otherwise key files. `emporia identity store NAME --to env|files`."
+    prompt: "Where new keys go (env/files)"
+    password: false
+  - name: EMPORIA_X402_MAINNET
+    description: "Real money on mainnets. Person-only (`emporia wallet mainnet`); off by default, testnets only."
+    prompt: "Mainnet payments (on/off, default off)"
+    password: false
+  - name: EMPORIA_X402_PAY_NETWORKS
+    description: "Networks the agent may pay on (`emporia wallet limits`)."
+    prompt: "Payment networks (comma-separated)"
+    password: false
+  - name: EMPORIA_X402_MAX_PAYMENT_CENTS
+    description: "The most one payment may be, in cents (`emporia wallet limits`)."
+    prompt: "Max one payment, in cents"
+    password: false
+  - name: EMPORIA_X402_MAX_DAILY_CENTS
+    description: "The most the agent may pay in a day, in cents (`emporia wallet limits`)."
+    prompt: "Max per day, in cents"
+    password: false
+  - name: EMPORIA_PAYMENT_APPROVAL_CENTS
+    description: "Payments above this many cents wait for your yes (`emporia wallet limits`)."
+    prompt: "Ask me above, in cents"
+    password: false
+  - name: EMPORIA_SIGN_LIMITS
+    description: "Signing limits the signer enforces apart from the agent (`emporia signer`)."
+    prompt: "Signing limits (or empty)"
+    password: false
+  - name: EMPORIA_PAYOUT_ADDRESSES
+    description: "Addresses the agent's payouts may go to; set by you, never by the agent."
+    prompt: "Payout addresses (or empty)"
+    password: false
+  - name: EMPORIA_BACKUP_RELAYS
+    description: "Relays that keep a signed copy of the agent's moves so it can be restored (`emporia relay backup`)."
+    prompt: "Backup relays (comma-separated URLs, or empty)"
+    password: false
+  - name: EMPORIA_VISIT_POLICY
+    description: "Whether the agent may visit other relays: `ask` (default; each new relay needs your yes), `listed` (only the relays you list) or `linked` (also those its home relay links to). Agents never move themselves."
+    prompt: "Visit policy (ask/listed/linked, default ask)"
+    password: false
+  - name: EMPORIA_VISIT_RELAYS
+    description: "Relays the agent may visit without asking (comma-separated; `emporia visits`)."
+    prompt: "Allowed relays (comma-separated URLs, or empty)"
+    password: false
+  - name: EMPORIA_VISIT_DENY
+    description: "Relays the agent never reads or visits (comma-separated; `emporia visits`)."
+    prompt: "Denied relays (comma-separated URLs, or empty)"
+    password: false
+  - name: EMPORIA_PUBLISH_VISITS
+    description: "`1`: list the relays this agent visited on its public card. Default off."
+    prompt: "Publish visits? (1 or empty)"
+    password: false
+  - name: EMPORIA_IDENTITY_KEY_SOURCE
+    description: "Where the identity key is read from when it is linked rather than held (`emporia identity link`): a reference such as env:NAME, never the key."
+    prompt: "Identity key source (or empty)"
+    password: false
+  - name: EMPORIA_ENCRYPTION_KEY_SOURCE
+    description: "Where the encryption key is read from when linked: a reference, never the key."
+    prompt: "Encryption key source (or empty)"
+    password: false
+  - name: EMPORIA_X402_EVM_KEY_SOURCE
+    description: "Where the EVM wallet key is read from when linked: a reference, never the key."
+    prompt: "EVM key source (or empty)"
+    password: false
+  - name: EMPORIA_X402_SOLANA_KEY_SOURCE
+    description: "Where the Solana wallet key is read from when linked: a reference, never the key."
+    prompt: "Solana key source (or empty)"
+    password: false
+  - name: EMPORIA_X402_PHRASE_SOURCE
+    description: "Where the wallet recovery phrase is read from when linked: a reference, never the phrase."
+    prompt: "Phrase source (or empty)"
+    password: false
   # P201: the profile's secrets, declared so Hermes keeps them out of every
   # command and script the agent runs (its terminal, code, cron scripts). Set
   # by `emporia setup` in this profile's .env — never typed here.

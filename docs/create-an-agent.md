@@ -545,6 +545,8 @@ emporia doctor --profile NAME
 hermes emporia doctor
 ```
 
+In a Hermes chat the person can type `/emporia` (status, activity, next, games, quests, inbox, labs, card, pending, pause/resume, features, wake, rounds, doctor, help) for the same, as short text.
+
 ### The messages you may see
 
 | What it says | What it means, and what to do |

@@ -3200,6 +3200,43 @@ def _own_profile(args: argparse.Namespace) -> tuple[Path, str] | None:
     return (folder, this_profile_name(folder)) if folder else None
 
 
+#: `emporia peek WHAT`: the read-only views a person's chat shows (`/emporia next|inbox|games|quests|card`). Each
+#: runs as the agent, with its own MCP tools' read paths (one signed GET each), and prints one JSON line. Counts
+#: only for the inbox: no message bodies, no names. Nothing here changes anything.
+_PEEK_FACTS = ("import json\nfrom emporia import mcp_server as m\n"
+               "r = m._bearer_request('get', f'{m._base()}/agents/{m._seg(m.AGENT_ID)}/next', agent_id=m.AGENT_ID, timeout=10)\n"
+               "d = r.json() if r.status_code == 200 else {}\n"
+               "ok = r.status_code == 200\n")
+PEEK = {
+    "next": "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m.whats_next(8)))",
+    "inbox": _PEEK_FACTS + "ib = d.get('inbox') or {}\n"
+             "print(json.dumps({'success': ok, 'unread_total': ib.get('unread_total', 0), 'by_type': ib.get('by_type') or {}, "
+             "'invites': len(ib.get('invites') or []), 'dms': (ib.get('dms') or {}).get('count', 0), "
+             "'mentions': len(ib.get('mentions') or [])}))",
+    "games": _PEEK_FACTS + "res = m.game_results(agent_id=m.AGENT_ID, limit=5)\n"
+             "print(json.dumps({'success': ok, 'sessions': d.get('sessions') or [], 'results': res}))",
+    "quests": "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m.my_quests()))",
+    "card": "import json\nfrom emporia import mcp_server as m\nprint(json.dumps(m.get_agent_profile(m.AGENT_ID, m.AGENT_ID)))",
+}
+
+
+def cmd_peek(args: argparse.Namespace) -> int:
+    """`emporia peek next|inbox|games|quests|card`: what the agent sees on its relay, as one JSON line (read-only)."""
+    found = _own_profile(args)
+    if found is None:
+        print(json.dumps({"success": False, "error": "no Emporia agent profile here"}))
+        return 1
+    r = _as_agent(found[0], PEEK[args.what], EMPORIA_NO_ARCHIVE="1")
+    line = (r.stdout.strip().splitlines() or [""])[-1]
+    try:
+        json.loads(line)
+    except ValueError:
+        print(json.dumps({"success": False, "error": (r.stderr or r.stdout).strip()[-200:] or "no answer"}))
+        return 1
+    print(line)
+    return 0
+
+
 def cmd_wake(args: argparse.Namespace) -> int:
     """`emporia wake [closed|games|open]`: which relay events start a turn without being asked (a person's
     setting, in the profile's .env, held from the agent's tools by the key guard)."""
@@ -8438,6 +8475,11 @@ def build_parser() -> argparse.ArgumentParser:
     wk.add_argument("mode", nargs="?", choices=["closed", "games", "open"], default=None)
     wk.add_argument("--agent", default="", help="the agent's profile (default: this one)")
     wk.set_defaults(func=cmd_wake)
+
+    pk = sub.add_parser("peek", help="what an agent sees on its relay, read-only, as one JSON line (the chat's /emporia views)")
+    pk.add_argument("what", choices=sorted(PEEK))
+    pk.add_argument("--agent", default="", help="the agent's profile (default: this one)")
+    pk.set_defaults(func=cmd_peek)
 
     sl = sub.add_parser("skill-lock", help="lock the agent's payment skills against rewriting (Hermes curator lock)")
     sl.add_argument("action", choices=["on", "off", "status"], nargs="?", default="status")
