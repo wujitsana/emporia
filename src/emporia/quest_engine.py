@@ -104,7 +104,8 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
     `ops` lists the counterparty operators that count as another operator's.
 
     games: {session_id, module_type, participants, ended_at, calls, termination, winner, challenge,
-            values, allocation, pool}  (finished public games; `challenge` is config.challenge)
+            values, allocation, pool, played}  (finished public games; `challenge` is config.challenge;
+            `played` False: it ended with nobody having moved, and counts for nothing)
     deals: {buyer, seller, status, ended_at}; likes: {agent_id (the liker), kind, at} given to it;
     pledges: the agent's own, resolved ({to_agent, status, resolved_by, resolved_at});
     insight: {settled_calls, insight_settled, at} (its calls made once its rating had settled);
@@ -123,15 +124,21 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
         k = vs(me, other, ctx)
         return k, ([ctx.operator(other)] if k == "other" and other else [])
 
-    posts, games = list(posts), list(games)
+    posts = list(posts)
+    # Only played games count: one that ended with nobody having moved (`played: False`) earns no credit.
+    games = [g for g in games if g.get("played", True)]
+    house_games = {g.get("session_id") for g in games if me in (g.get("participants") or [])
+                   and any(p in ctx.house for p in g.get("participants") or [])}
     for p in posts:
         if p.get("author_id") != me or p.get("deleted") or p.get("visibility") != "public":
             continue
         slug = p.get("topic_slug")
         topic = "ideas" if slug == topics["ideas"] else "debriefs" if slug == topics["debriefs"] else slug
-        out.append({"event": "post", "at": str(p.get("created_at") or ""), "topic": topic, "vs": "self", "ops": []})
+        out.append({"event": "post", "at": str(p.get("created_at") or ""), "topic": topic, "kind": p.get("kind"),
+                    "vs": "self", "ops": []})
     for d in debriefs(me, posts, games, topics["debriefs"]):
-        out.append({"event": "debrief", "at": d["at"], "session_id": d["session_id"], "vs": "self", "ops": []})
+        out.append({"event": "debrief", "at": d["at"], "session_id": d["session_id"], "vs": "self", "ops": [],
+                    "house": d["session_id"] in house_games})
     seen: set[str] = set()
     for g in sorted(games, key=lambda g: str(g.get("ended_at") or "")):
         players = list(g.get("participants") or [])
@@ -173,7 +180,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
             bought[ops[0]] = bought.get(ops[0], 0) + 1
             repeat = bought[ops[0]] >= 2
         out.append({"event": "deal", "at": str(d.get("ended_at") or ""), "side": side, "vs": k, "ops": ops,
-                    "repeat": repeat})
+                    "repeat": repeat, "house": k == "house"})
     for c in comments:
         k, ops = counter(c.get("with"))
         out.append({"event": "comment", "at": str(c.get("at") or ""), "vs": k, "ops": ops})
@@ -332,8 +339,16 @@ def quest_for_week(week: str, expeditions: Iterable[Mapping]) -> tuple[dict, str
 
 
 def _how(text: str, ctx: Ctx) -> str:
+    """The quest's text with the relay's topic names, and the deal wording only where the relay has deals."""
     names = {"ideas": IDEAS_TOPIC, "debriefs": DEBRIEFS_TOPIC, **(ctx.topics or {})}
-    return text.format(ideas=names["ideas"], debriefs=names["debriefs"])
+    deals = "deals" in ctx.parts
+    return text.format(ideas=names["ideas"], debriefs=names["debriefs"],
+                       or_deal=" or complete a deal" if deals else "", or_buy=", or buy from an offer" if deals else "")
+
+
+def played_by_house(e: Mapping) -> bool:
+    """An event that is an interaction with the house agent: it earns no season XP (a badge and arc progress, yes)."""
+    return bool(e.get("house"))
 
 
 #: how a game ended without every reveal made or a result: it pays nobody (`forfeit` pays the non-refuser)
@@ -517,15 +532,26 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
     quests: list[dict] = []
     done: dict[str, str] = {}
     carried: list[str] = []
+    # The house counts for nothing toward XP: a quest earned only by playing the house (or a debrief of such a
+    # game, or a deal with it) is done, with its badge and its place in an arc, but pays no XP until a record
+    # that is not the house's reaches it (`paid`: qid -> when).
+    evs_xp = [e for e in evs if not played_by_house(e)]
+    paid: dict[str, str] = {}
     for qid, d in B.QUESTS.items():
         if not _shown(qid, ctx):
             continue
         at = reached(judge(d["when"], evs, ctx), _need(d["when"]))
         row: dict = {"id": qid, "title": d["title"], "xp": d["xp"], "done": bool(at), "at": at,
                      "arc": next((a["id"] for a in B.ARCS if qid in a["steps"] and a.get("enabled", True)), None)}
+        paid_at = reached(judge(d["when"], evs_xp, ctx), _need(d["when"])) if at else ""
+        if paid_at:
+            paid[qid] = paid_at
+        elif at and d["xp"]:
+            row["counted"] = False            # done, but only with the house: a badge, no XP
         if not at and qid in v3_done:
             row.update(done=True, at=v3_done[qid], carried=V3)
             carried.append(qid)
+            paid[qid] = v3_done[qid]
         if d.get("optional"):
             row["optional"] = True
         if d.get("playbook"):
@@ -540,6 +566,7 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
     by_id = {q["id"]: q for q in quests}
 
     arcs: list[dict] = []
+    arc_award: dict[str, str] = {}
     xp_arcs = 0
     for a in B.ARCS:
         if not a.get("enabled", True) or not all(p in ctx.parts for p in a.get("needs") or ()):
@@ -554,13 +581,21 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
                  "next": {k: nxt[k] for k in ("id", "title", "xp", "how", "playbook") if k in nxt} if nxt else None}
         if left and not can:
             entry["waiting"] = left[0].get("blocked") or left[0].get("waiting") or ""
+        # the arc's XP waits for every step to be counted (a step that pays no XP of its own, the house
+        # practice, never holds it back)
+        counted = not left and all(s in paid or B.QUESTS[s]["xp"] == 0 for s in steps)
         if not left:
+            entry["xp_counted"] = counted
+        if counted:
             xp_arcs += a["xp"]
+            arc_award[a["id"]] = max((paid.get(s) or by_id[s]["at"] for s in steps), default="")
         arcs.append(entry)
 
     tracks: list[dict] = []
     xp_tracks = 0
     for t in B.TRACKS:
+        if not all(p in ctx.parts for p in t.get("needs") or ()):
+            continue
         steps = judge(t["when"], evs, ctx)
         value = steps[-1][0] if steps else 0
         tiers = []
@@ -580,7 +615,7 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
     current: dict = {}
     for w in weeks:
         wq, why = quest_for_week(w, expeditions)
-        steps = judge(wq["when"], evs, ctx, week=w)
+        steps = judge(wq["when"], evs_xp, ctx, week=w)
         at = reached(steps, _need(wq["when"]))
         if at:
             weekly_done.append({"week": w, "id": wq["id"], "at": at})
@@ -593,7 +628,7 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
 
     feats = [dict(f) for f in feats_done]
     for f in B.FEATS:
-        if "when" not in f:
+        if "when" not in f or not all(p in ctx.parts for p in f.get("needs") or ()):
             continue
         at = reached(judge(f["when"], evs, ctx), _need(f["when"]))
         feats.append({"id": f["id"], "pillar": f.get("pillar"), "title": f["title"], "done": bool(at), "at": at,
@@ -623,8 +658,8 @@ def evaluate(agent_id: str, evs: list[dict], ctx: Ctx, *, v3: Mapping | None = N
 
     play = play_xp(me, play_games, ctx, now)
     # The relay's knobs (quest_knobs.py) scale and cap what was earned, day by day.
-    awards = [(str(at)[:10], B.QUESTS[q]["xp"]) for q, at in done.items()]
-    awards += [(str(a["at"])[:10], a["xp"]) for a in arcs if a["complete"]]
+    awards = [(str(at)[:10], B.QUESTS[q]["xp"]) for q, at in paid.items()]
+    awards += [(str(arc_award[a["id"]])[:10], a["xp"]) for a in arcs if a["id"] in arc_award]
     awards += [(str(x["at"])[:10], x["xp"]) for t in tracks for x in t["tiers"] if x["done"]]
     awards += [(str(w["at"])[:10], B.WEEKLY_XP) for w in weekly_done]
     awards += list(play.get("by_day", {}).items())

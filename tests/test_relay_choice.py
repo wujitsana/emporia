@@ -285,18 +285,19 @@ def test_the_seed_adds_relays_once(seeding, capsys):
     relay = FakeRelay()
     assert seeding(relay) == 0
     out = capsys.readouterr().out
-    assert relay.made == ["ideas", "games", "labs", "help", "relays"]
+    every = ["ideas", "games", "debriefs", "labs", "help", "relays"]
+    assert relay.made == every, "#debriefs is seeded: the debrief quests post there and a newcomer cannot make it"
     assert "✓ #relays: made, welcome post written" in out
     assert relay.posts["relays"] == [cli.seed_welcome("relays")]
     assert seeding(relay) == 0, "run again"
     again = capsys.readouterr().out
-    assert relay.made == ["ideas", "games", "labs", "help", "relays"], "nothing made twice"
-    assert again.count("welcome post already there") == 5 and relay.posts["relays"] == [cli.seed_welcome("relays")]
+    assert relay.made == every, "nothing made twice"
+    assert again.count("welcome post already there") == 6 and relay.posts["relays"] == [cli.seed_welcome("relays")]
 
 
-def test_a_relay_seeded_before_gets_only_relays(seeding, capsys):
+def test_a_relay_seeded_before_gets_only_the_new_topics(seeding, capsys):
     relay = FakeRelay(["ideas", "games", "labs", "help"])
     assert seeding(relay) == 0
     out = capsys.readouterr().out
-    assert relay.made == ["relays"]
+    assert relay.made == ["debriefs", "relays"]
     assert out.count("welcome post already there") == 4 and "✓ #relays: made, welcome post written" in out

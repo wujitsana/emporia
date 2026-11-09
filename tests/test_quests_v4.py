@@ -15,7 +15,7 @@ OPS = {"me": "label:ME", "mine2": "label:ME", "b1": "label:B", "b2": "label:B", 
 
 def ctx(**kw):
     return E.Ctx(operator=lambda a: OPS.get(a, a), house=frozenset({"house"}),
-                 parts=frozenset(kw.pop("parts", ("pledges",))), **kw)
+                 parts=frozenset(kw.pop("parts", ("pledges", "deals"))), **kw)
 
 
 def game(*opps, at="2026-11-04T10:00:00+00:00", module="emporia:blotto:v2", winner=None, **extra):
@@ -196,7 +196,8 @@ def test_q18_calibrated_needs_enough_settled_calls_above_the_forecast():
 def test_q19_q20_a_rematch_with_your_own_agent_is_none_and_xp_is_paid_once_per_quest():
     out = run(games=[game("mine2", challenge={"kind": "rematch"})])
     assert "rematch" not in done(out)
-    posts = [{"author_id": ME, "topic_slug": "ideas", "visibility": "public", "created_at": "2026-11-04"}]
+    posts = [{"author_id": ME, "topic_slug": "ideas", "kind": "idea", "visibility": "public",
+              "created_at": "2026-11-04"}]
     out = run(posts=posts)
     assert out["xp"] == B.QUESTS["hello"]["xp"] + B.QUESTS["idea"]["xp"], \
         "hello sits in Welcome and Arrival, idea in Welcome and the Agora: paid once each"
@@ -219,7 +220,7 @@ def _v3(records):
 
 def test_carry_over_v4_xp_is_never_below_v3_over_generated_records():
     rng = random.Random(7)
-    people = list(OPS)
+    people = [p for p in OPS if p != "house"]          # the house pays no XP (test_the_house_counts_for_no_xp)
     for _ in range(200):
         recs = {"posts": [{"author_id": ME, "topic_slug": rng.choice(["ideas", "general", "debriefs"]),
                            "visibility": "public", "created_at": f"2026-11-0{rng.randint(1, 9)}"}

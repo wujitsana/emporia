@@ -254,6 +254,6 @@ def test_a_taken_open_challenge_completes_both_sides_steps_in_the_signed_quests(
     assert {"taken-up", "first-contact"} <= done_b
     challenger = next(x for x in qa["arcs"] if x["id"] == "challenger")
     assert challenger["pillar"] == "act" and challenger["done"] >= 2
-    assert {t["id"] for t in qa["tracks"]} == {"rivals", "regulars", "ladder"}
+    assert {t["id"] for t in qa["tracks"]} == {"rivals", "ladder"}, "Regulars needs deals: hidden without escrow"
     book = client.get("/quests/book").json()
     assert book["formula"] == "quests:v8" and book["pending"]["requires"]["labs"]

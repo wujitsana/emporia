@@ -301,10 +301,24 @@ async def list_sessions(request: Request, status: str | None = None, module_type
         except ValueError:      # one damaged row is left out, not the whole list
             continue
     return {"sessions": [s for s in sessions if rs._session_viewer_allowed(s, caller)]}
-def open_challenges(module_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+def _poster_idle_hours() -> float:
+    """How long a poster may go without any relay activity before its open challenges leave the board
+    (EMPORIA_CHALLENGE_IDLE_HOURS, default 6; 0 keeps them all): a taker would only wait on a game nobody plays."""
+    try:
+        return max(0.0, float(os.getenv("EMPORIA_CHALLENGE_IDLE_HOURS", "").strip() or 6))
+    except ValueError:
+        return 6.0
+
+
+def open_challenges(module_type: str | None = None, limit: int = 50,
+                    viewer: str | None = None) -> list[dict[str, Any]]:
     """quests:v4: the board — open challenges waiting for a player, public, unexpired, with a seat,
-    newest first, as `challenges.summary` shows them."""
+    newest first, as `challenges.summary` shows them. A poster idle for `_poster_idle_hours()` (no post, move, message or
+    like on the relay) is left off, except for the poster itself (`viewer`)."""
     from emporia import challenges as C
+    from emporia.routes.operator import _last_active
+    idle_s = _poster_idle_hours() * 3600
+    active: dict[str, bool] = {}
     q = ("SELECT * FROM sessions WHERE status = 'waiting' AND config_json LIKE '%\"challenge\"%'"
          + (" AND module_type = ?" if module_type else "") + " ORDER BY created_at DESC LIMIT 400")
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -320,6 +334,20 @@ def open_challenges(module_type: str | None = None, limit: int = 50) -> list[dic
         if (not ch or ch["kind"] != "open" or C.expired(ch) or not rs._session_viewer_allowed(s, None)
                 or len(s["participants"]) >= module.MAX_PARTICIPANTS):
             continue
+        poster = (s["participants"] or [""])[0]
+        if idle_s and poster and poster != viewer:
+            if poster not in active:
+                with rs.DB_LOCK, rs.get_db() as conn:
+                    last = _last_active(conn, poster)
+                try:
+                    then = datetime.fromisoformat(str(last).replace("Z", "+00:00")) if last else None
+                except ValueError:
+                    then = None
+                if then is not None and then.tzinfo is None:
+                    then = then.replace(tzinfo=UTC)
+                active[poster] = then is None or (datetime.now(UTC) - then).total_seconds() <= idle_s
+            if not active[poster]:
+                continue
         out.append({**C.summary(s), "seats": {"taken": len(s["participants"]), "max": module.MAX_PARTICIPANTS}})
         if len(out) >= limit:
             break
@@ -327,11 +355,12 @@ def open_challenges(module_type: str | None = None, limit: int = 50) -> list[dic
 
 
 @router.get("/challenges")
-async def list_challenges(module_type: str | None = None, limit: int = 20):
+async def list_challenges(request: Request, module_type: str | None = None, limit: int = 20):
     """quests:v4: open challenges anyone may take with join_session (`docs/proposals/quests-v4.md` §5.3).
-    A direct, rematch or ladder challenge is not listed: its opponent sees it in its inbox."""
+    A direct, rematch or ladder challenge is not listed: its opponent sees it in its inbox. A poster that has
+    been idle for hours (EMPORIA_CHALLENGE_IDLE_HOURS) is left off for everyone else."""
     return {"scope": "this_relay", "module_type": module_type,
-            "challenges": open_challenges(module_type, rs._clamp_limit(limit)),
+            "challenges": open_challenges(module_type, rs._clamp_limit(limit), rs._dashboard_agent_id(request)),
             "note": "join_session(session_id) takes one; games against your own operator's agents or the "
                     "house count for no quest or ladder"}
 

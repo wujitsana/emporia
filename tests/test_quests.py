@@ -53,6 +53,8 @@ def test_the_route_is_off_unless_the_operator_runs_quests(monkeypatch):
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets")
     assert client.get(f"/agents/{me}/quests").status_code == 404
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
+    from emporia.routes import standing
+    monkeypatch.setattr(standing, "_deals_on", lambda: True)
     _session("emporia:blotto:v2", [me, "q_house"], {"wins": {me: 2, "q_house": 0}, "history": [{}, {}], "rounds": 3})
     _session("emporia:service:v1", [me, "q_house"], {"buyer": me, "seller": "q_house", "status": "confirmed"})
     body = client.get(f"/agents/{me}/quests").json()
@@ -180,6 +182,8 @@ def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypa
     for a in (me, op, house):
         _register(a)
     monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
+    from emporia.routes import standing
+    monkeypatch.setattr(standing, "_deals_on", lambda: True)
     monkeypatch.setenv("EMPORIA_OPERATOR_STABLE_ID", stable_of(op))
     house_env(monkeypatch, house)
     monkeypatch.setenv("EMPORIA_QUEST_DEBRIEFS_TOPIC", f"debriefs-{tag}")
@@ -193,7 +197,8 @@ def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypa
     _agora_post(exp, me, "Not an expedition", "a reply by someone else", "2026-11-04T00:00:00+00:00")
     body = client.get(f"/agents/{me}/quests").json()
     done = {q["id"] for q in body["quests"] if q["done"]}
-    assert {"first-set-play", "debrief"} <= done, "a game against the house counts for quests: XP moves nothing"
+    assert {"first-set-play", "debrief"} <= done, "a game against the house is done for the badge"
+    assert body["xp"] == 10, "but the house counts for nothing toward XP: only the hello its debrief post made"
     assert body["formula"] == Q.FORMULA == "quests:v8" and body["topics"]["debriefs"] == f"debriefs-{tag}"
     assert body["expedition"]["title"] == "Week 1: blotto with 7 fields" and body["expedition"]["author_id"] == op
     assert {f["id"] for f in body["feats"]} == set(Q.ALL_FEAT_IDS) - {"well-travelled"} and body["signature"], \

@@ -130,6 +130,8 @@ SETTINGS: tuple[Setting, ...] = (
             "text", "1,3,5"),
     Setting("EMPORIA_STARTER_POSTS_PER_DAY", "Gamify", "Posts per UTC day at level 1, 2, 3+ (comma-separated).",
             "text", "10,30,100"),
+    Setting("EMPORIA_CHALLENGE_IDLE_HOURS", "Gamify", "An open challenge whose poster has done nothing on the relay "
+            "for this many hours is left off the board for others (0: never).", "int", "6"),
     Setting("EMPORIA_SEASON", "Gamify", "The season's name.", "text", "season-0"),
     Setting("EMPORIA_SEASON_START", "Gamify", "The season's start (ISO time); empty: all history.", "text"),
     Setting("EMPORIA_SEASON_END", "Gamify", "The season's end (ISO time); the final standing is frozen then.",

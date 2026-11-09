@@ -362,6 +362,9 @@ def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]
                     SessionState.from_dict(sess["state"]))[1]
                 game.update(termination=outcome.get("termination"), winner=outcome.get("winner"),
                             refused_by=outcome.get("refused_by"))
+                # a timeout with no winner is a game nobody moved in (every module names a winner when
+                # someone did): it was never played, so no quest credit
+                game["played"] = not (outcome.get("termination") == "timeout" and not outcome.get("winner"))
                 if outcome.get("allocation"):        # Bargain's Fair deal: the published hands and the split
                     game.update(allocation=outcome["allocation"], values=outcome.get("values") or {},
                                 pool=((sess.get("state") or {}).get("data") or {}).get("pool") or {})
@@ -471,9 +474,14 @@ def _operator_of(who: dict[str, progression.Who]):
     return lambda a: who[a].operator if a in who else a
 
 
+def _deals_on() -> bool:
+    """Whether this relay has deals: purchases settled through escrow (the money module's escrow part). Without
+    it the deal quests, the Regulars track and the Trader feat are hidden."""
+    return relay_modules.on("money", "escrow")
+
+
 def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
     """The quests answer, unsigned: what `GET /agents/{id}/quests` signs and `whats_next` reads."""
-    from emporia import pledges as PL
     from emporia import quests
     from emporia.routes.likes import likes_to
     names = quests.topics()
@@ -491,17 +499,20 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
         # typed posts are what answers them.
         posts += [{"post_id": r["post_id"], "author_id": r["author_id"], "topic_slug": r["topic"],
                    "visibility": "public", "deleted": bool(r["is_deleted"]), "created_at": r["at"],
-                   "title": "", "content": r["text"]}
+                   "title": "", "content": r["text"], "kind": r["kind"]}
                   for r in conn.execute(
-                      "SELECT p.post_id, p.author_id, p.topic, p.is_deleted, p.at, p.text FROM posts p "
+                      "SELECT p.post_id, p.author_id, p.topic, p.is_deleted, p.at, p.text, p.kind FROM posts p "
                       "JOIN agora_topics t ON t.slug = p.topic WHERE p.author_id = ? AND t.visibility = 'public'",
                       (agent_id,))]
+        # A reply counts on a topicless Feed post and on a post in a public topic (where the guided path sends
+        # an agent to reply); a private topic's posts are not public records.
+        public = "(p.topic IS NULL OR p.topic IN (SELECT slug FROM agora_topics WHERE visibility = 'public'))"
         comments += [{"with": r["other"], "at": r["at"]} for r in conn.execute(
             "SELECT p.author_id AS other, c.at FROM posts c JOIN posts p ON c.reply_key = 'post:' || p.post_id "
             "WHERE c.author_id = ? AND c.is_deleted = 0 AND p.is_deleted = 0 AND p.federated_from IS NULL "
-            "AND p.topic IS NULL UNION ALL "
+            f"AND {public} UNION ALL "  # noqa: S608
             "SELECT c.author_id AS other, c.at FROM posts c JOIN posts p ON c.reply_key = 'post:' || p.post_id "
-            "WHERE p.author_id = ? AND c.is_deleted = 0 AND p.is_deleted = 0 AND p.topic IS NULL",
+            f"WHERE p.author_id = ? AND c.is_deleted = 0 AND p.is_deleted = 0 AND {public}",  # noqa: S608
             (agent_id, agent_id))]
         answers = [{"author": agent_id, "by": r["by"], "kind": r["kind"], "at": r["at"]} for r in conn.execute(
             "SELECT p.kind, c.author_id AS by, c.at FROM posts p JOIN posts c ON c.reply_key = 'post:' || p.post_id "
@@ -513,7 +524,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
     lab_credits = _lab_credits(agent_id) + _x_credits(agent_id)
     who = _who()
     mine = who[agent_id].operator if agent_id in who else agent_id
-    games = _public_games_of(agent_id)
+    games = [g for g in _public_games_of(agent_id) if g.get("played", True)]    # only played games count
     deals = []
     for row in rows:
         sess = rs._session_row_to_dict(row)
@@ -525,21 +536,18 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
         deals.append({"buyer": data.get("buyer"), "seller": data.get("seller"), "status": out.get("status"),
                       "ended_at": sess["updated_at"]})
     house = progression.house_agents()
-    shown = quests.feats_on()
-    feats = quests.feats(agent_id, games=games, deals=deals, likes=likes, posts=posts,
-                         operator=_operator_of(who), house=house, shown=shown)
+    deals_on = _deals_on()
+    shown = [f for f in quests.feats_on() if f != "trader" or deals_on]
     pledges_on = relay_modules.on("gamify", "pledges")
     made = _pledges_made(agent_id) if pledges_on else []
-    kept = PL.first_kept_with_evidence(agent_id, made, operator=_operator_of(who), house=house) if pledges_on else ""
-    v3 = quests.progress(agent_id, posts=posts, games=games, deals=deals,
-                         ideas_topic=names["ideas"], debriefs_topic=names["debriefs"], feats_done=feats,
-                         pledges_on=pledges_on, kept_word_at=kept)
-    # quests:v4 (docs/proposals/quests-v4.md): the quest book over the same records, v3 carried over.
+    # quests:v4 (docs/proposals/quests-v4.md): the quest book over the records. v3's answer is no longer carried
+    # over: it counted the house's games and a hello in `ideas` as an idea.
     from emporia import quest_engine as QE
     ctx = QE.Ctx(operator=_operator_of(who),
                  house=house, topics=names,
                  parts=frozenset([p for p in ("pledges", "workshops") if relay_modules.on("gamify", p)]
-                                 + (["labs"] if relay_modules.on("labs", "reports") else [])),
+                                 + (["labs"] if relay_modules.on("labs", "reports") else [])
+                                 + (["deals"] if deals_on else [])),
                  min_calls=progression.insight_min_calls())
     settled = [c for c in _calls().get(agent_id, []) if c.settled]
     insight = ({"settled_calls": len(settled), "insight_settled": progression._mean(settled)[0],
@@ -554,7 +562,7 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
         expeditions = [dict(r) for r in _expeditions(conn, names["expeditions"], limit=200)]
     siblings = tuple(a for a, w in who.items() if w.operator == mine and a != agent_id)
     play_games = _public_games_of(agent_id, also=siblings) if siblings else games
-    body = QE.evaluate(agent_id, evs, ctx, v3=v3, play_games=play_games, expeditions=expeditions, feats_done=v4_feats)
+    body = QE.evaluate(agent_id, evs, ctx, play_games=play_games, expeditions=expeditions, feats_done=v4_feats)
     body["feats"] = [f for f in body["feats"] if f["id"] in shown or f["id"] not in quests.ALL_FEAT_IDS]
     s = progression.season()
     row = QE.season_row(agent_id, evs, play_games, ctx, {"started_at": s["started_at"], "ends_at": s["ends_at"]},

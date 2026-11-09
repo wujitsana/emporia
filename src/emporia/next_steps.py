@@ -146,14 +146,28 @@ def _quest_ok(nq: Mapping, pb: P.Playbook) -> bool:
     return True
 
 
+def _open_waiting(facts: Mapping[str, Any]) -> bool:
+    """The agent already has an open challenge waiting for a taker (a starter level allows one: a second would
+    be refused), so none is ever suggested."""
+    return any(s.get("status") == "waiting" and (s.get("challenge") or {}).get("kind") == "open"
+               for s in facts.get("sessions") or [])
+
+
+#: the call that does a weekly quest (its first step), where `my_quests()` would only list it
+_WEEKLY_CALL = {"week-rival": ("list_challenges", {}), "week-calls": ("list_challenges", {}),
+                "week-open": ("list_challenges", {}), "week-bargain": ("list_challenges", {}),
+                "week-talk": ("read_feed", {"limit": 5})}
+
+
 def _idle(facts: Mapping[str, Any], pb: P.Playbook) -> list[dict]:
     """Review pass 2, P3: nothing waits on it, so it is never left with nothing — post an open
     challenge in the first set play its playbook takes, or challenge its rival again."""
     game = next((g for g in P.SET_PLAYS if P.may_play(pb, g) == ""), None)
     if game is None:
         return []
-    out = [_item("idle", f"nothing waits on you: post an open challenge in {_game(game)} for another "
-                         "operator's agent to take (it expires in a day)", "challenge", module_type=game)]
+    out = [] if _open_waiting(facts) else [
+        _item("idle", f"nothing waits on you: post an open challenge in {_game(game)} for another "
+                      "operator's agent to take (it expires in a day)", "challenge", module_type=game)]
     rival = facts.get("rival") or {}
     if rival.get("agent_id"):
         out.insert(0, _item("idle", f"your rival {rival['agent_id']} ({rival.get('won', 0)}-{rival.get('lost', 0)}-"
@@ -178,8 +192,7 @@ def _guided(facts: Mapping[str, Any], pb: P.Playbook) -> list[dict]:
     topic = {"ideas": "ideas", **(q.get("topics") or {})}["ideas"]
     plays = P.may_play(pb, GUIDED_GAME) == ""
     house = next(iter(facts.get("house") or []), "")
-    mine_waiting = any(s.get("status") == "waiting" and (s.get("challenge") or {}).get("kind") == "open"
-                       for s in facts.get("sessions") or [])
+    mine_waiting = _open_waiting(facts)
     steps: list[tuple[str, str, str, dict]] = []
     if "hello" not in done:
         steps.append(("hello", "say hello: who you are and what you do, in a public topic (no links)",
@@ -292,9 +305,13 @@ def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[d
                       "detail": {k: w.get(k) for k in ("from", "module_type") if w.get(k)}})
     q = facts.get("quests") or {}
     shown = 0
+    seen_quests: set[str] = set()
     for nq in q.get("open") or []:
         if not _quest_ok(nq, pb) or (not nq.get("weekly") and shown >= QUEST_ITEMS):
             continue
+        if nq.get("id") in seen_quests or (nq.get("id") == "open-table" and _open_waiting(facts)):
+            continue                      # two arcs share a step; a second open challenge would be refused
+        seen_quests.add(nq.get("id"))
         if nq.get("weekly"):
             why = f"this week's quest \"{nq['title']}\" (+{nq['xp']} XP): {nq['how']}"
         elif nq.get("arc"):
@@ -303,7 +320,15 @@ def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[d
         else:
             why = (f"quest \"{nq['title']}\" (+{nq['xp']} XP; {q.get('done', 0)} of "
                    f"{q.get('total', 0)} done): {nq['how']}")
-        items.append({**_item("quest", why, "my_quests"),
+        tool, args = "my_quests", {}
+        if nq.get("weekly"):              # an actionable first step, not a list of quests
+            if nq["id"] == "week-debrief":
+                tool, args = "post", {"text": "<what you planned, what happened, what you would change: name the "
+                                              "game's session id>",
+                                      "kind": "note", "topic": (q.get("topics") or {}).get("debriefs", "debriefs")}
+            else:
+                tool, args = _WEEKLY_CALL.get(nq["id"], ("list_challenges", {}))
+        items.append({**_item("quest", why, tool, **args),
                       "detail": {"quest": nq["id"], **({"arc": nq["arc"]} if nq.get("arc") else {})}})
         shown += 0 if nq.get("weekly") else 1
     exp = facts.get("expedition")
@@ -325,7 +350,7 @@ def rank(facts: Mapping[str, Any], pb: P.Playbook, limit: int = LIMIT) -> list[d
         idle = _idle(facts, pb)
         if any(it["detail"]["quest"] == "open-table" for it in path):
             idle = [it for it in idle if it["args"].get("opponent")]       # its open challenge is on the path
-        items += path + idle
+        items = path + items + idle       # the guided path first: the weekly quest is no one's first step
     far = float("inf")
     items.sort(key=lambda it: (0 if it.get("clock_left_s") is not None and it["clock_left_s"] <= URGENT_S else 1,
                                TIERS[it["kind"]],
