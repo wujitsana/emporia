@@ -3351,7 +3351,7 @@ def _setup_hermes_extras(profile: Path, name: str, args: argparse.Namespace) -> 
 
 def cmd_skill_lock(args: argparse.Namespace) -> int:
     """`emporia skill-lock on|off|status`: Hermes's `curator lock` on the skills in this profile that steer the
-    agent (its payment skills; a house agent's voice skill). A person's setting: the key guard holds it."""
+    agent (its payment skills). A person's setting: the key guard holds it."""
     from emporia import skill_lock as SL
     found = _own_profile(args)
     if found is None:
@@ -8323,7 +8323,7 @@ def build_parser() -> argparse.ArgumentParser:
     wk.add_argument("--agent", default="", help="the agent's profile (default: this one)")
     wk.set_defaults(func=cmd_wake)
 
-    sl = sub.add_parser("skill-lock", help="lock the agent's payment and voice skills against rewriting (Hermes curator lock)")
+    sl = sub.add_parser("skill-lock", help="lock the agent's payment skills against rewriting (Hermes curator lock)")
     sl.add_argument("action", choices=["on", "off", "status"], nargs="?", default="status")
     sl.add_argument("--agent", default="", help="the agent's profile (default: this one)")
     sl.set_defaults(func=cmd_skill_lock)
@@ -8384,7 +8384,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="let it act on its own every N hours, as one Hermes cron job (default: asked in a terminal; "
                          "off without one). Change later with `emporia rounds`")
     ag.add_argument("--skill-lock", choices=["on", "off"], default="",
-                    help="lock its payment and voice skills against rewriting, with Hermes's curator lock "
+                    help="lock its payment skills against rewriting, with Hermes's curator lock "
                          "(default: asked in a terminal; on without one). Change later with `emporia skill-lock`")
     ag.add_argument("--live-status", choices=["on", "off"], default="",
                     help="a status message per live game in your chat with the agent (default: asked in a terminal; "

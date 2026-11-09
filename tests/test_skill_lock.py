@@ -37,18 +37,17 @@ def profile(tmp_path):
     (p / "config.yaml").write_text("{}")
     _skill(p, "payments/mpp-agent")
     _skill(p, "payments/stripe-link-cli")
-    _skill(p, "wujitsana-voice")
     _skill(p, "chess-notes")
     return p
 
 
-def test_only_payment_and_voice_skills_are_lockable(profile):
-    assert skill_lock.present(profile) == ["mpp-agent", "stripe-link-cli", "wujitsana-voice"]
+def test_only_payment_skills_are_lockable(profile):
+    assert skill_lock.present(profile) == ["mpp-agent", "stripe-link-cli"]
 
 
 def test_lock_asks_hermes_for_each_one_in_this_profile(hermes, profile):
     locked, notes = skill_lock.lock("shop", profile)
-    assert locked == ["mpp-agent", "stripe-link-cli", "wujitsana-voice"]
+    assert locked == ["mpp-agent", "stripe-link-cli"]
     assert hermes.calls == [["-p", "shop", "curator", "lock", n] for n in locked]
     assert any("read-only" in n and "emporia:emporia" in n for n in notes)
 
@@ -76,7 +75,7 @@ def test_plugin_skills_are_never_sent_to_hermes(hermes, profile):
 
 
 def test_unlock(hermes, profile):
-    assert skill_lock.unlock("shop", profile) == ["mpp-agent", "stripe-link-cli", "wujitsana-voice"]
+    assert skill_lock.unlock("shop", profile) == ["mpp-agent", "stripe-link-cli"]
     assert all(c[2:4] == ["curator", "unlock"] or c[2] == "curator" for c in hermes.calls)
 
 
@@ -129,7 +128,7 @@ def test_setup_locks_by_default_without_a_terminal_and_records_only_a_departure_
     monkeypatch.setattr(cli.installer(), "harvest_env", lambda p: {})
     monkeypatch.setattr(cli, "merge_env_file", lambda path, updates: saved.update(updates) or list(updates))
     lines = cli._setup_hermes_extras(profile, "shop", argparse.Namespace(skill_lock="", live_status=""))
-    assert [c[-1] for c in hermes.calls] == ["mpp-agent", "stripe-link-cli", "wujitsana-voice"]
+    assert [c[-1] for c in hermes.calls] == ["mpp-agent", "stripe-link-cli"]
     assert saved == {} and "mpp-agent" in "\n".join(lines)
     lines = cli._setup_hermes_extras(profile, "shop", argparse.Namespace(skill_lock="off", live_status="on"))
     assert saved == {"EMPORIA_SKILL_LOCK": "off", "EMPORIA_LIVE_STATUS": "on"}
