@@ -107,10 +107,10 @@ def test_init_refuses_a_hermes_profile_and_bad_input(tmp_path, monkeypatch):
     (profile / "config.yaml").write_text("x: 1\n")
     (profile / ".env").write_text("")
     with pytest.raises(agent_init.InitError, match="Hermes profile"):
-        agent_init.init_agent(name="a1", key_dir=profile / "keys", register=False)
+        agent_init.init_agent(name="aa1", key_dir=profile / "keys", register=False)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
     with pytest.raises(agent_init.InitError, match="HERMES_HOME"):
-        agent_init.init_agent(name="a1", key_dir=tmp_path / "home" / "keys", register=False)
+        agent_init.init_agent(name="aa1", key_dir=tmp_path / "home" / "keys", register=False)
     for kw, why in (({"name": "Bad Name"}, "agent name"), ({"client": "evil client!"}, "client"),
                     ({"operator_label": "op_nope"}, "operator label"), ({"client_version": "a b"}, "version"),
                     ({"model": "bad model!"}, "model name")):
@@ -547,6 +547,14 @@ def test_init_without_a_name_says_agent_and_a_bare_name_is_accepted(tmp_path, mo
         url_or_name=str(tmp_path), agent="x", relay="", client="", client_version="", model="", no_declare_model=False,
         operator_label="", same_as="", display_name="", no_register=True, recommended=False, json=False, features=""))
     assert (other.name, other.path) == ("x", str(tmp_path))
+
+
+def test_init_refuses_a_name_the_relay_would_refuse():
+    """The relay takes 3-64 characters, starting and ending with a letter or digit: init says so before it makes keys."""
+    for bad in ("bo", "a", "-abc", "abc-", "_abc", "Abc", "a b", "x" * 65, ""):
+        assert agent_init.agent_problem(bad), bad
+    for good in ("bob", "scout-1", "a_b", "x" * 64, "abc"):
+        assert not agent_init.agent_problem(good), good
 
 
 def test_init_help_shows_init_options_only():

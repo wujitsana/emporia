@@ -29,6 +29,87 @@ def test_the_mcp_server_starts_without_a_banner_or_an_update_box(monkeypatch, tr
     assert len(calls) == 1 and calls[0]["show_banner"] is False
 
 
+# ── the "Verify it yourself" commands ───────────────────────────────────────────────────────
+
+def _beacon_script():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("emporia_verify_beacon", ROOT / "scripts" / "verify_beacon.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _game_on_round(round_no: int, sig):
+    from datetime import UTC, datetime
+
+    from emporia import rand
+    at = datetime.fromtimestamp(rand.round_time(round_no - 20), UTC).isoformat()
+    commits = {"a": {"seat": 0, "hash": "0" * 64, "beacon_round": round_no - 1, "at": at},
+               "b": {"seat": 1, "hash": "1" * 64, "beacon_round": round_no, "at": at}}
+    return {"session_id": "sess_x", "module_type": "emporia:bargain:v2", "config": {"rand": {"commits": commits}},
+            "state": {"data": {"rand": {"commits": commits, "round": round_no, "beacon_sig": sig}}}}
+
+
+def test_verify_beacon_checks_a_game_against_drands_own_round(monkeypatch, capsys):
+    from emporia import beacon
+    from tests.test_rand import R_LATE, recorded_get
+    mod = _beacon_script()
+    game = _game_on_round(R_LATE["round"], R_LATE["signature"])
+    monkeypatch.setattr(mod, "get_json", lambda url: game)
+    monkeypatch.setattr(beacon, "http_get", recorded_get)             # drand's answer, from a recording
+    assert mod.main(["sess_x", "--relay", "http://relay.example"]) == 0
+    out = capsys.readouterr().out
+    assert "the relay stored exactly the signature drand serves" in out and R_LATE["randomness"] in out
+    assert out.strip().endswith("all checks hold")
+    # a relay that stored another round's signature, or one that is not drand's, is caught
+    from tests.test_rand import R1000
+    for bad in (R1000["signature"], "ab" * 48):
+        monkeypatch.setattr(mod, "get_json", lambda url, bad=bad: _game_on_round(R_LATE["round"], bad))
+        assert mod.main(["sess_x", "--relay", "http://relay.example"]) == 1
+        assert "FAIL" in capsys.readouterr().out
+    # offline: no network is asked, and the output says so
+    monkeypatch.setattr(mod, "get_json", lambda url: game)
+    monkeypatch.setattr(beacon, "http_get", lambda url: (_ for _ in ()).throw(AssertionError("asked drand")))
+    assert mod.main(["sess_x", "--relay", "http://relay.example", "--offline"]) == 0
+    assert "offline: drand itself was not asked" in capsys.readouterr().out
+
+
+def test_verify_beacon_reports_a_game_that_does_not_draw_or_has_not_drawn_yet(monkeypatch, capsys):
+    mod = _beacon_script()
+    monkeypatch.setattr(mod, "get_json", lambda url: {"module_type": "emporia:blotto:v2", "state": {"data": {}}})
+    assert mod.main(["sess_x", "--relay", "http://r"]) == 2
+    from tests.test_rand import R_LATE
+    monkeypatch.setattr(mod, "get_json", lambda url: _game_on_round(R_LATE["round"], None))
+    assert mod.main(["sess_x", "--relay", "http://r"]) == 2
+    assert "no randomness has been drawn" in capsys.readouterr().out
+
+
+def test_log_verify_takes_a_key_directory_for_an_agent_that_is_not_hermes(monkeypatch, tmp_path, capsys):
+    import argparse
+    import json
+    import subprocess
+
+    from emporia import agent_init, cli
+    agent_init.init_agent(name="logger", key_dir=tmp_path / "k", relay="http://relay.example", register=False)
+    seen = {}
+
+    def fake_run(argv, env=None, **kw):
+        seen.update(env=env, code=argv[-1])
+        out = {"ok": True, "status": "first", "detail": "first look: a log of 3 entries, kept to check next time",
+               "key_steps": {"logged": 0, "pending": 0}}
+        return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(out) + "\n", stderr="")
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+    args = argparse.Namespace(name="", dir=str(tmp_path / "k"), compare_with=None)
+    assert cli.cmd_log_verify(args) == 0
+    assert seen["env"]["EMPORIA_KEYS_DIR"] == str(tmp_path / "k") and seen["env"]["EMPORIA_NO_DOTENV"] == "1"
+    assert seen["env"]["EMPORIA_RELAY_URL"] == "http://relay.example" and "verify_relay" in seen["code"]
+    assert "logger's relay: first look" in capsys.readouterr().out
+    assert cli.cmd_log_verify(argparse.Namespace(name="", dir=str(tmp_path / "nope"), compare_with=None)) == 1
+    assert "emporia agent init" in capsys.readouterr().out
+    parsed = cli.build_parser().parse_args(["log", "verify", "--dir", "/x"])
+    assert parsed.dir == "/x" and parsed.name == ""
+
+
 def test_doctor_never_prints_an_empty_dashboard_tab_section(capsys):
     from emporia import cli
     for compact in (False, True):

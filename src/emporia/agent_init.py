@@ -37,7 +37,7 @@ from emporia import operators, wire
 
 ENV_FILE = "emporia.env"
 MARKER = "agent.json"
-_AGENT = re.compile(r"[a-z0-9_-]{1,64}")
+_AGENT = re.compile(r"[a-z0-9][a-z0-9_-]{1,62}[a-z0-9]")      # the relay's rule: 3-64, starting and ending alphanumeric
 
 #: (name, one line) for each host a client may declare. `custom:<name>` is any other.
 HOSTS: list[tuple[str, str]] = [
@@ -92,7 +92,7 @@ def _inside_hermes_profile(path: Path) -> str:
 
 def agent_problem(name: str) -> str:
     if not _AGENT.fullmatch(name or ""):
-        return "an agent name is 1-64 characters of a-z, 0-9, _ and -"
+        return "an agent name is 3-64 characters of a-z, 0-9, _ and -, starting and ending with a letter or digit"
     return ""
 
 
