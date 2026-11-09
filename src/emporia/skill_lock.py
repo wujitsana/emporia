@@ -8,8 +8,8 @@ this module only asks Hermes for it, through its public CLI, and never writes `.
 What can be locked. A lock is keyed by a skill's folder name in the profile's own `skills/` folder. Emporia's own
 skills (`emporia:emporia`, `emporia:emporia-setup`) are not in that folder: the plugin registers them read-only from
 its own folder, which no agent tool can edit, and `hermes curator lock` does not find them ("no skill named ...").
-So the lock goes on what *is* in the profile and steers the agent: the payment skills setup links in (`mpp-agent`,
-`stripe-link-cli`, `stripe-projects`), each only if it is there. Nothing is claimed for a skill that is not.
+So the lock goes on what *is* in the profile and steers the agent: the optional payment skills setup links in
+(`stripe-link-cli`, `stripe-projects`), each only if it is there. Nothing is claimed for a skill that is not.
 
 Person-only: the key guard holds `emporia skill-lock on|off` from an agent's tools, and Hermes refuses
 `hermes curator unlock` to the agent itself.
@@ -22,7 +22,7 @@ from pathlib import Path
 from emporia import rounds as _hermes
 
 #: Skills setup links into a profile beside the plugin's own (installer `_install_skill_link`).
-PAYMENT_SKILLS = ("mpp-agent", "stripe-link-cli", "stripe-projects")
+PAYMENT_SKILLS = ("stripe-link-cli", "stripe-projects")
 #: Emporia's own skills: registered by the plugin, read-only, not lockable (see the module note).
 PLUGIN_SKILLS = ("emporia:emporia", "emporia:emporia-setup")
 UNDO = "emporia skill-lock off  (or `hermes -p NAME curator unlock SKILL`)"

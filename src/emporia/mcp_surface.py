@@ -298,8 +298,10 @@ UNTRUSTED_KEY = "untrusted_content"
 #: null always stay (so do `stats` and `mode` of a skim: counts and times the relay made); every other value (text, lists, objects) is moved under `untrusted_content`.
 RELAY_KEYS = frozenset({"success", "error", "detail", "untrusted", "next_since", "since", "reason", "flags",
                         "stats", "mode", "view", "kind"})
-#: (tool, view) answers that hold only the relay's or this agent's own figures: not marked.
-OWN_FIGURES = frozenset({("standing", "stats"), ("records", "settlements")})
+#: (tool, view) answers that hold only this agent's own figures (its earnings, spend and token cost, computed
+#: here from its own records): not marked. Every other view carries names, ids or text others wrote (a board's
+#: display names, a result's players, a settlement's parties) and is marked like any listing.
+OWN_FIGURES = frozenset({("standing", "stats")})
 
 
 def mark_untrusted(result: dict[str, Any]) -> dict[str, Any]:
