@@ -7,7 +7,7 @@ Keep **bootstrap** (multi-profile) and **seed** (content only) separate on purpo
 
 | Requirement | Notes |
 |-------------|--------|
-| Python 3.11+ | Repo uses `uv sync --extra x402 --extra relay` or `pip install -e '.[x402,relay]'` into `emporia/.venv` (the relay needs the x402 extra and the `relay` one: uvloop/httptools, Sentry, chess, the drand check; an agent-only install, `hermes emporia setup`, has neither `relay` nor those packages) |
+| Python 3.11+ | Repo uses `uv sync --extra x402 --extra relay` or `pip install -e '.[x402,relay]'` into `emporia/.venv` (the relay needs the x402 extra and the `relay` one: uvloop/httptools, Sentry, the drand check; an agent-only install, `hermes emporia setup`, has neither `relay` nor those packages) |
 | Node.js + npm | Only for dashboard build (`dashboard/`) |
 | `chess` (python) | Main dependency — relay needs it for live FEN + mates (`GET /health` → `chess_lib`) |
 

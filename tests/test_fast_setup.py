@@ -16,9 +16,9 @@ sys.modules["emporia_setup_cli_fast"] = setup_cli
 spec.loader.exec_module(setup_cli)
 
 #: Importable names (top-level) of the packages only a relay uses: its faster event loop and HTTP
-#: parser (uvicorn[standard]), Sentry, the chess rules, the stripe SDK (nothing imports it).
-RELAY_ONLY_MODULES = ("sentry_sdk", "chess", "uvloop", "httptools", "watchfiles", "stripe")
-RELAY_ONLY_DISTS = {"sentry-sdk", "chess", "py-ecc", "uvicorn"}
+#: parser (uvicorn[standard]), Sentry, the stripe SDK (nothing imports it). Not chess: the house
+#: agent's runner and local turn validation use it on an agent.
+RELAY_ONLY_MODULES = ("sentry_sdk", "uvloop", "httptools", "watchfiles", "stripe")
 
 
 def _names(specs):
@@ -29,8 +29,9 @@ def _names(specs):
 def test_the_base_dependencies_are_the_agents_and_the_relay_extra_holds_the_servers():
     base = PYPROJECT["project"]["dependencies"]
     relay = PYPROJECT["project"]["optional-dependencies"]["relay"]
-    assert not ({"sentry-sdk", "chess", "py-ecc", "stripe"} & _names(base)), base
-    assert {"sentry-sdk", "chess", "py-ecc"} <= _names(relay)
+    assert not ({"sentry-sdk", "py-ecc", "stripe"} & _names(base)), base
+    assert {"sentry-sdk", "py-ecc"} <= _names(relay)
+    assert "chess" in _names(base) and "chess" not in _names(relay), "the house runner needs chess on an agent"
     assert not any(s.startswith("uvicorn[standard]") for s in base), "the agent's console needs plain uvicorn only"
     assert any(s.startswith("uvicorn[standard]") for s in relay)
     assert "stripe" not in _names(base + relay), "the stripe SDK was never imported; cards use HTTP"
@@ -72,6 +73,16 @@ def test_an_agent_install_without_the_relay_packages_imports_every_emporia_modul
     assert out.stdout.strip().endswith("FAILED:"), out.stdout[-1500:]
 
 
+def test_the_house_runners_chess_move_works_with_the_agent_set():
+    """chess is a base dependency, so `emporia house run` on an agent runtime has it."""
+    import random
+
+    from emporia import house
+    start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    assert house.chess_move(start, random.Random(1)) is not None
+    assert "chess" in _names(PYPROJECT["project"]["dependencies"])
+
+
 def test_the_agents_install_asks_for_no_relay_extra():
     src = (REPO / "hermes_plugin" / "emporia" / "setup_cli.py").read_text()
     sync = [line for line in src.splitlines() if '"sync"' in line]
@@ -79,9 +90,9 @@ def test_the_agents_install_asks_for_no_relay_extra():
     export = (REPO / "scripts" / "pin_plugin_runtime.py").read_text()
     assert '"--extra", "x402"' in export and '"relay"' not in export, "the pip path's lock export is the agent set"
     requirements = (REPO / setup_cli.LOCKED_REQUIREMENTS).read_text()
-    for dist in ("sentry-sdk", "chess", "uvloop", "stripe"):
+    for dist in ("sentry-sdk", "uvloop", "stripe"):
         assert f"\n{dist}==" not in "\n" + requirements, dist
-    for dist in ("fastmcp", "eth-account", "fastapi", "uvicorn"):
+    for dist in ("fastmcp", "eth-account", "fastapi", "uvicorn", "chess"):
         assert f"\n{dist}==" in "\n" + requirements, dist
 
 

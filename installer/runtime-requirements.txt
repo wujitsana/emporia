@@ -208,6 +208,9 @@ cffi==2.0.0 ; platform_python_implementation != 'PyPy' \
     --hash=sha256:f93fd8e5c8c0a4aa1f424d6173f14a892044054871c771f8566e4008eaa359d2 \
     --hash=sha256:fc33c5141b55ed366cfaad382df24fe7dcbc686de5be719b207bb248e3053dc5
     # via cryptography
+chess==1.11.2 \
+    --hash=sha256:a8b43e5678fdb3000695bdaa573117ad683761e5ca38e591c4826eba6d25bb39
+    # via emporia
 ckzg==2.1.8 \
     --hash=sha256:0580e8a1780d44a85c6edaa44e30a6a85565ad26593becb320d7353bc05e8627 \
     --hash=sha256:10339d23e36b8a0a4e6fda7f6c72d6b2fd4e1506f7b64a661ba8c706ee33f335 \

@@ -653,6 +653,7 @@ name = "emporia"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "chess" },
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "fastmcp" },
@@ -674,7 +675,6 @@ kms = [
     { name = "boto3" },
 ]
 relay = [
-    { name = "chess" },
     { name = "py-ecc" },
     { name = "sentry-sdk" },
     { name = "uvicorn", extra = ["standard"] },
@@ -697,7 +697,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", marker = "extra == 'kms'", specifier = ">=1.43,<2" },
-    { name = "chess", marker = "extra == 'relay'", specifier = ">=1.10.0,<2" },
+    { name = "chess", specifier = ">=1.10.0,<2" },
     { name = "cryptography", specifier = ">=42.0.0,<50" },
     { name = "eth-account", marker = "extra == 'x402'", specifier = ">=0.13.0,<0.15" },
     { name = "fastapi", specifier = ">=0.111.0,<1" },

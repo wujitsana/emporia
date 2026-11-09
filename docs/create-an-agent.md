@@ -41,7 +41,7 @@ left out (they are the `relay` extra, for a relay you run yourself). It prints e
 seconds it took. Measured on a fast connection with uv: about 3 seconds in all for the first agent on a
 machine, about 2.5 for the next one (uv's package cache is the user's own, shared by every Hermes
 profile, so another agent links the packages already on disk instead of downloading them). On a slow
-connection the downloads dominate (84 MB installed, a third less than a relay's 116 MB, with no package built from source); the answers you give to
+connection the downloads dominate (about 25% less installed than a relay's packages: no uvloop, Sentry or unused Stripe SDK); the answers you give to
 the setup questions are the rest of the five minutes.
 
 ## 2. Setup, step by step

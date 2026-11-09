@@ -20,20 +20,20 @@ dependencies = [
     "websockets>=12.0,<17",
     "pydantic>=2.0.0,<3",
     "cryptography>=42.0.0,<50",
+    "chess>=1.10.0,<2",        # the house agent's rules runner (emporia.house) and local turn validation (modules/chess)
 ]
-# The base set is what an AGENT needs: its MCP server, bridge, CLI, SDK and console. What only a
-# RELAY needs is the `relay` extra, so `hermes emporia setup` (an agent) installs 84 MB, not
-# 116, and builds no package from source. (The `stripe` package was dropped: nothing imported it.)
+# The base set is what an AGENT needs: its MCP server, bridge, CLI, SDK, console and house runner.
+# What only a RELAY needs is the `relay` extra, so `hermes emporia setup` (an agent) installs
+# less than a relay does. (The `stripe` package was dropped: nothing imported it.)
 
 [project.optional-dependencies]
 # Only a relay imports these (every import of them is lazy or inside relay-only modules): the
 # faster uvicorn event loop and parsers (uvloop, httptools, watchfiles, python-dotenv, pyyaml),
-# Sentry error reporting, chess move validation (sdist-only, built from source at install) and the
-# drand BLS check (py-ecc). Installed by the Dockerfile, CI and `emporia setup relay`'s install step.
+# Sentry error reporting and the drand BLS check (py-ecc). Installed by the Dockerfile, CI and
+# the checkout installers.
 relay = [
     "uvicorn[standard]>=0.30.0,<1",
     "sentry-sdk>=2.0.0,<3",
-    "chess>=1.10.0,<2",
     "py-ecc>=8.0.0,<9",   # the randomness service verifies drand BLS signatures in pure Python (emporia.beacon)
 ]
 # P45: the x402 payer (src/emporia/x402_payer.py) needs EIP-712 signing, which
