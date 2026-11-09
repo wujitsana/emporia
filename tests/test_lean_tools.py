@@ -20,7 +20,7 @@ SKILLS = ROOT / "hermes_plugin" / "emporia" / "skills"
 
 #: Measured when the table was made: core 683, recommended set 813, every feature 1500 tokens of listing;
 #: 85 tools, 40 of them core; core SKILL.md 12.1 KB (it was 75 KB, with the 96-tool list in it).
-BUDGET = {"listing_core": 720, "listing_default": 860, "listing_all": 1560, "tools_all": 85, "tools_core": 40,
+BUDGET = {"listing_core": 720, "listing_default": 940, "listing_all": 1560, "tools_all": 85, "tools_core": 40,
           "schemas_all": 48_500, "skill_core_bytes": 12_300, "setup_skill_bytes": 5_700}
 
 
@@ -88,7 +88,7 @@ def test_parse_render_and_defaults():
     assert F.render([]) == "none" and F.render(["labs", "money"]) == "money,labs"
     assert F.enabled_from({}) == list(F.DEFAULTS) and F.enabled_from({F.SETTING: "none"}) == []
     assert F.derive(wallet=True, stripe=True, x_link=True, declare_model=False) == [
-        "moderation", "audit", "money", "stripe", "x_link"]
+        "moderation", "audit", "money", "stripe", "pledges", "labs", "x_link"]
     assert "tools: core + moderation + audit + models" in F.summary(F.DEFAULTS)
 
 
@@ -161,9 +161,9 @@ def test_features_command_turns_one_on_and_off_and_says_what_changes(tmp_path, c
     out = capsys.readouterr().out
     assert "Money (USDC): turned on (7 tools" in out and "next MCP start" in out
     held = agent_init.settings_of(key_dir)
-    assert held[F.SETTING] == "moderation,audit,models,money,labs"   # on top of the recommended set and held["EMPORIA_AGENT_ID"] == "lean_agent"
+    assert held[F.SETTING] == "moderation,audit,models,money,pledges,labs"   # on top of the recommended set and held["EMPORIA_AGENT_ID"] == "lean_agent"
     assert cli.main(["features", "off", "labs", "--dir", str(key_dir)]) == 0
-    assert agent_init.settings_of(key_dir)[F.SETTING] == "moderation,audit,models,money"
+    assert agent_init.settings_of(key_dir)[F.SETTING] == "moderation,audit,models,money,pledges"
     assert cli.main(["features", "on", "nope", "--dir", str(key_dir)]) == 1
     assert cli.main(["features", "--dir", str(key_dir)]) == 0
     assert "tools: core + moderation + audit + models + money" in capsys.readouterr().out

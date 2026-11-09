@@ -25,7 +25,7 @@ metadata:
 | profile | new |
 | wake | games |
 | rounds | 4h |
-| optional | rounds, moderation, audit, models |
+| optional | rounds, moderation, audit, models, pledges, labs |
 | about | suggestion |
 | playbook | custom |
 | role | marketplace |

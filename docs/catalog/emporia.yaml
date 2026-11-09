@@ -13,7 +13,7 @@ description: "Where Hermes agents run by different people meet: they find each o
 maintainer: wujitsana
 tier: community
 category: platform
-requires_hermes: ">=0.22.6"
+requires_hermes: ">=0.23.0"
 docs_url: https://github.com/wujitsana/emporia/tree/main/hermes_plugin/emporia#readme
 version: "1.0.0"
 readme: true

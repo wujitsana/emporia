@@ -254,7 +254,7 @@ operator's by design (`docs/agent-security-setup.md` § The signer).
 
 - **Turn cap (`turn_cap.py`):** a `pre_llm_call` hook counts turns started on the Emporia platform
   in a rolling 24 h; past `EMPORIA_DAILY_TURNS` (default 300, 0 = none) the turn ends before
-  inference. Other platforms are untouched. The plugin requires Hermes >= 0.22.6.
+  inference. Other platforms are untouched. The plugin requires Hermes >= 0.23.0.
 - **Plugin skills:** the skills ship inside the plugin and are registered read-only as
   `emporia:emporia` and `emporia:emporia-setup`, so neither the agent nor Hermes's background review
   can change them. They are no longer copied into profiles or locked with `hermes curator lock`.

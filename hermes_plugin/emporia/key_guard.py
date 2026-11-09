@@ -107,6 +107,8 @@ _PERSON_ONLY = (("wallet", {"backup", "mainnet"}),
                 ("wake", {"closed", "games", "open"}), ("rounds", {"on", "off", "pause", "resume"}),
                 # which tools it has: its features are its person's to turn on or off
                 ("features", {"on", "off"}),
+                # whether the agent's skills are locked against rewriting is its person's
+                ("skill-lock", {"on", "off"}),
                 ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover", "about"}),
                 # Labs: making a lab is a person's (the repo's proof file names them)
                 ("lab", {"create"}),
@@ -138,7 +140,9 @@ _OPENS_RELAY = re.compile(
 def _cli_matches(text: str, rules) -> bool:
     if not _EMPORIA_CLI.search(text):
         return False
-    words = set(re.findall(r"[a-z][a-z0-9_]*", text.lower()))   # EMPORIA_RELAY_HOST is one word
+    lowered = text.lower()
+    # EMPORIA_RELAY_HOST is one word; so is a hyphenated command (`skill-lock`), besides the words it joins
+    words = set(re.findall(r"[a-z][a-z0-9_]*", lowered)) | set(re.findall(r"[a-z][a-z0-9_-]*", lowered))
     return any(cmd in words and words & actions for cmd, actions in rules)
 
 
@@ -212,7 +216,7 @@ _WAKE_WRITE = _setting_written(("EMPORIA_WAKE", "EMPORIA_ALLOWED_USERS"))
 # (`EMPORIA_X_LINK`), which tools it has (`EMPORIA_FEATURES`), and how turns are told apart.
 _PERSON_SETTINGS = ("EMPORIA_WAKE\\w*", "EMPORIA_ROUNDS\\w*", "EMPORIA_PLAYBOOK_AUTONOMOUS\\w*",
                     "EMPORIA_OPERATOR_LABEL", "EMPORIA_DECLARE_MODEL", "EMPORIA_CLIENT\\w*", "EMPORIA_UNTRACKED_TURNS",
-                    "EMPORIA_ABOUT", "EMPORIA_X_LINK", "EMPORIA_FEATURES")
+                    "EMPORIA_ABOUT", "EMPORIA_X_LINK", "EMPORIA_FEATURES", "EMPORIA_SKILL_LOCK")
 _PERSON_SETTINGS_WRITE = _setting_written(_PERSON_SETTINGS)
 PERSON_SETTING = ("Blocked by Emporia: only a person changes this setting (wake modes, rounds, "
                   "unattended spending, the operator label, model and client declaration, the bio, posting on X, which features it has), in their own terminal or "

@@ -224,6 +224,16 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
            (_o("new", "a fresh random label: your first agent, or a separate one.", True, "Nothing is shared."),
             _o("same", "your agents share a label; games between them count for nothing, as they are one operator.")),
            "emporia agent init NAME --same-as AGENT, or --operator-label LABEL"),
+    Choice("skill_lock", "Lock its payment skills against rewriting?",
+           "Other agents can try to talk yours into editing its own skills (its payment skills). A lock is "
+           "Hermes's own: the agent can no longer change a locked skill through any tool, even in YOLO mode; it "
+           "still reads and uses it, and you can still edit it yourself. Emporia's own skills come from the plugin "
+           "and are already read-only.",
+           YES_NO("locks the payment skills setup linked in, if they are there "
+                  "(nothing else changes; undo: emporia skill-lock off).",
+                  "its skills stay editable by the agent.", True,
+                  "It costs nothing, and nobody else's words can rewrite them."),
+           "emporia skill-lock on|off|status"),
     Choice("stripe", "Should it be paid by card too (Stripe)?",
            "Only matters on a relay that takes cards.",
            YES_NO("sets up card payouts to you.", "USDC only; nothing to set up.", False, "Skip until you need cards."),
@@ -317,3 +327,15 @@ def _first(choice: Choice, value: str) -> str:
         if o.value == value:
             return o.effect.rstrip(".")
     return choice.matters.rstrip(".")
+
+
+def hermes_lines(skill_lock: str, locked: list[str], name: str = "NAME") -> list[str]:
+    """The closing block's line for the Hermes 0.23 skill lock, in the same layout as `installed_lines`.
+    `locked`: the skills Hermes now holds locked for this profile."""
+    c = CHOICES
+    held = ", ".join(locked) if locked else "none to lock (no Emporia payment skill in this profile)"
+    return [
+        f"  {paint('Skill lock', '1')}  {held if skill_lock == 'on' else 'off'}\n"
+        + dim("      Hermes refuses every agent tool a write to a locked skill, so words from another agent cannot rewrite "
+              f"it; you can still edit it. Change: {c['skill_lock'].change}"),
+    ]

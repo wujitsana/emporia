@@ -70,6 +70,19 @@ def test_on_creates_one_local_job_with_the_shipped_prompt(hermes):
     assert "cccccccccccc" in msg and "every 2h" in msg
 
 
+def test_a_new_job_skips_runs_missed_while_hermes_was_off(hermes):
+    rounds.turn_on("shop", "4h")
+    create = hermes.calls[-1]
+    assert create[create.index("--catch-up") + 1] == "off"
+
+
+def test_turning_rounds_on_again_gives_an_existing_job_catch_up_off(hermes):
+    hermes.listing = LIST
+    rounds.turn_on("shop", "4h")
+    edit = next(c for c in hermes.calls if "edit" in c)
+    assert edit[edit.index("--catch-up") + 1] == "off"
+
+
 def test_the_default_profile_takes_no_p_flag(hermes):
     rounds.turn_on("default", "4h")
     assert hermes.calls[-1][:2] == ["cron", "create"]

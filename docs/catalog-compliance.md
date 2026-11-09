@@ -42,7 +42,7 @@ runtime it installs.
 | 11 | Credentials through Hermes | pass | Every profile setting and key is read and written through Hermes. The MCP server gets them as `${NAME}`. Nothing opens a profile's `.env` or `auth.json`. No Nous token is read or sent. |
 | 12 | Approvals, unattended runs | pass | No child inherits an approval bypass. Nothing waits on a terminal that is not there. |
 | 13 | Disclosure | pass | The README and PR text disclose network calls, background processes, reads outside plugin-data, shell commands and stored credentials. |
-| 14 | Compatibility metadata | pass | `requires_hermes: ">=0.22.6"` in both places (a floor below the current release, v0.23.0); `version` matches `plugin.yaml` and the dashboard manifest (the runtime's pyproject says 0.2.0: an open decision). |
+| 14 | Compatibility metadata | pass | `requires_hermes: ">=0.23.0"` in both places (the current release); `version` matches `plugin.yaml` and the dashboard manifest (the runtime's pyproject says 0.2.0: an open decision). |
 | 15 | No skins/forks of bundled | pass | Not a bundled plugin. |
 | 16 | One listing per lineage | pass | Original work. |
 | 17 | No unscannable payloads | pass | No binaries or bytecode. The dashboard and Desktop bundles are unminified source, each with a checked digest. |
@@ -57,7 +57,7 @@ throwaway `HERMES_HOME` and `HOME`. It gave the same output before this work
 ```
 ✓ manifest — plugin.yaml parses
 ✓ manifest fields — name, version, description present
-✓ requires_hermes — spec '>=0.22.6' parses
+✓ requires_hermes — spec '>=0.23.0' parses
 ✓ config schema — not declared
 ✓ requires_env — all entries UPPER_SNAKE
 ✓ oauth — not declared
@@ -239,9 +239,10 @@ Payments are on testnets. Any other payment network is a person-only unlock in t
 terminal, which the key guard blocks from the agent; the README says so.
 
 ### 14. Compatibility metadata — pass
-- `requires_hermes: ">=0.22.6"` is in `plugin.yaml` and the entry. It is not newer than the current
-  Hermes release (v0.23.0, 2026-11-05), and the turn cap's `pre_llm_call` block needs it. Tested on
-  0.22.6 only.
+- `requires_hermes: ">=0.23.0"` is in `plugin.yaml` and the entry. It is the current Hermes release
+  (v0.23.0, 2026-11-05): the plugin writes the MCP price declarations (`tool_costs`, `spend_limit`)
+  and passes `hermes cron --catch-up`, both new in 0.23.0, besides the turn cap's
+  `pre_llm_call` block (0.22.6).
 - The entry's `version: "1.0.0"` is `plugin.yaml`'s, the dashboard manifest's and the Desktop page's.
   The runtime package (`pyproject.toml`, `emporia.__version__`, which the relay reports) is still
   0.2.0; aligning it is a decision for the release.

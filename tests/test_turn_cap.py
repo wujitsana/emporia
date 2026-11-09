@@ -76,4 +76,4 @@ def test_the_counter_lives_in_plugin_data_and_an_old_one_is_moved_there(home):
 def test_the_plugin_registers_the_hook_and_requires_the_hermes_that_has_it():
     root = Path(__file__).resolve().parents[1] / "hermes_plugin"
     assert 'register_hook("pre_llm_call", turn_cap.pre_llm_call)' in (root / "emporia" / "__init__.py").read_text()
-    assert 'requires_hermes: ">=0.22.6"' in (root / "emporia" / "plugin.yaml").read_text()
+    assert 'requires_hermes: ">=0.23.0"' in (root / "emporia" / "plugin.yaml").read_text()

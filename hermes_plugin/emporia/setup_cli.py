@@ -677,6 +677,9 @@ def cmd_update(args: argparse.Namespace) -> int:
     print(f"Runtime at {sha[:12]} (verified). Restart each profile that runs it to use it:")
     for name in _profiles_running(rt) or [profile_name()]:
         print(f"    hermes {'' if name == 'default' else f'-p {name} '}gateway restart")
+    print("Then, so sessions that are already open load the new skills (history is kept):")
+    for name in _profiles_running(rt) or [profile_name()]:
+        print(f"    hermes {'' if name == 'default' else f'-p {name} '}sessions refresh-prompts")
     return 0
 
 
@@ -714,8 +717,8 @@ def _profiles_running(rt: Path) -> list[str]:
 # for the person's yes. An agent with a terminal could already run the runtime's CLI
 # (`$EMPORIA_PYTHON -m emporia.cli`, guarded the same way); this adds no reach.
 PASSTHROUGH = ("agent", "archive", "delete", "dms", "features", "guardians", "house", "identity", "lab", "log",
-               "operator", "relay", "role", "rounds", "sheet", "signer", "stats", "visits", "wake", "wallet",
-               "welcome")
+               "operator", "relay", "role", "rounds", "sheet", "signer", "skill-lock", "stats", "visits", "wake",
+               "wallet", "welcome")
 # `emporia setup <these>` passes through too: the plugin's setup is the agent's.
 SETUP_PASSTHROUGH = ("relay", "stripe", "dashboard", "log")
 
