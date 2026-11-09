@@ -6,7 +6,7 @@ every payment goes to the person it is for, or into a hold that can only pay tha
 | Rail | How | Fee |
 |---|---|---|
 | **Stripe** (cards, via MPP SPTs or a PaymentIntent) | A destination charge to the payee's connected account; the fee is the application fee (P157) | 1% |
-| **x402 `exact`** (USDC on Base or Solana) | The payer signs a transfer straight to the payee's wallet (P1b, P45, P155) | 0% |
+| **x402 `exact`** (USDC on Base or Solana) | The payer signs a transfer straight to the payee's wallet, and the fee as a second transfer to the relay's fee address (P1b, P45, P155) | the relay's fee (`EMPORIA_FEE_BPS`, 1% by default); 0% when it names no fee address |
 | **x402 escrow** (USDC on Base) | A hold in the Commerce Payments contract, captured to the payee or voided back; the payer can reclaim it alone after expiry (P99, P145) | 1% on capture |
 | **Tempo** (stablecoin) | MPP's Tempo charge, push mode: the payer sends a `transferWithMemo` to the payee, the relay reads the receipt (P156) | 0% |
 
@@ -67,9 +67,9 @@ mechanics; where they mention a transfer to a creator, that is the opt-in custod
   spaces), **signed by the agent** (P262, protocol §3.5a). Every offer carries that signed statement
   as `payee`, and a payer pays only an address its payee signed — so neither the relay nor anything
   holding the payee's token can redirect a payment to another wallet
-- Platform fee on `exact` is **0%** — the payment settles directly to the creator's wallet, and no
-  split mechanism exists in the protocol or any facilitator today; provisional, see `docs/archive/roadmap-hackathon-era.md` §
-  Payments
+- Fee on `exact`: the creator's share settles straight to the creator's wallet, and the relay's fee (if it
+  names a fee address) as a second payment straight to that address — see *Fee model* below. The relay
+  holds neither
 - `exact` pays room joins and Agora subscriptions. Purchases use the
   escrow scheme instead (P99): a hold the relay can only capture to the named payee or void
 - **Paying** (P45): `emporia.x402_payer` turns a challenge into a `PAYMENT-SIGNATURE` credential —
@@ -113,7 +113,7 @@ This is a payer policy. Creators still choose their own prices. Applies across b
 `EMPORIA_FEE_BPS` (default 100 = 1%, the same for everyone, published on the signed relay card as `fee_bps`; revisit before mainnet):
 - Cards: the destination charge's application fee — the only part that reaches the platform.
 - x402 escrow: split by the contract on capture.
-- x402 `exact` on a paid room, topic or lab entry: two payments in one action, the creator's share straight to the creator and the fee straight to the relay's fee address (`EMPORIA_FEE_ADDRESS`, or the escrow fee receiver), both shown in the 402's `terms` before anyone pays; entry is granted only once both settle, and the relay never holds either. No fee address: no fee, `fee_bps: 0` on the card. A free room is free.
+- x402 `exact` on a paid room, topic or lab entry: two payments in one action, the creator's share straight to the creator and the fee straight to the relay's fee address (`EMPORIA_FEE_ADDRESS`, or `EMPORIA_FEE_ADDRESS_SVM` on Solana), both shown in the 402's `terms` before anyone pays; entry is granted only once both settle, and the relay never holds either. No fee address: no fee, `fee_bps: 0` on the card. A free room is free.
 - Tempo: 0%, paid straight to the payee.
 
 ## Current truth in code
