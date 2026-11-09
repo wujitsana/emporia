@@ -3321,6 +3321,84 @@ def _setup_optional(profile: Path, name: str, args: argparse.Namespace, existing
     return every
 
 
+def _setup_hermes_extras(profile: Path, name: str, args: argparse.Namespace) -> list[str]:
+    """Hermes 0.23 settings, asked after the optional features: lock the skills in the profile that steer the
+    agent (default yes) and a live status line per game in the person's chat (default no). Returns the closing
+    block's lines. Without a terminal: the flags, else the recommended answers (lock yes, live status no) unless
+    the profile's .env already records the person's other choice."""
+    from emporia import setup_choices as sc, skill_lock as SL
+    held = installer().harvest_env(profile)
+    lock = getattr(args, "skill_lock", "") or ""
+    live = getattr(args, "live_status", "") or ""
+    if not lock:
+        lock = "on" if (ask_setting("skill_lock") if _TTY else held.get("EMPORIA_SKILL_LOCK", "on") != "off") else "off"
+    if not live:
+        live = "on" if (ask_setting("live_status") if _TTY else held.get("EMPORIA_LIVE_STATUS", "") == "on") else "off"
+    updates = {k: v for k, v, cur, dflt in (("EMPORIA_SKILL_LOCK", lock, held.get("EMPORIA_SKILL_LOCK", ""), "on"),
+                                            ("EMPORIA_LIVE_STATUS", live, held.get("EMPORIA_LIVE_STATUS", ""), "off"))
+               if (v != dflt) or cur}
+    if updates:
+        merge_env_file(profile / ".env", updates)
+    locked: list[str] = []
+    if lock == "on":
+        locked, notes = SL.lock(this_profile_name(profile), profile)
+        for n in notes:
+            print(localize("  Skill lock: " + n + "."))
+    else:
+        SL.unlock(this_profile_name(profile), profile)
+    return sc.hermes_lines(lock, locked, live, name)
+
+
+def cmd_skill_lock(args: argparse.Namespace) -> int:
+    """`emporia skill-lock on|off|status`: Hermes's `curator lock` on the skills in this profile that steer the
+    agent (its payment skills; a house agent's voice skill). A person's setting: the key guard holds it."""
+    from emporia import skill_lock as SL
+    found = _own_profile(args)
+    if found is None:
+        print("skill-lock: no Emporia agent profile here (run it as `hermes -p NAME emporia skill-lock …`, or pass --agent NAME)")
+        return 1
+    profile, name = found
+    pname = this_profile_name(profile)
+    try:
+        if args.action == "on":
+            locked, notes = SL.lock(pname, profile)
+            merge_env_file(profile / ".env", {"EMPORIA_SKILL_LOCK": "on"})
+            print("  locked: " + (", ".join(locked) or "nothing"))
+            for n in notes:
+                print("  " + n)
+            print(f"  Undo: {SL.UNDO.replace('NAME', pname)}")
+        elif args.action == "off":
+            done = SL.unlock(pname, profile)
+            merge_env_file(profile / ".env", {"EMPORIA_SKILL_LOCK": "off"})
+            print("  unlocked: " + (", ".join(done) or "nothing was locked"))
+        else:
+            mine = SL.present(profile)
+            print(f"  Lockable skills here: {', '.join(mine) or 'none'}")
+            print("  (Emporia's own skills come from the plugin, read-only; `hermes curator status` lists what is locked.)")
+    except SL.SkillLockError as e:
+        print(f"skill-lock: {e}")
+        return 1
+    return 0
+
+
+def cmd_live_status(args: argparse.Namespace) -> int:
+    """`emporia live-status on|off|status`: a status message per live game in the person's own chat
+    (EMPORIA_LIVE_STATUS in the profile's .env; a person's setting, held from the agent's tools)."""
+    found = _own_profile(args)
+    if found is None:
+        print("live-status: no Emporia agent profile here (run it as `hermes -p NAME emporia live-status …`, or pass --agent NAME)")
+        return 1
+    profile, name = found
+    if args.action in ("on", "off"):
+        merge_env_file(profile / ".env", {"EMPORIA_LIVE_STATUS": args.action})
+        print(f"  live status: {args.action}. "
+              + ("It refreshes when you next write to the agent in a chat; the gateway restart picks up the change."
+                 if args.action == "on" else "Nothing more is posted."))
+    else:
+        print(f"  Live status  {installer().harvest_env(profile).get('EMPORIA_LIVE_STATUS') or 'off'}")
+    return 0
+
+
 def _fast_path(args: argparse.Namespace) -> bool:
     """The first question of setup: take every recommended setting without asking each one."""
     from emporia import setup_choices as sc
@@ -3335,11 +3413,13 @@ def _recommend(args: argparse.Namespace, existing: bool) -> None:
     """The fast path's answers, as the flags a person could have passed (never over one they did)."""
     from emporia import setup_choices as sc
     args.rounds = args.rounds or sc.default("rounds")
+    args.skill_lock = getattr(args, "skill_lock", "") or "on"
+    args.live_status = getattr(args, "live_status", "") or "off"
     args.register = True if not args.register else args.register
 
 
 def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace, chosen_all: bool,
-                   rounds: str) -> None:
+                   rounds: str, extra_lines: list[str] | None = None) -> None:
     from emporia import setup_choices as sc
     dotenv = installer().harvest_env(profile)
     _, agent_id, _ = _agent(name)
@@ -3352,6 +3432,8 @@ def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace
     keys = "env" if dotenv.get("EMPORIA_KEY_STORAGE") == "env" else "files"
     for line in sc.installed_lines(dotenv, role=role, keys=keys, wallets=wallets, rounds=rounds, chosen=chosen,
                                    name=name):
+        print(localize(line))
+    for line in extra_lines or ():
         print(localize(line))
 
 
@@ -6053,8 +6135,9 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     _setup_playbook(profile, name, args.playbook, existing)
     _setup_wake(profile, name, args.wake, existing)
     rounds_every = _setup_optional(profile, name, args, existing)
+    hermes_lines = _setup_hermes_extras(profile, name, args)
     _setup_summary(profile, name, role)
-    _closing_block(profile, name, role, args, answered, rounds_every)
+    _closing_block(profile, name, role, args, answered, rounds_every, hermes_lines)
     inst.sync_mcp_costs(profile)      # the limits set above, as Hermes's price and chat limit on the paying tools
     inst.print_restart_instructions(list(inst._TOUCHED_PROFILES))
     return 0
@@ -8240,6 +8323,16 @@ def build_parser() -> argparse.ArgumentParser:
     wk.add_argument("--agent", default="", help="the agent's profile (default: this one)")
     wk.set_defaults(func=cmd_wake)
 
+    sl = sub.add_parser("skill-lock", help="lock the agent's payment and voice skills against rewriting (Hermes curator lock)")
+    sl.add_argument("action", choices=["on", "off", "status"], nargs="?", default="status")
+    sl.add_argument("--agent", default="", help="the agent's profile (default: this one)")
+    sl.set_defaults(func=cmd_skill_lock)
+
+    ls = sub.add_parser("live-status", help="a status message per live game in your chat with the agent (a person's setting)")
+    ls.add_argument("action", choices=["on", "off", "status"], nargs="?", default="status")
+    ls.add_argument("--agent", default="", help="the agent's profile (default: this one)")
+    ls.set_defaults(func=cmd_live_status)
+
     rd = sub.add_parser("rounds", help="let the agent act on its own, on a schedule (one Hermes cron job)")
     rd.add_argument("action", choices=["on", "off", "status", "pause", "resume"], nargs="?", default="status")
     rd.add_argument("--every", default="4h", choices=["2h", "4h", "8h", "12h", "24h"], help="how often (default 4h)")
@@ -8290,6 +8383,12 @@ def build_parser() -> argparse.ArgumentParser:
     ag.add_argument("--rounds", choices=["2h", "4h", "8h", "12h", "24h", "off"], default="",
                     help="let it act on its own every N hours, as one Hermes cron job (default: asked in a terminal; "
                          "off without one). Change later with `emporia rounds`")
+    ag.add_argument("--skill-lock", choices=["on", "off"], default="",
+                    help="lock its payment and voice skills against rewriting, with Hermes's curator lock "
+                         "(default: asked in a terminal; on without one). Change later with `emporia skill-lock`")
+    ag.add_argument("--live-status", choices=["on", "off"], default="",
+                    help="a status message per live game in your chat with the agent (default: asked in a terminal; "
+                         "off without one). Change later with `emporia live-status`")
     ag.add_argument("--keys", choices=["env", "files"], default="",
                     help="where its keys are kept: its profile .env (recommended) or key files")
     ag.add_argument("--separate-keys", action="store_true",

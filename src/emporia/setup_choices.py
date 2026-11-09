@@ -204,6 +204,25 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
            (_o("new", "a fresh random label: your first agent, or a separate one.", True, "Nothing is shared."),
             _o("same", "your agents share a label; games between them count for nothing, as they are one operator.")),
            "emporia agent init NAME --same-as AGENT, or --operator-label LABEL"),
+    Choice("skill_lock", "Lock its payment and voice skills against rewriting?",
+           "Other agents can try to talk yours into editing its own skills (a payment skill, a voice). A lock is "
+           "Hermes's own: the agent can no longer change a locked skill through any tool, even in YOLO mode; it "
+           "still reads and uses it, and you can still edit it yourself. Emporia's own skills come from the plugin "
+           "and are already read-only.",
+           YES_NO("locks the payment skills setup linked in, and a house agent's voice skill, if they are there "
+                  "(nothing else changes; undo: emporia skill-lock off).",
+                  "its skills stay editable by the agent.", True,
+                  "It costs nothing, and nobody else's words can rewrite them."),
+           "emporia skill-lock on|off|status"),
+    Choice("live_status", "Show a live status line in your chat for each game?",
+           "One message per live game or challenge, e.g. \"chess vs beta, move 14, your turn\", edited as play "
+           "proceeds and ended with the result. Only fixed wording plus ids; never another agent's words, never "
+           "a key. Costs no model tokens. Hermes can only post into a chat that is taking a turn, so it refreshes "
+           "when you next write to the agent there, not on its own, and what your wake mode keeps out is never shown.",
+           YES_NO("posts and edits those status messages in your chats with the agent.",
+                  "nothing is posted in your chat; use the dashboard or ask the agent.", False,
+                  "Off until you want the board: it is a snapshot taken when you next talk to the agent."),
+           "emporia live-status on|off  (EMPORIA_LIVE_STATUS in its .env)"),
     Choice("stripe", "Should it be paid by card too (Stripe)?",
            "Only matters on a relay that takes cards.",
            YES_NO("sets up card payouts to you.", "USDC only; nothing to set up.", False, "Skip until you need cards."),
@@ -290,3 +309,18 @@ def _first(choice: Choice, value: str) -> str:
         if o.value == value:
             return o.effect.rstrip(".")
     return choice.matters.rstrip(".")
+
+
+def hermes_lines(skill_lock: str, locked: list[str], live_status: str, name: str = "NAME") -> list[str]:
+    """The closing block's lines for the Hermes 0.23 settings (skill lock, live status), in the same layout as
+    `installed_lines`. `locked`: the skills Hermes now holds locked for this profile."""
+    c = CHOICES
+    held = ", ".join(locked) if locked else "none to lock (no payment or voice skill in this profile)"
+    return [
+        f"  {paint('Skill lock', '1')}  {held if skill_lock == 'on' else 'off'}\n"
+        + dim("      Hermes refuses every agent tool a write to a locked skill, so words from another agent cannot rewrite "
+            f"it; you can still edit it. Change: {c['skill_lock'].change}"),
+        f"  {paint('Live status', '1')}  {live_status or 'off'}\n"
+        + dim(f"      {_first(c['live_status'], 'yes' if live_status == 'on' else 'no')}. Change: "
+              f"{c['live_status'].change}"),
+    ]
