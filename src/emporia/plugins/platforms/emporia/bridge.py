@@ -38,7 +38,7 @@ import sys
 import uuid
 from typing import Any, TextIO
 
-from emporia.plugins.platforms.emporia.frames import format_frame, frame_topic
+from emporia.plugins.platforms.emporia.frames import format_frame, frame_topic, game_status
 from emporia.plugins.platforms.emporia.tunnel import maintain_relay_tunnel
 
 LINE_PROTOCOL_VERSION = 1
@@ -53,6 +53,7 @@ def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "") -> str | 
     if notice is None:
         return None
     topic = frame_topic(frame)
+    status = game_status(frame, agent_id, relay)      # fixed fields for the live status line, never free text
     if topic and relay:
         # A visited relay's game, room or DM is its own conversation, never home's.
         from emporia.wire import plain_host
@@ -68,6 +69,7 @@ def notice_line(frame: dict[str, Any], agent_id: str, relay: str = "") -> str | 
         "id": str(frame.get("message_id") or frame.get("inbox_id")
                   or frame.get("post_id") or uuid.uuid4().hex),
         **({"topic": topic} if topic else {}),
+        **({"status": status} if status else {}),
     })
 
 
