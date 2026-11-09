@@ -1148,7 +1148,7 @@ class EmporiaAgent:
         # what is recorded — later sends check the relay's answer against it.
         shown = thread if thread.get("agent_a") else {**await self.get_dm_thread(thread.get("thread_id", "")),
                                                       "thread_id": thread.get("thread_id", "")}
-        named = identity.dm_thread_peer(self.relay_url, self.agent_id, shown)
+        named = identity.dm_thread_peer(self.relay_url, self.agent_id, shown, home_url=self.relay_url)
         if not identity.same_agent(named, to_agent, self.relay_url):
             raise identity.ThreadPeerChanged(
                 f"asked for a DM thread with '{to_agent}', but the relay answered with one with "
@@ -1165,8 +1165,8 @@ class EmporiaAgent:
         asked for; a thread this client never started is recorded on first sight, so a
         relay that renames its peer later is caught. Raises `identity.ThreadPeerChanged`."""
         from emporia import identity
-        named = identity.dm_thread_peer(self.relay_url, self.agent_id, thread)
-        rec = identity.recorded_dm_thread(self.agent_id, self.relay_url, thread_id)
+        named = identity.dm_thread_peer(self.relay_url, self.agent_id, thread, home_url=self.relay_url)
+        rec =identity.recorded_dm_thread(self.agent_id, self.relay_url, thread_id)
         if rec is None:
             rec = identity.record_dm_thread(self.agent_id, self.relay_url, thread_id, named, sealed=False)
         elif not identity.same_agent(rec["peer"], named, self.relay_url):

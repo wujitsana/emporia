@@ -52,7 +52,8 @@ def test_dms_cross_relays_sealed_and_signed_and_a_swapped_key_is_never_believed(
     assert alpha.tool("send_dm", to_agent_id=dana.address, content="hello dana")["success"]
     first = _read(dana, alpha.address)
     assert _seen(first) == [(alpha.address, "hello dana", True, True)] and "signing_key_changed" not in first
-    assert fay.tool("send_dm", to_agent_id=alpha.address, content="hi alpha, fay here")["success"]
+    hello = fay.tool("send_dm", to_agent_id=alpha.address, content="hi alpha, fay here")
+    assert hello["success"], hello
 
     # the hop starts serving a signing key of its own for alpha: dana is told. What she holds is checked
     # against the key she pinned, never the one served now.

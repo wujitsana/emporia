@@ -7,6 +7,6 @@ def thread_id_for(agent, other: str) -> str:
     """The id of `agent`'s thread with `other` (an address), as its own relay lists it."""
     out = agent.tool("list_dm_threads")
     for t in out.get("threads", out if isinstance(out, list) else []):
-        if other in (t.get("agent_a"), t.get("agent_b"), t.get("peer_label"), t.get("with")):
+        if t.get("other_agent") == other:
             return t["thread_id"]
     raise AssertionError(f"{agent.address} has no thread with {other}: {out}")

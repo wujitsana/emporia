@@ -47,4 +47,5 @@ def test_a_replaced_encryption_key_is_followed_across_relays(fleet):
         "label = next(k for k in env['keys'] if k.startswith(m.AGENT_ID))\n"
         "r = crypto_box.open_sealed(env, label, cur, crypto_box.message_aad('dm', t, x['sender_id'],"
         " x.get('msg_type', ''), x.get('nonce') or ''))")
-    assert opened_with_new_only == "sealed to the new key"
+    # what is sealed is a post (a message's text with its kind and links), not the bare text
+    assert json.loads(opened_with_new_only)["text"] == "sealed to the new key"

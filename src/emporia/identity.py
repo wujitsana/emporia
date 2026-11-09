@@ -492,12 +492,49 @@ def same_agent(a: str, b: str, relay_url: str) -> bool:
     return bool(a) and bool(b) and _canonical_agent(a, relay_url) == _canonical_agent(b, relay_url)
 
 
-def dm_thread_peer(relay_url: str, agent_id: str, thread: Mapping[str, Any]) -> str:
+#: home relay URL -> (what it said it is called, when we asked). Per process.
+_ADVERTISED_URLS: dict[str, tuple[str, float]] = {}
+_ADVERTISED_RETRY_SECONDS = 30       # an answer is kept for the process; a failed ask is tried again after this
+_ADVERTISED_TIMEOUT_SECONDS = 2
+
+
+def advertised_relay_url(home_url: str) -> str:
+    """The URL the agent's own home relay (`home_url`, the agent's configured relay URL: never one taken from a
+    peer, a message or a thread) names itself by in `/health`, or "" when it does not say. A client may reach its
+    relay by another name than the relay's own (a proxy, a container's service name), and a relay names its
+    agents' addresses by its own, so the agent's `my_label` in a cross-relay thread carries that host.
+    Asked only when a label does not match the client's own URL, with a short timeout, no redirects, and the
+    answer kept for the process. It fails closed: no answer, a wrong status or a body that says nothing is "",
+    and the label stays refused. The relay's word only explains the host part of the agent's own label: the agent
+    part must still be the agent's, and each thread's peer is still checked against the client's own record."""
+    import time
+    held = _ADVERTISED_URLS.get(home_url)
+    if held and (held[0] or time.monotonic() - held[1] < _ADVERTISED_RETRY_SECONDS):
+        return held[0]
+    found = ""
+    if home_url.startswith(("http://", "https://")):
+        try:
+            import httpx
+            r = httpx.get(f"{home_url.rstrip('/')}/health", timeout=_ADVERTISED_TIMEOUT_SECONDS,
+                          follow_redirects=False)
+            if r.status_code == 200:
+                body = r.json()
+                found = str(body.get("relay_url") or "") if isinstance(body, dict) else ""
+        except Exception:  # noqa: BLE001 - no answer: no alias, the label is refused as before
+            found = ""
+    _ADVERTISED_URLS[home_url] = (found, time.monotonic())
+    return found
+
+
+def dm_thread_peer(relay_url: str, agent_id: str, thread: Mapping[str, Any], *, home_url: str = "") -> str:
     """The other participant of `thread` as the relay serves it, after checking that it
     names this agent (`my_label`) as this agent and has exactly one other participant.
+    `home_url` is the agent's own configured relay URL: only when the client is talking to it (`relay_url` is
+    it) may a label carrying the host that relay names itself by (`advertised_relay_url`) pass.
     Raises `ThreadPeerChanged` otherwise."""
     me = thread.get("my_label") or agent_id
-    if not same_agent(me, agent_id, relay_url):
+    if not same_agent(me, agent_id, relay_url) and not (
+            home_url and relay_url == home_url and same_agent(me, agent_id, advertised_relay_url(home_url))):
         raise ThreadPeerChanged(
             f"the relay labels this agent '{me}' in DM thread {thread.get('thread_id')}, not "
             f"'{agent_id}' — refusing it, since that is how a relay hides the real peer")
@@ -751,6 +788,28 @@ def signing_key_for(key: str, when: Any = "") -> str:
     return key_at(windows, when)
 
 
+def signing_keys_for_recorded(key: str, when: Any = "") -> list[str]:
+    """The keys a message could have been signed with, given the time its relay recorded for it.
+    A sealed message's time is kept to the minute and no finer (the relay floors it), so a message
+    sent after a key change but in the same minute reads as earlier than the change. Whoever sent it
+    was signing at some moment in `[when, when + 1 minute)`, so every key the agent held in that span
+    is a candidate. A time with seconds in it is exact: just `signing_key_for`."""
+    from datetime import timedelta
+
+    from emporia import wire
+    windows = getattr(key, "windows", None)
+    moment = wire.when_of(when)
+    if not windows or moment is None or moment.second or moment.microsecond:
+        return [k] if (k := signing_key_for(key, when)) else []
+    span_end = moment + timedelta(minutes=1)
+    out: list[str] = []
+    for w in windows:
+        start, end = wire.when_of(w["from"]), wire.when_of(w["until"])
+        if (start is None or start < span_end) and (end is None or end > moment) and w["key"] not in out:
+            out.append(w["key"])
+    return out
+
+
 def key_for_record(public_key_hex: str, stable_id: str = "", key_log: Any = None, at: Any = "") -> str:
     """The key to check a record against that its agent signed at `at`: as an agent's served profile gives
     it (`public_key_hex`, `stable_id`, `key_log`). An agent that rotated its key still has its older records
@@ -942,14 +1001,9 @@ def verify_dm_message(
     if not signature or not nonce or not sender_public_key_hex:
         return None
     # P245: the key the sender had when the relay recorded the message.
-    key = signing_key_for(sender_public_key_hex, message.get("created_at"))
-    return bool(key) and verify(
-        signed_dm_thread_payload(
-            thread_id, message.get("content", ""), message.get("msg_type", ""), nonce,
-        ),
-        signature,
-        key,
-    )
+    payload = signed_dm_thread_payload(thread_id, message.get("content", ""), message.get("msg_type", ""), nonce)
+    return any(verify(payload, signature, key)
+               for key in signing_keys_for_recorded(sender_public_key_hex, message.get("created_at")))
 
 
 def verify_room_acts(room: dict[str, Any], creator_public_key_hex: str, key_of: Any = None) -> dict[str, Any]:
@@ -1307,15 +1361,12 @@ def verify_room_message(
     nonce = message.get("nonce")
     if not signature or not nonce or not sender_public_key_hex:
         return None
-    key = signing_key_for(sender_public_key_hex, message.get("created_at"))   # P245
-    return bool(key) and verify(
-        signed_room_message_payload(
-            room_id, message.get("content", ""), message.get("msg_type", ""), nonce,
-            message.get("sender_stable_id") or "",
-        ),
-        signature,
-        key,
+    payload = signed_room_message_payload(
+        room_id, message.get("content", ""), message.get("msg_type", ""), nonce,
+        message.get("sender_stable_id") or "",
     )
+    return any(verify(payload, signature, key)      # P245: the key it had then (a minute's span, see there)
+               for key in signing_keys_for_recorded(sender_public_key_hex, message.get("created_at")))
 
 
 def trust_peer_encryption_key(
