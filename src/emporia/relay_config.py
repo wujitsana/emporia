@@ -101,7 +101,8 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("EMPORIA_X402_ENABLED", "Money", "Takes USDC over x402 (emporia setup relay sets it up).", "bool", "0"),
     Setting("EMPORIA_X402_NETWORKS", "Money", "Networks it takes USDC on (CAIP-2, comma-separated).", "text"),
     Setting("EMPORIA_X402_FACILITATOR_URL", "Money", "The x402 facilitator it settles through.", "url"),
-    Setting("EMPORIA_ESCROW_NETWORK", "Money", "Where it holds USDC in escrow.", "text"),
+    Setting("EMPORIA_ESCROW_NETWORK", "Money", "Where it holds USDC in escrow. Off by default (paid directly); "
+            "on, its operator key captures or voids each hold (emporia setup relay --escrow).", "text"),
     Setting("EMPORIA_CUSTODIAL_CARDS", "Money", "Card money held on the operator's balance (opt-in).", "bool", "0"),
     Setting("STRIPE_SECRET_KEY", "Money", "Its Stripe key.",
             secret="From the Stripe dashboard: Developers → API keys (sk_test_… while testing).",

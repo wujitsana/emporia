@@ -84,7 +84,7 @@ def test_doctor_names_each_problem_with_its_fix(profiles, capsys, monkeypatch):
     assert "sk_live_relays" not in out, "doctor never prints a secret"
 
 
-def test_setup_relay_writes_the_testnet_preset_and_makes_an_operator_key(profiles, monkeypatch):
+def test_setup_relay_writes_the_testnet_preset_and_makes_an_operator_key_only_with_escrow(profiles, monkeypatch):
     _, op = profiles
     keys = op / "home" / ".hermes" / "keys"
     keys.mkdir(parents=True)
@@ -93,6 +93,12 @@ def test_setup_relay_writes_the_testnet_preset_and_makes_an_operator_key(profile
         assert cli.main(["setup", "relay", "--fee-receiver", "0x" + "ab" * 20, "--yes"]) == 0
     dotenv = (op / ".env").read_text()
     assert "STRIPE_SECRET_KEY=sk_test_relay" in dotenv, "other lines are kept"
+    assert "EMPORIA_X402_FACILITATOR_URL=https://facilitator.payai.network" in dotenv
+    assert "EMPORIA_ESCROW" not in dotenv and not (keys / "relay_operator.secp256k1").exists(), \
+        "money alone: x402 paid directly, no escrow, no operator key"
+    with patch.dict(os.environ, {"EMPORIA_OPERATOR_PRIVATE_KEY": "", "EMPORIA_OPERATOR_ADDRESS": ""}):
+        assert cli.main(["setup", "relay", "--fee-receiver", "0x" + "ab" * 20, "--escrow", "--yes"]) == 0
+    dotenv = (op / ".env").read_text()
     assert "EMPORIA_ESCROW_CONTRACT=0xf96815976523E00e65Be8f34cA5e64b4f41EB19c" in dotenv
     assert "EMPORIA_FEE_ADDRESS=0x" + "ab" * 20 in dotenv
     assert (keys / "relay_operator.secp256k1").exists()

@@ -248,6 +248,31 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
            "Only matters on a relay that takes cards.",
            YES_NO("sets up card payouts to you.", "USDC only; nothing to set up.", False, "Skip until you need cards."),
            "emporia setup agent NAME --stripe"),
+    # A relay's money (`emporia setup relay`, the money module of `relay host` and `relay modules`).
+    Choice("relay_money", "Take testnet USDC payments on this relay?",
+           "Paid rooms, topics and lab entries are paid over x402 (Base Sepolia), agent to agent: the relay "
+           "never holds the money.",
+           YES_NO("agents can pay for paid rooms and entries in testnet USDC; nothing is held by the relay.",
+                  "free rooms only; add it later with `emporia setup relay`.", True,
+                  "Play money on a testnet, paid directly."),
+           "emporia setup relay · emporia relay modules remove money"),
+    Choice("relay_fee", "Should the relay take a fee on payments?",
+           "The fee is EMPORIA_FEE_BPS (default 100 = 1%) of each paid entry or deal, published on the relay's "
+           "signed card.",
+           (_o("none", "no fee: blank fee address; the creator gets the whole price and the card says fee 0.", True,
+               "Recommended for testnet.", title="no fee"),
+            _o("address", "a fee on each payment, sent to an address you control (ideally a Safe) as a separate "
+                          "payment beside the creator's share; the relay still holds nothing.",
+               title="a fee, to my address")),
+           "emporia relay config set EMPORIA_FEE_ADDRESS 0x… (unset it for no fee)"),
+    Choice("relay_escrow", "Hold purchases in escrow?",
+           "Escrow holds a service purchase in a contract until delivery. The relay's operator key can capture or "
+           "void a held payment, so the relay has a say in who gets paid.",
+           YES_NO("purchases are held until delivery; the relay's operator key captures or voids each hold. Needs a "
+                  "fee address and an operator key with a little Base Sepolia ETH for gas.",
+                  "payments go straight to the payee; the relay never decides who gets paid.", False,
+                  "No operator key to fund or guard."),
+           "emporia setup relay --escrow / --no-escrow"),
 )}
 
 #: The yes/no questions' keys, whose answer is "yes"/"no".

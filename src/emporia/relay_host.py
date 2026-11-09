@@ -350,7 +350,8 @@ def write_into_compose_files(folder: Path, front_door: str, host_dir: str, repo_
 
 def into_compose_steps(front_door: str, host_dir: str, domain: str, needs_key: bool, secrets: list[str]) -> list[str]:
     """What the person does by hand, in order, with the exact commands. The relay's
-    uid owns what only it may read; the tunnel's owns the token."""
+    uid owns what only it may read; the tunnel's owns the token. `needs_key`: escrow
+    is on and has no operator key yet — money alone (x402, paid directly) needs none."""
     steps = [f"Add the snippet to your Hermes compose file: copy the services:, volumes: and networks: entries of "
              f"{host_dir}/{SNIPPET} under the same keys there (or pass it as a second -f file — one project either way)."]
     if front_door == "tunnel":

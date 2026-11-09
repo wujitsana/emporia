@@ -35,7 +35,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # copy, which is why the variable names differ from the relay's.
 BASE_SEPOLIA = "eip155:84532"
 BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
-PUBLIC_FACILITATOR = "https://x402.org/facilitator"
+PUBLIC_FACILITATOR = "https://facilitator.payai.network"   # the same as `emporia setup relay`'s
 BASE_SEPOLIA_RPC = "https://sepolia.base.org"
 # Commerce Payments v1.1.0 on Base Sepolia (github.com/base/commerce-payments),
 # checked to hold code there on 2026-10-22. The harness's copies, like the USDC
