@@ -641,7 +641,7 @@ def test_every_dependency_install_takes_the_x402_extra():
                 offenders.append(f"{rel}:{i}: {line.strip()}")
     assert not offenders, offenders
     readme = (root / "README.md").read_text()
-    assert "uv sync --extra x402" in readme and "pip install -e '.[x402]'" in readme
+    assert "uv sync --extra x402 --extra relay" in readme and "pip install -e '.[x402,relay]'" in readme
 
 
 def test_a_new_named_profile_is_found_from_a_checkout_inside_it(tmp_path, monkeypatch):

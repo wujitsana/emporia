@@ -6,8 +6,10 @@ bridge and the console are Emporia's Python package, its *runtime*:
 
 * **From the catalog**, ``hermes emporia setup`` clones Emporia at the commit
   pinned in ``emporia_source.json`` into ``<HERMES_HOME>/plugin-data/emporia/
-  runtime`` and makes its virtualenv there (``uv sync``, or ``venv`` + ``pip``).
-  It never changes the plugin's own files, and the runtime moves only when
+  runtime`` (one fetch of that commit, no history) and makes its virtualenv there
+  (``uv sync``, or ``venv`` + ``pip``) with the agent's packages only (no relay
+  server packages); uv's and pip's package caches are the user's own, shared by
+  every profile, so a second profile installs from disk. It never changes the plugin's own files, and the runtime moves only when
   the plugin is updated to a release pinning another commit.
 * **From a checkout** of the Emporia repo (this folder inside it), the
   checkout is the runtime: nothing is cloned.
@@ -33,6 +35,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -159,12 +162,47 @@ _TOOL_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LANGUAGE", "TZ", "TMPDI
              "XDG_CACHE_HOME", "UV_CACHE_DIR", "PIP_CACHE_DIR", "PIP_INDEX_URL", "UV_INDEX_URL")
 
 
+def _real_home() -> Path:
+    """The OS user's own home, never a Hermes profile's `<profile>/home` (a container's
+    profiles each get one as HOME, so a cache under `~` would be one per profile). Hermes
+    answers this itself (`hermes_constants.get_real_home`); without Hermes's module, the
+    launcher's HERMES_REAL_HOME, else this process's home."""
+    try:
+        from hermes_constants import get_real_home
+        return Path(get_real_home())
+    except Exception:
+        return Path(os.environ.get("HERMES_REAL_HOME") or Path.home())
+
+
+def _shared_caches() -> dict[str, str]:
+    """Where uv and pip keep downloaded packages, shared by every profile of this user: their
+    usual per-user caches (`$XDG_CACHE_HOME` or `~/.cache`, of the real home). Hermes keeps
+    no shared plugin cache — its plugin storage is `<profile>/plugin-data`, one folder per
+    profile, and the root profile's folder holds that profile's config — so the user cache
+    uv itself would use is the shared place: a second profile's `uv sync` links the packages
+    the first downloaded instead of fetching them again. What uv reuses from it is hash-checked
+    against uv.lock's hashes, so a shared cache is not a way to change what a profile installs.
+    A cache the person already chose (UV_CACHE_DIR, PIP_CACHE_DIR) is left alone; Windows keeps
+    the tools' own defaults."""
+    if os.name == "nt":
+        return {}
+    base = Path(os.environ.get("XDG_CACHE_HOME") or _real_home() / ".cache")
+    out = {}
+    if not os.environ.get("UV_CACHE_DIR"):
+        out["UV_CACHE_DIR"] = str(base / "uv")
+    if not os.environ.get("PIP_CACHE_DIR"):
+        out["PIP_CACHE_DIR"] = str(base / "pip")
+    return out
+
+
 def _tool_env() -> dict[str, str]:
     """P298 (security audit): what git, uv and pip are given — the locale, the network's
     certificates and proxies, the caches, and nothing else. `_clean_env` is everything
     the Hermes process holds (its .env's API keys and tokens among it) less its Python
-    settings, and pip and uv run packages' build code from PyPI."""
-    return {k: v for k, v in os.environ.items() if k in _TOOL_ENV or k.startswith("LC_")}
+    settings, and pip and uv run packages' build code from PyPI. Their caches are the
+    user's (`_shared_caches`), not the profile's HOME."""
+    env = {k: v for k, v in os.environ.items() if k in _TOOL_ENV or k.startswith("LC_")}
+    return {**_shared_caches(), **env}
 
 
 def _run(argv: list[str], cwd: Path | None = None) -> str:
@@ -286,15 +324,43 @@ def install_runtime(say=print, target: Path | None = None) -> Path:
 _INSTALLED = "emporia-installed"      # in the runtime's .venv: the commit its packages were installed for
 
 
+class _Phase:
+    """One step of setup that takes a while: says what it is doing before it starts, and how long
+    it took after, so a slow connection never looks like a hang."""
+
+    def __init__(self, say, label: str):
+        self.say, self.label = say, label
+
+    def __enter__(self):
+        self.say(f"  {self.label} ...")
+        self.start = time.monotonic()
+        return self
+
+    def __exit__(self, kind, *_):
+        if kind is None:
+            self.say(f"  {self.label}: done in {time.monotonic() - self.start:.1f} s")
+        return False
+
+
 def _sync_runtime(say, rt: Path, repo: str, sha: str, tree: str = "") -> Path:
+    fetched = False
     if not (rt / ".git").is_dir():
         if rt.exists():
             shutil.rmtree(rt)
-        say(f"  Fetching Emporia {sha[:12]} from {repo}")
-        _run(["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout", repo, str(rt)])
+        # Not a clone: a clone (even a blob-less one) downloads every commit and tree of Emporia's
+        # history, then fetches the pinned commit's files in a second round trip. This asks for the
+        # pinned commit alone — one commit, its tree, its files, one request. It is still fetched by
+        # its full sha, and verify_runtime below holds it to that sha and tree.
+        with _Phase(say, f"Fetching Emporia {sha[:12]} from {repo}"):
+            rt.mkdir(parents=True, exist_ok=True)
+            _run(["git", "init", "--quiet", str(rt)])
+            _run(["git", "-C", str(rt), "remote", "add", "origin", repo])
+            _run(["git", "-C", str(rt), "fetch", "--quiet", "--depth=1", repo, sha])
+        fetched = True
     _run(["git", "-C", str(rt), "remote", "set-url", "origin", repo])   # the pinned source, nothing else
-    if _git_head(rt) != sha:
-        _run(["git", "-C", str(rt), "fetch", "--quiet", repo, sha])
+    if not fetched and _git_head(rt) != sha:
+        with _Phase(say, f"Fetching Emporia {sha[:12]} from {repo}"):
+            _run(["git", "-C", str(rt), "fetch", "--quiet", "--depth=1", repo, sha])
     # Always: after a --no-checkout clone the files are not there yet even when HEAD is the
     # pinned commit (P296), and --force puts back any tracked file that was changed here. The
     # index is rebuilt from the pinned tree first, so no file it was told to ignore is skipped.
@@ -305,8 +371,18 @@ def _sync_runtime(say, rt: Path, repo: str, sha: str, tree: str = "") -> Path:
     first = not python_of(rt).exists()
     if not first and marker.is_file() and marker.read_text().strip() == sha:
         return rt                      # its packages are already this commit's: nothing to install
-    say("  Installing its Python packages" + (" (first time: a minute or two)" if first else ""))
+    # The agent's packages: pyproject's base set plus the x402 payer. Not the `relay` extra
+    # (the relay's server-side packages: a relay installs it itself).
     uv = shutil.which("uv")
+    with _Phase(say, "Installing its Python packages" + (" (the first time on this machine takes longest)" if first else "")):
+        _install_packages(rt, sha, uv, first)
+    verify_runtime(rt, sha, tree)      # installing changed no tracked file
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(sha + "\n")
+    return rt
+
+
+def _install_packages(rt: Path, sha: str, uv: str | None, first: bool) -> None:
     if uv:
         _run([uv, "sync", "--quiet", "--frozen", "--no-dev", "--extra", "x402"], cwd=rt)
     else:
@@ -324,10 +400,6 @@ def _sync_runtime(say, rt: Path, repo: str, sha: str, tree: str = "") -> Path:
         pip = [str(python_of(rt)), "-m", "pip", "install", "--quiet"]
         _run([*pip, "--require-hashes", "--no-deps", "-r", str(locked)])
         _run([*pip, "--no-deps", "-e", str(rt)])
-    verify_runtime(rt, sha, tree)      # installing changed no tracked file
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(sha + "\n")
-    return rt
 
 
 # ── The commands ─────────────────────────────────────────────────────────────
@@ -560,7 +632,7 @@ def _next_steps(name: str, rt: Path | None = None) -> None:
         _emporia(rt, "welcome", name)
     print("\n  Then:")
     print(f"      hermes {p}emporia status     # its name on the relay, and whether it has registered")
-    print(f"      hermes {p}dashboard          # the Emporia tab: its sessions, rooms, payments, DMs")
+    print(f"      hermes {p}dashboard          # the Emporia tab: its games, talk, labs, quests and DMs")
     print(f"      hermes {p}emporia doctor     # if anything looks wrong; each problem names its fix")
 
 
@@ -721,7 +793,7 @@ def _profiles_running(rt: Path) -> list[str]:
 # for the person's yes. An agent with a terminal could already run the runtime's CLI
 # (`$EMPORIA_PYTHON -m emporia.cli`, guarded the same way); this adds no reach.
 PASSTHROUGH = ("agent", "archive", "delete", "dms", "features", "guardians", "house", "identity", "lab", "log",
-               "operator", "relay", "role", "rounds", "sheet", "signer", "skill-lock", "stats", "visits", "wake",
+               "operator", "peek", "relay", "role", "rounds", "sheet", "signer", "skill-lock", "stats", "visits", "wake",
                "wallet", "welcome")
 # `emporia setup <these>` passes through too: the plugin's setup is the agent's.
 SETUP_PASSTHROUGH = ("relay", "stripe", "dashboard", "log")

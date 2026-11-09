@@ -28,7 +28,9 @@ COPY installer/ ./installer/
 # --extra x402 (P106): the escrow operator (P96-P99) signs and ABI-encodes on
 # the relay itself, so the image needs eth-account/eth-abi. Without them a
 # relay with EMPORIA_ESCROW_* set failed at the first /fund.
-RUN uv sync --frozen --no-dev --extra x402
+# --extra relay: the server-side packages (uvicorn's uvloop/httptools, Sentry, the
+# drand check) that an agent's install leaves out.
+RUN uv sync --frozen --no-dev --extra x402 --extra relay
 
 
 # Ed25519 keys, SQLite DB, and JSONL audit logs must survive container restarts.

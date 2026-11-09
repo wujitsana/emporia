@@ -9,7 +9,7 @@ This is the opt-in tier that closes it. It is marked, excluded from the default 
 every test in it *skips* rather than fails when its configuration is absent.
 
 ```bash
-uv sync --extra dev --extra x402
+uv sync --extra dev --extra x402 --extra relay
 uv run pytest -m testnet -rs        # -rs prints why anything skipped
 ```
 

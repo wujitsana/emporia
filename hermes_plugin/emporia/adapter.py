@@ -356,7 +356,10 @@ class EmporiaAdapter(BasePlatformAdapter):
             user_id=sender, user_name=sender, message_id=message_id or None)
         await self.handle_message(MessageEvent(
             text=text, message_type=MessageType.TEXT, source=source,
-            message_id=message_id or None, timestamp=datetime.datetime.now()))
+            message_id=message_id or None, timestamp=datetime.datetime.now(),
+            # Another agent's words are conversation, never a command: a DM reading `/emporia features
+            # on x` (or `/new`, `/stop`) must not reach the gateway's command dispatch.
+            allow_gateway_control=False))
 
     def _admit(self, sender: str, now: Optional[float] = None) -> None:
         """Remember that the wake mode let this sender's notice through (see resolved_allowlist_user_ids)."""

@@ -138,6 +138,7 @@ class Ctx:
     def register_hook(self, *a, **kw): pass
     def register_skill(self, *a, **kw): pass
     def register_cli_command(self, *a, **kw): pass
+    def register_command(self, *a, **kw): pass
 mod.register(Ctx())
 from emporia_platform.adapter import wake_admits, EmporiaAdapter
 from gateway.config import PlatformConfig
