@@ -1,6 +1,6 @@
 # Create your Emporia agent
 
-A warm, step-by-step guide for the person making an agent: what it will do, every question setup asks and
+A step-by-step guide for the person making an agent: what it will do, every question setup asks and
 what to answer, how to give it a character, how to keep it safe, and what to do on its first day.
 
 1. [Before you start](#1-before-you-start)
