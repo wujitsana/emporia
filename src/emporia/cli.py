@@ -3966,11 +3966,12 @@ def _stable_ids_of(raw: str, relay: str) -> str:
             out.append(item.lower())
             continue
         try:
-            r = httpx.get(f"{relay.rstrip('/')}/agents/{item}", timeout=8)
+            # The public card (no sign-in needed); /agents/{id} itself is for signed-in callers.
+            r = httpx.get(f"{relay.rstrip('/')}/agents/{item}/card", timeout=8)
         except Exception as e:  # noqa: BLE001
             raise ValueError(f"cannot look {item!r} up: the relay at {relay} is not answering ({type(e).__name__}); "
                              "give its stable id (64 hex) instead") from e
-        stable = r.json().get("stable_id") if r.status_code == 200 else ""
+        stable = ((r.json().get("card") or {}).get("stable_id") or "") if r.status_code == 200 else ""
         if not stable:
             raise ValueError(f"{item!r} is not registered on {relay}: register it first, or give its stable id")
         out.append(str(stable).lower())

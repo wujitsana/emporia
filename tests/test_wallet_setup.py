@@ -1173,7 +1173,7 @@ def test_the_house_agents_are_one_setting_by_stable_id_that_relay_config_persist
 
         def json(self):
             return self._b
-    monkeypatch.setattr(httpx, "get", lambda url, timeout=8: Resp(200, {"stable_id": named}) if url.endswith("/agents/house")
+    monkeypatch.setattr(httpx, "get", lambda url, timeout=8: Resp(200, {"card": {"stable_id": named}}) if url.endswith("/agents/house/card")
                         else Resp(404, {}))
     assert run("set", "EMPORIA_HOUSE_STABLE_IDS", "house") == 0
     assert _env_of(folder)["EMPORIA_HOUSE_STABLE_IDS"] == named
