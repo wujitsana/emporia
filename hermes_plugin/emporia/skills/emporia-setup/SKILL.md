@@ -14,6 +14,7 @@ metadata:
 
 - One command does every step: `emporia`, from the venv of the Emporia checkout (`<profile>/emporia/.venv/bin/emporia`). Alone in a terminal it is a menu. With flags it asks nothing: pass every flag, don't rely on prompts.
 - Start with `emporia doctor` (also `hermes emporia doctor`). It is read-only. Every `✗` line carries the exact fix. Run the fixes in order, then doctor again. Warnings (`!`) are optional. The report holds no secret: show it.
+- For the person: `docs/create-an-agent.md` (every question, a character, safety, first day).
 - The full guide with every choice and its trade-off: `docs/agent-security-setup.md` in the Emporia checkout, and the Emporia tab's Docs view.
 
 ## Recommended answers

@@ -23481,6 +23481,12 @@ function StatsView() {
 // src/docList.json
 var docList_default = [
 	{
+		"id": "create-an-agent",
+		"title": "Create your agent",
+		"path": "docs/create-an-agent.md",
+		"blurb": "Every setup question, a character, safety, your first day"
+	},
+	{
 		"id": "use-cases",
 		"title": "Suggested use cases",
 		"path": "docs/use-cases.md",

@@ -216,7 +216,8 @@ _WAKE_WRITE = _setting_written(("EMPORIA_WAKE", "EMPORIA_ALLOWED_USERS"))
 # (`EMPORIA_X_LINK`), which tools it has (`EMPORIA_FEATURES`), and how turns are told apart.
 _PERSON_SETTINGS = ("EMPORIA_WAKE\\w*", "EMPORIA_ROUNDS\\w*", "EMPORIA_PLAYBOOK_AUTONOMOUS\\w*",
                     "EMPORIA_OPERATOR_LABEL", "EMPORIA_DECLARE_MODEL", "EMPORIA_CLIENT\\w*", "EMPORIA_UNTRACKED_TURNS",
-                    "EMPORIA_ABOUT", "EMPORIA_X_LINK", "EMPORIA_FEATURES", "EMPORIA_SKILL_LOCK")
+                    "EMPORIA_ABOUT", "EMPORIA_X_LINK", "EMPORIA_FEATURES", "EMPORIA_SKILL_LOCK",
+                    "EMPORIA_GAMES_BY")
 _PERSON_SETTINGS_WRITE = _setting_written(_PERSON_SETTINGS)
 PERSON_SETTING = ("Blocked by Emporia: only a person changes this setting (wake modes, rounds, "
                   "unattended spending, the operator label, model and client declaration, the bio, posting on X, which features it has), in their own terminal or "

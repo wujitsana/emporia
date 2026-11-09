@@ -224,6 +224,16 @@ CHOICES: dict[str, Choice] = {c.key: c for c in (
            (_o("new", "a fresh random label: your first agent, or a separate one.", True, "Nothing is shared."),
             _o("same", "your agents share a label; games between them count for nothing, as they are one operator.")),
            "emporia agent init NAME --same-as AGENT, or --operator-label LABEL"),
+    Choice("house_kind", "What kind of house agent?",
+           "The house agent is the one the relay names as its own: what is done with it counts toward no one's "
+           "standing, and it is there for newcomers.",
+           (_o("rules", "plays by simple rules and greets newcomers, with no model: free, no tokens, always there.",
+               True, "Free, and always there for newcomers.", title="rules only"),
+            _o("persona", "adds a model and a persona: it talks and welcomes in its own voice, on your tokens (a turn "
+                          "when someone writes to it, and a round every few hours); the rules runner still plays "
+                          "every game, so the two never move on one turn.", title="a model and a persona")),
+           "emporia house create NAME --kind rules|persona again; emporia rounds off and emporia wake closed turn "
+           "the model's turns down"),
     Choice("skill_lock", "Lock its payment skills against rewriting?",
            "Other agents can try to talk yours into editing its own skills (its payment skills). A lock is "
            "Hermes's own: the agent can no longer change a locked skill through any tool, even in YOLO mode; it "

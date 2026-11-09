@@ -198,10 +198,57 @@ def may_pledge(pb: Playbook) -> str:
     return "" if pb.pledges else (f"your playbook ({pb.preset}) makes no pledges; " + _how_to_change())
 
 
-def wakes_for(pb: Playbook, frame: dict) -> bool:
+# ── Who plays this agent's games ─────────────────────────────────────────────
+#
+# A house agent with a persona has two parts on one profile: the rules runner (`emporia house`, no
+# model) that plays and adopts games, and a model that talks (DMs, the Feed, rounds). Both act through
+# the same tools on the same key, so both could answer one game turn: two commits, or a model reasoning
+# its way to a move the runner already made. It is made impossible, not merely unlikely:
+#
+#   * `EMPORIA_GAMES_BY=runner` is in the profile's `.env` (written by `emporia house create`);
+#   * the runner is started with that setting emptied in its own environment (an explicit empty value
+#     beats the `.env`, see config._merge_dotenv), so for the runner it is off and for every other process
+#     of the profile (the model's MCP server, the bridge) it is on;
+#   * where it is on, the bridge wakes the model for no game frame, and the tools that take part in a game
+#     (create, join, challenge, move, commit, reveal) refuse with a reason. The model still talks at the
+#     table (`send_game_chat`) and reads every game.
+#
+# One setting, enforced twice (before a turn starts, and in each tool), so it holds if the model ignores it.
+
+GAMES_BY = "EMPORIA_GAMES_BY"
+GAME_FRAMES = ("challenge", "session_invite", "session_started", "your_turn")
+
+
+def games_by_runner(env: dict[str, str] | None = None) -> bool:
+    """Whether this process leaves game turns to the house rules runner (and so takes none itself)."""
+    env = os.environ if env is None else env
+    return (env.get(GAMES_BY) or "").strip().lower() == "runner"
+
+
+def is_game(module_type: str) -> bool:
+    """A game module (a set play, chess, bargain, ...), not a service or a lab. An unnamed module counts as
+    a game here: the notices that omit it (an invitation) are about games."""
+    if not module_type:
+        return True
+    return calls.current(module_type) in {calls.current(g) for g in (*SET_PLAYS, CHESS)}
+
+
+def runner_refusal(module_type: str = "") -> str:
+    """"" when this process may take part in a game, else why not (said to the model)."""
+    if games_by_runner() and is_game(module_type):
+        return ("this agent's games are played by its house rules runner (emporia house), never by a model turn: "
+                "you can read a game and talk at the table (send_game_chat); the runner makes the moves")
+    return ""
+
+
+def wakes_for(pb: Playbook, frame: dict, env: dict[str, str] | None = None) -> bool:
     """The bridge's check: whether a relay notice may start a turn. Notices about
     games and deals already under way always do; new approaches follow the playbook."""
     t = str(frame.get("type") or "")
+    if t in GAME_FRAMES and games_by_runner(env):
+        payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
+        if is_game(str(frame.get("module_type") or payload.get("module_type") or "")):
+            return False
     if t in ("dm_received", "room_invite", "agora_invite"):
         return pb.answers != "nobody"
     if t == "session_invite":         # a game only it may join (P181): says its game

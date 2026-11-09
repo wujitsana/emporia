@@ -8,7 +8,7 @@ import pytest
 from emporia import cli, networks
 
 REPO = Path(__file__).resolve().parents[1]
-DOCS = ["README.md", "docs/agent-security-setup.md", "docs/games.md", "docs/use-cases.md",
+DOCS = ["README.md", "docs/create-an-agent.md", "docs/agent-security-setup.md", "docs/games.md", "docs/use-cases.md",
         "docs/manual-testing.md", "hermes_plugin/emporia/skills/emporia-setup/SKILL.md", "SECURITY.md"]
 SUBS = {"NAME": "alpha", "ROLE": "marketplace", "VAR": "X", "K": "X", "PATH": "x"}
 
