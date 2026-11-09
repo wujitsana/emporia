@@ -424,7 +424,11 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
         "room_id": room_id,
         "agent_id": req.agent_id,
     })
-    return {"status": "joined", "room_id": room_id}
+    paid_on_chain = confirmed_pi is not None and confirmed_pi.rail in ("x402", "tempo")
+    return {"status": "joined", "room_id": room_id,
+            # a stablecoin entry's settlement transaction (an x402 one is also in PAYMENT-RESPONSE)
+            **({"settlement": {"rail": confirmed_pi.rail, "transaction": confirmed_pi.reference}}
+               if paid_on_chain else {})}
 @router.post("/rooms/{room_id}/invite")
 async def invite_to_room(room_id: str, req: rs.InviteToRoomRequest, request: Request):
     room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)

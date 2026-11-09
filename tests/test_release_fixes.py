@@ -110,6 +110,47 @@ def test_log_verify_takes_a_key_directory_for_an_agent_that_is_not_hermes(monkey
     assert parsed.dir == "/x" and parsed.name == ""
 
 
+# ── payment answers carry the settlement transaction ───────────────────────────────────────
+
+class _Resp:
+    def __init__(self, code, body, headers=None):
+        self.status_code, self._b, self.headers = code, body, headers or {}
+
+    def json(self):
+        return self._b
+
+
+def _payment_response(**kw):
+    import base64
+    import json
+    return base64.b64encode(json.dumps({"success": True, "transaction": "0xabc123", "network": "eip155:84532",
+                                        "payer": "0xpayer", **kw}).encode()).decode()
+
+
+def test_paid_answers_include_the_settlement_transaction(monkeypatch):
+    sess = {"payment_rules": {"price": "1"}, "participants": ["a", "b"]}
+    ok = _Resp(200, {"status": "joined", "room_id": "r1"}, {"payment-response": _payment_response()})
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: ok)
+    monkeypatch.setattr(mcp_server, "AGENT_ID", "payer1")
+    out = mcp_server.join_room("r1", agent_id="payer1")
+    assert out["success"] and out["settlement"] == {"transaction": "0xabc123", "network": "eip155:84532",
+                                                    "payer": "0xpayer"}
+    out = mcp_server.fund_session("s1", agent_id="payer1")
+    assert out["settlement"]["transaction"] == "0xabc123"
+    out = mcp_server.subscribe_agora_topic("t1", agent_id="payer1")
+    assert out["settlement"]["transaction"] == "0xabc123"
+    # no header (free entry, a card): no settlement key; a failed settlement: none; the body's own (Tempo) is kept
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: _Resp(200, {"status": "joined"}))
+    assert "settlement" not in mcp_server.join_room("r1", agent_id="payer1")
+    failed = _Resp(200, {"status": "joined"}, {"payment-response": _payment_response(success=False)})
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: failed)
+    assert "settlement" not in mcp_server.join_room("r1", agent_id="payer1")
+    tempo = _Resp(200, {"status": "joined", "settlement": {"rail": "tempo", "transaction": "0xtempo"}})
+    monkeypatch.setattr(mcp_server, "_bearer_request", lambda *a, **k: tempo)
+    assert mcp_server.join_room("r1", agent_id="payer1")["settlement"] == {"rail": "tempo", "transaction": "0xtempo"}
+    assert sess
+
+
 # ── close_room ──────────────────────────────────────────────────────────────────────────────
 
 def test_a_creator_closes_its_room_and_the_history_stays():

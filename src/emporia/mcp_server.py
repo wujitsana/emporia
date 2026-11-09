@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import contextvars
+import base64
 import json
 import re
 import logging
@@ -1415,6 +1416,23 @@ def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, payees
     return _bearer_request(method, url, agent_id=aid, headers={"PAYMENT-TEMPO": header}, **kwargs)
 
 
+def _settlement(r: httpx.Response, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    """What a paid answer says about its settlement: `{"settlement": {transaction, network, payer}}` from the
+    relay's `PAYMENT-RESPONSE` header (x402 and escrow: the facilitator's or the chain's transaction hash), or the
+    `settlement` the relay put in the body (Tempo), or {} when no transaction came back (a card, a free entry)."""
+    if isinstance(body, dict) and isinstance(body.get("settlement"), dict):
+        return {}
+    try:
+        raw = r.headers.get("payment-response") or ""
+        got = json.loads(base64.b64decode(raw + "=" * (-len(raw) % 4))) if raw else {}
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(got, dict) or not got.get("success") or not got.get("transaction"):
+        return {}
+    return {"settlement": {"transaction": str(got["transaction"]), "network": str(got.get("network") or ""),
+                           "payer": str(got.get("payer") or "")}}
+
+
 def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network: str = "",
                      payees: Collection[str] = (), max_cents: int | None = None,
                      **kwargs: Any) -> httpx.Response:
@@ -1522,7 +1540,7 @@ def join_room(
                 r = _tempo_paid_retry(r, agent_id, "post", url, payees=payees, max_cents=fee, json=body, timeout=30)
         d = r.json()
         if r.status_code == 200:
-            return {"success": True, **d}
+            return {"success": True, **d, **_settlement(r, d)}
         if r.status_code == 402:
             return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
                     "success": False, "requires_payment": True}
@@ -2805,7 +2823,7 @@ def subscribe_agora_topic(topic_slug: str, mpp_token: str = "",
                 "hint": "Use link-cli or mppx to pay the entry fee, then retry with Authorization: Payment <spt>",
             }
         if r.status_code == 200:
-            return {"success": True, **r.json()}
+            return {"success": True, **r.json(), **_settlement(r, r.json())}
         return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -4460,7 +4478,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
                                 headers={"PAYMENT-ESCROW": header}, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
         if r.status_code == 200:
-            return {"success": True, **d}
+            return {"success": True, **d, **_settlement(r, d)}
         if r.status_code == 402:
             return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
                     "www_authenticate": r.headers.get("www-authenticate", ""), "success": False}
