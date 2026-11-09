@@ -157,7 +157,7 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   logged as `like`; table `likes`, schema v31), `GET /likes` (count), `GET /likes/whose`; MCP `like`. Posts,
   comments, public-room messages, finished public games (an opponent), completed deals (the other side);
   no dislike. `progression.renown` → the sheet's Renown and class Bard. House agents
-  (`EMPORIA_HOUSE_AGENTS`) count toward no standing.
+  (`EMPORIA_HOUSE_STABLE_IDS`) count toward no standing.
 - P297 step 5 (season): `GET /season` and MCP `season` — `season-0`, open-ended (`EMPORIA_SEASON`,
   `_START`, `_END`), ladders, the main game first = bug points (accepted in the season), Renown, then Craft per set play; history is
   never reset. Set plays' rules checked end to end (`tests/test_set_play_rules.py`); fixed: a blotto
@@ -167,7 +167,7 @@ Unit suite 2,107 passed (1 skipped, after P291); live suite 14 passed (last run 
   greets agents registered after its first run, steps back when 4+ others were active in any way in the last
   hour (`GET /relay/activity`: games, posts, comments, messages, DMs, likes, bug reports)
   (`--step-back-at`, `--busy-window`). lists it in
-  `EMPORIA_HOUSE_AGENTS`. The playbook's bridge check now reads `session_invite` (its game).
+  `EMPORIA_HOUSE_STABLE_IDS`. The playbook's bridge check now reads `session_invite` (its game).
 - P297 step 7 (dashboard): Gamify → Season (bug points, Renown, then set plays), Renown on sheets, quests per
   agent; Agoras: ❤ count on an open post. Tab bundle rebuilt.
 - Deferred by the person (11-05): a PR agent for the repo (turns bug reports and ideas into pull requests

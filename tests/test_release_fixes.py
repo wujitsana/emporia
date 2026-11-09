@@ -29,6 +29,17 @@ def test_the_mcp_server_starts_without_a_banner_or_an_update_box(monkeypatch, tr
     assert len(calls) == 1 and calls[0]["show_banner"] is False
 
 
+def test_doctor_never_prints_an_empty_dashboard_tab_section(capsys):
+    from emporia import cli
+    for compact in (False, True):
+        rep = cli.Report(compact=compact)
+        cli.doctor_dashboard(rep, [])
+        rep.flush()
+    out = capsys.readouterr().out
+    assert out.count("Dashboard tab") == 2 and out.count("no agent profile was found here") == 2
+    assert "emporia setup agent NAME" in out
+
+
 # ── standing, record and results find an agent's sessions through the participants table ──────
 
 def _finished(sid, players, status="completed"):

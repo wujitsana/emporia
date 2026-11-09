@@ -3,14 +3,15 @@
 An audit of the Emporia Hermes plugin (`hermes_plugin/emporia/`) against the 18 admission
 rules in Hermes's `plugin-catalog/README.md` and its submission guide, with evidence, the
 validator's output, and how each rule is met. Re-derived on 2026-11-06 against the catalog README
-and the submission guide as published that day (Hermes v0.23.0 is the current release; this
-machine runs 0.22.6), for `preview-2`; see `docs/review-pass-2026-11-06-release.md`.
+and the submission guide as published that day, for `preview-2` (see
+`docs/review-pass-2026-11-06-release.md`); the validator was re-run on 2026-11-09 with Hermes v0.23.0, the
+current release.
 
 - The draft entry is in [`docs/catalog/emporia.yaml`](catalog/emporia.yaml).
 - The draft PR text is in [`docs/catalog/PR.md`](catalog/PR.md).
 
 **What the plugin is.** A `kind: platform` plugin. It registers:
-- three hooks;
+- four hooks (`pre_llm_call`, `pre_tool_call`, `post_llm_call`, `transform_tool_result`);
 - a gateway platform (`emporia`);
 - two skills;
 - the `hermes emporia` CLI command;
@@ -19,7 +20,7 @@ machine runs 0.22.6), for `preview-2`; see `docs/review-pass-2026-11-06-release.
   status-bar chip and one setting), through the Desktop plugin SDK.
 
 The agent's Emporia tools are not plugin registrations. They are an MCP server,
-`emporia.mcp_server` (96 tools), in Emporia's *runtime* (`src/emporia`).
+`emporia.mcp_server` (85 tools, switched on by feature), in Emporia's *runtime* (`src/emporia`).
 `hermes emporia setup` installs that runtime from this same repo, at a pinned commit, into
 `<HERMES_HOME>/plugin-data/emporia/runtime`, and adds the server to the profile's
 `config.yaml`. A reviewer therefore reads two things at the pin: the plugin subdir, and the
@@ -37,7 +38,7 @@ runtime it installs.
 | 6 | Capabilities match | pass | Generated from Hermes's own probe, and kept in step with the manifest by a test. |
 | 7 | Install scanner | pass | `security scan — safe`, with no findings. |
 | 8 | Desktop SDK surface | pass | `desktop/plugin.js` imports only `@hermes/plugin-sdk`, `react` and `react/jsx-runtime`; no `eval`, `new Function`, dynamic `import()`, script tags, prototype patching (the one `.prototype.` write is the bundled PEG parser's own class) or reads of Desktop's markup; `desktop surface` passes. |
-| 9 | No core overrides | pass | No rebinds and no private Hermes imports. The tab's WebSocket is authenticated with the plugin's own single-use ticket, minted by an authenticated route. |
+| 9 | No core overrides | pass | No core overrides; imports only Hermes modules that `hermes plugins validate` accepts without warnings. The tab's WebSocket is authenticated with the plugin's own single-use ticket, minted by an authenticated route. |
 | 10 | Dependency policy | pass | The plugin declares no Python dependencies. The runtime's are bounded and locked (`uv lock --check` passes). |
 | 11 | Credentials through Hermes | pass | Every profile setting and key is read and written through Hermes. The MCP server gets them as `${NAME}`. Nothing opens a profile's `.env` or `auth.json`. No Nous token is read or sent. |
 | 12 | Approvals, unattended runs | pass | No child inherits an approval bypass. Nothing waits on a terminal that is not there. |
@@ -50,9 +51,9 @@ runtime it installs.
 
 ## Validator
 
-`hermes plugins validate hermes_plugin/emporia`, run on a `git archive` of each HEAD in a
-throwaway `HERMES_HOME` and `HOME`. It gave the same output before this work
-(`hackathon-v2`) and after it (`catalog-rule11`):
+`hermes plugins validate hermes_plugin/emporia`, run (Hermes Agent v0.23.0) on a `git archive` of the HEAD of
+`release-fixes` (the `hermes_plugin` folder, extracted to its own folder) in a throwaway `HERMES_HOME` and
+`HOME`:
 
 ```
 ✓ manifest — plugin.yaml parses
@@ -71,17 +72,25 @@ throwaway `HERMES_HOME` and `HOME`. It gave the same output before this work
 ✓ security scan — safe
 ✓ no core override — no runtime rebinds of Hermes core
 ✓ desktop surface — stays inside the plugin SDK surface
-◇ Isolation — in-process only: kind 'platform' ...
+◇ Isolation — in-process only: kind 'platform': gateway platform adapters run in
+the Hermes process; dashboard backend API streams (SSE/websocket); ...
+  · ctx.register_cli_command() is skipped in the host (`hermes <command>`
+subcommands are wired into the local CLI parser)
+
 Validation passed.
 ```
 
 - **No failures, no warnings.** One note remains: the isolation note, which every platform
-  adapter gets (platform adapters run in the gateway process).
+  adapter gets (platform adapters run in the gateway process). (An earlier run of this commit range had one
+  warning, `security scan caution: dump_all_env (SKILL.md:32)`: a table row in the setup skill ending in a bare
+  `env |`, which the scanner reads as an environment dump. The values are in backticks now, and the scan says `safe`.)
 - **`--install-deps`** (what the catalog CI runs) has nothing to install. Hermes's own reader
   (`pm.plugin_declarations.read_python_declaration`) reports no `pyproject.toml` and no
   requirements for the plugin dir. It was not run here: it syncs the Hermes install's own
   environment, which is shared with the live gateway.
-- `scripts/validate_plugin_catalog.py docs/catalog/emporia.yaml` passes.
+- The entry validator, `scripts/validate_plugin_catalog.py`, lives in the hermes-agent repository (the catalog's
+  own CI runs it on the PR), not in this one. Here, `tests/test_catalog_entry.py` keeps `docs/catalog/emporia.yaml`
+  equal to the manifest and to what `register()` registers.
 
 ## Rule by rule
 
@@ -128,14 +137,14 @@ replaces.
   `tests/test_cli.py::test_a_catalog_runtime_is_never_pulled_or_synced_by_emporia_update`.
 
 ### 6. Declared capabilities — pass
-Hermes's probe records hooks `pre_tool_call`, `transform_tool_result` and `pre_llm_call`, no
-tools, no middleware, and the `emporia` command. The entry lists exactly those hooks, and as
+Hermes's probe records the four hooks `pre_llm_call`, `pre_tool_call`, `post_llm_call` and
+`transform_tool_result`, no tools, no middleware, and the `emporia` command. The entry lists exactly those hooks, and as
 `requires_env` the three settings the platform requires (`adapter.py`, `required_env`).
 `tests/test_catalog_entry.py` keeps the entry, the manifest and `register()` in step.
 
 ### 9. No core overrides — pass
-- `no core override` passes, and the validator reports no private core import: the plugin
-  imports nothing from `hermes_cli`.
+- No core overrides, and the plugin imports only Hermes modules that `hermes plugins validate` accepts without
+  warnings: `no core override` passes, and the plugin imports nothing from `hermes_cli`.
 - Hermes gates every plugin HTTP route, but for a WebSocket it only checks that the plugin is
   enabled (`PluginApiWebSocketGate`) and leaves the credential to the route. It documents no
   public helper for that check (the bundled kanban plugin calls a private one).

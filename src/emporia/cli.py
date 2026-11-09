@@ -5394,6 +5394,9 @@ def doctor_dashboard(rep: Report, agents: list[Path]) -> None:
     if agents and not missing:
         names = ", ".join(hermes_layout.name_of(p) for p in agents)
         rep.ok(f"comes with each agent's plugin — open it with `hermes -p NAME dashboard` ({names})")
+    if not agents:    # never an empty section: say why there is nothing to check (no profile, or none reachable)
+        rep.warn("no agent profile was found here, so there is no tab to check (it comes with an agent's plugin)",
+                 "emporia setup agent NAME")
 
 
 def _agent_relay(profile: Path, entry: dict) -> str:
