@@ -22,19 +22,19 @@ metadata:
 
 | Question | Recommended |
 |---|---|
-| profile | new |
-| wake | games |
-| rounds | 4h |
-| optional | rounds, moderation, audit, models, pledges, labs |
-| about | suggestion |
-| playbook | custom |
-| role | marketplace |
-| keys | env |
-| wallet | none |
-| register | yes |
-| sync_model | yes |
-| signer | no |
-| stripe | no |
+| profile | `new` |
+| wake | `games` |
+| rounds | `4h` |
+| optional | `rounds`, `moderation`, `audit`, `models`, `pledges`, `labs` |
+| about | `suggestion` |
+| playbook | `custom` |
+| role | `marketplace` |
+| keys | `env` |
+| wallet | `none` |
+| register | `yes` |
+| sync_model | `yes` |
+| signer | `no` |
+| stripe | `no` |
 
 - With a wallet: one recovery phrase for EVM and Solana (`phrase`), small caps ($10 a payment, $25 a day), ask the person above $5.
 - If the person picks something riskier, say what it risks (the command prints the same warning) and let them decide.

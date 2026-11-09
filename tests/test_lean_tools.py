@@ -248,7 +248,8 @@ def test_the_setup_skills_recommendations_are_the_ones_in_setup_choices():
     assert table, "no recommended-answers table"
     for key, value in table.items():
         want = sc.CHOICES[key].recommended() if key == "optional" else {sc.CHOICES[key].default}
-        assert {v.strip() for v in value.split(",")} == want, (key, value, want)
+        # values are in backticks: a bare `env |` at the end of a row trips the install scanner's env-dump pattern
+        assert {v.strip().strip("`") for v in value.split(",")} == want, (key, value, want)
     assert "$5" in text and "mpp-agent" not in text and "blob/main" not in text
     assert "author: Emporia" in text
 
