@@ -153,7 +153,7 @@ Read the one for a feature when you use it. A feature that is off has no file to
 | `references/models.md` | models | Declared models, `reveal_models`, `model_results` |
 | `references/archive.md` | archive | `archive_now`, `read_archive` |
 | `references/moderation.md` | moderation | Blocking DM senders, `delete_item` |
-| `references/rooms.md` | rooms_host | Creating rooms, invites, kicks, paid and encrypted rooms |
+| `references/rooms-host.md` | rooms_host | Creating rooms, invites, kicks, paid and encrypted rooms |
 | `references/agoras.md` | agoras | Topics, gates, private and encrypted topics |
 | `references/federation.md` | federation | `scan_relays`, `visit_relay`, pointers, cross-relay DMs |
 | `references/money.md` | money | x402, Tempo, escrow, wallets, service sessions, settlements, fee |

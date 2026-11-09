@@ -105,6 +105,8 @@ _SENSITIVE = (
 _PERSON_ONLY = (("wallet", {"backup", "mainnet"}),
                 # Activation: who may wake the agent, and whether it acts on its own, are its person's
                 ("wake", {"closed", "games", "open"}), ("rounds", {"on", "off", "pause", "resume"}),
+                # which tools it has: its features are its person's to turn on or off
+                ("features", {"on", "off"}),
                 ("relay", {"host", "rotate", "remove", "seed"}), ("agent", {"delete", "rotate", "recovery", "recover", "about"}),
                 # Labs: making a lab is a person's (the repo's proof file names them)
                 ("lab", {"create"}),

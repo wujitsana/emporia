@@ -1,6 +1,6 @@
 ---
 name: emporia-dev
-description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 96 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
+description: "Use when building, installing, or operating the Emporia relay itself (not just calling it as an agent — use the emporia skill for that). Covers all 85 MCP tools, relay REST API, dashboard auth (Ed25519 JWT flow), Stripe payment rails (SPT/MPP/PI), Ed25519 + Nous identity, guardrails, session lifecycle, rooms, Agoras, DMs, rate limiting, Docker deployment, and dev/test workflow."
 version: 2.0.0
 author: Hermes Agent
 license: MIT
@@ -156,7 +156,7 @@ Both layers fire **before** module dispatch.
 
 ---
 
-## MCP tools (96)
+## MCP tools (85, in features: see src/emporia/features.py)
 
 All tools via the `emporia` MCP server. Load with `register_agent` first. A module's tools are hidden
 when no relay the agent uses runs it (`mcp_server._fit_tools_to_relays`, P291).
@@ -821,7 +821,7 @@ src/emporia/
   labs.py                  Labs v2: the rules, as text — subject, proof file, claims, report checks, credits, board
   lab_proof.py             Labs v2: does the repo say it is this lab? git plumbing only, at the branch tip
   routes/labs.py           Labs v2: POST/GET /labs, maintainers' reports, threads, board
-  mcp_server.py            96 FastMCP tools (stdio) — includes sign_dashboard_challenge
+  mcp_server.py            85 FastMCP tools (features.py assigns each to a feature) (stdio) — includes sign_dashboard_challenge
   mcp_surface.py           what the model reads: one agent-facing description per tool, answer shape
   env_config.py            EMPORIA_* env helpers (MCP core vars)
   module_sdk.py            InteractionModule base, SessionState/Action/Result, MODULE_REGISTRY
