@@ -293,42 +293,104 @@ def _register(name: str, key_dir: Path, relay: str, label: str, client: str, ver
 
 # ── the command ──────────────────────────────────────────────────────────────
 
-def add_arguments(p: argparse.ArgumentParser) -> None:
-    """The flags `emporia agent init` and `mcp-config` add to the `agent` command. The key directory (init) and
-    the host (mcp-config) are its positionals; the agent's name is `--agent`."""
-    p.add_argument("--relay", default="", help="init: the relay's URL; mcp-config grok-bot: for the message")
-    p.add_argument("--client", default="", help="init: the host it runs on, declared: "
-                   + ", ".join(h for h, _ in HOSTS) + " or custom:<name> (default custom)")
-    p.add_argument("--client-version", default="", help="init: the host's version, declared (optional)")
-    p.add_argument("--model", default="", help="init, mcp-config grok-bot: the model it runs on, declared (optional)")
-    p.add_argument("--features", default="", help="init: the optional features it has, comma-separated, or default|all|none "
-                   "(`emporia features` lists them; default: the recommended set)")
-    p.add_argument("--no-declare-model", action="store_true", help="init: declare no model, even with --model")
-    p.add_argument("--operator-label", default="", help="init: use this operator label (op_...)")
-    p.add_argument("--same-as", default="", help="init: share the operator of another of your agents: its label, "
-                                                 "or its key directory")
-    p.add_argument("--display-name", default="", help="init: the name shown on the relay (default: the agent name)")
-    p.add_argument("--no-register", action="store_true", help="init: make the keys and settings; do not register")
-    p.add_argument("--recommended", action="store_true", help="init: ask only for the relay, the name and the host")
-    p.add_argument("--json", action="store_true", help="init: print the summary as JSON")
-    p.add_argument("--routine", action="store_true", help="mcp-config grok-bot: print the Routine prompt instead")
+#: The flags of `agent init` and `agent mcp-config`: (flag, argparse options, {command: its help line}). One table, so
+#: the shared `agent` parser and each command's own `--help` (`action_parser`) say the same things.
+_OPTIONS: list[tuple[str, dict[str, Any], dict[str, str]]] = [
+    ("--agent", {"default": ""}, {
+        "init": "the agent's name on the relay (a-z, 0-9, _ and -); asked for when you run in a terminal",
+        "mcp-config": "the agent whose config to print: its key directory defaults to ~/.config/emporia/agents/NAME "
+                      "(grok-bot: the Bot's name)"}),
+    ("--relay", {"default": ""}, {
+        "init": "the relay's URL (http:// or https://); the agent registers there",
+        "mcp-config": "grok-bot: the relay the Bot joins (default: the one in the agent's emporia.env)"}),
+    ("--client", {"default": ""}, {
+        "init": "the host it runs on, declared: " + ", ".join(h for h, _ in HOSTS) + " or custom:<name> (default custom)"}),
+    ("--client-version", {"default": ""}, {"init": "the host's version, declared (optional)"}),
+    ("--model", {"default": ""}, {
+        "init": "the model it runs on, declared (optional)",
+        "mcp-config": "grok-bot: the model the Bot runs on, declared (optional)"}),
+    ("--features", {"default": ""}, {
+        "init": "the optional features it has, comma-separated, or default|all|none (`emporia features` lists them; "
+                "default: the recommended set)"}),
+    ("--no-declare-model", {"action": "store_true"}, {"init": "declare no model, even with --model"}),
+    ("--operator-label", {"default": ""}, {"init": "use this operator label (op_...)"}),
+    ("--same-as", {"default": ""}, {
+        "init": "share the operator of another of your agents: its label, or its key directory"}),
+    ("--display-name", {"default": ""}, {"init": "the name shown on the relay (default: the agent name)"}),
+    ("--no-register", {"action": "store_true"}, {"init": "make the keys and settings; do not register"}),
+    ("--recommended", {"action": "store_true"}, {"init": "ask only for the relay, the name and the host"}),
+    ("--json", {"action": "store_true"}, {"init": "print the summary as JSON"}),
+    ("--routine", {"action": "store_true"}, {"mcp-config": "grok-bot: print the Routine prompt instead"}),
+    ("--ref", {"default": ""}, {
+        "mcp-config": "grok-bot: the commit or tag of Emporia the Bot installs (default: the one pinned in "
+                      "hermes_plugin/emporia/emporia_source.json; pick one you reviewed, see "
+                      "`git ls-remote https://github.com/wujitsana/emporia`)"}),
+]
+POSITIONALS = {
+    "init": ("KEY_DIR", "where its keys and settings are kept (default ~/.config/emporia/agents/NAME; never inside a "
+                        "Hermes profile). A bare name here is taken as --agent."),
+    "mcp-config": ("HOST", "the host to print the config for: " + ", ".join(
+        ("claude-desktop", "claude-code", "cursor", "openclaw", "pi", "grok-build", "grok-bot", "openai-agents",
+         "generic"))),
+}
+
+
+def add_arguments(p: argparse.ArgumentParser, skip: tuple[str, ...] = ()) -> None:
+    """The flags `emporia agent init` and `mcp-config` add to the `agent` command (`skip`: flags that command
+    already defines). The key directory (init) and the host (mcp-config) are its positionals; the agent's name is
+    `--agent`."""
+    for flag, opts, helps in _OPTIONS:
+        if flag in skip:
+            continue
+        p.add_argument(flag, **opts, help="; ".join(f"{cmd}: {h}" for cmd, h in helps.items()))
+
+
+def action_parser(action: str) -> argparse.ArgumentParser:
+    """The parser that holds only `action`'s own options (init or mcp-config): what `emporia agent init --help`
+    prints, instead of the shared `agent` command's long list."""
+    pos, pos_help = POSITIONALS[action]
+    p = argparse.ArgumentParser(
+        prog=f"emporia agent {action}", description=(__doc__ or "").split("\n\n")[0] if action == "init" else
+        mcp_config.__doc__)
+    if action == "mcp-config":
+        p.add_argument("host", metavar=pos, help=pos_help)
+        p.add_argument("key_dir", metavar="KEY_DIR", nargs="?", default="",
+                       help="the agent's key directory (default: from --agent, or the only agent made here)")
+    else:
+        p.add_argument("key_dir", metavar=pos, nargs="?", default="", help=pos_help)
+    for flag, opts, helps in _OPTIONS:
+        if action in helps:
+            p.add_argument(flag, **opts, help=helps[action])
+    return p
+
+
+def help_for(argv: list[str]) -> str:
+    """The `--help` text for `emporia agent init|mcp-config ... --help`, or "" when argv is not that."""
+    if len(argv) >= 2 and argv[0] == "agent" and argv[1] in POSITIONALS and ("-h" in argv or "--help" in argv):
+        return action_parser(argv[1]).format_help()
+    return ""
 
 
 def namespace_from_cli(a: argparse.Namespace) -> argparse.Namespace:
-    """`init`'s arguments from the `agent` command's: PATH is its first positional, the name is `--agent`."""
+    """`init`'s arguments from the `agent` command's: PATH is its first positional, the name is `--agent`. A bare
+    name as the positional (`emporia agent init scout`) is the name when it is no existing directory."""
+    path, name = a.url_or_name, a.agent
+    if not name and path and _AGENT.fullmatch(path) and not Path(path).expanduser().exists():
+        path, name = "", path
     return argparse.Namespace(
-        path=a.url_or_name, name=a.agent, relay=a.relay, client=a.client, client_version=a.client_version,
+        path=path, name=name, relay=a.relay, client=a.client, client_version=a.client_version,
         model=a.model, no_declare_model=a.no_declare_model, operator_label=a.operator_label, same_as=a.same_as,
         display_name=a.display_name, no_register=a.no_register, recommended=a.recommended, json=a.json,
         features=a.features)
 
 
 def mcp_config(a: argparse.Namespace) -> int:
-    """`emporia agent mcp-config HOST [KEY_DIR]`: the config on stdout, the notes on stderr."""
+    """`emporia agent mcp-config HOST [KEY_DIR]`: print the config for an agent's host (stdout; notes on stderr).
+    KEY_DIR defaults to the agent's own directory (`--agent NAME`), or the only agent made on this computer."""
     from emporia import host_configs
     try:
         text, notes = host_configs.build(a.url_or_name, a.name or "", name=a.agent, relay=a.relay, model=a.model,
-                                         routine=a.routine)
+                                         routine=a.routine, ref=getattr(a, "ref", ""))
     except host_configs.ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 2
@@ -410,7 +472,9 @@ def run(args: argparse.Namespace) -> int:
             return 130
     try:
         if not args.name:
-            raise InitError("--name is needed (the agent's name on the relay)")
+            raise InitError("--agent NAME is needed: the agent's name on the relay, e.g. "
+                            "`emporia agent init --agent scout --relay http://127.0.0.1:8088` "
+                            "(or give the name as the first word: `emporia agent init scout ...`)")
         key_dir = Path(args.path).expanduser() if args.path else default_dir(args.name)
         res = init_agent(
             name=args.name, key_dir=key_dir, relay=args.relay, client=args.client or "custom",

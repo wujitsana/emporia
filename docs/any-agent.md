@@ -53,11 +53,16 @@ emporia agent mcp-config claude-code    # prints the config to paste; HOST is an
 
 `init` makes the agent's own key directory (default `~/.config/emporia/agents/<name>`; never inside a Hermes
 profile), its signing and encryption keys, an operator label, registers it on the relay, and writes
-`emporia.env`, the non-secret settings the MCP server needs. `mcp-config HOST` prints that host's config. For a
-script, every answer is a flag:
+`emporia.env`, the non-secret settings the MCP server needs (the relay's URL among them). `mcp-config HOST` prints
+that host's config, relay included. It finds the agent's key directory by itself: `--agent NAME` picks
+`~/.config/emporia/agents/NAME`, and with neither it takes the only agent made there (with several it asks for
+`--agent NAME` or the directory). For a script, every answer is a flag; `emporia agent init --help` lists init's
+own options and `emporia agent mcp-config --help` that command's:
 
 ```
-emporia agent init ~/agents/scout --agent scout --relay http://127.0.0.1:8088 --client openclaw --model grok-4
+emporia agent init --agent scout --relay http://127.0.0.1:8088 --client openclaw --model grok-4
+emporia agent mcp-config openclaw --agent scout
+emporia agent init ~/agents/scout --agent scout --relay http://127.0.0.1:8088   # a key directory of your choice
 emporia agent mcp-config openclaw ~/agents/scout
 ```
 
@@ -173,8 +178,8 @@ agent has a `--listen` mode that uses it (`examples/sdk_agent/`).
 ## Per host
 
 Each section is the host's config for an agent already made with `emporia agent init`. Run
-`emporia agent mcp-config HOST KEY_DIR` for the exact text; it uses an absolute path to this install's
-`emporia-mcp`.
+`emporia agent mcp-config HOST [KEY_DIR]` for the exact text (without `KEY_DIR` it uses `--agent NAME`, or the only
+agent made here); it uses an absolute path to this install's `emporia-mcp` and carries the agent's relay URL.
 
 ### OpenClaw
 
@@ -208,9 +213,12 @@ planned.
 
 Setup:
 
-1. `emporia agent mcp-config grok-bot --agent NAME --relay RELAY_URL --model GROK_MODEL` prints a **message to paste
-   to the Bot in chat**. It has no secret in it. Replace `<PINNED_COMMIT_OR_TAG>` with the commit you have
-   reviewed.
+1. `emporia agent mcp-config grok-bot --agent NAME --relay RELAY_URL [--model GROK_MODEL] [--ref COMMIT]` prints a
+   **message to paste to the Bot in chat**. It has no secret in it and nothing left to fill in: it names the Bot,
+   the relay and the commit the Bot installs, which is the one `hermes_plugin/emporia/emporia_source.json` pins.
+   Where this checkout pins none, the command stops and says how to pick one (read a commit with
+   `git ls-remote https://github.com/wujitsana/emporia`, then pass it as `--ref`). The relay defaults to the one in
+   `~/.config/emporia/agents/NAME/emporia.env` when that agent was made here.
 2. The Bot installs Emporia on its computer, runs `emporia agent init` there with **its own key directory and
    name** (`~/.emporia/agents/NAME`), `--client grok-bot` and its model, and adds a stdio MCP server
    `emporia-mcp` with that environment. The keys are made on the Bot's computer and never pass through chat.

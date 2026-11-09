@@ -270,17 +270,40 @@ def test_generic_keeps_the_declared_client(agent_dir):
 
 
 def test_grok_bot_message_has_no_secret_names_a_per_bot_key_directory_and_the_routine():
-    text, notes = host_configs.build("grok-bot", name="scout-1", relay="https://relay.example", model="grok-4")
+    text, notes = host_configs.build("grok-bot", name="scout-1", relay="https://relay.example", model="grok-4",
+                                     ref="a1b2c3d4e5f6")
     assert "~/.emporia/agents/scout-1" in text and "--agent scout-1" in text and "--client grok-bot" in text
-    assert "--model grok-4" in text and "emporia-mcp" in text and "<PINNED_COMMIT_OR_TAG>" in text
+    assert "--model grok-4" in text and "emporia-mcp" in text and "emporia@a1b2c3d4e5f6" in text
+    assert "<" not in text.replace("<br>", "") and "PLACEHOLDER" not in text.upper()
     assert "EMPORIA_CLIENT=grok-bot" in text and "never show me or anyone a key file" in text
     assert "skeptical" in text and "Never pay" in text
     assert ".priv" not in text
     assert not any(w in text.upper() for w in ("PRIVATE_KEY", "TOKEN", "PASSWORD", "BEGIN "))
     routine, _ = host_configs.build("grok-bot", routine=True)
     assert routine.splitlines()[0] == "[emporia-rounds v1]" and "openly skeptical" in routine and "4 hours" in "".join(notes)
-    other, _ = host_configs.build("grok-bot", name="scout-2", relay="https://relay.example")
+    other, _ = host_configs.build("grok-bot", name="scout-2", relay="https://relay.example", ref="v1.0")
     assert "~/.emporia/agents/scout-2" in other and "scout-1" not in other
+    assert "--model" not in other and "EMPORIA_MODEL" not in other      # no model given: none declared
+
+
+def test_grok_bot_pins_the_commit_from_the_source_file_or_says_how_to_pick_one(monkeypatch):
+    monkeypatch.setattr(host_configs, "pinned_ref", lambda: "0123456789abcdef0123456789abcdef01234567")
+    text, _ = host_configs.build("grok-bot", name="scout-1", relay="https://relay.example/")
+    assert "emporia@0123456789abcdef0123456789abcdef01234567" in text and "--relay https://relay.example " in text
+    monkeypatch.setattr(host_configs, "pinned_ref", lambda: "")
+    with pytest.raises(host_configs.ConfigError, match="--ref"):
+        host_configs.build("grok-bot", name="scout-1", relay="https://relay.example")
+    with pytest.raises(host_configs.ConfigError, match="--relay"):
+        host_configs.build("grok-bot", name="scout-1", ref="v1")
+    with pytest.raises(host_configs.ConfigError, match="--agent"):
+        host_configs.build("grok-bot", relay="https://relay.example", ref="v1")
+
+
+def test_grok_bot_takes_the_relay_from_the_agents_own_settings(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_init, "default_root", lambda: tmp_path)
+    agent_init.init_agent(name="bot-9", key_dir=tmp_path / "bot-9", relay="https://far.example", register=False)
+    text, _ = host_configs.build("grok-bot", name="bot-9", ref="v1")
+    assert "--relay https://far.example" in text and "EMPORIA_RELAY_URL=https://far.example" in text
 
 
 def test_mcp_config_errors_are_clear(tmp_path):
@@ -429,7 +452,7 @@ def test_the_init_command_in_the_grok_bot_message_parses_with_the_real_cli():
     import shlex
 
     from emporia import cli
-    text, _ = host_configs.build("grok-bot", name="scout-1", relay="https://relay.example", model="grok-4")
+    text, _ = host_configs.build("grok-bot", name="scout-1", relay="https://relay.example", model="grok-4", ref="v1.0")
     line = next(x for x in text.splitlines() if "agent init" in x)
     argv = shlex.split(line.strip())[1:]                    # without the emporia executable
     ns = cli.build_parser().parse_args(argv)
@@ -471,3 +494,69 @@ def test_the_portable_skill_carries_open_skepticism_and_the_autonomous_limits():
     for phrase in ("5 writes", "2 agents you never messaged", "one new\n>   room or topic a day", "no money at all"):
         assert phrase in text, phrase
     assert "Hermes" not in text.split("## Connecting")[0].replace("Hermes's", "")
+
+
+# ── the kit's rough edges: names, key directories, relays, help ─────────────────────────────
+
+@pytest.mark.parametrize("host", [h for h in host_configs.HOSTS if h != "grok-bot"])
+def test_every_config_carries_the_agents_relay_for_a_registered_agent_on_another_relay(tmp_path, transport, host):
+    name, res = made(tmp_path, transport, host="custom")
+    assert res["registered"] and RELAY != "http://127.0.0.1:8088"
+    text, notes = host_configs.build(host, res["key_dir"])
+    assert "EMPORIA_RELAY_URL" in text and RELAY in text
+    assert not any("falls back" in n for n in notes)
+
+
+def test_a_relay_flag_overrides_and_a_settings_file_without_one_gets_a_note(tmp_path):
+    key_dir = tmp_path / "norelay"
+    agent_init.init_agent(name="norelay", key_dir=key_dir, register=False)
+    text, notes = host_configs.build("cursor", str(key_dir))
+    assert "EMPORIA_RELAY_URL" not in text and any("falls back" in n for n in notes)
+    text, notes = host_configs.build("cursor", str(key_dir), relay="https://r.example/")
+    assert json.loads(text)["mcpServers"]["emporia"]["env"]["EMPORIA_RELAY_URL"] == "https://r.example"
+    assert not any("falls back" in n for n in notes)
+
+
+def test_mcp_config_finds_the_key_directory_from_agent_or_the_only_agent(tmp_path, monkeypatch):
+    monkeypatch.setattr(agent_init, "default_root", lambda: tmp_path)
+    with pytest.raises(host_configs.ConfigError, match="none is made"):
+        host_configs.build("cursor")
+    agent_init.init_agent(name="solo", key_dir=tmp_path / "solo", relay="http://relay.example", register=False)
+    only = json.loads(host_configs.build("cursor")[0])["mcpServers"]["emporia"]["env"]
+    assert only["EMPORIA_AGENT_ID"] == "solo" and only["EMPORIA_RELAY_URL"] == "http://relay.example"
+    agent_init.init_agent(name="duo", key_dir=tmp_path / "duo", relay="http://other.example", register=False)
+    with pytest.raises(host_configs.ConfigError, match="--agent NAME"):
+        host_configs.build("cursor")
+    chosen = json.loads(host_configs.build("cursor", name="duo")[0])["mcpServers"]["emporia"]["env"]
+    assert chosen["EMPORIA_AGENT_ID"] == "duo" and chosen["EMPORIA_RELAY_URL"] == "http://other.example"
+    with pytest.raises(host_configs.ConfigError, match="no agent 'ghost'"):
+        host_configs.build("cursor", name="ghost")
+
+
+def test_init_without_a_name_says_agent_and_a_bare_name_is_accepted(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    r = subprocess.run([sys.executable, "-m", "emporia.cli", "agent", "init", "--no-register"],
+                       capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=120)
+    assert r.returncode == 2 and "--agent NAME" in r.stderr and "--name" not in r.stderr
+    import argparse
+    ns = agent_init.namespace_from_cli(argparse.Namespace(
+        url_or_name="scout", agent="", relay="", client="", client_version="", model="", no_declare_model=False,
+        operator_label="", same_as="", display_name="", no_register=True, recommended=False, json=False, features=""))
+    assert (ns.name, ns.path) == ("scout", "")
+    other = agent_init.namespace_from_cli(argparse.Namespace(
+        url_or_name=str(tmp_path), agent="x", relay="", client="", client_version="", model="", no_declare_model=False,
+        operator_label="", same_as="", display_name="", no_register=True, recommended=False, json=False, features=""))
+    assert (other.name, other.path) == ("x", str(tmp_path))
+
+
+def test_init_help_shows_init_options_only():
+    r = subprocess.run([sys.executable, "-m", "emporia.cli", "agent", "init", "--help"], capture_output=True,
+                       text=True, stdin=subprocess.DEVNULL, timeout=120)
+    assert r.returncode == 0 and r.stdout.startswith("usage: emporia agent init")
+    for flag in ("--agent", "--relay", "--client", "--model", "--features", "--no-register", "--same-as"):
+        assert flag in r.stdout, flag
+    for foreign in ("--routine", "--handle", "--recovery-key-file", "--preset", "--compromised-since", "leave"):
+        assert foreign not in r.stdout, foreign
+    m = subprocess.run([sys.executable, "-m", "emporia.cli", "agent", "mcp-config", "-h"], capture_output=True,
+                       text=True, stdin=subprocess.DEVNULL, timeout=120)
+    assert "HOST" in m.stdout and "--routine" in m.stdout and "--no-register" not in m.stdout

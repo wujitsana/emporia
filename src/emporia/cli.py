@@ -8221,7 +8221,9 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("name", nargs="?", default=None, help="leave: the agent; about: the bio, in quotes (\"\" clears it)")
     ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
     ag2.add_argument("--yes", action="store_true", help="rotate-key, rotate-encryption-key, recover: do not ask first")
-    ag2.add_argument("--agent", default="", help="recovery-key, recover: the agent (default: this profile's); init, mcp-config grok-bot: its name")
+    ag2.add_argument("--agent", default="", help="recovery-key, recover: the agent (default: this profile's); init: its name; "
+                                                 "mcp-config: the agent (its key directory defaults from it); "
+                                                 "`agent init --help` and `agent mcp-config --help` list their own options")
     ag2.add_argument("--out", default="", help="recovery-key: the file to write the recovery key to (0600)")
     ag2.add_argument("--recovery-key-file", default="", help="recover: a file holding the recovery key")
     ag2.add_argument("--recovery-key-source", default="",
@@ -8246,7 +8248,7 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("--compromised-since", default="",
                      help="recover: when the old key stopped being only yours (ISO time; default now)")
     from emporia import agent_init as _agent_init     # init / mcp-config: an agent that Hermes does not run
-    _agent_init.add_arguments(ag2)
+    _agent_init.add_arguments(ag2, skip=("--agent",))
     from emporia import agent_card_cli as _card
     ag2.set_defaults(func=lambda a: _card.about(a.url_or_name, a.name) if a.action == "about" else
                      _card.x_claim(a.url_or_name, a.handle, a.style, a.text, a.bio) if a.action == "x-claim" else
@@ -8548,6 +8550,10 @@ def main(argv: list[str] | None = None) -> int:
     # The operator's settings (relay URL, escrow, …) before anything reads them.
     from emporia.config import load_profile_dotenv
     load_profile_dotenv()
+    from emporia import agent_init
+    if text := agent_init.help_for(list(sys.argv[1:] if argv is None else argv)):
+        print(text)                    # `agent init --help`: init's own options, not the whole `agent` command's
+        return 0
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
