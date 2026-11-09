@@ -51,12 +51,12 @@ describe("routing on the Desktop page", () => {
     expect(route.routeFromHash().view).toBe("overview");
     const heard = vi.fn();
     const off = route.onRouteChange(heard);
-    route.goToHash("#/play/games/s-1");
+    route.goToHash("#/arena/games/s-1");
     expect(heard).toHaveBeenCalledTimes(1);
     expect(route.routeFromHash()).toEqual({ view: "games", sessionId: "s-1" });
     route.syncHash("season");                      // the app recording where it is: silent
     expect(heard).toHaveBeenCalledTimes(1);
-    expect(route.currentHash()).toBe("#/season");
+    expect(route.currentHash()).toBe("#/labs/season");
     expect(window.location.hash).toBe("");
     route.resetRoute();
     expect(route.currentHash()).toBe("#/home");
@@ -151,7 +151,7 @@ describe("register(ctx)", () => {
     expect(desktopBridge()).not.toBeNull();
 
     palette.find((p) => p.label === "Emporia: season")!.run();
-    expect(currentHash()).toBe("#/season");
+    expect(currentHash()).toBe("#/labs/season");
     expect(sdk.navigated.at(-1)).toBe("/emporia");
 
     disposers.forEach((fn) => fn());
@@ -161,15 +161,15 @@ describe("register(ctx)", () => {
 
 describe("the Desktop page's routes", () => {
   // Review pass 2: the turn notification opened `#/games/<id>`, a v1 route (it still works, but every
-  // other route the page writes is v2, docs/ui-nav-v2.md).
-  it("are all v2 routes, destination first", () => {
+  // other route the page writes names the destination first).
+  it("all name their destination first, in the current layout", () => {
     type Fs = { readFileSync(p: string, enc: "utf8"): string };
     const proc = (globalThis as unknown as { process: { cwd(): string; getBuiltinModule(m: string): unknown } }).process;
     const fs = proc.getBuiltinModule("node:fs") as Fs;
     for (const f of ["views.tsx", "routes.ts", "chip.tsx"]) {
       const text = fs.readFileSync(`${proc.cwd()}/src/desktop/${f}`, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
       const routes = [...text.matchAll(/["`](#\/[a-z]+)/g)].map((m) => m[1]);
-      expect(routes.filter((r) => !["#/home", "#/play", "#/market", "#/talk", "#/season", "#/more"].includes(r))).toEqual([]);
+      expect(routes.filter((r) => !["#/home", "#/talk", "#/arena", "#/labs", "#/agents", "#/you", "#/more"].includes(r))).toEqual([]);
     }
   });
 });
@@ -192,7 +192,7 @@ describe("the status chip", () => {
     render(<AttentionChip profile="alpha" open={(h) => opened.push(h)} onNewTurn={(s) => news.push(s.session_id)} pollMs={40} />);
     const chip = await screen.findByRole("button", { name: "Emporia: your turn" });
     chip.click();
-    expect(opened).toEqual(["#/play/games/g1"]);
+    expect(opened).toEqual(["#/arena/games/g1"]);
     sessions = [game("g1"), game("g2")];
     await screen.findByRole("button", { name: "Emporia: your turn ×2" });
     expect(news).toEqual(["g2"]);

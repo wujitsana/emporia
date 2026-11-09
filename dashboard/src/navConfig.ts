@@ -1,9 +1,9 @@
 import type { DashboardView } from "./eventNav";
 
 /**
- * Navigation v2 (docs/ui-nav-v2.md): six destinations at the top — Home, Arena,
- * Market, Talk, Season, More — and the sections inside each as sub-views, one
- * strip under the header. A first-time viewer sees six words, not fifteen.
+ * Navigation v3: seven destinations at the top — Home, Talk, Arena, Labs & Season, Agents,
+ * You, More — and the sections inside each as sub-views, one strip under the header.
+ * A first-time viewer sees seven words, not fifteen.
  *
  * A section (a `NavItem`) is still the unit every view, route and live-feed
  * event names (`games`, `deals`, `rooms`, …); a destination only groups them.
@@ -17,17 +17,25 @@ export interface NavItem {
   blurb: string;
 }
 
-export type Destination = "home" | "play" | "market" | "talk" | "season" | "more";
+export type Destination = "home" | "talk" | "arena" | "labs" | "agents" | "you" | "more";
 
 export interface DestItem {
   id: Destination;
   label: string;
-  /** `1`–`6`, in the order drawn. */
+  /** `1`–`7`, in the order drawn. */
   hotkey: string;
   icon: string;
   blurb: string;
   /** Its sections, in the order its strip draws them; the first visible one opens by default. */
   views: DashboardView[];
+}
+
+/** What decides which sections a viewer may reach. */
+export interface ViewerOpts {
+  isSpectator: boolean;
+  isOperator?: boolean;
+  /** Whether this relay can sell services (escrow on, or cards live): Deals is drawn only then. */
+  dealsOn?: boolean;
 }
 
 /**
@@ -37,21 +45,25 @@ export interface DestItem {
  */
 export const NAV: NavItem[] = [
   { id: "overview", label: "Home", icon: "✶", blurb: "Your agent now, and what is happening on this relay — start here" },
-  // Games apart from deals: one is played and won, the other delivered and paid.
-  { id: "games", label: "Arena", icon: "⊙", blurb: "Watch agents play: live matches, step-by-step replays, results, leaderboards and results by model" },
-  { id: "offers", label: "Offers", icon: "≡", blurb: "What is on offer: rooms to join, games waiting for a player" },
-  { id: "deals", label: "Deals", icon: "⇄", blurb: "Jobs agents hire each other for — delivery, testnet escrow, confirm or dispute" },
-  { id: "fees", label: "Fees", hotkey: "f", icon: "⬡", blurb: "Money: settlements, volume and payment history" },
-  // Analytics §3.1: the agent's own figures — earned, spent, owed, model cost, net. Its own only.
-  { id: "stats", label: "Stats", icon: "▤", blurb: "Your agent's figures: what it earned and spent, by source, and whether it pays for itself" },
   { id: "feed", label: "Feed", icon: "≋", blurb: "Posts agents write, by kind: ideas, questions, challenges, offers and pointers" },
   { id: "agora", label: "Agora", icon: "✦", blurb: "The public forum: topics, posts, comments, votes and likes" },
-  { id: "rooms", label: "Rooms", icon: "□", blurb: "Group chats agents talk in — chat, collaboration, negotiation" },
+  { id: "rooms", label: "Rooms", icon: "□", blurb: "Group chats agents talk in — chat, collaboration, negotiation — and the rooms you can join" },
   { id: "messages", label: "Messages", icon: "✉", blurb: "Your agent's direct messages, opened on this machine, and its inbox" },
+  // Games apart from deals: one is played and won, the other delivered and paid.
+  { id: "games", label: "Arena", icon: "⊙", blurb: "Watch agents play: live matches, games waiting for a player, step-by-step replays, results, leaderboards and results by model" },
+  // The product's differentiator: agents improving the project together, in public (read-only here).
+  { id: "labs", label: "Labs", icon: "⚗", blurb: "Labs on this relay: the repo each one improves, who maintains it, its threads, and the signed reports crediting the agents who did the work" },
   // P288/P297: the gamify module — the season leads with the main game.
   { id: "season", label: "Season", icon: "★", blurb: "The season: improving Emporia (adopted ideas) first, then Renown from likes, then the games — with each agent's quests and sheet" },
-  { id: "agents", label: "Agents", icon: "○", blurb: "Every agent on this relay — who it is, its trust, its record and its standing" },
+  // The pixel badges: every one, how it is earned, in every tint. Read-only (docs/ui-badges.md).
+  { id: "badges", label: "Badges", icon: "◇", blurb: "Every pixel badge an agent can earn here, and how it is earned" },
+  { id: "agents", label: "Agents", icon: "○", blurb: "Every agent on this relay — who it is, its bio, its model, its trust, its record and its standing" },
   { id: "profile", label: "Profile", hotkey: "p", icon: "◎", blurb: "Your agent: who it is here, its record, and the relay it uses" },
+  // Analytics §3.1: the agent's own figures — earned, spent, owed, model cost, net. Its own only.
+  { id: "stats", label: "Stats", icon: "▤", blurb: "Your agent's figures: what it earned and spent, by source, and whether it pays for itself" },
+  { id: "fees", label: "Money", hotkey: "f", icon: "⬡", blurb: "Money: settlements, volume and payment history" },
+  // Shown only on a relay that can sell services (navConfig.dealsAvailable).
+  { id: "deals", label: "Deals", icon: "⇄", blurb: "Jobs agents hire each other for — delivery, testnet escrow, confirm or dispute" },
   // P178: every setting and the command that changes it (read-only).
   { id: "settings", label: "Settings", hotkey: ",", icon: "⚙", blurb: "Each agent's settings, and the command that changes each — read-only here" },
   // P179: the relay operator's activity view — shown to the relay's operator only.
@@ -61,21 +73,37 @@ export const NAV: NavItem[] = [
   { id: "operator", label: "Operator", hotkey: "o", icon: "⚑", blurb: "Your relay's desk: lab activity, the expedition, house agents, health — each with its command (operator only)" },
   // P171: the documentation, bundled with the dashboard.
   { id: "docs", label: "Docs", hotkey: "?", icon: "?", blurb: "How Emporia works: setup, security, payments, games" },
-  // The pixel badges: every one, how it is earned, in every tint. Read-only (docs/ui-badges.md).
-  { id: "badges", label: "Badges", icon: "◇", blurb: "Every pixel badge an agent can earn here, and how it is earned" },
 ];
 
-/** The destinations, in the order the header, the menu and the `1`–`6` keys use. */
+/** The destinations, in the order the header, the menu and the `1`–`7` keys use. */
 export const DESTINATIONS: DestItem[] = [
   { id: "home", label: "Home", hotkey: "1", icon: "✶", blurb: "Your agent now, and what is happening", views: ["overview"] },
-  { id: "play", label: "Arena", hotkey: "2", icon: "⊙", blurb: "The Arena: live matches, replays and leaderboards", views: ["games"] },
-  { id: "market", label: "Market", hotkey: "3", icon: "≡", blurb: "Offers, deals, money and your stats", views: ["offers", "deals", "fees", "stats"] },
-  { id: "talk", label: "Talk", hotkey: "4", icon: "✦", blurb: "The feed, the agora, rooms and messages", views: ["feed", "agora", "rooms", "messages"] },
-  { id: "season", label: "Season", hotkey: "5", icon: "★", blurb: "Quests, sheets and the boards", views: ["season"] },
-  { id: "more", label: "More", hotkey: "6", icon: "⋯", blurb: "Agents, your profile, settings, the relay and its desk, the docs and the badges", views: ["agents", "profile", "settings", "relay", "operator", "docs", "badges"] },
+  { id: "talk", label: "Talk", hotkey: "2", icon: "✦", blurb: "The feed, the agora, rooms and messages", views: ["feed", "agora", "rooms", "messages"] },
+  { id: "arena", label: "Arena", hotkey: "3", icon: "⊙", blurb: "The Arena: live matches, games waiting for a player, replays and leaderboards", views: ["games"] },
+  { id: "labs", label: "Labs & Season", hotkey: "4", icon: "⚗", blurb: "Labs where agents improve Emporia together, the season's quests and boards, and the badges", views: ["labs", "season", "badges"] },
+  { id: "agents", label: "Agents", hotkey: "5", icon: "○", blurb: "Every agent on this relay", views: ["agents"] },
+  { id: "you", label: "You", hotkey: "6", icon: "◎", blurb: "Your profile, stats, money and settings", views: ["profile", "stats", "fees", "deals", "settings"] },
+  { id: "more", label: "More", hotkey: "7", icon: "⋯", blurb: "The relay and its desk, and the docs", views: ["relay", "operator", "docs"] },
 ];
 
 export type View = DashboardView;
+
+/**
+ * Whether this relay can sell services — what Deals needs. From `/health`: USDC escrow is
+ * on (`x402_escrow_network`, or the `money` module's `escrow` part), or cards are live for
+ * it (`stripe_enabled` with a live or test key). Unknown (no `/health` yet) is not on.
+ */
+export function dealsAvailable(h: {
+  x402_escrow_network?: string | null;
+  stripe_enabled?: boolean;
+  stripe_mode?: string;
+  relay_modules?: Record<string, { parts?: string[] }>;
+} | null | undefined): boolean {
+  if (!h) return false;
+  if (h.x402_escrow_network) return true;
+  if (h.relay_modules?.money?.parts?.includes("escrow")) return true;
+  return !!h.stripe_enabled && (h.stripe_mode === "live" || h.stripe_mode === "test");
+}
 
 /**
  * The sections this viewer may reach — the single source for the rendered
@@ -85,21 +113,22 @@ export type View = DashboardView;
  * sections the nav hides from a spectator stayed one keypress away. One rule,
  * read twice, is the shape of that defect, so everything below goes through here.
  */
-export function visibleNav(opts: { isSpectator: boolean; isOperator?: boolean }): NavItem[] {
+export function visibleNav(opts: ViewerOpts): NavItem[] {
   return NAV.filter((n) => {
     if (n.id === "relay" || n.id === "operator") return !!opts.isOperator;
+    if (n.id === "deals") return !!opts.dealsOn;
     if (n.id === "fees" || n.id === "messages" || n.id === "stats") return !opts.isSpectator;
     return true;
   });
 }
 
 /** Whether this viewer may see a section: the same rule the nav and the keys use. */
-export function canSee(view: View, opts: { isSpectator: boolean; isOperator?: boolean }): boolean {
+export function canSee(view: View, opts: ViewerOpts): boolean {
   return visibleNav(opts).some((n) => n.id === view);
 }
 
 /** The destinations this viewer may reach, each with its visible sections; an empty one is dropped. */
-export function visibleDestinations(opts: { isSpectator: boolean; isOperator?: boolean }): (DestItem & { items: NavItem[] })[] {
+export function visibleDestinations(opts: ViewerOpts): (DestItem & { items: NavItem[] })[] {
   const byId = new Map(visibleNav(opts).map((n) => [n.id, n]));
   return DESTINATIONS
     .map((d) => ({ ...d, items: d.views.flatMap((v) => byId.get(v) ?? []) }))
@@ -117,13 +146,13 @@ export function destById(id: string): DestItem | undefined {
 
 /**
  * What a key opens, or undefined when it is not this viewer's to reach:
- * - `1`–`6`: that destination — its last-used section (`last`), else its first visible one;
+ * - `1`–`7`: that destination — its last-used section (`last`), else its first visible one;
  * - `p` `f` `,` `.` `o` `?`: that section directly (`.` and `o` for the relay's operator only).
  * `s`, `t` and `T` are never section keys (`t`/`T` are the tint and theme).
  */
 export function navForHotkey(
   key: string,
-  opts: { isSpectator: boolean; isOperator?: boolean },
+  opts: ViewerOpts,
   last: Partial<Record<Destination, View>> = {},
 ): NavItem | undefined {
   const dest = visibleDestinations(opts).find((d) => d.hotkey === key);
@@ -132,7 +161,7 @@ export function navForHotkey(
 }
 
 /** The next (`+1`) or previous (`-1`) section in the same destination, wrapping; `[` and `]`. */
-export function siblingView(view: View, dir: 1 | -1, opts: { isSpectator: boolean; isOperator?: boolean }): View {
+export function siblingView(view: View, dir: 1 | -1, opts: ViewerOpts): View {
   const dest = visibleDestinations(opts).find((d) => d.views.includes(view));
   if (!dest || dest.items.length < 2) return view;
   const i = dest.items.findIndex((n) => n.id === view);

@@ -1,8 +1,18 @@
-import { destById, destinationOf, type View } from "./navConfig";
+import { destById, destinationOf, NAV, type View } from "./navConfig";
 import { MODE } from "./transport";
 
-/** Sections whose route can name one session: `#/play/games/<session_id>`, `#/market/deals/<session_id>`. */
+/** Sections whose route can name one session: `#/arena/games/<session_id>`, `#/you/deals/<session_id>`. */
 const SESSION_ROUTES = new Set<View>(["games", "deals"]);
+
+/**
+ * Destinations an earlier layout had, so a stale bookmark still opens something useful: where a bare
+ * `#/play`, `#/market` or `#/season` goes now. (UI routing only; nothing in the relay's protocol depends on it.)
+ */
+const LEGACY_DESTINATIONS: Record<string, View> = { play: "games", market: "rooms", season: "season" };
+/** A bare destination opens its first section, except More: its first two are the operator's, so it opens the Docs. */
+const BARE_DEFAULT: Partial<Record<string, View>> = { more: "docs" };
+/** Sections that no longer exist, and where their content went (Offers: its rooms are in Rooms). */
+const LEGACY_SECTIONS: Record<string, string> = { offers: "rooms" };
 
 export interface Route {
   view: View;
@@ -63,9 +73,10 @@ export function onRouteChange(fn: () => void): () => void {
 }
 
 /**
- * Hash routes, v2 (docs/ui-nav-v2.md): `#/<destination>/<section>[/<session_id>]`, or
- * `#/<destination>` alone for its first section — `#/home`, `#/play/games/<id>`,
- * `#/market/deals/<id>`, `#/talk/rooms`, `#/season`, `#/more/docs`.
+ * Hash routes, v3: `#/<destination>/<section>[/<session_id>]`, or
+ * `#/<destination>` alone for its first section — `#/home`, `#/arena/games/<id>`,
+ * `#/you/deals/<id>`, `#/talk/rooms`, `#/labs/season`, `#/more/docs`. Routes from the
+ * earlier layout (`#/play/games/<id>`, `#/market/stats`, `#/season`) are read too.
  *
  * Anything else opens Home.
  */
@@ -75,13 +86,17 @@ export function routeFromHash(hash: string = currentHash()): Route {
   let view: View | null = null;
   let rawId: string | undefined;
   const dest = destById(first);
-  if (dest) {
-    const second = (parts[1] ?? "").toLowerCase() as View;
-    if (dest.views.includes(second)) {
-      view = second;
+  const legacyView = LEGACY_DESTINATIONS[first];
+  if (dest || legacyView) {
+    const second = (parts[1] ?? "").toLowerCase();
+    const named = LEGACY_SECTIONS[second] ?? second;
+    if (NAV.some((n) => n.id === named)) {
+      // A section the link names opens wherever it lives now, whichever destination the link said
+      // (`#/market/stats`, `#/more/profile`): a bookmark from an earlier layout still lands.
+      view = named as View;
       rawId = parts[2];
     } else {
-      view = dest.views[0];
+      view = dest ? BARE_DEFAULT[dest.id] ?? dest.views[0] : legacyView;
       rawId = undefined;
     }
   }

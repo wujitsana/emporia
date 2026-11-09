@@ -44,7 +44,6 @@ describe("countsFromSnapshot", () => {
     // on it. This is the whole reason the snapshot holds settled results.
     const counts = countsFromSnapshot(snapshot({ rooms: failed() }));
     expect(counts.rooms).toBeNull();
-    expect(counts.offers).toBeNull();
   });
 
   it("counts only emporia: modules as game sessions", () => {
@@ -69,7 +68,7 @@ describe("countsFromSnapshot", () => {
 describe("sectionsFromSnapshot", () => {
   it("says so in words when a collection is empty", () => {
     const byView = new Map(sectionsFromSnapshot(snapshot()).map((r) => [r.view, r]));
-    expect(byView.get("offers")?.lines).toEqual(["No open offers"]);
+    expect(byView.get("rooms")?.lines).toEqual(["No rooms visible to viewer"]);
     expect(byView.get("messages")?.lines).toEqual(["No DM threads"]);
   });
 
@@ -84,7 +83,7 @@ describe("sectionsFromSnapshot", () => {
         }),
       } as unknown as Partial<OverviewSnapshot>)
     );
-    expect(rows.find((r) => r.view === "offers")?.lines).toHaveLength(3);
+    expect(rows.find((r) => r.view === "rooms")?.lines).toHaveLength(3);
   });
 
   it("renders a failed leg as the empty state rather than throwing", () => {
@@ -118,8 +117,7 @@ describe("failedFromSnapshot — rejected is not empty (P69)", () => {
       typeof failedFromSnapshot
     >[0];
     const failed = failedFromSnapshot(snap);
-    // Offers are the rooms anyone may open, so a failed rooms read fails both cards.
-    expect([...failed].sort()).toEqual(["offers", "rooms"]);
+    expect([...failed].sort()).toEqual(["rooms"]);
   });
 
   it("names each of several independent failures", () => {

@@ -10,15 +10,16 @@ export const NOTIFY_KEY = "notifyYourTurn";
 /** The palette's commands: a label, the words it is found by, and the section it opens. */
 export const COMMANDS: { id: string; label: string; hash: string; keywords: string[] }[] = [
   { id: "open", label: "Emporia: open", hash: "#/home", keywords: ["emporia", "marketplace", "agents"] },
-  { id: "games", label: "Emporia: open games", hash: "#/play/games", keywords: ["emporia", "games", "blotto", "play"] },
-  { id: "season", label: "Emporia: season", hash: "#/season", keywords: ["emporia", "season", "quests", "renown"] },
-  { id: "deals", label: "Emporia: deals", hash: "#/market/deals", keywords: ["emporia", "deals", "jobs", "escrow"] },
-  { id: "offers", label: "Emporia: offers", hash: "#/market/offers", keywords: ["emporia", "offers", "rooms", "market"] },
-  { id: "stats", label: "Emporia: stats", hash: "#/market/stats", keywords: ["emporia", "stats", "earnings", "cost"] },
+  { id: "games", label: "Emporia: open games", hash: "#/arena/games", keywords: ["emporia", "games", "blotto", "play", "arena"] },
+  { id: "labs", label: "Emporia: labs", hash: "#/labs/labs", keywords: ["emporia", "labs", "repo", "reports"] },
+  { id: "season", label: "Emporia: season", hash: "#/labs/season", keywords: ["emporia", "season", "quests", "renown"] },
+  { id: "deals", label: "Emporia: deals", hash: "#/you/deals", keywords: ["emporia", "deals", "jobs", "escrow"] },
+  { id: "rooms", label: "Emporia: rooms", hash: "#/talk/rooms", keywords: ["emporia", "rooms", "offers", "join"] },
+  { id: "stats", label: "Emporia: stats", hash: "#/you/stats", keywords: ["emporia", "stats", "earnings", "cost"] },
   { id: "messages", label: "Emporia: messages", hash: "#/talk/messages", keywords: ["emporia", "messages", "dm", "inbox"] },
   { id: "feed", label: "Emporia: feed", hash: "#/talk/feed", keywords: ["emporia", "feed", "posts"] },
   { id: "agora", label: "Emporia: agora", hash: "#/talk/agora", keywords: ["emporia", "agora", "forum"] },
-  { id: "agents", label: "Emporia: agents", hash: "#/more/agents", keywords: ["emporia", "agents", "standings"] },
+  { id: "agents", label: "Emporia: agents", hash: "#/agents", keywords: ["emporia", "agents", "standings"] },
 ];
 
 /** Open the page on a section: the route first, so a page mounting now starts there. */

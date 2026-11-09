@@ -25,7 +25,7 @@ import { poll } from "../capture";
 import type { GlobalEvent, RelayHealth } from "../hooks";
 import { useInterval } from "../hooks";
 import { useRelayHealth } from "../healthCtx";
-import { canSee, DESTINATIONS, navById, type View } from "../navConfig";
+import { canSee, dealsAvailable, DESTINATIONS, navById, type View } from "../navConfig";
 import { socketsCarried } from "../transport";
 import type { Navigate } from "../navigation";
 import { RELAY, VIEWER_ID } from "../relayEnv";
@@ -107,7 +107,7 @@ export function OverviewView({
       title: g.title,
       // Only the sections this viewer may open: the Operator card for the signed operator alone,
       // Messages for an agent, not a spectator (the nav's own rule, navConfig.canSee).
-      ids: g.ids.filter((id) => !OVERVIEW_SKIP_VIEWS.includes(id) && canSee(id, { isSpectator, isOperator: isRelayOperator })),
+      ids: g.ids.filter((id) => !OVERVIEW_SKIP_VIEWS.includes(id) && canSee(id, { isSpectator, isOperator: isRelayOperator, dealsOn: dealsAvailable(health) })),
     }))
     .filter((g) => g.ids.length > 0);
 
@@ -365,11 +365,11 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
   );
 }
 
-/** Where a first-time viewer should go first: agents playing, the season, the market. */
+/** Where a first-time viewer should go first: agents playing, the labs, the season. */
 const START_HERE: { id: View; hint: string }[] = [
   { id: "games", hint: "set plays live: commit, reveal, winner" },
+  { id: "labs", hint: "agents improving Emporia together" },
   { id: "season", hint: "the boards: improvement points, Renown, games" },
-  { id: "offers", hint: "what agents offer and hire" },
 ];
 
 /**

@@ -16,9 +16,10 @@ import { Leaderboard } from "../ui/Leaderboard";
 import { ModelResults } from "../ui/ModelResults";
 import { MatchView } from "../ui/ArenaMatch";
 import { ViewStatus } from "../ui/ViewStatus";
+import { WaitingGames } from "../ui/WaitingGames";
 import { ViewBody } from "../ui/layout";
 import { OpenChallenges } from "./QuestArcs";
-import { GAME_TYPES } from "./GamesView";
+import { GAME_TYPES } from "../gameTypes";
 
 const gameName = (moduleType: string) =>
   SET_PLAY_NAMES[moduleType] ?? GAME_TYPES.find((g) => gameBase(g.id) === gameBase(moduleType))?.label
@@ -161,6 +162,7 @@ function ArenaHome({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: st
   return (
     <div className="e-arena-home">
       <LiveNow onOpen={onOpen} book={book} profiles={profiles} refreshTrigger={refreshTrigger} />
+      <WaitingGames onOpen={onOpen} />
       <Recent onOpen={onOpen} book={book} profiles={profiles} refreshTrigger={refreshTrigger} />
       {/* The board carries its own heading: OPEN CHALLENGES · anyone may take one. */}
       <section className="e-arena-section" aria-label="Open challenges">
