@@ -591,6 +591,64 @@ def refresh_mcp_references(profile_dir: Path, dry_run: bool = False) -> list[str
     return sorted(added)
 
 
+# Hermes 0.23 MCP price declarations (`tool_costs`, `spend_limit`, `cost_unit` on an `mcp_servers` entry;
+# tools/mcp_tool_costs.py). Hermes shows the price and the chat's running total in the approval prompt and asks
+# before a call would take the chat past its limit, even in YOLO mode. A price is a figure or a [min, max] range
+# declared up front and Hermes counts the top of the range for every call, so the honest declaration for a payment
+# whose size the agent chooses is its cap: 0 up to the single-payment limit the person set. The chat limit is the
+# agent's daily limit. These are the tools that move money; keyed by name, Hermes warns about a name the server
+# does not offer.
+MONEY_TOOLS = ("join_room", "subscribe_agora_topic", "fund_session", "create_payment_intent")
+COST_UNIT = "cents"
+DEFAULT_MAX_PAYMENT_CENTS = 1000     # as agent_wallet.DEFAULT_MAX_PAYMENT_CENTS / DEFAULT_MAX_DAILY_CENTS
+DEFAULT_MAX_DAILY_CENTS = 5000
+COST_KEYS = ("tool_costs", "spend_limit", "cost_unit")
+
+
+def mcp_cost_policy(dotenv: dict[str, str]) -> dict[str, Any]:
+    """The cost declaration for this agent's limits (`EMPORIA_X402_MAX_PAYMENT_CENTS`, `EMPORIA_X402_MAX_DAILY_CENTS`):
+    {} when a limit is 0 or unreadable, so nothing is declared that Hermes cannot count."""
+    def cents(name: str, default: int) -> int:
+        raw = (dotenv.get(name) or "").strip()
+        try:
+            return int(raw) if raw else default
+        except ValueError:
+            return 0
+    per = cents("EMPORIA_X402_MAX_PAYMENT_CENTS", DEFAULT_MAX_PAYMENT_CENTS)
+    daily = cents("EMPORIA_X402_MAX_DAILY_CENTS", DEFAULT_MAX_DAILY_CENTS)
+    if per <= 0 or daily <= 0:
+        return {}
+    note = f"at most this agent's {per}-cent payment limit; the exact amount is in the payment's own approval"
+    return {"tool_costs": {tool: {"credits": [0, per], "note": note} for tool in MONEY_TOOLS},
+            "spend_limit": daily, "cost_unit": COST_UNIT}
+
+
+def apply_mcp_costs(entry: dict[str, Any], dotenv: dict[str, str]) -> bool:
+    """Put the cost declaration on an `mcp_servers.emporia` entry (or take it off when no limit can be
+    declared). True when the entry changed."""
+    want = mcp_cost_policy(dotenv)
+    before = {k: entry.get(k) for k in COST_KEYS}
+    for k in COST_KEYS:
+        entry.pop(k, None)
+    entry.update(want)
+    return {k: entry.get(k) for k in COST_KEYS} != before
+
+
+def sync_mcp_costs(profile_dir: Path, dry_run: bool = False) -> bool:
+    """Bring `mcp_servers.emporia` in a profile's config.yaml in line with its payment limits (after
+    `emporia wallet limits`, or setup). True when it was rewritten; a profile with no entry is left alone."""
+    config_path = Path(profile_dir) / "config.yaml"
+    if not config_path.exists():
+        return False
+    config = load_yaml(config_path)
+    entry = (config.get("mcp_servers") or {}).get(MCP_TOOL_NAME)
+    if not isinstance(entry, dict) or not apply_mcp_costs(entry, harvest_env(profile_dir)):
+        return False
+    if not dry_run:
+        save_yaml(config_path, config)
+    return True
+
+
 def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profile_dir: Path | None = None) -> dict[str, Any]:
     env: dict[str, str] = {
         "EMPORIA_RELAY_URL": relay_url,
@@ -611,11 +669,13 @@ def _mcp_entry(relay_url: str, agent_id: str = "", display_name: str = "", profi
     hermes_bin = os.getenv("EMPORIA_HERMES_BIN", "").strip() or shutil.which("hermes")
     if hermes_bin:
         env["EMPORIA_HERMES_BIN"] = hermes_bin
-    return {
+    entry = {
         "command": _venv_python(),
         "args": ["-m", "emporia.mcp_server"],
         "env": env,
     }
+    apply_mcp_costs(entry, harvest_env(profile_dir) if profile_dir else {})
+    return entry
 
 
 # P63: `_platform_entry()` used to be written into `config.yaml` as
@@ -794,6 +854,9 @@ def install_into_profile(
             changed = True
             print(f"  ~ mcp_servers.{MCP_TOOL_NAME}.env: {len(added)} setting(s) now handed over by Hermes")
         mcp_servers[MCP_TOOL_NAME]["env"] = existing_env
+        if apply_mcp_costs(mcp_servers[MCP_TOOL_NAME], harvest_env(profile_dir)):
+            changed = True
+            print(f"  ~ mcp_servers.{MCP_TOOL_NAME}: prices on the paying tools (Hermes asks before going over the limit)")
 
     # P63: no platform entry is written — see _platform_entry's removal note.
     # An existing one from an older install is left alone rather than deleted:

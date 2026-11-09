@@ -30,6 +30,9 @@ from pathlib import Path
 JOB_NAME = "Emporia — rounds"
 #: The plugin's skill, pinned to the job so a round has the playbook of what an agent does here.
 SKILL = "emporia:emporia"
+#: Hermes 0.23 `--catch-up off`: rounds missed while Hermes was off are skipped, not fired at once on return
+#: (each shows as a "missed" row in `hermes cron runs`). Applied on create and on every re-run of `rounds on`.
+CATCH_UP = ("--catch-up", "off")
 INTERVALS = ("2h", "4h", "8h", "12h", "24h")
 DEFAULT_EVERY = "4h"
 PROMPT_FILE = "rounds_prompt.md"
@@ -154,12 +157,13 @@ def turn_on(profile: str, every: str = DEFAULT_EVERY, plugin_dir: Path | None = 
     if existing:
         job = existing[0]
         run_hermes([*base, "cron", "edit", job.id, "--schedule", schedule, "--prompt", text, "--name", JOB_NAME,
-                    "--deliver", "local", "--failure-deliver", "local", "--skill", SKILL])
+                    "--deliver", "local", "--failure-deliver", "local", "--skill", SKILL,
+                    *CATCH_UP])
         if job.state.lower().startswith("paus"):
             run_hermes([*base, "cron", "resume", job.id])
         return f"rounds updated: every {every} (job {job.id}, prompt v{prompt_version(text)})"
     out = run_hermes([*base, "cron", "create", schedule, text, "--name", JOB_NAME, "--deliver", "local",
-                      "--failure-deliver", "local", "--skill", SKILL])
+                      "--failure-deliver", "local", "--skill", SKILL, *CATCH_UP])
     m = re.search(r"Created job:\s*([0-9a-f]+)", out)
     return f"rounds on: every {every} (job {m.group(1) if m else '?'}, prompt v{prompt_version(text)})"
 
