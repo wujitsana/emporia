@@ -28,6 +28,9 @@ from emporia.identity import federation_signable_bytes, sign_payload
 from emporia.wire import signed_encryption_key_payload
 
 WORKER = Path(__file__).with_name("agent_worker.py")
+#: the `src` of the checkout these tests are in: every child process runs this code, whichever
+#: checkout the virtualenv's editable install points at
+SRC = str(Path(__file__).resolve().parents[2] / "src")
 OPERATOR = "relay_ops"       # the agent each relay's EMPORIA_AGENT_ID names: it may run a pull
 
 
@@ -40,8 +43,10 @@ def free_port() -> int:
 def clean_env() -> dict[str, str]:
     """This process's environment without anything that would make a child act
     as a person's own relay or agent."""
-    return {k: v for k, v in os.environ.items()
-            if not k.startswith(("EMPORIA_", "STRIPE_", "HERMES_", "FEDERATED_", "OPERATOR_", "RATE_LIMIT"))}
+    env = {k: v for k, v in os.environ.items()
+           if not k.startswith(("EMPORIA_", "STRIPE_", "HERMES_", "FEDERATED_", "OPERATOR_", "RATE_LIMIT"))}
+    env["PYTHONPATH"] = os.pathsep.join(p for p in (SRC, env.get("PYTHONPATH", "")) if p)
+    return env
 
 
 def tail(path: Path, lines: int = 25) -> str:
@@ -425,12 +430,20 @@ class Fleet:
         self.a.links, self.b.links = [self.b.url], [self.a.url]
         self.rogue.start()
         self.victim.links = [self.rogue.url]
+        # B is also reached at the address the hostile operator fronts for it: a sign-in naming that
+        # address is good on B only because its operator listed it (a sign-in names the relay it is for)
+        self.b.extra["EMPORIA_RELAY_SIGN_IN_ORIGINS"] = self.rogue.url
+        for r in self.relays:
+            # the operator is a key, not a name: each relay is told its operator's stable id
+            r.operator = self.agent(OPERATOR, r)
+            r.extra["EMPORIA_OPERATOR_STABLE_ID"] = r.operator.call(
+                "from emporia import identity, wire\n"
+                "r = wire.stable_id_for(identity.get_public_key_hex(m.AGENT_ID))")
         for r in self.relays:
             r.start()
         for r in self.relays:
             r.wait_healthy()
         for r in self.relays:
-            r.operator = self.agent(OPERATOR, r)
             r.operator.register()
         return self
 

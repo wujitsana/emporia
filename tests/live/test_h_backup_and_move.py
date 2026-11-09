@@ -56,7 +56,8 @@ def test_an_agent_adds_a_backup_then_moves_home_and_its_record_travels_as_its_ol
     assert shown["success"] and shown["relay"] == b.url and shown["games"]["lost"] == 0, shown
     [elsewhere] = shown["elsewhere"]
     assert elsewhere["relay"] == a.url and elsewhere["games"]["lost"] == 1
-    unsigned = (*moves.RECORD_UNSIGNED, "relay_key_fingerprint")
+    # what carrying adds for display (`moves.carried_record`) is not part of what A signed
+    unsigned = (*moves.RECORD_UNSIGNED, "relay_key_fingerprint", "label", "counts_here")
     assert verify_raw(federation_signable_bytes(a.url, "record", [{k: v for k, v in elsewhere.items()
                                                                     if k not in unsigned}]),
                       elsewhere["signature"], a.health()["relay_public_key"])

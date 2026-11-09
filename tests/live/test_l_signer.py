@@ -69,8 +69,11 @@ def test_a_wallet_moves_behind_the_signer_pays_waits_for_approval_and_comes_back
         rc = cli.main(list(argv))
         return rc, capsys.readouterr().out
 
-    def pay(cents: int) -> dict:
-        r = cli._as_agent(root / "alpha", PAY, CHALLENGE=json.dumps(_challenge(cents)))
+    def pay(cents: int, as_person: bool = True) -> dict:
+        # This process is no Hermes turn, so Emporia counts its calls as unattended and refuses money
+        # (autonomy.py); a person who gates the tools themselves says so with EMPORIA_UNTRACKED_TURNS=person.
+        over = {"EMPORIA_UNTRACKED_TURNS": "person"} if as_person else {}
+        r = cli._as_agent(root / "alpha", PAY, CHALLENGE=json.dumps(_challenge(cents)), **over)
         try:
             return json.loads(r.stdout.strip().splitlines()[-1])
         except (ValueError, IndexError):
@@ -79,6 +82,8 @@ def test_a_wallet_moves_behind_the_signer_pays_waits_for_approval_and_comes_back
     assert run("setup", "agent", "alpha", "--keys", "files", "--wallet", "--max-daily-cents", "700")[0] == 0
     monkeypatch.setattr(cli, "_TTY", True)                 # from here, the person's own terminal
     prof, key_dir = root / "alpha", root / "alpha" / "home" / ".hermes" / "keys"
+    unattended = pay(50, as_person=False)               # the money guard holds without the person's say-so
+    assert not unattended["ok"] and "unattended turn" in unattended["error"], unattended
     first = pay(50)
     assert first["ok"] and not first["signer"], first
     address = first["address"]
