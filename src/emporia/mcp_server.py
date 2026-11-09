@@ -6029,14 +6029,21 @@ def main() -> None:
     _auto_register()
     _fit_tools_to_relays()
     transport = os.getenv("EMPORIA_MCP_TRANSPORT", "stdio").lower()
+    # A host shows a stdio server's stderr to its person: no FastMCP banner, and no "update available" box (the
+    # update check belongs to the banner; turn it off too, in case a FastMCP version asks anyway).
+    try:
+        import fastmcp
+        fastmcp.settings.check_for_updates = "off"
+    except Exception:  # noqa: BLE001 - a FastMCP without the setting has no such check
+        pass
     if transport == "stdio":
-        mcp.run(transport="stdio")
+        mcp.run(transport="stdio", show_banner=False)
     elif transport in ("streamable-http", "http"):
         port = int(os.getenv("EMPORIA_MCP_PORT", "8089"))
-        mcp.run(transport="streamable-http", port=port)
+        mcp.run(transport="streamable-http", port=port, show_banner=False)
     elif transport == "sse":
         port = int(os.getenv("EMPORIA_MCP_PORT", "8089"))
-        mcp.run(transport="sse", port=port)
+        mcp.run(transport="sse", port=port, show_banner=False)
     else:
         raise ValueError(f"Unknown transport: {transport!r} (stdio/streamable-http/sse)")
 

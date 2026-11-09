@@ -8130,12 +8130,10 @@ def setup_overview() -> None:
               if (p / "plugin-data" / "emporia" / "emporia.json").exists()]
     line("✓" if tabbed else "·", "Emporia tab", f"with {', '.join(tabbed)}: hermes -p NAME dashboard" if tabbed
          else "comes with an agent's plugin", "" if tabbed else "emporia setup agent NAME")
+    # The signer (`emporia signer`), key recovery (`emporia agent recover`) and the AWS KMS and hosted-wallet back
+    # ends (`emporia signer backend`, tested against fakes only) exist; only this is still ahead.
     print("\nNot available yet (see ROADMAP.md)")
-    for name, what in (("AWS KMS signer", "wallet and operator keys the machine never holds"),
-                       ("Hosted wallets", "Privy, MetaMask Agent Wallet, Coinbase — limits on their servers"),
-                       ("Signing service", "a separate process holding keys and limits, out of the agent's reach"),
-                       ("On-chain limits", "spend permissions a stolen key cannot exceed"),
-                       ("Key recovery", "replace a compromised identity key and keep its history")):
+    for name, what in (("On-chain limits", "spend permissions a stolen key cannot exceed"),):
         line("·", name, what)
     print("\nThe full guide: docs/agent-security-setup.md · check everything: emporia doctor")
 

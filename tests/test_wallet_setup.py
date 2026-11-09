@@ -580,8 +580,11 @@ def test_the_overview_lists_every_component_and_reads_only(profiles, capsys):
     assert cli.main(["setup"]) == 0
     out = capsys.readouterr().out
     for part in ("Relay", "USDC payments", "Escrow holds", "Cards (Stripe)", "Federation", "Risky switches",
-                 "phi", "marketplace", "Emporia tab", "AWS KMS signer", "Key recovery"):
+                 "phi", "marketplace", "Emporia tab", "On-chain limits"):
         assert part in out, part
+    ahead = out.split("Not available yet")[1].split("The full guide")[0]
+    for built in ("AWS KMS signer", "Hosted wallets", "Signing service", "Key recovery"):
+        assert built not in ahead, f"{built} exists; it is not 'not available yet'"
     after = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
     assert before == after, "the overview changes nothing"
 
