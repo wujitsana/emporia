@@ -128,13 +128,23 @@ def test_the_facilitator_fee_payer_check_warns_on_no_gas_and_notes_failures():
         return {"result": {"value": 5_000_000}}
     out = fc.check("https://fac.example/", [base, sol], {"EMPORIA_X402_RPC_EIP155_84532": "https://my-rpc.example"},
                    get=lambda url: supported, post=post)
-    assert [(lvl) for lvl, *_ in out] == ["warn"]
+    assert [lvl for lvl, *_ in out] == ["warn", "note"]          # base: its only payer is empty; solana: funded
     level, msg, fix = out[0]
-    assert "0xEvmSigner" in msg and base in msg and "no gas" in msg and "EMPORIA_X402_FACILITATOR_URL" in fix
+    assert "none of" in msg and base in msg and "has gas" in msg and "EMPORIA_X402_FACILITATOR_URL" in fix
+    assert out[1][1] == f"1 of 1 fee payer(s) on {sol} have gas"
     assert ("https://my-rpc.example", "eth_getBalance") in asked and any(m == "getBalance" for _, m in asked)
-    # funded: nothing to say
+    # funded: one quiet line
     assert fc.check("https://fac.example", [base], {}, get=lambda u: supported,
-                    post=lambda url, body: {"result": "0x1"}) == []
+                    post=lambda url, body: {"result": "0x1"}) == [("note", f"1 of 1 fee payer(s) on {base} have gas", "")]
+    # many payers, some empty, one unreadable (a facilitator settles from a funded one): one line, no warning
+    many = {"signers": {"eip155:*": [f"0x{i}" for i in range(15)]}}
+
+    def some_funded(url, body):
+        if body["params"][0] == "0x14":
+            raise OSError("rpc hiccup")
+        return {"result": "0x1" if body["params"][0] in ("0x0", "0x1", "0x2") else "0x0"}
+    assert fc.check("https://fac.example", [base], {}, get=lambda u: many, post=some_funded) == [
+        ("note", f"3 of 14 fee payer(s) on {base} have gas (1 could not be read)", "")]
     # failures are notes, never errors: facilitator down, RPC down, no signer named, no facilitator at all
     def down(*a, **k):
         raise OSError("down")

@@ -86,13 +86,23 @@ def check(facilitator: str, networks: list[str], env: dict[str, str], *, get: Ca
         if not rpc:
             out.append(("note", f"no RPC for {net} (EMPORIA_X402_RPC_*), so the fee payer's gas was not checked", ""))
             continue
+        # A facilitator may name many fee payers and settle from whichever is funded, so one empty account
+        # says nothing: one line per network, a warning only when none of the readable ones has gas.
+        funded = empty = unread = 0
         for addr in payers[net]:
             try:
                 held = balance(net, addr, rpc, post)
-            except Exception as e:  # noqa: BLE001
-                out.append(("note", f"could not read the balance of {addr} on {net} ({type(e).__name__})", ""))
+            except Exception:  # noqa: BLE001 - counted as unread
+                unread += 1
                 continue
-            if held <= 0:
-                out.append(("warn", f"the x402 facilitator's fee payer {addr} on {net} has no gas: its settlements "
-                                    "will fail", FIX))
+            funded, empty = (funded + 1, empty) if held > 0 else (funded, empty + 1)
+        read = funded + empty
+        tail = f" ({unread} could not be read)" if unread else ""
+        if not read:
+            out.append(("note", f"could not read the balance of any fee payer on {net}, so its gas was not checked", ""))
+        elif not funded:
+            out.append(("warn", f"none of the x402 facilitator's {read} fee payer(s) on {net} has gas{tail}: its "
+                                "settlements will fail", FIX))
+        else:
+            out.append(("note", f"{funded} of {read} fee payer(s) on {net} have gas{tail}", ""))
     return out
