@@ -110,6 +110,56 @@ def test_log_verify_takes_a_key_directory_for_an_agent_that_is_not_hermes(monkey
     assert parsed.dir == "/x" and parsed.name == ""
 
 
+# ── doctor: the facilitator's fee payer needs gas ───────────────────────────────────────────
+
+def test_the_facilitator_fee_payer_check_warns_on_no_gas_and_notes_failures():
+    from emporia import facilitator_check as fc
+    base, sol = "eip155:84532", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
+    supported = {"kinds": [{"network": sol, "scheme": "exact", "extra": {"feePayer": "SoLpayer"}}],
+                 "signers": {"eip155:*": ["0xEvmSigner"], "solana:*": ["SoLpayer"]}}
+    assert fc.fee_payers(supported, [base, sol]) == {base: ["0xEvmSigner"], sol: ["SoLpayer"]}
+    asked = []
+
+    def post(url, body):
+        asked.append((url, body["method"]))
+        empty = body["params"][0] in ("0xEvmSigner",)
+        if body["method"] == "eth_getBalance":
+            return {"result": "0x0" if empty else "0x2386f26fc10000"}
+        return {"result": {"value": 5_000_000}}
+    out = fc.check("https://fac.example/", [base, sol], {"EMPORIA_X402_RPC_EIP155_84532": "https://my-rpc.example"},
+                   get=lambda url: supported, post=post)
+    assert [(lvl) for lvl, *_ in out] == ["warn"]
+    level, msg, fix = out[0]
+    assert "0xEvmSigner" in msg and base in msg and "no gas" in msg and "EMPORIA_X402_FACILITATOR_URL" in fix
+    assert ("https://my-rpc.example", "eth_getBalance") in asked and any(m == "getBalance" for _, m in asked)
+    # funded: nothing to say
+    assert fc.check("https://fac.example", [base], {}, get=lambda u: supported,
+                    post=lambda url, body: {"result": "0x1"}) == []
+    # failures are notes, never errors: facilitator down, RPC down, no signer named, no facilitator at all
+    def down(*a, **k):
+        raise OSError("down")
+    assert [lvl for lvl, *_ in fc.check("https://fac.example", [base], {}, get=down)] == ["note"]
+    assert [lvl for lvl, *_ in fc.check("https://fac.example", [base], {}, get=lambda u: supported, post=down)] == ["note"]
+    assert [lvl for lvl, *_ in fc.check("https://fac.example", [base], {}, get=lambda u: {})] == ["note"]
+    assert fc.check("", [base], {}) == [] and fc.check("https://f", [], {}) == []
+
+
+def test_doctor_shows_the_fee_payer_warning(monkeypatch, capsys):
+    from emporia import cli, facilitator_check
+    monkeypatch.setattr(cli, "health", lambda: {"version": "1", "fee_bps": 100, "stripe_enabled": False,
+                                                "x402_enabled": True, "x402_networks": ["eip155:84532"]})
+    monkeypatch.setattr(cli, "_relay_code_behind", lambda h: "")
+    monkeypatch.setattr(cli, "doctor_federation", lambda rep, h: None)
+    monkeypatch.setenv("EMPORIA_X402_FACILITATOR_URL", "https://fac.example")
+    monkeypatch.setattr(facilitator_check, "check", lambda *a, **k: [
+        ("warn", "the x402 facilitator's fee payer 0xabc on eip155:84532 has no gas: its settlements will fail", "fix it"),
+        ("note", "could not read something", "")])
+    rep = cli.Report()
+    cli.doctor_relay(rep)
+    out = capsys.readouterr().out
+    assert "! the x402 facilitator's fee payer 0xabc" in out and "fix: fix it" in out and "✓ could not read something" in out
+
+
 # ── payment answers carry the settlement transaction ───────────────────────────────────────
 
 class _Resp:

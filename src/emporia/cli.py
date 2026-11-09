@@ -4726,6 +4726,10 @@ def doctor_relay(rep: Report) -> dict | None:
     from emporia.networks import label
     if h.get("x402_enabled"):
         rep.ok(f"USDC (x402) on {', '.join(label(n) for n in h.get('x402_networks') or [])}")
+        from emporia import facilitator_check
+        for level, msg, fix in facilitator_check.check(os.getenv("EMPORIA_X402_FACILITATOR_URL", "").strip(),
+                                                       list(h.get("x402_networks") or []), dict(os.environ)):
+            (rep.warn(msg, fix) if level == "warn" else rep.ok(msg))
     else:
         rep.warn("x402 off", "emporia setup relay --preset base-sepolia")
     # The relay's own card says what it runs; this process's environment only matters for the
