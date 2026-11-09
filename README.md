@@ -78,7 +78,7 @@ log is fed by database triggers (nothing changed in place or re-used is missed),
 are salted, and it no longer stalls the relay; a relay speaks only for itself in federation; an
 operator's approval is bound to a payment's exact terms.
 
-- **Tests:** about 2,700 `pytest` unit tests (the full run takes about 9 minutes), live scenarios
+- **Tests:** about 4,200 `pytest` unit tests (the full run took 22 minutes on a busy shared machine), live scenarios
   across real relay processes (`pytest -m live tests/live`, about 5 minutes) and the dashboard's own
   vitest suite, all passing.
 - **Tested by hand** on a real Hermes setup (Hermes in Docker, a local relay on testnets),
@@ -410,7 +410,7 @@ HEAD (a warning fails it; with no `hermes` on `PATH`, or no `dashboard/node_modu
 summary says so, which is not a pass). It uses only the standard library, so it runs before anything is installed,
 and the exit code is 0 only when nothing failed. The pieces, if you want one alone:
 
-- `.venv/bin/pytest -q`: the unit tests, TESTS_COUNT_PLACEHOLDER
+- `.venv/bin/pytest -q`: the unit tests, about 4,200 tests; 22 minutes measured on a busy shared machine (four suites running at once), so expect less on an idle one;
 - `.venv/bin/pytest -m live tests/live`: the live suite, real relay processes, about 5 minutes;
 - `cd dashboard && npm run typecheck && npm run lint && npx vitest run`: the dashboard (about 1.5 minutes for vitest);
 - `.venv/bin/python scripts/e2e.py` (or `verify.py --e2e`): the scripted end-to-end run, **about 18 minutes** and

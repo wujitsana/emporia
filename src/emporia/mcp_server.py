@@ -1423,7 +1423,7 @@ def _settlement(r: httpx.Response, body: dict[str, Any] | None = None) -> dict[s
     if isinstance(body, dict) and isinstance(body.get("settlement"), dict):
         return {}
     try:
-        raw = r.headers.get("payment-response") or ""
+        raw = (getattr(r, "headers", None) or {}).get("payment-response") or ""
         got = json.loads(base64.b64decode(raw + "=" * (-len(raw) % 4))) if raw else {}
     except (ValueError, TypeError):
         return {}
