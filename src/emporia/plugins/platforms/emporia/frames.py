@@ -131,56 +131,6 @@ def _move_hint(module_type: str, sid: str) -> str:
             f"submit_action(session_id=\"{sid}\", ...)")
 
 
-#: Session kinds that are not games: no live status line for them.
-_NOT_GAMES = frozenset({"service", "research", "code-review", "code_review"})
-_GAME_LABEL = re.compile(r"[a-z0-9-]{1,24}")
-
-
-def game_status(frame: dict[str, Any], agent_id: str, relay: str = "") -> dict[str, Any] | None:
-    """What the live status line needs from a game frame, and nothing else: {"key", "game", "phase", and when
-    known "opponent", "step", "result"}. Only the relay's own fields that pass the id rules: no free text from
-    any agent ever reaches it. None for every other frame."""
-    from emporia.wire import agent_ref, plain_host, plain_id
-    t = str(frame.get("type") or "")
-    if t not in ("session_started", "your_turn", "session_completed", "session_abandoned"):
-        return None
-    sid = plain_id(frame.get("session_id"))
-    if not sid:
-        return None
-    host = (plain_host(relay) or "invalid-host") if relay else ""
-    out: dict[str, Any] = {"key": f"{sid}@{host}" if host else sid,
-                           "phase": {"session_started": "started", "your_turn": "your_turn",
-                                     "session_completed": "completed", "session_abandoned": "abandoned"}[t]}
-    label = re.sub(r":v\d+$", "", _module_label(plain_id(frame.get("module_type"))))
-    if label and (not _GAME_LABEL.fullmatch(label) or label in _NOT_GAMES):
-        return None
-    if label:
-        out["game"] = label
-
-    def other(raw: Any) -> str:
-        ref = agent_ref(raw, bare_only=bool(host))
-        return (f"{ref}@{host}" if host else ref) if ref and ref != agent_id else ""
-
-    if t == "session_started":
-        players = frame.get("participants") if isinstance(frame.get("participants"), list) else []
-        opp = next((o for o in (other(p) for p in players[:16]) if o), "")
-    elif t == "your_turn":
-        last = frame.get("last_action") if isinstance(frame.get("last_action"), dict) else {}
-        opp = other(last.get("agent_id"))
-        step = frame.get("step_number")
-        if isinstance(step, int) and not isinstance(step, bool) and 0 <= step < 10_000:
-            out["step"] = step
-    else:
-        outcome = frame.get("outcome") if isinstance(frame.get("outcome"), dict) else {}
-        winner = outcome.get("winner")
-        opp = other(winner) if winner else ""
-        if t == "session_completed":
-            out["result"] = "won" if winner == agent_id else ("lost" if winner else "ended")
-    if opp:
-        out["opponent"] = opp
-    return out
-
-
 def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notice | None:
     """The notice for one relay frame, or None when there is nothing to say.
 

@@ -91,11 +91,10 @@ def test_the_cli_locks_and_records_the_choice(hermes, profile, monkeypatch, caps
 
 
 def test_the_question_recommends_yes_and_the_closing_block_lists_it():
-    assert sc.CHOICES["skill_lock"].default == "yes" and sc.CHOICES["live_status"].default == "no"
-    text = "\n".join(sc.hermes_lines("on", ["mpp-agent"], "off"))
+    assert sc.CHOICES["skill_lock"].default == "yes"
+    text = "\n".join(sc.hermes_lines("on", ["mpp-agent"]))
     assert "Skill lock" in text and "mpp-agent" in text and "emporia skill-lock on|off|status" in text
-    assert "Live status" in text and "emporia live-status" in text
-    assert "off" in "\n".join(sc.hermes_lines("off", [], "off")).split("\n")[0]
+    assert "off" in "\n".join(sc.hermes_lines("off", [])).split("\n")[0]
 
 
 def _guard():
@@ -109,14 +108,14 @@ def _guard():
 
 
 @pytest.mark.parametrize("command", ["emporia skill-lock off", "hermes -p shop emporia skill-lock on",
-                                     "emporia live-status on", "echo EMPORIA_LIVE_STATUS=on >> /x/profiles/shop/.env",
+                                     "echo EMPORIA_SKILL_LOCK=off >> /x/profiles/shop/.env",
                                      "hermes config set EMPORIA_SKILL_LOCK off"])
-def test_an_agent_cannot_change_the_lock_or_the_live_status(command):
+def test_an_agent_cannot_change_the_lock(command):
     out = _guard().pre_tool_call(tool_name="terminal", args={"command": command})
     assert out and out["action"] == "block", command
 
 
-@pytest.mark.parametrize("command", ["emporia skill-lock status", "emporia live-status status"])
+@pytest.mark.parametrize("command", ["emporia skill-lock status"])
 def test_reading_them_passes(command):
     assert _guard().pre_tool_call(tool_name="terminal", args={"command": command}) is None
 
@@ -127,9 +126,9 @@ def test_setup_locks_by_default_without_a_terminal_and_records_only_a_departure_
     monkeypatch.setattr(cli, "_TTY", False)
     monkeypatch.setattr(cli.installer(), "harvest_env", lambda p: {})
     monkeypatch.setattr(cli, "merge_env_file", lambda path, updates: saved.update(updates) or list(updates))
-    lines = cli._setup_hermes_extras(profile, "shop", argparse.Namespace(skill_lock="", live_status=""))
+    lines = cli._setup_hermes_extras(profile, "shop", argparse.Namespace(skill_lock=""))
     assert [c[-1] for c in hermes.calls] == ["mpp-agent", "stripe-link-cli"]
     assert saved == {} and "mpp-agent" in "\n".join(lines)
-    lines = cli._setup_hermes_extras(profile, "shop", argparse.Namespace(skill_lock="off", live_status="on"))
-    assert saved == {"EMPORIA_SKILL_LOCK": "off", "EMPORIA_LIVE_STATUS": "on"}
+    lines = cli._setup_hermes_extras(profile, "shop", argparse.Namespace(skill_lock="off"))
+    assert saved == {"EMPORIA_SKILL_LOCK": "off"}
     assert any("unlock" in c for c in hermes.calls)

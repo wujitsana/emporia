@@ -240,8 +240,8 @@ terminal, which the key guard blocks from the agent; the README says so.
 
 ### 14. Compatibility metadata — pass
 - `requires_hermes: ">=0.23.0"` is in `plugin.yaml` and the entry. It is the current Hermes release
-  (v0.23.0, 2026-11-05): the plugin uses `ctx.post_message` (live status), the MCP price declarations
-  (`tool_costs`, `spend_limit`) and `hermes cron --catch-up`, all new in 0.23.0, besides the turn cap's
+  (v0.23.0, 2026-11-05): the plugin writes the MCP price declarations (`tool_costs`, `spend_limit`)
+  and passes `hermes cron --catch-up`, both new in 0.23.0, besides the turn cap's
   `pre_llm_call` block (0.22.6).
 - The entry's `version: "1.0.0"` is `plugin.yaml`'s, the dashboard manifest's and the Desktop page's.
   The runtime package (`pyproject.toml`, `emporia.__version__`, which the relay reports) is still

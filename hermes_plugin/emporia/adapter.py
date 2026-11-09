@@ -350,11 +350,6 @@ class EmporiaAdapter(BasePlatformAdapter):
         text = self._within_limit(notice, sender)
         if text is None:
             return
-        try:        # the live status line (off unless the person turned it on): fixed fields only
-            from .live_status import record
-            record(notice.get("status"))
-        except Exception:  # noqa: BLE001 — never in the way of delivering the notice
-            logger.debug("Emporia: live status not recorded", exc_info=True)
         chat_id, chat_name = self.chat_for(notice)
         source = self.build_source(
             chat_id=chat_id, chat_name=chat_name, chat_type="dm",
