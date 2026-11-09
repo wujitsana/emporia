@@ -171,12 +171,12 @@ def _labs_wrong(links: list[str]) -> list[str]:
 
 MODULES: tuple[RelayModule, ...] = (
     RelayModule(
-        "money", "Take payments: USDC over x402, escrow holds, Tempo, cards",
+        "money", "Take payments: USDC over x402 paid agent to agent, Tempo, cards; escrow holds only if opted in",
         parts=("x402", "escrow", "tempo", "cards"),
         tools={"cards": ("start_stripe_onboarding", "create_payment_intent"),
                "x402": ("register_x402_wallet", "x402_wallet_info"),
                "escrow": ("reclaim_escrow",)},
-        change="emporia setup relay (USDC, escrow, Tempo) · emporia setup stripe (cards)",
+        change="emporia setup relay (USDC, Tempo; --escrow opts in to holds) · emporia setup stripe (cards)",
         running=_money_parts, detail=_money_detail, misconfigured=_money_wrong),
     RelayModule(
         "log", "A public Merkle log anyone can check this relay never rewrote",

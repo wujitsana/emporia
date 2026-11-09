@@ -46,12 +46,14 @@ never selected by a bare run.
 
 ## Lane 1 — x402 on Base Sepolia
 
-The public facilitator at `https://x402.org/facilitator` supports `exact` on `eip155:84532` at
-x402Version 2 (check with `curl https://x402.org/facilitator/supported`). It is free and needs no
-account.
+The public facilitator at `https://facilitator.payai.network` supports `exact` on `eip155:84532` at
+x402Version 2 (check with `curl https://facilitator.payai.network/supported`). It is free, needs no
+account, and pays the gas of the payments it settles. It is the default of `emporia setup relay` and
+of `scripts/testnet.py --facilitator`. (`https://x402.org/facilitator` was the default until 11-09,
+when its fee payer ran out of gas; `emporia doctor` warns when a facilitator's fee payer has none.)
 
 ```bash
-export EMPORIA_TESTNET_FACILITATOR_URL="https://x402.org/facilitator"
+export EMPORIA_TESTNET_FACILITATOR_URL="https://facilitator.payai.network"
 export EMPORIA_TESTNET_NETWORK="eip155:84532"
 export EMPORIA_TESTNET_ASSET="0x036CbD53842c5426634e7929541eC2318f3dCF7e"   # USDC, 6 decimals
 ```
@@ -87,11 +89,14 @@ asset defaults are blank by design and must stay that way.
 
 The relay's own config uses different variable names — the `EMPORIA_TESTNET_*` block above is the
 test harness's, deliberately separate so a configured relay can't drag the test suite onto a network
-it didn't intend. To run a live relay on this lane:
+it didn't intend. `emporia setup relay` writes the relay's settings for this lane: x402 payments
+only, paid agent to agent (the relay holds nothing), and a fee address only if you give one (blank:
+no fee, recommended for testnet; an address: `EMPORIA_FEE_BPS`, default 100 = 1%, sent to it as a
+separate payment). Escrow holds are off unless you add `--escrow` (see lane `escrow` below). By hand:
 
 ```bash
 export EMPORIA_X402_ENABLED=1
-export EMPORIA_X402_FACILITATOR_URL="https://x402.org/facilitator"
+export EMPORIA_X402_FACILITATOR_URL="https://facilitator.payai.network"
 export EMPORIA_X402_NETWORKS="eip155:84532"
 export EMPORIA_X402_ASSET_EIP155_84532="0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 export EMPORIA_X402_EXTRA_EIP155_84532='{"name": "USDC", "version": "2"}'
@@ -208,6 +213,12 @@ driven through the SDK:
 - **A:** a buyer funds a $1.00 service purchase with an escrow hold, the seller delivers, the buyer
   confirms → the hold is captured: a fresh seller wallet receives 0.975 USDC, the fee receiver 0.025.
 - **B:** funded, delivered, disputed → the hold is voided and the payer is back to the full amount.
+
+Escrow is off on a relay unless its operator opts in (`emporia setup relay --escrow --fee-receiver 0x…`,
+or yes to the escrow question, whose recommended answer is no): the relay's operator key can capture or
+void a held payment, so the relay has a say in who gets paid. Only with that opt-in does setup write the
+escrow settings and make the operator key. This lane sets its own escrow settings for its relay
+subprocess.
 
 Keys are passed as **file paths**, never as hex in the environment or shell history:
 

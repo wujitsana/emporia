@@ -53,7 +53,8 @@ def test_a_drifting_block_is_caught(tmp_path, monkeypatch):
 
 
 def test_every_question_setup_asks_is_in_the_guide_in_one_place_or_another():
-    covered = set(build_docs.HERMES_ORDER) | set(build_docs.INIT_ORDER) | {"house_kind"}
+    covered = (set(build_docs.HERMES_ORDER) | set(build_docs.INIT_ORDER) | {"house_kind"}
+               | set(build_docs.RELAY_MONEY_ORDER))
     assert covered == set(sc.CHOICES), "a question missing from scripts/build_docs.py's lists is missing from the guide"
     text = GUIDE.read_text()
     for key in build_docs.HERMES_ORDER + build_docs.INIT_ORDER:

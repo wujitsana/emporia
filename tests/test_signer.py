@@ -376,7 +376,7 @@ def test_an_approval_is_for_the_holds_terms_not_just_how_it_reads(held, monkeypa
 
 
 def test_doctor_escrow_off_is_a_note_unless_the_relays_card_requires_it(monkeypatch, capsys):
-    """A testnet relay without escrow is a choice: a warning naming the command to turn it on, not a failure."""
+    """A testnet relay without escrow is the default: a passing line naming the opt-in, never a failure."""
     from emporia import cli
     monkeypatch.delenv("EMPORIA_ESCROW_NETWORK", raising=False)
     monkeypatch.setattr(cli, "doctor_federation", lambda rep, h: None)
@@ -386,8 +386,8 @@ def test_doctor_escrow_off_is_a_note_unless_the_relays_card_requires_it(monkeypa
     rep = cli.Report()
     cli.doctor_relay(rep)
     out = capsys.readouterr().out
-    assert not rep.failed and "escrow off" in out and "emporia setup relay --preset base-sepolia" in out
-    assert "✗" not in out.split("escrow off")[0].splitlines()[-1]
+    assert not rep.failed and "escrow off" in out and "emporia setup relay --escrow" in out
+    assert "✓" in out.split("escrow off")[0].splitlines()[-1]
     monkeypatch.setattr(cli, "health", lambda timeout=3.0, url="": {**card, "x402_escrow_required": True})
     rep = cli.Report()
     cli.doctor_relay(rep)

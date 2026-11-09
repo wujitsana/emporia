@@ -899,7 +899,8 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     monkeypatch.setattr(cli, "this_profile", lambda: root / "keeper")
     monkeypatch.setattr("shutil.which", lambda _: None)            # no Docker here
     folder = tmp_path / "emporia-relay"
-    _typing(monkeypatch, "1,2", "0x" + "ab" * 20)                # modules: money, log · fee address
+    # modules: money, log · a fee, to my address · that address · escrow: Enter (no, recommended)
+    _typing(monkeypatch, "1,2", "2", "0x" + "ab" * 20, "")
     assert cli.main(["relay", "host", "--run", "docker", "--dir", str(folder), "--domain", "relay.example.com",
                      "--admin", "keeper", "--access", "open", "--transparency-log", "on"]) == 0
     out = capsys.readouterr().out
@@ -913,6 +914,9 @@ def test_relay_host_writes_its_own_folder_and_refuses_an_agent(profiles, monkeyp
     env = _env_of(folder)
     assert env["EMPORIA_RELAY_URL"] == "https://relay.example.com" and "EMPORIA_REQUIRE_NOUS" not in env
     assert env["EMPORIA_FEE_ADDRESS"] == "0x" + "ab" * 20 and env["EMPORIA_TRANSPARENCY_LOG"] == "on"
+    assert env["EMPORIA_X402_FACILITATOR_URL"] == "https://facilitator.payai.network"
+    assert not any(k.startswith("EMPORIA_ESCROW_") for k in env) and "EMPORIA_OPERATOR_SIGNER" not in env
+    assert "operator_signer" not in out, "money without escrow makes no operator key"
     assert env["EMPORIA_AGENT_ID"] and oct((folder / ".env").stat().st_mode)[-3:] == "600"
     assert _env_of(root / "keeper")["EMPORIA_RELAY_URL"] == "http://relay:8088"
     assert "EMPORIA_FEE_ADDRESS" not in _env_of(root / "keeper")      # the relay's, in its own folder

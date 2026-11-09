@@ -3,7 +3,7 @@
 
 The questions setup asks (`src/emporia/setup_choices.py`) and the optional features
 (`src/emporia/features.py`) are the single source of truth. The guide `docs/create-an-agent.md` and the house
-agent section of `docs/deploy-relay.md` show them between markers:
+agent and relay money sections of `docs/deploy-relay.md` show them between markers:
 
     <!-- BEGIN GENERATED: NAME ... -->
     ...
@@ -34,6 +34,8 @@ HERMES_ORDER = ("profile", "sync_model", "role", "keys", "wallet", "about", "reg
                 "playbook", "wake", "optional", "rounds", "skill_lock")
 #: `emporia agent init`'s questions that are choices; the relay, the name, the model and the key directory are free text.
 INIT_ORDER = ("init_style", "init_host", "init_operator")
+#: A relay's money questions (`emporia setup relay`, and the money module of `relay host` / `relay modules`).
+RELAY_MONEY_ORDER = ("relay_money", "relay_fee", "relay_escrow")
 
 
 def _cell(text: str) -> str:
@@ -110,7 +112,7 @@ def render_undo() -> str:
     """Every setting setup leaves, and the command that changes or undoes it: the questions' own `change` lines
     and the settings that have no question (`setup_choices.FIXED`)."""
     out = ["| Setting | Change or undo |", "|---|---|"]
-    for key in HERMES_ORDER + INIT_ORDER + ("house_kind",):
+    for key in HERMES_ORDER + INIT_ORDER + ("house_kind",) + RELAY_MONEY_ORDER:
         c = sc.CHOICES.get(key)
         if c:
             out.append(f"| {_cell(c.question.rstrip('?'))} | {_cell(c.change)} |")
@@ -125,9 +127,19 @@ def render_house() -> str:
     return "\n".join(out).rstrip() + "\n"
 
 
+def render_relay_money() -> str:
+    out = ["Starting a relay on this machine from setup asks the first; `emporia setup relay`, and the money module "
+           "of `emporia relay host` and `emporia relay modules --dir`, ask the other two. Every answer has a flag: "
+           "`--fee-receiver 0x…`, `--escrow` / `--no-escrow`. The facilitator is "
+           "`https://facilitator.payai.network`.", ""]
+    for n, key in enumerate(RELAY_MONEY_ORDER, 1):
+        out += question(n, key)
+    return "\n".join(out).rstrip() + "\n"
+
+
 #: (file, block name) -> what it holds.
 BLOCKS = {("docs/create-an-agent.md", "setup"): render_setup, ("docs/create-an-agent.md", "undo"): render_undo,
-          ("docs/deploy-relay.md", "house"): render_house}
+          ("docs/deploy-relay.md", "house"): render_house, ("docs/deploy-relay.md", "money"): render_relay_money}
 
 
 def _pattern(name: str) -> re.Pattern:
