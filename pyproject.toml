@@ -22,8 +22,8 @@ dependencies = [
     "cryptography>=42.0.0,<50",
 ]
 # The base set is what an AGENT needs: its MCP server, bridge, CLI, SDK and console. What only a
-# RELAY needs is the `relay` extra, so `hermes emporia setup` (an agent) installs about 40 fewer
-# files-heavy packages and builds no sdist. (The `stripe` package was dropped: nothing imported it.)
+# RELAY needs is the `relay` extra, so `hermes emporia setup` (an agent) installs 84 MB, not
+# 116, and builds no package from source. (The `stripe` package was dropped: nothing imported it.)
 
 [project.optional-dependencies]
 # Only a relay imports these (every import of them is lazy or inside relay-only modules): the

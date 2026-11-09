@@ -165,6 +165,11 @@ Hermes's probe records the four hooks `pre_llm_call`, `pre_tool_call`, `post_llm
   tree.
 - `tests/test_dependency_bounds.py` keeps every runtime dependency bounded and the locked
   versions inside the ranges.
+- The agent's install leaves out the `relay` extra (server-side packages only a relay imports;
+  `tests/test_fast_setup.py` imports every module with them blocked). uv and pip use the user's own
+  package caches, shared by the profiles of one user: what they take from a cache is checked against
+  uv.lock's hashes (`--frozen`) or `--require-hashes`, and each profile still has its own runtime
+  folder and virtualenv, verified by `verify_runtime` before use (rule 3 is unchanged).
 
 ### 11. Credentials come through Hermes — pass
 - **The plugin's in-process code** reads its settings with
