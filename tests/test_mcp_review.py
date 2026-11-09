@@ -141,7 +141,7 @@ def test_the_tool_list_stays_within_its_measured_budget():
     import json
     size = sum(len(json.dumps({"name": t.name, "description": t.description, "parameters": t.parameters},
                               separators=(",", ":"))) for t in _tools().values())
-    assert size < 50_700, size   # 96 tools (50.6 KB: the X link tools in): the bounty tools and settle_promise out
+    assert size < 50_700, size   # tests/test_lean_tools.py holds the tighter, per-feature budgets
 
 
 def test_relay_and_own_id_arguments_say_what_they_are():
@@ -196,7 +196,8 @@ def test_tool_calls_written_for_agents_use_real_arguments():
     call = re.compile(r"(?<![.\w])(" + "|".join(sorted(tools, key=len, reverse=True)) + r")\(([^()]*)\)")
     kw = re.compile(r"(?:^|,)\s*([a-z_][a-z0-9_]*)\s*=")
     wrong = []
-    for doc in ("hermes_plugin/emporia/skills/emporia/SKILL.md", "src/emporia/plugins/platforms/emporia/frames.py",
+    refs = sorted(str(p.relative_to(root)) for p in (root / "hermes_plugin/emporia/skills/emporia/references").glob("*.md"))
+    for doc in ("hermes_plugin/emporia/skills/emporia/SKILL.md", *refs, "src/emporia/plugins/platforms/emporia/frames.py",
                 "skills/dev/emporia-dev/SKILL.md", "README.md", "docs/protocol.md"):
         for m in call.finditer((root / doc).read_text()):
             props = tools[m.group(1)].parameters.get("properties", {})

@@ -4,7 +4,7 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
-from emporia import cli, relay_modules as rm
+from emporia import cli, features, relay_modules as rm
 from emporia import relay_server as rs
 
 _SWITCHES = ("EMPORIA_TRANSPARENCY_LOG", "EMPORIA_GAMIFY", "EMPORIA_FEDERATED_DMS", "EMPORIA_X402_ENABLED",
@@ -84,10 +84,10 @@ def test_agents_see_only_the_tools_their_relays_serve():
     assert rm.tools_to_hide([{}, None]) == set()                            # one did not answer: hide nothing
     assert rm.tools_to_hide([]) == set()
     sheets = rm.tools_to_hide([{"gamify": {"parts": ["sheets"]}}])
-    assert "character_sheet" not in sheets and "my_quests" in sheets
+    assert "my_quests" in sheets and "make_pledge" in sheets
     # a module's tools show when any relay it uses runs it — home or a visit
     both = rm.tools_to_hide([{"log": {"parts": []}}, {"money": {"parts": ["x402", "escrow"]}}])
-    assert not both & {"check_relay_log", "register_x402_wallet", "reclaim_escrow"}
+    assert not both & {"register_x402_wallet", "reclaim_escrow"}
     assert {"create_payment_intent", "my_quests"} <= both
 
 
@@ -116,13 +116,13 @@ def test_the_mcp_server_hides_and_shows_them(monkeypatch):
     monkeypatch.setattr(mcp_server.httpx, "get", lambda url, timeout=5: Answer({"gamify": {"parts": ["sheets"]}}))
     try:
         hidden = mcp_server._fit_tools_to_relays()
-        assert "my_quests" in hidden and "my_quests" not in names() and "character_sheet" in names()
+        assert "my_quests" in hidden and "my_quests" not in names() and "standing" in names()
         monkeypatch.setattr(mcp_server, "_visits", lambda: ["https://other.example"])
         monkeypatch.setattr(mcp_server.fetch, "get", lambda url, timeout=5: Answer({"gamify": {"parts": ["quests"]}, "log": {}}))
         mcp_server._fit_tools_to_relays()
         assert "my_quests" in names()                                       # the visited relay runs quests
     finally:
-        mcp_server.mcp.enable(names=rm.all_tools())
+        mcp_server.mcp.enable(names=features.all_tools())
 
 
 def test_relay_modules_command_writes_only_what_changes(tmp_path, monkeypatch):

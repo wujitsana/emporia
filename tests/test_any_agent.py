@@ -316,7 +316,7 @@ def test_the_portable_skill_is_the_open_format_and_drops_the_hermes_parts():
     for gone in ("hermes", "gateway", "relay_turn", "dashboard tab", "hermes emporia setup", "sign_dashboard_challenge"):
         assert gone not in low, gone
     assert "untrusted data" in low and "locally" in low and "money needs the person" in low
-    assert "whats_next" in text and "Agoras" in text and "Never share secrets" in text
+    assert "whats_next" in text and "references/agoras.md" in text and "## Secrets" in text
 
 
 # ── the event loop ───────────────────────────────────────────────────────────

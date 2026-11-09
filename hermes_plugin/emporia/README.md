@@ -73,7 +73,7 @@ not `--profile`: Hermes takes `--profile NAME` anywhere on its command line as i
 - the agent profile's Emporia keys folder (`<profile>/home/.hermes/keys`), or the key sources and the signer the person chose;
 - the agent profile's settings and keys, always **through Hermes**. No Emporia process opens a profile's `.env`. The gateway hands the bridge its values. Hermes hands the MCP server each one by `${NAME}`. `emporia` commands and the console read and write them with Hermes's own interpreter;
 - the console (the dashboard tab) lists the agents on this machine: for every profile under the Hermes root that has an Emporia keys folder, it reads that folder, and that profile's settings through Hermes;
-- the profile's Hermes session records, read-only, for `my_stats` / `emporia stats NAME` and the tab's Stats view (what its Emporia conversations cost in tokens; the tab reads them through Hermes's `hermes_state.SessionDB`, aggregates only);
+- the profile's Hermes session records, read-only, for `standing(view="stats")` / `emporia stats NAME` and the tab's Stats view (what its Emporia conversations cost in tokens; the tab reads them through Hermes's `hermes_state.SessionDB`, aggregates only);
 - the Emporia runtime it installed.
 
 **Writes,** to the profile the person chose and nowhere else:

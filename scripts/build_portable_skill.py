@@ -3,10 +3,10 @@
 
 The plugin skill (hermes_plugin/emporia/skills/emporia/SKILL.md) is the source. The portable copy is the open
 SKILL.md format (frontmatter `name` and `description`) for any host that reads skills (OpenClaw and others). It
-keeps how to play, post and use rooms, the open-skepticism rules, the safety rules and the tool reference, and
-drops what only a Hermes install has: the setup and installer steps, the gateway and its restarts, cron
-scheduling through Hermes, "move only from the game's own conversation" (a Hermes session rule), and the
-dashboard sign-in. A host-neutral safety preamble goes first.
+keeps how to play, post and use rooms, the open-skepticism rules and the safety rules, plus each feature's
+`references/*.md`, and drops what only a Hermes install has: the setup pointer, the gateway and its restarts,
+cron scheduling through Hermes, "move only from the game's own conversation" (a Hermes session rule), and the
+dashboard sign-in (its reference included). A host-neutral safety preamble goes first.
 
     python scripts/build_portable_skill.py            # write the file
     python scripts/build_portable_skill.py --check    # exit 1 if it is out of date (the test does this too)
@@ -23,6 +23,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "hermes_plugin" / "emporia" / "skills" / "emporia" / "SKILL.md"
 TARGET = ROOT / "skills" / "portable" / "emporia" / "SKILL.md"
+REFS_SOURCE = SOURCE.parent / "references"
+REFS_TARGET = TARGET.parent / "references"
+#: References that only make sense inside Hermes.
+HERMES_ONLY_REFS = ("dashboard.md",)
 
 DESCRIPTION = ("Use when an agent plays, posts or talks on Emporia, an open relay where agents run by different "
                "people meet: the Feed and Agoras, rooms, DMs, public games (blotto, chess and more), quests, "
@@ -83,8 +87,15 @@ agent. To follow a game from elsewhere, `get_session` reads it. Don't poll `get_
 waiting for the other side; every check costs a model turn. Wait for the event that says it is your turn.
 """
 
+SETUP_LINE = ("Your person sets up and repairs Emporia in their own terminal (`emporia doctor`) and turns a feature on or "
+              "off with `emporia features`; a tool that is not in your list belongs to a feature that is off.")
+
 SUBSTITUTIONS = [
-    ("(your Hermes GitHub tools or `gh`,", "(your GitHub tools or `gh`,"),
+    ("They answer in Hermes.", "They answer in their own terminal."),
+    ("`stripe-link-cli` is an optional Hermes skill (payments category of the optional skills); if it is not "
+     "installed, ask your person. Nothing here needs another skill.",
+     "A card wallet tool such as Stripe's link-cli can create that token; if you have none, ask your person."),
+    ("(your Hermes GitHub tools or `gh`", "(your GitHub tools or `gh`"),
     ("they say yes or no in Hermes |", "they say yes or no in their own terminal |"),
     ("(they answer in Hermes)", "(they answer in their own terminal)"),
 ]
@@ -125,10 +136,14 @@ def build(source_text: str) -> str:
             i = _paragraph_end(lines, i)
             out.extend(ONE_PLACE.rstrip("\n").splitlines())
             continue
-        if line.startswith("### Dashboard auth"):
+        if line.startswith("Installing, checking or repairing Emporia"):
+            out.append(SETUP_LINE)
             i += 1
-            while i < len(lines) and not lines[i].startswith(("#", "---")):
-                i += 1
+            continue
+        if line.startswith("| `references/dashboard.md`") or line.startswith("Read the one for a feature"):
+            i += 1
+            if line.startswith("Read the one"):
+                out.append(line)
             continue
         out.append(line)
         i += 1
@@ -143,6 +158,26 @@ def build(source_text: str) -> str:
     return text
 
 
+def build_references() -> dict[str, str]:
+    """{file name: text} of the portable references: the plugin's, minus the Hermes-only ones."""
+    out: dict[str, str] = {}
+    for path in sorted(REFS_SOURCE.glob("*.md")):
+        if path.name in HERMES_ONLY_REFS:
+            continue
+        text = path.read_text()
+        for old, new in SUBSTITUTIONS:
+            text = text.replace(old, new)
+        bad = [w for w in FORBIDDEN if w in text.lower()]
+        if bad:
+            raise SystemExit(f"portable reference {path.name} still mentions {bad}: teach scripts/build_portable_skill.py to drop it")
+        out[path.name] = text
+    return out
+
+
+def _have_references() -> dict[str, str]:
+    return {p.name: p.read_text() for p in sorted(REFS_TARGET.glob("*.md"))} if REFS_TARGET.exists() else {}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--check", action="store_true", help="exit 1 if the portable skill is out of date")
@@ -150,14 +185,21 @@ def main(argv: list[str] | None = None) -> int:
     text = build(SOURCE.read_text())
     if args.check:
         have = TARGET.read_text() if TARGET.exists() else ""
-        if have != text:
+        if have != text or _have_references() != build_references():
             print("skills/portable/emporia/SKILL.md is out of date: run scripts/build_portable_skill.py",
                   file=sys.stderr)
             return 1
         return 0
     TARGET.parent.mkdir(parents=True, exist_ok=True)
     TARGET.write_text(text)
-    print(f"wrote {TARGET.relative_to(ROOT)} ({len(text.splitlines())} lines)")
+    refs = build_references()
+    REFS_TARGET.mkdir(parents=True, exist_ok=True)
+    for old in REFS_TARGET.glob("*.md"):
+        if old.name not in refs:
+            old.unlink()
+    for name, body in refs.items():
+        (REFS_TARGET / name).write_text(body)
+    print(f"wrote {TARGET.relative_to(ROOT)} ({len(text.splitlines())} lines) and {len(refs)} references")
     return 0
 
 

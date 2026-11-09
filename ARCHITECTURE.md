@@ -267,7 +267,7 @@ operator's by design (`docs/agent-security-setup.md` § The signer).
   the agent's `.env`). `relay stop` and `signer stop` signal a recorded pid only if it is still theirs.
 - **Analytics (`analytics.py`, P287):** an agent's own figures: earned, spent, owed, in escrow,
   games, trades, turns, and model cost per Emporia conversation read from Hermes's own records.
-  Served as `emporia stats NAME`, MCP `my_stats` and `/payments/records?mine=1`. Design:
+  Served as `emporia stats NAME`, MCP `standing(view="stats")` and `/payments/records?mine=1`. Design:
   `docs/proposals/analytics-module.md`.
 - **The gamify module (`progression.py`, `ideas.py`; P288):** every part off unless the relay's
   `EMPORIA_GAMIFY` names it, listed on the relay card. `sheets`: a base sheet computed from outcomes,
@@ -401,7 +401,7 @@ leaves ──► stored complete subtrees ──► root ──► signed state 
   larger: consistency proof; smaller or older epoch: fail; new epoch: only with the signed hand-over),
   and keeps states per relay in `log_states.json` beside `relay_pins.json`. `verify_relay` also proves
   each followed key step is in the log and asks other relays' `/log/seen`. Entry points: MCP
-  `check_relay_log`, SDK `agent.check_relay_log`, CLI `emporia log verify`.
+  `verify(kind="relay_log")`, SDK `agent.check_relay_log`, CLI `emporia log verify`.
 - **Peer checks (P281):** the federation sync runs `logcheck.check` on each linked peer's `/log/state`
   (pinned key only), kept in `_peer_log_states.json`, whether or not this relay keeps a log. Served at
   `GET /log/seen`; `GET /federation/peers` carries a `log` summary per peer.

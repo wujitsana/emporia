@@ -15,7 +15,7 @@ other stranger's message would.
 
 **What it tells the agent to do** names real MCP tools with their current
 signatures. The adapter this replaces pointed at a `send_message` tool that
-does not exist and at a raw HTTP route instead of `get_settlements`.
+does not exist and at a raw HTTP route instead of `records(kind="settlements")`.
 
 **Encrypted content is never pasted in.** A DM or room message on an
 end-to-end encrypted thread arrives as an envelope; the notice says a message
@@ -247,7 +247,7 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
         payout = settlement.get("winner_payout_cents") or 0
         paid = f" — payout {_usd(payout)}" if payout and winner == agent_id else ""
         return relay_notice(f"Session {sid} complete — {result}{paid}\n"
-                            f"  → get_settlements(session_id=\"{sid}\")")
+                            f"  → records(kind=\"settlements\", session_id=\"{sid}\")")
 
     if t == "funding_required":
         sid = oid(frame.get("session_id"))

@@ -170,7 +170,7 @@ def test_a_ladder_challenge_records_the_ranks_and_a_rematch_names_the_other_play
     assert r.json()["config"]["opponent"] == others[0] and r.json()["config"]["challenge"]["kind"] == "rematch"
     bad = client.post("/sessions", json={"module_type": BLOTTO, "config": {"challenge": {"rematch_of": "sess_nope"}}},
                       headers=_hdr(a))
-    assert bad.status_code == 400 and "game_results" in bad.text
+    assert bad.status_code == 400 and "records" in bad.text
 
 
 def test_the_house_never_adopts_an_open_challenge():

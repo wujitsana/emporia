@@ -22,12 +22,12 @@ from emporia.identity import get_public_key_hex
 # tool -> SDK method; or None with the reason it is not in the SDK.
 PERSON = "a person's or operator's act (the SDK agent's operator does it on its own side)"
 LATER = "not in the SDK yet"
-PARITY: dict[str, str | None] = {
+PARITY: dict[str, str | tuple[str, ...] | None] = {
     # identity, relays
     "register_agent": "register", "agent_card": "get_agent_profile", "list_agents": "list_agents",
     "get_agent_profile": "get_agent_profile", "counterparty_record": "counterparty_record",
     "start_stripe_onboarding": "start_stripe_onboarding", "supported_games": "supported_games",
-    "relay_payment_info": "get_relay_descriptor", "check_relay_log": "check_relay_log",
+    "relay_payment_info": "get_relay_descriptor",
     "scan_relays": None, "visit_relay": None, "leave_relay": None,        # federation: see below
     # feed, threads, Agora
     "post": "post", "read_feed": "read_feed", "read_thread": "read_thread", "whats_happening": "whats_happening",
@@ -40,10 +40,10 @@ PARITY: dict[str, str | None] = {
     "create_room": "create_room", "list_rooms": "get_rooms", "join_room": "join_room", "leave_room": "leave_room",
     "send_room_message": "send_room_message", "get_room_messages": "get_room_messages",
     "invite_to_room": "invite_to_room", "revoke_room_invite": "revoke_room_invite",
-    "kick_from_room": "kick_from_room", "verify_room_chain": "verify_room_chain", "check_room": None,
+    "kick_from_room": "kick_from_room",
     # DMs and inbox
     "send_dm": "send_dm", "get_dm_messages": "get_dm_messages", "list_dm_threads": "list_dm_threads",
-    "verify_dm_chain": "verify_dm_chain", "get_inbox": "get_inbox", "mark_inbox_read": "mark_inbox_read",
+    "get_inbox": "get_inbox", "mark_inbox_read": "mark_inbox_read",
     "block_dm_sender": "block_dm_sender", "list_dm_blocks": "list_dm_blocks",
     "set_cross_relay_dms": None, "archive_now": None, "read_archive": None, "my_settings": None,
     # games and sessions
@@ -51,18 +51,19 @@ PARITY: dict[str, str | None] = {
     "get_session": "get_session", "leave_session": "leave_session", "abandon_session": "abandon_session",
     "submit_action": "submit_action", "commit_move": "commit_move", "reveal_move": "reveal_move",
     "send_game_chat": "say_in_game", "get_game_chat": "get_game_chat", "reveal_models": "reveal_models",
-    "get_game_models": "get_game_models", "get_model_results": "get_model_results",
+    "model_results": ("get_game_models", "get_model_results"),
     "challenge": "challenge", "list_challenges": "list_challenges", "decline_challenge": "decline_challenge",
-    "game_results": "game_results", "leaderboard": "leaderboard", "export_games": "export_games",
-    "verify_session": None, "validate_turn": None,
+    "records": ("game_results", "export_games", "get_settlements"),
+    "verify": ("verify_dm_chain", "verify_room_chain", "check_relay_log"),   # room and session checks: left out below
+    "validate_turn": None,
     # money
     "create_payment_intent": "create_payment_intent", "fund_session": "fund_session",
     "confirm_delivery": "confirm_delivery", "dispute_delivery": "dispute_delivery",
-    "get_settlements": "get_settlements", "register_x402_wallet": "register_x402_wallet",
+    "register_x402_wallet": "register_x402_wallet",
     "reclaim_escrow": None, "x402_wallet_info": None,
     # quests, levels, season, what next
-    "my_quests": "my_quests", "character_sheet": "character_sheet", "season": "season", "season_board": "season_board",
-    "whats_next": "whats_next", "my_stats": None,
+    "my_quests": "my_quests", "standing": ("character_sheet", "season", "season_board", "leaderboard"),
+    "whats_next": "whats_next",
     # labs
     "lab_threads": "lab_threads", "github_claim_line": "github_claim_line", "lab_report": "lab_report",
     # the card's X link
@@ -74,12 +75,12 @@ PARITY: dict[str, str | None] = {
 
 # Why each tool left out is left out.
 LEFT_OUT = {
-    **dict.fromkeys(["set_cross_relay_dms", "archive_now", "read_archive", "my_settings", "my_stats",
+    **dict.fromkeys(["set_cross_relay_dms", "archive_now", "read_archive", "my_settings",
                      "sign_dashboard_challenge", "x402_wallet_info"], PERSON),
     **dict.fromkeys(["scan_relays", "visit_relay", "leave_relay"],
                     "federation needs the operator's yes; an SDK agent reaches another relay by being given "
                     "that relay's URL (one `EmporiaAgent` per relay, its own key on each)"),
-    **dict.fromkeys(["check_room", "verify_session", "reclaim_escrow", "validate_turn"],
+    **dict.fromkeys(["reclaim_escrow", "validate_turn"],
                     "a local check or a recovery over keys the plugin pins and stores; " + LATER),
     **dict.fromkeys(["make_pledge", "attest_pledge", "list_pledges"], "pledges: " + LATER),
 }
@@ -95,9 +96,10 @@ def test_every_mcp_tool_is_mapped_to_an_sdk_method_or_left_out_with_a_reason():
         if method is None:
             assert LEFT_OUT.get(tool), f"{tool}: no reason for leaving it out"
         else:
-            assert callable(getattr(EmporiaAgent, method, None)), f"{tool}: EmporiaAgent.{method} is missing"
+            for one in ([method] if isinstance(method, str) else method):
+                assert callable(getattr(EmporiaAgent, one, None)), f"{tool}: EmporiaAgent.{one} is missing"
             assert tool not in LEFT_OUT, tool
-    assert len([t for t, v in PARITY.items() if v]) >= 75
+    assert len([t for t, v in PARITY.items() if v]) >= 65
 
 
 def test_the_sdk_methods_are_documented():
