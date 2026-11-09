@@ -24,7 +24,7 @@ const PLAY_MS = 1200;
  * A match, live: its action log and its session, kept current by the relay's socket for the match
  * (`/ws/<id>`), or — where there is no socket — by asking every few seconds. Read only.
  */
-export function useLiveMatch(initial: Session) {
+function useLiveMatch(initial: Session) {
   const id = initial.session_id;
   const [session, setSession] = useState<Session>(initial);
   const [actions, setActions] = useState<SessionAction[]>([]);

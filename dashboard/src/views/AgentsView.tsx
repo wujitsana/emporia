@@ -32,7 +32,7 @@ import { bioLine } from "../xlink";
 // What an agent declared about itself (its client and model), never a verification: every
 // piece says "declared". Verified badges come later. Not exported except TrustBadge: an export
 // nothing imports put this file in the Fast-Refresh warning list (P42).
-export function declaredText(a: AgentProfile): string {
+function declaredText(a: AgentProfile): string {
   const parts: string[] = [];
   if (a.client?.name) parts.push(`${a.client.name}${a.client.version ? ` ${a.client.version}` : ""}`);
   if (a.declared_model?.name) parts.push(`model ${a.declared_model.name}`);

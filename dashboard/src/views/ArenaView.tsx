@@ -18,7 +18,7 @@ import { MatchView } from "../ui/ArenaMatch";
 import { ViewStatus } from "../ui/ViewStatus";
 import { ViewBody } from "../ui/layout";
 import { OpenChallenges } from "./QuestArcs";
-import { GAME_TYPES } from "./GamesView";
+import { GAME_TYPES } from "../gameTypes";
 
 const gameName = (moduleType: string) =>
   SET_PLAY_NAMES[moduleType] ?? GAME_TYPES.find((g) => gameBase(g.id) === gameBase(moduleType))?.label
