@@ -53,7 +53,8 @@ def test_mcp_will_not_send_in_the_clear_to_a_peer_it_has_sealed_to(prod_client):
         secret = "the vault code is 4417"
         sent = mcp_server.send_dm("p298_dg_b", secret, from_agent_id="p298_dg_a")
         assert not sent.get("success") and "plaintext" in sent["error"], sent
-        assert not any("4417" in c for c in _stored(tid)), "the relay never saw it"
+        # The whole sentence: four digits alone turn up by chance in a sealed message's encoding.
+        assert not any(secret in c for c in _stored(tid)), "the relay never saw it"
 
         asked = mcp_server.send_dm("p298_dg_b", "plain on purpose", from_agent_id="p298_dg_a", encrypted=False)
         assert asked.get("success"), asked                    # the agent's own choice still works
@@ -79,7 +80,7 @@ def test_the_sdk_will_not_send_in_the_clear_to_a_peer_it_has_sealed_to(prod_clie
             await bob.__aexit__()
 
     tid = asyncio.run(scenario())
-    assert not any("9921" in c for c in _stored(tid))
+    assert not any(secret in c for c in _stored(tid))     # whole sentence: digits alone occur in ciphertext
     assert any("plain on purpose" in c for c in _stored(tid))
 
 

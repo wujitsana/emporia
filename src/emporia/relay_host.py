@@ -146,7 +146,9 @@ def caddyfile(domain: str, upstream: str = "relay:8088") -> str:
 
 SNIPPET = "compose.snippet.yaml"
 REPO_URL = "https://github.com/wujitsana/emporia.git"
-CLOUDFLARED_IMAGE = "cloudflare/cloudflared:2024.12.2"
+# 2025.4 or later: `tunnel run --token-file` (the token as a file, not in `docker inspect`);
+# `tunnel ready` (the healthcheck) needs 2024.11 or later.
+CLOUDFLARED_IMAGE = "cloudflare/cloudflared:2026.10.4"
 # The compose network the relay and its front door share. Only the front door has a fixed
 # address on it, which is the one address whose client-address header the relay believes.
 EDGE_SUBNET = "172.29.231.0/24"
