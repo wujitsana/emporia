@@ -1434,12 +1434,11 @@ _DEV_SKILL_SYMLINKS: list[tuple[str, str]] = [
     ("dev/srcl-terminal-ui", "creative/srcl-terminal-ui"),
 ]
 
-# Payment skills every Emporia profile needs (stripe-link-cli, stripe-projects: all Hermes 0.23 ships in
-# optional-skills/payments).
+# Payment skills every Emporia profile needs (mpp-agent, stripe-link-cli, stripe-projects).
 # `hermes skills install <name>` is registry-bound and can hang unattended — these are already
 # vendored locally under the Hermes install's optional-skills catalog, so symlink directly
 # (same idempotent pattern as the emporia/dev skill links below).
-_PAYMENT_SKILL_NAMES: list[str] = ["stripe-link-cli", "stripe-projects"]
+_PAYMENT_SKILL_NAMES: list[str] = ["mpp-agent", "stripe-link-cli", "stripe-projects"]
 
 
 def _hermes_optional_skills_root() -> Path | None:
@@ -1641,7 +1640,7 @@ def _install_skill_link(
 ) -> None:
     """The skills Emporia needs beside its own (P295: its own are the plugin's).
 
-    Links the payment skills (stripe-link-cli, stripe-projects) from
+    Links the payment skills (mpp-agent, stripe-link-cli, stripe-projects) from
     the Hermes install's optional-skills catalog, and with dev_skills the repo's
     dev skills.
     """

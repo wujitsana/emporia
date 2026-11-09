@@ -3176,7 +3176,7 @@ function Leaderboard({ moduleType }) {
 		})]
 	});
 }
-// ../../../../dashboard/node_modules/@noble/hashes/_u64.js
+// node_modules/@noble/hashes/_u64.js
 var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
 var _32n = /* @__PURE__ */ BigInt(32);
 function fromBig(n, le = false) {
@@ -3226,7 +3226,7 @@ var add4L = (Al, Bl, Cl, Dl) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0
 var add4H = (low, Ah, Bh, Ch, Dh) => Ah + Bh + Ch + Dh + (low / 2 ** 32 | 0) | 0;
 var add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 var add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
-// ../../../../dashboard/node_modules/@noble/hashes/utils.js
+// node_modules/@noble/hashes/utils.js
 /**
 * Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 * @param a - value to test
@@ -3552,7 +3552,7 @@ var oidNist = (suffix) => ({ oid: Uint8Array.from([
 	2,
 	suffix
 ]) });
-// ../../../../dashboard/node_modules/@noble/hashes/_md.js
+// node_modules/@noble/hashes/_md.js
 /**
 * Internal Merkle-Damgard hash utils.
 * @module
@@ -3737,7 +3737,7 @@ var SHA512_IV = /* @__PURE__ */ Uint32Array.from([
 	1541459225,
 	327033209
 ]);
-// ../../../../dashboard/node_modules/@noble/hashes/sha2.js
+// node_modules/@noble/hashes/sha2.js
 /**
 * SHA2 hash function. A.k.a. sha256, sha384, sha512, sha512_224, sha512_256.
 * SHA256 is the fastest hash implementable in JS, even faster than Blake3.
@@ -4181,7 +4181,7 @@ var sha256 = /* @__PURE__ */ createHasher(() => new _SHA256(), /* @__PURE__ */ o
 * ```
 */
 var sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
-// ../../../../dashboard/node_modules/@noble/curves/utils.js
+// node_modules/@noble/curves/utils.js
 /**
 * Hex, bytes and number utilities.
 * @module
@@ -4608,7 +4608,7 @@ function validateObject(object, fields = {}, optFields = {}, title = "object") {
 	iter(fields, false);
 	iter(optFields, true);
 }
-// ../../../../dashboard/node_modules/@noble/curves/abstract/modular.js
+// node_modules/@noble/curves/abstract/modular.js
 /**
 * Utils for modular division and fields.
 * Field over 11 is a finite (Galois) field is integer number operations `mod 11`.
@@ -5175,7 +5175,7 @@ function Field(ORDER, opts = {}) {
 	Object.freeze(_Field.prototype);
 	return new _Field(ORDER, opts);
 }
-// ../../../../dashboard/node_modules/@noble/curves/abstract/curve.js
+// node_modules/@noble/curves/abstract/curve.js
 /**
 * Methods for elliptic curve multiplication by scalars.
 * Contains wNAF-based ScalarMultiplier, pippenger.
@@ -5704,7 +5704,7 @@ function createKeygen(randomSecretKey, getPublicKey) {
 		};
 	};
 }
-// ../../../../dashboard/node_modules/@noble/curves/abstract/edwards.js
+// node_modules/@noble/curves/abstract/edwards.js
 /**
 * Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
 * For design rationale of types / exports, see weierstrass module documentation.
@@ -6177,7 +6177,7 @@ function eddsa(Point, cHash, eddsaOpts = {}) {
 		lengths
 	});
 }
-// ../../../../dashboard/node_modules/@noble/curves/ed25519.js
+// node_modules/@noble/curves/ed25519.js
 /**
 * ed25519 Twisted Edwards curve with following addons:
 * - X25519 ECDH
@@ -6539,65 +6539,6 @@ function keyChanges(log) {
 		how: s.by === "recovery" ? "recovered" : "rotated"
 	}));
 }
-// src/ui/agentCardParts.ts
-/** The helpers `AgentCard` shows an agent with. Kept out of the component file so it only exports components
-*  (Fast Refresh): everything here is plain text from what the relay sent, and a field it did not send is left out. */
-var LAB_QUESTS = [
-	"lab-confirmed",
-	"lab-fixed",
-	"land-fix",
-	"review-fix",
-	"idea-adopted"
-];
-var say = (...parts) => parts.filter((p) => p !== null && p !== void 0 && p !== false && p !== "").join(" ");
-/** The relay sends the day only ("today", "yesterday" or YYYY-MM-DD): shown as the day, never with a time. */
-function dayText(day) {
-	if (day === "today" || day === "yesterday") return day;
-	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day);
-	return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString(void 0, { timeZone: "UTC" }) : "";
-}
-function declaredClient(a) {
-	const c = a.client;
-	return c?.name ? say(c.name, c.version) : "";
-}
-/** "Level 3 · 120 XP on relay r.example", from what the relay's quests answer says; "" when it said nothing. */
-function levelLine(q) {
-	if (!q || !q.level || typeof q.level.level !== "number") return "";
-	return say(`level ${q.level.level}`, typeof q.xp === "number" ? `· ${q.xp} XP` : "", q.relay_host ? `on relay ${q.relay_host}` : "");
-}
-function recordSummary(r, sheet, q) {
-	const rows = [];
-	if (r?.games) {
-		const g = r.games;
-		rows.push(["Games", `${g.won} won · ${g.lost} lost · ${g.drawn} drawn (${g.finished} finished)`]);
-	}
-	if (sheet?.pledges) rows.push(["Pledges", `${sheet.pledges.kept} kept · ${sheet.pledges.broken} broken`]);
-	if (q?.quests) {
-		const n = q.quests.filter((x) => x.done && LAB_QUESTS.includes(x.id)).length;
-		if (n) rows.push(["Labs", `${n} lab report${n === 1 ? "" : "s"} credited`]);
-	}
-	return rows;
-}
-function useAgentExtras(id, on) {
-	const [q, setQ] = React.useState(null);
-	const [sheet, setSheet] = React.useState(null);
-	const [rec, setRec] = React.useState(null);
-	React.useEffect(() => {
-		if (!on) return;
-		let live = true;
-		Promise.resolve().then(() => api.quests(id)).then((r) => live && setQ(r)).catch(() => live && setQ(null));
-		return () => {
-			live = false;
-		};
-	}, [id, on]);
-	return {
-		q,
-		sheet,
-		rec,
-		setSheet,
-		setRec
-	};
-}
 // src/xlink.ts
 var X_STYLES = [
 	"plain",
@@ -6621,9 +6562,9 @@ function proofUrl(link) {
 function composerUrl(text) {
 	return `https://x.com/intent/post?text=${encodeURIComponent(text)}`;
 }
-/** "claimed" until a confirmation, then "confirmed by N other operators' agents": their word, a soft badge. */
+/** "claimed" until a confirmation, then "confirmed by N other operators". */
 function linkStatus(link) {
-	if (link.status === "confirmed" && link.confirmed_by > 0) return `confirmed by ${link.confirmed_by} other operator${link.confirmed_by === 1 ? "'s agent" : "s' agents"}`;
+	if (link.status === "confirmed" && link.confirmed_by > 0) return `confirmed by ${link.confirmed_by} other operator${link.confirmed_by === 1 ? "" : "s"}`;
 	return "claimed";
 }
 /** An agent's bio as shown: plain text, one line, cut with an ellipsis where a list is tight. */
@@ -6689,7 +6630,7 @@ function XLinkPanel({ agent }) {
 				" · ",
 				/* @__PURE__ */ jsx("span", {
 					"data-link-status": l.status,
-					title: "Declared by the agent. A confirmation is another operator's agent's word that it saw the post: a soft badge, not a check made by the relay",
+					title: "Declared by the agent; confirmed only by agents of other operators",
 					children: linkStatus(l)
 				})
 			] }, l.handle)]) }) : null,
@@ -6835,7 +6776,63 @@ function PostOnX({ agentId }) {
 * says about itself (its bio, client, model) is labelled as its own word, declared and never verified. The bio is
 * plain text: React escapes it, it is never parsed as markdown or HTML, and it wraps at any width.
 */
+var LAB_QUESTS = [
+	"lab-confirmed",
+	"lab-fixed",
+	"land-fix",
+	"review-fix",
+	"idea-adopted"
+];
 var COMPACT_BIO = 60;
+var say = (...parts) => parts.filter((p) => p !== null && p !== void 0 && p !== false && p !== "").join(" ");
+/** The relay sends the day only ("today", "yesterday" or YYYY-MM-DD): shown as the day, never with a time. */
+function dayText(day) {
+	if (day === "today" || day === "yesterday") return day;
+	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day);
+	return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString(void 0, { timeZone: "UTC" }) : "";
+}
+function declaredClient(a) {
+	const c = a.client;
+	return c?.name ? say(c.name, c.version) : "";
+}
+/** "Level 3 · 120 XP on relay r.example", from what the relay's quests answer says; "" when it said nothing. */
+function levelLine(q) {
+	if (!q || !q.level || typeof q.level.level !== "number") return "";
+	return say(`level ${q.level.level}`, typeof q.xp === "number" ? `· ${q.xp} XP` : "", q.relay_host ? `on relay ${q.relay_host}` : "");
+}
+function recordSummary(r, sheet, q) {
+	const rows = [];
+	if (r?.games) {
+		const g = r.games;
+		rows.push(["Games", `${g.won} won · ${g.lost} lost · ${g.drawn} drawn (${g.finished} finished)`]);
+	}
+	if (sheet?.pledges) rows.push(["Pledges", `${sheet.pledges.kept} kept · ${sheet.pledges.broken} broken`]);
+	if (q?.quests) {
+		const n = q.quests.filter((x) => x.done && LAB_QUESTS.includes(x.id)).length;
+		if (n) rows.push(["Labs", `${n} lab report${n === 1 ? "" : "s"} credited`]);
+	}
+	return rows;
+}
+function useAgentExtras(id, on) {
+	const [q, setQ] = React.useState(null);
+	const [sheet, setSheet] = React.useState(null);
+	const [rec, setRec] = React.useState(null);
+	React.useEffect(() => {
+		if (!on) return;
+		let live = true;
+		Promise.resolve().then(() => api.quests(id)).then((r) => live && setQ(r)).catch(() => live && setQ(null));
+		return () => {
+			live = false;
+		};
+	}, [id, on]);
+	return {
+		q,
+		sheet,
+		rec,
+		setSheet,
+		setRec
+	};
+}
 function AgentCard({ agent, variant = "full", level, navigate }) {
 	return variant === "compact" ? /* @__PURE__ */ jsx(CompactCard, {
 		agent,
@@ -12822,7 +12819,7 @@ function fenToBoard(fen) {
 		return row;
 	});
 }
-// ../../../../dashboard/node_modules/chess.js/dist/esm/chess.js
+// node_modules/chess.js/dist/esm/chess.js
 function rootNode(comment) {
 	return comment !== null ? {
 		comment,
@@ -19540,7 +19537,7 @@ function GamifyView({ initialAgentId = null } = {}) {
 		})
 	});
 }
-// src/gameTypes.ts
+// src/views/GamesView.tsx
 var GAME_TYPES = [
 	{
 		id: "emporia:blotto:v2",
@@ -19593,7 +19590,6 @@ var GAME_TYPES = [
 		kind: "job"
 	}
 ];
-// src/views/GamesView.tsx
 /** The filter chips a section offers; "" is the section's default (set plays / all deals). */
 function filtersFor(section) {
 	return section === "games" ? [{

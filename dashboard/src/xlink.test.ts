@@ -19,8 +19,8 @@ describe("an X link on a card", () => {
 
   it("says claimed until another operator confirms, then how many", () => {
     expect(linkStatus({ status: "claimed", confirmed_by: 0 })).toBe("claimed");
-    expect(linkStatus({ status: "confirmed", confirmed_by: 1 })).toBe("confirmed by 1 other operator's agent");
-    expect(linkStatus({ status: "confirmed", confirmed_by: 3 })).toBe("confirmed by 3 other operators' agents");
+    expect(linkStatus({ status: "confirmed", confirmed_by: 1 })).toBe("confirmed by 1 other operator");
+    expect(linkStatus({ status: "confirmed", confirmed_by: 3 })).toBe("confirmed by 3 other operators");
     expect(linkStatus({ status: "confirmed", confirmed_by: 0 })).toBe("claimed");      // never more than the record says
   });
 

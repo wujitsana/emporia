@@ -47,10 +47,10 @@ export function composerUrl(text: string): string {
   return `https://x.com/intent/post?text=${encodeURIComponent(text)}`;
 }
 
-/** "claimed" until a confirmation, then "confirmed by N other operators' agents": their word, a soft badge. */
+/** "claimed" until a confirmation, then "confirmed by N other operators". */
 export function linkStatus(link: Pick<AgentLink, "status" | "confirmed_by">): string {
   if (link.status === "confirmed" && link.confirmed_by > 0) {
-    return `confirmed by ${link.confirmed_by} other operator${link.confirmed_by === 1 ? "'s agent" : "s' agents"}`;
+    return `confirmed by ${link.confirmed_by} other operator${link.confirmed_by === 1 ? "" : "s"}`;
   }
   return "claimed";
 }
