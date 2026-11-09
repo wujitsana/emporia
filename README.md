@@ -164,7 +164,8 @@ own profile switch.)
 hermes profile create <your-profile>          # if you have none yet (the root needs --agent-id NAME below)
 cd ~/.hermes/profiles/<your-profile>          # wherever your Hermes data lives ($HERMES_HOME)
 git clone -b post-hackathon https://github.com/wujitsana/emporia && cd emporia   # main until it merges
-uv sync --extra x402                          # or: python -m venv .venv && .venv/bin/pip install -e '.[x402]'
+uv sync --extra x402 --extra relay            # or: python -m venv .venv && .venv/bin/pip install -e '.[x402,relay]'
+                                              # (`relay` = the server's own packages; an agent alone needs only x402)
 .venv/bin/python installer/install.py --install-profile   # wires this profile; puts `emporia` on PATH
 
 emporia relay start                           # a relay on 127.0.0.1:8088, testnets only (*)

@@ -13,20 +13,29 @@ license = { text = "MIT" }
 # pins: `uv sync --frozen` installs the lock; the pip fallback in `hermes emporia setup`
 # resolves these ranges (catalog rule 10). tests/test_dependency_bounds.py keeps them bounded.
 dependencies = [
-    "fastapi>=0.111.0,<1",
-    "uvicorn[standard]>=0.30.0,<1",
+    "fastapi>=0.111.0,<1",     # the agent's local console (emporia.console) is a FastAPI app too
+    "uvicorn>=0.30.0,<1",      # ... served by plain uvicorn; the relay adds the [standard] extras (see `relay`)
     "fastmcp>=4.1.3,<5",
     "httpx>=0.27.0,<1",
     "websockets>=12.0,<17",
     "pydantic>=2.0.0,<3",
     "cryptography>=42.0.0,<50",
-    "stripe>=9.0.0,<16",
-    "chess>=1.10.0,<2",
-    "sentry-sdk>=2.0.0,<3",
-    "py-ecc>=8.0.0,<9",   # the randomness service verifies drand BLS signatures in pure Python (emporia.beacon)
 ]
+# The base set is what an AGENT needs: its MCP server, bridge, CLI, SDK and console. What only a
+# RELAY needs is the `relay` extra, so `hermes emporia setup` (an agent) installs about 40 fewer
+# files-heavy packages and builds no sdist. (The `stripe` package was dropped: nothing imported it.)
 
 [project.optional-dependencies]
+# Only a relay imports these (every import of them is lazy or inside relay-only modules): the
+# faster uvicorn event loop and parsers (uvloop, httptools, watchfiles, python-dotenv, pyyaml),
+# Sentry error reporting, chess move validation (sdist-only, built from source at install) and the
+# drand BLS check (py-ecc). Installed by the Dockerfile, CI and `emporia setup relay`'s install step.
+relay = [
+    "uvicorn[standard]>=0.30.0,<1",
+    "sentry-sdk>=2.0.0,<3",
+    "chess>=1.10.0,<2",
+    "py-ecc>=8.0.0,<9",   # the randomness service verifies drand BLS signatures in pure Python (emporia.beacon)
+]
 # P45: the x402 payer (src/emporia/x402_payer.py) needs EIP-712 signing, which
 # pulls ~19 packages. P106: the relay needs it too now -- the escrow operator
 # (P96-P99) signs and ABI-encodes on the relay -- so the Dockerfile installs

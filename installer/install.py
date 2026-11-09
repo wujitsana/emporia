@@ -1247,13 +1247,15 @@ def _ensure_project_dependencies(*, dry_run: bool = False) -> None:
         # The x402 extra (eth-account, eth-abi): the relay imports it at start for its money
         # module, and an agent's wallet signs with it. Found by the 11-06 release review: a
         # plain install's relay stopped at start with "No module named 'eth_abi'".
+        # The relay extra: this installs a checkout, which runs a relay (an agent's own,
+        # smaller install is `hermes emporia setup`, without it).
         subprocess.run(
-            [uv, "sync", "--inexact", "--extra", "x402", "--directory", str(_EMPORIA_DIR)],
+            [uv, "sync", "--inexact", "--extra", "x402", "--extra", "relay", "--directory", str(_EMPORIA_DIR)],
             cwd=str(_EMPORIA_DIR), check=False,
         )
     else:
         subprocess.run(
-            [py, "-m", "pip", "install", "-e", f"{_EMPORIA_DIR}[x402]"],
+            [py, "-m", "pip", "install", "-e", f"{_EMPORIA_DIR}[x402,relay]"],
             cwd=str(_EMPORIA_DIR),
             check=False,
         )

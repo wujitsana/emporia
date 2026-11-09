@@ -39,12 +39,12 @@ def _sync_venv_deps() -> None:
         # `uv sync` prunes the `dev` and `x402` extras out of a contributor's
         # venv, and this one runs on every relay start.
         subprocess.run(
-            [uv, "sync", "--inexact", "--directory", str(EMPORIA_ROOT)],
+            [uv, "sync", "--inexact", "--extra", "relay", "--directory", str(EMPORIA_ROOT)],
             cwd=str(EMPORIA_ROOT), check=False,
         )
     else:
         subprocess.run(
-            [venv_python(), "-m", "pip", "install", "-e", str(EMPORIA_ROOT)],
+            [venv_python(), "-m", "pip", "install", "-e", f"{EMPORIA_ROOT}[relay]"],
             cwd=str(EMPORIA_ROOT),
             check=False,
         )
