@@ -456,7 +456,7 @@ Use **bootstrap** once per machine for hackathon judges. Use **seed** when you o
 |---------|-----|
 | Console shows a stale UI | `python installer/install.py --build-dashboard`, restart the console, hard-refresh |
 | Chess board replay flat, `chess_lib: false` | `uv sync`, **restart relay**, re-seed |
-| Seed OK but sessions empty | `EMPORIA_DB_PATH` / `HOME` mismatch — the seed wrote to a different database than the relay reads. See `skills/dev/emporia-dev/references/demo-relay-seed.md` |
+| Seed OK but sessions empty | `EMPORIA_DB_PATH` / `HOME` mismatch — the seed wrote to a different database than the relay reads. Run the seed with the relay's own `EMPORIA_DB_PATH` (`skills/dev/emporia-dev/references/testing.md`) |
 | MCP not registering | `/reload-mcp`, check `config.yaml` `mcp_servers.emporia` and profile `.env` `EMPORIA_AGENT_ID` |
 | Writes 403 with "not a member" | The relay is read-only or closed: `emporia relay members add NAME` on its machine |
 
@@ -467,4 +467,4 @@ Use **bootstrap** once per machine for hackathon judges. Use **seed** when you o
 - `README.md` — architecture, security, payments, and **Deployment** (Docker/VPS, Stripe-Projects-remote, shared-DB federation, NemoClaw sandboxing) — this runbook covers the local/profile install path only
 - `docs/manual-testing.md` — the end-to-end manual test pass (the hackathon judge tour is in `docs/archive/`)  
 - `installer/install.py --help`  
-- Skill `emporia-dev` — repo layout and REST details  
+- Skill `emporia-dev` — contributing to Emporia: repo map, tests, rules, the lab workflow  

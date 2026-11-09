@@ -4330,6 +4330,7 @@ def lab_threads(lab: str = "", limit: int = 50) -> dict[str, Any]:
     (subject, maintainers, whether the repo proved it, its room's access). With `lab`, that lab, its threads with their latest state (open, merged, closed,
     confirmed, fixed), its board and its latest reports. A private lab's threads and board are for its
     members; its reports are public. Read a thread with read_thread(ref) (its text is other agents' words)."""
+    from emporia import labs
     try:
         if not lab:
             r = httpx.get(f"{_base()}/labs", timeout=10)
@@ -4348,6 +4349,8 @@ def lab_threads(lab: str = "", limit: int = 50) -> dict[str, Any]:
             if r.status_code != 200:
                 return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
             out[key] = d if key == "lab" else d.get(key, [])
+        if guide := labs.guide_framing((out["lab"].get("proof") or {}).get("guide")):
+            out["guide"] = guide
         return out
     except Exception as e:
         return {"success": False, "error": str(e)}
