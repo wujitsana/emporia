@@ -1,19 +1,29 @@
 /**
  * P178: every setting `emporia` changes — each agent's and this machine's —
- * with its current value and the command that changes it. Read-only: the
- * dashboard watches, a person changes things in their own terminal. Read from
- * the local console (GET /settings), which holds no secret in its answer.
+ * laid out like Hermes's own config page: sections, one row per setting, its
+ * value drawn the way Hermes's form would (a switch, the option chosen among
+ * its options, a number with its unit), and where to change it.
+ *
+ * Read-only, and it stays so: the agent can reach this console from its own
+ * terminal, and must never change its own limits. A setting Hermes's dashboard
+ * edits links there (hermesPlace.ts); the rest show the command a person runs.
+ * Read from the local console (GET /settings), which holds no secret in its
+ * answer; a secret shows only as set or not set.
  */
 import { useMemo, useState } from "react";
 import Text from "@kit/Text";
 import SidebarLayout from "@kit/SidebarLayout";
 import { FlatRailItem } from "../ui/FlatRailItem";
+import { CopyCommand } from "../ui/CopyCommand";
 import { ViewBody } from "../ui/layout";
 import { useInterval } from "../hooks";
 import { consoleUrl, httpFetch, VIA_CONSOLE } from "../transport";
 import { VIEWER_ID } from "../relayEnv";
 import { EMPORIA_VERSION } from "../buildInfo";
-import { groupItems, type SettingItem, type SettingsReport } from "../settings";
+import {
+  changeInHermes, groupItems, kindOf, READ_ONLY_NOTE, secretState, switchOn, type SettingItem, type SettingsReport,
+} from "../settings";
+import { hermesPlace, type HermesPlace } from "../hermesPlace";
 import { api } from "../api";
 import { useRelayCtx } from "../relayCtx";
 
@@ -29,41 +39,105 @@ async function fetchSettings(): Promise<SettingsReport> {
 }
 
 
-function CopyCommand({ command }: { command: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard?.writeText(command).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }, () => undefined);
-  };
-  return (
-    <span className="e-setting-cmd">
-      <code>{command}</code>
-      <button type="button" className="e-setting-copy" onClick={copy} aria-label={`Copy: ${command}`}>
-        {copied ? "copied" : "copy"}
+/** The value, drawn as Hermes's form would draw the field — but never a control: nothing here is pressed. */
+export function SettingValue({ item }: { item: SettingItem }) {
+  const kind = kindOf(item);
+  if (kind === "switch") {
+    const on = switchOn(item);
+    return (
+      <span className={`e-setting-switch${on ? " is-on" : ""}`} role="img" aria-label={`${item.label}: ${on ? "on" : "off"}`}>
+        <span className="e-setting-switch__track" aria-hidden><span className="e-setting-switch__knob" /></span>
+        <span className="e-setting-switch__word" aria-hidden>{on ? "On" : "Off"}</span>
+      </span>
+    );
+  }
+  if (kind === "secret") {
+    const set = secretState(item) === "set";
+    return <span className={`e-setting-pill${set ? " is-on" : ""}`}>{set ? "set" : "not set"}</span>;
+  }
+  if (kind === "choice" && item.options?.length) {
+    const current = item.current ?? item.value;
+    return (
+      <span className="e-setting-choices" role="list" aria-label={`${item.label}: ${current}`}>
+        {item.options.map((o) => (
+          <span key={o} role="listitem" className={`e-setting-choice${o === current ? " is-current" : ""}`}
+            aria-current={o === current ? "true" : undefined}>
+            {o}
+            {o === item.recommended && <span className="e-setting-rec"> · recommended</span>}
+          </span>
+        ))}
+      </span>
+    );
+  }
+  if (!item.value) return null;
+  const cls = kind === "number" || kind === "money" ? "e-setting-number" : kind === "list" ? "e-setting-list" : "e-setting-value";
+  return <span className={cls}>{item.value}</span>;
+}
+
+function ChangeInHermes({ place }: { place: HermesPlace }) {
+  if (place.href) {
+    return (
+      <a className="e-setting-hermes" href={place.href} target="_blank" rel="noopener noreferrer"
+        title={place.text}>Change in Hermes ↗</a>
+    );
+  }
+  if (place.open) {
+    return (
+      <button type="button" className="e-setting-hermes" onClick={place.open} title={place.text}>
+        Change in Hermes →
       </button>
-    </span>
+    );
+  }
+  return <span className="e-setting-hermes-text">Change in {place.text}</span>;
+}
+
+export function SettingRow({ item, place }: { item: SettingItem; place: HermesPlace }) {
+  const inHermes = changeInHermes(item);
+  const mark = item.level === "danger" ? "✗" : item.level === "warn" ? "!" : "";
+  return (
+    <div className={`e-setting e-setting-${item.level}`}>
+      <div className="e-setting-main">
+        <div className="e-setting-text">
+          <span className="e-setting-label">
+            {mark && <span className="e-setting-mark" aria-label={item.level === "danger" ? "risk" : "to look at"}>{mark}</span>}
+            {item.label}
+          </span>
+          <span className="e-setting-about">{item.about}</span>
+        </div>
+        <div className="e-setting-control">
+          <SettingValue item={item} />
+          {item.is_default && <span className="e-setting-tag">default</span>}
+        </div>
+      </div>
+      {(inHermes || item.command) && (
+        <div className="e-setting-change">
+          {inHermes && <ChangeInHermes place={place} />}
+          {inHermes && <code className="e-setting-env" title="Its name in Hermes's form">{item.env}</code>}
+          {item.command && <CopyCommand command={item.command} />}
+          {item.person_only && (
+            <span className="e-setting-note">
+              Only a person runs this, in their own terminal — never through an agent.
+            </span>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
-function SettingRow({ item }: { item: SettingItem }) {
-  const mark = item.level === "danger" ? "✗" : item.level === "warn" ? "!" : "✓";
+export function SettingsSections({ items, profile }: { items: SettingItem[]; profile: string }) {
+  const place = useMemo(() => hermesPlace(profile), [profile]);
   return (
-    <div className={`e-setting e-setting-${item.level}`}>
-      <div className="e-setting-head">
-        <span className="e-setting-mark" aria-hidden>{mark}</span>
-        <Text className="e-setting-label">{item.label}</Text>
-        {item.value && <Text className="e-setting-value">{item.value}</Text>}
-      </div>
-      <Text className="e-faint e-setting-about">{item.about}</Text>
-      {item.command && <CopyCommand command={item.command} />}
-      {item.person_only && (
-        <Text className="e-faint e-setting-note">
-          Only a person runs this, in their own terminal — never through an agent.
-        </Text>
-      )}
-    </div>
+    <>
+      {groupItems(items).map(([group, list]) => (
+        <section key={group} className="e-settings-group" aria-label={group}>
+          <h3 className="e-settings-title">{group}</h3>
+          <div className="e-settings-card">
+            {list.map((it) => <SettingRow key={`${group}-${it.label}`} item={it} place={place} />)}
+          </div>
+        </section>
+      ))}
+    </>
   );
 }
 
@@ -77,11 +151,12 @@ export function SettingsView() {
   const agents = useMemo(() => report?.agents ?? [], [report]);
   const selected = picked ?? (agents.find((a) => a.agent_id === VIEWER_ID)?.agent_id ?? agents[0]?.agent_id
     ?? (VIA_CONSOLE ? MACHINE : RELAY));
+  const agent = agents.find((a) => a.agent_id === selected);
   const items = useMemo(
-    () => (selected === RELAY ? relay?.settings : selected === MACHINE ? report?.machine
-      : agents.find((a) => a.agent_id === selected)?.items) ?? [],
-    [report, relay, agents, selected]);
+    () => (selected === RELAY ? relay?.settings : selected === MACHINE ? report?.machine : agent?.items) ?? [],
+    [report, relay, agent, selected]);
   const warnings = (list: SettingItem[]) => list.filter((i) => i.level !== "ok").length;
+  const title = selected === RELAY ? "This relay" : selected === MACHINE ? "This machine" : agent?.agent_id ?? "";
 
   if (!VIA_CONSOLE && !isRelayOperator) {
     return (
@@ -128,24 +203,14 @@ export function SettingsView() {
   );
 
   return (
-    <ViewBody flush toolbar={<Text className="e-faint">Read-only · change a setting by running its command in your own terminal · plugin {EMPORIA_VERSION}</Text>}>
-      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={24}>
+    <ViewBody flush toolbar={<Text className="e-faint">Settings · read-only · plugin {EMPORIA_VERSION}</Text>}>
+      <SidebarLayout sidebar={sidebar} defaultSidebarWidth={24} initialPane="detail" backLabel="all settings">
         <div className="e-split-main e-settings">
+          <p className="e-settings-intro">{READ_ONLY_NOTE}</p>
+          {title && <h2 className="e-settings-heading">{title}</h2>}
           {error && !report && <Text className="e-status-txt">Could not read the settings: {error}</Text>}
           {loading && !report && <Text className="e-faint">Reading the settings…</Text>}
-          {groupItems(items).map(([group, list]) => (
-            <section key={group} className="e-settings-group">
-              <h3 className="e-settings-title">{group}</h3>
-              {list.map((it) => <SettingRow key={`${group}-${it.label}`} item={it} />)}
-            </section>
-          ))}
-          {report && (
-            <Text className="e-faint e-settings-foot">
-              Changing settings here, like the Hermes dashboard's config page, is planned (see the
-              Roadmap in Docs). Until then the dashboard only shows them, so nothing in a browser can
-              change an agent's money or keys.
-            </Text>
-          )}
+          <SettingsSections items={items} profile={agent?.profile ?? ""} />
         </div>
       </SidebarLayout>
     </ViewBody>

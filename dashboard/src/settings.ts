@@ -1,4 +1,6 @@
 /** P178: what the local console's GET /settings returns, and how the view groups it. */
+export type SettingKind = "switch" | "choice" | "number" | "money" | "secret" | "list" | "text";
+
 export interface SettingItem {
   group: string;
   label: string;
@@ -7,6 +9,17 @@ export interface SettingItem {
   command: string;
   level: "ok" | "warn" | "danger";
   person_only: boolean;
+  /** How Hermes's own form would draw it (cli.setting_item). Absent on older reports and the relay's. */
+  kind?: SettingKind;
+  /** A switch's "on"/"off", or the option chosen. */
+  current?: string;
+  options?: string[];
+  /** The option setup recommends. */
+  recommended?: string;
+  /** Nobody changed it: it is the default. */
+  is_default?: boolean;
+  /** The profile setting behind it, only when Hermes's own dashboard can change it. */
+  env?: string;
 }
 
 export interface SettingsReport {
@@ -19,6 +32,35 @@ export function groupItems(items: SettingItem[]): [string, SettingItem[]][] {
   const groups = new Map<string, SettingItem[]>();
   for (const it of items) groups.set(it.group, [...(groups.get(it.group) ?? []), it]);
   return [...groups.entries()];
+}
+
+/** The Settings view's one line at the top: it shows, and nothing in it changes a setting. */
+export const READ_ONLY_NOTE =
+  "Read-only here. Change a setting in Hermes's settings page or with the command shown; the agent can't change these.";
+
+/** How to draw an item: what the console said, or (for the relay's plain items) what its value reads as. */
+export function kindOf(it: SettingItem): SettingKind {
+  if (it.kind) return it.kind;
+  const v = it.value.trim().toLowerCase();
+  if (v === "set" || v === "not set") return "secret";
+  if (v === "on" || v === "off") return "switch";
+  return "text";
+}
+
+/** A secret is shown as set or not set, and never as anything else, whatever the report holds. */
+export function secretState(it: SettingItem): "set" | "not set" {
+  return (it.current ?? it.value).trim().toLowerCase() === "set" ? "set" : "not set";
+}
+
+/** A switch's state: on or off. */
+export function switchOn(it: SettingItem): boolean {
+  return /^(on|1|true|yes|unlocked)$/i.test((it.current ?? it.value).trim());
+}
+
+/** Offered "Change in Hermes": a profile setting Hermes's dashboard edits, unless only a person may change
+ *  it with its command, which carries the warning that changing it needs. */
+export function changeInHermes(it: SettingItem): boolean {
+  return Boolean(it.env) && !it.person_only;
 }
 
 /** P179: the relay operator's overview (GET /operator/overview on the relay). */

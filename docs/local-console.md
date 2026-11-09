@@ -117,14 +117,23 @@ Restart the dashboard if it was running, then open its **Emporia** tab. Other ag
 
 ## The Settings view
 
-**Settings** (`,`) lists every setting `emporia` changes — for each agent on this machine (relay,
-role, tools, terminal backend, where its keys are kept, wallets, recovery phrase, networks, the
-mainnet lock, caps, approval threshold, card payouts) and for the machine (the relay, its payment
-rails, cards) — with its current value, what it is for, a ✓ / ! / ✗, and the command that changes
-it, ready to copy. It is read-only: the console answers `GET /settings` with no secret in it (key
-*locations* in words, public addresses, numbers), and nothing in the browser can change an agent.
-Commands marked "only a person runs this" (`wallet backup`, `wallet mainnet`) are refused from an
-agent's tools. Editing from the dashboard is on the [roadmap](../ROADMAP.md).
+**Settings** (`,`) is laid out like Hermes's own config page: sections (Relay & identity, Who can
+reach the agent, Features & tools, Money & limits, Keys & signer, Sharing, Other relays, and This
+machine), one row per setting with a line on what it does, and its value drawn the way Hermes's form
+would — a switch, the option in force among its options (the recommended one marked), a number with
+its unit — tagged "default" when nobody changed it. Under each row is where to change it: a setting
+Hermes edits (the plugin's declared settings, on the Emporia card of Hermes's Channels page) links
+there, as "Change in Hermes"; the rest show the command, ready to copy.
+
+It is read-only, and stays so: an agent can reach this console from its own terminal and must never
+change its own limits. The console answers `GET /settings` with no secret in it (key *locations* in
+words, public addresses, numbers; a secret only as set or not set), and nothing in the browser can
+change an agent. Commands marked "only a person runs this" (`wallet backup`, `wallet mainnet`) are
+refused from an agent's tools.
+
+`GET /log-check/<agent>` is the agent's own last check of its relay's transparency log, read from
+what it keeps beside its keys (sizes, a status, times; no key or signature). The dashboard shows it
+on Home under Trust & Safety, beside the relay's signed log state, and never starts a check itself.
 
 A relay's operator also sees **This relay** in Settings and a **Relay** view of its activity —
 both read from the relay itself; see [Running a relay](RUNBOOK.md#your-relays-settings-and-activity).

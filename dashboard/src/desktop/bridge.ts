@@ -10,6 +10,7 @@
  *   no-op where Desktop cannot carry a plugin socket (OAuth remotes, the
  *   browser Webapp), so every consumer keeps a polling fallback.
  * - `storage` is `ctx.storage`: preferences namespaced to this plugin.
+ * - `navigate` is `host.navigate`: another Desktop page, for links out of the app.
  */
 
 export interface DesktopRestOptions {
@@ -28,6 +29,8 @@ export interface DesktopBridge {
   rest: <T>(path: string, opts?: DesktopRestOptions) => Promise<T>;
   socket: (path: string, onMessage: (data: unknown) => void) => () => void;
   storage?: DesktopStorage;
+  /** `host.navigate`: open another Desktop page (Settings links to Messaging, where Hermes edits them). */
+  navigate?: (path: string) => void;
 }
 
 let current: DesktopBridge | null = null;

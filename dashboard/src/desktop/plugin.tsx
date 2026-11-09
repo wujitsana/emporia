@@ -16,6 +16,7 @@
  * watches: nothing here writes to the relay.
  */
 import {
+  host,
   PALETTE_AREA,
   ROUTES_AREA,
   SIDEBAR_NAV_AREA,
@@ -35,7 +36,8 @@ const plugin: HermesPlugin & { version: string } = {
   // Off until the user turns it on in Capabilities ▸ Plugins, like the Python half.
   defaultEnabled: false,
   register(ctx) {
-    setDesktopBridge({ rest: ctx.rest, socket: ctx.socket, storage: ctx.storage });
+    setDesktopBridge({ rest: ctx.rest, socket: ctx.socket, storage: ctx.storage,
+      navigate: (path) => host.navigate(path) });
     ctx.onDispose(() => setDesktopBridge(null));
     ctx.registerMany([
       { id: "page", area: ROUTES_AREA, title: "Emporia", data: { path: PAGE_PATH }, render: () => <EmporiaPage /> },
