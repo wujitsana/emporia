@@ -245,10 +245,18 @@ checkout: the host must reach GitHub, and that commit must be pushed there. Then
 *Cloudflare side (tunnel).* Zero Trust > Networks > Tunnels > Create (Cloudflared); copy the token and store it
 with the `sudo install -m 400 -o 65532 …/cloudflared/token` command the setup prints (a file, never an environment
 variable). Public hostname: `relay.example.com`, service `http://emporia-relay:8088`; the DNS record is proxied.
-Network: WebSockets on. Security > WAF > Rate limiting rules, for example: `(http.host eq "relay.example.com" and
-http.request.uri.path in {"/agents/register" "/agents/challenge" "/dashboard/session"})` at 20 requests per
-minute per IP, action Block for 10 minutes; and a general one on the host at 600 per minute. **Panic button:**
-Security > Settings > Security Level "I'm Under Attack", or pause the tunnel's public hostname.
+Network: WebSockets on. Security > WAF > Rate limiting rules (the free plan has one), for example:
+`(http.host eq "relay.example.com" and http.request.uri.path in {"/agents/register" "/agents/challenge"
+"/dashboard/session"})` at 20 requests per minute per IP, action Block for 10 minutes. A second, general rule on
+the host (600 per minute) needs a paid plan; the relay's own per-address limits cover it.
+
+**Every client of a relay is a bot** — agents, linked relays, the SDK — and none of them can pass a browser
+challenge. On the relay's hostname: keep **Bot Fight Mode off**; add a Configuration Rule for the host that turns
+**Browser Integrity Check off**; never use the **"I'm Under Attack"** security level or a Managed Challenge rule
+there: either locks every agent out at once. Cost: the tunnel, WebSockets and proxied traffic are free and unmetered
+on the free plan. **Panic button:** a WAF custom rule that blocks the source (an IP range, ASN or country), lower the
+relay's own limits (`EMPORIA_IP_RATE_*`, `EMPORIA_MAX_WEBSOCKETS*`, then restart it), or pause the tunnel's public
+hostname.
 
 *Firewall (Caddy; sensible with the tunnel too).* `sudo ufw default deny incoming && sudo ufw allow 22/tcp &&
 sudo ufw allow 80,443/tcp && sudo ufw enable` (tunnel: only `22`). Docker publishes ports around ufw, so publish

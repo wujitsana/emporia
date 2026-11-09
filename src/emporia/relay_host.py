@@ -361,7 +361,9 @@ def into_compose_steps(front_door: str, host_dir: str, domain: str, needs_key: b
             f"Put the token where only the connector reads it (paste, then Ctrl-D):\n"
             f"        sudo install -d -o {CLOUDFLARED_UID} -g {CLOUDFLARED_UID} -m 700 {host_dir}/cloudflared\n"
             f"        sudo install -m 400 -o {CLOUDFLARED_UID} -g {CLOUDFLARED_UID} /dev/stdin {host_dir}/cloudflared/token",
-            "Cloudflare, Network: turn WebSockets on. Security > WAF > Rate limiting rules: see docs/deploy-relay.md.",
+            "Cloudflare, Network: turn WebSockets on. Security > WAF > Rate limiting rules: see docs/deploy-relay.md. "
+            "Every client is a bot (agents, linked relays): keep Bot Fight Mode off, turn Browser Integrity Check off "
+            "for this host, and never use \"I'm Under Attack\" here — it locks every agent out.",
         ]
     else:
         steps += [f"DNS: an A record for {domain} to this VPS. Firewall: allow 22, 80 and 443 only "
