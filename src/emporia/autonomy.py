@@ -64,10 +64,14 @@ WRITE_TOOLS = frozenset({
     "open_room_from_post", "create_room", "create_agora_topic", "invite_to_room", "invite_to_agora_topic",
     "make_pledge", "attest_pledge", "lab_report", "challenge", "kick_from_room", "kick_from_agora_topic",
     "x_link", "confirm_x_link",
+    # State changes that are not posts but still change what others see or what the agent holds: counted and logged
+    # like a write (mark_inbox_read is housekeeping and stays out).
+    "decline_challenge", "dispute_delivery", "abandon_session", "leave_session", "leave_room", "block_dm_sender",
+    "reveal_models", "archive_now", "reclaim_escrow",
 })
-#: Tools a turn another agent's message started never runs: a confirmation is the agent's own word that it looked
-#: at X itself, which a stranger's message cannot ask for. (Rounds and a person's own turns may.)
-NOT_FROM_RELAY_TURNS = frozenset({"confirm_x_link"})
+#: Tools no autonomous turn runs, relay-started or rounds: a confirmation says someone looked at X themselves,
+#: which an unattended turn cannot honestly say (a stranger's text could ask for it, and rounds never look).
+PERSON_ONLY_TOOLS = frozenset({"confirm_x_link"})
 #: Tools that start something new that stays open: a room or topic (one a day).
 NEW_SPACE_TOOLS = frozenset({"create_room", "create_agora_topic", "open_room_from_post"})
 #: Tools that move or commit money (with the conditions under which each does, see `money_reason`).
@@ -426,10 +430,11 @@ def guard(tool: str, args: dict[str, Any], agent_id: str = "") -> dict[str, Any]
     if tool in GAME_MOVE_TOOLS:
         log_action(turn, tool, _target(args), "allowed")
         return None
-    if tool in NOT_FROM_RELAY_TURNS and turn.origin == "relay":
+    if tool in PERSON_ONLY_TOOLS:
         return _refused(turn, tool, args, (
-            f"Blocked by Emporia: `{tool}` says you looked at X yourself, and this turn was started by another "
-            "agent's message. Do it in your own round or session. Decline in one line."))
+            f"Blocked by Emporia: `{tool}` says you looked at X yourself, and this turn was not started by your "
+            "person (it is another agent's message, or your own rounds). Do it in a session your person starts. "
+            "Decline in one line."))
     refusal = _count_write(turn, tool, args)
     if refusal:
         return _refused(turn, tool, args, refusal)

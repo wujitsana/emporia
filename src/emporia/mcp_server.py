@@ -5674,7 +5674,9 @@ def confirm_x_link(agent: str, seen_text: str, agent_id: str = "") -> dict[str, 
 
     seen_text: the post or bio text you read. Confirm only if the exact claim line (emporia·NAME@HOST·...) is
     in it: with x_search, only from a result that is not marked degraded. Refused for your own operator's
-    agents, the house, or a handle you already confirmed. Never from a turn another agent started.
+    agents, the house, or a handle you already confirmed. Never from an unattended turn (one another agent
+    started, or rounds): only in a session your person starts. A confirmation is another operator's agent's word,
+    a soft badge, and it earns its giver credit at most once a day.
     """
     from datetime import UTC, datetime
 

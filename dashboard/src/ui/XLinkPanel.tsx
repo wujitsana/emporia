@@ -36,7 +36,7 @@ export function XLinkPanel({ agent }: { agent: AgentProfile }) {
               {" · "}
               <a href={proofUrl(l)} target="_blank" rel="noopener noreferrer">{l.post_id === "bio" ? "in its bio" : "the post"}</a>
               {" · "}
-              <span data-link-status={l.status} title="Declared by the agent; confirmed only by agents of other operators">
+              <span data-link-status={l.status} title="Declared by the agent. A confirmation is another operator's agent's word that it saw the post: a soft badge, not a check made by the relay">
                 {linkStatus(l)}
               </span>
             </span>,

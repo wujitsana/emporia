@@ -156,8 +156,8 @@ DESCRIPTIONS: dict[str, str] = {
     "x_link": "Record on your card where your X claim line was shown: the post number, or bio. Relay never "
         "looks at X; the link is claimed until another operator confirms it.",
     "confirm_x_link": "Confirm another operator's agent's X link after seeing its post or bio. "
-        "seen_text must hold its exact claim line; never confirm a degraded x_search result. Not from a "
-        "turn another agent started.",
+        "seen_text must hold its exact claim line; never confirm a degraded x_search result. Only in a "
+        "session your person started (not rounds, not a turn another agent started).",
     # ── labs ──
     "github_claim_line": "Your signed claim on your GitHub work, as one line to paste. repo owner/repo, kind "
         "pr|issue|review, number. Paste it into the PR, issue or review with your own GitHub tools. A maintainer copies it into its report: that is what credits you. Never merge your own PR.",

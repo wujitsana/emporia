@@ -39,7 +39,7 @@ describe("the full agent card", () => {
     await waitFor(() => expect(card.textContent).toContain("level 3 · 120 XP on relay relay.example"));
     const t = card.textContent!;
     for (const want of ["Kestrel", "kestrel@relay.example", "plays blotto; keeps its word", "(its own words)",
-      "@kestrel_x", "confirmed by 2 other operators", "model-a (declared)", "hermes-plugin 1.0.0 (declared)",
+      "@kestrel_x", "confirmed by 2 other operators' agents", "model-a (declared)", "hermes-plugin 1.0.0 (declared)",
       "operator changed on 2026-11-03", "6 won · 3 lost · 1 drawn", "4 kept · 1 broken", "1 lab report credited",
       "Registered", "Last active"]) expect(t).toContain(want);
     expect(screen.getByTestId("agent-badges").textContent).toContain("on-x");

@@ -28,8 +28,10 @@ person's setting, off by default) a rounds turn may run exactly one terminal com
 when the text ends with this agent's current valid claim line (the signature is checked here, `x_proof`) and no
 proof has been posted for that handle with that claim. Replies, quotes, DMs, deletes, follows, raw API paths and
 anything else that names ``xurl`` are refused in rounds, and in a relay-started turn X is never allowed, whatever
-the setting. A person's own turn is not policed: ``xurl`` is the person's own tool there (as a GitHub token is
-Hermes's concern). Each allowed post is logged ("x proof post", no text).
+the setting. The text also gets the leak checks other outbound text gets (label, salts, home path, key material,
+tokens). The one-time proof is recorded by ``transform_tool_result`` only after ``xurl post`` exited 0; allowing the
+command records nothing. A person's own turn is not policed: ``xurl`` is the person's own tool there (as a GitHub
+token is Hermes's concern). Each allowed post is logged ("x proof post", no text).
 
 ``EMPORIA_RELAY_TURN_TOOLS`` (read through Hermes like the plugin's other settings) is
 ``restricted`` (default) or ``all``. It is a person's setting: key_guard stops an agent from writing it.
@@ -333,19 +335,81 @@ def x_command(command: Any) -> tuple[str, str]:
     return "post", text
 
 
-def _leaks_own_identity(text: str) -> bool:
+#: Credentials and key material in any text a post could carry (the runtime's secret_guard is the fuller list; the
+#: plugin imports nothing from Emporia, so the shapes that matter for one short post are repeated here).
+_SECRET_SHAPES = (
+    ("key material", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:0x)?[0-9a-fA-F]{64}\b")),
+    ("credential", re.compile(r"\b(?:sk|pk|xai|ghp|gho|ghs|github_pat|xox[abp]|AKIA)[-_A-Za-z0-9]{16,}")),
+    ("login token", re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*")),
+    ("setting with a secret", re.compile(r"\bEMPORIA_[A-Z0-9_]*(?:KEY|SECRET|TOKEN|PASSWORD)\b\s*[=:]", re.I)),
+)
+_SALT_KEYS = frozenset({"nonce", "salt", "secret", "seed"})
+_MIN_SECRET = 8
+INFLIGHT_TTL = 10 * 60
+_inflight: dict[tuple[str, str, str], float] = {}     # (agent, handle, claim token) of a proof post being run
+
+
+def _salts(agent_id: str) -> list[str]:
+    """Salts and nonces of this agent's games and model commitments in progress (files beside its keys)."""
+    keys = _setting("EMPORIA_KEYS_DIR")
+    if not keys or not agent_id:
+        return []
+    root = Path(keys).expanduser()
+    stem = re.sub(r"[^a-z0-9_-]+", "_", agent_id.strip().lower()).strip("_-") or "default"
+    files: list[Path] = []
+    try:
+        if (root / "commitments").is_dir():
+            files += [p for p in (root / "commitments").glob(f"{agent_id}.*.json") if p.is_file()][:200]
+        if (root / "model-commits" / f"{stem}.json").is_file():
+            files.append(root / "model-commits" / f"{stem}.json")
+    except OSError:
+        return []
+    found: list[str] = []
+
+    def walk(value: Any, under: str = "") -> None:
+        if isinstance(value, str):
+            if under in _SALT_KEYS and len(value) >= _MIN_SECRET:
+                found.append(value)
+        elif isinstance(value, dict):
+            for k, v in value.items():
+                walk(v, str(k).lower())
+        elif isinstance(value, list):
+            for v in value:
+                walk(v, under)
+    for p in files:
+        try:
+            walk(json.loads(p.read_text()))
+        except (OSError, ValueError):
+            continue
+    return found
+
+
+def post_leak(text: str, agent_id: str = "") -> str:
+    """The kind of private thing in a verification post's text ("" when none): the operator label, an operator
+    id, the profile's home or key folder, a salt or nonce of a live game, key material, a credential or a login
+    token. The same things the runtime keeps out of every other outbound text."""
+    flat = re.sub(r"\s+", " ", text).lower()
     label = _setting("EMPORIA_OPERATOR_LABEL").lower()
-    if label and label in text.lower():
-        return True
-    if re.search(r"\bop_[a-z2-7]{26}\b", text.lower()):
-        return True
-    home = str(_home())
-    return len(home) > 8 and home in text
+    if label and label in flat:
+        return "operator label"
+    if re.search(r"\bop_[a-z2-7]{26}\b", flat):
+        return "operator id"
+    for kind, folder in (("home path", str(_home())), ("key folder", _setting("EMPORIA_KEYS_DIR"))):
+        if len(folder) > 8 and folder.lower() in flat:
+            return kind
+    for salt in _salts(agent_id):
+        if salt.lower() in flat:
+            return "commit salt or nonce for a live game"
+    for kind, shape in _SECRET_SHAPES:
+        if shape.search(text):
+            return kind
+    return ""
 
 
 def _x_decision(kind: str, args: Any) -> str:
-    """"" when this terminal call is the allowed verification post (and records it), else why not. `kind`:
-    "relay" or "rounds" (a person's own turn is never asked)."""
+    """"" when this terminal call is the allowed verification post, else why not (nothing is recorded here: the
+    proof counts once the post succeeded, see `transform_tool_result`). `kind`: "relay" or "rounds" (a person's own
+    turn is never asked)."""
     if kind == "relay":
         return "relay"
     if not x_link_on():
@@ -354,17 +418,54 @@ def _x_decision(kind: str, args: Any) -> str:
     sub, text = x_command(command)
     if not sub:
         return f"command: {text}"
-    if _leaks_own_identity(text):
-        return "the text names this agent's own identity or paths"
+    agent = _setting("EMPORIA_AGENT_ID")
+    if leak := post_leak(text, agent):
+        return f"the text holds this agent's own {leak}"
     now = time.time()
-    folder = data_dir()
     with _lock:
-        handle, why = x_proof.check(text, _setting("EMPORIA_AGENT_ID"), folder, now)
+        handle, why = x_proof.check(text, agent, data_dir(), now)
         if not handle:
             return why
-        parsed = x_proof.parse_last_line(text)
-        x_proof.record(folder, _setting("EMPORIA_AGENT_ID"), handle, parsed["token"])
+        key = (agent, handle, x_proof.parse_last_line(text)["token"])
+        if now - _inflight.get(key, 0.0) < INFLIGHT_TTL:
+            return "this proof post is already being sent"
+        _inflight[key] = now
     return ""
+
+
+def _succeeded(result: Any) -> bool:
+    """Whether a terminal result says the command exited 0 (Hermes's envelope: {output, exit_code, error})."""
+    try:
+        body = json.loads(result) if isinstance(result, str) else result
+    except ValueError:
+        return False
+    return isinstance(body, dict) and body.get("exit_code") == 0 and not body.get("error")
+
+
+def transform_tool_result(tool_name: str = "", args: Any = None, result: Any = None, session_id: str = "",
+                          task_id: str = "", **_ignored: Any) -> None:
+    """After the verification post ran: record its one-time proof only when `xurl post` succeeded (a post that
+    failed can be tried again). The result is never changed; the answer is always None."""
+    if (tool_name or "").lower() != "terminal" or not mentions_xurl(args):
+        return None
+    if autonomous_kind(session_id, task_id) != "rounds":
+        return None
+    sub, text = x_command(args.get("command"))
+    parsed = x_proof.parse_last_line(text) if sub else None
+    if parsed is None:
+        return None
+    agent, folder = _setting("EMPORIA_AGENT_ID"), data_dir()
+    with _lock:
+        for key in [k for k in _inflight if k[0] == agent and k[2] == parsed["token"]]:
+            del _inflight[key]
+        handle, _why = x_proof.check(text, agent, folder, time.time())
+        if handle and _succeeded(result):
+            try:
+                x_proof.record(folder, agent, handle, parsed["token"])
+            except OSError:
+                return None
+            log_action("rounds", "rounds", "terminal", "x proof post", "recorded", handle[:20])
+    return None
 
 
 def pre_tool_call(tool_name: str = "", session_id: str = "", task_id: str = "", args: Any = None,

@@ -34,7 +34,7 @@ describe("the bio and X links on an agent page", () => {
     expect(document.querySelector("b")).toBeNull();
     const links = [...document.querySelectorAll("a")].map((a) => a.getAttribute("href"));
     expect(links).toEqual(["https://x.com/kestrel_x", "https://x.com/kestrel_x/status/123"]);
-    expect(screen.getByText("confirmed by 2 other operators")).toBeTruthy();
+    expect(screen.getByText("confirmed by 2 other operators' agents")).toBeTruthy();
     for (const a of document.querySelectorAll("a")) expect(a.getAttribute("rel")).toContain("noopener");
   });
 
