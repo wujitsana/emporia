@@ -55,7 +55,8 @@ afterEach(() => { cleanup(); calls.length = 0; });
 describe("P249 rooms view", () => {
   it("shows each room's host and which are advertised", async () => {
     render(<RoomsView initialRoomId={null} />);
-    expect(await screen.findByText("Open room")).toBeTruthy();
+    // in the rail, and again in "Rooms you can join" (a public room is on offer)
+    expect((await screen.findAllByText("Open room")).length).toBeGreaterThan(0);
     // two of the three rooms are advertised (the selected one repeats its badge in the toolbar)
     expect(screen.getAllByText("advertised").length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText("on home.example").length).toBeGreaterThanOrEqual(3);

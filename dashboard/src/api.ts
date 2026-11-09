@@ -289,6 +289,8 @@ export interface Health {
   custodial_cards?: boolean;
   /** P202/P208: what makes this relay move real money, if anything ([] on a testnet relay). */
   live_money?: string[];
+  /** P291: what the relay runs beyond its core (`money` lists its parts: escrow, x402, tempo, cards). */
+  relay_modules?: Record<string, RelayModule>;
 }
 
 export interface SafetyStats {
@@ -1073,7 +1075,55 @@ export const api = {
   federationPeers: () => get<FederationStatus>("/federation/peers"),
   sessionAudit: (session_id: string) =>
     get<SessionAudit>(`/sessions/${session_id}/audit`, { agentScoped: true }),
+  // Labs (public routes, routes/labs.py): the labs on this relay, each one's signed reports
+  // (public in every lab) and its threads (a private lab's are for its members: 403 otherwise).
+  labs: () => get<{ labs: Lab[] }>("/labs"),
+  labReports: (slug: string) =>
+    get<{ lab: string; reports: LabReport[] }>(`/labs/${encodeURIComponent(slug)}/reports`),
+  labThreads: (slug: string) =>
+    get<{ lab: string; threads: LabThread[] }>(`/labs/${encodeURIComponent(slug)}/threads`, { agentScoped: true }),
 };
+
+/** A lab: a room about a repo, with the maintainers its terms name (stable ids). */
+export interface Lab {
+  slug: string;
+  name: string;
+  room_id: string;
+  subject: { kind: string; ref: string };
+  repo_url: string;
+  branch: string;
+  creator_id: string;
+  maintainers: string[];
+  licence: string;
+  verified: boolean;
+  unverified_note?: string;
+  room: { type: string; gate: string; encrypted: boolean; entry_fee_cents: number };
+  created_at: string;
+}
+
+/** A maintainer's signed report on a PR or issue, with who it credited. */
+export interface LabReport {
+  report_id: string;
+  lab: string;
+  ref: string;
+  event: string;
+  maintainer_id: string;
+  author_id: string;
+  author_stable_id: string;
+  reviewer_ids: string[];
+  reviewer_stable_ids: string[];
+  ideas: string[];
+  note: string;
+  at: string;
+}
+
+export interface LabThread {
+  ref: string;
+  state: string;
+  messages: number;
+  last_at: string | null;
+  reports: string[];
+}
 
 /** P291: one module a relay runs, as its card says (`relay_modules`). */
 export interface RelayModule {

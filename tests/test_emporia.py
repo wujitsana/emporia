@@ -19117,7 +19117,7 @@ def test_ui_config_no_longer_speaks_of_header_auth():
 
 
 def test_dashboard_game_types_match_the_relay_module_registry():
-    """P36-4: `GamesView.GAME_TYPES` is a hand-written list of module ids used
+    """P36-4: `GAME_TYPES` (dashboard/src/gameTypes.ts) is a hand-written list of module ids used
     for the sidebar rail *and* for mapping an incoming `gameModuleType` onto a
     filter. Nothing tied it to `MODULE_REGISTRY`, so adding or renaming a module
     server-side would leave the dashboard filtering on ids the relay no longer
@@ -19130,20 +19130,19 @@ def test_dashboard_game_types_match_the_relay_module_registry():
     from emporia.relay_server import MODULE_REGISTRY
 
     src = (
-        Path(__file__).parent.parent / "dashboard" / "src" / "views" / "GamesView.tsx"
+        Path(__file__).parent.parent / "dashboard" / "src" / "gameTypes.ts"
     ).read_text()
-    # P42: `export` is optional — the const stopped being exported when it
-    # turned out nothing outside GamesView.tsx read it. This pin is about the
-    # id set, not the visibility.
+    # The list lives in its own module (gameTypes.ts) so the views that read it stay
+    # components-only files; this pin is about the id set, not where it is written.
     block = re.search(r"(?:export )?const GAME_TYPES = \[(.*?)\] as const;", src, re.DOTALL)
-    assert block, "GAME_TYPES not found in GamesView.tsx"
+    assert block, "GAME_TYPES not found in gameTypes.ts"
     ids = {m for m in re.findall(r'id:\s*"([^"]*)"', block.group(1)) if m}
 
     # Calls: the :v1 set plays are retired (their classes stay for games still running);
     # the dashboard names the live ones, exactly.
     live = {t for t, cls in MODULE_REGISTRY.items() if not cls.RETIRED_FOR}
     assert ids == live, (
-        "GamesView.GAME_TYPES has drifted from the relay's live MODULE_REGISTRY.\n"
+        "GAME_TYPES (gameTypes.ts) has drifted from the relay's live MODULE_REGISTRY.\n"
         f"  only in dashboard: {sorted(ids - live)}\n"
         f"  only in relay:     {sorted(live - ids)}"
     )
@@ -19157,9 +19156,9 @@ def test_dashboard_names_the_live_set_plays():
 
     from emporia import calls
     root = Path(__file__).parent.parent / "dashboard" / "src"
-    src = (root / "views" / "GamesView.tsx").read_text()
+    src = (root / "gameTypes.ts").read_text()
     assert set(calls.SET_PLAYS) <= set(re.findall(r'id:\s*"([^"]*)"', src))
-    for f in ("views/GamesView.tsx", "ui/GameResults.tsx", "paymentFormat.ts"):
+    for f in ("views/GamesView.tsx", "gameTypes.ts", "ui/GameResults.tsx", "paymentFormat.ts"):
         text = (root / f).read_text()
         assert not re.search(r"emporia:(blotto|two-thirds|lowest-unique):v1", text), f
 
@@ -25124,10 +25123,8 @@ _DASHBOARD_UNSURFACED_GETS: dict[str, str] = {
     "/pledges/{}": "pledges: one pledge — the sheet's pledge list (GET /pledges) carries the same fields",
     "/agents/{}/dm-blocks": "P273: whom an agent blocks — its own tool and its operator's command",
     "/sessions/{}/encryption-keys": "P149: the players' key bundle a player's tools seal private text with — machine-facing; the dashboard only opens, through the local console",
-    "/labs": "labs v2: the operator's desk shows lab activity; `emporia lab list` and the MCP tools read it",
-    "/labs/{}": "labs v2: one lab, for `emporia lab NAME show` and `lab_threads`",
-    "/labs/{}/reports": "labs v2: maintainers' public reports — the desk shows the recent ones (from /operator/status); `lab_threads` reads them",
-    "/labs/{}/threads": "labs v2: a lab's threads — the desk shows the open ones; read in the room itself",
+    # `/labs`, `/labs/{}/reports` and `/labs/{}/threads` are the Labs view's reads (not listed here).
+    "/labs/{}": "labs v2: one lab, for `emporia lab NAME show` and `lab_threads`; the Labs view reads the list, whose rows carry the same terms",
     "/labs/{}/board": "labs v2: a lab's board — computed from its reports, read by `lab_threads`",
     # Infrastructure and machine-facing descriptors — nothing for a human view.
     "/": "redirects to /ui/; it *is* the dashboard's front door",

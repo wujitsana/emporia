@@ -1,5 +1,5 @@
 /**
- * The Season section (route `#/season`; the module is still "gamify" on the relay).
+ * The Season section (route `#/labs/season`; the module is still "gamify" on the relay).
  *
  * P288: the gamify module, under one tab — character sheets (Craft per game,
  * Trade, Trust, Renown, levels and class), and P297's season (its boards, the

@@ -77,9 +77,31 @@ describe("a route to a section this viewer may not see", () => {
 
   it("shows a section the viewer may see as before", async () => {
     narrowWindow(false);
-    await renderAt("#/season");
+    await renderAt("#/labs/season");
     expect(screen.queryByText(/This section is/)).toBeNull();
     expect(await screen.findByText(/the relay did not answer|asking the relay/)).toBeTruthy();
+  });
+
+  it("says in one line why Deals is not here when the relay cannot sell services, and draws it nowhere", async () => {
+    narrowWindow(false);
+    await renderAt("#/you/deals");
+    expect(screen.getByText("Service purchases need escrow or cards on this relay.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Deals/ })).toBeNull();
+  });
+
+  it("opens a bookmark from the earlier layout where its content lives now", async () => {
+    narrowWindow(false);
+    await renderAt("#/market/offers");
+    expect(document.querySelector(".e-page-head__title")).toBeTruthy();
+    expect(screen.queryByText(/This section is/)).toBeNull();
+    // Rooms now: it names the destination it sits in, Talk, in the strip.
+    expect(screen.getByRole("navigation", { name: "Talk: sections" })).toBeTruthy();
+  });
+
+  it("opens Labs with its empty state when the relay answers nothing", async () => {
+    narrowWindow(false);
+    await renderAt("#/labs");
+    expect(screen.getByRole("navigation", { name: "Labs & Season: sections" })).toBeTruthy();
   });
 
   it("is not offered on Home: a spectator's Home has no Operator or Messages card", async () => {

@@ -2014,7 +2014,11 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-relay-table th, .e-relay-table td { text-align: left; padding: 4px 10px;
   border: 1px solid color-mix(in srgb, currentColor 22%, transparent); }
 
-/* Market › Stats: the agent's own figures. Bars are decoration: every value is also text. */
+/* Rooms › "Rooms you can join": folded above the chat until opened. */
+.e-joinable { margin: 0 0 10px; border: 1px solid var(--theme-border-subdued, currentColor); padding: 6px 10px; }
+.e-joinable > summary { cursor: pointer; font-size: 0.85rem; opacity: 0.8; }
+.e-joinable[open] > summary { margin-bottom: 6px; }
+/* You › Stats: the agent's own figures. Bars are decoration: every value is also text. */
 .e-stats-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .e-stats-num { font-variant-numeric: tabular-nums; }
 .e-stats-list { list-style: none; margin: 4px 0 8px 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }

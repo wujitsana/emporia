@@ -20,7 +20,7 @@ import { DESKTOP_ROOT } from "./shadowScope";
 import { RelayHealthCtx } from "./healthCtx";
 import { applyTheme, nextTint, toggleTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
-import { canSee, destById, destinationOf, navById, navForHotkey, siblingView, type Destination, type View } from "./navConfig";
+import { canSee, dealsAvailable, destById, destinationOf, navById, navForHotkey, siblingView, type Destination, type View } from "./navConfig";
 import { GatedNote } from "./ui/GatedNote";
 import { isNarrow, useNarrow, useOverlayFocus } from "./ui/overlayFocus";
 import { PageHeading, ViewBoundary } from "./ui/layout";
@@ -29,7 +29,7 @@ import { sessionSection } from "./eventNav";
 import type { Navigate } from "./navigation";
 import {
   OverviewView,
-  OffersView,
+  LabsView,
   RoomsView,
   AgentsView,
   AgorasView,
@@ -135,6 +135,8 @@ function AppInner() {
     return () => clearInterval(t);
   }, [agentWs.last, agentWs.connected]);
   const relayHealth = healthPoll ?? seed;
+  // Deals (You › Deals) is drawn only on a relay that can sell services: escrow on, or cards live.
+  const dealsOn = dealsAvailable(relayHealth);
 
   /* P41-2: keyed on the newest event's identity rather than on
      `events[0]?._ts`. `_ts` is `Date.now()`, so two events arriving in the same
@@ -174,7 +176,7 @@ function AppInner() {
     syncHash(id, sessionId);
   }, []);
 
-  // A route that names a session (`#/play/games/<id>`) opens it — on load and on a
+  // A route that names a session (`#/arena/games/<id>`) opens it — on load and on a
   // route change (a hash change; on the Desktop page, a palette command).
   useEffect(() => {
     const onHash = () => {
@@ -203,17 +205,17 @@ function AppInner() {
     [applyView],
   );
 
-  // Each destination reopens on the section last seen in it (Play → Games, if that was last).
+  // Each destination reopens on the section last seen in it (Labs & Season → Season, if that was last).
   const lastInDest = useRef<Partial<Record<Destination, View>>>({});
   useEffect(() => {
     lastInDest.current[destinationOf(view).id] = view;
   }, [view]);
   const goToDest = useCallback(
     (id: Destination) => {
-      const found = navForHotkey(destById(id)?.hotkey ?? "", { isSpectator, isOperator: isRelayOperator }, lastInDest.current);
+      const found = navForHotkey(destById(id)?.hotkey ?? "", { isSpectator, isOperator: isRelayOperator, dealsOn }, lastInDest.current);
       if (found) goToView(found.id);
     },
-    [goToView, isSpectator, isRelayOperator],
+    [goToView, isSpectator, isRelayOperator, dealsOn],
   );
 
   const navigate = useCallback<Navigate>(
@@ -266,16 +268,16 @@ function AppInner() {
         });
         return;
       }
-      // `[` / `]`: the previous / next section in this destination (Games ↔ Deals).
+      // `[` / `]`: the previous / next section in this destination (Feed ↔ Agora ↔ Rooms ↔ Messages).
       if (e.key === "[" || e.key === "]") {
-        const next = siblingView(view, e.key === "]" ? 1 : -1, { isSpectator, isOperator: isRelayOperator });
+        const next = siblingView(view, e.key === "]" ? 1 : -1, { isSpectator, isOperator: isRelayOperator, dealsOn });
         if (next !== view) goToView(next);
         return;
       }
       // P35-2: `navForHotkey` applies the same visibility rule the rendered
       // nav does. Searching the unfiltered NAV here is what let a spectator
       // reach the two sections the nav hides.
-      const found = navForHotkey(e.key, { isSpectator, isOperator: isRelayOperator }, lastInDest.current);
+      const found = navForHotkey(e.key, { isSpectator, isOperator: isRelayOperator, dealsOn }, lastInDest.current);
       if (found) goToView(found.id);
     };
     window.addEventListener("keydown", handler);
@@ -283,9 +285,10 @@ function AppInner() {
     // `isSpectator` belongs here: the handler closes over it, and it stops being
     // constant the moment the dashboard/challenge login flow lands (the token
     // setter is already on the context).
-  }, [goToView, isSpectator, isRelayOperator, view]);
+  }, [goToView, isSpectator, isRelayOperator, dealsOn, view]);
 
   const currentNav = navById(view);
+  const shown = canSee(view, { isSpectator, isOperator: isRelayOperator, dealsOn });
   // Picking a game or a deal names it in the route, so the address opens that session.
   const onSessionShown = useCallback((id: string | null, step?: number | null) => {
     if (view === "games" || view === "deals") syncHash(view, id, step);
@@ -364,14 +367,14 @@ function AppInner() {
               compact
             />
           </div>
-          {/* The sections inside this destination (Games · Deals), on every width. */}
+          {/* The sections inside this destination (Feed · Agora · Rooms · Messages), on every width. */}
           <SubNav view={view} onGo={goToView} badges={inboxUnread > 0 ? { messages: inboxUnread } : undefined} />
           <div className="e-view">
             <NotAnAgentNote />
             {!hermesNonAgent && <PageHeading item={currentNav} />}
             {/* P234: a Hermes profile that is no agent shows nothing of the relay. */}
-            {!hermesNonAgent && !canSee(view, { isSpectator, isOperator: isRelayOperator }) && <GatedNote view={view} />}
-            {!hermesNonAgent && canSee(view, { isSpectator, isOperator: isRelayOperator }) && (<ViewBoundary key={view} name={currentNav?.label ?? "This section"}>
+            {!hermesNonAgent && !shown && <GatedNote view={view} />}
+            {!hermesNonAgent && shown && (<ViewBoundary key={view} name={currentNav?.label ?? "This section"}>
             {view === "overview" && (
               <OverviewView
                 events={events}
@@ -381,7 +384,7 @@ function AppInner() {
                 onAfterNavigate={() => setNavOpen(false)}
               />
             )}
-            {view === "offers" && <OffersView navigate={navigate} />}
+            {view === "labs" && <LabsView />}
             {view === "games" && (
               <ArenaView
                 initialSessionId={selectedSessionId}

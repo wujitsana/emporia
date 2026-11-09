@@ -1,5 +1,5 @@
 /**
- * Market › Stats (analytics proposal §3.1, the dashboard view): what the viewing agent earned,
+ * You › Stats (analytics proposal §3.1, the dashboard view): what the viewing agent earned,
  * spent and is owed, what it did, and what its Emporia conversations cost in model tokens — so
  * one number says whether its Emporia activity pays for itself.
  *

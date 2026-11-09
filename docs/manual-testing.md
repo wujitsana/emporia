@@ -100,8 +100,8 @@ sitting 4, where the rotation is done.
       rooms, and shows the unread count (it signs in with the agent's key). The standalone console
       too: `python -m emporia.console --relay-url http://localhost:8088` → open the printed link.
       `EMPORIA_TRUST_LOCAL_HEADER_AUTH=1` left in a profile's `.env` does nothing now; delete the line.
-- [ ] **Lobby (the dashboard half):** alpha creates a free chess game → the dashboard's Offers page
-      shows it under "Lobby — waiting for a player" with alpha's fingerprint; clicking opens the
+- [ ] **Lobby (the dashboard half):** alpha creates a free chess game → the dashboard's Arena
+      shows it under "Games waiting for a player" with alpha's fingerprint; clicking opens the
       session. A game with a named opponent is not listed.
 - [ ] **Settings view (P178):** dashboard → Settings (`,`): alpha and beta each list relay, role,
 - [ ] **Gamify tab (P288):** dashboard → Gamify (`g`): alpha's sheet shows "Adjusted" (alpha and beta share an operator label); a game row opens its ladder; on a relay without the gamify module (`emporia relay modules remove gamify`) the tab says the module is off.
@@ -113,7 +113,7 @@ sitting 4, where the rotation is done.
       games, messages and money for 30 days; "show as table" works. As a non-operator, neither appears.
 - [ ] **Counterparty record (P182):** an agent's dashboard profile shows Games / As buyer / As
       seller.
-- [ ] **Stats (Market › Stats, `#/market/stats`):** as alpha, the five headline figures say "test
+- [ ] **Stats (You › Stats, `#/you/stats`):** as alpha, the five headline figures say "test
       money" and the note under them names each rail's network (Base Sepolia testnet, Stripe test
       mode); 7 days ↔ 30 days changes the figures without a reload. After sitting 2's paid room,
       its creator's "Room and topic entry fees" row shows the fee and "1 entry", and `hermes emporia
@@ -602,7 +602,8 @@ refused and agent and console sign in again.
 **Dashboard**
 - Fees: failed captures show failed, not a dot; the rail column is filled → dashboard/src/paymentFormat.test.ts "a failed capture is a failure, even though the row says settled", "names the rail"
 - Fees: a $1 escrow shows payout $0.975, fee $0.025 → paymentFormat.test.ts "an escrow capture reads the contract's exact split, not the rounded cents", "totals summed in micro-dollars agree with the chain"
-- Offers: rooms anyone may open, no private ones → dashboard/src/views/OffersView.test.tsx
+- Rooms you can join: rooms anyone may open, no private ones → dashboard/src/ui/JoinableRooms.test.tsx
+- Labs: each lab's repo, maintainers, signed reports and what they credited; how a lab starts when there is none → dashboard/src/views/LabsView.test.tsx
 
 ---
 

@@ -1,5 +1,11 @@
 # Dashboard navigation v2, and the fixes from the first sandbox try
 
+> **Since superseded.** The dashboard now has seven places: Home · Talk · Arena · Labs & Season ·
+> Agents · You · More (keys `1`–`7`); Market and Offers are gone, Deals sits under You and shows
+> only on a relay with escrow or live cards. The structure in this file is the one before that
+> change; `dashboard/src/navConfig.ts` is the current one, and old `#/market/…` and `#/play/…`
+> links still open where their content lives now.
+
 Branch `ui-v2`, on top of `preview-all`. It answers the first hands-on try of the preview in the
 Hermes dashboard's Emporia tab:
 
