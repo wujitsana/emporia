@@ -94,4 +94,18 @@ def test_the_log_root_comes_from_hermes_home_not_a_hard_coded_path():
     e2e = _e2e()
     assert e2e.host_log_root("/srv/h") == Path("/srv/h/logs/gateways") and e2e.host_log_root("") is None
     assert "/opt/data" not in (REPO / "scripts" / "e2e.py").read_text()
-    assert Path("/run/hermes-service") in e2e.S6_SCANDIRS     # where Hermes registers profile gateways
+    # the service root is read from the installed Hermes (fake install here), never from a path in this script
+    install = Path(__file__).parent / "_fake_hermes_root"
+    import subprocess
+    import sys
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        (tmp / "hermes_cli").mkdir()
+        (tmp / "hermes_cli" / "service_manager.py").write_text('S6_DYNAMIC_SCANDIR = Path("/srv/fake-services")\n')
+        exe = tmp / "hermes"
+        exe.write_text(f"#!{sys.executable}\nprint('Hermes Agent v9\\nInstall directory: {tmp}')\n")
+        exe.chmod(0o755)
+        assert e2e.service_roots(str(exe)) == (Path("/srv/fake-services"),)
+    assert subprocess and not install.exists()
+    assert e2e.service_roots("/nonexistent/hermes") == (Path("/run/hermes-service"),)   # unreadable: Hermes 0.23's

@@ -96,7 +96,36 @@ SETUP_TIMEOUT = 900
 # image's static services. Each service's log goes to `$HERMES_HOME/logs/gateways/<profile>`, where HERMES_HOME is
 # the *container's* (the supervised log script reads it from the container environment, not from this run's
 # temporary HERMES_HOME), so this script reads it from its own environment before it changes anything.
-S6_SCANDIRS = (Path("/run/hermes-service"), Path("/run/service"))
+#
+# The dynamic scandir is read from the installed Hermes itself, the way Hermes names it: `hermes --version` says where
+# it is installed, and `hermes_cli/service_manager.py` there defines `S6_DYNAMIC_SCANDIR` (HERMES_S6_SCANDIR overrides
+# it). Only when that cannot be read does this fall back to the value Hermes 0.23 has.
+_SCANDIR_FALLBACK = "/run/hermes-service"
+_scandirs: tuple[Path, ...] | None = None
+
+
+def service_roots(hermes: str | None = None) -> tuple[Path, ...]:
+    """The folders profile gateway services are registered in (Hermes's dynamic scandir), found as described."""
+    global _scandirs
+    if _scandirs is not None and hermes is None:
+        return _scandirs
+    import re
+    import subprocess as sp
+    found = os.environ.get("HERMES_S6_SCANDIR", "").strip()
+    exe = hermes if hermes is not None else shutil.which("hermes")
+    if not found and exe:
+        try:
+            out = sp.run([exe, "--version"], capture_output=True, text=True, timeout=30).stdout
+            m = re.search(r"Install directory:\s*(\S+)", out)
+            src = Path(m.group(1)) / "hermes_cli" / "service_manager.py" if m else None
+            d = re.search(r'S6_DYNAMIC_SCANDIR\s*=\s*Path\("([^"]+)"\)', src.read_text()) if src else None
+            found = d.group(1) if d else ""
+        except (OSError, sp.SubprocessError):
+            found = ""
+    roots = (Path(found or _SCANDIR_FALLBACK),)
+    if hermes is None:
+        _scandirs = roots
+    return roots
 S6_SERVICE_PREFIX = "gateway-"
 HOST_HERMES_HOME = os.environ.get("HERMES_HOME", "")
 _OWN_NAME = r"e2e-[a-z]+-{tag}"
@@ -109,7 +138,7 @@ def host_log_root(home: str | None = None) -> Path | None:
     return Path(home) / "logs" / "gateways" if home else None
 
 
-def cleanup_gateways(names: list[str], tag: str, *, scandirs=S6_SCANDIRS, log_root: Path | None = None,
+def cleanup_gateways(names: list[str], tag: str, *, scandirs=None, log_root: Path | None = None,
                      delete=None, services_before: frozenset[str] | set[str] = frozenset()) -> dict[str, list[str]]:
     """Remove this run's own gateway services and log folders, and nothing else.
 
@@ -122,6 +151,8 @@ def cleanup_gateways(names: list[str], tag: str, *, scandirs=S6_SCANDIRS, log_ro
     import re
     own = re.compile(_OWN_NAME.format(tag=re.escape(tag)))
     mine = [n for n in dict.fromkeys(names) if own.fullmatch(n) and f"{S6_SERVICE_PREFIX}{n}" not in services_before]
+
+    scandirs = service_roots() if scandirs is None else scandirs
 
     def present(name: str) -> bool:
         return any((d / f"{S6_SERVICE_PREFIX}{name}").exists() for d in scandirs)
@@ -1395,7 +1426,7 @@ class Run:
     @staticmethod
     def _services() -> set[str]:
         found: set[str] = set()
-        for scandir in S6_SCANDIRS:
+        for scandir in service_roots():
             try:
                 found |= {p.name for p in scandir.iterdir() if p.name.startswith(S6_SERVICE_PREFIX)}
             except OSError:
