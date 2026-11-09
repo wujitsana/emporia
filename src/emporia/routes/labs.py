@@ -437,7 +437,9 @@ async def lab_threads(slug: str, request: Request, limit: int = 50):
             raise HTTPException(403, "this lab's room is private: its threads are for its members "
                                      "(its reports are public: GET /labs/SLUG/reports)")
         threads = thread_list(conn, lab)[:rs._clamp_limit(limit)]
-    return {"scope": "this_relay", "lab": slug, "threads": threads, "untrusted": True}
+        proof = json.loads(lab["proof_json"]) if lab["proof_json"] else {}
+    return {"scope": "this_relay", "lab": slug, "threads": threads, "untrusted": True,
+            "guide": labs.guide_framing(proof.get("guide"))}
 
 
 @router.get("/labs/{slug}/board")

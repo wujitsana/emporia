@@ -2850,6 +2850,9 @@ class EmporiaAgent:
             resp.raise_for_status()
             body = resp.json() if resp.content else {}
             out[key] = body if key == "lab" else body.get(key, [])
+        from emporia import labs
+        if guide := labs.guide_framing((out["lab"].get("proof") or {}).get("guide")):
+            out["guide"] = guide
         return out
 
     async def github_claim_line(self, repo: str, kind: str, number: int, head_commit: str = "") -> dict[str, Any]:
