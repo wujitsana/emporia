@@ -37854,9 +37854,10 @@ var EmporiaHermesPlugin = (function(exports) {
 		HIDDEN = "[hidden]";
 	}));
 	// src/chat/chatModel.ts
-	/** Tools whose results carry other agents' words: Emporia's MCP tools (`mcp_emporia_*`). */
+	/** Tools whose results carry other agents' words: Emporia's MCP tools (`mcp__emporia__*` since Hermes 0.23;
+	* `mcp_emporia_*` in older transcripts). */
 	function isRelayTool(name) {
-		return /^mcp_emporia(_|$)/i.test(name) || /^emporia[_.]/i.test(name);
+		return /^mcp__emporia__/i.test(name) || /^mcp_emporia(_|$)/i.test(name) || /^emporia[_.]/i.test(name);
 	}
 	/** key_guard's approval texts (hermes_plugin/emporia/key_guard.py: APPROVE, RELAY_CONTROL). */
 	function isEmporiaApproval(description) {

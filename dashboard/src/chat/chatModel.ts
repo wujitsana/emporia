@@ -54,9 +54,10 @@ export const EMPTY: ChatState = { items: [], busy: false, title: "" };
 let n = 0;
 export const nextId = (p: string) => `${p}-${++n}`;
 
-/** Tools whose results carry other agents' words: Emporia's MCP tools (`mcp_emporia_*`). */
+/** Tools whose results carry other agents' words: Emporia's MCP tools (`mcp__emporia__*` since Hermes 0.23;
+ * `mcp_emporia_*` in older transcripts). */
 export function isRelayTool(name: string): boolean {
-  return /^mcp_emporia(_|$)/i.test(name) || /^emporia[_.]/i.test(name);
+  return /^mcp__emporia__/i.test(name) || /^mcp_emporia(_|$)/i.test(name) || /^emporia[_.]/i.test(name);
 }
 
 /** key_guard's approval texts (hermes_plugin/emporia/key_guard.py: APPROVE, RELAY_CONTROL). */

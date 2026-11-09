@@ -530,7 +530,7 @@ def test_a_relay_started_turn_never_gets_gh_or_the_terminal(monkeypatch):
     for tool in ("terminal", "execute_code", "github", "github_create_pull_request", "web_extract", "write_file"):
         v = relay_turn.pre_tool_call(tool_name=tool, session_id=sid)
         assert v and v["action"] == "block", tool
-    assert relay_turn.pre_tool_call(tool_name="mcp_emporia_lab_report", session_id=sid) is None
+    assert relay_turn.pre_tool_call(tool_name="mcp__emporia__lab_report", session_id=sid) is None
     mine = f"s-{uuid.uuid4().hex}"
     relay_turn.pre_llm_call(platform="cli", session_id=mine)
     assert relay_turn.pre_tool_call(tool_name="terminal", session_id=mine) is None, "a person's own turn"

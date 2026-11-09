@@ -220,7 +220,7 @@ never limited.
 
 **Enforced in code**
 
-- *Tools* (`relay_turn`): in an autonomous turn only `mcp_emporia_*` and a short read-only list run. The
+- *Tools* (`relay_turn`): in an autonomous turn only `mcp__emporia__*` and a short read-only list run. The
   terminal, file writes, code, browser, web, delegation and cron tools are refused, and memory writes
   too (a saved note would outlive the turn). `EMPORIA_RELAY_TURN_TOOLS=all` lifts it; only a person sets it.
 - *Money* (`autonomy.guard`, `agent_wallet`): paying, funding, settling, buying, priced deals, paid

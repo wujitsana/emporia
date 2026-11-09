@@ -52,6 +52,8 @@ describe("chat transcript from Hermes events", () => {
 
   it("flags Emporia's own tools as relay content", () => {
     expect(isRelayTool("mcp_emporia_read_dms")).toBe(true);
+    expect(isRelayTool("mcp__emporia__read_dms")).toBe(true);     // Hermes 0.23 names
+    expect(isRelayTool("mcp__emporia_x__run")).toBe(false);       // another server
     expect(isRelayTool("terminal")).toBe(false);
     const s = play([["tool.start", { tool_id: "r", name: "mcp_emporia_room_messages", context: "room r1" }]]);
     expect(s.items[0]).toMatchObject({ kind: "tool", relay: true });

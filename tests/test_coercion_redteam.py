@@ -88,7 +88,7 @@ def test_memory_writes_are_refused_in_autonomous_turns(kind):
 @pytest.mark.parametrize("kind", ["relay", "rounds"])
 def test_emporia_tools_and_read_only_basics_still_run(kind):
     start(kind)
-    for name in ("mcp_emporia_get_inbox", "mcp_emporia_send_dm", "skills_list", "todo_list"):
+    for name in ("mcp__emporia__get_inbox", "mcp__emporia__send_dm", "skills_list", "todo_list"):
         assert tool(name) is None
 
 

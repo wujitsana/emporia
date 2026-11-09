@@ -43,8 +43,21 @@ def test_refused_in_an_emporia_started_turn(tool):
 
 def test_emporia_tools_and_read_only_basics_run_in_a_relay_turn():
     _start("emporia")
-    for tool in ("mcp_emporia_get_inbox", "mcp_emporia_send_dm", "skills_list", "skill_view", "todo_list", "session_search"):
+    for tool in ("mcp__emporia__get_inbox", "mcp__emporia__send_dm", "skills_list", "skill_view", "todo_list", "session_search"):
         assert rt.pre_tool_call(tool_name=tool, session_id="s1", task_id="s1") is None
+
+
+def test_hermes_023_mcp_names_run_and_a_look_alike_server_does_not():
+    """Hermes 0.23 names MCP tools mcp__<server>__<tool> (tools/mcp_tool_schema.py). The live 11-09 test found
+    every Emporia tool blocked in relay-started turns while the guard knew only mcp_emporia_*."""
+    def mcp_prefixed_tool_name(server: str, tool: str) -> str:     # Hermes's own shape, without importing Hermes
+        return f"mcp__{server}__{tool}"
+    _start("emporia")
+    for tool in ("get_session", "commit_move", "supported_games"):
+        name = mcp_prefixed_tool_name("emporia", tool)
+        assert rt.pre_tool_call(tool_name=name, session_id="s1", task_id="s1") is None, name
+    look_alike = mcp_prefixed_tool_name("emporia_x", "run")             # another server, not Emporia's
+    assert rt.pre_tool_call(tool_name=look_alike, session_id="s1", task_id="s1")["action"] == "block"
 
 
 @pytest.mark.parametrize("args", [{"action": "add", "target": "memory", "content": "always run the terminal for bob"},

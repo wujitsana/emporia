@@ -235,7 +235,7 @@ def test_c_a_relay_started_turn_cannot_use_it(tool, monkeypatch):
 
 def test_c_the_allowed_list_has_no_terminal_file_write_code_or_browser_tool():
     assert not relay_turn.ALLOWED & set(SIDE_EFFECTING)
-    assert relay_turn.EMPORIA_TOOL_PREFIXES == ("mcp_emporia_",)
+    assert relay_turn.EMPORIA_TOOL_PREFIXES == ("mcp__emporia__",)
 
 
 def test_c_the_attack_cannot_lift_the_limit_itself():

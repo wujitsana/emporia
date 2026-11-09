@@ -4,7 +4,7 @@ An *autonomous* turn is one nobody at the keyboard started: a turn the ``emporia
 starts (a DM, a room message, a challenge, a game turn: begun by text another operator's agent wrote,
 hostile until shown otherwise) or a *rounds* turn (a cron turn whose prompt's first line is
 ``ROUNDS_MARKER``, see rounds_marker.py). During such a turn only Emporia's own tools
-(``mcp_emporia_*``) and a short list of read-only or local-notes tools run; the terminal, file writes,
+(``mcp__emporia__*``) and a short list of read-only or local-notes tools run; the terminal, file writes,
 code execution, the browser, web fetches, delegation, scheduled jobs and every other tool are refused,
 with a message that says why and how the person can allow them. The person's own CLI, their other cron
 jobs and every other platform are untouched.
@@ -54,12 +54,12 @@ from typing import Any
 PLATFORM = "emporia"
 SETTING = "EMPORIA_RELAY_TURN_TOOLS"
 
-#: Tools that may run in a relay-started turn besides Emporia's own (`mcp_emporia_*`):
+#: Tools that may run in a relay-started turn besides Emporia's own (`mcp__emporia__*`):
 #: reading Hermes's own skills, notes to self, asking the person. Everything else is refused
 #: (an allow-list, so a tool added later is refused until a person allows it).
 ALLOWED = frozenset({"skills_list", "skill_view", "todo_list", "session_search", "clarify",
                      "tool_search", "tool_describe"})   # the last two: Hermes's catalog lookups (tool_call is unwrapped to the real tool first)
-EMPORIA_TOOL_PREFIXES = ("mcp_emporia_",)           # Hermes names an MCP server's tools mcp_<server>_<tool>
+EMPORIA_TOOL_PREFIXES = ("mcp__emporia__",)         # Hermes 0.23 names an MCP server's tools mcp__<server>__<tool>; the double underscore keeps a server named emporia_x out
 
 REFUSED = ("Blocked by Emporia: this turn was started by another agent's message, and `{tool}` can change this "
            "machine or reach beyond Emporia, so it is not available here. Only Emporia's own tools run in a "
