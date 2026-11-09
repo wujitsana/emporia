@@ -3431,6 +3431,22 @@ def _playbook_session_refusal(what: str, aid: str, session_id: str,
     return _playbook_refusal(what, module)
 
 
+def _runner_only_refusal() -> dict[str, Any] | None:
+    """A tool that only plays a game (commit, reveal): refused in a process that leaves its games to the house
+    rules runner (`EMPORIA_GAMES_BY=runner`, see playbook.py), so a model turn and the runner never both move."""
+    from emporia import playbook
+    why = playbook.runner_refusal()
+    return {"error": why, "playbook": "house runner", "success": False} if why else None
+
+
+def _playbook_refusal_runner(module_type: str) -> dict[str, Any] | None:
+    """The same for a tool that serves games and deals alike (submit_action): only a game is refused."""
+    from emporia.module_sdk import load_bundled_modules
+    from emporia.standing import game_module_types
+    load_bundled_modules()
+    return _runner_only_refusal() if module_type in game_module_types() else None
+
+
 def _playbook_refusal(what: str, module_type: str = "") -> dict[str, Any] | None:
     """P297: the playbook its person set — which games, and
     whether it sells or buys. `what`: play (create or join a game), join (a session that is not a game: providing it is selling),
@@ -3446,7 +3462,7 @@ def _playbook_refusal(what: str, module_type: str = "") -> dict[str, Any] | None
     pb = playbook.current()
     game = bool(module_type) and module_type in game_module_types()
     if game and what in ("play", "join", "create", "fund"):
-        why = playbook.may_play(pb, module_type)
+        why = playbook.runner_refusal(module_type) or playbook.may_play(pb, module_type)   # the house runner's games
     elif what in ("join", "sell"):
         why = playbook.may_sell(pb)
     elif what in ("create", "fund", "buy"):
@@ -4590,6 +4606,8 @@ def submit_action(
         step_number = sess["step_number"]
     except Exception as e:
         return {"error": _session_load_error(session_id, e), "success": False}
+    if (refusal := _playbook_refusal_runner(sess.get("module_type", ""))):
+        return refusal
     cls = _load_game_module(sess.get("module_type", ""))
     if getattr(cls, "USES_RAND", False):
         if action_type == "reveal" and "move" not in (payload or {}):   # (a sealed bid's reveal carries its move)
@@ -4980,6 +4998,8 @@ def commit_move(session_id: str, move: Any, rationale: str, agent_id: str = "",
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    if why := _runner_only_refusal():
+        return why
     try:
         sess = _session_json(session_id, aid)
     except Exception as e:
@@ -5082,6 +5102,8 @@ def reveal_move(session_id: str, rationale: str, agent_id: str = "", say: str = 
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    if why := _runner_only_refusal():
+        return why
     try:
         data = _session_data(session_id, aid)
     except Exception as e:

@@ -3489,6 +3489,11 @@ def _closing_block(profile: Path, name: str, role: str, args: argparse.Namespace
         print(localize(line))
     for line in extra_lines or ():
         print(localize(line))
+    print(f"\n  Guide: {CREATE_GUIDE}  (giving it a character, how it behaves, safety habits, your first day, fixing problems)")
+
+
+#: The people's guide to making an agent; setup's closing blocks point at it.
+CREATE_GUIDE = "docs/create-an-agent.md"
 
 
 def cmd_rounds(args: argparse.Namespace) -> int:
@@ -5668,9 +5673,12 @@ def cmd_house(args: argparse.Namespace) -> int:
     Operator section: `emporia house start NAME` runs it in the background (its PID kept in
     the profile), `emporia house stop NAME` stops that one process and no other, and
     `emporia house status NAME` says whether it runs and what its last pass did."""
-    if args.action not in ("run", "start", "stop", "status"):
-        print("emporia house: run|start|stop|status NAME")
+    if args.action not in ("create", "run", "start", "stop", "status"):
+        print("emporia house: create|run|start|stop|status NAME")
         return 2
+    if args.action == "create":
+        from emporia import house_create
+        return house_create.run(args)
     profile, agent_id, env = _agent(args.name)
     if not env:
         print(f"house {args.action}: {args.name or '(none)'} is not an Emporia agent profile")
@@ -5719,7 +5727,11 @@ def cmd_house(args: argparse.Namespace) -> int:
             "--adopt-after", str(args.adopt_after), "--step-back-at", str(args.step_back_at),
             "--busy-window", str(args.busy_window)] + (["--once"] if args.once else []) + \
         []
-    run_env = {"PATH": os.defpath, "HOME": str(Path.home()), "HERMES_HOME": str(profile), **_mcp_env(profile)}
+    # The runner is the one process of this profile that plays its games: EMPORIA_GAMES_BY=runner (a house with
+    # a persona, see playbook.py) keeps every other process out of them, so it is emptied for this one alone.
+    # An explicit empty value beats the profile's .env (config._merge_dotenv), whatever the .env says.
+    run_env = {"PATH": os.defpath, "HOME": str(Path.home()), "HERMES_HOME": str(profile), **_mcp_env(profile),
+               "EMPORIA_GAMES_BY": ""}
     if args.action == "run":
         return subprocess.call(argv, env=run_env)
     if running:
@@ -8265,10 +8277,21 @@ def build_parser() -> argparse.ArgumentParser:
         argparse.Namespace(action=a.action, url=a.url_or_name if a.action == "leave" else "",
                            name=(a.name or "") if a.action == "leave" else a.url_or_name, home=a.home)))
 
-    hs = sub.add_parser("house", help="the house agent's rules runner: run NAME (P297); start, stop or "
-                                      "status NAME in the background (the operator's)")
-    hs.add_argument("action", choices=["run", "start", "stop", "status"])
+    hs = sub.add_parser("house", help="the house agent: create NAME (rules only, or with a persona); the rules "
+                                      "runner: run NAME (P297); start, stop or status NAME in the background "
+                                      "(the operator's)")
+    hs.add_argument("action", choices=["create", "run", "start", "stop", "status"])
     hs.add_argument("name", help="the house agent's profile")
+    hs.add_argument("--kind", choices=["rules", "persona"], default="",
+                    help="create: rules only (recommended: no model, no tokens) or a model and a persona (default: asks)")
+    hs.add_argument("--relay", default="", help="create: the relay it belongs to (default: this machine's relay)")
+    hs.add_argument("--rounds", choices=["2h", "4h", "8h", "12h", "24h", "off"], default="",
+                    help="create, persona: how often it acts on its own (default 8h; rules only has none)")
+    hs.add_argument("--dir", default="", help="create: a hosted relay's folder, to list the house on it when "
+                                              "you are its operator")
+    hs.add_argument("--operator", default="", help="create: the relay operator's agent profile, checked with the relay "
+                                                   "before the house is listed")
+    hs.add_argument("--start", action="store_true", help="create: also start its rules runner")
     hs.add_argument("--once", action="store_true", help="one pass, then stop")
     hs.add_argument("--interval", type=float, default=20.0, help="seconds between passes")
     hs.add_argument("--adopt-after", type=float, default=120.0,
