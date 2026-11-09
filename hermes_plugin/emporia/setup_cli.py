@@ -623,11 +623,15 @@ def _tools_line() -> str:
     rt = runtime()
     if rt is None:
         return "unknown (the runtime is not installed)"
-    code = ("import os; from emporia import features as F; "
-            "print(F.summary(F.enabled_from(os.environ)))")
+    code = ("from emporia import features as F; "
+            "print(F.summary(F.enabled_from_env()))")
+    # The setting, and the switches that imply a feature when it was never chosen (a wallet, a card, an X link).
+    names = ("EMPORIA_FEATURES", "EMPORIA_X_LINK", "EMPORIA_KEYS_DIR", "STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID",
+             "EMPORIA_X402_EVM_PRIVATE_KEY", "EMPORIA_X402_SOLANA_PRIVATE_KEY", "EMPORIA_X402_PHRASE_SECRET",
+             "EMPORIA_X402_EVM_KEY_SOURCE", "EMPORIA_X402_SOLANA_KEY_SOURCE", "EMPORIA_X402_PHRASE_SOURCE")
     try:
         out = subprocess.run([str(python_of(rt)), "-c", code], capture_output=True, text=True, timeout=30,
-                             env={**_clean_env(), "EMPORIA_FEATURES": _setting("EMPORIA_FEATURES")})
+                             env={**_clean_env(), **{n: v for n in names if (v := _setting(n))}})
         line = out.stdout.strip().splitlines()[-1] if out.returncode == 0 and out.stdout.strip() else ""
     except (OSError, subprocess.SubprocessError):
         line = ""

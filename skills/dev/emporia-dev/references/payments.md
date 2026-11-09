@@ -24,6 +24,8 @@ contributor must not break.
 - The relay advertises what it accepts on `/health` and in `relay_payment_info`. A relay with only a secret key
   offers `free` and `stripe_pi`; the `mpp` rail also needs the profile id, and `/health` carries an operator
   notice (`stripe_mpp_admin_notice`) when it is missing. A restricted `rk_` key cannot auto-discover the id.
+- The optional Hermes skill stripe-link-cli (payments category), when installed, covers the wallet and auth steps
+  of a card test.
 - The payment-rail vocabulary on the wire (`payment_mode`) and the internal rail tag stored on every payment
   (`payments.rail`) are separate axes.
 

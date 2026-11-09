@@ -12,7 +12,8 @@ The MCP server registers only the tools of enabled features (`mcp_server._fit_to
   A relay that does not answer hides nothing.
 
 Server-side gating is the source of truth for every host (Hermes, `emporia agent mcp-config`, any MCP
-client). Pure functions, no I/O except `enabled_from_env`.
+client). Pure functions; the only reads are the environment and, to see a wallet key file, a directory listing
+(`implied_by`).
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 SETTING = "EMPORIA_FEATURES"
 CORE = "core"
@@ -113,17 +115,70 @@ def parse(value: str) -> list[str]:
     return [n for n in OPTIONAL if n in names]
 
 
-def enabled_from(env: Mapping[str, str]) -> list[str]:
-    """The optional features on in `env`. A profile that never chose gets the recommended set."""
+#: Settings that hold a wallet key or where one is kept, in the profile's environment.
+_WALLET_VARS = ("EMPORIA_X402_EVM_PRIVATE_KEY", "EMPORIA_X402_SOLANA_PRIVATE_KEY", "EMPORIA_X402_PHRASE_SECRET",
+                "EMPORIA_X402_EVM_KEY_SOURCE", "EMPORIA_X402_SOLANA_KEY_SOURCE", "EMPORIA_X402_PHRASE_SOURCE")
+_WALLET_FILES = (".x402.secp256k1", ".x402.ed25519", ".x402.phrase")
+
+
+def implied_by(env: Mapping[str, str], key_dir: str | os.PathLike | None = None) -> list[str]:
+    """The features an agent's other switches already imply, so a profile that never chose its features keeps
+    what it uses: a wallet (a key, a linked source or a key file) means money; a Stripe key or profile means
+    stripe; `EMPORIA_X_LINK=on` means x_link. Read from the switches, not remembered."""
+    out: set[str] = set()
+    wallet = any(str(env.get(v) or "").strip() for v in _WALLET_VARS)
+    if not wallet and key_dir:
+        try:
+            wallet = any(p.name.endswith(_WALLET_FILES) for p in Path(key_dir).expanduser().iterdir())
+        except OSError:
+            wallet = False
+    if wallet:
+        out.add("money")
+    if any(str(env.get(v) or "").strip() for v in ("STRIPE_SECRET_KEY", "STRIPE_PROFILE_ID")):
+        out.add("stripe")
+    if str(env.get("EMPORIA_X_LINK") or "").strip().lower() in ("on", "1", "true", "yes"):
+        out.add("x_link")
+    return [n for n in OPTIONAL if n in out]
+
+
+def enabled_from(env: Mapping[str, str], key_dir: str | os.PathLike | None = None) -> list[str]:
+    """The optional features on in `env`. A profile that chose has exactly what it chose. One that never chose
+    gets the recommended set plus what its other switches imply (`implied_by`)."""
     raw = (env.get(SETTING) or "").strip()
-    return parse(raw) if raw else list(DEFAULTS)
+    if raw:
+        return parse(raw)
+    return [n for n in OPTIONAL if n in set(DEFAULTS) | set(implied_by(env, key_dir))]
 
 
 def enabled_from_env() -> list[str]:
     try:
-        return enabled_from(os.environ)
+        from emporia.identity import KEY_DIR
+        return enabled_from(os.environ, KEY_DIR)
     except FeatureError:
         return list(DEFAULTS)
+
+
+_TOOL_WORD = None
+
+
+def off_features_named_in(text: str, enabled: Iterable[str]) -> list[str]:
+    """The features that are off, one of whose tools `text` names (a quest's `how`, a suggested call). Only
+    the names in our own table are looked for; the text itself is never repeated."""
+    global _TOOL_WORD
+    import re
+    if _TOOL_WORD is None:
+        _TOOL_WORD = re.compile(r"(?<![\w.])(" + "|".join(sorted(map(re.escape, FEATURE_OF), key=len, reverse=True)) + r")(?![\w])")
+    on = {CORE, *enabled}
+    found = {FEATURE_OF[m.group(1)] for m in _TOOL_WORD.finditer(text or "")}
+    return [n for n in OPTIONAL if n in found and n not in on]
+
+
+def needs_note(off: Iterable[str]) -> str:
+    """`needs: feature pledges: your person turns it on with `emporia features on pledges``, or ''."""
+    off = list(off)
+    if not off:
+        return ""
+    return "needs: feature " + ", ".join(off) + ": your person turns it on with `emporia features on " + " ".join(off) + "`"
 
 
 def render(names: Iterable[str]) -> str:

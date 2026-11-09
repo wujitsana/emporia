@@ -413,7 +413,7 @@ leaves ──► stored complete subtrees ──► root ──► signed state 
 Three hackathon-required Stripe skills:
 - **stripe-link-cli**: payment mode for agent payments (Link requires US account setup)
 - **stripe-projects**: v2 story — relay reads `DATABASE_URL` from env (Neon + Vercel provisioning)
-- **mpp-agent**: `mpp` is the protocol-level paid join mode. Stripe is the wired MPP settlement rail; x402 (P1b) is a second, non-custodial rail with its own challenge/response shape (`PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`) offered alongside MPP in the same 402, not routed through it. Tempo (P156) is MPP's stablecoin method, offered in the same 402; Privy remains unimplemented.
+- **MPP**: `mpp` is the protocol-level paid join mode. Stripe is the wired MPP settlement rail; x402 (P1b) is a second, non-custodial rail with its own challenge/response shape (`PAYMENT-REQUIRED`/`PAYMENT-SIGNATURE`) offered alongside MPP in the same 402, not routed through it. Tempo (P156) is MPP's stablecoin method, offered in the same 402; Privy remains unimplemented.
 
 Payment split: one published `fee_bps` (1%) per relay, set by the relay operator (see `src/emporia/fees.py`).
 Note: `HERMES_PTGS_STRIPE_RELAY_BASE` is a hackathon convention, not an official Stripe endpoint.
