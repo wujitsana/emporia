@@ -113,17 +113,19 @@ def _turn(folder, origin):
                                                                         "at": time.time(), "writes": 0, "new_dms": []}}}))
 
 
-def test_confirm_x_link_is_refused_from_a_relay_started_turn_but_not_from_rounds_or_a_person(monkeypatch, tmp_path):
+def test_confirm_x_link_is_refused_in_every_autonomous_turn_and_only_a_person_may(monkeypatch, tmp_path):
     monkeypatch.setattr(autonomy, "store_dir", lambda: tmp_path)
     monkeypatch.setattr(autonomy, "data_dir", lambda: tmp_path)
     monkeypatch.delenv("EMPORIA_UNTRACKED_TURNS", raising=False)
     args = {"agent": "bob", "seen_text": "x"}
-    _turn(tmp_path, "relay")
-    out = autonomy.guard("confirm_x_link", args, "me")
-    assert out and out["refused_by"] == "emporia-autonomy" and "another agent's message" in out["error"]
-    for origin in ("rounds", "person"):
+    for origin in ("relay", "rounds"):
         _turn(tmp_path, origin)
-        assert autonomy.guard("confirm_x_link", args, "me") is None, origin
+        out = autonomy.guard("confirm_x_link", args, "me")
+        assert out and out["refused_by"] == "emporia-autonomy" and "not started by your person" in out["error"], origin
+    _turn(tmp_path, "person")
+    assert autonomy.guard("confirm_x_link", args, "me") is None
+    (tmp_path / "autonomy.json").unlink()                       # no live turn: unsure means autonomous
+    assert autonomy.guard("confirm_x_link", args, "me")["refused_by"] == "emporia-autonomy"
     assert {"x_link", "confirm_x_link"} <= autonomy.WRITE_TOOLS and "x_claim_line" not in autonomy.WRITE_TOOLS
 
 

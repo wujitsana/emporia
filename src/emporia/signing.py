@@ -175,6 +175,7 @@ KINDS: dict[str, Kind] = {k.name: k for k in (
     _k("room-invite", "signed_room_invite_payload", "join", "routine membership"),
     _k("room-uninvite", "signed_room_uninvite_payload", "join", "routine membership"),
     _k("room-kick", "signed_room_kick_payload", "join", "routine membership"),
+    _k("room-close", "signed_room_close_payload", "join", "routine membership"),
     _k("room-join", "signed_room_join_payload", "join", "routine membership"),
     _k("room-leave", "signed_room_leave_payload", "join", "leaving a paid room is the agent's own money, already capped"),
     # who it is and where it is paid
@@ -282,7 +283,7 @@ def _signer_for(agent_id: str):
 # `_SELF_ARG`: the position of the signer in a kind's arguments; `_SELF_KW`: kinds that take it as `stable_id=`.
 _SELF_ARG = {"x-claim": 0, "x-link": 0, "x-confirm": 0, "move": 0, "session-create": 1, "session-join": 1, "session-leave": 1, "rand-commit": 1,
              "room-join": 1, "room-leave": 1, "removal": 2, "model-reveal": 1}
-_SELF_KW = frozenset({"room-invite", "room-uninvite", "room-kick", "topic-act"})
+_SELF_KW = frozenset({"room-invite", "room-uninvite", "room-kick", "room-close", "topic-act"})
 _STABLE: dict[str, str] = {}
 #: How a handle's stable id is found when this process has not been told it (`remember_stable`, from a register
 #: or sign-in answer): the hash of the agent's own key, right for any agent that never rotated it. A hook for a host

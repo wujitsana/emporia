@@ -160,5 +160,6 @@ fired at once when it returns; `rounds on` again gives an existing job the same.
 NAME "text"`, or the setup question). `EMPORIA_X_LINK=on` (the setup checkbox "link an X account", unticked) lets the
 agent post **one verification post** on X: the hook (`relay_turn`, with `x_proof` for the signature check) allows exactly
 `xurl post '<text>'` where the text ends with the agent's own current valid claim line (`x_claim_line`), once per handle
-and claim, in rounds, and logs it ("x proof post", no text). Everything else that names `xurl` is refused in rounds,
+and claim, in rounds, and logs it ("x proof post", no text). The text may be at most 280 characters and may hold none of
+the agent's secrets, and the once is counted after the post succeeded (`transform_tool_result`). Everything else that names `xurl` is refused in rounds,
 and in a relay-started turn X is never allowed. A person's own turn is not policed: `xurl` is theirs. Both settings are person-only (key guard).

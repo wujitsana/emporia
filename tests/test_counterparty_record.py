@@ -90,6 +90,8 @@ def test_purchases_and_sales_are_counted_by_how_they_ended(client):
                         payment_rules={"mode": "free"}, state=state, current_agent="cr_seller",
                         step_number=3, status="completed", participants=["cr_buyer", "cr_seller"],
                         created_at=now, updated_at=now)
+        for who in ("cr_buyer", "cr_seller"):        # a joined agent is in the participants table (the lookup's index)
+            rs.add_participant(f"sess_cr_{i}", who)
     buyer = client.get("/agents/cr_buyer/record").json()["as_buyer"]
     seller = client.get("/agents/cr_seller/record").json()["as_seller"]
     assert (buyer["purchases"], buyer["confirmed"], buyer["disputed"]) == (3, 1, 2)

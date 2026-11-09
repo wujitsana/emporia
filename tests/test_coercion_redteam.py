@@ -33,6 +33,7 @@ OP_LABEL = "op_abcdefghijklmnopqrstuvwxyz"
 def fresh(monkeypatch):
     rt._origin.clear()
     rt._kind.clear()
+    rt._inflight.clear()
     monkeypatch.setenv("EMPORIA_UNTRACKED_TURNS", "")        # these tests use the real turn tracking
     for name in ("EMPORIA_RELAY_TURN_TOOLS", "EMPORIA_X_LINK", "EMPORIA_AGENT_ID", "EMPORIA_ABOUT",
                  "EMPORIA_PLAYBOOK", "EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY"):
@@ -166,8 +167,40 @@ def test_the_verification_post_runs_in_rounds_when_on(monkeypatch, style):
     text, made = _post_with_claim(monkeypatch, style=style)
     start("rounds")
     assert tool("terminal", {"command": _cmd(text)}) is None
+    busy = tool("terminal", {"command": _cmd(text)})                  # the first one is still running
+    assert busy["action"] == "block" and "already being sent" in busy["message"]
+    finished(text)
     again = tool("terminal", {"command": _cmd(text)})                 # once per handle and claim
     assert again["action"] == "block" and "already posted" in again["message"]
+
+
+def finished(text, code=0, session="s1"):
+    """What Hermes's transform_tool_result hook is told after the terminal command ran."""
+    return rt.transform_tool_result(tool_name="terminal", args={"command": _cmd(text)}, session_id=session,
+                                    task_id=session, result=json.dumps({"output": "", "exit_code": code, "error": None}))
+
+
+def test_the_proof_counts_only_after_the_post_succeeded(monkeypatch):
+    monkeypatch.setenv("EMPORIA_X_LINK", "on")
+    text, _ = _post_with_claim(monkeypatch)
+    start("rounds")
+    assert tool("terminal", {"command": _cmd(text)}) is None
+    assert not (rt.data_dir() / "x-proofs.json").exists()             # allowing the command records nothing
+    assert finished(text, code=1) is None                              # xurl failed: nothing recorded, may retry
+    assert not (rt.data_dir() / "x-proofs.json").exists()
+    assert tool("terminal", {"command": _cmd(text)}) is None
+    assert finished(text, code=0) is None
+    assert (rt.data_dir() / "x-proofs.json").exists()
+    assert tool("terminal", {"command": _cmd(text)})["action"] == "block"
+
+
+def test_a_person_turn_or_a_relay_turn_records_no_proof(monkeypatch):
+    monkeypatch.setenv("EMPORIA_X_LINK", "on")
+    text, _ = _post_with_claim(monkeypatch)
+    for kind in ("cli", "relay"):
+        start(kind)
+        assert finished(text) is None
+    assert not (rt.data_dir() / "x-proofs.json").exists()
 
 
 def test_a_changed_claim_may_be_posted_again_but_not_the_same_one(monkeypatch):
@@ -175,7 +208,8 @@ def test_a_changed_claim_may_be_posted_again_but_not_the_same_one(monkeypatch):
     first, _ = _post_with_claim(monkeypatch)
     start("rounds")
     assert tool("terminal", {"command": _cmd(first)}) is None
-    time.sleep(1.1)                                                   # a new claim (a key change would do this)
+    finished(first)
+    time.sleep(1.1)                                                  # a new claim (a key change would do this)
     second, _ = _post_with_claim(monkeypatch)
     assert second != first
     assert tool("terminal", {"command": _cmd(second)}) is None
@@ -273,6 +307,24 @@ def test_the_text_may_not_name_the_agents_own_label(monkeypatch):
     text, _ = _post_with_claim(monkeypatch, prefix=f"I am {OP_LABEL}")
     start("rounds")
     assert tool("terminal", {"command": _cmd(text)})["action"] == "block"
+
+
+def test_the_post_gets_the_same_leak_checks_as_other_outbound_text(monkeypatch, tmp_path):
+    monkeypatch.setenv("EMPORIA_X_LINK", "on")
+    keys = tmp_path / "agent-keys"
+    (keys / "commitments").mkdir(parents=True)
+    (keys / "commitments" / f"{AGENT}.game1.json").write_text(json.dumps({"salt": "s4ltvalue-0123456789"}))
+    monkeypatch.setenv("EMPORIA_KEYS_DIR", str(keys))
+    start("rounds")
+    for kind, prefix in (("salt", "my salt is s4ltvalue-0123456789"), ("home", f"home {rt._home()}"),
+                         ("keys", f"keys in {keys}"), ("hex key", "k " + "ab" * 32),
+                         ("credential", "token ghp_" + "A" * 36), ("jwt", "t eyJhbGciOi12345.eyJzdWIiOi12345.sig"),
+                         ("pem", "x -----BEGIN " + "PRIVATE KEY-----")):
+        text, _ = _post_with_claim(monkeypatch, prefix=prefix)
+        out = tool("terminal", {"command": _cmd(text)})
+        assert out and out["action"] == "block" and "holds this agent's own" in out["message"], kind
+    clean, _ = _post_with_claim(monkeypatch, prefix="gm, a small agent says hello")
+    assert tool("terminal", {"command": _cmd(clean)}) is None
 
 
 def test_a_post_with_an_apostrophe_has_no_command_form():

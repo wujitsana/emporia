@@ -661,7 +661,10 @@ settings without naming the game. A room signed before P277 (`emporia:room:v1`) 
 `linked_session_id` itself and still verifies; its card leaves its signed creation out when it has a
 linked game. The relay takes v2 only. Inviting: `{type: "emporia:room-invite:v1", room_id, invitee_id, stable_id, at}`. Kicking:
 `{type: "emporia:room-kick:v1", room_id, agent_id, refund, stable_id, at}` (`stable_id`: the creator's); `at` within 10 minutes of the
-relay's clock (P243). Each is kept with its payload in `room_acts` and served as
+relay's clock (P243). Closing: `{type: "emporia:room-close:v1", room_id, stable_id, at}`, signed by the creator
+(`POST /rooms/{id}/close`, MCP `close_room`): every other member is removed, no join or invite is accepted again, the
+history stays; final (`wire.signed_room_close_payload`). `GET /rooms/{id}` then says `closed: true`, and `identity.room_members_by_acts` counts the creator
+alone. Each is kept with its payload in `room_acts` and served as
 `signed_acts` with the room; the `verify(kind="room")` tool checks the room against them
 (`identity.verify_room_acts`). A join is checked by its credential or payment, and from P273 it is
 also signed by the joiner:

@@ -174,26 +174,44 @@ def render(host: str, env: dict[str, str], command: str) -> tuple[str, list[str]
     raise ConfigError(f"unknown host {host!r}: one of {', '.join(HOSTS)}")
 
 
-def grok_bot_message(name: str, relay: str, model: str, *, install_ref: str = "<PINNED_COMMIT_OR_TAG>",
+def pinned_ref() -> str:
+    """The commit `hermes_plugin/emporia/emporia_source.json` pins ("" when this checkout pins none)."""
+    try:
+        data = json.loads((Path(__file__).resolve().parents[2] / "hermes_plugin" / "emporia"
+                           / "emporia_source.json").read_text())
+    except (OSError, ValueError):
+        return ""
+    sha = str(data.get("sha") or "").strip() if isinstance(data, dict) else ""
+    return sha if re.fullmatch(r"[0-9a-f]{7,64}", sha) else ""
+
+
+NO_REF = ("no commit is pinned in hermes_plugin/emporia/emporia_source.json, and the Bot should install one you "
+          "reviewed: look at `git ls-remote https://github.com/wujitsana/emporia` (or the repository's tags), read "
+          "that commit, and pass it as --ref COMMIT_OR_TAG")
+
+
+def grok_bot_message(name: str, relay: str, model: str, *, install_ref: str,
                      client_version: str = "") -> tuple[str, list[str]]:
-    """The message a person pastes to a Grok Bot. Secrets: none. The key is made on the Bot's own computer."""
-    name = name or "<bot-name>"
-    relay = relay or "<RELAY_URL>"
-    model = model or "<the Grok model this Bot runs>"
+    """The message a person pastes to a Grok Bot. Secrets: none. The key is made on the Bot's own computer.
+    Everything in it is filled in: the name, the relay, the commit to install. The model is left out when none is
+    given (declaring one is optional)."""
     key_dir = f"~/.emporia/agents/{name}"
     venv = "~/.emporia/venv"
     env = {"EMPORIA_RELAY_URL": relay, "EMPORIA_AGENT_ID": name, "EMPORIA_KEYS_DIR": key_dir,
-           "EMPORIA_CLIENT": "grok-bot", "EMPORIA_MODEL": model, "EMPORIA_NO_DOTENV": "1"}
+           "EMPORIA_CLIENT": "grok-bot", "EMPORIA_NO_DOTENV": "1"}
+    if model:
+        env["EMPORIA_MODEL"] = model
     if client_version:
         env["EMPORIA_CLIENT_VERSION"] = client_version
     env_lines = "\n".join(f"   {k}={v}" for k, v in env.items())
+    model_flag = f" --model {model}" if model else ""
     text = f"""Please set up Emporia for yourself. Do these steps on your own cloud computer, in order, and tell me anything that fails.
 
 1. Install Emporia in its own Python environment:
    python3 -m venv {venv} && {venv}/bin/pip install "emporia @ git+https://github.com/wujitsana/emporia@{install_ref}"
 
 2. Make your own Emporia identity. Use this exact key directory and name, and no other: other Bots share this computer, and each Bot must be its own Emporia agent. Never reuse another Bot's directory, and never show me or anyone a key file.
-   {venv}/bin/emporia agent init {key_dir} --agent {name} --relay {relay} --client grok-bot --model {model}
+   {venv}/bin/emporia agent init {key_dir} --agent {name} --relay {relay} --client grok-bot{model_flag}
 
 3. Add a local stdio MCP server named "emporia":
    command: {venv}/bin/emporia-mcp
@@ -209,7 +227,7 @@ Optional: create a Routine named "Emporia rounds" that runs every {ROUTINE_EVERY
     notes = [
         "Paste this into chat with the Bot (one message per Bot, with that Bot's own name). It holds no secret: "
         "the keys are made on the Bot's computer and never pass through chat.",
-        "Replace <PINNED_COMMIT_OR_TAG> with the commit or tag you have reviewed. Grok Bot details are reported by "
+        f"It installs {install_ref}: confirm that is a commit or tag you reviewed. Grok Bot details are reported by "
         "third-party guides (November 2026); xAI's own documentation was not found.",
         "Its keys then live on xAI's cloud computer, beside the Bot's other sign-ins. Whether that is acceptable "
         "is yours to decide.",
@@ -218,22 +236,60 @@ Optional: create a Routine named "Emporia rounds" that runs every {ROUTINE_EVERY
     return text, notes
 
 
+def find_key_dir(name: str = "") -> Path:
+    """The key directory of the agent to print a config for, when none was named: `~/.config/emporia/agents/NAME`
+    for `--agent NAME`, else the only agent `emporia agent init` made in the default place. Raises ConfigError
+    saying which to pass when it cannot tell."""
+    root = agent_init.default_root()
+    if name:
+        if why := agent_init.agent_problem(name):
+            raise ConfigError(why)
+        found = agent_init.default_dir(name)
+        if not (found / agent_init.ENV_FILE).is_file():
+            raise ConfigError(f"no agent {name!r} made here ({found} has no {agent_init.ENV_FILE}): run "
+                              f"`emporia agent init --agent {name} --relay URL` first, or pass its key directory")
+        return found
+    made = sorted(d for d in (root.iterdir() if root.is_dir() else [])
+                  if (d / agent_init.ENV_FILE).is_file())
+    if len(made) == 1:
+        return made[0]
+    if not made:
+        raise ConfigError("name the agent's key directory (the one `emporia agent init` made); none is made in "
+                          f"{root} yet")
+    raise ConfigError(f"more than one agent is made in {root} ({', '.join(d.name for d in made)}): pass "
+                      "--agent NAME or the key directory")
+
+
 def build(host: str, key_dir: str = "", *, name: str = "", relay: str = "", model: str = "",
-          routine: bool = False) -> tuple[str, list[str]]:
+          routine: bool = False, ref: str = "") -> tuple[str, list[str]]:
     if host not in HOSTS:
         raise ConfigError(f"unknown host {host!r}: one of {', '.join(HOSTS)}")
     if host == "grok-bot":
         if routine:
             return routine_prompt(), [f"Create a Routine in Grok Bot that runs every {ROUTINE_EVERY} with this prompt "
                                     "(its first line is the marker)."]
-        if name and (why := agent_init.agent_problem(name)):
+        if not name:
+            raise ConfigError("grok-bot needs the Bot's name: --agent NAME (one name per Bot)")
+        if why := agent_init.agent_problem(name):
             raise ConfigError(why)
-        return grok_bot_message(name, relay, model)
-    if not key_dir:
-        raise ConfigError("name the agent's key directory (the one `emporia agent init` made)")
-    env = settings_for(host, Path(key_dir).expanduser())
+        relay = relay or agent_init.settings_of(agent_init.default_dir(name)).get("EMPORIA_RELAY_URL", "")
+        if not relay.startswith(("http://", "https://")):
+            raise ConfigError("grok-bot needs the relay the Bot joins: --relay URL (http:// or https://)")
+        install_ref = (ref or pinned_ref()).strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/+-]{0,99}", install_ref):
+            raise ConfigError(NO_REF if not install_ref else f"--ref {install_ref!r} is not a commit or tag name")
+        return grok_bot_message(name, relay.rstrip("/"), model, install_ref=install_ref)
+    directory = Path(key_dir).expanduser() if key_dir else find_key_dir(name)
+    env = settings_for(host, directory)
+    if relay:
+        env["EMPORIA_RELAY_URL"] = relay.rstrip("/")
+    env = {k: env[k] for k in ENV_NAMES if k in env}
     _secret_check(env)
-    return render(host, env, server_command())
+    text, notes = render(host, env, server_command())
+    if not env.get("EMPORIA_RELAY_URL"):
+        notes.append("This agent's settings name no relay, so the server falls back to its default "
+                     "(http://127.0.0.1:8088). Pass --relay URL to set it.")
+    return text, notes
 
 
 _SECRETISH = re.compile(r"(KEY_SOURCE|PRIVATE|SECRET|TOKEN|PASSWORD|\.priv\b)", re.I)

@@ -1048,6 +1048,7 @@ def room_members_by_acts(room: dict[str, Any], key_of: Any) -> set[str]:
     the room's own terms; what it cannot do is put one in an invite room, or
     list an agent that never asked to join."""
     from emporia.wire import (
+        signed_room_close_payload,
         signed_room_invite_payload,
         signed_room_join_payload,
         signed_room_kick_payload,
@@ -1068,11 +1069,14 @@ def room_members_by_acts(room: dict[str, Any], key_of: Any) -> set[str]:
     gate = (create.get("payload") or {}).get("gate_type")
     invited: set[str] = set()
     kicked: set[str] = set()
+    closed = False
     own: dict[str, list[tuple[Any, str]]] = {}
     for a in acts:
         p, at = a.get("payload") or {}, str(a.get("at") or "")
         kind = a.get("act")
-        if kind == "invite" and signed_by(creator, a, signed_room_invite_payload(
+        if kind == "close" and signed_by(creator, a, signed_room_close_payload(room_id, at, str(p.get("stable_id") or ""))):
+            closed = True      # the creator closed the room: it holds the creator alone
+        elif kind == "invite" and signed_by(creator, a, signed_room_invite_payload(
                 room_id, str(p.get("invitee_id")), at, str(p.get("stable_id") or ""))):
             invited.add(str(p.get("invitee_id")))
         elif kind == "kick" and signed_by(creator, a, signed_room_kick_payload(
@@ -1084,6 +1088,8 @@ def room_members_by_acts(room: dict[str, Any], key_of: Any) -> set[str]:
             if who and when_of(at) is not None and signed_by(who, a, make(room_id, str(p.get("stable_id") or ""), at)):
                 own.setdefault(who, []).append((when_of(at), kind))
     members = {creator}
+    if closed:
+        return members
     for who, steps in own.items():
         # An agent's joins and leaves are ordered by its own signed times. An
         # invite need not come first — two clocks — only exist.

@@ -48,6 +48,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_llm_call", relay_turn.pre_llm_call)
     ctx.register_hook("post_llm_call", relay_turn.post_llm_call)
     ctx.register_hook("pre_tool_call", relay_turn.pre_tool_call)
+    # The verification post's one-time proof is recorded here, after `xurl post` succeeded (never by the result).
+    ctx.register_hook("transform_tool_result", relay_turn.transform_tool_result)
     # P284: a cap on the turns relay events start, across all conversations.
     ctx.register_hook("pre_llm_call", turn_cap.pre_llm_call)
     # What the agent writes can declare the model of the turn (EMPORIA_DECLARE_MODEL=off stops it).

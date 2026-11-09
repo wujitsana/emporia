@@ -24,6 +24,7 @@ from emporia import rooms as rooms_db
 from emporia.identity import federation_signable_bytes, get_relay_public_key_hex, sign_raw_relay
 from emporia.wire import (
     ERR_DUPLICATE_NONCE,
+    signed_room_close_payload,
     signed_room_invite_payload,
     signed_room_join_payload,
     signed_room_kick_payload,
@@ -40,13 +41,23 @@ def _require_creator_signed(creator: str, signed: dict, at: str, signature: str)
     _require_signed_by(creator, signed, at, signature, "the room creator's")
 
 
-def _last_own_act(room_id: str, agent_id: str) -> tuple[str, str]:
-    """P273: ("join" or "leave", its signed time) — the last an agent signed in
-    this room, or ("", "")."""
+def is_closed(room_id: str) -> bool:
+    """A room its creator closed (a signed `close` act): nobody joins or is invited again."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT act, at FROM room_acts WHERE room_id = ? AND by_agent = ? "
-                           "AND act IN ('join','leave') ORDER BY rowid DESC LIMIT 1", (room_id, agent_id)).fetchone()
-    return (row["act"], row["at"]) if row else ("", "")
+        return conn.execute("SELECT 1 FROM room_acts WHERE room_id = ? AND act = 'close' LIMIT 1",
+                            (room_id,)).fetchone() is not None
+
+
+def _last_own_act(room_id: str, agent_id: str) -> tuple[str, str, bool]:
+    """P273: ("join" or "leave", its signed time) — the last an agent signed in
+    this room, or ("", "") — and whether the room's creator closed it (one read for both)."""
+    with rs.DB_LOCK, rs.get_db() as conn:
+        rows = conn.execute("SELECT act, at, by_agent FROM room_acts WHERE room_id = ? AND "
+                            "((by_agent = ? AND act IN ('join','leave')) OR act = 'close') ORDER BY rowid DESC",
+                            (room_id, agent_id)).fetchall()
+    own = next((r for r in rows if r["act"] in ("join", "leave")), None)
+    return (own["act"], own["at"], any(r["act"] == "close" for r in rows)) if own else (
+        "", "", any(r["act"] == "close" for r in rows))
 
 
 def _when(at: str) -> datetime:
@@ -236,8 +247,9 @@ async def get_room_endpoint(room_id: str, request: Request):
             raise HTTPException(403, "Private room — not a member")
         return {**_card(room), "signed_acts": [a for a in _acts(room_id) if a["act"] == "create"]}
     # P243: the creator's signed acts, for a member to check the room against.
-    return {**room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), "signed_acts": _acts(room_id),
-            "host": rs._own_host()}
+    acts = _acts(room_id)
+    return {**room.to_dict(viewer_id=viewer_id, db_path=rs.DATABASE_PATH), "signed_acts": acts,
+            "closed": any(a["act"] == "close" for a in acts), "host": rs._own_host()}
 
 
 @router.post("/rooms/{room_id}/join")
@@ -258,7 +270,9 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
     identity_verified = True
     # A join signed before the agent's last act here is an old one replayed —
     # after a leave it would put back someone who left.
-    last_act, last_at = _last_own_act(room_id, req.agent_id)
+    last_act, last_at, closed = _last_own_act(room_id, req.agent_id)
+    if closed:
+        raise HTTPException(403, "This room is closed")
     if last_at and _when(req.at) <= _when(last_at):
         raise HTTPException(409, "this join was signed before your last join or leave here — sign a new one")
     # N12-5 (R5): identity_verified is False on the MPP-payment branch, where agent_id is
@@ -413,7 +427,11 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
         "room_id": room_id,
         "agent_id": req.agent_id,
     })
-    return {"status": "joined", "room_id": room_id}
+    paid_on_chain = confirmed_pi is not None and confirmed_pi.rail in ("x402", "tempo")
+    return {"status": "joined", "room_id": room_id,
+            # a stablecoin entry's settlement transaction (an x402 one is also in PAYMENT-RESPONSE)
+            **({"settlement": {"rail": confirmed_pi.rail, "transaction": confirmed_pi.reference}}
+               if paid_on_chain else {})}
 @router.post("/rooms/{room_id}/invite")
 async def invite_to_room(room_id: str, req: rs.InviteToRoomRequest, request: Request):
     room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
@@ -421,6 +439,8 @@ async def invite_to_room(room_id: str, req: rs.InviteToRoomRequest, request: Req
         raise HTTPException(404, "Room not found")
     rs._require_caller_is(room.creator_id, request)
     rs._enforce_agent_rate_limit(room.creator_id)
+    if is_closed(room_id):
+        raise HTTPException(403, "This room is closed")
     if room.gate_type == "open":
         raise HTTPException(400, "Open rooms don't use invites")
     rs._require_registered(req.invitee_id)
@@ -914,3 +934,29 @@ async def get_room_chain(room_id: str, request: Request):
         "origin_public_key_hex": get_relay_public_key_hex(),
         "signature": signature,
     }
+
+
+@router.post("/rooms/{room_id}/close")
+async def close_room(room_id: str, req: SignedActRequest, request: Request):
+    """The creator closes its room, by its own signed act (`wire.signed_room_close_payload`): every other member is
+    removed, nobody joins or is invited again, and the history stays readable. Final: there is no reopening. No
+    refund moves; a paid member's access ends with the room."""
+    room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
+    if not room:
+        raise HTTPException(404, "Room not found")
+    rs._require_caller_is(room.creator_id, request)
+    rs._enforce_agent_rate_limit(room.creator_id)
+    if is_closed(room_id):
+        raise HTTPException(409, "This room is already closed")
+    signed = signed_room_close_payload(room_id, req.at, rs.AGENT_REGISTRY.get_stable_id(room.creator_id) or "")
+    _require_creator_signed(room.creator_id, signed, req.at, req.signature)
+    removed = [m for m in room.members if m != room.creator_id]
+    for member in removed:
+        rooms_db.remove_member(room_id, member, db_path=rs.DATABASE_PATH)
+        entitlements.revoke("room", room_id, member, reason="closed", db_path=rs.DATABASE_PATH)
+        rooms_db.remove_invite(room_id, member, db_path=rs.DATABASE_PATH)
+    _record_act(room_id, "close", None, room.creator_id, req.at, signed, req.signature)
+    for member in removed:
+        await rs.broadcast_to_agent(member, {"type": "room_closed", "room_id": room_id, "room_name": room.name})
+    await rs.broadcast_to_session(f"room:{room_id}", {"type": "room_closed", "room_id": room_id})
+    return {"status": "closed", "room_id": room_id, "removed": removed}

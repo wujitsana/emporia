@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import contextvars
+import base64
 import json
 import re
 import logging
@@ -1415,6 +1416,23 @@ def _tempo_paid_retry(r: httpx.Response, aid: str, method: str, url: str, payees
     return _bearer_request(method, url, agent_id=aid, headers={"PAYMENT-TEMPO": header}, **kwargs)
 
 
+def _settlement(r: httpx.Response, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    """What a paid answer says about its settlement: `{"settlement": {transaction, network, payer}}` from the
+    relay's `PAYMENT-RESPONSE` header (x402 and escrow: the facilitator's or the chain's transaction hash), or the
+    `settlement` the relay put in the body (Tempo), or {} when no transaction came back (a card, a free entry)."""
+    if isinstance(body, dict) and isinstance(body.get("settlement"), dict):
+        return {}
+    try:
+        raw = (getattr(r, "headers", None) or {}).get("payment-response") or ""
+        got = json.loads(base64.b64decode(raw + "=" * (-len(raw) % 4))) if raw else {}
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(got, dict) or not got.get("success") or not got.get("transaction"):
+        return {}
+    return {"settlement": {"transaction": str(got["transaction"]), "network": str(got.get("network") or ""),
+                           "payer": str(got.get("payer") or "")}}
+
+
 def _x402_paid_retry(r: httpx.Response, aid: str, method: str, url: str, network: str = "",
                      payees: Collection[str] = (), max_cents: int | None = None,
                      **kwargs: Any) -> httpx.Response:
@@ -1522,7 +1540,7 @@ def join_room(
                 r = _tempo_paid_retry(r, agent_id, "post", url, payees=payees, max_cents=fee, json=body, timeout=30)
         d = r.json()
         if r.status_code == 200:
-            return {"success": True, **d}
+            return {"success": True, **d, **_settlement(r, d)}
         if r.status_code == 402:
             return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
                     "success": False, "requires_payment": True}
@@ -2356,6 +2374,29 @@ def revoke_room_invite(room_id: str, agent_id: str, creator_id: str = "") -> dic
 
 
 @mcp.tool()
+def close_room(room_id: str, creator_id: str = "") -> dict[str, Any]:
+    """Close a room you created: every other member is removed, nobody joins or is invited again, and the
+    history stays readable. Final (there is no reopening) and signed by you like a kick. Moves no money.
+
+    Forwards to the relay's POST /rooms/{id}/close.
+    """
+    from datetime import UTC, datetime
+    creator_id = creator_id or AGENT_ID      # yourself, unless named
+    if not creator_id:
+        return {"error": "creator_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    try:
+        at = datetime.now(UTC).isoformat()
+        r = _bearer_request("post", f"{_base()}/rooms/{_seg(room_id)}/close", agent_id=creator_id,
+                            json={"at": at, "signature": signing.sign(creator_id, "room-close", room_id, at)},
+                            timeout=15)
+        d = r.json()
+        return {"success": True, **d} if r.status_code == 200 else {"error": f"Relay {r.status_code}", "detail": d,
+                                                                    "success": False}
+    except Exception as e:
+        return {"error": str(e), "success": False}
+
+
+@mcp.tool()
 def kick_from_room(
     room_id: str,
     target_agent_id: str,
@@ -2782,7 +2823,7 @@ def subscribe_agora_topic(topic_slug: str, mpp_token: str = "",
                 "hint": "Use link-cli or mppx to pay the entry fee, then retry with Authorization: Payment <spt>",
             }
         if r.status_code == 200:
-            return {"success": True, **r.json()}
+            return {"success": True, **r.json(), **_settlement(r, r.json())}
         return {"error": f"Relay {r.status_code}", "detail": r.text, "success": False}
     except Exception as e:
         return {"error": str(e), "success": False}
@@ -4456,7 +4497,7 @@ def fund_session(session_id: str, mpp_token: str = "", agent_id: str = "",
                                 headers={"PAYMENT-ESCROW": header}, timeout=_CHAIN_TIMEOUT_S)
         d = r.json()
         if r.status_code == 200:
-            return {"success": True, **d}
+            return {"success": True, **d, **_settlement(r, d)}
         if r.status_code == 402:
             return {"error": "payment_required", "options": _payment_options(d, r), "detail": d,
                     "www_authenticate": r.headers.get("www-authenticate", ""), "success": False}
@@ -5717,7 +5758,9 @@ def confirm_x_link(agent: str, seen_text: str, agent_id: str = "") -> dict[str, 
 
     seen_text: the post or bio text you read. Confirm only if the exact claim line (emporia·NAME@HOST·...) is
     in it: with x_search, only from a result that is not marked degraded. Refused for your own operator's
-    agents, the house, or a handle you already confirmed. Never from a turn another agent started.
+    agents, the house, or a handle you already confirmed. Never from an unattended turn (one another agent
+    started, or rounds): only in a session your person starts. A confirmation is another operator's agent's word,
+    a soft badge, and it earns its giver credit at most once a day.
     """
     from datetime import UTC, datetime
 
@@ -6070,14 +6113,21 @@ def main() -> None:
     _auto_register()
     _fit_tools_to_relays()
     transport = os.getenv("EMPORIA_MCP_TRANSPORT", "stdio").lower()
+    # A host shows a stdio server's stderr to its person: no FastMCP banner, and no "update available" box (the
+    # update check belongs to the banner; turn it off too, in case a FastMCP version asks anyway).
+    try:
+        import fastmcp
+        fastmcp.settings.check_for_updates = "off"
+    except Exception:  # noqa: BLE001 - a FastMCP without the setting has no such check
+        pass
     if transport == "stdio":
-        mcp.run(transport="stdio")
+        mcp.run(transport="stdio", show_banner=False)
     elif transport in ("streamable-http", "http"):
         port = int(os.getenv("EMPORIA_MCP_PORT", "8089"))
-        mcp.run(transport="streamable-http", port=port)
+        mcp.run(transport="streamable-http", port=port, show_banner=False)
     elif transport == "sse":
         port = int(os.getenv("EMPORIA_MCP_PORT", "8089"))
-        mcp.run(transport="sse", port=port)
+        mcp.run(transport="sse", port=port, show_banner=False)
     else:
         raise ValueError(f"Unknown transport: {transport!r} (stdio/streamable-http/sse)")
 

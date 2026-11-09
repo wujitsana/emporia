@@ -4731,6 +4731,10 @@ def doctor_relay(rep: Report) -> dict | None:
     from emporia.networks import label
     if h.get("x402_enabled"):
         rep.ok(f"USDC (x402) on {', '.join(label(n) for n in h.get('x402_networks') or [])}")
+        from emporia import facilitator_check
+        for level, msg, fix in facilitator_check.check(os.getenv("EMPORIA_X402_FACILITATOR_URL", "").strip(),
+                                                       list(h.get("x402_networks") or []), dict(os.environ)):
+            (rep.warn(msg, fix) if level == "warn" else rep.ok(msg))
     else:
         rep.warn("x402 off", "emporia setup relay --preset base-sepolia")
     # The relay's own card says what it runs; this process's environment only matters for the
@@ -5401,6 +5405,9 @@ def doctor_dashboard(rep: Report, agents: list[Path]) -> None:
     if agents and not missing:
         names = ", ".join(hermes_layout.name_of(p) for p in agents)
         rep.ok(f"comes with each agent's plugin — open it with `hermes -p NAME dashboard` ({names})")
+    if not agents:    # never an empty section: say why there is nothing to check (no profile, or none reachable)
+        rep.warn("no agent profile was found here, so there is no tab to check (it comes with an agent's plugin)",
+                 "emporia setup agent NAME")
 
 
 def _agent_relay(profile: Path, entry: dict) -> str:
@@ -5595,17 +5602,33 @@ def cmd_log_verify(args: argparse.Namespace) -> int:
     """P281: `emporia log verify NAME [--compare-with URL ...]` — check the relay
     agent NAME uses: its log only grew since NAME last checked, the key changes
     NAME followed are in it, and other relays were shown the same log. Run as
-    the agent, with its own pins; exits 1 on anything caught."""
+    the agent, with its own pins; exits 1 on anything caught. `--dir KEY_DIR` is the same for an agent that is not
+    Hermes's (made with `emporia agent init`): its key directory holds its pins and the states it kept."""
     import json as _json
-    agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
-    if args.name not in agents:
-        print(f"log verify: no agent {args.name!r} ({', '.join(agents) or 'none set up'})")
-        return 1
     others = [u.rstrip("/") for u in (args.compare_with or [])]
     code = ("import json, os\nfrom emporia import logcheck\n"
             f"print(json.dumps(logcheck.verify_relay(os.environ['EMPORIA_RELAY_URL'].rstrip('/'), "
             f"compare_with={others!r} or None)))")
-    done = _as_agent(agents[args.name], code)
+    if getattr(args, "dir", ""):
+        from emporia import host_configs
+        try:
+            env = host_configs.settings_for("generic", Path(args.dir).expanduser())
+        except host_configs.ConfigError as e:
+            print(f"log verify: {e}")
+            return 1
+        if not env.get("EMPORIA_RELAY_URL"):
+            print(f"log verify: {args.dir} names no relay (EMPORIA_RELAY_URL in its emporia.env)")
+            return 1
+        args.name = env.get("EMPORIA_AGENT_ID", args.dir)
+        done = subprocess.run([sys.executable, "-c", code], env={"PATH": os.defpath, "HOME": str(Path.home()), **env},
+                              capture_output=True, text=True, timeout=120)
+    else:
+        agents = {p.name: p for p, _ in _agent_profiles(profiles_root())}
+        if args.name not in agents:
+            print(f"log verify: no agent {args.name!r} ({', '.join(agents) or 'none set up'}); "
+                  "an agent that is not Hermes's: --dir KEY_DIR")
+            return 1
+        done = _as_agent(agents[args.name], code)
     try:
         out = _json.loads(done.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
@@ -8144,12 +8167,10 @@ def setup_overview() -> None:
               if (p / "plugin-data" / "emporia" / "emporia.json").exists()]
     line("✓" if tabbed else "·", "Emporia tab", f"with {', '.join(tabbed)}: hermes -p NAME dashboard" if tabbed
          else "comes with an agent's plugin", "" if tabbed else "emporia setup agent NAME")
+    # The signer (`emporia signer`), key recovery (`emporia agent recover`) and the AWS KMS and hosted-wallet back
+    # ends (`emporia signer backend`, tested against fakes only) exist; only this is still ahead.
     print("\nNot available yet (see ROADMAP.md)")
-    for name, what in (("AWS KMS signer", "wallet and operator keys the machine never holds"),
-                       ("Hosted wallets", "Privy, MetaMask Agent Wallet, Coinbase — limits on their servers"),
-                       ("Signing service", "a separate process holding keys and limits, out of the agent's reach"),
-                       ("On-chain limits", "spend permissions a stolen key cannot exceed"),
-                       ("Key recovery", "replace a compromised identity key and keep its history")):
+    for name, what in (("On-chain limits", "spend permissions a stolen key cannot exceed"),):
         line("·", name, what)
     print("\nThe full guide: docs/agent-security-setup.md · check everything: emporia doctor")
 
@@ -8235,7 +8256,9 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("name", nargs="?", default=None, help="leave: the agent; about: the bio, in quotes (\"\" clears it)")
     ag2.add_argument("--home", action="store_true", help="leave: even its home (it is then on no relay)")
     ag2.add_argument("--yes", action="store_true", help="rotate-key, rotate-encryption-key, recover: do not ask first")
-    ag2.add_argument("--agent", default="", help="recovery-key, recover: the agent (default: this profile's); init, mcp-config grok-bot: its name")
+    ag2.add_argument("--agent", default="", help="recovery-key, recover: the agent (default: this profile's); init: its name; "
+                                                 "mcp-config: the agent (its key directory defaults from it); "
+                                                 "`agent init --help` and `agent mcp-config --help` list their own options")
     ag2.add_argument("--out", default="", help="recovery-key: the file to write the recovery key to (0600)")
     ag2.add_argument("--recovery-key-file", default="", help="recover: a file holding the recovery key")
     ag2.add_argument("--recovery-key-source", default="",
@@ -8260,7 +8283,7 @@ def build_parser() -> argparse.ArgumentParser:
     ag2.add_argument("--compromised-since", default="",
                      help="recover: when the old key stopped being only yours (ISO time; default now)")
     from emporia import agent_init as _agent_init     # init / mcp-config: an agent that Hermes does not run
-    _agent_init.add_arguments(ag2)
+    _agent_init.add_arguments(ag2, skip=("--agent",))
     from emporia import agent_card_cli as _card
     ag2.set_defaults(func=lambda a: _card.about(a.url_or_name, a.name) if a.action == "about" else
                      _card.x_claim(a.url_or_name, a.handle, a.style, a.text, a.bio) if a.action == "x-claim" else
@@ -8440,7 +8463,9 @@ def build_parser() -> argparse.ArgumentParser:
     tls = tl.add_subparsers(dest="what", required=True)
     tv = tls.add_parser("verify", help="the relay's log only grew, holds the key changes followed, "
                                        "and matches what other relays were shown")
-    tv.add_argument("name", help="the agent whose relay, pins and kept states are used")
+    tv.add_argument("name", nargs="?", default="", help="the agent whose relay, pins and kept states are used")
+    tv.add_argument("--dir", default="", metavar="KEY_DIR",
+                    help="instead of NAME: an agent that is not Hermes's, by the key directory `emporia agent init` made")
     tv.add_argument("--compare-with", action="append", metavar="URL",
                     help="another relay to ask what it was shown (default: the relays it links to)")
     tv.set_defaults(func=cmd_log_verify)
@@ -8573,6 +8598,10 @@ def main(argv: list[str] | None = None) -> int:
     # The operator's settings (relay URL, escrow, …) before anything reads them.
     from emporia.config import load_profile_dotenv
     load_profile_dotenv()
+    from emporia import agent_init
+    if text := agent_init.help_for(list(sys.argv[1:] if argv is None else argv)):
+        print(text)                    # `agent init --help`: init's own options, not the whole `agent` command's
+        return 0
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)

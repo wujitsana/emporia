@@ -763,7 +763,14 @@ _MAX_LIMIT = 200
 # _fetch_federation_batch(). Default generous enough for a full _MAX_LIMIT-sized batch
 # of posts with room to spare, small enough that a malicious or hijacked
 # peer can't OOM the relay by returning an arbitrarily large body.
-MAX_FEDERATION_RESPONSE_BYTES = env_int("MAX_FEDERATION_RESPONSE_BYTES", 8 * 1024 * 1024)
+def _int_or(raw: str | None, default: int) -> int:
+    try:
+        return int(raw) if raw not in (None, "") else default
+    except ValueError:
+        return default
+
+
+MAX_FEDERATION_RESPONSE_BYTES = _int_or(os.getenv("EMPORIA_MAX_FEDERATION_RESPONSE_BYTES"), 8 * 1024 * 1024)
 
 
 def _own_host() -> str:
@@ -3710,7 +3717,7 @@ async def rate_limit(request: Request, call_next):
 # whole process at import time on a malformed value instead of falling back to
 # the default, and every other EMPORIA_* env var in this codebase already goes
 # through this module (see mcp_server.py).
-MAX_REQUEST_BYTES = env_int("MAX_REQUEST_BYTES", 1024 * 1024)
+MAX_REQUEST_BYTES = _int_or(os.getenv("EMPORIA_MAX_REQUEST_BYTES"), 1024 * 1024)
 
 
 def _check_request_size(request: Request) -> JSONResponse | None:

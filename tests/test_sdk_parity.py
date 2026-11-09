@@ -40,7 +40,7 @@ PARITY: dict[str, str | tuple[str, ...] | None] = {
     "create_room": "create_room", "list_rooms": "get_rooms", "join_room": "join_room", "leave_room": "leave_room",
     "send_room_message": "send_room_message", "get_room_messages": "get_room_messages",
     "invite_to_room": "invite_to_room", "revoke_room_invite": "revoke_room_invite",
-    "kick_from_room": "kick_from_room",
+    "kick_from_room": "kick_from_room", "close_room": "close_room",
     # DMs and inbox
     "send_dm": "send_dm", "get_dm_messages": "get_dm_messages", "list_dm_threads": "list_dm_threads",
     "get_inbox": "get_inbox", "mark_inbox_read": "mark_inbox_read",

@@ -44,7 +44,8 @@ hand in a throwaway Hermes home:
 No model or LLM is called, no gateway is started. Each profile's name carries a tag of this run:
 inside a container whose PID 1 is s6, `hermes profile create` registers a (stopped) gateway service
 for it in the container's supervision tree, and Hermes has no opt-out; the teardown removes those
-services through `hermes profile delete`, for this run's profiles only. Everything is written under one temporary
+services (and their `logs/gateways/<profile>` folders) through `hermes profile delete`, for this run's profiles only
+(`cleanup_gateways`). Each step prints its name when it starts and its time when it ends. Everything is written under one temporary
 folder this script makes (base: --workdir, default the system temp), and torn down at the end,
 on an error and on Ctrl-C: only the processes it started (their recorded PIDs) are stopped.
 
@@ -89,7 +90,92 @@ SETUP_TIMEOUT = 900
 # for the profile in the container-wide supervision tree, whatever HERMES_HOME says; Hermes has no
 # opt-out. So every profile name carries this run's tag (never a name someone else has), and the
 # teardown removes, through `hermes profile delete`, the services of the profiles this run made.
-S6_SCANDIR = Path("/run/service")
+#
+# Where Hermes puts them (hermes_cli/service_manager.py): profile gateways are `gateway-<profile>` directories in
+# the dynamic scandir (`S6_DYNAMIC_SCANDIR`, watched by a nested s6-svscan); the root scandir holds only the
+# image's static services. Each service's log goes to `$HERMES_HOME/logs/gateways/<profile>`, where HERMES_HOME is
+# the *container's* (the supervised log script reads it from the container environment, not from this run's
+# temporary HERMES_HOME), so this script reads it from its own environment before it changes anything.
+#
+# The dynamic scandir is read from the installed Hermes itself, the way Hermes names it: `hermes --version` says where
+# it is installed, and `hermes_cli/service_manager.py` there defines `S6_DYNAMIC_SCANDIR` (HERMES_S6_SCANDIR overrides
+# it). Only when that cannot be read does this fall back to the value Hermes 0.23 has.
+_SCANDIR_FALLBACK = "/run/hermes-service"
+_scandirs: tuple[Path, ...] | None = None
+
+
+def service_roots(hermes: str | None = None) -> tuple[Path, ...]:
+    """The folders profile gateway services are registered in (Hermes's dynamic scandir), found as described."""
+    global _scandirs
+    if _scandirs is not None and hermes is None:
+        return _scandirs
+    import re
+    import subprocess as sp
+    found = os.environ.get("HERMES_S6_SCANDIR", "").strip()
+    exe = hermes if hermes is not None else shutil.which("hermes")
+    if not found and exe:
+        try:
+            out = sp.run([exe, "--version"], capture_output=True, text=True, timeout=30).stdout
+            m = re.search(r"Install directory:\s*(\S+)", out)
+            src = Path(m.group(1)) / "hermes_cli" / "service_manager.py" if m else None
+            d = re.search(r'S6_DYNAMIC_SCANDIR\s*=\s*Path\("([^"]+)"\)', src.read_text()) if src else None
+            found = d.group(1) if d else ""
+        except (OSError, sp.SubprocessError):
+            found = ""
+    roots = (Path(found or _SCANDIR_FALLBACK),)
+    if hermes is None:
+        _scandirs = roots
+    return roots
+S6_SERVICE_PREFIX = "gateway-"
+HOST_HERMES_HOME = os.environ.get("HERMES_HOME", "")
+_OWN_NAME = r"e2e-[a-z]+-{tag}"
+
+
+def host_log_root(home: str | None = None) -> Path | None:
+    """The folder Hermes's gateway log directories are made in (`<HERMES_HOME>/logs/gateways`), or None when
+    this process has no HERMES_HOME to say (nothing to clean then)."""
+    home = HOST_HERMES_HOME if home is None else home
+    return Path(home) / "logs" / "gateways" if home else None
+
+
+def cleanup_gateways(names: list[str], tag: str, *, scandirs=None, log_root: Path | None = None,
+                     delete=None, services_before: frozenset[str] | set[str] = frozenset()) -> dict[str, list[str]]:
+    """Remove this run's own gateway services and log folders, and nothing else.
+
+    `names`: the profiles this run created; only a name of the form `e2e-<word>-<tag>` (this run's tag) is
+    touched, so another run's, or a person's, never is. A service that was already registered before the run began
+    is left alone. `delete(name)` removes a service the way Hermes does (`hermes profile delete NAME --yes`); a
+    service that is still there after it is reported, never deleted by hand. A log folder is removed only once its
+    service is gone, only directly under `log_root` (never through a link). Returns {"services_left": [...],
+    "logs_removed": [...], "logs_left": [...]}."""
+    import re
+    own = re.compile(_OWN_NAME.format(tag=re.escape(tag)))
+    mine = [n for n in dict.fromkeys(names) if own.fullmatch(n) and f"{S6_SERVICE_PREFIX}{n}" not in services_before]
+
+    scandirs = service_roots() if scandirs is None else scandirs
+
+    def present(name: str) -> bool:
+        return any((d / f"{S6_SERVICE_PREFIX}{name}").exists() for d in scandirs)
+
+    for name in mine:
+        if present(name) and delete is not None:
+            delete(name)
+    left = [f"{S6_SERVICE_PREFIX}{n}" for n in mine if present(n)]
+    removed: list[str] = []
+    logs_left: list[str] = []
+    if log_root is not None:
+        for name in mine:
+            if present(name):
+                continue
+            folder = log_root / name
+            if folder.is_symlink() or not folder.is_dir():
+                continue
+            try:
+                shutil.rmtree(folder)
+                removed.append(str(folder))
+            except OSError:
+                logs_left.append(str(folder))
+    return {"services_left": left, "logs_removed": removed, "logs_left": logs_left}
 
 # Runs with Hermes's interpreter, HERMES_HOME the agent's profile: builds the agent's MCP server
 # environment with Hermes's own functions (its `${NAME}` references filled from the profile's
@@ -155,8 +241,8 @@ class Run:
         for d in (self.hh, self.home, self.relay_dir):
             d.mkdir()
         self.log = self.log_path.open("a", encoding="utf-8")
-        tag = secrets.token_hex(2)
-        self.judge = f"e2e-judge-{tag}"
+        tag = self.tag = secrets.token_hex(2)
+        self.judge =f"e2e-judge-{tag}"
         self.player, self.merchant, self.house_agent = (f"e2e-player-{tag}", f"e2e-merchant-{tag}",
                                                         f"e2e-house-{tag}")
         self.signed = f"e2e-signed-{tag}"        # an agent whose keys its signer made and holds
@@ -189,6 +275,7 @@ class Run:
 
     def step(self, name: str, fn, *args) -> Any:
         self.note(f"\n=== {name}")
+        print(f"… {name}", flush=True)          # what is running now (the ✓/✗ line below says how long it took)
         t0 = time.monotonic()
         try:
             value = fn(*args)
@@ -1338,25 +1425,34 @@ class Run:
 
     @staticmethod
     def _services() -> set[str]:
+        found: set[str] = set()
+        for scandir in service_roots():
+            try:
+                found |= {p.name for p in scandir.iterdir() if p.name.startswith(S6_SERVICE_PREFIX)}
+            except OSError:
+                continue
+        return found
+
+    def _own_names(self) -> list[str]:
+        return [self.judge, self.player, self.merchant, self.house_agent, self.signed, self.beta, self.newcomer,
+                self.sdk]
+
+    def _delete_profile(self, name: str) -> None:
+        """`hermes profile delete NAME --yes` with the temp homes: how Hermes removes a profile's gateway service."""
+        if not self.hermes:
+            return
         try:
-            return {p.name for p in S6_SCANDIR.iterdir() if p.name.startswith("gateway-")}
-        except OSError:
-            return set()
+            self.run([self.hermes, "profile", "delete", name, "--yes"], timeout=120, ok_codes=None)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            self.note(f"profile delete {name}: {exc}")
 
     def _remove_own_services(self) -> list[str]:
-        """The s6 gateway services `hermes profile create` registered for this run's profiles, removed
-        the way Hermes removes them: `hermes profile delete NAME --yes`, here, with the temp homes.
-        Only names this run made, and only services that were not there when it started."""
-        mine = [n for n in (self.judge, self.player, self.merchant, self.house_agent, self.beta, self.newcomer)
-                if f"gateway-{n}" not in self.services_before]
-        for name in mine:
-            if f"gateway-{name}" in self._services() and self.hermes:
-                try:
-                    self.run([self.hermes, "profile", "delete", name, "--yes"], timeout=120, ok_codes=None)
-                except (OSError, subprocess.TimeoutExpired) as exc:
-                    self.note(f"profile delete {name}: {exc}")
-        now = self._services()
-        return [f"gateway-{n}" for n in mine if f"gateway-{n}" in now]
+        """This run's gateway services (registered by `hermes profile create`, which has no opt-out) and their log
+        folders, removed: see `cleanup_gateways`. Returns the services still there."""
+        res = cleanup_gateways(self._own_names(), self.tag, log_root=host_log_root(), delete=self._delete_profile,
+                               services_before=self.services_before)
+        self.note(f"log folders removed: {res['logs_removed']}; left: {res['logs_left']}")
+        return res["services_left"]
 
     def _left_running(self) -> list[int]:
         """Processes not started here that name this run's folder: reported, never killed."""

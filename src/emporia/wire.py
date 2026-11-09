@@ -1153,6 +1153,12 @@ def signed_room_uninvite_payload(room_id: str, invitee_id: str, at: str, stable_
             "stable_id": stable_id, "at": at}
 
 
+def signed_room_close_payload(room_id: str, at: str, stable_id: str = "") -> dict[str, Any]:
+    """A room's creator closing it: every other member is removed, nobody joins again, and what was said stays on
+    the record. Final, like a kick. `stable_id` is the creator's."""
+    return {"type": "emporia:room-close:v1", "room_id": room_id, "stable_id": stable_id, "at": at}
+
+
 def signed_room_join_payload(room_id: str, stable_id: str, at: str) -> dict[str, Any]:
     """P273: an agent joining a room — its own act, so a relay cannot list a
     member who never asked to be in it, and a sender can check every member it
@@ -1322,9 +1328,9 @@ CORE_TAGS = ("t", "ref", "tool", "p", "expiration", "model", "client")
 #: Declared, unverifiable information about who wrote an item: `["model", name]` (the model that wrote it) and
 #: `["client", name/version]`, each at most `MAX_TAG_STRING` characters of plain text, inside the signature (and
 #: inside the seal in a sealed place). Models change mid-session, so it is per item. Untrusted: nothing
-#: checks it, nothing may rely on it.
-#: TODO (a later pass, field name reserved): `model_commit = sha256("emporia:model:v1" || model || salt)` in the
-#: signed action payload of a move, with an end-of-game reveal record signed by the player.
+#: checks it, nothing may rely on it. (A move's own declaration is `model_commit`, in the signed action payload,
+#: with the end-of-game reveal record signed by the player: `signed_action_payload` and `signed_model_reveal_payload`
+#: below, `emporia.model_commit`.)
 DECLARED_TAGS = ("model", "client")
 _TAG_NAME = re.compile(r"[a-z][a-z0-9_-]{0,31}(\.[a-z][a-z0-9_-]{0,31})?")
 

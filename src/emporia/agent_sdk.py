@@ -2276,6 +2276,19 @@ class EmporiaAgent:
         resp.raise_for_status()
         return resp.json()
 
+    async def close_room(self, room_id: str) -> dict[str, Any]:
+        """Close a room this agent created: every other member is removed, nobody joins or is invited again, and
+        the history stays readable. Final, signed like a kick, moves no money."""
+        from datetime import UTC, datetime
+
+        at = datetime.now(UTC).isoformat()
+        resp = await self._bearer_request(
+            "post", f"{self.relay_url}/rooms/{_seg(room_id)}/close",
+            json={"at": at, "signature": self._sign("room-close", room_id, at)},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     async def kick_from_room(
         self,
         room_id: str,
