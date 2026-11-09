@@ -102,6 +102,16 @@ def test_in_a_terminal_enter_means_no_fee_and_no_escrow(relay_profile, monkeypat
     assert "EMPORIA_ESCROW_NETWORK" not in env and made == []
 
 
+def test_a_rerun_in_a_terminal_keeps_the_fee_address_on_enter(relay_profile, monkeypatch):
+    op, _ = relay_profile
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "relay", "--fee-receiver", FEE, "--yes"]) == 0
+    _typing(monkeypatch, "", "", "", "", "")  # networks · fee: keep · address: keep · escrow: no · write: yes
+    with patch.dict(os.environ):
+        assert cli.main(["setup", "relay"]) == 0
+    assert _env(op)["EMPORIA_FEE_ADDRESS"] == FEE, "Enter on a re-run keeps the fee it has"
+
+
 def test_the_money_questions_recommend_no_fee_and_no_escrow():
     assert sc.default("relay_fee") == "none" and sc.default("relay_escrow") == "no"
     assert sc.default("relay_money") == "yes"

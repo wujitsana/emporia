@@ -6612,7 +6612,8 @@ def _ask_fee_address(given: str, current: str) -> str | None:
         return given if re.fullmatch(_FEE_ADDRESS_RE, given) else None
     if not _TTY:
         return current
-    if choose_setting("relay_fee") == "none":
+    # A re-run keeps what is set: with a fee address already there, Enter keeps the fee.
+    if choose_setting("relay_fee", default=1 if current else None) == "none":
         return ""
     for _ in range(3):
         fee = prompt("Fee address (0x…, a wallet you control; blank: no fee)", current).strip()
