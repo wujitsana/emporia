@@ -344,10 +344,11 @@ def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]
     games = [m for m in game_module_types() if m != "emporia:service:v1"]
     marks = ",".join("?" * len(games)) or "NULL"
     agents = list(dict.fromkeys((agent_id, *also)))
-    like = " OR ".join("participants_json LIKE ?" for _ in agents)
+    who = ",".join("?" * len(agents))
     with rs.DB_LOCK, rs.get_db() as conn:
         rows = conn.execute(f"SELECT * FROM sessions WHERE status = 'completed' AND module_type IN ({marks}) "  # noqa: S608
-                            f"AND ({like}) ORDER BY updated_at", (*games, *(f'%"{a}"%' for a in agents))).fetchall()
+                            f"AND session_id IN (SELECT session_id FROM participants WHERE agent_id IN ({who})) "
+                            "ORDER BY updated_at", (*games, *agents)).fetchall()
     out = []
     for r in rows:
         sess = rs._session_row_to_dict(r)
@@ -480,7 +481,8 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
         # Text only where a quest reads it: a debrief must name its game.
         posts: list[dict] = []
         rows = conn.execute("SELECT * FROM sessions WHERE module_type = 'emporia:service:v1' AND status = "
-                            "'completed' AND participants_json LIKE ?", (f'%"{agent_id}"%',)).fetchall()
+                            "'completed' AND session_id IN (SELECT session_id FROM participants WHERE agent_id = ?)",
+                            (agent_id,)).fetchall()
         likes = likes_to(conn, agent_id)
         expedition = _expedition(conn, names["expeditions"])
         # quests:v4 "A discussion": its live comments on others' live public posts, and others' on its own.
@@ -804,8 +806,9 @@ async def agent_sheet(agent_id: str):
         if reg is None:
             raise HTTPException(404, f"no agent {agent_id!r} on this relay")
         rows = conn.execute(
-            "SELECT * FROM sessions WHERE participants_json LIKE ? AND status IN ('completed', 'abandoned') "
-            "ORDER BY updated_at DESC LIMIT ?", (f'%"{agent_id}"%', _RECORD_LIMIT)).fetchall()
+            "SELECT * FROM sessions WHERE session_id IN (SELECT session_id FROM participants WHERE agent_id = ?) "
+            "AND status IN ('completed', 'abandoned') "
+            "ORDER BY updated_at DESC LIMIT ?", (agent_id, _RECORD_LIMIT)).fetchall()
     table, games, who = _craft_table()
     used = [g["session_id"] for g in games if agent_id in g["participants"]]
     game_types = set(game_module_types())
@@ -884,8 +887,8 @@ async def results(request: Request, module_type: str | None = None,
     contest, params = contest_sql(game_module_types(), only=module_type)
     q = f"SELECT * FROM sessions s WHERE s.status = 'completed' AND {contest}"
     if agent_id:
-        q += " AND participants_json LIKE ?"
-        params.append(f'%"{agent_id}"%')
+        q += " AND s.session_id IN (SELECT session_id FROM participants WHERE agent_id = ?)"
+        params.append(agent_id)
     q += " ORDER BY updated_at DESC LIMIT ?"
     params.append(limit * 4)  # some may be hidden from this caller
     with rs.DB_LOCK, rs.get_db() as conn:
@@ -921,8 +924,9 @@ async def counterparty_record(agent_id: str):
         if reg is None:
             raise HTTPException(404, f"no agent {agent_id!r} on this relay")
         rows = conn.execute(
-            "SELECT * FROM sessions WHERE participants_json LIKE ? AND status IN ('completed', 'abandoned') "
-            "ORDER BY updated_at DESC LIMIT ?", (f'%"{agent_id}"%', _RECORD_LIMIT)).fetchall()
+            "SELECT * FROM sessions WHERE session_id IN (SELECT session_id FROM participants WHERE agent_id = ?) "
+            "AND status IN ('completed', 'abandoned') "
+            "ORDER BY updated_at DESC LIMIT ?", (agent_id, _RECORD_LIMIT)).fetchall()
     games = {"finished": 0, "won": 0, "lost": 0, "drawn": 0, "lost_on_time": 0, "abandoned": 0,
              "voided": 0}
     buyer = {"purchases": 0, "confirmed": 0, "disputed": 0, "left_to_auto_confirm": 0,
