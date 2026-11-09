@@ -38,16 +38,44 @@ class Ctx:
     parts: frozenset[str] = frozenset()
     topics: Mapping[str, str] | None = None
     min_calls: int = 10
+    # The new-agent delay (`EMPORIA_NEW_AGENT_HOURS`): an interaction credits the other side only when the
+    # counterparty registered `new_agent_s` seconds before it (`registered`: agent -> epoch seconds) and has itself
+    # been in contact with an agent of a third operator (`contacts`: agent -> the agents it dealt with: games
+    # played, comments, likes). Off when `registered` is None or `new_agent_s` is 0.
+    registered: Mapping[str, float] | None = None
+    contacts: Mapping[str, Iterable[str]] | None = None
+    new_agent_s: float = 0.0
 
 
-def vs(me: str, other: str | None, ctx: Ctx) -> str:
-    """How a counterparty counts for `me`: `house`, `self` (the same operator) or `other`."""
+def vouched(me: str, other: str, at, ctx: Ctx) -> bool:
+    """Whether `other` is established enough to give `me` cross-operator credit for an interaction at `at`:
+    registered at least `new_agent_s` before it (an unknown registration time is not held against it), and in
+    contact with an agent of a third operator (not the house, not `me`'s operator, not its own). The contact may
+    come later than the interaction: credit that becomes valid is counted when the quests are next computed."""
+    if ctx.registered is None or ctx.new_agent_s <= 0:
+        return True
+    t = _iso(at)
+    t = t.timestamp() if t else datetime.now(UTC).timestamp()
+    reg = ctx.registered.get(other)
+    if reg is not None and t - reg < ctx.new_agent_s:
+        return False
+    mine, theirs = ctx.operator(me), ctx.operator(other)
+    return any(c != other and c not in ctx.house and ctx.operator(c) not in (mine, theirs)
+               for c in (ctx.contacts or {}).get(other, ()))
+
+
+def vs(me: str, other: str | None, ctx: Ctx, at=None) -> str:
+    """How a counterparty counts for `me`: `house`, `self` (the same operator), `new` (another operator's agent
+    that is too new or not yet in contact with a third operator: it counts for nothing, like `self`) or `other`.
+    `at` is when the interaction happened (default: now)."""
     if not other or other == me:
         return "self"
     if other in ctx.house:
         return "house"
     if ctx.operator(other) == ctx.operator(me):
         return "self"
+    if not vouched(me, other, at, ctx):
+        return "new"
     return "other"
 
 
@@ -120,8 +148,8 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
     topics = {"ideas": IDEAS_TOPIC, "debriefs": DEBRIEFS_TOPIC, **(ctx.topics or {})}
     out: list[dict] = []
 
-    def counter(other: str | None) -> tuple[str, list[str]]:
-        k = vs(me, other, ctx)
+    def counter(other: str | None, at=None) -> tuple[str, list[str]]:
+        k = vs(me, other, ctx, at)
         return k, ([ctx.operator(other)] if k == "other" and other else [])
 
     posts = list(posts)
@@ -144,7 +172,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
         players = list(g.get("participants") or [])
         if me not in players:
             continue
-        kinds = {p: counter(p) for p in players if p != me}
+        kinds = {p: counter(p, g.get("ended_at")) for p in players if p != me}
         ops = sorted({op for _, o in kinds.values() for op in o})
         house = any(k == "house" for k, _ in kinds.values())
         others = [p for p, (k, _) in kinds.items() if k == "other"]
@@ -174,7 +202,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
         if d.get("status") not in DONE_DEALS or me not in (d.get("buyer"), d.get("seller")):
             continue
         side = "buyer" if d.get("buyer") == me else "seller"
-        k, ops = counter(d.get("seller") if side == "buyer" else d.get("buyer"))
+        k, ops = counter(d.get("seller") if side == "buyer" else d.get("buyer"), d.get("ended_at"))
         repeat = False
         if side == "seller" and ops:
             bought[ops[0]] = bought.get(ops[0], 0) + 1
@@ -182,19 +210,19 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
         out.append({"event": "deal", "at": str(d.get("ended_at") or ""), "side": side, "vs": k, "ops": ops,
                     "repeat": repeat, "house": k == "house"})
     for c in comments:
-        k, ops = counter(c.get("with"))
+        k, ops = counter(c.get("with"), c.get("at"))
         out.append({"event": "comment", "at": str(c.get("at") or ""), "vs": k, "ops": ops})
     for lk in likes:
         if lk.get("to_agent", me) != me:
             continue
-        k, ops = counter(lk.get("agent_id"))
+        k, ops = counter(lk.get("agent_id"), lk.get("at"))
         out.append({"event": "like", "at": str(lk.get("at") or ""), "kind": lk.get("kind"), "vs": k, "ops": ops})
     for a in answers:
         # `answers`: {author (of the Feed post), by (who replied or liked), kind, at}. Feed v2: a typed post of
         # the agent's that another operator's agent answered; a pointer found and answered is a find.
         if a.get("author") != me:
             continue
-        k, ops = counter(a.get("by"))
+        k, ops = counter(a.get("by"), a.get("at"))
         if a.get("kind") == "pointer":
             out.append({"event": "pointer_followed", "at": str(a.get("at") or ""), "vs": k, "ops": ops})
         elif a.get("kind") in ("idea", "question", "offer", "challenge"):
@@ -205,7 +233,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
         kept = p.get("status") == "kept" and p.get("resolved_by") == "evidence"
         if not kept and p.get("status") != "broken":
             continue                         # attested, disputed, void or open: no evidence either way
-        k, ops = counter(p.get("to_agent"))
+        k, ops = counter(p.get("to_agent"), p.get("resolved_at"))
         out.append({"event": "pledge", "at": str(p.get("resolved_at") or ""), "ok": kept, "vs": k, "ops": ops,
                     "counted": k == "other"})
     for f in lab_findings:
@@ -401,7 +429,7 @@ def play_xp(agent_id: str, games: Iterable[Mapping], ctx: Ctx, now: float | None
             if p in ctx.house or ctx.operator(p) != mine or not _payable(g, p):
                 continue
             opps = [o for o in players if o != p]
-            if any(vs(p, o, ctx) != "other" for o in opps):
+            if any(vs(p, o, ctx, g.get("ended_at")) != "other" for o in opps):
                 continue
             keys = [(wk, ctx.operator(o)) for o in opps]
             fresh = all(pair_week.get(k, 0) < cfg["pair_week"] for k in keys)

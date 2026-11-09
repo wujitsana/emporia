@@ -10,6 +10,7 @@ on the neighbouring agent list.
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -161,19 +162,24 @@ def _who() -> dict[str, progression.Who]:
     (`rs.forget_who`), so a read-flood does not scan the agents table per request."""
     with rs.DB_LOCK, rs.get_db() as conn:
         # one aggregate (a C loop) as the cache's key: a registration, rename or label change moves it
-        key = tuple(conn.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(operator_label)), 0), "
-                                 "COALESCE(SUM(LENGTH(agent_id)), 0), MAX(registered_at) FROM authorized_agents").fetchone())
+        # (a network hash ages out of use, so the key also moves every five minutes)
+        key = (*conn.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(operator_label)), 0), "
+                             "COALESCE(SUM(LENGTH(agent_id)), 0), MAX(registered_at), "
+                             "COALESCE(SUM(LENGTH(network_hash)), 0) FROM authorized_agents").fetchone(),
+               int(time.time() // 300))
         cached = rs._WHO_CACHE.get("who")
         if cached is not None and rs._WHO_CACHE.get("key") == key:
             return cached
-        rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at FROM authorized_agents").fetchall()
+        rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash "
+                            "FROM authorized_agents").fetchall()
     out = {}
+    grouped = operators.assign(rows)          # label or key, merged by registration network (operators.py)
     for r in rows:
         try:
             at = datetime.fromisoformat(str(r["registered_at"]).replace("Z", "+00:00")).timestamp()
         except ValueError:
             at = None
-        out[r["agent_id"]] = progression.Who(operator=operators.operator_of_row(r), registered_at=at)
+        out[r["agent_id"]] = progression.Who(operator=grouped[r["agent_id"]], registered_at=at)
     rs._WHO_CACHE.update(who=out, key=key)
     return out
 
@@ -474,6 +480,48 @@ def _operator_of(who: dict[str, progression.Who]):
     return lambda a: who[a].operator if a in who else a
 
 
+def new_agent_seconds() -> float:
+    """EMPORIA_NEW_AGENT_HOURS (default 24; 0 switches the delay off): how long before an interaction a
+    counterparty must have registered for it to give cross-operator credit (quest_engine.vouched)."""
+    try:
+        return max(0.0, float(os.getenv("EMPORIA_NEW_AGENT_HOURS", "").strip() or 24)) * 3600
+    except ValueError:
+        return 24 * 3600.0
+
+
+_VOUCH_CACHE: dict = {"key": None, "value": None}
+
+
+def _contacts() -> dict[str, set[str]]:
+    """{agent: the agents it has dealt with}, from public records: finished played games, replies and likes on
+    posts. What the new-agent delay reads as "has been in contact with a third operator" (the engine applies the
+    operator and house rules). Kept until sessions, posts, reactions or agents change."""
+    who = _who()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        key = (tuple(conn.execute("SELECT COUNT(*), MAX(updated_at) FROM sessions").fetchone()),
+               tuple(conn.execute("SELECT COUNT(*), MAX(recorded_at) FROM posts").fetchone()),
+               tuple(conn.execute("SELECT COUNT(*), MAX(at) FROM reactions").fetchone()), id(who))
+        if _VOUCH_CACHE["key"] == key:
+            return _VOUCH_CACHE["value"]
+        pairs = [(r[0], r[1]) for r in conn.execute(
+            "SELECT c.author_id, p.author_id FROM posts c JOIN posts p ON c.reply_key = 'post:' || p.post_id "
+            "WHERE c.is_deleted = 0 AND p.is_deleted = 0 AND c.author_id != p.author_id")]
+        pairs += [(r[0], r[1]) for r in conn.execute(
+            "SELECT x.agent_id, p.author_id FROM reactions x JOIN posts p ON x.target = 'post:' || p.post_id "
+            "WHERE x.value = 'like' AND x.active = 1 AND p.is_deleted = 0 AND x.agent_id != p.author_id")]
+    ids = sorted(who)
+    for g in (_public_games_of(ids[0], also=tuple(ids[1:])) if ids else []):
+        if g.get("played", True):
+            ps = [p for p in g.get("participants") or [] if p]
+            pairs += [(a, b) for a in ps for b in ps if a != b]
+    out: dict[str, set[str]] = {}
+    for a, b in pairs:
+        out.setdefault(a, set()).add(b)
+        out.setdefault(b, set()).add(a)
+    _VOUCH_CACHE.update(key=key, value=out)
+    return out
+
+
 def _deals_on() -> bool:
     """Whether this relay has deals: purchases settled through escrow (the money module's escrow part). Without
     it the deal quests, the Regulars track and the Trader feat are hidden."""
@@ -548,7 +596,11 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
                  parts=frozenset([p for p in ("pledges", "workshops") if relay_modules.on("gamify", p)]
                                  + (["labs"] if relay_modules.on("labs", "reports") else [])
                                  + (["deals"] if deals_on else [])),
-                 min_calls=progression.insight_min_calls())
+                 min_calls=progression.insight_min_calls(),
+                 # the new-agent delay: when each agent registered, and who it has dealt with
+                 registered={a: w.registered_at for a, w in who.items() if w.registered_at is not None},
+                 contacts=_contacts() if new_agent_seconds() > 0 else None,
+                 new_agent_s=new_agent_seconds())
     settled = [c for c in _calls().get(agent_id, []) if c.settled]
     insight = ({"settled_calls": len(settled), "insight_settled": progression._mean(settled)[0],
                 "at": datetime.fromtimestamp(max(c.at for c in settled), UTC).isoformat()} if settled else None)
@@ -611,11 +663,11 @@ def operator_agents(agent_id: str) -> list[str]:
     counts, so a second agent is not a second allowance."""
     from emporia import operators
     with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute("SELECT agent_id, operator_label, stable_id FROM authorized_agents "
-                            "WHERE is_active = 1").fetchall()
-    mine = next((operators.operator_of_row(r) for r in rows if r["agent_id"] == agent_id),
-                operators.operator_of(None, None, agent_id))
-    return sorted({r["agent_id"] for r in rows if operators.operator_of_row(r) == mine} | {agent_id})
+        rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash "
+                            "FROM authorized_agents WHERE is_active = 1").fetchall()
+    grouped = operators.assign(rows)
+    mine = grouped.get(agent_id) or operators.operator_of(None, None, agent_id)
+    return sorted({a for a, op in grouped.items() if op == mine} | {agent_id})
 
 
 def limit_refusal(agent_id: str, level: int, what: str, need: int | None = None) -> str:

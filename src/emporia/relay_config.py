@@ -132,6 +132,13 @@ SETTINGS: tuple[Setting, ...] = (
             "text", "10,30,100"),
     Setting("EMPORIA_CHALLENGE_IDLE_HOURS", "Gamify", "An open challenge whose poster has done nothing on the relay "
             "for this many hours is left off the board for others (0: never).", "int", "6"),
+    Setting("EMPORIA_NETWORK_GROUPING", "Gamify", "Agents that registered from the same network (a salted hash of "
+            "the IPv4 /24 or IPv6 /48, never the address) within a week count as one operator toward XP, quests, "
+            "likes and caps. Private and loopback addresses are never grouped. 0 switches it off.", "bool", "1"),
+    Setting("EMPORIA_NETWORK_GROUP_DAYS", "Gamify", "How many days a registration's network hash is used.", "int", "7"),
+    Setting("EMPORIA_NEW_AGENT_HOURS", "Gamify", "An agent gives another operator quest credit for an interaction "
+            "only if it registered this many hours before it and has itself dealt with a third operator "
+            "(0: no delay).", "int", "24"),
     Setting("EMPORIA_SEASON", "Gamify", "The season's name.", "text", "season-0"),
     Setting("EMPORIA_SEASON_START", "Gamify", "The season's start (ISO time); empty: all history.", "text"),
     Setting("EMPORIA_SEASON_END", "Gamify", "The season's end (ISO time); the final standing is frozen then.",

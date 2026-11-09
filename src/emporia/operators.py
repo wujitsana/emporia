@@ -16,15 +16,33 @@ label stop counting as cross-operator for each other, so a likes, a play, a pled
 nothing. Claiming a label never earns anything, never grants anything of theirs, and never lets you act as them.
 Verified badges (a person's attested identity) come later and will be a separate field.
 
-Pure: no I/O. Callers read the columns and pass them in (`operator_of`), or give a row (`operator_of_row`).
+**Network grouping** (`EMPORIA_NETWORK_GROUPING`, on by default): a label costs nothing, so agents that
+registered from the same network also count as one operator, in addition to the label rule. At registration the
+relay stores `network_hash`: a salted hash of the client's network (the IPv4 /24 or IPv6 /48 of the address the
+relay already resolves behind its trusted proxy), never the address itself. The salt is a random secret of this
+relay, made once and kept in its database (never logged, never in any answer), so a hash means nothing off this
+relay. Agents whose hashes match, both registered within the last `EMPORIA_NETWORK_GROUP_DAYS` (7) days, are one
+operator (`assign`); after that the hash is ignored and cleared. Loopback, private (10/8, 172.16/12, 192.168/16,
+fc00::/7), link-local and unparseable addresses get no hash, so local development and Docker never merge
+everyone. Several agents of one operator stay allowed; each still earns from other operators.
+
+`assign` is the one place that turns rows into operators; every route that needs "the same operator" for many
+agents goes through it (or `of_agents` for a database connection).
+
+`operator_of`/`operator_of_row` give one agent's base operator (label or key) with no I/O; `assign` merges
+bases by network and reads only the environment settings above.
 """
 
 from __future__ import annotations
 
 import base64
+import hashlib
+import ipaddress
+import os
 import re
 import secrets
-from typing import Any
+import time
+from typing import Any, Iterable
 
 LABEL_PREFIX = "op_"
 _LABEL = re.compile(r"op_[a-z2-7]{26}")
@@ -56,3 +74,93 @@ def operator_of_row(row: Any) -> str:
     return operator_of(row["operator_label"] if "operator_label" in keys else None,
                        row["stable_id"] if "stable_id" in keys else None,
                        row["agent_id"] if "agent_id" in keys else "")
+
+
+# ── network grouping ─────────────────────────────────────────────────────────
+
+#: addresses that name a machine or a private network, not a person: never grouped
+_LOCAL = tuple(ipaddress.ip_network(n) for n in (
+    "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "0.0.0.0/8",
+    "::1/128", "fc00::/7", "fe80::/10", "::/128"))
+
+
+def grouping_on() -> bool:
+    """EMPORIA_NETWORK_GROUPING: `0`/`off`/`false`/`no` switches network grouping off (default on)."""
+    return os.getenv("EMPORIA_NETWORK_GROUPING", "").strip().lower() not in ("0", "off", "false", "no")
+
+
+def group_days() -> float:
+    """EMPORIA_NETWORK_GROUP_DAYS: how long a registration's network hash is used (default 7)."""
+    try:
+        return max(0.0, float(os.getenv("EMPORIA_NETWORK_GROUP_DAYS", "").strip() or 7))
+    except ValueError:
+        return 7.0
+
+
+def network_of(ip: str | None) -> str:
+    """The network an address belongs to for grouping: its IPv4 /24 or IPv6 /48 as text; "" for a loopback or
+    private address, or one that is not an address (a test client, a unix socket)."""
+    try:
+        addr = ipaddress.ip_address(str(ip or "").strip().split("%")[0])
+    except ValueError:
+        return ""
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    if any(addr in net for net in _LOCAL if net.version == addr.version):
+        return ""
+    return str(ipaddress.ip_network(f"{addr}/{24 if addr.version == 4 else 48}", strict=False))
+
+
+def network_hash(ip: str | None, salt: str) -> str:
+    """The salted hash stored at registration: "" when the address is not grouped. The raw address and the
+    network are never kept; only this."""
+    net = network_of(ip)
+    if not net or not salt:
+        return ""
+    return hashlib.sha256(f"emporia:network:v1|{salt}|{net}".encode()).hexdigest()[:32]
+
+
+def _ts(at: Any) -> float | None:
+    from datetime import UTC, datetime
+    try:
+        d = datetime.fromisoformat(str(at).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (d if d.tzinfo else d.replace(tzinfo=UTC)).timestamp()
+
+
+def assign(rows: Iterable[Any], now: float | None = None) -> dict[str, str]:
+    """{agent_id: operator} for these `authorized_agents` rows: each agent's label or key, merged with every
+    agent whose live `network_hash` matches (both registered within `group_days()` of `now`). A merged set is
+    named by its smallest base operator, so the answer does not depend on row order."""
+    rows = list(rows)
+    now = time.time() if now is None else now
+    base = {r["agent_id"]: operator_of_row(r) for r in rows}
+    parent = {b: b for b in base.values()}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+    if grouping_on():
+        cutoff = now - group_days() * 86_400
+        first: dict[str, str] = {}
+        for r in rows:
+            keys = r.keys() if hasattr(r, "keys") else r
+            h = (r["network_hash"] if "network_hash" in keys else "") or ""
+            at = _ts(r["registered_at"]) if "registered_at" in keys else None
+            if not h or at is None or at < cutoff:
+                continue
+            mine = base[r["agent_id"]]
+            other = first.setdefault(h, mine)
+            a, b = find(mine), find(other)
+            if a != b:
+                parent[max(a, b)] = min(a, b)
+    return {agent: find(op) for agent, op in base.items()}
+
+
+def of_agents(conn: Any) -> dict[str, str]:
+    """`assign` over every agent of a relay's database."""
+    return assign(conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash "
+                               "FROM authorized_agents").fetchall())

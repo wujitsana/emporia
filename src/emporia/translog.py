@@ -713,6 +713,7 @@ CHAINS: dict[str, tuple[str, str]] = {"room": ("room_messages", "room_id"), "dm"
 
 #: tables deliberately not in the log, and why
 NOT_LOGGED: dict[str, str] = {
+    "relay_secrets": "the relay's own secrets (the salt of its network hashes): never published, not even as a hash",
     "dm_messages": "content; each conversation's chain head is logged instead, as a commitment",
     "dm_threads": "who talks to whom; the chain heads cover the conversations",
     "rooms": "a room's creation, settings, invites, kicks, joins and leaves are its signed room_acts",

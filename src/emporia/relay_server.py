@@ -2424,6 +2424,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("topic_acts", "act_id"), ("topic_acts", "topic_id"), ("topic_acts", "act"), ("topic_acts", "at"),
     ("topic_acts", "nonce"), ("topic_acts", "payload_json"), ("topic_acts", "signature"),
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
+    ("authorized_agents", "network_hash"), ("relay_secrets", "name"), ("relay_secrets", "value"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("deletions", "stable_id"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
     ("dm_messages", "deleted_at"), ("game_chat", "deleted_at"),
@@ -3285,14 +3286,12 @@ OPERATOR_RATE_MULTIPLE = max(1.0, float(os.getenv("EMPORIA_OPERATOR_RATE_MULTIPL
 
 def _operator_key(agent_id: str) -> str:
     """The operator of `agent_id` (`operators.operator_of`), "" when it is not registered."""
-    from emporia import operators
-    try:
-        with DB_LOCK, get_db() as conn:
-            row = conn.execute("SELECT agent_id, operator_label, stable_id FROM authorized_agents WHERE agent_id = ?",
-                               (agent_id,)).fetchone()
+    try:       # the cached grouping every other route uses (label or key, merged by registration network)
+        from emporia.routes.standing import _who
+        who = _who().get(agent_id)
     except Exception:  # noqa: BLE001 — a throttle that cannot look up an operator still throttles the agent
         return ""
-    return operators.operator_of_row(row) if row else ""
+    return who.operator if who else ""
 
 
 def _enforce_agent_rate_limit(agent_id: str) -> None:

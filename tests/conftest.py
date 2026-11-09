@@ -140,6 +140,9 @@ TEST_ENVIRONMENT: dict[str, str] = {
     "EMPORIA_ESCROW_CONTRACT": "",
     "EMPORIA_ESCROW_COLLECTOR": "",
     "EMPORIA_FEE_ADDRESS": "",
+    # The new-agent delay (24 h by default) would hold back every test that registers two agents and has
+    # them play at once: it is off here and switched on by the tests of the delay itself.
+    "EMPORIA_NEW_AGENT_HOURS": "0",
 }
 
 os.environ.update(TEST_ENVIRONMENT)

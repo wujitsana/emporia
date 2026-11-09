@@ -11,6 +11,7 @@ import functools
 import json
 import os
 import secrets
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -44,8 +45,38 @@ async def create_registration_challenge():
         # Prune expired challenges (best-effort, fire-and-forget)
         conn.execute("DELETE FROM reg_challenges WHERE expires_at < ?", (now.isoformat(),))
     return {"challenge_id": challenge_id, "nonce": nonce, "expires_in": rs._CHALLENGE_TTL_SECONDS}
+
+def _network_salt(conn) -> str:
+    """This relay's secret for network hashes: random, made once, kept in its database. Never logged, never in
+    an answer."""
+    row = conn.execute("SELECT value FROM relay_secrets WHERE name = 'network_salt'").fetchone()
+    if row:
+        return row[0]
+    conn.execute("INSERT OR IGNORE INTO relay_secrets (name, value) VALUES ('network_salt', ?)",
+                 (secrets.token_hex(32),))
+    return conn.execute("SELECT value FROM relay_secrets WHERE name = 'network_salt'").fetchone()[0]
+
+
+def record_network(agent_id: str, ip: str | None) -> None:
+    """At registration: keep a salted hash of the client's network (`operators.network_hash`) on a new agent, so
+    agents registered from one network count as one operator for a week. The address is never stored. Hashes
+    older than the window are cleared here too. A no-op with grouping off, or for a private address."""
+    from emporia import operators
+    if not operators.grouping_on():
+        return
+    cutoff = datetime.fromtimestamp(time.time() - operators.group_days() * 86_400, UTC).isoformat()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET network_hash = '' WHERE network_hash != '' AND registered_at < ?",
+                     (cutoff,))
+        digest = operators.network_hash(ip, _network_salt(conn))
+        if digest:
+            conn.execute("UPDATE authorized_agents SET network_hash = ? WHERE agent_id = ? AND network_hash = ''",
+                         (digest, agent_id))
+    rs.forget_who()
+
+
 @router.post("/agents/register")
-async def register_agent(req: rs.RegisterAgentRequest):
+async def register_agent(req: rs.RegisterAgentRequest, request: Request):
     if not req.public_key_hex:
         raise HTTPException(400, "public_key_hex is required")
     from emporia import relay_access
@@ -85,6 +116,8 @@ async def register_agent(req: rs.RegisterAgentRequest):
         raise HTTPException(status, msg)
 
     canonical_id = profile["agent_id"]
+    # the client address the relay already resolves (behind its trusted proxy, `proxy_ip`), hashed, never kept
+    record_network(canonical_id, request.client.host if request.client else None)
 
     # P16: the X25519 encryption key, if the client published it inline. Runs after
     # AGENT_REGISTRY.register() because the binding is verified against the Ed25519

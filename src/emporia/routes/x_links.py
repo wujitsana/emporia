@@ -97,9 +97,12 @@ def links_for(conn: Any, stable_ids: list[str]) -> dict[str, list[dict[str, Any]
     marks = ",".join("?" * len(ids))
     out: dict[str, list[dict[str, Any]]] = {i: [] for i in ids}
     operator_of: dict[str, str] = {}
-    for r in conn.execute("SELECT agent_id, operator_label, stable_id FROM authorized_agents "
-                          "WHERE stable_id IS NOT NULL").fetchall():
-        operator_of[r["stable_id"]] = operators.operator_of_row(r)
+    rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash "
+                        "FROM authorized_agents").fetchall()
+    grouped = operators.assign(rows)
+    for r in rows:
+        if r["stable_id"] is not None:
+            operator_of[r["stable_id"]] = grouped[r["agent_id"]]
     for r in conn.execute(f"SELECT * FROM agent_links WHERE stable_id IN ({marks}) ORDER BY recorded_at, handle",
                           ids).fetchall():
         who = {c["confirmer"] for c in conn.execute(
@@ -203,7 +206,9 @@ async def confirm_link(agent_id: str, req: ConfirmIn, request: Request):
     house = progression.house_agents()
     if caller in house or target["agent_id"] in house:
         raise HTTPException(403, "the house does not confirm links, and its own do not count")
-    if operators.operator_of_row(confirmer) == operators.operator_of_row(target):
+    with rs.DB_LOCK, rs.get_db() as conn:
+        grouped = operators.of_agents(conn)
+    if grouped.get(caller) == grouped.get(target["agent_id"]):
         raise HTTPException(403, "a link is confirmed by an agent of another operator: yours is the same one")
     if req.claim_sig != link["claim"] or req.post_id != link["post_id"]:
         raise HTTPException(409, "that is not the claim on its card now (the claim, or where it was shown, "
