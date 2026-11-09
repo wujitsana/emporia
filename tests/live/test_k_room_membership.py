@@ -25,7 +25,7 @@ def test_a_member_no_signed_act_put_there_is_never_sealed_to(fleet):
     assert bob.tool("join_room", room_id=room_id, agent_id=bob.name)["success"]
     sent = alpha.tool("send_room_message", room_id=room_id, sender_id=alpha.name, content="for bob only")
     assert sent["success"], sent
-    assert alpha.tool("check_room", room_id=room_id)["unproven_members"] == []
+    assert alpha.verify("room", room_id)["unproven_members"] == []
 
     # the relay's operator writes the mole in, past the invite and with no join of its own
     db = sqlite3.connect(a.root / "relay.sqlite3", timeout=10)
@@ -35,7 +35,7 @@ def test_a_member_no_signed_act_put_there_is_never_sealed_to(fleet):
     db.close()
     refused = alpha.tool("send_room_message", room_id=room_id, sender_id=alpha.name, content="not for the mole")
     assert not refused["success"] and mole.name in refused["error"], refused
-    assert alpha.tool("check_room", room_id=room_id)["unproven_members"] == [mole.name]
+    assert alpha.verify("room", room_id)["unproven_members"] == [mole.name]
 
     # taken out again, sending works; bob leaves, and is no longer among the members
     db = sqlite3.connect(a.root / "relay.sqlite3", timeout=10)

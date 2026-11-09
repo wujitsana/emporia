@@ -21,7 +21,7 @@ def test_a_relay_rotates_its_key_and_peers_and_agents_follow_but_a_bare_change_i
     # before: B has pulled from A (and pinned its key), alpha has played a game there and kept A's signed receipts
     assert b.sync()["peers"][a.url]["pinned_public_key_hex"] == first
     sid = play_fools_mate(alpha, alfred)
-    assert alpha.tool("verify_session", session_id=sid)["verdict"] == "ok"
+    assert alpha.verify("session", sid)["verdict"] == "ok"
     assert _relay_pin(alpha, a.url) == first
     assert alpha.tool("send_dm", to_agent_id=bob.address, content="before the rotation")["success"]
 
@@ -44,7 +44,7 @@ def test_a_relay_rotates_its_key_and_peers_and_agents_follow_but_a_bare_change_i
     # the agent follows it too: she is not told the key changed, and the receipts the old key signed still check
     scanned = alpha.tool("scan_relays")
     assert a.url not in scanned["skipped"], scanned
-    checked = alpha.tool("verify_session", session_id=sid)
+    checked = alpha.verify("session", sid)
     assert checked["verdict"] == "ok" and checked["failures"] == 0 and not checked["problems"], checked
     assert _relay_pin(alpha, a.url) == step["new"]
 
@@ -62,7 +62,7 @@ def test_a_relay_rotates_its_key_and_peers_and_agents_follow_but_a_bare_change_i
                 if m["content"] == "from the impostor's relay"], refused
     scanned = alpha.tool("scan_relays")
     assert "key changed" in scanned["skipped"].get(a.url, ""), scanned
-    failed = alpha.tool("verify_session", session_id=sid)
+    failed = alpha.verify("session", sid)
     assert failed["verdict"] == "fail" and any("pinned at first contact" in p for p in failed["problems"]), failed
     assert _relay_pin(alpha, a.url) == step["new"]
     assert httpx.get(f"{b.url}/federation/peers").json()["peers"][0]["pinned_public_key_hex"] == step["new"]

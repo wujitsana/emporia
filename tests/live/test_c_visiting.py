@@ -51,7 +51,7 @@ def test_visiting_registers_the_same_key_on_another_relay_and_a_game_there_verif
     # the player's own key, and the result B declared against a replay of the moves
     for who, relay in ((alpha, b.url), (bob, "")):
         kwargs = {"relay": relay} if relay else {}
-        checked = who.tool("verify_session", session_id=sid, agent_id=who.name, **kwargs)
+        checked = who.verify("session", sid, agent_id=who.name, **kwargs)
         assert checked["success"] and checked["verdict"] == "ok" and checked["failures"] == 0, (who.name, checked)
         assert not checked["problems"] and "signing_key_changed" not in checked, checked
     state = bob.tool("get_session", session_id=sid)

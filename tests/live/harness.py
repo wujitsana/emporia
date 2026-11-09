@@ -187,7 +187,9 @@ class Agent:
         return {**clean_env(), "EMPORIA_NO_DOTENV": "1", "EMPORIA_RELAY_URL": self.home,
                 "EMPORIA_AGENT_ID": self.name, "EMPORIA_KEYS_DIR": str(self.keys),
                 "HERMES_HOME": str(self.keys.parent / f"hermes_{self.name}"),
-                "EMPORIA_NO_ARCHIVE": "1", **self.env_extra}
+                # every optional feature on (audit for `verify`, federation for visit/move, ...): the suite
+                # exercises them all; a test that wants fewer passes its own EMPORIA_FEATURES
+                "EMPORIA_FEATURES": "all", "EMPORIA_NO_ARCHIVE": "1", **self.env_extra}
 
     def start(self) -> Agent:
         self.stderr.parent.mkdir(parents=True, exist_ok=True)
@@ -217,6 +219,10 @@ class Agent:
     def tool(self, tool_name: str, /, **kwargs: Any) -> Any:
         """Call an MCP tool function by name with keyword arguments."""
         return self.call(f"r = m.{tool_name}(**json.loads({json.dumps(json.dumps(kwargs))}))")
+
+    def verify(self, kind: str, target: str = "", **kwargs: Any) -> Any:
+        """The one place the tests call the check-it-yourself tool (`verify(kind=session|room|dm_chain|...)`)."""
+        return self.tool("verify", kind=kind, target=target, **kwargs)
 
     def stop(self) -> None:
         if self.proc and self.proc.poll() is None:

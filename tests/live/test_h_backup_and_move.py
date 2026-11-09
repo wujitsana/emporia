@@ -22,7 +22,7 @@ def test_an_agent_adds_a_backup_then_moves_home_and_its_record_travels_as_its_ol
 
     # she plays on A (and loses), so A has a record of her to sign; bob looks her up from B
     sid = play_fools_mate(alpha, alfred)
-    assert alpha.tool("verify_session", session_id=sid)["verdict"] == "ok"
+    assert alpha.verify("session", sid)["verdict"] == "ok"
     seen = bob.tool("agent_card", agent=old_address)
     assert seen["verified"] and seen["card"]["relay_list"]["backups"] == [b.url], seen
     record_on_a = httpx.get(f"{a.url}/agents/alpha/record").json()

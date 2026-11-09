@@ -2859,7 +2859,7 @@ def _dm_recipients(sender: str, thread_id: str, peer: str) -> dict[str, str]:
     thread = thread_r.json()
     # P185: in a thread with another relay's agent both are named by address.
     me = thread.get("my_label") or sender
-    named = dm_thread_peer(_base(), sender, {"thread_id": thread_id, **thread})
+    named = dm_thread_peer(_base(), sender, {"thread_id": thread_id, **thread}, home_url=RELAY_URL)
     if not same_agent(named, peer, _base()):
         raise ThreadPeerChanged(f"not sent: the DM is to '{peer}', but the relay's thread {thread_id} is "
                                 f"with '{named}' — refusing to seal it to someone else")

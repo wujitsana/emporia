@@ -492,35 +492,49 @@ def same_agent(a: str, b: str, relay_url: str) -> bool:
     return bool(a) and bool(b) and _canonical_agent(a, relay_url) == _canonical_agent(b, relay_url)
 
 
-_ADVERTISED_URLS: dict[str, str] = {}
+#: home relay URL -> (what it said it is called, when we asked). Per process.
+_ADVERTISED_URLS: dict[str, tuple[str, float]] = {}
+_ADVERTISED_RETRY_SECONDS = 30       # an answer is kept for the process; a failed ask is tried again after this
+_ADVERTISED_TIMEOUT_SECONDS = 2
 
 
-def advertised_relay_url(relay_url: str) -> str:
-    """The URL the relay at `relay_url` names itself by (`/health`), or "" when it does not say. A client may
-    reach its relay by another name than the relay's own (a proxy, a container's service name), and a relay
-    names its agents' addresses by its own, so an agent's `my_label` in a cross-relay thread carries that host.
-    Asked only when a label does not match the client's own URL, and once per URL. This is the relay's own word,
-    so it only explains the host part of the agent's own label: the agent part must still be the agent's, and
-    every thread's peer is still checked against the record the client made when it started the thread."""
-    if relay_url not in _ADVERTISED_URLS:
-        found = ""
+def advertised_relay_url(home_url: str) -> str:
+    """The URL the agent's own home relay (`home_url`, the agent's configured relay URL: never one taken from a
+    peer, a message or a thread) names itself by in `/health`, or "" when it does not say. A client may reach its
+    relay by another name than the relay's own (a proxy, a container's service name), and a relay names its
+    agents' addresses by its own, so the agent's `my_label` in a cross-relay thread carries that host.
+    Asked only when a label does not match the client's own URL, with a short timeout, no redirects, and the
+    answer kept for the process. It fails closed: no answer, a wrong status or a body that says nothing is "",
+    and the label stays refused. The relay's word only explains the host part of the agent's own label: the agent
+    part must still be the agent's, and each thread's peer is still checked against the client's own record."""
+    import time
+    held = _ADVERTISED_URLS.get(home_url)
+    if held and (held[0] or time.monotonic() - held[1] < _ADVERTISED_RETRY_SECONDS):
+        return held[0]
+    found = ""
+    if home_url.startswith(("http://", "https://")):
         try:
             import httpx
-            r = httpx.get(f"{relay_url.rstrip('/')}/health", timeout=3)
+            r = httpx.get(f"{home_url.rstrip('/')}/health", timeout=_ADVERTISED_TIMEOUT_SECONDS,
+                          follow_redirects=False)
             if r.status_code == 200:
-                found = str((r.json() or {}).get("relay_url") or "")
+                body = r.json()
+                found = str(body.get("relay_url") or "") if isinstance(body, dict) else ""
         except Exception:  # noqa: BLE001 - no answer: no alias, the label is refused as before
-            pass
-        _ADVERTISED_URLS[relay_url] = found
-    return _ADVERTISED_URLS[relay_url]
+            found = ""
+    _ADVERTISED_URLS[home_url] = (found, time.monotonic())
+    return found
 
 
-def dm_thread_peer(relay_url: str, agent_id: str, thread: Mapping[str, Any]) -> str:
+def dm_thread_peer(relay_url: str, agent_id: str, thread: Mapping[str, Any], *, home_url: str = "") -> str:
     """The other participant of `thread` as the relay serves it, after checking that it
     names this agent (`my_label`) as this agent and has exactly one other participant.
+    `home_url` is the agent's own configured relay URL: only when the client is talking to it (`relay_url` is
+    it) may a label carrying the host that relay names itself by (`advertised_relay_url`) pass.
     Raises `ThreadPeerChanged` otherwise."""
     me = thread.get("my_label") or agent_id
-    if not same_agent(me, agent_id, relay_url) and not same_agent(me, agent_id, advertised_relay_url(relay_url)):
+    if not same_agent(me, agent_id, relay_url) and not (
+            home_url and relay_url == home_url and same_agent(me, agent_id, advertised_relay_url(home_url))):
         raise ThreadPeerChanged(
             f"the relay labels this agent '{me}' in DM thread {thread.get('thread_id')}, not "
             f"'{agent_id}' — refusing it, since that is how a relay hides the real peer")
