@@ -823,7 +823,7 @@ def test_choose_relay_offers_the_one_in_use_then_local_remote_later(profiles, mo
     _typing(monkeypatch, "")                           # the default: the one in use
     assert cli._choose_relay() == "https://relay.example"
     out = capsys.readouterr().out
-    assert "used by alpha" in out and "Base Sepolia (testnet)" in out and "Start a relay on this machine" in out
+    assert "used by alpha" in out and "Base Sepolia (testnet)" in out and "A relay on this machine" in out
     _typing(monkeypatch, "3", "http://203.0.113.9:8088", "n", "https://relay.example")   # remote · plain http refused
     assert cli._choose_relay() == "https://relay.example"
     out = capsys.readouterr().out

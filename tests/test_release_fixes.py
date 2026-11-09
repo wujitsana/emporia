@@ -339,7 +339,7 @@ README_ROWS = {
     "profile": "Profile", "role": "Role", "keys": "Keys", "wallet": "Wallets", "wake": "Wake mode",
     "rounds": "Rounds", "optional": "Optional features", "skill_lock": "Skill lock", "playbook": "Playbook",
     "about": "Bio (`about`)", "register": "Register now", "sync_model": "Same model as this profile",
-    "signer": "Signer", "stripe": "Card payouts (Stripe)",
+    "signer": "Signer", "stripe": "Card payouts (Stripe)", "relay": "Relay",
 }
 #: Where the README words an option differently from its stored value.
 README_ALIAS = {("keys", "env"): ".env", ("keys", "files"): "key files"}

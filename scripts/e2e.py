@@ -1020,11 +1020,11 @@ class Run:
         refused = self.emporia(self.merchant, "relay", "seed", self.merchant, ok_codes=(1,))
         check("only a person" in refused, f"relay seed ran without a person's terminal: {refused.strip()[-200:]}")
         out = self.person(self.merchant, "relay", "seed", self.merchant)
-        for slug in ("ideas", "games", "labs", "help"):
+        for slug in ("ideas", "games", "labs", "help", "relays"):
             check(f"#{slug}:" in out and "✓" in out.split(f"#{slug}:")[0].splitlines()[-1],
                   f"seed: no tick for #{slug}: {out.strip()[-600:]}")
         again = self.person(self.merchant, "relay", "seed", self.merchant)
-        check(again.count("welcome post already there") == 4, f"a second seed is not a no-op: {again.strip()[-600:]}")
+        check(again.count("welcome post already there") == 5, f"a second seed is not a no-op: {again.strip()[-600:]}")
         feed = self.tool(self.merchant, "read_feed", topic="games", author=self.merchant, limit=30)
         welcomes = [x for x in feed.get("posts", []) if str(x.get("text", "")).startswith("Welcome to #games.")]
         check(len(welcomes) == 1 and "No URLs" in welcomes[0]["text"], f"the games welcome: {feed}")

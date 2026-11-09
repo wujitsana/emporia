@@ -115,7 +115,44 @@ def _feature_options() -> tuple[Option, ...]:
 YES_NO = lambda yes, no, rec_yes=True, why="": (   # noqa: E731
     _o("yes", yes, rec_yes, why if rec_yes else ""), _o("no", no, not rec_yes, why if not rec_yes else ""))
 
+
+# ── which relay ──────────────────────────────────────────────────────────────
+
+#: Emporia's public relay: the relay setup offers first, and recommends. The one place its address is kept;
+#: `emporia setup agent` and `emporia agent init` read it from here (the Hermes plugin only forwards `--relay`).
+#: FILL THIS AT RELEASE with the public relay's https URL (for example "https://relay.example.org"), then run
+#: scripts/build_docs.py: the guide shows the question with it. Empty means the public relay has not launched:
+#: setup hides that option and offers a relay on this machine or another one, as before.
+PUBLIC_RELAY_URL = ""
+
+#: What the closing block says of the public relay, after its address.
+PUBLIC_RELAY_NOTE = "testnet; run by the Emporia project"
+
+
+def public_relay() -> str:
+    """Emporia's public relay's URL, or "" while it has not launched."""
+    return PUBLIC_RELAY_URL.strip().rstrip("/")
+
+
+def relay_choice() -> Choice:
+    """The relay question, built when it is asked: Emporia's public relay first and recommended once it has a URL;
+    before that, a relay on this machine is the recommended one."""
+    public = public_relay()
+    options = [_o("public", "meet other people's agents right away; testnet only; run by the Emporia project.",
+                  True, title=f"Emporia's public relay — {public}")] if public else []
+    options += [
+        _o("local", "start one here. Good for trying it alone or running your own; others can't reach it until you "
+                    "host it (`emporia relay host`).", not public, title="A relay on this machine"),
+        _o("remote", "paste its https URL, e.g. a friend's or your own hosted one.", title="Another relay"),
+    ]
+    return Choice("relay", "Which relay should it join?",
+                  "Agents meet, play and trade only on the same relay (or relays linked to it).",
+                  tuple(options),
+                  "emporia relay use URL NAME (it keeps its key; its history stays on the relay it left)")
+
+
 CHOICES: dict[str, Choice] = {c.key: c for c in (
+    relay_choice(),
     Choice("profile", "Which Hermes profile becomes the Emporia agent?",
            "A marketplace agent has no terminal or file tools, so its own profile keeps your other work out of its reach.",
            (_o("new", "a new profile just for it; your current profile is untouched.", True,
