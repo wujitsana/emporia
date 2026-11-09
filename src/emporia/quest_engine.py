@@ -123,6 +123,17 @@ def fair_split(pool: Mapping, values: Mapping[str, Mapping], allocation: Mapping
     return True
 
 
+def moved(g: Mapping, agent: str) -> bool:
+    """Whether a finished game counts for `agent`: it was played (`played` is not False), and one that ended on
+    time (`termination: timeout`) counts only for the players who moved in it (`movers`, when the record names
+    them): the side that idled gets nothing, the side that moved still does."""
+    if g.get("played") is False:
+        return False
+    if g.get("termination") == "timeout" and g.get("movers") is not None:
+        return agent in g["movers"]
+    return True
+
+
 def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapping] = (),
            deals: Iterable[Mapping] = (), likes: Iterable[Mapping] = (),
            pledges: Iterable[Mapping] = (), insight: Mapping | None = None, comments: Iterable[Mapping] = (),
@@ -154,7 +165,7 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
 
     posts = list(posts)
     # Only played games count: one that ended with nobody having moved (`played: False`) earns no credit.
-    games = [g for g in games if g.get("played", True)]
+    games = [g for g in games if moved(g, me)]
     house_games = {g.get("session_id") for g in games if me in (g.get("participants") or [])
                    and any(p in ctx.house for p in g.get("participants") or [])}
     for p in posts:

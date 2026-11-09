@@ -69,6 +69,68 @@ def test_a_network_hash_is_ignored_after_seven_days():
         O.assign([row("a", net="n1", days_ago=6.9), row("b", net="n1", days_ago=1)], NOW.timestamp())["b"]
 
 
+def link_row(agent, to="", days_ago=30.0, label=""):
+    return {**row(agent, label=label, days_ago=days_ago), "network_group": to}
+
+
+def test_agents_registered_alongside_each_other_stay_one_operator_after_the_hash_is_gone():
+    rows = [link_row("a"), link_row("b", to="stable-a")]       # 30 days on: no hash left, only the link
+    ops = O.assign(rows, NOW.timestamp())
+    assert ops["a"] == ops["b"] and all(not r["network_hash"] for r in rows)
+    assert O.assign([link_row("a"), link_row("b")], NOW.timestamp())["a"] != \
+        O.assign([link_row("a"), link_row("b")], NOW.timestamp())["b"], "without the link they are two"
+
+
+def test_links_are_transitive_and_order_independent():
+    rows = [link_row("a"), link_row("b", to="stable-a", days_ago=25), link_row("c", to="stable-b", days_ago=20),
+            link_row("d", days_ago=10)]
+    ops = O.assign(rows, NOW.timestamp())
+    assert ops["a"] == ops["b"] == ops["c"] != ops["d"]
+    assert O.assign(list(reversed(rows)), NOW.timestamp()) == ops
+
+
+def test_a_link_is_ignored_with_grouping_off(monkeypatch):
+    monkeypatch.setenv("EMPORIA_NETWORK_GROUPING", "0")
+    ops = O.assign([link_row("a"), link_row("b", to="stable-a")], NOW.timestamp())
+    assert ops["a"] != ops["b"]
+
+
+def test_the_relay_keeps_the_link_after_the_network_hash_is_deleted():
+    from emporia.routes import agents, standing
+    tag = uuid.uuid4().hex[:6]
+    a, b, c, d = (f"nl_{x}_{tag}" for x in "abcd")
+    x, y, z = (f"nc_{k}_{tag}" for k in "xyz")
+    for k in (a, b, c, d, x, y, z):
+        _register(k)
+    now = datetime.now(UTC).isoformat()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("UPDATE authorized_agents SET registered_at = ? WHERE agent_id IN (?,?,?,?,?,?,?)",
+                     (now, a, b, c, d, x, y, z))
+    rs.forget_who()
+    agents.record_network(a, "192.0.2.10")           # a and b: one network, registered together
+    agents.record_network(b, "192.0.2.99")
+    agents.record_network(c, "198.51.100.1")         # another network
+    agents.record_network(x, "203.0.113.5")          # x, then y alongside it
+    agents.record_network(y, "203.0.113.6")
+    long_ago = (datetime.now(UTC) - timedelta(days=30)).isoformat()
+    with rs.DB_LOCK, rs.get_db() as conn:             # a month passes for a, b, c; x is now 8 days old
+        conn.execute("UPDATE authorized_agents SET registered_at = ? WHERE agent_id IN (?,?,?)", (long_ago, a, b, c))
+        conn.execute("UPDATE authorized_agents SET registered_at = ? WHERE agent_id = ?",
+                     ((datetime.now(UTC) - timedelta(days=8)).isoformat(), x))
+    agents.record_network(d, "192.0.2.50")           # same /24 as a, b, but 30 days later: not alongside them
+    agents.record_network(z, "203.0.113.77")         # alongside y (live), x's hash is past the window
+    rs.forget_who()
+    who = standing._who()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        left = [r[0] for r in conn.execute("SELECT network_hash FROM authorized_agents WHERE agent_id IN (?,?,?,?)",
+                                           (a, b, c, x))]
+    assert left == ["", "", "", ""], "no network data outlives the window"
+    assert who[a].operator == who[b].operator, "one operator for good"
+    assert who[d].operator != who[a].operator and who[c].operator != who[a].operator, "10+ days apart: separate"
+    assert who[x].operator == who[y].operator == who[z].operator, "x~y at once, y~z later: one chain"
+    rs.forget_who()
+
+
 def test_network_grouping_can_be_switched_off(monkeypatch):
     rows = [row("a", net="n1"), row("b", net="n1")]
     assert O.assign(rows, NOW.timestamp())["a"] == O.assign(rows, NOW.timestamp())["b"]

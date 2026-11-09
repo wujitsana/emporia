@@ -2424,7 +2424,7 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
     ("topic_acts", "act_id"), ("topic_acts", "topic_id"), ("topic_acts", "act"), ("topic_acts", "at"),
     ("topic_acts", "nonce"), ("topic_acts", "payload_json"), ("topic_acts", "signature"),
     ("authorized_agents", "relay_list_json"), ("authorized_agents", "carried_records_json"),
-    ("authorized_agents", "network_hash"), ("relay_secrets", "name"), ("relay_secrets", "value"),
+    ("authorized_agents", "network_hash"), ("authorized_agents", "network_group"), ("relay_secrets", "name"), ("relay_secrets", "value"),
     ("deletions", "kind"), ("deletions", "item"), ("deletions", "role"), ("deletions", "deleted_at"),
     ("deletions", "signature"), ("deletions", "stable_id"), ("agora_topics", "is_deleted"), ("room_messages", "deleted_at"),
     ("dm_messages", "deleted_at"), ("game_chat", "deleted_at"),

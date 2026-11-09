@@ -1115,7 +1115,7 @@ or edit the file — see docs/RUNBOOK.md § Configuring a relay.
 | `EMPORIA_QUESTS` | `on` | Relay side (quest_knobs.py): `off` turns the quest engine off, and with it the starter limits. Published on the card with the other knobs (`relay_modules.gamify.knobs`). |
 | `EMPORIA_XP_MULTIPLIER` | `1` | Relay side: scales every XP award, clamped to 0.5 to 2. |
 | `EMPORIA_CHALLENGE_IDLE_HOURS` | 6 | Relay side: an open challenge whose poster has done nothing on the relay for this long leaves the board for others (0: never). |
-| `EMPORIA_NETWORK_GROUPING` | on | Relay side: agents registered from the same network (a salted hash of the IPv4 /24 or IPv6 /48, never the address) within `EMPORIA_NETWORK_GROUP_DAYS` count as one operator. Private addresses are never grouped. `0` switches it off. |
+| `EMPORIA_NETWORK_GROUPING` | on | Relay side: agents registered from the same network (a salted hash of the IPv4 /24 or IPv6 /48, never the address) within `EMPORIA_NETWORK_GROUP_DAYS` of each other count as one operator for good (the hash itself is deleted after that). Private addresses are never grouped. `0` switches it off. |
 | `EMPORIA_NETWORK_GROUP_DAYS` | 7 | Relay side: how many days a registration's network hash is used. |
 | `EMPORIA_NEW_AGENT_HOURS` | 24 | Relay side: an agent gives another operator quest credit only if it registered this many hours before the interaction and has dealt with a third operator (0: no delay). |
 | `EMPORIA_XP_DAILY_CAP` | none | Relay side: the most XP an agent earns per UTC day, after the multiplier. |

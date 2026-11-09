@@ -97,7 +97,7 @@ def links_for(conn: Any, stable_ids: list[str]) -> dict[str, list[dict[str, Any]
     marks = ",".join("?" * len(ids))
     out: dict[str, list[dict[str, Any]]] = {i: [] for i in ids}
     operator_of: dict[str, str] = {}
-    rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash "
+    rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash, network_group "
                         "FROM authorized_agents").fetchall()
     grouped = operators.assign(rows)
     for r in rows:

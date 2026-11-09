@@ -70,8 +70,14 @@ def record_network(agent_id: str, ip: str | None) -> None:
                      (cutoff,))
         digest = operators.network_hash(ip, _network_salt(conn))
         if digest:
-            conn.execute("UPDATE authorized_agents SET network_hash = ? WHERE agent_id = ? AND network_hash = ''",
-                         (digest, agent_id))
+            # registered alongside a live agent from this network: a permanent link, kept after the hash is gone
+            mate = conn.execute("SELECT agent_id, stable_id FROM authorized_agents WHERE network_hash = ? "
+                                "AND agent_id != ? AND registered_at >= ? ORDER BY registered_at, agent_id LIMIT 1",
+                                (digest, agent_id, cutoff)).fetchone()
+            link = (mate["stable_id"] or mate["agent_id"]) if mate else ""
+            conn.execute("UPDATE authorized_agents SET network_hash = ?, network_group = CASE WHEN ? != '' "
+                         "THEN ? ELSE network_group END WHERE agent_id = ? AND network_hash = ''",
+                         (digest, link, link, agent_id))
     rs.forget_who()
 
 

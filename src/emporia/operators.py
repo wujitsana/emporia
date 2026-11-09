@@ -17,14 +17,18 @@ nothing. Claiming a label never earns anything, never grants anything of theirs,
 Verified badges (a person's attested identity) come later and will be a separate field.
 
 **Network grouping** (`EMPORIA_NETWORK_GROUPING`, on by default): a label costs nothing, so agents that
-registered from the same network also count as one operator, in addition to the label rule. At registration the
-relay stores `network_hash`: a salted hash of the client's network (the IPv4 /24 or IPv6 /48 of the address the
-relay already resolves behind its trusted proxy), never the address itself. The salt is a random secret of this
-relay, made once and kept in its database (never logged, never in any answer), so a hash means nothing off this
-relay. Agents whose hashes match, both registered within the last `EMPORIA_NETWORK_GROUP_DAYS` (7) days, are one
-operator (`assign`); after that the hash is ignored and cleared. Loopback, private (10/8, 172.16/12, 192.168/16,
+registered from the same network within `EMPORIA_NETWORK_GROUP_DAYS` (7) days of each other count as one operator
+**for good**, in addition to the label rule. At registration the relay stores `network_hash`: a salted hash of the
+client's network (the IPv4 /24 or IPv6 /48 of the address the relay already resolves behind its trusted proxy),
+never the address itself. The salt is a random secret of this relay, made once and kept in its database (never
+logged, never in any answer), so a hash means nothing off this relay. If the new agent's hash matches a live one
+(another agent registered within the window), the relay records `network_group` on the new agent: the other agent's
+stable id. That link is permanent, transitive and order-independent (`assign` unions over it: A~B on day 0 and B~C
+on day 5 make A, B and C one operator). The hash itself is ignored and deleted after the window, so no network data
+outlives 7 days; only the fact "registered alongside X" remains. Loopback, private (10/8, 172.16/12, 192.168/16,
 fc00::/7), link-local and unparseable addresses get no hash, so local development and Docker never merge
-everyone. Several agents of one operator stay allowed; each still earns from other operators.
+everyone; the same network registered more than the window apart is not grouped. With grouping off nothing is
+merged by hash or by link. Several agents of one operator stay allowed; each still earns from other operators.
 
 `assign` is the one place that turns rows into operators; every route that needs "the same operator" for many
 agents goes through it (or `of_agents` for a database connection).
@@ -144,6 +148,21 @@ def assign(rows: Iterable[Any], now: float | None = None) -> dict[str, str]:
             x = parent[x]
         return x
     if grouping_on():
+        # a permanent link: the agent registered alongside another within the window (`network_group` names that
+        # agent by stable id, else agent id). Transitive, so A~B and B~C make A, B and C one operator for good.
+        by_name = {}
+        for r in rows:
+            keys = r.keys() if hasattr(r, "keys") else r
+            by_name[r["agent_id"]] = base[r["agent_id"]]
+            if "stable_id" in keys and r["stable_id"]:
+                by_name[r["stable_id"]] = base[r["agent_id"]]
+        for r in rows:
+            keys = r.keys() if hasattr(r, "keys") else r
+            link = (r["network_group"] if "network_group" in keys else "") or ""
+            if link in by_name:
+                a, b = find(base[r["agent_id"]]), find(by_name[link])
+                if a != b:
+                    parent[max(a, b)] = min(a, b)
         cutoff = now - group_days() * 86_400
         first: dict[str, str] = {}
         for r in rows:
@@ -162,5 +181,5 @@ def assign(rows: Iterable[Any], now: float | None = None) -> dict[str, str]:
 
 def of_agents(conn: Any) -> dict[str, str]:
     """`assign` over every agent of a relay's database."""
-    return assign(conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash "
-                               "FROM authorized_agents").fetchall())
+    return assign(conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash, "
+                               "network_group FROM authorized_agents").fetchall())

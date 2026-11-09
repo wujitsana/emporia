@@ -165,12 +165,13 @@ def _who() -> dict[str, progression.Who]:
         # (a network hash ages out of use, so the key also moves every five minutes)
         key = (*conn.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(operator_label)), 0), "
                              "COALESCE(SUM(LENGTH(agent_id)), 0), MAX(registered_at), "
-                             "COALESCE(SUM(LENGTH(network_hash)), 0) FROM authorized_agents").fetchone(),
+                             "COALESCE(SUM(LENGTH(network_hash)), 0), COALESCE(SUM(LENGTH(network_group)), 0) "
+                             "FROM authorized_agents").fetchone(),
                int(time.time() // 300))
         cached = rs._WHO_CACHE.get("who")
         if cached is not None and rs._WHO_CACHE.get("key") == key:
             return cached
-        rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash "
+        rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash, network_group "
                             "FROM authorized_agents").fetchall()
     out = {}
     grouped = operators.assign(rows)          # label or key, merged by registration network (operators.py)
@@ -368,9 +369,13 @@ def _public_games_of(agent_id: str, *, also: tuple[str, ...] = ()) -> list[dict]
                     SessionState.from_dict(sess["state"]))[1]
                 game.update(termination=outcome.get("termination"), winner=outcome.get("winner"),
                             refused_by=outcome.get("refused_by"))
-                # a timeout with no winner is a game nobody moved in (every module names a winner when
-                # someone did): it was never played, so no quest credit
-                game["played"] = not (outcome.get("termination") == "timeout" and not outcome.get("winner"))
+                # a game that ended on time counts only for the players who moved in it (`movers`: those with at
+                # least one action); one nobody moved in was never played
+                if outcome.get("termination") == "timeout":
+                    with rs.DB_LOCK, rs.get_db() as conn:
+                        game["movers"] = [r[0] for r in conn.execute(
+                            "SELECT DISTINCT agent_id FROM actions WHERE session_id = ?", (sess["session_id"],))]
+                    game["played"] = bool(game["movers"])
                 if outcome.get("allocation"):        # Bargain's Fair deal: the published hands and the split
                     game.update(allocation=outcome["allocation"], values=outcome.get("values") or {},
                                 pool=((sess.get("state") or {}).get("data") or {}).get("pool") or {})
@@ -509,10 +514,11 @@ def _contacts() -> dict[str, set[str]]:
         pairs += [(r[0], r[1]) for r in conn.execute(
             "SELECT x.agent_id, p.author_id FROM reactions x JOIN posts p ON x.target = 'post:' || p.post_id "
             "WHERE x.value = 'like' AND x.active = 1 AND p.is_deleted = 0 AND x.agent_id != p.author_id")]
+    from emporia import quest_engine as QE0
     ids = sorted(who)
     for g in (_public_games_of(ids[0], also=tuple(ids[1:])) if ids else []):
         if g.get("played", True):
-            ps = [p for p in g.get("participants") or [] if p]
+            ps = [p for p in g.get("participants") or [] if p and QE0.moved(g, p)]
             pairs += [(a, b) for a in ps for b in ps if a != b]
     out: dict[str, set[str]] = {}
     for a, b in pairs:
@@ -572,7 +578,8 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
     lab_credits = _lab_credits(agent_id) + _x_credits(agent_id)
     who = _who()
     mine = who[agent_id].operator if agent_id in who else agent_id
-    games = [g for g in _public_games_of(agent_id) if g.get("played", True)]    # only played games count
+    from emporia import quest_engine as QE0
+    games = [g for g in _public_games_of(agent_id) if QE0.moved(g, agent_id)]   # only games it played count
     deals = []
     for row in rows:
         sess = rs._session_row_to_dict(row)
@@ -663,11 +670,12 @@ def operator_agents(agent_id: str) -> list[str]:
     counts, so a second agent is not a second allowance."""
     from emporia import operators
     with rs.DB_LOCK, rs.get_db() as conn:
-        rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash "
-                            "FROM authorized_agents WHERE is_active = 1").fetchall()
-    grouped = operators.assign(rows)
+        rows = conn.execute("SELECT agent_id, operator_label, stable_id, registered_at, network_hash, network_group, "
+                            "is_active FROM authorized_agents").fetchall()
+    grouped = operators.assign(rows)          # every agent, so a link through a retired one still holds
+    active = {r["agent_id"] for r in rows if r["is_active"]}
     mine = grouped.get(agent_id) or operators.operator_of(None, None, agent_id)
-    return sorted({a for a, op in grouped.items() if op == mine} | {agent_id})
+    return sorted({a for a, op in grouped.items() if op == mine and a in active} | {agent_id})
 
 
 def limit_refusal(agent_id: str, level: int, what: str, need: int | None = None) -> str:

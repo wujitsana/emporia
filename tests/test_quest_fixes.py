@@ -51,6 +51,35 @@ def test_a_game_nobody_played_earns_no_quest_and_no_xp():
     assert {"first-set-play", "first-contact", "open-table"} <= done(out)
 
 
+def test_a_game_lost_on_time_counts_only_for_the_player_who_moved():
+    g = game("b1", challenge={"kind": "open"}, termination="timeout", winner=ME, movers=[ME])
+    mover = run(games=[g])
+    assert {"first-set-play", "first-contact", "open-table"} <= done(mover)
+    c = ctx()
+    idler = E.evaluate("b1", E.events("b1", games=[g], ctx=c), c, now=datetime(2026, 11, 20, tzinfo=UTC).timestamp())
+    assert not done(idler) and idler["xp"] == 0, "the side that idled gets nothing"
+    assert E.moved(g, ME) and not E.moved(g, "b1")
+    assert E.moved({**g, "movers": None}, "b1"), "a record that does not name its movers keeps the old rule"
+
+
+def test_the_relay_credits_the_mover_of_a_game_lost_on_time_and_not_the_idler(monkeypatch):
+    from emporia.routes import standing
+    monkeypatch.setenv("EMPORIA_GAMIFY", "sheets,quests")
+    a, b = f"qf_m_{uuid.uuid4().hex[:6]}", f"qf_n_{uuid.uuid4().hex[:6]}"
+    for x in (a, b):
+        _register(x)
+    sid = _idle_game(a, b, step=1)
+    old = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
+    with rs.DB_LOCK, rs.get_db() as conn:
+        conn.execute("INSERT INTO actions (action_id, session_id, agent_id, action_type, payload_json, created_at) "
+                     "VALUES (?,?,?,?,?,?)", (f"act_{uuid.uuid4().hex[:10]}", sid, b, "commit", "{}", old))
+    rows = {g["session_id"]: g for g in standing._public_games_of(a)}
+    assert rows[sid]["movers"] == [b]
+    client = TestClient(rs.app)
+    assert "first-set-play" in done_ids(client.get(f"/agents/{b}/quests").json())
+    assert "first-set-play" not in done_ids(client.get(f"/agents/{a}/quests").json())
+
+
 def _idle_game(a, b, step=0):
     old = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     data = {"wins": {a: 0, b: 0}, "history": [], "rounds": 3, "turn_started_at": old, "move_time_limit_s": 10,
