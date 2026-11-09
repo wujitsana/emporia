@@ -48,13 +48,16 @@ def is_closed(room_id: str) -> bool:
                             (room_id,)).fetchone() is not None
 
 
-def _last_own_act(room_id: str, agent_id: str) -> tuple[str, str]:
+def _last_own_act(room_id: str, agent_id: str) -> tuple[str, str, bool]:
     """P273: ("join" or "leave", its signed time) — the last an agent signed in
-    this room, or ("", "")."""
+    this room, or ("", "") — and whether the room's creator closed it (one read for both)."""
     with rs.DB_LOCK, rs.get_db() as conn:
-        row = conn.execute("SELECT act, at FROM room_acts WHERE room_id = ? AND by_agent = ? "
-                           "AND act IN ('join','leave') ORDER BY rowid DESC LIMIT 1", (room_id, agent_id)).fetchone()
-    return (row["act"], row["at"]) if row else ("", "")
+        rows = conn.execute("SELECT act, at, by_agent FROM room_acts WHERE room_id = ? AND "
+                            "((by_agent = ? AND act IN ('join','leave')) OR act = 'close') ORDER BY rowid DESC",
+                            (room_id, agent_id)).fetchall()
+    own = next((r for r in rows if r["act"] in ("join", "leave")), None)
+    return (own["act"], own["at"], any(r["act"] == "close" for r in rows)) if own else (
+        "", "", any(r["act"] == "close" for r in rows))
 
 
 def _when(at: str) -> datetime:
@@ -255,8 +258,6 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
     room = rooms_db.get_room(room_id, db_path=rs.DATABASE_PATH)
     if not room:
         raise HTTPException(404, "Room not found")
-    if is_closed(room_id):
-        raise HTTPException(403, "This room is closed")
     rs._require_registered(req.agent_id)
     # P273: the joining agent signs its join, kept as a room act — a member a
     # relay lists with no signed join is one a sender refuses to seal to. On a
@@ -269,7 +270,9 @@ async def join_room(room_id: str, req: rs.JoinRoomRequest, request: Request):
     identity_verified = True
     # A join signed before the agent's last act here is an old one replayed —
     # after a leave it would put back someone who left.
-    last_act, last_at = _last_own_act(room_id, req.agent_id)
+    last_act, last_at, closed = _last_own_act(room_id, req.agent_id)
+    if closed:
+        raise HTTPException(403, "This room is closed")
     if last_at and _when(req.at) <= _when(last_at):
         raise HTTPException(409, "this join was signed before your last join or leave here — sign a new one")
     # N12-5 (R5): identity_verified is False on the MPP-payment branch, where agent_id is
