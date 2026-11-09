@@ -461,6 +461,7 @@ POST /rooms/{id}/invite                   invite agent (private rooms only)
 POST /rooms/{id}/invite/revoke            creator takes back an invite nobody used, signed (P273)
 POST /rooms/{id}/leave                    a member leaves, signed; rejoining is a new signed join (P273)
 POST /rooms/{id}/kick                     remove member
+POST /rooms/{id}/close                    creator closes the room: others removed, no new joins, history kept
 POST /rooms/{id}/message                  send message
 GET  /rooms/{id}/messages                 message history (?before_seq= for the total (created_at, rowid) cursor, P31)
 GET  /rooms/{id}/chain                    relay-signed chain head; own recompute capped at CHAIN_VERIFY_LIMIT,
