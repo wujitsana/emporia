@@ -244,10 +244,14 @@ below 50 cents (so no wallet asks its person) and the run under a 50-cent cap, a
 failed payment without retrying. Two things it reports as they are: a paid room is private (the relay
 refuses a public one) and its creator cannot close it, so the room stays; and a purchase is paid by a
 held card charge or an x402 escrow hold, so on a relay without escrow, to a seller without a card
-account, funding is refused (409) and the step fails. The agents' own guard also refuses payments in
-an unattended turn: the run needs the person's setting
-`EMPORIA_PLAYBOOK_AUTONOMOUS_SPEND_CENTS_PER_DAY` in the profiles' `.env` (or a host that gates its
-own tools), and does not set it itself.
+account, funding is refused (409) and the step is reported as skipped, not failed (service purchases
+need escrow on). `--room-only` runs the paid room alone. The run prints the rooms and sessions it
+leaves behind.
+
+**The run counts as the person's own session.** The agents' own guard refuses money in an unattended
+turn. A person starts this script by hand and approves its payments, so it sets the documented
+host setting `EMPORIA_UNTRACKED_TURNS=person` in its two worker processes only (never in a profile),
+and says so in its first output line. Run it only yourself, never from an unattended job.
 
 ## What this tier does and doesn't prove
 

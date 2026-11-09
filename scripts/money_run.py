@@ -156,11 +156,15 @@ class Agent:
         python = root / ".venv" / "bin" / "python"
         if not (python.is_file() and sites):
             raise StepFailed(f"no Hermes interpreter under {root}")
+        # This run counts as the person's own session: a person starts it by hand and approved its payments.
+        # The server's documented setting for a host that gates its own tools is applied to THIS worker
+        # process only (never a profile setting); without it every payment is refused as an unattended turn.
+        worker = "import os\nos.environ['EMPORIA_UNTRACKED_TURNS'] = 'person'\n" + WORKER
         env = {k: v for k, v in os.environ.items() if k != "EMPORIA_RELAY_URL"}
         env.update(HERMES_HOME=str(self.home), PYTHONPATH=os.pathsep.join([str(root), str(sites[-1])]))
         self.logdir.mkdir(parents=True, exist_ok=True)
         err = (self.logdir / f"worker-{self.name}.log").open("ab")
-        proc = subprocess.Popen([str(python), "-c", LAUNCH, WORKER], env=env, text=True, stdin=subprocess.PIPE,
+        proc = subprocess.Popen([str(python), "-c", LAUNCH, worker], env=env, text=True, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=err, bufsize=1)
         if proc.stdout.readline().strip() != '{"ready": true}':
             proc.kill()
@@ -200,6 +204,10 @@ class Report:
         self.steps.append((ok, text))
         print(("✓ " if ok else "✗ ") + text, flush=True)
 
+    def skip(self, text: str) -> None:
+        """A step that cannot apply here: not a failure."""
+        print("- skipped: " + text, flush=True)
+
     def note(self, text: str) -> None:
         self.lines.append(text)
         print("  " + text, flush=True)
@@ -226,11 +234,13 @@ def run(alpha: Any, beta: Any, chain: Any, report: Report, *, dry_run: bool, roo
         spend: Spend, relay_url: str, sleep: Callable[[float], None] = time.sleep, stamp: str = "") -> bool:
     stamp = stamp or datetime.now(UTC).strftime("%Y-%m-%d %H:%MZ")
     cleanup: list[Callable[[], None]] = []
+    left_behind: list[str] = []
     t0 = time.monotonic()
     try:
         # planned total, before anything happens
         for cents in (room_cents, service_cents):
-            spend.allow(cents)
+            if cents:
+                spend.allow(cents)
         if room_cents + service_cents > spend.cap_cents:
             raise Refused(f"the planned {room_cents + service_cents} cents is over the cap of {spend.cap_cents}")
 
@@ -260,6 +270,7 @@ def run(alpha: Any, beta: Any, chain: Any, report: Report, *, dry_run: bool, roo
         report.step(bool(room.get("success") and room_id), f"alpha made the paid room {room_id} ({room_cents} cents, x402)")
         if not room_id:
             raise StepFailed(f"create_room: {json.dumps(room)[:400]}")
+        left_behind.append(f"room {room_id}")
         ask = beta.tool("join_room", room_id)
         report.step(ask.get("error") == "payment_required", "beta's join answers payment_required")
         req = requirement_from(ask)
@@ -288,6 +299,9 @@ def run(alpha: Any, beta: Any, chain: Any, report: Report, *, dry_run: bool, roo
                 raise StepFailed("no matching USDC transfer found on chain")
 
         # 2. service purchase (the buyer makes the session)
+        if not service_cents:
+            report.skip("the service purchase (--room-only)")
+            return all(ok for ok, _ in report.steps)
         price = f"{service_cents / 100:.2f}"
         sess = beta.tool("create_session", "emporia:service:v1", config={
             "description": f"money run {stamp}: a testnet service", "requirements": ["reply with any text"],
@@ -298,6 +312,7 @@ def run(alpha: Any, beta: Any, chain: Any, report: Report, *, dry_run: bool, roo
         if not sid:
             return False
         cleanup.append(lambda: beta.tool("abandon_session", sid))
+        left_behind.append(f"service session {sid} (abandoned at the end)")
         j = alpha.tool("join_session", sid)
         report.step(bool(j.get("success")), "alpha joined as the seller"
                     + ("" if j.get("success") else f": {json.dumps(j)[:300]}"))
@@ -306,11 +321,17 @@ def run(alpha: Any, beta: Any, chain: Any, report: Report, *, dry_run: bool, roo
         if dry_run:
             fund = beta.tool("fund_session", sid)
             report.note("the funding requirement without paying: " + json.dumps(fund)[:500])
-            report.step(True, "dry run: not funding")
+            if _no_way_to_pay(fund):
+                report.skip(NO_ESCROW)
+            else:
+                report.step(True, "dry run: not funding")
         else:
             spend.allow(service_cents)
             block = chain.block()
             fund = beta.tool("fund_session", sid, pay_with_x402=True)
+            if _no_way_to_pay(fund):
+                report.skip(NO_ESCROW)
+                return all(ok for ok, _ in report.steps)
             if not fund.get("success"):
                 report.step(False, "beta funds the purchase with x402: " + json.dumps(fund)[:600])
                 report.note("stopping the purchase here; nothing was paid for it")
@@ -347,9 +368,21 @@ def run(alpha: Any, beta: Any, chain: Any, report: Report, *, dry_run: bool, roo
                             f"beta {usd(b1)} USDC ({(b1 - b0) / 1e6:+.6f})")
         except Exception as e:  # noqa: BLE001
             report.note(f"balances after: unreadable ({e})")
+        if left_behind:
+            report.note("left behind on the relay (a room cannot be closed or left by its creator): "
+                        + "; ".join(left_behind))
         report.note(f"spent by this run: {spend.spent_cents} cents; elapsed {time.monotonic() - t0:.1f}s"
                     + ("; DRY RUN" if dry_run else ""))
     return all(ok for ok, _ in report.steps)
+
+
+NO_ESCROW = ("this relay has escrow off and the seller has no card account — "
+             "service purchases need escrow on (docs/payments.md)")
+
+
+def _no_way_to_pay(fund: Any) -> bool:
+    """fund_session's 409: the seller cannot be paid by any rail this relay offers."""
+    return isinstance(fund, dict) and not fund.get("success") and "cannot receive payments yet" in json.dumps(fund)
 
 
 def _find_transfer(chain: Any, payer: str, payee: str, since: int, exact: int, sleep: Callable[[float], None],
@@ -381,6 +414,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--hermes", default=shutil.which("hermes") or "")
     ap.add_argument("--room-cents", type=int, default=5)
     ap.add_argument("--service-cents", type=int, default=10)
+    ap.add_argument("--room-only", action="store_true", help="the paid room only: no service purchase")
     ap.add_argument("--cap-cents", type=int, default=SPEND_CAP_CENTS)
     ap.add_argument("--logdir", default="", help="where the workers' logs go (default: a folder beside this run's cwd)")
     args = ap.parse_args(argv)
@@ -392,9 +426,11 @@ def main(argv: list[str] | None = None) -> int:
     beta = Agent(args.beta, profile_home(args.beta, args.beta_home), args.hermes, args.relay_url, logdir)
     report = Report()
     print(f"money run {'(dry run) ' if args.dry_run else ''}on {args.relay_url}, {NETWORK}")
+    print("NOTE: this run counts as the person's OWN session (EMPORIA_UNTRACKED_TURNS=person, set in the two "
+          "worker processes only, no profile setting changed), because a person starts it by hand.")
     try:
         ok = run(alpha, beta, Chain(args.rpc), report, dry_run=args.dry_run, room_cents=args.room_cents,
-                 service_cents=args.service_cents, spend=Spend(cap_cents=min(args.cap_cents, SPEND_CAP_CENTS)),
+                 service_cents=0 if args.room_only else args.service_cents, spend=Spend(cap_cents=min(args.cap_cents, SPEND_CAP_CENTS)),
                  relay_url=args.relay_url)
     finally:
         alpha.close()
