@@ -147,8 +147,8 @@ goes depends on how the relay runs:
 
 The relay's settings stay in its `.env` (`env_file` in compose): they are not secret, and
 `emporia relay config` and the live re-read of access and members use that one file. The operator's
-escrow key is best not given at all: `emporia relay host` makes it in its own 0600 file in the
-relay's volume, where it never passes through an environment.
+escrow key (only on a relay that opted in to escrow) is best not given at all: `emporia relay host`
+makes it in its own 0600 file in the relay's volume, where it never passes through an environment.
 
 In the image the relay starts as root only long enough to read its secret files (they belong to
 whoever wrote them on the host) and hand its data to its own user, then runs as `emporia` (uid 10001).
@@ -185,7 +185,7 @@ shows it), what it posted stays as history, and it can register again with its k
 
 ### Who could reach a relay's keys
 
-A relay holds its identity key, the escrow operator key and, with cards, the Stripe key. Apart from
+A relay holds its identity key and, with escrow, the escrow operator key and, with cards, the Stripe key. Apart from
 the agents means the same as for the signer (docs/agent-security-setup.md § The signer):
 
 | The relay runs | Its keys are out of the agents' reach when |
@@ -336,8 +336,9 @@ Docker runs on the **host**. When Hermes itself runs in a container (it usually 
 can't reach Docker: it writes the folder and prints the `docker compose` commands to run on the host,
 in that folder. Every path in `compose.yaml` is relative, so it works wherever Hermes's data is
 mounted there. With Docker reachable it builds the image, makes the escrow operator key inside the
-relay's volume (`emporia-data`, which also holds its identity and database — back it up, never
-delete it), starts it and waits for it.
+relay's volume (only when you opted in to escrow: `--escrow`, or yes to its question; money alone is
+x402 paid directly and needs no operator key) (`emporia-data`, which also holds its identity and
+database — back it up, never delete it), starts it and waits for it.
 
 This machine reaches it at `http://127.0.0.1:8089`; others at `https://<domain>`. Move agents with
 `emporia relay use https://<domain> NAME`.
