@@ -191,6 +191,7 @@ class Ctx:
         assert path.is_file() and description, name
         got.setdefault("skills", []).append(name)
     def register_cli_command(self, **kw): got["cli"] = kw["name"]
+    def register_command(self, name, handler, **kw): got["command"] = name
 m.register(Ctx())
 print(json.dumps(got))
 """
@@ -200,7 +201,7 @@ print(json.dumps(got))
     assert json.loads(out.stdout.strip().splitlines()[-1]) == {
         "hooks": ["pre_tool_call", "transform_tool_result", "pre_llm_call", "post_llm_call", "pre_tool_call",
                   "transform_tool_result", "pre_llm_call", "pre_llm_call"], "platform": "emporia",
-        "skills": ["emporia", "emporia-setup"], "cli": "emporia"}
+        "skills": ["emporia", "emporia-setup"], "cli": "emporia", "command": "emporia"}
 
 
 def test_the_agent_id_is_the_profile_name_except_for_the_default_profile(tmp_path, monkeypatch, capsys):

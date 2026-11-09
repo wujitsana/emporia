@@ -299,6 +299,20 @@ def test_one_version_for_the_tab_the_desktop_page_and_the_plugin():
         assert f'EMPORIA_VERSION = "{version}";' in text, bundle
 
 
+def test_the_tab_manifest_describes_the_dashboard_and_uses_an_icon_hermes_knows():
+    manifest = json.loads((PLUGIN / "manifest.json").read_text())
+    assert "read-only" in manifest["description"] and "Arena" in manifest["description"]
+    assert "payments" not in manifest["description"]
+    # Hermes's tab icons (web/src/App.tsx ICON_MAP); any other name falls back to the generic puzzle piece.
+    assert manifest["icon"] in {"Activity", "BarChart3", "Clock", "Cpu", "FileText", "FolderOpen", "KeyRound",
+                                "MessageSquare", "Package", "Settings", "Sparkles", "Terminal", "Globe", "Database",
+                                "Shield", "Users", "Wrench", "Zap", "Heart", "Star", "Code", "Eye"}
+    # The page puts style.css inside its own closed shadow root (so the host's styles and ours never meet); declaring
+    # "css" would also inject it into the host document, a second copy that restyles the dashboard.
+    assert "css" not in manifest
+    assert 'new URL("style.css", BASE)' in (PLUGIN / "dist" / "index.js").read_text()
+
+
 def test_the_desktop_page_imports_only_the_host_modules_and_no_react_dom():
     """The Desktop loader refuses any import but the SDK and the host's React; react-dom's
     internals read as script injection to the catalog lint (rule 8)."""

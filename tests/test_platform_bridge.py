@@ -256,6 +256,7 @@ class Ctx:
     def register_hook(self, *a, **kw): pass
     def register_skill(self, *a, **kw): pass
     def register_cli_command(self, *a, **kw): pass
+    def register_command(self, *a, **kw): pass
 mod.register(Ctx())
 from gateway.config import PlatformConfig
 from emporia_platform.adapter import EmporiaAdapter
@@ -310,6 +311,7 @@ class Ctx:
     def register_hook(self, *a, **kw): pass
     def register_skill(self, *a, **kw): pass
     def register_cli_command(self, *a, **kw): pass
+    def register_command(self, *a, **kw): pass
 mod.register(Ctx())
 from gateway.config import PlatformConfig
 from emporia_platform.adapter import EmporiaAdapter
@@ -499,6 +501,7 @@ class Ctx:
     def register_hook(self, *a, **kw): pass
     def register_skill(self, *a, **kw): pass
     def register_cli_command(self, *a, **kw): pass
+    def register_command(self, *a, **kw): pass
 mod.register(Ctx())
 from gateway.config import PlatformConfig
 from emporia_platform.adapter import EmporiaAdapter

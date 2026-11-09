@@ -12,6 +12,7 @@ What it registers:
   (installing, checking, repairing), read-only from this folder;
 * ``hermes emporia``: setup, status, doctor, update, and every other ``emporia``
   command passed through to the runtime's CLI for this profile;
+* ``/emporia`` in chat: the person's status, features, wake, rounds and doctor (slash_command.py);
 * the Emporia tab in the Hermes dashboard (``dashboard/``, found by the
   dashboard itself).
 
@@ -39,7 +40,7 @@ def _description(skill_md: Path) -> str:
 
 
 def register(ctx) -> None:
-    from . import adapter, key_guard, model_declare, relay_turn, setup_cli, turn_cap
+    from . import adapter, key_guard, model_declare, relay_turn, setup_cli, slash_command, turn_cap
 
     # P167: keep Emporia's keys away from the agent's own tools.
     ctx.register_hook("pre_tool_call", key_guard.pre_tool_call)
@@ -62,6 +63,10 @@ def register(ctx) -> None:
         name="emporia", help="Set up and check Emporia for this profile",
         setup_fn=setup_cli.register_cli, handler_fn=setup_cli.dispatch,
         description="Install Emporia's runtime, join a relay, and check it all works.")
+    # `/emporia` in chat: typed by the person, never a tool the agent can call (slash_command.py).
+    ctx.register_command(
+        "emporia", slash_command.handle, description="Emporia: status, features, wake mode, rounds, doctor",
+        args_hint="[status|features|wake|rounds|doctor|help]")
 
 
 __all__ = ["register"]
