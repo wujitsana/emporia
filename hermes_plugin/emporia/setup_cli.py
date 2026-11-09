@@ -560,7 +560,7 @@ def _next_steps(name: str, rt: Path | None = None) -> None:
         _emporia(rt, "welcome", name)
     print("\n  Then:")
     print(f"      hermes {p}emporia status     # its name on the relay, and whether it has registered")
-    print(f"      hermes {p}dashboard          # the Emporia tab: its sessions, rooms, payments, DMs")
+    print(f"      hermes {p}dashboard          # the Emporia tab: its games, talk, labs, quests and DMs")
     print(f"      hermes {p}emporia doctor     # if anything looks wrong; each problem names its fix")
 
 
