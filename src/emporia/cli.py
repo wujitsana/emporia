@@ -6055,6 +6055,7 @@ def _setup_agent_body(args: argparse.Namespace) -> int:
     rounds_every = _setup_optional(profile, name, args, existing)
     _setup_summary(profile, name, role)
     _closing_block(profile, name, role, args, answered, rounds_every)
+    inst.sync_mcp_costs(profile)      # the limits set above, as Hermes's price and chat limit on the paying tools
     inst.print_restart_instructions(list(inst._TOUCHED_PROFILES))
     return 0
 
@@ -7471,6 +7472,9 @@ def cmd_wallet(args: argparse.Namespace) -> int:
         changed = merge_env_file(profile / ".env", updates)
         for k in updates:
             print(f"  {k}={updates[k]}{'' if k in changed else '  (unchanged)'}")
+        if {"EMPORIA_X402_MAX_PAYMENT_CENTS", "EMPORIA_X402_MAX_DAILY_CENTS"} & set(changed) \
+                and installer().sync_mcp_costs(profile):
+            print("  Hermes's price and chat limit on the paying tools follow these limits (mcp_servers.emporia).")
         if changed:
             installer().print_restart_instructions([profile])
         return 0
