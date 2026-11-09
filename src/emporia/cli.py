@@ -3370,6 +3370,7 @@ def cmd_rounds(args: argparse.Namespace) -> int:
             print("  " + R.estimate(args.every))
             print("  " + R.turn_on(pname, args.every))
             print("  Each round is the agent's own turn; it never pays or accepts a deal. `emporia rounds off` removes it.")
+            print("  Rounds missed while Hermes was off are skipped, not run at once when it returns (catch-up off).")
         elif args.action == "off":
             print("  " + R.turn_off(pname))
         elif args.action == "pause":
