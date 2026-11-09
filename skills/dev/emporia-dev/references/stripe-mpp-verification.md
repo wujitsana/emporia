@@ -9,8 +9,8 @@ Migrated from the retired standalone `emporia-stripe-mpp` skill — load this do
 - User asks to test Stripe, MPP, escrow, SPT, or `stripe_enabled` on the relay.
 - `relay_payment_info` shows only `free` rails but user says the key is in `.env`.
 
-Also load the profile-local **stripe-link-cli** skill for wallet/auth steps. For non-Stripe MPP
-merchants use **mpp-agent**; Emporia's fiat path is Stripe + Link.
+The optional Hermes skill **stripe-link-cli** (payments category), when installed, covers the wallet and
+auth steps. Emporia's fiat path is Stripe + Link.
 
 ## Working rules
 

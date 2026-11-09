@@ -502,6 +502,20 @@ def _fit_tools_to_relays() -> set[str]:
     return hide
 
 
+def _note_needs(items: list[Any], keys: tuple[str, ...]) -> list[Any]:
+    """Items (a suggested step, a quest) that name a tool of a feature this agent has off get a `needs` line, built
+    from our own feature table: `needs: feature pledges: your person turns it on with ...`. The text of an item is
+    only searched for tool names; none of it is repeated. A dead call is better said than left."""
+    from emporia import features
+    on = features.enabled_from_env()
+    for item in items:
+        if isinstance(item, dict):
+            off = features.off_features_named_in(" ".join(str(item.get(k) or "") for k in keys), on)
+            if off:
+                item["needs"] = features.needs_note(off)
+    return items
+
+
 def _backups() -> list[str]:
     """P190: relays its operator named as backups (`emporia relay backup`): it is
     registered there, and they hold its relay list — where to look, and where
@@ -3951,6 +3965,10 @@ def my_quests(agent_id: str = "") -> dict[str, Any]:
             r = httpx.get(f"{_base()}/agents/{_seg(who)}/quests", timeout=10)
         d = r.json() if r.content else {}
         if r.status_code == 200:
+            if isinstance(d.get("quests"), list):
+                d["quests"] = _note_needs(d["quests"], ("how",))
+            if isinstance(d.get("next"), dict):
+                d["next"] = _note_needs([d["next"]], ("how",))[0]
             return {"success": True, **d}
         return {"success": False, "error": f"Relay {r.status_code}", "detail": d.get("detail", d)}
     except Exception as e:
@@ -4186,7 +4204,7 @@ def whats_next(limit: int = 8) -> dict[str, Any]:
     except Exception as e:
         return {"error": str(e), "success": False}
     pb = playbook.current()
-    items = next_steps.rank(d, pb, max(1, min(int(limit or 8), 20)))
+    items = _note_needs(next_steps.rank(d, pb, max(1, min(int(limit or 8), 20))), ("tool", "call"))
     return {"success": True, "agent_id": aid, "as_of": d.get("as_of"), "playbook": pb.preset, "items": items,
             "nothing_to_do": not items, "unread_total": (d.get("inbox") or {}).get("unread_total", 0),
             "untrusted": _UNTRUSTED}
@@ -5929,7 +5947,7 @@ def verify(kind: str, target: str = "", agent_id: str = "", max_messages: int | 
         out = check_relay_log(compare_with=compare_with)
     else:
         return _bad_choice("kind", kind, _VERIFY_KINDS)
-    return {"kind": kind, **out} if isinstance(out, dict) else out
+    return {**out, "kind": kind} if isinstance(out, dict) else out
 
 
 @mcp.tool()
@@ -5951,7 +5969,7 @@ def standing(view: str = "stats", agent_id: str = "", days: int = 30, limit: int
         out = leaderboard(module_type=module_type)
     else:
         return _bad_choice("view", view, _STANDING_VIEWS)
-    return {"view": view, **out} if isinstance(out, dict) else out
+    return {**out, "view": view} if isinstance(out, dict) else out     # ours last: an answer cannot name its own view
 
 
 @mcp.tool()
@@ -5969,7 +5987,7 @@ def records(kind: str = "results", session_id: str = "", module_type: str = "", 
         out = get_settlements(session_id=session_id)
     else:
         return _bad_choice("kind", kind, _RECORD_KINDS)
-    return {"view": kind, **out} if isinstance(out, dict) else out
+    return {**out, "view": kind} if isinstance(out, dict) else out
 
 
 @mcp.tool()
