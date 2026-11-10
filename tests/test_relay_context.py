@@ -70,12 +70,12 @@ def test_doctor_fails_with_the_fix_when_not_confined_then_passes(tmp_path, capsy
     prof.mkdir()
     (prof / "config.yaml").write_text(json.dumps({}))
     rep, out = _doctor(prof, monkeypatch, capsys)
-    assert rep.failed
+    assert rep.failed, out
     assert "emporia agent refresh zed" in out and "AGENTS.md" in out and "terminal.cwd" in out
     _inst().isolate_context(prof)
     (prof / "config.yaml").write_text(json.dumps({**_cfg(prof), "agent": {"disabled_toolsets": list(cli.MARKETPLACE_OFF)}}))
     rep, out = _doctor(prof, monkeypatch, capsys)
-    assert not rep.failed
+    assert not rep.failed, out
     assert "load no project files" in out and "SOUL.md still applies" in out
     assert "folder inside its own profile" in out and "browser and cron toolsets are off" in out
 
