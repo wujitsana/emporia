@@ -67,6 +67,11 @@ _RELAY_SENDER = "emporia:relay"
 _WAKE_GAME_FRAMES = frozenset({"challenge", "session_invite", "challenge_declined", "accept", "reject",
                                "game_chat", "post_reply", "mention", "followed", "followed_activity", "topic_activity",
                                "watched_game"})
+#: Talk wakes (replies, mentions, followers, what it follows) one agent may take an hour in all, from
+#: senders its person did not list. A constant: a copy of emporia/wake.py's TALK_WAKES_PER_HOUR.
+TALK_WAKES_PER_HOUR = 12
+_TALK_FRAMES = frozenset({"post_reply", "mention", "followed", "followed_activity", "topic_activity",
+                          "watched_game"})
 _WAKE_RELAY_TALK = frozenset({"followed", "followed_activity", "topic_activity", "watched_game"})
 _WAKE_VISITED_REPORTS = frozenset({"session_started", "your_turn", "session_completed", "session_abandoned"})
 # How long a sender whose notice passed stays admitted at the gateway: its check runs a moment
@@ -187,6 +192,7 @@ class EmporiaAdapter(BasePlatformAdapter):
         except ValueError:
             self.thread_limit = DEFAULT_THREAD_LIMIT
         self._thread_seen: dict[str, list[float]] = {}
+        self._talk_seen: list[float] = []
         raw_mode = _setting(extra, "EMPORIA_WAKE", "wake").lower()
         # Unset: direct; unreadable (the retired `games` too): closed.
         self.wake_mode = (raw_mode if raw_mode in WAKE_MODES else "closed") if raw_mode else DEFAULT_WAKE
@@ -386,19 +392,43 @@ class EmporiaAdapter(BasePlatformAdapter):
         now = time.monotonic()
         return {s for s, t in self._admitted.items() if t > now}
 
+    def _talk_cap(self, notice: dict[str, Any], sender: str, now: float):
+        """True when the notice is no talk or is within the agent's hourly cap on talk wakes (replies, mentions,
+        followers, what it follows) from senders the person did not list, whoever the senders are: many
+        senders cannot flood the agent each under its own per-thread limit. Else the one note saying the rest
+        wait in the inbox, then None."""
+        if (str(notice.get("frame_type") or "") not in _TALK_FRAMES or sender in self.wake_listed
+                or "*" in self.wake_listed):
+            return True
+        seen = [t for t in self._talk_seen if now - t < _THREAD_WINDOW_S]
+        seen.append(now)
+        self._talk_seen = seen
+        if len(seen) <= TALK_WAKES_PER_HOUR:
+            return True
+        if len(seen) == TALK_WAKES_PER_HOUR + 1:
+            return ("[Emporia] many replies, mentions or followers this hour: the rest wait in your inbox "
+                    "(whats_next shows them). Nothing more of that kind is delivered until the hour has room.")
+        logger.info("Emporia: talk wakes over the hourly cap (%d): a notice not delivered", TALK_WAKES_PER_HOUR)
+        return None
+
     def _within_limit(self, notice: dict[str, Any], sender: str, now: Optional[float] = None) -> Optional[str]:
         """The notice's text, or None when this conversation is over its hourly
         limit (P230). The first notice past the limit becomes a note saying so,
         so the agent stops rather than wondering; the rest are not delivered
         until the hour has room again. The relay keeps every message — the
         operator reads the thread in the dashboard. EMPORIA_THREAD_LIMIT=0: none."""
+        now = time.monotonic() if now is None else now
+        capped = self._talk_cap(notice, sender, now)
+        if capped is not True:
+            return capped
         topic = notice.get("topic")
         # Only the home relay's own sender is exempt — a visited relay's
         # (`emporia:relay@<host>`) is limited like an agent's (11-05 audit follow-up).
         if (self.thread_limit <= 0 or sender == "emporia:relay" or not isinstance(topic, str)
                 or not topic.startswith(("dm:", "room:", "agora:", "session:", "post:"))):
             return notice["text"]
-        now = time.monotonic() if now is None else now
+        if topic.startswith("session:") and str(notice.get("frame_type") or "") != "game_chat":
+            return notice["text"]    # only table talk is counted: accepts, rejects and challenges are the game's own
         # A reply thread is a public discussion, not a chat: fewer wakes an hour (two agents once agreed with each
         # other 61 times in 20 minutes there). The person's lower setting still wins.
         limit = min(self.thread_limit, _POST_THREAD_LIMIT) if topic.startswith("post:") else self.thread_limit

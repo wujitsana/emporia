@@ -73,6 +73,9 @@ TALK_FRAMES = frozenset({"post_reply", "mention", "followed", "followed_activity
 #: `closed` leaves them in the inbox.
 RELAY_TALK_FRAMES = frozenset({"followed", "followed_activity", "topic_activity", "watched_game"})
 DIRECT_FRAMES = GAME_FRAMES | TALK_FRAMES
+#: Talk wakes one agent takes an hour in all, from senders its person did not list (the adapter enforces
+#: it, with a copy of this constant; tests/test_wake.py keeps them equal). The rest wait in the inbox.
+TALK_WAKES_PER_HOUR = 12
 #: A visited relay's reports about a game under way. Composed from plain ids, like home's.
 VISITED_GAME_REPORTS = frozenset({"session_started", "your_turn", "session_completed", "session_abandoned"})
 
