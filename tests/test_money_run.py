@@ -36,6 +36,21 @@ def test_a_requirement_must_be_the_exact_amount_to_the_payee():
             mr.check_requirement(bad, 5, A)
 
 
+def test_with_a_relay_fee_the_payee_is_asked_for_its_share_with_the_relays_own_rounding():
+    """11-09 live fee test: 40 cents at 3% made the relay ask 39 cents (390000 atomic) for the creator, and the
+    run refused it because it expected the whole price."""
+    from emporia import fees
+    for total, bps in ((40, 300), (5, 100), (100, 100), (50, 250), (7, 0)):
+        with pytest.MonkeyPatch.context() as m:
+            m.setenv("EMPORIA_FEE_ADDRESS", A)
+            m.setenv("EMPORIA_FEE_BPS", str(bps))
+            relay_share = fees.split(total)[0] if bps else total
+        assert mr.creator_share(total, bps) == relay_share, (total, bps)
+    mr.check_requirement(req(amount="390000"), 40, A, fee_bps=300)
+    with pytest.raises(mr.Refused):
+        mr.check_requirement(req(amount="400000"), 40, A, fee_bps=300)   # the whole price is not the payee's share
+
+
 def test_the_spend_cap_and_the_approval_floor():
     s = mr.Spend(cap_cents=50)
     s.pay(15)

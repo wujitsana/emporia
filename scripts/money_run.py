@@ -69,10 +69,20 @@ def refuse_unless_testnet(network: str, asset: str) -> None:
         raise Refused(f"asset {asset!r} is not Base Sepolia USDC ({USDC}): refusing")
 
 
-def check_requirement(req: dict[str, Any], expect_cents: int, pay_to: str) -> None:
-    """One x402 `accepts` entry: Base Sepolia USDC, exactly the amount, paid to the payee's wallet."""
+def creator_share(total_cents: int, fee_bps: int) -> int:
+    """The payee's part of a paid entry when the relay takes a fee (the relay's own rounding, emporia.fees):
+    the fee rounds to the cent and is 0 below one cent; the payee gets the rest."""
+    if total_cents <= 0 or fee_bps <= 0:
+        return total_cents
+    fee = round(total_cents * fee_bps / 10000)
+    return total_cents - (fee if fee >= 1 else 0)
+
+
+def check_requirement(req: dict[str, Any], expect_cents: int, pay_to: str, fee_bps: int = 0) -> None:
+    """One x402 `accepts` entry: Base Sepolia USDC, exactly the payee's share of the price (all of it when the
+    relay takes no fee), paid to the payee's wallet."""
     refuse_unless_testnet(str(req.get("network") or ""), str(req.get("asset") or ""))
-    want = expect_cents * ATOMIC_PER_CENT
+    want = creator_share(expect_cents, fee_bps) * ATOMIC_PER_CENT
     if int(req.get("amount") or 0) != want:
         raise Refused(f"the relay asks {req.get('amount')} atomic USDC, expected exactly {want}")
     if pay_to and str(req.get("payTo") or "").lower() != pay_to.lower():
@@ -231,7 +241,8 @@ def requirement_from(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def run(alpha: Any, beta: Any, chain: Any, report: Report, *, dry_run: bool, room_cents: int, service_cents: int,
-        spend: Spend, relay_url: str, sleep: Callable[[float], None] = time.sleep, stamp: str = "") -> bool:
+        spend: Spend, relay_url: str, sleep: Callable[[float], None] = time.sleep, stamp: str = "",
+        fee_bps: int = 0) -> bool:
     stamp = stamp or datetime.now(UTC).strftime("%Y-%m-%d %H:%MZ")
     cleanup: list[Callable[[], None]] = []
     left_behind: list[str] = []
@@ -274,7 +285,7 @@ def run(alpha: Any, beta: Any, chain: Any, report: Report, *, dry_run: bool, roo
         ask = beta.tool("join_room", room_id)
         report.step(ask.get("error") == "payment_required", "beta's join answers payment_required")
         req = requirement_from(ask)
-        check_requirement(req, room_cents, a_addr)
+        check_requirement(req, room_cents, a_addr, fee_bps)
         report.step(True, f"the requirement: {req['amount']} atomic USDC on {req['network']}, asset {req['asset']}, payTo alpha")
         if dry_run:
             report.note("dry run: not paying")
@@ -289,7 +300,7 @@ def run(alpha: Any, beta: Any, chain: Any, report: Report, *, dry_run: bool, roo
             spend.pay(room_cents)
             member = beta.tool("get_room_messages", room_id)
             report.step(not (isinstance(member, dict) and member.get("error")), "beta is a member (it reads the room)")
-            tx = _find_transfer(chain, b_addr, a_addr, block, room_cents * ATOMIC_PER_CENT, sleep)
+            tx = _find_transfer(chain, b_addr, a_addr, block, creator_share(room_cents, fee_bps) * ATOMIC_PER_CENT, sleep)
             report.step(bool(tx), "on chain: beta -> alpha, exactly " + usd(room_cents * ATOMIC_PER_CENT) + " USDC"
                         + (f", {tx}" if tx else ""))
             if tx:
@@ -402,6 +413,16 @@ def profile_home(name: str, override: str) -> Path:
     return root / "profiles" / name
 
 
+def relay_fee_bps(relay_url: str) -> int:
+    """The relay's fee on paid entries, as its /health says (0 when it takes none or cannot be read)."""
+    import httpx
+    try:
+        h = httpx.get(relay_url.rstrip("/") + "/health", timeout=10).json()
+    except Exception:  # noqa: BLE001 - no fee known: expect the whole price, and a fee leg makes the run refuse
+        return 0
+    return int(h.get("fee_bps") or 0) if h.get("fee_address") else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--dry-run", action="store_true", help="everything up to, not including, any payment")
@@ -431,7 +452,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         ok = run(alpha, beta, Chain(args.rpc), report, dry_run=args.dry_run, room_cents=args.room_cents,
                  service_cents=0 if args.room_only else args.service_cents, spend=Spend(cap_cents=min(args.cap_cents, SPEND_CAP_CENTS)),
-                 relay_url=args.relay_url)
+                 relay_url=args.relay_url, fee_bps=relay_fee_bps(args.relay_url))
     finally:
         alpha.close()
         beta.close()
