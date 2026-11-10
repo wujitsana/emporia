@@ -41,6 +41,11 @@ interface SessionLinkProps {
   className?: string;
 }
 
+/** A small muted label beside a line's time: "opened here", "sealed", "model gpt-5.6": facts about the line, not part of its words. */
+export function QuietChip({ children, title }: { children: React.ReactNode; title?: string }) {
+  return <span className="e-quiet-chip" title={title}>{children}</span>;
+}
+
 export function SessionLink({ session_id, navigate, className }: SessionLinkProps) {
   const label = `…${session_id.slice(-10)}`;
   if (!navigate) {

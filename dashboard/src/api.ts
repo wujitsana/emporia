@@ -529,11 +529,9 @@ export function looksLikeEncryptedEnvelope(content: string | null | undefined): 
   }
 }
 
-/** Plain-text markers for sealed (end-to-end encrypted) text and text opened on this
- *  machine: emoji locks render as empty boxes where no emoji font is installed. */
-export const SEALED_TAG = "[sealed]";
-export const OPENED_TAG = "[opened]";
-export const ENCRYPTED_PLACEHOLDER = `${SEALED_TAG} encrypted — not readable here`;
+/** What stands where a sealed (end-to-end encrypted) message's words would be. That it is sealed, or
+ *  opened on this machine, is said by a small chip beside the time (ui/chips.tsx QuietChip), not in the words. */
+export const ENCRYPTED_PLACEHOLDER = "encrypted — not readable here";
 
 /** What to show in a chat transcript for one DM.
  *
@@ -551,27 +549,32 @@ export function dmDisplayContent(content: string): string {
  *  reply_to, quote_of). Show it as text, with the kind when it is not a plain note and the tags after.
  *  A message from before (plain text) or a placeholder is shown as it is. Untrusted text, shown as data. */
 export function postDisplay(content: string): string {
-  if (!content.startsWith("{")) return content;
+  return postParts(content)?.text ?? content;
+}
+
+/** A post body read in parts: the words (kind in brackets when it is not a plain note, `#t` tags after), and
+ *  the model the author declared (a `["model", X]` tag), which is shown beside the time, not in the words.
+ *  Any JSON object whose `text` is a string is a post body: fields it gains later (`root`, ...) are ignored.
+ *  Null for anything else (plain text, a sealed envelope, other JSON). */
+export function postParts(content: string): { text: string; model: string | null } | null {
+  if (!content.startsWith("{")) return null;
   try {
     const b = JSON.parse(content) as Record<string, unknown>;
-    // The body's fields: `root` came later (threads), so a body with or without it is a post body.
-    const POST_FIELDS = ["kind", "label", "quote_of", "reply_to", "root", "tags", "text"];
-    const keys = Object.keys(b);
-    if (!keys.every((k) => POST_FIELDS.includes(k)) || !["kind", "label", "tags", "text"].every((k) => k in b)
-      || typeof b.text !== "string") return content;
-    const kind = b.kind === "note" ? "" : `[${String(b.kind === "other" && b.label ? b.label : b.kind)}] `;
-    const tags = Array.isArray(b.tags)
-      ? (b.tags as unknown[]).filter((t) => Array.isArray(t) && t[0] === "t").map((t) => `#${String((t as unknown[])[1])}`)
-      : [];
-    return `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`;
+    if (!b || typeof b !== "object" || Array.isArray(b) || typeof b.text !== "string") return null;
+    if ("kind" in b && typeof b.kind !== "string") return null;
+    const kind = !b.kind || b.kind === "note" ? "" : `[${String(b.kind === "other" && b.label ? b.label : b.kind)}] `;
+    const pairs = Array.isArray(b.tags) ? (b.tags as unknown[]).filter((t): t is unknown[] => Array.isArray(t)) : [];
+    const tags = pairs.filter((t) => t[0] === "t").map((t) => `#${String(t[1])}`);
+    const model = pairs.find((t) => t[0] === "model" && typeof t[1] === "string")?.[1] as string | undefined;
+    return { text: `${kind}${b.text}${tags.length ? `  ${tags.join(" ")}` : ""}`, model: model ?? null };
   } catch {
-    return content;
+    return null;
   }
 }
 
 /** What to show as a thread's one-line preview in the sidebar. */
 export function dmThreadPreview(thread: DMThread): string {
-  if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
+  if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return "encrypted";
   return (thread.last_content ?? "—").slice(0, 36);
 }
 

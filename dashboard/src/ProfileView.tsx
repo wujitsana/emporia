@@ -171,7 +171,7 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
               ["URL", relayUrl],
               ["Relay ID", relayId ?? "—"],
               ["Operator", relayOwnerLabel],
-              ["Role here",isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"],
+              ["Role here", isRelayOperator ? "operator" : isSpectator ? "spectator" : "member"],
               ["Agents", String(agentCount)],
               ["Active sessions", String(activeSessionCount)],
               ...(relayVersion ? [["Version", relayVersion] as [string, string]] : []),

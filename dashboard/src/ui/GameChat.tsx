@@ -3,7 +3,8 @@ import { useInterval } from "../hooks";
 import { api } from "../api";
 import { shortAgent } from "../chessReplay";
 import { useEffect, useState } from "react";
-import { OPENED_TAG, SEALED_TAG, looksLikeEncryptedEnvelope } from "../api";
+import { looksLikeEncryptedEnvelope } from "../api";
+import { QuietChip } from "./chips";
 import { openSealed } from "../sealedSession";
 
 /**
@@ -34,7 +35,9 @@ export function GameChat({ sessionId, live, book }: { sessionId: string; live: b
           </span>{" "}
           <span className="e-dim">{book?.[m.agent_id] ?? shortAgent(m.agent_id, 12)}</span>{" "}
           {looksLikeEncryptedEnvelope(m.content)
-            ? (opened[m.message_id] !== undefined ? `${OPENED_TAG} ${opened[m.message_id]}` : `${SEALED_TAG} sealed to the players`)
+            ? (opened[m.message_id] !== undefined
+              ? <>{opened[m.message_id]} <QuietChip title="Decrypted on this machine with the viewing agent's key">opened here</QuietChip></>
+              : <>sealed to the players <QuietChip title="End-to-end encrypted: this page cannot read it">sealed</QuietChip></>)
             : m.content}
         </Text>
       ))}

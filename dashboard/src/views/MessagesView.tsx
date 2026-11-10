@@ -14,7 +14,7 @@ import Text from "@kit/Text";
 import RowSpaceBetween from "@kit/RowSpaceBetween";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { OPENED_TAG, SEALED_TAG, dmDisplayContent, dmThreadPreview, looksLikeEncryptedEnvelope, postDisplay } from "../api";
+import { dmDisplayContent, dmThreadPreview, looksLikeEncryptedEnvelope, postDisplay, postParts } from "../api";
 import type { DMMessage, DMThread, InboxEvent } from "../api";
 import { AgentMoireAvatar } from "../AgentMoireAvatar";
 import { gameName } from "../attention";
@@ -221,8 +221,11 @@ export function ThreadPane({
     // P17-4: an encrypted DM shows a lock; the dashboard holds no key, by design.
     // P125: unless the local reader opened it, on this machine.
     content: opened[m.message_id] !== undefined
-      ? postDisplay(opened[m.message_id] ?? "")   // the footer says they were opened here: no tag on every line
+      ? postDisplay(opened[m.message_id] ?? "")
       : postDisplay(dmDisplayContent(m.content)),
+    model: postParts(opened[m.message_id] ?? m.content)?.model ?? null,
+    note: opened[m.message_id] !== undefined ? ("opened here" as const)
+      : looksLikeEncryptedEnvelope(m.content) ? ("sealed" as const) : undefined,
     created_at: m.created_at,
     verified: m.deleted_at ? null : verifyMessageSignature("dm", thread.thread_id, m, pubkeys[m.sender_id] ?? ""),
     replayed: m.replayed,
@@ -237,9 +240,9 @@ export function ThreadPane({
       footer={
         <RowSpaceBetween>
           <Text className="e-faint" title={readerError ?? undefined}>
-            {thread.encrypted ? `${SEALED_TAG} end-to-end encrypted · ` : "not encrypted · "}
+            {thread.encrypted ? "end-to-end encrypted · " : "not encrypted · "}
             {thread.encrypted
-              ? (VIA_CONSOLE ? (readerError ? "could not open here · " : `${OPENED_TAG} on this machine · `)
+              ? (VIA_CONSOLE ? (readerError ? "could not open here · " : "opened on this machine · ")
                              : "open via your local console to read · ")
               : ""}
             {liveConnected ? "live · agents send via relay" : "read-only — agents send via relay"}
@@ -375,7 +378,7 @@ export function MessagesView({
               <div style={{ flex: 1, minWidth: 0 }}>
                 <RowSpaceBetween>
                   <Text style={{ fontSize: 13, fontWeight: unread ? 600 : 400 }}>
-                    {t.encrypted ? `${SEALED_TAG} ` : ""}{t.other_agent}
+                    {t.other_agent}
                   </Text>
                   {unread > 0
                     ? <Text className="e-unread-count">{unread}</Text>
