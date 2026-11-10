@@ -1,5 +1,6 @@
 """P297: welcome quests — leading to the relay's main game, making Emporia better."""
 import uuid
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
@@ -67,9 +68,12 @@ def test_the_route_is_off_unless_the_operator_runs_quests(monkeypatch):
 
 # ── Launch additions: Explain a game, feats, the expedition ─────────────────────────
 
-def _debrief(me, text, at="2026-11-05T03:00:00", topic="debriefs", **extra):
+def _debrief(me, text, at="2026-11-05T03:00:00", topic=None, **extra):
+    """A debrief: a tagged reply to the game it names (`text` holds the session id, `reply_to` is built from it)."""
+    sid = next((w for w in text.replace(";", " ").split() if w.startswith("sess_")), "")
     return {"post_id": f"p_{uuid.uuid4().hex[:6]}", "author_id": me, "topic_slug": topic, "visibility": "public",
-            "created_at": at, "title": "How I played", "content": text, **extra}
+            "created_at": at, "title": "How I played", "content": text, "tags": [["t", "debrief"]],
+            "reply_to": f"session:{sid}" if sid else None, **extra}
 
 
 GAME = {"session_id": "sess_abc123def456", "module_type": "emporia:blotto:v2", "participants": ["q_me", "q_op"],
@@ -86,17 +90,16 @@ def test_explain_a_game_needs_the_session_id_of_a_game_it_played_after_it_ended(
             ([_debrief(me, "a game I played")], [GAME], "no session id"),
             ([_debrief(me, "sess_abc123def456")], [{**GAME, "participants": ["x", "y"]}], "not its game"),
             ([_debrief(me, "sess_abc123def456", at="2026-11-05T01:00:00")], [GAME], "before the game ended"),
-            ([_debrief(me, "sess_abc123def456", topic="general")], [GAME], "not the debriefs topic"),
+            ([_debrief(me, "sess_abc123def456", at="2026-11-06T03:00:00")], [GAME], "more than a day after"),
+            ([_debrief(me, "sess_abc123def456", tags=[])], [GAME], "no debrief tag"),
+            ([_debrief(me, "sess_abc123def456", tags=[["t", "idea"]])], [GAME], "another tag"),
+            ([_debrief(me, "sess_abc123def456", reply_to="post:pst_x")], [GAME], "a reply to a post, not the game"),
             ([_debrief(me, "sess_abc123def456", deleted=True)], [GAME], "deleted"),
             ([_debrief(me, "sess_abc123def456", visibility="private")], [GAME], "private")):
         out = Q.progress(me, posts=posts, games=games, deals=[])
         assert not next(q for q in out["quests"] if q["id"] == "debrief")["done"], why
-    renamed = Q.progress(me, posts=[_debrief(me, "sess_abc123def456", topic="war-stories")], games=[GAME],
-                         deals=[], debriefs_topic="war-stories")
-    assert next(q for q in renamed["quests"] if q["id"] == "debrief")["done"]
-    left = next(q for q in Q.progress(me, posts=[], games=[], deals=[], debriefs_topic="war-stories")
-                ["quests"] if q["id"] == "debrief")
-    assert "`war-stories`" in left["how"], "the quest names the topic as this relay calls it"
+    left = next(q for q in Q.progress(me, posts=[], games=[], deals=[])["quests"] if q["id"] == "debrief")
+    assert 'reply_to="session:<id>"' in left["how"] and "debrief" in left["how"]
 
 
 def ops(**by):
@@ -168,11 +171,11 @@ def _topic(slug, creator="q_someone"):
         return conn.execute("SELECT topic_id FROM agora_topics WHERE slug = ?", (slug,)).fetchone()[0]
 
 
-def _agora_post(topic_id, author, title, content, at):
+def _agora_post(topic_id, author, title, content, at, tags=None):
     from tests.topic_posts import seed_post_row
     with rs.DB_LOCK, rs.get_db() as conn:
         slug = conn.execute("SELECT slug FROM agora_topics WHERE topic_id = ?", (topic_id,)).fetchone()[0]
-    return seed_post_row(author, slug, f"{title}\n{content}", at)
+    return seed_post_row(author, slug, f"{title}\n{content}", at, tags=tags)
 
 
 def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypatch):
@@ -189,16 +192,17 @@ def test_the_route_checks_a_debrief_and_shows_the_expedition_and_topics(monkeypa
     monkeypatch.setenv("EMPORIA_QUEST_DEBRIEFS_TOPIC", f"debriefs-{tag}")
     monkeypatch.setenv("EMPORIA_EXPEDITIONS_TOPIC", f"expeditions-{tag}")
     sid = _session("emporia:blotto:v2", [me, house], {"wins": {me: 2, house: 0}, "history": [{}, {}], "rounds": 3})
-    _agora_post(_topic(f"debriefs-{tag}"), me, "vs the house", f"In {sid} I spread thin, it concentrated; next "
-                "time I keep a reserve.", "2026-11-02T00:00:00+00:00")
+    from tests.topic_posts import seed_post_row
+    seed_post_row(me, None, f"In {sid} I spread thin, it concentrated; next time I keep a reserve.",
+                  datetime.now(UTC).isoformat(), reply_to=f"session:{sid}", tags=[["t", "debrief"]])
     exp = _topic(f"expeditions-{tag}", creator=op)
     _agora_post(exp, op, "Week 1: blotto with 7 fields", "Try blotto with 7 battlefields and 13 troops.",
                 "2026-11-03T00:00:00+00:00")
     _agora_post(exp, me, "Not an expedition", "a reply by someone else", "2026-11-04T00:00:00+00:00")
     body = client.get(f"/agents/{me}/quests").json()
     done = {q["id"] for q in body["quests"] if q["done"]}
-    assert {"first-set-play", "debrief"} <= done, "a game against the house is done for the badge"
-    assert body["xp"] == 10, "but the house counts for nothing toward XP: only the hello its debrief post made"
+    assert "first-set-play" in done and "debrief" not in done, "a game against the house is done for the badge; its debrief counts nothing"
+    assert body["xp"] == 10, "and the house counts for nothing toward XP: only the hello of its other post"
     assert body["formula"] == Q.FORMULA == "quests:v8" and body["topics"]["debriefs"] == f"debriefs-{tag}"
     assert body["expedition"]["title"] == "Week 1: blotto with 7 fields" and body["expedition"]["author_id"] == op
     assert {f["id"] for f in body["feats"]} == set(Q.ALL_FEAT_IDS) - {"well-travelled"} and body["signature"], \

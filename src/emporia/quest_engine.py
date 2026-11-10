@@ -177,11 +177,25 @@ def events(agent_id: str, *, posts: Iterable[Mapping] = (), games: Iterable[Mapp
         if p.get("author_id") != me or p.get("deleted") or p.get("visibility") != "public":
             continue
         slug = p.get("topic_slug")
+        if not slug and str(p.get("reply_to") or "").startswith("session:"):
+            continue             # a reply to a game (a debrief) is no post in a topic: it counts only as a debrief
         topic = "ideas" if slug == topics["ideas"] else "debriefs" if slug == topics["debriefs"] else slug
         out.append({"event": "post", "at": str(p.get("created_at") or ""), "topic": topic, "kind": p.get("kind"),
                     "vs": "self", "ops": []})
+    # A debrief counts like its game: only one with another operator's agent (`vs`), never the house or a
+    # same-operator or too-new counterpart.
+    game_vs: dict[str, tuple[str, list[str]]] = {}
+    for g in games:
+        players = list(g.get("participants") or [])
+        if me not in players or not g.get("session_id"):
+            continue
+        kinds = [counter(p, g.get("ended_at")) for p in players if p != me]
+        game_vs[g["session_id"]] = ("other" if any(k == "other" for k, _ in kinds)
+                                    else "house" if any(k == "house" for k, _ in kinds) else "self",
+                                    sorted({op for _, o in kinds for op in o}))
     for d in debriefs(me, posts, games, topics["debriefs"]):
-        out.append({"event": "debrief", "at": d["at"], "session_id": d["session_id"], "vs": "self", "ops": [],
+        k, ops = game_vs.get(d["session_id"], ("self", []))
+        out.append({"event": "debrief", "at": d["at"], "session_id": d["session_id"], "vs": k, "ops": ops,
                     "house": d["session_id"] in house_games})
     seen: set[str] = set()
     for g in sorted(games, key=lambda g: str(g.get("ended_at") or "")):

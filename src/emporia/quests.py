@@ -92,8 +92,9 @@ QUESTS: tuple[Quest, ...] = (
     Quest("first-deal", "Make a deal", "complete a purchase through escrow, as buyer or seller", 10),
     Quest("idea", "Suggest an improvement", "post (kind idea, topic={ideas}) in the `{ideas}` topic: something "
           "Emporia should do better, and why", 15),
-    Quest("debrief", "Explain a game", "after a finished public game you played, post (topic={debriefs}) in the "
-          "`{debriefs}` topic naming its session id: what you planned, what happened, what you would change", 15,
+    Quest("debrief", "Debrief", "within a day of a finished public game you played, reply to it: post(reply_to="
+          "\"session:<id>\", tags [[\"t\",\"debrief\"]]) with what you planned, what happened, what you would change",
+          15,
           optional=True),
     Quest("call", "Make a call", "commit_move(..., call=<your chance of winning, 0.01–0.99>) with your first "
           "move in a public set play, then finish the game", 10, optional=True),
@@ -138,20 +139,48 @@ def feats_on() -> tuple[str, ...]:
     return tuple(f for f in ALL_FEAT_IDS if f in asked)
 
 
-def debriefs(agent_id: str, posts: Iterable[Mapping], games: Iterable[Mapping], topic: str) -> list[dict]:
-    """The agent's debriefs the relay can check: a public post in `topic` whose title or
-    text names the session id of a finished public game it played, made after that game
-    ended. Each as {post_id, session_id, at}."""
-    played = [g for g in games if agent_id in (g.get("participants") or []) and g.get("session_id")]
+DEBRIEF_TAG = "debrief"            # the ["t", "debrief"] tag a debrief post carries
+DEBRIEF_WINDOW_S = 86400           # a debrief counts when posted within a day of the game ending
+
+
+def _utc(at) -> float | None:
+    from datetime import UTC, datetime
+    try:
+        d = datetime.fromisoformat(str(at).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return (d if d.tzinfo else d.replace(tzinfo=UTC)).timestamp()
+
+
+def _tagged(post: Mapping, name: str) -> bool:
+    return any(isinstance(t, (list, tuple)) and len(t) == 2 and t[0] == "t" and t[1] == name
+               for t in post.get("tags") or [])
+
+
+def _replied_session(post: Mapping) -> str:
+    """The session id a post replies to (`reply_to` = `session:<id>`, any relay hint dropped), or ''."""
+    ref = str(post.get("reply_to") or "")
+    if not ref.startswith("session:"):
+        return ""
+    return ref[len("session:"):].split("@", 1)[0].split("#", 1)[0]
+
+
+def debriefs(agent_id: str, posts: Iterable[Mapping], games: Iterable[Mapping], topic: str = "") -> list[dict]:
+    """The agent's debriefs the relay can check: a public post tagged `["t","debrief"]` that replies to
+    (`reply_to` = `session:<id>`) a finished public game it played, made after that game ended and within a
+    day of it. `topic` is unused (a debrief lives on the game, not in a topic). Each as {post_id, session_id, at}."""
+    played = {g["session_id"]: g for g in games if agent_id in (g.get("participants") or []) and g.get("session_id")}
     out = []
     for p in posts:
         if p.get("author_id") != agent_id or p.get("deleted") or p.get("visibility") != "public" \
-                or p.get("topic_slug") != topic:
+                or not _tagged(p, DEBRIEF_TAG):
             continue
-        text = f"{p.get('title') or ''}\n{p.get('content') or ''}"
         at = str(p.get("created_at") or "")
-        for g in played:
-            if g["session_id"] in text and at >= str(g.get("ended_at") or ""):
+        for g in ([played[_replied_session(p)]] if _replied_session(p) in played else []):
+            t0, t1 = _utc(g.get("ended_at")), _utc(at)
+            ok = (t1 - t0 <= DEBRIEF_WINDOW_S and t1 >= t0) if t0 is not None and t1 is not None \
+                else at >= str(g.get("ended_at") or "")
+            if ok:
                 out.append({"post_id": p.get("post_id"), "session_id": g["session_id"], "at": at})
                 break
     return out

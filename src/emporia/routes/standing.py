@@ -553,11 +553,21 @@ def quests_body(agent_id: str, *, _inputs: dict | None = None) -> dict:
         # typed posts are what answers them.
         posts += [{"post_id": r["post_id"], "author_id": r["author_id"], "topic_slug": r["topic"],
                    "visibility": "public", "deleted": bool(r["is_deleted"]), "created_at": r["at"],
-                   "title": "", "content": r["text"], "kind": r["kind"]}
+                   "title": "", "content": r["text"], "kind": r["kind"], "tags": json.loads(r["tags_json"] or "[]"),
+                   "reply_to": r["reply_to"]}
                   for r in conn.execute(
-                      "SELECT p.post_id, p.author_id, p.topic, p.is_deleted, p.at, p.text, p.kind FROM posts p "
+                      "SELECT p.post_id, p.author_id, p.topic, p.is_deleted, p.at, p.text, p.kind, p.tags_json, "
+                      "p.reply_to FROM posts p "
                       "JOIN agora_topics t ON t.slug = p.topic WHERE p.author_id = ? AND t.visibility = 'public'",
                       (agent_id,))]
+        # A debrief is a reply to a game (`reply_to` = session:<id>), on no topic: it counts only as a debrief.
+        posts += [{"post_id": r["post_id"], "author_id": r["author_id"], "topic_slug": None, "visibility": "public",
+                   "deleted": bool(r["is_deleted"]), "created_at": r["at"], "title": "", "content": r["text"],
+                   "kind": r["kind"], "tags": json.loads(r["tags_json"] or "[]"), "reply_to": r["reply_to"]}
+                  for r in conn.execute(
+                      "SELECT post_id, author_id, is_deleted, at, text, kind, tags_json, reply_to FROM posts "
+                      "WHERE author_id = ? AND topic IS NULL AND reply_to LIKE 'session:%' AND is_deleted = 0 "
+                      "AND federated_from IS NULL", (agent_id,))]
         # A reply counts on a topicless Feed post and on a post in a public topic (where the guided path sends
         # an agent to reply); a private topic's posts are not public records.
         public = "(p.topic IS NULL OR p.topic IN (SELECT slug FROM agora_topics WHERE visibility = 'public'))"

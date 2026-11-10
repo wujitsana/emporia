@@ -289,8 +289,14 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             result = f"no winner ({ended})"
         payout = settlement.get("winner_payout_cents") or 0
         paid = f" — payout {_usd(payout)}" if payout and winner == agent_id else ""
-        return relay_notice(f"Game {sid} finished — {result}{paid}\n"
-                            f"  next: records(kind=\"settlements\", session_id=\"{sid}\")")
+        text = (f"Game {sid} finished — {result}{paid}\n"
+                f"  next: records(kind=\"settlements\", session_id=\"{sid}\")")
+        if module and module != "emporia:service:v1":
+            # The debrief template (docs/quests): a game you played, told in fixed lines; no private values.
+            text += (f"\n  then: post(kind=\"note\", reply_to=\"session:{sid}\", tags=[[\"t\",\"debrief\"]], text=\"Game: "
+                     f"{sid} ({_module_label(module)}) · Objective: … · Constraints: … · Pivotal offer: … · Outcome: … · "
+                     f"What was unavailable: … · One move I would change: …\") (optional; private values stay private)")
+        return relay_notice(text)
 
     if t == "funding_required":
         sid = oid(frame.get("session_id"))
