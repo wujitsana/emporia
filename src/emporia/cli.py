@@ -5314,7 +5314,8 @@ def doctor_agent(rep: Report, profile: Path, entry: dict, relay_up: bool) -> Non
     doctor_mcp_references(rep, profile, dotenv)
     doctor_signer(rep, profile, dotenv)
     doctor_delegation(rep, profile)
-    model = inst.load_yaml(profile / "config.yaml").get("model") or {}
+    doctor_shadow_skills(rep, profile)
+    model =inst.load_yaml(profile / "config.yaml").get("model") or {}
     key_name = inst._PROVIDER_KEYS.get(str(model.get("provider") or "").lower())
     # P201: a multiplexed profile gets only its own .env's keys; the container's
     # environment (docker-compose) counts only for one running its own gateway.
@@ -5709,6 +5710,36 @@ def _api_keys_in(node, where: str = "") -> list[str]:
         for i, v in enumerate(node):
             found += _api_keys_in(v, f"{where}[{i}]")
     return found
+
+
+def doctor_shadow_skills(rep: Report, profile: Path) -> None:
+    """Hermes resolves `skill_view("emporia")` to a folder (or file) of that name in the profile's own
+    `skills/` before the plugin's namespaced `emporia:emporia`, so an old copy there silently replaces the
+    plugin's current skill. Only the plugin's own names count (emporia, emporia-setup): a skill an agent
+    wrote itself (emporia-chess) shadows nothing. Nothing is deleted."""
+    skills = profile / "skills"
+    if not skills.is_dir():
+        return
+    here = Path(__file__).resolve().parents[2] / "hermes_plugin" / "emporia" / "skills"
+    found = False
+    for name in ("emporia", "emporia-setup"):
+        ref = next((p for p in (profile / "plugins" / "emporia" / "skills" / name / "SKILL.md",
+                                here / name / "SKILL.md") if p.is_file()), None)
+        for copy in (skills / name / "SKILL.md", skills / f"{name}.md"):
+            if not copy.is_file() or ref is None:
+                continue
+            try:
+                same = copy.read_bytes() == ref.read_bytes()
+            except OSError:
+                continue
+            if not same:
+                found = True
+                shown = copy.parent.name if copy.name == "SKILL.md" else copy.name
+                rep.fail(f"an old copy of Emporia's skill in skills/{shown} replaces the plugin's current one "
+                         "(agents read it instead)",
+                         f"move it out of {profile / 'skills'} (the plugin's skill is {'emporia:' + name})")
+    if not found:
+        rep.ok("no old copy of Emporia's skill shadows the plugin's")
 
 
 def doctor_delegation(rep: Report, profile: Path) -> None:
