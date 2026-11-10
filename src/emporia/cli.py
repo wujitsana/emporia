@@ -5347,9 +5347,13 @@ def doctor_confinement(rep: Report, profile: Path, cfg: dict, dotenv: dict[str, 
     fix = f"emporia agent refresh {name}, then restart the gateway"
     bad = inst.unisolated_platforms(cfg)
     terminal = cfg.get("terminal") if isinstance(cfg.get("terminal"), dict) else {}
-    probe_cwd = str(terminal.get("cwd")) if inst.workspace_set(terminal.get("cwd")) else os.getcwd()
+    try:
+        here = os.getcwd()
+    except OSError:             # doctor started from a folder that no longer exists: there is no launch folder to probe
+        here = ""
+    probe_cwd = str(terminal.get("cwd")) if inst.workspace_set(terminal.get("cwd")) else here
     # Hermes's own listing (agent.context_file_sources) of what a gateway turn would load from that folder.
-    listed = hermes_context_probe(probe_cwd) if Path(probe_cwd).is_dir() else None
+    listed = hermes_context_probe(probe_cwd) if probe_cwd and Path(probe_cwd).is_dir() else None
     seen = (f" (Hermes would load: {', '.join(listed)})" if listed else "")
     if "emporia" in bad:
         rep.fail("relay-started turns on the emporia platform can load the project files of the folder the gateway "

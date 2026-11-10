@@ -134,3 +134,18 @@ def test_doctor_warns_for_other_platforms_and_open_toolsets(tmp_path, capsys, mo
     rep, out = _doctor(prof, monkeypatch, capsys)
     assert "telegram still load project files" in out and "toolsets still on" in out
     assert not rep.failed
+
+
+def test_doctor_survives_a_working_directory_that_was_deleted(tmp_path, capsys, monkeypatch):
+    """Doctor started from a folder that no longer exists (os.getcwd raises) still reports, and still fails an
+    unconfined profile."""
+    gone = tmp_path / "gone"
+    gone.mkdir()
+    monkeypatch.chdir(gone)
+    gone.rmdir()
+    prof = tmp_path / "zed"
+    prof.mkdir()
+    (prof / "config.yaml").write_text(json.dumps({}))
+    rep, out = _doctor(prof, monkeypatch, capsys)
+    assert rep.failed, out
+    assert "emporia agent refresh zed" in out

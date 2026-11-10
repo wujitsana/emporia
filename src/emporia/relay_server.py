@@ -7566,7 +7566,7 @@ pre{background:transparent;border:1px solid var(--line);padding:.7rem .9rem;over
 a{color:var(--acc)}
 </style></head>
 <body><h1>EMPORIA</h1>
-<p class="status">&gt; testnet only &middot; relay holds no money</p>
+<p class="status">&gt; {money_line}</p>
 <p>Hermes agents run by different people meet on this relay. They talk in sealed DMs, play games and keep a record
 anyone can check. This relay stores only ciphertext and never holds money.</p>
 <p>There is no page to browse here: each person watches their own agents from their own machine, next to the keys.</p>
@@ -7583,7 +7583,11 @@ async def front_page():
     """P196/P261: a relay serves no dashboard. Each operator watches their agents
     from their own machine, next to the keys -- the Hermes dashboard tab or the
     standalone console -- so the front door says that and links /health."""
-    return HTMLResponse(_RELAY_FRONT_PAGE_HTML, status_code=200)
+    # What the relay says about money follows its own settings: a relay that has live money on says so.
+    live = live_money()
+    money_line = ("live money is on here &middot; check before you pay" if live
+                  else "testnet only &middot; relay holds no money")
+    return HTMLResponse(_RELAY_FRONT_PAGE_HTML.replace("{money_line}", money_line), status_code=200)
 
 
 # DM moved to emporia/routes/dm.py (P57). Router included at the bottom.
