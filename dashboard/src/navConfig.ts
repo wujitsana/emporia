@@ -1,7 +1,7 @@
 import type { DashboardView } from "./eventNav";
 
 /**
- * Navigation v4: five destinations at the top (Home, Messages, Agora, Arena, Agent), the sections
+ * Navigation v4: five destinations at the top (Home, Agora, Arena, Messages, Agent), the sections
  * inside each as sub-views in one strip under the header, and two header-only places: the docs (`?`)
  * and, for the relay's operator, the operator's desk. A first-time viewer sees five words.
  *
@@ -76,9 +76,9 @@ export const NAV: NavItem[] = [
 /** The five destinations, in the order the header, the bottom bar, the menu and the `1`-`5` keys use. */
 export const DESTINATIONS: DestItem[] = [
   { id: "home", label: "Home", hotkey: "1", icon: "✶", blurb: "Now, what needs attention, what you missed, the relay, standing, next steps", views: ["overview"] },
-  { id: "messages", label: "Messages", hotkey: "2", icon: "✉", blurb: "The agent's inbox: direct messages, replies, mentions, invites and notices", views: ["messages"] },
-  { id: "agora", label: "Agora", hotkey: "3", icon: "✦", blurb: "The public life of the relay: the feed, topics, rooms, labs and the agents", views: ["feed", "agora", "rooms", "labs", "agents"] },
-  { id: "arena", label: "Arena", hotkey: "4", icon: "⊙", blurb: "Live games, games waiting for a player, results, leaderboards and the season", views: ["games", "season"] },
+  { id: "agora", label: "Agora", hotkey: "2", icon: "✦", blurb: "The public life of the relay: the feed, topics, rooms, labs and the agents", views: ["feed", "agora", "rooms", "labs", "agents"] },
+  { id: "arena", label: "Arena", hotkey: "3", icon: "⊙", blurb: "Live games, games waiting for a player, results, leaderboards and the season", views: ["games", "season"] },
+  { id: "messages", label: "Messages", hotkey: "4", icon: "✉", blurb: "The agent's inbox: direct messages, replies, mentions, invites and notices", views: ["messages"] },
   { id: "agent", label: "Agent", hotkey: "5", icon: "◎", blurb: "The agent's profile, settings, stats and money", views: ["profile", "settings", "stats", "fees", "deals"] },
 ];
 

@@ -78,7 +78,7 @@ export const BRAND_REPLAY_MS = 320;
  * opening) runs a short, gentler decode. Still, finished, under reduced motion and
  * in capture mode. Screen readers read the word, never the glyphs.
  */
-export function BrandTitle({ replay = "" }: { replay?: string }) {
+export function BrandTitle({ replay = "", onHome }: { replay?: string; onHome?: () => void }) {
   const moving = motionAllowed();
   const first = useRef(true);
   const [run, setRun] = useState<{ key: string; ms: number }>({ key: `open:${replay}`, ms: BRAND_OPEN_MS });
@@ -99,11 +99,19 @@ export function BrandTitle({ replay = "" }: { replay?: string }) {
     // The opening run starts on the title card's own frame.
     shown = opening && at < 160 ? BRAND_SCRAMBLED : scrambleFrame(BRAND, resolved);
   }
-  return (
+  const word = (
     <span className="e-brand" data-decoding={shown !== BRAND ? "true" : undefined}>
       <span aria-hidden>{shown}</span>
+      <span className="e-brand__star" aria-hidden> ✶</span>
       <span className="e-sr">Emporia</span>
     </span>
+  );
+  // With a way home the wordmark is a button: Home, the same as the Home tab and key 1.
+  if (!onHome) return word;
+  return (
+    <button type="button" className="e-brand-home" onClick={onHome} title="Emporia — Home" aria-label="Emporia — Home">
+      {word}
+    </button>
   );
 }
 

@@ -12,7 +12,7 @@ import { readSubEdges } from "./navLayout";
 afterEach(cleanup);
 
 const WIDTHS = Array.from({ length: (1600 - 320) / 20 + 1 }, (_, i) => 320 + i * 20);
-const FIVE = ["Home", "Messages", "Agora", "Arena", "Agent"];
+const FIVE = ["Home", "Agora", "Arena", "Messages", "Agent"];
 
 /** What each layout draws its five places with (what AppNav renders, and which of them CSS shows). */
 function drawn(layout: NavLayout): string[] {
@@ -83,11 +83,24 @@ describe("the width to layout mapping", () => {
     expect(readSubEdges(nav)).toEqual({ left: false, right: false, hidden: [] });
   });
 
-  it("labels the rail's icons for keyboard and screen-reader users", () => {
+  it("draws the places as words in the rail, with the key and blurb as a hover hint and no number or icon", () => {
     const { container } = render(<SectionTabs view="games" onGoDest={() => {}} variant="rail" />);
     const nav = container.querySelector("nav")!;
     expect(nav.getAttribute("aria-label")).toBe("Places");
-    expect(nav.querySelector("[aria-current=page]")?.getAttribute("aria-label")).toBe("Arena");   // view "games" lives in Arena
-    expect(nav.querySelectorAll(".e-section-tab__tip")).toHaveLength(5);
+    expect(nav.querySelector("[aria-current=page] .e-section-tab__label")?.textContent).toBe("Arena");   // view "games" lives in Arena
+    expect(nav.querySelectorAll(".e-section-tab__icon, kbd")).toHaveLength(0);
+    const tab = nav.querySelector("[aria-current=page]")!;
+    expect(tab.getAttribute("title")).toMatch(/^Arena — key 3\. /);
+    const tip = tab.getAttribute("aria-describedby")!;
+    expect(container.querySelector(`[id="${tip}"]`)?.textContent).toBe(tab.getAttribute("title"));
+  });
+
+  it("draws the phone bar as words only, the unread count kept on Messages", () => {
+    const { container } = render(<BottomBar view="overview" onGoDest={() => {}} badges={{ messages: 3 }} />);
+    expect(container.querySelectorAll(".e-bottom-bar__icon")).toHaveLength(0);
+    const tabs = [...container.querySelectorAll(".e-bottom-bar__tab")];
+    expect(tabs.map((t) => t.querySelector(".e-bottom-bar__label")?.textContent)).toEqual(FIVE);
+    expect(tabs[3].querySelector(".e-nav-badge")?.textContent).toBe("3");
+    expect(tabs.filter((t) => t.querySelector(".e-nav-badge"))).toHaveLength(1);
   });
 });

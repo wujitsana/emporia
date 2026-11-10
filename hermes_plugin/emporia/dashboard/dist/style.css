@@ -720,7 +720,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   flex-direction: column;
   align-items: stretch;
   gap: 2px;
-  width: 52px;
+  width: 88px;
   padding: 8px 4px;
   border-right: 1px solid var(--e-rule, var(--theme-border-subdued));
   background: var(--theme-background);
@@ -728,31 +728,13 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   z-index: 30;
 }
 .e-section-tabs--rail .e-section-tab {
-  justify-content: center;
+  justify-content: flex-start;
   min-height: 44px;
-  padding: 0;
+  padding: 0 8px;
   opacity: 0.85;
 }
-.e-section-tabs--rail .e-section-tab__icon { font-size: 1.15rem; }
-.e-section-tabs--rail .e-section-tab__label { display: none; }
+.e-section-tabs--rail .e-section-tab__label { font-size: 0.78rem; letter-spacing: 0; }
 .e-section-tabs--rail .e-section-tab .e-nav-badge { position: absolute; top: 4px; right: 4px; margin: 0; }
-.e-section-tab__tip {
-  display: none;
-  position: absolute;
-  left: calc(100% + 6px);
-  top: 50%;
-  transform: translateY(-50%);
-  padding: 4px 8px;
-  border: 1px solid var(--theme-border, var(--e-rule));
-  background: var(--theme-background);
-  color: var(--theme-text);
-  font-size: 0.78rem;
-  white-space: nowrap;
-  pointer-events: none;
-  z-index: 40;
-}
-.e-section-tabs--rail .e-section-tab:hover .e-section-tab__tip,
-.e-section-tabs--rail .e-section-tab:focus-visible .e-section-tab__tip { display: block; }
 
 .e-section-tab {
   position: relative;
@@ -773,11 +755,13 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 }
 .e-section-tab:hover  { opacity: 1; border-color: var(--theme-border-subdued, rgba(255,255,255,0.12)); background: transparent; }
 .e-section-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); background: transparent; color: var(--theme-focused-foreground); }
-.e-section-tab__icon  { font-size: 0.935rem; }
 .e-section-tab__label { letter-spacing: 0.02em; }
-.e-section-tabs--horizontal .e-section-tab__icon { display: none; }
-/* The five places in the header row are words only, wide and medium: no icon beside a word (the rail has
-   icons and no words; the phone bar has an icon over a small word). */
+/* The five places are words only in every layout (header row, rail, phone bar, menu): no icon, no hotkey number;
+   the key and the blurb are the hover title. */
+/* The wordmark is a button to Home: it keeps the title's look, with a pointer and a focus ring. */
+.e-brand-home { background: none; border: 0; padding: 0; margin: 0; color: inherit; font: inherit; letter-spacing: inherit; cursor: pointer; }
+.e-brand-home:hover { color: var(--theme-focused-foreground); }
+.e-brand-home:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: 3px; }
 
 /* Drawer variant */
 .e-section-tabs--drawer {
@@ -789,7 +773,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   overflow-y: auto;
 }
 .e-section-tabs--drawer .e-section-tab { width: 100%; justify-content: flex-start; padding: 10px 14px; }
-.e-section-tabs--drawer .e-section-tab__key { margin-left: auto; opacity: 0.5; }
 .e-section-tabs--drawer .e-section-tab.is-active { background: transparent !important; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
 
 /* Nav unread badge */
@@ -1539,8 +1522,6 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-theme-circle--mode[data-mode="theme-light"] { background: #f2f2f2; }
 .e-theme-circle--mode[data-mode="theme-dark"]  { background: #121212; }
 .e-theme-circle--accent { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
-/* The light swatch is near-white: a clear edge so it reads on a light page. */
-.e-theme-circle--mode { box-shadow: inset 0 0 0 1.5px var(--theme-text, rgba(127, 127, 127, 0.6)); }
 .e-mode-toggle {
   width: 26px; height: 26px;
   padding: 0;
@@ -2387,14 +2368,13 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-section-tabs--drawer .e-section-tab {
   min-height: 52px;
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  grid-template-areas: "icon label key" "icon sub key";
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "label key" "sub key";
   align-items: center;
   column-gap: 10px;
   row-gap: 0;
   text-align: left;
 }
-.e-section-tabs--drawer .e-section-tab__icon { grid-area: icon; }
 .e-section-tabs--drawer .e-section-tab__label { grid-area: label; font-size: 0.95rem; }
 .e-section-tabs--drawer .e-section-tab__key { grid-area: key; }
 .e-section-tab__sub {
@@ -2575,8 +2555,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   min-width: 0;
 }
 .e-bottom-bar__tab.is-active { border-top-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
-.e-bottom-bar__icon { font-size: 1.05rem; line-height: 1; }
-.e-bottom-bar__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e-bottom-bar__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.72rem; letter-spacing: 0; }
 .e-bottom-bar__tab .e-nav-badge { top: 4px; right: 22%; min-width: 8px; height: 8px; font-size: 0; padding: 0; }
 /* The page scrolls under the bar's height too, so its last row is never behind the bar (390px, the game
    panel's move list): the bar's tab is 52px plus its 2px accent and the bar's 1px rule, and the safe area. */
@@ -3190,6 +3169,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-look .e-panel-card,
 .e-look .e-overview-card,
 .e-look .e-setplay,
+.e-look .e-hcard,
 .e-look .e-empty-pane {
   background-image:
     linear-gradient(var(--anim-line), var(--anim-line)), linear-gradient(var(--anim-line), var(--anim-line)),
@@ -3791,15 +3771,72 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }
 
 /* ─── IN THE HERMES TAB ──────────────────────────────────────────────────────
-   Hermes already pads its own content frame (24px each side, 24px on top); the standalone console has no
-   such frame and keeps the page's own margins. Inside the tab (the plugin mounts into `.e-host-body`) the app
-   adds only a small inner margin, so it fills Hermes's area edge to edge and the page is not indented twice. */
-.e-host-body .e-view-body { padding-left: 8px; padding-right: 8px; padding-top: 12px; }
-.e-host-body.e-look .e-page-head,
-.e-host-body .e-look .e-page-head,
-.e-host-body .e-page-head { padding-left: 12px; padding-right: 12px; margin-top: 4px; max-width: 100%; }
-.e-host-body .e-app-top__row { padding-left: 8px; padding-right: 8px; }
-.e-host-body .e-now-strip, .e-host-body .e-home-lead { padding-left: 8px; padding-right: 8px; }.Text_text_1shpo {
+   Hermes pads its own content frame (px-3 sm:px-6) and its pages fill what is inside it. The app inside the tab
+   (the plugin mounts into `.e-host-body`) does the same: the page heading, the foot line and the view body lose the
+   standalone page's centred cap (1440px, and the look's "100% - 32px" that left 16px on each side), so they span
+   the whole plugin area. Their own padding is untouched: only the extra outer indent is gone. */
+.e-host-body .e-page-head,
+.e-host-body .e-anim-hud--foot,
+.e-host-body .e-view-body { max-width: none; }
+
+/* ─── HOME AS CARDS ─────────────────────────────────────────────────────────
+   The animatic's information cards (ui/HomeCards.tsx): brackets (§ 30), a status line, a chip, a pixel headline,
+   one line of detail, a tint-filled caption bar and a footer; a section is one horizontal, snapping row. */
+.e-home-switch { display: inline-flex; margin: 0 0 10px; border: 1px solid var(--theme-border); }
+.e-home-switch__opt {
+  padding: 3px 12px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 0.74rem;
+  letter-spacing: 0.06em; cursor: pointer; opacity: 0.75;
+}
+.e-home-switch__opt.is-on { background: var(--anim-fill, var(--theme-focused-foreground)); color: var(--anim-ink, var(--theme-background)); opacity: 1; font-weight: 700; }
+.e-home-switch__opt:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: -2px; }
+.e-cards-section { margin: 0 0 14px; min-width: 0; }
+.e-cards-section__head { margin-bottom: 6px; }
+.e-cardrow {
+  display: flex; gap: 14px; align-items: stretch;
+  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x mandatory;
+  padding: 8px 20px 14px 12px; margin: 0; scroll-padding-left: 12px;
+  scrollbar-width: thin; scrollbar-color: var(--anim-line, currentColor) transparent;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 22px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 22px), transparent 100%);
+}
+.e-cardrow:focus-visible { outline: 1px solid var(--theme-focused-foreground); outline-offset: -1px; }
+.e-hcard {
+  --anim-bracket: 9px; --anim-bracket-w: 2px;
+  flex: 0 0 260px; box-sizing: border-box; scroll-snap-align: start;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+  min-height: 188px; padding: 12px 14px; text-align: left;
+  border: 0; border-radius: 0; color: inherit; font: inherit;
+  background-color: color-mix(in srgb, var(--theme-text) 4%, transparent);
+}
+.e-hcard.is-link { cursor: pointer; }
+.e-hcard.is-link:hover, .e-hcard.is-link:focus-visible { background-color: var(--anim-wash, transparent); outline: none; }
+.e-hcard.is-link:focus-visible { box-shadow: inset 0 0 0 1px var(--theme-focused-foreground); }
+.e-hcard--hero { flex-basis: 300px; min-height: 212px; }
+.e-hcard__hud {
+  display: flex; justify-content: space-between; gap: 8px; font-size: 0.68rem; letter-spacing: 0.05em;
+  color: color-mix(in srgb, var(--theme-text) 78%, var(--theme-background)); font-variant-numeric: tabular-nums;
+}
+.e-hcard__hud > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e-hcard__chip {
+  align-self: flex-start; padding: 0 7px; font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em;
+  background: var(--anim-fill); color: var(--anim-ink); line-height: 1.6;
+}
+.e-hcard__chip--none { visibility: hidden; }
+.e-hcard__head {
+  font-family: var(--anim-pixel); text-transform: uppercase; font-size: 1.3rem; line-height: 1.12; letter-spacing: 0.04em;
+  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; flex: 1;
+}
+.e-hcard--hero .e-hcard__head { font-size: 1.75rem; }
+.e-hcard__detail { font-size: 0.74rem; line-height: 1.4; color: var(--anim-faint, inherit); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e-hcard__caption {
+  padding: 5px 8px; background: var(--anim-fill); color: var(--anim-ink); font-size: 0.8rem; font-weight: 700; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
+}
+.e-hcard--quiet .e-hcard__caption { background: transparent; color: var(--anim-faint, inherit); font-weight: 400; padding-left: 0; }
+.e-hcard--quiet { min-height: 150px; }
+.e-hcard__foot { font-size: 0.66rem; letter-spacing: 0.04em; color: var(--anim-faint, inherit); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 520px) { .e-hcard { flex-basis: 232px; } .e-hcard--hero { flex-basis: 268px; } }
+.Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }

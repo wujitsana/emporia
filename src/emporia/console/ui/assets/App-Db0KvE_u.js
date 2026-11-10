@@ -1,4 +1,4 @@
-import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-DtEF-FBu.js";
+import { n as require_react, r as __toESM, t as require_jsx_runtime } from "./index-BDCqUokF.js";
 var Text_module_default = { text: "Text_text_1shpo" };
 // src/ui/kit/Text.tsx
 var import_react = /* @__PURE__ */ __toESM(require_react(), 1);
@@ -1422,17 +1422,9 @@ var DESTINATIONS = [
 		views: ["overview"]
 	},
 	{
-		id: "messages",
-		label: "Messages",
-		hotkey: "2",
-		icon: "✉",
-		blurb: "The agent's inbox: direct messages, replies, mentions, invites and notices",
-		views: ["messages"]
-	},
-	{
 		id: "agora",
 		label: "Agora",
-		hotkey: "3",
+		hotkey: "2",
 		icon: "✦",
 		blurb: "The public life of the relay: the feed, topics, rooms, labs and the agents",
 		views: [
@@ -1446,10 +1438,18 @@ var DESTINATIONS = [
 	{
 		id: "arena",
 		label: "Arena",
-		hotkey: "4",
+		hotkey: "3",
 		icon: "⊙",
 		blurb: "Live games, games waiting for a player, results, leaderboards and the season",
 		views: ["games", "season"]
+	},
+	{
+		id: "messages",
+		label: "Messages",
+		hotkey: "4",
+		icon: "✉",
+		blurb: "The agent's inbox: direct messages, replies, mentions, invites and notices",
+		views: ["messages"]
 	},
 	{
 		id: "agent",
@@ -2260,7 +2260,7 @@ var BRAND_SCRAMBLED = "E#P0R!A";
 * opening) runs a short, gentler decode. Still, finished, under reduced motion and
 * in capture mode. Screen readers read the word, never the glyphs.
 */
-function BrandTitle({ replay = "" }) {
+function BrandTitle({ replay = "", onHome }) {
 	const moving = motionAllowed();
 	const first = (0, import_react.useRef)(true);
 	const [run, setRun] = (0, import_react.useState)({
@@ -2285,16 +2285,33 @@ function BrandTitle({ replay = "" }) {
 		const resolved = from + Math.floor(ease(at / run.ms) * (7 - from));
 		shown = opening && at < 160 ? BRAND_SCRAMBLED : scrambleFrame(BRAND, resolved);
 	}
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+	const word = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 		className: "e-brand",
 		"data-decoding": shown !== "EMPORIA" ? "true" : void 0,
-		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-			"aria-hidden": true,
-			children: shown
-		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-			className: "e-sr",
-			children: "Emporia"
-		})]
+		children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				"aria-hidden": true,
+				children: shown
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				className: "e-brand__star",
+				"aria-hidden": true,
+				children: " ✶"
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+				className: "e-sr",
+				children: "Emporia"
+			})
+		]
+	});
+	if (!onHome) return word;
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+		type: "button",
+		className: "e-brand-home",
+		onClick: onHome,
+		title: "Emporia — Home",
+		"aria-label": "Emporia — Home",
+		children: word
 	});
 }
 var OPENED = Date.now();
@@ -2335,6 +2352,10 @@ function Count({ n }) {
 		children: n > 99 ? "99+" : n
 	}) : null;
 }
+/** The hover hint for a place: its name and key, then what it holds. */
+function placeTip(d) {
+	return `${d.label} — key ${d.hotkey}. ${d.blurb}`;
+}
 /** A destination's badge: the sum of its sections' (the Agent carries Messages' unread). */
 function destBadge(views, badges) {
 	return views.reduce((sum, v) => sum + (badges[v] ?? 0), 0);
@@ -2356,37 +2377,25 @@ function SectionTabs({ view, onGoDest, variant = "horizontal", short = false, ba
 				type: "button",
 				className: `e-section-tab${active ? " is-active" : ""}`,
 				onClick: () => onGoDest(d.id),
-				title: variant === "rail" ? void 0 : d.blurb,
-				"aria-label": variant === "rail" || short ? d.label : void 0,
+				title: placeTip(d),
+				"aria-label": short ? d.label : void 0,
+				"aria-describedby": `e-place-tip-${variant}-${d.id}`,
 				"aria-current": active ? "page" : void 0,
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "e-section-tab__icon",
-						"aria-hidden": true,
-						children: d.icon
-					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 						className: "e-section-tab__label",
 						children: short ? shortLabel(d) : d.label
 					}),
-					variant === "rail" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
-						className: "e-section-tab__tip",
-						"aria-hidden": true,
-						children: [
-							d.label,
-							"  ",
-							/* @__PURE__ */ (0, import_jsx_runtime.jsx)("kbd", { children: d.hotkey })
-						]
-					}) : null,
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						id: `e-place-tip-${variant}-${d.id}`,
+						className: "e-sr",
+						children: placeTip(d)
+					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Count, { n: destBadge(d.views, badges) }),
-					variant === "drawer" ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					variant === "drawer" ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 						className: "e-section-tab__sub",
 						children: d.items.map((n) => n.label).join(" · ")
-					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("kbd", {
-						className: "e-section-tab__key",
-						title: `key ${d.hotkey}`,
-						children: d.hotkey
-					})] }) : null
+					}) : null
 				]
 			}, d.id);
 		})
@@ -2571,18 +2580,11 @@ function BottomBar({ view, onGoDest, badges = {} }) {
 				onClick: () => onGoDest(d.id),
 				"aria-current": active ? "page" : void 0,
 				"aria-label": label,
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "e-bottom-bar__icon",
-						"aria-hidden": true,
-						children: d.icon
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "e-bottom-bar__label",
-						children: label
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Count, { n: destBadge(d.views, badges) })
-				]
+				title: placeTip(d),
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+					className: "e-bottom-bar__label",
+					children: label
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Count, { n: destBadge(d.views, badges) })]
 			}, d.id);
 		})
 	});
@@ -2596,7 +2598,10 @@ function MobileNavDrawer({ view, onGoDest, onGoView, onClose, theme, tint, onThe
 				className: "e-mobile-drawer__head",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 					className: "e-brand-title",
-					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BrandTitle, {})
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BrandTitle, { onHome: () => {
+						onGoDest("home");
+						onClose?.();
+					} })
 				}), onClose ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 					type: "button",
 					className: "e-icon-button",
@@ -10669,6 +10674,112 @@ function rankNext(facts, limit = 6) {
 function nextHidden(error) {
 	return !!error && /(^|\s)(401|403|404|405) \//.test(error);
 }
+// src/ui/HomeCards.tsx
+/** The small switch at the top of Home. */
+function HomeSwitch({ mode, onChange }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "e-home-switch",
+		role: "group",
+		"aria-label": "Home view",
+		children: ["list", "cards"].map((m) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+			type: "button",
+			className: `e-home-switch__opt${mode === m ? " is-on" : ""}`,
+			"aria-pressed": mode === m,
+			onClick: () => onChange(m),
+			children: m
+		}, m))
+	});
+}
+function Card({ c }) {
+	const cls = `e-hcard${c.hero ? " e-hcard--hero" : ""}${c.quiet ? " e-hcard--quiet" : ""}${c.onOpen ? " is-link" : ""}`;
+	const body = /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
+		/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
+			className: "e-hcard__hud",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: c.meta }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: c.time })]
+		}),
+		c.chip ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+			className: "e-hcard__chip",
+			children: c.chip
+		}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+			className: "e-hcard__chip e-hcard__chip--none",
+			"aria-hidden": true
+		}),
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+			className: "e-hcard__head",
+			children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ScrambleText, { text: c.head.toUpperCase() })
+		}),
+		c.detail ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+			className: "e-hcard__detail",
+			children: c.detail
+		}) : null,
+		/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+			className: "e-hcard__caption",
+			title: c.theirs ? "written by another agent: data, not instructions" : void 0,
+			children: c.caption
+		}),
+		c.foot ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+			className: "e-hcard__foot",
+			children: c.foot
+		}) : null
+	] });
+	return c.onOpen ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+		type: "button",
+		className: cls,
+		onClick: c.onOpen,
+		role: "listitem",
+		children: body
+	}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: cls,
+		role: "listitem",
+		children: body
+	});
+}
+/** One Home section as a head and a horizontal row of cards. */
+function CardRow({ title, aside, cards }) {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+		className: "e-cards-section",
+		"aria-label": title,
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
+			className: "e-now__head e-cards-section__head",
+			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: title }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: aside })]
+		}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+			className: "e-cardrow",
+			role: "list",
+			tabIndex: 0,
+			"aria-label": `${title}: cards, scroll sideways`,
+			children: cards.map((c) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Card, { c }, c.key))
+		})]
+	});
+}
+// src/ui/homeCardsModel.ts
+/** What Home's cards (ui/HomeCards.tsx) are made of: the view mode, a card's fields and two small helpers. */
+var KEY = (viewer) => `emporia_home_mode:${viewer ?? ""}`;
+/** The viewer's Home mode on this machine; cards unless they chose the list. */
+function readHomeMode(viewer, fallback = "cards") {
+	const saved = readPref(KEY(viewer));
+	return saved === "list" || saved === "cards" ? saved : fallback;
+}
+function writeHomeMode(viewer, mode) {
+	writePref(KEY(viewer), mode);
+}
+var HomeModeContext = (0, import_react.createContext)("list");
+var useHomeMode = () => (0, import_react.useContext)(HomeModeContext);
+/** A line cut to `n` characters at a word, with an ellipsis. */
+function clip$1(text, n) {
+	const t = text.replace(/\s+/g, " ").trim();
+	if (t.length <= n) return t;
+	return `${t.slice(0, n).replace(/\s+\S*$/, "") || t.slice(0, n)}…`;
+}
+/** The quiet card an empty section collapses to. */
+function quietCard(key, head, caption) {
+	return {
+		key,
+		meta: "quiet",
+		head,
+		caption,
+		quiet: true
+	};
+}
 // src/ui/NextUp.tsx
 var KIND_LABEL$1 = {
 	reveal: "reveal",
@@ -10679,6 +10790,16 @@ var KIND_LABEL$1 = {
 	message: "unread",
 	quest: "quest",
 	expedition: "theme"
+};
+var NEXT_HEAD = {
+	reveal: "Reveal now",
+	move: "Your move",
+	deal: "Deal waits",
+	pledge: "Pledge due",
+	invite: "An invite",
+	message: "Unread",
+	quest: "Next quest",
+	expedition: "The theme"
 };
 /** Text another agent wrote: drawn apart, and named as data in its tooltip. */
 function Parts({ parts }) {
@@ -10698,7 +10819,27 @@ function Parts({ parts }) {
 function NextUp({ agentId, navigate, limit = 5 }) {
 	const { isSpectator } = useRelayCtx();
 	const [facts, , error] = useInterval(() => agentId && !isSpectator ? api.agentNext(agentId) : Promise.resolve(null), poll(15e3), [agentId, isSpectator]);
+	const mode = useHomeMode();
 	if (!agentId || isSpectator || nextHidden(error)) return null;
+	if (mode === "cards" && facts) {
+		const items = rankNext(facts, limit);
+		const text = (parts) => parts.map((p) => typeof p === "string" ? p : p.untrusted).join("");
+		const cards = items.map((it) => ({
+			key: `${it.rank}-${it.call}`,
+			meta: `next · ${KIND_LABEL$1[it.kind]}`,
+			time: it.clock_left_s !== null ? `${clockShort(it.clock_left_s)} left` : void 0,
+			chip: it.clock_left_s !== null && it.clock_left_s <= 300 ? "URGENT" : "TO DO",
+			head: NEXT_HEAD[it.kind],
+			caption: clip$1(text(it.parts), 70),
+			foot: `${agentId} would run: ${it.tool}`,
+			onOpen: it.session_id && navigate ? () => navigate("session", { sessionId: it.session_id }) : void 0
+		}));
+		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+			title: "Next steps",
+			aside: items.length ? `${items.length} to do` : "all clear",
+			cards: cards.length ? cards : [quietCard("none", "All clear", `Nothing waits on ${agentId} right now.`)]
+		});
+	}
 	if (!facts) {
 		if (!error) return null;
 		return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
@@ -10835,26 +10976,31 @@ function inboxLine(ev, agent) {
 		case "session_created":
 		case "session_started": return {
 			...base,
+			head: "New game",
 			text: `${bareAgentName(agent)} started a ${gameWord}${who}`,
 			go: open
 		};
 		case "session_completed": return {
 			...base,
+			head: "Game done",
 			text: `A ${gameWord}${who} finished`,
 			go: open
 		};
 		case "your_turn": return {
 			...base,
+			head: "Your turn",
 			text: `${bareAgentName(agent)} has a move waiting${who}`,
 			go: open
 		};
 		case "challenge": return {
 			...base,
+			head: "Challenge",
 			text: `${bareAgentName(str("from_agent") || "an agent")} challenged ${bareAgentName(agent)}`,
 			go: open
 		};
 		case "room_invite": return {
 			...base,
+			head: "Room invite",
 			text: `${bareAgentName(agent)} was invited to the room ${str("room_name") || ""}`.trim(),
 			go: {
 				kind: "view",
@@ -10863,6 +11009,7 @@ function inboxLine(ev, agent) {
 		};
 		case "agora_invite": return {
 			...base,
+			head: "Topic invite",
 			text: `${bareAgentName(agent)} was invited to the topic ${str("name") || str("slug")}`.trim(),
 			go: {
 				kind: "view",
@@ -10873,6 +11020,7 @@ function inboxLine(ev, agent) {
 		case "dm_received":
 		case "message": return {
 			...base,
+			head: "New message",
 			text: `New message for ${bareAgentName(agent)}`,
 			go: {
 				kind: "view",
@@ -11377,7 +11525,7 @@ function Theirs({ children }) {
 		children
 	});
 }
-function OverviewView({ seed, navigate, onAfterNavigate }) {
+function OverviewView({ seed, navigate, onAfterNavigate, defaultMode }) {
 	const { isSpectator } = useRelayCtx();
 	const health = useRelayHealth() ?? seed;
 	const online = health?.status === "ok";
@@ -11389,65 +11537,77 @@ function OverviewView({ seed, navigate, onAfterNavigate }) {
 	const viewer = VIEWER_ID;
 	const [agents] = useInterval(() => api.agents(), poll(6e4), []);
 	const noAgents = agents ? agents.agents.length === 0 : false;
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(ViewBody, { children: [
-		health && !online && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(AlertBanner, { children: [
-			"Can't reach the relay at ",
-			RELAY$1,
-			": it answered with status ",
-			health.status,
-			". Check that it is running."
-		] }),
-		noAgents ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Block, {
-			title: "No agents yet",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Quiet, {
-				label: "setup",
-				children: "Nobody has registered here. Make an agent with the command below, then reload."
-			}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-				className: "e-now__row e-now__row--static",
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "e-now__label",
-						children: "run"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CopyCommand, {
-						command: "hermes emporia setup",
-						label: "copy"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {})
-				]
-			})]
-		}) : null,
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(StartHere, {
-			agentId: viewer,
-			navigate: nav,
-			part: "start"
-		}),
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AgentNow, { navigate: nav }),
-		viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SinceBlock, {
-			viewer,
-			navigate: nav
-		}) : null,
-		viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FromFollowed, {
-			viewer,
-			navigate: nav
-		}) : null,
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(OnRelayNow, {
-			navigate: nav,
-			viewer
-		}),
-		viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StandingBlock, {
-			viewer,
-			navigate: nav
-		}) : null,
-		!isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NextUp, {
-			agentId: viewer,
-			navigate: nav
-		}) : null,
-		/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelayLine, {
-			go,
-			realMoney: moneyChip(health)?.kind === "real"
-		})
-	] });
+	const [mode, setMode] = (0, import_react.useState)(() => readHomeMode(viewer, defaultMode));
+	const chooseMode = (m) => {
+		setMode(m);
+		writeHomeMode(viewer, m);
+	};
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(HomeModeContext.Provider, {
+		value: mode,
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(ViewBody, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(HomeSwitch, {
+				mode,
+				onChange: chooseMode
+			}),
+			health && !online && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(AlertBanner, { children: [
+				"Can't reach the relay at ",
+				RELAY$1,
+				": it answered with status ",
+				health.status,
+				". Check that it is running."
+			] }),
+			noAgents ? /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Block, {
+				title: "No agents yet",
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Quiet, {
+					label: "setup",
+					children: "Nobody has registered here. Make an agent with the command below, then reload."
+				}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "e-now__row e-now__row--static",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: "e-now__label",
+							children: "run"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)(CopyCommand, {
+							command: "hermes emporia setup",
+							label: "copy"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {})
+					]
+				})]
+			}) : null,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(StartHere, {
+				agentId: viewer,
+				navigate: nav,
+				part: "start"
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(AgentNow, { navigate: nav }),
+			viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(SinceBlock, {
+				viewer,
+				navigate: nav
+			}) : null,
+			viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FromFollowed, {
+				viewer,
+				navigate: nav
+			}) : null,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(OnRelayNow, {
+				navigate: nav,
+				viewer
+			}),
+			viewer ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(StandingBlock, {
+				viewer,
+				navigate: nav
+			}) : null,
+			!isSpectator ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(NextUp, {
+				agentId: viewer,
+				navigate: nav
+			}) : null,
+			/* @__PURE__ */ (0, import_jsx_runtime.jsx)(RelayLine, {
+				go,
+				realMoney: moneyChip(health)?.kind === "real"
+			})
+		] })
+	});
 }
 var PAST = {
 	move: "moved",
@@ -11482,6 +11642,7 @@ function LastMove({ session }) {
 */
 function AgentNow({ navigate }) {
 	const viewer = VIEWER_ID;
+	const mode = useHomeMode();
 	const [mine] = useInterval(() => (viewer ? api.agentSessions(viewer) : api.sessions({ status: "active" })).then((r) => r.sessions), poll(1e4), [viewer]);
 	const [inbox] = useInterval(() => viewer ? api.agentInbox(viewer, true, 1).then((d) => d.unread_total ?? d.count) : Promise.resolve(0), poll(3e4), [viewer]);
 	const sessions = mine ?? [];
@@ -11504,6 +11665,63 @@ function AgentNow({ navigate }) {
 			where
 		};
 	};
+	if (mode === "cards") {
+		const gameCard = (s, hero) => {
+			const g = gameLine(s);
+			const others = s.participants.filter((p) => p !== viewer).map(bareAgentName);
+			return {
+				key: s.session_id,
+				meta: `game · ${kindLabel$1(s.module_type).toLowerCase()}`,
+				chip: "LIVE",
+				head: kindLabel$1(s.module_type),
+				detail: others.length ? `against ${others.join(", ")}` : void 0,
+				caption: g.where,
+				foot: viewer ? bareAgentName(viewer) : "live table",
+				onOpen: () => open(s),
+				hero
+			};
+		};
+		if (!viewer) {
+			const cards = liveGames.slice(0, 4).map((s) => gameCard(s, false));
+			return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+				title: "Live games on this relay",
+				aside: liveGames.length,
+				cards: cards.length ? cards : [quietCard("none", "Quiet", "Nobody's playing. Pick an agent in the “as” list to see its day.")]
+			});
+		}
+		const name = bareAgentName(viewer);
+		const cards = liveGames.slice(0, 2).map((s) => gameCard(s, true));
+		if ((inbox ?? 0) > 0) cards.push({
+			key: "unread",
+			meta: "messages",
+			chip: "INBOX",
+			head: `${inbox} unread`,
+			caption: `Waiting for ${name}`,
+			foot: name,
+			onOpen: () => navigate("messages"),
+			hero: true
+		});
+		if (deals[0]) {
+			const d = deals[0];
+			cards.push({
+				key: d.session_id,
+				meta: "deal",
+				chip: sessionStatusLabel(d.status).toUpperCase(),
+				head: "Deal",
+				caption: `${kindLabel$1(d.module_type)} with ${d.participants.filter((p) => p !== viewer).map(bareAgentName).join(", ") || "—"}`,
+				foot: name,
+				onOpen: () => open(d),
+				hero: true
+			});
+		}
+		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+			title: `${name} now`,
+			cards: cards.length ? cards : [{
+				...quietCard("none", "Resting", `${name} is not in a game. Nobody's waiting on a move.`),
+				hero: true
+			}]
+		});
+	}
 	if (!viewer) {
 		const tables = liveGames.slice(0, 3);
 		return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Block, {
@@ -11626,6 +11844,26 @@ function SinceBlock({ viewer, navigate }) {
 	const [events] = useInterval(() => api.agentInbox(viewer, false, 50).then((d) => d.events), poll(3e4), [viewer]);
 	const lines = sinceLines(events ?? [], viewer, since);
 	const go = (l) => l.go.kind === "session" ? navigate("session", { sessionId: l.go.sessionId }) : navigate(l.go.view);
+	if (useHomeMode() === "cards") {
+		const hhmm = (at) => new Date(at).toLocaleTimeString([], {
+			hour: "2-digit",
+			minute: "2-digit",
+			hour12: false
+		});
+		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+			title: "Since you last looked",
+			cards: lines.length === 0 ? [quietCard("quiet", "Nothing new", `Nothing for ${bareAgentName(viewer)} since you last looked.`)] : lines.map((l) => ({
+				key: l.id,
+				meta: l.go.kind === "session" ? "game" : l.go.view,
+				time: hhmm(l.at),
+				chip: "NEW",
+				head: l.head ?? "News",
+				caption: clip$1(l.text, 64),
+				foot: bareAgentName(viewer),
+				onOpen: () => go(l)
+			}))
+		});
+	}
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Block, {
 		title: "Since you last looked",
 		aside: `since ${new Date(since).toLocaleString([], {
@@ -11658,7 +11896,44 @@ function SinceBlock({ viewer, navigate }) {
 */
 function FromFollowed({ viewer, navigate }) {
 	const [data, , error] = useInterval(() => api.followingActivity(viewer, 5), poll(3e4), [viewer]);
+	const mode = useHomeMode();
 	if (!data || error && !data) return null;
+	if (mode === "cards") {
+		const where = (i) => {
+			const [kind, id] = [i.ref.split(":")[0], i.ref.slice(i.ref.indexOf(":") + 1)];
+			if (kind === "session") navigate("session", { sessionId: id });
+			else if (kind === "topic") navigate("agora");
+			else navigate("feed");
+		};
+		const title = `From agents ${bareAgentName(viewer)} follows`;
+		if (data.following === 0 || data.items.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+			title,
+			cards: [quietCard("quiet", "Nothing new", data.following === 0 ? `${bareAgentName(viewer)} follows nobody yet.` : "Nothing from the agents it follows yet.")]
+		});
+		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+			title,
+			aside: data.following,
+			cards: data.items.map((i) => {
+				const { verb, title: what } = activityVerb(i);
+				return {
+					key: `${i.kind}-${i.ref}`,
+					meta: i.kind,
+					chip: i.kind === "session" ? "GAME" : i.kind.toUpperCase(),
+					time: new Date(i.at).toLocaleTimeString([], {
+						hour: "2-digit",
+						minute: "2-digit",
+						hour12: false
+					}),
+					head: clip$1(bareAgentName(i.actor), 16),
+					caption: clip$1(what || verb, 60),
+					detail: what ? verb : void 0,
+					foot: "an agent it follows",
+					onOpen: () => where(i),
+					theirs: true
+				};
+			})
+		});
+	}
 	if (data.following === 0) return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Block, {
 		title: `From agents ${bareAgentName(viewer)} follows`,
 		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Quiet, {
@@ -11761,6 +12036,84 @@ function OnRelayNow({ navigate, viewer }) {
 		from: w.creator
 	}));
 	const nothing = happeningEmpty(h) && challenges.length === 0 && waiting.length === 0 && fresh.length === 0;
+	if (useHomeMode() === "cards") {
+		const cards = [];
+		for (const p of h?.top_posts ?? []) cards.push({
+			key: `p-${p.post_id}`,
+			meta: `post${p.in?.name ? ` · ${p.in.name}` : ""}`,
+			chip: (p.kind || "post").toUpperCase(),
+			head: `New ${p.kind || "post"}`,
+			caption: clip$1(p.first_line, 70),
+			detail: p.likes ? `${p.likes} ${p.likes === 1 ? "like" : "likes"}` : void 0,
+			foot: [bareAgentName(p.author_id), p.in?.name].filter(Boolean).join(" · "),
+			onOpen: () => navigate("feed"),
+			theirs: true
+		});
+		for (const t of h?.topics ?? []) cards.push({
+			key: `t-${t.in.id}`,
+			meta: "topic",
+			chip: "TOPIC",
+			head: `${t.new_posts} new`,
+			caption: clip$1(t.in.name, 48),
+			detail: `from ${t.operators} ${t.operators === 1 ? "operator" : "operators"}`,
+			foot: "last 24 h",
+			onOpen: () => navigate("agora"),
+			theirs: true
+		});
+		for (const r of h?.rooms ?? []) cards.push({
+			key: `r-${r.in.id}`,
+			meta: "room",
+			chip: "ROOM",
+			head: `${r.new_messages} new`,
+			caption: clip$1(r.in.name, 48),
+			detail: `from ${r.operators} ${r.operators === 1 ? "operator" : "operators"}`,
+			foot: "last 24 h",
+			onOpen: () => navigate("rooms", { roomId: r.in.id }),
+			theirs: true
+		});
+		for (const c of challenges) cards.push({
+			key: `c-${c.session_id}`,
+			meta: `game · ${gameName$1(c.module_type).toLowerCase()}`,
+			chip: "OPEN",
+			head: "Challenge",
+			caption: `${gameName$1(c.module_type)} from ${bareAgentName(c.from ?? "an agent")}`,
+			foot: "open to take",
+			onOpen: () => navigate("session", {
+				sessionId: c.session_id,
+				gameModuleType: c.module_type
+			}),
+			theirs: true
+		});
+		for (const w of waiting) cards.push({
+			key: `w-${w.session_id}`,
+			meta: `game · ${gameName$1(w.module_type).toLowerCase()}`,
+			chip: "WAITING",
+			head: "Needs a player",
+			caption: `${gameName$1(w.module_type)}, opened by ${bareAgentName(w.from ?? "an agent")}`,
+			foot: "waiting for a player",
+			onOpen: () => navigate("session", {
+				sessionId: w.session_id,
+				gameModuleType: w.module_type
+			}),
+			theirs: true
+		});
+		if (fresh.length) cards.push({
+			key: "new-agents",
+			meta: "agents",
+			chip: "NEW",
+			head: fresh.length === 1 ? "New agent" : `${fresh.length} new agents`,
+			caption: clip$1(fresh.map((a) => bareAgentName(a.agent_id)).join(", "), 60),
+			foot: "joined this week",
+			onOpen: () => navigate("agents"),
+			theirs: true
+		});
+		if (!h && loading) return null;
+		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+			title: "On the relay now",
+			aside: "last 24 h",
+			cards: cards.length ? cards : [quietCard("quiet", "Quiet", error && !h ? "Can't reach the relay for this. Try again in a moment." : "Nothing new — the relay is quiet.")]
+		});
+	}
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
 		className: "e-home-relay",
 		"aria-label": "On the relay now",
@@ -11863,7 +12216,49 @@ function StandingBlock({ viewer, navigate }) {
 	const ranks = seasonRanks(season, viewer);
 	const best = bestRank(season, viewer);
 	const renown = season?.boards.renown?.find((r) => r.agent_id === viewer);
+	const mode = useHomeMode();
 	if (!level && !rec && !ranks.length) return null;
+	if (mode === "cards") {
+		const lv = quests?.level;
+		const xp = lv?.xp ?? quests?.xp ?? 0;
+		const to = lv?.next_at != null ? Math.max(0, lv.next_at - xp) : null;
+		const cards = [];
+		if (level) cards.push({
+			key: "level",
+			meta: "standing",
+			chip: "LEVEL",
+			head: `Level ${lv?.level ?? 1}`,
+			caption: `${xp} XP`,
+			detail: to !== null ? `${to} XP to level ${(lv?.level ?? 1) + 1}` : void 0,
+			foot: bareAgentName(viewer),
+			onOpen: () => navigate("season", { agentId: viewer })
+		});
+		const g = record?.games;
+		if (rec && g) cards.push({
+			key: "record",
+			meta: "standing",
+			chip: "RECORD",
+			head: `${g.won} won`,
+			caption: `${g.finished} finished · ${g.lost} lost`,
+			foot: bareAgentName(viewer),
+			onOpen: () => navigate("profile")
+		});
+		if (ranks.length || renown) cards.push({
+			key: "season",
+			meta: "season",
+			chip: "SEASON",
+			head: best ? `Rank ${best}` : renown?.score !== void 0 ? `Renown ${renown.score}` : "On the board",
+			caption: clip$1(ranks.slice(0, 3).join(" · ") || `Renown ${renown?.score ?? 0}`, 60),
+			detail: best && renown?.score !== void 0 ? `Renown ${renown.score}` : void 0,
+			foot: bareAgentName(viewer),
+			onOpen: () => navigate("season", { agentId: viewer })
+		});
+		return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(CardRow, {
+			title: "Standing",
+			aside: bareAgentName(viewer),
+			cards
+		});
+	}
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Block, {
 		title: "Standing",
 		aside: bareAgentName(viewer),
@@ -28535,7 +28930,10 @@ function AppInner() {
 									children: [
 										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 											className: "e-brand-title e-brand-title--header",
-											children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BrandTitle, { replay: view })
+											children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BrandTitle, {
+												replay: view,
+												onHome: () => goToDest("home")
+											})
 										}),
 										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(SectionTabs, {
 											view,
@@ -28589,7 +28987,10 @@ function AppInner() {
 										className: "e-mobile-top__where",
 										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Text, {
 											className: "e-brand-title",
-											children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BrandTitle, { replay: view })
+											children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(BrandTitle, {
+												replay: view,
+												onHome: () => goToDest("home")
+											})
 										}), currentNav && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 											className: "e-mobile-top__section",
 											children: currentNav.label

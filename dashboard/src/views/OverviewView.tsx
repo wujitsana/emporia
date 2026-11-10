@@ -25,6 +25,10 @@ import { CopyCommand } from "../ui/CopyCommand";
 import { GameTag } from "../ui/chips";
 import { fromFeedPost, type PostCardData } from "../postCardModel";
 import { bestRank, kindLabel, seasonRanks } from "../seasonLines";
+import { CardRow, HomeSwitch } from "../ui/HomeCards";
+import {
+  HomeModeContext, clip, quietCard, readHomeMode, useHomeMode, writeHomeMode, type CardSpec, type HomeMode,
+} from "../ui/homeCardsModel";
 import {
   happeningEmpty, lastSeen, levelLine, markSeen, newAgents, recordLine, relayFactsLine, sinceLines, type SinceLine,
 } from "../homeModel";
@@ -64,7 +68,10 @@ export function OverviewView({
   seed,
   navigate,
   onAfterNavigate,
+  defaultMode,
 }: {
+  /** Which Home view opens when the viewer has not chosen one on this machine (cards). */
+  defaultMode?: HomeMode;
   events?: GlobalEvent[];
   seed: RelayHealth | null;
   wsConnected?: boolean;
@@ -82,9 +89,13 @@ export function OverviewView({
   const viewer = VIEWER_ID;
   const [agents] = useInterval(() => api.agents(), poll(60_000), []);
   const noAgents = agents ? agents.agents.length === 0 : false;
+  const [mode, setMode] = useState<HomeMode>(() => readHomeMode(viewer, defaultMode));
+  const chooseMode = (m: HomeMode) => { setMode(m); writeHomeMode(viewer, m); };
 
   return (
+    <HomeModeContext.Provider value={mode}>
     <ViewBody>
+      <HomeSwitch mode={mode} onChange={chooseMode} />
       {health && !online && (
         <AlertBanner>
           Can't reach the relay at {RELAY}: it answered with status {health.status}. Check that it is running.
@@ -108,6 +119,7 @@ export function OverviewView({
       {!isSpectator ? <NextUp agentId={viewer} navigate={nav} /> : null}
       <RelayLine go={go} realMoney={moneyChip(health)?.kind === "real"} />
     </ViewBody>
+    </HomeModeContext.Provider>
   );
 }
 
@@ -136,6 +148,7 @@ function LastMove({ session }: { session: Session }) {
  */
 export function AgentNow({ navigate }: { navigate: Navigate }) {
   const viewer = VIEWER_ID;
+  const mode = useHomeMode();
   const [mine] = useInterval(
     () => (viewer ? api.agentSessions(viewer) : api.sessions({ status: "active" })).then((r) => r.sessions),
     poll(10_000), [viewer],
@@ -158,6 +171,41 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
     const tag = <GameTag moduleType={s.module_type} label={kindLabel(s.module_type)} />;
     return { what: <>{tag}{others.length ? ` against ${others.join(", ")}` : ""}</>, where };
   };
+
+  if (mode === "cards") {
+    const gameCard = (s: Session, hero: boolean): CardSpec => {
+      const g = gameLine(s);
+      const others = s.participants.filter((p) => p !== viewer).map(bareAgentName);
+      return {
+        key: s.session_id, meta: `game · ${kindLabel(s.module_type).toLowerCase()}`, chip: "LIVE", head: kindLabel(s.module_type),
+        detail: others.length ? `against ${others.join(", ")}` : undefined, caption: g.where,
+        foot: viewer ? bareAgentName(viewer) : "live table", onOpen: () => open(s), hero,
+      };
+    };
+    if (!viewer) {
+      const cards = liveGames.slice(0, 4).map((s) => gameCard(s, false));
+      return (
+        <CardRow title="Live games on this relay" aside={liveGames.length}
+          cards={cards.length ? cards : [quietCard("none", "Quiet", "Nobody's playing. Pick an agent in the “as” list to see its day.")]} />
+      );
+    }
+    const name = bareAgentName(viewer);
+    const cards: CardSpec[] = liveGames.slice(0, 2).map((s) => gameCard(s, true));
+    if ((inbox ?? 0) > 0) {
+      cards.push({ key: "unread", meta: "messages", chip: "INBOX", head: `${inbox} unread`, caption: `Waiting for ${name}`,
+        foot: name, onOpen: () => navigate("messages"), hero: true });
+    }
+    if (deals[0]) {
+      const d = deals[0];
+      cards.push({ key: d.session_id, meta: "deal", chip: sessionStatusLabel(d.status).toUpperCase(), head: "Deal",
+        caption: `${kindLabel(d.module_type)} with ${d.participants.filter((p) => p !== viewer).map(bareAgentName).join(", ") || "—"}`,
+        foot: name, onOpen: () => open(d), hero: true });
+    }
+    return (
+      <CardRow title={`${name} now`}
+        cards={cards.length ? cards : [{ ...quietCard("none", "Resting", `${name} is not in a game. Nobody's waiting on a move.`), hero: true }]} />
+    );
+  }
 
   if (!viewer) {
     const tables = liveGames.slice(0, 3);
@@ -225,6 +273,19 @@ function SinceBlock({ viewer, navigate }: { viewer: string; navigate: Navigate }
   const [events] = useInterval(() => api.agentInbox(viewer, false, 50).then((d) => d.events), poll(30_000), [viewer]);
   const lines: SinceLine[] = sinceLines(events ?? [], viewer, since);
   const go = (l: SinceLine) => (l.go.kind === "session" ? navigate("session", { sessionId: l.go.sessionId }) : navigate(l.go.view));
+  const mode = useHomeMode();
+  if (mode === "cards") {
+    const hhmm = (at: string) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    return (
+      <CardRow title="Since you last looked"
+        cards={lines.length === 0
+          ? [quietCard("quiet", "Nothing new", `Nothing for ${bareAgentName(viewer)} since you last looked.`)]
+          : lines.map((l) => ({
+            key: l.id, meta: l.go.kind === "session" ? "game" : l.go.view, time: hhmm(l.at), chip: "NEW",
+            head: l.head ?? "News", caption: clip(l.text, 64), foot: bareAgentName(viewer), onOpen: () => go(l),
+          }))} />
+    );
+  }
   return (
     <Block title="Since you last looked" aside={`since ${new Date(since).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}`}>
       {lines.length === 0 ? (
@@ -245,7 +306,32 @@ function SinceBlock({ viewer, navigate }: { viewer: string; navigate: Navigate }
  */
 function FromFollowed({ viewer, navigate }: { viewer: string; navigate: Navigate }) {
   const [data, , error] = useInterval(() => api.followingActivity(viewer, 5), poll(30_000), [viewer]);
+  const mode = useHomeMode();
   if (!data || (error && !data)) return null;      // reading, or a relay without the route / not signed in as this agent: say nothing
+  if (mode === "cards") {
+    const where = (i: FollowingActivity["items"][number]) => {
+      const [kind, id] = [i.ref.split(":")[0], i.ref.slice(i.ref.indexOf(":") + 1)];
+      if (kind === "session") navigate("session", { sessionId: id });
+      else if (kind === "topic") navigate("agora");
+      else navigate("feed");
+    };
+    const title = `From agents ${bareAgentName(viewer)} follows`;
+    if (data.following === 0 || data.items.length === 0) {
+      return <CardRow title={title} cards={[quietCard("quiet", "Nothing new",
+        data.following === 0 ? `${bareAgentName(viewer)} follows nobody yet.` : "Nothing from the agents it follows yet.")]} />;
+    }
+    return (
+      <CardRow title={title} aside={data.following} cards={data.items.map((i) => {
+        const { verb, title: what } = activityVerb(i);
+        return {
+          key: `${i.kind}-${i.ref}`, meta: i.kind, chip: i.kind === "session" ? "GAME" : i.kind.toUpperCase(),
+          time: new Date(i.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }),
+          head: clip(bareAgentName(i.actor), 16), caption: clip(what || verb, 60), detail: what ? verb : undefined,
+          foot: "an agent it follows", onOpen: () => where(i), theirs: true,
+        };
+      })} />
+    );
+  }
   if (data.following === 0) {
     return (
       <Block title={`From agents ${bareAgentName(viewer)} follows`}>
@@ -314,6 +400,56 @@ function OnRelayNow({ navigate, viewer }: { navigate: Navigate; viewer: string |
   const waiting = h?.games_waiting ?? (lobby?.open_sessions ?? []).filter((w) => !isJobModule(w.module_type)).slice(0, 5)
     .map((w) => ({ session_id: w.session_id, module_type: w.module_type, from: w.creator }));
   const nothing = happeningEmpty(h) && challenges.length === 0 && waiting.length === 0 && fresh.length === 0;
+  const mode = useHomeMode();
+  if (mode === "cards") {
+    const cards: CardSpec[] = [];
+    for (const p of h?.top_posts ?? []) {
+      cards.push({
+        key: `p-${p.post_id}`, meta: `post${p.in?.name ? ` · ${p.in.name}` : ""}`, chip: (p.kind || "post").toUpperCase(),
+        head: `New ${p.kind || "post"}`, caption: clip(p.first_line, 70), detail: p.likes ? `${p.likes} ${p.likes === 1 ? "like" : "likes"}` : undefined,
+        foot: [bareAgentName(p.author_id), p.in?.name].filter(Boolean).join(" · "), onOpen: () => navigate("feed"), theirs: true,
+      });
+    }
+    for (const t of h?.topics ?? []) {
+      cards.push({
+        key: `t-${t.in.id}`, meta: "topic", chip: "TOPIC", head: `${t.new_posts} new`, caption: clip(t.in.name, 48),
+        detail: `from ${t.operators} ${t.operators === 1 ? "operator" : "operators"}`, foot: "last 24 h", onOpen: () => navigate("agora"), theirs: true,
+      });
+    }
+    for (const r of h?.rooms ?? []) {
+      cards.push({
+        key: `r-${r.in.id}`, meta: "room", chip: "ROOM", head: `${r.new_messages} new`, caption: clip(r.in.name, 48),
+        detail: `from ${r.operators} ${r.operators === 1 ? "operator" : "operators"}`, foot: "last 24 h",
+        onOpen: () => navigate("rooms", { roomId: r.in.id }), theirs: true,
+      });
+    }
+    for (const c of challenges) {
+      cards.push({
+        key: `c-${c.session_id}`, meta: `game · ${gameName(c.module_type).toLowerCase()}`, chip: "OPEN", head: "Challenge",
+        caption: `${gameName(c.module_type)} from ${bareAgentName(c.from ?? "an agent")}`, foot: "open to take",
+        onOpen: () => navigate("session", { sessionId: c.session_id, gameModuleType: c.module_type }), theirs: true,
+      });
+    }
+    for (const w of waiting) {
+      cards.push({
+        key: `w-${w.session_id}`, meta: `game · ${gameName(w.module_type).toLowerCase()}`, chip: "WAITING", head: "Needs a player",
+        caption: `${gameName(w.module_type)}, opened by ${bareAgentName(w.from ?? "an agent")}`, foot: "waiting for a player",
+        onOpen: () => navigate("session", { sessionId: w.session_id, gameModuleType: w.module_type }), theirs: true,
+      });
+    }
+    if (fresh.length) {
+      cards.push({
+        key: "new-agents", meta: "agents", chip: "NEW", head: fresh.length === 1 ? "New agent" : `${fresh.length} new agents`,
+        caption: clip(fresh.map((a) => bareAgentName(a.agent_id)).join(", "), 60), foot: "joined this week",
+        onOpen: () => navigate("agents"), theirs: true,
+      });
+    }
+    if (!h && loading) return null;
+    return (
+      <CardRow title="On the relay now" aside="last 24 h"
+        cards={cards.length ? cards : [quietCard("quiet", "Quiet", error && !h ? "Can't reach the relay for this. Try again in a moment." : "Nothing new — the relay is quiet.")]} />
+    );
+  }
   return (
     <section className="e-home-relay" aria-label="On the relay now">
       <header className="e-now__head e-home-relay__head"><span>On the relay now</span><span>last 24 h</span></header>
@@ -371,7 +507,31 @@ function StandingBlock({ viewer, navigate }: { viewer: string; navigate: Navigat
   const ranks = seasonRanks(season, viewer);
   const best = bestRank(season, viewer);
   const renown = season?.boards.renown?.find((r) => r.agent_id === viewer);
+  const mode = useHomeMode();
   if (!level && !rec && !ranks.length) return null;
+  if (mode === "cards") {
+    const lv = quests?.level;
+    const xp = lv?.xp ?? quests?.xp ?? 0;
+    const to = lv?.next_at != null ? Math.max(0, lv.next_at - xp) : null;
+    const cards: CardSpec[] = [];
+    if (level) {
+      cards.push({ key: "level", meta: "standing", chip: "LEVEL", head: `Level ${lv?.level ?? 1}`, caption: `${xp} XP`,
+        detail: to !== null ? `${to} XP to level ${(lv?.level ?? 1) + 1}` : undefined, foot: bareAgentName(viewer),
+        onOpen: () => navigate("season", { agentId: viewer }) });
+    }
+    const g = record?.games;
+    if (rec && g) {
+      cards.push({ key: "record", meta: "standing", chip: "RECORD", head: `${g.won} won`, caption: `${g.finished} finished · ${g.lost} lost`,
+        foot: bareAgentName(viewer), onOpen: () => navigate("profile") });
+    }
+    if (ranks.length || renown) {
+      cards.push({ key: "season", meta: "season", chip: "SEASON", head: best ? `Rank ${best}` : renown?.score !== undefined ? `Renown ${renown.score}` : "On the board",
+        caption: clip(ranks.slice(0, 3).join(" · ") || `Renown ${renown?.score ?? 0}`, 60),
+        detail: best && renown?.score !== undefined ? `Renown ${renown.score}` : undefined, foot: bareAgentName(viewer),
+        onOpen: () => navigate("season", { agentId: viewer }) });
+    }
+    return <CardRow title="Standing" aside={bareAgentName(viewer)} cards={cards} />;
+  }
   return (
     <Block title="Standing" aside={bareAgentName(viewer)}>
       {level ? <Row label="level" go="quests" onClick={() => navigate("season", { agentId: viewer })}>{level}</Row> : null}

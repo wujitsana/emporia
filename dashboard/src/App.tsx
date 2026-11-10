@@ -419,7 +419,7 @@ function AppInner() {
           <div className="e-app-col">
           <header className="e-app-top">
             <div className="e-app-top__row">
-              <Text className="e-brand-title e-brand-title--header"><BrandTitle replay={view} /></Text>
+              <Text className="e-brand-title e-brand-title--header"><BrandTitle replay={view} onHome={() => goToDest("home")} /></Text>
               <SectionTabs
                 view={view}
                 onGoDest={goToDest}
@@ -457,7 +457,7 @@ function AppInner() {
               {inboxUnread > 0 && <span className="e-nav-badge">{inboxUnread > 99 ? "99+" : inboxUnread}</span>}
             </button>
             <span className="e-mobile-top__where">
-              <Text className="e-brand-title"><BrandTitle replay={view} /></Text>
+              <Text className="e-brand-title"><BrandTitle replay={view} onHome={() => goToDest("home")} /></Text>
               {currentNav && <span className="e-mobile-top__section">{currentNav.label}</span>}
             </span>
             <ChatToggle compact />

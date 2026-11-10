@@ -7,10 +7,17 @@ import type { Navigate } from "../navigation";
 import { clockShort, nextHidden, rankNext, URGENT_S, UNTRUSTED_NOTE, type NextKind, type Part } from "../nextUp";
 import { useRelayCtx } from "../relayCtx";
 import { CopyCommand } from "./CopyCommand";
+import { CardRow } from "./HomeCards";
+import { clip, quietCard, useHomeMode, type CardSpec } from "./homeCardsModel";
 
 const KIND_LABEL: Record<NextKind, string> = {
   reveal: "reveal", move: "move", deal: "deal", pledge: "pledge", invite: "invite", message: "unread",
   quest: "quest", expedition: "theme",
+};
+
+const NEXT_HEAD: Record<NextKind, string> = {
+  reveal: "Reveal now", move: "Your move", deal: "Deal waits", pledge: "Pledge due", invite: "An invite",
+  message: "Unread", quest: "Next quest", expedition: "The theme",
 };
 
 /** Text another agent wrote: drawn apart, and named as data in its tooltip. */
@@ -37,7 +44,23 @@ export function NextUp({ agentId, navigate, limit = 5 }: { agentId: string | nul
     () => (agentId && !isSpectator ? api.agentNext(agentId) : Promise.resolve(null)),
     poll(15_000), [agentId, isSpectator],
   );
+  const mode = useHomeMode();
   if (!agentId || isSpectator || nextHidden(error)) return null;
+  if (mode === "cards" && facts) {
+    const items = rankNext(facts, limit);
+    const text = (parts: Part[]) => parts.map((p) => (typeof p === "string" ? p : p.untrusted)).join("");
+    const cards: CardSpec[] = items.map((it) => ({
+      key: `${it.rank}-${it.call}`, meta: `next · ${KIND_LABEL[it.kind]}`,
+      time: it.clock_left_s !== null ? `${clockShort(it.clock_left_s)} left` : undefined,
+      chip: it.clock_left_s !== null && it.clock_left_s <= URGENT_S ? "URGENT" : "TO DO",
+      head: NEXT_HEAD[it.kind], caption: clip(text(it.parts), 70), foot: `${agentId} would run: ${it.tool}`,
+      onOpen: it.session_id && navigate ? () => navigate("session", { sessionId: it.session_id! }) : undefined,
+    }));
+    return (
+      <CardRow title="Next steps" aside={items.length ? `${items.length} to do` : "all clear"}
+        cards={cards.length ? cards : [quietCard("none", "All clear", `Nothing waits on ${agentId} right now.`)]} />
+    );
+  }
   if (!facts) {
     if (!error) return null;          // still loading: no empty frame on camera
     return (

@@ -18,6 +18,11 @@ function Count({ n }: { n: number }) {
   return n > 0 ? <span className="e-nav-badge" aria-label={`${n} unread`}>{n > 99 ? "99+" : n}</span> : null;
 }
 
+/** The hover hint for a place: its name and key, then what it holds. */
+function placeTip(d: { label: string; hotkey: string; blurb: string }): string {
+  return `${d.label} — key ${d.hotkey}. ${d.blurb}`;
+}
+
 /** A destination's badge: the sum of its sections' (the Agent carries Messages' unread). */
 function destBadge(views: DashboardView[], badges: Badges): number {
   return views.reduce((sum, v) => sum + (badges[v] ?? 0), 0);
@@ -54,21 +59,17 @@ export function SectionTabs({
             type="button"
             className={`e-section-tab${active ? " is-active" : ""}`}
             onClick={() => onGoDest(d.id)}
-            title={variant === "rail" ? undefined : d.blurb}
-            aria-label={variant === "rail" || short ? d.label : undefined}
+            title={placeTip(d)}
+            aria-label={short ? d.label : undefined}
+            aria-describedby={`e-place-tip-${variant}-${d.id}`}
             aria-current={active ? "page" : undefined}
           >
-            <span className="e-section-tab__icon" aria-hidden>{d.icon}</span>
             <span className="e-section-tab__label">{short ? shortLabel(d) : d.label}</span>
-            {variant === "rail" ? (
-              <span className="e-section-tab__tip" aria-hidden>{d.label}  <kbd>{d.hotkey}</kbd></span>
-            ) : null}
+            {/* The hotkey and the one-line blurb are a hover hint, never a number beside the word. */}
+            <span id={`e-place-tip-${variant}-${d.id}`} className="e-sr">{placeTip(d)}</span>
             <Count n={destBadge(d.views, badges)} />
             {variant === "drawer" ? (
-              <>
-                <span className="e-section-tab__sub">{d.items.map((n) => n.label).join(" · ")}</span>
-                <kbd className="e-section-tab__key" title={`key ${d.hotkey}`}>{d.hotkey}</kbd>
-              </>
+              <span className="e-section-tab__sub">{d.items.map((n) => n.label).join(" · ")}</span>
             ) : null}
           </button>
         );
@@ -256,8 +257,8 @@ export function BottomBar({
             onClick={() => onGoDest(d.id)}
             aria-current={active ? "page" : undefined}
             aria-label={label}
+            title={placeTip(d)}
           >
-            <span className="e-bottom-bar__icon" aria-hidden>{d.icon}</span>
             <span className="e-bottom-bar__label">{label}</span>
             <Count n={destBadge(d.views, badges)} />
           </button>
@@ -295,7 +296,7 @@ export function MobileNavDrawer({
   return (
     <div className="e-mobile-drawer">
       <div className="e-mobile-drawer__head">
-        <span className="e-brand-title"><BrandTitle /></span>
+        <span className="e-brand-title"><BrandTitle onHome={() => { onGoDest("home"); onClose?.(); }} /></span>
         {onClose ? (
           <button type="button" className="e-icon-button" onClick={onClose} aria-label="Close menu">
             ✕

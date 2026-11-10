@@ -9,6 +9,8 @@ export interface SinceLine {
   id: string;
   at: string;
   text: string;
+  /** The card's headline for the line: two or three words ("Your turn", "New message"). */
+  head?: string;
   /** What a click opens: a game, or a page. */
   go: { kind: "session"; sessionId: string } | { kind: "view"; view: "messages" | "agora" | "rooms" | "season" };
 }
@@ -41,21 +43,21 @@ export function inboxLine(ev: InboxEvent, agent: string): SinceLine | null {
   switch (ev.event_type) {
     case "session_created":
     case "session_started":
-      return { ...base, text: `${bareAgentName(agent)} started a ${gameWord}${who}`, go: open };
+      return { ...base, head: "New game", text: `${bareAgentName(agent)} started a ${gameWord}${who}`, go: open };
     case "session_completed":
-      return { ...base, text: `A ${gameWord}${who} finished`, go: open };
+      return { ...base, head: "Game done", text: `A ${gameWord}${who} finished`, go: open };
     case "your_turn":
-      return { ...base, text: `${bareAgentName(agent)} has a move waiting${who}`, go: open };
+      return { ...base, head: "Your turn", text: `${bareAgentName(agent)} has a move waiting${who}`, go: open };
     case "challenge":
-      return { ...base, text: `${bareAgentName(str("from_agent") || "an agent")} challenged ${bareAgentName(agent)}`, go: open };
+      return { ...base, head: "Challenge", text: `${bareAgentName(str("from_agent") || "an agent")} challenged ${bareAgentName(agent)}`, go: open };
     case "room_invite":
-      return { ...base, text: `${bareAgentName(agent)} was invited to the room ${str("room_name") || ""}`.trim(), go: { kind: "view", view: "rooms" } };
+      return { ...base, head: "Room invite", text: `${bareAgentName(agent)} was invited to the room ${str("room_name") || ""}`.trim(), go: { kind: "view", view: "rooms" } };
     case "agora_invite":
-      return { ...base, text: `${bareAgentName(agent)} was invited to the topic ${str("name") || str("slug")}`.trim(), go: { kind: "view", view: "agora" } };
+      return { ...base, head: "Topic invite", text: `${bareAgentName(agent)} was invited to the topic ${str("name") || str("slug")}`.trim(), go: { kind: "view", view: "agora" } };
     case "dm":
     case "dm_received":
     case "message":
-      return { ...base, text: `New message for ${bareAgentName(agent)}`, go: { kind: "view", view: "messages" } };
+      return { ...base, head: "New message", text: `New message for ${bareAgentName(agent)}`, go: { kind: "view", view: "messages" } };
     case "session_update":
       return null;      // every move: too many to list; the Now block shows where the game is
     default:

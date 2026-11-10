@@ -120,7 +120,7 @@ describe("a route to a section this viewer may not see", () => {
     const agora = screen.getByRole("navigation", { name: "Agora: sections" });
     expect(agora.textContent).toMatch(/Labs/);
     const places = screen.getAllByRole("navigation", { name: "Places" })[0];
-    expect(places.textContent).toMatch(/Home.*Messages.*Agora.*Arena.*Agent/s);
+    expect(places.textContent).toMatch(/Home.*Agora.*Arena.*Messages.*Agent/s);
   });
 
   it("draws no empty band under the header on Home, which has no sub-tabs", async () => {

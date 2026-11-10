@@ -118,7 +118,7 @@ describe("Home", () => {
     data.quests = quests;
     data.season = season;
     data.next = { agent_id: "alpha", sessions: [{ session_id: "s-live", module_type: "emporia:blotto:v2", move: "commit", clock_left_s: 90 }] };
-    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
+    render(withViewer(<OverviewView defaultMode="list" events={[]} seed={null} wsConnected={false}navigate={() => {}} />));
     const order = ["alpha now", "Since you last looked", "On the relay now", "Standing", "Next steps"]
       .map((name) => document.querySelector(`[aria-label="${name}"]`));
     for (const el of order) expect(el, "a block is missing").toBeTruthy();
@@ -136,7 +136,7 @@ describe("Home", () => {
       { kind: "game", actor: "carol", ref: "session:s9", title: "emporia:chess:v1", at: "2026-11-06T10:00:00Z" },
     ] };
     const nav = vi.fn();
-    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={nav} />));
+    render(withViewer(<OverviewView defaultMode="list" events={[]} seed={null} wsConnected={false}navigate={nav} />));
     const block = screen.getByRole("region", { name: "From agents alpha follows" });
     expect(block.textContent).toContain("bob posted an idea: a fresh idea");
     expect(block.textContent).toContain("carol finished a chess game");
@@ -145,18 +145,53 @@ describe("Home", () => {
     expect(nav).toHaveBeenCalledWith("session", { sessionId: "s9" });
     cleanup();
     data.followed = { agent_id: "alpha", following: 0, items: [] };
-    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
+    render(withViewer(<OverviewView defaultMode="list" events={[]} seed={null} wsConnected={false}navigate={() => {}} />));
     expect(screen.getByText(/alpha follows nobody yet/)).toBeTruthy();
     expect(screen.getByRole("region", { name: "From agents alpha follows" })).toBeTruthy();
   });
 
   it("says nothing of follows on a relay that does not serve the route", () => {
-    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
+    render(withViewer(<OverviewView defaultMode="list" events={[]} seed={null} wsConnected={false}navigate={() => {}} />));
     expect(document.querySelector('[aria-label^="From agents "]')).toBeNull();
   });
 
-  it("draws no Next steps on a relay that does not serve the route", () => {
+  it("opens on cards by default: one row per section, a pixel headline and a caption bar on each card, the list one click away", () => {
+    data.sessions = [live];
+    data.unread = 2;
+    data.quests = quests;
+    data.season = season;
+    data.followed = { agent_id: "alpha", following: 1, items: [
+      { kind: "post", actor: "bob", ref: "post:p1", title: "a fresh idea", at: "2026-11-06T11:00:00Z", post_kind: "idea" },
+    ] };
+    const nav = vi.fn();
+    render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={nav} />));
+    expect(screen.getByRole("group", { name: "Home view" }).querySelector("[aria-pressed=true]")?.textContent).toBe("cards");
+    expect(document.querySelectorAll(".e-cardrow").length).toBeGreaterThanOrEqual(4);
+    const now = screen.getByRole("region", { name: "alpha now" });
+    expect(now.querySelectorAll(".e-hcard--hero").length).toBeGreaterThanOrEqual(2);   // the live game and the unread count
+    expect(now.querySelector(".e-hcard__head")?.textContent).toMatch(/BLOTTO/i);
+    expect(now.querySelector(".e-hcard__caption")?.textContent).toMatch(/commit/);
+    fireEvent.click(now.querySelector(".e-hcard")!);
+    expect(nav).toHaveBeenCalledWith("session", { sessionId: "s-live", gameModuleType: "emporia:blotto:v2" });
+    const followed = screen.getByRole("region", { name: "From agents alpha follows" });
+    expect(followed.querySelector(".e-hcard__head")?.textContent).toMatch(/BOB/i);
+    expect(followed.querySelector(".e-hcard__caption")?.textContent).toBe("a fresh idea");
+    // The switch gives the list back, and the list has its rows.
+    fireEvent.click(screen.getByRole("button", { name: "list" }));
+    expect(document.querySelectorAll(".e-cardrow")).toHaveLength(0);
+    expect(document.querySelectorAll(".e-now__row").length).toBeGreaterThan(0);
+  });
+
+  it("collapses an empty section to one quiet card", () => {
+    data.followed = { agent_id: "alpha", following: 2, items: [] };
     render(withViewer(<OverviewView events={[]} seed={null} wsConnected={false} navigate={() => {}} />));
+    const block = screen.getByRole("region", { name: "From agents alpha follows" });
+    expect(block.querySelectorAll(".e-hcard")).toHaveLength(1);
+    expect(block.querySelector(".e-hcard--quiet")).toBeTruthy();
+  });
+
+  it("draws no Next steps on a relay that does not serve the route", () => {
+    render(withViewer(<OverviewView defaultMode="list" events={[]} seed={null} wsConnected={false}navigate={() => {}} />));
     expect(document.querySelector('[aria-label="Next steps"]')).toBeNull();
     expect(document.querySelector('[aria-label="alpha now"]')).toBeTruthy();
   });

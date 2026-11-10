@@ -10,7 +10,7 @@
  * composer is a slim line pinned at the bottom.
  */
 import postcss, { type Declaration, type Rule } from "postcss";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BRAND, BRAND_OPEN_MS, BRAND_SCRAMBLED, BrandTitle } from "./ui/LookChrome";
@@ -83,16 +83,22 @@ describe("the chat drawer", () => {
     expect(find("chat/ChatDrawer.module.css", ".composer", "flex")[0]?.value).toBe("none");
   });
 
-  it("adds only a small inner margin inside the Hermes tab, which pads its own frame; the console keeps the page margin", () => {
-    expect(find("dashboard.css", ".e-host-body .e-view-body", "padding-left")[0]?.value).toBe("8px");
+  it("keeps the page's own margins in the tab (the earlier tab-only cut to 8px is gone)", () => {
+    expect(find("dashboard.css", ".e-host-body .e-view-body", "padding-left")).toHaveLength(0);
+    expect(find("dashboard.css", ".e-host-body .e-page-head", "padding-left")).toHaveLength(0);
     expect(find("dashboard.css", ".e-view-body", "padding")[0]?.value).toBe("20px 24px 32px");
   });
 
-  it("has a large wordmark and words without icons in the header row, wide and medium", () => {
+  it("lets the heading, the foot and the view fill Hermes's padded area: no centred cap in the tab", () => {
+    for (const sel of [".e-host-body .e-page-head", ".e-host-body .e-anim-hud--foot", ".e-host-body .e-view-body"]) {
+      expect(ALL.some((d) => d.file === "dashboard.css" && d.prop === "max-width" && d.value === "none"
+        && d.sel.split(",").map((s) => s.trim()).includes(sel)), sel).toBe(true);
+    }
+  });
+
+  it("has a large wordmark in the header row, wide and medium", () => {
     const brand = find("dashboard.css", '.e-app-shell[data-nav="wide"] .e-app-top .e-brand-title,\n.e-app-shell[data-nav="medium"] .e-app-top .e-brand-title', "font-size");
     expect(brand[0]?.value).toContain("1.5rem");
-    expect(find("dashboard.css", ".e-section-tabs--horizontal .e-section-tab__icon", "display")[0]?.value).toBe("none");
-    expect(find("dashboard.css", '.e-app-shell[data-nav="medium"] .e-section-tabs--horizontal .e-section-tab__icon', "display")).toHaveLength(0);
   });
 
   it("has a slim composer: one 42px line, the send button as tall, growing to six lines", () => {
@@ -130,6 +136,16 @@ describe("the brand", () => {
     expect(screen.getByText("Emporia").className).toBe("e-sr");
     await act(() => new Promise((r) => setTimeout(r, BRAND_OPEN_MS + 250)));
     expect(shown()).toBe(BRAND);
+  });
+
+  it("ends in a star, and is a button to Home when it has a way there", () => {
+    const home = vi.fn();
+    const { container } = render(<BrandTitle onHome={home} />);
+    expect(container.querySelector(".e-brand__star")?.textContent?.trim()).toBe("✶");
+    const btn = screen.getByRole("button", { name: "Emporia — Home" });
+    expect(btn.getAttribute("title")).toBe("Emporia — Home");
+    fireEvent.click(btn);
+    expect(home).toHaveBeenCalledTimes(1);
   });
 
   it("is still under prefers-reduced-motion", () => {

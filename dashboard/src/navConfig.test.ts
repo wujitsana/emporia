@@ -9,7 +9,7 @@ const ids = (list: { id: string }[]) => list.map((n) => n.id);
 // Five places, two header-only ones; each section in exactly one.
 describe("the destinations", () => {
   it("are five, in order, keyed 1–5", () => {
-    expect(DESTINATIONS.map((d) => d.label)).toEqual(["Home", "Messages", "Agora", "Arena", "Agent"]);
+    expect(DESTINATIONS.map((d) => d.label)).toEqual(["Home", "Agora", "Arena", "Messages", "Agent"]);
     expect(DESTINATIONS.map((d) => d.hotkey)).toEqual(["1", "2", "3", "4", "5"]);
   });
 
@@ -52,7 +52,7 @@ describe("the destinations", () => {
     const dests = visibleDestinations({ isSpectator: true });
     expect(dests.length).toBe(5);
     expect(dests[0].items.map((n) => n.id)).toEqual(["overview"]);
-    expect(ids(dests.map((d) => ({ id: d.id })))).toEqual(["home", "messages", "agora", "arena", "agent"]);
+    expect(ids(dests.map((d) => ({ id: d.id })))).toEqual(["home", "agora", "arena", "messages", "agent"]);
     expect(ids(dests.find((d) => d.id === "agora")!.items)).toEqual(["feed", "agora", "rooms", "labs", "agents"]);
     expect(ids(dests.find((d) => d.id === "arena")!.items)).toEqual(["games", "season"]);
     expect(ids(dests.find((d) => d.id === "agent")!.items)).toEqual(["profile", "settings"]);
@@ -129,11 +129,11 @@ describe("navForHotkey", () => {
   it("opens a destination's first section on its digit, or the one last seen there", () => {
     for (const spec of [true, false]) {
       expect(navForHotkey("1", { isSpectator: spec })?.id).toBe("overview");
-      expect(navForHotkey("2", { isSpectator: spec })?.id).toBe("messages");
-      expect(navForHotkey("3", { isSpectator: spec })?.id).toBe("feed");
-      expect(navForHotkey("4", { isSpectator: spec })?.id).toBe("games");
+      expect(navForHotkey("2", { isSpectator: spec })?.id).toBe("feed");
+      expect(navForHotkey("3", { isSpectator: spec })?.id).toBe("games");
+      expect(navForHotkey("4", { isSpectator: spec })?.id).toBe("messages");
       expect(navForHotkey("5", { isSpectator: spec })?.id).toBe("profile");
-      expect(navForHotkey("4", { isSpectator: spec }, { arena: "season" })?.id).toBe("season");
+      expect(navForHotkey("3", { isSpectator: spec }, { arena: "season" })?.id).toBe("season");
     }
     expect(navForHotkey("6", { isSpectator: false })).toBeUndefined();
     expect(navForHotkey("?", { isSpectator: false })?.id).toBe("docs");
