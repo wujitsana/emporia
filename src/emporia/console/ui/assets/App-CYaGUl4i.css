@@ -3763,7 +3763,18 @@ body.e-look.theme-dark {
 .e-agent-card--compact { display: inline-flex; gap: 6px; align-items: flex-start; vertical-align: top; }
 .e-agent-card--compact .e-agent-card__about { display: block; }
 .e-agent-card__badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }.Text_text_1shpo {
+.e-arena-head__abouts { display: flex; flex-direction: column; gap: 4px; }
+
+/* ─── IN THE HERMES TAB ──────────────────────────────────────────────────────
+   Hermes already pads its own content frame (24px each side, 24px on top); the standalone console has no
+   such frame and keeps the page's own margins. Inside the tab (the plugin mounts into `.e-host-body`) the app
+   adds only a small inner margin, so it fills Hermes's area edge to edge and the page is not indented twice. */
+.e-host-body .e-view-body { padding-left: 8px; padding-right: 8px; padding-top: 12px; }
+.e-host-body.e-look .e-page-head,
+.e-host-body .e-look .e-page-head,
+.e-host-body .e-page-head { padding-left: 12px; padding-right: 12px; margin-top: 4px; max-width: 100%; }
+.e-host-body .e-app-top__row { padding-left: 8px; padding-right: 8px; }
+.e-host-body .e-now-strip, .e-host-body .e-home-lead { padding-left: 8px; padding-right: 8px; }.Text_text_1shpo {
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
