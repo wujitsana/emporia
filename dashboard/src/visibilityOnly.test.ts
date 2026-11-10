@@ -6,8 +6,6 @@
  * dashboard served by a relay has no console in between, so the source is held
  * to it too. Every request that is not a GET in dashboard/src is one of:
  * - the local console opening sealed text with the viewer's own key (`…/open`), on this machine;
- * - the dashboard sign-in challenge (`/dashboard/challenge`, `/dashboard/session`), which
- *   asks for a read token and changes nothing on the marketplace.
  * - the tab's socket ticket (`/_ws_ticket`, transport.ts), a POST because it mints a 30-second
  *   in-memory credential in the plugin's own process: nothing is stored or changed anywhere.
  * The chat drawer's socket is Hermes's own chat (/api/ws), not the relay's.
@@ -23,13 +21,12 @@ const FILES = fs.readdirSync(SRC, { recursive: true })
   .map((f) => ({ file: f, text: fs.readFileSync(`${SRC}/${f}`, "utf8") }));
 
 describe("the dashboard only reads", () => {
-  it("writes only to the local console's /open routes and the sign-in challenge", () => {
+  it("writes only to the local console's /open routes and the tab's socket ticket", () => {
     const found: string[] = [];
     for (const { file, text } of FILES) {
       for (const m of text.matchAll(/method:\s*["'`](POST|PUT|PATCH|DELETE)["'`]/g)) {
         const around = text.slice(Math.max(0, m.index! - 400), m.index! + 200);
         const ok = (/consoleUrl\(`\/(dm|room|session)\/[^`]*\/open`\)/.test(around))
-          || (file === "api.ts" && /async function post</.test(around))
           || (file === "transport.ts" && /_ws_ticket/.test(around));
         if (!ok) found.push(`${file}: ${m[0]}`);
       }
@@ -37,10 +34,9 @@ describe("the dashboard only reads", () => {
     expect(found).toEqual([]);
   });
 
-  it("api.ts posts only the sign-in challenge", () => {
+  it("api.ts posts nothing", () => {
     const api = FILES.find((f) => f.file === "api.ts")!.text;
-    const posts = [...api.matchAll(/post<[^>]*>\(\s*"([^"]+)"/gs)].map((m) => m[1]);
-    expect(posts.sort()).toEqual(["/dashboard/challenge", "/dashboard/session"]);
+    expect(/post<|method:\s*["'`]POST/.test(api)).toBe(false);
   });
 
   it("sends nothing on a relay socket but a keep-alive ping", () => {

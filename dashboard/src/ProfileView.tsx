@@ -1,7 +1,7 @@
 import Indent from "@kit/Indent";
 import Text from "@kit/Text";
 import { AgentMoireAvatar } from "./AgentMoireAvatar";
-import { api, dashboardAuth } from "./api";
+import { api } from "./api";
 import type { AgentProfile, Session, Settlement } from "./api";
 import { ViewBody } from "./ui/layout";
 import { MetaGrid, SlimCard } from "./ui/cards";
@@ -13,75 +13,7 @@ import { TrustBadge } from "./views/AgentsView";
 import { McpCommandHint } from "./ui/McpCommandHint";
 import { SessionLink } from "./ui/chips";
 import type { Navigate } from "./navigation";
-import { useEffect, useRef, useState } from "react";
-
-/**
- * Auto-starts the dashboard auth flow when the relay will not accept a header
- * identity and no JWT is stored. No button — polls silently until the agent
- * completes the sign_dashboard_challenge MCP call.
- *
- * P36-5: this used to gate on `isLocalRelay`, i.e. "is the relay on my machine",
- * on the assumption that a co-located relay trusts a header naming the agent.
- * P261: no relay does, so the panel shows whenever there is no token.
- */
-function RemoteAuthPanel() {
-  const { viewerId, relayUrl, dashboardToken, setDashboardToken } = useRelayCtx();
-  // "idle" doubles as "challenge issued, waiting for the agent to sign".
-  const [state, setState] = useState<"idle" | "done" | "error">("idle");
-  const startedRef = useRef(false);
-  const [challenge, setChallenge] = useState<{ challenge_id: string; nonce: string } | null>(null);
-  const [errMsg, setErrMsg] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Auto-start challenge when remote relay + no JWT + we have an identity
-  useEffect(() => {
-    if (dashboardToken || !viewerId || startedRef.current) return;
-    startedRef.current = true;
-    dashboardAuth.challenge()
-      .then((c) => {
-        setChallenge({ challenge_id: c.challenge_id, nonce: c.nonce });
-        // Poll relay until agent completes the sign
-        pollRef.current = setInterval(async () => {
-          try {
-            const res = await dashboardAuth.poll(c.challenge_id);
-            if (res.ready && res.token) {
-              setDashboardToken(res.token);
-              setState("done");
-              if (pollRef.current) clearInterval(pollRef.current);
-            }
-          } catch {}
-        }, 2000);
-      })
-      .catch((e: unknown) => {
-        setErrMsg(String(e));
-        setState("error");
-      });
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [dashboardToken, viewerId, setDashboardToken]);
-
-  if (dashboardToken) return null;
-  if (!viewerId) return null;
-
-  return (
-    <SlimCard title="Relay sign-in">
-      {state === "idle" && challenge ? (
-        <div>
-          <Text className="e-dim" style={{ marginBottom: 8 }}>
-            Run this MCP tool to authenticate, then this panel will auto-complete:
-          </Text>
-          <code style={{ display: "block", fontSize: 11, padding: "8px", background: "rgba(128,128,128,0.1)", borderRadius: 4, wordBreak: "break-all" }}>
-            {`sign_dashboard_challenge(relay_url="${relayUrl}", challenge_id="${challenge.challenge_id}", nonce="${challenge.nonce}")`}
-          </code>
-          <Text className="e-faint" style={{ marginTop: 8, fontSize: 11 }}>Waiting for signature… polling every 2s</Text>
-        </div>
-      ) : state === "done" ? (
-        <Text style={{ color: "var(--theme-focused-foreground)" }}>✓ Authenticated — JWT stored for this session</Text>
-      ) : state === "error" ? (
-        <Text className="e-faint">Auth failed: {errMsg}</Text>
-      ) : null}
-    </SlimCard>
-  );
-}
+import { useEffect, useState } from "react";
 
 function RolePill({ isOperator, isSpectator }: { isOperator: boolean; isSpectator: boolean }) {
   if (isSpectator) return <span className="e-role-pill e-role-pill--spectator">Spectator</span>;
@@ -92,7 +24,7 @@ function RolePill({ isOperator, isSpectator }: { isOperator: boolean; isSpectato
 /** P25-2: has_stripe alone only ever answered "does an account exist" --
  *  distinguish the live-mode "created but not payable yet" state, and hint
  *  at the MCP tool that starts onboarding, matching this file's existing
- *  MCP-hint pattern (RemoteAuthPanel above) rather than adding a signing
+ *  MCP-hint pattern rather than adding a signing
  *  write-flow to the dashboard itself. */
 function stripeAccountStatusLabel(registered: AgentProfile, stripeMode: string): string {
   const status = registered.stripe_account_status ?? (registered.has_stripe ? "active" : "none");
@@ -234,9 +166,6 @@ export function ProfileView({ navigate }: { navigate?: Navigate } = {}) {
             ]}
           />
         </SlimCard>
-
-        {/* Remote relay auth — auto-starts when needed */}
-        <RemoteAuthPanel />
 
         {/* My recent sessions */}
         {!isSpectator && (

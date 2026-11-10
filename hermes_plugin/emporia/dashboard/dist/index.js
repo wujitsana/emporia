@@ -12059,18 +12059,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (!r.ok) throw new Error(`${r.status} ${path}`);
 		return r.json();
 	}
-	async function post(path, body) {
-		const r = await httpFetch(`${base$2()}${path}`, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				...agentHeaders()
-			},
-			body: JSON.stringify(body)
-		});
-		if (!r.ok) throw new Error(`${r.status} ${path}`);
-		return r.json();
-	}
 	/** P17-4/P20-1: does this content look like a crypto_box envelope?
 	*
 	*  Mirrors `crypto_box.looks_like_envelope()` — deliberately a shape check and
@@ -12130,21 +12118,11 @@ var EmporiaHermesPlugin = (function(exports) {
 		if (thread.encrypted || looksLikeEncryptedEnvelope(thread.last_content)) return `${SEALED_TAG} encrypted`;
 		return (thread.last_content ?? "—").slice(0, 36);
 	}
-	var base$2, dashboardAuth, SEALED_TAG, OPENED_TAG, ENCRYPTED_PLACEHOLDER, api;
+	var base$2, SEALED_TAG, OPENED_TAG, ENCRYPTED_PLACEHOLDER, api;
 	var init_api = __esmMin((() => {
 		init_relayEnv();
 		init_transport();
 		base$2 = () => relayHttpBase();
-		dashboardAuth = {
-			challenge: () => post("/dashboard/challenge", {}),
-			session: (agent_id, challenge_id, signature_hex) => post("/dashboard/session", {
-				agent_id,
-				challenge_id,
-				signature_hex
-			}),
-			/** Poll after agent signs — resolves once relay has the token */
-			poll: (challenge_id) => get(`/dashboard/poll?challenge_id=${encodeURIComponent(challenge_id)}`)
-		};
 		SEALED_TAG = "[sealed]";
 		OPENED_TAG = "[opened]";
 		ENCRYPTED_PLACEHOLDER = `${SEALED_TAG} encrypted — not readable here`;
@@ -19311,90 +19289,6 @@ var EmporiaHermesPlugin = (function(exports) {
 		import_jsx_runtime$64 = require_jsx_runtime();
 	}));
 	// src/ProfileView.tsx
-	/**
-	* Auto-starts the dashboard auth flow when the relay will not accept a header
-	* identity and no JWT is stored. No button — polls silently until the agent
-	* completes the sign_dashboard_challenge MCP call.
-	*
-	* P36-5: this used to gate on `isLocalRelay`, i.e. "is the relay on my machine",
-	* on the assumption that a co-located relay trusts a header naming the agent.
-	* P261: no relay does, so the panel shows whenever there is no token.
-	*/
-	function RemoteAuthPanel() {
-		const { viewerId, relayUrl, dashboardToken, setDashboardToken } = useRelayCtx();
-		const [state, setState] = (0, import_react$29.useState)("idle");
-		const startedRef = (0, import_react$29.useRef)(false);
-		const [challenge, setChallenge] = (0, import_react$29.useState)(null);
-		const [errMsg, setErrMsg] = (0, import_react$29.useState)(null);
-		const pollRef = (0, import_react$29.useRef)(null);
-		(0, import_react$29.useEffect)(() => {
-			if (dashboardToken || !viewerId || startedRef.current) return;
-			startedRef.current = true;
-			dashboardAuth.challenge().then((c) => {
-				setChallenge({
-					challenge_id: c.challenge_id,
-					nonce: c.nonce
-				});
-				pollRef.current = setInterval(async () => {
-					try {
-						const res = await dashboardAuth.poll(c.challenge_id);
-						if (res.ready && res.token) {
-							setDashboardToken(res.token);
-							setState("done");
-							if (pollRef.current) clearInterval(pollRef.current);
-						}
-					} catch {}
-				}, 2e3);
-			}).catch((e) => {
-				setErrMsg(String(e));
-				setState("error");
-			});
-			return () => {
-				if (pollRef.current) clearInterval(pollRef.current);
-			};
-		}, [
-			dashboardToken,
-			viewerId,
-			setDashboardToken
-		]);
-		if (dashboardToken) return null;
-		if (!viewerId) return null;
-		return /* @__PURE__ */ (0, import_jsx_runtime$63.jsx)(SlimCard, {
-			title: "Relay sign-in",
-			children: state === "idle" && challenge ? /* @__PURE__ */ (0, import_jsx_runtime$63.jsxs)("div", { children: [
-				/* @__PURE__ */ (0, import_jsx_runtime$63.jsx)(Text, {
-					className: "e-dim",
-					style: { marginBottom: 8 },
-					children: "Run this MCP tool to authenticate, then this panel will auto-complete:"
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$63.jsx)("code", {
-					style: {
-						display: "block",
-						fontSize: 11,
-						padding: "8px",
-						background: "rgba(128,128,128,0.1)",
-						borderRadius: 4,
-						wordBreak: "break-all"
-					},
-					children: `sign_dashboard_challenge(relay_url="${relayUrl}", challenge_id="${challenge.challenge_id}", nonce="${challenge.nonce}")`
-				}),
-				/* @__PURE__ */ (0, import_jsx_runtime$63.jsx)(Text, {
-					className: "e-faint",
-					style: {
-						marginTop: 8,
-						fontSize: 11
-					},
-					children: "Waiting for signature… polling every 2s"
-				})
-			] }) : state === "done" ? /* @__PURE__ */ (0, import_jsx_runtime$63.jsx)(Text, {
-				style: { color: "var(--theme-focused-foreground)" },
-				children: "✓ Authenticated — JWT stored for this session"
-			}) : state === "error" ? /* @__PURE__ */ (0, import_jsx_runtime$63.jsxs)(Text, {
-				className: "e-faint",
-				children: ["Auth failed: ", errMsg]
-			}) : null
-		});
-	}
 	function RolePill({ isOperator, isSpectator }) {
 		if (isSpectator) return /* @__PURE__ */ (0, import_jsx_runtime$63.jsx)("span", {
 			className: "e-role-pill e-role-pill--spectator",
@@ -19412,7 +19306,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	/** P25-2: has_stripe alone only ever answered "does an account exist" --
 	*  distinguish the live-mode "created but not payable yet" state, and hint
 	*  at the MCP tool that starts onboarding, matching this file's existing
-	*  MCP-hint pattern (RemoteAuthPanel above) rather than adding a signing
+	*  MCP-hint pattern rather than adding a signing
 	*  write-flow to the dashboard itself. */
 	function stripeAccountStatusLabel(registered, stripeMode) {
 		const status = registered.stripe_account_status ?? (registered.has_stripe ? "active" : "none");
@@ -19551,7 +19445,6 @@ var EmporiaHermesPlugin = (function(exports) {
 					["Registration", requireChallenge ? "challenge required (proves key possession)" : "open — no key-possession proof"]
 				] })
 			}),
-			/* @__PURE__ */ (0, import_jsx_runtime$63.jsx)(RemoteAuthPanel, {}),
 			!isSpectator && /* @__PURE__ */ (0, import_jsx_runtime$63.jsx)(SlimCard, {
 				title: "Recent sessions",
 				action: /* @__PURE__ */ (0, import_jsx_runtime$63.jsx)(Text, {

@@ -37,32 +37,6 @@ async function get<T>(path: string, opts?: { agentScoped?: boolean }): Promise<T
   return r.json();
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const r = await httpFetch(`${base()}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...agentHeaders() },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) throw new Error(`${r.status} ${path}`);
-  return r.json();
-}
-
-// Dashboard auth flow (for remote relays)
-export const dashboardAuth = {
-  challenge: () => post<{ challenge_id: string; nonce: string; expires_in: number; relay_id: string; instructions: string }>(
-    "/dashboard/challenge", {}
-  ),
-  session: (agent_id: string, challenge_id: string, signature_hex: string) =>
-    post<{ token: string; agent_id: string; expires_in: number }>(
-      "/dashboard/session", { agent_id, challenge_id, signature_hex }
-    ),
-  /** Poll after agent signs — resolves once relay has the token */
-  poll: (challenge_id: string) =>
-    get<{ ready: boolean; token?: string; expires_in?: number }>(
-      `/dashboard/poll?challenge_id=${encodeURIComponent(challenge_id)}`
-    ),
-};
-
 /** What each player of one game declared (GET /sessions/{id}/models): declared, never verified. */
 export interface SessionModels {
   session_id: string;
