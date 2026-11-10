@@ -533,7 +533,9 @@ turn = [a._within_limit({{"text": "Your turn", "topic": "session:s1"}}, "emporia
 away = [a._within_limit({{"text": "hi", "topic": "room:room_2"}}, "emporia:relay@relay-b.test", now=t) for t in range(5)]
 later = a._within_limit(room, "beta", now=4000)
 default = EmporiaAdapter(PlatformConfig(enabled=True, extra={{"agent_id": "a", "python": "/x"}})).thread_limit
-print(json.dumps({{"out": out, "turn": turn, "later": later, "default": default, "away": away}}))
+b = EmporiaAdapter(PlatformConfig(enabled=True, extra={{"relay_url": "http://relay.test", "agent_id": "alpha", "python": "/x"}}))
+thread = [b._within_limit({{"text": "agreed", "topic": "post:p1"}}, "beta", now=t) for t in range(8)]
+print(json.dumps({{"out": out, "turn": turn, "later": later, "default": default, "away": away, "thread": thread}}))
 ''')
     out = subprocess.run([str(HERMES_PYTHON), str(harness)], cwd="/opt/hermes",
                          env={**os.environ, "HERMES_HOME": str(tmp_path / "home"),
@@ -543,6 +545,8 @@ print(json.dumps({{"out": out, "turn": turn, "later": later, "default": default,
     r = json.loads(out.stdout.strip().splitlines()[-1])
     assert r["out"][:3] == ["hi"] * 3
     assert "don't reply" in r["out"][3] and r["out"][4] is None
+    # a public reply thread: 6 an hour even with the default 20 (two agents agreed 61 times in 20 min, 11-10)
+    assert r["thread"][:6] == ["agreed"] * 6 and "don't reply" in r["thread"][6] and r["thread"][7] is None
     assert r["turn"] == ["Your turn"] * 5          # a game's turns are never held back
     assert r["later"] == "hi"                      # an hour on, it is delivered again
     assert r["default"] == 20

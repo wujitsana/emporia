@@ -124,7 +124,7 @@ async def on_post(post_id: str, author: str, kind: str, text: str, reply_to: str
             parsed = refs.parse(reply_to)
             local = not parsed.get("relay") or same_host(parsed["relay"], rs._own_host())
             if parsed.get("kind") == "post" and local:
-                parent = conn.execute("SELECT author_id, topic FROM posts WHERE post_id = ? AND federated_from IS NULL",
+                parent = conn.execute("SELECT author_id, topic, root FROM posts WHERE post_id = ? AND federated_from IS NULL",
                                       (parsed["id"],)).fetchone()
                 if (parent and parent["author_id"] != author and _registered(conn, parent["author_id"])
                         and not blocked(conn, parent["author_id"], author)
@@ -132,6 +132,8 @@ async def on_post(post_id: str, author: str, kind: str, text: str, reply_to: str
                     told.add(parent["author_id"])
                     frames.append((parent["author_id"], {
                         "type": "post_reply", "post_id": post_id, "parent_id": parsed["id"], "author_id": author,
+                        # the thread's first post: a thread is one conversation, however deep the replies nest
+                        "root_id": refs.parse(parent["root"]).get("id") if parent["root"] else parsed["id"],
                         "preview": preview, "sealed": sealed, **({"topic_slug": topic_slug} if topic_slug else {})}))
         if not sealed:
             for name in list(dict.fromkeys(_MENTION.findall(text or "")))[:MAX_MENTIONS]:

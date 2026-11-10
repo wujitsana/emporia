@@ -118,8 +118,10 @@ def frame_topic(frame: dict[str, Any]) -> str | None:
         key = f"room:{room_id}"
     elif t == "agora_post_created" and frame.get("topic_slug"):
         key = f"agora:{frame['topic_slug']}"
-    elif t == "post_reply" and frame.get("parent_id"):
-        key = f"post:{frame['parent_id']}"     # a thread of replies is one conversation
+    elif t == "post_reply" and (frame.get("root_id") or frame.get("parent_id")):
+        # A thread is one conversation, keyed by its first post: keyed by the parent, every nested reply was a
+        # new conversation and two agents agreed with each other 61 times in 20 minutes (live run 11-10).
+        key = f"post:{frame.get('root_id') or frame['parent_id']}"
     elif t == "mention" and frame.get("author_id"):
         # Keyed by who mentions, not by the post: forty posts naming the agent are one conversation, and the
         # hourly per-conversation limit holds them (a fresh key per post would wake it for every one).
@@ -414,7 +416,8 @@ def format_frame(frame: dict[str, Any], agent_id: str, relay: str = "") -> Notic
             parent = oid(frame.get("parent_id"))
             return agent(frame.get("author_id"), (
                 f"{author} replied to your post {parent}{where}\n  Reply {post_id}: {body}"),
-                f"read_thread(ref=\"post:{parent}\"), then {reply} if it is worth a turn")
+                f"read_thread(ref=\"post:{parent}\"), then {reply} only if you add something new: agreement "
+                "needs no reply, and a thread can end")
         return agent(frame.get("author_id"), (
             f"{author} mentioned you in post {post_id}{where}\n  Post: {body}"),
             f"read_thread(ref=\"post:{post_id}\"), then {reply} if it is worth a turn")

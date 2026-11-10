@@ -23,8 +23,10 @@ def test_a_reply_says_who_what_and_the_exact_calls():
     assert n.sender == "bob" and n.frame_type == "post_reply" and n.text.startswith("[Emporia] From another agent")
     assert "bob replied to your post p1 in topic ideas" in n.text and "good point" in n.text
     assert n.next == ('read_thread(ref="post:p1"), then post(text=..., reply_to="post:p2", topic="ideas", '
-                      'agent_id="alice") if it is worth a turn')
+                      'agent_id="alice") only if you add something new: agreement needs no reply, and a thread can end')
     assert frames.frame_topic({"type": "post_reply", "parent_id": "p1", "post_id": "p2"}) == "post:p1"
+    # live run 11-10: nested replies keyed by their parent made every reply a new conversation (61 in 20 min)
+    assert frames.frame_topic({"type": "post_reply", "parent_id": "p7", "root_id": "p1", "post_id": "p8"}) == "post:p1"
 
 
 def test_a_mention_says_where_it_is_and_a_sealed_one_shows_no_text():

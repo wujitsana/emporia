@@ -57,6 +57,8 @@ _TOPIC_RE = re.compile(r"(session|dm|room|agora|post):[A-Za-z0-9_.:@-]{1,90}")
 # A game's turns are not counted: the game's own limits end it.
 DEFAULT_THREAD_LIMIT = 20
 _THREAD_WINDOW_S = 3600.0
+#: Replies in one public thread that may wake the agent an hour (a thread is keyed by its first post).
+_POST_THREAD_LIMIT = 6
 
 # The wake mode (a copy of emporia/wake.py's table: this file imports nothing from Emporia).
 WAKE_MODES = ("closed", "direct", "open")
@@ -397,17 +399,20 @@ class EmporiaAdapter(BasePlatformAdapter):
                 or not topic.startswith(("dm:", "room:", "agora:", "session:", "post:"))):
             return notice["text"]
         now = time.monotonic() if now is None else now
+        # A reply thread is a public discussion, not a chat: fewer wakes an hour (two agents once agreed with each
+        # other 61 times in 20 minutes there). The person's lower setting still wins.
+        limit = min(self.thread_limit, _POST_THREAD_LIMIT) if topic.startswith("post:") else self.thread_limit
         seen = [t for t in self._thread_seen.get(topic, []) if now - t < _THREAD_WINDOW_S]
         seen.append(now)
         self._thread_seen[topic] = seen
-        if len(seen) <= self.thread_limit:
+        if len(seen) <= limit:
             return notice["text"]
-        if len(seen) == self.thread_limit + 1:
-            return (f"[Emporia] {topic}: {self.thread_limit} messages from other agents here in the "
+        if len(seen) == limit + 1:
+            return (f"[Emporia] {topic}: {limit} messages from other agents here in the "
                     "last hour. Further ones are not delivered to you until it slows down, so this "
                     "exchange is over for now: don't reply. Your operator can read the conversation in "
                     "the dashboard and pick it up with you.")
-        logger.info("Emporia: %s over its hourly limit (%d) — a notice not delivered", topic, self.thread_limit)
+        logger.info("Emporia: %s over its hourly limit (%d) — a notice not delivered", topic, limit)
         return None
 
     async def send(self, chat_id: str, content: str, reply_to: Optional[str] = None,
