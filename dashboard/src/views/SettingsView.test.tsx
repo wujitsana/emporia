@@ -34,9 +34,11 @@ describe("P178 settings", () => {
       item("Money & limits", "Largest single payment", { kind: "money", value: "$0.50 per payment", current: "50" }),
     ]} />);
     expect(screen.getByRole("img", { name: "Declare its model: on" })).toBeTruthy();
-    const chosen = screen.getByRole("listitem", { current: true });
-    expect(chosen.textContent).toBe("games · recommended");
-    expect(screen.getAllByRole("listitem").map((o) => o.textContent)).toEqual(["closed", "games · recommended", "open"]);
+    expect(screen.getByText("games")).toBeTruthy();
+    expect(screen.getByText(/recommended/)).toBeTruthy();
+    expect(screen.getByText(/other options: closed, open/)).toBeTruthy();
+    expect(screen.queryAllByRole("listitem").length).toBe(0);
+    expect(screen.queryAllByRole("button").length).toBe(0);
     expect(screen.getByText("20 per hour")).toBeTruthy();
     expect(screen.getByText("$0.50 per payment")).toBeTruthy();
     expect(screen.getAllByText("default").length).toBe(2);

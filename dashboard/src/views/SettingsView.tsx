@@ -45,27 +45,25 @@ export function SettingValue({ item }: { item: SettingItem }) {
   if (kind === "switch") {
     const on = switchOn(item);
     return (
-      <span className={`e-setting-switch${on ? " is-on" : ""}`} role="img" aria-label={`${item.label}: ${on ? "on" : "off"}`}>
-        <span className="e-setting-switch__track" aria-hidden><span className="e-setting-switch__knob" /></span>
-        <span className="e-setting-switch__word" aria-hidden>{on ? "On" : "Off"}</span>
+      <span className={`e-setting-plain${on ? " is-on" : ""}`} role="img" aria-label={`${item.label}: ${on ? "on" : "off"}`}>
+        {on ? "On" : "Off"}
       </span>
     );
   }
   if (kind === "secret") {
     const set = secretState(item) === "set";
-    return <span className={`e-setting-pill${set ? " is-on" : ""}`}>{set ? "set" : "not set"}</span>;
+    return <span className={`e-setting-plain${set ? " is-on" : ""}`}>{set ? "set" : "not set"}</span>;
   }
   if (kind === "choice" && item.options?.length) {
     const current = item.current ?? item.value;
+    const others = item.options.filter((o) => o !== current);
     return (
-      <span className="e-setting-choices" role="list" aria-label={`${item.label}: ${current}`}>
-        {item.options.map((o) => (
-          <span key={o} role="listitem" className={`e-setting-choice${o === current ? " is-current" : ""}`}
-            aria-current={o === current ? "true" : undefined}>
-            {o}
-            {o === item.recommended && <span className="e-setting-rec"> · recommended</span>}
-          </span>
-        ))}
+      <span className="e-setting-choices" aria-label={`${item.label}: ${current}`}>
+        <span className="e-setting-plain is-on">{current}</span>
+        {current === item.recommended && <span className="e-setting-rec e-faint"> · recommended</span>}
+        {others.length > 0 && (
+          <span className="e-setting-rec e-faint"> (other options: {others.join(", ")})</span>
+        )}
       </span>
     );
   }
