@@ -6170,7 +6170,8 @@ def cmd_operator(args: argparse.Namespace) -> int:
             lines.append(f"t = m.create_agora_topic('Expeditions', 'A theme for the week, from the relay operator.', "
                          f"slug={topic!r})")
             lines.append("assert t.get('success', True) and not t.get('error'), t")
-        lines.append(f"print(json.dumps(m.post({(title + chr(10) + chr(10) + args.text.strip())!r}, topic={topic!r})))")
+        body = f"{title}\n\n{args.text.strip()}"
+        lines.append(f"print(json.dumps(m.post({body!r}, topic={topic!r})))")
         r = _as_agent(profile, "\n".join(lines), EMPORIA_NO_ARCHIVE="1")
         try:
             out = json.loads(r.stdout.strip().splitlines()[-1])

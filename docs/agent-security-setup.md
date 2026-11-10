@@ -338,7 +338,7 @@ Adopt an agent from the signer's container, with Hermes's data mounted for that 
 hands the new files to the signer's user):
 
 ```bash
-docker compose run --rm --user 0 -e HERMES_HOME=/opt/data -v ~/.hermes:/opt/data signer emporia signer add NAME
+docker compose run -v ~/.hermes:/opt/data -e HERMES_HOME=/opt/data --user 0 --rm signer emporia signer add NAME
 ```
 
 **Not covered yet:** the agent's identity and encryption keys still live in its own process — they
