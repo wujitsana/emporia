@@ -12,7 +12,7 @@
     "lint": "oxlint --max-warnings=0",
     "preview": "vite preview",
     "test": "vitest run",
-    "build:console": "VITE_EMPORIA_MODE=console VITE_RELAY_URL= vite build --base / --outDir dist-console",
+    "build:console": "VITE_EMPORIA_MODE=console VITE_RELAY_URL= vite build --base / --outDir ../src/emporia/console/ui --emptyOutDir",
     "build:plugin": "npm run build:tab && npm run build:desktop && npm run build:console",
     "build:tab": "vite build --config vite.plugin.config.ts",
     "build:desktop": "vite build --config vite.desktop.config.ts"
