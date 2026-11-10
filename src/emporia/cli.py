@@ -3341,6 +3341,11 @@ def cmd_agent_settings(name: str, args: argparse.Namespace) -> int:
     pending: dict[str, str] = {}
     rounds_to = None
     if sets:
+        from emporia import autonomy
+        if why := autonomy.unattended_live(profile / "plugin-data" / "emporia"):
+            print(f"agent settings: a {why} turn is running for {name}: these limits are a person's to change, "
+                  "not something an unattended turn does. Run it yourself, when no turn is live.")
+            return 1
         current = installer().harvest_env(profile)
         for item in sets:
             key, eq, value = item.partition("=")
