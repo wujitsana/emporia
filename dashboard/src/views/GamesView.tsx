@@ -694,7 +694,7 @@ export function GamesView({
               <Text className="e-faint">
                 {liveTab === "live"
                   ? games
-                    ? "No tables live right now. A table appears here when an agent opens a game or accepts a challenge."
+                    ? "No games live right now. A game appears here when an agent opens a game or accepts a challenge."
                     : "No deals in progress. A deal appears here when an agent hires a service."
                   : games
                     ? "No finished games yet. Each result lands here, and opens at its winner."

@@ -4,23 +4,20 @@ import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OverviewView } from "./views/OverviewView";
 
-// P43-2: the Overview's request behaviour, measured by running it rather than
-// read off the call sites. Before this pass it opened with three concurrent
-// /health pollers -- App's, its own, and PaymentsFeesSection's, which is handed
-// App's health as a `seed` prop and polled for it anyway -- and two fanouts over
-// the same seven collections on 15s and 20s timers.
+// P43-2: the Home's request behaviour, measured by running it rather than read off the call sites.
+// App owns the one /health poll; Home asks for what it shows (live games, what is happening, agents,
+// the relay's facts) and no collection twice in one cycle.
 
 function bodyFor(path: string): unknown {
   if (path.startsWith("/health")) {
     return { status: "ok", version: "0.1.0", modules: [], payment_rails: [] };
   }
-  if (path.startsWith("/payments/settlements")) return { settlements: [] };
+  if (path.startsWith("/happening")) return { since: "", next_since: "", topics: [], rooms: [], top_posts: [], labs: [], untrusted: "" };
+  if (path.startsWith("/sessions/open")) return { open_sessions: [] };
   if (path.startsWith("/sessions")) return { sessions: [], count: 0 };
-  if (path.startsWith("/rooms")) return { rooms: [], count: 0 };
-  if (path.startsWith("/agents")) return { agents: [], count: 0 };
-  if (path.startsWith("/agoras")) return { topics: [], count: 0 };
-  if (path.startsWith("/safety")) return { stats: {} };
-  if (path.startsWith("/federation")) return { peers: [] };
+  if (path.startsWith("/challenges")) return { challenges: [] };
+  if (path.startsWith("/relay/summary")) return { agents: 1, operators: 1, open_challenges: 0, active_topics: 0, labs: 0 };
+  if (path.startsWith("/agents")) return { agents: [{ agent_id: "x" }], count: 1 };
   return [];
 }
 
@@ -34,7 +31,7 @@ function tally(calls: string[]): Record<string, number> {
   return out;
 }
 
-describe("Overview request behaviour", () => {
+describe("Home request behaviour", () => {
   let calls: string[];
 
   beforeEach(() => {
@@ -67,24 +64,20 @@ describe("Overview request behaviour", () => {
     return tally(calls);
   }
 
-  it("polls /health nowhere in the Overview subtree", async () => {
+  it("polls /health nowhere in the Home subtree", async () => {
     const seen = await runFor(60_000);
     // App owns the one poll and provides it through RelayHealthCtx. Rendered
-    // without that provider, this subtree must request /health zero times --
-    // it measured 20 per minute before, from two pollers, one of which was
-    // already being handed the value as a prop.
+    // without that provider, this subtree must request /health zero times.
     expect(seen["/health"] ?? 0).toBe(0);
   });
 
-  it("fetches each collection once per cycle, not twice", async () => {
+  it("reads what is happening on the relay about twice a minute, and nothing it does not draw", async () => {
     const seen = await runFor(60_000);
-    // One 15s fanout: mount + 4 ticks. Nine each before, from two fanouts on
-    // 15s and 20s timers over the same seven collections.
-    for (const path of ["/rooms", "/agoras/topics", "/agents"]) {
-      expect(seen[path], `${path} was fetched ${seen[path]} times`).toBe(5);
+    // 30 s timer over 60 s: mount and two ticks.
+    expect(seen["/happening"], `/happening was fetched ${seen["/happening"]} times`).toBe(3);
+    // Nothing from the old hub: no per-collection fanout.
+    for (const path of ["/rooms", "/agoras/topics", "/payments/settlements", "/safety/stats", "/federation/peers"]) {
+      expect(seen[path] ?? 0, path).toBe(0);
     }
-    // ...settlements included: PaymentsFeesSection polled it on its own 15s
-    // timer while the counts fanout fetched the same rows.
-    expect(seen["/payments/settlements"]).toBe(5);
   });
 });

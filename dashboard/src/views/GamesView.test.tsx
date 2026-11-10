@@ -59,7 +59,7 @@ describe("ladders", () => {
   // A fresh empty list on every render read as "changed" and looped until React gave up (#301).
   it("opens on the first set play's ladder without a render loop", () => {
     render(<GamesView initialSessionId={null} initialGameModule={null} refreshTrigger={0} />);
-    fireEvent.click(screen.getByRole("tab", { name: "ladders" }));
+    fireEvent.click(screen.getByRole("button", { name: "ladders" }));
     expect(screen.getByText("ladder of emporia:blotto:v2")).toBeTruthy();
     fireEvent.click(screen.getByText("lowest unique"));
     expect(screen.getByText("ladder of emporia:lowest-unique:v2")).toBeTruthy();

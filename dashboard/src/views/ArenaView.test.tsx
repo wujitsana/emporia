@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ArenaView } from "./ArenaView";
 import { AUCTION, BARGAIN, BLOTTO, DICE, TWO_THIRDS } from "../arenaFixtures";
 import type { Session, SessionAction } from "../api";
+import type { ArenaLens } from "../navConfig";
 
 const FIXTURES = [BLOTTO, TWO_THIRDS, DICE, AUCTION, BARGAIN];
 const byId = (id: string) => FIXTURES.find((f) => f.session.session_id === id)!;
@@ -38,8 +39,8 @@ vi.mock("../ui/Leaderboard", () => ({ Leaderboard: () => null }));
 vi.mock("../ui/ModelResults", () => ({ ModelResults: () => null }));
 vi.mock("./QuestArcs", () => ({ OpenChallenges: () => <p>OPEN CHALLENGES</p> }));
 
-const view = (id: string | null, step: number | null = null) =>
-  <ArenaView initialSessionId={id} initialStep={step} refreshTrigger={0} />;
+const view = (id: string | null, lens: ArenaLens = "live", step: number | null = null) =>
+  <ArenaView initialSessionId={id} initialStep={step} lens={lens} refreshTrigger={0} />;
 const stepText = () => document.querySelector(".e-chess-replay-status [role=status]")?.textContent ?? "";
 
 beforeEach(() => { vi.useRealTimers(); });
@@ -47,16 +48,24 @@ afterEach(cleanup);
 
 describe("the Arena home", () => {
   it("names its sections", () => {
-    render(view(null));
-    for (const t of ["Live now", "Games waiting for a player", "Recent", "OPEN CHALLENGES", "Leaderboards", "Results by model"]) {
-      expect(screen.getByText(new RegExp(`^${t}`))).toBeTruthy();
+    // One page per lens of the sub-row: Live, Waiting, Results, Boards.
+    const pages: [ArenaLens, string[]][] = [
+      ["live", ["Live now"]],
+      ["waiting", ["Games waiting for a player", "OPEN CHALLENGES"]],
+      ["results", ["Results"]],
+      ["boards", ["Leaderboards", "Results by model"]],
+    ];
+    for (const [lens, titles] of pages) {
+      render(view(null, lens));
+      for (const t of titles) expect(screen.getByText(new RegExp(`^${t}`))).toBeTruthy();
+      cleanup();
     }
   });
 });
 
 describe("names, not raw ids", () => {
   it("names the winner of a recent match by its address", () => {
-    render(view(null));
+    render(view(null, "results"));
     expect(screen.getByText(/alpha@relay\.example won by checkmate/)).toBeTruthy();
   });
   it("hands the address book to the table talk", async () => {
@@ -77,7 +86,7 @@ describe("a match header shows the players' bios", () => {
 
 describe("a match opened by its address", () => {
   it("opens at the step the link names, with the table talk beside the moves", async () => {
-    render(view(BLOTTO.session.session_id, 2));
+    render(view(BLOTTO.session.session_id, "live", 2));
     await waitFor(() => expect(stepText()).toContain("step 2 of 4"));
     expect(screen.getByText(/table talk here/)).toBeTruthy();
     expect(screen.getByText(/moves · click to seek/)).toBeTruthy();
@@ -90,7 +99,7 @@ describe("a match opened by its address", () => {
     const { unmount } = render(view(BLOTTO.session.session_id));
     await waitFor(() => expect(stepText()).toContain("step 4 of 4"));
     unmount();
-    render(view(BLOTTO.session.session_id, 99));
+    render(view(BLOTTO.session.session_id, "live", 99));
     await waitFor(() => expect(stepText()).toContain("step 4 of 4"));
   });
 
@@ -108,7 +117,7 @@ describe("a match opened by its address", () => {
   });
 
   it("keeps a sealed move hidden until its reveal step, and shows it then", async () => {
-    render(view(BLOTTO.session.session_id, 2));
+    render(view(BLOTTO.session.session_id, "live", 2));
     await waitFor(() => expect(stepText()).toContain("step 2 of 4"));
     fireEvent.click(screen.getByRole("button", { name: "Next move" }));
     await waitFor(() => expect(stepText()).toContain("step 3 of 4"));
@@ -119,7 +128,7 @@ describe("a match opened by its address", () => {
   });
 
   it("plays through at a fixed speed and stops at the end", async () => {
-    render(view(TWO_THIRDS.session.session_id, 0));
+    render(view(TWO_THIRDS.session.session_id, "live", 0));
     await waitFor(() => expect(stepText()).toContain("step 0 of 4"));
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Play replay" }));
@@ -143,7 +152,7 @@ describe("a match opened by its address", () => {
     [AUCTION, 3, "52"],
     [BARGAIN, 2, "silk"],
   ] as const)("draws %s at a middle step", async (fx, step, needle) => {
-    render(view(fx.session.session_id, step));
+    render(view(fx.session.session_id, "live", step));
     await waitFor(() => expect(stepText()).toContain(`step ${step} of`));
     expect(document.querySelector(".e-arena-frame")?.textContent).toContain(needle);
   });

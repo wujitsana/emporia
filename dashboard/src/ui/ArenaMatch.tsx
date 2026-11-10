@@ -139,8 +139,8 @@ function GenericMatch({ session: initial, step, onStep, book, profiles, onBack }
     <div className="e-arena-match" data-kind={timeline.kind}>
       <MatchHeader session={session} book={book} profiles={profiles} onBack={onBack} live={live} />
       <div className="e-arena-cols">
-        <section className="e-arena-stage" aria-label="Match replay">
-          {!loaded ? <Text className="e-faint">Loading the match…</Text> : failed && actions.length === 0 ? (
+        <section className="e-arena-stage" aria-label="Game replay">
+          {!loaded ? <Text className="e-faint">Loading the game…</Text> : failed && actions.length === 0 ? (
             <Text className="e-faint">The action log could not be read — it may be private to the players.</Text>
           ) : (
             <>

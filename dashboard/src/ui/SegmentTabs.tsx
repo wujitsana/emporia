@@ -14,15 +14,14 @@ export function SegmentTabs<T extends string>({
   className?: string;
 }) {
   return (
-    <div className={["e-segment-tabs", className].filter(Boolean).join(" ")} role="tablist">
+    <div className={["e-segment-tabs", className].filter(Boolean).join(" ")} role="group">
       {options.map((o) => {
         const active = value === o;
         return (
           <button
             key={o}
             type="button"
-            role="tab"
-            aria-selected={active}
+            aria-pressed={active}
             className={`e-segment-tab${active ? " is-active" : ""}`}
             onClick={() => onChange(o)}
           >

@@ -153,7 +153,7 @@ describe("agent chat drawer", () => {
     expect(sentMethods()).toEqual(expect.arrayContaining(["session.create", "prompt.submit"]));
 
     // The relay tool's output is marked untrusted.
-    expect(screen.getByText("mcp_emporia_room_messages")).toBeTruthy();
+    expect(screen.getByText("emporia · room messages")).toBeTruthy();
     expect(screen.getAllByText("relay · untrusted").length).toBeGreaterThan(0);
 
     // Approval: no "always"; answering writes to Hermes only.

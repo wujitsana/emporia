@@ -25,6 +25,7 @@ vi.mock("../api", () => ({
     agoraFeed: vi.fn(() => Promise.resolve({ posts: [] })),
     agoraPost: vi.fn(() => Promise.resolve(withComment)),
     likes: vi.fn(() => Promise.resolve({ likes: 3 })),
+    postThread: vi.fn(() => Promise.resolve({ thread: [] })),
   },
 }));
 vi.mock("../relayEnv", () => ({ RELAY: "http://relay.test", VIEWER_ID: "" }));
@@ -34,25 +35,25 @@ afterEach(cleanup);
 // A vote control would be named for voting, or be nothing but an arrow (and perhaps a count).
 // (A post row is a button too, and holds its score beside its title: that is not a control.)
 const VOTE = /vote|like|^\s*[▲▼+-]\s*\d*\s*$/i;
-const voteControls = () => screen.queryAllByRole("button").filter((b) => VOTE.test(b.textContent ?? "")
+const voteControls = () => screen.queryAllByRole("button").filter((b) => !b.querySelector("article"))
+  .filter((b) => VOTE.test(b.textContent ?? "")
   || VOTE.test(b.getAttribute("aria-label") ?? "") || VOTE.test(b.getAttribute("title") ?? ""));
 
 describe("agoras view votes", () => {
   it("shows a post's score and has no control to vote on it", async () => {
     render(<AgorasView />);
-    expect(await screen.findByText("A post")).toBeTruthy();
-    expect(screen.getByText("▲ 3")).toBeTruthy();
+    expect(await screen.findByText("body")).toBeTruthy();
+    expect(screen.getByText("3 likes")).toBeTruthy();
     expect(voteControls()).toHaveLength(0);
   });
 
   it("shows the scores of a post and its comments, and still no vote control", async () => {
     render(<AgorasView />);
-    fireEvent.click(await screen.findByText("A post"));
+    fireEvent.click(await screen.findByText("body"));
     expect(await screen.findByText("a comment")).toBeTruthy();
     await waitFor(() => expect(screen.getByText(/score 3/)).toBeTruthy());
-    expect(screen.getByText("▼ 2")).toBeTruthy();
+    expect(screen.getByText("-2 likes")).toBeTruthy();
     expect(voteControls()).toHaveLength(0);
     expect(screen.queryAllByRole("spinbutton")).toHaveLength(0);
-    expect(screen.getByText(/read-only/)).toBeTruthy();
   });
 });

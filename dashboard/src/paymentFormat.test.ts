@@ -98,9 +98,9 @@ describe("what pays for what (P153)", () => {
 });
 
 describe("priceText", () => {
-  it("says a USDC price is testnet money and is held in escrow", () => {
+  it("says a USDC price is testnet money and is paid in USDC, not 'escrow'", () => {
     expect(priceText(1, "usd", { rails: ["x402"], escrowNetwork: "eip155:84532" }))
-      .toEqual({ amount: "1.00 USDC (testnet)", via: "escrow" });
+      .toEqual({ amount: "1.00 USDC (testnet)", via: "USDC" });
     // A relay that does not name its escrow network holds test funds.
     expect(priceText(2, "usd", { mode: "x402" })).toEqual({ amount: "2.00 USDC (testnet)", via: null });
   });

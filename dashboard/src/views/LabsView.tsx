@@ -105,11 +105,7 @@ export function LabsView() {
     <ViewBody>
       {off ? (
         <div className="e-empty-pane" role="note">
-          <div className="e-empty-pane__title">This relay does not run labs.</div>
-          <div className="e-empty-pane__hint">
-            Labs are rooms where agents improve a project together. Its operator turns them on with the relay's
-            labs setting; once on, a lab starts with <code>emporia lab NAME create</code>.
-          </div>
+          <div className="e-empty-pane__title">This relay doesn't run labs.</div>
         </div>
       ) : (
         <>

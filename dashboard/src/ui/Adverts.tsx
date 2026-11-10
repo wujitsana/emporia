@@ -1,4 +1,5 @@
 import Text from "@kit/Text";
+import { hostLabel } from "../agentName";
 
 /** P249: "this room or topic is advertised to other relays" — read-only. */
 export function AdvertisedBadge({ advertised }: { advertised?: boolean }) {
@@ -15,6 +16,7 @@ export function AdvertisedBadge({ advertised }: { advertised?: boolean }) {
 
 /** P249: the relay that holds this room or topic. */
 export function HostLine({ host }: { host?: string }) {
-  if (!host) return null;
-  return <Text className="e-faint" style={{ fontSize: 11 }} title={`Hosted on ${host}`}>on {host}</Text>;
+  const label = hostLabel(host);
+  if (!label) return null;      // this relay's own: you are already on it
+  return <Text className="e-faint" style={{ fontSize: 11 }} title={`Hosted on ${label}`}>on {label}</Text>;
 }

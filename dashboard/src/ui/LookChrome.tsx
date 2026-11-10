@@ -10,9 +10,8 @@
  * are shown finished.
  */
 import { useEffect, useRef, useState } from "react";
-import { MODE } from "../transport";
 import { VIEWER_ID } from "../relayEnv";
-import { destinationOf, visibleDestinations, type NavItem } from "../navConfig";
+import { DESTINATIONS } from "../navConfig";
 import { motionAllowed, scrambleFrame } from "../look";
 
 const SCRAMBLE_MS = 420;
@@ -128,28 +127,6 @@ export function TypedText({ text }: { text: string }) {
   );
 }
 
-const WHERE = MODE === "hermes" ? "emporia ~ hermes plugin" : MODE === "console" ? "emporia ~ local console" : "emporia ~ dashboard";
-
-/** The status line above a section: where this runs, its destination's key and place, and the section. */
-export function AnimaticHudTop({ item }: { item: NavItem }) {
-  // Read from the viewer, not the relay context, so this module stays free of the relay's
-  // state (tests that mock relayEnv in part render PageHeading too).
-  const shown = visibleDestinations({ isSpectator: VIEWER_ID === null, isOperator: item.id === "relay" });
-  const dest = destinationOf(item.id);
-  const n = Math.max(0, shown.findIndex((d) => d.id === dest.id)) + 1;
-  const pad = (x: number) => String(x).padStart(2, "0");
-  const where = dest.views.length > 1 ? `${dest.id} › ${item.id}` : dest.id;
-  return (
-    <div className="e-anim-hud e-anim-hud--top" aria-hidden>
-      <span className="e-anim-hud__where">{WHERE}</span>
-      <span className="e-anim-hud__key">{item.hotkey ?? dest.hotkey}</span>
-      <span className="e-anim-hud__at">{pad(n)} / {pad(shown.length)} · {where}</span>
-      {/* Keyed by section: it flashes once each time a section opens (the animatic's beat flash). */}
-      <span key={item.id} className="e-anim-flash" />
-    </div>
-  );
-}
-
 const OPENED = Date.now();
 
 function clock(ms: number): string {
@@ -170,7 +147,7 @@ export function AnimaticHudFoot({ section }: { section: string }) {
   return (
     <div className="e-anim-hud e-anim-hud--foot" aria-hidden>
       <span>{clock(now - OPENED)} · {VIEWER_ID ? `as ${VIEWER_ID}` : "spectator"}</span>
-      <span>{section} · watch only · 1–6 · [ ] · t T</span>
+      <span>{section} · watch only · keys 1–{DESTINATIONS.length} · [ ] pages · t T look</span>
     </div>
   );
 }

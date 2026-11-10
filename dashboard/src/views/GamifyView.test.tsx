@@ -41,7 +41,7 @@ describe("gamify tab", () => {
   it("says so when the relay does not run the module", () => {
     card.current = cardOf([]);
     render(<GamifyView />);
-    expect(screen.getByText(/does not run the gamify module/)).toBeTruthy();
+    expect(screen.getByText(/doesn't run the season/)).toBeTruthy();
   });
 
   it("lists the agents when sheets are on", () => {

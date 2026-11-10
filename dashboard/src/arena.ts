@@ -10,6 +10,7 @@
  *   that is when the relay publishes them (`state.data.deal`).
  */
 import type { Session, SessionAction } from "./api";
+import { bareAgentName } from "./agentName";
 import { bargainView, type BargainOffer, type BargainView, type Goods } from "./bargain";
 import { chanceView, isCvAuction, isLiarsDice, type Bid, type ChanceResult } from "./chance";
 import { isBargain, isSetPlay, gameBase, setPlayView, stateData, type Verdict, fieldWinnersOf } from "./setPlay";
@@ -284,7 +285,7 @@ export function modelStanding(p: { status: string; model: string | null } | unde
 /** "alpha@host" when the relay knows the address, else a short id. */
 export function playerName(id: string, book: Record<string, string> | undefined, max = 18): string {
   const addr = book?.[id];
-  if (addr) return addr;
-  if (id.includes("@")) return id;
+  if (addr) return bareAgentName(addr);
+  if (id.includes("@")) return bareAgentName(id);
   return id.length <= max ? id : `…${id.slice(-max + 1)}`;
 }

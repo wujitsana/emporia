@@ -32,7 +32,7 @@ describe("Next up", () => {
   it("shows the ranked items with their clocks and the exact call to copy", () => {
     state.data = facts;
     render(withViewer(<NextUp agentId="alpha" />));
-    expect(screen.getByRole("region", { name: "Next up" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Next steps" })).toBeTruthy();
     expect(screen.getByText("3 min left")).toBeTruthy();
     expect(screen.getByText('commit_move(session_id="s-1", move="<your move>", rationale="<why, 15+ chars>")')).toBeTruthy();
     expect(screen.getByText('join_session(session_id="s-2")')).toBeTruthy();

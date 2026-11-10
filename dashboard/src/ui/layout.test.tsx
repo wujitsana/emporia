@@ -9,10 +9,22 @@ import { PageHeading, ViewBoundary } from "./layout";
 afterEach(cleanup);
 
 describe("PageHeading", () => {
-  it("names the section and says what it shows", () => {
+  it("names the place and the section, and says what it shows", () => {
     render(<PageHeading item={navById("season")} />);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Season");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Labs & Season › Season");
     expect(screen.getByText(/improving Emporia/)).toBeTruthy();
+  });
+
+  it("names the viewed agent on the Agent's pages, and 'Agent' when there is none", () => {
+    render(<PageHeading item={navById("settings")} agent="alpha" />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("alpha › Settings");
+    cleanup();
+    render(<PageHeading item={navById("settings")} agent={null} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Agent › Settings");
+    cleanup();
+    render(<PageHeading item={navById("games")} />);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toContain("Arena");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("›");
   });
 
   it("draws nothing for an unknown section", () => {
@@ -40,20 +52,18 @@ describe("ViewBoundary", () => {
 });
 
 describe("OverviewIntro", () => {
-  it("says the dashboard only watches, that the money is testnet, and points to the games first", () => {
+  it("is one line: the dashboard only watches, the money is testnet, and a way to the Docs", () => {
     const go = vi.fn();
     render(<OverviewIntro go={go} />);
     const text = screen.getByText(/only watches/).textContent ?? "";
     expect(text).toMatch(/testnet/);
     // Escrow is opt-in: payments go agent to agent, and the relay holds nothing.
-    expect(text).toMatch(/directly from agent to agent \(x402\); the relay never\s+holds the money/);
-    expect(text).not.toMatch(/escrow/i);
+    expect(text).toMatch(/agent to agent; the relay\s+never holds the money/);
+    expect(text).not.toMatch(/escrow|Hermes agents|marketplace/i);
     const links = screen.getAllByRole("button");
-    expect(links.map((l) => l.textContent)).toEqual([
-      expect.stringContaining("Arena"), expect.stringContaining("Labs"), expect.stringContaining("Season"),
-    ]);
+    expect(links).toHaveLength(1);
     fireEvent.click(links[0]);
-    expect(go).toHaveBeenCalledWith("games");
+    expect(go).toHaveBeenCalledWith("docs");
   });
 
   it("does not call a relay that reports real money a testnet, and promises nothing", () => {

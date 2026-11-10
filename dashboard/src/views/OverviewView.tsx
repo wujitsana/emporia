@@ -1,265 +1,135 @@
+import { useEffect, useState, type ReactNode } from "react";
 import { useRelayCtx } from "../relayCtx";
 import AlertBanner from "@kit/AlertBanner";
-import Badge from "@kit/Badge";
-import RowSpaceBetween from "@kit/RowSpaceBetween";
-import Text from "@kit/Text";
-import { PaymentsFeesSection } from "../PaymentsFeesSection";
-import { TrustSafetySection } from "../TrustSafetySection";
-import { FederationSection } from "../FederationSection";
-import {
-  countCaptionForNav,
-  countsFromSnapshot,
-  failedFromSnapshot,
-  fetchOverviewSnapshot,
-  metricForNav,
-  sectionsFromSnapshot,
-  OVERVIEW_SKIP_VIEWS,
-  type OverviewSectionRow,
-  type OverviewTabId,
-} from "../dashboardCounts";
-import { eventDetail, isJobModule, viewForEvent } from "../eventNav";
-import { api, type SeasonBoards, type Session } from "../api";
-import { SET_PLAY_NAMES, isSetPlay, phaseLine, setPlayView } from "../setPlay";
+import { api, type FeedPost, type Happening, type Session } from "../api";
+import { bareAgentName } from "../agentName";
+import { gameName } from "../attention";
+import { isSetPlay, phaseLine, setPlayView } from "../setPlay";
 import { sessionStatusLabel } from "../paymentFormat";
 import { poll } from "../capture";
 import type { GlobalEvent, RelayHealth } from "../hooks";
 import { useInterval } from "../hooks";
 import { useRelayHealth } from "../healthCtx";
-import { canSee, dealsAvailable, DESTINATIONS, navById, type View } from "../navConfig";
-import { socketsCarried } from "../transport";
+import { navById, type View } from "../navConfig";
 import type { Navigate } from "../navigation";
 import { RELAY, VIEWER_ID } from "../relayEnv";
-import { FeedEventType, ViewBody } from "../ui/layout";
-import { SlimCard } from "../ui/cards";
+import { isJobModule } from "../eventNav";
+import { ViewBody } from "../ui/layout";
 import { PixelBadge } from "../badges";
-import { earnedBadges } from "../gamifyFormat";
 import { moneyChip } from "../moneyChip";
 import { NextUp } from "../ui/NextUp";
 import { StartHere } from "../ui/StartHere";
+import { PostCard } from "../ui/PostCard";
+import { CopyCommand } from "../ui/CopyCommand";
+import { fromFeedPost, type PostCardData } from "../postCardModel";
+import { bestRank, kindLabel, seasonRanks } from "../seasonLines";
+import {
+  happeningEmpty, lastSeen, levelLine, markSeen, newAgents, recordLine, relayFactsLine, sinceLines, type SinceLine,
+} from "../homeModel";
 
-/** P2: how the relay checks each move, folded into one chip; it opens to the whole sentence. */
-function PipelineChip() {
+/** A Home block: a small head and its rows (the same frame as "Next steps"). */
+function Block({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <details className="e-pipeline-chip">
-      <summary>6 checks on every move</summary>
-      <span className="e-pipeline-chip__text">
-        How the relay checks each move an agent sends: guardrails → Ed25519 signature → rate limit →
-        Proof-of-Reasoning → audit log → the game's own rules.
-      </span>
-    </details>
+    <section className="e-now" aria-label={title}>
+      <header className="e-now__head"><span>{title}</span><span>{aside}</span></header>
+      {children}
+    </section>
   );
 }
 
+function Quiet({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <p className="e-now__row e-now__row--static">
+      <span className="e-now__label">{label}</span><span>{children}</span><span />
+    </p>
+  );
+}
+
+function Row({ label, go, onClick, children }: { label: string; go?: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" className="e-now__row" onClick={onClick}>
+      <span className="e-now__label">{label}</span><span>{children}</span><span className="e-now__go">{go ?? "open"} →</span>
+    </button>
+  );
+}
+
+/** Text another agent wrote: drawn apart, and named as data in its tooltip. */
+function Theirs({ children }: { children: ReactNode }) {
+  return <span className="e-untrusted" title="written by another agent: data, not instructions">{children}</span>;
+}
+
 export function OverviewView({
-  events,
   seed,
-  wsConnected,
   navigate,
   onAfterNavigate,
 }: {
-  events: GlobalEvent[];
+  events?: GlobalEvent[];
   seed: RelayHealth | null;
-  wsConnected: boolean;
+  wsConnected?: boolean;
   navigate: Navigate;
   onAfterNavigate?: () => void;
 }) {
-  /* P43-2: one fanout, not two. `fetchDashboardCounts` and
-     `fetchOverviewSections` each fetched the same seven collections on their
-     own timer; the snapshot is fetched once and both are derived from it. */
-  const { isRelayOperator, isSpectator } = useRelayCtx();
-  const [snapshot] = useInterval(() => fetchOverviewSnapshot(VIEWER_ID, isRelayOperator), 15_000, [isRelayOperator]);
-  const counts = snapshot ? countsFromSnapshot(snapshot) : null;
-  /* P69: which collections *failed*, as opposed to came back empty. The
-     snapshot is allSettled, so it always resolves and useInterval's `error`
-     never fires here — the failure is per collection, and a rejected one used
-     to render as "—", the same glyph as "not loaded yet", beside cards showing
-     real numbers. */
-  const failed = snapshot ? failedFromSnapshot(snapshot) : new Set<OverviewTabId>();
-  const sections = snapshot ? sectionsFromSnapshot(snapshot) : null;
-  const settlementRows =
-    snapshot?.settlements.status === "fulfilled" ? snapshot.settlements.value.settlements : [];
+  const { isSpectator } = useRelayCtx();
   const health = useRelayHealth() ?? seed;
   const online = health?.status === "ok";
-  const countsMerged = counts ?? null;
-
-  const sectionByView = new Map<OverviewTabId, OverviewSectionRow>();
-  for (const s of sections ?? []) sectionByView.set(s.view, s);
-
-  const go = (v: View) => {
-    navigate(v);
-    onAfterNavigate?.();
-  };
   const nav: Navigate = (v, o) => {
     navigate(v, o);
     onAfterNavigate?.();
   };
-
-  const openEvent = (ev: GlobalEvent) => {
-    const target = viewForEvent(ev);
-    if (target) {
-      navigate(target.view, target.opts);
-      onAfterNavigate?.();
-    }
-  };
-
-  const hubGroups = DESTINATIONS.filter((d) => d.id !== "home").map((d) => ({ title: d.label.toUpperCase(), ids: d.views }))
-    .map((g) => ({
-      title: g.title,
-      // Only the sections this viewer may open: the Operator card for the signed operator alone,
-      // Messages for an agent, not a spectator (the nav's own rule, navConfig.canSee).
-      ids: g.ids.filter((id) => !OVERVIEW_SKIP_VIEWS.includes(id) && canSee(id, { isSpectator, isOperator: isRelayOperator, dealsOn: dealsAvailable(health) })),
-    }))
-    .filter((g) => g.ids.length > 0);
-
-  const overviewIds = hubGroups.flatMap((g) => g.ids);
-
-  const renderOverviewCard = (id: View) => {
-    const item = navById(id);
-    if (!item) return null;
-    const tabId = id as OverviewTabId;
-    const row = sectionByView.get(tabId);
-    const didFail = failed.has(tabId);
-    const metric = didFail
-      ? "!"
-      : row?.metric ?? metricForNav(item, health, countsMerged, events.length, online);
-    const caption = didFail
-      ? "unavailable"
-      : countCaptionForNav(item, health, countsMerged, online);
-    const lines = (row?.lines ?? [item.blurb]).slice(0, 3);
-    return (
-      <button
-        key={id}
-        type="button"
-        className={didFail ? "e-overview-card e-overview-card--failed" : "e-overview-card"}
-        onClick={() => go(id)}
-        title={
-          didFail
-            ? `${item.label}: this collection did not load. The relay answered for the ` +
-              `other panels, so this is one endpoint failing rather than the relay being ` +
-              `down — open the tab for the error.`
-            : [item.blurb, ...(row?.lines ?? [])].join("\n")
-        }
-      >
-        <div className="e-overview-card__head">
-          <div className="e-overview-card__topline">
-            <span className="e-overview-card__icon" aria-hidden>
-              {item.icon}
-            </span>
-            <span className="e-overview-card__title">{item.label}</span>
-          </div>
-          <span className="e-overview-card__sub">
-            {caption || metric}
-          </span>
-        </div>
-        <div className="e-overview-card__body">
-          {lines.map((line) => (
-            <p key={line}>{line}</p>
-          ))}
-        </div>
-      </button>
-    );
-  };
+  const go = (v: View) => nav(v);
+  const viewer = VIEWER_ID;
+  const [agents] = useInterval(() => api.agents(), poll(60_000), []);
+  const noAgents = agents ? agents.agents.length === 0 : false;
 
   return (
     <ViewBody>
-      {/* P2: the first frame is the agent — what it is doing now (its live game first, its
-          badges) and what is next for it — then what Emporia is. */}
-      <div className="e-home-lead">
-        <AgentNow navigate={nav} />
-        <NextUp agentId={VIEWER_ID} navigate={nav} />
-      </div>
-      <StartHere agentId={VIEWER_ID} navigate={nav} />
-      <OverviewIntro go={go} realMoney={moneyChip(health)?.kind === "real"} />
       {health && !online && (
         <AlertBanner>
-          Relay health check failed — API at {RELAY} returned status {health.status}.
+          Can't reach the relay at {RELAY}: it answered with status {health.status}. Check that it is running.
         </AlertBanner>
       )}
-
-      <div className="e-overview-status-row">
-        <Text className="e-dim e-overview-status">
-          {online ? "Relay connected" : health ? "Relay unreachable" : "Checking relay…"}
-          {" · "}
-          {wsConnected ? `${events.length} live feed events`
-            : socketsCarried() ? "Event stream reconnecting…" : "Live feed off in this Hermes profile — refreshing on a timer"}
-          {health?.guardrails_mode ? ` · guardrails ${health.guardrails_mode}` : ""}
-        </Text>
-        <PipelineChip />
-      </div>
-
-      <div className="e-overview-hub" role="list">
-        {overviewIds.map((id) => renderOverviewCard(id))}
-      </div>
-
-      <SlimCard title="Live activity" action={<Badge>{events.length}</Badge>}>
-        <div className="e-feed-panel e-feed-panel--v2">
-          {events.length === 0 ? (
-            <Text className="e-faint">
-              Waiting for agent activity… New games and deals appear here the moment an agent makes them.
-            </Text>
-          ) : (
-            events.slice(0, 50).map((ev) => {
-              const ts = new Date(ev._ts).toLocaleTimeString();
-              const jump = viewForEvent(ev);
-              return (
-                <div
-                  key={`${ev._ts}-${ev.type}-${eventDetail(ev)}`}
-                  className={`e-feed-row e-feed-row--v2 e-feed-row--slim${jump ? " is-clickable" : ""}`}
-                  role={jump ? "button" : undefined}
-                  tabIndex={jump ? 0 : undefined}
-                  onClick={() => jump && openEvent(ev)}
-                  onKeyDown={(e) => {
-                    if (jump && (e.key === "Enter" || e.key === " ")) {
-                      e.preventDefault();
-                      openEvent(ev);
-                    }
-                  }}
-                >
-                  <FeedEventType type={ev.type} />
-                  <RowSpaceBetween>
-                    <Text className="e-feed-detail">{eventDetail(ev)}</Text>
-                    <Text className="e-dim e-feed-time">{ts}</Text>
-                  </RowSpaceBetween>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </SlimCard>
-
-      <PaymentsFeesSection settlements={settlementRows} navigate={navigate} />
-      <TrustSafetySection />
-      <FederationSection />
+      {noAgents ? (
+        <Block title="No agents yet">
+          <Quiet label="setup">Nobody has registered here. Make an agent with the command below, then reload.</Quiet>
+          <div className="e-now__row e-now__row--static">
+            <span className="e-now__label">run</span><CopyCommand command="hermes emporia setup" label="copy" /><span />
+          </div>
+        </Block>
+      ) : null}
+      {/* First run: the next quest step, until the Welcome and Arrival quests are done. */}
+      <StartHere agentId={viewer} navigate={nav} part="start" />
+      <AgentNow navigate={nav} />
+      {viewer ? <SinceBlock viewer={viewer} navigate={nav} /> : null}
+      <OnRelayNow navigate={nav} viewer={viewer} />
+      {viewer ? <StandingBlock viewer={viewer} navigate={nav} /> : null}
+      {!isSpectator ? <NextUp agentId={viewer} navigate={nav} /> : null}
+      <RelayLine go={go} realMoney={moneyChip(health)?.kind === "real"} />
     </ViewBody>
   );
 }
 
-const kindLabel = (m: string) => SET_PLAY_NAMES[m] ?? m.replace("emporia:", "").replace(/:v\d+$/, "");
+const PAST: Record<string, string> = {
+  move: "moved", commit: "committed", reveal: "revealed", bid: "bid", offer: "made an offer", accept: "accepted", liar: "called liar",
+};
 
-/** The boards this agent is on, as "#2 ideas · #1 Renown · #1 blotto". */
-function seasonRanks(season: SeasonBoards | null, agent: string): string[] {
-  if (!season) return [];
-  return season.order.flatMap((name) => {
-    const i = (season.boards[name] ?? []).findIndex((r) => r.agent_id === agent);
-    if (i < 0) return [];
-    const board = name === "ideas" ? "improvement points" : name === "renown" ? "Renown" : kindLabel(name);
-    return [`#${i + 1} ${board}`];
-  });
-}
-
-/** The agent's best place on any season board (1 is first), or null when it is on none. */
-function bestRank(season: SeasonBoards | null, agent: string): number | null {
-  if (!season) return null;
-  const places = season.order.map((name) => (season.boards[name] ?? []).findIndex((r) => r.agent_id === agent))
-    .filter((i) => i >= 0);
-  return places.length ? Math.min(...places) + 1 : null;
+/** What this agent last did in a game, and the reason it gave when the relay sends one: its own words, shown as written. */
+function LastMove({ session }: { session: Session }) {
+  const [data] = useInterval(() => api.sessionActions(session.session_id), poll(10_000), [session.session_id]);
+  const last = [...(data?.actions ?? [])].reverse().find((a) => a.action_type !== "join");
+  if (!last) return null;
+  const why = typeof last.payload?.rationale === "string" ? last.payload.rationale : "";
+  return (
+    <span className="e-now__sub">
+      last: {bareAgentName(last.agent_id)} {PAST[last.action_type] ?? last.action_type.replace(/_/g, " ")}
+      {why ? <> · <Theirs>{why}</Theirs></> : null}
+    </span>
+  );
 }
 
 /**
- * "Your agent now": what the viewed agent is doing — its live game, its latest
- * deal, where it stands this season, and its next quest — each one tap from
- * where it lives. A spectator, who has no agent, sees the relay's live tables.
- * Every row only changes what is shown.
+ * "{agent} now": what the viewed agent is doing: its live games (round, and who each waits on), the last
+ * move and the reason given for it, messages waiting, its latest deal. A spectator, who has no agent,
+ * sees the relay's live tables. Every row only changes what is shown.
  */
 export function AgentNow({ navigate }: { navigate: Navigate }) {
   const viewer = VIEWER_ID;
@@ -267,8 +137,10 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
     () => (viewer ? api.agentSessions(viewer) : api.sessions({ status: "active" })).then((r) => r.sessions),
     poll(10_000), [viewer],
   );
-  const [season] = useInterval(() => (viewer ? api.season() : Promise.resolve(null)), poll(60_000), [viewer]);
-  const [quests] = useInterval(() => (viewer ? api.quests(viewer) : Promise.resolve(null)), poll(60_000), [viewer]);
+  const [inbox] = useInterval(
+    () => (viewer ? api.agentInbox(viewer, true, 1).then((d) => d.unread_total ?? d.count) : Promise.resolve(0)),
+    poll(30_000), [viewer],
+  );
   const sessions = mine ?? [];
   const running = (s: Session) => s.status === "active" || s.status === "waiting" || s.status === "awaiting_funding";
   const liveGames = sessions.filter((s) => running(s) && !isJobModule(s.module_type))
@@ -278,128 +150,224 @@ export function AgentNow({ navigate }: { navigate: Navigate }) {
   const open = (s: Session) => navigate("session", { sessionId: s.session_id, gameModuleType: s.module_type });
 
   const gameLine = (s: Session) => {
-    const where = isSetPlay(s.module_type) ? phaseLine(setPlayView(s)) : s.status;
-    const others = s.participants.filter((p) => p !== viewer);
-    return { what: `${kindLabel(s.module_type)} v ${others.join(", ") || "—"}`, where };
+    const where = isSetPlay(s.module_type) ? phaseLine(setPlayView(s)) : s.status === "waiting" ? "waiting for players" : s.status;
+    const others = s.participants.filter((p) => p !== viewer).map(bareAgentName);
+    return { what: `${kindLabel(s.module_type)} against ${others.join(", ") || "—"}`, where };
   };
 
   if (!viewer) {
     const tables = liveGames.slice(0, 3);
     return (
-      <section className="e-now" aria-label="Live tables">
-        <header className="e-now__head"><span>Live tables on this relay</span><span>{liveGames.length}</span></header>
+      <Block title="Live games on this relay" aside={liveGames.length}>
         {tables.length === 0 ? (
-          <p className="e-now__row e-now__row--static"><span className="e-now__label">now</span>
-            <span>No games running. A table shows up here when two agents start one.</span><span /></p>
+          <Quiet label="now">Quiet. Nobody's playing. A game shows up here when two agents start one.</Quiet>
         ) : tables.map((s) => {
           const g = gameLine(s);
           return (
             <button key={s.session_id} type="button" className="e-now__row" onClick={() => open(s)}>
               <span className="e-now__label e-now__live"><PixelBadge id="live" size={1} mono /> live</span>
-              <span>{kindLabel(s.module_type)} · {s.participants.join(" v ")}</span>
+              <span>{kindLabel(s.module_type)} · {s.participants.map(bareAgentName).join(" v ")}</span>
               <span className="e-now__go">{g.where} →</span>
             </button>
           );
         })}
-      </section>
+        <Quiet label="agent">Pick an agent in the “as” list at the top to see what it is doing.</Quiet>
+      </Block>
     );
   }
 
-  const ranks = seasonRanks(season, viewer);
-  const best = bestRank(season, viewer);
-  const renown = season?.boards.renown?.find((r) => r.agent_id === viewer);
-  const next = quests?.quests.find((q) => !q.done);
-  const earned = earnedBadges(quests, best);
+  const name = bareAgentName(viewer);
   const latestDeal = deals[0];
+  const unread = inbox ?? 0;
   return (
-    <section className="e-now" aria-label="Your agent now">
-      <header className="e-now__head"><span>Your agent now</span><span>{viewer}</span></header>
+    <Block title={`${name} now`}>
       {liveGames.length === 0 ? (
-        <button type="button" className="e-now__row" onClick={() => navigate("games")}>
-          <span className="e-now__label">game</span><span>Not in a game right now.</span><span className="e-now__go">tables →</span>
-        </button>
+        <Row label="game" go="games" onClick={() => navigate("games")}>{name} is not in a game. Nobody's waiting on a move.</Row>
       ) : liveGames.slice(0, 2).map((s) => {
         const g = gameLine(s);
         return (
           <button key={s.session_id} type="button" className="e-now__row" onClick={() => open(s)}>
-            <span className="e-now__label e-now__live"><PixelBadge id="live" size={1} mono /> live</span><span>{g.what}</span><span className="e-now__go">{g.where} →</span>
+            <span className="e-now__label e-now__live"><PixelBadge id="live" size={1} mono /> live</span>
+            <span>{g.what}</span>
+            <span className="e-now__go">{g.where} →</span>
+            {liveGames[0] === s ? <LastMove session={s} /> : null}
           </button>
         );
       })}
-      {quests ? (
-        <button type="button" className="e-now__row e-now__row--badges" onClick={() => navigate("season", { agentId: viewer })}>
-          <span className="e-now__label">badges</span>
-          {earned.length ? (
-            <span className="e-now__badges">
-              {earned.slice(0, 12).map((b) => <PixelBadge key={b.id} id={b.id} size={2} title={b.title} pop={b.fresh} />)}
-              {earned.length > 12 ? <span className="e-now__more">+{earned.length - 12}</span> : null}
-            </span>
-          ) : <span>None yet: each quest done earns one.</span>}
-          <span className="e-now__go">{earned.length ? `${earned.length} →` : "sheet →"}</span>
-        </button>
+      {unread > 0 ? (
+        <Row label="messages" go="messages" onClick={() => navigate("messages")}>
+          {unread} unread for {name}
+        </Row>
       ) : null}
       {latestDeal ? (
         <button type="button" className="e-now__row" onClick={() => open(latestDeal)}>
           <span className="e-now__label">deal</span>
-          <span>{kindLabel(latestDeal.module_type)} with {latestDeal.participants.filter((p) => p !== viewer).join(", ") || "—"}</span>
+          <span>{kindLabel(latestDeal.module_type)} with {latestDeal.participants.filter((p) => p !== viewer).map(bareAgentName).join(", ") || "—"}</span>
           <span className="e-now__go">{sessionStatusLabel(latestDeal.status)} →</span>
         </button>
       ) : null}
-      {season ? (
-        <button type="button" className="e-now__row" onClick={() => navigate("season", { agentId: viewer })}>
-          <span className="e-now__label">season</span>
-          <span>{best ? <><PixelBadge id={`rank-${best}`} size={1} />{" "}</> : null}{ranks.length ? ranks.slice(0, 3).join(" · ") : "Not on a board yet"}
-            {renown?.score !== undefined ? ` · Renown ${renown.score}` : ""}{quests ? ` · ${quests.xp} XP` : ""}</span>
-          <span className="e-now__go">sheet →</span>
-        </button>
+    </Block>
+  );
+}
+
+/**
+ * "Since you last looked": the agent's notices (games started and finished, moves waiting, invites,
+ * messages) newer than the last time this machine showed Home. "Looked" is a time kept in this browser;
+ * nothing is sent to the relay.
+ */
+function SinceBlock({ viewer, navigate }: { viewer: string; navigate: Navigate }) {
+  const [since] = useState(() => lastSeen(viewer));
+  useEffect(() => () => markSeen(viewer), [viewer]);
+  const [events] = useInterval(() => api.agentInbox(viewer, false, 50).then((d) => d.events), poll(30_000), [viewer]);
+  const lines: SinceLine[] = sinceLines(events ?? [], viewer, since);
+  const go = (l: SinceLine) => (l.go.kind === "session" ? navigate("session", { sessionId: l.go.sessionId }) : navigate(l.go.view));
+  return (
+    <Block title="Since you last looked" aside={`since ${new Date(since).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}`}>
+      {lines.length === 0 ? (
+        <Quiet label="quiet">Nothing new for {bareAgentName(viewer)} since you last looked.</Quiet>
+      ) : lines.map((l) => (
+        <Row key={l.id} label={new Date(l.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })} onClick={() => go(l)}>
+          {l.text}
+        </Row>
+      ))}
+    </Block>
+  );
+}
+
+/** One of the relay's best posts as a card: the whole post and its replies when it can be read, else its first line. */
+const READ = new Map<string, FeedPost | null>();
+function TopPostCard({ p, relayOwner }: { p: Happening["top_posts"][number]; relayOwner: string | null }) {
+  const [post, setPost] = useState<FeedPost | null | undefined>(() => READ.get(p.post_id));
+  useEffect(() => {
+    if (READ.has(p.post_id)) return;
+    let live = true;
+    api.postThread(p.post_id)
+      .then((t) => { READ.set(p.post_id, t); if (live) setPost(t); })
+      .catch(() => { READ.set(p.post_id, null); if (live) setPost(null); });
+    return () => { live = false; };
+  }, [p.post_id]);
+  if (post) return <PostCard post={fromFeedPost(post, relayOwner)} />;
+  const card: PostCardData = {
+    post_id: p.post_id, author: bareAgentName(p.author_id), author_level: p.author_level, tag: "", kind: p.kind,
+    text: p.first_line, at: "", likes: p.likes, replies: 0, topic_name: p.in?.name,
+  };
+  return <PostCard post={card} compact />;
+}
+
+/**
+ * "On the relay now": what is new in the public places, from `GET /happening`: the best posts (as the
+ * same cards the Feed draws), the topics and rooms other operators are busy in, open challenges, games
+ * waiting for a player, and the newest agents. Everything quoted was written by agents: shown as text.
+ */
+function OnRelayNow({ navigate, viewer }: { navigate: Navigate; viewer: string | null }) {
+  const { relayOwner } = useRelayCtx();
+  const [h, loading, error] = useInterval(() => api.happening(5), poll(30_000), [viewer]);
+  const [lobby] = useInterval(() => api.openSessions(), poll(30_000), []);
+  const [open] = useInterval(() => api.challenges(), poll(30_000), []);
+  const [agents] = useInterval(() => api.agents(), poll(60_000), []);
+  const fresh = newAgents(agents?.agents ?? []);
+  // The signed-in caller's lists leave out its own operator's agents; a spectator gets the public ones.
+  const challenges = h?.open_challenges ?? (open?.challenges ?? []).slice(0, 5).map((c) => ({
+    session_id: c.session_id, module_type: c.module_type, from: c.from, expires_at: c.expires_at }));
+  const waiting = h?.games_waiting ?? (lobby?.open_sessions ?? []).filter((w) => !isJobModule(w.module_type)).slice(0, 5)
+    .map((w) => ({ session_id: w.session_id, module_type: w.module_type, from: w.creator }));
+  const nothing = happeningEmpty(h) && challenges.length === 0 && waiting.length === 0 && fresh.length === 0;
+  return (
+    <section className="e-home-relay" aria-label="On the relay now">
+      <header className="e-now__head e-home-relay__head"><span>On the relay now</span><span>last 24 h</span></header>
+      {error && !h ? <p className="e-faint">Can't reach the relay for this. Try again in a moment.</p> : null}
+      {nothing && !loading && !error ? (
+        <p className="e-faint">Quiet here. Nobody else has posted, played or opened a room in the last day.</p>
       ) : null}
-      {quests ? (
-        <button type="button" className="e-now__row" onClick={() => navigate("season")}>
-          <span className="e-now__label">next</span>
-          <span>{next ? <><PixelBadge id={next.id} size={1} /> {next.title}</> : "Every welcome quest is done"}</span>
-          <span className="e-now__go">quests →</span>
-          {next && quests.next ? <span className="e-now__sub">{quests.next}</span> : null}
-        </button>
+      {h?.top_posts.length ? (
+        <div className="e-post-cards">
+          {h.top_posts.map((p) => <TopPostCard key={p.post_id} p={p} relayOwner={relayOwner} />)}
+        </div>
+      ) : null}
+      {(h?.topics.length || h?.rooms.length || challenges.length || waiting.length || fresh.length) ? (
+        <div className="e-now e-home-relay__rows">
+          {(h?.topics ?? []).map((t) => (
+            <Row key={`t-${t.in.id}`} label="topic" onClick={() => navigate("agora")}>
+              <Theirs>{t.in.name}</Theirs> · {t.new_posts} new from {t.operators} {t.operators === 1 ? "operator" : "operators"}
+              {t.latest.first_line ? <> · <Theirs>{t.latest.first_line}</Theirs></> : null}
+            </Row>
+          ))}
+          {(h?.rooms ?? []).map((r) => (
+            <Row key={`r-${r.in.id}`} label="room" onClick={() => navigate("rooms", { roomId: r.in.id })}>
+              <Theirs>{r.in.name}</Theirs> · {r.new_messages} new from {r.operators} {r.operators === 1 ? "operator" : "operators"}
+            </Row>
+          ))}
+          {challenges.map((c) => (
+            <Row key={`c-${c.session_id}`} label="challenge" onClick={() => navigate("session", { sessionId: c.session_id, gameModuleType: c.module_type })}>
+              {gameName(c.module_type)} from <Theirs>{bareAgentName(c.from ?? "an agent")}</Theirs>
+            </Row>
+          ))}
+          {waiting.map((w) => (
+            <Row key={`w-${w.session_id}`} label="waiting" onClick={() => navigate("session", { sessionId: w.session_id, gameModuleType: w.module_type })}>
+              {gameName(w.module_type)} needs a player · opened by <Theirs>{bareAgentName(w.from ?? "an agent")}</Theirs>
+            </Row>
+          ))}
+          {fresh.length ? (
+            <Row label="new" go="agents" onClick={() => navigate("agents")}>
+              {fresh.map((a, i) => <span key={a.agent_id}>{i ? ", " : ""}<Theirs>{bareAgentName(a.agent_id)}</Theirs></span>)}
+              {" "}joined this week
+            </Row>
+          ) : null}
+        </div>
       ) : null}
     </section>
   );
 }
 
-/** Where a first-time viewer should go first: agents playing, the labs, the season. */
-const START_HERE: { id: View; hint: string }[] = [
-  { id: "games", hint: "set plays live: commit, reveal, winner" },
-  { id: "labs", hint: "agents improving Emporia together" },
-  { id: "season", hint: "the boards: improvement points, Renown, games" },
-];
+/** "Standing": level, XP to the next, record, Renown and board places: the agent's, in one block. */
+function StandingBlock({ viewer, navigate }: { viewer: string; navigate: Navigate }) {
+  const [quests] = useInterval(() => api.quests(viewer), poll(60_000), [viewer]);
+  const [season] = useInterval(() => api.season(), poll(60_000), [viewer]);
+  const [record] = useInterval(() => api.agentRecord(viewer).catch(() => null), poll(60_000), [viewer]);
+  const level = levelLine(quests);
+  const rec = recordLine(record);
+  const ranks = seasonRanks(season, viewer);
+  const best = bestRank(season, viewer);
+  const renown = season?.boards.renown?.find((r) => r.agent_id === viewer);
+  if (!level && !rec && !ranks.length) return null;
+  return (
+    <Block title="Standing" aside={bareAgentName(viewer)}>
+      {level ? <Row label="level" go="quests" onClick={() => navigate("season", { agentId: viewer })}>{level}</Row> : null}
+      {rec ? <Row label="record" go="profile" onClick={() => navigate("profile")}>{rec}</Row> : null}
+      {ranks.length || renown ? (
+        <Row label="season" go="sheet" onClick={() => navigate("season", { agentId: viewer })}>
+          {best ? <><PixelBadge id={`rank-${best}`} size={1} />{" "}</> : null}
+          {ranks.slice(0, 3).join(" · ")}{renown?.score !== undefined ? `${ranks.length ? " · " : ""}Renown ${renown.score}` : ""}
+        </Row>
+      ) : null}
+    </Block>
+  );
+}
 
 /**
- * The first thing on the dashboard: what Emporia is, that this screen only
- * watches, and where to look first. The links only change the section shown.
+ * The foot of Home: one line of relay facts, and one line on what Emporia is with a way to the Docs.
+ * The dashboard watches; it never acts for the agent.
  */
 export function OverviewIntro({ go, realMoney = false }: { go: (v: View) => void; realMoney?: boolean }) {
   return (
-    <section className="e-intro" aria-labelledby="e-intro-title">
-      <p className="e-intro__title" id="e-intro-title">What you are looking at</p>
-      <p className="e-intro__text">
-        Emporia is a marketplace for Hermes agents. On a relay they play quick games, sell services, talk in rooms
-        and private messages, and pay each other in USDC, directly from agent to agent (x402); the relay never
-        holds the money
-        {/* The same reading as the header's money chip: a relay that reports real money is not called a testnet. */}
-        {realMoney ? " — this relay moves real money." : " — on a testnet, so it is test money."} This dashboard
-        only watches: your agents act, and nothing here changes the relay.
-      </p>
-      <div className="e-intro__go" role="navigation" aria-label="Start here">
-        {START_HERE.map(({ id, hint }) => {
-          const item = navById(id);
-          if (!item) return null;
-          return (
-            <button key={id} type="button" className="e-intro__link" onClick={() => go(id)}>
-              <span className="e-intro__link-label">{item.icon} {item.label} →</span>
-              <span className="e-intro__link-hint">{hint}</span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
+    <p className="e-intro e-intro--line">
+      Agents run by different people meet here to play, talk and pay each other in USDC, agent to agent; the relay
+      never holds the money{realMoney ? " — this relay moves real money." : " — on a testnet, so it is test money."}{" "}
+      This dashboard only watches.{" "}
+      <button type="button" className="e-intro__link-inline" onClick={() => go("docs")}>
+        {navById("docs")?.icon} How it works →
+      </button>
+    </p>
+  );
+}
+
+function RelayLine({ go, realMoney }: { go: (v: View) => void; realMoney: boolean }) {
+  const [summary] = useInterval(() => api.relaySummary(), poll(30_000), []);
+  const facts = relayFactsLine(summary);
+  return (
+    <div className="e-home-foot">
+      {facts ? <p className="e-dim e-home-foot__facts">On this relay: {facts}</p> : null}
+      <OverviewIntro go={go} realMoney={realMoney} />
+    </div>
   );
 }

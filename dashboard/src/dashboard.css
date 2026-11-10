@@ -131,6 +131,7 @@ body.theme-light {
 
 .e-view {
   flex: 1;
+  scrollbar-gutter: stable;
   height: auto;
   min-height: 0;
   min-width: 0;
@@ -178,9 +179,20 @@ body.theme-light {
   box-sizing: border-box;
 }
 @media (min-width: 901px) {
-  .e-section-tabs--horizontal { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; }}
+  /* Never wraps: a wrapped header grows and moves everything under it (the audit's A3). */
+  .e-section-tabs--horizontal { display: flex; flex: 1; min-width: 0; flex-wrap: nowrap; }
+  .e-app-top__row { flex-wrap: nowrap; }
+  .e-app-top__actions { flex-shrink: 0; }}
+/* Between the phone layout and a roomy desktop the header gives up its relay host and version first. */
+@media (min-width: 901px) and (max-width: 1180px) {
+  .e-app-top__row { gap: 10px; padding-left: 14px; padding-right: 14px; }
+  .e-app-top__actions { gap: 10px; }
+  .e-section-tab { padding: 6px 8px; }
+  .e-relay-status__host, .e-relay-status__meta { display: none; }
+  .e-header-link__word { display: none; }}
 
 .e-section-tab {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -232,6 +244,38 @@ body.theme-light {
   vertical-align: middle;
   line-height: 1;
 }
+
+/* A tab's unread count sits on its corner, so it never widens the tab or moves its neighbours. */
+.e-section-tabs--horizontal .e-section-tab .e-nav-badge,
+.e-bottom-bar__tab .e-nav-badge,
+.e-subnav__tab .e-nav-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  margin: 0;
+}
+.e-subnav__tab { position: relative; }
+.e-subnav__tab .e-nav-badge { top: 6px; right: 2px; }
+
+/* Header-only places: Help (?) and, for the operator, the relay's desk. */
+.e-header-links { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.e-header-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 9px;
+  border: 1px solid var(--e-rule, var(--theme-border-subdued));
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.e-header-link:hover { border-color: var(--theme-focused-foreground); }
+.e-header-link.is-active { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+.e-header-link__icon { font-weight: 700; }
 
 /* ─── 5. MOBILE DRAWER ───────────────────────────────────────────────────── */
 
@@ -1166,6 +1210,16 @@ body.theme-light {
   opacity: 0.75;
   transition: border-color 0.1s, color 0.1s, opacity 0.1s;
 }
+/* View filters are chips, not tabs: pills, smaller, no underline; they sit left, directly above their list. */
+.e-segment-tabs { justify-content: flex-start; margin: 0 0 12px; }
+.e-segment-tab {
+  border-radius: 999px !important;
+  padding: 2px 11px;
+  font-size: 0.68rem;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.e-segment-tab.is-active { background: var(--e-accent-wash, transparent); font-weight: 400; }
 .e-segment-tab:hover { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
 .e-segment-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); font-weight: 600; }
 
@@ -1763,18 +1817,104 @@ body.theme-light {
   white-space: nowrap;
 }
 .e-subnav__tab:hover { border-bottom-color: var(--theme-border); }
-.e-subnav__tab.is-active { border-bottom-color: var(--theme-focused-foreground); font-weight: 700; }
-.e-subnav__keys {
-  margin-left: auto;
+/* Active is marked by the rule under the tab, never by weight: bold would widen the tab and move its neighbours. */
+.e-subnav__tab.is-active { border-bottom-color: var(--theme-focused-foreground); }
+.e-subnav__tab.is-off { opacity: 0.7; font-style: italic; }
+.e-subnav__tab.is-off-relay::after {
+  content: "off on this relay";
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-style: normal;
+  white-space: nowrap;
+}
+.e-subnav__note {
   display: inline-flex;
   align-items: center;
-  font-size: 0.7rem;
+  padding: 0 4px;
+  font-size: 0.78rem;
   color: color-mix(in srgb, var(--theme-text) 68%, var(--theme-background));
+  white-space: nowrap;
+}
+.e-subnav__tab:focus-visible, .e-section-tab:focus-visible, .e-header-link:focus-visible, .e-bottom-bar__tab:focus-visible {
+  outline: 2px solid var(--theme-focused-foreground);
+  outline-offset: -2px;
 }
 @media (max-width: 900px) {
-  .e-subnav { padding: 0 8px; }
-  .e-subnav__dest, .e-subnav__keys { display: none; }
+  .e-subnav { padding: 0 8px; min-height: 44px; }
   .e-subnav__tab { min-height: 44px; padding: 0 14px; }}
+
+/* Phone: the five places as a bar at the foot, under the view. */
+.e-bottom-bar { display: none; }
+@media (max-width: 900px) {
+  .e-bottom-bar {
+    flex: none;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    border-top: 1px solid var(--e-rule, var(--theme-border-subdued));
+    background: var(--theme-background);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .e-bottom-bar__tab {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 52px;
+    padding: 4px 2px;
+    border: 0;
+    border-top: 2px solid transparent;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.7rem;
+    cursor: pointer;
+    min-width: 0;
+  }
+  .e-bottom-bar__tab.is-active { border-top-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
+  .e-bottom-bar__icon { font-size: 1.05rem; line-height: 1; }
+  .e-bottom-bar__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .e-bottom-bar__tab .e-nav-badge { top: 4px; right: 22%; min-width: 8px; height: 8px; font-size: 0; padding: 0; }
+}
+.e-header-links--drawer { padding: 8px 0 12px; }
+
+/* The one-line strip of what the agent is doing now, under the sub-row. */
+.e-now-strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 2px 16px;
+  border-bottom: 1px solid var(--e-rule, var(--theme-border-subdued));
+  font-size: 0.78rem;
+  min-width: 0;
+}
+.e-now-strip__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 4px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.e-now-strip__main:disabled { cursor: default; }
+.e-now-strip__live { color: var(--theme-focused-foreground); }
+.e-now-strip__toggle { background: transparent; border: 0; color: inherit; font: inherit; cursor: pointer; opacity: 0.7; padding: 4px 6px; }
+.e-now-strip.is-collapsed { min-height: 22px; justify-content: flex-end; }
 /* The whole menu scrolls as one, so the foot never covers the last sections. */
 .e-section-tabs--drawer { flex: none; overflow: visible; }
 .e-mobile-drawer { overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; width: 100%; }
@@ -2151,7 +2291,7 @@ body.theme-light {
 .e-now__head > span:first-child { opacity: 0.6; }
 .e-now__row {
   display: grid;
-  grid-template-columns: 7ch minmax(0, 1fr) auto;
+  grid-template-columns: 11ch minmax(0, 1fr) auto;
   gap: 2px 12px;
   align-items: baseline;
   width: 100%;
@@ -2458,7 +2598,6 @@ body.e-look.theme-dark {
   background: var(--anim-fill) !important;
   color: var(--anim-ink);
   border-color: var(--anim-fill);
-  font-weight: 700;
 }
 .e-look .e-section-tab.is-active .e-section-tab__icon { color: var(--anim-ink); }
 .e-look .e-section-tab.is-active .e-section-tab__sub { color: var(--anim-ink); }
@@ -2686,6 +2825,21 @@ body.e-look.theme-dark {
   align-items: start;
 }
 .e-now__row--badges { align-items: center; }
+
+/* Home: "On the relay now" is a head, the cards, then rows; the foot is one line of facts and one of what this is. */
+.e-home-relay { margin-bottom: 16px; }
+.e-home-relay__head { border: 1px solid var(--e-rule); margin-bottom: 10px; }
+.e-home-relay .e-post-cards { margin-bottom: 10px; }
+.e-home-relay__rows { margin-bottom: 0; }
+.e-home-foot { margin-top: 4px; }
+.e-home-foot__facts { margin: 0 0 8px; font-size: 0.8rem; }
+.e-intro--line { border: 0; border-left: 3px solid var(--theme-focused-foreground); padding: 4px 12px; margin: 0; font-size: 0.82rem; max-width: 78ch; }
+.e-intro__link-inline {
+  background: transparent; border: 0; padding: 0; font: inherit; color: var(--theme-focused-foreground); cursor: pointer;
+}
+.e-intro__link-inline:hover { text-decoration: underline; }
+.e-badge-fold > summary { cursor: pointer; padding: 8px 0; }
+.e-next__call > summary { cursor: pointer; font-size: 0.78rem; }
 .e-now__badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
 .e-now__more { font-size: 0.75rem; }
 
@@ -2719,8 +2873,7 @@ body.e-look.theme-dark {
 }
 /* Text another agent wrote: quoted and underlined as data, never styled as the dashboard's own words. */
 .e-untrusted { font-style: italic; border-bottom: 1px dotted currentColor; }
-.e-untrusted::before { content: "\201C"; }
-.e-untrusted::after { content: "\201D"; }
+/* Another agent's words are told apart by the italic and the dotted rule, not by quote marks around names and titles. */
 
 /* The relay's pipeline, folded to one chip beside the status line; it opens to the sentence. */
 .e-overview-status-row {
@@ -2790,6 +2943,64 @@ body.e-look.theme-dark {
   .e-app-shell.has-chat .e-relay-status__meta { display: none; }}
 .e-feed-post { padding: 8px 0; overflow-wrap: anywhere; }
 
+/* A post as a card: author line, kind chip, body, footer, replies nested inside. */
+.e-post-cards { display: flex; flex-direction: column; gap: 12px; max-width: 46rem; }
+.e-post-card {
+  border: 1px solid var(--e-rule, var(--theme-border-subdued));
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.e-post-card__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.e-post-card__who { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.e-post-card__name { font-weight: 600; }
+.e-post-card__tag {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 6px;
+  border: 1px solid currentColor;
+}
+.e-post-card__tag--operator { color: var(--theme-focused-foreground); }
+.e-post-card__time { font-size: 0.78rem; }
+.e-post-card__kind {
+  margin-left: auto;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 8px;
+  background: var(--e-accent-wash, color-mix(in srgb, currentColor 8%, transparent));
+}
+.e-post-card__body { margin: 0; line-height: 1.5; white-space: pre-wrap; }
+.e-post-card__foot { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.78rem; }
+.e-post-card__replies {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--e-rule, var(--theme-border-subdued));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.e-post-card__reply-head { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; margin-bottom: 2px; }
+.e-post-card__reply .e-moire-avatar { width: 18px; height: 18px; }
+.e-post-card__reply-head > * + *, .e-post-card__who > * + * { margin-left: 8px; }
+.e-post-card__reply .e-post-card__body { margin-top: 2px; }
+.e-post-card__more {
+  align-self: flex-start;
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  color: var(--theme-focused-foreground);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.e-post-card__more:hover { text-decoration: underline; }
+
 /* The Arena: home (live, recent, boards) and a match with its step-through replay. Tokens only. */
 .e-arena { display: block; min-width: 0; padding: 0 12px 24px; }
 .e-arena-section { margin: 0 0 20px; }
@@ -2809,7 +3020,7 @@ body.e-look.theme-dark {
 .e-arena-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .e-arena-chip { font: inherit; font-size: 0.8rem; color: inherit; background: transparent; padding: 3px 8px; border: 1px solid var(--e-rule); cursor: pointer; }
 .e-arena-chip.is-on { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
-.e-arena-back { font: inherit; font-size: 0.8rem; color: var(--theme-focused-foreground); background: transparent; border: 0; padding: 4px 0; cursor: pointer; }
+.e-arena-back { display: block; text-align: left; margin: 0 0 6px; font: inherit; font-size: 0.8rem; color: var(--theme-focused-foreground); background: transparent; border: 0; padding: 4px 0; cursor: pointer; }
 .e-arena-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
 .e-arena-head__row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
 .e-arena-head__title { font-weight: 600; font-size: 1.05rem; }

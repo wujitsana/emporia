@@ -1,6 +1,7 @@
 import AlertBanner from "@kit/AlertBanner";
 import BlockLoader from "@kit/BlockLoader";
 import Text from "@kit/Text";
+import { friendlyError } from "../friendlyError";
 
 export function ViewStatus({
   loading,
@@ -16,7 +17,7 @@ export function ViewStatus({
   if (error) {
     return (
       <>
-        <AlertBanner>{error}</AlertBanner>
+        <AlertBanner>{friendlyError(error)}</AlertBanner>
         <br />
       </>
     );

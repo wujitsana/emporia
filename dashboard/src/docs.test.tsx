@@ -69,7 +69,7 @@ describe("the bundled docs (P171)", () => {
 
   it("resolves links between bundled docs, whatever the relative path", () => {
     const setup = DOCS.find((d) => d.id === "agent-setup")!;
-    expect(resolveDocLink(setup, "../ROADMAP.md")).toEqual({ kind: "doc", id: "roadmap", anchor: undefined });
+    expect(resolveDocLink(setup, "../SECURITY.md")).toEqual({ kind: "doc", id: "security", anchor: undefined });
     expect(resolveDocLink(setup, "payments.md#fee-model")).toEqual({ kind: "doc", id: "payments", anchor: "fee-model" });
     expect(resolveDocLink(setup, "#roles")).toEqual({ kind: "anchor", anchor: "roles" });
     expect(resolveDocLink(setup, "https://x.y")).toEqual({ kind: "web", href: "https://x.y" });

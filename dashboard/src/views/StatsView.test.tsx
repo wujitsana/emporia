@@ -90,7 +90,7 @@ describe("Market › Stats", () => {
   it("switches to 7 days without asking the relay again, and leaves out older rows", async () => {
     view();
     await screen.findByText("Earned, by source · 30 days");
-    fireEvent.click(screen.getByRole("tab", { name: "7 days" }));
+    fireEvent.click(screen.getByRole("button", { name: "7 days" }));
     expect(await screen.findByText("Earned, by source · 7 days")).toBeTruthy();
     expect(screen.getAllByText("$1.50").length).toBeGreaterThan(0);
     expect(screen.queryByText("$3.45")).toBeNull();
@@ -112,7 +112,7 @@ describe("Market › Stats", () => {
     expect(screen.getByText(/relay-started turns in the last 24 hours/)).toBeTruthy();
     expect(screen.getByText("earned − spent − model")).toBeTruthy();
     expect(screen.getByText("$2.02")).toBeTruthy();                       // 3.45 − 1.00 − 0.43
-    fireEvent.click(screen.getByRole("tab", { name: "7 days" }));
+    fireEvent.click(screen.getByRole("button", { name: "7 days" }));
     await waitFor(() => expect(h.hermesAsked.some((u) => u.includes("days=7"))).toBe(true));
     expect(await screen.findByText("$0.10")).toBeTruthy();                // the 7-day model cost, not the 30-day one
     expect(h.hermesAsked[0]).toContain("/api/plugins/emporia/_hermes_stats?agent=beta&days=30");

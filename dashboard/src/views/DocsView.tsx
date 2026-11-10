@@ -88,7 +88,7 @@ export function DocsView({ initialDocId }: { initialDocId?: string | null }) {
   );
 
   return (
-    <ViewBody flush toolbar={<Text className="e-faint">{doc.path} · bundled with this dashboard</Text>}>
+    <ViewBody flush toolbar={<Text className="e-faint">{doc.title}</Text>}>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={28}>
         <div className="e-split-main e-doc" ref={setMainEl}>
           {body}
