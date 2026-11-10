@@ -214,19 +214,23 @@ _YAML_CACHE: dict[tuple[str, int], dict] = {}
 
 
 def load_yaml(path: Path) -> dict:
-    """Parsed YAML. P174: cached by path and modification time — doctor and the
-    setup overview read the same large config.yaml many times. Returns a copy,
+    """Parsed YAML. P174: cached — doctor and the setup overview read the same large config.yaml many
+    times. The key is the file's content, not its modification time: two writes a few milliseconds apart
+    can share a timestamp, and a time-keyed cache then returned the first version (seen as a doctor that
+    passed a config just changed to fail). Reading is cheap; parsing is what is saved. Returns a copy,
     so a caller that edits it and saves does not change the cache."""
     import copy
+    import hashlib
     try:
-        key = (str(path), path.stat().st_mtime_ns)
+        raw = path.read_bytes()
+        key = (str(path), hashlib.sha256(raw).hexdigest())
     except OSError:
-        key = None
+        raw, key = None, None
     if key in _YAML_CACHE:
         return copy.deepcopy(_YAML_CACHE[key])
     try:
         import yaml
-        data = yaml.safe_load(path.read_text()) or {}
+        data = yaml.safe_load(raw.decode() if raw is not None else path.read_text()) or {}
         if key:
             _YAML_CACHE[key] = data
         return copy.deepcopy(data)

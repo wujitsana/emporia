@@ -150,3 +150,16 @@ def test_doctor_survives_a_working_directory_that_was_deleted(tmp_path, capsys, 
     rep, out = _doctor(prof, monkeypatch, capsys)
     assert rep.failed, out
     assert "emporia agent refresh zed" in out
+
+
+def test_a_config_rewritten_within_the_same_timestamp_is_read_fresh(tmp_path):
+    """load_yaml cached by modification time returned the first of two writes that shared a timestamp."""
+    import os
+    inst = _inst()
+    p = tmp_path / "config.yaml"
+    p.write_text(json.dumps({"memory": {"user_profile_enabled": False}}))
+    st = p.stat()
+    assert inst.load_yaml(p)["memory"]["user_profile_enabled"] is False
+    p.write_text(json.dumps({"memory": {"user_profile_enabled": True}}))
+    os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))            # same timestamp as the first version
+    assert inst.load_yaml(p)["memory"]["user_profile_enabled"] is True
