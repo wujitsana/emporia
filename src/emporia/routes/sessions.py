@@ -813,11 +813,30 @@ SERVICE_MODULE = "emporia:service:v1"
 _PENDING_TASKS: set[asyncio.Task] = set()
 
 
-def _schedule(coro) -> None:
+def _schedule(coro) -> asyncio.Task:
     """Run `coro` in the background, holding a reference so it is not collected mid-sleep."""
     task = asyncio.get_running_loop().create_task(coro)
     _PENDING_TASKS.add(task)
     task.add_done_callback(_PENDING_TASKS.discard)
+    return task
+
+
+#: The scheduled move reminders, one per (game, player): cancelled when that player moves or the game ends.
+_REMINDERS: dict[tuple[str, str], asyncio.Task] = {}
+
+
+def _cancel_reminders(session_id: str, agent: str | None = None) -> None:
+    """Drop the reminder scheduled for `agent` in a game (every player's when `agent` is None)."""
+    for key in [k for k in _REMINDERS if k[0] == session_id and (agent is None or k[1] == agent)]:
+        _REMINDERS.pop(key).cancel()
+
+
+def _waiting_on(s: dict[str, Any], data: dict[str, Any]) -> list[str]:
+    """Whom a game waits on: a simultaneous phase's pending players (the key, even when empty: everyone has moved),
+    else the player whose turn it is."""
+    if "pending" in data and isinstance(data["pending"], (list, tuple, set)):
+        return list(data["pending"])
+    return [s["current_agent"]] if s.get("current_agent") else []
 
 
 def _first_turn_opens_at(data: dict[str, Any]) -> datetime | None:
@@ -847,10 +866,15 @@ def _remind_later(session_id: str, agents: list[str], step: int, data: dict[str,
         return
     if limit <= 0 or not agents:
         return
-    try:
-        _schedule(_remind(session_id, list(agents), step, limit * REMIND_AT, reveal))
-    except RuntimeError:          # no running loop (a synchronous caller): no reminder
-        pass
+    for agent in dict.fromkeys(agents):
+        _cancel_reminders(session_id, agent)
+        try:
+            task = _schedule(_remind(session_id, [agent], step, limit * REMIND_AT, reveal))
+        except RuntimeError:          # no running loop (a synchronous caller): no reminder
+            return
+        key = (session_id, agent)
+        _REMINDERS[key] = task
+        task.add_done_callback(lambda t, k=key: _REMINDERS.pop(k, None) if _REMINDERS.get(k) is t else None)
 
 
 async def _remind(session_id: str, agents: list[str], step: int, delay_s: float, reveal: bool) -> None:
@@ -865,7 +889,7 @@ async def _remind(session_id: str, agents: list[str], step: int, delay_s: float,
     else:
         if int(s.get("step_number") or 0) != step:
             return
-        waiting = set(data.get("pending") or ([s["current_agent"]] if s.get("current_agent") else []))
+        waiting = set(_waiting_on(s, data))
         due = [a for a in agents if a in waiting]
     for agent in due:
         await rs.broadcast_to_agent(agent, {"type": "your_turn", "session_id": session_id,
@@ -882,7 +906,7 @@ async def _tell_when_open(session_id: str, opens_at: datetime) -> None:
     data = ((s.get("state") or {}).get("data") or {})
     # Whom the game waits on: a simultaneous phase's pending players, else the one whose turn it is (bargain and
     # liar's dice say TURN_ORDER = False because a reveal is anyone's, but their offers and bids go in turn).
-    waiting = data.get("pending") or ([s["current_agent"]] if s.get("current_agent") else s.get("participants") or [])
+    waiting = _waiting_on(s, data) if ("pending" in data or s.get("current_agent")) else list(s.get("participants") or [])
     for agent in waiting:
         await rs.broadcast_to_agent(agent, {"type": "your_turn", "session_id": session_id,
                                             "module_type": s["module_type"], "step_number": 0})
@@ -930,6 +954,10 @@ async def _start(session_id: str, s: dict[str, Any], participants: list[str],
         for p in state.data.get("pending") or participants:
             await rs.broadcast_to_agent(p, {"type": "your_turn", "session_id": session_id,
                                             "module_type": s["module_type"], "step_number": 0})
+    # the first mover(s) get the same half-clock reminder as any later mover
+    first = (list(state.data.get("pending") or participants) if not module.TURN_ORDER
+             else ([state.current_agent] if state.current_agent else []))
+    _remind_later(session_id, first, 0, state.data)
 
 
 ESCROW_HEADER = "PAYMENT-ESCROW"
@@ -1737,6 +1765,7 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     await rs.broadcast_to_session(session_id, action_event)
     if rs._session_visibility(s) == "public":
         await rs.broadcast_global(action_event)
+    _cancel_reminders(session_id, req.agent_id)     # it moved: its reminder is moot
 
     settlement_record: dict[str, Any] | None = None
     last_action = {"agent_id": req.agent_id, "action_type": req.action_type,
@@ -1926,6 +1955,7 @@ async def _abandon(s: dict[str, Any], reason: str, by: str | None = None) -> lis
     session_id = s["session_id"]
     if not rs.claim_session_status(session_id, s["status"], "abandoned"):
         return None
+    _cancel_reminders(session_id)
     if by and by in (s.get("participants") or []):
         with rs.DB_LOCK, rs.get_db() as conn:
             row = conn.execute("SELECT state_json FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
@@ -1958,6 +1988,7 @@ async def _abandon(s: dict[str, Any], reason: str, by: str | None = None) -> lis
 async def _finish_session(session_id: str, s: dict[str, Any], module, outcome) -> dict[str, Any] | None:
     """Settle a session that just ended and tell everyone (P112: shared by the
     action that ended it and the sweep that ends a timed-out one)."""
+    _cancel_reminders(session_id)
     if module.USES_RAND:     # the round the result came from stays with the game, and the result is logged
         await _persist_beacon(session_id, module)
     if module.USES_RAND or ((rs.load_session(session_id) or {}).get("state") or {}).get("data", {}).get("dealt"):

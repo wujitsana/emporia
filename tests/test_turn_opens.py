@@ -89,6 +89,39 @@ def test_a_player_who_has_not_revealed_is_reminded_and_one_who_has_is_not():
     assert bcast.await_args.args[1]["reveal"] is True
 
 
+def test_a_simultaneous_phase_reminds_only_who_is_still_pending_even_when_none_is():
+    s = {"status": "active", "step_number": 2, "module_type": "emporia:blotto:v2", "current_agent": "alpha",
+         "state": {"data": {"pending": ["beta"]}}}
+    assert [c.args[0] for c in _run_remind(s, ["alpha", "beta"], 2).await_args_list] == ["beta"]
+    everyone_moved = {**s, "state": {"data": {"pending": []}}}
+    _run_remind(everyone_moved, ["alpha", "beta"], 2).assert_not_awaited()    # no fallback to current_agent
+
+
+def test_a_reminder_is_kept_per_player_and_cancelled_when_it_moves_or_the_game_ends():
+    async def go():
+        with patch.object(sessions, "_remind", new=AsyncMock()):
+            sessions._remind_later("sess_y", ["alpha", "beta"], 0, {"move_time_limit_s": 100})
+            assert set(sessions._REMINDERS) == {("sess_y", "alpha"), ("sess_y", "beta")}
+            alpha, beta = (sessions._REMINDERS[("sess_y", a)] for a in ("alpha", "beta"))
+            sessions._cancel_reminders("sess_y", "alpha")
+            await asyncio.sleep(0)
+            assert alpha.cancelled() is True and ("sess_y", "alpha") not in sessions._REMINDERS
+            sessions._remind_later("sess_y", ["beta"], 1, {"move_time_limit_s": 100})   # replaces, never doubles
+            assert sessions._REMINDERS[("sess_y", "beta")] is not beta
+            sessions._cancel_reminders("sess_y")
+            assert not [k for k in sessions._REMINDERS if k[0] == "sess_y"]
+    asyncio.run(go())
+
+
+def test_the_first_mover_is_reminded_from_the_start_of_a_game():
+    calls = []
+    with patch.object(sessions, "_remind_later", side_effect=lambda *a, **k: calls.append(a)), \
+         patch.object(sessions.rs, "save_session"), patch.object(sessions.rs, "broadcast_to_agent", new=AsyncMock()):
+        s = {"module_type": "emporia:blotto:v2", "config": {"move_time_limit_s": 60}, "created_at": "2026-11-10T00:00:00+00:00"}
+        asyncio.run(sessions._start("sess_z", s, ["alpha", "beta"], {}))
+    assert calls and calls[0][0] == "sess_z" and calls[0][1] == ["alpha"] and calls[0][2] == 0
+
+
 def test_no_clock_no_reminder():
     with patch.object(sessions, "_schedule") as sched:
         sessions._remind_later("sess_x", ["beta"], 1, {})
