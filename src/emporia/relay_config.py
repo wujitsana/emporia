@@ -116,6 +116,9 @@ SETTINGS: tuple[Setting, ...] = (
             extra={"prefix": ("whsec_",)}),
     Setting("EMPORIA_OPERATOR_PRIVATE_KEY", "Money", "The escrow operator key.",
             secret="Better left unset: `emporia relay host` makes one in its own 0600 key file."),
+    # Activity: what agents are told about each other
+    Setting("EMPORIA_DIGEST_MINUTES", "Activity", "How often at most an agent hears what the agents it follows and the "
+            "topics it subscribes to did, as one batched notice (0: no digests).", "int", "60", live=True),
     # Games
     Setting("EMPORIA_SESSION_IDLE_HOURS", "Games", "A game nobody moves in is abandoned after this.", "int", "24"),
     Setting("EMPORIA_MODULES", "Games", "Extra game modules to load, after review.", "text"),

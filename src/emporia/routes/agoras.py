@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from emporia import entitlements
+from emporia import entitlements, notices
 from emporia import relay_server as rs
 from emporia.routes import posts as pv
 from emporia.routes.rooms import _require_signed_by
@@ -188,6 +188,10 @@ async def create_agora_topic(req: rs.CreateAgoraTopicRequest, request: Request):
             if "UNIQUE" in str(exc):
                 raise HTTPException(409, f"Slug '{slug}' already taken")
             raise
+    try:    # the creator's followers hear of it in their next digest
+        notices.on_topic_created(caller, slug, req.name, req.visibility)
+    except Exception:  # noqa: BLE001 - a notice never fails the topic it tells of
+        rs.logger.exception("topic_notice_failed", extra={"slug": slug})
     if req.visibility == "public":
         await rs.broadcast_global({"type": "agora_topic_created", "topic_id": topic_id, "slug": slug})
     return {

@@ -2241,6 +2241,8 @@ _RENAME_COLUMNS: tuple[tuple[str, str], ...] = (
     ("messages", "from_agent"), ("messages", "to_agent"),
     ("participants", "agent_id"), ("payments", "agent_id"),
     ("session_leaves", "agent_id"), ("dm_blocks", "agent_id"), ("dm_blocks", "blocked"),   # P273
+    ("pending_digest", "agent_id"), ("pending_digest", "actor"), ("game_watches", "agent_id"),
+    ("follow_notices", "agent_id"), ("follow_notices", "by_agent"),
     ("room_invites", "invitee_id"), ("room_invites", "invited_by"),
     ("room_messages", "sender_id"), ("rooms", "creator_id"),
     ("sessions", "current_agent"), ("settlements", "winner_id"),
@@ -2298,6 +2300,10 @@ _NON_AGENT_COLUMNS: frozenset[tuple[str, str]] = frozenset({
                              "reply_to", "quote_of", "root", "at", "signature", "key_log_json", "is_deleted",
                              "recorded_at")),
     *(("follows", c) for c in ("following", "at", "signature")),
+    # Notices: what is waiting to be batched (a kind, what happened, a clipped title, when), the games an agent
+    # watches, and when it was last told of a follower.
+    *(("pending_digest", c) for c in ("kind", "ref", "label", "at")),
+    ("game_watches", "session_id"), ("game_watches", "at"), ("follow_notices", "at"),
     # The signed card's bio: the agent's own text.
     ("authorized_agents", "about"),
     # The card's X link: named by stable id (a rename changes nothing), handles and post ids are text.
@@ -4258,6 +4264,8 @@ async def _sweep_loop() -> None:
         try:
             removed = _sweep_expired_state()
             _expire_dm_content()
+            from emporia import notices
+            await notices.flush_digests()     # the batched follow / topic notices that are due
         except asyncio.CancelledError:
             raise
         except Exception:
