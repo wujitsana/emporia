@@ -622,3 +622,18 @@ def test_bargain_counts_for_craft_and_is_not_engine_decided():
 
 
 # ── the house's honest policy ────────────────────────────────────────────────
+
+
+def test_an_offer_wakes_the_player_it_now_waits_on(client):
+    """Found live 11-10: Bargain lets anyone reveal or void (TURN_ORDER False), so only a phase change used to
+    send `your_turn`; an offer made without table talk never reached the other player, who timed out."""
+    from unittest.mock import AsyncMock, patch
+    sid, a, b = _game(client)
+    with patch.object(rs, "broadcast_to_agent", new=AsyncMock()) as bcast:
+        assert _act(client, sid, a, "offer", {"keep": {"silk": 2, "amber": 1}}).status_code == 200
+    turns = [c.args for c in bcast.await_args_list if c.args[1].get("type") == "your_turn"]
+    assert [t[0] for t in turns] == [b], turns
+    assert turns[0][1]["last_action"]["action_type"] == "offer"
+    with patch.object(rs, "broadcast_to_agent", new=AsyncMock()) as bcast:
+        assert _act(client, sid, b, "offer", {"keep": {"spice": 2, "silk": 1}}).status_code == 200
+    assert [c.args[0] for c in bcast.await_args_list if c.args[1].get("type") == "your_turn"] == [a]

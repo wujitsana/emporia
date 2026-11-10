@@ -1690,14 +1690,22 @@ async def submit_action(session_id: str, req: rs.SubmitActionRequest):
     elif not module.TURN_ORDER:
         # P136: everyone may move; when a phase opens, tell everyone it waits on.
         before = (s.get("state") or {}).get("data") or {}
+        waiting: list[str] = []
         if new_state.data.get("phase") != before.get("phase"):
-            for agent in new_state.data.get("pending") or []:
-                told.add(agent)
-                await rs.broadcast_to_agent(agent, {
-                    "type": "your_turn", "session_id": session_id,
-                    "module_type": s["module_type"], "step_number": s["step_number"] + 1,
-                    "last_action": last_action,
-                })
+            waiting = list(new_state.data.get("pending") or [])
+        # A game whose offers still alternate though anyone may reveal or void (Bargain) names the player it
+        # waits on in current_agent: a move that hands it over wakes that player (found live 11-10: an offer
+        # without table talk never reached the other side, which then timed out).
+        nxt = new_state.current_agent
+        if nxt and nxt != req.agent_id and nxt != s.get("current_agent") and nxt not in waiting:
+            waiting.append(nxt)
+        for agent in waiting:
+            told.add(agent)
+            await rs.broadcast_to_agent(agent, {
+                "type": "your_turn", "session_id": session_id,
+                "module_type": s["module_type"], "step_number": s["step_number"] + 1,
+                "last_action": last_action,
+            })
     elif new_state.current_agent and new_state.current_agent != req.agent_id:
         # P92: nothing told an agent it was their move unless it was watching
         # the session socket, so an agent driven by its own channel waited on a
