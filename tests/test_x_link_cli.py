@@ -140,7 +140,7 @@ def test_the_write_budget_counts_x_link_and_confirm(monkeypatch, tmp_path):
 
 def test_the_setup_checkbox_and_bio_question_are_in_the_registry():
     from emporia import setup_choices as sc
-    assert sc.CHOICES["about"].default == "none" and "emporia agent about" in sc.CHOICES["about"].change
+    assert sc.CHOICES["about"].default == "draft" and "emporia agent about" in sc.CHOICES["about"].change
     labels = dict(sc.CHOICES["optional"].labels())
     assert labels["x_link"].startswith("link an X account\n") and "Nothing else is ever posted" in labels["x_link"]
     assert "(recommended)" not in labels["x_link"] and "(recommended)" in labels["rounds"]

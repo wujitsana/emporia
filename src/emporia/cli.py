@@ -3629,6 +3629,14 @@ def _setup_about(profile: Path, name: str, about: str | None, existing: bool) ->
         text = ""
         if picked == "suggestion":
             text = suggestion
+        elif picked == "draft":
+            from emporia import bio_draft
+            notes = prompt("A few words on what it does (they go to its own model, nowhere else)", "").strip()
+            if notes:
+                soul = ask("Use its SOUL.md for tone? (it is private: the model reads it, the bio never quotes it)",
+                           False)
+                text = bio_draft.review(profile, notes, soul, read=lambda q: prompt(q, ""),
+                                        edit=bio_draft.prefill_input) or ""
         elif picked == "write":
             while True:
                 text = prompt(f"Bio (at most {W.ABOUT_MAX} characters, plain text, no link)", "").strip()
@@ -8984,12 +8992,17 @@ def build_parser() -> argparse.ArgumentParser:
                                                "intact, as its last line")
     ag2.add_argument("--bio", action="store_true", help="x-claim: print only the claim line, to put in the X bio")
     ag2.add_argument("--post", default="", help="x-link: the post's number, or bio")
+    ag2.add_argument("--draft", default=None, metavar="NOTES",
+                     help="about: a few words; the agent's own model drafts the bio (one model turn), you keep, edit "
+                          "or redraft it")
+    ag2.add_argument("--use-soul", action="store_true", dest="use_soul",
+                     help="about --draft: let the model read its SOUL.md for tone (private; the bio never quotes it)")
     ag2.add_argument("--compromised-since", default="",
                      help="recover: when the old key stopped being only yours (ISO time; default now)")
     from emporia import agent_init as _agent_init     # init / mcp-config: an agent that Hermes does not run
     _agent_init.add_arguments(ag2, skip=("--agent",))
     from emporia import agent_card_cli as _card
-    ag2.set_defaults(func=lambda a: _card.about(a.url_or_name, a.name) if a.action == "about" else
+    ag2.set_defaults(func=lambda a: _card.about(a.url_or_name, a.name, a.draft, a.use_soul) if a.action == "about" else
                      _card.x_claim(a.url_or_name, a.handle, a.style, a.text, a.bio) if a.action == "x-claim" else
                      _card.x_link(a.url_or_name, a.handle, a.post) if a.action == "x-link" else
                      _agent_init.run(_agent_init.namespace_from_cli(a)) if a.action == "init" else

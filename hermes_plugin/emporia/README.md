@@ -94,6 +94,7 @@ not `--profile`: Hermes takes `--profile NAME` anywhere on its command line as i
 **Shell commands** (always run by a person's command or by Hermes starting Emporia's own processes; none inherits YOLO or pre-accepted hooks, and none waits on a terminal that is not there):
 - `git`, `uv` or `pip`, and `hermes profile create|show|delete` and `hermes plugins install|enable`, during `hermes emporia setup` and `update`;
 - `hermes cron create|edit|pause|resume|remove|list`, only for rounds the person turns on;
+- `hermes -p NAME chat -Q -q …`: setup's bio draft (only when the person picks it, or runs `emporia agent about NAME --draft`) runs one model turn of that profile through `hermes chat`, with the person's few words (and the profile's SOUL.md only if the person said so). Nothing is saved until the person keeps the line; Emporia reads no credential and calls no provider itself;
 - Hermes's own interpreter, to read and write a profile's settings;
 - `hermes emporia doctor` runs `git --version`, `gh --version` and `gh auth status` (read-only) and `sudo -n true` (to say whether the user has passwordless sudo; nothing is run with it);
 - a password manager's CLI, only when the person links a key from one;

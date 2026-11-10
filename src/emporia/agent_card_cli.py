@@ -87,13 +87,47 @@ def _result(r: subprocess.CompletedProcess) -> dict[str, Any]:
         return {"success": False, "error": (r.stderr or r.stdout).strip()[-300:] or "no answer"}
 
 
-def about(name: str, text: str | None) -> int:
-    """`emporia agent about NAME ["text"]`."""
+def _draft_bio(t: _Target, name: str, notes: str, use_soul: bool) -> str | None:
+    """`about NAME --draft "notes"`: the agent's own model drafts a line; in a person's terminal they keep, edit,
+    redraft or drop it. Returns the text to save, or None when nothing is to be saved (also: no terminal, where
+    the draft is only printed, with the command that would save it)."""
+    from emporia import bio_draft
+    if t.profile is None:
+        print("agent about --draft: only a Hermes agent profile has a model to draft with here; write the bio "
+              f"yourself: emporia agent about {name} \"text\"")
+        return None
+    if why := t.unattended():
+        print(f"agent about: a {why} turn is running for {name}: the bio is a person's to change. Run it "
+              "yourself, when no turn is live.")
+        return None
+    cli = _cli()
+    if not cli._persons_terminal():
+        text, why = bio_draft.draft_with_reason(t.profile, notes, use_soul)
+        if not text:
+            print(f"agent about --draft: {why}.")
+        else:
+            print(f"  Draft: {text!r}  (not saved: there is no terminal to keep it from)")
+            print(f"  To keep it: emporia agent about {name} {json.dumps(text)}")
+        return None
+    return bio_draft.review(t.profile, notes, use_soul, read=lambda q: cli.prompt(q, ""),
+                            edit=bio_draft.prefill_input)
+
+
+def about(name: str, text: str | None, draft_notes: str | None = None, use_soul: bool = False) -> int:
+    """`emporia agent about NAME ["text"]` / `emporia agent about NAME --draft "notes" [--use-soul]`."""
     t = _Target(name)
     if not t.found:
         print(f"agent about: no agent {name!r} here (a Hermes agent profile, or one made with `emporia agent init`)")
         return 1
     current = (t.settings().get("EMPORIA_ABOUT") or "").strip()
+    if draft_notes is not None:
+        if text is not None:
+            print("agent about: give the bio's text or --draft, not both")
+            return 1
+        text = _draft_bio(t, name, draft_notes, use_soul)
+        if not text:
+            print(f"  {name}: nothing saved.")
+            return 0
     if text is None:
         from emporia import identity_card
         print(f"  {name}: bio {current!r}" if current else f"  {name}: no bio yet")
