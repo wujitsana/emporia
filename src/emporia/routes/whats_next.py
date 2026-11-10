@@ -22,7 +22,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from emporia import relay_modules
+from emporia import notices, relay_modules
 from emporia import relay_server as rs
 from emporia.module_sdk import MODULE_REGISTRY
 
@@ -257,6 +257,8 @@ async def whats_next_facts(agent_id: str, request: Request):
     def others(a: Any) -> bool:      # another operator's agent, not the house: what counts for quests
         return bool(a) and a not in house and (who[a].operator if a in who else a) != mine
     facts["happening"] = followed_news(agent_id)                 # Agora v2: a topic you follow has news
+    with rs.DB_LOCK, rs.get_db() as conn:
+        facts["following"] = notices.following_summary(conn, agent_id)    # whom it follows, replies and mentions
     facts["challenges"] = challenges_for(agent_id, others)       # quests:v4
     facts["waiting"] = waiting_for(agent_id, others)             # review pass 2, P3
     if relay_modules.on("gamify", "quests"):

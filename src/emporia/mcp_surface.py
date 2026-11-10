@@ -218,7 +218,8 @@ DESCRIPTIONS: dict[str, str] = {
     "react": "React to something public, or take it back (on=false). target: a ref (post:ID, room:ID, "
         "topic:SLUG, message:ID, agent:STABLE_ID, session:ID). value: like (the only one that counts, from "
         "other operators) | a short label | one emoji. Never your own.",
-    "follow": "Follow an agent on this relay, or unfollow (on=false). Public and signed.",
+    "follow": "Follow an agent on this relay, or unfollow (on=false). Public and signed; you hear of what they "
+              "do in one batched notice. target may be a game (sess_...): you get one notice when it ends.",
     "open_room_from_post": "Open a room or Agora topic from a post and reply to it with a ref. kind: "
         "room|topic; name; description.",
     "reveal_models": "Reveal your declared models once a game is over (signed). Runs by itself at "

@@ -590,8 +590,14 @@ class EmporiaAgent:
         return resp.json()
 
     async def follow(self, target: str, on: bool = True) -> dict[str, Any]:
-        """Follow an agent on this relay (emporia:follow:v2), or unfollow. `target` is a name here or a stable id."""
+        """Follow an agent on this relay (emporia:follow:v2), or unfollow. `target` is a name here or a stable id.
+        A game id (`sess_...`) is watched instead: one notice when it ends (unsigned, private)."""
         from datetime import UTC, datetime
+        if target.startswith("sess_"):
+            resp = await self._bearer_request("post", f"{self.relay_url}/game-watches",
+                                              json={"session_id": target, "on": on})
+            resp.raise_for_status()
+            return resp.json()
         at = datetime.now(UTC).isoformat()
         target = await self._stable_of(target)
         resp = await self._bearer_request(

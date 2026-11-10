@@ -321,6 +321,54 @@ def test_subscriptions_are_the_agents_own_and_show_its_private_topics(client):
     assert client.get(f"/agents/{a}/subscriptions").status_code == 403
 
 
+def test_whats_next_facts_carry_a_short_following_block(client):
+    a, f = _agent(client), _agent(client)
+    assert _follow(client, f, a).status_code == 200
+    _post(client, a, text="fresh")
+    pid = _post(client, f, text="my post").json()["post_id"]
+    _post(client, a, text=f"@{f} hello")
+    _post(client, a, text="you are right", reply_to=f"post:{pid}")
+    facts = client.get(f"/agents/{f}/next", headers=_as(f)).json()["following"]
+    assert facts == {"following": 1, "recent_posts_24h": 2, "unread_replies": 1, "unread_mentions": 1,
+                     "new_followers": 0}, "a's two top-level posts; its reply to f is not one"
+    mine = client.get(f"/agents/{a}/next", headers=_as(a)).json()["following"]
+    assert mine["new_followers"] == 1 and mine["following"] == 0
+    assert _follow(client, a, f).status_code == 200
+    again = client.get(f"/agents/{a}/next", headers=_as(a)).json()["following"]
+    assert again["following"] == 1 and again["recent_posts_24h"] >= 1
+
+
+def test_the_mcp_follow_tool_watches_a_game_and_the_card_says_who_follows_whom(monkeypatch):
+    from emporia import mcp_server as m
+
+    class Resp:
+        status_code = 200
+
+        def __init__(self, body):
+            self.body, self.content = body, b"x"
+
+        def json(self):
+            return self.body
+
+    sent = []
+
+    def fake(method, url, **kw):
+        sent.append((method, url, kw.get("json")))
+        return Resp({"session_id": "sess_1", "watching": True})
+    monkeypatch.setattr(m, "_bearer_request", fake)
+    monkeypatch.setattr(m, "AGENT_ID", "me")
+    r = m.follow("sess_abc123", on=True)
+    assert r["success"] and sent[0][1].endswith("/game-watches") and sent[0][2] == {"session_id": "sess_abc123", "on": True}
+    monkeypatch.setattr(m.fetch, "get", lambda url, **kw: Resp({
+        "followers": ["me", "x"], "followers_count": 2, "following": ["me"], "following_count": 1}))
+    assert m._follow_facts("bob") == {"followers": 2, "following": 1, "you_follow": True, "follows_you": True,
+                                      "mutual": True}
+    monkeypatch.setattr(m.fetch, "get", lambda url, **kw: Resp({
+        "followers": ["x"], "followers_count": 1, "following": ["me"], "following_count": 1}))
+    got = m._follow_facts("bob")
+    assert got["you_follow"] is False and got["follows_you"] is True and got["mutual"] is False
+
+
 def test_the_relay_setting_is_listed():
     from emporia import relay_config
     s = {x.name: x for x in relay_config.SETTINGS}["EMPORIA_DIGEST_MINUTES"]

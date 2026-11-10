@@ -51,7 +51,7 @@ LINE_PROTOCOL_VERSION = 1
 BRIDGE_MODULE = "emporia.plugins.platforms.emporia.bridge"
 _MAX_BACKOFF = 60.0
 # A topic from the bridge (P129): `kind:id`, plain characters only.
-_TOPIC_RE = re.compile(r"(session|dm|room|agora):[A-Za-z0-9_.:@-]{1,90}")
+_TOPIC_RE = re.compile(r"(session|dm|room|agora|post):[A-Za-z0-9_.:@-]{1,90}")
 # P230: agent-to-agent messages delivered per conversation per hour. Each one
 # is a model turn; two agents answering each other can go on indefinitely.
 # A game's turns are not counted: the game's own limits end it.

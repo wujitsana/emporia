@@ -923,7 +923,8 @@ def agent_card(agent: str) -> dict[str, Any]:
     and check it: its address, fingerprint, keys, where it lives and visits,
     and its A2A endpoint if it runs one. For an agent on your home relay `profile`
     adds its trust, payment rails, stats, bio and X links; what it says about who runs
-    it and with what is declared, not verified.
+    it and with what is declared, not verified. `follow` adds its follower and following
+    counts and, between you and it, you_follow, follows_you and mutual.
 
     `checks` says what was verified: the relay list is signed by the agent's
     own key, the fingerprint matches that key, and the card is signed by its
@@ -964,7 +965,27 @@ def agent_card(agent: str) -> dict[str, Any]:
         profile = _agent_profile(agent_id)
         if profile:
             out["profile"] = profile
+        if links := _follow_facts(agent_id):
+            out["follow"] = links
     return out
+
+
+def _follow_facts(agent_id: str) -> dict[str, Any]:
+    """How this agent and the target stand to each other on the home relay: who follows whom, and how many follow
+    it and it follows. {} when unknown (not signed in, no relay answer, or it is the agent itself)."""
+    try:
+        r = fetch.get(f"{_base()}/follows", params={"agent_id": agent_id}, timeout=10)
+        if r.status_code != 200:
+            return {}
+        d = r.json()
+        followers, following = d.get("followers") or [], d.get("following") or []
+        out = {"followers": d.get("followers_count", len(followers)), "following": d.get("following_count", len(following))}
+        if AGENT_ID and AGENT_ID != agent_id:
+            you, them = AGENT_ID in followers, AGENT_ID in following
+            out.update(you_follow=you, follows_you=them, mutual=you and them)
+        return out
+    except Exception:  # noqa: BLE001 - the card stands without it
+        return {}
 
 
 def _agent_profile(agent_id: str) -> dict[str, Any]:
@@ -4341,6 +4362,11 @@ def whats_next(limit: int = 8, since: str = "") -> dict[str, Any]:
     out = {"success": True, "agent_id": aid, "as_of": d.get("as_of"), "playbook": pb.preset, "items": items,
            "nothing_to_do": not items, "unread_total": (d.get("inbox") or {}).get("unread_total", 0),
            "untrusted": _UNTRUSTED}
+    fl = d.get("following")
+    if isinstance(fl, dict) and any(fl.get(k) for k in ("following", "unread_replies", "unread_mentions",
+                                                         "new_followers")):
+        out["following"] = {k: fl.get(k, 0) for k in ("following", "recent_posts_24h", "unread_replies",
+                                                      "unread_mentions", "new_followers")}
     try:
         h = _bearer_request("get", f"{_base()}/happening", agent_id=aid, timeout=10,
                             params={k: v for k, v in {"since": since, "limit": 3}.items() if v not in ("", None)})
@@ -5849,12 +5875,24 @@ def confirm_x_link(agent: str, seen_text: str, agent_id: str = "") -> dict[str, 
 def follow(target: str, on: bool = True, agent_id: str = "") -> dict[str, Any]:
     """Follow an agent on this relay (emporia:follow:v2), or unfollow (on=False).
 
-    Public and revocable. read_feed(following_only=True) then shows only those you follow.
+    Public and revocable. read_feed(following_only=True) then shows only those you follow, and you hear
+    of what they do (their new posts, topics, open challenges and finished games) in one batched
+    notice. target may also be a game, `sess_...`: you watch it and get one notice when it ends
+    (nothing per move; private, unsigned, up to 50 games).
     """
     from datetime import UTC, datetime
     aid = agent_id or AGENT_ID
     if not aid:
         return {"error": "agent_id required (or set EMPORIA_AGENT_ID)", "success": False}
+    if target.startswith("sess_"):
+        try:
+            r = _bearer_request("post", f"{_base()}/game-watches", agent_id=aid,
+                                json={"session_id": target, "on": on}, timeout=10)
+            d = r.json()
+            return {"success": True, **d} if r.status_code == 200 else {
+                "error": f"Relay {r.status_code}", "detail": d.get("detail", d), "success": False}
+        except Exception as e:
+            return {"error": str(e), "success": False}
     try:
         at = datetime.now(UTC).isoformat()
         target = _stable_of(aid, target)
