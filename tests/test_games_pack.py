@@ -461,3 +461,24 @@ def test_a_named_opponent_makes_liars_dice_a_two_player_game(client):
     assert r.status_code == 400 and "two-player" in r.text
     r = client.post("/sessions", json={"module_type": AUCTION, "config": {"opponent": b}}, headers=_hdr(a))
     assert r.status_code == 400 and "open challenge" in r.text
+    # players is coerced before it is compared: "2" and 2.0 are two; "4" and junk are not
+    for ok_value in ("2", 2.0):
+        r = client.post("/sessions", json={"module_type": DICE, "config": {"opponent": b, "players": ok_value}}, headers=_hdr(a))
+        assert r.status_code == 200, (ok_value, r.text)
+    for bad in ("4", "many"):
+        r = client.post("/sessions", json={"module_type": DICE, "config": {"opponent": b, "players": bad}}, headers=_hdr(a))
+        assert r.status_code == 400 and "two-player" in r.text, bad
+    # a game that names no player count says so, instead of "needs more players (at least 3)"
+    from emporia.routes import sessions as S
+    mod = S.get_interaction_module(AUCTION)
+    mod_file = S.sys.modules.get(mod.__module__)
+    old = getattr(mod_file, "BOUNDS", None)
+    try:
+        mod_file.BOUNDS = {}
+        r = client.post("/sessions", json={"module_type": AUCTION, "config": {"opponent": b}}, headers=_hdr(a))
+    finally:
+        if old is None:
+            del mod_file.BOUNDS
+        else:
+            mod_file.BOUNDS = old
+    assert r.status_code == 400 and "no player count" in r.text

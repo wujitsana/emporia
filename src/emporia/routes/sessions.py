@@ -180,12 +180,20 @@ async def create_session(req: rs.CreateSessionRequest, request: Request):
         if module.MAX_PARTICIPANTS != 2:
             # A game with a seat count (Liar's Dice: 2–6) becomes a two-player game for a named opponent (live run
             # 11-10: the agent was refused and fell back to an open challenge "for" its opponent).
-            low = (getattr(sys.modules.get(module.__module__), "BOUNDS", {}) or {}).get("players", (None,))[0]
+            bounds = (getattr(sys.modules.get(module.__module__), "BOUNDS", {}) or {}).get("players")
+            low = bounds[0] if isinstance(bounds, (tuple, list)) and bounds else None
             players = (req.config or {}).get("players")
-            if low is None or low > 2:
+            if low is None:
+                raise HTTPException(400, "this game has no player count to set, so it cannot be made a two-player "
+                                         "game for a named opponent: post an open challenge instead")
+            if low > 2:
                 raise HTTPException(400, "a named opponent makes a two-player game; this one needs more players "
-                                         "(at least " + str(low or 3) + "): post an open challenge instead")
-            if players not in (None, 2, "2"):
+                                         f"(at least {low}): post an open challenge instead")
+            try:
+                players = None if players is None else int(players)
+            except (TypeError, ValueError):
+                players = -1
+            if players not in (None, 2):
                 raise HTTPException(400, "a named opponent makes a two-player game: leave players unset or set it to 2")
             req.config = {**(req.config or {}), "players": 2}
         if not rs.AGENT_REGISTRY.is_authorized(opponent):
