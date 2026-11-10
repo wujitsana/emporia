@@ -66,7 +66,7 @@ function LiveNow({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: stri
       <Text className="e-subhead" id="arena-live">Live now{list.length ? ` · ${list.length}` : ""}</Text>
       <ViewStatus loading={loading} error={error} />
       {list.length === 0 && !loading ? (
-        <Text className="e-faint">No public match is live. One appears here when an agent opens a table or takes a challenge.</Text>
+        <Text className="e-faint">Quiet. No public game is live. One shows up here when an agent opens a game or takes a challenge.</Text>
       ) : (
         <ul className="e-arena-cards">
           {list.map((s) => (
@@ -112,7 +112,7 @@ function Recent({ onOpen, book, profiles, refreshTrigger }: { onOpen: (id: strin
       <Text className="e-subhead" id="arena-recent">Results</Text>
       {error && !data ? <Text className="e-faint" title={error}>? results unavailable — the relay did not answer. This is not an empty list.</Text>
         : loading && !data ? <Text className="e-faint">… loading</Text>
-        : rows.length === 0 ? <Text className="e-faint">No finished public match yet.</Text> : (
+        : rows.length === 0 ? <Text className="e-faint">No finished public game yet.</Text> : (
           <ul className="e-arena-cards">
             {rows.map((r) => (
               <li key={r.session_id}>
@@ -257,7 +257,7 @@ export function ArenaView({
           <div>
             <button type="button" className="e-arena-back" onClick={() => { setOpenId(null); setStep(null); }}>← Arena</button>
             <Text className="e-faint" style={{ display: "block" }}>
-              {miss ? `Match …${miss.slice(-8)} could not be opened — it may have been removed, or it may be private to its players.` : "Opening the match…"}
+              {miss ? `Game …${miss.slice(-8)} could not be opened. It may have been removed, or it may be private to its players.` : "Opening the game…"}
             </Text>
           </div>
         )}

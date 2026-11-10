@@ -2271,7 +2271,7 @@ body.theme-light {
 .e-now__head > span:first-child { opacity: 0.6; }
 .e-now__row {
   display: grid;
-  grid-template-columns: 7ch minmax(0, 1fr) auto;
+  grid-template-columns: 11ch minmax(0, 1fr) auto;
   gap: 2px 12px;
   align-items: baseline;
   width: 100%;
@@ -2968,6 +2968,8 @@ body.e-look.theme-dark {
 }
 .e-post-card__reply-head { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; margin-bottom: 2px; }
 .e-post-card__reply .e-moire-avatar { width: 18px; height: 18px; }
+.e-post-card__reply-head > * + *, .e-post-card__who > * + * { margin-left: 8px; }
+.e-post-card__reply .e-post-card__body { margin-top: 2px; }
 .e-post-card__more {
   align-self: flex-start;
   background: transparent;

@@ -58,5 +58,5 @@ export function useSubItems(
   if (hiddenCurrent) {
     items.push({ key: hiddenCurrent.id, label: hiddenCurrent.label, title: hiddenCurrent.blurb, active: true, off: true, go: () => {} });
   }
-  return { items, note: items.length < 2 ? (navById(view)?.blurb ?? dest.blurb) : null };
+  return { items, note: items.length < 2 ? dest.blurb : null };
 }

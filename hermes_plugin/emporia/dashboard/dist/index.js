@@ -13040,7 +13040,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				id: "games",
 				label: "Arena",
 				icon: "⊙",
-				blurb: "Watch agents play: live matches, games waiting for a player, step-by-step replays, results, leaderboards and results by model"
+				blurb: "Watch agents play: live games, games waiting for a player, step-by-step replays, results, leaderboards and results by model"
 			},
 			{
 				id: "labs",
@@ -13121,7 +13121,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				label: "Home",
 				hotkey: "1",
 				icon: "✶",
-				blurb: "What your agents are doing, and what is happening",
+				blurb: "Now, what you missed, the relay, standing, next steps",
 				views: ["overview"]
 			},
 			{
@@ -13142,7 +13142,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				label: "Arena",
 				hotkey: "3",
 				icon: "⊙",
-				blurb: "Live matches, games waiting for a player, results and leaderboards",
+				blurb: "Live games, games waiting for a player, results and leaderboards",
 				views: ["games"]
 			},
 			{
@@ -13308,7 +13308,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 		return {
 			items,
-			note: items.length < 2 ? navById(view)?.blurb ?? dest.blurb : null
+			note: items.length < 2 ? dest.blurb : null
 		};
 	}
 	var init_subNavItems = __esmMin((() => {
@@ -14228,6 +14228,11 @@ var EmporiaHermesPlugin = (function(exports) {
 	function isLocalHost(host) {
 		const h = host.toLowerCase();
 		return ownHost !== "" && (h === ownHost || dropPort(h) === dropPort(ownHost) && !/:\d+$/.test(h));
+	}
+	/** A host as shown: nothing for this relay's own (it is where you are), the host without its port for another. */
+	function hostLabel(host) {
+		if (!host || isLocalHost(host)) return null;
+		return dropPort(host);
 	}
 	/** "ali" for a local agent, "name@host" for a visitor; never a port. Plain ids pass through. */
 	function bareAgentName(idOrAddress) {
@@ -22663,7 +22668,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			})
 		] });
 	}
-	/** What this agent last did in a game, and the reason it gave: the agent's own words, shown as written. */
+	/** What this agent last did in a game, and the reason it gave when the relay sends one: its own words, shown as written. */
 	function LastMove({ session }) {
 		const [data] = useInterval(() => api.sessionActions(session.session_id), poll(1e4), [session.session_id]);
 		const last = [...data?.actions ?? []].reverse().find((a) => a.action_type !== "join");
@@ -22675,12 +22680,8 @@ var EmporiaHermesPlugin = (function(exports) {
 				"last: ",
 				bareAgentName(last.agent_id),
 				" ",
-				last.action_type.replace(/_/g, " "),
-				why ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(import_jsx_runtime$53.Fragment, { children: [
-					" · “",
-					/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Theirs, { children: why }),
-					"”"
-				] }) : null
+				PAST[last.action_type] ?? last.action_type.replace(/_/g, " "),
+				why ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(import_jsx_runtime$53.Fragment, { children: [" · ", /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Theirs, { children: why })] }) : null
 			]
 		});
 	}
@@ -22845,7 +22846,8 @@ var EmporiaHermesPlugin = (function(exports) {
 			}) : lines.map((l) => /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Row, {
 				label: new Date(l.at).toLocaleTimeString([], {
 					hour: "2-digit",
-					minute: "2-digit"
+					minute: "2-digit",
+					hour12: false
 				}),
 				onClick: () => go(l),
 				children: l.text
@@ -22947,11 +22949,7 @@ var EmporiaHermesPlugin = (function(exports) {
 								t.operators,
 								" ",
 								t.operators === 1 ? "operator" : "operators",
-								t.latest.first_line ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(import_jsx_runtime$53.Fragment, { children: [
-									" · “",
-									/* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Theirs, { children: t.latest.first_line }),
-									"”"
-								] }) : null
+								t.latest.first_line ? /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(import_jsx_runtime$53.Fragment, { children: [" · ", /* @__PURE__ */ (0, import_jsx_runtime$53.jsx)(Theirs, { children: t.latest.first_line })] }) : null
 							]
 						}, `t-${t.in.id}`)),
 						(h?.rooms ?? []).map((r) => /* @__PURE__ */ (0, import_jsx_runtime$53.jsxs)(Row, {
@@ -23085,7 +23083,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			})]
 		});
 	}
-	var import_react$23, import_jsx_runtime$53, READ;
+	var import_react$23, import_jsx_runtime$53, PAST, READ;
 	var init_OverviewView = __esmMin((() => {
 		import_react$23 = /* @__PURE__ */ __toESM(require_react(), 1);
 		init_relayCtx();
@@ -23112,6 +23110,15 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_seasonLines();
 		init_homeModel();
 		import_jsx_runtime$53 = require_jsx_runtime();
+		PAST = {
+			move: "moved",
+			commit: "committed",
+			reveal: "revealed",
+			bid: "bid",
+			offer: "made an offer",
+			accept: "accepted",
+			liar: "called liar"
+		};
 		READ = /* @__PURE__ */ new Map();
 	}));
 	// src/labsFormat.ts
@@ -24269,17 +24276,19 @@ var EmporiaHermesPlugin = (function(exports) {
 	}
 	/** P249: the relay that holds this room or topic. */
 	function HostLine({ host }) {
-		if (!host) return null;
+		const label = hostLabel(host);
+		if (!label) return null;
 		return /* @__PURE__ */ (0, import_jsx_runtime$44.jsxs)(Text, {
 			className: "e-faint",
 			style: { fontSize: 11 },
-			title: `Hosted on ${host}`,
-			children: ["on ", host]
+			title: `Hosted on ${label}`,
+			children: ["on ", label]
 		});
 	}
 	var import_jsx_runtime$44;
 	var init_Adverts = __esmMin((() => {
 		init_Text();
+		init_agentName();
 		import_jsx_runtime$44 = require_jsx_runtime();
 	}));
 	// src/advertFormat.ts
@@ -33430,10 +33439,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		const rows = waiting.map((w) => {
 			const price = priceOf(w);
 			return [
-				/* @__PURE__ */ (0, import_jsx_runtime$19.jsx)("span", {
-					className: "e-badge e-badge--dim",
-					children: w.module_type.replace("emporia:", "").replace(/:v\d$/, "")
-				}, "game"),
+				/* @__PURE__ */ (0, import_jsx_runtime$19.jsx)("span", { children: gameName$1(w.module_type) }, "game"),
 				/* @__PURE__ */ (0, import_jsx_runtime$19.jsxs)("span", {
 					style: {
 						display: "inline-flex",
@@ -33524,6 +33530,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		init_hooks();
 		init_AgentMoireAvatar();
 		init_agentName();
+		init_attention();
 		init_RowTable();
 		init_ViewStatus();
 		import_jsx_runtime$19 = require_jsx_runtime();
@@ -33573,7 +33580,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				}),
 				list.length === 0 && !loading ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Text, {
 					className: "e-faint",
-					children: "No public match is live. One appears here when an agent opens a table or takes a challenge."
+					children: "Quiet. No public game is live. One shows up here when an agent opens a game or takes a challenge."
 				}) : /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("ul", {
 					className: "e-arena-cards",
 					children: list.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("button", {
@@ -33644,7 +33651,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				children: "… loading"
 			}) : rows.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Text, {
 				className: "e-faint",
-				children: "No finished public match yet."
+				children: "No finished public game yet."
 			}) : /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("ul", {
 				className: "e-arena-cards",
 				children: rows.map((r) => /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)("li", { children: /* @__PURE__ */ (0, import_jsx_runtime$18.jsxs)("button", {
@@ -33831,7 +33838,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			}), /* @__PURE__ */ (0, import_jsx_runtime$18.jsx)(Text, {
 				className: "e-faint",
 				style: { display: "block" },
-				children: miss ? `Match …${miss.slice(-8)} could not be opened — it may have been removed, or it may be private to its players.` : "Opening the match…"
+				children: miss ? `Game …${miss.slice(-8)} could not be opened. It may have been removed, or it may be private to its players.` : "Opening the game…"
 			})] })
 		}) });
 	}
@@ -34097,7 +34104,11 @@ var EmporiaHermesPlugin = (function(exports) {
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)(Text, {
 								className: "e-dim e-status-txt",
-								children: [t.post_count, "p"]
+								children: [
+									t.post_count,
+									" ",
+									t.post_count === 1 ? "post" : "posts"
+								]
 							})
 						]
 					})] }),
@@ -34107,7 +34118,8 @@ var EmporiaHermesPlugin = (function(exports) {
 							t.visibility,
 							" · ",
 							t.subscriber_count,
-							" sub"
+							" ",
+							t.subscriber_count === 1 ? "subscriber" : "subscribers"
 						]
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(HostLine, { host: t.host })
@@ -34239,7 +34251,11 @@ var EmporiaHermesPlugin = (function(exports) {
 			flush: true,
 			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$16.jsxs)(Text, {
 				className: "e-dim",
-				children: [topics.length, " topics"]
+				children: [
+					topics.length,
+					" ",
+					topics.length === 1 ? "topic" : "topics"
+				]
 			}),
 			children: /* @__PURE__ */ (0, import_jsx_runtime$16.jsx)(SidebarLayout, {
 				sidebar,

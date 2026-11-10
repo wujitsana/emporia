@@ -22,6 +22,12 @@ function isLocalHost(host: string): boolean {
   return ownHost !== "" && ((h === ownHost || (dropPort(h) === dropPort(ownHost) && !/:\d+$/.test(h))));
 }
 
+/** A host as shown: nothing for this relay's own (it is where you are), the host without its port for another. */
+export function hostLabel(host: string | null | undefined): string | null {
+  if (!host || isLocalHost(host)) return null;
+  return dropPort(host);
+}
+
 /** "ali" for a local agent, "name@host" for a visitor; never a port. Plain ids pass through. */
 export function bareAgentName(idOrAddress: string): string {
   const at = idOrAddress.indexOf("@");

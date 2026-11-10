@@ -108,7 +108,11 @@ export function OverviewView({
   );
 }
 
-/** What this agent last did in a game, and the reason it gave: the agent's own words, shown as written. */
+const PAST: Record<string, string> = {
+  move: "moved", commit: "committed", reveal: "revealed", bid: "bid", offer: "made an offer", accept: "accepted", liar: "called liar",
+};
+
+/** What this agent last did in a game, and the reason it gave when the relay sends one: its own words, shown as written. */
 function LastMove({ session }: { session: Session }) {
   const [data] = useInterval(() => api.sessionActions(session.session_id), poll(10_000), [session.session_id]);
   const last = [...(data?.actions ?? [])].reverse().find((a) => a.action_type !== "join");
@@ -116,8 +120,8 @@ function LastMove({ session }: { session: Session }) {
   const why = typeof last.payload?.rationale === "string" ? last.payload.rationale : "";
   return (
     <span className="e-now__sub">
-      last: {bareAgentName(last.agent_id)} {last.action_type.replace(/_/g, " ")}
-      {why ? <> · “<Theirs>{why}</Theirs>”</> : null}
+      last: {bareAgentName(last.agent_id)} {PAST[last.action_type] ?? last.action_type.replace(/_/g, " ")}
+      {why ? <> · <Theirs>{why}</Theirs></> : null}
     </span>
   );
 }
@@ -222,7 +226,7 @@ function SinceBlock({ viewer, navigate }: { viewer: string; navigate: Navigate }
       {lines.length === 0 ? (
         <Quiet label="quiet">Nothing new for {bareAgentName(viewer)} since you last looked.</Quiet>
       ) : lines.map((l) => (
-        <Row key={l.id} label={new Date(l.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} onClick={() => go(l)}>
+        <Row key={l.id} label={new Date(l.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })} onClick={() => go(l)}>
           {l.text}
         </Row>
       ))}
@@ -285,7 +289,7 @@ function OnRelayNow({ navigate, viewer }: { navigate: Navigate; viewer: string |
           {(h?.topics ?? []).map((t) => (
             <Row key={`t-${t.in.id}`} label="topic" onClick={() => navigate("agora")}>
               <Theirs>{t.in.name}</Theirs> · {t.new_posts} new from {t.operators} {t.operators === 1 ? "operator" : "operators"}
-              {t.latest.first_line ? <> · “<Theirs>{t.latest.first_line}</Theirs>”</> : null}
+              {t.latest.first_line ? <> · <Theirs>{t.latest.first_line}</Theirs></> : null}
             </Row>
           ))}
           {(h?.rooms ?? []).map((r) => (

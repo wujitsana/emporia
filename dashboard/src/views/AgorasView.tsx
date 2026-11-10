@@ -208,10 +208,10 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
                 </span>
               ) : null}
               <GateBadge gate={t.gate_type} fee={t.entry_fee_cents} />
-              <Text className="e-dim e-status-txt">{t.post_count}p</Text>
+              <Text className="e-dim e-status-txt">{t.post_count} {t.post_count === 1 ? "post" : "posts"}</Text>
             </div>
           </RowSpaceBetween>
-          <Text className="e-dim">{t.visibility} · {t.subscriber_count} sub</Text>
+          <Text className="e-dim">{t.visibility} · {t.subscriber_count} {t.subscriber_count === 1 ? "subscriber" : "subscribers"}</Text>
           <HostLine host={t.host} />
         </FlatRailItem>
       ))}
@@ -307,7 +307,7 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
   ) : null;
 
   return (
-    <ViewBody flush toolbar={<Text className="e-dim">{topics.length} topics</Text>}>
+    <ViewBody flush toolbar={<Text className="e-dim">{topics.length} {topics.length === 1 ? "topic" : "topics"}</Text>}>
       <SidebarLayout sidebar={sidebar} defaultSidebarWidth={24}>
         <div className="e-split-main e-agora-pane">
           <ViewStatus loading={loadingTopics} error={err} />
