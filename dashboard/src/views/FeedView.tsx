@@ -25,16 +25,13 @@ export function FeedView() {
   const [data, loading, error] = useInterval(() => api.feed({ kind }), 15_000, [kind]);
   const posts: FeedPost[] = data?.posts ?? [];
   return (
-    <ViewBody
-      toolbar={
-        <SegmentTabs
-          options={TABS.map((t) => t.id)}
-          value={tab}
-          onChange={setTab}
-          labels={Object.fromEntries(TABS.map((t) => [t.id, t.label]))}
-        />
-      }
-    >
+    <ViewBody>
+      <SegmentTabs
+        options={TABS.map((t) => t.id)}
+        value={tab}
+        onChange={setTab}
+        labels={Object.fromEntries(TABS.map((t) => [t.id, t.label]))}
+      />
       <ViewStatus loading={loading} error={error} empty={posts.length === 0} emptyHint="Nothing posted here yet." />
       <div className="e-post-cards">
         {posts.map((p) => <PostCard key={p.post_id} post={fromFeedPost(p, relayOwner)} />)}

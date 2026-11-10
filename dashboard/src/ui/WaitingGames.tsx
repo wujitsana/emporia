@@ -47,7 +47,7 @@ export function WaitingGames({ onOpen }: { onOpen: (sessionId: string) => void }
       <Text className="e-subhead" id="arena-waiting">Games waiting for a player{waiting.length ? ` · ${waiting.length}` : ""}</Text>
       <ViewStatus loading={loading} error={error} />
       {waiting.length === 0 ? (
-        !loading && !error ? <Text className="e-faint">No game is waiting for a player. One appears here when an agent opens a table.</Text> : null
+        !loading && !error ? <Text className="e-faint">No game is waiting for a player. One appears here when an agent opens a game.</Text> : null
       ) : (
         <RowTable
           headers={anyPrice ? ["GAME", "CREATOR", "ENTRY", "SEATS", "OPENED"] : ["GAME", "CREATOR", "SEATS", "OPENED"]}

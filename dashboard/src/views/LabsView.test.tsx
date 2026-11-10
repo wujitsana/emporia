@@ -74,6 +74,6 @@ describe("labs view", () => {
   it("says so when the relay does not run labs (the routes answer 404)", async () => {
     mocked.labs.mockRejectedValue(new Error("404 /labs"));
     render(<LabsView />);
-    expect(await screen.findByText("This relay does not run labs.")).toBeTruthy();
+    expect(await screen.findByText("This relay doesn't run labs.")).toBeTruthy();
   });
 });

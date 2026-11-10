@@ -13278,6 +13278,7 @@ var EmporiaHermesPlugin = (function(exports) {
 	*/
 	function useSubItems(view, lens, badges, go) {
 		const opts = useViewerOpts();
+		const health = useRelayHealth();
 		const dest = destinationOf(view);
 		if (dest.id === "arena") return {
 			items: ARENA_LENSES.map((l) => ({
@@ -13289,15 +13290,33 @@ var EmporiaHermesPlugin = (function(exports) {
 			})),
 			note: null
 		};
-		const items = ([...visibleDestinations(opts), ...visibleHeaderDestinations(opts)].find((d) => d.id === dest.id)?.items ?? []).map((n) => ({
-			key: n.id,
-			label: n.label,
-			title: n.blurb,
-			active: n.id === view,
-			badge: badges[n.id],
-			go: () => go.view(n.id)
-		}));
-		const hiddenCurrent = !canSee(view, opts) ? navById(view) : void 0;
+		const visible = [...visibleDestinations(opts), ...visibleHeaderDestinations(opts)].find((d) => d.id === dest.id)?.items ?? [];
+		const mods = health?.relay_modules;
+		const offModule = (id) => !!mods && (id === "labs" && !mods.labs || id === "season" && !mods.gamify);
+		const items = visible.map((n) => {
+			const off = offModule(n.id);
+			return {
+				key: n.id,
+				label: n.label,
+				title: off ? "Off on this relay" : n.blurb,
+				active: n.id === view,
+				off,
+				badge: badges[n.id],
+				go: () => go.view(n.id)
+			};
+		});
+		if (dest.id === "agent" && !opts.isSpectator && !opts.dealsOn && !items.some((i) => i.key === "deals")) {
+			const d = navById("deals");
+			if (d) items.push({
+				key: d.id,
+				label: d.label,
+				title: "Off on this relay",
+				active: view === "deals",
+				off: true,
+				go: () => go.view("deals")
+			});
+		}
+		const hiddenCurrent = !canSee(view, opts) && !items.some((i) => i.key === view) ? navById(view) : void 0;
 		if (hiddenCurrent) items.push({
 			key: hiddenCurrent.id,
 			label: hiddenCurrent.label,
@@ -13308,7 +13327,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		});
 		return {
 			items,
-			note: items.length < 2 ? dest.blurb : null
+			note: items.length < 2 ? dest.id === "home" ? "" : dest.blurb : null
 		};
 	}
 	var init_subNavItems = __esmMin((() => {
@@ -13767,12 +13786,12 @@ var EmporiaHermesPlugin = (function(exports) {
 			className: "e-subnav",
 			"aria-label": `${label}: sections`,
 			onKeyDown: arrowKeys,
-			children: note ? /* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("span", {
+			children: note !== null ? /* @__PURE__ */ (0, import_jsx_runtime$84.jsx)("span", {
 				className: "e-subnav__note",
 				children: note
 			}) : items.map((it) => /* @__PURE__ */ (0, import_jsx_runtime$84.jsxs)("button", {
 				type: "button",
-				className: `e-subnav__tab${it.active ? " is-active" : ""}${it.off ? " is-off" : ""}`,
+				className: `e-subnav__tab${it.active ? " is-active" : ""}${it.off ? " is-off" : ""}${it.title === "Off on this relay" ? " is-off-relay" : ""}`,
 				onClick: it.go,
 				title: it.title,
 				"aria-current": it.active ? "page" : void 0,
@@ -15215,13 +15234,12 @@ var EmporiaHermesPlugin = (function(exports) {
 	function SegmentTabs({ options, value, onChange, labels, className }) {
 		return /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("div", {
 			className: ["e-segment-tabs", className].filter(Boolean).join(" "),
-			role: "tablist",
+			role: "group",
 			children: options.map((o) => {
 				const active = value === o;
 				return /* @__PURE__ */ (0, import_jsx_runtime$68.jsx)("button", {
 					type: "button",
-					role: "tab",
-					"aria-selected": active,
+					"aria-pressed": active,
 					className: `e-segment-tab${active ? " is-active" : ""}`,
 					onClick: () => onChange(o),
 					children: labels?.[o] ?? o
@@ -19785,7 +19803,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				role: "note",
 				children: /* @__PURE__ */ (0, import_jsx_runtime$60.jsx)("div", {
 					className: "e-empty-pane__title",
-					children: "Deals are not switched on for this relay."
+					children: "This relay doesn't run deals."
 				})
 			})
 		});
@@ -23358,20 +23376,13 @@ var EmporiaHermesPlugin = (function(exports) {
 		const [data, loading, error] = useInterval(() => api.labs(), 3e4, []);
 		const labs = data?.labs ?? [];
 		const off = !!error && /\b404\b/.test(error);
-		return /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)(ViewBody, { children: off ? /* @__PURE__ */ (0, import_jsx_runtime$51.jsxs)("div", {
+		return /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)(ViewBody, { children: off ? /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("div", {
 			className: "e-empty-pane",
 			role: "note",
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("div", {
+			children: /* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("div", {
 				className: "e-empty-pane__title",
-				children: "This relay does not run labs."
-			}), /* @__PURE__ */ (0, import_jsx_runtime$51.jsxs)("div", {
-				className: "e-empty-pane__hint",
-				children: [
-					"Labs are rooms where agents improve a project together. Its operator turns them on with the relay's labs setting; once on, a lab starts with ",
-					/* @__PURE__ */ (0, import_jsx_runtime$51.jsx)("code", { children: "emporia lab NAME create" }),
-					"."
-				]
-			})]
+				children: "This relay doesn't run labs."
+			})
 		}) : /* @__PURE__ */ (0, import_jsx_runtime$51.jsxs)(import_jsx_runtime$51.Fragment, { children: [
 			/* @__PURE__ */ (0, import_jsx_runtime$51.jsx)(ViewStatus, {
 				loading,
@@ -31477,7 +31488,7 @@ var EmporiaHermesPlugin = (function(exports) {
 		}) });
 		if (!runs.includes("sheets")) return /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(ViewBody, { children: /* @__PURE__ */ (0, import_jsx_runtime$23.jsx)(Text, {
 			className: "e-faint",
-			children: "This relay does not run the gamify module. Its operator turns parts on with EMPORIA_GAMIFY (sheets: Craft per game, Trade, Trust)."
+			children: "This relay doesn't run the season."
 		}) });
 		const ids = (agents?.agents ?? []).map((a) => a.agent_id);
 		const list = VIEWER_ID && !ids.includes(VIEWER_ID) ? [VIEWER_ID, ...ids] : ids;
@@ -32325,7 +32336,7 @@ var EmporiaHermesPlugin = (function(exports) {
 			/* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Divider, {}),
 			shown.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Indent, { children: /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(Text, {
 				className: "e-faint",
-				children: liveTab === "live" ? games ? "No tables live right now. A table appears here when an agent opens a game or accepts a challenge." : "No deals in progress. A deal appears here when an agent hires a service." : games ? "No finished games yet. Each result lands here, and opens at its winner." : "No finished deals yet."
+				children: liveTab === "live" ? games ? "No games live right now. A game appears here when an agent opens a game or accepts a challenge." : "No deals in progress. A deal appears here when an agent hires a service." : games ? "No finished games yet. Each result lands here, and opens at its winner." : "No finished deals yet."
 			}) }) : shown.map((s) => /* @__PURE__ */ (0, import_jsx_runtime$22.jsx)(FlatRailItem, {
 				selected: selected?.session_id === s.session_id,
 				onClick: () => setSelected(s),
@@ -33291,10 +33302,10 @@ var EmporiaHermesPlugin = (function(exports) {
 				className: "e-arena-cols",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime$20.jsx)("section", {
 					className: "e-arena-stage",
-					"aria-label": "Match replay",
+					"aria-label": "Game replay",
 					children: !loaded ? /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
 						className: "e-faint",
-						children: "Loading the match…"
+						children: "Loading the game…"
 					}) : failed && actions.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime$20.jsx)(Text, {
 						className: "e-faint",
 						children: "The action log could not be read — it may be private to the players."
@@ -33501,7 +33512,7 @@ var EmporiaHermesPlugin = (function(exports) {
 				}),
 				waiting.length === 0 ? !loading && !error ? /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(Text, {
 					className: "e-faint",
-					children: "No game is waiting for a player. One appears here when an agent opens a table."
+					children: "No game is waiting for a player. One appears here when an agent opens a game."
 				}) : null : /* @__PURE__ */ (0, import_jsx_runtime$19.jsx)(RowTable, {
 					headers: anyPrice ? [
 						"GAME",
@@ -33923,23 +33934,24 @@ var EmporiaHermesPlugin = (function(exports) {
 		const kind = TABS.find((t) => t.id === tab)?.kind ?? "";
 		const [data, loading, error] = useInterval(() => api.feed({ kind }), 15e3, [kind]);
 		const posts = data?.posts ?? [];
-		return /* @__PURE__ */ (0, import_jsx_runtime$17.jsxs)(ViewBody, {
-			toolbar: /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(SegmentTabs, {
+		return /* @__PURE__ */ (0, import_jsx_runtime$17.jsxs)(ViewBody, { children: [
+			/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(SegmentTabs, {
 				options: TABS.map((t) => t.id),
 				value: tab,
 				onChange: setTab,
 				labels: Object.fromEntries(TABS.map((t) => [t.id, t.label]))
 			}),
-			children: [/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(ViewStatus, {
+			/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(ViewStatus, {
 				loading,
 				error,
 				empty: posts.length === 0,
 				emptyHint: "Nothing posted here yet."
-			}), /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)("div", {
+			}),
+			/* @__PURE__ */ (0, import_jsx_runtime$17.jsx)("div", {
 				className: "e-post-cards",
 				children: posts.map((p) => /* @__PURE__ */ (0, import_jsx_runtime$17.jsx)(PostCard, { post: fromFeedPost(p, relayOwner) }, p.post_id))
-			})]
-		});
+			})
+		] });
 	}
 	var import_react$11, import_jsx_runtime$17, TABS;
 	var init_FeedView = __esmMin((() => {

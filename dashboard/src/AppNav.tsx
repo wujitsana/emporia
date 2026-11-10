@@ -101,11 +101,11 @@ export function HeaderLinks({ view, onGo, drawer = false }: { view: View; onGo: 
 export function SubNav({ label, items, note }: { label: string; items: SubItem[]; note: string | null }) {
   return (
     <nav className="e-subnav" aria-label={`${label}: sections`} onKeyDown={arrowKeys}>
-      {note ? <span className="e-subnav__note">{note}</span> : items.map((it) => (
+      {note !== null ? <span className="e-subnav__note">{note}</span> : items.map((it) => (
         <button
           key={it.key}
           type="button"
-          className={`e-subnav__tab${it.active ? " is-active" : ""}${it.off ? " is-off" : ""}`}
+          className={`e-subnav__tab${it.active ? " is-active" : ""}${it.off ? " is-off" : ""}${it.title === "Off on this relay" ? " is-off-relay" : ""}`}
           onClick={it.go}
           title={it.title}
           aria-current={it.active ? "page" : undefined}

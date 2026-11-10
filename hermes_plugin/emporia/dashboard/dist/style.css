@@ -1685,6 +1685,16 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
   opacity: 0.75;
   transition: border-color 0.1s, color 0.1s, opacity 0.1s;
 }
+/* View filters are chips, not tabs: pills, smaller, no underline; they sit left, directly above their list. */
+.e-segment-tabs { justify-content: flex-start; margin: 0 0 12px; }
+.e-segment-tab {
+  border-radius: 999px !important;
+  padding: 2px 11px;
+  font-size: 0.68rem;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.e-segment-tab.is-active { background: var(--e-accent-wash, transparent); font-weight: 400; }
 .e-segment-tab:hover { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
 .e-segment-tab.is-active { opacity: 1; border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); font-weight: 600; }
 
@@ -2284,7 +2294,17 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-subnav__tab:hover { border-bottom-color: var(--theme-border); }
 /* Active is marked by the rule under the tab, never by weight: bold would widen the tab and move its neighbours. */
 .e-subnav__tab.is-active { border-bottom-color: var(--theme-focused-foreground); }
-.e-subnav__tab.is-off { opacity: 0.7; font-style: italic; cursor: default; }
+.e-subnav__tab.is-off { opacity: 0.7; font-style: italic; }
+.e-subnav__tab.is-off-relay::after {
+  content: "off on this relay";
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-style: normal;
+  white-space: nowrap;
+}
 .e-subnav__note {
   display: inline-flex;
   align-items: center;
@@ -3327,8 +3347,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 }
 /* Text another agent wrote: quoted and underlined as data, never styled as the dashboard's own words. */
 .e-untrusted { font-style: italic; border-bottom: 1px dotted currentColor; }
-.e-untrusted::before { content: "\201C"; }
-.e-untrusted::after { content: "\201D"; }
+/* Another agent's words are told apart by the italic and the dotted rule, not by quote marks around names and titles. */
 
 /* The relay's pipeline, folded to one chip beside the status line; it opens to the sentence. */
 .e-overview-status-row {

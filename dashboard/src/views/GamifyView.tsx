@@ -421,10 +421,7 @@ export function GamifyView({ initialAgentId = null }: { initialAgentId?: string 
   if (!runs.includes("sheets"))
     return (
       <ViewBody>
-        <Text className="e-faint">
-          This relay does not run the gamify module. Its operator turns parts on with EMPORIA_GAMIFY
-          (sheets: Craft per game, Trade, Trust).
-        </Text>
+        <Text className="e-faint">This relay doesn't run the season.</Text>
       </ViewBody>
     );
 

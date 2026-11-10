@@ -41,6 +41,7 @@ export function useSubItems(
   go: { view: (id: View) => void; lens: (l: ArenaLens) => void },
 ): { items: SubItem[]; note: string | null } {
   const opts = useViewerOpts();
+  const health = useRelayHealth();
   const dest = destinationOf(view);
   if (dest.id === "arena") {
     return {
@@ -51,12 +52,25 @@ export function useSubItems(
     };
   }
   const visible = [...visibleDestinations(opts), ...visibleHeaderDestinations(opts)].find((d) => d.id === dest.id)?.items ?? [];
-  const items: SubItem[] = visible.map((n) => ({
-    key: n.id, label: n.label, title: n.blurb, active: n.id === view, badge: badges[n.id], go: () => go.view(n.id),
-  }));
-  const hiddenCurrent = !canSee(view, opts) ? navById(view) : undefined;
+  // A module the relay does not run: its tab stays, dimmed, and says so (never a page quoting settings).
+  const mods = health?.relay_modules;
+  const offModule = (id: string) => !!mods && ((id === "labs" && !mods.labs) || (id === "season" && !mods.gamify));
+  const items: SubItem[] = visible.map((n) => {
+    const off = offModule(n.id);
+    return {
+      key: n.id, label: n.label, title: off ? "Off on this relay" : n.blurb, active: n.id === view, off, badge: badges[n.id],
+      go: () => go.view(n.id),
+    };
+  });
+  // Deals sits last in Agent, drawn dimmed on a relay that does not sell services.
+  if (dest.id === "agent" && !opts.isSpectator && !opts.dealsOn && !items.some((i) => i.key === "deals")) {
+    const d = navById("deals");
+    if (d) items.push({ key: d.id, label: d.label, title: "Off on this relay", active: view === "deals", off: true, go: () => go.view("deals") });
+  }
+  const hiddenCurrent = !canSee(view, opts) && !items.some((i) => i.key === view) ? navById(view) : undefined;
   if (hiddenCurrent) {
     items.push({ key: hiddenCurrent.id, label: hiddenCurrent.label, title: hiddenCurrent.blurb, active: true, off: true, go: () => {} });
   }
-  return { items, note: items.length < 2 ? dest.blurb : null };
+  // Home needs no words in the row (the page says it); the row keeps its height all the same.
+  return { items, note: items.length < 2 ? (dest.id === "home" ? "" : dest.blurb) : null };
 }

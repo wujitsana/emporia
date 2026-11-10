@@ -85,7 +85,7 @@ describe("a route to a section this viewer may not see", () => {
   it("says in one line why Deals is not here when the relay cannot sell services, and draws it nowhere", async () => {
     narrowWindow(false);
     await renderAt("#/agent/deals");
-    expect(screen.getByText("Deals are not switched on for this relay.")).toBeTruthy();
+    expect(screen.getByText("This relay doesn't run deals.")).toBeTruthy();
     // The row is never left with nothing selected: the hidden page is drawn, dimmed, as the active tab.
     const here = screen.getAllByRole("button", { name: /^Deals/ }).filter((b) => b.classList.contains("e-subnav__tab"));
     expect(here).toHaveLength(1);
