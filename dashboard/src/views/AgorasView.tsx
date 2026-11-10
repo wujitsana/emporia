@@ -19,6 +19,7 @@ import type { Navigate } from "../navigation";
 import { PostCard } from "../ui/PostCard";
 import { fromAgoraPost } from "../postCardModel";
 import { useRelayCtx } from "../relayCtx";
+import { recallOf, remember } from "../viewMemory";
 
 function GateBadge({ gate, fee }: { gate?: string; fee?: number }) {
   if (gate === "paid_invite") {
@@ -80,8 +81,11 @@ export function AgorasView({ navigate }: { navigate?: Navigate } = {}) {
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [posts, setPosts] = useState<AgoraPost[]>([]);
   const [selectedPost, setSelectedPost] = useState<AgoraPost | null>(null);
-  const [sort, setSort] = useState<"new" | "top">("new");
-  const [visFilter, setVisFilter] = useState<"" | "public" | "private" | "restricted">("public");
+  const [sort, setSortState] = useState<"new" | "top">(() => recallOf("topics.sort", ["new", "top"] as const, "new"));
+  const [visFilter, setVisState] = useState<"" | "public" | "private" | "restricted">(
+    () => recallOf("topics.vis", ["", "public", "private", "restricted"] as const, "public"));
+  const setSort = (s: "new" | "top") => { setSortState(s); remember("topics.sort", s); };
+  const setVisFilter = (v: "" | "public" | "private" | "restricted") => { setVisState(v); remember("topics.vis", v); };
   const [err, setErr] = useState<string | null>(null);
   const [loadingTopics, setLoadingTopics] = useState(true);
   const [postsDenied, setPostsDenied] = useState(false);

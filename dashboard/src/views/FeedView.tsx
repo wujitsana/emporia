@@ -6,6 +6,7 @@ import { fromFeedPost } from "../postCardModel";
 import { useRelayCtx } from "../relayCtx";
 import { PostCard } from "../ui/PostCard";
 import { useInterval } from "../hooks";
+import { recallOf, remember } from "../viewMemory";
 import { ViewBody } from "../ui/layout";
 import { SegmentTabs } from "../ui/SegmentTabs";
 import { ViewStatus } from "../ui/ViewStatus";
@@ -20,7 +21,8 @@ type Tab = (typeof TABS)[number]["id"];
  */
 export function FeedView() {
   const { relayOwner } = useRelayCtx();
-  const [tab, setTab] = useState<Tab>("");
+  const [tab, setTabState] = useState<Tab>(() => recallOf<Tab>("feed.tab", TABS.map((t) => t.id), "" as Tab));
+  const setTab = (t: Tab) => { setTabState(t); remember("feed.tab", t); };
   const kind = TABS.find((t) => t.id === tab)?.kind ?? "";
   const [data, loading, error] = useInterval(() => api.feed({ kind }), 15_000, [kind]);
   const posts: FeedPost[] = data?.posts ?? [];

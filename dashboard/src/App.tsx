@@ -22,8 +22,9 @@ import { DESKTOP_ROOT } from "./shadowScope";
 import { RelayHealthCtx } from "./healthCtx";
 import { applyTheme, nextTint, toggleTheme, THEMES, TINTS, type Theme, type Tint } from "./themeConfig";
 import { useAgentWs, useGlobalEvents, useInterval } from "./hooks";
-import { canSee, dealsAvailable, destById, destinationOf, navById, navForHotkey, siblingView, type ArenaLens, type Destination, type View } from "./navConfig";
+import { ARENA_LENSES, canSee, dealsAvailable, destById, destinationOf, navById, navForHotkey, siblingView, type ArenaLens, type Destination, type View } from "./navConfig";
 import { GatedNote } from "./ui/GatedNote";
+import { recall, recallOf, remember } from "./viewMemory";
 import { isNarrow, useNarrow, useOverlayFocus } from "./ui/overlayFocus";
 import { useNavLayout } from "./ui/navLayout";
 import { PageHeading, ViewBoundary } from "./ui/layout";
@@ -65,6 +66,16 @@ function readTint(): Tint {
   if (CAPTURE) return "tint-green";
   const v = readPref(LS_TINT);
   return (TINTS as readonly string[]).includes(v ?? "") ? (v as Tint) : "";
+}
+
+/** The sub-tab last seen in each destination in this browser tab (navForHotkey ignores a name it does not know). */
+function recalledSections(): Partial<Record<Destination, View>> {
+  const out: Partial<Record<Destination, View>> = {};
+  for (const d of ["home", "agora", "arena", "labs", "agent"] as const) {
+    const v = recall(`dest.${d}`);
+    if (v) out[d] = v as View;
+  }
+  return out;
 }
 
 export default function App() {
@@ -226,19 +237,29 @@ function AppInner() {
     setSelectedStep(null);
     setNavOpen(false);
     syncHash("games", null, null, l);
+    remember("arena.lens", l);
   }, []);
 
-  // Each destination reopens on the section last seen in it (Labs & Season → Season, if that was last).
-  const lastInDest = useRef<Partial<Record<Destination, View>>>({});
+  // Each destination reopens on the section last seen in it (Labs & Season → Season, if that was last);
+  // kept for this browser tab, so a reload comes back to the same sub-tab.
+  const lastInDest = useRef<Partial<Record<Destination, View>>>(recalledSections());
   useEffect(() => {
-    lastInDest.current[destinationOf(view).id] = view;
+    const d = destinationOf(view).id;
+    lastInDest.current[d] = view;
+    remember(`dest.${d}`, view);
   }, [view]);
   const goToDest = useCallback(
     (id: Destination) => {
       const found = navForHotkey(destById(id)?.hotkey ?? "", { isSpectator, isOperator: isRelayOperator, dealsOn }, lastInDest.current);
-      if (found) goToView(found.id);
+      if (!found) return;
+      // The Arena reopens on the page (Live, Waiting, Results, Boards) the person last had.
+      if (found.id === "games") {
+        const l = recallOf<ArenaLens>("arena.lens", ARENA_LENSES.map((x) => x.id), "live");
+        if (l !== lens) { goToLens(l); return; }
+      }
+      goToView(found.id);
     },
-    [goToView, isSpectator, isRelayOperator, dealsOn],
+    [goToView, goToLens, lens, isSpectator, isRelayOperator, dealsOn],
   );
 
   const navigate = useCallback<Navigate>(
