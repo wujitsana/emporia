@@ -2135,26 +2135,11 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-setting-number { font-variant-numeric: tabular-nums; font-weight: 600; }
 .e-setting-tag { font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 1px 6px;
   border: 1px dashed color-mix(in srgb, currentColor 45%, transparent); }
-/* A switch, drawn and never pressed. */
-.e-setting-switch { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85em; }
-.e-setting-switch__track { position: relative; display: inline-block; width: 30px; height: 16px; border-radius: 8px;
-  border: 1px solid color-mix(in srgb, currentColor 45%, transparent); box-sizing: border-box; }
-.e-setting-switch__knob { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%;
-  background: color-mix(in srgb, currentColor 55%, transparent); }
-.e-setting-switch.is-on .e-setting-switch__track { background: var(--theme-focused-foreground);
-  border-color: var(--theme-focused-foreground); }
-.e-setting-switch.is-on .e-setting-switch__knob { left: 16px; background: var(--theme-background, #fff); }
-.e-setting-switch__word { min-width: 2.2em; }
-.e-setting-pill { font-size: 0.8em; padding: 1px 9px; border-radius: 10px;
-  border: 1px solid color-mix(in srgb, currentColor 40%, transparent); }
-.e-setting-pill.is-on { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
-/* A choice: every option, the one in force filled. */
-.e-setting-choices { display: inline-flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
-.e-setting-choice { font-size: 0.82em; padding: 2px 9px; white-space: nowrap;
-  border: 1px solid var(--e-settings-rule); color: color-mix(in srgb, currentColor 78%, transparent); }
-.e-setting-choice.is-current { color: var(--theme-background); background: var(--theme-focused-foreground);
-  border-color: var(--theme-focused-foreground); font-weight: 600; }
-.e-setting-rec { font-weight: 400; font-size: 0.9em; }
+/* Read-only values are plain text: no border, fill, hover or pointer, so nothing looks pressable. */
+.e-setting-plain { font-size: 0.9em; font-weight: 600; cursor: default; opacity: 0.7; }
+.e-setting-plain.is-on { opacity: 1; }
+.e-setting-choices { display: inline; text-align: right; cursor: default; }
+.e-setting-rec { font-weight: 400; font-size: 0.82em; }
 /* Where to change it: Hermes's own page, the command, and who may run it. */
 .e-setting-change { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 0.88em; min-width: 0; }
 .e-setting-hermes { font: inherit; color: var(--theme-focused-foreground); background: transparent; cursor: pointer;
@@ -3594,7 +3579,11 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 }
 .e-post-card__reply-head { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; margin-bottom: 2px; }
 .e-post-card__reply .e-moire-avatar { width: 18px; height: 18px; }
-.e-post-card__reply-head > * + *, .e-post-card__who > * + * { margin-left: 8px; }
+/* gap already spaces the items; no extra margins. The name is the only part that shrinks (ellipsis), so the tag and level never sit on top of it. */
+.e-post-card__who > * { flex: none; }
+.e-post-card__who > .e-post-card__name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.e-post-card__who { max-width: 100%; }
+.e-post-card__reply-head { flex-wrap: wrap; }
 .e-post-card__reply .e-post-card__body { margin-top: 2px; }
 .e-post-card__more {
   align-self: flex-start;
@@ -3623,7 +3612,11 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-arena-card__live { color: var(--theme-focused-foreground); font-size: 0.75rem; }
 .e-arena-card__result { font-size: 0.85rem; }
 .e-arena-card__models { font-size: 0.7rem; }
-.e-arena-players, .e-arena-slot__who { overflow-wrap: anywhere; }
+.e-arena-players { overflow-wrap: anywhere; }
+/* An id or name: one line, monospace, ellipsis at its box edge (full value in the title); the only place a break "anywhere" is allowed. */
+.e-id { display: inline-block; max-width: 100%; vertical-align: bottom; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-family-mono, monospace); overflow-wrap: anywhere; }
+.e-arena-slot__who { min-width: 0; max-width: 100%; }
 .e-arena-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .e-arena-chip { font: inherit; font-size: 0.8rem; color: inherit; background: transparent; padding: 3px 8px; border: 1px solid var(--e-rule); cursor: pointer; }
 .e-arena-chip.is-on { border-color: var(--theme-focused-foreground); color: var(--theme-focused-foreground); }
@@ -3631,7 +3624,7 @@ selectors below derive every --theme-* token from that tint via OKLCH math.
 .e-arena-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
 .e-arena-head__row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
 .e-arena-head__title { font-weight: 600; font-size: 1.05rem; }
-.e-arena-head__players { overflow-wrap: anywhere; }
+.e-arena-head__players { min-width: 0; }
 .e-arena-head__badges { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .e-arena-cols { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
 @media (min-width: 900px) { .e-arena-cols { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }}
